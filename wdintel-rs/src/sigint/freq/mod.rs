@@ -422,7 +422,7 @@ pub async fn list_callsigns_by_freqs(
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .filter(sigint_inbox_item::Column::Freq.eq_any(req.freqs.clone()))
-        .filter(active_inbox_item_callsign_exists())
+        .filter(inbox_item_callsign_exists())
         .into_model::<InboxItemFreq>()
         .all(&env.dbx)
         .await
@@ -451,7 +451,7 @@ pub async fn list_callsigns_by_freqs(
     ))
 }
 
-fn active_inbox_item_callsign_exists() -> SimpleExpr {
+fn inbox_item_callsign_exists() -> SimpleExpr {
     Expr::exists(
         Query::select()
             .expr(Expr::value(1))
@@ -469,6 +469,14 @@ fn active_inbox_item_callsign_exists() -> SimpleExpr {
             .and_where(sigint_inbox_item_callsign::Column::Deleted.eq(false))
             .to_owned(),
     )
+    .or(Expr::cust(
+        r#"(
+            (jsonb_typeof(sigint_inbox_item.callsigns) = 'array'
+                and sigint_inbox_item.callsigns <> '[]'::jsonb)
+            or (jsonb_typeof(sigint_inbox_item.callsigns_alg2) = 'array'
+                and sigint_inbox_item.callsigns_alg2 <> '[]'::jsonb)
+        )"#,
+    ))
 }
 
 /// Lists frequencies which were active (active in 14-day period, can include non-actives if checked), their assigned units if any.
@@ -564,7 +572,7 @@ pub async fn list_freqs(
                 crate::inbox::callsigns::sql_filter_condition(filter_callsigns),
             ));
             dedup_subquery =
-                dedup_subquery.filter(active_inbox_item_callsign_exists());
+                dedup_subquery.filter(inbox_item_callsign_exists());
 
             if req.filter_unknown_network.unwrap_or(false) {
                 dedup_subquery = dedup_subquery.filter(
@@ -941,7 +949,7 @@ pub async fn list_freqs_v2(
             subquery = subquery.filter(Expr::cust(
                 crate::inbox::callsigns::sql_filter_condition(filter_callsigns),
             ));
-            subquery = subquery.filter(active_inbox_item_callsign_exists());
+            subquery = subquery.filter(inbox_item_callsign_exists());
 
             let inbox_items = subquery
                 .into_model::<InboxItemFreq>()
