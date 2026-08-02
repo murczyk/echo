@@ -10,6 +10,7 @@
 
 ## NEXT
 
+- [#3035](https://github.com/echoua/echo/issues/3035) додано Storybook для картки повідомлення з варіантами аудіо-плеєра.
 - [#3021](https://github.com/echoua/echo/issues/3021) ✅🐞 Аналіз, Звіти: додано підтримку розширеного формату повідомлень пеленгації, збереження об’єктів пеленгації та уточнено опис звіту 1.2.5.
 - [#3005](https://github.com/echoua/echo/issues/3005) ✅👷 ORBIT: додано інтерактивний імпорт і синхронізацію ієрархії підрозділів; на інстансах з ClickHouse перед застосуванням міграцій і запуском `wdintel-rs-bgworker.service` з оновленого checkout виконати `just setup-analytics-reconcile-tables`, щоб таблиці `orbit_*` не потрапили до дзеркала.
 - [#2846](https://github.com/echoua/echo/issues/2846) 🐞👷 Аналіз: виправлено історичну статистику після зміни прив’язок груп до смуг і підрахунок унікальних повідомлень у кеші; на кожному інстансі спочатку встановити новий пакет, виконати `sudo wdintel-rs --mode=live oneoff-calculate-historic-stats`, а потім деплоїти Echo; на інстансах з ClickHouse після деплою також виконати `/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes`, щоб виключити `group_stats_recalculation_task` із дзеркала.
