@@ -157,6 +157,7 @@ function TestHarness(props: {
   initialFeeds?: MessageFeedState[];
   initialSavedFilters?: SavedFilterDuty[];
   authUserName?: string | null;
+  currentUserOrganismId?: number | null;
   columnRefsRef?: MutableRefObject<
     Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
   >;
@@ -188,6 +189,7 @@ function TestHarness(props: {
     setLoadingNewerFeedIds: hoisted.setLoadingNewerFeedIds,
     requestValidatedInboxCount: hoisted.requestValidatedInboxCount,
     authUserName: props.authUserName ?? null,
+    currentUserOrganismId: props.currentUserOrganismId ?? null,
     profiles: {
       'sender-1': { givenName: 'BBC', familyName: 'SPORT' },
     },
@@ -975,6 +977,7 @@ describe('useRerDutyMessageActions', () => {
         <TestHarness
           apiRef={apiRef}
           authUserName="tester"
+          currentUserOrganismId={7}
           initialFeeds={[
             buildFeed({
               items: [
@@ -1001,7 +1004,7 @@ describe('useRerDutyMessageActions', () => {
     expect(hoisted.inboxMessageTagsAdd).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
     expect(apiRef.current!.botTagAction).toBeNull();
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].inboxTags).toEqual([
-      expect.objectContaining({ tagId: 3, login: 'tester', model: null }),
+      expect.objectContaining({ tagId: 3, login: 'tester', model: null, organismId: 7 }),
       expect.objectContaining({ tagId: 3, model: 'bot' }),
     ]);
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].tags).toEqual([3, 4]);

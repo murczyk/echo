@@ -42,6 +42,7 @@ export type MessageActionsDeps = {
     requestSignature: string;
   } | null>;
   authUserName: string | null;
+  currentUserOrganismId: number | null;
   profiles: Record<string, SignalProfileEntry | null>;
   tagsMap: Record<number, Tag>;
   tagsOrder: number[];

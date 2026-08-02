@@ -105,7 +105,10 @@ function mergePostsFromMessages(
   return [...merged].sort((a, b) => a.localeCompare(b));
 }
 
-export function useRerDutyFeeds(authUserName: string | null) {
+export function useRerDutyFeeds(
+  authUserName: string | null,
+  currentUserOrganismId: number | null = null,
+) {
   const [keywordSets, setKeywordSets] = useState<OrganismKeywordSetDto[]>([]);
   const reloadKeywordSets = useCallback(async () => {
     const sets = await fetchOrganismKeywordSets();
@@ -369,6 +372,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     setLoadingNewerFeedIds: feedState.setLoadingNewerFeedIds,
     requestValidatedInboxCount: feedState.requestValidatedInboxCount,
     authUserName,
+    currentUserOrganismId,
     profiles: filterOpts.profiles,
     groupInfos: filterOpts.groupInfos,
     tagsMap: filterOpts.tagsMap,

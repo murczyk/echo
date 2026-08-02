@@ -402,7 +402,7 @@ export function RerDutyNeoPage({
     keywordSets,
     reloadKeywordSets,
     applyFilter,
-  } = useRerDutyFeeds(authUserName);
+  } = useRerDutyFeeds(authUserName, currentUser?.organismId ?? null);
   const activeFeedIdSafe = messageFeeds.some((feed) => feed.id === activeFeedId)
     ? activeFeedId
     : (messageFeeds[0]?.id ?? null);

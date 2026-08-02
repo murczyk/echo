@@ -68,7 +68,9 @@ fn require_current_analytics_exclusions() -> anyhow::Result<()> {
 }
 
 fn read_analytics_exclusions(path: &str) -> anyhow::Result<BTreeSet<String>> {
-    let contents = fs::read_to_string(path).c(h!())?;
+    let contents = fs::read_to_string(path).with_context(|| {
+        format!("failed to read analytics exclusions from {path}")
+    })?;
     parse_analytics_exclusions(&contents, path)
 }
 
