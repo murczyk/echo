@@ -709,4 +709,54 @@ describe('FeedColumn', () => {
 
     expect(container.querySelector('button[aria-label="Закрити стрічку"]')).not.toBeNull();
   });
+
+  it('closes open settings instead of removing the feed', async () => {
+    const props = buildProps();
+    props.column.view.canRemove = true;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Фільтри"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Закрити стрічку"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.querySelector('[data-testid="feed-filter-panel"]')).toBeNull();
+    expect(props.column.actions.onRemoveColumn).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain('Ви впевнені, що хочете видалити цю стрічку?');
+  });
+
+  it('confirms before removing a feed', async () => {
+    const props = buildProps();
+    props.column.view.canRemove = true;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Закрити стрічку"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(props.column.actions.onRemoveColumn).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('Ви впевнені, що хочете видалити цю стрічку?');
+
+    const confirmButton = Array.from(document.body.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Видалити',
+    );
+    await act(async () => {
+      confirmButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(props.column.actions.onRemoveColumn).toHaveBeenCalledTimes(1);
+  });
 });

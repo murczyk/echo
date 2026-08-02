@@ -10,6 +10,7 @@ import {
 import { FeedColumnHeader } from './FeedColumnHeader';
 import { FeedColumnContent, type FeedColumnContentHandle } from './FeedColumnContent';
 import { useDocumentClickAway } from '../../hooks/use-document-click-away';
+import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import type { FeedColumnModel } from './types';
 
 export type FeedColumnProps = {
@@ -27,6 +28,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   const [showFilters, setShowFilters] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
   const [showKeywordsPanel, setShowKeywordsPanel] = useState(false);
+  const [removeConfirmationOpen, setRemoveConfirmationOpen] = useState(false);
   const columnRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
   const filtersPanelRef = useRef<HTMLDivElement | null>(null);
@@ -99,6 +101,19 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       return next;
     });
   }, [closeOtherPanels]);
+  const handleCloseAction = useCallback(() => {
+    if (showFilters || showNotificationPanel || showKeywordsPanel) {
+      setShowFilters(false);
+      setShowNotificationPanel(false);
+      setShowKeywordsPanel(false);
+      return;
+    }
+    setRemoveConfirmationOpen(true);
+  }, [showFilters, showNotificationPanel, showKeywordsPanel]);
+  const handleRemoveConfirmed = useCallback(() => {
+    setRemoveConfirmationOpen(false);
+    onRemoveColumn();
+  }, [onRemoveColumn]);
   const shouldDismissPanelClick = useCallback((event: globalThis.MouseEvent) => {
     const target = event.target;
     if (!(target instanceof Element)) return true;
@@ -167,7 +182,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         onToggleNotificationPanel={onToggleNotificationPanel}
         onToggleKeywordsPanel={onToggleKeywordsPanel}
         onToggleDutyNotifications={handleBellToggleDutyNotifications}
-        onRemoveColumn={onRemoveColumn}
+        onRemoveColumn={handleCloseAction}
         headerRef={headerRef}
         filtersPanelRef={filtersPanelRef}
         notificationPanelRef={notificationPanelRef}
@@ -180,6 +195,15 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         onNotificationPersisted={bumpNotificationStorageSync}
       />
       <FeedColumnContent ref={contentRef} column={column} />
+      {removeConfirmationOpen ? (
+        <ConfirmDangerDialog
+          open
+          onClose={() => setRemoveConfirmationOpen(false)}
+          onConfirm={handleRemoveConfirmed}
+          maxWidth="xs"
+          description="Ви впевнені, що хочете видалити цю стрічку?"
+        />
+      ) : null}
     </Box>
   );
 });
