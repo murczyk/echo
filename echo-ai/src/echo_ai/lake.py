@@ -349,7 +349,8 @@ class Lake:
             sigint_inbox_item_id,
             model,
             confidence,
-            removed_at
+            removed_at,
+            removed_by_login
         )
         SELECT
             '{db}' AS source,
@@ -358,14 +359,18 @@ class Lake:
             postgres_query('{db}',
         $$
             SELECT
-                id,
-                tag_id,
-                sigint_inbox_item_id,
-                model,
-                confidence,
-                removed_at
+                e.id,
+                e.tag_id,
+                e.sigint_inbox_item_id,
+                e.model,
+                e.confidence,
+                e.removed_at,
+                r.login AS removed_by_login
             FROM
-                sigint_inbox_tag_model_error
+                sigint_inbox_tag_model_error e
+            JOIN login r
+                ON e.removed_by_login_id = r.id
+
             {cond_removed_at}
         $$)
         """
