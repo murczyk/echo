@@ -7,6 +7,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
+python3 -m unittest scripts/ci/test_check_analytics_migrations.py
+python3 scripts/ci/check_analytics_migrations.py
+
 bash "$SCRIPT_DIR/ensure_postgres_running.sh"
 
 # CI boxes may require extra time while PostgreSQL replays WAL / crash-recovery.
@@ -19,6 +22,8 @@ source "$SCRIPT_DIR/setup_test_database.sh"
 # Export the database name for tests
 export TEST_DB_NAME="$DB_NAME"
 echo "Using test database: $TEST_DB_NAME"
+
+bash "$REPO_ROOT/scripts/ci/check_analytics_migration_catalog.sh"
 
 # Create storage directory and dummy files for CI
 mkdir -p ~/Downloads/storage

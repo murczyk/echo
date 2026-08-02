@@ -545,6 +545,10 @@ pub const ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT: u64 = 90_000;
 pub const ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT: u64 = 30_000;
 pub const ANALYTICS_HEALTH_LOG_INTERVAL_SECS: u64 = 60;
 pub const ANALYTICS_SOURCE_CONFIG_PATH: &str = "/etc/echo-peerdb/source.env";
+pub const ANALYTICS_SOURCE_EXCLUSIONS_PATH: &str =
+    "/etc/echo-peerdb/tables-exclude.txt";
+pub const ANALYTICS_PACKAGED_EXCLUSIONS_PATH: &str =
+    "/opt/echo-peerdb/env/tables-exclude.txt";
 pub const ANALYTICS_TABLE_RECONCILE_SERVICE: &str =
     "echo-peerdb-table-reconcile.service";
 

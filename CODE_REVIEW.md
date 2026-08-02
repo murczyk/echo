@@ -2,10 +2,16 @@
 
 ## Replicated PostgreSQL migrations
 
+CI compares migration DDL with
+`deploy/clickhouse/migration-impact.json`. Every changed Echo migration and
+every updated `echo-im` or `echo-gpu` migration revision must declare its
+analytics impact. The supported strategies are `excluded`,
+`replicated_snapshot`, `cdc_backfill`, and `mirror_resync`.
+
 For `CREATE TABLE`, confirm whether the table belongs in
 `deploy/clickhouse/env/tables-exclude.txt`. Non-excluded tables are added to
 PeerDB automatically after migration; exclusion changes remain an explicit
-deployment operation.
+deployment operation performed before migrations.
 
 Flag `ALTER TABLE ... ADD COLUMN ... DEFAULT ...` on PeerDB-replicated tables.
 PeerDB propagates the column, but it does not populate existing ClickHouse rows
@@ -22,6 +28,12 @@ is green.
 
 Apply this review to schema migrations shipped by application dependencies
 such as `echo-im`, not only migrations in `echo-migration`.
+
+Reviewers validate the declared strategy and the trigger safety of any DML;
+they are not expected to catch deployed exclusion drift manually. Deployment
+syncs the packaged exclusions before running migrations and fails if analytics
+does not become healthy afterward. Do not replace that guard with a warning or
+an automatic full-mirror resync.
 
 ## Architecture documentation
 

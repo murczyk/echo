@@ -26,6 +26,15 @@ sudo install -d -o "$automation_user" -g "$automation_group" -m 0750 \
 sudo install -o root -g root -m 0644 "$SCRIPT_DIR/lib.sh" /opt/echo-peerdb/bin/lib.sh
 sudo install -o root -g root -m 0755 "$SCRIPT_DIR/wal-status.sh" /opt/echo-peerdb/bin/wal-status.sh
 sudo install -o root -g root -m 0755 \
+  "$SCRIPT_DIR/source-sync-exclusions.sh" \
+  /opt/echo-peerdb/bin/source-sync-exclusions.sh
+sudo install -o root -g root -m 0755 \
+  "$SCRIPT_DIR/source-sync-exclusions-if-needed.sh" \
+  /opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh
+sudo install -o root -g root -m 0755 \
+  "$SCRIPT_DIR/source-verify-deploy.sh" \
+  /opt/echo-peerdb/bin/source-verify-deploy.sh
+sudo install -o root -g root -m 0755 \
   "$SCRIPT_DIR/source-reconcile-tables.sh" \
   /opt/echo-peerdb/bin/source-reconcile-tables.sh
 sudo install -o root -g root -m 0755 \

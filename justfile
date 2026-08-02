@@ -842,6 +842,10 @@ deploy _server_pos="" server:
         sudo env DEBIAN_FRONTEND=noninteractive \
           apt-get -o Dpkg::Lock::Timeout=120 -y -qq install echo-install wdintel-rs'
 
+    ssh "$SERVER" 'set -euo pipefail
+      /opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh --yes
+      sudo /usr/bin/wdintel-rs --mode=live migrate'
+
     # Re-assert critical services after deploy package update
     ssh "$SERVER" '
       set -euo pipefail
@@ -905,6 +909,7 @@ deploy _server_pos="" server:
         exit 1
       fi
     '
+    ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
     printf "\n⚠️⚠️⚠️ docs were not deployed. Run: just deploy-docs --server %s ⚠️⚠️⚠️\n" "$SERVER"
     echo "✅✅✅ deploy OK on $SERVER: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
 
@@ -1024,6 +1029,10 @@ deploy-from-local _server_pos="" server:
     "
     REMOTE_DEB_PATH=""
 
+    ssh "$SERVER" 'set -euo pipefail
+      /opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh --yes
+      sudo /usr/bin/wdintel-rs --mode=live migrate'
+
     ssh "$SERVER" '
       set -euo pipefail
 
@@ -1081,6 +1090,7 @@ deploy-from-local _server_pos="" server:
 
       echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, 8081 via systemd ✅✅✅"
     '
+    ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
     RESTART_WORKERS_ON_FAILURE=0
 
 [arg('server', long='server')]

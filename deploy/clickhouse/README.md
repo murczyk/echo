@@ -652,10 +652,43 @@ reconciliation does not update the fingerprint, so it cannot be mistaken for
 success.
 
 The timer uses the already deployed `/etc/echo-peerdb/tables-exclude.txt` and
-does not copy the repository file during an application deploy. Rerun
+does not copy the packaged file on its own. Rerun
 `deploy/clickhouse/bin/install-source-monitor.sh --yes` once on an existing
 source to install this automation. Its invoking account must have passwordless
 sudo and working non-interactive SSH to the paired analytics host.
+
+The standard `just deploy` and `just deploy-from-local` workflows install the
+packaged exclusion file before migrations when its selected table set differs
+from `/etc/echo-peerdb/tables-exclude.txt`. They then run migrations once while
+workers are stopped and require the source reconciliation plus end-to-end
+analytics health check to succeed after service startup. The default health
+deadline is 300 seconds and can be changed with
+`ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS` in `source.env`. A direct
+`wdintel-rs migrate` refuses to run while the packaged and deployed exclusion
+sets differ; use `source-sync-exclusions-if-needed.sh --yes` first.
+
+Migration pull requests are checked against
+`migration-impact.json`. New tables declare `excluded` or
+`replicated_snapshot`; additive replicated columns declare `cdc_backfill` with
+reviewed post-DDL DML or `mirror_resync`. Drops, renames, and type changes use
+`mirror_resync` until a narrower path has been validated. Dependency revision
+changes for `echo-im` and `echo-gpu` must also declare whether they contain
+schema changes. Deployment never starts a full mirror resync implicitly.
+
+```json
+{
+  "migrations": {
+    "echo:m20260801_120000_example": {
+      "changes": [
+        { "table": "public.example", "strategy": "cdc_backfill" }
+      ]
+    }
+  },
+  "dependencies": {
+    "echo-im:<commit>": { "changes": [] }
+  }
+}
+```
 
 ### Replacing a development source database
 

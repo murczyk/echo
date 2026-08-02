@@ -76,8 +76,15 @@ SQL
 source_schema=$(source_columns)
 raw_schema=$(clickhouse_raw_columns)
 [[ -n "$source_schema" ]] || die "source publication has no columns"
-[[ "$source_schema" == "$raw_schema" ]] \
-  || die "source and raw ClickHouse schemas differ; waiting for PeerDB schema propagation or resync"
+if [[ "$source_schema" != "$raw_schema" ]]; then
+  log "Columns present only in the source publication:"
+  comm -23 <(printf '%s\n' "$source_schema") <(printf '%s\n' "$raw_schema") \
+    | sed 's/^/  /' >&2
+  log "Columns present only in raw ClickHouse:"
+  comm -13 <(printf '%s\n' "$source_schema") <(printf '%s\n' "$raw_schema") \
+    | sed 's/^/  /' >&2
+  die "source and raw ClickHouse schemas differ; waiting for PeerDB schema propagation or resync"
+fi
 
 current_schema=$(clickhouse_current_columns)
 gateway_schema=$(gateway_columns)

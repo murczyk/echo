@@ -472,6 +472,22 @@ read_exclusions() {
   done < <(read_protected_file "$exclude_file")
 }
 
+normalized_exclusions() {
+  local exclude_file=$1
+  read_exclusions "$exclude_file"
+  if ((${#EXCLUDED_TABLE_LOOKUP[@]} > 0)); then
+    printf '%s\n' "${!EXCLUDED_TABLE_LOOKUP[@]}" | LC_ALL=C sort
+  fi
+}
+
+source_exclusions_match() {
+  local first=$1 second=$2
+  diff -q \
+    <(normalized_exclusions "$first") \
+    <(normalized_exclusions "$second") \
+    >/dev/null
+}
+
 effective_source_exclude_file() {
   if protected_file_exists "$SOURCE_TABLE_EXCLUDE_FILE"; then
     printf '%s' "$SOURCE_TABLE_EXCLUDE_FILE"
