@@ -18,6 +18,5 @@ export function buildFeedCountSignature(feed: MessageFeedState, freqs: string[])
     freqUniverse: feed.adjacentFreqsRange > 0 ? freqs : null,
     adjacentFreqsRange: feed.adjacentFreqsRange ?? 0,
     highlightSignalsEnabled: feed.highlightSignalsEnabled ?? false,
-    onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled ?? false,
   });
 }

@@ -91,6 +91,7 @@ export type MessageCardProps = {
   referenceTimeMs: number | null;
   /** Auth user display name for background watermark */
   authUserName: string | null;
+  tagContributionsOrganismId?: number;
   groupName: string | null;
   senderName: string | null;
   copiedFeedbackId: string | null;
@@ -143,6 +144,7 @@ function MessageCardComponent({
   tagsLoading = false,
   referenceTimeMs,
   authUserName,
+  tagContributionsOrganismId,
   groupName,
   senderName,
   copiedFeedbackId,
@@ -329,6 +331,7 @@ function MessageCardComponent({
           msg={msg}
           tagsMap={tagsMap}
           tagsOrder={tagsOrder}
+          tagContributionsOrganismId={tagContributionsOrganismId}
           tagsLoading={tagsLoading}
           onToggleTag={onToggleTag}
           readOnly={readOnly}

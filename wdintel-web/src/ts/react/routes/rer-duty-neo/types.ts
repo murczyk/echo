@@ -44,6 +44,7 @@ export type FeedColumnModel = {
   messageCard: {
     /** Current auth user display name for message watermarks */
     authUserName: string | null;
+    tagContributionsOrganismId?: number;
     copiedFeedbackId: string | null;
     networkDisplayMap: Record<number, string>;
     networkMap: Record<number, Network>;

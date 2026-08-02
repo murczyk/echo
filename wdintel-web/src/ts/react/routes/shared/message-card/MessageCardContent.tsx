@@ -52,6 +52,7 @@ export function MessageCardMessageBody({
   msg,
   tagsMap,
   tagsOrder,
+  tagContributionsOrganismId,
   tagsLoading = false,
   onToggleTag,
   readOnly = false,
@@ -74,6 +75,7 @@ export function MessageCardMessageBody({
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
   tagsOrder?: number[];
+  tagContributionsOrganismId?: number;
   tagsLoading?: boolean;
   readOnly?: boolean;
   onToggleTag?: (tagId: number) => void;
@@ -324,6 +326,7 @@ export function MessageCardMessageBody({
               msg={msg}
               tagsMap={tagsMap}
               tagsOrder={tagsOrder}
+              tagContributionsOrganismId={tagContributionsOrganismId}
               onToggleTag={onToggleTag}
               tagsLayout={tagsLayout}
               interactive={!readOnly && onToggleTag != null}

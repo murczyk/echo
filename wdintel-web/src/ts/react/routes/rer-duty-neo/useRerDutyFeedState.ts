@@ -331,7 +331,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         expandedFreqsSelected: expandedSelected,
         expandedFreqsDenied: expandedDenied,
         highlightSignals: feed.highlightSignalsEnabled ?? false,
-        reportTagsOnlyThisUnit: feed.onlyMyUnitTagsEnabled ? true : null,
       });
     },
     [freqs],

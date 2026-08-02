@@ -198,6 +198,24 @@ describe('useRerDutyFeedState — loading', () => {
     expect(apiRef.current?.messageFeeds[0]?.loading).toBe(false);
   });
 
+  it('never turns the own-unit tag display into an inbox filter', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({ ...feed, onlyMyUnitTagsEnabled: true })),
+      );
+    });
+    hoisted.fetchInboxMessages.mockClear();
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+
+    await act(async () => {
+      await apiRef.current!.loadFeedInitialMessages('mf-0');
+    });
+
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.fetchInboxMessages.mock.calls[0][0].reportTagsOnlyThisUnit).toBeNull();
+  });
+
   it('preserves a follow generation until cancellation', async () => {
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,

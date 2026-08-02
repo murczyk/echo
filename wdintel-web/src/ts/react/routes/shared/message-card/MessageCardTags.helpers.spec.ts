@@ -177,4 +177,33 @@ describe('buildMessageCardTagRows', () => {
 
     expect(rows[0]?.tip).toBe('Користувачі: (ваш вибір)');
   });
+
+  it('shows only human tag contributions from the selected organism', () => {
+    const rows = buildMessageCardTagRows(
+      buildMessage({
+        tags: [2, 99],
+        inboxTags: [
+          { id: 1, tagId: 99, confidence: 1, login: 'own', model: null, organismId: 7 },
+          { id: 2, tagId: 2, confidence: 1, login: 'other', model: null, organismId: 8 },
+          { id: 3, tagId: 2, confidence: 0.9, login: null, model: 'bot', organismId: 7 },
+        ],
+      }),
+      tagsMap,
+      [99, 2],
+      7,
+    );
+
+    expect(rows[0]).toMatchObject({
+      tagId: 99,
+      isSet: true,
+      humanContribsLen: 1,
+      botContribsLen: 0,
+    });
+    expect(rows[1]).toMatchObject({
+      tagId: 2,
+      isSet: false,
+      humanContribsLen: 0,
+      botContribsLen: 0,
+    });
+  });
 });

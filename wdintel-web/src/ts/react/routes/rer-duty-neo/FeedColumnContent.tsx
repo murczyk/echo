@@ -87,6 +87,7 @@ type DutyMessageCardItemProps = {
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
   referenceTimeMs: number | null;
   authUserName: string | null;
+  tagContributionsOrganismId?: number;
   groupInfos: Record<string, SignalGroupEntry>;
   profiles: Record<string, SignalProfileEntry | null>;
   copiedFeedbackId: string | null;
@@ -121,6 +122,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   onMarkBotTagWrong,
   referenceTimeMs,
   authUserName,
+  tagContributionsOrganismId,
   groupInfos,
   profiles,
   copiedFeedbackId,
@@ -168,6 +170,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       onMarkBotTagWrong={onMarkBotTagWrong}
       referenceTimeMs={referenceTimeMs}
       authUserName={authUserName}
+      tagContributionsOrganismId={tagContributionsOrganismId}
       groupName={labels.groupName}
       senderName={labels.senderName}
       copiedFeedbackId={copiedFeedbackId}
@@ -248,6 +251,7 @@ type DutyMessageListProps = {
   onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;
   referenceTimeMs: number | null;
   authUserName: string | null;
+  tagContributionsOrganismId?: number;
   groupInfos: Record<string, SignalGroupEntry>;
   profiles: Record<string, SignalProfileEntry | null>;
   copiedFeedbackId: string | null;
@@ -283,6 +287,7 @@ const DutyMessageList = memo(function DutyMessageList({
   onMarkBotTagWrong,
   referenceTimeMs,
   authUserName,
+  tagContributionsOrganismId,
   groupInfos,
   profiles,
   copiedFeedbackId,
@@ -327,6 +332,7 @@ const DutyMessageList = memo(function DutyMessageList({
             onMarkBotTagWrong={onMarkBotTagWrong}
             referenceTimeMs={referenceTimeMs}
             authUserName={authUserName}
+            tagContributionsOrganismId={tagContributionsOrganismId}
             groupInfos={groupInfos}
             profiles={profiles}
             copiedFeedbackId={copiedFeedbackId}
@@ -375,6 +381,7 @@ export const FeedColumnContent = memo(
     } = view;
     const {
       authUserName,
+      tagContributionsOrganismId,
       copiedFeedbackId,
       networkDisplayMap,
       networkMap,
@@ -539,6 +546,7 @@ export const FeedColumnContent = memo(
               onMarkBotTagWrong={stableOnMarkBotTagWrong}
               referenceTimeMs={feed.referenceTimeMs}
               authUserName={authUserName}
+              tagContributionsOrganismId={tagContributionsOrganismId}
               groupInfos={groupInfos}
               profiles={profiles}
               copiedFeedbackId={copiedFeedbackId}

@@ -221,7 +221,6 @@ export function RerDutyNeoPage({
           setMessageFeeds((prev) =>
             prev.map((f) => (f.id === feed.id ? { ...f, onlyMyUnitTagsEnabled: v } : f)),
           );
-          loadFeedInitialMessages(feed.id, { onlyMyUnitTagsEnabled: v });
         },
         onReloadFreqs: reloadLatestFrequencies,
         onSavedFilterSelect: (id) =>
@@ -242,6 +241,9 @@ export function RerDutyNeoPage({
     },
     messageCard: {
       authUserName,
+      tagContributionsOrganismId: feed.onlyMyUnitTagsEnabled
+        ? (currentUser?.organismId ?? undefined)
+        : undefined,
       copiedFeedbackId,
       networkDisplayMap,
       networkMap,

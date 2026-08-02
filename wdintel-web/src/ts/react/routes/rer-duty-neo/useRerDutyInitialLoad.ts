@@ -79,7 +79,6 @@ export function useRerDutyInitialLoad(params: Params) {
       feedId: string,
       overrides?: {
         highlightSignalsEnabled?: boolean;
-        onlyMyUnitTagsEnabled?: boolean;
         preserveUnread?: boolean;
       },
     ) => {
@@ -94,9 +93,6 @@ export function useRerDutyInitialLoad(params: Params) {
             ...(overrides.highlightSignalsEnabled === undefined
               ? {}
               : { highlightSignalsEnabled: overrides.highlightSignalsEnabled }),
-            ...(overrides.onlyMyUnitTagsEnabled === undefined
-              ? {}
-              : { onlyMyUnitTagsEnabled: overrides.onlyMyUnitTagsEnabled }),
           }
         : feed;
       current.setMessageFeeds((previous) =>

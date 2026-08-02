@@ -16,7 +16,7 @@ export type MessageActionsDeps = {
   applyFilter: (feedId: string, f: RerDutyFeedFilterState) => void;
   loadFeedInitialMessages: (
     feedId: string,
-    overrides?: { highlightSignalsEnabled?: boolean; onlyMyUnitTagsEnabled?: boolean },
+    overrides?: { highlightSignalsEnabled?: boolean },
   ) => Promise<void>;
   loadFeedNewerMessages: (
     feedId: string,
