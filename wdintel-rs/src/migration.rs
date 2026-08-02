@@ -17,7 +17,7 @@ pub async fn run_migration_1(mode: Mode) -> Result<(), AppError> {
         warn!("skipping DB migrations, running in slave mode");
         return Ok(());
     }
-    require_current_analytics_exclusions().context(h!())?;
+    require_current_analytics_exclusions(mode).context(h!())?;
     println!("Running migration");
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
 
@@ -33,7 +33,14 @@ pub async fn run_migration_1(mode: Mode) -> Result<(), AppError> {
     Ok(())
 }
 
-fn require_current_analytics_exclusions() -> anyhow::Result<()> {
+fn require_current_analytics_exclusions(mode: Mode) -> anyhow::Result<()> {
+    if mode != Mode::Live {
+        read_analytics_exclusions(
+            crate::config::ANALYTICS_LOCAL_EXCLUSIONS_PATH,
+        )?;
+        return Ok(());
+    }
+
     if !Path::new(crate::config::ANALYTICS_SOURCE_CONFIG_PATH).exists() {
         return Ok(());
     }
