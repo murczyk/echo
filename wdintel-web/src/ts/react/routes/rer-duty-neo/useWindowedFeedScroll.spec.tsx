@@ -19,7 +19,7 @@ function TestScroller(props: {
   onNearBottomChange?: (near: boolean) => void;
   onAtBottomChange?: (atBottom: boolean) => void;
   onPhysicalBottomChange?: (atBottom: boolean) => void;
-  onReachedBottom?: () => void;
+  onReachedBottom?: (context: { hasSeenNotAtBottom: boolean }) => boolean | void;
   onLeftBottom?: () => void;
   onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
   enabled?: boolean;
@@ -902,6 +902,44 @@ describe('useWindowedFeedScroll', () => {
       (container.querySelector('[data-testid="item-3"]') as HTMLElement).getBoundingClientRect()
         .top,
     ).toBe(-25);
+  });
+
+  it('preserves the old bottom anchor when pending newer messages finish loading', async () => {
+    const initialIds = [1, 2, 3, 4];
+    const nextIds = [1, 2, 3, 4, 5, 6];
+    const onReachedBottom = vi.fn(() => false);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} onReachedBottom={onReachedBottom} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={initialIds} onReachedBottom={onReachedBottom} />);
+    });
+    scroller.scrollTop = 50;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    scroller.scrollTop = 100;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+
+    metrics.scrollHeight = 300;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} onReachedBottom={onReachedBottom} />);
+    });
+
+    expect(onReachedBottom).toHaveBeenLastCalledWith({ hasSeenNotAtBottom: true });
+    expect(scroller.scrollTop).toBe(100);
   });
 
   it('preserves the visible anchor when the top loading status changes', async () => {

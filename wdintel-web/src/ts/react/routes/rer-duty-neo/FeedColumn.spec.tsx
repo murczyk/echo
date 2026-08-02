@@ -208,6 +208,35 @@ describe('FeedColumn', () => {
     });
   });
 
+  it('loads newer messages before reaching the physical bottom', async () => {
+    const props = buildProps();
+    const onLoadNewer = vi.fn();
+    const onReachedBottom = vi.fn();
+    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.actions.onLoadNewer = onLoadNewer;
+    props.column.actions.onReachedBottom = onReachedBottom;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    const scroller = container.querySelector('[data-duty-feed-scroller]') as HTMLElement;
+    Object.defineProperties(scroller, {
+      scrollTop: { value: 300, writable: true, configurable: true },
+      clientHeight: { value: 500, configurable: true },
+      scrollHeight: { value: 1400, configurable: true },
+    });
+    onReachedBottom.mockClear();
+
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+
+    expect(onLoadNewer).toHaveBeenCalledTimes(1);
+    expect(onReachedBottom).not.toHaveBeenCalled();
+  });
+
   it('closes the filters panel on outside click', async () => {
     await act(async () => {
       root.render(<FeedColumn column={buildProps().column} />);

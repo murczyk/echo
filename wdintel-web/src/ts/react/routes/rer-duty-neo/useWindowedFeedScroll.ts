@@ -34,7 +34,7 @@ export type UseWindowedFeedScrollOptions = {
   onLoadOlder: () => void;
   onLoadNewer?: () => void;
   onScrollToTop?: () => void;
-  onReachedBottom?: () => void;
+  onReachedBottom?: (context: { hasSeenNotAtBottom: boolean }) => boolean | void;
   onLeftBottom?: () => void;
   onNearBottomChange?: (near: boolean) => void;
   onAtBottomChange?: (atBottom: boolean) => void;
@@ -361,8 +361,9 @@ export function useWindowedFeedScroll({
         physicallyAtBottomRef.current = physicallyAtBottom;
         callbacksRef.current.onPhysicalBottomChange?.(physicallyAtBottom);
         if (physicallyAtBottom && wasPhysicallyAtBottom !== true) {
-          liveBottomFollowRef.current = true;
-          onReachedBottom?.();
+          const shouldFollow =
+            onReachedBottom?.({ hasSeenNotAtBottom: hasSeenNotAtBottomRef.current }) !== false;
+          liveBottomFollowRef.current = shouldFollow;
         }
       }
 
@@ -509,6 +510,7 @@ export function useWindowedFeedScroll({
     if (resetChanged) {
       previousResetKeyRef.current = resetKey;
       hasInitialScrolledRef.current = false;
+      hasSeenNotAtBottomRef.current = false;
       anchorSnapshotRef.current = null;
       stopBottomSettle();
     }
@@ -521,6 +523,7 @@ export function useWindowedFeedScroll({
     previousTopStatusRef.current = topStatus;
     if (currentItemIds.length === 0) {
       hasInitialScrolledRef.current = false;
+      hasSeenNotAtBottomRef.current = false;
       previousItemIdsRef.current = currentItemIds;
       stopBottomSettle();
       return;

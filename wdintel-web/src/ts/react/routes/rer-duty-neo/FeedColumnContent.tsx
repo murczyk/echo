@@ -39,8 +39,8 @@ import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 
 /** Start loading older messages when the user scrolls close to the top of the DOM list. */
 const LOAD_OLDER_BUFFER_PX = 160;
-/** Load newer messages only at the physical bottom so replacement never interrupts reading. */
-const LOAD_NEWER_AT_BOTTOM_BUFFER_PX = 1;
+/** Fetch the next tail window early enough to render it before the reader reaches the bottom. */
+const LOAD_NEWER_BUFFER_PX = 640;
 /** Consider "at bottom" when within this many pixels of the scroll end (watch mode / read-state). */
 const DUTY_FEED_AT_BOTTOM_THRESHOLD_PX = 25;
 // Hoisted stable empty array: passing `[]` inline as a prop would allocate a fresh reference
@@ -447,7 +447,7 @@ export const FeedColumnContent = memo(
       },
       onVisibleMessageIds,
       topLoadBufferPx: LOAD_OLDER_BUFFER_PX,
-      bottomLoadBufferPx: LOAD_NEWER_AT_BOTTOM_BUFFER_PX,
+      bottomLoadBufferPx: LOAD_NEWER_BUFFER_PX,
       atBottomThresholdPx: DUTY_FEED_AT_BOTTOM_THRESHOLD_PX,
       resetKey: feed.referenceTimeMs ?? feed.id,
     });

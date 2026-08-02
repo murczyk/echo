@@ -284,16 +284,29 @@ export function RerDutyNeoPage({
         cancelFollowTail(feed.id);
         setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false }));
       },
-      onReachedBottom: () => {
-        ensureFollowTail(feed.id);
-        if (!dutyDisableAutoScroll) {
-          setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: true }));
+      onReachedBottom: ({ hasSeenNotAtBottom }) => {
+        const tailAvailability = tailAvailabilityByFeedId[feed.id] ?? 'unknown';
+        const hasPendingTail =
+          feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id]) > 0 ||
+          tailAvailability === 'available' ||
+          tailAvailability === 'checking' ||
+          tailAvailability === 'loading';
+        const preservePendingTail = hasSeenNotAtBottom && hasPendingTail;
+        if (preservePendingTail) {
+          cancelFollowTail(feed.id);
+          setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false }));
+        } else {
+          ensureFollowTail(feed.id);
+          if (!dutyDisableAutoScroll) {
+            setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: true }));
+          }
         }
         if (feed.items.length > 0) {
           handleVisibleMessageIds(feed.id)(feed.items[feed.items.length - 1][0], {
             atBottom: true,
           });
         }
+        return !preservePendingTail;
       },
       onLeftBottom: () => {
         cancelFollowTail(feed.id);
