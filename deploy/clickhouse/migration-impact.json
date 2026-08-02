@@ -1,4 +1,10 @@
 {
-  "migrations": {},
+  "migrations": {
+    "echo:m20260802_174927_rer_duty_test_replay": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    }
+  },
   "dependencies": {}
 }

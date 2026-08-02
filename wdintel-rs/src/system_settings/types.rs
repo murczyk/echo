@@ -12,6 +12,7 @@ pub struct SystemSettingsCurrentRsp {
     pub rer_duty_test_since_ms: i64,
     pub rer_duty_test_limit: i64,
     pub rer_duty_poll_interval_sec: i64,
+    pub rer_duty_test_replay_interval_sec: i64,
     pub short_url_enabled: bool,
     pub support_non_rer_interceptions: bool,
     pub default_neo_analysis: bool,
@@ -43,6 +44,7 @@ pub struct SystemSettingsItem {
     pub rer_duty_test_since_ms: i64,
     pub rer_duty_test_limit: i64,
     pub rer_duty_poll_interval_sec: i64,
+    pub rer_duty_test_replay_interval_sec: i64,
     pub created_at: i64,
     pub updated_at: i64,
     pub updated_by_login_id: Option<String>,
@@ -85,6 +87,8 @@ pub struct CreateSystemSettingsReq {
     pub rer_duty_test_since_ms: i64,
     pub rer_duty_test_limit: i64,
     pub rer_duty_poll_interval_sec: i64,
+    #[serde(default = "default_rer_duty_test_replay_interval_sec")]
+    pub rer_duty_test_replay_interval_sec: i64,
     pub short_url_enabled: bool,
     #[serde(default)]
     pub support_non_rer_interceptions: bool,
@@ -122,6 +126,21 @@ pub struct CreateSystemSettingsReq {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_rer_duty_test_replay_interval_sec() -> i64 {
+    1
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct RerDutyTestReplayStatusRsp {
+    pub status: String,
+    pub source_count: i64,
+    pub next_source_position: Option<i64>,
+    pub generated_count: i64,
+    pub next_emit_at_ms: Option<i64>,
 }
 
 fn default_sigint_comment_parsing_enabled() -> bool {
@@ -162,5 +181,6 @@ mod tests {
         assert_eq!(req.report_chunking_hours, 24);
         assert!(!req.limit_big_reports);
         assert!(!req.enable_audio_transcription);
+        assert_eq!(req.rer_duty_test_replay_interval_sec, 1);
     }
 }

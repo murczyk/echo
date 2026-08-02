@@ -8,6 +8,7 @@ type SystemSettingsItemRaw = {
   rer_duty_test_since_ms: number;
   rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
+  rer_duty_test_replay_interval_sec?: number;
   created_at: number;
   updated_at: number;
   updated_by?: string | null;
@@ -41,6 +42,7 @@ type SystemSettingsCurrentRspRaw = {
   rer_duty_test_since_ms: number;
   rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
+  rer_duty_test_replay_interval_sec?: number;
   short_url_enabled: boolean;
   support_non_rer_interceptions?: boolean;
   default_neo_analysis?: boolean;
@@ -72,6 +74,7 @@ type CreateSystemSettingsReqRaw = {
   rer_duty_test_since_ms: number;
   rer_duty_test_limit: number;
   rer_duty_poll_interval_sec: number;
+  rer_duty_test_replay_interval_sec: number;
   short_url_enabled: boolean;
   support_non_rer_interceptions: boolean;
   default_neo_analysis: boolean;
@@ -105,6 +108,7 @@ export type SystemSettingsItem = {
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
+  rerDutyTestReplayIntervalSec: number;
   createdAt: number;
   updatedAt: number;
   updatedBy: string | null;
@@ -138,6 +142,7 @@ export type SystemSettingsCurrent = {
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
+  rerDutyTestReplayIntervalSec: number;
   rerShortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
@@ -165,6 +170,7 @@ export type CreateSystemSettingsInput = {
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
+  rerDutyTestReplayIntervalSec: number;
   rerDutyShortUrl: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
@@ -195,6 +201,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     rerDutyTestSinceMs: raw.rer_duty_test_since_ms,
     rerDutyTestLimit: raw.rer_duty_test_limit,
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
+    rerDutyTestReplayIntervalSec: raw.rer_duty_test_replay_interval_sec ?? 1,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
     updatedBy: raw.updated_by ?? null,
@@ -230,6 +237,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     rerDutyTestSinceMs: raw.rer_duty_test_since_ms,
     rerDutyTestLimit: raw.rer_duty_test_limit,
     rerDutyPollIntervalSec: raw.rer_duty_poll_interval_sec,
+    rerDutyTestReplayIntervalSec: raw.rer_duty_test_replay_interval_sec ?? 1,
     rerShortUrlEnabled: raw.short_url_enabled,
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
@@ -266,6 +274,7 @@ export async function createSystemSettings(
     rer_duty_test_since_ms: input.rerDutyTestSinceMs,
     rer_duty_test_limit: input.rerDutyTestLimit,
     rer_duty_poll_interval_sec: input.rerDutyPollIntervalSec,
+    rer_duty_test_replay_interval_sec: input.rerDutyTestReplayIntervalSec,
     short_url_enabled: input.rerDutyShortUrl,
     support_non_rer_interceptions: input.supportNonRerInterceptions,
     default_neo_analysis: input.defaultNeoAnalysis,
@@ -299,4 +308,33 @@ export async function activateSystemSettings(id: number): Promise<SystemSettings
   const req: ActivateSystemSettingsReqRaw = { id };
   const data = await postJson<SystemSettingsItemRaw>('/api/admin/system-settings/activate', req);
   return normalizeItem(data);
+}
+
+type RerDutyTestReplayStatusRaw = {
+  status: string;
+  source_count: number;
+  next_source_position: number | null;
+  generated_count: number;
+  next_emit_at_ms: number | null;
+};
+
+export type RerDutyTestReplayStatus = {
+  status: string;
+  sourceCount: number;
+  nextSourcePosition: number | null;
+  generatedCount: number;
+  nextEmitAtMs: number | null;
+};
+
+export async function getRerDutyTestReplayStatus(): Promise<RerDutyTestReplayStatus> {
+  const raw = await postJson<RerDutyTestReplayStatusRaw>(
+    '/api/admin/system-settings/rer-duty-test-replay/status',
+  );
+  return {
+    status: raw.status,
+    sourceCount: raw.source_count,
+    nextSourcePosition: raw.next_source_position,
+    generatedCount: raw.generated_count,
+    nextEmitAtMs: raw.next_emit_at_ms,
+  };
 }

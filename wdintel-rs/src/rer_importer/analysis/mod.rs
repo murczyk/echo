@@ -6828,9 +6828,11 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    req.search
-        .as_ref()
-        .is_none_or(|search| search.trim().is_empty())
+    req.only_with_media != Some(true)
+        && req
+            .search
+            .as_ref()
+            .is_none_or(|search| search.trim().is_empty())
         && req.selected_units.as_ref().is_none_or(Vec::is_empty)
         && req.denied_units.as_ref().is_none_or(Vec::is_empty)
         && (req

@@ -8850,6 +8850,7 @@ type alias SystemSettingsCurrentRsp =
     , rerDutyTestSinceMs : Int
     , rerDutyTestLimit : Int
     , rerDutyPollIntervalSec : Int
+    , rerDutyTestReplayIntervalSec : Int
     , shortUrlEnabled : Bool
     , supportNonRerInterceptions : Bool
     , defaultNeoAnalysis : Bool
@@ -8881,6 +8882,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "rer_duty_test_since_ms", (Json.Encode.int) struct.rerDutyTestSinceMs )
         , ( "rer_duty_test_limit", (Json.Encode.int) struct.rerDutyTestLimit )
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
+        , ( "rer_duty_test_replay_interval_sec", (Json.Encode.int) struct.rerDutyTestReplayIntervalSec )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
         , ( "default_neo_analysis", (Json.Encode.bool) struct.defaultNeoAnalysis )
@@ -8910,6 +8912,7 @@ type alias SystemSettingsItem =
     , rerDutyTestSinceMs : Int
     , rerDutyTestLimit : Int
     , rerDutyPollIntervalSec : Int
+    , rerDutyTestReplayIntervalSec : Int
     , createdAt : Int
     , updatedAt : Int
     , updatedByLoginId : Maybe (String)
@@ -8946,6 +8949,7 @@ systemSettingsItemEncoder struct =
         , ( "rer_duty_test_since_ms", (Json.Encode.int) struct.rerDutyTestSinceMs )
         , ( "rer_duty_test_limit", (Json.Encode.int) struct.rerDutyTestLimit )
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
+        , ( "rer_duty_test_replay_interval_sec", (Json.Encode.int) struct.rerDutyTestReplayIntervalSec )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "updated_at", (Json.Encode.int) struct.updatedAt )
         , ( "updated_by_login_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.updatedByLoginId )
@@ -8991,6 +8995,7 @@ type alias CreateSystemSettingsReq =
     , rerDutyTestSinceMs : Int
     , rerDutyTestLimit : Int
     , rerDutyPollIntervalSec : Int
+    , rerDutyTestReplayIntervalSec : Int
     , shortUrlEnabled : Bool
     , supportNonRerInterceptions : Bool
     , defaultNeoAnalysis : Bool
@@ -9022,6 +9027,7 @@ createSystemSettingsReqEncoder struct =
         , ( "rer_duty_test_since_ms", (Json.Encode.int) struct.rerDutyTestSinceMs )
         , ( "rer_duty_test_limit", (Json.Encode.int) struct.rerDutyTestLimit )
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
+        , ( "rer_duty_test_replay_interval_sec", (Json.Encode.int) struct.rerDutyTestReplayIntervalSec )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
         , ( "default_neo_analysis", (Json.Encode.bool) struct.defaultNeoAnalysis )
@@ -9053,6 +9059,26 @@ activateSystemSettingsReqEncoder : ActivateSystemSettingsReq -> Json.Encode.Valu
 activateSystemSettingsReqEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
+        ]
+
+
+type alias RerDutyTestReplayStatusRsp =
+    { status : String
+    , sourceCount : Int
+    , nextSourcePosition : Maybe (Int)
+    , generatedCount : Int
+    , nextEmitAtMs : Maybe (Int)
+    }
+
+
+rerDutyTestReplayStatusRspEncoder : RerDutyTestReplayStatusRsp -> Json.Encode.Value
+rerDutyTestReplayStatusRspEncoder struct =
+    Json.Encode.object
+        [ ( "status", (Json.Encode.string) struct.status )
+        , ( "source_count", (Json.Encode.int) struct.sourceCount )
+        , ( "next_source_position", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.nextSourcePosition )
+        , ( "generated_count", (Json.Encode.int) struct.generatedCount )
+        , ( "next_emit_at_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.nextEmitAtMs )
         ]
 
 
@@ -15365,6 +15391,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_replay_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "default_neo_analysis" (Json.Decode.bool)))
@@ -15395,6 +15422,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_replay_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_by_login_id" (Json.Decode.nullable (Json.Decode.string))))
@@ -15435,6 +15463,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_limit" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_test_replay_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "default_neo_analysis" (Json.Decode.bool)))
@@ -15460,6 +15489,16 @@ activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq
 activateSystemSettingsReqDecoder =
     Json.Decode.succeed ActivateSystemSettingsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+
+
+rerDutyTestReplayStatusRspDecoder : Json.Decode.Decoder RerDutyTestReplayStatusRsp
+rerDutyTestReplayStatusRspDecoder =
+    Json.Decode.succeed RerDutyTestReplayStatusRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_source_position" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generated_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_emit_at_ms" (Json.Decode.nullable (Json.Decode.int))))
 
 
 aiEngineItemDecoder : Json.Decode.Decoder AiEngineItem

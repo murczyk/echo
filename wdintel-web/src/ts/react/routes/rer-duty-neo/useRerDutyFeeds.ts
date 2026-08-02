@@ -115,9 +115,6 @@ export function useRerDutyFeeds(
     setKeywordSets(sets);
   }, []);
   const filterOpts = useRerDutyFilterOptions();
-  const [testEnabled, setTestEnabled] = useState(false);
-  const [testSinceMs, setTestSinceMs] = useState(0);
-  const [testLimit, setTestLimit] = useState(1);
   const [pollIntervalSec, setPollIntervalSec] = useState(1);
   const dutySettings = useDutySettings();
   const [callsignRetryVersion, setCallsignRetryVersion] = useState(0);
@@ -130,9 +127,6 @@ export function useRerDutyFeeds(
     freqs: filterOpts.freqs,
     setProfiles: filterOpts.setProfiles,
     setGroupInfos: filterOpts.setGroupInfos,
-    testEnabled,
-    testSinceMs,
-    testLimit,
     pollIntervalSec,
     disableAutoScroll: dutySettings.disableAutoScroll,
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
@@ -161,9 +155,6 @@ export function useRerDutyFeeds(
     currentSystemSettings()
       .then((settings) => {
         if (cancelled) return;
-        setTestEnabled(settings.rerDutyTestEnabled);
-        setTestSinceMs(settings.rerDutyTestSinceMs);
-        setTestLimit(settings.rerDutyTestLimit);
         setPollIntervalSec(settings.rerDutyPollIntervalSec);
       })
       .catch((error) => {

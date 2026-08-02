@@ -9,7 +9,6 @@ storage_dir = "/Users/kon/Downloads/storage"
 signal_api_phone = ""
 signal_import_group_name = "Rer Import"
 signal_import_fiven_name = "Rer Importer"
-rer_duty_test_source_window_minutes = 1051200
 static_path = "../wdintel-web/public"
 executable_path = "/Users/kon/workspace/wildducks-intel/wdintel-rs/target/debug/wdintel-rs"
 fill_comp_freq_worker = false

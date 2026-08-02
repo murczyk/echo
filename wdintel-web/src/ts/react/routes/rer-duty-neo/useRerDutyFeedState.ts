@@ -22,9 +22,6 @@ export type FeedStateDeps = {
   freqs: string[];
   setProfiles: Dispatch<SetStateAction<Record<string, SignalProfileEntry | null>>>;
   setGroupInfos: Dispatch<SetStateAction<Record<string, SignalGroupEntry>>>;
-  testEnabled: boolean;
-  testSinceMs: number;
-  testLimit: number;
   pollIntervalSec: number;
   /** When true, duty page must not auto-scroll / follow new messages (user prefs). */
   disableAutoScroll: boolean;

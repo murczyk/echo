@@ -3411,6 +3411,7 @@ export type SystemSettingsCurrentRsp = {
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
+  rerDutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
@@ -3439,6 +3440,7 @@ export type SystemSettingsItem = {
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
+  rerDutyTestReplayIntervalSec: number;
   createdAt: number;
   updatedAt: number;
   updatedByLoginId: string | null;
@@ -3475,6 +3477,7 @@ export type CreateSystemSettingsReq = {
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
+  rerDutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
@@ -3498,6 +3501,14 @@ export type CreateSystemSettingsReq = {
 
 export type ActivateSystemSettingsReq = {
   id: number;
+};
+
+export type RerDutyTestReplayStatusRsp = {
+  status: string;
+  sourceCount: number;
+  nextSourcePosition: number | null;
+  generatedCount: number;
+  nextEmitAtMs: number | null;
 };
 
 export type AiEngineItem = {
