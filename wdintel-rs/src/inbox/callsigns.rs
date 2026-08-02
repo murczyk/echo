@@ -41,6 +41,10 @@ pub async fn oneoff_backfill(
     loop {
         let txn = dbx.begin().await.c(h!())?;
         let inbox_items = sigint_inbox_item::Entity::find()
+            .select_only()
+            .column(sigint_inbox_item::Column::Id)
+            .column(sigint_inbox_item::Column::Callsigns)
+            .column(sigint_inbox_item::Column::CallsignsAlg2)
             .filter(sigint_inbox_item::Column::Id.gt(after_id))
             .filter(sigint_inbox_item::Column::Id.lte(through_id))
             .filter(Expr::cust(
@@ -57,6 +61,8 @@ pub async fn oneoff_backfill(
             ))
             .order_by_asc(sigint_inbox_item::Column::Id)
             .limit(batch_size)
+            .lock_exclusive()
+            .into_model::<LegacyInboxItemCallsigns>()
             .all(&txn)
             .await
             .c(h!())?;
@@ -67,7 +73,11 @@ pub async fn oneoff_backfill(
 
         let mut expected_callsigns = Vec::with_capacity(inbox_items.len());
         for inbox_item in &inbox_items {
-            let callsigns = from_legacy(inbox_item).map_err(|error| {
+            let callsigns = from_legacy_values(
+                inbox_item.callsigns.clone(),
+                inbox_item.callsigns_alg2.clone(),
+            )
+            .map_err(|error| {
                 AppError::BL {
                     msg: format!(
                         "invalid legacy callsigns for sigint_inbox_item_id={}: {error}",
@@ -75,18 +85,14 @@ pub async fn oneoff_backfill(
                     ),
                 }
             })?;
-            let callsigns = if ps.dry_run {
-                callsigns.normalized()
-            } else {
-                sync(&txn, inbox_item.id, callsigns, system_login_id).await?
-            };
+            let callsigns = callsigns.normalized();
             expected_rows += callsigns.primary.len() + callsigns.alg2.len();
-            if !ps.dry_run {
-                expected_callsigns.push((inbox_item.id, callsigns));
-            }
+            expected_callsigns.push((inbox_item.id, callsigns));
             after_id = inbox_item.id;
         }
         if !ps.dry_run {
+            sync_backfill_batch(&txn, &expected_callsigns, system_login_id)
+                .await?;
             let item_ids = expected_callsigns
                 .iter()
                 .map(|(inbox_item_id, _)| *inbox_item_id)
@@ -261,6 +267,166 @@ where
     )
     .await?;
     Ok(callsigns)
+}
+
+async fn sync_backfill_batch<C>(
+    dbx: &C,
+    expected_callsigns: &[(i64, InboxItemCallsigns)],
+    actor_id: Uuid,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let item_ids = expected_callsigns
+        .iter()
+        .map(|(inbox_item_id, _)| *inbox_item_id)
+        .collect::<Vec<_>>();
+    let existing = sigint_inbox_item_callsign::Entity::find()
+        .filter(
+            sigint_inbox_item_callsign::Column::SigintInboxItemId
+                .is_in(item_ids),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let expected_by_item_id = expected_callsigns
+        .iter()
+        .map(|(inbox_item_id, callsigns)| (*inbox_item_id, callsigns))
+        .collect::<HashMap<_, _>>();
+    let missing_ids = existing
+        .iter()
+        .filter(|row| {
+            !row.deleted
+                && !expected_by_item_id
+                    .get(&row.sigint_inbox_item_id)
+                    .is_some_and(|callsigns| {
+                        callsigns_contains(
+                            callsigns,
+                            &row.source,
+                            &row.callsign,
+                        )
+                    })
+        })
+        .map(|row| row.id)
+        .collect::<Vec<_>>();
+    if !missing_ids.is_empty() {
+        sigint_inbox_item_callsign::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item_callsign::Column::Deleted,
+                Expr::value(true),
+            )
+            .col_expr(
+                sigint_inbox_item_callsign::Column::DeletedAt,
+                Expr::value(Utc::now().naive_utc()),
+            )
+            .col_expr(
+                sigint_inbox_item_callsign::Column::DeletedById,
+                Expr::value(actor_id),
+            )
+            .filter(sigint_inbox_item_callsign::Column::Id.is_in(missing_ids))
+            .exec(dbx)
+            .await
+            .c(h!())?;
+    }
+
+    let callsigns = expected_callsigns
+        .iter()
+        .flat_map(|(inbox_item_id, callsigns)| {
+            callsign_active_models(*inbox_item_id, callsigns, actor_id)
+        })
+        .collect::<Vec<_>>();
+    for callsigns in callsigns
+        .chunks(crate::config::INBOX_ITEM_CALLSIGN_SYNC_INSERT_BATCH_SIZE)
+    {
+        sigint_inbox_item_callsign::Entity::insert_many(callsigns.to_vec())
+            .on_conflict(
+                sea_query::OnConflict::columns([
+                    sigint_inbox_item_callsign::Column::SigintInboxItemId,
+                    sigint_inbox_item_callsign::Column::Source,
+                    sigint_inbox_item_callsign::Column::Callsign,
+                ])
+                .update_columns([
+                    sigint_inbox_item_callsign::Column::Ordering,
+                    sigint_inbox_item_callsign::Column::Deleted,
+                    sigint_inbox_item_callsign::Column::DeletedAt,
+                    sigint_inbox_item_callsign::Column::DeletedById,
+                ])
+                .to_owned(),
+            )
+            .exec_without_returning(dbx)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+fn callsigns_contains(
+    callsigns: &InboxItemCallsigns,
+    source: &SigintInboxItemCallsignSource,
+    callsign: &str,
+) -> bool {
+    let callsigns = match source {
+        SigintInboxItemCallsignSource::Primary => &callsigns.primary,
+        SigintInboxItemCallsignSource::Alg2 => &callsigns.alg2,
+    };
+    callsigns.iter().any(|expected| expected == callsign)
+}
+
+fn callsign_active_models(
+    sigint_inbox_item_id: i64,
+    callsigns: &InboxItemCallsigns,
+    actor_id: Uuid,
+) -> Vec<sigint_inbox_item_callsign::ActiveModel> {
+    callsigns
+        .primary
+        .iter()
+        .enumerate()
+        .map(|(ordering, callsign)| {
+            callsign_active_model(
+                sigint_inbox_item_id,
+                callsign.clone(),
+                SigintInboxItemCallsignSource::Primary,
+                ordering as f64,
+                actor_id,
+            )
+        })
+        .chain(
+            callsigns
+                .alg2
+                .iter()
+                .enumerate()
+                .map(|(ordering, callsign)| {
+                    callsign_active_model(
+                        sigint_inbox_item_id,
+                        callsign.clone(),
+                        SigintInboxItemCallsignSource::Alg2,
+                        ordering as f64,
+                        actor_id,
+                    )
+                }),
+        )
+        .collect()
+}
+
+fn callsign_active_model(
+    sigint_inbox_item_id: i64,
+    callsign: String,
+    source: SigintInboxItemCallsignSource,
+    ordering: f64,
+    actor_id: Uuid,
+) -> sigint_inbox_item_callsign::ActiveModel {
+    sigint_inbox_item_callsign::ActiveModel {
+        id: NotSet,
+        sigint_inbox_item_id: Set(sigint_inbox_item_id),
+        callsign: Set(callsign),
+        source: Set(source),
+        ordering: Set(ordering),
+        created_at: NotSet,
+        deleted_at: Set(None),
+        deleted: Set(false),
+        created_by_id: Set(actor_id),
+        deleted_by_id: Set(None),
+    }
 }
 
 pub async fn load_by_item_ids<C>(
