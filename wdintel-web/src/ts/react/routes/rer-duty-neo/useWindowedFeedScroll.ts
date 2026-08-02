@@ -24,6 +24,8 @@ type AnchorSnapshot = {
   anchors: VisibleAnchor[];
 };
 
+type TopStatus = 'loading' | 'reached-start' | 'none';
+
 export type UseWindowedFeedScrollOptions = {
   itemIds: readonly number[];
   loadingOlder: boolean;
@@ -130,6 +132,12 @@ export function useWindowedFeedScroll({
   const liveBottomFollowRef = useRef(false);
   const previousItemIdsRef = useRef<readonly number[]>([]);
   const previousResetKeyRef = useRef<string | number | null>(resetKey);
+  const topStatus: TopStatus = loadingOlder
+    ? 'loading'
+    : hasReachedStart
+      ? 'reached-start'
+      : 'none';
+  const previousTopStatusRef = useRef<TopStatus>(topStatus);
   const isWatchModeRef = useRef<boolean>(isWatchMode);
   // Narrow-screen feeds remain mounted while hidden. Disabled tracking must not
   // report visibility, bottom state, loads, or read-state side effects.
@@ -479,7 +487,7 @@ export function useWindowedFeedScroll({
     bottomSettleRafRef.current = requestAnimationFrame(settleFrame);
   }, [scrollToBottom, stopBottomSettle]);
 
-  const restoreAnchorAfterItemsChange = useCallback(() => {
+  const restoreAnchorPosition = useCallback(() => {
     const scroller = scrollerRef.current;
     const snapshot = anchorSnapshotRef.current;
     if (!scroller || !snapshot) return false;
@@ -506,9 +514,11 @@ export function useWindowedFeedScroll({
     }
 
     const currentItemIds = itemIdsRef.current;
+    const topStatusChanged = previousTopStatusRef.current !== topStatus;
     if (!enabled) {
       return;
     }
+    previousTopStatusRef.current = topStatus;
     if (currentItemIds.length === 0) {
       hasInitialScrolledRef.current = false;
       previousItemIdsRef.current = currentItemIds;
@@ -526,12 +536,16 @@ export function useWindowedFeedScroll({
     }
 
     const itemsChanged = !areNumberArraysEqual(previousItemIdsRef.current, currentItemIds);
-    if (itemsChanged) {
-      if (liveBottomFollowRef.current && isWatchModeRef.current !== false) {
+    if (itemsChanged || topStatusChanged) {
+      if (
+        liveBottomFollowRef.current &&
+        physicallyAtBottomRef.current === true &&
+        isWatchModeRef.current !== false
+      ) {
         scrollToBottom('auto');
         startBottomSettle();
       } else {
-        restoreAnchorAfterItemsChange();
+        restoreAnchorPosition();
       }
       updateScrollState({ allowLoadOlder: false, allowLoadNewer: false, allowTopReached: false });
       captureAnchorSnapshot();
@@ -552,12 +566,44 @@ export function useWindowedFeedScroll({
     enabledBeforeRender,
     enabled,
     resetKey,
-    restoreAnchorAfterItemsChange,
+    restoreAnchorPosition,
     scrollToBottom,
     startBottomSettle,
     stopBottomSettle,
+    topStatus,
     updateScrollState,
     itemIds,
+  ]);
+
+  useLayoutEffect(() => {
+    if (!enabled || itemIds.length === 0 || typeof ResizeObserver === 'undefined') return;
+    const list = listRef.current;
+    if (!list) return;
+
+    const observer = new ResizeObserver(() => {
+      if (!enabledRef.current || bottomSettleActiveRef.current) return;
+      if (
+        liveBottomFollowRef.current &&
+        physicallyAtBottomRef.current === true &&
+        isWatchModeRef.current !== false
+      ) {
+        scrollToBottom('auto');
+        return;
+      }
+      restoreAnchorPosition();
+      updateScrollState({ allowLoadOlder: false, allowLoadNewer: false, allowTopReached: false });
+      captureAnchorSnapshot();
+    });
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [
+    captureAnchorSnapshot,
+    enabled,
+    itemIds.length,
+    resetKey,
+    restoreAnchorPosition,
+    scrollToBottom,
+    updateScrollState,
   ]);
 
   useEffect(() => {
@@ -589,13 +635,13 @@ export function useWindowedFeedScroll({
       }
     }
 
+    captureAnchorSnapshot();
     if (handleScrollRafRef.current !== null) return;
     handleScrollRafRef.current = requestAnimationFrame(() => {
       updateScrollState();
-      captureAnchorSnapshot();
       handleScrollRafRef.current = null;
     });
-  }, [captureAnchorSnapshot, updateScrollState, stopBottomSettle, atBottomThresholdPx]);
+  }, [captureAnchorSnapshot, updateScrollState, stopBottomSettle]);
 
   const refCacheRef = useRef<Map<number, (node: HTMLDivElement | null) => void>>(new Map());
 

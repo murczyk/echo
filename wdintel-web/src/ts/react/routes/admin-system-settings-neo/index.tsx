@@ -14,10 +14,13 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import dayjs from 'dayjs';
+import type { Dayjs } from 'dayjs';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
+import { PowerDateTimePicker } from '../../components/PowerDateTimePicker';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
@@ -26,6 +29,7 @@ import {
   listSystemSettings,
   type SystemSettingsItem,
 } from '../../services/api/system-settings';
+import { APP_TIME_ZONE } from '../../utils/misc';
 import { AdminControlPanelNeoSection } from '../admin-control-panel-neo';
 import { AiEnginesSection } from './AiEnginesSection';
 import { CacheBackfillSection } from './CacheBackfillSection';
@@ -126,6 +130,24 @@ const SUPPORT_NON_RER_TOOLTIP =
 const REPORT_CHUNKING_TOOLTIP =
   'якщо звіт охоплює більший період - ми розбиваємо цей період на вікна вказаного розміру, обраховуємо їх окремо і агрегуємо в цілий звіт';
 const REPORT_CHUNKING_HOURS_MAX = 2_147_483_647;
+const DUTY_TEST_ENABLED_TOOLTIP =
+  'Після збереження обмежує початкову вибірку Оперативного повідомленнями з 10-хвилинного вікна від дати старту. Не створює нових повідомлень. Щоб застосувати зміну, перезавантажте Оперативний.';
+const DUTY_INSERT_HISTORICAL_TOOLTIP =
+  'Після збереження фоновий процес копіює історичні перехоплення з 10-хвилинного вікна від дати старту та вставляє їх із поточним часом, тому вони з’являються в Оперативному як нові.';
+const DUTY_TEST_SINCE_TOOLTIP =
+  'Початок 10-хвилинного історичного вікна, спільний для тестової вибірки та вставлення історичних перехоплень. Дата й час указуються за київським часом.';
+const DUTY_TEST_LIMIT_TOOLTIP =
+  'Максимальна кількість повідомлень у тестовій відповіді та історичних перехоплень, які фоновий процес вставляє за один цикл.';
+const DUTY_POLL_INTERVAL_TOOLTIP =
+  'Пауза між перевірками нових повідомлень в Оперативному та між циклами вставлення історичних перехоплень.';
+
+function dutyTestSinceDateTime(value: number) {
+  return value > 0 ? dayjs(value).tz(APP_TIME_ZONE) : null;
+}
+
+function dutyTestSinceMs(value: Dayjs | null): number {
+  return value ? value.tz(APP_TIME_ZONE, true).valueOf() : 0;
+}
 
 function InfoLabel({ label, tooltip }: { label: string; tooltip: string }) {
   return (
@@ -534,7 +556,12 @@ function DutySettingsSection({
             }}
           />
         }
-        label="Увімкнути тестову вибірку повідомлень"
+        label={
+          <InfoLabel
+            label="Увімкнути тестову вибірку повідомлень"
+            tooltip={DUTY_TEST_ENABLED_TOOLTIP}
+          />
+        }
       />
       <FormControlLabel
         control={
@@ -545,21 +572,23 @@ function DutySettingsSection({
             }}
           />
         }
-        label="Вставляти історичні перехоплення"
+        label={
+          <InfoLabel
+            label="Вставляти історичні перехоплення"
+            tooltip={DUTY_INSERT_HISTORICAL_TOOLTIP}
+          />
+        }
       />
-      <TextField
-        label="Дата старту (timestamp ms)"
-        type="number"
-        value={form.dutyTestSinceMs}
-        onChange={(event) => {
-          const next = Number(event.target.value);
-          patchForm({ dutyTestSinceMs: Number.isFinite(next) ? next : 0 });
+      <PowerDateTimePicker
+        label={<InfoLabel label="Дата старту" tooltip={DUTY_TEST_SINCE_TOOLTIP} />}
+        value={dutyTestSinceDateTime(form.dutyTestSinceMs)}
+        onChange={(value) => {
+          patchForm({ dutyTestSinceMs: dutyTestSinceMs(value) });
         }}
-        inputProps={{ min: 0, step: 1000 }}
-        helperText="Використовується як sinceDateInclusiveMs"
+        allowEmpty
       />
       <TextField
-        label="Ліміт повідомлень"
+        label={<InfoLabel label="Ліміт повідомлень" tooltip={DUTY_TEST_LIMIT_TOOLTIP} />}
         type="number"
         value={form.dutyTestLimit}
         onChange={(event) => {
@@ -570,7 +599,12 @@ function DutySettingsSection({
         helperText="Мінімум 1"
       />
       <TextField
-        label="Інтервал запиту нових повідомлень (сек)"
+        label={
+          <InfoLabel
+            label="Інтервал запиту нових повідомлень (сек)"
+            tooltip={DUTY_POLL_INTERVAL_TOOLTIP}
+          />
+        }
         type="number"
         value={form.dutyPollIntervalSec}
         onChange={(event) => {
