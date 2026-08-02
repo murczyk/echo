@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import type { RefObject, UIEventHandler } from 'react';
+import {
+  isDutyScrollDebugEnabled,
+  recordDutyScrollDebugEvent,
+  recordDutyScrollDebugMetrics,
+  useDutyScrollDebugEnabled,
+} from './duty-scroll-debug';
 
 export type WindowedFeedScrollItem = { id: number };
 
@@ -46,6 +52,7 @@ export type UseWindowedFeedScrollOptions = {
   resetKey?: string | number | null;
   isWatchMode?: boolean;
   enabled?: boolean;
+  debugFeedId?: string;
 };
 
 export type WindowedFeedScrollHandle = {
@@ -86,7 +93,9 @@ export function useWindowedFeedScroll({
   resetKey = null,
   isWatchMode = true,
   enabled = true,
+  debugFeedId,
 }: UseWindowedFeedScrollOptions): WindowedFeedScrollHandle {
+  const debugEnabled = useDutyScrollDebugEnabled();
   const callbacksRef = useRef({
     onLoadOlder,
     onLoadNewer,
@@ -233,6 +242,57 @@ export function useWindowedFeedScroll({
     anchorSnapshotRef.current = anchors.length > 0 ? { anchors } : null;
   }, [collectVisibleAnchors]);
 
+  const publishDebugMetrics = useCallback(
+    (scroller: HTMLDivElement, previousScrollTop: number) => {
+      if (!isDutyScrollDebugEnabled() || !debugFeedId) return;
+      const bottomDistance = distanceToBottom(scroller);
+      const anchors = collectVisibleAnchors();
+      const anchor = anchorSnapshotRef.current?.anchors[0] ?? null;
+      const computedStyle = window.getComputedStyle(scroller);
+      recordDutyScrollDebugMetrics(debugFeedId, {
+        capturedAtMs: Date.now(),
+        scrollTop: scroller.scrollTop,
+        previousScrollTop,
+        scrollDelta: scroller.scrollTop - previousScrollTop,
+        scrollHeight: scroller.scrollHeight,
+        clientHeight: scroller.clientHeight,
+        bottomDistance,
+        topLoadBufferPx,
+        bottomLoadBufferPx,
+        atBottomThresholdPx,
+        atTop: scroller.scrollTop <= 0,
+        atBottom: bottomDistance <= atBottomThresholdPx,
+        physicallyAtBottom: bottomDistance <= 1,
+        nearBottom: bottomDistance <= bottomLoadBufferPx,
+        liveBottomFollow: liveBottomFollowRef.current,
+        bottomSettleActive: bottomSettleActiveRef.current,
+        loadOlderTriggered: loadOlderTriggeredRef.current,
+        loadNewerTriggered: loadNewerTriggeredRef.current,
+        visibleAnchorCount: anchors.length,
+        firstVisibleId: anchors[0]?.id ?? null,
+        lastVisibleId: anchors.at(-1)?.id ?? null,
+        anchorId: anchor?.id ?? null,
+        anchorOffsetTop: anchor?.offsetTop ?? null,
+        itemCount: itemIdsRef.current.length,
+        firstItemId: itemIdsRef.current[0] ?? null,
+        lastItemId: itemIdsRef.current.at(-1) ?? null,
+        enabled: enabledRef.current,
+        isWatchMode: isWatchModeRef.current,
+        overflowAnchor: computedStyle.overflowAnchor,
+        scrollBehavior: computedStyle.scrollBehavior,
+      });
+    },
+    [atBottomThresholdPx, bottomLoadBufferPx, collectVisibleAnchors, debugFeedId, topLoadBufferPx],
+  );
+
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!debugEnabled || !enabled || !scroller) return;
+    captureAnchorSnapshot();
+    publishDebugMetrics(scroller, previousScrollTopRef.current);
+    recordDutyScrollDebugEvent(debugFeedId, 'debug:attach');
+  }, [captureAnchorSnapshot, debugEnabled, debugFeedId, enabled, publishDebugMetrics]);
+
   const reportVisibleMessageIdsRafRef = useRef<number | null>(null);
   const reportVisibleMessageIdsLastRunRef = useRef<number>(0);
   const reportVisibleMessageIdsLatestArgsRef = useRef<boolean>(false);
@@ -283,6 +343,7 @@ export function useWindowedFeedScroll({
   );
 
   const stopBottomSettle = useCallback(() => {
+    const wasActive = bottomSettleActiveRef.current;
     bottomSettleActiveRef.current = false;
     if (bottomSettleRafRef.current !== null) {
       cancelAnimationFrame(bottomSettleRafRef.current);
@@ -294,7 +355,8 @@ export function useWindowedFeedScroll({
     }
     bottomSettleResizeObserverRef.current?.disconnect();
     bottomSettleResizeObserverRef.current = null;
-  }, []);
+    if (wasActive) recordDutyScrollDebugEvent(debugFeedId, 'settle:stop');
+  }, [debugFeedId]);
 
   useEffect(() => stopBottomSettle, [stopBottomSettle]);
 
@@ -313,6 +375,7 @@ export function useWindowedFeedScroll({
     enabledRef.current = enabled;
 
     if (enabledBeforeRender && !enabled) {
+      recordDutyScrollDebugEvent(debugFeedId, 'tracking:disable');
       cancelPendingScrollProcessing();
       stopBottomSettle();
       const { onAtBottomChange, onNearBottomChange, onPhysicalBottomChange } = callbacksRef.current;
@@ -326,7 +389,7 @@ export function useWindowedFeedScroll({
       loadOlderTriggeredRef.current = false;
       loadNewerTriggeredRef.current = false;
     }
-  }, [cancelPendingScrollProcessing, enabled, stopBottomSettle]);
+  }, [cancelPendingScrollProcessing, debugFeedId, enabled, stopBottomSettle]);
 
   const updateScrollState = useCallback(
     (
@@ -360,16 +423,32 @@ export function useWindowedFeedScroll({
         const wasPhysicallyAtBottom = physicallyAtBottomRef.current;
         physicallyAtBottomRef.current = physicallyAtBottom;
         callbacksRef.current.onPhysicalBottomChange?.(physicallyAtBottom);
+        recordDutyScrollDebugEvent(
+          debugFeedId,
+          'state:physical-bottom',
+          `${wasPhysicallyAtBottom ?? '—'}→${physicallyAtBottom}; distance=${bottomDistance.toFixed(1)}`,
+        );
         if (physicallyAtBottom && wasPhysicallyAtBottom !== true) {
           const shouldFollow =
             onReachedBottom?.({ hasSeenNotAtBottom: hasSeenNotAtBottomRef.current }) !== false;
           liveBottomFollowRef.current = shouldFollow;
+          recordDutyScrollDebugEvent(
+            debugFeedId,
+            shouldFollow ? 'follow:enable' : 'follow:blocked',
+            `physical bottom reached; returned=${hasSeenNotAtBottomRef.current}`,
+          );
         }
       }
 
       if (nearBottomRef.current !== nearBottom) {
+        const previousNearBottom = nearBottomRef.current;
         nearBottomRef.current = nearBottom;
         onNearBottomChange?.(nearBottom);
+        recordDutyScrollDebugEvent(
+          debugFeedId,
+          'state:near-bottom',
+          `${previousNearBottom ?? '—'}→${nearBottom}; distance=${bottomDistance.toFixed(1)}; buffer=${bottomLoadBufferPx}`,
+        );
       }
 
       if (bottomSettleActiveRef.current && !atBottom && opts.allowLoadOlder !== false) {
@@ -379,12 +458,22 @@ export function useWindowedFeedScroll({
       if (wasAtBottom !== atBottom) {
         atBottomRef.current = atBottom;
         onAtBottomChange?.(atBottom);
+        recordDutyScrollDebugEvent(
+          debugFeedId,
+          'state:at-bottom',
+          `${wasAtBottom ?? '—'}→${atBottom}; distance=${bottomDistance.toFixed(1)}; threshold=${atBottomThresholdPx}`,
+        );
       }
       if (!atBottom) hasSeenNotAtBottomRef.current = true;
       if (wasAtBottom === true && !atBottom) {
         const scrolledUp = currentScrollTop < prevScrollTop - 1;
         if (scrolledUp) {
           liveBottomFollowRef.current = false;
+          recordDutyScrollDebugEvent(
+            debugFeedId,
+            'follow:disable',
+            `upward scroll ${prevScrollTop.toFixed(1)}→${currentScrollTop.toFixed(1)}`,
+          );
           onLeftBottom?.();
         }
       }
@@ -401,6 +490,11 @@ export function useWindowedFeedScroll({
           scroller.scrollTop <= topLoadBufferPx && !loadingOlder && !hasReachedStart;
         if (shouldLoadOlder && !loadOlderTriggeredRef.current) {
           loadOlderTriggeredRef.current = true;
+          recordDutyScrollDebugEvent(
+            debugFeedId,
+            'load-older:trigger',
+            `scrollTop=${scroller.scrollTop.toFixed(1)}; buffer=${topLoadBufferPx}`,
+          );
           onLoadOlder();
         } else if (scroller.scrollTop > topLoadBufferPx) {
           loadOlderTriggeredRef.current = false;
@@ -411,26 +505,34 @@ export function useWindowedFeedScroll({
         const shouldLoadNewer = nearBottom && !loadingNewer && typeof onLoadNewer === 'function';
         if (shouldLoadNewer && !loadNewerTriggeredRef.current) {
           loadNewerTriggeredRef.current = true;
+          recordDutyScrollDebugEvent(
+            debugFeedId,
+            'load-newer:trigger',
+            `distance=${bottomDistance.toFixed(1)}; buffer=${bottomLoadBufferPx}; physical=${physicallyAtBottom}`,
+          );
           onLoadNewer();
         } else if (!nearBottom) {
           loadNewerTriggeredRef.current = false;
         }
       }
+      publishDebugMetrics(scroller, prevScrollTop);
     },
     [
       atBottomThresholdPx,
       bottomLoadBufferPx,
+      debugFeedId,
       hasReachedStart,
       loadingNewer,
       loadingOlder,
       reportVisibleMessageIds,
+      publishDebugMetrics,
       stopBottomSettle,
       topLoadBufferPx,
     ],
   );
 
   const scrollToBottom = useCallback(
-    (behavior: ScrollBehavior = 'auto') => {
+    (behavior: ScrollBehavior = 'auto', debugReason = 'imperative') => {
       if (!enabledRef.current) return;
       const scroller = scrollerRef.current;
       if (!scroller) return;
@@ -449,8 +551,15 @@ export function useWindowedFeedScroll({
         allowTopReached: false,
       });
       captureAnchorSnapshot();
+      if (!debugReason.startsWith('settle:')) {
+        recordDutyScrollDebugEvent(
+          debugFeedId,
+          'scroll-to-bottom',
+          `${debugReason}; behavior=${behavior}; top=${scroller.scrollTop.toFixed(1)}; height=${scroller.scrollHeight.toFixed(1)}`,
+        );
+      }
     },
-    [captureAnchorSnapshot, updateScrollState],
+    [captureAnchorSnapshot, debugFeedId, updateScrollState],
   );
 
   const startBottomSettle = useCallback(() => {
@@ -460,10 +569,15 @@ export function useWindowedFeedScroll({
 
     bottomSettleActiveRef.current = true;
     bottomSettleFramesRemainingRef.current = INITIAL_BOTTOM_SETTLE_FRAMES;
+    recordDutyScrollDebugEvent(
+      debugFeedId,
+      'settle:start',
+      `frames=${INITIAL_BOTTOM_SETTLE_FRAMES}; timeout=${INITIAL_BOTTOM_SETTLE_TIMEOUT_MS}`,
+    );
 
     if (typeof ResizeObserver !== 'undefined') {
       const observer = new ResizeObserver(() => {
-        if (bottomSettleActiveRef.current) scrollToBottom('auto');
+        if (bottomSettleActiveRef.current) scrollToBottom('auto', 'settle:resize');
       });
       bottomSettleResizeObserverRef.current = observer;
       if (scrollerRef.current) observer.observe(scrollerRef.current);
@@ -477,7 +591,7 @@ export function useWindowedFeedScroll({
         bottomSettleRafRef.current = null;
         return;
       }
-      scrollToBottom('auto');
+      scrollToBottom('auto', 'settle:frame');
       bottomSettleFramesRemainingRef.current -= 1;
       if (bottomSettleFramesRemainingRef.current > 0) {
         bottomSettleRafRef.current = requestAnimationFrame(settleFrame);
@@ -486,7 +600,7 @@ export function useWindowedFeedScroll({
       bottomSettleRafRef.current = null;
     };
     bottomSettleRafRef.current = requestAnimationFrame(settleFrame);
-  }, [scrollToBottom, stopBottomSettle]);
+  }, [debugFeedId, scrollToBottom, stopBottomSettle]);
 
   const restoreAnchorPosition = useCallback(() => {
     const scroller = scrollerRef.current;
@@ -500,14 +614,29 @@ export function useWindowedFeedScroll({
       const currentOffsetTop = node.getBoundingClientRect().top - scrollerTop;
       const delta = currentOffsetTop - anchor.offsetTop;
       if (Math.abs(delta) > 0.5) scroller.scrollTop += delta;
+      recordDutyScrollDebugEvent(
+        debugFeedId,
+        'anchor:restore',
+        `id=${anchor.id}; offset=${anchor.offsetTop.toFixed(1)}; current=${currentOffsetTop.toFixed(1)}; delta=${delta.toFixed(1)}`,
+      );
       return true;
     }
+    recordDutyScrollDebugEvent(
+      debugFeedId,
+      'anchor:missing',
+      `candidates=${snapshot.anchors.map((anchor) => anchor.id).join(',')}`,
+    );
     return false;
-  }, []);
+  }, [debugFeedId]);
 
   useLayoutEffect(() => {
     const resetChanged = previousResetKeyRef.current !== resetKey;
     if (resetChanged) {
+      recordDutyScrollDebugEvent(
+        debugFeedId,
+        'feed:reset',
+        `${String(previousResetKeyRef.current)}→${String(resetKey)}`,
+      );
       previousResetKeyRef.current = resetKey;
       hasInitialScrolledRef.current = false;
       hasSeenNotAtBottomRef.current = false;
@@ -530,7 +659,7 @@ export function useWindowedFeedScroll({
     }
 
     if (!hasInitialScrolledRef.current) {
-      scrollToBottom('auto');
+      scrollToBottom('auto', 'initial render');
       startBottomSettle();
       liveBottomFollowRef.current = true;
       hasInitialScrolledRef.current = true;
@@ -545,9 +674,19 @@ export function useWindowedFeedScroll({
         physicallyAtBottomRef.current === true &&
         isWatchModeRef.current !== false
       ) {
-        scrollToBottom('auto');
+        recordDutyScrollDebugEvent(
+          debugFeedId,
+          'items:follow-bottom',
+          `${previousItemIdsRef.current.length}→${currentItemIds.length}; watch=${isWatchModeRef.current}`,
+        );
+        scrollToBottom('auto', 'items changed while following');
         startBottomSettle();
       } else {
+        recordDutyScrollDebugEvent(
+          debugFeedId,
+          'items:preserve-anchor',
+          `${previousItemIdsRef.current[0] ?? '—'}→${previousItemIdsRef.current.at(-1) ?? '—'} becomes ${currentItemIds[0] ?? '—'}→${currentItemIds.at(-1) ?? '—'}; follow=${liveBottomFollowRef.current}; physical=${physicallyAtBottomRef.current}; watch=${isWatchModeRef.current}`,
+        );
         restoreAnchorPosition();
       }
       updateScrollState({ allowLoadOlder: false, allowLoadNewer: false, allowTopReached: false });
@@ -557,6 +696,7 @@ export function useWindowedFeedScroll({
     }
 
     if (!enabledBeforeRender && enabled) {
+      recordDutyScrollDebugEvent(debugFeedId, 'tracking:enable');
       updateScrollState({
         allowLoadOlder: false,
         allowLoadNewer: false,
@@ -566,6 +706,7 @@ export function useWindowedFeedScroll({
     }
   }, [
     captureAnchorSnapshot,
+    debugFeedId,
     enabledBeforeRender,
     enabled,
     resetKey,
@@ -590,9 +731,11 @@ export function useWindowedFeedScroll({
         physicallyAtBottomRef.current === true &&
         isWatchModeRef.current !== false
       ) {
-        scrollToBottom('auto');
+        recordDutyScrollDebugEvent(debugFeedId, 'resize:follow-bottom');
+        scrollToBottom('auto', 'list resized while following');
         return;
       }
+      recordDutyScrollDebugEvent(debugFeedId, 'resize:preserve-anchor');
       restoreAnchorPosition();
       updateScrollState({ allowLoadOlder: false, allowLoadNewer: false, allowTopReached: false });
       captureAnchorSnapshot();
@@ -601,6 +744,7 @@ export function useWindowedFeedScroll({
     return () => observer.disconnect();
   }, [
     captureAnchorSnapshot,
+    debugFeedId,
     enabled,
     itemIds.length,
     resetKey,
@@ -625,6 +769,11 @@ export function useWindowedFeedScroll({
       stopBottomSettle();
       if (liveBottomFollowRef.current) {
         liveBottomFollowRef.current = false;
+        recordDutyScrollDebugEvent(
+          debugFeedId,
+          'follow:disable',
+          `immediate upward scroll to ${scroller.scrollTop.toFixed(1)}`,
+        );
         callbacksRef.current.onLeftBottom?.();
       }
     } else if (scroller && distanceToBottom(scroller) <= 0.5) {
@@ -644,7 +793,7 @@ export function useWindowedFeedScroll({
       updateScrollState();
       handleScrollRafRef.current = null;
     });
-  }, [captureAnchorSnapshot, updateScrollState, stopBottomSettle]);
+  }, [captureAnchorSnapshot, debugFeedId, updateScrollState, stopBottomSettle]);
 
   const refCacheRef = useRef<Map<number, (node: HTMLDivElement | null) => void>>(new Map());
 

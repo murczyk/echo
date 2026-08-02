@@ -429,6 +429,7 @@ export const FeedColumnContent = memo(
     const itemIds = useMemo(() => feed.items.map(([id]) => id), [feed.items]);
     const scroll = useWindowedFeedScroll({
       itemIds,
+      debugFeedId: feed.id,
       isWatchMode,
       enabled: scrollTrackingEnabled,
       loadingOlder: feed.loadingOlder,

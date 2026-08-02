@@ -11,6 +11,7 @@ import { fetchInboxMessages } from '../../services/api/inbox';
 import { appendWindowedMessageItems, prependWindowedMessageItems } from './utils';
 import type { MessageCursor, MessageFeedState, MessageItem } from './utils';
 import type { TailAvailability } from './types';
+import { beginDutyScrollDebugActivity, recordDutyScrollDebugEvent } from './duty-scroll-debug';
 
 type NewerLoadOptions = {
   nolimit?: boolean;
@@ -186,10 +187,16 @@ export function useRerDutyDirectionalLoads(params: Params) {
           previous.map((feed) => (feed.id === feedId ? { ...feed, loadingOlder: true } : feed)),
         );
         runParams.setError(null);
+        const finishDebugActivity = beginDutyScrollDebugActivity(
+          feedId,
+          'olderMessages',
+          `before=${beforeIdNoninclusive}; generation=${requestGeneration}`,
+        );
         try {
           const response = await fetchInboxMessages(
             runParams.buildReqForFeed(currentFeed, { beforeIdNoninclusive }),
           );
+          finishDebugActivity(`ok; received=${response.inboxItems.length}`);
           const latestFeed = runParams.messageFeedsRef.current.find(
             (candidate) => candidate.id === feedId,
           );
@@ -231,6 +238,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
             );
           }
         } catch (error) {
+          finishDebugActivity(`error; ${error instanceof Error ? error.message : String(error)}`);
           const latestFeed = runParams.messageFeedsRef.current.find(
             (candidate) => candidate.id === feedId,
           );
@@ -336,6 +344,11 @@ export function useRerDutyDirectionalLoads(params: Params) {
         if (operation.newerOptions.confirmedTailAvailable) {
           runParams.setTailAvailability(feedId, 'loading');
         }
+        const finishDebugActivity = beginDutyScrollDebugActivity(
+          feedId,
+          'newerMessages',
+          `since=${requestedTailId}; generation=${requestGeneration}; followRequested=${operation.newerOptions.scrollToEndAfterLoad}; followGeneration=${operation.newerOptions.followGeneration}; confirmed=${operation.newerOptions.confirmedTailAvailable}`,
+        );
         try {
           const response = await fetchInboxMessages(
             runParams.buildReqForFeed(currentFeed, {
@@ -343,6 +356,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
               nolimit: operation.newerOptions.nolimit || undefined,
             }),
           );
+          finishDebugActivity(`ok; received=${response.inboxItems.length}`);
           const capturedFollowGeneration = operation.newerOptions.followGeneration;
           const followStillValid = runParams.isFollowTailValid(feedId, capturedFollowGeneration);
           const latestFeed = runParams.messageFeedsRef.current.find(
@@ -371,6 +385,11 @@ export function useRerDutyDirectionalLoads(params: Params) {
           const markAllRead =
             (followTail && runParams.isFollowTailValid(feedId, capturedFollowGeneration)) ||
             operation.newerOptions.markAllReadAfterAppend;
+          recordDutyScrollDebugEvent(
+            feedId,
+            'newer:decision',
+            `accepted=${accepted}; added=${addedCount}; followValid=${followStillValid}; follow=${followTail}; markRead=${markAllRead}; near=${runParams.nearBottomByFeedIdRef.current[feedId] === true}`,
+          );
           if (markAllRead && newestItem != null) {
             runParams.advanceFeedReadCursor(
               feedId,
@@ -430,7 +449,8 @@ export function useRerDutyDirectionalLoads(params: Params) {
               }),
             );
           }
-        } catch {
+        } catch (error) {
+          finishDebugActivity(`error; ${error instanceof Error ? error.message : String(error)}`);
           // Keep polling and the previously loaded messages after a transient failure.
           if (!isStillCurrent()) return;
           if (operation.newerOptions.confirmedTailAvailable) {

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FeedColumnProps } from './FeedColumn';
 import { minimalInboxMessage } from './inbox-message-mocks';
 import { MAX_MESSAGE_FEEDS } from './utils';
+import { beginDutyScrollDebugActivity, setDutyScrollDebugEnabled } from './duty-scroll-debug';
 
 vi.mock('./FeedFilterPanel', () => ({
   FeedFilterPanel: () => <div data-testid="feed-filter-panel" />,
@@ -80,6 +81,7 @@ function buildProps(): FeedColumnProps {
         hasReachedStart: false,
         referenceTimeMs: null,
         readIds: new Set<number>(),
+        windowedUnreadItems: new Map<number, number>(),
         unreadCount: 0,
         adjacentFreqsRange: 0,
         highlightSignalsEnabled: false,
@@ -202,6 +204,7 @@ describe('FeedColumn', () => {
 
   afterEach(() => {
     act(() => {
+      setDutyScrollDebugEnabled(false);
       root.unmount();
       container.remove();
       document.body.innerHTML = '';
@@ -235,6 +238,47 @@ describe('FeedColumn', () => {
 
     expect(onLoadNewer).toHaveBeenCalledTimes(1);
     expect(onReachedBottom).not.toHaveBeenCalled();
+  });
+
+  it('shows waterfall debug info after eight quick bell presses', async () => {
+    const props = buildProps();
+    props.column.view.feedCount = 4;
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    const bell = container.querySelector('button[aria-label="Сповіщення"]');
+    expect(bell).not.toBeNull();
+
+    await act(async () => {
+      for (let press = 0; press < 8; press += 1) {
+        bell?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      }
+    });
+
+    const panel = container.querySelector('[data-duty-scroll-debug-panel]');
+    expect(panel).not.toBeNull();
+    expect(panel?.textContent).toContain('counter HTTP');
+    expect(panel?.textContent).toContain('newer messages HTTP');
+    expect(panel?.querySelector('[data-duty-scroll-debug-events]')).not.toBeNull();
+
+    let finishCounter!: (result: string) => void;
+    let finishMessages!: (result: string) => void;
+    await act(async () => {
+      finishCounter = beginDutyScrollDebugActivity('feed-1', 'unreadCount', 'test counter');
+      finishMessages = beginDutyScrollDebugActivity('feed-1', 'newerMessages', 'test messages');
+    });
+    expect(panel?.querySelector('[data-duty-debug-counter-status]')?.textContent).toContain(
+      'LOADING',
+    );
+    expect(panel?.querySelector('[data-duty-debug-newer-messages-status]')?.textContent).toContain(
+      'LOADING',
+    );
+
+    await act(async () => {
+      finishCounter('ok');
+      finishMessages('ok');
+    });
   });
 
   it('closes the filters panel on outside click', async () => {
