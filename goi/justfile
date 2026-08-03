@@ -50,16 +50,26 @@ build-echo-swapp builder=goi_builder:
 
     BRANCH="$1"
     REPO_DIR="$HOME/{{ goi_builder_repo_dir }}"
+    GIT_CONFIG=(-c url.ssh://git@github.com/.insteadOf=https://github.com/)
 
     echo "Switching ${REPO_DIR} to ${BRANCH}..."
     cd "${REPO_DIR}"
-    git fetch origin "${BRANCH}"
+    git "${GIT_CONFIG[@]}" fetch origin "${BRANCH}"
     git clean -df
     git checkout "${BRANCH}"
-    git pull --ff-only origin "${BRANCH}"
+    git "${GIT_CONFIG[@]}" pull --ff-only origin "${BRANCH}"
 
+    mkdir -p "${REPO_DIR}/target/debian"
     rm -f "${REPO_DIR}"/target/debian/echo-swapp_*_*.deb
-    "$HOME/.cargo/bin/cargo" deb -p echo-swapp
+    "$HOME/.cargo/bin/cargo" deb -p echo-swapp --output "${REPO_DIR}/target/debian"
+
+    DEB_PATH="$(ls -1t "${REPO_DIR}"/target/debian/echo-swapp_*_*.deb 2>/dev/null | head -n 1 || true)"
+    if [[ -z "${DEB_PATH}" ]]; then
+      echo "Failed to build echo-swapp .deb under ${REPO_DIR}/target/debian" >&2
+      find "${REPO_DIR}" -maxdepth 6 -path "*/target/debian/*.deb" -type f -print >&2 || true
+      exit 1
+    fi
+    echo "Built $(basename "${DEB_PATH}")"
     REMOTE
 
 _require-goi-cloud-access:
@@ -408,6 +418,7 @@ deploy-echo-swapp server builder=goi_builder:
     ARTIFACT_DIR="$(mktemp -d)"
     DEB_PATH=""
     DEB_NAME=""
+    REMOTE_DEB_PATH=""
     SIGNAL_DEB_PATH=""
     SIGNAL_DEB_NAME=""
     WHATSAPP_DEB_PATH=""
@@ -424,7 +435,13 @@ deploy-echo-swapp server builder=goi_builder:
     echo "Downloading deploy artifacts from ${BUILDER}..."
     scp "${BUILDER}:${BUILDER_REPO_DIR}/goi/.deb/echo-im-signal_*_amd64.deb" "${ARTIFACT_DIR}/"
     scp "${BUILDER}:${BUILDER_REPO_DIR}/goi/.deb/echo-im-whatsapp_*_amd64.deb" "${ARTIFACT_DIR}/"
-    scp "${BUILDER}:${BUILDER_REPO_DIR}/target/debian/echo-swapp_*_*.deb" "${ARTIFACT_DIR}/"
+
+    REMOTE_DEB_PATH="$(ssh "$BUILDER" "ls -1t ${BUILDER_REPO_DIR}/target/debian/echo-swapp_*_*.deb 2>/dev/null | head -n 1 || true")"
+    if [[ -z "${REMOTE_DEB_PATH}" ]]; then
+      echo "Failed to find built echo-swapp .deb on ${BUILDER}:${BUILDER_REPO_DIR}/target/debian" >&2
+      exit 1
+    fi
+    scp "${BUILDER}:${REMOTE_DEB_PATH}" "${ARTIFACT_DIR}/"
 
     SIGNAL_DEB_PATH="$(ls -1t "${ARTIFACT_DIR}"/echo-im-signal_*_amd64.deb 2>/dev/null | head -n 1 || true)"
     if [[ -z "${SIGNAL_DEB_PATH}" ]]; then
