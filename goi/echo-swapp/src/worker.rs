@@ -8,6 +8,7 @@ const CLEANUP_WORKER_SLEEP_MS: u64 = 60_000;
 pub fn spawn_workers(db: DatabaseConnection) {
     tokio::spawn(messenger_worker(db.clone()));
     tokio::spawn(cleanup_worker(db));
+    tokio::spawn(echo_install_utils::tmpdir::cleanup_tmp_worker_nofail());
 }
 
 async fn messenger_worker(db: DatabaseConnection) {

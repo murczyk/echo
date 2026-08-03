@@ -217,6 +217,7 @@ flowchart TB
     api["wdintel-rs.service"]
     bg["wdintel-rs-bgworker.service"]
     reports["wdintel-rs-report-worker.service"]
+    swapp["echo-swapp.service"]
 
     api --> api_workers["Request-adjacent workers<br/>session_activity_worker<br/>messenger_media_cache_cleanup_worker<br/>messenger_media_thumbnail_worker"]
     api -.-> api_vault_worker["secret_worker<br/>when Vault is configured"]
@@ -234,6 +235,8 @@ flowchart TB
     reports --> report_workers_a["Report-history workers<br/>report_history_worker_tags<br/>report_history_worker_interception<br/>report_history_worker_babak<br/>report_history_worker_mouse<br/>report_history_worker_pelengs<br/>report_history_worker_senders<br/>report_history_worker_posts<br/>report_history_worker_naushnom<br/>report_history_worker_reo<br/>report_history_worker_digest"]
     reports --> report_workers_b["Report-history workers<br/>report_history_worker_rer_report<br/>report_history_worker_sposob<br/>report_history_worker_posts_docx<br/>report_history_worker_active_networks<br/>report_history_worker_network_frequencies<br/>report_history_worker_report_125<br/>report_history_worker_report_1213<br/>report_history_worker_summary_table"]
     reports --> report_workers_c["Report-history workers<br/>report_history_worker_kmz<br/>report_history_worker_geojson<br/>report_history_worker_etalonka<br/>report_history_worker_etalonka_1<br/>report_history_worker_goi<br/>report_history_worker_unknown<br/>report_history_timeout_worker"]
+
+    swapp --> swapp_workers["Messenger workers<br/>messenger_worker<br/>echo_im cleanup<br/>/tmp size cleanup"]
 
     classDef optional stroke-dasharray:6 4
     class api_vault_worker,bg_vault_worker,configured_workers,startup_workers optional
