@@ -768,6 +768,8 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260801_085538_suppress_deleted_orbit_links::Migration,
             ),
+            Box::new(m20260802_174927_rer_duty_test_replay::Migration),
+            Box::new(m20260803_093803_echo_automation_send_log::Migration),
             Box::new(m20260707_081900_create_devices::Migration),
             Box::new(m20260707_132105_create_device_aor::Migration),
             Box::new(m20260707_135501_drop_device_aor_id::Migration),
@@ -779,8 +781,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260721_120720_device_source_label_custom_fields::Migration),
             Box::new(m20260721_124518_drop_legacy_device_file::Migration),
             Box::new(m20260729_143549_add_device_organism::Migration),
-            Box::new(m20260802_174927_rer_duty_test_replay::Migration),
-            Box::new(m20260803_093803_echo_automation_send_log::Migration),
+
         ]
     }
 }
