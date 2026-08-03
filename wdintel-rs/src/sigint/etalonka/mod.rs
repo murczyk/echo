@@ -2679,6 +2679,7 @@ mod tests {
             .expect("expected moved callsign");
         assert_eq!(moved.message_count, 1);
         assert_eq!(moved.last_datetime, Some(ts));
+        assert_eq!(moved.created_at, moved_at.and_utc().timestamp_millis());
         let moved_unassigned = entry
             .callsigns_detailed
             .iter()

@@ -1123,6 +1123,7 @@ pub struct CallsignActivityInfo {
     pub last_datetime: Option<i64>,
     pub freqs: Option<Vec<String>>,
     pub network_names: Option<Vec<String>>,
+    pub(crate) activity_datetime: NaiveDateTime,
 }
 
 pub async fn load_callsigns(
