@@ -830,7 +830,6 @@ fn callsign_exists_condition(callsign: String) -> SimpleExpr {
                     select 1
                     from sigint_inbox_item_callsign siic
                     where siic.sigint_inbox_item_id = sigint_inbox_item.id
-                      and not siic.deleted
                 )
                 and (
                     exists (
