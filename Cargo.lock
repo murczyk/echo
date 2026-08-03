@@ -2800,6 +2800,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "echo-im",
+ "echo-install-utils",
  "env_logger 0.11.9",
  "log",
  "milgeo-rs",
