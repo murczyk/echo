@@ -2,6 +2,8 @@ set positional-arguments := false
 
 goi_dir := justfile_directory()
 repo_dir := goi_dir + "/.."
+goi_builder := "echo-build-main"
+goi_builder_repo_dir := "workspace/echo"
 goi_app_dir := "/etc/goi"
 goi_timezone := "Europe/Kyiv"
 goi_b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
@@ -14,50 +16,51 @@ goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 g
 default:
     @just --list
 
-_require-linux-goi-deploy-host:
+[arg('builder', long='builder')]
+checkout-messenger-debs builder=goi_builder:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    if [[ "$(uname -s)" == "Linux" ]]; then
-      exit 0
-    fi
+    BUILDER="{{ builder }}"
 
-    {
-      echo "============================================================"
-      echo "ERROR: GOI deploy must be run from Linux."
-      echo
-      echo "This recipe downloads Debian packages with apt-get and builds/uploads"
-      echo "a fresh echo-swapp .deb. Running it on macOS is blocked because it"
-      echo "would otherwise skip the freshly built echo-swapp artifact."
-      echo
-      echo "Run this command from a Linux builder/workstation."
-      echo "============================================================"
-    } >&2
-    exit 1
-
-checkout-messenger-debs:
-    #!/usr/bin/env bash
+    echo "Downloading messenger deb packages on ${BUILDER}..."
+    ssh "$BUILDER" bash -se <<'REMOTE'
     set -euo pipefail
 
-    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
+    DEB_DIR="$HOME/{{ goi_builder_repo_dir }}/goi/.deb"
 
     sudo apt-get update
-    mkdir -p "{{ goi_dir }}/.deb"
-    cd "{{ goi_dir }}/.deb" && apt-get download echo-im-signal echo-im-whatsapp
+    mkdir -p "${DEB_DIR}"
+    rm -f "${DEB_DIR}"/echo-im-signal_*_amd64.deb "${DEB_DIR}"/echo-im-whatsapp_*_amd64.deb
+    cd "${DEB_DIR}"
+    apt-get download echo-im-signal echo-im-whatsapp
+    REMOTE
 
-build-echo-swapp:
+[arg('builder', long='builder')]
+build-echo-swapp builder=goi_builder:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
-
+    BUILDER="{{ builder }}"
     BRANCH="main"
 
-    echo "Switching {{ repo_dir }} to ${BRANCH}..."
-    (cd "{{ repo_dir }}" && git fetch origin "${BRANCH}" && git clean -df && git checkout "${BRANCH}" && git pull --ff-only origin "${BRANCH}")
+    echo "Building echo-swapp deb package on ${BUILDER}..."
+    ssh "$BUILDER" bash -se -- "$BRANCH" <<'REMOTE'
+    set -euo pipefail
 
-    echo "Building echo-swapp deb package..."
-    (cd "{{ repo_dir }}" && cargo deb -p echo-swapp)
+    BRANCH="$1"
+    REPO_DIR="$HOME/{{ goi_builder_repo_dir }}"
+
+    echo "Switching ${REPO_DIR} to ${BRANCH}..."
+    cd "${REPO_DIR}"
+    git fetch origin "${BRANCH}"
+    git clean -df
+    git checkout "${BRANCH}"
+    git pull --ff-only origin "${BRANCH}"
+
+    rm -f "${REPO_DIR}"/target/debian/echo-swapp_*_*.deb
+    "$HOME/.cargo/bin/cargo" deb -p echo-swapp
+    REMOTE
 
 _require-goi-cloud-access:
     #!/usr/bin/env bash
@@ -391,33 +394,48 @@ deploy-goi-xlsx server:
     sudo systemctl status goi.service --no-pager
     sudo systemctl status goi-echo-worker.service --no-pager
     REMOTE
+
+[arg('builder', long='builder')]
 [arg('server', long='server')]
-deploy-echo-swapp server:
+deploy-echo-swapp server builder=goi_builder:
     #!/usr/bin/env bash
     set -euo pipefail
 
     SERVER="{{ server }}"
+    BUILDER="{{ builder }}"
+    BUILDER_HOME=""
+    BUILDER_REPO_DIR=""
+    ARTIFACT_DIR="$(mktemp -d)"
     DEB_PATH=""
     DEB_NAME=""
-    MESSENGER_DEB_DIR="{{ goi_dir }}/.deb"
     SIGNAL_DEB_PATH=""
     SIGNAL_DEB_NAME=""
     WHATSAPP_DEB_PATH=""
     WHATSAPP_DEB_NAME=""
 
-    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
-    just --justfile "{{ goi_dir }}/justfile" checkout-messenger-debs
+    trap 'rm -rf -- "${ARTIFACT_DIR}"' EXIT
 
-    SIGNAL_DEB_PATH="$(ls -1t "${MESSENGER_DEB_DIR}"/echo-im-signal_*_amd64.deb 2>/dev/null | head -n 1 || true)"
+    just --justfile "{{ goi_dir }}/justfile" build-echo-swapp --builder "$BUILDER"
+    just --justfile "{{ goi_dir }}/justfile" checkout-messenger-debs --builder "$BUILDER"
+
+    BUILDER_HOME="$(ssh "$BUILDER" 'printf %s "$HOME"')"
+    BUILDER_REPO_DIR="${BUILDER_HOME}/{{ goi_builder_repo_dir }}"
+
+    echo "Downloading deploy artifacts from ${BUILDER}..."
+    scp "${BUILDER}:${BUILDER_REPO_DIR}/goi/.deb/echo-im-signal_*_amd64.deb" "${ARTIFACT_DIR}/"
+    scp "${BUILDER}:${BUILDER_REPO_DIR}/goi/.deb/echo-im-whatsapp_*_amd64.deb" "${ARTIFACT_DIR}/"
+    scp "${BUILDER}:${BUILDER_REPO_DIR}/target/debian/echo-swapp_*_*.deb" "${ARTIFACT_DIR}/"
+
+    SIGNAL_DEB_PATH="$(ls -1t "${ARTIFACT_DIR}"/echo-im-signal_*_amd64.deb 2>/dev/null | head -n 1 || true)"
     if [[ -z "${SIGNAL_DEB_PATH}" ]]; then
-      echo "Failed to find echo-im-signal .deb in ${MESSENGER_DEB_DIR}" >&2
+      echo "Failed to download echo-im-signal .deb from ${BUILDER}" >&2
       exit 1
     fi
     SIGNAL_DEB_NAME="$(basename "${SIGNAL_DEB_PATH}")"
 
-    WHATSAPP_DEB_PATH="$(ls -1t "${MESSENGER_DEB_DIR}"/echo-im-whatsapp_*_amd64.deb 2>/dev/null | head -n 1 || true)"
+    WHATSAPP_DEB_PATH="$(ls -1t "${ARTIFACT_DIR}"/echo-im-whatsapp_*_amd64.deb 2>/dev/null | head -n 1 || true)"
     if [[ -z "${WHATSAPP_DEB_PATH}" ]]; then
-      echo "Failed to find echo-im-whatsapp .deb in ${MESSENGER_DEB_DIR}" >&2
+      echo "Failed to download echo-im-whatsapp .deb from ${BUILDER}" >&2
       exit 1
     fi
     WHATSAPP_DEB_NAME="$(basename "${WHATSAPP_DEB_PATH}")"
@@ -436,11 +454,9 @@ deploy-echo-swapp server:
       rm -f \"./${SIGNAL_DEB_NAME}\" \"./${WHATSAPP_DEB_NAME}\"
     "
 
-    just --justfile "{{ goi_dir }}/justfile" build-echo-swapp
-
-    DEB_PATH="$(ls -1t "{{ repo_dir }}"/target/debian/echo-swapp_*_*.deb | head -n 1)"
+    DEB_PATH="$(ls -1t "${ARTIFACT_DIR}"/echo-swapp_*_*.deb 2>/dev/null | head -n 1 || true)"
     if [[ -z "${DEB_PATH}" ]]; then
-      echo "Failed to find built echo-swapp .deb in target/debian" >&2
+      echo "Failed to download built echo-swapp .deb from ${BUILDER}" >&2
       exit 1
     fi
     DEB_NAME="$(basename "${DEB_PATH}")"
@@ -539,14 +555,14 @@ _backup-app-data server app_dir:
     echo "Backed up ${APP_DIR}/data to ${BACKUP_DIR}"
     REMOTE
 
+[arg('builder', long='builder')]
 [arg('server', long='server')]
-deploy server:
+deploy server builder=goi_builder:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
-
     SERVER="{{ server }}"
+    BUILDER="{{ builder }}"
     APP_DIR="{{ goi_app_dir }}"
     SRC_DIR="{{ goi_dir }}/goi/goi-{{ goi_version }}/"
 
@@ -591,8 +607,13 @@ deploy server:
     REMOTE
 
     echo "Syncing GOI source into ${SERVER}:${APP_DIR}..."
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      RSYNC_INFO_ARGS=(--progress --stats)
+    else
+      RSYNC_INFO_ARGS=(--info=flist2,progress2,stats2,name1)
+    fi
     rsync -az --human-readable \
-      --info=flist2,progress2,stats2,name1 \
+      "${RSYNC_INFO_ARGS[@]}" \
       --delete-after \
       --force \
       --exclude '.git/' \
@@ -648,16 +669,16 @@ deploy server:
     "
 
     just deploy-goi-echo-worker --server "$SERVER"
-    just deploy-echo-swapp --server "$SERVER"
+    just deploy-echo-swapp --server "$SERVER" --builder "$BUILDER"
 
+[arg('builder', long='builder')]
 [arg('server', long='server')]
-deploy-first server:
+deploy-first server builder=goi_builder:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
-
     SERVER="{{ server }}"
+    BUILDER="{{ builder }}"
     APP_DIR="{{ goi_app_dir }}"
     SRC_DIR="{{ goi_dir }}/goi/goi-{{ goi_version }}/"
 
@@ -739,7 +760,7 @@ deploy-first server:
     "
 
     just deploy-goi-echo-worker --server "$SERVER"
-    just deploy-echo-swapp --server "$SERVER"
+    just deploy-echo-swapp --server "$SERVER" --builder "$BUILDER"
 
 [arg('server', long='server')]
 deploy-swapp server:
