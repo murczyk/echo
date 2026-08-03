@@ -1380,7 +1380,9 @@ pub fn build_datetime_filter(
     }
 }
 
-/// Активні позивні на частотах мережі, які не входять до вже прив'язаних до мережі позивних
+/// Активні позивні на частотах мережі.
+/// Поточні прив'язки виключаються лише без історичного фільтра; звіт за період
+/// звіряє позивні з інтервалами прив'язки після завантаження активності.
 pub async fn get_active_callsigns(
     db: &DatabaseConnection,
     groups: &Vec<String>,
@@ -1409,7 +1411,9 @@ pub async fn get_active_callsigns(
         .await
         .context(h!())?;
 
-    let sigint_network_callsigns: Vec<String> =
+    let sigint_network_callsigns: Vec<String> = if filter.is_some() {
+        vec![]
+    } else {
         sigint_network_callsign::Entity::find()
             .select_only()
             .distinct()
@@ -1421,7 +1425,8 @@ pub async fn get_active_callsigns(
             .into_tuple()
             .all(db)
             .await
-            .context(h!())?;
+            .context(h!())?
+    };
 
     let expr_jsonb_callsigns = Expr::cust_with_expr(
         "jsonb_array_elements_text($1)",

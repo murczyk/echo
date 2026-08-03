@@ -58,6 +58,7 @@ describe('networks API etalonka report download', () => {
           includeCallsignFullNames: false,
           includeSigintSigns: true,
           includeConfirmation: false,
+          includeHeadingsAndFreqs: false,
         },
       },
     });
@@ -78,8 +79,10 @@ describe('networks API etalonka report download', () => {
         etalonka_type: {
           AccordingToTheForm: {
             active_freqs_only: true,
+            include_callsign_full_names: false,
             include_sigint_signs: true,
             include_confirmation: false,
+            include_headings_and_freqs: false,
           },
         },
       }),
@@ -104,6 +107,7 @@ describe('networks API etalonka report download', () => {
           includeSigintSigns: false,
           includeConfirmation: true,
           includePelengsMap: false,
+          includeHeadingsAndFreqs: false,
         },
       },
     });
@@ -118,10 +122,14 @@ describe('networks API etalonka report download', () => {
             since_date_inclusive_ms: 1,
             till_date_inclusive_ms: 2,
             active_freqs_only: false,
+            include_freq_active_from: false,
+            include_freq_created_at: true,
+            include_callsign_full_names: false,
             include_unit_callsigns: true,
             include_sigint_signs: false,
             include_confirmation: true,
             include_pelengs_map: false,
+            include_headings_and_freqs: false,
           },
         },
       }),

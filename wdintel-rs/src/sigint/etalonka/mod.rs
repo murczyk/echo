@@ -2134,7 +2134,7 @@ mod tests {
     use crate::entities::*;
     use crate::functest::tests::*;
     use crate::sigint::network::types::ListNetworksReq;
-    use chrono::{DateTime, Utc};
+    use chrono::Utc;
     use sea_orm::ActiveValue::Set;
     use sea_orm::*;
     use serde_json::json;
@@ -2284,15 +2284,17 @@ mod tests {
         .await
         .unwrap();
 
-        for (callsign, full_name) in
-            [("Beta", "Бутилкін Сергій"), ("Stale", "Старий Позивний")]
-        {
+        for (callsign, full_name, created_at) in [
+            ("Beta", "Бутилкін Сергій", now - chrono::Duration::days(1)),
+            ("Stale", "Старий Позивний", now - chrono::Duration::days(1)),
+            ("Late", "Пізній Позивний", now + chrono::Duration::hours(1)),
+        ] {
             sigint_network_callsign::ActiveModel {
                 sigint_network_id: Set(network.id),
                 sigint_callsign: Set(callsign.to_string()),
                 full_name: Set(Some(full_name.to_string())),
                 deleted: Set(false),
-                created_at: Set(now - chrono::Duration::days(1)),
+                created_at: Set(created_at),
                 developing: Set(false),
                 unit_developing: Set(false),
                 main_radio_station: Set(false),
@@ -2370,11 +2372,6 @@ mod tests {
         .await
         .unwrap();
 
-        let dt_kyiv = DateTime::<Utc>::from_naive_utc_and_offset(now, Utc)
-            .with_timezone(&Kyiv);
-        let date = dt_kyiv.format("%Y-%m-%d").to_string();
-        let time = dt_kyiv.format("%H:%M:%S").to_string();
-
         let _inbox_item = mk_sigint_inbox_item(
             &env.dbx,
             sigint_inbox_item::ActiveModel {
@@ -2383,11 +2380,12 @@ mod tests {
                 callsigns: Set(Some(json!([
                     "Alpha",
                     "Beta",
+                    "Late",
                     "Historical",
                     "Expired"
                 ]))),
-                date: Set(Some(date)),
-                time: Set(Some(time)),
+                date: Set(None),
+                time: Set(None),
                 parsed_unit_v2: Set(false),
                 ..Default::default()
             },
@@ -2424,8 +2422,7 @@ mod tests {
         .await
         .unwrap();
 
-        let datetime = inbox_item.datetime.expect("expected datetime");
-        let ts = datetime.and_utc().timestamp_millis();
+        let ts = now.and_utc().timestamp_millis();
 
         let req = EtalonkaJimForksReq {
             req: ListNetworksReq {
@@ -2511,6 +2508,7 @@ mod tests {
             .find(|callsign| callsign.callsign == "Beta")
             .expect("expected active linked callsign Beta");
         assert_eq!(linked_callsign.message_count, 1);
+        assert_eq!(linked_callsign.last_datetime, Some(ts));
         let historical_callsign = entry
             .net_callsigns
             .iter()
@@ -2527,6 +2525,14 @@ mod tests {
             .iter()
             .any(|callsign| callsign.callsign == "Expired"));
         assert!(!entry
+            .net_callsigns
+            .iter()
+            .any(|callsign| callsign.callsign == "Late"));
+        assert!(entry
+            .callsigns_detailed
+            .iter()
+            .any(|callsign| callsign.callsign == "Late"));
+        assert!(!entry
             .callsigns_detailed
             .iter()
             .any(|callsign| callsign.callsign == "Historical"));
@@ -2539,15 +2545,61 @@ mod tests {
     #[test]
     fn report_callsign_full_name_is_optional() {
         let callsign = NetworkCallsign {
-            full_name: Some("Бутилкін Сергій Говнович".to_string()),
+            full_name: Some("Коваленко Олексій Іванович".to_string()),
             ..make_network_callsign(1, "чебурашка", false, false, false)
         };
 
         assert_eq!(format_callsign(&callsign, false), "ЧЕБУРАШКА");
         assert_eq!(
             format_callsign(&callsign, true),
-            "ЧЕБУРАШКА (Бутилкін Сергій Говнович)"
+            "ЧЕБУРАШКА (Коваленко Олексій Іванович)"
         );
+    }
+
+    #[test]
+    fn extended_frequency_date_options_keep_header_and_row_layouts_aligned() {
+        let freq = NetworkFreqsRes {
+            network_freq_id: 1,
+            freq: "123.4500".to_string(),
+            encryption_id: None,
+            encryption: None,
+            encryption_key_ids: vec![],
+            encryption_keys: vec![],
+            message_count: 1,
+            callsigns: Some(vec!["alpha".to_string()]),
+            last_datetime: None,
+            last_datetime_in_aor: None,
+            created_at: 1,
+            is_active: true,
+            active_from: 1,
+            active_to: None,
+            modulation: None,
+        };
+
+        for (include_active_from, include_created_at, expected_cells) in [
+            (false, false, 5),
+            (true, false, 6),
+            (false, true, 6),
+            (true, true, 7),
+        ] {
+            let table = build_extended_freqs_table(
+                std::slice::from_ref(&freq),
+                1,
+                include_active_from,
+                include_created_at,
+            )
+            .unwrap();
+            let cell_counts = table
+                .rows
+                .iter()
+                .map(|row| {
+                    let TableChild::TableRow(row) = row;
+                    row.cells.len()
+                })
+                .collect::<Vec<_>>();
+
+            assert_eq!(cell_counts, vec![expected_cells, expected_cells]);
+        }
     }
 
     #[test]

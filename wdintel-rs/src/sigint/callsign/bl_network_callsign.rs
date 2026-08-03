@@ -1335,7 +1335,6 @@ where
         .select_only()
         .column(sigint_inbox_item::Column::Id)
         .column(sigint_inbox_item::Column::Freq)
-        .column(sigint_inbox_item::Column::Datetime)
         .expr_as(activity_datetime, "activity_datetime")
         .expr_as(expr_jsonb_callsigns, "callsign")
         .join(
@@ -1380,8 +1379,7 @@ where
         .from_subquery(subquery, "messages")
         .column("callsign")
         .expr_as(Expr::cust("COUNT(DISTINCT id)"), "message_count")
-        .expr_as(Expr::cust("MAX(datetime)"), "last_datetime")
-        .expr_as(Expr::cust("MAX(activity_datetime)"), "activity_datetime")
+        .expr_as(Expr::cust("MAX(activity_datetime)"), "last_datetime")
         .expr_as(Expr::cust("ARRAY_AGG(DISTINCT freq)"), "freqs")
         .and_where(Expr::column("callsign").eq(PgFunc::any(expr_callsigns)))
         .group_by_col("callsign")
@@ -1405,21 +1403,17 @@ where
             query_result.try_get("", "callsign").context(h!())?;
         let message_count: i64 =
             query_result.try_get("", "message_count").context(h!())?;
-        let last_datetime: Option<NaiveDateTime> =
+        let last_datetime: NaiveDateTime =
             query_result.try_get("", "last_datetime").context(h!())?;
-        let activity_datetime: NaiveDateTime = query_result
-            .try_get("", "activity_datetime")
-            .context(h!())?;
         let freqs: Vec<String> =
             query_result.try_get("", "freqs").context(h!())?;
 
         let activity_info = CallsignActivityInfo {
             message_count,
-            last_datetime: last_datetime
-                .map(|ts| ts.and_utc().timestamp_millis()),
+            last_datetime: Some(last_datetime.and_utc().timestamp_millis()),
             freqs: Some(freqs),
             network_names: Some(network_names.clone()),
-            activity_datetime,
+            activity_datetime: last_datetime,
         };
         callsigns_activity_info.insert(callsign, activity_info);
     }
