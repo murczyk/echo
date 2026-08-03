@@ -56,20 +56,28 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
           const detailsHref = `/rer-units/${row.original.id}`;
           const filesHref = `${detailsHref}?tab=files`;
           return (
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-              <Link
-                href={detailsHref}
-                onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
-                sx={{
-                  display: 'block',
-                  minWidth: 0,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {row.original.name}
-              </Link>
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              useFlexGap
+              sx={{ minWidth: 0, width: '100%' }}
+            >
+              <Tooltip title={row.original.name}>
+                <Link
+                  href={detailsHref}
+                  onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
+                  sx={{
+                    display: 'block',
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {row.original.name}
+                </Link>
+              </Tooltip>
               <Stack
                 direction="row"
                 spacing={1}
@@ -85,12 +93,12 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
                       aria-label={`Відкрити файли підрозділу ${row.original.name}`}
                     >
                       <Chip
+                        component="span"
                         icon={<AttachFileIcon />}
-                        label="Файл"
+                        label="Файли"
                         size="small"
                         color="primary"
                         variant="outlined"
-                        clickable
                       />
                     </Link>
                   </Tooltip>
@@ -102,7 +110,13 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
                       underline="none"
                       aria-label={`Відкрити дані Orbit підрозділу ${row.original.name}`}
                       onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
-                      sx={{ display: 'inline-flex', alignItems: 'center' }}
+                      sx={{
+                        display: 'inline-flex',
+                        minWidth: 24,
+                        minHeight: 24,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
                     >
                       <Box
                         component="img"

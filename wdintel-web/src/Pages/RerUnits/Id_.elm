@@ -561,15 +561,39 @@ orbitDataCard canManageOrbitData shared orbitUnitUnlinking orbitUnit =
 
 orbitDataActions : Maybe String -> B.OrbitUnitDetails -> Html Msg
 orbitDataActions orbitUnitUnlinking orbitUnit =
+    let
+        isUnlinking =
+            orbitUnitUnlinking == Just orbitUnit.unitId
+
+        actionLabel =
+            if isUnlinking then
+                "Відв’язування Orbit підрозділу"
+
+            else
+                "Дії з даними Orbit"
+    in
     div [ class "dropdown" ]
         [ button
             [ class "btn btn-sm btn-link text-secondary"
             , type_ "button"
+            , disabled (orbitUnitUnlinking /= Nothing)
             , attribute "data-bs-toggle" "dropdown"
             , attribute "aria-expanded" "false"
-            , attribute "aria-label" "Дії з даними Orbit"
+            , attribute "aria-label" actionLabel
+            , attribute "aria-busy"
+                (if isUnlinking then
+                    "true"
+
+                 else
+                    "false"
+                )
             ]
-            [ i [ class "bi bi-three-dots-vertical" ] [] ]
+            [ if isUnlinking then
+                span [ class "spinner-border spinner-border-sm" ] []
+
+              else
+                i [ class "bi bi-three-dots-vertical" ] []
+            ]
         , ul [ class "dropdown-menu dropdown-menu-end" ]
             [ li []
                 [ button
@@ -579,7 +603,13 @@ orbitDataActions orbitUnitUnlinking orbitUnit =
                     , onClick (UnlinkOrbitUnit orbitUnit)
                     ]
                     [ i [ class "bi bi-link-45deg" ] []
-                    , text "Відв'язати Orbit підрозділ"
+                    , text
+                        (if isUnlinking then
+                            "Відв’язування…"
+
+                         else
+                            "Відв'язати Orbit підрозділ"
+                        )
                     ]
                 ]
             ]
