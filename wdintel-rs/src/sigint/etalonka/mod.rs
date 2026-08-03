@@ -2329,6 +2329,40 @@ mod tests {
         .await
         .unwrap();
 
+        let moved_at = now - chrono::Duration::hours(6);
+        let moved_callsign = sigint_network_callsign::ActiveModel {
+            sigint_network_id: Set(network.id),
+            sigint_callsign: Set("Moved".to_string()),
+            deleted: Set(false),
+            created_at: Set(now - chrono::Duration::days(1)),
+            developing: Set(false),
+            unit_developing: Set(false),
+            main_radio_station: Set(false),
+            command_control: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        sigint_network_callsign_changelog::ActiveModel {
+            sigint_network_callsign_id: Set(moved_callsign.id),
+            login_id: Set(login.id),
+            action: Set(
+                crate::entities::sea_orm_active_enums::ChangelogActionEnum::Update,
+            ),
+            old_value: Set(Some(json!({
+                "sigint_network_id": network.id + 1,
+            }))),
+            new_value: Set(Some(json!({
+                "sigint_network_id": network.id,
+            }))),
+            created_at: Set(moved_at),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
         sigint_callsign::ActiveModel {
             callsign: Set("Alpha".to_string()),
             position: Set("pos".to_string()),
@@ -2473,7 +2507,7 @@ mod tests {
             &freq,
             historical_activity_at,
             "uid-historical",
-            &["Relinked"],
+            &["Relinked", "Moved"],
         )
         .await;
         insert_network_activity(
@@ -2484,7 +2518,15 @@ mod tests {
             &freq,
             now,
             "uid-current",
-            &["Alpha", "Beta", "Late", "Historical", "Expired", "Relinked"],
+            &[
+                "Alpha",
+                "Beta",
+                "Late",
+                "Historical",
+                "Expired",
+                "Relinked",
+                "Moved",
+            ],
         )
         .await;
 
@@ -2599,6 +2641,13 @@ mod tests {
         assert!(current_relinked.active);
         assert_eq!(current_relinked.message_count, 1);
         assert_eq!(current_relinked.last_datetime, Some(ts));
+        let moved = entry
+            .net_callsigns
+            .iter()
+            .find(|callsign| callsign.id == moved_callsign.id)
+            .expect("expected moved callsign");
+        assert_eq!(moved.message_count, 1);
+        assert_eq!(moved.last_datetime, Some(ts));
         assert!(!entry
             .net_callsigns
             .iter()

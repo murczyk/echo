@@ -1089,43 +1089,85 @@ async fn network_callsigns_activity_targets_for_period<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let deleted_ids = network_callsigns
+    let network_callsign_ids = network_callsigns
         .iter()
-        .filter(|network_callsign| network_callsign.deleted)
         .map(|network_callsign| network_callsign.id)
         .collect::<Vec<_>>();
-    let deletion_records = sigint_network_callsign_changelog::Entity::find()
+    let changelog_records = sigint_network_callsign_changelog::Entity::find()
         .filter(
             sigint_network_callsign_changelog::Column::SigintNetworkCallsignId
-                .is_in(deleted_ids),
-        )
-        .filter(
-            sigint_network_callsign_changelog::Column::Action
-                .eq(ChangelogActionEnum::Delete),
+                .is_in(network_callsign_ids),
         )
         .order_by_asc(sigint_network_callsign_changelog::Column::CreatedAt)
+        .order_by_asc(sigint_network_callsign_changelog::Column::Id)
         .all(txn)
         .await
         .context(h!())?;
-    let deletion_times = deletion_records.into_iter().fold(
-        HashMap::new(),
-        |mut deletion_times, deletion_record| {
-            deletion_times
-                .entry(deletion_record.sigint_network_callsign_id)
-                .or_insert(deletion_record.created_at);
-            deletion_times
-        },
-    );
+    let deletion_times = network_callsign_deletion_times(&changelog_records);
+    let assignment_times =
+        network_callsign_assignment_times(&changelog_records);
 
     Ok(build_network_callsign_activity_targets(
         network_callsigns,
         &deletion_times,
+        &assignment_times,
     ))
+}
+
+fn network_callsign_deletion_times(
+    changelog_records: &[sigint_network_callsign_changelog::Model],
+) -> HashMap<i64, NaiveDateTime> {
+    changelog_records.iter().fold(
+        HashMap::new(),
+        |mut deletion_times, deletion_record| {
+            if deletion_record.action == ChangelogActionEnum::Delete {
+                deletion_times
+                    .entry(deletion_record.sigint_network_callsign_id)
+                    .or_insert(deletion_record.created_at);
+            }
+            deletion_times
+        },
+    )
+}
+
+fn network_callsign_assignment_times(
+    changelog_records: &[sigint_network_callsign_changelog::Model],
+) -> HashMap<(i64, i64), NaiveDateTime> {
+    changelog_records.iter().fold(
+        HashMap::new(),
+        |mut assignment_times, changelog_record| {
+            let old_network_id =
+                changelog_network_id(changelog_record.old_value.as_ref());
+            let new_network_id =
+                changelog_network_id(changelog_record.new_value.as_ref());
+            if let (Some(old_network_id), Some(new_network_id)) =
+                (old_network_id, new_network_id)
+            {
+                if old_network_id != new_network_id {
+                    assignment_times.insert(
+                        (
+                            changelog_record.sigint_network_callsign_id,
+                            new_network_id,
+                        ),
+                        changelog_record.created_at,
+                    );
+                }
+            }
+            assignment_times
+        },
+    )
+}
+
+fn changelog_network_id(value: Option<&serde_json::Value>) -> Option<i64> {
+    value?
+        .get("sigint_network_id")
+        .and_then(serde_json::Value::as_i64)
 }
 
 fn build_network_callsign_activity_targets(
     network_callsigns: &[NetworkCallsignResult],
     deletion_times: &HashMap<i64, NaiveDateTime>,
+    assignment_times: &HashMap<(i64, i64), NaiveDateTime>,
 ) -> Vec<NetworkCallsignActivityTarget> {
     network_callsigns
         .iter()
@@ -1138,15 +1180,17 @@ fn build_network_callsign_activity_targets(
             if network_callsign.deleted && active_to.is_none() {
                 return None;
             }
-            if active_to.is_some_and(|active_to| {
-                active_to < network_callsign.created_at
-            }) {
+            let active_from = assignment_times
+                .get(&(network_callsign.id, network_callsign.sigint_network_id))
+                .copied()
+                .unwrap_or(network_callsign.created_at);
+            if active_to.is_some_and(|active_to| active_to < active_from) {
                 return None;
             }
             Some(NetworkCallsignActivityTarget {
                 id: network_callsign.id,
                 callsign: network_callsign.sigint_callsign.clone(),
-                active_from: network_callsign.created_at,
+                active_from,
                 active_to,
             })
         })
@@ -1926,6 +1970,7 @@ mod tests {
         let targets = build_network_callsign_activity_targets(
             &callsigns,
             &deletion_times,
+            &HashMap::new(),
         );
 
         assert_eq!(targets.len(), 1);
@@ -1933,6 +1978,27 @@ mod tests {
         assert_eq!(targets[0].callsign, "historical");
         assert_eq!(targets[0].active_from, active_from);
         assert_eq!(targets[0].active_to, Some(active_to));
+    }
+
+    #[test]
+    fn moved_network_callsign_starts_activity_at_reassignment() {
+        let created_at =
+            NaiveDateTime::parse_from_str("2026-06-01 00:00:00", "%F %T")
+                .unwrap();
+        let reassigned_at =
+            NaiveDateTime::parse_from_str("2026-06-15 00:00:00", "%F %T")
+                .unwrap();
+        let callsigns =
+            vec![network_callsign_result(1, "moved", created_at, false)];
+
+        let targets = build_network_callsign_activity_targets(
+            &callsigns,
+            &HashMap::new(),
+            &HashMap::from([((1, 2), reassigned_at)]),
+        );
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].active_from, reassigned_at);
     }
 
     #[test]
