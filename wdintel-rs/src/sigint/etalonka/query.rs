@@ -7,7 +7,9 @@ use crate::error::AppError;
 use crate::rer_importer::analysis::{
     filter_selected_networks, filter_selected_networks_stmt,
 };
-use crate::sigint::callsign::bl_network_callsign::get_callsigns_activity_info;
+use crate::sigint::callsign::bl_network_callsign::{
+    get_callsigns_activity_info, get_unassigned_callsigns_activity_info,
+};
 use crate::sigint::etalonka::types::*;
 use crate::sigint::network::filter::{
     apply_network_list_filters_with_text_search_mode, NetworkTextSearchMode,
@@ -1133,6 +1135,7 @@ pub async fn load_callsigns(
         crate::sigint::network::types::SingleNetworkCallsignsSection,
     >,
     filter: Option<&NetworkFreqFilter>,
+    exclude_network_callsign_activity: bool,
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
 
@@ -1198,17 +1201,34 @@ pub async fn load_callsigns(
     // Step 2. Get activity info for callsigns with known_callsigns
     let callsigns = res.iter().map(|c| c.callsign.clone()).collect::<Vec<_>>();
 
-    let known_callsigns_activity_info = get_callsigns_activity_info(
-        db,
-        groups.clone(),
-        network_id,
-        &callsigns,
-        filter,
-    )
-    .await
-    .context(h!())?;
+    let known_callsigns_activity_info = if exclude_network_callsign_activity {
+        get_unassigned_callsigns_activity_info(
+            db,
+            groups.clone(),
+            network_id,
+            &callsigns,
+            filter.context(h!())?,
+        )
+        .await
+        .context(h!())?
+    } else {
+        get_callsigns_activity_info(
+            db,
+            groups.clone(),
+            network_id,
+            &callsigns,
+            filter,
+        )
+        .await
+        .context(h!())?
+    };
 
     apply_activity_info(&mut res, &known_callsigns_activity_info);
+    if exclude_network_callsign_activity {
+        res.retain(|callsign| {
+            known_callsigns_activity_info.contains_key(&callsign.callsign)
+        });
+    }
 
     let duration = start.elapsed();
     trace!(

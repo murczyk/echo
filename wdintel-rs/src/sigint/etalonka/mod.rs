@@ -446,25 +446,13 @@ pub(crate) async fn collect_etalonka_data_with_progress(
                     true,
                     None,
                     Some(&filter),
+                    true,
                 )
                 .await
                 .context(h!())?
             } else {
                 vec![]
             };
-            let linked_callsigns = entry
-                .net_callsigns
-                .iter()
-                .map(|callsign| callsign.callsign.trim().to_lowercase())
-                .collect::<HashSet<_>>();
-            let callsigns_detailed = callsigns_detailed
-                .into_iter()
-                .filter(|callsign| {
-                    !linked_callsigns
-                        .contains(&callsign.callsign.trim().to_lowercase())
-                })
-                .collect();
-
             entry.callsigns_detailed = callsigns_detailed;
 
             let freqs = load_freqs(
@@ -2287,6 +2275,15 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
+        let other_network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("OtherNetwork".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
 
         sigint_network_unit::ActiveModel {
             network_id: Set(network.id),
@@ -2351,10 +2348,43 @@ mod tests {
                 crate::entities::sea_orm_active_enums::ChangelogActionEnum::Update,
             ),
             old_value: Set(Some(json!({
-                "sigint_network_id": network.id + 1,
+                "sigint_network_id": other_network.id,
             }))),
             new_value: Set(Some(json!({
                 "sigint_network_id": network.id,
+            }))),
+            created_at: Set(moved_at),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let moved_away_callsign = sigint_network_callsign::ActiveModel {
+            sigint_network_id: Set(other_network.id),
+            sigint_callsign: Set("MovedAway".to_string()),
+            deleted: Set(false),
+            created_at: Set(now - chrono::Duration::days(1)),
+            developing: Set(false),
+            unit_developing: Set(false),
+            main_radio_station: Set(false),
+            command_control: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        sigint_network_callsign_changelog::ActiveModel {
+            sigint_network_callsign_id: Set(moved_away_callsign.id),
+            login_id: Set(login.id),
+            action: Set(
+                crate::entities::sea_orm_active_enums::ChangelogActionEnum::Update,
+            ),
+            old_value: Set(Some(json!({
+                "sigint_network_id": network.id,
+            }))),
+            new_value: Set(Some(json!({
+                "sigint_network_id": other_network.id,
             }))),
             created_at: Set(moved_at),
             ..Default::default()
@@ -2507,7 +2537,7 @@ mod tests {
             &freq,
             historical_activity_at,
             "uid-historical",
-            &["Relinked", "Moved"],
+            &["Relinked", "Moved", "MovedAway"],
         )
         .await;
         insert_network_activity(
@@ -2526,6 +2556,7 @@ mod tests {
                 "Expired",
                 "Relinked",
                 "Moved",
+                "MovedAway",
             ],
         )
         .await;
@@ -2648,6 +2679,29 @@ mod tests {
             .expect("expected moved callsign");
         assert_eq!(moved.message_count, 1);
         assert_eq!(moved.last_datetime, Some(ts));
+        let moved_unassigned = entry
+            .callsigns_detailed
+            .iter()
+            .find(|callsign| callsign.callsign == "Moved")
+            .expect("expected pre-assignment moved callsign activity");
+        assert_eq!(moved_unassigned.message_count, 1);
+        assert_eq!(moved_unassigned.last_datetime, Some(historical_ts));
+        let moved_away = entry
+            .net_callsigns
+            .iter()
+            .find(|callsign| callsign.id == moved_away_callsign.id)
+            .expect("expected historically assigned moved-away callsign");
+        assert_eq!(moved_away.network_id, network.id);
+        assert!(!moved_away.active);
+        assert_eq!(moved_away.message_count, 1);
+        assert_eq!(moved_away.last_datetime, Some(historical_ts));
+        let moved_away_unassigned = entry
+            .callsigns_detailed
+            .iter()
+            .find(|callsign| callsign.callsign == "MovedAway")
+            .expect("expected post-assignment moved-away callsign activity");
+        assert_eq!(moved_away_unassigned.message_count, 1);
+        assert_eq!(moved_away_unassigned.last_datetime, Some(ts));
         assert!(!entry
             .net_callsigns
             .iter()

@@ -3573,6 +3573,7 @@ pub async fn network_callsigns_list(
         include_activity_info,
         req.section,
         None,
+        false,
     )
     .await
     .context(h!())?;
