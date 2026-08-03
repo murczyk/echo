@@ -281,6 +281,36 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
     [setState],
   );
 
+  const setEtalonkaReportIncludeCallsignFullNames = useCallback(
+    (includeCallsignFullNames: boolean) => {
+      updateReportState(setState, (current) => ({
+        ...current,
+        includeCallsignFullNames,
+      }));
+    },
+    [setState],
+  );
+
+  const setEtalonkaReportIncludeFreqActiveFrom = useCallback(
+    (includeFreqActiveFrom: boolean) => {
+      updateReportState(setState, (current) => ({
+        ...current,
+        includeFreqActiveFrom,
+      }));
+    },
+    [setState],
+  );
+
+  const setEtalonkaReportIncludeFreqCreatedAt = useCallback(
+    (includeFreqCreatedAt: boolean) => {
+      updateReportState(setState, (current) => ({
+        ...current,
+        includeFreqCreatedAt,
+      }));
+    },
+    [setState],
+  );
+
   const setEtalonkaReportIncludeSigintSigns = useCallback(
     (includeSigintSigns: boolean) => {
       updateReportState(setState, (current) => ({
@@ -375,6 +405,9 @@ export function useRerNetworkDetailsNeoPageReportActions({ state, setState }: Ar
     closeEtalonkaReportDialog,
     setEtalonkaReportType,
     setEtalonkaReportActiveFreqsOnly,
+    setEtalonkaReportIncludeFreqActiveFrom,
+    setEtalonkaReportIncludeFreqCreatedAt,
+    setEtalonkaReportIncludeCallsignFullNames,
     setEtalonkaReportIncludeSigintSigns,
     setEtalonkaReportIncludeConfirmation,
     setEtalonkaReportIncludeHeadingsAndFreqs,

@@ -6602,6 +6602,9 @@ type alias EtalonkaExtendedSettings =
     { sinceDateInclusiveMs : Int
     , tillDateInclusiveMs : Maybe (Int)
     , activeFreqsOnly : Bool
+    , includeFreqActiveFrom : Bool
+    , includeFreqCreatedAt : Bool
+    , includeCallsignFullNames : Bool
     , includeUnitCallsigns : Bool
     , includeSigintSigns : Bool
     , includeConfirmation : Bool
@@ -6616,6 +6619,9 @@ etalonkaExtendedSettingsEncoder struct =
         [ ( "since_date_inclusive_ms", (Json.Encode.int) struct.sinceDateInclusiveMs )
         , ( "till_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillDateInclusiveMs )
         , ( "active_freqs_only", (Json.Encode.bool) struct.activeFreqsOnly )
+        , ( "include_freq_active_from", (Json.Encode.bool) struct.includeFreqActiveFrom )
+        , ( "include_freq_created_at", (Json.Encode.bool) struct.includeFreqCreatedAt )
+        , ( "include_callsign_full_names", (Json.Encode.bool) struct.includeCallsignFullNames )
         , ( "include_unit_callsigns", (Json.Encode.bool) struct.includeUnitCallsigns )
         , ( "include_sigint_signs", (Json.Encode.bool) struct.includeSigintSigns )
         , ( "include_confirmation", (Json.Encode.bool) struct.includeConfirmation )
@@ -6656,6 +6662,7 @@ etalonkaNetworkBatchReqEncoder struct =
 
 type alias EtalonkaSettings =
     { activeFreqsOnly : Bool
+    , includeCallsignFullNames : Bool
     , includeSigintSigns : Bool
     , includeConfirmation : Bool
     , includeHeadingsAndFreqs : Bool
@@ -6666,6 +6673,7 @@ etalonkaSettingsEncoder : EtalonkaSettings -> Json.Encode.Value
 etalonkaSettingsEncoder struct =
     Json.Encode.object
         [ ( "active_freqs_only", (Json.Encode.bool) struct.activeFreqsOnly )
+        , ( "include_callsign_full_names", (Json.Encode.bool) struct.includeCallsignFullNames )
         , ( "include_sigint_signs", (Json.Encode.bool) struct.includeSigintSigns )
         , ( "include_confirmation", (Json.Encode.bool) struct.includeConfirmation )
         , ( "include_headings_and_freqs", (Json.Encode.bool) struct.includeHeadingsAndFreqs )
@@ -6754,6 +6762,7 @@ type alias KnownCallsignShortRes =
     , callsign : String
     , position : String
     , comment : String
+    , fullName : String
     , unitId : Int
     , unitName : String
     , sourceName : String
@@ -6768,6 +6777,7 @@ knownCallsignShortResEncoder struct =
         , ( "callsign", (Json.Encode.string) struct.callsign )
         , ( "position", (Json.Encode.string) struct.position )
         , ( "comment", (Json.Encode.string) struct.comment )
+        , ( "full_name", (Json.Encode.string) struct.fullName )
         , ( "unit_id", (Json.Encode.int) struct.unitId )
         , ( "unit_name", (Json.Encode.string) struct.unitName )
         , ( "source_name", (Json.Encode.string) struct.sourceName )
@@ -14113,6 +14123,9 @@ etalonkaExtendedSettingsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_inclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_freqs_only" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_freq_active_from" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_freq_created_at" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_callsign_full_names" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_unit_callsigns" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_sigint_signs" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_confirmation" (Json.Decode.bool)))
@@ -14139,6 +14152,7 @@ etalonkaSettingsDecoder : Json.Decode.Decoder EtalonkaSettings
 etalonkaSettingsDecoder =
     Json.Decode.succeed EtalonkaSettings
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_freqs_only" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_callsign_full_names" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_sigint_signs" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_confirmation" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_headings_and_freqs" (Json.Decode.bool)))
@@ -14190,6 +14204,7 @@ knownCallsignShortResDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "position" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "full_name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_name" (Json.Decode.string)))

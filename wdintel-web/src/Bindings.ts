@@ -2547,6 +2547,9 @@ export type EtalonkaExtendedSettings = {
   sinceDateInclusiveMs: number;
   tillDateInclusiveMs: number | null;
   activeFreqsOnly: boolean;
+  includeFreqActiveFrom: boolean;
+  includeFreqCreatedAt: boolean;
+  includeCallsignFullNames: boolean;
   includeUnitCallsigns: boolean;
   includeSigintSigns: boolean;
   includeConfirmation: boolean;
@@ -2567,6 +2570,7 @@ export type EtalonkaNetworkBatchReq = {
 
 export type EtalonkaSettings = {
   activeFreqsOnly: boolean;
+  includeCallsignFullNames: boolean;
   includeSigintSigns: boolean;
   includeConfirmation: boolean;
   includeHeadingsAndFreqs: boolean;
@@ -2610,6 +2614,7 @@ export type KnownCallsignShortRes = {
   callsign: string;
   position: string;
   comment: string;
+  fullName: string;
   unitId: number;
   unitName: string;
   sourceName: string;

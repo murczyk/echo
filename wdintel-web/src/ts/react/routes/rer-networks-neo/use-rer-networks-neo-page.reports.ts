@@ -317,6 +317,7 @@ export function createRerNetworksNeoReportActions(args: ReportArgs) {
               etalonkaType: {
                 AccordingToTheForm: {
                   activeFreqsOnly: true,
+                  includeCallsignFullNames: false,
                   includeSigintSigns: true,
                   includeConfirmation: true,
                   includeHeadingsAndFreqs: false,

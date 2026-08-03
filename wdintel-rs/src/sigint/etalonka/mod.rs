@@ -407,13 +407,24 @@ pub(crate) async fn collect_etalonka_data_with_progress(
                 sort_by: None,
             };
             // list of callsigns manually assigned to the Network
-            let net_callsigns = bl_get_network_callsigns_list(
-                &list_network_callsigns_req,
-                user_id,
-                dbx,
-            )
-            .await
-            .context(h!())?;
+            let net_callsigns = if is_extended_report {
+                bl_get_network_callsigns_list_for_period(
+                    &list_network_callsigns_req,
+                    user_id,
+                    dbx,
+                    &filter,
+                )
+                .await
+                .context(h!())?
+            } else {
+                bl_get_network_callsigns_list(
+                    &list_network_callsigns_req,
+                    user_id,
+                    dbx,
+                )
+                .await
+                .context(h!())?
+            };
 
             if !net_callsigns.is_empty() {
                 let unique_count = net_callsigns
@@ -441,6 +452,18 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             } else {
                 vec![]
             };
+            let linked_callsigns = entry
+                .net_callsigns
+                .iter()
+                .map(|callsign| callsign.callsign.trim().to_lowercase())
+                .collect::<HashSet<_>>();
+            let callsigns_detailed = callsigns_detailed
+                .into_iter()
+                .filter(|callsign| {
+                    !linked_callsigns
+                        .contains(&callsign.callsign.trim().to_lowercase())
+                })
+                .collect();
 
             entry.callsigns_detailed = callsigns_detailed;
 
@@ -738,7 +761,12 @@ pub async fn etalonka_extended(
             // Add Section 5b with known callsigns assigned to the Unit, which was present in radio communication
             // during selected period
             if settings.include_unit_callsigns {
-                doc = add_unit_callsigns_section(doc, callsigns, width_unit);
+                doc = add_unit_callsigns_section(
+                    doc,
+                    callsigns,
+                    width_unit,
+                    settings.include_callsign_full_names,
+                );
             }
 
             // Add Section 6 with network freques
@@ -1059,6 +1087,15 @@ fn add_network_callsigns_section(
     width_unit: usize,
     report_type: &EtalonkaReportType,
 ) -> Docx {
+    let include_full_names = match report_type {
+        EtalonkaReportType::AccordingToTheForm(settings) => {
+            settings.include_callsign_full_names
+        }
+        EtalonkaReportType::ExtendedReport(settings) => {
+            settings.include_callsign_full_names
+        }
+    };
+
     // Section title
     doc = add_field(doc, "5. Позивні: ", "");
 
@@ -1070,12 +1107,19 @@ fn add_network_callsigns_section(
         match report_type {
             EtalonkaReportType::AccordingToTheForm(_) => {
                 build_basic_network_callsigns_table(
-                    table_type, callsigns, width,
+                    table_type,
+                    callsigns,
+                    width,
+                    include_full_names,
                 )
             }
             EtalonkaReportType::ExtendedReport(_) => {
                 build_extended_network_callsigns_table(
-                    table_type, callsigns, sources, width,
+                    table_type,
+                    callsigns,
+                    sources,
+                    width,
+                    include_full_names,
                 )
             }
         }
@@ -1146,7 +1190,7 @@ fn add_network_callsigns_section(
         let callsigns_other = net_callsigns
             .iter()
             .filter(|c| c.developing)
-            .map(|c| c.callsign.to_uppercase())
+            .map(|c| format_callsign(c, include_full_names))
             .collect::<Vec<String>>()
             .join(", ");
 
@@ -1165,6 +1209,7 @@ fn add_unit_callsigns_section(
     mut doc: Docx,
     callsigns: &[CallsignRes],
     width_unit: usize,
+    include_full_names: bool,
 ) -> Docx {
     if !callsigns.is_empty() {
         let filtered_callsigns: Vec<CallsignRes> = callsigns
@@ -1183,9 +1228,11 @@ fn add_unit_callsigns_section(
             doc = add_field(doc, "Співпадіння з каталогом: ", "");
 
             // Add known callsigns linked to the unit in table
-            if let Some(table) =
-                build_unit_callsigns_table(&filtered_callsigns, width_unit)
-            {
+            if let Some(table) = build_unit_callsigns_table(
+                &filtered_callsigns,
+                width_unit,
+                include_full_names,
+            ) {
                 doc = doc.add_table(table);
             }
         }
@@ -1228,8 +1275,13 @@ fn add_network_freqs_section(
             EtalonkaReportType::AccordingToTheForm(_) => {
                 build_basic_freqs_table(freqs, width)
             }
-            EtalonkaReportType::ExtendedReport(_) => {
-                build_extended_freqs_table(freqs, width)
+            EtalonkaReportType::ExtendedReport(settings) => {
+                build_extended_freqs_table(
+                    freqs,
+                    width,
+                    settings.include_freq_active_from,
+                    settings.include_freq_created_at,
+                )
             }
         };
 
@@ -1282,6 +1334,7 @@ fn build_basic_network_callsigns_table(
     callsigns_table_type: &CallsignTableType,
     net_callsigns: &[NetworkCallsign],
     width_unit: usize,
+    include_full_names: bool,
 ) -> Option<Table> {
     if net_callsigns.is_empty() {
         return None;
@@ -1320,7 +1373,7 @@ fn build_basic_network_callsigns_table(
         vec![
             create_table_data_cell(
                 width_unit * 9,
-                &callsign.callsign.to_uppercase(),
+                &format_callsign(callsign, include_full_names),
                 None,
                 false,
             ),
@@ -1371,6 +1424,7 @@ fn build_extended_network_callsigns_table(
     net_callsigns: &[NetworkCallsign],
     sources: Option<&HashMap<i64, String>>,
     width_unit: usize,
+    include_full_names: bool,
 ) -> Option<Table> {
     if net_callsigns.is_empty() {
         return None;
@@ -1451,7 +1505,7 @@ fn build_extended_network_callsigns_table(
             vec![
                 create_table_data_cell(
                     width_unit * 6,
-                    &callsign.callsign.to_uppercase(),
+                    &format_callsign(callsign, include_full_names),
                     None,
                     false,
                 ),
@@ -1537,6 +1591,7 @@ fn build_extended_network_callsigns_table(
 fn build_unit_callsigns_table(
     callsigns: &[CallsignRes],
     width_unit: usize,
+    include_full_names: bool,
 ) -> Option<Table> {
     if callsigns.is_empty() {
         return None;
@@ -1615,7 +1670,7 @@ fn build_unit_callsigns_table(
         vec![
             create_table_data_cell(
                 width_unit * 6,
-                &callsign.callsign.to_uppercase(),
+                &format_detailed_callsign(callsign, include_full_names),
                 None,
                 false,
             ),
@@ -1742,10 +1797,15 @@ fn build_basic_freqs_table(
 fn build_extended_freqs_table(
     freqs: &[NetworkFreqsRes],
     width_unit: usize,
+    include_active_from: bool,
+    include_created_at: bool,
 ) -> Option<Table> {
     let header_style_id = gen_style_id_by_name(TABLE_HEADER_STYLE_NAME);
+    let date_columns_count =
+        usize::from(include_active_from) + usize::from(include_created_at);
+    let callsigns_width = 30 - 7 * date_columns_count;
 
-    let headers = vec![
+    let mut headers = vec![
         create_table_header_cell(
             width_unit * 4,
             Some(DEFAULT_TABLE_HEADER_COLOR),
@@ -1771,7 +1831,7 @@ fn build_extended_freqs_table(
             0,
         ),
         create_table_header_cell(
-            width_unit * 23,
+            width_unit * callsigns_width,
             Some(DEFAULT_TABLE_HEADER_COLOR),
             &header_style_id,
             "Позивні",
@@ -1786,15 +1846,28 @@ fn build_extended_freqs_table(
             false,
             0,
         ),
-        create_table_header_cell(
+    ];
+
+    if include_active_from {
+        headers.push(create_table_header_cell(
+            width_unit * 7,
+            Some(DEFAULT_TABLE_HEADER_COLOR),
+            &header_style_id,
+            "Активна з",
+            false,
+            0,
+        ));
+    }
+    if include_created_at {
+        headers.push(create_table_header_cell(
             width_unit * 7,
             Some(DEFAULT_TABLE_HEADER_COLOR),
             &header_style_id,
             "Дата прив'язки",
             false,
             0,
-        ),
-    ];
+        ));
+    }
 
     let row_builder = move |freq: &NetworkFreqsRes| {
         let formatted_callsigns = freq
@@ -1809,7 +1882,7 @@ fn build_extended_freqs_table(
             })
             .unwrap_or_default();
 
-        vec![
+        let mut cells = vec![
             create_table_data_cell(width_unit * 4, &freq.freq, None, false),
             create_table_data_cell(
                 width_unit * 5,
@@ -1827,7 +1900,7 @@ fn build_extended_freqs_table(
                 false,
             ),
             create_table_data_cell(
-                width_unit * 23,
+                width_unit * callsigns_width,
                 &formatted_callsigns,
                 None,
                 false,
@@ -1838,13 +1911,25 @@ fn build_extended_freqs_table(
                 get_color(!freq.is_active),
                 false,
             ),
-            create_table_data_cell(
+        ];
+
+        if include_active_from {
+            cells.push(create_table_data_cell(
+                width_unit * 7,
+                &format_datetime_field(Some(freq.active_from)),
+                get_color(!freq.is_active),
+                false,
+            ));
+        }
+        if include_created_at {
+            cells.push(create_table_data_cell(
                 width_unit * 7,
                 &format_datetime_field(Some(freq.created_at)),
                 get_color(!freq.is_active),
                 false,
-            ),
-        ]
+            ));
+        }
+        cells
     };
 
     build_table(freqs, headers, row_builder, width_unit, None)
@@ -1968,6 +2053,58 @@ fn get_color(is_old: bool) -> Option<String> {
         Some(OLD_CALLSIGNS_COLOR.to_string())
     } else {
         None
+    }
+}
+
+fn format_callsign(
+    callsign: &NetworkCallsign,
+    include_full_name: bool,
+) -> String {
+    format_callsign_with_full_names(
+        &callsign.callsign,
+        callsign.full_name.iter().cloned().collect(),
+        include_full_name,
+    )
+}
+
+fn format_detailed_callsign(
+    callsign: &CallsignRes,
+    include_full_names: bool,
+) -> String {
+    let full_names = callsign
+        .known_callsigns
+        .as_ref()
+        .into_iter()
+        .flatten()
+        .map(|known_callsign| known_callsign.full_name.clone())
+        .collect();
+    format_callsign_with_full_names(
+        &callsign.callsign,
+        full_names,
+        include_full_names,
+    )
+}
+
+fn format_callsign_with_full_names(
+    callsign: &str,
+    full_names: Vec<String>,
+    include_full_names: bool,
+) -> String {
+    let callsign = callsign.trim().to_uppercase();
+    if !include_full_names {
+        return callsign;
+    }
+
+    let full_names = full_names
+        .into_iter()
+        .map(|full_name| full_name.trim().to_string())
+        .filter(|full_name| !full_name.is_empty())
+        .collect::<Vec<_>>();
+    let full_names = uniq_via_btreeset(&full_names).join(", ");
+    match (callsign.is_empty(), full_names.is_empty()) {
+        (false, false) => format!("{callsign} ({full_names})"),
+        (true, false) => full_names,
+        _ => callsign,
     }
 }
 
@@ -2132,7 +2269,7 @@ mod tests {
             callsign: Set("Alpha".to_string()),
             position: Set("pos".to_string()),
             comment: Set("comment".to_string()),
-            full_name: Set(String::new()),
+            full_name: Set("Петренко Петро".to_string()),
             unit_id: Set(unit.id),
             deleted: Set(false),
             created_at: Set(now),
@@ -2146,6 +2283,58 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
+
+        for (callsign, full_name) in
+            [("Beta", "Бутилкін Сергій"), ("Stale", "Старий Позивний")]
+        {
+            sigint_network_callsign::ActiveModel {
+                sigint_network_id: Set(network.id),
+                sigint_callsign: Set(callsign.to_string()),
+                full_name: Set(Some(full_name.to_string())),
+                deleted: Set(false),
+                created_at: Set(now - chrono::Duration::days(1)),
+                developing: Set(false),
+                unit_developing: Set(false),
+                main_radio_station: Set(false),
+                command_control: Set(false),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+
+        for (callsign, deleted_at) in [
+            ("Historical", now + chrono::Duration::hours(1)),
+            ("Expired", now - chrono::Duration::hours(1)),
+        ] {
+            let network_callsign = sigint_network_callsign::ActiveModel {
+                sigint_network_id: Set(network.id),
+                sigint_callsign: Set(callsign.to_string()),
+                deleted: Set(true),
+                created_at: Set(now - chrono::Duration::days(1)),
+                developing: Set(false),
+                unit_developing: Set(false),
+                main_radio_station: Set(false),
+                command_control: Set(false),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            sigint_network_callsign_changelog::ActiveModel {
+                sigint_network_callsign_id: Set(network_callsign.id),
+                login_id: Set(login.id),
+                action: Set(
+                    crate::entities::sea_orm_active_enums::ChangelogActionEnum::Delete,
+                ),
+                created_at: Set(deleted_at),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
 
         sigint_callsign::ActiveModel {
             callsign: Set(String::new()),
@@ -2191,7 +2380,12 @@ mod tests {
             sigint_inbox_item::ActiveModel {
                 id: Set(message.id),
                 freq: Set(Some(freq.clone())),
-                callsigns: Set(Some(json!(["Alpha"]))),
+                callsigns: Set(Some(json!([
+                    "Alpha",
+                    "Beta",
+                    "Historical",
+                    "Expired"
+                ]))),
                 date: Set(Some(date)),
                 time: Set(Some(time)),
                 parsed_unit_v2: Set(false),
@@ -2259,6 +2453,9 @@ mod tests {
                     since_date_inclusive_ms: ts - 1_000,
                     till_date_inclusive_ms: Some(ts + 1_000),
                     active_freqs_only: true,
+                    include_freq_active_from: false,
+                    include_freq_created_at: true,
+                    include_callsign_full_names: false,
                     include_unit_callsigns: false,
                     include_sigint_signs: false,
                     include_confirmation: false,
@@ -2297,6 +2494,10 @@ mod tests {
             callsign.known_callsigns.as_ref().unwrap()[0].callsign,
             "Alpha"
         );
+        assert_eq!(
+            callsign.known_callsigns.as_ref().unwrap()[0].full_name,
+            "Петренко Петро"
+        );
         assert_eq!(callsign.freqs.as_ref().unwrap(), &vec![freq.clone()]);
         assert!(callsign
             .network_names
@@ -2304,9 +2505,49 @@ mod tests {
             .unwrap()
             .contains(&format!("р/м {}", network.name)));
 
+        let linked_callsign = entry
+            .net_callsigns
+            .iter()
+            .find(|callsign| callsign.callsign == "Beta")
+            .expect("expected active linked callsign Beta");
+        assert_eq!(linked_callsign.message_count, 1);
+        let historical_callsign = entry
+            .net_callsigns
+            .iter()
+            .find(|callsign| callsign.callsign == "Historical")
+            .expect("expected historically active linked callsign");
+        assert!(!historical_callsign.active);
+        assert_eq!(historical_callsign.message_count, 1);
+        assert!(!entry
+            .net_callsigns
+            .iter()
+            .any(|callsign| callsign.callsign == "Stale"));
+        assert!(!entry
+            .net_callsigns
+            .iter()
+            .any(|callsign| callsign.callsign == "Expired"));
+        assert!(!entry
+            .callsigns_detailed
+            .iter()
+            .any(|callsign| callsign.callsign == "Historical"));
+
         assert_eq!(entry.freqs.len(), 1);
         assert_eq!(entry.freqs[0].freq, freq);
         assert_eq!(entry.freqs[0].message_count, 1);
+    }
+
+    #[test]
+    fn report_callsign_full_name_is_optional() {
+        let callsign = NetworkCallsign {
+            full_name: Some("Бутилкін Сергій Говнович".to_string()),
+            ..make_network_callsign(1, "чебурашка", false, false, false)
+        };
+
+        assert_eq!(format_callsign(&callsign, false), "ЧЕБУРАШКА");
+        assert_eq!(
+            format_callsign(&callsign, true),
+            "ЧЕБУРАШКА (Бутилкін Сергій Говнович)"
+        );
     }
 
     #[test]

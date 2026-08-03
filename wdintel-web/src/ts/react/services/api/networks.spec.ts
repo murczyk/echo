@@ -55,6 +55,7 @@ describe('networks API etalonka report download', () => {
       etalonkaType: {
         AccordingToTheForm: {
           activeFreqsOnly: true,
+          includeCallsignFullNames: false,
           includeSigintSigns: true,
           includeConfirmation: false,
         },
@@ -96,6 +97,9 @@ describe('networks API etalonka report download', () => {
           sinceDateInclusiveMs: 1,
           tillDateInclusiveMs: 2,
           activeFreqsOnly: false,
+          includeFreqActiveFrom: false,
+          includeFreqCreatedAt: true,
+          includeCallsignFullNames: false,
           includeUnitCallsigns: true,
           includeSigintSigns: false,
           includeConfirmation: true,

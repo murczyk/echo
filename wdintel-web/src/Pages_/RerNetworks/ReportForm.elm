@@ -16,9 +16,12 @@ import Shared.Components.RadioGroup as RadioGroup
 type alias Config msg =
     { onReportTypeChanged : ReportTypeOption -> msg
     , onActiveFreqsOnlyChanged : Bool -> msg
+    , onIncludeCallsignFullNamesChanged : Bool -> msg
     , onIncludeSigintSignsChanged : Bool -> msg
     , onIncludeConfirmationChanged : Bool -> msg
     , onIncludeHeadingsAndFreqsChanged : Bool -> msg
+    , onIncludeFreqActiveFromChanged : Bool -> msg
+    , onIncludeFreqCreatedAtChanged : Bool -> msg
     , onIncludeUnitCallsignsChanged : Bool -> msg
     , onIncludePelengsMapChanged : Bool -> msg
     , reportFromDate : Maybe Shared.Components.DateTime.Model
@@ -126,6 +129,12 @@ commonSettingsView config settings =
             |> Checkbox.withContent [ text "Лише активні частоти" ]
             |> Checkbox.view
         , Checkbox.new
+            { isChecked = settings.includeCallsignFullNames
+            , onToggle = config.onIncludeCallsignFullNamesChanged
+            }
+            |> Checkbox.withContent [ text "Включити ПІБ у позивні" ]
+            |> Checkbox.view
+        , Checkbox.new
             { isChecked = settings.includeSigintSigns
             , onToggle = config.onIncludeSigintSignsChanged
             }
@@ -152,6 +161,18 @@ extendedSettingsView : Config msg -> ReportConfig.ExtendedReportSettings -> Html
 extendedSettingsView config settings =
     div [ class "space-y-2" ]
         [ Checkbox.new
+            { isChecked = settings.includeFreqActiveFrom
+            , onToggle = config.onIncludeFreqActiveFromChanged
+            }
+            |> Checkbox.withContent [ text "Включити «Активна з» для частот" ]
+            |> Checkbox.view
+        , Checkbox.new
+            { isChecked = settings.includeFreqCreatedAt
+            , onToggle = config.onIncludeFreqCreatedAtChanged
+            }
+            |> Checkbox.withContent [ text "Включити «Дата прив'язки» для частот" ]
+            |> Checkbox.view
+        , Checkbox.new
             { isChecked = settings.includeUnitCallsigns
             , onToggle = config.onIncludeUnitCallsignsChanged
             }

@@ -32,6 +32,9 @@ updateCommonSetting settingName checked currentReport =
         ( "includeSigintSigns", AccordingToForm settings ) ->
             AccordingToForm { settings | includeSigintSigns = checked }
 
+        ( "includeCallsignFullNames", AccordingToForm settings ) ->
+            AccordingToForm { settings | includeCallsignFullNames = checked }
+
         ( "includeConfirmation", AccordingToForm settings ) ->
             AccordingToForm { settings | includeConfirmation = checked }
 
@@ -42,6 +45,7 @@ updateCommonSetting settingName checked currentReport =
             let
                 newCommon =
                     { activeFreqsOnly = checked
+                    , includeCallsignFullNames = settings.common.includeCallsignFullNames
                     , includeSigintSigns = settings.common.includeSigintSigns
                     , includeConfirmation = settings.common.includeConfirmation
                     , includeHeadingsAndFreqs = settings.common.includeHeadingsAndFreqs
@@ -53,6 +57,7 @@ updateCommonSetting settingName checked currentReport =
             let
                 newCommon =
                     { activeFreqsOnly = settings.common.activeFreqsOnly
+                    , includeCallsignFullNames = settings.common.includeCallsignFullNames
                     , includeSigintSigns = checked
                     , includeConfirmation = settings.common.includeConfirmation
                     , includeHeadingsAndFreqs = settings.common.includeHeadingsAndFreqs
@@ -64,6 +69,7 @@ updateCommonSetting settingName checked currentReport =
             let
                 newCommon =
                     { activeFreqsOnly = settings.common.activeFreqsOnly
+                    , includeCallsignFullNames = settings.common.includeCallsignFullNames
                     , includeSigintSigns = settings.common.includeSigintSigns
                     , includeConfirmation = checked
                     , includeHeadingsAndFreqs = settings.common.includeHeadingsAndFreqs
@@ -75,12 +81,25 @@ updateCommonSetting settingName checked currentReport =
             let
                 newCommon =
                     { activeFreqsOnly = settings.common.activeFreqsOnly
+                    , includeCallsignFullNames = settings.common.includeCallsignFullNames
                     , includeSigintSigns = settings.common.includeSigintSigns
                     , includeConfirmation = settings.common.includeConfirmation
                     , includeHeadingsAndFreqs = checked
                     }
             in
             ExtendedReport { settings | common = newCommon }
+
+        ( "includeCallsignFullNames", ExtendedReport settings ) ->
+            ExtendedReport
+                { settings
+                    | common =
+                        { activeFreqsOnly = settings.common.activeFreqsOnly
+                        , includeCallsignFullNames = checked
+                        , includeSigintSigns = settings.common.includeSigintSigns
+                        , includeConfirmation = settings.common.includeConfirmation
+                        , includeHeadingsAndFreqs = settings.common.includeHeadingsAndFreqs
+                        }
+                }
 
         _ ->
             currentReport
@@ -91,6 +110,12 @@ updateCommonSetting settingName checked currentReport =
 updateExtendedSetting : String -> Bool -> ReportType -> ReportType
 updateExtendedSetting settingName checked currentReport =
     case ( settingName, currentReport ) of
+        ( "includeFreqActiveFrom", ExtendedReport settings ) ->
+            ExtendedReport { settings | includeFreqActiveFrom = checked }
+
+        ( "includeFreqCreatedAt", ExtendedReport settings ) ->
+            ExtendedReport { settings | includeFreqCreatedAt = checked }
+
         ( "includeUnitCallsigns", ExtendedReport settings ) ->
             ExtendedReport { settings | includeUnitCallsigns = checked }
 

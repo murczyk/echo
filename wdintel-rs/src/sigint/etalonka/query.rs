@@ -1063,6 +1063,7 @@ async fn find_known_callsigns(
         .column(sigint_callsign::Column::Callsign)
         .column(sigint_callsign::Column::Comment)
         .column(sigint_callsign::Column::Position)
+        .column(sigint_callsign::Column::FullName)
         .column(sigint_callsign::Column::UnitId)
         .column_as(sigint_unit::Column::Name, "unit_name")
         .column(sigint_unit::Column::Regiment)
@@ -1120,6 +1121,7 @@ pub struct CallsignActivityInfo {
     pub last_datetime: Option<i64>,
     pub freqs: Option<Vec<String>>,
     pub network_names: Option<Vec<String>>,
+    pub(crate) activity_datetime: NaiveDateTime,
 }
 
 pub async fn load_callsigns(
@@ -2392,6 +2394,7 @@ mod tests {
             etalonka_type: EtalonkaReportType::AccordingToTheForm(
                 EtalonkaSettings {
                     active_freqs_only: false,
+                    include_callsign_full_names: false,
                     include_sigint_signs: false,
                     include_confirmation: false,
                     include_headings_and_freqs: false,
@@ -2542,6 +2545,7 @@ mod tests {
                 callsign: "KNOWN".to_string(),
                 position: String::new(),
                 comment: String::new(),
+                full_name: String::new(),
                 unit_id: 1,
                 unit_name: "Unit".to_string(),
                 source_name: "Source".to_string(),
