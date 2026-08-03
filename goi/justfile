@@ -607,8 +607,13 @@ deploy server builder=goi_builder:
     REMOTE
 
     echo "Syncing GOI source into ${SERVER}:${APP_DIR}..."
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      RSYNC_INFO_ARGS=(--progress --stats)
+    else
+      RSYNC_INFO_ARGS=(--info=flist2,progress2,stats2,name1)
+    fi
     rsync -az --human-readable \
-      --info=flist2,progress2,stats2,name1 \
+      "${RSYNC_INFO_ARGS[@]}" \
       --delete-after \
       --force \
       --exclude '.git/' \
