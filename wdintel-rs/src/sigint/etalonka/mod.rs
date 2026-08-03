@@ -2171,6 +2171,70 @@ mod tests {
         }
     }
 
+    async fn insert_network_activity(
+        dbx: &DatabaseConnection,
+        datasource_group_id: i64,
+        signal_group_master_key: &str,
+        network_id: i64,
+        freq: &str,
+        timestamp: chrono::NaiveDateTime,
+        message_uid: &str,
+        callsigns: &[&str],
+    ) {
+        let message = mk_signal_message(
+            dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("test message".to_string())),
+                created_at: Set(timestamp),
+                timestamp: Set(Some(timestamp)),
+                sender: Set(Some("sender".to_string())),
+                message_uid: Set(Some(message_uid.to_string())),
+                datasource_group_id: Set(Some(datasource_group_id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let inbox_item = mk_sigint_inbox_item(
+            dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some(freq.to_string())),
+                callsigns: Set(Some(json!(callsigns))),
+                date: Set(None),
+                time: Set(None),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(signal_group_master_key.to_string())),
+            sender: Set(Some("sender".to_string())),
+            message_uid: Set(Some(message_uid.to_string())),
+            datasource_group_id: Set(Some(datasource_group_id)),
+            created_at: Set(timestamp),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+
+        sigint_inbox_item_network::ActiveModel {
+            id: NotSet,
+            sigint_inbox_item_id: Set(inbox_item.id),
+            sigint_network_id: Set(network_id),
+            created_at: NotSet,
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+    }
+
     #[serial]
     #[tokio::test]
     async fn test_bl_etalonka_report_networks_data_includes_callsigns() {
@@ -2338,6 +2402,49 @@ mod tests {
             .unwrap();
         }
 
+        let relinked_at = now - chrono::Duration::hours(6);
+        let historical_relinked_callsign =
+            sigint_network_callsign::ActiveModel {
+                sigint_network_id: Set(network.id),
+                sigint_callsign: Set("Relinked".to_string()),
+                deleted: Set(true),
+                created_at: Set(now - chrono::Duration::days(1)),
+                developing: Set(false),
+                unit_developing: Set(false),
+                main_radio_station: Set(false),
+                command_control: Set(false),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        sigint_network_callsign_changelog::ActiveModel {
+            sigint_network_callsign_id: Set(historical_relinked_callsign.id),
+            login_id: Set(login.id),
+            action: Set(
+                crate::entities::sea_orm_active_enums::ChangelogActionEnum::Delete,
+            ),
+            created_at: Set(relinked_at),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let current_relinked_callsign = sigint_network_callsign::ActiveModel {
+            sigint_network_id: Set(network.id),
+            sigint_callsign: Set("Relinked".to_string()),
+            deleted: Set(false),
+            created_at: Set(relinked_at),
+            developing: Set(false),
+            unit_developing: Set(false),
+            main_radio_station: Set(false),
+            command_control: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
         sigint_callsign::ActiveModel {
             callsign: Set(String::new()),
             position: Set("pio".to_string()),
@@ -2357,72 +2464,32 @@ mod tests {
         .await
         .unwrap();
 
-        let message = mk_signal_message(
+        let historical_activity_at = now - chrono::Duration::hours(12);
+        insert_network_activity(
             &env.dbx,
-            signal_message::ActiveModel {
-                body: Set(Some("test message".to_string())),
-                created_at: Set(now),
-                timestamp: Set(Some(now)),
-                sender: Set(Some("sender".to_string())),
-                message_uid: Set(Some("uid-1".to_string())),
-                datasource_group_id: Set(Some(datasource_group.id)),
-                ..Default::default()
-            },
+            datasource_group.id,
+            &signal_group.master_key,
+            network.id,
+            &freq,
+            historical_activity_at,
+            "uid-historical",
+            &["Relinked"],
         )
-        .await
-        .unwrap();
-
-        let _inbox_item = mk_sigint_inbox_item(
+        .await;
+        insert_network_activity(
             &env.dbx,
-            sigint_inbox_item::ActiveModel {
-                id: Set(message.id),
-                freq: Set(Some(freq.clone())),
-                callsigns: Set(Some(json!([
-                    "Alpha",
-                    "Beta",
-                    "Late",
-                    "Historical",
-                    "Expired"
-                ]))),
-                date: Set(None),
-                time: Set(None),
-                parsed_unit_v2: Set(false),
-                ..Default::default()
-            },
+            datasource_group.id,
+            &signal_group.master_key,
+            network.id,
+            &freq,
+            now,
+            "uid-current",
+            &["Alpha", "Beta", "Late", "Historical", "Expired", "Relinked"],
         )
-        .await
-        .unwrap();
-
-        signal_message_group::ActiveModel {
-            signal_message_id: Set(message.id),
-            group_master_key: Set(Some(signal_group.master_key.clone())),
-            sender: Set(Some("sender".to_string())),
-            message_uid: Set(Some("uid-1".to_string())),
-            datasource_group_id: Set(Some(datasource_group.id)),
-            created_at: Set(now),
-            ..Default::default()
-        }
-        .insert(&env.dbx)
-        .await
-        .unwrap();
-
-        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .expect("expected inbox item");
-
-        sigint_inbox_item_network::ActiveModel {
-            id: NotSet,
-            sigint_inbox_item_id: Set(inbox_item.id),
-            sigint_network_id: Set(network.id),
-            created_at: NotSet,
-        }
-        .insert(&env.dbx)
-        .await
-        .unwrap();
+        .await;
 
         let ts = now.and_utc().timestamp_millis();
+        let historical_ts = historical_activity_at.and_utc().timestamp_millis();
 
         let req = EtalonkaJimForksReq {
             req: ListNetworksReq {
@@ -2447,7 +2514,7 @@ mod tests {
             },
             etalonka_type: EtalonkaReportType::ExtendedReport(
                 EtalonkaExtendedSettings {
-                    since_date_inclusive_ms: ts - 1_000,
+                    since_date_inclusive_ms: historical_ts - 1_000,
                     till_date_inclusive_ms: Some(ts + 1_000),
                     active_freqs_only: true,
                     include_freq_active_from: false,
@@ -2516,6 +2583,22 @@ mod tests {
             .expect("expected historically active linked callsign");
         assert!(!historical_callsign.active);
         assert_eq!(historical_callsign.message_count, 1);
+        let historical_relinked = entry
+            .net_callsigns
+            .iter()
+            .find(|callsign| callsign.id == historical_relinked_callsign.id)
+            .expect("expected historical relinked callsign");
+        assert!(!historical_relinked.active);
+        assert_eq!(historical_relinked.message_count, 1);
+        assert_eq!(historical_relinked.last_datetime, Some(historical_ts));
+        let current_relinked = entry
+            .net_callsigns
+            .iter()
+            .find(|callsign| callsign.id == current_relinked_callsign.id)
+            .expect("expected current relinked callsign");
+        assert!(current_relinked.active);
+        assert_eq!(current_relinked.message_count, 1);
+        assert_eq!(current_relinked.last_datetime, Some(ts));
         assert!(!entry
             .net_callsigns
             .iter()
@@ -2539,7 +2622,7 @@ mod tests {
 
         assert_eq!(entry.freqs.len(), 1);
         assert_eq!(entry.freqs[0].freq, freq);
-        assert_eq!(entry.freqs[0].message_count, 1);
+        assert_eq!(entry.freqs[0].message_count, 2);
     }
 
     #[test]
