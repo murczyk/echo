@@ -300,7 +300,7 @@ flowchart LR
         direction TB
         goi_app["GOI application"]
         goi_worker["goi-echo-worker.service<br/>HTTP API · :8088"]
-        echo_swapp["echo-swapp.service<br/>GOI-side Echo Messengers · :4010<br/>automation + cleanup workers"]
+        echo_swapp["echo-swapp.service<br/>GOI-side Echo Messengers · :4010<br/>messenger_worker · cleanup_worker<br/>cleanup_tmp_worker_nofail"]
         messenger_clients["echo-signal-bot@.service<br/>echo-whatsapp-bot@.service"]
         goi_watchers["Internal workers<br/>associations_worker_nofail<br/>knowledge_worker_nofail"]
         goi_postgres["postgresql.service"]
@@ -335,8 +335,10 @@ routes but does not start GOI background workers in live mode. Debug/test
 server mode can still run the general worker set for local development, with
 the GOI pool disabled.
 
-`echo-swapp.service` runs automation forwarding and Echo IM cleanup on the GOI
-LXC while using the Echo PostgreSQL database as its system of record.
+`echo-swapp.service` always starts `messenger_worker`, `cleanup_worker` (Echo IM
+and automation cleanup), and `cleanup_tmp_worker_nofail` on the GOI LXC; none
+is configuration-gated. The service uses the Echo PostgreSQL database as its
+system of record.
 Cross-automation send reservations, outbound queue rows, and delivery records
 commit atomically. `echo_automation_send_log` retains route-level
 deduplication state for 30 days; the cleanup worker hard-deletes older rows.
