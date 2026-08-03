@@ -73,6 +73,41 @@ update sample set enabled = false;
                 {"public.sample"},
             )
 
+    def test_catalog_comparison_allows_table_created_and_dropped_in_branch(
+        self,
+    ) -> None:
+        migrations = [
+            (
+                "echo:m1",
+                "",
+                [MODULE.DdlChange(operation="create", table="public.transient")],
+            ),
+            (
+                "echo:m2",
+                "",
+                [MODULE.DdlChange(operation="drop", table="public.transient")],
+            ),
+        ]
+
+        self.assertEqual(
+            MODULE.catalog_differences(set(), {"public.transient"}, migrations),
+            (set(), set()),
+        )
+
+    def test_catalog_comparison_rejects_unchanged_altered_table(self) -> None:
+        migrations = [
+            (
+                "echo:m1",
+                "",
+                [MODULE.DdlChange(operation="alter", table="public.sample")],
+            )
+        ]
+
+        self.assertEqual(
+            MODULE.catalog_differences(set(), {"public.sample"}, migrations),
+            (set(), {"public.sample"}),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

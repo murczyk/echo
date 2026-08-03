@@ -262,6 +262,23 @@ def declared_tables(
     return tables
 
 
+def catalog_differences(
+    actual: set[str],
+    declared: set[str],
+    migrations: list[tuple[str, str, list[DdlChange]]],
+) -> tuple[set[str], set[str]]:
+    operations_by_table: dict[str, set[str]] = {}
+    for _, _, changes in migrations:
+        for change in changes:
+            operations_by_table.setdefault(change.table, set()).add(change.operation)
+    created_and_dropped = {
+        table
+        for table, operations in operations_by_table.items()
+        if {"create", "drop"} <= operations
+    }
+    return actual - declared, declared - actual - created_and_dropped
+
+
 def check(
     base: str, catalog_before: Path | None = None, catalog_after: Path | None = None
 ) -> list[str]:
@@ -290,11 +307,14 @@ def check(
         declared = declared_tables(
             manifest, [key for key, _, _ in migrations], dependency_keys
         )
-        if actual != declared:
+        undeclared, unchanged_but_declared = catalog_differences(
+            actual, declared, migrations
+        )
+        if undeclared or unchanged_but_declared:
             errors.append(
                 "database catalog changes differ from the analytics impact manifest "
-                f"(undeclared={sorted(actual - declared)}, "
-                f"unchanged_but_declared={sorted(declared - actual)})"
+                f"(undeclared={sorted(undeclared)}, "
+                f"unchanged_but_declared={sorted(unchanged_but_declared)})"
             )
     return errors
 

@@ -9,6 +9,52 @@
       "changes": [
         { "table": "public.echo_automation_send_log", "strategy": "excluded" }
       ]
+    },
+    "echo:m20260707_081900_create_devices": {
+      "changes": [
+        { "table": "public.device", "strategy": "replicated_snapshot" },
+        { "table": "public.device_file", "strategy": "replicated_snapshot" }
+      ]
+    },
+    "echo:m20260707_132105_create_device_aor": {
+      "changes": [
+        { "table": "public.device_aor", "strategy": "replicated_snapshot" }
+      ]
+    },
+    "echo:m20260707_135501_drop_device_aor_id": {
+      "changes": [
+        { "table": "public.device", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260707_180541_rename_device_tags_archive": {
+      "changes": [
+        { "table": "public.device", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260716_101007_device_hostname_ssh_port_and_drop_name_uniqueness": {
+      "changes": [
+        { "table": "public.device", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260716_134601_device_aor_id_uuid": {
+      "changes": [
+        { "table": "public.device_aor", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260721_120720_device_source_label_custom_fields": {
+      "changes": [
+        { "table": "public.device", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260721_124518_drop_legacy_device_file": {
+      "changes": [
+        { "table": "public.device_file", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260729_143549_add_device_organism": {
+      "changes": [
+        { "table": "public.device", "strategy": "cdc_backfill" }
+      ]
     }
   },
   "dependencies": {}
