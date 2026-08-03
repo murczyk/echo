@@ -74,6 +74,13 @@ flowchart LR
         signoz["SigNoz<br/>central logs + dashboards"]
     end
 
+    subgraph vllm_router_lxc["echo-vllm-router · Optional AI routing · Debian 13"]
+        direction TB
+        vllm_router["vLLM Router<br/>native systemd · :8000<br/>cache_aware"]
+        vllm_otel["SigNoz OTel collector<br/>native systemd"]
+        vllm_router -.->|router metrics<br/>loopback :29000| vllm_otel
+    end
+
     subgraph analytics_lxc["LXC 2 · Secondary analytics · OPTIONAL · Debian 13"]
         direction LR
         replication["Replication pipeline<br/>PeerDB + Temporal"]
@@ -103,6 +110,7 @@ flowchart LR
     api -.->|activity events<br/>PostgreSQL protocol| greptime
     bg -.->|activity batches<br/>PostgreSQL protocol| greptime
     vector -.->|HTTP JSON logs| signoz
+    vllm_otel -.->|router + worker metrics<br/>OTLP gRPC · Tailscale| signoz
     iggy <-->|consume + produce events| promin
     api <-->|uploads + downloads| backblaze
     bg <-->|media + generated reports| backblaze
@@ -112,17 +120,20 @@ flowchart LR
     echo_im <-->|messenger bot integration| goi
     bg <-->|health · audio upload · transcription| echo_gpu
     api -.->|Chat Completions HTTPS| openai_engine
-    api <-->|Chat Completions HTTP<br/>Tailscale| vllm
+    api <-->|Chat Completions HTTP<br/>Tailscale| vllm_router
+    vllm_router -->|OpenAI-compatible HTTP<br/>Tailscale| vllm
+    vllm -.->|Prometheus metrics<br/>Tailscale| vllm_otel
 
     style echo_lxc stroke-width:2px
     style analytics_lxc stroke-width:2px,stroke-dasharray:8 5
     style greptime_lxc stroke-width:2px,stroke-dasharray:8 5
     style signoz_lxc stroke-width:2px,stroke-dasharray:8 5
+    style vllm_router_lxc stroke-width:2px,stroke-dasharray:8 5
     style vllm_spark stroke-width:2px,stroke-dasharray:8 5
     classDef canonical stroke-width:3px
     classDef optional stroke-dasharray:6 4
     class postgres canonical
-    class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm,hf_cache,gb10 optional
+    class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm_router,vllm_otel,vllm,hf_cache,gb10 optional
 ```
 
 The diagram focuses on the core web, worker, messenger, storage, observability,
@@ -137,8 +148,11 @@ configuration, network requirements, queue, cache, retry, and REST API flow.
 Admins configure OpenAI-compatible engines in `/admin/system-settings-neo`.
 `/admin/ai-callsigns` provides prompt testing and an optional sequential
 bgworker that replaces regular parsed callsigns with the AI result.
-See [Echo vLLM](../echo-vllm/README.md) for the `echo-gpu-spark` deployment,
-launch, verification, and shutdown commands.
+See [Echo vLLM](../echo-vllm/README.md) for the `echo-gpu-spark` worker and
+[Echo vLLM Router](../echo-vllm-router/README.md) for routing, observability,
+deployment, verification, and rollback commands. Echo uses the router as its
+normal OpenAI-compatible endpoint; direct Spark access is retained only as a
+fallback.
 
 ## Echo LXC systemd graph
 
