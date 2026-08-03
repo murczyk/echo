@@ -294,7 +294,6 @@ flowchart LR
         conversion --> echo_pg
         report --> echo_pg
         report -.-> report_store
-        echo_im --> echo_pg
     end
 
     subgraph goi_lxc["GOI LXC · external"]
