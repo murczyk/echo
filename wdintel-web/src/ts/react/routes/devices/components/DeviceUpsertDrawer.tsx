@@ -21,7 +21,6 @@ import type { DeviceLookupOption } from '../helpers';
 import {
   validateDeviceUpsertForm,
   DEVICE_NAME_MAX_CHARS,
-  DEVICE_SOURCE_LABEL_MAX_CHARS,
   type DeviceCustomFieldDraftError,
   type DeviceFieldPermissions,
   type DeviceServerFieldErrors,
@@ -48,7 +47,7 @@ type Props = {
   onSave: (form: DeviceUpsertForm) => void;
 };
 
-type TouchedField = 'sourceLabel' | 'name' | 'externalUrl';
+type TouchedField = 'name' | 'externalUrl';
 
 function selectedLookupOptions(options: DeviceLookupOption[], ids: number[]): DeviceLookupOption[] {
   const optionsById = new Map(options.map((option) => [option.id, option]));
@@ -86,7 +85,8 @@ export function DeviceUpsertDrawer({
     () => validateDeviceUpsertForm(form, fieldPermissions),
     [fieldPermissions, form],
   );
-  const formBlocked = saving || (fieldPermissions.analyticalData && referenceLoading);
+  const formBlocked =
+    saving || (mode === 'edit' && fieldPermissions.analyticalData && referenceLoading);
   const saveLabel = mode === 'create' ? 'Створити' : 'Зберегти';
   const drawerTitle = mode === 'create' ? 'Створити пристрій' : 'Редагувати пристрій';
   const canTrySave = form !== null && !formBlocked && (mode === 'create' || hasChanges);
@@ -128,7 +128,7 @@ export function DeviceUpsertDrawer({
   const handleSave = () => {
     if (form === null || formBlocked) return;
     setSubmitted(true);
-    setTouched({ sourceLabel: true, name: true, externalUrl: true });
+    setTouched({ name: true, externalUrl: true });
     if (validation !== null) return;
     onSave(form);
   };
@@ -199,20 +199,6 @@ export function DeviceUpsertDrawer({
               {fieldPermissions.sourceData ? (
                 <>
                   <TextField
-                    label="Джерельна мітка"
-                    value={form.sourceLabel}
-                    onChange={(event) => patchForm({ sourceLabel: event.target.value })}
-                    onBlur={() => setTouched((current) => ({ ...current, sourceLabel: true }))}
-                    disabled={formBlocked}
-                    fullWidth
-                    size="small"
-                    required
-                    inputProps={{ maxLength: DEVICE_SOURCE_LABEL_MAX_CHARS }}
-                    error={fieldError('sourceLabel') !== undefined}
-                    helperText={fieldError('sourceLabel') ?? 'Позначення джерела пристрою.'}
-                  />
-
-                  <TextField
                     label="Зовнішнє посилання"
                     value={form.externalUrl}
                     onChange={(event) => patchForm({ externalUrl: event.target.value })}
@@ -245,7 +231,8 @@ export function DeviceUpsertDrawer({
               {fieldPermissions.analyticalData ? (
                 <>
                   <TextField
-                    label="Аналітична назва"
+                    label="Назва"
+                    required
                     value={form.name}
                     onChange={(event) => patchForm({ name: event.target.value })}
                     onBlur={() => setTouched((current) => ({ ...current, name: true }))}
@@ -254,41 +241,45 @@ export function DeviceUpsertDrawer({
                     size="small"
                     inputProps={{ maxLength: DEVICE_NAME_MAX_CHARS }}
                     error={fieldError('name') !== undefined}
-                    helperText={fieldError('name') ?? 'Порожнє значення очистить аналітичну назву.'}
+                    helperText={fieldError('name') ?? 'Обов’язкова назва пристрою.'}
                   />
 
-                  <Autocomplete<DeviceLookupOption, true, false, false>
-                    multiple
-                    disableCloseOnSelect
-                    filterSelectedOptions
-                    fullWidth
-                    size="small"
-                    options={aorOptions}
-                    value={selectedAors}
-                    loading={referenceLoading}
-                    disabled={formBlocked}
-                    getOptionLabel={(option) => option.label}
-                    isOptionEqualToValue={(option, value) => option.id === value.id}
-                    onChange={handleAorChange}
-                    renderInput={(params) => (
-                      <TextField {...params} label="Смуги" placeholder="Смуга" />
-                    )}
-                  />
+                  {mode === 'edit' ? (
+                    <>
+                      <Autocomplete<DeviceLookupOption, true, false, false>
+                        multiple
+                        disableCloseOnSelect
+                        filterSelectedOptions
+                        fullWidth
+                        size="small"
+                        options={aorOptions}
+                        value={selectedAors}
+                        loading={referenceLoading}
+                        disabled={formBlocked}
+                        getOptionLabel={(option) => option.label}
+                        isOptionEqualToValue={(option, value) => option.id === value.id}
+                        onChange={handleAorChange}
+                        renderInput={(params) => (
+                          <TextField {...params} label="Смуги" placeholder="Смуга" />
+                        )}
+                      />
 
-                  <Autocomplete<DeviceLookupOption, false, false, false>
-                    fullWidth
-                    size="small"
-                    options={unitOptions}
-                    value={selectedUnit}
-                    loading={referenceLoading}
-                    disabled={formBlocked}
-                    getOptionLabel={(option) => option.label}
-                    isOptionEqualToValue={(option, value) => option.id === value.id}
-                    onChange={handleUnitChange}
-                    renderInput={(params) => (
-                      <TextField {...params} label="Підрозділ" placeholder="Без підрозділу" />
-                    )}
-                  />
+                      <Autocomplete<DeviceLookupOption, false, false, false>
+                        fullWidth
+                        size="small"
+                        options={unitOptions}
+                        value={selectedUnit}
+                        loading={referenceLoading}
+                        disabled={formBlocked}
+                        getOptionLabel={(option) => option.label}
+                        isOptionEqualToValue={(option, value) => option.id === value.id}
+                        onChange={handleUnitChange}
+                        renderInput={(params) => (
+                          <TextField {...params} label="Підрозділ" placeholder="Без підрозділу" />
+                        )}
+                      />
+                    </>
+                  ) : null}
                 </>
               ) : null}
             </>

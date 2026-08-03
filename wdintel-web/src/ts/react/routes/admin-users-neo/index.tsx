@@ -71,7 +71,6 @@ const ROLE_OPTIONS = [
   'CallsignsEditor',
   'Cyber',
   'DeviceSource',
-  'DeviceAnalyst',
   'AdvancedReports',
   'Orbit',
   'DeleteMsg',

@@ -6,7 +6,7 @@ mod read {
         ListDevicesResult,
     };
     use super::validation::normalize_device_list_pagination;
-    use crate::config::DEVICE_SOURCE_LABEL_MAX_CHARS;
+    use crate::config::DEVICE_NAME_MAX_CHARS;
     use crate::entities::login;
     use crate::error::AppError;
     use crate::h;
@@ -50,16 +50,16 @@ mod read {
             .filter_text
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
-        if filter_text.as_ref().is_some_and(|value| {
-            value.chars().count() > DEVICE_SOURCE_LABEL_MAX_CHARS
-        }) {
+        if filter_text
+            .as_ref()
+            .is_some_and(|value| value.chars().count() > DEVICE_NAME_MAX_CHARS)
+        {
             return Err(form_error("filter_text", "Значення пошуку задовге"));
         }
 
         Ok(query::ListDevicesQuery {
             filter_text,
             archived_scope: command.archived_scope,
-            needs_analytical_name: command.needs_analytical_name,
             aor_ids: command
                 .aor_ids
                 .into_iter()
@@ -154,8 +154,7 @@ mod write {
     use super::validation::{
         normalize_custom_fields, normalize_custom_fields_patch,
         normalize_device_name, normalize_present_external_url,
-        normalize_source_label, normalize_unique_aor_ids,
-        validate_custom_fields_count,
+        normalize_unique_aor_ids, validate_custom_fields_count,
     };
     use crate::devices::access;
     use crate::entities::{device, login};
@@ -171,14 +170,14 @@ mod write {
         login: &login::Model,
         command: CreateDeviceCommand,
     ) -> Result<DeviceCurrentState, AppError> {
-        access::require_source_write(&login.roles).c(h!())?;
+        access::require_create(&login.roles).c(h!())?;
 
         let CreateDeviceCommand {
-            source_label,
+            name,
             external_url,
             custom_fields,
         } = command;
-        let source_label = normalize_source_label(&source_label).c(h!())?;
+        let name = normalize_device_name(&name).c(h!())?;
         let external_url = external_url
             .map(normalize_present_external_url)
             .transpose()
@@ -196,8 +195,7 @@ mod write {
                 transaction_db,
                 device::ActiveModel {
                     id: Set(device_id),
-                    source_label: Set(source_label),
-                    name: Set(None),
+                    name: Set(name),
                     created_by: Set(login.login.clone()),
                     organism_id: Set(access::organism_id(login).c(h!())?),
                     unit_id: Set(None),
@@ -297,10 +295,9 @@ mod write {
 
     struct NormalizedUpdateDevice {
         device_id: Uuid,
-        source_label: DevicePatchField<String>,
         external_url: DevicePatchField<Option<String>>,
         custom_fields: DevicePatchField<BTreeMap<String, Option<String>>>,
-        name: DevicePatchField<Option<String>>,
+        name: DevicePatchField<String>,
         aor_ids: DevicePatchField<Vec<i64>>,
         unit_id: DevicePatchField<Option<i64>>,
     }
@@ -310,11 +307,6 @@ mod write {
     ) -> Result<NormalizedUpdateDevice, AppError> {
         Ok(NormalizedUpdateDevice {
             device_id: command.device_id,
-            source_label: normalize_patch_field(
-                command.source_label,
-                |source_label| normalize_source_label(&source_label),
-            )
-            .c(h!())?,
             external_url: normalize_patch_field(
                 command.external_url,
                 |external_url| {
@@ -328,7 +320,7 @@ mod write {
             )
             .c(h!())?,
             name: normalize_patch_field(command.name, |name| {
-                name.map(|name| normalize_device_name(&name)).transpose()
+                normalize_device_name(&name)
             })
             .c(h!())?,
             aor_ids: normalize_patch_field(
@@ -379,14 +371,6 @@ mod write {
         current_aor_ids: Vec<i64>,
         command: NormalizedUpdateDevice,
     ) -> Result<DeviceChanges, AppError> {
-        let source_label = match command.source_label {
-            DevicePatchField::Value(source_label)
-                if source_label != device.source_label =>
-            {
-                Some(source_label)
-            }
-            _ => None,
-        };
         let external_url = match command.external_url {
             DevicePatchField::Value(external_url)
                 if external_url != device.external_url =>
@@ -427,7 +411,6 @@ mod write {
         };
 
         Ok(DeviceChanges {
-            source_label,
             external_url,
             custom_fields,
             name,
@@ -466,7 +449,6 @@ mod mapping {
     ) -> DeviceDetails {
         DeviceDetails {
             id: device.id.hyphenated().to_string(),
-            source_label: device.source_label,
             name: device.name,
             aors: device.aors.into_iter().map(map_aor).collect(),
             unit: device.unit.map(map_unit),
@@ -515,7 +497,6 @@ mod mapping {
     fn map_device_list_item(device: DeviceCurrentState) -> DeviceListItem {
         DeviceListItem {
             id: device.id.hyphenated().to_string(),
-            source_label: device.source_label,
             name: device.name,
             aors: device.aors.into_iter().map(map_aor).collect(),
             unit: device.unit.map(map_unit),
@@ -616,7 +597,7 @@ pub(super) mod validation {
         DEVICE_CUSTOM_FIELDS_MAX_COUNT, DEVICE_CUSTOM_FIELD_KEY_MAX_CHARS,
         DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS, DEVICE_EXTERNAL_URL_MAX_CHARS,
         DEVICE_LIST_DEFAULT_LIMIT, DEVICE_LIST_MAX_LIMIT,
-        DEVICE_NAME_MAX_CHARS, DEVICE_SOURCE_LABEL_MAX_CHARS,
+        DEVICE_NAME_MAX_CHARS,
     };
     use crate::h;
     use crate::types::{AppError, BTreeMap, BTreeSet, ShortContext};
@@ -653,25 +634,6 @@ pub(super) mod validation {
         }
         validate_max_chars("name", &name, DEVICE_NAME_MAX_CHARS).c(h!())?;
         Ok(name)
-    }
-
-    pub fn normalize_source_label(
-        source_label: &str,
-    ) -> Result<String, AppError> {
-        let source_label = source_label.trim().to_string();
-        if source_label.is_empty() {
-            return Err(form_error(
-                "source_label",
-                "Джерельна мітка не може бути порожньою",
-            ));
-        }
-        validate_max_chars(
-            "source_label",
-            &source_label,
-            DEVICE_SOURCE_LABEL_MAX_CHARS,
-        )
-        .c(h!())?;
-        Ok(source_label)
     }
 
     pub(in crate::devices) fn validate_custom_fields_count(

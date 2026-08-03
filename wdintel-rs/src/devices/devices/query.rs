@@ -190,7 +190,6 @@ fn archived_device_error() -> AppError {
 pub(super) struct ListDevicesQuery {
     pub(super) filter_text: Option<String>,
     pub(super) archived_scope: DeviceArchivedScope,
-    pub(super) needs_analytical_name: Option<bool>,
     pub(super) aor_ids: Vec<i64>,
     pub(super) unit_ids: Vec<i64>,
     pub(super) limit: u64,
@@ -396,7 +395,6 @@ fn hydrate_device(
 
     Ok(DeviceCurrentState {
         id: device_id,
-        source_label: device.source_label,
         name: device.name,
         aors: aors_by_device.remove(&device_id).unwrap_or_default(),
         unit,
@@ -427,13 +425,6 @@ fn apply_list_filters(
     mut query: Select<device::Entity>,
     command: &ListDevicesQuery,
 ) -> Select<device::Entity> {
-    if let Some(needs_analytical_name) = command.needs_analytical_name {
-        query = if needs_analytical_name {
-            query.filter(device::Column::Name.is_null())
-        } else {
-            query.filter(device::Column::Name.is_not_null())
-        };
-    }
     if !command.aor_ids.is_empty() {
         let matching_aor = device_aor::Entity::find()
             .select_only()
@@ -455,10 +446,6 @@ fn apply_list_filters(
         let pattern = literal_substring_pattern(filter_text);
         query = query.filter(
             Condition::any()
-                .add(
-                    Expr::col((device::Entity, device::Column::SourceLabel))
-                        .ilike(LikeExpr::new(pattern.clone())),
-                )
                 .add(
                     Expr::col((device::Entity, device::Column::Name))
                         .ilike(LikeExpr::new(pattern.clone())),
@@ -518,11 +505,7 @@ fn apply_list_sort(
 }
 
 fn display_title_sort_expr() -> SimpleExpr {
-    Func::lower(Func::coalesce([
-        Expr::col((device::Entity, device::Column::Name)).into(),
-        Expr::col((device::Entity, device::Column::SourceLabel)).into(),
-    ]))
-    .into()
+    Func::lower(Expr::col((device::Entity, device::Column::Name))).into()
 }
 
 async fn load_status_counts(
@@ -568,18 +551,16 @@ fn literal_substring_pattern(value: &str) -> String {
 }
 
 pub(super) struct DeviceChanges {
-    pub(super) source_label: Option<String>,
     pub(super) external_url: Option<Option<String>>,
     pub(super) custom_fields: Option<serde_json::Value>,
-    pub(super) name: Option<Option<String>>,
+    pub(super) name: Option<String>,
     pub(super) aor_ids: Option<Vec<i64>>,
     pub(super) unit_id: Option<Option<i64>>,
 }
 
 impl DeviceChanges {
     pub(super) fn is_empty(&self) -> bool {
-        self.source_label.is_none()
-            && self.external_url.is_none()
+        self.external_url.is_none()
             && self.custom_fields.is_none()
             && self.name.is_none()
             && self.aor_ids.is_none()
@@ -687,7 +668,6 @@ pub(super) async fn apply_device_changes(
     now: NaiveDateTime,
 ) -> Result<device::Model, AppError> {
     let DeviceChanges {
-        source_label,
         external_url,
         custom_fields,
         name,
@@ -698,9 +678,6 @@ pub(super) async fn apply_device_changes(
         id: Set(device_id),
         ..Default::default()
     };
-    if let Some(source_label) = source_label {
-        device.source_label = Set(source_label);
-    }
     if let Some(external_url) = external_url {
         device.external_url = Set(external_url);
     }

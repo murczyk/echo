@@ -4,12 +4,10 @@ use super::query::{
     DeviceReadScope,
 };
 use super::types::*;
-use crate::config::{
-    DEVICE_CUSTOM_FIELDS_MAX_COUNT, ROLE_ADMIN, ROLE_CYBER,
-    ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
-};
+use crate::config::{DEVICE_CUSTOM_FIELDS_MAX_COUNT, ROLE_ADMIN};
 use crate::devices::access;
 use crate::devices::tests::schema::device_active_model;
+use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
 use crate::entities::{
     area_of_responsibility, device, device_aor, login, organism, sigint_unit,
 };
@@ -28,7 +26,6 @@ use uuid::Uuid;
 fn update_command(device_id: Uuid) -> UpdateDeviceCommand {
     UpdateDeviceCommand {
         device_id,
-        source_label: DevicePatchField::Missing,
         external_url: DevicePatchField::Missing,
         custom_fields: DevicePatchField::Missing,
         name: DevicePatchField::Missing,
@@ -45,7 +42,6 @@ fn list_command() -> ListDevicesCommand {
     ListDevicesCommand {
         filter_text: None,
         archived_scope: DeviceArchivedScope::ActiveOnly,
-        needs_analytical_name: None,
         aor_ids: Vec::new(),
         unit_ids: Vec::new(),
         limit: None,
@@ -174,7 +170,6 @@ async fn batch_hydration_preserves_input_order_and_current_references() {
     let mut first_device = device_active_model(
         &source_login.login,
         source_login.organism_id.unwrap(),
-        "source-first",
         Some("First device"),
         json!({"inventory_id": "one"}),
         false,
@@ -187,8 +182,7 @@ async fn batch_hydration_preserves_input_order_and_current_references() {
     let second_device = device_active_model(
         &source_login.login,
         source_login.organism_id.unwrap(),
-        "source-second",
-        None,
+        Some("Second device"),
         json!({}),
         false,
         None,
@@ -225,8 +219,8 @@ async fn batch_hydration_preserves_input_order_and_current_references() {
         states.iter().map(|state| state.id).collect::<Vec<_>>(),
         [second_device.id, first_device.id,]
     );
-    assert_eq!(states[0].name, None);
-    assert_eq!(states[1].source_label, "source-first");
+    assert_eq!(states[0].name, "Second device");
+    assert_eq!(states[1].name, "First device");
     assert_eq!(
         states[1].aors.iter().map(|aor| aor.id).collect::<Vec<_>>(),
         [first_aor.id, second_aor.id]
@@ -252,7 +246,7 @@ async fn batch_hydration_preserves_input_order_and_current_references() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn source_create_persists_only_normalized_source_state() {
+async fn device_source_create_persists_normalized_state() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
     let actor = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
@@ -262,7 +256,7 @@ async fn source_create_persists_only_normalized_source_state() {
         &main_db,
         &actor,
         CreateDeviceCommand {
-            source_label: "  device-source  ".to_string(),
+            name: "  Device source  ".to_string(),
             external_url: Some(" https://example.com ".to_string()),
             custom_fields: Some(BTreeMap::from([(
                 " inventory_id ".to_string(),
@@ -276,7 +270,7 @@ async fn source_create_persists_only_normalized_source_state() {
         &main_db,
         &actor,
         CreateDeviceCommand {
-            source_label: "device-source".to_string(),
+            name: "Another device".to_string(),
             external_url: None,
             custom_fields: None,
         },
@@ -285,8 +279,8 @@ async fn source_create_persists_only_normalized_source_state() {
     .unwrap();
 
     assert_ne!(state.id, another_state.id);
-    assert_eq!(state.source_label, "device-source");
-    assert_eq!(state.name, None);
+    assert_eq!(state.name, "Device source");
+    assert_eq!(another_state.name, "Another device");
     assert!(state.aors.is_empty());
     assert_eq!(state.unit, None);
     assert_eq!(state.external_url.as_deref(), Some("https://example.com/"));
@@ -303,7 +297,7 @@ async fn source_create_persists_only_normalized_source_state() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(device.name, None);
+    assert_eq!(device.name, "Device source");
     assert_eq!(device.unit_id, None);
     assert_eq!(device.tags, json!([]));
     assert_eq!(device.organism_id, source_login.organism_id.unwrap());
@@ -312,18 +306,19 @@ async fn source_create_persists_only_normalized_source_state() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn analyst_mixed_update_is_atomic_and_source_cannot_change_analysis() {
+async fn device_source_mixed_update_is_atomic_and_cyber_cannot_change_analysis()
+{
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
-    let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
+    let cyber_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
     let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = login_with_roles(&analyst_login, &[ROLE_DEVICE_ANALYST]);
+    let cyber = login_with_roles(&cyber_login, &[ROLE_CYBER]);
     let main_db = env.dbx.clone();
     let created = create(
         &main_db,
         &source,
         CreateDeviceCommand {
-            source_label: "initial source".to_string(),
+            name: "Initial device".to_string(),
             external_url: None,
             custom_fields: None,
         },
@@ -342,7 +337,7 @@ async fn analyst_mixed_update_is_atomic_and_source_cannot_change_analysis() {
     let unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
-            created_by_login_id: Set(analyst_login.id),
+            created_by_login_id: Set(source_login.id),
             name: Set("Update unit".to_string()),
             ..Default::default()
         },
@@ -350,8 +345,6 @@ async fn analyst_mixed_update_is_atomic_and_source_cannot_change_analysis() {
     .await
     .unwrap();
     let mut command = update_command(created.id);
-    command.source_label =
-        DevicePatchField::Value("  updated source  ".to_string());
     command.external_url = DevicePatchField::Value(Some(
         "https://example.com/updated".to_string(),
     ));
@@ -359,14 +352,12 @@ async fn analyst_mixed_update_is_atomic_and_source_cannot_change_analysis() {
         " inventory_id ".to_string(),
         Some("node-2".to_string()),
     )]));
-    command.name =
-        DevicePatchField::Value(Some("  Updated device  ".to_string()));
+    command.name = DevicePatchField::Value("  Updated device  ".to_string());
     command.aor_ids = DevicePatchField::Value(vec![aor.id]);
     command.unit_id = DevicePatchField::Value(Some(unit.id));
 
-    let updated = update(&main_db, &analyst, command).await.unwrap();
+    let updated = update(&main_db, &source, command).await.unwrap();
 
-    assert_eq!(updated.source_label, "updated source");
     assert_eq!(
         updated.external_url.as_deref(),
         Some("https://example.com/updated")
@@ -375,7 +366,7 @@ async fn analyst_mixed_update_is_atomic_and_source_cannot_change_analysis() {
         updated.custom_fields,
         BTreeMap::from([("inventory_id".to_string(), "node-2".to_string())])
     );
-    assert_eq!(updated.name.as_deref(), Some("Updated device"));
+    assert_eq!(updated.name, "Updated device");
     assert_eq!(
         updated.aors.iter().map(|aor| aor.id).collect::<Vec<_>>(),
         [aor.id]
@@ -391,47 +382,41 @@ async fn analyst_mixed_update_is_atomic_and_source_cannot_change_analysis() {
 
     let mut forbidden_command = update_command(created.id);
     forbidden_command.name =
-        DevicePatchField::Value(Some("Source cannot set this".to_string()));
-    let error = update(&main_db, &source, forbidden_command)
-        .await
-        .unwrap_err();
-    assert!(matches!(error, AppError::Forbidden(_)));
+        DevicePatchField::Value("Cyber cannot set this".to_string());
+    assert_forbidden(
+        update(&main_db, &cyber, forbidden_command)
+            .await
+            .unwrap_err(),
+    );
     assert_eq!(
         device::Entity::find_by_id(created.id)
             .one(&env.dbx)
             .await
             .unwrap()
             .unwrap()
-            .name
-            .as_deref(),
-        Some("Updated device")
+            .name,
+        "Updated device"
     );
 }
 
 #[tokio::test]
 #[serial_test::serial]
-async fn create_allows_source_analyst_and_admin_but_not_cyber() {
+async fn create_allows_device_source_and_admin_and_rejects_cyber() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
-    let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
     let admin_login = insert_login(&env.dbx, &[ROLE_ADMIN]).await;
     let cyber_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
     let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = login_with_roles(&analyst_login, &[ROLE_DEVICE_ANALYST]);
     let admin = login_with_roles(&admin_login, &[ROLE_ADMIN]);
     let cyber = login_with_roles(&cyber_login, &[ROLE_CYBER]);
     let main_db = env.dbx.clone();
 
-    for (login, actor) in [
-        (&source_login, &source),
-        (&analyst_login, &analyst),
-        (&admin_login, &admin),
-    ] {
+    for (login, actor) in [(&source_login, &source), (&admin_login, &admin)] {
         let state = create(
             &main_db,
             actor,
             CreateDeviceCommand {
-                source_label: format!("create-role-{}", Uuid::now_v7()),
+                name: format!("create-role-{}", Uuid::now_v7()),
                 external_url: None,
                 custom_fields: None,
             },
@@ -439,6 +424,7 @@ async fn create_allows_source_analyst_and_admin_but_not_cyber() {
         .await
         .unwrap();
         assert_eq!(state.created_by, login.login);
+        assert!(!state.name.is_empty());
     }
 
     assert_forbidden(
@@ -446,7 +432,21 @@ async fn create_allows_source_analyst_and_admin_but_not_cyber() {
             &main_db,
             &cyber,
             CreateDeviceCommand {
-                source_label: "   ".to_string(),
+                name: "Cyber device".to_string(),
+                external_url: None,
+                custom_fields: None,
+            },
+        )
+        .await
+        .unwrap_err(),
+    );
+
+    assert_forbidden(
+        create(
+            &main_db,
+            &cyber,
+            CreateDeviceCommand {
+                name: "   ".to_string(),
                 external_url: Some("not a URL".to_string()),
                 custom_fields: None,
             },
@@ -459,7 +459,7 @@ async fn create_allows_source_analyst_and_admin_but_not_cyber() {
         &main_db,
         &source,
         CreateDeviceCommand {
-            source_label: "authorization target".to_string(),
+            name: "Authorization target".to_string(),
             external_url: None,
             custom_fields: None,
         },
@@ -467,8 +467,9 @@ async fn create_allows_source_analyst_and_admin_but_not_cyber() {
     .await
     .unwrap();
     let mut malformed_mixed = update_command(created.id);
-    malformed_mixed.source_label = DevicePatchField::Value("   ".to_string());
-    malformed_mixed.name = DevicePatchField::Value(Some("   ".to_string()));
+    malformed_mixed.external_url =
+        DevicePatchField::Value(Some("not a URL".to_string()));
+    malformed_mixed.name = DevicePatchField::Value("   ".to_string());
     assert_forbidden(
         update(&main_db, &cyber, malformed_mixed).await.unwrap_err(),
     );
@@ -478,8 +479,8 @@ async fn create_allows_source_analyst_and_admin_but_not_cyber() {
             .await
             .unwrap()
             .unwrap()
-            .source_label,
-        "authorization target"
+            .name,
+        "Authorization target"
     );
 }
 
@@ -488,17 +489,17 @@ async fn create_allows_source_analyst_and_admin_but_not_cyber() {
 async fn patch_presence_and_clears_follow_the_internal_contract() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
-    let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
     let cyber_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
+    let unauthorized_login = insert_login(&env.dbx, &[]).await;
     let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = login_with_roles(&analyst_login, &[ROLE_DEVICE_ANALYST]);
     let cyber = login_with_roles(&cyber_login, &[ROLE_CYBER]);
+    let unauthorized = login_with_roles(&unauthorized_login, &[]);
     let main_db = env.dbx.clone();
     let created = create(
         &main_db,
         &source,
         CreateDeviceCommand {
-            source_label: "presence source".to_string(),
+            name: "Presence device".to_string(),
             external_url: Some("https://example.com/original".to_string()),
             custom_fields: Some(BTreeMap::from([(
                 "source_key".to_string(),
@@ -529,7 +530,7 @@ async fn patch_presence_and_clears_follow_the_internal_contract() {
     let unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
-            created_by_login_id: Set(analyst_login.id),
+            created_by_login_id: Set(source_login.id),
             name: Set("Presence unit".to_string()),
             ..Default::default()
         },
@@ -537,20 +538,24 @@ async fn patch_presence_and_clears_follow_the_internal_contract() {
     .await
     .unwrap();
 
-    let mut source_patch = update_command(created.id);
-    source_patch.source_label =
-        DevicePatchField::Value("  presence source updated  ".to_string());
-    let source_updated = update(&main_db, &source, source_patch).await.unwrap();
-    assert_eq!(source_updated.source_label, "presence source updated");
+    let mut cyber_patch = update_command(created.id);
+    cyber_patch.external_url = DevicePatchField::Value(Some(
+        "https://example.com/updated".to_string(),
+    ));
+    let cyber_updated = update(&main_db, &cyber, cyber_patch).await.unwrap();
+    assert_eq!(
+        cyber_updated.external_url.as_deref(),
+        Some("https://example.com/updated")
+    );
 
     let mut analytical_patch = update_command(created.id);
     analytical_patch.name =
-        DevicePatchField::Value(Some("Presence device".to_string()));
+        DevicePatchField::Value("Renamed presence device".to_string());
     analytical_patch.aor_ids =
         DevicePatchField::Value(vec![second_aor.id, first_aor.id]);
     analytical_patch.unit_id = DevicePatchField::Value(Some(unit.id));
     let analytical_updated =
-        update(&main_db, &analyst, analytical_patch).await.unwrap();
+        update(&main_db, &source, analytical_patch).await.unwrap();
     assert_eq!(
         analytical_updated
             .aors
@@ -561,7 +566,7 @@ async fn patch_presence_and_clears_follow_the_internal_contract() {
     );
 
     assert_form_error(
-        update(&main_db, &analyst, update_command(created.id))
+        update(&main_db, &source, update_command(created.id))
             .await
             .unwrap_err(),
         "patch",
@@ -581,19 +586,18 @@ async fn patch_presence_and_clears_follow_the_internal_contract() {
     unauthorized_empty_custom_fields.custom_fields =
         DevicePatchField::Value(BTreeMap::new());
     assert_forbidden(
-        update(&main_db, &cyber, unauthorized_empty_custom_fields)
+        update(&main_db, &unauthorized, unauthorized_empty_custom_fields)
             .await
             .unwrap_err(),
     );
 
     let mut clears = update_command(created.id);
     clears.external_url = DevicePatchField::Value(None);
-    clears.name = DevicePatchField::Value(None);
     clears.aor_ids = DevicePatchField::Value(Vec::new());
     clears.unit_id = DevicePatchField::Value(None);
-    let cleared = update(&main_db, &analyst, clears).await.unwrap();
+    let cleared = update(&main_db, &source, clears).await.unwrap();
     assert_eq!(cleared.external_url, None);
-    assert_eq!(cleared.name, None);
+    assert_eq!(cleared.name, "Renamed presence device");
     assert!(cleared.aors.is_empty());
     assert_eq!(cleared.unit, None);
 }
@@ -603,15 +607,13 @@ async fn patch_presence_and_clears_follow_the_internal_contract() {
 async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
-    let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
     let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = login_with_roles(&analyst_login, &[ROLE_DEVICE_ANALYST]);
     let main_db = env.dbx.clone();
     let created = create(
         &main_db,
         &source,
         CreateDeviceCommand {
-            source_label: "rollback source".to_string(),
+            name: "Rollback device".to_string(),
             external_url: None,
             custom_fields: Some(BTreeMap::from([(
                 "stable".to_string(),
@@ -633,7 +635,7 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     let active_unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
-            created_by_login_id: Set(analyst_login.id),
+            created_by_login_id: Set(source_login.id),
             name: Set("Active rollback unit".to_string()),
             ..Default::default()
         },
@@ -641,34 +643,32 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     .await
     .unwrap();
     let mut setup = update_command(created.id);
-    setup.name = DevicePatchField::Value(Some("Stable name".to_string()));
+    setup.name = DevicePatchField::Value("Stable name".to_string());
     setup.aor_ids = DevicePatchField::Value(vec![active_aor.id]);
     setup.unit_id = DevicePatchField::Value(Some(active_unit.id));
-    update(&main_db, &analyst, setup).await.unwrap();
+    update(&main_db, &source, setup).await.unwrap();
     let before =
-        read(&main_db, &analyst, created.id, DeviceReadScope::ActiveOnly)
+        read(&main_db, &source, created.id, DeviceReadScope::ActiveOnly)
             .await
             .unwrap();
     let links_before = current_aor_links(&env.dbx, created.id).await;
 
     let mut invalid_mixed = update_command(created.id);
-    invalid_mixed.source_label =
-        DevicePatchField::Value("should roll back".to_string());
     invalid_mixed.custom_fields = DevicePatchField::Value(BTreeMap::from([(
         "stable".to_string(),
         Some("changed".to_string()),
     )]));
     invalid_mixed.name =
-        DevicePatchField::Value(Some("Should roll back".to_string()));
+        DevicePatchField::Value("Should roll back".to_string());
     invalid_mixed.aor_ids = DevicePatchField::Value(vec![i64::MAX]);
     invalid_mixed.unit_id = DevicePatchField::Value(Some(active_unit.id));
     assert_form_error(
-        update(&main_db, &analyst, invalid_mixed).await.unwrap_err(),
+        update(&main_db, &source, invalid_mixed).await.unwrap_err(),
         "aor_ids",
         "Смугу не знайдено",
     );
     let after =
-        read(&main_db, &analyst, created.id, DeviceReadScope::ActiveOnly)
+        read(&main_db, &source, created.id, DeviceReadScope::ActiveOnly)
             .await
             .unwrap();
     assert_eq!(after, before);
@@ -688,9 +688,7 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     duplicate_aors.aor_ids =
         DevicePatchField::Value(vec![active_aor.id, active_aor.id]);
     assert_form_error(
-        update(&main_db, &analyst, duplicate_aors)
-            .await
-            .unwrap_err(),
+        update(&main_db, &source, duplicate_aors).await.unwrap_err(),
         "aor_ids",
         "Смуги не можуть повторюватися",
     );
@@ -715,7 +713,7 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     let mut deleted_aor_patch = update_command(created.id);
     deleted_aor_patch.aor_ids = DevicePatchField::Value(vec![deleted_aor.id]);
     assert_form_error(
-        update(&main_db, &analyst, deleted_aor_patch)
+        update(&main_db, &source, deleted_aor_patch)
             .await
             .unwrap_err(),
         "aor_ids",
@@ -725,7 +723,7 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     let mut missing_unit_patch = update_command(created.id);
     missing_unit_patch.unit_id = DevicePatchField::Value(Some(i64::MAX));
     assert_form_error(
-        update(&main_db, &analyst, missing_unit_patch)
+        update(&main_db, &source, missing_unit_patch)
             .await
             .unwrap_err(),
         "unit_id",
@@ -735,7 +733,7 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     let deleted_unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
-            created_by_login_id: Set(analyst_login.id),
+            created_by_login_id: Set(source_login.id),
             name: Set("Deleted rollback unit".to_string()),
             ..Default::default()
         },
@@ -753,7 +751,7 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     let mut deleted_unit_patch = update_command(created.id);
     deleted_unit_patch.unit_id = DevicePatchField::Value(Some(deleted_unit.id));
     assert_form_error(
-        update(&main_db, &analyst, deleted_unit_patch)
+        update(&main_db, &source, deleted_unit_patch)
             .await
             .unwrap_err(),
         "unit_id",
@@ -766,15 +764,13 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
 async fn custom_field_patches_and_effective_no_ops_preserve_state() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
-    let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
     let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = login_with_roles(&analyst_login, &[ROLE_DEVICE_ANALYST]);
     let main_db = env.dbx.clone();
     let created = create(
         &main_db,
         &source,
         CreateDeviceCommand {
-            source_label: "no-op source".to_string(),
+            name: "Custom fields device".to_string(),
             external_url: None,
             custom_fields: Some(BTreeMap::from([
                 ("remove".to_string(), "value".to_string()),
@@ -805,14 +801,14 @@ async fn custom_field_patches_and_effective_no_ops_preserve_state() {
     let mut assign_aors = update_command(created.id);
     assign_aors.aor_ids =
         DevicePatchField::Value(vec![first_aor.id, second_aor.id]);
-    update(&main_db, &analyst, assign_aors).await.unwrap();
+    update(&main_db, &source, assign_aors).await.unwrap();
 
     let mut merge = update_command(created.id);
     merge.custom_fields = DevicePatchField::Value(BTreeMap::from([
         ("remove".to_string(), None),
         ("added".to_string(), Some("new value".to_string())),
     ]));
-    let merged = update(&main_db, &analyst, merge).await.unwrap();
+    let merged = update(&main_db, &source, merge).await.unwrap();
     assert_eq!(
         merged.custom_fields,
         BTreeMap::from([
@@ -827,7 +823,7 @@ async fn custom_field_patches_and_effective_no_ops_preserve_state() {
         ("added".to_string(), Some("two".to_string())),
     ]));
     assert_form_error(
-        update(&main_db, &analyst, collision).await.unwrap_err(),
+        update(&main_db, &source, collision).await.unwrap_err(),
         "custom_fields",
         "Ключі кастомних полів мають бути унікальними",
     );
@@ -839,12 +835,10 @@ async fn custom_field_patches_and_effective_no_ops_preserve_state() {
         .unwrap();
     let links_before = current_aor_links(&env.dbx, created.id).await;
     let mut no_op = update_command(created.id);
-    no_op.source_label =
-        DevicePatchField::Value("  no-op source  ".to_string());
     no_op.aor_ids = DevicePatchField::Value(vec![second_aor.id, first_aor.id]);
     no_op.custom_fields =
         DevicePatchField::Value(BTreeMap::from([("absent".to_string(), None)]));
-    let no_op_state = update(&main_db, &analyst, no_op).await.unwrap();
+    let no_op_state = update(&main_db, &source, no_op).await.unwrap();
     assert_eq!(no_op_state.updated_at, before.updated_at);
     let after = device::Entity::find_by_id(created.id)
         .one(&env.dbx)
@@ -871,7 +865,7 @@ async fn custom_field_patches_and_effective_no_ops_preserve_state() {
         &main_db,
         &source,
         CreateDeviceCommand {
-            source_label: "full custom fields".to_string(),
+            name: "Full custom fields device".to_string(),
             external_url: None,
             custom_fields: Some(full_custom_fields),
         },
@@ -884,7 +878,7 @@ async fn custom_field_patches_and_effective_no_ops_preserve_state() {
         Some("value".to_string()),
     )]));
     assert_form_error(
-        update(&main_db, &analyst, over_limit).await.unwrap_err(),
+        update(&main_db, &source, over_limit).await.unwrap_err(),
         "custom_fields",
         "Забагато кастомних полів",
     );
@@ -892,18 +886,18 @@ async fn custom_field_patches_and_effective_no_ops_preserve_state() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn read_handles_archives_nullable_names_and_deleted_references() {
+async fn read_handles_archives_and_deleted_references() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
-    let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
+    let cyber_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
     let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = login_with_roles(&analyst_login, &[ROLE_DEVICE_ANALYST]);
+    let cyber = login_with_roles(&cyber_login, &[ROLE_CYBER]);
     let main_db = env.dbx.clone();
     let created = create(
         &main_db,
         &source,
         CreateDeviceCommand {
-            source_label: "read source".to_string(),
+            name: "Read device".to_string(),
             external_url: Some("https://example.com/read".to_string()),
             custom_fields: Some(BTreeMap::from([(
                 "read_key".to_string(),
@@ -934,7 +928,7 @@ async fn read_handles_archives_nullable_names_and_deleted_references() {
     let unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
-            created_by_login_id: Set(analyst_login.id),
+            created_by_login_id: Set(source_login.id),
             name: Set("Deleted read unit".to_string()),
             ..Default::default()
         },
@@ -945,7 +939,7 @@ async fn read_handles_archives_nullable_names_and_deleted_references() {
     assign_references.aor_ids =
         DevicePatchField::Value(vec![second_aor.id, first_aor.id]);
     assign_references.unit_id = DevicePatchField::Value(Some(unit.id));
-    update(&main_db, &analyst, assign_references).await.unwrap();
+    update(&main_db, &source, assign_references).await.unwrap();
     area_of_responsibility::ActiveModel {
         id: Set(first_aor.id),
         deleted: Set(true),
@@ -973,14 +967,13 @@ async fn read_handles_archives_nullable_names_and_deleted_references() {
     .unwrap();
 
     assert!(matches!(
-        read(&main_db, &analyst, created.id, DeviceReadScope::ActiveOnly,)
-            .await,
+        read(&main_db, &cyber, created.id, DeviceReadScope::ActiveOnly,).await,
         Err(AppError::NotFound)
     ));
     assert!(matches!(
         read(
             &main_db,
-            &analyst,
+            &cyber,
             Uuid::now_v7(),
             DeviceReadScope::IncludeArchived,
         )
@@ -989,14 +982,13 @@ async fn read_handles_archives_nullable_names_and_deleted_references() {
     ));
     let state = read(
         &main_db,
-        &analyst,
+        &cyber,
         created.id,
         DeviceReadScope::IncludeArchived,
     )
     .await
     .unwrap();
-    assert_eq!(state.name, None);
-    assert_eq!(state.source_label, "read source");
+    assert_eq!(state.name, "Read device");
     assert_eq!(
         state.external_url.as_deref(),
         Some("https://example.com/read")
@@ -1077,26 +1069,24 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     .unwrap();
     let now = Utc::now().naive_utc();
 
-    let mut missing_name = device_active_model(
+    let mut aor_device = device_active_model(
         &reader.login,
         reader.organism_id.unwrap(),
-        "literal%source",
-        None,
+        Some("AOR device"),
         json!({}),
         false,
         None,
     );
-    missing_name.unit_id = Set(Some(active_unit.id));
-    missing_name.created_at = Set(now - chrono::Duration::hours(4));
-    missing_name.updated_at = Set(now - chrono::Duration::hours(4));
-    let missing_name = missing_name.insert(&env.dbx).await.unwrap();
-    link_device_aor(&env.dbx, missing_name.id, aor.id).await;
+    aor_device.unit_id = Set(Some(active_unit.id));
+    aor_device.created_at = Set(now - chrono::Duration::hours(4));
+    aor_device.updated_at = Set(now - chrono::Duration::hours(4));
+    let aor_device = aor_device.insert(&env.dbx).await.unwrap();
+    link_device_aor(&env.dbx, aor_device.id, aor.id).await;
 
     let mut named = device_active_model(
         &reader.login,
         reader.organism_id.unwrap(),
-        "ordinary-source",
-        Some("Needle Alpha"),
+        Some("Needle%Alpha"),
         json!({}),
         false,
         None,
@@ -1109,7 +1099,6 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     let mut uuid_match = device_active_model(
         &reader.login,
         reader.organism_id.unwrap(),
-        "uuid-source",
         Some("UUID device"),
         json!({}),
         false,
@@ -1122,7 +1111,6 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     let mut archived = device_active_model(
         &reader.login,
         reader.organism_id.unwrap(),
-        "archived-source",
         Some("Archived device"),
         json!({}),
         true,
@@ -1136,8 +1124,7 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     let mut other_device = device_active_model(
         &other_login.login,
         other_organism.id,
-        "literal%source",
-        None,
+        Some("Other device"),
         json!({}),
         false,
         None,
@@ -1146,20 +1133,6 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     other_device.insert(&env.dbx).await.unwrap();
 
     let main_db = env.dbx.clone();
-    let mut command = list_command();
-    command.needs_analytical_name = Some(true);
-    command.sort_by = vec![DeviceListSort::CreatedAtAsc];
-    let result = list(&main_db, &actor, command).await.unwrap();
-    assert_eq!(
-        result
-            .devices
-            .iter()
-            .map(|device| device.id)
-            .collect::<Vec<_>>(),
-        vec![missing_name.id],
-    );
-    assert_eq!(result.status_counts.active, 1);
-    assert_eq!(result.status_counts.archived, 0);
 
     let result = list(&main_db, &actor, list_command()).await.unwrap();
     assert_eq!(result.status_counts.active, 3);
@@ -1167,8 +1140,8 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     assert_eq!(result.total, 3);
 
     for (filter_text, expected_id) in [
-        ("%".to_string(), missing_name.id),
-        ("Needle Alpha".to_string(), named.id),
+        ("%".to_string(), named.id),
+        ("Needle%Alpha".to_string(), named.id),
         (uuid_match.id.to_string(), uuid_match.id),
     ] {
         let mut command = list_command();
@@ -1193,7 +1166,7 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
             .iter()
             .map(|device| device.id)
             .collect::<Vec<_>>(),
-        vec![missing_name.id],
+        vec![aor_device.id],
     );
 
     let stats = unit_stats(&main_db, &actor).await.unwrap();
@@ -1334,16 +1307,7 @@ mod validation_tests {
     }
 
     #[test]
-    fn source_label_and_custom_fields_are_normalized_without_special_keys() {
-        assert_eq!(
-            normalize_source_label("  source-device  ").unwrap(),
-            "source-device"
-        );
-        assert_form_field(
-            normalize_source_label("   ").unwrap_err(),
-            "source_label",
-        );
-
+    fn custom_fields_are_normalized_without_special_keys() {
         let fields = normalize_custom_fields(BTreeMap::from([
             (" inventory_id ".to_string(), "node-1".to_string()),
             ("source_port".to_string(), "not-a-port".to_string()),
@@ -1408,8 +1372,7 @@ mod mapping_tests {
         DeviceCurrentState {
             id: Uuid::parse_str("018f0000-0000-7000-8000-000000000001")
                 .unwrap(),
-            source_label: "source".to_string(),
-            name: None,
+            name: "Mapped device".to_string(),
             aors: vec![DeviceAorReference {
                 id: 7,
                 name: "AOR".to_string(),
@@ -1437,8 +1400,7 @@ mod mapping_tests {
             serde_json::to_value(map_device_details(device_state())).unwrap(),
             json!({
                 "id": "018f0000-0000-7000-8000-000000000001",
-                "source_label": "source",
-                "name": null,
+                "name": "Mapped device",
                 "aors": [{"id": 7, "name": "AOR"}],
                 "unit": {"id": 8, "name": "Unit"},
                 "external_url": "https://example.com",
@@ -1465,8 +1427,7 @@ mod mapping_tests {
             json!({
                 "list": [{
                     "id": "018f0000-0000-7000-8000-000000000001",
-                    "source_label": "source",
-                    "name": null,
+                    "name": "Mapped device",
                     "aors": [{"id": 7, "name": "AOR"}],
                     "unit": {"id": 8, "name": "Unit"},
                     "created_by": "reader",
@@ -1485,10 +1446,10 @@ mod mapping_tests {
 
 mod query_tests {
     use super::super::query::*;
-    use crate::config::{ROLE_CYBER, ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE};
     use crate::devices::access;
     use crate::devices::files::query;
     use crate::devices::tests::schema::device_active_model;
+    use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
     use crate::entities::{device, login, organism, system_settings};
     use crate::error::AppError;
     use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
@@ -1541,11 +1502,9 @@ mod query_tests {
         organism_id: i64,
         archived: bool,
     ) -> device::Model {
-        let source_label = format!("device-visibility-{}", Uuid::now_v7());
         device_active_model(
             created_by,
             organism_id,
-            &source_label,
             Some("Visibility device"),
             json!({}),
             archived,
@@ -1829,22 +1788,15 @@ mod query_tests {
             insert_device(&env.dbx, &owner.login, organism.id, true).await;
         let cyber = login_with_roles(&owner, &[ROLE_CYBER]);
         let source = login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
-        let analyst = login_with_roles(&owner, &[ROLE_DEVICE_ANALYST]);
 
-        assert_device_operation_forbidden(
-            access::require_source_write(&cyber.roles).unwrap_err(),
-        );
+        access::require_source_write(&cyber.roles).unwrap();
         assert_device_operation_forbidden(
             access::require_analytical_write(&cyber.roles).unwrap_err(),
         );
         access::require_source_write(&source.roles).unwrap();
-        assert_device_operation_forbidden(
-            access::require_analytical_write(&source.roles).unwrap_err(),
-        );
-        access::require_source_write(&analyst.roles).unwrap();
-        access::require_analytical_write(&analyst.roles).unwrap();
+        access::require_analytical_write(&source.roles).unwrap();
 
-        assert_device_operation_forbidden(
+        assert_eq!(
             authorize_file_registry_access(
                 &env.dbx,
                 &cyber,
@@ -1852,7 +1804,8 @@ mod query_tests {
                 FileRegistryDeviceAccess::SourceWrite,
             )
             .await
-            .unwrap_err(),
+            .unwrap(),
+            active.id,
         );
         assert_eq!(
             authorize_file_registry_access(
@@ -1875,7 +1828,7 @@ mod query_tests {
 
         let transaction = env.dbx.begin().await.unwrap();
         assert_eq!(
-            lock_active_visible_device(&transaction, &analyst, active.id,)
+            lock_active_visible_device(&transaction, &source, active.id,)
                 .await
                 .unwrap()
                 .id,

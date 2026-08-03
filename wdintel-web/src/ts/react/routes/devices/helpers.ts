@@ -153,7 +153,6 @@ export function buildDevicesListReq(params: {
         : params.filters.archivedFilter === 'all'
           ? 'all'
           : 'active_only',
-    needsAnalyticalName: null,
     aorIds: null,
     unitIds: params.filters.unitIds.length > 0 ? params.filters.unitIds : null,
     limit: params.limit,
@@ -182,7 +181,6 @@ export function buildDeviceRowView(device: DeviceListItem): DeviceRowView {
 export function deviceDetailsToListItem(device: DeviceDetails): DeviceListItem {
   return {
     id: device.id,
-    sourceLabel: device.sourceLabel,
     name: device.name,
     aors: device.aors,
     unit: device.unit,

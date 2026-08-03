@@ -133,7 +133,7 @@ function DeviceAorsValue({ device }: { device: DeviceDetails }) {
 }
 
 function DeviceNameValue({ device }: { device: DeviceDetails }) {
-  return <DeviceTextValue muted={device.name === null}>{device.name ?? '—'}</DeviceTextValue>;
+  return <DeviceTextValue>{device.name}</DeviceTextValue>;
 }
 
 function DeviceExternalUrlValue({ device }: { device: DeviceDetails }) {
@@ -163,18 +163,13 @@ function buildMainFields(device: DeviceDetails): FieldConfig[] {
       value: <DeviceTextValue>{device.id}</DeviceTextValue>,
     },
     {
-      key: 'sourceLabel',
-      label: 'Джерельна мітка',
-      value: <DeviceTextValue>{device.sourceLabel}</DeviceTextValue>,
-    },
-    {
       key: 'externalUrl',
       label: 'Зовнішнє посилання',
       value: <DeviceExternalUrlValue device={device} />,
     },
     {
       key: 'name',
-      label: 'Аналітична назва',
+      label: 'Назва',
       value: <DeviceNameValue device={device} />,
     },
     {

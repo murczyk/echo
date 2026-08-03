@@ -1,8 +1,6 @@
 use self::schema::device_active_model;
-use crate::config::{
-    IDENTITY_DURATION_HOURS, ROLE_CYBER, ROLE_DEVICE_ANALYST,
-    ROLE_DEVICE_SOURCE,
-};
+use crate::config::IDENTITY_DURATION_HOURS;
+use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
 use crate::entities::{
     area_of_responsibility, login, organism, sigint_unit, system_settings,
 };
@@ -70,7 +68,7 @@ async fn target_api_smoke_covers_all_routes() {
         &env.dbx,
         login::ActiveModel {
             login: Set(login_name.clone()),
-            roles: Set(json!([ROLE_DEVICE_ANALYST])),
+            roles: Set(json!([ROLE_DEVICE_SOURCE])),
             organism_id: Set(Some(organism.id)),
             ..Default::default()
         },
@@ -118,8 +116,7 @@ async fn target_api_smoke_covers_all_routes() {
     let other_device = device_active_model(
         &other_login.login,
         other_organism.id,
-        "Other organism API source",
-        None,
+        Some("Other API device"),
         json!({}),
         false,
         None,
@@ -214,7 +211,7 @@ async fn target_api_smoke_covers_all_routes() {
     let response = post_json!(
         "/api/device/create",
         json!({
-            "source_label": "API source",
+            "name": "API device",
             "external_url": "https://example.com/device",
             "custom_fields": {"inventory_id": "api-1"}
         })
@@ -222,17 +219,17 @@ async fn target_api_smoke_covers_all_routes() {
     assert_eq!(response.status(), StatusCode::OK);
     let created: Value = test::read_body_json(response).await;
     let device_id = created["id"].as_str().unwrap().to_string();
-    assert_eq!(created["name"], Value::Null);
+    assert_eq!(created["name"], "API device");
     assert_eq!(created["aors"], json!([]));
     assert_eq!(created["unit"], Value::Null);
 
     let response = post_json!(
         "/api/device/update",
-        json!({"device_id": device_id, "name": "API analytical name"})
+        json!({"device_id": device_id, "name": "API renamed"})
     );
     assert_eq!(response.status(), StatusCode::OK);
     let updated: Value = test::read_body_json(response).await;
-    assert_eq!(updated["name"], "API analytical name");
+    assert_eq!(updated["name"], "API renamed");
 
     let response = post_json!("/api/device/list", json!({}));
     assert_eq!(response.status(), StatusCode::OK);
@@ -256,7 +253,7 @@ async fn target_api_smoke_covers_all_routes() {
         post_json!("/api/device/detail", json!({"device_id": device_id}));
     assert_eq!(response.status(), StatusCode::OK);
     let detail: Value = test::read_body_json(response).await;
-    assert_eq!(detail["name"], "API analytical name");
+    assert_eq!(detail["name"], "API renamed");
 
     let response =
         post_json!("/api/device/detail", json!({"device_id": other_device.id}));
@@ -500,8 +497,7 @@ async fn target_api_smoke_covers_all_routes() {
     let child_device = device_active_model(
         &child_login.login,
         child_organism.id,
-        "Child organism API source",
-        None,
+        Some("Child API device"),
         json!({}),
         false,
         None,
@@ -524,29 +520,29 @@ async fn target_api_smoke_covers_all_routes() {
         .any(|device| device["id"] == child_device.id.to_string()));
 
     let mut login = login.into_active_model();
-    login.roles = Set(json!([ROLE_DEVICE_SOURCE]));
-    let login = login.update(&env.dbx).await.unwrap();
+    login.roles = Set(json!([ROLE_CYBER]));
+    login.update(&env.dbx).await.unwrap();
+    let response = post_json!(
+        "/api/device/update",
+        json!({
+            "device_id": device_id,
+            "external_url": "https://example.com/cyber-update"
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let updated: Value = test::read_body_json(response).await;
+    assert_eq!(updated["external_url"], "https://example.com/cyber-update");
     let response = post_json!(
         "/api/device/update",
         json!({"device_id": device_id, "name": "Forbidden rename"})
     );
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = post_json!(
+        "/api/device/create",
+        json!({"name": "Forbidden Cyber device"})
+    );
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-    for path in ["/api/device/aors", "/api/device/units"] {
-        let response = test::call_service(
-            &app,
-            test::TestRequest::post()
-                .uri(path)
-                .cookie(session_cookie.clone())
-                .to_request(),
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    }
-
-    let mut login = login.into_active_model();
-    login.roles = Set(json!([ROLE_CYBER]));
-    login.update(&env.dbx).await.unwrap();
     for path in ["/api/device/aors", "/api/device/units"] {
         let response = test::call_service(
             &app,
@@ -648,9 +644,8 @@ async fn target_route_matrix_has_only_thirteen_post_routes() {
 
 mod access_tests {
     use super::super::access::*;
-    use crate::config::{
-        ROLE_ADMIN, ROLE_CYBER, ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
-    };
+    use crate::config::ROLE_ADMIN;
+    use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
     use crate::entities::{login, organism, system_settings};
     use crate::error::AppError;
     use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
@@ -665,9 +660,10 @@ mod access_tests {
         json!(roles)
     }
 
-    fn capabilities(roles: &serde_json::Value) -> (bool, bool, bool) {
+    fn capabilities(roles: &serde_json::Value) -> (bool, bool, bool, bool) {
         (
             require_read(roles).is_ok(),
+            require_create(roles).is_ok(),
             require_source_write(roles).is_ok(),
             require_analytical_write(roles).is_ok(),
         )
@@ -702,10 +698,9 @@ mod access_tests {
     #[test]
     fn access_maps_each_exact_device_role() {
         let cases = [
-            (ROLE_CYBER, (true, false, false)),
-            (ROLE_DEVICE_SOURCE, (true, true, false)),
-            (ROLE_DEVICE_ANALYST, (true, true, true)),
-            (ROLE_ADMIN, (true, true, true)),
+            (ROLE_CYBER, (true, false, true, false)),
+            (ROLE_DEVICE_SOURCE, (true, true, true, true)),
+            (ROLE_ADMIN, (true, true, true, true)),
         ];
 
         for (role, expected_capabilities) in cases {
@@ -716,9 +711,15 @@ mod access_tests {
     #[test]
     fn access_unions_combined_device_roles() {
         let cases = vec![
-            (vec![ROLE_CYBER, ROLE_DEVICE_SOURCE], (true, true, false)),
-            (vec![ROLE_CYBER, ROLE_DEVICE_ANALYST], (true, true, true)),
-            (vec![ROLE_DEVICE_SOURCE, "Unrelated"], (true, true, false)),
+            (
+                vec![ROLE_CYBER, ROLE_DEVICE_SOURCE],
+                (true, true, true, true),
+            ),
+            (
+                vec![ROLE_DEVICE_SOURCE, "Unrelated"],
+                (true, true, true, true),
+            ),
+            (vec![ROLE_CYBER, "Unrelated"], (true, false, true, false)),
         ];
 
         for (roles, expected_capabilities) in cases {
@@ -727,15 +728,19 @@ mod access_tests {
     }
 
     #[test]
-    fn access_ignores_legacy_and_unrelated_roles() {
+    fn access_ignores_unrelated_and_miscased_roles() {
         let cases = vec![
             vec!["DevicesEditor"],
             vec!["Unrelated"],
-            vec!["deviceanalyst"],
+            vec!["cyber"],
+            vec!["devicesource"],
         ];
 
         for roles in cases {
-            assert_eq!(capabilities(&json!(roles)), (false, false, false));
+            assert_eq!(
+                capabilities(&json!(roles)),
+                (false, false, false, false)
+            );
         }
     }
 
@@ -745,6 +750,7 @@ mod access_tests {
 
         for result in [
             require_read(&roles),
+            require_create(&roles),
             require_source_write(&roles),
             require_analytical_write(&roles),
         ] {
@@ -754,8 +760,8 @@ mod access_tests {
 
     #[test]
     fn access_authorizes_all_field_group_combinations() {
+        let cyber_roles = roles(&[ROLE_CYBER]);
         let source_roles = roles(&[ROLE_DEVICE_SOURCE]);
-        let analyst_roles = roles(&[ROLE_DEVICE_ANALYST]);
         let cases = [
             (false, false, true),
             (true, false, true),
@@ -763,22 +769,22 @@ mod access_tests {
             (true, true, false),
         ];
 
-        for (source_data, analytical_data, source_allowed) in cases {
-            let source_result = require_field_groups(
-                &source_roles,
+        for (source_data, analytical_data, cyber_allowed) in cases {
+            let cyber_result = require_field_groups(
+                &cyber_roles,
                 DeviceFieldGroups {
                     source_data,
                     analytical_data,
                 },
             );
-            if source_allowed {
-                source_result.unwrap();
+            if cyber_allowed {
+                cyber_result.unwrap();
             } else {
-                assert_device_operation_forbidden(source_result.unwrap_err());
+                assert_device_operation_forbidden(cyber_result.unwrap_err());
             }
 
             require_field_groups(
-                &analyst_roles,
+                &source_roles,
                 DeviceFieldGroups {
                     source_data,
                     analytical_data,
@@ -807,7 +813,7 @@ mod access_tests {
             &env.dbx,
             login::ActiveModel {
                 login: Set(login_name),
-                roles: Set(json!([ROLE_DEVICE_ANALYST])),
+                roles: Set(json!([ROLE_DEVICE_SOURCE])),
                 organism_id: Set(Some(organism.id)),
                 ..Default::default()
             },
@@ -816,16 +822,16 @@ mod access_tests {
         .unwrap();
         let login_id = login.id;
 
-        let analyst = resolve_login_by_id(&env.dbx, &login_id).await.unwrap();
-        assert_eq!(capabilities(&analyst.roles), (true, true, true));
-        assert_eq!(organism_id(&analyst).unwrap(), organism.id);
+        let source = resolve_login_by_id(&env.dbx, &login_id).await.unwrap();
+        assert_eq!(capabilities(&source.roles), (true, true, true, true));
+        assert_eq!(organism_id(&source).unwrap(), organism.id);
 
         let mut login = login.into_active_model();
-        login.roles = Set(json!([ROLE_DEVICE_SOURCE]));
+        login.roles = Set(json!([ROLE_CYBER]));
         let login = login.update(&env.dbx).await.unwrap();
 
-        let source = resolve_login_by_id(&env.dbx, &login_id).await.unwrap();
-        assert_eq!(capabilities(&source.roles), (true, true, false));
+        let cyber = resolve_login_by_id(&env.dbx, &login_id).await.unwrap();
+        assert_eq!(capabilities(&cyber.roles), (true, false, true, false));
 
         let mut login = login.into_active_model();
         login.organism_id = Set(None);
@@ -911,8 +917,7 @@ pub(in crate::devices) mod schema {
         let saved = device_active_model(
             &login.login,
             organism.id,
-            "shared-source-label",
-            Some("Analytical name"),
+            Some("Device name"),
             custom_fields.clone(),
             false,
             None,
@@ -926,15 +931,13 @@ pub(in crate::devices) mod schema {
             .unwrap()
             .unwrap();
 
-        assert_eq!(fetched.name.as_deref(), Some("Analytical name"));
-        assert_eq!(fetched.source_label, "shared-source-label");
+        assert_eq!(fetched.name, "Device name");
         assert_eq!(fetched.custom_fields, custom_fields);
 
-        let duplicate_source_label = device_active_model(
+        let duplicate_name = device_active_model(
             &login.login,
             organism.id,
-            "shared-source-label",
-            Some("Different name"),
+            Some("Device name"),
             json!({}),
             false,
             None,
@@ -942,38 +945,30 @@ pub(in crate::devices) mod schema {
         .insert(&env.dbx)
         .await
         .unwrap();
-        assert_eq!(duplicate_source_label.source_label, "shared-source-label");
+        assert_eq!(duplicate_name.name, "Device name");
 
-        let nullable_name = device_active_model(
+        let transaction = env.dbx.begin().await.unwrap();
+        let missing_name_error = device_active_model(
             &login.login,
             organism.id,
-            "source-without-name",
             None,
             json!({}),
             false,
             None,
         )
-        .insert(&env.dbx)
+        .insert(&transaction)
         .await
-        .unwrap();
-        assert_eq!(nullable_name.name, None);
+        .unwrap_err();
+        assert!(
+            has_postgres_error_code(&missing_name_error, "23502"),
+            "expected SQLSTATE 23502, got {missing_name_error:?}"
+        );
+        transaction.rollback().await.unwrap();
 
         assert_device_check_fails(
             &env.dbx,
             &login.login,
             organism.id,
-            "   ",
-            Some("Valid name"),
-            json!({}),
-            false,
-            None,
-        )
-        .await;
-        assert_device_check_fails(
-            &env.dbx,
-            &login.login,
-            organism.id,
-            "valid-source-label",
             Some("   "),
             json!({}),
             false,
@@ -984,7 +979,6 @@ pub(in crate::devices) mod schema {
             &env.dbx,
             &login.login,
             organism.id,
-            "valid-source-label",
             Some("Valid name"),
             json!([]),
             false,
@@ -995,7 +989,6 @@ pub(in crate::devices) mod schema {
             &env.dbx,
             &login.login,
             organism.id,
-            "valid-source-label",
             Some("Valid name"),
             json!({}),
             false,
@@ -1042,7 +1035,7 @@ pub(in crate::devices) mod schema {
             .collect::<Vec<(String, String, Option<String>, String)>>();
         let expected_columns = [
             ("id", "NO", None, "uuid"),
-            ("name", "YES", None, "text"),
+            ("name", "NO", None, "text"),
             ("created_by", "NO", None, "text"),
             ("unit_id", "YES", None, "bigint"),
             ("tags", "NO", Some("'[]'::jsonb"), "jsonb"),
@@ -1061,7 +1054,6 @@ pub(in crate::devices) mod schema {
                 Some("(now() AT TIME ZONE 'utc'::text)"),
                 "timestamp without time zone",
             ),
-            ("source_label", "NO", None, "text"),
             ("custom_fields", "NO", None, "jsonb"),
             ("organism_id", "NO", None, "bigint"),
         ]
@@ -1206,7 +1198,6 @@ pub(in crate::devices) mod schema {
         dbx: &DatabaseConnection,
         created_by: &str,
         organism_id: i64,
-        source_label: &str,
         name: Option<&str>,
         custom_fields: Value,
         archived: bool,
@@ -1216,7 +1207,6 @@ pub(in crate::devices) mod schema {
         let error = device_active_model(
             created_by,
             organism_id,
-            source_label,
             name,
             custom_fields,
             archived,
@@ -1235,7 +1225,6 @@ pub(in crate::devices) mod schema {
     pub(in crate::devices) fn device_active_model(
         created_by: &str,
         organism_id: i64,
-        source_label: &str,
         name: Option<&str>,
         custom_fields: Value,
         archived: bool,
@@ -1243,7 +1232,7 @@ pub(in crate::devices) mod schema {
     ) -> device::ActiveModel {
         device::ActiveModel {
             id: Set(Uuid::now_v7()),
-            name: Set(name.map(str::to_owned)),
+            name: name.map(str::to_owned).map_or(NotSet, Set),
             created_by: Set(created_by.to_string()),
             organism_id: Set(organism_id),
             unit_id: Set(None),
@@ -1253,7 +1242,6 @@ pub(in crate::devices) mod schema {
             archived_at: Set(archived_at),
             created_at: NotSet,
             updated_at: NotSet,
-            source_label: Set(source_label.to_string()),
             custom_fields: Set(custom_fields),
         }
     }

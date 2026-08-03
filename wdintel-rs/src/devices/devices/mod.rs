@@ -43,7 +43,6 @@ pub(crate) async fn list(
             }
             DeviceArchivedFilter::AllDevices => DeviceArchivedScope::All,
         },
-        needs_analytical_name: body.needs_analytical_name,
         aor_ids: body.aor_ids.unwrap_or_default(),
         unit_ids: body.unit_ids.unwrap_or_default(),
         limit: body.limit,
@@ -134,7 +133,7 @@ pub(crate) async fn create(
     Json(body): Json<CreateDeviceReq>,
 ) -> Result<Json<DeviceDetails>, AppError> {
     let command = CreateDeviceCommand {
-        source_label: body.source_label,
+        name: body.name,
         external_url: body.external_url,
         custom_fields: body.custom_fields.into_option(),
     };
@@ -153,10 +152,9 @@ pub(crate) async fn update(
 ) -> Result<Json<DeviceDetails>, AppError> {
     let command = UpdateDeviceCommand {
         device_id: parse_uuid(&body.device_id),
-        source_label: map_required_patch(body.source_label),
         external_url: map_nullable_patch(body.external_url),
         custom_fields: map_required_patch(body.custom_fields),
-        name: map_nullable_patch(body.name),
+        name: map_required_patch(body.name),
         aor_ids: map_required_patch(body.aor_ids),
         unit_id: map_nullable_patch(body.unit_id),
     };

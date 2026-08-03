@@ -45,7 +45,6 @@ const tableStateContext = {
 function buildDeviceRow(): DeviceRowView {
   return {
     id: '018f0000-0000-7000-8000-000000000000',
-    sourceLabel: 'Source device',
     name: 'Device Alpha',
     aors: [],
     unit: null,
@@ -119,7 +118,6 @@ describe('DevicesTable', () => {
 
     expect(columns.map((column) => column.id)).toEqual([
       'name',
-      'sourceLabel',
       'aors',
       'unit',
       'createdBy',
@@ -137,33 +135,6 @@ describe('DevicesTable', () => {
     );
   });
 
-  it('marks a missing analytical name while keeping the source label visible', () => {
-    renderTable();
-    const columns = capturedOptions?.columns as Array<{
-      id: string;
-      Cell?: (props: { row: { original: DeviceRowView } }) => ReactNode;
-    }>;
-    const nameColumn = columns.find((column) => column.id === 'name');
-    const nameHost = document.createElement('div');
-    document.body.appendChild(nameHost);
-    const nameRoot = createRoot(nameHost);
-
-    try {
-      act(() => {
-        nameRoot.render(
-          createElement(nameColumn!.Cell!, {
-            row: { original: { ...buildDeviceRow(), name: null } },
-          }),
-        );
-      });
-
-      expect(nameHost.textContent).toContain('Source device');
-      expect(nameHost.querySelector('[aria-label="Потребує аналітичної назви"]')).not.toBeNull();
-    } finally {
-      act(() => nameRoot.unmount());
-      nameHost.remove();
-    }
-  });
   it('renders a textual lifecycle indicator for every row', () => {
     renderTable();
     const columns = capturedOptions?.columns as Array<{

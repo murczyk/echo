@@ -64,7 +64,7 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
   const permissions = useMemo(
     () => ({
       canRead: capabilities.canRead,
-      canCreate: capabilities.canWriteSourceData,
+      canCreate: capabilities.canCreate,
       canEdit: capabilities.canWriteSourceData || capabilities.canWriteAnalyticalData,
       canSyncFiles: capabilities.canWriteSourceData,
       fieldPermissions: {
@@ -292,7 +292,7 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
   const submitCreateDialog = useCallback(
     async (form: DeviceUpsertForm) => {
       if (!permissions.canCreate || creating) return;
-      if (validateDeviceUpsertForm(form, { sourceData: true, analyticalData: false }) !== null) {
+      if (validateDeviceUpsertForm(form, permissions.fieldPermissions) !== null) {
         setCreateError('Перевірте поля форми.');
         return;
       }
@@ -321,7 +321,7 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
         setCreating(false);
       }
     },
-    [creating, loadActions, permissions.canCreate],
+    [creating, loadActions, permissions.canCreate, permissions.fieldPermissions],
   );
 
   const loadAnalyticalLookups = useCallback(async (): Promise<string | null> => {

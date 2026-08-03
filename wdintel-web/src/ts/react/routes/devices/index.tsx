@@ -21,23 +21,13 @@ import { DevicesToolbar } from './components/DevicesToolbar';
 import { useDevicesPage } from './use-devices-page';
 
 const columnOrder = buildDefaultColumnOrder({
-  dataColumnIds: [
-    'name',
-    'sourceLabel',
-    'aors',
-    'unit',
-    'createdBy',
-    'createdAt',
-    'updatedAt',
-    'lifecycle',
-  ],
+  dataColumnIds: ['name', 'aors', 'unit', 'createdBy', 'createdAt', 'updatedAt', 'lifecycle'],
   withRowNumbers: true,
   withRowActions: true,
 });
 
 const defaultColumnVisibility = {
   name: true,
-  sourceLabel: true,
   aors: true,
   unit: true,
   updatedAt: true,
@@ -163,7 +153,7 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
         <DeviceUpsertDrawer
           open={page.createDialogOpen}
           mode="create"
-          fieldPermissions={{ sourceData: true, analyticalData: false }}
+          fieldPermissions={page.permissions.fieldPermissions}
           form={page.createForm}
           saving={page.creating}
           error={page.createError}

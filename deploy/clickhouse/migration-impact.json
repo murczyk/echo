@@ -55,6 +55,11 @@
       "changes": [
         { "table": "public.device", "strategy": "cdc_backfill" }
       ]
+    },
+    "echo:m20260803_130117_device_source_role_and_name": {
+      "changes": [
+        { "table": "public.device", "strategy": "mirror_resync" }
+      ]
     }
   },
   "dependencies": {}

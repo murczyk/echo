@@ -49,7 +49,6 @@ vi.mock('../device-files/components/DeviceFileJournal', () => ({
 
 const activeDevice: DeviceDetails = {
   id: DEVICE_ID,
-  sourceLabel: 'Inventory import',
   name: 'Device Alpha',
   aors: [
     { id: 1, name: 'Північ' },
@@ -124,7 +123,7 @@ afterEach(() => {
 
 function renderPage() {
   act(() => {
-    root?.render(<DeviceDetailsPage deviceId={DEVICE_ID} authUserRoles={['DeviceAnalyst']} />);
+    root?.render(<DeviceDetailsPage deviceId={DEVICE_ID} authUserRoles={['DeviceSource']} />);
   });
 }
 
@@ -145,8 +144,6 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanelText).toContain('Південь');
     expect(leftPanelText).toContain('Unit Seven');
     expect(leftPanelText).toContain('operator');
-    expect(leftPanelText).toContain('Джерельна мітка');
-    expect(leftPanelText).toContain('Inventory import');
     expect(leftPanelText).toContain('Зовнішнє посилання');
     expect(leftPanelText).toContain('Кастомні поля');
     expect(leftPanelText).toContain('inventory_id');

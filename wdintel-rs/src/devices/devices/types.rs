@@ -98,7 +98,6 @@ pub enum DeviceListSortBy {
 pub struct ListDevicesReq {
     pub filter_text: Option<String>,
     pub archived_filter: Option<DeviceArchivedFilter>,
-    pub needs_analytical_name: Option<bool>,
     pub aor_ids: Option<Vec<i64>>,
     pub unit_ids: Option<Vec<i64>>,
     pub limit: Option<u64>,
@@ -138,8 +137,7 @@ pub struct DeviceStatusCounts {
 #[serde(deny_unknown_fields)]
 pub struct DeviceListItem {
     pub id: String,
-    pub source_label: String,
-    pub name: Option<String>,
+    pub name: String,
     pub aors: Vec<AorSummary>,
     pub unit: Option<UnitSummary>,
     pub created_by: String,
@@ -182,8 +180,7 @@ pub struct ListDevicesRsp {
 #[serde(deny_unknown_fields)]
 pub struct DeviceDetails {
     pub id: String,
-    pub source_label: String,
-    pub name: Option<String>,
+    pub name: String,
     pub aors: Vec<AorSummary>,
     pub unit: Option<UnitSummary>,
     pub external_url: Option<String>,
@@ -259,7 +256,7 @@ pub struct DeviceDetailReq {
 )]
 #[serde(deny_unknown_fields)]
 pub struct CreateDeviceReq {
-    pub source_label: String,
+    pub name: String,
     pub external_url: Option<String>,
     #[serde(default, skip_serializing_if = "RequiredPatch::is_missing")]
     pub custom_fields: RequiredPatch<BTreeMap<String, String>>,
@@ -280,14 +277,12 @@ pub struct CreateDeviceReq {
 pub struct UpdateDeviceReq {
     #[serde(deserialize_with = "deserialize_canonical_uuid")]
     pub device_id: String,
-    #[serde(default, skip_serializing_if = "RequiredPatch::is_missing")]
-    pub source_label: RequiredPatch<String>,
     #[serde(default, skip_serializing_if = "NullablePatch::is_missing")]
     pub external_url: NullablePatch<String>,
     #[serde(default, skip_serializing_if = "RequiredPatch::is_missing")]
     pub custom_fields: RequiredPatch<BTreeMap<String, Option<String>>>,
-    #[serde(default, skip_serializing_if = "NullablePatch::is_missing")]
-    pub name: NullablePatch<String>,
+    #[serde(default, skip_serializing_if = "RequiredPatch::is_missing")]
+    pub name: RequiredPatch<String>,
     #[serde(default, skip_serializing_if = "RequiredPatch::is_missing")]
     pub aor_ids: RequiredPatch<Vec<i64>>,
     #[serde(default, skip_serializing_if = "NullablePatch::is_missing")]
@@ -307,7 +302,7 @@ mod domain {
 
     #[derive(Debug, PartialEq, Eq)]
     pub(in crate::devices) struct CreateDeviceCommand {
-        pub(in crate::devices) source_label: String,
+        pub(in crate::devices) name: String,
         pub(in crate::devices) external_url: Option<String>,
         pub(in crate::devices) custom_fields: Option<BTreeMap<String, String>>,
     }
@@ -315,11 +310,10 @@ mod domain {
     #[derive(Debug, PartialEq, Eq)]
     pub(in crate::devices) struct UpdateDeviceCommand {
         pub(in crate::devices) device_id: Uuid,
-        pub(in crate::devices) source_label: DevicePatchField<String>,
         pub(in crate::devices) external_url: DevicePatchField<Option<String>>,
         pub(in crate::devices) custom_fields:
             DevicePatchField<BTreeMap<String, Option<String>>>,
-        pub(in crate::devices) name: DevicePatchField<Option<String>>,
+        pub(in crate::devices) name: DevicePatchField<String>,
         pub(in crate::devices) aor_ids: DevicePatchField<Vec<i64>>,
         pub(in crate::devices) unit_id: DevicePatchField<Option<i64>>,
     }
@@ -328,9 +322,6 @@ mod domain {
         pub(in crate::devices) fn field_groups(&self) -> DeviceFieldGroups {
             DeviceFieldGroups {
                 source_data: matches!(
-                    &self.source_label,
-                    DevicePatchField::Value(_)
-                ) || matches!(
                     &self.external_url,
                     DevicePatchField::Value(_)
                 ) || matches!(
@@ -351,8 +342,7 @@ mod domain {
         }
 
         pub(in crate::devices) fn is_structurally_empty(&self) -> bool {
-            matches!(&self.source_label, DevicePatchField::Missing)
-                && matches!(&self.external_url, DevicePatchField::Missing)
+            matches!(&self.external_url, DevicePatchField::Missing)
                 && matches!(&self.name, DevicePatchField::Missing)
                 && matches!(&self.aor_ids, DevicePatchField::Missing)
                 && matches!(&self.unit_id, DevicePatchField::Missing)
@@ -385,7 +375,6 @@ mod domain {
     pub(in crate::devices) struct ListDevicesCommand {
         pub(in crate::devices) filter_text: Option<String>,
         pub(in crate::devices) archived_scope: DeviceArchivedScope,
-        pub(in crate::devices) needs_analytical_name: Option<bool>,
         pub(in crate::devices) aor_ids: Vec<i64>,
         pub(in crate::devices) unit_ids: Vec<i64>,
         pub(in crate::devices) limit: Option<u64>,
@@ -428,8 +417,7 @@ mod domain {
     #[derive(Debug, PartialEq, Eq)]
     pub(in crate::devices) struct DeviceCurrentState {
         pub(in crate::devices) id: Uuid,
-        pub(in crate::devices) source_label: String,
-        pub(in crate::devices) name: Option<String>,
+        pub(in crate::devices) name: String,
         pub(in crate::devices) aors: Vec<DeviceAorReference>,
         pub(in crate::devices) unit: Option<DeviceUnitReference>,
         pub(in crate::devices) external_url: Option<String>,

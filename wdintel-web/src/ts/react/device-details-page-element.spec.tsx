@@ -23,7 +23,6 @@ beforeEach(() => {
       if (url === '/api/device/detail') {
         return jsonResponse({
           id: DEVICE_ID,
-          source_label: 'Source device',
           name: 'Device Alpha',
           aors: [],
           unit: null,
@@ -104,7 +103,7 @@ describe('device-details-page custom element', () => {
     ).toBe(true);
 
     await act(async () => {
-      element.setAttribute('data-auth-user-roles', 'Cyber');
+      element.setAttribute('data-auth-user-roles', 'Basic');
       await Promise.resolve();
     });
 
@@ -115,7 +114,7 @@ describe('device-details-page custom element', () => {
     ).toBe(false);
 
     await act(async () => {
-      element.setAttribute('data-auth-user-roles', 'DeviceAnalyst');
+      element.setAttribute('data-auth-user-roles', 'Cyber');
       await Promise.resolve();
     });
 
@@ -156,7 +155,6 @@ describe('device-details-page custom element', () => {
     resolveSecond(
       jsonResponse({
         id: SECOND_DEVICE_ID,
-        source_label: 'Second source',
         name: 'Second device',
         aors: [],
         unit: null,
@@ -179,7 +177,6 @@ describe('device-details-page custom element', () => {
     resolveFirst(
       jsonResponse({
         id: DEVICE_ID,
-        source_label: 'First source',
         name: 'Stale first device',
         aors: [],
         unit: null,

@@ -76,7 +76,7 @@ describe('useDevicesPage create reconciliation', () => {
     expect(apiMock.listDevices).toHaveBeenCalledTimes(1);
     apiMock.listDevices.mockClear();
     act(() => latest?.openCreateDialog());
-    const form = { ...latest!.createForm!, sourceLabel: 'Source device' };
+    const form = { ...latest!.createForm!, name: 'Source device' };
 
     await act(async () => {
       await latest?.submitCreateDialog(form);

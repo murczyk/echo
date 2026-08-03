@@ -52,7 +52,6 @@ function requestSignal(index = 0) {
 function mockDeviceDetailsResponse() {
   return {
     id: DEVICE_ID,
-    source_label: 'Source device',
     name: 'Device Alpha',
     aors: [{ id: 4, name: 'AOR' }],
     unit: { id: 7, name: 'Unit' },
@@ -112,7 +111,6 @@ describe('devices API service routes', () => {
         list: [
           {
             id: DEVICE_ID,
-            source_label: 'Source device',
             name: 'Device Alpha',
             aors: [{ id: 4, name: 'AOR' }],
             unit: { id: 7, name: 'Unit' },
@@ -133,7 +131,6 @@ describe('devices API service routes', () => {
       {
         filterText: 'alpha',
         archivedFilter: 'active_only',
-        needsAnalyticalName: null,
         aorIds: [4],
         unitIds: [7],
         limit: 25,
@@ -148,7 +145,6 @@ describe('devices API service routes', () => {
     expect(requestBody()).toEqual({
       filter_text: 'alpha',
       archived_filter: 'active_only',
-      needs_analytical_name: null,
       aor_ids: [4],
       unit_ids: [7],
       limit: 25,
@@ -156,7 +152,7 @@ describe('devices API service routes', () => {
       sort_by: ['updated_at_desc'],
     });
     expect(rsp.list[0]).toMatchObject({
-      sourceLabel: 'Source device',
+      name: 'Device Alpha',
       aors: [{ id: 4, name: 'AOR' }],
       unit: { id: 7, name: 'Unit' },
       updatedAt: UPDATED_AT,
@@ -204,15 +200,15 @@ describe('devices API service routes', () => {
     expect(rsp.customFields).toEqual({ inventory_id: 'node-1' });
   });
 
-  it('creates a device with source fields only', async () => {
+  it('creates a device with its permitted source and name fields', async () => {
     await createDevice({
-      sourceLabel: 'Source device',
+      name: 'Device Alpha',
       externalUrl: null,
       customFields: { inventory_id: 'node-1' },
     });
 
     expect(requestBody()).toEqual({
-      source_label: 'Source device',
+      name: 'Device Alpha',
       external_url: null,
       custom_fields: { inventory_id: 'node-1' },
     });
@@ -221,8 +217,7 @@ describe('devices API service routes', () => {
   it('serializes a presence-aware update without changing custom-field keys', async () => {
     await updateDevice({
       deviceId: DEVICE_ID,
-      sourceLabel: 'Updated source',
-      name: null,
+      name: 'Renamed device',
       aorIds: [],
       unitId: null,
       customFields: { inventory_id: null, transportType: 'ssh' },
@@ -230,8 +225,7 @@ describe('devices API service routes', () => {
 
     expect(requestBody()).toEqual({
       device_id: DEVICE_ID,
-      source_label: 'Updated source',
-      name: null,
+      name: 'Renamed device',
       aor_ids: [],
       unit_id: null,
       custom_fields: { inventory_id: null, transportType: 'ssh' },
@@ -528,8 +522,7 @@ describe('DeviceUpdatePatchInput serialization', () => {
     expect(
       toDeviceUpdatePatchReq({
         deviceId: DEVICE_ID,
-        sourceLabel: undefined,
-        name: null,
+        name: 'Renamed device',
         aorIds: [],
         unitId: null,
         externalUrl: null,
@@ -537,7 +530,7 @@ describe('DeviceUpdatePatchInput serialization', () => {
       }),
     ).toEqual({
       deviceId: DEVICE_ID,
-      name: null,
+      name: 'Renamed device',
       aorIds: [],
       unitId: null,
       externalUrl: null,

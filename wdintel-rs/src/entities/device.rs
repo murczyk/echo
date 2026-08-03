@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub name: Option<String>,
+    #[sea_orm(column_type = "Text")]
+    pub name: String,
     #[sea_orm(column_type = "Text")]
     pub created_by: String,
     pub unit_id: Option<i64>,
@@ -23,8 +23,6 @@ pub struct Model {
     pub archived_at: Option<DateTime>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
-    #[sea_orm(column_type = "Text")]
-    pub source_label: String,
     #[sea_orm(column_type = "JsonBinary")]
     pub custom_fields: Json,
     pub organism_id: i64,

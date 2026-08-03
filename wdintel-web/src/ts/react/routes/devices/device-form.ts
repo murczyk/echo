@@ -2,7 +2,6 @@ import type { DeviceDetails } from '../../../../Bindings';
 import type { CreateDeviceInput, DeviceUpdatePatchInput } from '../../services/api/devices';
 import { formatDeviceErrorMessage } from './helpers';
 
-export const DEVICE_SOURCE_LABEL_MAX_CHARS = 255;
 export const DEVICE_NAME_MAX_CHARS = 255;
 export const DEVICE_EXTERNAL_URL_MAX_CHARS = 4096;
 export const DEVICE_CUSTOM_FIELDS_MAX_COUNT = 50;
@@ -28,7 +27,6 @@ export type DeviceCustomFieldDraft = {
 };
 
 export type DeviceUpsertForm = {
-  sourceLabel: string;
   name: string;
   aorIds: number[];
   unitId: number | null;
@@ -42,7 +40,6 @@ export type DeviceCustomFieldDraftError = {
 };
 
 export type DeviceUpsertValidationErrors = {
-  sourceLabel?: string;
   name?: string;
   externalUrl?: string;
   customFields?: string;
@@ -50,7 +47,6 @@ export type DeviceUpsertValidationErrors = {
 };
 
 export type DeviceServerFieldErrors = Partial<{
-  sourceLabel: string;
   name: string;
   aorIds: string;
   unitId: string;
@@ -70,7 +66,6 @@ export function createDeviceCustomFieldDraft(
 
 export function createDefaultDeviceUpsertForm(): DeviceUpsertForm {
   return {
-    sourceLabel: '',
     name: '',
     aorIds: [],
     unitId: null,
@@ -81,8 +76,7 @@ export function createDefaultDeviceUpsertForm(): DeviceUpsertForm {
 
 export function deviceDetailsToUpsertForm(device: DeviceDetails): DeviceUpsertForm {
   return {
-    sourceLabel: device.sourceLabel,
-    name: device.name ?? '',
+    name: device.name,
     aorIds: device.aors.map((aor) => aor.id),
     unitId: device.unit?.id ?? null,
     externalUrl: device.externalUrl ?? '',
@@ -96,15 +90,11 @@ function validateMaxChars(value: string, max: number): string | undefined {
   return Array.from(value).length > max ? 'Значення занадто довге' : undefined;
 }
 
-function validateSourceLabel(sourceLabel: string): string | undefined {
-  const trimmed = sourceLabel.trim();
-  if (trimmed === '') return 'Вкажіть джерельну мітку.';
-  return validateMaxChars(trimmed, DEVICE_SOURCE_LABEL_MAX_CHARS);
-}
-
 function validateName(name: string): string | undefined {
   const trimmed = name.trim();
-  return trimmed === '' ? undefined : validateMaxChars(trimmed, DEVICE_NAME_MAX_CHARS);
+  return trimmed === ''
+    ? 'Вкажіть назву пристрою.'
+    : validateMaxChars(trimmed, DEVICE_NAME_MAX_CHARS);
 }
 
 function validateExternalUrl(value: string): string | undefined {
@@ -170,9 +160,6 @@ export function validateDeviceUpsertForm(
   if (form === null) return errors;
 
   if (permissions.sourceData) {
-    const sourceLabelError = validateSourceLabel(form.sourceLabel);
-    if (sourceLabelError) errors.sourceLabel = sourceLabelError;
-
     const externalUrlError = validateExternalUrl(form.externalUrl);
     if (externalUrlError) errors.externalUrl = externalUrlError;
 
@@ -187,7 +174,6 @@ export function validateDeviceUpsertForm(
   }
 
   const isEmpty =
-    errors.sourceLabel === undefined &&
     errors.name === undefined &&
     errors.externalUrl === undefined &&
     errors.customFields === undefined &&
@@ -220,7 +206,7 @@ function buildCustomFieldsPatch(
 export function buildCreateDeviceReq(form: DeviceUpsertForm): CreateDeviceInput {
   const externalUrl = form.externalUrl.trim();
   return {
-    sourceLabel: form.sourceLabel.trim(),
+    name: form.name.trim(),
     externalUrl: externalUrl === '' ? null : externalUrl,
     customFields: normalizeDeviceCustomFields(form.customFields),
   };
@@ -234,20 +220,17 @@ export function buildUpdateDevicePatch(
   const req: DeviceUpdatePatchInput = { deviceId: device.id };
 
   if (permissions.sourceData) {
-    const sourceLabel = form.sourceLabel.trim();
     const externalUrlValue = form.externalUrl.trim();
     const externalUrl = externalUrlValue === '' ? null : externalUrlValue;
     const customFields = normalizeDeviceCustomFields(form.customFields);
     const customFieldsPatch = buildCustomFieldsPatch(customFields, device.customFields);
 
-    if (sourceLabel !== device.sourceLabel) req.sourceLabel = sourceLabel;
     if (externalUrl !== device.externalUrl) req.externalUrl = externalUrl;
     if (customFieldsPatch !== undefined) req.customFields = customFieldsPatch;
   }
 
   if (permissions.analyticalData) {
-    const nameValue = form.name.trim();
-    const name = nameValue === '' ? null : nameValue;
+    const name = form.name.trim();
     const deviceAorIds = device.aors.map((aor) => aor.id);
     const arraysEqual =
       form.aorIds.length === deviceAorIds.length &&
@@ -263,7 +246,6 @@ export function buildUpdateDevicePatch(
 
 export function hasDeviceUpdatePatchChanges(patch: DeviceUpdatePatchInput): boolean {
   return (
-    patch.sourceLabel !== undefined ||
     patch.name !== undefined ||
     patch.aorIds !== undefined ||
     patch.unitId !== undefined ||
@@ -274,8 +256,6 @@ export function hasDeviceUpdatePatchChanges(patch: DeviceUpdatePatchInput): bool
 
 function fieldNameFromBackend(field: string): keyof DeviceServerFieldErrors | null {
   switch (field) {
-    case 'source_label':
-      return 'sourceLabel';
     case 'name':
       return 'name';
     case 'aor_ids':

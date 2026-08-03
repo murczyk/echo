@@ -86,7 +86,6 @@ const rendered: Array<{ container: HTMLDivElement; root: Root }> = [];
 function buildForm(overrides: Partial<DeviceUpsertForm> = {}): DeviceUpsertForm {
   return {
     ...createDefaultDeviceUpsertForm(),
-    sourceLabel: 'Source device',
     ...overrides,
   };
 }
@@ -135,32 +134,30 @@ afterEach(() => {
 });
 
 describe('DeviceUpsertDrawer', () => {
-  it('shows only the permitted field groups', () => {
+  it('shows only fields supported by the mode and permissions', () => {
     const createView = renderDrawer(buildForm(), 'create', {
       sourceData: true,
       analyticalData: false,
     });
     rendered.push(createView);
 
-    expect(inputByLabel(createView.container, 'Джерельна мітка')?.value).toBe('Source device');
     expect(inputByLabel(createView.container, 'Зовнішнє посилання')).not.toBeNull();
-    expect(inputByLabel(createView.container, 'Аналітична назва')).toBeNull();
+    expect(inputByLabel(createView.container, 'Назва')).toBeNull();
     expect(
       createView.container.querySelector('[data-testid="device-custom-fields-editor"]'),
     ).not.toBeNull();
 
-    const analyticalView = renderDrawer(buildForm({ name: 'Analytical name' }), 'edit', {
-      sourceData: false,
+    const deviceSourceCreateView = renderDrawer(buildForm({ name: 'Device name' }), 'create', {
+      sourceData: true,
       analyticalData: true,
     });
-    rendered.push(analyticalView);
+    rendered.push(deviceSourceCreateView);
 
-    expect(inputByLabel(analyticalView.container, 'Джерельна мітка')).toBeNull();
-    expect(inputByLabel(analyticalView.container, 'Аналітична назва')?.value).toBe(
-      'Analytical name',
-    );
+    expect(inputByLabel(deviceSourceCreateView.container, 'Назва')?.value).toBe('Device name');
+    expect(inputByLabel(deviceSourceCreateView.container, 'Смуги')).toBeNull();
+    expect(inputByLabel(deviceSourceCreateView.container, 'Підрозділ')).toBeNull();
     expect(
-      analyticalView.container.querySelector('[data-testid="device-custom-fields-editor"]'),
-    ).toBeNull();
+      deviceSourceCreateView.container.querySelector('[data-testid="device-custom-fields-editor"]'),
+    ).not.toBeNull();
   });
 });

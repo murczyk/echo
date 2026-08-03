@@ -1,6 +1,5 @@
-use crate::config::{
-    ROLE_ADMIN, ROLE_CYBER, ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
-};
+use super::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
+use crate::config::ROLE_ADMIN;
 use crate::entities::login;
 use crate::error::AppError;
 use crate::h;
@@ -26,30 +25,25 @@ pub(in crate::devices) fn organism_id(
 pub(in crate::devices) fn require_read(
     roles: &serde_json::Value,
 ) -> Result<(), AppError> {
-    require_any_role(
-        roles,
-        &[
-            ROLE_CYBER,
-            ROLE_DEVICE_SOURCE,
-            ROLE_DEVICE_ANALYST,
-            ROLE_ADMIN,
-        ],
-    )
+    require_any_role(roles, &[ROLE_CYBER, ROLE_DEVICE_SOURCE, ROLE_ADMIN])
+}
+
+pub(in crate::devices) fn require_create(
+    roles: &serde_json::Value,
+) -> Result<(), AppError> {
+    require_any_role(roles, &[ROLE_DEVICE_SOURCE, ROLE_ADMIN])
 }
 
 pub(in crate::devices) fn require_source_write(
     roles: &serde_json::Value,
 ) -> Result<(), AppError> {
-    require_any_role(
-        roles,
-        &[ROLE_DEVICE_SOURCE, ROLE_DEVICE_ANALYST, ROLE_ADMIN],
-    )
+    require_any_role(roles, &[ROLE_CYBER, ROLE_DEVICE_SOURCE, ROLE_ADMIN])
 }
 
 pub(in crate::devices) fn require_analytical_write(
     roles: &serde_json::Value,
 ) -> Result<(), AppError> {
-    require_any_role(roles, &[ROLE_DEVICE_ANALYST, ROLE_ADMIN])
+    require_any_role(roles, &[ROLE_DEVICE_SOURCE, ROLE_ADMIN])
 }
 
 pub(in crate::devices) fn require_field_groups(

@@ -31,17 +31,16 @@ import { postJson } from './client';
 import type { JsonBody, RequestOptions } from './client';
 
 export type CreateDeviceInput = {
-  sourceLabel: CreateDeviceReq['sourceLabel'];
+  name: CreateDeviceReq['name'];
   externalUrl?: CreateDeviceReq['externalUrl'];
   customFields?: Exclude<CreateDeviceReq['customFields'], null>;
 };
 
 export type DeviceUpdatePatchInput = {
   deviceId: UpdateDeviceReq['deviceId'];
-  sourceLabel?: NonNullable<UpdateDeviceReq['sourceLabel']>;
   externalUrl?: UpdateDeviceReq['externalUrl'];
   customFields?: Exclude<UpdateDeviceReq['customFields'], null>;
-  name?: UpdateDeviceReq['name'];
+  name?: NonNullable<UpdateDeviceReq['name']>;
   aorIds?: NonNullable<UpdateDeviceReq['aorIds']>;
   unitId?: UpdateDeviceReq['unitId'];
 };
@@ -65,7 +64,6 @@ type CamelFileSyncResult =
 export function toDeviceUpdatePatchReq(input: DeviceUpdatePatchInput): DeviceUpdatePatchReq {
   const req: DeviceUpdatePatchReq = { deviceId: input.deviceId };
 
-  if (input.sourceLabel !== undefined) req.sourceLabel = input.sourceLabel;
   if (input.externalUrl !== undefined) req.externalUrl = input.externalUrl;
   if (input.customFields !== undefined) req.customFields = input.customFields;
   if (input.name !== undefined) req.name = input.name;

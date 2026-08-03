@@ -20,7 +20,6 @@ const SOURCE_FIELDS: DeviceFieldPermissions = { sourceData: true, analyticalData
 function buildDevice(overrides: Partial<DeviceDetails> = {}): DeviceDetails {
   return {
     id: DEVICE_ID,
-    sourceLabel: 'Source device',
     name: 'Device Alpha',
     aors: [{ id: 4, name: 'AOR' }],
     unit: { id: 7, name: 'Unit' },
@@ -36,9 +35,8 @@ function buildDevice(overrides: Partial<DeviceDetails> = {}): DeviceDetails {
 }
 
 describe('device form helpers', () => {
-  it('builds create requests from source fields only', () => {
+  it('builds create requests from every permitted create field', () => {
     const form = createDefaultDeviceUpsertForm();
-    form.sourceLabel = '  Source device  ';
     form.name = '  Device Beta  ';
     form.aorIds = [10, 20];
     form.unitId = 7;
@@ -48,18 +46,18 @@ describe('device form helpers', () => {
     ];
 
     expect(buildCreateDeviceReq(form)).toEqual({
-      sourceLabel: 'Source device',
+      name: 'Device Beta',
       externalUrl: 'https://example.test/beta',
       customFields: { inventory_id: ' node-2 ' },
     });
   });
 
-  it('submits empty optional source fields explicitly', () => {
+  it('includes the mandatory name in every create request', () => {
     const form = createDefaultDeviceUpsertForm();
-    form.sourceLabel = 'Source device';
+    form.name = '  Device Beta  ';
 
     expect(buildCreateDeviceReq(form)).toEqual({
-      sourceLabel: 'Source device',
+      name: 'Device Beta',
       externalUrl: null,
       customFields: {},
     });
@@ -68,8 +66,7 @@ describe('device form helpers', () => {
   it('builds a presence-aware update patch for every permitted field group', () => {
     const device = buildDevice();
     const form = deviceDetailsToUpsertForm(device);
-    form.sourceLabel = ' Updated source ';
-    form.name = ' ';
+    form.name = ' Device Gamma ';
     form.aorIds = [];
     form.unitId = null;
     form.externalUrl = ' ';
@@ -80,8 +77,7 @@ describe('device form helpers', () => {
 
     expect(buildUpdateDevicePatch(device, form, ALL_FIELDS)).toEqual({
       deviceId: DEVICE_ID,
-      sourceLabel: 'Updated source',
-      name: null,
+      name: 'Device Gamma',
       aorIds: [],
       unitId: null,
       externalUrl: null,
@@ -92,14 +88,14 @@ describe('device form helpers', () => {
   it('does not send changes from a field group without permission', () => {
     const device = buildDevice();
     const form = deviceDetailsToUpsertForm(device);
-    form.sourceLabel = 'Updated source';
-    form.name = 'Changed analytical name';
+    form.name = 'Changed device name';
     form.aorIds = [];
     form.unitId = null;
+    form.externalUrl = 'https://example.test/updated';
 
     expect(buildUpdateDevicePatch(device, form, SOURCE_FIELDS)).toEqual({
       deviceId: DEVICE_ID,
-      sourceLabel: 'Updated source',
+      externalUrl: 'https://example.test/updated',
     });
   });
 
@@ -111,7 +107,7 @@ describe('device form helpers', () => {
     expect(hasDeviceUpdatePatchChanges(patch)).toBe(false);
   });
 
-  it('validates only permitted source fields and allows an empty analytical name', () => {
+  it('validates only permitted fields and requires a name', () => {
     const form = createDefaultDeviceUpsertForm();
     form.externalUrl = '/relative';
     form.customFields = [
@@ -121,18 +117,17 @@ describe('device form helpers', () => {
 
     const errors = validateDeviceUpsertForm(form, ALL_FIELDS);
 
-    expect(errors?.sourceLabel).toBe('Вкажіть джерельну мітку.');
-    expect(errors?.name).toBeUndefined();
+    expect(errors?.name).toBe('Вкажіть назву пристрою.');
     expect(errors?.externalUrl).toBe('Посилання має бути абсолютним URL');
     expect(errors?.customFieldRows['field-b'].key).toBe(
       'Ключі кастомних полів мають бути унікальними.',
     );
     expect(
       validateDeviceUpsertForm(
-        { ...form, sourceLabel: '', externalUrl: '/relative' },
+        { ...form, externalUrl: '/relative' },
         { sourceData: false, analyticalData: true },
-      ),
-    ).toBeNull();
+      )?.name,
+    ).toBe('Вкажіть назву пристрою.');
   });
 
   it('maps backend form errors to editable fields', () => {
@@ -141,12 +136,10 @@ describe('device form helpers', () => {
     });
     expect(
       parseDeviceServerFieldErrors(
-        new Error(
-          '[[' + '"source_label","invalid source"' + '],["custom_fields","invalid fields"]]',
-        ),
+        new Error('[[' + '"external_url","invalid URL"' + '],["custom_fields","invalid fields"]]'),
       ),
     ).toEqual({
-      sourceLabel: 'invalid source',
+      externalUrl: 'invalid URL',
       customFields: 'invalid fields',
     });
     expect(parseDeviceServerFieldErrors(new Error('Пристрій з такою назвою вже існує'))).toEqual(

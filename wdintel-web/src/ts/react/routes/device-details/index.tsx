@@ -131,7 +131,7 @@ export function DeviceDetailsPage({
       <PageHeader
         title={
           <DeviceHeaderTitle
-            deviceName={device ? device.name || device.sourceLabel : null}
+            deviceName={device?.name ?? null}
             archived={device?.archived ?? false}
           />
         }

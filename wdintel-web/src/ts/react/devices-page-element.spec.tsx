@@ -29,9 +29,9 @@ describe('devices-page custom element', () => {
     expect(document.body.textContent).toContain('Cyber');
 
     await act(async () => {
-      element.setAttribute('data-auth-user-roles', 'DeviceSource, DeviceAnalyst');
+      element.setAttribute('data-auth-user-roles', 'DeviceSource, Admin');
       await Promise.resolve();
     });
-    expect(document.body.textContent).toContain('DeviceSource,DeviceAnalyst');
+    expect(document.body.textContent).toContain('DeviceSource,Admin');
   });
 });

@@ -347,6 +347,7 @@ mod m20260731_234500_orbit_unit_search_indexes;
 mod m20260801_085538_suppress_deleted_orbit_links;
 mod m20260802_174927_rer_duty_test_replay;
 mod m20260803_093803_echo_automation_send_log;
+mod m20260803_130117_device_source_role_and_name;
 
 pub struct Migrator;
 
@@ -781,7 +782,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260721_120720_device_source_label_custom_fields::Migration),
             Box::new(m20260721_124518_drop_legacy_device_file::Migration),
             Box::new(m20260729_143549_add_device_organism::Migration),
-
+            Box::new(m20260803_130117_device_source_role_and_name::Migration),
         ]
     }
 }

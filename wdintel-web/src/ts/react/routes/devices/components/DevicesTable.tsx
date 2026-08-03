@@ -51,43 +51,22 @@ function useDevicesTableColumns(): MRT_ColumnDef<DeviceRowView>[] {
     () => [
       {
         id: 'name',
-        accessorFn: (row) => row.name || row.sourceLabel,
+        accessorFn: (row) => row.name,
         header: 'Назва',
         size: 260,
         Cell: ({ row }) => {
           const href = `/devices/${row.original.id}`;
-          const displayName = row.original.name?.trim() || row.original.sourceLabel;
-          const analyticalNameMissing = !row.original.name?.trim();
           return (
-            <Box sx={{ display: 'flex', minWidth: 0, flexDirection: 'column', gap: 0.25 }}>
-              <Link
-                href={href}
-                underline="hover"
-                fontWeight={600}
-                onClick={(event) => handleNavigateWithinSpaClick(event, href)}
-              >
-                {displayName}
-              </Link>
-              {analyticalNameMissing ? (
-                <Typography
-                  component="span"
-                  variant="caption"
-                  color="text.secondary"
-                  aria-label="Потребує аналітичної назви"
-                >
-                  Потребує аналітичної назви
-                </Typography>
-              ) : null}
-            </Box>
+            <Link
+              href={href}
+              underline="hover"
+              fontWeight={600}
+              onClick={(event) => handleNavigateWithinSpaClick(event, href)}
+            >
+              {row.original.name}
+            </Link>
           );
         },
-      },
-      {
-        id: 'sourceLabel',
-        accessorKey: 'sourceLabel',
-        header: 'Джерельна мітка',
-        size: 220,
-        enableSorting: false,
       },
       {
         id: 'aors',

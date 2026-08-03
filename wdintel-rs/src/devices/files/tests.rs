@@ -13,10 +13,10 @@ use super::{
 };
 use crate::config::{
     read_config, DEVICE_FILE_CURSOR_MAX_BYTES, DEVICE_FILE_PAGE_MAX_LIMIT,
-    DEVICE_FILE_SYNC_BATCH_MAX_COUNT, ROLE_ADMIN, ROLE_CYBER,
-    ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
+    DEVICE_FILE_SYNC_BATCH_MAX_COUNT, ROLE_ADMIN,
 };
 use crate::devices::access;
+use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
 use crate::entities::{device, login, organism};
 use crate::file_registry::entities::file_entry;
 use crate::file_registry::{connect_runtime, run_migrations, FileRegistryDb};
@@ -42,12 +42,11 @@ async fn insert_device(
     db: &DatabaseConnection,
     id: Uuid,
     owner: &login::Model,
-    source_label: &str,
     timestamp: NaiveDateTime,
 ) {
     device::ActiveModel {
         id: Set(id),
-        name: Set(Some("Filesystem fixture device".to_string())),
+        name: Set("Filesystem fixture device".to_string()),
         created_by: Set(owner.login.clone()),
         organism_id: Set(owner.organism_id.unwrap()),
         unit_id: Set(None),
@@ -57,7 +56,6 @@ async fn insert_device(
         archived_at: Set(None),
         created_at: Set(timestamp),
         updated_at: Set(timestamp),
-        source_label: Set(source_label.to_string()),
         custom_fields: Set(json!({})),
     }
     .insert(db)
@@ -316,28 +314,13 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
     let tree =
         insert_stage_two_tree(env.file_registry_db.connection(), timestamp)
             .await;
-    insert_device(
-        &env.dbx,
-        forest.target_device_id,
-        &owner,
-        "stage-eight-active",
-        timestamp,
-    )
-    .await;
-    insert_device(
-        &env.dbx,
-        tree.device_id,
-        &owner,
-        "stage-eight-archived",
-        timestamp,
-    )
-    .await;
+    insert_device(&env.dbx, forest.target_device_id, &owner, timestamp).await;
+    insert_device(&env.dbx, tree.device_id, &owner, timestamp).await;
     archive_device(&env.dbx, tree.device_id, timestamp).await;
 
     for roles in [
         &[ROLE_CYBER][..],
         &[ROLE_DEVICE_SOURCE][..],
-        &[ROLE_DEVICE_ANALYST][..],
         &[ROLE_ADMIN][..],
     ] {
         let actor = access::login_with_roles(&owner, roles);
@@ -390,22 +373,8 @@ async fn stage_eight_read_service_short_circuits_and_preserves_safe_errors() {
     let forest =
         insert_stage_three_forest(env.file_registry_db.connection(), timestamp)
             .await;
-    insert_device(
-        &env.dbx,
-        tree.device_id,
-        &owner,
-        "stage-eight-visible",
-        timestamp,
-    )
-    .await;
-    insert_device(
-        &env.dbx,
-        tree.other_device_id,
-        &owner,
-        "stage-eight-other",
-        timestamp,
-    )
-    .await;
+    insert_device(&env.dbx, tree.device_id, &owner, timestamp).await;
+    insert_device(&env.dbx, tree.other_device_id, &owner, timestamp).await;
 
     let actor = access::login_with_roles(&owner, &[ROLE_ADMIN]);
     assert_stage_eight_live_scope_errors(
@@ -3343,14 +3312,7 @@ async fn stage_ten_sync_service_returns_ordered_partial_results() {
     let timestamp = stage_eight_timestamp();
     let owner = insert_device_owner(&env.dbx, "filesystem-stage-ten").await;
     let device_id = Uuid::now_v7();
-    insert_device(
-        &env.dbx,
-        device_id,
-        &owner,
-        "stage-ten-ordered-results",
-        timestamp,
-    )
-    .await;
+    insert_device(&env.dbx, device_id, &owner, timestamp).await;
     let actor = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
     let result = bl::sync(
         &env.dbx,
@@ -3444,22 +3406,8 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
     let owner = insert_device_owner(&env.dbx, "filesystem-stage-ten").await;
     let target_device_id = Uuid::now_v7();
     let other_device_id = Uuid::now_v7();
-    insert_device(
-        &env.dbx,
-        target_device_id,
-        &owner,
-        "stage-ten-target",
-        timestamp,
-    )
-    .await;
-    insert_device(
-        &env.dbx,
-        other_device_id,
-        &owner,
-        "stage-ten-other",
-        timestamp,
-    )
-    .await;
+    insert_device(&env.dbx, target_device_id, &owner, timestamp).await;
+    insert_device(&env.dbx, other_device_id, &owner, timestamp).await;
     let actor = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
     let repository = &env.file_registry_db;
     let metadata_created_at = timestamp - Duration::hours(2);
@@ -3745,16 +3693,8 @@ async fn stage_ten_sync_service_gates_registry_writes() {
     let owner = insert_device_owner(&env.dbx, "filesystem-stage-ten").await;
     let device_id = Uuid::now_v7();
     let archived_device_id = Uuid::now_v7();
-    insert_device(&env.dbx, device_id, &owner, "stage-ten-active", timestamp)
-        .await;
-    insert_device(
-        &env.dbx,
-        archived_device_id,
-        &owner,
-        "stage-ten-archived",
-        timestamp,
-    )
-    .await;
+    insert_device(&env.dbx, device_id, &owner, timestamp).await;
+    insert_device(&env.dbx, archived_device_id, &owner, timestamp).await;
     archive_device(&env.dbx, archived_device_id, timestamp).await;
     let source = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
     let unauthorized = access::login_with_roles(&owner, &[]);
@@ -3860,14 +3800,7 @@ async fn stage_ten_sync_service_main_db_outage_short_circuits_registry() {
     let timestamp = stage_eight_timestamp();
     let owner = insert_device_owner(&env.dbx, "filesystem-stage-ten").await;
     let device_id = Uuid::now_v7();
-    insert_device(
-        &env.dbx,
-        device_id,
-        &owner,
-        "stage-ten-main-outage",
-        timestamp,
-    )
-    .await;
+    insert_device(&env.dbx, device_id, &owner, timestamp).await;
     let source = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
     let outage_main =
         crate::new_pg_pool_from_config(&env.config).await.unwrap();

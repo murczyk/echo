@@ -201,7 +201,6 @@ describe('DevicesPage layout', () => {
         'mrt-row-numbers',
         'mrt-row-actions',
         'name',
-        'sourceLabel',
         'aors',
         'unit',
         'createdBy',

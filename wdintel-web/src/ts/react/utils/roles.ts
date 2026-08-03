@@ -12,7 +12,6 @@ export type UserRole =
   | 'CallsignsEditor'
   | 'Cyber'
   | 'DeviceSource'
-  | 'DeviceAnalyst'
   | 'AdvancedReports'
   | 'Orbit'
   | 'NoAutoLogout';
@@ -46,9 +45,7 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
     case 'Cyber':
       return has('Admin') || has('Cyber');
     case 'DeviceSource':
-      return has('Admin') || has('DeviceSource') || has('DeviceAnalyst');
-    case 'DeviceAnalyst':
-      return has('Admin') || has('DeviceAnalyst');
+      return has('Admin') || has('DeviceSource');
     case 'AdvancedReports':
       return has('Admin') || has('AdvancedReports');
     case 'Orbit':
@@ -59,11 +56,12 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
 }
 
 export function canReadDevices(roles: readonly string[] | null | undefined): boolean {
-  return hasAnyRole(roles, ['Cyber', 'DeviceSource', 'DeviceAnalyst']);
+  return hasAnyRole(roles, ['Cyber', 'DeviceSource']);
 }
 
 export type DevicesCapabilities = {
   canRead: boolean;
+  canCreate: boolean;
   canWriteSourceData: boolean;
   canWriteAnalyticalData: boolean;
 };
@@ -71,16 +69,16 @@ export type DevicesCapabilities = {
 export function resolveDevicesCapabilities(
   roles: readonly string[] | null | undefined,
 ): DevicesCapabilities {
-  const hasAssignedRole = (role: 'Admin' | 'DeviceSource' | 'DeviceAnalyst') =>
+  const hasAssignedRole = (role: 'Admin' | 'Cyber' | 'DeviceSource') =>
     Boolean(roles?.includes(role));
+
+  const canWriteAnalyticalData = hasAssignedRole('Admin') || hasAssignedRole('DeviceSource');
 
   return {
     canRead: canReadDevices(roles),
-    canWriteSourceData:
-      hasAssignedRole('Admin') ||
-      hasAssignedRole('DeviceSource') ||
-      hasAssignedRole('DeviceAnalyst'),
-    canWriteAnalyticalData: hasAssignedRole('Admin') || hasAssignedRole('DeviceAnalyst'),
+    canCreate: canWriteAnalyticalData,
+    canWriteSourceData: canWriteAnalyticalData || hasAssignedRole('Cyber'),
+    canWriteAnalyticalData,
   };
 }
 

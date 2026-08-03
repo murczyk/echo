@@ -251,11 +251,6 @@ fn role_matches(roles: &[String], role: &str) -> Result<bool, AppError> {
         "DeviceSource" => {
             roles.contains(&"Admin".to_string())
                 || roles.contains(&"DeviceSource".to_string())
-                || roles.contains(&"DeviceAnalyst".to_string())
-        }
-        "DeviceAnalyst" => {
-            roles.contains(&"Admin".to_string())
-                || roles.contains(&"DeviceAnalyst".to_string())
         }
         "AdvancedReports" => {
             roles.contains(&"Admin".to_string())
@@ -2506,26 +2501,18 @@ mod tests {
     }
 
     #[test]
-    fn devices_roles_preserve_cyber_boundary() {
+    fn devices_roles_preserve_boundaries() {
         assert!(role_matches(&roles(&["Cyber"]), "Cyber").unwrap());
         assert!(!role_matches(&roles(&["DeviceSource"]), "Cyber").unwrap());
-        assert!(!role_matches(&roles(&["DeviceAnalyst"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["Cyber"]), "DeviceSource").unwrap());
         assert!(
             role_matches(&roles(&["DeviceSource"]), "DeviceSource").unwrap()
         );
-        assert!(
-            role_matches(&roles(&["DeviceAnalyst"]), "DeviceSource").unwrap()
-        );
-        assert!(
-            role_matches(&roles(&["DeviceAnalyst"]), "DeviceAnalyst").unwrap()
-        );
-        assert!(
-            !role_matches(&roles(&["DeviceSource"]), "DeviceAnalyst").unwrap()
-        );
         assert!(role_matches(&roles(&["Admin"]), "Cyber").unwrap());
         assert!(role_matches(&roles(&["Admin"]), "DeviceSource").unwrap());
-        assert!(role_matches(&roles(&["Admin"]), "DeviceAnalyst").unwrap());
         assert!(!role_matches(&roles(&["Api"]), "Cyber").unwrap());
         assert!(!role_matches(&roles(&["Full"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["Api"]), "DeviceSource").unwrap());
+        assert!(!role_matches(&roles(&["Full"]), "DeviceSource").unwrap());
     }
 }

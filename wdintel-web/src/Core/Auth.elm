@@ -57,11 +57,6 @@ hasRole role user =
         "DeviceSource" ->
             List.member "Admin" user.roles
                 || List.member "DeviceSource" user.roles
-                || List.member "DeviceAnalyst" user.roles
-
-        "DeviceAnalyst" ->
-            List.member "Admin" user.roles
-                || List.member "DeviceAnalyst" user.roles
 
         "AdvancedReports" ->
             List.member "Admin" user.roles
@@ -88,7 +83,6 @@ canReadDevices : User -> Bool
 canReadDevices user =
     hasRole "Cyber" user
         || hasRole "DeviceSource" user
-        || hasRole "DeviceAnalyst" user
 
 
 serverModeIs : String -> Maybe B.ServerInfo -> Bool

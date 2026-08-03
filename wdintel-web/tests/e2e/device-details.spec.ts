@@ -70,6 +70,7 @@ function systemSettings() {
     rer_duty_test_since_ms: 0,
     rer_duty_test_limit: 1,
     rer_duty_poll_interval_sec: 1,
+    rer_duty_test_replay_interval_sec: 1,
     short_url_enabled: false,
     support_non_rer_interceptions: false,
     default_neo_analysis: false,
@@ -82,6 +83,12 @@ function systemSettings() {
     devices_section_enabled: true,
     sigint_comment_parsing_enabled: false,
     do_not_store_duplicate_echoim_failures: false,
+    goi_association_message_uid_worker_enabled: false,
+    report_chunking_hours: 24,
+    limit_big_reports: false,
+    enable_audio_transcription: false,
+    show_classic_duty: false,
+    show_classic_analysis: false,
   };
 }
 
@@ -89,6 +96,7 @@ type ApiTracker = {
   journalRequestCount: number;
   rootsRequestCount: number;
   subtreeCountRequestCount: number;
+  submittedCreateName: string | undefined;
   releaseSubtreeCounts: () => void;
 };
 
@@ -101,6 +109,7 @@ async function installMocks(page: Page): Promise<ApiTracker> {
     journalRequestCount: 0,
     rootsRequestCount: 0,
     subtreeCountRequestCount: 0,
+    submittedCreateName: undefined,
     releaseSubtreeCounts,
   };
   await page.route('**/api-public/server-info', (route) =>
@@ -122,8 +131,9 @@ async function installMocks(page: Page): Promise<ApiTracker> {
     }
     if (pathname === '/api/user') {
       await fulfillJson(route, {
+        id: 'device-tester-id',
         name: 'device-tester',
-        roles: ['Cyber', 'DeviceSource', 'DeviceAnalyst'],
+        roles: ['Cyber', 'DeviceSource'],
         sigint_zone_id: null,
         organism_id: null,
         delta_login: null,
@@ -143,10 +153,54 @@ async function installMocks(page: Page): Promise<ApiTracker> {
       await fulfillJson(route, { tagsLayout: 'compact', disableAutoScroll: false });
       return;
     }
+    if (pathname === '/api/device/list') {
+      await fulfillJson(route, {
+        list: [],
+        total: 0,
+        has_more: false,
+        status_counts: { active: 0, archived: 0 },
+      });
+      return;
+    }
+    if (pathname === '/api/device/unit-stats') {
+      await fulfillJson(route, { units: [] });
+      return;
+    }
+    if (pathname === '/api/device/aors') {
+      await fulfillJson(route, []);
+      return;
+    }
+    if (pathname === '/api/device/units') {
+      await fulfillJson(route, { units: [] });
+      return;
+    }
+    if (pathname === '/api/device/create') {
+      const payload: unknown = route.request().postDataJSON();
+      if (payload === null || typeof payload !== 'object' || !('name' in payload)) {
+        throw new Error('Device create request is missing name');
+      }
+      if (typeof payload.name !== 'string') {
+        throw new Error('Device create request name is not a string');
+      }
+      tracker.submittedCreateName = payload.name;
+      await fulfillJson(route, {
+        id: DEVICE_ID,
+        name: tracker.submittedCreateName,
+        aors: [],
+        unit: null,
+        external_url: null,
+        custom_fields: {},
+        created_by: 'device-tester',
+        archived: false,
+        created_at: NOW,
+        updated_at: NOW,
+        archived_at: null,
+      });
+      return;
+    }
     if (pathname === '/api/device/detail') {
       await fulfillJson(route, {
         id: DEVICE_ID,
-        source_label: 'Inventory Alpha',
         name: 'Device Alpha',
         aors: [{ id: 1, name: 'Північ' }],
         unit: { id: 7, name: 'Unit Seven' },
@@ -289,6 +343,9 @@ test('@smoke device details uses tabs, a synchronization journal, a collapsible 
   expect(tracker.rootsRequestCount).toBe(0);
   const metadataPanel = page.getByTestId('device-details-left-panel');
   await expect(metadataPanel).toBeVisible();
+  await expect(metadataPanel).toContainText('Назва');
+  await expect(metadataPanel).toContainText('Device Alpha');
+  await expect(metadataPanel).not.toContainText('Джерельна мітка');
   const metadataBox = await metadataPanel.boundingBox();
   expect(metadataBox?.width).toBeGreaterThanOrEqual(360);
   expect(metadataBox?.width).toBeLessThanOrEqual(420);
@@ -302,11 +359,12 @@ test('@smoke device details uses tabs, a synchronization journal, a collapsible 
   await expect(journalTable.getByRole('columnheader')).toHaveText([
     'Назва файлу',
     'Шлях до файлу',
+    'Контент',
     'Дата й час синхронізації',
   ]);
   const journalRow = journalTable.getByRole('row').filter({ hasText: 'journal.log' });
   await expect(journalRow).toContainText('/var/log/journal.log');
-  await expect(journalRow.getByRole('cell').nth(2)).not.toHaveText('');
+  await expect(journalRow.getByRole('cell').nth(3)).not.toHaveText('');
   await expect.poll(() => tracker.journalRequestCount).toBe(1);
   await expect(page.getByRole('status', { name: 'Показано 1 з 1 файлів' })).toBeVisible();
 
@@ -393,5 +451,34 @@ test('@smoke device details uses tabs, a synchronization journal, a collapsible 
   await page.getByRole('tab', { name: 'Журнал' }).click();
   await expect(journalTable).toBeVisible();
   await expect(metadataPanel).toBeVisible();
+  expect(browserFailures).toEqual([]);
+});
+
+test('@smoke device creation requires and submits a name for DeviceSource', async ({ page }) => {
+  const browserFailures: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserFailures.push(`console: ${message.text()}`);
+  });
+  page.on('pageerror', (error) => browserFailures.push(`pageerror: ${error.message}`));
+  page.on('response', (response) => {
+    if (response.status() >= 400) {
+      browserFailures.push(`response: ${response.status()} ${response.url()}`);
+    }
+  });
+
+  const tracker = await installMocks(page);
+
+  await page.goto('/devices', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Створити пристрій' }).click();
+
+  const nameInput = page.getByRole('textbox', { name: 'Назва', exact: true });
+  await expect(nameInput).toBeVisible();
+  await expect(nameInput).toHaveAttribute('required', '');
+  await nameInput.fill('  Device Bravo  ');
+  await expect(nameInput).toHaveAttribute('aria-invalid', 'false');
+  await page.getByRole('button', { name: 'Створити', exact: true }).click();
+
+  await expect.poll(() => tracker.submittedCreateName).toBe('Device Bravo');
+  await expect(page.getByRole('textbox', { name: 'Назва', exact: true })).toBeHidden();
   expect(browserFailures).toEqual([]);
 });

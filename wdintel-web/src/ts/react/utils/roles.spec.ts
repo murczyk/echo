@@ -14,20 +14,14 @@ describe('roles', () => {
     expect(hasRole(['Full'], 'Orbit')).toBe(false);
     expect(hasRole(['Cyber'], 'Cyber')).toBe(true);
     expect(hasRole(['DeviceSource'], 'Cyber')).toBe(false);
-    expect(hasRole(['DeviceAnalyst'], 'Cyber')).toBe(false);
     expect(hasRole(['DeviceSource'], 'DeviceSource')).toBe(true);
-    expect(hasRole(['DeviceAnalyst'], 'DeviceSource')).toBe(true);
-    expect(hasRole(['DeviceAnalyst'], 'DeviceAnalyst')).toBe(true);
-    expect(hasRole(['DeviceSource'], 'DeviceAnalyst')).toBe(false);
     expect(hasRole(['Admin'], 'Cyber')).toBe(true);
     expect(hasRole(['Admin'], 'DeviceSource')).toBe(true);
-    expect(hasRole(['Admin'], 'DeviceAnalyst')).toBe(true);
     expect(hasRole(['Api'], 'Cyber')).toBe(false);
     expect(hasRole(['Full'], 'Cyber')).toBe(false);
     expect(hasRole(['Rer'], 'Cyber')).toBe(false);
     expect(canReadDevices(['Cyber'])).toBe(true);
     expect(canReadDevices(['DeviceSource'])).toBe(true);
-    expect(canReadDevices(['DeviceAnalyst'])).toBe(true);
     expect(canReadDevices(['Admin'])).toBe(true);
     expect(canReadDevices(['Api'])).toBe(false);
     expect(hasRole(['Full'], 'DeleteMsg')).toBe(true);
@@ -37,26 +31,25 @@ describe('roles', () => {
   it('resolves Devices capabilities by action instead of role inheritance', () => {
     expect(resolveDevicesCapabilities(['Cyber'])).toEqual({
       canRead: true,
-      canWriteSourceData: false,
+      canCreate: false,
+      canWriteSourceData: true,
       canWriteAnalyticalData: false,
     });
     expect(resolveDevicesCapabilities(['DeviceSource'])).toEqual({
       canRead: true,
-      canWriteSourceData: true,
-      canWriteAnalyticalData: false,
-    });
-    expect(resolveDevicesCapabilities(['DeviceAnalyst'])).toEqual({
-      canRead: true,
+      canCreate: true,
       canWriteSourceData: true,
       canWriteAnalyticalData: true,
     });
-    expect(resolveDevicesCapabilities(['DeviceSource', 'DeviceAnalyst'])).toEqual({
+    expect(resolveDevicesCapabilities(['Cyber', 'DeviceSource'])).toEqual({
       canRead: true,
+      canCreate: true,
       canWriteSourceData: true,
       canWriteAnalyticalData: true,
     });
     expect(resolveDevicesCapabilities(['Admin'])).toEqual({
       canRead: true,
+      canCreate: true,
       canWriteSourceData: true,
       canWriteAnalyticalData: true,
     });
@@ -66,7 +59,7 @@ describe('roles', () => {
     expect(hasAnyRole(['Admin'], ['AdvancedReports'])).toBe(true);
     expect(hasAnyRole(['Full'], ['UnitsEditor', 'CallsignsEditor'])).toBe(false);
     expect(hasAnyRole(['CallsignsEditor'], ['UnitsEditor', 'CallsignsEditor'])).toBe(true);
-    expect(hasAnyRole(['DeviceSource'], ['DeviceSource', 'DeviceAnalyst'])).toBe(true);
+    expect(hasAnyRole(['DeviceSource'], ['Cyber', 'DeviceSource'])).toBe(true);
     expect(hasAnyRole(['Api'], ['Cyber', 'DeviceSource'])).toBe(false);
   });
 });

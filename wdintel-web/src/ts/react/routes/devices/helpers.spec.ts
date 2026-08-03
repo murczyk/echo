@@ -44,7 +44,6 @@ describe('devices list query mapping', () => {
     ).toEqual({
       filterText: null,
       archivedFilter: 'active_only',
-      needsAnalyticalName: null,
       aorIds: null,
       unitIds: null,
       limit: 100,

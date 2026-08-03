@@ -1624,8 +1624,7 @@ export type DeviceStatusCounts = {
 
 export type DeviceListItem = {
   id: string;
-  sourceLabel: string;
-  name: string | null;
+  name: string;
   aors: Array<AorSummary>;
   unit: UnitSummary | null;
   createdBy: string;
@@ -1637,8 +1636,7 @@ export type DeviceListItem = {
 
 export type DeviceDetails = {
   id: string;
-  sourceLabel: string;
-  name: string | null;
+  name: string;
   aors: Array<AorSummary>;
   unit: UnitSummary | null;
   externalUrl: string | null;
@@ -1658,7 +1656,6 @@ export type DeviceUnitStat = {
 export type ListDevicesReq = {
   filterText: string | null;
   archivedFilter: DeviceArchivedFilter | null;
-  needsAnalyticalName: boolean | null;
   aorIds: Array<number> | null;
   unitIds: Array<number> | null;
   limit: number | null;
@@ -1683,14 +1680,13 @@ export type DeviceDetailReq = {
 };
 
 export type CreateDeviceReq = {
-  sourceLabel: string;
+  name: string;
   externalUrl: string | null;
   customFields: Record<string, string> | null;
 };
 
 export type UpdateDeviceReq = {
   deviceId: string;
-  sourceLabel: string | null;
   externalUrl: string | null;
   customFields: Record<string, string | null> | null;
   name: string | null;
