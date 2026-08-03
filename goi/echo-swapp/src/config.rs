@@ -5,6 +5,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 
 pub const DEFAULT_CONFIG_PATH: &str = "/etc/echo-swapp/config.toml";
+pub const AUTOMATION_SEND_LOG_RETENTION_DAYS: i64 = 30;
 const DEFAULT_PG_HOST: &str = "localhost";
 const DEFAULT_PG_PORT: u16 = 5432;
 const DEFAULT_PG_USER: &str = "wd";

@@ -47,6 +47,11 @@ async fn messenger_worker_tick(db: &DatabaseConnection) -> anyhow::Result<()> {
 async fn cleanup_worker(db: DatabaseConnection) {
     log::info!("starting echo-swapp cleanup worker");
     loop {
+        if let Err(err) = automation::delete_expired_send_log(&db).await {
+            log::error!(
+                "echo-swapp automation send log cleanup failed: {err:#}"
+            );
+        }
         if let Err(err) = echo_im::worker::run_cleanup_worker(&db).await {
             log::error!("echo-swapp cleanup worker failed: {err:#}");
         }
