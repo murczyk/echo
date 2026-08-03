@@ -3,7 +3,7 @@ use super::types::{
     OrbitUnitLinkCandidate, OrbitUnitLinkCandidatesReq,
     OrbitUnitLinkCandidatesRsp,
 };
-use crate::config::ROLE_ADMIN;
+use crate::config::ROLE_ORBIT;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
@@ -24,7 +24,7 @@ pub async fn can_view_orbit_data(
     dbx: &DatabaseConnection,
     login_id: &Uuid,
 ) -> Result<bool, AppError> {
-    match has_role(dbx, login_id, ROLE_ADMIN).await {
+    match has_role(dbx, login_id, ROLE_ORBIT).await {
         Ok(()) => Ok(true),
         Err(AppError::Forbidden(_)) => Ok(false),
         Err(err) => Err(err),
@@ -386,6 +386,25 @@ fn render_orbit_unit_candidate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::{cleanup, mk_login};
+    use serial_test::serial;
+
+    async fn create_login_with_roles(
+        dbx: &DatabaseConnection,
+        login_name: &str,
+        roles: &[&str],
+    ) -> login::Model {
+        mk_login(
+            dbx,
+            login::ActiveModel {
+                login: Set(login_name.to_string()),
+                roles: Set(serde_json::to_value(roles).unwrap()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+    }
 
     #[test]
     fn orbit_search_words_splits_text_and_limits_terms() {
@@ -395,5 +414,26 @@ mod tests {
                 "53", "зрбр", "20", "ЗВА", "МВО", "extra", "words", "ignored"
             ]
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orbit_role_and_admin_can_view_orbit_data() {
+        let env = cleanup().await.unwrap();
+        let orbit_login =
+            create_login_with_roles(&env.dbx, "orbit-role", &["Rer", "Orbit"])
+                .await;
+        let admin_login =
+            create_login_with_roles(&env.dbx, "orbit-admin", &["Admin"]).await;
+        let rer_login =
+            create_login_with_roles(&env.dbx, "orbit-rer", &["Rer"]).await;
+
+        assert!(can_view_orbit_data(&env.dbx, &orbit_login.id)
+            .await
+            .unwrap());
+        assert!(can_view_orbit_data(&env.dbx, &admin_login.id)
+            .await
+            .unwrap());
+        assert!(!can_view_orbit_data(&env.dbx, &rer_login.id).await.unwrap());
     }
 }

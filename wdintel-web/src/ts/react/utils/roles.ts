@@ -11,6 +11,7 @@ export type UserRole =
   | 'NetworkEditor'
   | 'CallsignsEditor'
   | 'AdvancedReports'
+  | 'Orbit'
   | 'NoAutoLogout';
 
 export function hasRole(roles: readonly string[] | null | undefined, role: UserRole): boolean {
@@ -41,6 +42,8 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
       return has('Admin') || has('CallsignsEditor');
     case 'AdvancedReports':
       return has('Admin') || has('AdvancedReports');
+    case 'Orbit':
+      return has('Admin') || has('Orbit');
     case 'NoAutoLogout':
       return has('NoAutoLogout');
   }

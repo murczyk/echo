@@ -229,6 +229,10 @@ where
                 roles.contains(&"Admin".to_string())
                     || roles.contains(&"AdvancedReports".to_string())
             }
+            "Orbit" => {
+                roles.contains(&"Admin".to_string())
+                    || roles.contains(&"Orbit".to_string())
+            }
             "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
             role => {
                 return Err(AppError::BL {

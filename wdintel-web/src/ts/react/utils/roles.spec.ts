@@ -9,6 +9,9 @@ describe('roles', () => {
     expect(hasRole(['Bpla'], 'Basic')).toBe(true);
     expect(hasRole(['Full'], 'UnitsEditor')).toBe(false);
     expect(hasRole(['Admin'], 'UnitsEditor')).toBe(true);
+    expect(hasRole(['Admin'], 'Orbit')).toBe(true);
+    expect(hasRole(['Orbit'], 'Orbit')).toBe(true);
+    expect(hasRole(['Full'], 'Orbit')).toBe(false);
     expect(hasRole(['Full'], 'DeleteMsg')).toBe(true);
     expect(hasRole(['Admin'], 'NoAutoLogout')).toBe(false);
   });
