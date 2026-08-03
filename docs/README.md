@@ -217,7 +217,6 @@ flowchart TB
     api["wdintel-rs.service"]
     bg["wdintel-rs-bgworker.service"]
     reports["wdintel-rs-report-worker.service"]
-    swapp["echo-swapp.service"]
 
     api --> api_workers["Request-adjacent workers<br/>session_activity_worker<br/>messenger_media_cache_cleanup_worker<br/>messenger_media_thumbnail_worker"]
     api -.-> api_vault_worker["secret_worker<br/>when Vault is configured"]
@@ -235,8 +234,6 @@ flowchart TB
     reports --> report_workers_a["Report-history workers<br/>report_history_worker_tags<br/>report_history_worker_interception<br/>report_history_worker_babak<br/>report_history_worker_mouse<br/>report_history_worker_pelengs<br/>report_history_worker_senders<br/>report_history_worker_posts<br/>report_history_worker_naushnom<br/>report_history_worker_reo<br/>report_history_worker_digest"]
     reports --> report_workers_b["Report-history workers<br/>report_history_worker_rer_report<br/>report_history_worker_sposob<br/>report_history_worker_posts_docx<br/>report_history_worker_active_networks<br/>report_history_worker_network_frequencies<br/>report_history_worker_report_125<br/>report_history_worker_report_1213<br/>report_history_worker_summary_table"]
     reports --> report_workers_c["Report-history workers<br/>report_history_worker_kmz<br/>report_history_worker_geojson<br/>report_history_worker_etalonka<br/>report_history_worker_etalonka_1<br/>report_history_worker_goi<br/>report_history_worker_unknown<br/>report_history_timeout_worker"]
-
-    swapp --> swapp_workers["Messenger workers<br/>messenger_worker<br/>echo_im cleanup<br/>/tmp size cleanup"]
 
     classDef optional stroke-dasharray:6 4
     class api_vault_worker,bg_vault_worker,configured_workers,startup_workers optional
@@ -282,8 +279,6 @@ flowchart LR
         message_uid["goi_association_message_uid_worker<br/>backfill message links when enabled"]
         conversion["palitra_conversion_worker<br/>convert imported palette sources"]
         report["report_history_worker_goi<br/>generate requested GOI reports"]
-        echo_im["Echo IM<br/>Signal + WhatsApp bot integration"]
-
         echo_pg[("PostgreSQL 18 · wd<br/>goi_integration · goi_association · goi_knowledge<br/>goi_palitra_sync · source blobs · converted geometry<br/>palitra sync/conversion queues · automation send log")]
         report_store[("Backblaze B2 / S3<br/>generated GOI reports · optional")]
 
@@ -306,13 +301,16 @@ flowchart LR
         direction TB
         goi_app["GOI application"]
         goi_worker["goi-echo-worker.service<br/>HTTP API · :8088"]
+        echo_swapp["echo-swapp.service<br/>GOI-side Echo Messengers · :4010<br/>automation + cleanup workers"]
+        messenger_clients["echo-signal-bot@.service<br/>echo-whatsapp-bot@.service"]
         goi_watchers["Internal workers<br/>associations_worker_nofail<br/>knowledge_worker_nofail"]
-        echo_swapp["echo-swapp.service<br/>messenger UI/API<br/>automation + cleanup workers"]
         goi_postgres["postgresql.service"]
         goi_pg[("PostgreSQL · goi<br/>association · knowledge · sync_lock")]
         goi_files[("GOI filesystem<br/>/etc/goi/data/xlsx/<br/>associations · knowledge · frequencies<br/>/etc/goi/data/palettes/")]
 
         goi_app <--> goi_files
+        goi_app <-->|messenger bot integration| echo_swapp
+        echo_swapp <-->|manage clients| messenger_clients
         goi_worker --> goi_watchers
         goi_worker --> goi_postgres
         goi_postgres --> goi_pg
@@ -324,7 +322,6 @@ flowchart LR
     sync <-->|Basic-auth HTTP<br/>associations · knowledge · signed frequencies| goi_worker
     sync <-->|SSH · knowledge workbook + palette files| goi_files
     sync -.->|SSH · remote sync lock| goi_pg
-    goi_app <-->|messenger bot integration| echo_swapp
     echo_swapp -->|Echo IM + automation tables| echo_pg
 
     style echo_lxc stroke-width:2px
