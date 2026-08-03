@@ -2,7 +2,18 @@
   "migrations": {
     "echo:m20260802_174927_rer_duty_test_replay": {
       "changes": [
-        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+        {
+          "table": "public.system_settings",
+          "strategy": "cdc_backfill"
+        }
+      ]
+    },
+    "echo:m20260729_155811_add_sigint_inbox_item_callsign": {
+      "changes": [
+        {
+          "table": "public.sigint_inbox_item_callsign",
+          "strategy": "replicated_snapshot"
+        }
       ]
     },
     "echo:m20260803_093803_echo_automation_send_log": {
