@@ -223,6 +223,97 @@ remained enabled and active for the next scheduled run. Temporary local,
 remote-host, and read-only-clone working copies were removed. The timestamped
 container rollback set and the preserved old `goi-144ombr` target remain.
 
+## Recurrence on 2026-08-03
+
+`goi-jf` lost its active association workbook for a third time. Before repair,
+the structurally valid replacement had only 105 XML rows and the worker read
+104 data rows. The worker log contained 1,092 invalid-ZIP/end-of-central-
+directory errors during the incident window. The same five writers as on
+2026-08-02 were stopped and their active-state list was preserved before the
+swap.
+
+The clean `associations_backup_daily.xlsx` from 2026-08-02 22:00 Kyiv supplied
+13,210 base rows. PostgreSQL preserved 308 unique association rows created
+after that file's mtime. Appending their serialized cell values with
+`openpyxl` produced a 13,518-row recovery candidate with SHA-256
+`aacc3ee73495224f5e730df38d1927fac791fc9099de37c70feb680467180b3e`.
+ZIP CRC, worksheet XML, and `openpyxl` validation all passed. The worker read
+all 13,518 rows immediately after the atomic replacement. GOI subsequently
+normalized the workbook to 13,205 rows; it had progressed to 13,208 during the
+final fleet scan without another invalid-ZIP error.
+
+The complete rollback set is retained at:
+
+```text
+goi-jf:/var/backups/goi-xlsx-recovery/20260803T085624Z/
+```
+
+It contains the 105-row post-outage workbook, daily/hourly/pre-shrink/monthly
+copies, a full PostgreSQL association dump, the 308 selected database rows as
+JSON, hashes, the recovery candidate, and the pre-maintenance service list.
+
+No other live workbook required restoration. `goi-159ombr`,
+`goi-prod-05`, and `goi-475oshb` had transient errors or suspicious row-count
+differences but were structurally clean and continued progressing from their
+latest snapshots. The apparent `goi-475oshb` knowledge reduction matched
+26,998 intentional database deletions and 2,651 active rows; its readonly
+frequency workbook is derived from that state. The small `goi-prod-05`
+`inbox.xlsx` is a drained queue, not a lost append-only workbook. The final
+fleet scan checked 182 current top-level XLSX files. Its only two failures were
+the intentionally retained `knowledge_bkp_bad.xlsx` evidence files in
+`goi-jf` and `goi-jf-next`.
+
+### Space-consumer diagnosis and prevention
+
+The previous free-space operation had finished: no cleanup or ZFS-send process
+was still running and both pools reported `freeing=0`. Space appeared not to
+stay free because `goi-144ombr` continuously recreated JNI extraction files
+under `/tmp`:
+
+- 101 `libsignal*` directories in that container accounted for 17.64 GB of
+  logical data, with a new approximately 175 MB logical extraction appearing
+  about every 20 seconds;
+- 6,486 `sqlite-3.53.1.0-*-libsqlitejdbc.so` files accounted for another
+  7.08 GB of logical data; and
+- the existing `cleanup-libsignal-tmp` timer ignored the SQLite files and its
+  original five-minute cadence/ten-minute age threshold allowed a large steady
+  working set.
+
+The cleanup unit was tightened to run every minute, delete only matching
+top-level files/directories older than one minute, and cover both the
+`libsignal*` directories and the precise SQLite JNI filename patterns. Original
+and intermediate units are retained under
+`goi-144ombr:/var/backups/goi-space-fix/20260803T090543Z/` and
+`goi-144ombr:/var/backups/goi-space-fix/20260803T090737Z/`. After the final
+rule ran, SQLite JNI files fell from 6,486 to 8 and `/tmp` fell from about
+5.8 GB to 610 MB. The timer remained enabled and active.
+
+The scheduled backup began at 05:57 Kyiv, reached an incremental send of
+`goi-144ombr`, and was still running when the host rebooted at 07:17. Later
+space cleanup removed its source snapshots, leaving two stale Incus snapshot
+records and no common snapshot with the canonical target. Both records were
+reconciled safely by temporarily recreating their raw ZFS snapshots and then
+deleting them through Incus. The old 69.2 GB target and its restore point were
+preserved without deletion as:
+
+```text
+hdd0/manual-keep/echo-gpu-hammer/default/goi-144ombr-preleakfix-20260803T091001Z
+```
+
+A new full `goi-144ombr` chain was created at matching source/target snapshot
+`snapshot-incusbak_20260803T091022Z`; its target used 9.90 GB. The repaired
+`goi-jf` then received matching source/target snapshot
+`snapshot-incusbak_20260803T091213Z`. A temporary read-only clone contained a
+CRC/XML-clean 13,205-row workbook. Full preflight passed for all 26 configured
+GOI containers.
+
+At final verification, the live workbook had reached 13,210 rows, all five
+`goi-jf` writers were active,
+`cleanup-libsignal-tmp.timer` and `echo-incus-zfs-backup.timer` were enabled and
+active, and neither pool had pending freeing work. `rpool` was 60% allocated
+with 359 GB free; `hdd0` was 14% allocated with 18.7 TB free. Both pools were
+ONLINE.
+
 ## Repeatable recovery procedure
 
 1. Confirm `rpool` and the backup pool are ONLINE and have safe headroom with
@@ -261,6 +352,12 @@ container rollback set and the preserved old `goi-144ombr` target remain.
 11. Force a targeted ZFS backup, verify source/target snapshot agreement, and
     inspect the XLSX through a temporary read-only clone. Finish with full fleet
     preflight and confirm the timer is enabled and active.
+12. On `goi-144ombr`, check both `libsignal*` directories and
+    `sqlite-*-libsqlitejdbc.so` files in `/tmp`, plus snapshot-pinned space. A
+    small current directory does not prove the leak is harmless if an older
+    source snapshot still pins deleted generations. Confirm the one-minute
+    `cleanup-libsignal-tmp.timer` is active and that the file counts remain in a
+    short rolling window.
 
 For a CRC-only failure where the decompressed XML is valid, repacking the ZIP
 members can repair the central-directory CRC without changing worksheet XML.
