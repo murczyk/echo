@@ -470,7 +470,7 @@ overviewTab user shared model details =
             else
                 List.map
                     (orbitDataCard
-                        (Core.Auth.hasRole "Admin" user)
+                        (Core.Auth.hasRole "Orbit" user)
                         shared
                         model.orbitUnitUnlinking
                     )
@@ -658,7 +658,7 @@ orbitUnitDetails shared orbitUnit =
             , overviewField
                 "Угруповання військ"
                 (orbitUnit.groupingOfForces
-                    |> List.map orbitDictionaryDetails
+                    |> List.map .name
                     |> String.join "\n"
                 )
             , overviewField
@@ -712,11 +712,6 @@ orbitParentPath value =
         |> String.split " / "
         |> List.drop 1
         |> String.join " / "
-
-
-orbitDictionaryDetails : B.OrbitDictionaryValue -> String
-orbitDictionaryDetails value =
-    value.name ++ " (" ++ value.key ++ "; " ++ value.id ++ ")"
 
 
 overviewField : String -> String -> Html Msg
