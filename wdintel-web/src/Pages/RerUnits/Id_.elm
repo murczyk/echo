@@ -380,7 +380,7 @@ detailsView user shared model details =
         , tabsView model.activeTab
         , case model.activeTab of
             Overview ->
-                overviewTab shared model details.unit details.orbitUnits
+                overviewTab user shared model details
 
             Files ->
                 filesTab user shared model details.attachments
@@ -392,7 +392,7 @@ detailsHeader : B.UnitDetailsRsp -> Html Msg
 detailsHeader details =
     div
         [ class "d-flex align-items-center justify-content-between gap-3 flex-wrap" ]
-        ([ div [ class "d-flex align-items-center gap-3 flex-wrap" ]
+        [ div [ class "d-flex align-items-center gap-3 flex-wrap" ]
             [ a
                 [ class "btn btn-outline-secondary btn-sm"
                 , Route.href
@@ -406,32 +406,7 @@ detailsHeader details =
                 ]
             , h1 [ class "mb-0" ] [ text details.unit.name ]
             ]
-         ]
-            ++ orbitLinkHeaderActions details.canLinkOrbitUnit
-        )
-
-
-orbitLinkHeaderActions : Bool -> List (Html Msg)
-orbitLinkHeaderActions canLinkOrbitUnit =
-    if canLinkOrbitUnit then
-        [ button
-            [ class "btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2 text-nowrap"
-            , type_ "button"
-            , onClick OpenOrbitLinkDialog
-            ]
-            [ img
-                [ src "/img/delta-icon.webp"
-                , alt ""
-                , style "height" "22px"
-                , style "width" "22px"
-                ]
-                []
-            , text "Прив'язати Orbit підрозділ"
-            ]
         ]
-
-    else
-        []
 
 
 orbitLinkDialog : Model -> Html Msg
@@ -481,15 +456,55 @@ tabsView activeTab =
         ]
 
 
-overviewTab : Shared.Model -> Model -> B.Unit -> List B.OrbitUnitDetails -> Html Msg
-overviewTab shared model unit orbitUnits =
+overviewTab : Auth.User -> Shared.Model -> Model -> B.UnitDetailsRsp -> Html Msg
+overviewTab user shared model details =
+    let
+        orbitCards =
+            if List.isEmpty details.orbitUnits then
+                if details.canLinkOrbitUnit then
+                    [ emptyOrbitDataCard ]
+
+                else
+                    []
+
+            else
+                List.map
+                    (orbitDataCard
+                        (Core.Auth.hasRole "Admin" user)
+                        shared
+                        model.orbitUnitUnlinking
+                    )
+                    details.orbitUnits
+    in
     div
         [ class "flex flex-col gap-4"
         , attribute "role" "tabpanel"
         ]
-        (unitOverviewCard shared unit
-            :: List.map (orbitDataCard shared model.orbitUnitUnlinking) orbitUnits
-        )
+        (unitOverviewCard shared details.unit :: orbitCards)
+
+
+emptyOrbitDataCard : Html Msg
+emptyOrbitDataCard =
+    div [ class "border rounded p-4 bg-card" ]
+        [ h2 [ class "h4 mb-4" ] [ text "Дані із Orbit" ]
+        , p [] [ text "Відсутні дані із системи Orbit." ]
+        , p [ class "mb-0" ]
+            [ button
+                [ class "btn btn-outline-primary d-inline-flex align-items-center gap-2"
+                , type_ "button"
+                , onClick OpenOrbitLinkDialog
+                ]
+                [ img
+                    [ src "/img/delta-icon.webp"
+                    , alt ""
+                    , style "height" "22px"
+                    , style "width" "22px"
+                    ]
+                    []
+                , text "Прив'язати Orbit підрозділ"
+                ]
+            ]
+        ]
 
 
 unitOverviewCard : Shared.Model -> B.Unit -> Html Msg
@@ -529,26 +544,73 @@ unitOverviewCard shared unit =
         ]
 
 
-orbitDataCard : Shared.Model -> Maybe String -> B.OrbitUnitDetails -> Html Msg
-orbitDataCard shared orbitUnitUnlinking orbitUnit =
+orbitDataCard : Bool -> Shared.Model -> Maybe String -> B.OrbitUnitDetails -> Html Msg
+orbitDataCard canManageOrbitData shared orbitUnitUnlinking orbitUnit =
     div [ class "border rounded p-4 bg-card" ]
-        [ h2 [ class "h4 mb-4" ] [ text "Дані із Orbit" ]
-        , orbitUnitDetails shared orbitUnit
-        , div [ class "d-flex justify-content-end mt-4" ]
-            [ button
-                [ class "btn btn-danger"
-                , type_ "button"
-                , disabled (orbitUnitUnlinking /= Nothing)
-                , onClick (UnlinkOrbitUnit orbitUnit)
-                ]
-                [ i [ class "bi bi-trash me-2" ] []
-                , text
-                    (if orbitUnitUnlinking == Just orbitUnit.unitId then
-                        "Видалення…"
+        [ div [ class "d-flex align-items-center justify-content-between gap-3 mb-4" ]
+            [ h2 [ class "h4 mb-0" ] [ text "Дані із Orbit" ]
+            , if canManageOrbitData then
+                orbitDataActions orbitUnitUnlinking orbitUnit
 
-                     else
-                        "Видалити"
-                    )
+              else
+                text ""
+            ]
+        , orbitUnitDetails shared orbitUnit
+        ]
+
+
+orbitDataActions : Maybe String -> B.OrbitUnitDetails -> Html Msg
+orbitDataActions orbitUnitUnlinking orbitUnit =
+    let
+        isUnlinking =
+            orbitUnitUnlinking == Just orbitUnit.unitId
+
+        actionLabel =
+            if isUnlinking then
+                "Відв’язування Orbit підрозділу"
+
+            else
+                "Дії з даними Orbit"
+    in
+    div [ class "dropdown" ]
+        [ button
+            [ class "btn btn-sm btn-link text-secondary"
+            , type_ "button"
+            , disabled (orbitUnitUnlinking /= Nothing)
+            , attribute "data-bs-toggle" "dropdown"
+            , attribute "aria-expanded" "false"
+            , attribute "aria-label" actionLabel
+            , attribute "aria-busy"
+                (if isUnlinking then
+                    "true"
+
+                 else
+                    "false"
+                )
+            ]
+            [ if isUnlinking then
+                span [ class "spinner-border spinner-border-sm" ] []
+
+              else
+                i [ class "bi bi-three-dots-vertical" ] []
+            ]
+        , ul [ class "dropdown-menu dropdown-menu-end" ]
+            [ li []
+                [ button
+                    [ class "dropdown-item text-danger d-flex align-items-center gap-2"
+                    , type_ "button"
+                    , disabled (orbitUnitUnlinking /= Nothing)
+                    , onClick (UnlinkOrbitUnit orbitUnit)
+                    ]
+                    [ i [ class "bi bi-link-45deg" ] []
+                    , text
+                        (if isUnlinking then
+                            "Відв’язування…"
+
+                         else
+                            "Відв'язати Orbit підрозділ"
+                        )
+                    ]
                 ]
             ]
         ]

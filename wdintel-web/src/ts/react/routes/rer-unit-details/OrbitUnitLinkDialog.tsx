@@ -23,6 +23,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { OrbitUnitLinkCandidate } from '../../../../Bindings';
+import { PowerAlert } from '../../components/PowerAlert';
 import {
   CUSTOM_STYLES,
   getDefaultMrtContainerProps,
@@ -366,13 +367,7 @@ function OrbitUnitLinkDialogBody({
               ),
             }}
           />
-        ) : (
-          <Box>
-            <Button variant="outlined" startIcon={<SearchIcon />} onClick={startAdvancedSearch}>
-              Нема збігів, спробувати розширений пошук...
-            </Button>
-          </Box>
-        )}
+        ) : null}
 
         {advancedSearch && !search.trim() ? (
           <Typography variant="body2" color="text.secondary">
@@ -383,6 +378,19 @@ function OrbitUnitLinkDialogBody({
         <Box sx={{ flex: 1, minHeight: 0 }}>
           <MaterialReactTable table={table} />
         </Box>
+
+        {!advancedSearch ? (
+          <>
+            <PowerAlert severity="info">
+              Якщо жоден варіант не підійшов - спробуйте розширений пошук
+            </PowerAlert>
+            <Box>
+              <Button variant="outlined" startIcon={<SearchIcon />} onClick={startAdvancedSearch}>
+                Розширений пошук
+              </Button>
+            </Box>
+          </>
+        ) : null}
       </DialogContent>
 
       <DialogActions>

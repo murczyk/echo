@@ -48,63 +48,86 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
         muiTableBodyCellProps: {
           sx: {
             ...CUSTOM_STYLES.muiTableBodyCellProps.sx,
-            position: 'relative',
             overflow: 'hidden',
             verticalAlign: 'middle',
-            paddingRight: '32px!important',
           },
         },
         Cell: ({ row }) => {
           const detailsHref = `/rer-units/${row.original.id}`;
           const filesHref = `${detailsHref}?tab=files`;
           return (
-            <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-              <Link
-                href={detailsHref}
-                onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
-                sx={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              useFlexGap
+              sx={{ minWidth: 0, width: '100%' }}
+            >
+              <Tooltip title={row.original.name}>
+                <Link
+                  href={detailsHref}
+                  onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
+                  sx={{
+                    display: 'block',
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {row.original.name}
+                </Link>
+              </Tooltip>
+              <Stack
+                direction="row"
+                spacing={1}
+                alignItems="center"
+                sx={{ ml: 'auto', flexShrink: 0 }}
               >
-                {row.original.name}
-              </Link>
-              {attachmentUnitIds.has(row.original.id) ? (
-                <Tooltip title="Відкрити файли підрозділу">
-                  <Link
-                    href={filesHref}
-                    underline="none"
-                    onClick={(event) => handleNavigateWithinSpaClick(event, filesHref)}
-                    aria-label={`Відкрити файли підрозділу ${row.original.name}`}
-                  >
-                    <Chip
-                      icon={<AttachFileIcon />}
-                      label="Файли"
-                      size="small"
-                      color="primary"
-                      variant="outlined"
-                      clickable
-                    />
-                  </Link>
-                </Tooltip>
-              ) : null}
-              {row.original.hasOrbit ? (
-                <Tooltip title="Є дані із Orbit">
-                  <Link
-                    href={detailsHref}
-                    underline="none"
-                    aria-label={`Відкрити дані Orbit підрозділу ${row.original.name}`}
-                    onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
-                    sx={{
-                      position: 'absolute',
-                      top: '50%',
-                      right: 8,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      transform: 'translateY(-50%)',
-                    }}
-                  >
-                    <Box component="img" src="/img/delta-icon.webp" alt="" sx={{ height: 13.2 }} />
-                  </Link>
-                </Tooltip>
-              ) : null}
+                {attachmentUnitIds.has(row.original.id) ? (
+                  <Tooltip title="Відкрити файли підрозділу">
+                    <Link
+                      href={filesHref}
+                      underline="none"
+                      onClick={(event) => handleNavigateWithinSpaClick(event, filesHref)}
+                      aria-label={`Відкрити файли підрозділу ${row.original.name}`}
+                    >
+                      <Chip
+                        component="span"
+                        icon={<AttachFileIcon />}
+                        label="Файли"
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                      />
+                    </Link>
+                  </Tooltip>
+                ) : null}
+                {row.original.hasOrbit ? (
+                  <Tooltip title="Є дані із Orbit">
+                    <Link
+                      href={detailsHref}
+                      underline="none"
+                      aria-label={`Відкрити дані Orbit підрозділу ${row.original.name}`}
+                      onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
+                      sx={{
+                        display: 'inline-flex',
+                        minWidth: 24,
+                        minHeight: 24,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Box
+                        component="img"
+                        src="/img/delta-icon.webp"
+                        alt=""
+                        sx={{ height: 13.2 }}
+                      />
+                    </Link>
+                  </Tooltip>
+                ) : null}
+              </Stack>
             </Stack>
           );
         },
