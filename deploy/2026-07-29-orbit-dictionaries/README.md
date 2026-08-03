@@ -80,8 +80,8 @@ path, while same-path duplicates select the lowest ID. A longer path wins when
 SIGINT parent evidence ranks it higher. After synchronization, matching loads
 top-level roots and parent chains exclusively from PostgreSQL. The rebuilt link
 set replaces all existing links, including links produced by older matching
-rules. These links drive the admin-only ORBIT indicator and separate
-unit-details cards.
+rules. These links drive the ORBIT indicator and separate unit-details cards
+for users with either the `Admin` or `Orbit` role.
 When a unit also appears inside another unit's path with a different parent,
 the unit's own top-level parent chain is authoritative. Conflicting
 embedded-only paths still fail when the ambiguous unit is selected.

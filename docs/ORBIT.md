@@ -170,10 +170,10 @@ replication.
 
 ## Application behavior
 
-ORBIT information is currently visible only when
-`can_view_orbit_data` permits it, which currently means the user has the admin
-role. Other users always receive `has_orbit: false` in the RER units response
-and no ORBIT detail cards.
+ORBIT information is visible only when `can_view_orbit_data` permits it, which
+means the user has either the `Admin` or `Orbit` role. The `Orbit` role grants
+this access without broader administrator privileges. Other users always
+receive `has_orbit: false` in the RER units response and no ORBIT detail cards.
 
 For permitted users, a Delta icon marks linked rows in the RER unit list. The
 unit details page renders one separate `Дані із Orbit` card for every active

@@ -386,7 +386,7 @@ fn render_orbit_unit_candidate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functest::tests::{cleanup, mk_login};
+    use crate::functest::tests::{cleanup, mk_login, mk_organism};
     use serial_test::serial;
 
     async fn create_login_with_roles(
@@ -394,11 +394,21 @@ mod tests {
         login_name: &str,
         roles: &[&str],
     ) -> login::Model {
+        let organism = mk_organism(
+            dbx,
+            organism::ActiveModel {
+                name: Set(format!("{login_name} organism")),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         mk_login(
             dbx,
             login::ActiveModel {
                 login: Set(login_name.to_string()),
                 roles: Set(serde_json::to_value(roles).unwrap()),
+                organism_id: Set(Some(organism.id)),
                 ..Default::default()
             },
         )
