@@ -198,7 +198,6 @@ or (
         select 1
         from sigint_inbox_item_callsign siic
         where siic.sigint_inbox_item_id = sigint_inbox_item.id
-          and not siic.deleted
     )
     and (
         coalesce(sigint_inbox_item.callsigns, '[]'::jsonb) ?| array[{selected_callsigns}]
@@ -219,10 +218,17 @@ exists (
       and not siic.deleted
 )
 or (
-    (jsonb_typeof({inbox_alias}.callsigns) = 'array'
-        and {inbox_alias}.callsigns <> '[]'::jsonb)
-    or (jsonb_typeof({inbox_alias}.callsigns_alg2) = 'array'
-        and {inbox_alias}.callsigns_alg2 <> '[]'::jsonb)
+    not exists (
+        select 1
+        from sigint_inbox_item_callsign siic
+        where siic.sigint_inbox_item_id = {inbox_alias}.id
+    )
+    and (
+        (jsonb_typeof({inbox_alias}.callsigns) = 'array'
+            and {inbox_alias}.callsigns <> '[]'::jsonb)
+        or (jsonb_typeof({inbox_alias}.callsigns_alg2) = 'array'
+            and {inbox_alias}.callsigns_alg2 <> '[]'::jsonb)
+    )
 )
 )"#
     )
@@ -449,7 +455,6 @@ where
                 sigint_inbox_item_callsign::Column::SigintInboxItemId
                     .is_in(item_ids.to_vec()),
             )
-            .filter(sigint_inbox_item_callsign::Column::Deleted.eq(false))
             .order_by_asc(sigint_inbox_item_callsign::Column::SigintInboxItemId)
             .order_by_asc(sigint_inbox_item_callsign::Column::Source)
             .order_by_asc(sigint_inbox_item_callsign::Column::Ordering)
@@ -462,6 +467,9 @@ where
             .map(|row| row.sigint_inbox_item_id)
             .collect::<HashSet<_>>();
         for row in rows {
+            if row.deleted {
+                continue;
+            }
             let callsigns: &mut InboxItemCallsigns =
                 result.entry(row.sigint_inbox_item_id).or_default();
             match row.source {
@@ -649,7 +657,14 @@ mod tests {
     fn callsign_filter_escapes_sql_literals() {
         let condition = sql_filter_condition(&["call'sign".to_string()]);
         assert!(condition.contains("'call''sign'"));
-        assert!(condition.contains("not siic.deleted"));
+        assert_eq!(condition.matches("and not siic.deleted").count(), 1);
         assert!(condition.contains("callsigns_alg2"));
+    }
+
+    #[test]
+    fn callsign_existence_fallback_requires_no_normalized_rows() {
+        let condition = sql_exists_condition("sigint_inbox_item");
+        assert!(condition.contains("not exists"));
+        assert_eq!(condition.matches("and not siic.deleted").count(), 1);
     }
 }
