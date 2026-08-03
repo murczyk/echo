@@ -327,7 +327,6 @@ mod m20260728_203332_propagate_echo_client_display_name;
 mod m20260729_062653_add_classic_menu_visibility_settings;
 mod m20260729_121823_drop_postgres_group_stats;
 mod m20260729_170544_orbit_units;
-mod m20260730_122452_echo_automation_send_log;
 mod m20260730_125429_orbit_unit_grouping_many_to_many;
 mod m20260730_134741_orbit_unit_sigint_unit;
 mod m20260730_151706_unique_orbit_link_per_sigint_unit;
@@ -338,6 +337,7 @@ mod m20260731_220945_persist_manual_orbit_links;
 mod m20260731_234500_orbit_unit_search_indexes;
 mod m20260801_085538_suppress_deleted_orbit_links;
 mod m20260802_174927_rer_duty_test_replay;
+mod m20260803_093803_echo_automation_send_log;
 
 pub struct Migrator;
 
@@ -741,9 +741,6 @@ impl MigratorTrait for Migrator {
             Box::new(m20260729_121823_drop_postgres_group_stats::Migration),
             Box::new(m20260729_170544_orbit_units::Migration),
             Box::new(
-                m20260730_122452_echo_automation_send_log::Migration,
-            ),
-            Box::new(
                 m20260730_125429_orbit_unit_grouping_many_to_many::Migration,
             ),
             Box::new(m20260730_134741_orbit_unit_sigint_unit::Migration),
@@ -763,6 +760,7 @@ impl MigratorTrait for Migrator {
                 m20260801_085538_suppress_deleted_orbit_links::Migration,
             ),
             Box::new(m20260802_174927_rer_duty_test_replay::Migration),
+            Box::new(m20260803_093803_echo_automation_send_log::Migration),
         ]
     }
 }

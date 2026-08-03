@@ -5,7 +5,7 @@
         { "table": "public.system_settings", "strategy": "cdc_backfill" }
       ]
     },
-    "echo:m20260730_122452_echo_automation_send_log": {
+    "echo:m20260803_093803_echo_automation_send_log": {
       "changes": [
         { "table": "public.echo_automation_send_log", "strategy": "excluded" }
       ]

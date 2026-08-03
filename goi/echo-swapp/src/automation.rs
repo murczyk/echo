@@ -1605,6 +1605,8 @@ async fn record_delivery(
             error = excluded.error,
             sent_at = coalesce(excluded.sent_at, echo_automation_delivery.sent_at),
             updated_at = excluded.updated_at
+        where echo_automation_delivery.status <> 'sent'
+            or excluded.status = 'sent'
         "#,
         vec![
             automation_id.into(),
@@ -2201,6 +2203,13 @@ mod tests {
         created_at: NaiveDateTime,
     }
 
+    #[derive(FromQueryResult)]
+    struct TestDeliveryRow {
+        status: String,
+        error: Option<String>,
+        sent_at: Option<NaiveDateTime>,
+    }
+
     fn filter() -> AutomationFilter {
         AutomationFilter {
             keyword_tokens: vec!["alpha".to_string()],
@@ -2539,6 +2548,28 @@ mod tests {
         .await
         .c(h!())?
         .context("send log was not found")
+        .c(h!())
+    }
+
+    async fn load_test_delivery(
+        db: &DatabaseConnection,
+        automation_id: i64,
+        message_id: i32,
+    ) -> Result<TestDeliveryRow> {
+        TestDeliveryRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select status, error, sent_at
+            from echo_automation_delivery
+            where automation_id = $1
+                and source_inbox_message_id = $2
+            "#,
+            [automation_id.into(), message_id.into()],
+        ))
+        .one(db)
+        .await
+        .c(h!())?
+        .context("delivery was not found")
         .c(h!())
     }
 
@@ -3146,6 +3177,54 @@ mod tests {
             )
             .await
             .c(h!())?);
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn late_skip_preserves_sent_delivery() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let now = Utc::now().naive_utc();
+            let message = insert_message(&db, &fixture, "late-skip", now)
+                .await
+                .c(h!())?;
+            insert_sent_delivery(&db, &fixture, &message, now)
+                .await
+                .c(h!())?;
+            let sent_delivery =
+                load_test_delivery(&db, fixture.automation_id, message.id)
+                    .await
+                    .c(h!())?;
+
+            record_delivery(
+                &db,
+                fixture.automation_id,
+                &message,
+                "skipped",
+                Some("message is already planned for this target group"),
+                false,
+            )
+            .await
+            .c(h!())?;
+
+            let delivery =
+                load_test_delivery(&db, fixture.automation_id, message.id)
+                    .await
+                    .c(h!())?;
+            assert_eq!(delivery.status, "sent");
+            assert_eq!(delivery.error, None);
+            assert_eq!(delivery.sent_at, sent_delivery.sent_at);
+            assert!(already_sent(&db, fixture.automation_id, &message)
+                .await
+                .c(h!())?);
             Ok(())
         }
         .await;
