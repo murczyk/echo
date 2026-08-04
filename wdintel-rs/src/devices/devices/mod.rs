@@ -99,11 +99,17 @@ pub(crate) async fn units(
         after_unit_id: None,
         before_unit_id: None,
     };
-    Ok(Json(
-        crate::sigint::unit::read_units(&env.dbx, &req)
-            .await
-            .c(h!())?,
-    ))
+    let mut response = crate::sigint::unit::read_units(&env.dbx, &req)
+        .await
+        .c(h!())?;
+    if !crate::sigint::unit::orbit::can_view_orbit_data(&env.dbx, &login.id)
+        .await?
+    {
+        for unit in &mut response.units {
+            crate::sigint::unit::redact_unit_orbit_data(unit);
+        }
+    }
+    Ok(Json(response))
 }
 
 #[post("/api/device/detail")]

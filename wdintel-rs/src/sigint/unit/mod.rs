@@ -79,6 +79,10 @@ pub async fn list_units(
         for unit in &mut response.units {
             unit.has_orbit = orbit_unit_ids.contains(&unit.id);
         }
+    } else {
+        for unit in &mut response.units {
+            redact_unit_orbit_data(unit);
+        }
     }
     Ok(Json(response))
 }
@@ -181,13 +185,11 @@ pub async fn list_units_by_id(
     env: actix_web::web::Data<Env>,
     req: Json<ListUnitsByIdReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
-    has_any_role(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
-    )
-    .await
-    .c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "Api"])
+        .await
+        .c(h!())?;
+    let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
     let mut units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false));
     if let Some(ids) = &req.ids {
@@ -197,7 +199,11 @@ pub async fn list_units_by_id(
 
     let mut res = vec![];
     for unit in units {
-        res.push(render_unit(&unit)?);
+        let mut unit = render_unit(&unit)?;
+        if !can_view_orbit {
+            redact_unit_orbit_data(&mut unit);
+        }
+        res.push(unit);
     }
     Ok(Json(ListUnitsByIdRsp { units: res }))
 }
@@ -243,6 +249,8 @@ pub async fn create_unit(
     let mut unit = render_unit(&unit)?;
     if orbit::can_view_orbit_data(&env.dbx, &login).await? {
         unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
+    } else {
+        redact_unit_orbit_data(&mut unit);
     }
     Ok(Json(unit))
 }
@@ -405,6 +413,8 @@ async fn render_created_unit_with_optional_network(
     let mut unit = render_unit(&unit)?;
     if orbit::can_view_orbit_data(&env.dbx, login).await? {
         unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
+    } else {
+        redact_unit_orbit_data(&mut unit);
     }
     Ok(CreateUnitWithAutoNetworkRsp {
         unit,
@@ -644,6 +654,8 @@ pub async fn update_unit(
     let mut unit = render_unit(&unit)?;
     if orbit::can_view_orbit_data(&env.dbx, &login).await? {
         unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
+    } else {
+        redact_unit_orbit_data(&mut unit);
     }
     Ok(Json(unit))
 }
@@ -862,7 +874,11 @@ pub async fn delete_unit(
     let event = EventMsg::new(EventType::ETUnitChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
-    Ok(Json(render_unit(&unit)?))
+    let mut unit = render_unit(&unit)?;
+    if !orbit::can_view_orbit_data(&env.dbx, &login).await? {
+        redact_unit_orbit_data(&mut unit);
+    }
+    Ok(Json(unit))
 }
 
 async fn delete_unit_for_login(
@@ -903,6 +919,8 @@ async fn delete_unit_for_login(
         )
         .await?;
     }
+    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+        .await?;
     transaction.commit().await.context(h!())?;
     Ok(unit)
 }
@@ -933,6 +951,8 @@ pub async fn delete_unit_duplicate(
     let mut unit = render_unit(&unit)?;
     if orbit::can_view_orbit_data(dbx, &login).await? {
         unit.has_orbit = orbit::unit_has_orbit(dbx, unit.id).await?;
+    } else {
+        redact_unit_orbit_data(&mut unit);
     }
     Ok(Json(unit))
 }
@@ -1032,6 +1052,11 @@ pub fn render_unit(unit: &sigint_unit::Model) -> Result<Unit, AppError> {
         created_by_login_id: unit.created_by_login_id.to_string(),
         has_orbit: false,
     })
+}
+
+pub(crate) fn redact_unit_orbit_data(unit: &mut Unit) {
+    unit.has_orbit = false;
+    unit.is_deduplicate_candidate = None;
 }
 
 async fn swap_units(
@@ -1368,9 +1393,9 @@ pub async fn units_search(
     env: actix_web::web::Data<Env>,
     req: Json<UnitSearchReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
-    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
-        .await
-        .c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    has_any_role(&env.dbx, &login, vec!["Rer"]).await.c(h!())?;
+    let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
 
     let search_phrase = req.search.trim();
     let mut q = sigint_unit::Entity::find()
@@ -1397,7 +1422,11 @@ pub async fn units_search(
 
     let mut res = vec![];
     for unit in units {
-        res.push(render_unit(&unit)?);
+        let mut unit = render_unit(&unit)?;
+        if !can_view_orbit {
+            redact_unit_orbit_data(&mut unit);
+        }
+        res.push(unit);
     }
     Ok(Json(ListUnitsByIdRsp { units: res }))
 }
@@ -2019,6 +2048,62 @@ mod tests {
         assert_eq!(remaining.is_deduplicate_candidate, Some(false));
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn delete_unit_reconciles_remaining_deduplicate_candidate() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let orbit_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let first = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::Entity::insert_many([first.id, second.id].map(
+            |sigint_unit_id| orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(orbit_unit_id),
+                sigint_unit_id: Set(sigint_unit_id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
+        ))
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&env.dbx)
+            .await
+            .unwrap();
+
+        delete_unit_for_login(&env.dbx, &login_id, second.id)
+            .await
+            .unwrap();
+
+        let remaining = sigint_unit::Entity::find_by_id(first.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(remaining.is_deduplicate_candidate, Some(false));
+    }
+
     async fn hierarchy_unit(
         dbx: &DatabaseConnection,
         hierarchy: [&str; 5],
@@ -2203,6 +2288,30 @@ mod tests {
         assert!(!orbit::can_view_orbit_data(&env.dbx, &login_id)
             .await
             .unwrap());
+    }
+
+    #[test]
+    fn redact_unit_orbit_data_hides_orbit_fields() {
+        let mut unit = Unit {
+            id: 1,
+            company: String::new(),
+            battalion: String::new(),
+            regiment: String::new(),
+            division: String::new(),
+            army: String::new(),
+            comment: String::new(),
+            name: String::new(),
+            active: true,
+            is_deduplicate_candidate: Some(true),
+            created_at: 0,
+            created_by_login_id: String::new(),
+            has_orbit: true,
+        };
+
+        redact_unit_orbit_data(&mut unit);
+
+        assert!(!unit.has_orbit);
+        assert_eq!(unit.is_deduplicate_candidate, None);
     }
 
     #[tokio::test]
