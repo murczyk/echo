@@ -619,28 +619,28 @@ orbitDataActions orbitUnitUnlinking orbitUnit =
 orbitUnitDetails : Shared.Model -> B.OrbitUnitDetails -> Html Msg
 orbitUnitDetails shared orbitUnit =
     div []
-        [ div [ class "d-flex align-items-center justify-content-between gap-3 mb-4 flex-wrap" ]
-            [ h3 [ class "h5 mb-0" ]
-                [ text (orbitUnitTitle orbitUnit) ]
-            , a
-                [ class "btn btn-outline-primary d-inline-flex align-items-center"
-                , href
-                    ("https://delta.mil.gov.ua/orbit/units/"
-                        ++ orbitUnit.unitId
-                        ++ "/organizational-structure"
-                    )
-                , target "_blank"
-                , rel "noopener noreferrer"
-                , style "font-size" "1rem"
-                , style "padding" "0.5rem 1rem"
-                ]
-                [ img
-                    [ src "/img/delta-icon.webp"
-                    , class "me-2 inline-block"
-                    , style "height" "36px"
+        [ div [ class "mb-4" ]
+            [ h3 [ class "h5" ] [ text (orbitUnitTitle orbitUnit) ]
+            , p [ class "mb-0" ]
+                [ a
+                    [ class "btn btn-outline-primary d-inline-flex align-items-center gap-2"
+                    , href
+                        ("https://delta.mil.gov.ua/orbit/units/"
+                            ++ orbitUnit.unitId
+                            ++ "/organizational-structure"
+                        )
+                    , target "_blank"
+                    , rel "noopener noreferrer"
                     ]
-                    []
-                , text "Відкрити в Orbit"
+                    [ img
+                        [ src "/img/delta-icon.webp"
+                        , alt ""
+                        , style "height" "22px"
+                        , style "width" "22px"
+                        ]
+                        []
+                    , text "Відкрити в Orbit"
+                    ]
                 ]
             ]
         , div [ class "row g-4" ]
