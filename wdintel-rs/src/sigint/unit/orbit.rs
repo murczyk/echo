@@ -12,7 +12,7 @@ use crate::users::{ensure_rer_role, has_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::{Data, Json};
 use sea_orm::sea_query::extension::postgres::PgExpr;
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -282,6 +282,16 @@ async fn manual_orbit_link_candidates(
     if words.is_empty() {
         return Ok(Vec::new());
     }
+    let units = manual_orbit_link_candidates_query(&words)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(units.into_iter().map(render_orbit_unit_candidate).collect())
+}
+
+fn manual_orbit_link_candidates_query(
+    words: &[String],
+) -> Select<orbit_unit::Entity> {
     let mut condition =
         Condition::all().add(orbit_unit::Column::Deleted.eq(false));
     for word in words {
@@ -302,16 +312,38 @@ async fn manual_orbit_link_candidates(
                 ),
         );
     }
-    let units = orbit_unit::Entity::find()
+    orbit_unit::Entity::find()
         .filter(condition)
+        .order_by_desc(orbit_full_word_match_score(words))
         .order_by_asc(orbit_unit::Column::GenerativeUnitNameFull)
         .order_by_asc(orbit_unit::Column::OperationalUnitNameFull)
         .order_by_asc(orbit_unit::Column::UnitId)
         .limit(ORBIT_LINK_CANDIDATE_LIMIT)
-        .all(dbx)
-        .await
-        .c(h!())?;
-    Ok(units.into_iter().map(render_orbit_unit_candidate).collect())
+}
+
+fn orbit_full_word_match_score(words: &[String]) -> SimpleExpr {
+    let mut words = words.iter();
+    let first_word = words
+        .next()
+        .expect("manual Orbit search words must not be empty");
+    words.fold(orbit_full_word_match(first_word), |score, word| {
+        score.add(orbit_full_word_match(word))
+    })
+}
+
+fn orbit_full_word_match(word: &str) -> SimpleExpr {
+    let full_word_match = Expr::cust_with_exprs(
+        "concat(' ', regexp_replace(lower(concat_ws(' ', $1, $2, $3)), '[[:punct:][:space:]]+', ' ', 'g'), ' ') ilike $4",
+        [
+            Expr::col(orbit_unit::Column::UnitName).into_simple_expr(),
+            Expr::col(orbit_unit::Column::GenerativeUnitNameFull)
+                .into_simple_expr(),
+            Expr::col(orbit_unit::Column::OperationalUnitNameFull)
+                .into_simple_expr(),
+            Expr::val(format!("% {word} %")).into_simple_expr(),
+        ],
+    );
+    Expr::case(full_word_match, 1).finally(0).into()
 }
 
 fn orbit_search_words(search: &str) -> Vec<String> {
@@ -424,6 +456,37 @@ mod tests {
                 "53", "зрбр", "20", "ЗВА", "МВО", "extra", "words", "ignored"
             ]
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn manual_search_prioritizes_full_word_matches() {
+        let env = cleanup().await.unwrap();
+        let full_word_match_id = Uuid::new_v4();
+        let substring_match_id = Uuid::new_v4();
+        orbit_unit::Entity::insert_many([
+            orbit_unit::ActiveModel {
+                unit_id: Set(full_word_match_id),
+                unit_name: Set(Some("55 мбр".to_string())),
+                ..Default::default()
+            },
+            orbit_unit::ActiveModel {
+                unit_id: Set(substring_match_id),
+                unit_name: Set(Some("1557 омбр".to_string())),
+                ..Default::default()
+            },
+        ])
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+
+        let candidates = manual_orbit_link_candidates(&env.dbx, "55 мбр")
+            .await
+            .unwrap();
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].unit_id, full_word_match_id.to_string());
+        assert_eq!(candidates[1].unit_id, substring_match_id.to_string());
     }
 
     #[tokio::test]
