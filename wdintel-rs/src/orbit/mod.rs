@@ -23,6 +23,38 @@ mod snapshot;
 mod tui;
 mod types;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum EchoEchelon {
+    Company,
+    Battalion,
+    Regiment,
+    Division,
+    Army,
+}
+
+impl EchoEchelon {
+    pub(crate) fn index(self) -> usize {
+        match self {
+            Self::Company => 0,
+            Self::Battalion => 1,
+            Self::Regiment => 2,
+            Self::Division => 3,
+            Self::Army => 4,
+        }
+    }
+}
+
+pub(crate) fn echo_echelon(key: &str) -> Option<EchoEchelon> {
+    match key {
+        "platoon" | "company" => Some(EchoEchelon::Company),
+        "battalion" => Some(EchoEchelon::Battalion),
+        "regiment" | "brigade" => Some(EchoEchelon::Regiment),
+        "division" => Some(EchoEchelon::Division),
+        "corps" | "fieldArmy" => Some(EchoEchelon::Army),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct OrbitMatchCandidate {
     pub unit_id: Uuid,
@@ -371,7 +403,7 @@ async fn connect_database(
     ))
 }
 
-async fn acquire_import_lock(
+pub(crate) async fn acquire_import_lock(
     db: &sea_orm::DatabaseConnection,
 ) -> anyhow::Result<DatabaseTransaction> {
     log::info!("waiting for the ORBIT import advisory lock");

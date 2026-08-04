@@ -287,6 +287,15 @@ pub async fn create_unit_with_auto_network_for_login(
             .c(h!())?;
     }
 
+    render_created_unit_with_optional_network(login, env, unit, network).await
+}
+
+async fn render_created_unit_with_optional_network(
+    login: &uuid::Uuid,
+    env: &Env,
+    unit: sigint_unit::Model,
+    network: Option<sigint_network::Model>,
+) -> Result<CreateUnitWithAutoNetworkRsp, AppError> {
     fanout_unit_changed_data(env).await?;
 
     if let Some(network) = network.clone() {
@@ -1174,6 +1183,69 @@ mod tests {
         sigint_unit::Entity::find().count(dbx).await.unwrap()
     }
 
+    struct OrbitHierarchyFixture {
+        root_unit_id: uuid::Uuid,
+        unit_ids: Vec<uuid::Uuid>,
+        echelon_ids: Vec<uuid::Uuid>,
+    }
+
+    async fn insert_orbit_hierarchy(
+        dbx: &DatabaseConnection,
+    ) -> OrbitHierarchyFixture {
+        let levels = [
+            ("company", "1 рота"),
+            ("battalion", "2 бат"),
+            ("brigade", "55 мбр"),
+            ("division", "45 див"),
+            ("fieldArmy", "20 ЗВА"),
+        ];
+        let echelon_ids = levels
+            .iter()
+            .map(|_| uuid::Uuid::new_v4())
+            .collect::<Vec<_>>();
+        orbit_unit_echelon::Entity::insert_many(
+            levels
+                .iter()
+                .zip(&echelon_ids)
+                .map(|((key, name), echelon_id)| {
+                    orbit_unit_echelon::ActiveModel {
+                        id: Set(*echelon_id),
+                        key: Set((*key).to_string()),
+                        name: Set(format!("{name}-{}", uuid::Uuid::new_v4())),
+                        ..Default::default()
+                    }
+                }),
+        )
+        .exec(dbx)
+        .await
+        .unwrap();
+
+        let unit_ids = levels
+            .iter()
+            .map(|_| uuid::Uuid::new_v4())
+            .collect::<Vec<_>>();
+        orbit_unit::Entity::insert_many(levels.iter().enumerate().map(
+            |(index, (_, name))| orbit_unit::ActiveModel {
+                unit_id: Set(unit_ids[index]),
+                unit_name: Set(Some(format!("Повна назва {name}"))),
+                unit_name_short: Set(Some((*name).to_string())),
+                unit_echelon_id: Set(Some(echelon_ids[index])),
+                operational_parent_unit_id: Set(
+                    unit_ids.get(index + 1).copied(),
+                ),
+                ..Default::default()
+            },
+        ))
+        .exec(dbx)
+        .await
+        .unwrap();
+        OrbitHierarchyFixture {
+            root_unit_id: unit_ids[0],
+            unit_ids,
+            echelon_ids,
+        }
+    }
+
     #[tokio::test]
     #[serial]
     async fn create_unit_with_auto_network_rejects_when_setting_missing() {
@@ -1295,6 +1367,67 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(relation.unit_id, rsp.unit.id);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orbit_import_creates_hierarchy_link_and_enabled_network() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
+
+        let rsp = orbit::import_orbit_unit_for_login(
+            &login_id,
+            &env,
+            orbit_fixture.root_unit_id,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(rsp.unit.company, "1 рота");
+        assert_eq!(rsp.unit.battalion, "2 бат");
+        assert_eq!(rsp.unit.regiment, "55 мбр");
+        assert_eq!(rsp.unit.division, "45 див");
+        assert_eq!(rsp.unit.army, "20 ЗВА");
+        assert!(rsp.unit.active);
+        assert!(orbit::unit_has_orbit(&env.dbx, rsp.unit.id).await.unwrap());
+        let link = orbit_unit_sigint_unit::Entity::find_by_id((
+            orbit_fixture.root_unit_id,
+            rsp.unit.id,
+        ))
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(link.is_manual);
+        assert!(!link.is_suppressed);
+        let network =
+            sigint_network::Entity::find_by_id(rsp.network_id.unwrap())
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(network.location, "");
+        assert_eq!(
+            serde_json::from_value::<Vec<String>>(network.unit_mask).unwrap(),
+            vec![
+                "1 рота 2 бат 55 мбр 45 див 20 ЗВА",
+                "20 ЗВА 45 див 55 мбр 2 бат 1 рота",
+            ]
+        );
+        orbit_unit::Entity::delete_many()
+            .filter(orbit_unit::Column::UnitId.is_in(orbit_fixture.unit_ids))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        orbit_unit_echelon::Entity::delete_many()
+            .filter(
+                orbit_unit_echelon::Column::Id.is_in(orbit_fixture.echelon_ids),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

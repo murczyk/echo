@@ -2503,6 +2503,14 @@ export type OrbitUnitLinkCandidatesRsp = {
   units: Array<OrbitUnitLinkCandidate>;
 };
 
+export type OrbitUnitSearchReq = {
+  search: string;
+};
+
+export type ImportOrbitUnitReq = {
+  orbitUnitId: string;
+};
+
 export type LinkOrbitUnitReq = {
   sigintUnitId: number;
   orbitUnitId: string;

@@ -6,8 +6,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { OrbitUnitLinkCandidate } from '../../../../Bindings';
-import { getOrbitUnitLinkCandidates } from '../../services/api/units';
-import { OrbitUnitLinkDialog } from './OrbitUnitLinkDialog';
+import { getOrbitUnitLinkCandidates, searchOrbitUnits } from '../../services/api/units';
+import { OrbitUnitImportDialog, OrbitUnitLinkDialog } from './OrbitUnitLinkDialog';
 
 vi.mock('material-react-table', () => ({
   MaterialReactTable: () => <div data-testid="orbit-candidates-table" />,
@@ -35,7 +35,9 @@ vi.mock('../../components/mui-customized/table/table-state-provider', () => ({
 
 vi.mock('../../services/api/units', () => ({
   getOrbitUnitLinkCandidates: vi.fn(),
+  importOrbitUnit: vi.fn(),
   linkOrbitUnit: vi.fn(),
+  searchOrbitUnits: vi.fn(),
 }));
 
 const candidate: OrbitUnitLinkCandidate = {
@@ -94,6 +96,23 @@ describe('OrbitUnitLinkDialog', () => {
     expect(document.body.querySelector('input[placeholder^="Повна назва"]')).not.toBeNull();
     expect(document.body.textContent).toContain('Введіть слова для пошуку підрозділу.');
     expect(findButton('Розширений пошук')).toBeUndefined();
+
+    act(() => root.unmount());
+  });
+
+  it('opens Orbit import directly in the shared search form', async () => {
+    vi.mocked(searchOrbitUnits).mockResolvedValue([]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<OrbitUnitImportDialog onClose={vi.fn()} onImported={vi.fn()} />);
+    });
+
+    expect(document.body.textContent).toContain('Пошук');
+    expect(document.body.querySelector('input[placeholder^="Повна назва"]')).not.toBeNull();
+    expect(getOrbitUnitLinkCandidates).not.toHaveBeenCalled();
 
     act(() => root.unmount());
   });

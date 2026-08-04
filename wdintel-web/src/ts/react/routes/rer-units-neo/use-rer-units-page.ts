@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { AlertColor } from '@mui/material';
-import type { OrbitUnitDetails, Unit } from '../../../../Bindings';
+import type { CreateUnitWithAutoNetworkRsp, OrbitUnitDetails, Unit } from '../../../../Bindings';
 import {
   createUnit,
   createUnitWithAutoNetwork,
@@ -46,6 +46,7 @@ function replaceUnit(units: Unit[], updated: Unit): Unit[] {
 
 export function useRerUnitsPage(authUserRoles: string[]) {
   const canEdit = useMemo(() => hasRole(authUserRoles, 'UnitsEditor'), [authUserRoles]);
+  const canImportOrbit = useMemo(() => hasRole(authUserRoles, 'Orbit'), [authUserRoles]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [attachmentUnitIds, setAttachmentUnitIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -298,6 +299,17 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     }
   }
 
+  function addImportedOrbitUnit(response: CreateUnitWithAutoNetworkRsp) {
+    setUnits((current) => sortUnits([...current, response.unit]));
+    setStatus({
+      severity: 'success',
+      text:
+        response.networkId === null
+          ? `Підрозділ «${response.unit.name}» імпортовано з Orbit.`
+          : `Підрозділ «${response.unit.name}» імпортовано з Orbit і створено радіомережу.`,
+    });
+  }
+
   async function confirmDelete() {
     if (deleteTarget === null) return;
     setSubmitting(true);
@@ -385,6 +397,7 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     loadError,
     loadUnits,
     canEdit,
+    canImportOrbit,
     settingsReady,
     devicesSectionEnabled,
     status,
@@ -407,6 +420,7 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     closeDialogs,
     unlinkEditOrbitUnit,
     submitUnit,
+    addImportedOrbitUnit,
     confirmDelete,
     confirmMerge,
     uploadKmz,

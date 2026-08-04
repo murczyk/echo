@@ -232,6 +232,20 @@ pub struct OrbitUnitLinkCandidatesRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct OrbitUnitSearchReq {
+    pub search: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ImportOrbitUnitReq {
+    pub orbit_unit_id: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct LinkOrbitUnitReq {
     pub sigint_unit_id: i64,
     pub orbit_unit_id: String,

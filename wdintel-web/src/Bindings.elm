@@ -6491,6 +6491,30 @@ orbitUnitLinkCandidatesRspEncoder struct =
         ]
 
 
+type alias OrbitUnitSearchReq =
+    { search : String
+    }
+
+
+orbitUnitSearchReqEncoder : OrbitUnitSearchReq -> Json.Encode.Value
+orbitUnitSearchReqEncoder struct =
+    Json.Encode.object
+        [ ( "search", (Json.Encode.string) struct.search )
+        ]
+
+
+type alias ImportOrbitUnitReq =
+    { orbitUnitId : String
+    }
+
+
+importOrbitUnitReqEncoder : ImportOrbitUnitReq -> Json.Encode.Value
+importOrbitUnitReqEncoder struct =
+    Json.Encode.object
+        [ ( "orbit_unit_id", (Json.Encode.string) struct.orbitUnitId )
+        ]
+
+
 type alias LinkOrbitUnitReq =
     { sigintUnitId : Int
     , orbitUnitId : String
@@ -14713,6 +14737,18 @@ orbitUnitLinkCandidatesRspDecoder : Json.Decode.Decoder OrbitUnitLinkCandidatesR
 orbitUnitLinkCandidatesRspDecoder =
     Json.Decode.succeed OrbitUnitLinkCandidatesRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (orbitUnitLinkCandidateDecoder))))
+
+
+orbitUnitSearchReqDecoder : Json.Decode.Decoder OrbitUnitSearchReq
+orbitUnitSearchReqDecoder =
+    Json.Decode.succeed OrbitUnitSearchReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.string)))
+
+
+importOrbitUnitReqDecoder : Json.Decode.Decoder ImportOrbitUnitReq
+importOrbitUnitReqDecoder =
+    Json.Decode.succeed ImportOrbitUnitReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_id" (Json.Decode.string)))
 
 
 linkOrbitUnitReqDecoder : Json.Decode.Decoder LinkOrbitUnitReq

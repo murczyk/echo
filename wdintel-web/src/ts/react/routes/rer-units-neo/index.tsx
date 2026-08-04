@@ -7,6 +7,7 @@ import { PageErrorState } from '../../components/PageErrorState';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import { OrbitUnitImportDialog } from '../rer-unit-details/OrbitUnitLinkDialog';
 import { DeleteUnitDialog, MergeUnitDialog } from './components/UnitActionDialogs';
 import { KmzTaskStatus } from './components/KmzTaskStatus';
 import { KmzUploadDialog } from './components/KmzUploadDialog';
@@ -42,39 +43,61 @@ const DEFAULT_COLUMN_ORDER = [
 
 function PageActions({
   canEdit,
+  canImportOrbit,
   createDisabled,
+  orbitImportDisabled,
   kmzDisabled,
   uploadingKmz,
   onCreate,
+  onOpenOrbitImport,
   onOpenKmz,
 }: {
   canEdit: boolean;
+  canImportOrbit: boolean;
   createDisabled: boolean;
+  orbitImportDisabled: boolean;
   kmzDisabled: boolean;
   uploadingKmz: boolean;
   onCreate: () => void;
+  onOpenOrbitImport: () => void;
   onOpenKmz: () => void;
 }) {
-  if (!canEdit) return null;
+  if (!canEdit && !canImportOrbit) return null;
 
   return (
     <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
-      <Button
-        variant="contained"
-        startIcon={<AddIcon />}
-        onClick={onCreate}
-        disabled={createDisabled}
-      >
-        Додати підрозділ
-      </Button>
-      <Button
-        variant="outlined"
-        startIcon={<UploadFileIcon />}
-        disabled={kmzDisabled || uploadingKmz}
-        onClick={onOpenKmz}
-      >
-        {uploadingKmz ? 'Підвантаження…' : 'Підвантажити KMZ…'}
-      </Button>
+      {canEdit ? (
+        <>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={onCreate}
+            disabled={createDisabled}
+          >
+            Додати підрозділ
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<UploadFileIcon />}
+            disabled={kmzDisabled || uploadingKmz}
+            onClick={onOpenKmz}
+          >
+            {uploadingKmz ? 'Підвантаження…' : 'Підвантажити KMZ…'}
+          </Button>
+        </>
+      ) : null}
+      {canImportOrbit ? (
+        <Button
+          variant="outlined"
+          startIcon={
+            <Box component="img" src="/img/delta-icon.webp" alt="" sx={{ width: 20, height: 20 }} />
+          }
+          disabled={orbitImportDisabled}
+          onClick={onOpenOrbitImport}
+        >
+          Імпортувати з Orbit
+        </Button>
+      ) : null}
     </Stack>
   );
 }
@@ -82,6 +105,7 @@ function PageActions({
 function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
   const page = useRerUnitsPage(authUserRoles);
   const [kmzDialogOpen, setKmzDialogOpen] = useState(false);
+  const [orbitImportOpen, setOrbitImportOpen] = useState(false);
 
   return (
     <Box
@@ -107,12 +131,15 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
           actions={
             <PageActions
               canEdit={page.canEdit}
+              canImportOrbit={page.canImportOrbit}
               createDisabled={
                 page.loading || page.loadError !== null || page.submitting || !page.settingsReady
               }
               kmzDisabled={page.loading || page.loadError !== null || page.submitting}
+              orbitImportDisabled={page.loading || page.loadError !== null}
               uploadingKmz={page.uploadingKmz}
               onCreate={page.openCreateDialog}
+              onOpenOrbitImport={() => setOrbitImportOpen(true)}
               onOpenKmz={() => setKmzDialogOpen(true)}
             />
           }
@@ -197,6 +224,15 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         onClose={() => setKmzDialogOpen(false)}
         onUpload={(file) => void page.uploadKmz(file)}
       />
+      {orbitImportOpen ? (
+        <OrbitUnitImportDialog
+          onClose={() => setOrbitImportOpen(false)}
+          onImported={(response) => {
+            page.addImportedOrbitUnit(response);
+            setOrbitImportOpen(false);
+          }}
+        />
+      ) : null}
     </Box>
   );
 }

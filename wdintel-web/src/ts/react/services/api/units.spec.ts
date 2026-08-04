@@ -8,6 +8,8 @@ import {
   getUnitDetails,
   getUnitIdsWithVisibleAttachments,
   getUnitsList,
+  importOrbitUnit,
+  searchOrbitUnits,
   updateUnitAttachment,
   uploadUnitAttachment,
 } from './units';
@@ -80,6 +82,43 @@ describe('units API', () => {
     await expect(getUnitDetails(7)).resolves.toMatchObject({
       unit: { id: 7 },
       attachments: [{ id: 19, unitId: 7, aors: null }],
+    });
+  });
+
+  it('searches and imports Orbit units', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          units: [
+            {
+              unit_id: 'orbit-id',
+              full_name: '55 мбр',
+              generative_unit_name_full: '55 мбр / 20 ЗВА',
+              operational_unit_name_full: '55 мбр / 3 АК',
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ unit: { id: 7, name: '55 мбр', has_orbit: true }, network_id: null }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(searchOrbitUnits({ search: '55 мбр' })).resolves.toMatchObject([
+      { unitId: 'orbit-id', fullName: '55 мбр' },
+    ]);
+    await expect(importOrbitUnit({ orbitUnitId: 'orbit-id' })).resolves.toMatchObject({
+      unit: { id: 7, name: '55 мбр', hasOrbit: true },
+      networkId: null,
+    });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/sigint/unit/orbit-search',
+      '/api/sigint/unit/orbit-import',
+    ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ search: '55 мбр' });
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      orbit_unit_id: 'orbit-id',
     });
   });
 

@@ -1,7 +1,8 @@
 use super::types::{
-    LinkOrbitUnitReq, OrbitDictionaryValue, OrbitUnitDetails,
-    OrbitUnitLinkCandidate, OrbitUnitLinkCandidatesReq,
-    OrbitUnitLinkCandidatesRsp,
+    CreateUnitReq, CreateUnitWithAutoNetworkReq, CreateUnitWithAutoNetworkRsp,
+    ImportOrbitUnitReq, LinkOrbitUnitReq, OrbitDictionaryValue,
+    OrbitUnitDetails, OrbitUnitLinkCandidate, OrbitUnitLinkCandidatesReq,
+    OrbitUnitLinkCandidatesRsp, OrbitUnitSearchReq,
 };
 use crate::config::ROLE_ORBIT;
 use crate::entities::*;
@@ -189,6 +190,34 @@ pub async fn orbit_link_candidates(
     Ok(Json(OrbitUnitLinkCandidatesRsp { units }))
 }
 
+#[post("/api/sigint/unit/orbit-search")]
+pub async fn search_orbit_units(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<OrbitUnitSearchReq>,
+) -> Result<Json<OrbitUnitLinkCandidatesRsp>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    ensure_orbit_access(&env.dbx, &login).await?;
+    let units = manual_orbit_link_candidates(&env.dbx, &req.search).await?;
+    Ok(Json(OrbitUnitLinkCandidatesRsp { units }))
+}
+
+#[post("/api/sigint/unit/orbit-import")]
+pub async fn import_orbit_unit(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<ImportOrbitUnitReq>,
+) -> Result<Json<CreateUnitWithAutoNetworkRsp>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    ensure_orbit_access(&env.dbx, &login).await?;
+    let orbit_unit_id = parse_orbit_unit_id(&req.orbit_unit_id)?;
+    Ok(Json(
+        import_orbit_unit_for_login(&login, &env, orbit_unit_id).await?,
+    ))
+}
+
 #[post("/api/sigint/unit/orbit-link")]
 pub async fn link_orbit_unit(
     user: actix_identity::Identity,
@@ -199,10 +228,7 @@ pub async fn link_orbit_unit(
     let login = login_id_from_identity(&user)?;
     ensure_orbit_access(&env.dbx, &login).await?;
     let req = req.into_inner();
-    let orbit_unit_id =
-        Uuid::parse_str(&req.orbit_unit_id).map_err(|_| AppError::BL {
-            msg: "Invalid ORBIT unit ID".to_string(),
-        })?;
+    let orbit_unit_id = parse_orbit_unit_id(&req.orbit_unit_id)?;
     find_available_sigint_unit(&env.dbx, req.sigint_unit_id).await?;
     find_available_orbit_unit(&env.dbx, orbit_unit_id).await?;
     crate::orbit::link_sigint_unit_if_unlinked_with_lock(
@@ -225,10 +251,7 @@ pub async fn unlink_orbit_unit(
     let login = login_id_from_identity(&user)?;
     ensure_orbit_access(&env.dbx, &login).await?;
     let req = req.into_inner();
-    let orbit_unit_id =
-        Uuid::parse_str(&req.orbit_unit_id).map_err(|_| AppError::BL {
-            msg: "Invalid ORBIT unit ID".to_string(),
-        })?;
+    let orbit_unit_id = parse_orbit_unit_id(&req.orbit_unit_id)?;
     find_available_sigint_unit(&env.dbx, req.sigint_unit_id).await?;
     find_available_orbit_unit(&env.dbx, orbit_unit_id).await?;
     crate::orbit::unlink_sigint_unit_with_lock(
@@ -250,6 +273,219 @@ async fn ensure_orbit_access(
     } else {
         Err(AppError::Forbidden("ORBIT data access denied".to_string()))
     }
+}
+
+fn parse_orbit_unit_id(value: &str) -> Result<Uuid, AppError> {
+    Uuid::parse_str(value).map_err(|_| AppError::BL {
+        msg: "Invalid ORBIT unit ID".to_string(),
+    })
+}
+
+pub(super) async fn import_orbit_unit_for_login(
+    login: &Uuid,
+    env: &Env,
+    orbit_unit_id: Uuid,
+) -> Result<CreateUnitWithAutoNetworkRsp, AppError> {
+    let transaction =
+        crate::orbit::acquire_import_lock(&env.dbx).await.c(h!())?;
+    let orbit_unit =
+        find_available_orbit_unit(&transaction, orbit_unit_id).await?;
+    let unit_req =
+        create_unit_req_from_orbit(&transaction, &orbit_unit).await?;
+    let unit =
+        super::insert_unit_with_changelog(&transaction, login, &unit_req)
+            .await
+            .c(h!())?;
+    let network =
+        create_imported_unit_network(&transaction, login, &unit_req, unit.id)
+            .await?;
+    orbit_unit_sigint_unit::ActiveModel {
+        orbit_unit_id: Set(orbit_unit_id),
+        sigint_unit_id: Set(unit.id),
+        is_manual: Set(true),
+        is_suppressed: Set(false),
+    }
+    .insert(&transaction)
+    .await
+    .c(h!())?;
+    transaction.commit().await.c(h!())?;
+
+    super::render_created_unit_with_optional_network(login, env, unit, network)
+        .await
+}
+
+async fn create_imported_unit_network<C>(
+    transaction: &C,
+    login: &Uuid,
+    unit: &CreateUnitReq,
+    unit_id: i64,
+) -> Result<Option<sigint_network::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if !crate::system_settings::devices_section_enabled(transaction)
+        .await
+        .c(h!())?
+    {
+        return Ok(None);
+    }
+    let req = CreateUnitWithAutoNetworkReq {
+        unit: unit.clone(),
+        skip_network_creation: false,
+        locations: Vec::new(),
+        unit_mask: imported_unit_masks(unit)?,
+    };
+    Ok(Some(
+        super::insert_auto_cyber_network(
+            transaction,
+            login,
+            &req,
+            unit_id,
+            Vec::new(),
+        )
+        .await
+        .c(h!())?,
+    ))
+}
+
+fn imported_unit_masks(unit: &CreateUnitReq) -> Result<Vec<String>, AppError> {
+    let parts = [
+        unit.company.as_str(),
+        unit.battalion.as_str(),
+        unit.regiment.as_str(),
+        unit.division.as_str(),
+        unit.army.as_str(),
+    ]
+    .into_iter()
+    .filter(|part| !part.is_empty())
+    .collect::<Vec<_>>();
+    let forward = parts.join(" ");
+    let backward = parts.into_iter().rev().collect::<Vec<_>>().join(" ");
+    crate::sigint::unit_tag::normalize_unit_mask(vec![forward, backward])
+}
+
+async fn create_unit_req_from_orbit<C>(
+    dbx: &C,
+    orbit_unit: &orbit_unit::Model,
+) -> Result<CreateUnitReq, AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut hierarchy = std::array::from_fn(|_| String::new());
+    fill_orbit_hierarchy_level(dbx, orbit_unit, &mut hierarchy).await?;
+    fill_orbit_parent_chain(
+        dbx,
+        orbit_unit,
+        OrbitParentKind::Operational,
+        &mut hierarchy,
+    )
+    .await?;
+    fill_orbit_parent_chain(
+        dbx,
+        orbit_unit,
+        OrbitParentKind::Generative,
+        &mut hierarchy,
+    )
+    .await?;
+    if hierarchy.iter().all(String::is_empty) {
+        return Err(AppError::BL {
+            msg: "ORBIT unit has no supported hierarchy levels".to_string(),
+        });
+    }
+    let [company, battalion, regiment, division, army] = hierarchy;
+    Ok(CreateUnitReq {
+        company,
+        battalion,
+        regiment,
+        division,
+        army,
+        active: true,
+        comment: String::new(),
+    })
+}
+
+#[derive(Clone, Copy)]
+enum OrbitParentKind {
+    Generative,
+    Operational,
+}
+
+impl OrbitParentKind {
+    fn parent_id(self, unit: &orbit_unit::Model) -> Option<Uuid> {
+        match self {
+            Self::Generative => unit.generative_parent_unit_id,
+            Self::Operational => unit.operational_parent_unit_id,
+        }
+    }
+}
+
+async fn fill_orbit_parent_chain<C>(
+    dbx: &C,
+    root: &orbit_unit::Model,
+    parent_kind: OrbitParentKind,
+    hierarchy: &mut [String; 5],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut seen = HashSet::from([root.unit_id]);
+    let mut parent_id = parent_kind.parent_id(root);
+    while let Some(unit_id) = parent_id {
+        if !seen.insert(unit_id) {
+            return Err(AppError::BL {
+                msg: "ORBIT unit hierarchy contains a cycle".to_string(),
+            });
+        }
+        let parent = find_available_orbit_unit(dbx, unit_id).await?;
+        parent_id = parent_kind.parent_id(&parent);
+        fill_orbit_hierarchy_level(dbx, &parent, hierarchy).await?;
+    }
+    Ok(())
+}
+
+async fn fill_orbit_hierarchy_level<C>(
+    dbx: &C,
+    unit: &orbit_unit::Model,
+    hierarchy: &mut [String; 5],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let Some(echelon_id) = unit.unit_echelon_id else {
+        return Ok(());
+    };
+    let Some(echelon) = orbit_unit_echelon::Entity::find_by_id(echelon_id)
+        .one(dbx)
+        .await
+        .c(h!())?
+    else {
+        return Ok(());
+    };
+    let Some(name) = preferred_orbit_unit_name(unit) else {
+        return Ok(());
+    };
+    let Some(index) = crate::orbit::echo_echelon(&echelon.key)
+        .map(crate::orbit::EchoEchelon::index)
+    else {
+        return Ok(());
+    };
+    if hierarchy[index].is_empty() {
+        hierarchy[index] = name;
+    }
+    Ok(())
+}
+
+fn preferred_orbit_unit_name(unit: &orbit_unit::Model) -> Option<String> {
+    [
+        unit.unit_name_short.as_deref(),
+        unit.unit_name.as_deref(),
+        unit.unit_name_original.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .find(|name| !name.is_empty())
+    .map(ToString::to_string)
 }
 
 pub async fn has_any_orbit_unit(
