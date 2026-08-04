@@ -142,9 +142,75 @@ setup-dev:
     npm install uglify-js -g
 
 gen-seaorm:
+    rm -rf wdintel-rs/src/entities
     (cd wdintel-rs && sea-orm-cli generate entity --with-serde both -u postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd -o src/entities)
     python3 deploy/patch_seaorm.py
     just fmt
+
+[arg('mode', long='mode')]
+create-file-registry-database mode="debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source deploy/resolve_echo_config_path.sh
+    mode="{{ mode }}"
+    config_path="$(resolve_echo_config_path "$mode")"
+    [[ -f "$config_path" ]] || {
+        echo "Echo config not found: $config_path" >&2
+        exit 1
+    }
+    ECHO_CONFIG_PATH="$config_path" cargo run -p wdintel-rs -- --mode="$mode" oneoff-create-file-registry-database
+
+[arg('mode', long='mode')]
+gen-seaorm-files mode="debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source deploy/resolve_echo_config_path.sh
+    mode="{{ mode }}"
+    config_path="$(resolve_echo_config_path "$mode")"
+    [[ -f "$config_path" ]] || {
+        echo "Echo config not found: $config_path" >&2
+        exit 1
+    }
+    pg_host="$(tq -r -f "$config_path" file_registry.pg_host)"
+    pg_port="$(tq -r -f "$config_path" file_registry.pg_port)"
+    pg_user="$(tq -r -f "$config_path" file_registry.pg_user)"
+    pg_password="$(tq -r -f "$config_path" file_registry.pg_password)"
+    pg_dbname="$(tq -r -f "$config_path" file_registry.pg_dbname)"
+    if [[ "$mode" == "test" && -n "${TEST_WDFILE_DB_NAME:-}" ]]; then
+        pg_dbname="$TEST_WDFILE_DB_NAME"
+    fi
+    database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
+    rm -rf wdintel-rs/src/file_registry/entities
+    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables file_entry --database-url "$database_url" --output-dir src/file_registry/entities)
+    python3 deploy/patch_seaorm_files.py
+    rustfmt --config-path wdintel-rs wdintel-rs/src/file_registry/entities/*.rs
+
+[arg('mode', long='mode')]
+check-seaorm-files mode="debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source deploy/resolve_echo_config_path.sh
+    mode="{{ mode }}"
+    config_path="$(resolve_echo_config_path "$mode")"
+    [[ -f "$config_path" ]] || {
+        echo "Echo config not found: $config_path" >&2
+        exit 1
+    }
+    pg_host="$(tq -r -f "$config_path" file_registry.pg_host)"
+    pg_port="$(tq -r -f "$config_path" file_registry.pg_port)"
+    pg_user="$(tq -r -f "$config_path" file_registry.pg_user)"
+    pg_password="$(tq -r -f "$config_path" file_registry.pg_password)"
+    pg_dbname="$(tq -r -f "$config_path" file_registry.pg_dbname)"
+    if [[ "$mode" == "test" && -n "${TEST_WDFILE_DB_NAME:-}" ]]; then
+        pg_dbname="$TEST_WDFILE_DB_NAME"
+    fi
+    database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
+    entity_dir="$(mktemp -d)"
+    trap 'rm -rf "$entity_dir"' EXIT
+    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables file_entry --database-url "$database_url" --output-dir "$entity_dir")
+    python3 deploy/patch_seaorm_files.py --entity-dir "$entity_dir"
+    rustfmt --config-path wdintel-rs "$entity_dir"/*.rs
+    diff -ru "$entity_dir" wdintel-rs/src/file_registry/entities
 
 gen-front: gen-elm gen-ts
 
@@ -2469,6 +2535,26 @@ deploy-stg: prepare-workspace
     scp echo-build-main:~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb "echo-staging":/var/tmp
     ssh echo-build-main 'rm ~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb'
     ssh "echo-staging" 'cd /var/tmp/ && sudo apt install -y --reinstall --allow-downgrades ./wdintel-rs*.deb'
+
+deploy-cbr-stg: prepare-workspace
+    #!/bin/bash
+    set -euxo pipefail
+    ssh echo-build-main "cd ~/workspace/krab/echo-feature/echo && \
+        git fetch origin && \
+        git checkout main && \
+        git checkout {{ branch }} && \
+        git pull && \
+        cd wdintel-web && \
+        git pull && \
+        . ~/.nvm/nvm.sh && \
+        npx npm ci && \
+        npm run build && \
+        cd .. && \
+        touch wdintel-rs/build.rs && \
+        \$HOME/.cargo/bin/cargo deb -p wdintel-rs --fast"
+    scp echo-build-main:~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb "echo-cbr-staging":/var/tmp
+    ssh echo-build-main 'rm ~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb'
+    ssh "echo-cbr-staging" 'cd /var/tmp/ && sudo apt install -y --reinstall --allow-downgrades ./wdintel-rs*.deb'
 
 [arg('server', long='server')]
 transcriber-smoke server:

@@ -10,6 +10,8 @@ const ENTRYPOINTS = [
   { modulePath: './rer-callsigns-neo-element', tag: 'rer-callsigns-neo' },
   { modulePath: './rer-analysis-neo-element', tag: 'rer-analysis-neo' },
   { modulePath: './rer-network-details-neo-element', tag: 'rer-network-details-neo' },
+  { modulePath: './devices-page-element', tag: 'devices-page' },
+  { modulePath: './device-details-page-element', tag: 'device-details-page' },
   { modulePath: './rer-networks-neo-element', tag: 'rer-networks-neo' },
   { modulePath: './rer-units-neo-element', tag: 'rer-units-neo' },
   { modulePath: './unit-attachment-upload-element', tag: 'unit-attachment-upload' },

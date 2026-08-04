@@ -51,6 +51,7 @@ fn systemd_listener() -> Result<Option<TcpListener>, AppError> {
 
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let config = read_config(mode).c(h!())?;
+    let metrics = crate::telemetry::Metrics::from_config(&config);
     let redis = new_redis(&config).await.c(h!())?;
     let stats_redis = new_redis_for_db(&config, config.group_stats_redis_db())
         .await
@@ -81,6 +82,12 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         .await
         .c(h!())?,
     );
+    let file_registry_db = crate::file_registry::connect_runtime(&config, mode)
+        .await
+        .c(h!())?;
+    if file_registry_db.is_none() {
+        log_missing_file_registry_configuration(&dbx, mode).await;
+    }
     let mut replicas = vec![];
     if let Some(replica_configs) = config.replicas.clone() {
         for replica in replica_configs {
@@ -176,9 +183,11 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         mil_geo: mil_geo.clone(),
         dbx: dbx.clone(),
         echo_gpu_client,
+        file_registry_db,
         rq,
         rq_goi_associations,
         config: config.clone(),
+        metrics,
         greptimedb: Arc::new(RwLock::new(m_greptimedb.clone())),
         settlements: settlements.clone(),
         callsigns_whitelist: callsigns_whitelist.clone(),
@@ -205,6 +214,51 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     .await
     .c(h!())?;
     Ok(Arc::new(env))
+}
+
+#[derive(Debug, PartialEq)]
+enum MissingFileRegistryConfigurationLog {
+    Warning(String),
+    Error(String),
+}
+
+fn missing_file_registry_configuration_log(
+    devices_enabled: bool,
+    mode: Mode,
+) -> MissingFileRegistryConfigurationLog {
+    if devices_enabled {
+        MissingFileRegistryConfigurationLog::Error(format!(
+            "Devices functionality is enabled, but the [file_registry] configuration section is missing. Add pg_host, pg_port, pg_user, pg_password, and pg_dbname under [file_registry], run `wdintel-rs --mode={mode} oneoff-create-file-registry-database`, then restart the backend. Device file operations are unavailable."
+        ))
+    } else {
+        MissingFileRegistryConfigurationLog::Warning(
+            "The optional [file_registry] configuration section is missing. Startup will continue without the file registry database; device file operations are unavailable. Add and provision [file_registry] before enabling Devices.".to_string(),
+        )
+    }
+}
+
+async fn log_missing_file_registry_configuration(
+    dbx: &sea_orm::DatabaseConnection,
+    mode: Mode,
+) {
+    match crate::system_settings::devices_section_enabled(dbx).await {
+        Ok(devices_enabled) => {
+            match missing_file_registry_configuration_log(devices_enabled, mode)
+            {
+                MissingFileRegistryConfigurationLog::Warning(message) => {
+                    warn!("{message}");
+                }
+                MissingFileRegistryConfigurationLog::Error(message) => {
+                    error!("{message}");
+                }
+            }
+        }
+        Err(error) => {
+            error!(
+                "The [file_registry] configuration section is missing, and checking whether Devices functionality is enabled failed: {error:?}. Startup will continue without the file registry database; add and provision [file_registry] before using Devices."
+            );
+        }
+    }
 }
 
 async fn connect_analytics(config: &Config) -> Option<AnalyticsPool> {
@@ -737,6 +791,19 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::api_integrations::upsert_api_integration)
             .service(crate::api_integrations::delete_api_integration)
             .service(crate::api_integrations::test_iggy_connection)
+            .service(crate::devices::devices::list)
+            .service(crate::devices::devices::unit_stats)
+            .service(crate::devices::devices::aors)
+            .service(crate::devices::devices::units)
+            .service(crate::devices::devices::detail)
+            .service(crate::devices::devices::create)
+            .service(crate::devices::devices::update)
+            .service(crate::devices::files::roots)
+            .service(crate::devices::files::subtree_counts)
+            .service(crate::devices::files::browse)
+            .service(crate::devices::files::search)
+            .service(crate::devices::files::journal)
+            .service(crate::devices::files::sync)
             .service(crate::organism::goi::integrations::list_admin_goi_integrations)
             .service(crate::organism::goi::integrations::get_admin_goi_integration)
             .service(crate::organism::goi::integrations::upsert_admin_goi_integration)
@@ -1093,7 +1160,7 @@ pub async fn main_server(
     let mut sigterm = signal(SignalKind::terminate())
         .expect("Failed to register SIGTERM handler");
 
-    shutdown_handle.spawn(async move {
+    let server_result = shutdown_handle.spawn(async move {
         tokio::select! {
             _ = sigint.recv() => {
                 println!("\n[SIGINT / CTRL+C] detected. Signaling shutdown.");
@@ -1119,7 +1186,11 @@ pub async fn main_server(
                 cancel_token.cancel();
             }
         }
-    }).await.c(h!())?;
+    }).await.c(h!());
+    if let Some(metrics) = &env.metrics {
+        metrics.shutdown();
+    }
+    server_result?;
     Ok(())
 }
 
@@ -1264,6 +1335,25 @@ pub async fn main_report_worker(
 mod tests {
     use super::*;
     use actix_web::{http::StatusCode, test, App};
+    #[actix_web::test]
+    async fn missing_file_registry_log_escalates_when_devices_are_enabled() {
+        let MissingFileRegistryConfigurationLog::Warning(warning) =
+            missing_file_registry_configuration_log(false, Mode::Live)
+        else {
+            panic!("disabled Devices should produce a warning");
+        };
+        assert!(warning.contains("Startup will continue"));
+
+        let MissingFileRegistryConfigurationLog::Error(error) =
+            missing_file_registry_configuration_log(true, Mode::Live)
+        else {
+            panic!("enabled Devices should produce an error");
+        };
+        assert!(error.contains("[file_registry]"));
+        assert!(error.contains(
+            "wdintel-rs --mode=live oneoff-create-file-registry-database"
+        ));
+    }
 
     #[actix_web::test]
     async fn test_api_sigint_units_route_is_registered() {

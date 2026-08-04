@@ -189,61 +189,7 @@ where
     let roles: Vec<String> = serde_json::from_value(login_obj.roles).c(h!())?;
     let mut is_any_good = false;
     for role in roles_list.clone() {
-        let is_good = match role {
-            "Admin" => roles.contains(&"Admin".to_string()),
-            "Api" => roles.contains(&"Api".to_string()),
-            "ApiAgent" => roles.contains(&"ApiAgent".to_string()),
-            "Full" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-            }
-            "DeleteMsg" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-                    || roles.contains(&"DeleteMsg".to_string())
-            }
-            "Rer" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-                    || roles.contains(&"Rer".to_string())
-            }
-            "Bpla" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-                    || roles.contains(&"Bpla".to_string())
-            }
-            "Basic" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-                    || roles.contains(&"Bpla".to_string())
-                    || roles.contains(&"Rer".to_string())
-                    || roles.contains(&"Basic".to_string())
-            }
-            "UnitsEditor" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"UnitsEditor".to_string())
-            }
-            "NetworkEditor" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"NetworkEditor".to_string())
-            }
-            "CallsignsEditor" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"CallsignsEditor".to_string())
-            }
-            "AdvancedReports" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"AdvancedReports".to_string())
-            }
-            "Orbit" => has_orbit_role(&roles),
-            "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
-            role => {
-                return Err(AppError::BL {
-                    msg: format!("impossible! unknown role {role}"),
-                })
-            }
-        };
-        is_any_good |= is_good;
+        is_any_good |= role_matches(&roles, role)?;
     }
     if !is_any_good {
         return Err(AppError::Forbidden(format!(
@@ -253,6 +199,71 @@ where
         )));
     }
     Ok(())
+}
+
+fn role_matches(roles: &[String], role: &str) -> Result<bool, AppError> {
+    Ok(match role {
+        "Admin" => roles.contains(&"Admin".to_string()),
+        "Api" => roles.contains(&"Api".to_string()),
+        "ApiAgent" => roles.contains(&"ApiAgent".to_string()),
+        "Full" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+        }
+        "DeleteMsg" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+                || roles.contains(&"DeleteMsg".to_string())
+        }
+        "Rer" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+                || roles.contains(&"Rer".to_string())
+        }
+        "Bpla" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+                || roles.contains(&"Bpla".to_string())
+        }
+        "Basic" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+                || roles.contains(&"Bpla".to_string())
+                || roles.contains(&"Rer".to_string())
+                || roles.contains(&"Basic".to_string())
+        }
+        "UnitsEditor" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"UnitsEditor".to_string())
+        }
+        "NetworkEditor" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"NetworkEditor".to_string())
+        }
+        "CallsignsEditor" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"CallsignsEditor".to_string())
+        }
+        "Cyber" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Cyber".to_string())
+        }
+        "DeviceSource" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"DeviceSource".to_string())
+        }
+        "AdvancedReports" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"AdvancedReports".to_string())
+        }
+        "Orbit" => has_orbit_role(roles),
+        "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
+        role => {
+            return Err(AppError::BL {
+                msg: format!("impossible! unknown role {role}"),
+            })
+        }
+    })
 }
 
 #[post("/api/user/keep-alive")]
@@ -2488,5 +2499,24 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(derived_count, 0);
+    }
+    fn roles(roles: &[&str]) -> Vec<String> {
+        roles.iter().map(|role| (*role).to_owned()).collect()
+    }
+
+    #[test]
+    fn devices_roles_preserve_boundaries() {
+        assert!(role_matches(&roles(&["Cyber"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["DeviceSource"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["Cyber"]), "DeviceSource").unwrap());
+        assert!(
+            role_matches(&roles(&["DeviceSource"]), "DeviceSource").unwrap()
+        );
+        assert!(role_matches(&roles(&["Admin"]), "Cyber").unwrap());
+        assert!(role_matches(&roles(&["Admin"]), "DeviceSource").unwrap());
+        assert!(!role_matches(&roles(&["Api"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["Full"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["Api"]), "DeviceSource").unwrap());
+        assert!(!role_matches(&roles(&["Full"]), "DeviceSource").unwrap());
     }
 }

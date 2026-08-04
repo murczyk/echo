@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isActiveName, menuIsActive, goiExternalUrl, type Menu } from './menu-items';
+import {
+  getDatabaseSubs,
+  goiExternalUrl,
+  isActiveName,
+  menuIsActive,
+  type Menu,
+} from './menu-items';
 
 describe('menu-items', () => {
   describe('isActiveName', () => {
@@ -53,6 +59,33 @@ describe('menu-items', () => {
 
     it('returns false for separators', () => {
       expect(menuIsActive('anything', { type: 'separator' })).toBe(false);
+    });
+  });
+
+  describe('getDatabaseSubs', () => {
+    it('keeps RER database items without Devices by default', () => {
+      const subs = getDatabaseSubs({ includeRerItems: true, includeDevicesItem: false });
+      expect(subs.map((item) => (item.type === 'item' ? item.label : item.type))).toContain(
+        'Мережі',
+      );
+      expect(subs.map((item) => (item.type === 'item' ? item.label : item.type))).not.toContain(
+        'Пристрої',
+      );
+    });
+
+    it('places Devices immediately after Networks when both gates are visible', () => {
+      const labels = getDatabaseSubs({ includeRerItems: true, includeDevicesItem: true }).map(
+        (item) => (item.type === 'item' ? item.label : item.type),
+      );
+      expect(labels.slice(0, 2)).toEqual(['Мережі', 'Пристрої']);
+    });
+
+    it('renders Devices as the only database item for non-RER Devices readers', () => {
+      const labels = getDatabaseSubs({ includeRerItems: false, includeDevicesItem: true }).map(
+        (item) => (item.type === 'item' ? item.label : item.type),
+      );
+      expect(labels).toEqual(['Пристрої']);
+      expect(getDatabaseSubs({ includeRerItems: false, includeDevicesItem: false })).toEqual([]);
     });
   });
 

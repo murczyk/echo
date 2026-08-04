@@ -19,11 +19,17 @@ export POSTGRES_STARTUP_TIMEOUT_SECS="${POSTGRES_STARTUP_TIMEOUT_SECS:-600}"
 echo "Setting up test database..."
 source "$SCRIPT_DIR/setup_test_database.sh"
 
-# Export the database name for tests
+# Export the database names for tests
 export TEST_DB_NAME="$DB_NAME"
-echo "Using test database: $TEST_DB_NAME"
+export TEST_WDFILE_DB_NAME="$FILE_REGISTRY_DB_NAME"
+echo "Using test databases: $TEST_DB_NAME and $TEST_WDFILE_DB_NAME"
 
 bash "$REPO_ROOT/scripts/ci/check_analytics_migration_catalog.sh"
+echo "Migrating test databases..."
+cargo run -p wdintel-rs -- --mode=test migrate
+
+echo "Checking file registry SeaORM entities..."
+just check-seaorm-files --mode=test
 
 # Create storage directory and dummy files for CI
 mkdir -p ~/Downloads/storage
@@ -75,6 +81,6 @@ done
 
 # Run backend tests
 echo "Running backend tests..."
-just test-be
+TEST_DB_NAME="$TEST_DB_NAME" TEST_WDFILE_DB_NAME="$TEST_WDFILE_DB_NAME" just test-be
 
 echo "Backend tests completed successfully!"

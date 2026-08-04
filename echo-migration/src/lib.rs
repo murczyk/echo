@@ -280,9 +280,13 @@ mod m20260703_095738_add_organism_to_tags;
 mod m20260705_230242_operator_datasource_group_perf;
 mod m20260706_142937_add_goi_integration_pause_worker;
 mod m20260706_153312_tag_unique_enabled_organism_label;
+mod m20260707_081900_create_devices;
 mod m20260707_095504_echo_missing_message_deleted_status;
+mod m20260707_132105_create_device_aor;
+mod m20260707_135501_drop_device_aor_id;
 mod m20260707_164344_echo_missing_message_duplicate_status;
 mod m20260707_170000_signal_message_attachments_hash;
+mod m20260707_180541_rename_device_tags_archive;
 mod m20260707_212500_echo_missing_message_duplicate_backfill;
 mod m20260708_083252_add_cyber_echo_enabled_to_settings;
 mod m20260708_130958_add_computer_name;
@@ -297,10 +301,14 @@ mod m20260711_120000_add_sigint_comment_parsing_to_system_settings;
 mod m20260712_204007_add_do_not_store_duplicate_echoim_failures;
 mod m20260713_152932_rename_cyber_echo_enabled_to_devices_section_enabled;
 mod m20260715_092901_add_sigint_inbox_item_network;
+mod m20260716_101007_device_hostname_ssh_port_and_drop_name_uniqueness;
+mod m20260716_134601_device_aor_id_uuid;
 mod m20260716_161040_login_uuid_v7;
 mod m20260717_111121_goi_palitra_sync_changelog_source;
 mod m20260720_100029_analysis_stats_query_indexes;
 mod m20260720_124323_add_signal_message_media_is_encrypted;
+mod m20260721_120720_device_source_label_custom_fields;
+mod m20260721_124518_drop_legacy_device_file;
 mod m20260721_141920_echo_analytics_heartbeat;
 mod m20260721_191340_goi_association_message_uid;
 mod m20260721_200001_goi_message_uid_worker_setting;
@@ -326,6 +334,7 @@ mod m20260728_163700_add_echo_client_display_name;
 mod m20260728_203332_propagate_echo_client_display_name;
 mod m20260729_062653_add_classic_menu_visibility_settings;
 mod m20260729_121823_drop_postgres_group_stats;
+mod m20260729_143549_add_device_organism;
 mod m20260729_170544_orbit_units;
 mod m20260730_125429_orbit_unit_grouping_many_to_many;
 mod m20260730_134741_orbit_unit_sigint_unit;
@@ -338,6 +347,7 @@ mod m20260731_234500_orbit_unit_search_indexes;
 mod m20260801_085538_suppress_deleted_orbit_links;
 mod m20260802_174927_rer_duty_test_replay;
 mod m20260803_093803_echo_automation_send_log;
+mod m20260803_130117_device_source_role_and_name;
 
 pub struct Migrator;
 
@@ -761,6 +771,18 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260802_174927_rer_duty_test_replay::Migration),
             Box::new(m20260803_093803_echo_automation_send_log::Migration),
+            Box::new(m20260707_081900_create_devices::Migration),
+            Box::new(m20260707_132105_create_device_aor::Migration),
+            Box::new(m20260707_135501_drop_device_aor_id::Migration),
+            Box::new(m20260707_180541_rename_device_tags_archive::Migration),
+            Box::new(
+                m20260716_101007_device_hostname_ssh_port_and_drop_name_uniqueness::Migration,
+            ),
+            Box::new(m20260716_134601_device_aor_id_uuid::Migration),
+            Box::new(m20260721_120720_device_source_label_custom_fields::Migration),
+            Box::new(m20260721_124518_drop_legacy_device_file::Migration),
+            Box::new(m20260729_143549_add_device_organism::Migration),
+            Box::new(m20260803_130117_device_source_role_and_name::Migration),
         ]
     }
 }

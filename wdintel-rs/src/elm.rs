@@ -230,6 +230,45 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::api_integrations::UpsertApiIntegrationReq,
             crate::api_integrations::DeleteApiIntegrationReq,
             crate::api_integrations::TestIggyConnectionReq,
+            crate::devices::devices::types::AorSummary,
+            crate::devices::devices::types::UnitSummary,
+            crate::devices::files::types::FieldError,
+            crate::devices::files::types::FileEntryKind,
+            crate::devices::devices::types::DeviceArchivedFilter,
+            crate::devices::devices::types::DeviceListSortBy,
+            crate::devices::devices::types::DeviceStatusCounts,
+            crate::devices::devices::types::DeviceListItem,
+            crate::devices::devices::types::DeviceDetails,
+            crate::devices::devices::types::DeviceUnitStat,
+            crate::devices::devices::types::ListDevicesReq,
+            crate::devices::devices::types::ListDevicesRsp,
+            crate::devices::devices::types::DeviceUnitStatsRsp,
+            crate::devices::devices::types::DeviceDetailReq,
+            crate::devices::devices::types::CreateDeviceReq,
+            crate::devices::devices::types::UpdateDeviceReq,
+            crate::devices::files::types::DeviceFileRoot,
+            crate::devices::files::types::FileBreadcrumb,
+            crate::devices::files::types::DeviceFileTreeEntry,
+            crate::devices::files::types::DeviceFile,
+            crate::devices::files::types::ListDeviceFileRootsReq,
+            crate::devices::files::types::ListDeviceFileRootsRsp,
+            crate::devices::files::types::DeviceFileSubtreeCount,
+            crate::devices::files::types::CountDeviceFileSubtreesReq,
+            crate::devices::files::types::CountDeviceFileSubtreesRsp,
+            crate::devices::files::types::BrowseDeviceFilesReq,
+            crate::devices::files::types::BrowseDeviceFilesRsp,
+            crate::devices::files::types::SearchDeviceFilesReq,
+            crate::devices::files::types::SearchDeviceFilesRsp,
+            crate::devices::files::types::DeviceFileJournalEntry,
+            crate::devices::files::types::JournalDeviceFilesReq,
+            crate::devices::files::types::JournalDeviceFilesRsp,
+            crate::devices::files::types::SyncDeviceFileItem,
+            crate::devices::files::types::FileSyncOperation,
+            crate::devices::files::types::FileSyncErrorKind,
+            crate::devices::files::types::FileSyncError,
+            crate::devices::files::types::FileSyncResult,
+            crate::devices::files::types::SyncDeviceFilesReq,
+            crate::devices::files::types::SyncDeviceFilesRsp,
             crate::organism::types::Organism,
             crate::organism::types::MyOrganism,
             crate::organism::types::MyAor,
@@ -744,6 +783,42 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::users::types::KeepAliveReq,
             crate::users::types::MarkReleaseSeenReq,
             crate::users::types::DeactivationReasonType,
+            crate::devices::devices::types::AorSummary,
+            crate::devices::devices::types::UnitSummary,
+            crate::devices::files::types::FieldError,
+            crate::devices::files::types::FileEntryKind,
+            crate::devices::devices::types::DeviceArchivedFilter,
+            crate::devices::devices::types::DeviceListSortBy,
+            crate::devices::devices::types::DeviceStatusCounts,
+            crate::devices::devices::types::DeviceListItem,
+            crate::devices::devices::types::DeviceDetails,
+            crate::devices::devices::types::DeviceUnitStat,
+            crate::devices::devices::types::ListDevicesReq,
+            crate::devices::devices::types::ListDevicesRsp,
+            crate::devices::devices::types::DeviceUnitStatsRsp,
+            crate::devices::devices::types::DeviceDetailReq,
+            crate::devices::devices::types::CreateDeviceReq,
+            crate::devices::devices::types::UpdateDeviceReq,
+            crate::devices::files::types::DeviceFileRoot,
+            crate::devices::files::types::FileBreadcrumb,
+            crate::devices::files::types::DeviceFileTreeEntry,
+            crate::devices::files::types::DeviceFile,
+            crate::devices::files::types::ListDeviceFileRootsReq,
+            crate::devices::files::types::ListDeviceFileRootsRsp,
+            crate::devices::files::types::BrowseDeviceFilesReq,
+            crate::devices::files::types::BrowseDeviceFilesRsp,
+            crate::devices::files::types::SearchDeviceFilesReq,
+            crate::devices::files::types::SearchDeviceFilesRsp,
+            crate::devices::files::types::DeviceFileJournalEntry,
+            crate::devices::files::types::JournalDeviceFilesReq,
+            crate::devices::files::types::JournalDeviceFilesRsp,
+            crate::devices::files::types::SyncDeviceFileItem,
+            crate::devices::files::types::FileSyncOperation,
+            crate::devices::files::types::FileSyncErrorKind,
+            crate::devices::files::types::FileSyncError,
+            crate::devices::files::types::FileSyncResult,
+            crate::devices::files::types::SyncDeviceFilesReq,
+            crate::devices::files::types::SyncDeviceFilesRsp,
             crate::organism::types::Organism,
             crate::organism::types::MyOrganism,
             crate::organism::types::MyAor,
@@ -1078,7 +1153,20 @@ pub fn main_gen_elm() -> Result<(), AppError> {
 }
 
 fn patch_generated_elm(output: String) -> String {
-    patch_backward_compatible_decoders(patch_generated_elm_names(output))
+    trim_trailing_whitespace(patch_backward_compatible_decoders(
+        patch_generated_elm_names(output),
+    ))
+}
+
+fn trim_trailing_whitespace(output: String) -> String {
+    let mut output = output
+        .trim_end()
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    output.push('\n');
+    output
 }
 
 fn patch_generated_elm_names(output: String) -> String {

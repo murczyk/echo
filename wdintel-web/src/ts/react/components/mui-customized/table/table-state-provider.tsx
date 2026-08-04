@@ -683,7 +683,8 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
       setGlobalFilter(nextGlobalFilter);
     }
 
-    const nextColumnFilters = parseColumnFiltersFromSearchParams(searchParams);
+    const parsedColumnFilters = parseColumnFiltersFromSearchParams(searchParams);
+    const nextColumnFilters = sanitizeColumnFilters?.(parsedColumnFilters) ?? parsedColumnFilters;
     if (!areColumnFiltersEqual(columnFilters, nextColumnFilters)) {
       setColumnFilters(nextColumnFilters);
     }
@@ -697,6 +698,7 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
     date,
     globalFilter,
     props.defaultDate,
+    sanitizeColumnFilters,
     props.defaultSorting,
     searchParams,
     sorting,

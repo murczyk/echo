@@ -61,6 +61,8 @@ import './ts/react/goi-settings-element';
 import './ts/react/rer-duty-neo-element';
 import './ts/react/rer-analysis-neo-element';
 import './ts/react/rer-network-details-neo-element';
+import './ts/react/devices-page-element';
+import './ts/react/device-details-page-element';
 import './ts/react/rer-palitra-neo-element';
 import './ts/react/rer-callsigns-neo-element';
 import './ts/react/rer-networks-neo-element';

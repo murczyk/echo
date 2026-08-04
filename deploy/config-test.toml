@@ -19,6 +19,17 @@ server_id = 37
 # signoz_logs_enabled = true
 # signoz_logs_endpoint = "http://signoz-echo.eagle-atria.ts.net:8082"
 
+# Enable device metrics to Signoz (OTLP gRPC).
+# signoz_metrics_enabled = true
+# signoz_metrics_endpoint = "http://signoz-echo.eagle-atria.ts.net:4317"
+
+[file_registry]
+pg_host = "localhost"
+pg_port = 5432
+pg_user = "wd"
+pg_password = "fee_-_-_-FnoeKFBeebu87bf"
+pg_dbname = "wd_files_test"
+
 [secret_config]
 token_endpoint = ""
 userinfo_endpoint = ""

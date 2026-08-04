@@ -1582,6 +1582,279 @@ export type TestIggyConnectionReq = {
   password: string;
 };
 
+export type AorSummary = {
+  id: number;
+  name: string;
+};
+
+export type UnitSummary = {
+  id: number;
+  name: string;
+};
+
+export type FileEntryKind =
+  | 'directory'
+  | 'file'
+;
+
+export type DeviceArchivedFilter =
+  | 'active_only'
+  | 'archived_only'
+  | 'all'
+;
+
+export type DeviceListSortBy =
+  | 'display_title_asc'
+  | 'display_title_desc'
+  | 'created_at_asc'
+  | 'created_at_desc'
+  | 'updated_at_asc'
+  | 'updated_at_desc'
+;
+
+export type DeviceStatusCounts = {
+  active: number;
+  archived: number;
+};
+
+export type DeviceListItem = {
+  id: string;
+  name: string | null;
+  aors: Array<AorSummary>;
+  unit: UnitSummary | null;
+  createdBy: string;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+};
+
+export type DeviceDetails = {
+  id: string;
+  name: string | null;
+  aors: Array<AorSummary>;
+  unit: UnitSummary | null;
+  externalUrl: string | null;
+  customFields: Record<string, string>;
+  createdBy: string;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+};
+
+export type DeviceUnitStat = {
+  unit: UnitSummary;
+  count: number;
+};
+
+export type ListDevicesReq = {
+  filterText: string | null;
+  archivedFilter: DeviceArchivedFilter | null;
+  aorIds: Array<number> | null;
+  unitIds: Array<number> | null;
+  limit: number | null;
+  offset: number | null;
+  sortBy: Array<DeviceListSortBy>;
+};
+
+export type ListDevicesRsp = {
+  list: Array<DeviceListItem>;
+  total: number;
+  hasMore: boolean;
+  statusCounts: DeviceStatusCounts;
+};
+
+export type DeviceUnitStatsRsp = {
+  units: Array<DeviceUnitStat>;
+};
+
+export type DeviceDetailReq = {
+  deviceId: string;
+  includeArchived: boolean | null;
+};
+
+export type CreateDeviceReq = {
+  name: string | null;
+  externalUrl: string | null;
+  customFields: Record<string, string> | null;
+};
+
+export type UpdateDeviceReq = {
+  deviceId: string;
+  externalUrl: string | null;
+  customFields: Record<string, string | null> | null;
+  name: string | null;
+  aorIds: Array<number> | null;
+  unitId: number | null;
+};
+
+export type DeviceFileRoot = {
+  entryId: string;
+  deviceId: string;
+  parentEntryId: string | null;
+  kind: FileEntryKind;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FileBreadcrumb = {
+  entryId: string;
+  name: string;
+};
+
+export type DeviceFileTreeEntry = {
+  entryId: string;
+  parentEntryId: string;
+  kind: FileEntryKind;
+  fileId: string | null;
+  name: string;
+  pathComponents: Array<string>;
+  absolutePath: string | null;
+  hasContent: boolean;
+  mimeType: string | null;
+  extension: string | null;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DeviceFile = {
+  fileId: string;
+  deviceId: string;
+  parentEntryId: string;
+  rootEntryId: string;
+  absolutePath: string;
+  hasContent: boolean;
+  name: string;
+  pathComponents: Array<string>;
+  mimeType: string | null;
+  extension: string | null;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ListDeviceFileRootsReq = {
+  deviceId: string;
+};
+
+export type ListDeviceFileRootsRsp = {
+  roots: Array<DeviceFileRoot>;
+};
+
+export type DeviceFileSubtreeCount = {
+  entryId: string;
+  fileCount: number;
+};
+
+export type CountDeviceFileSubtreesReq = {
+  deviceId: string;
+  parentEntryId: string | null;
+  directoryEntryIds: Array<string>;
+};
+
+export type CountDeviceFileSubtreesRsp = {
+  counts: Array<DeviceFileSubtreeCount>;
+};
+
+export type BrowseDeviceFilesReq = {
+  deviceId: string;
+  parentEntryId: string;
+  includeBreadcrumbs: boolean | null;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type BrowseDeviceFilesRsp = {
+  breadcrumbs: Array<FileBreadcrumb>;
+  entries: Array<DeviceFileTreeEntry>;
+  nextCursor: string | null;
+};
+
+export type SearchDeviceFilesReq = {
+  deviceId: string;
+  scopeEntryId: string;
+  nameQuery: string | null;
+  kinds: Array<FileEntryKind> | null;
+  mimeTypes: Array<string> | null;
+  extensions: Array<string> | null;
+  fileMetadataModifiedFrom: string | null;
+  fileMetadataModifiedTo: string | null;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type SearchDeviceFilesRsp = {
+  entries: Array<DeviceFileTreeEntry>;
+  nextCursor: string | null;
+};
+
+export type DeviceFileJournalEntry = {
+  fileId: string;
+  name: string;
+  absolutePath: string;
+  hasContent: boolean;
+  synchronizedAt: string;
+};
+
+export type JournalDeviceFilesReq = {
+  deviceId: string;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type JournalDeviceFilesRsp = {
+  entries: Array<DeviceFileJournalEntry>;
+  totalCount: number;
+  nextCursor: string | null;
+};
+
+export type SyncDeviceFileItem = {
+  fileId: string | null;
+  absolutePath: string;
+  mimeType: string | null;
+  extension: string | null;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+};
+
+export type FileSyncOperation =
+  | 'created'
+  | 'updated'
+;
+
+export type FileSyncErrorKind =
+  | 'validation'
+  | 'not_found'
+  | 'conflict'
+  | 'dependency'
+  | 'internal'
+;
+
+export type FileSyncError = {
+  kind: FileSyncErrorKind;
+  message: string;
+  fieldErrors: Array<[string, string]>;
+};
+
+export type FileSyncResult =
+  | { Accepted: { index: number; operation: FileSyncOperation; root: DeviceFileRoot; file: DeviceFile } }
+  | { Rejected: { index: number; error: FileSyncError } }
+;
+
+export type SyncDeviceFilesReq = {
+  deviceId: string;
+  files: Array<SyncDeviceFileItem>;
+};
+
+export type SyncDeviceFilesRsp = {
+  results: Array<FileSyncResult>;
+};
+
 export type Organism = {
   id: number;
   parentId: number | null;
@@ -3989,4 +4262,3 @@ export type UserDutySettingsDto = {
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
 };
-

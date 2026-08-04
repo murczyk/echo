@@ -72,6 +72,13 @@ pub mod tests {
             .await
             .context(h!())?;
         env.echo_gpu_client.reload_instances().await.context(h!())?;
+        if let Some(file_registry_db) = &env.file_registry_db {
+            file_registry_db
+                .connection()
+                .execute_unprepared("truncate table public.file_entry")
+                .await
+                .context(h!())?;
+        }
         // Delete dependent entities first to avoid foreign key constraint violations
         secret_group_user::Entity::delete_many()
             .exec(&env.dbx)
@@ -313,6 +320,10 @@ pub mod tests {
             .await
             .context(h!())?;
         sigint_key_share_policy::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        device::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .context(h!())?;

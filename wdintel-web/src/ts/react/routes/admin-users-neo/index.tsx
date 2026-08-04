@@ -69,6 +69,8 @@ const ROLE_OPTIONS = [
   'UnitsEditor',
   'NetworkEditor',
   'CallsignsEditor',
+  'Cyber',
+  'DeviceSource',
   'AdvancedReports',
   'Orbit',
   'DeleteMsg',

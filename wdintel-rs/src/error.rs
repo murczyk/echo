@@ -74,32 +74,50 @@ impl From<String> for AppError {
 impl From<anyhow::Error> for AppError {
     fn from(value: anyhow::Error) -> Self {
         for err in value.chain() {
-            if let Some(AppError::Forbidden(msg)) =
-                err.downcast_ref::<AppError>()
-            {
-                return AppError::Forbidden(msg.clone());
-            }
-            if let Some(AppError::ForbiddenWithHeader {
-                msg,
-                header_name,
-                header_value,
-            }) = err.downcast_ref::<AppError>()
-            {
-                return AppError::ForbiddenWithHeader {
-                    msg: msg.clone(),
-                    header_name,
-                    header_value,
-                };
-            }
-            if let Some(AppError::ServiceUnavailable {
-                msg,
-                retry_after_secs,
-            }) = err.downcast_ref::<AppError>()
-            {
-                return AppError::ServiceUnavailable {
-                    msg: msg.clone(),
-                    retry_after_secs: *retry_after_secs,
-                };
+            if let Some(error) = err.downcast_ref::<AppError>() {
+                match error {
+                    AppError::BL { msg } => {
+                        return AppError::BL { msg: msg.clone() };
+                    }
+                    AppError::NotFound => return AppError::NotFound,
+                    AppError::Unauthenticated => {
+                        return AppError::Unauthenticated;
+                    }
+                    AppError::Forbidden(msg) => {
+                        return AppError::Forbidden(msg.clone());
+                    }
+                    AppError::ForbiddenWithHeader {
+                        msg,
+                        header_name,
+                        header_value,
+                    } => {
+                        return AppError::ForbiddenWithHeader {
+                            msg: msg.clone(),
+                            header_name,
+                            header_value,
+                        };
+                    }
+                    AppError::ServiceUnavailable {
+                        msg,
+                        retry_after_secs,
+                    } => {
+                        return AppError::ServiceUnavailable {
+                            msg: msg.clone(),
+                            retry_after_secs: *retry_after_secs,
+                        };
+                    }
+                    AppError::Form(errors) => {
+                        return AppError::Form(errors.clone());
+                    }
+                    AppError::IO { .. }
+                    | AppError::JoinErr { .. }
+                    | AppError::FsExtraErr { .. }
+                    | AppError::AnyhowError { .. }
+                    | AppError::NotifyErr { .. }
+                    | AppError::ActixParseErr { .. }
+                    | AppError::PayloadError { .. }
+                    | AppError::MilgeoError { .. } => {}
+                }
             }
         }
         AppError::AnyhowError { source: value }
@@ -282,6 +300,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::ShortContext;
 
     #[test]
     fn service_unavailable_response_includes_retry_after() {
@@ -301,5 +320,37 @@ mod tests {
             response.headers().get(actix_web::http::header::RETRY_AFTER),
             Some(&actix_web::http::header::HeaderValue::from_static("2"))
         );
+    }
+
+    #[test]
+    fn short_context_preserves_app_error_http_status() {
+        use actix_web::http::StatusCode;
+
+        let cases = [
+            (
+                AppError::BL {
+                    msg: "invalid request".to_string(),
+                },
+                StatusCode::BAD_REQUEST,
+            ),
+            (AppError::NotFound, StatusCode::NOT_FOUND),
+            (AppError::Unauthenticated, StatusCode::UNAUTHORIZED),
+            (
+                AppError::Form(BTreeMap::from([(
+                    "field".to_string(),
+                    "invalid value".to_string(),
+                )])),
+                StatusCode::BAD_REQUEST,
+            ),
+        ];
+
+        for (error, expected_status) in cases {
+            let error = Err::<(), _>(error).c("test context").unwrap_err();
+            let error = AppError::from(error);
+            let response =
+                <AppError as actix_web::ResponseError>::error_response(&error);
+
+            assert_eq!(response.status(), expected_status);
+        }
     }
 }

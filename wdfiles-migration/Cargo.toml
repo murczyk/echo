@@ -1,0 +1,13 @@
+[package]
+name = "wdfiles-migration"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+
+[lib]
+name = "wdfiles_migration"
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+sea-orm-migration = { workspace = true }
