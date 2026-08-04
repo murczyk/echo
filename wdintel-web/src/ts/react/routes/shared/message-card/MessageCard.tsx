@@ -87,7 +87,7 @@ export type MessageCardProps = {
   /** Tag chips section visual density mode. */
   tagsLayout?: TagsLayoutVariant;
   tagsLoading?: boolean;
-  /** Baseline "now" when the card is off-screen; while visible, relative time updates every minute. */
+  /** Baseline "now" when the card is off-screen; while visible, relative time updates every second. */
   referenceTimeMs: number | null;
   /** Auth user display name for background watermark */
   authUserName: string | null;

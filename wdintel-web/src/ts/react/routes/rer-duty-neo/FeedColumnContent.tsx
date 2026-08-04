@@ -39,8 +39,8 @@ import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 
 /** Start loading older messages when the user scrolls close to the top of the DOM list. */
 const LOAD_OLDER_BUFFER_PX = 160;
-/** Start loading newer messages before the user gets close to the bottom edge. */
-const LOAD_NEWER_NEAR_BOTTOM_BUFFER_PX = 800;
+/** Fetch the next tail window early enough to render it before the reader reaches the bottom. */
+const LOAD_NEWER_BUFFER_PX = 640;
 /** Consider "at bottom" when within this many pixels of the scroll end (watch mode / read-state). */
 const DUTY_FEED_AT_BOTTOM_THRESHOLD_PX = 25;
 // Hoisted stable empty array: passing `[]` inline as a prop would allocate a fresh reference
@@ -429,6 +429,7 @@ export const FeedColumnContent = memo(
     const itemIds = useMemo(() => feed.items.map(([id]) => id), [feed.items]);
     const scroll = useWindowedFeedScroll({
       itemIds,
+      debugFeedId: feed.id,
       isWatchMode,
       enabled: scrollTrackingEnabled,
       loadingOlder: feed.loadingOlder,
@@ -447,7 +448,7 @@ export const FeedColumnContent = memo(
       },
       onVisibleMessageIds,
       topLoadBufferPx: LOAD_OLDER_BUFFER_PX,
-      bottomLoadBufferPx: LOAD_NEWER_NEAR_BOTTOM_BUFFER_PX,
+      bottomLoadBufferPx: LOAD_NEWER_BUFFER_PX,
       atBottomThresholdPx: DUTY_FEED_AT_BOTTOM_THRESHOLD_PX,
       resetKey: feed.referenceTimeMs ?? feed.id,
     });
@@ -642,6 +643,7 @@ export const FeedColumnContent = memo(
                       selected
                       interactive={false}
                       unselectedOpacity={1}
+                      labelPaddingX={bottomUnreadCount < 10 ? 0 : undefined}
                       sx={{
                         position: 'absolute',
                         top: -6,
@@ -649,6 +651,14 @@ export const FeedColumnContent = memo(
                         fontWeight: 600,
                         zIndex: 2,
                         pointerEvents: 'none',
+                        ...(bottomUnreadCount < 10 && {
+                          width: 20,
+                          minWidth: 20,
+                          height: 20,
+                          minHeight: 20,
+                          boxSizing: 'border-box',
+                          borderRadius: '50%',
+                        }),
                       }}
                     />
                   )}

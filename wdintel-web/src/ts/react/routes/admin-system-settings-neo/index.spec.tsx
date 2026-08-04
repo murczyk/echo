@@ -6,12 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   save: vi.fn(),
+  replayStatus: vi.fn(),
   notify: vi.fn(),
 }));
 
 vi.mock('../../services/api/system-settings', () => ({
   listSystemSettings: mocks.list,
   createSystemSettings: mocks.save,
+  getRerDutyTestReplayStatus: mocks.replayStatus,
 }));
 vi.mock('../../components/PowerSnackbar', () => ({
   usePowerSnackbar: () => ({ notify: mocks.notify }),
@@ -80,6 +82,13 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     mocks.save.mockReset();
     mocks.list.mockResolvedValue([]);
     mocks.save.mockResolvedValue(undefined);
+    mocks.replayStatus.mockResolvedValue({
+      status: 'disabled',
+      sourceCount: 0,
+      nextSourcePosition: null,
+      generatedCount: 0,
+      nextEmitAtMs: null,
+    });
     mocks.notify.mockReset();
   });
   afterEach(() => {

@@ -4,7 +4,11 @@ const mocks = vi.hoisted(() => ({ postJson: vi.fn() }));
 
 vi.mock('./client', () => ({ postJson: mocks.postJson }));
 
-import { createSystemSettings, listSystemSettings } from './system-settings';
+import {
+  createSystemSettings,
+  getRerDutyTestReplayStatus,
+  listSystemSettings,
+} from './system-settings';
 
 const rawSettings = {
   id: 1,
@@ -41,6 +45,7 @@ describe('system settings audio transcription mapping', () => {
       rerDutyTestSinceMs: 0,
       rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
+      rerDutyTestReplayIntervalSec: 3,
       rerDutyShortUrl: false,
       supportNonRerInterceptions: false,
       defaultNeoAnalysis: false,
@@ -58,7 +63,28 @@ describe('system settings audio transcription mapping', () => {
     });
     expect(mocks.postJson).toHaveBeenCalledWith(
       '/api/admin/system-settings/create',
-      expect.objectContaining({ enable_audio_transcription: true }),
+      expect.objectContaining({
+        enable_audio_transcription: true,
+        rer_duty_test_replay_interval_sec: 3,
+      }),
     );
+  });
+
+  it('maps replay status', async () => {
+    mocks.postJson.mockResolvedValue({
+      status: 'running',
+      source_count: 5,
+      next_source_position: 2,
+      generated_count: 7,
+      next_emit_at_ms: 123,
+    });
+
+    await expect(getRerDutyTestReplayStatus()).resolves.toEqual({
+      status: 'running',
+      sourceCount: 5,
+      nextSourcePosition: 2,
+      generatedCount: 7,
+      nextEmitAtMs: 123,
+    });
   });
 });

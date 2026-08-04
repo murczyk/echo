@@ -119,13 +119,15 @@ class Lake:
                 *
             FROM postgres_query('{db}', $$
                 SELECT
-                      sigint_inbox_item_id
-                    , tag_id
-                    , login
-                    , model
-                    , confidence
+                      t.sigint_inbox_item_id
+                    , t.tag_id
+                    , l.login
+                    , t.model
+                    , t.confidence
                 FROM
-                    sigint_inbox_item_tag
+                    sigint_inbox_item_tag t
+                LEFT JOIN login l
+                    ON t.login_id = l.id
             $$)
         )
         MERGE INTO sigint_inbox_item_tag AS tgt
@@ -133,8 +135,8 @@ class Lake:
             tgt.source = src.source
             AND tgt.sigint_inbox_item_id = src.sigint_inbox_item_id
             AND tgt.tag_id = src.tag_id
-            AND tgt.login = src.login
-            AND tgt.model = src.model
+            AND (tgt.login IS NOT DISTINCT FROM src.login)
+            AND (tgt.model IS NOT DISTINCT FROM src.model)
         )
         WHEN NOT MATCHED BY SOURCE AND tgt.source = '{db}' THEN DELETE
         WHEN NOT MATCHED BY TARGET THEN INSERT;
@@ -340,7 +342,16 @@ class Lake:
 
         self.conn.execute(
             f"""
-        INSERT INTO sigint_inbox_tag_model_error
+        INSERT INTO sigint_inbox_tag_model_error (
+            source,
+            id,
+            tag_id,
+            sigint_inbox_item_id,
+            model,
+            confidence,
+            removed_at,
+            removed_by_login
+        )
         SELECT
             '{db}' AS source,
             *
@@ -348,16 +359,18 @@ class Lake:
             postgres_query('{db}',
         $$
             SELECT
-                id,
-                tag_id,
-                sigint_inbox_item_id,
-                model,
-                model_login,
-                confidence,
-                removed_by_login,
-                removed_at
+                e.id,
+                e.tag_id,
+                e.sigint_inbox_item_id,
+                e.model,
+                e.confidence,
+                e.removed_at,
+                r.login AS removed_by_login
             FROM
-                sigint_inbox_tag_model_error
+                sigint_inbox_tag_model_error e
+            JOIN login r
+                ON e.removed_by_login_id = r.id
+
             {cond_removed_at}
         $$)
         """

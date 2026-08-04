@@ -336,6 +336,8 @@ mod m20260731_145031_orbit_sync;
 mod m20260731_220945_persist_manual_orbit_links;
 mod m20260731_234500_orbit_unit_search_indexes;
 mod m20260801_085538_suppress_deleted_orbit_links;
+mod m20260802_174927_rer_duty_test_replay;
+mod m20260803_093803_echo_automation_send_log;
 
 pub struct Migrator;
 
@@ -757,6 +759,8 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260801_085538_suppress_deleted_orbit_links::Migration,
             ),
+            Box::new(m20260802_174927_rer_duty_test_replay::Migration),
+            Box::new(m20260803_093803_echo_automation_send_log::Migration),
         ]
     }
 }

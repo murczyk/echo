@@ -74,6 +74,13 @@ flowchart LR
         signoz["SigNoz<br/>central logs + dashboards"]
     end
 
+    subgraph vllm_router_lxc["echo-vllm-router · Optional AI routing · Debian 13"]
+        direction TB
+        vllm_router["vLLM Router<br/>native systemd · :8000<br/>cache_aware"]
+        vllm_otel["SigNoz OTel collector<br/>native systemd"]
+        vllm_router -.->|router metrics<br/>loopback :29000| vllm_otel
+    end
+
     subgraph analytics_lxc["LXC 2 · Secondary analytics · OPTIONAL · Debian 13"]
         direction LR
         replication["Replication pipeline<br/>PeerDB + Temporal"]
@@ -103,6 +110,7 @@ flowchart LR
     api -.->|activity events<br/>PostgreSQL protocol| greptime
     bg -.->|activity batches<br/>PostgreSQL protocol| greptime
     vector -.->|HTTP JSON logs| signoz
+    vllm_otel -.->|router + worker metrics<br/>OTLP gRPC · Tailscale| signoz
     iggy <-->|consume + produce events| promin
     api <-->|uploads + downloads| backblaze
     bg <-->|media + generated reports| backblaze
@@ -112,17 +120,20 @@ flowchart LR
     echo_im <-->|messenger bot integration| goi
     bg <-->|health · audio upload · transcription| echo_gpu
     api -.->|Chat Completions HTTPS| openai_engine
-    api <-->|Chat Completions HTTP<br/>Tailscale| vllm
+    api <-->|Chat Completions HTTP<br/>Tailscale| vllm_router
+    vllm_router -->|OpenAI-compatible HTTP<br/>Tailscale| vllm
+    vllm -.->|Prometheus metrics<br/>Tailscale| vllm_otel
 
     style echo_lxc stroke-width:2px
     style analytics_lxc stroke-width:2px,stroke-dasharray:8 5
     style greptime_lxc stroke-width:2px,stroke-dasharray:8 5
     style signoz_lxc stroke-width:2px,stroke-dasharray:8 5
+    style vllm_router_lxc stroke-width:2px,stroke-dasharray:8 5
     style vllm_spark stroke-width:2px,stroke-dasharray:8 5
     classDef canonical stroke-width:3px
     classDef optional stroke-dasharray:6 4
     class postgres canonical
-    class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm,hf_cache,gb10 optional
+    class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm_router,vllm_otel,vllm,hf_cache,gb10 optional
 ```
 
 The diagram focuses on the core web, worker, messenger, storage, observability,
@@ -137,8 +148,11 @@ configuration, network requirements, queue, cache, retry, and REST API flow.
 Admins configure OpenAI-compatible engines in `/admin/system-settings-neo`.
 `/admin/ai-callsigns` provides prompt testing and an optional sequential
 bgworker that replaces regular parsed callsigns with the AI result.
-See [Echo vLLM](../echo-vllm/README.md) for the `echo-gpu-spark` deployment,
-launch, verification, and shutdown commands.
+See [Echo vLLM](../echo-vllm/README.md) for the `echo-gpu-spark` worker and
+[Echo vLLM Router](../echo-vllm-router/README.md) for routing, observability,
+deployment, verification, and rollback commands. Echo uses the router as its
+normal OpenAI-compatible endpoint; direct Spark access is retained only as a
+fallback.
 
 ## Echo LXC systemd graph
 
@@ -265,9 +279,7 @@ flowchart LR
         message_uid["goi_association_message_uid_worker<br/>backfill message links when enabled"]
         conversion["palitra_conversion_worker<br/>convert imported palette sources"]
         report["report_history_worker_goi<br/>generate requested GOI reports"]
-        echo_im["Echo IM<br/>Signal + WhatsApp bot integration"]
-
-        echo_pg[("PostgreSQL 18 · wd<br/>goi_integration · goi_association · goi_knowledge<br/>goi_palitra_sync · source blobs · converted geometry<br/>palitra sync/conversion queues")]
+        echo_pg[("PostgreSQL 18 · wd<br/>goi_integration · goi_association · goi_knowledge<br/>goi_palitra_sync · source blobs · converted geometry<br/>palitra sync/conversion queues · automation send log")]
         report_store[("Backblaze B2 / S3<br/>generated GOI reports · optional")]
 
         api --> routes
@@ -282,19 +294,22 @@ flowchart LR
         conversion --> echo_pg
         report --> echo_pg
         report -.-> report_store
-        echo_im --> echo_pg
     end
 
     subgraph goi_lxc["GOI LXC · external"]
         direction TB
         goi_app["GOI application"]
         goi_worker["goi-echo-worker.service<br/>HTTP API · :8088"]
+        echo_swapp["echo-swapp.service<br/>GOI-side Echo Messengers · :4010<br/>messenger_worker · cleanup_worker<br/>cleanup_tmp_worker_nofail"]
+        messenger_clients["echo-signal-bot@.service<br/>echo-whatsapp-bot@.service"]
         goi_watchers["Internal workers<br/>associations_worker_nofail<br/>knowledge_worker_nofail"]
         goi_postgres["postgresql.service"]
         goi_pg[("PostgreSQL · goi<br/>association · knowledge · sync_lock")]
         goi_files[("GOI filesystem<br/>/etc/goi/data/xlsx/<br/>associations · knowledge · frequencies<br/>/etc/goi/data/palettes/")]
 
         goi_app <--> goi_files
+        goi_app <-->|messenger bot integration| echo_swapp
+        echo_swapp <-->|manage clients| messenger_clients
         goi_worker --> goi_watchers
         goi_worker --> goi_postgres
         goi_postgres --> goi_pg
@@ -306,7 +321,7 @@ flowchart LR
     sync <-->|Basic-auth HTTP<br/>associations · knowledge · signed frequencies| goi_worker
     sync <-->|SSH · knowledge workbook + palette files| goi_files
     sync -.->|SSH · remote sync lock| goi_pg
-    goi_app <-->|messenger bot integration| echo_im
+    echo_swapp -->|Echo IM + automation tables| echo_pg
 
     style echo_lxc stroke-width:2px
     style goi_lxc stroke-width:2px,stroke-dasharray:8 5
@@ -319,6 +334,14 @@ conversion workers run beside it. `wdintel-rs.service` exposes GOI request
 routes but does not start GOI background workers in live mode. Debug/test
 server mode can still run the general worker set for local development, with
 the GOI pool disabled.
+
+`echo-swapp.service` always starts `messenger_worker`, `cleanup_worker` (Echo IM
+and automation cleanup), and `cleanup_tmp_worker_nofail` on the GOI LXC; none
+is configuration-gated. The service uses the Echo PostgreSQL database as its
+system of record.
+Cross-automation send reservations, outbound queue rows, and delivery records
+commit atomically. `echo_automation_send_log` retains route-level
+deduplication state for 30 days; the cleanup worker hard-deletes older rows.
 
 Each full GOI integration is scoped to its owner organism. Signed-frequency
 reports and worker-managed callsign rows include only live networks whose
@@ -476,6 +499,11 @@ stored as separate Bitwarden Secure Notes and rendered to root-owned
 environment files by deployment commands. Each participating Echo instance
 receives its own analytics container, credentials, publication, replication
 slot, ClickHouse data, and recovery lifecycle.
+
+GOI deployments build the `echo-swapp` and messenger Debian artifacts on the
+builder configured by `goi_builder` in `goi/justfile`, using its
+`~/workspace/echo` checkout. The operator workstation only transfers the
+artifacts to the target GOI instance, so deployments can be started from macOS.
 
 When configured and fresh, ClickHouse serves the expensive analysis count,
 facet lists and dedicated facet counts plus the replicated-data scans used by

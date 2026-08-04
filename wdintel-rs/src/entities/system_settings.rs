@@ -46,6 +46,7 @@ pub struct Model {
     pub limit_big_reports: bool,
     pub show_classic_duty: bool,
     pub show_classic_analysis: bool,
+    pub rer_duty_test_replay_interval_sec: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

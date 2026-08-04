@@ -31,6 +31,7 @@ pub mod echo_attachment;
 pub mod echo_automation;
 pub mod echo_automation_delivery;
 pub mod echo_automation_polygon;
+pub mod echo_automation_send_log;
 pub mod echo_automation_warning;
 pub mod echo_client;
 pub mod echo_client_config;

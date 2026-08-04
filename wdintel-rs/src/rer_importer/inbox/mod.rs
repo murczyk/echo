@@ -49,35 +49,6 @@ static INBOX_COUNT_SINGLEFLIGHT: Lazy<
     Mutex<HashMap<String, InboxCountSingleflightEntry>>,
 > = Lazy::new(|| Mutex::new(HashMap::new()));
 
-async fn apply_test_inbox_settings(
-    env: &Env,
-    req: &mut InboxMessagesReq,
-) -> Result<Option<i64>, AppError> {
-    let settings = crate::system_settings::get_active_system_settings(&env.dbx)
-        .await
-        .c(h!())?;
-    let Some(settings) = settings else {
-        return Ok(None);
-    };
-    if !settings.rer_duty_test_enabled {
-        return Ok(None);
-    }
-    if req.since_id_noninclusive.is_none()
-        && req.before_id_noninclusive.is_none()
-        && req.since_date_inclusive_ms.is_none()
-        && req.till_date_inclusive_ms.is_none()
-    {
-        let since_ms = settings.rer_duty_test_since_ms.max(0);
-        let window_ms =
-            Duration::minutes(env.config.rer_duty_test_source_window_minutes())
-                .num_milliseconds();
-        req.since_date_inclusive_ms = Some(since_ms);
-        req.till_date_inclusive_ms = Some(since_ms + window_ms);
-    }
-    req.nolimit = Some(true);
-    Ok(Some(settings.rer_duty_test_limit.max(1)))
-}
-
 #[post("/api/rer-importer/get-inbox-map")]
 async fn get_inbox_map(
     user: actix_identity::Identity,
@@ -530,7 +501,7 @@ async fn inbox_messages(
         .is_ok();
     let user_id = login_id_from_identity(&user)?;
     let page_id = req.page_id.clone();
-    let mut req = req.into_inner();
+    let req = req.into_inner();
     let skip_group_stats = req.skip_group_stats.unwrap_or(false);
 
     let payload = serde_json::to_value(&req).context(h!())?;
@@ -541,11 +512,7 @@ async fn inbox_messages(
     let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
         .context(h!())?;
-    let test_limit = apply_test_inbox_settings(&env, &mut req).await?;
-    if test_limit.is_none()
-        && inbox_request_is_unbounded(&req)
-        && req.load_latest != Some(true)
-    {
+    if inbox_request_is_unbounded(&req) && req.load_latest != Some(true) {
         error!(
             "rejecting unbounded get-inbox request without load_latest; page_id={page_id:?}"
         );
@@ -568,15 +535,9 @@ async fn inbox_messages(
     } else {
         None
     };
-    let inbox_items = if let Some(limit) = test_limit {
-        get_inbox_messages_limited(&login, &logins, &env, &req, limit)
-            .await
-            .context(h!())?
-    } else {
-        get_inbox_messages(&login, &logins, &env, &req)
-            .await
-            .context(h!())?
-    };
+    let inbox_items = get_inbox_messages(&login, &logins, &env, &req)
+        .await
+        .context(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
     let callsigns: Vec<CallsignInfoRes> =
         load_inbox_callsigns(&inbox_items, &env).await.c(h!())?;
@@ -600,13 +561,11 @@ async fn inbox_messages(
         _ => None,
     };
     txn.commit().await.context(h!())?;
-    let page_limit = test_limit.or_else(|| {
-        if req.nolimit == Some(true) {
-            None
-        } else {
-            Some(20)
-        }
-    });
+    let page_limit = if req.nolimit == Some(true) {
+        None
+    } else {
+        Some(20)
+    };
 
     Ok(Json(InboxMessagesRsp {
         inbox_items,
@@ -864,7 +823,7 @@ async fn inbox_messages_count(
     .c(h!())?;
     let user_id = login_id_from_identity(&user)?;
     let page_id = req.page_id.clone();
-    let mut req = req.into_inner();
+    let req = req.into_inner();
 
     let payload = serde_json::to_value(&req).context(h!())?;
     record_page_visit(&user_id, &page_id, &env, Some(payload))
@@ -872,8 +831,7 @@ async fn inbox_messages_count(
         .context(h!())?;
     let login = user_id;
 
-    let test_limit = apply_test_inbox_settings(&env, &mut req).await?;
-    if test_limit.is_none() && inbox_request_is_unbounded(&req) {
+    if inbox_request_is_unbounded(&req) {
         warn!(
             "rejecting unbounded get-inbox-count request; page_id={page_id:?}"
         );
@@ -888,15 +846,12 @@ async fn inbox_messages_count(
     let singleflight_key = format!("{:p}\n{q}", env.get_ref());
     let query_env = env.clone();
     let query_req = req.clone();
-    let (mut quantity, first_element_ts) =
+    let (quantity, first_element_ts) =
         query_inbox_digest_singleflight(singleflight_key, move || {
             query_inbox_digest_with_analytics(login, query_env, query_req, q)
         })
         .await
         .context(h!())?;
-    if let Some(limit) = test_limit {
-        quantity = quantity.min(limit);
-    }
     let first_element_ts =
         first_element_ts.map(|x| x.and_utc().timestamp_millis());
     Ok(Json(InboxMessagesDigestRsp {
@@ -2269,22 +2224,6 @@ pub(crate) fn format_inbox_message_location(
     location_v2: Option<String>,
 ) -> Option<String> {
     bl::format_inbox_message_location(location, location_v2)
-}
-
-async fn get_inbox_messages_limited(
-    login: &uuid::Uuid,
-    logins: &Vec<uuid::Uuid>,
-    env: &Env,
-    req: &InboxMessagesReq,
-    limit: i64,
-) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let q = build_inbox_query(login, env, req).await.c(h!())?;
-    let q = format!("{q} LIMIT {limit}");
-    let res =
-        fetch_inbox_messages_with_query(&env.dbx, login, logins, env, req, &q)
-            .await
-            .context(h!())?;
-    Ok(res)
 }
 
 async fn fetch_inbox_messages_with_query(

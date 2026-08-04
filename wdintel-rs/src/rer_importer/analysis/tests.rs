@@ -6756,6 +6756,9 @@ fn analytical_inbox_reads_support_callsign_filters_but_reject_search() {
     req.search = None;
     req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
     assert!(analytics_inbox_request_supported(&req));
+
+    req.only_with_media = Some(true);
+    assert!(!analytics_inbox_request_supported(&req));
 }
 
 #[test]

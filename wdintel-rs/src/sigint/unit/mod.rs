@@ -1109,6 +1109,7 @@ mod tests {
             rer_duty_test_since_ms: Set(0),
             rer_duty_test_limit: Set(0),
             rer_duty_poll_interval_sec: Set(0),
+            rer_duty_test_replay_interval_sec: Set(1),
             rer_duty_insert_historical_interceptions: Set(false),
             short_url_enabled: Set(false),
             support_non_rer_interceptions: Set(false),

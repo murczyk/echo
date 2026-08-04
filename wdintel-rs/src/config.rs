@@ -94,6 +94,7 @@ pub const URL_NEED_VISIT_NOTIFICATION_MINS: i64 = 5;
 pub const IDENTITY_DURATION_HOURS: u64 = 12;
 pub const IDENTITY_SALT: &str = "IUBwdub783736#";
 pub const ROLE_ADMIN: &str = "Admin";
+pub const ROLE_ORBIT: &str = "Orbit";
 pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this upload limit synchronized with
 /// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES`, frontend
@@ -136,8 +137,14 @@ pub const RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE: &str =
     "summary_table_report_message_limit";
 pub const RER_SUMMARY_TABLE_UNKNOWN_LOCALITY: &str = "Невідомо";
 pub const REPORT_HISTORY_LIST_LIMIT: u64 = 200;
-pub const RER_DUTY_TEST_SOURCE_WINDOW_MINUTES_DEFAULT: i64 = 10;
-pub const RER_DUTY_REPLAY_RECENT_WINDOW_MINUTES: i64 = 10;
+pub const RER_DUTY_TEST_REPLAY_SOURCE_MAX: i64 = 10_000;
+pub const RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX: i64 = 31_536_000;
+pub const RER_DUTY_TEST_REPLAY_COMMENT: &str = "[duplicate]";
+pub const RER_DUTY_TEST_REPLAY_CLEANUP_BATCH_SIZE: u64 = 500;
+pub const RER_DUTY_TEST_REPLAY_ADVISORY_LOCK_KEY: i64 = 7_312_025_041;
+pub const RER_DUTY_TEST_REPLAY_IDLE_SLEEP_SEC: u64 = 1;
+pub const RER_DUTY_TEST_REPLAY_DISABLED_SLEEP_SEC: u64 = 5;
+pub const RER_DUTY_TEST_REPLAY_ERROR_SLEEP_SEC: u64 = 15;
 // for xlsx import
 pub const SIGNAL_DATASOURCE_ID: i64 = 1;
 pub const SIGINT_SOURCE_RO_ID: i32 = 2;
@@ -571,7 +578,6 @@ pub struct Config {
     pub signal_api_phone: String,
     pub signal_import_group_name: String,
     pub signal_import_fiven_name: String,
-    pub rer_duty_test_source_window_minutes: Option<i64>,
     pub static_path: String,
     pub executable_path: String,
     pub fill_comp_freq_worker: bool,
@@ -705,12 +711,6 @@ impl Config {
 
     pub fn settlement_paths(&self) -> Result<Vec<String>> {
         get_settlement_paths(self.settlements_sources.clone())
-    }
-
-    pub fn rer_duty_test_source_window_minutes(&self) -> i64 {
-        self.rer_duty_test_source_window_minutes
-            .unwrap_or(RER_DUTY_TEST_SOURCE_WINDOW_MINUTES_DEFAULT)
-            .max(1)
     }
 }
 

@@ -17,14 +17,12 @@ import { createEmptyFeedState, useRerDutyInitialLoad } from './useRerDutyInitial
 import { buildFeedCountSignature } from './rerDutyFeedCount';
 import { compareMessageTuple } from './utils';
 import type { TailAvailability } from './types';
+import { beginDutyScrollDebugActivity, recordDutyScrollDebugEvent } from './duty-scroll-debug';
 
 export type FeedStateDeps = {
   freqs: string[];
   setProfiles: Dispatch<SetStateAction<Record<string, SignalProfileEntry | null>>>;
   setGroupInfos: Dispatch<SetStateAction<Record<string, SignalGroupEntry>>>;
-  testEnabled: boolean;
-  testSinceMs: number;
-  testLimit: number;
   pollIntervalSec: number;
   /** When true, duty page must not auto-scroll / follow new messages (user prefs). */
   disableAutoScroll: boolean;
@@ -143,6 +141,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, []);
   const setConfirmedTailPreview = useCallback(
     (feedId: string, preview: ConfirmedTailPreview | undefined) => {
+      recordDutyScrollDebugEvent(
+        feedId,
+        'counter:preview',
+        preview
+          ? `tail=${preview.tailId}; count=${preview.count}; generation=${preview.generation}`
+          : 'cleared',
+      );
       confirmedTailPreviewByFeedIdRef.current[feedId] = preview;
       setConfirmedTailPreviewByFeedId((previous) => {
         if (preview === undefined) {
@@ -289,6 +294,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     [],
   );
   const setTailAvailability = useCallback((feedId: string, availability: TailAvailability) => {
+    const previousAvailability = tailAvailabilityByFeedIdRef.current[feedId] ?? 'unknown';
+    if (previousAvailability !== availability) {
+      recordDutyScrollDebugEvent(
+        feedId,
+        'tail-availability',
+        `${previousAvailability}→${availability}`,
+      );
+    }
     tailAvailabilityByFeedIdRef.current[feedId] = availability;
     setTailAvailabilityByFeedId((previous) =>
       previous[feedId] === availability ? previous : { ...previous, [feedId]: availability },
@@ -348,9 +361,21 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       const cursorId = cursor?.id ?? null;
       const requestSignature = buildFeedCountSignature(feed, freqs);
       const requestPromise = (async () => {
-        const { quantity } = await fetchInboxCount(
-          buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true }),
+        const finishDebugActivity = beginDutyScrollDebugActivity(
+          feedId,
+          'unreadCount',
+          `cursor=${cursorId ?? '—'}; loadedTail=${feed.items.at(-1)?.[0] ?? '—'}`,
         );
+        let quantity: number;
+        try {
+          ({ quantity } = await fetchInboxCount(
+            buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true }),
+          ));
+          finishDebugActivity(`ok; quantity=${quantity}`);
+        } catch (error) {
+          finishDebugActivity(`error; ${error instanceof Error ? error.message : String(error)}`);
+          throw error;
+        }
         const currentFeed = messageFeedsRef.current.find((x) => x.id === feedId);
         if (
           !currentFeed ||
@@ -361,8 +386,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           unreadCursorByFeedIdRef.current[feedId]?.timestamp !== cursor?.timestamp ||
           buildFeedCountSignature(currentFeed, freqs) !== requestSignature
         ) {
+          recordDutyScrollDebugEvent(feedId, 'counter:discard', 'unread count became stale');
           return null;
         }
+        recordDutyScrollDebugEvent(
+          feedId,
+          'counter:accept',
+          `unread=${quantity}; cursor=${cursorId ?? '—'}`,
+        );
         return {
           feedId,
           quantity,
@@ -399,9 +430,23 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       const requestGeneration = getFeedLoadGeneration(feedId);
       const requestSignature = buildFeedCountSignature(feed, freqs);
       const requestPromise = (async () => {
-        const { quantity } = await fetchInboxCount(
-          buildReqForFeed(feed, { sinceIdNoninclusive: tailId, nolimit: true }),
+        const finishDebugActivity = beginDutyScrollDebugActivity(
+          feedId,
+          'tailCount',
+          `tail=${tailId}`,
         );
+        let quantity: number;
+        try {
+          ({ quantity } = await fetchInboxCount(
+            buildReqForFeed(feed, { sinceIdNoninclusive: tailId, nolimit: true }),
+          ));
+          finishDebugActivity(`ok; quantity=${quantity}; tail=${tailId}`);
+        } catch (error) {
+          finishDebugActivity(
+            `error; tail=${tailId}; ${error instanceof Error ? error.message : String(error)}`,
+          );
+          throw error;
+        }
         const currentFeed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
         if (
           !currentFeed ||
@@ -410,8 +455,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           currentFeed.items.at(-1)?.[0] !== tailId ||
           buildFeedCountSignature(currentFeed, freqs) !== requestSignature
         ) {
+          recordDutyScrollDebugEvent(feedId, 'counter:discard', `tail=${tailId} became stale`);
           return null;
         }
+        recordDutyScrollDebugEvent(feedId, 'counter:accept', `tail=${tailId}; newer=${quantity}`);
         return quantity;
       })();
       tailCountRequestPromiseByFeedIdRef.current[feedId] = requestPromise;

@@ -70,6 +70,7 @@ const ROLE_OPTIONS = [
   'NetworkEditor',
   'CallsignsEditor',
   'AdvancedReports',
+  'Orbit',
   'DeleteMsg',
   'NoAutoLogout',
 ];

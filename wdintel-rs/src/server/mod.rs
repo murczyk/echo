@@ -665,6 +665,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::system_settings::list_system_settings)
             .service(crate::system_settings::create_system_settings)
             .service(crate::system_settings::activate_system_settings)
+            .service(crate::system_settings::rer_duty_test_replay_status)
             .service(crate::ai_engine::list_ai_engines)
             .service(crate::ai_engine::get_ai_engine)
             .service(crate::ai_engine::create_ai_engine)
