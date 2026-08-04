@@ -2,21 +2,21 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { StorybookConfig } from '@storybook/react-vite';
-import type { Plugin } from 'vite';
+import type { Connect, Plugin, ViteDevServer } from 'vite';
 import { mergeConfig } from 'vite';
 
 const storybookDir = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(storybookDir, '..');
 const mockApiRoot = resolve(webRoot, 'src/stories/fixtures/mock-api');
+const MOCK_MEDIA_STATIC_DIR = {
+  from: '../src/stories/fixtures/mock-api',
+  to: '/api/messenger/media',
+} as const;
 
 function messengerMediaMockMiddleware(
-  req: { url?: string },
-  res: {
-    statusCode: number;
-    setHeader: (name: string, value: string) => void;
-    end: (body?: string | Buffer) => void;
-  },
-  next: () => void,
+  req: Connect.IncomingMessage,
+  res: Connect.ServerResponse,
+  next: Connect.NextFunction,
 ) {
   const pathname = (req.url ?? '').split('?')[0] ?? '';
   const match = pathname.match(/^\/api\/messenger\/media\/([^/]+)\/(wave|spectrogram)$/);
@@ -39,11 +39,23 @@ function messengerMediaMockMiddleware(
   }
 }
 
+function installMessengerMediaMockMiddleware(server: ViteDevServer) {
+  // Post-hook + unshift: run before Storybook staticDirs/sirv so Content-Type is image/png.
+  server.middlewares.stack.unshift({
+    route: '',
+    handle: messengerMediaMockMiddleware,
+  });
+}
+
 function messengerMediaMockPlugin(): Plugin {
   return {
     name: 'storybook-messenger-media-mock',
     configureServer(server) {
-      server.middlewares.use(messengerMediaMockMiddleware);
+      return () => installMessengerMediaMockMiddleware(server);
+    },
+    // `vite preview` / some Storybook preview paths also need the mock.
+    configurePreviewServer(server) {
+      return () => installMessengerMediaMockMiddleware(server);
     },
   };
 }
@@ -52,8 +64,8 @@ const config: StorybookConfig = {
   stories: ['../src/**/*.stories.@(js|jsx|mjs|ts|tsx)'],
   addons: [],
   framework: '@storybook/react-vite',
-  // Wave/spectrogram mocks are served by messengerMediaMockPlugin (correct Content-Type).
-  // Do not also map them via staticDirs — sirv wins and omits image/png.
+  // Emit fixtures into storybook-static so built Storybook can load wave/spectrogram.
+  staticDirs: [MOCK_MEDIA_STATIC_DIR],
   async viteFinal(config) {
     return mergeConfig(config, {
       plugins: [messengerMediaMockPlugin()],
