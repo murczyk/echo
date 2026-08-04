@@ -643,7 +643,9 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let system_login_id = crate::users::system_login_id(txn).await.c(h!())?;
-    let parsed = crate::sigint::parser::parse_comments(body);
+    let blacklist = crate::sigint::comments::load_blacklist(txn).await?;
+    let parsed =
+        crate::sigint::parser::parse_comments_with_blacklist(body, &blacklist);
     let mut texts = vec![];
     for text in [parsed.top, parsed.bottom].into_iter().flatten() {
         if !texts.contains(&text) {
@@ -939,6 +941,64 @@ mod tests {
              Дата та час: 16.07.2026 11:34:32;\n\
              Умовні координати для бота: MGRS {mgrs};"
         )
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn auto_comments_use_database_blacklist() {
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let body = "++\nважливий коментар\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка\n\nМітка перехоплення: +";
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        insert_missing_auto_comments(&env.dbx, message.id, None, body)
+            .await
+            .unwrap();
+
+        let comments = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].comment, "важливий коментар");
+
+        let system_login_id =
+            crate::users::system_login_id(&env.dbx).await.unwrap();
+        let seeded = sigint_comment_blacklist::Entity::find()
+            .filter(sigint_comment_blacklist::Column::IsPersistent.eq(true))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(seeded.len(), 24);
+        assert!(seeded
+            .iter()
+            .all(|entry| entry.created_by_login_id == system_login_id));
+
+        let manual_text = format!("manual-{}", Uuid::new_v4());
+        let manual = sigint_comment_blacklist::ActiveModel {
+            text: Set(manual_text.clone()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        assert!(!manual.is_persistent);
+        assert_eq!(manual.created_by_login_id, system_login_id);
+        sigint_comment_blacklist::Entity::delete_by_id(manual_text)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

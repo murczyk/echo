@@ -114,6 +114,7 @@ pub mod sigint_bookmark;
 pub mod sigint_callsign;
 pub mod sigint_callsign_changelog;
 pub mod sigint_comment;
+pub mod sigint_comment_blacklist;
 pub mod sigint_important;
 pub mod sigint_inbox_item;
 pub mod sigint_inbox_item_metadata;

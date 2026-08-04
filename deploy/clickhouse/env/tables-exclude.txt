@@ -21,6 +21,9 @@ public.palitra_goi_sync_job
 public.palitra_conversion_job
 public.goi_palitra_sync
 
+# PostgreSQL-only parsing configuration.
+public.sigint_comment_blacklist
+
 # ORBIT unit catalog remains PostgreSQL-only.
 public.orbit_grouping_of_forces
 public.orbit_combat_unit_type
