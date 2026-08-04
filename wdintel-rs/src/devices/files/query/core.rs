@@ -6,7 +6,9 @@ use crate::devices::files::{
 };
 use crate::file_registry::entities::file_entry;
 use crate::h;
-use sea_orm::sea_query::{extension::postgres::PgExpr, Expr, LikeExpr};
+use sea_orm::sea_query::{
+    extension::postgres::PgExpr, Alias, Expr, Func, LikeExpr, SimpleExpr,
+};
 use sea_orm::{
     ActiveEnum, ColumnTrait, Condition, ConnectionTrait, EntityTrait,
     QueryFilter, QueryOrder, QuerySelect, Select,
@@ -157,11 +159,25 @@ pub(super) fn literal_name_pattern(name_query: &str) -> String {
     pattern
 }
 
+fn utf8_name_bytes_expr() -> SimpleExpr {
+    Func::cust(Alias::new("convert_to"))
+        .arg(Expr::col((file_entry::Entity, file_entry::Column::Name)))
+        .arg(Expr::val("UTF8"))
+        .into()
+}
+
+fn utf8_bytes_value(value: &str) -> SimpleExpr {
+    Func::cust(Alias::new("convert_to"))
+        .arg(Expr::val(value))
+        .arg(Expr::val("UTF8"))
+        .into()
+}
+
 pub(super) fn apply_root_order(
     query: Select<file_entry::Entity>,
 ) -> Select<file_entry::Entity> {
     query
-        .order_by_asc(file_entry::Column::Name)
+        .order_by_asc(utf8_name_bytes_expr())
         .order_by_asc(file_entry::Column::Id)
 }
 
@@ -170,7 +186,7 @@ pub(in crate::devices::files) fn apply_entry_order(
 ) -> Select<file_entry::Entity> {
     query
         .order_by_asc(file_entry::Column::Kind)
-        .order_by_asc(file_entry::Column::Name)
+        .order_by_asc(utf8_name_bytes_expr())
         .order_by_asc(file_entry::Column::Id)
 }
 
@@ -180,12 +196,12 @@ pub(in crate::devices::files) fn entry_strict_after_condition(
     Condition::all().add(
         Expr::tuple([
             Expr::col((file_entry::Entity, file_entry::Column::Kind)).into(),
-            Expr::col((file_entry::Entity, file_entry::Column::Name)).into(),
+            utf8_name_bytes_expr(),
             Expr::col((file_entry::Entity, file_entry::Column::Id)).into(),
         ])
         .gt(Expr::tuple([
             after.kind().as_enum(),
-            Expr::val(after.name()).into(),
+            utf8_bytes_value(after.name()),
             Expr::val(after.entry_id()).into(),
         ])),
     )

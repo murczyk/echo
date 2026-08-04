@@ -1058,7 +1058,7 @@ pub(in crate::devices) mod schema {
                 Some("(now() AT TIME ZONE 'utc'::text)"),
                 "timestamp without time zone",
             ),
-            ("custom_fields", "NO", Some("'{}'::jsonb"), "jsonb"),
+            ("custom_fields", "NO", None, "jsonb"),
             ("organism_id", "NO", None, "bigint"),
         ]
         .into_iter()

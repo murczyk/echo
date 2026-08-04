@@ -1617,12 +1617,12 @@ async fn assert_stage_three_root_listing(
             .map(|root| (root.name.clone(), root.entry_id))
             .collect::<Vec<_>>(),
         vec![
+            ("C:\\".to_string(), forest.target_primary_root_id),
+            ("D:\\".to_string(), forest.target_windows_drive_root_id),
             (
                 "\\\\server\\share\\".to_string(),
                 forest.target_windows_unc_root_id,
             ),
-            ("C:\\".to_string(), forest.target_primary_root_id),
-            ("D:\\".to_string(), forest.target_windows_drive_root_id,),
         ]
     );
     assert!(!roots
@@ -1850,9 +1850,9 @@ async fn assert_stage_eight_actor_reads(
             .map(|root| root.entry_id)
             .collect::<Vec<_>>(),
         vec![
-            forest.target_windows_unc_root_id,
             forest.target_primary_root_id,
             forest.target_windows_drive_root_id,
+            forest.target_windows_unc_root_id,
         ]
     );
 
