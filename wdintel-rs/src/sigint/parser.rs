@@ -104,7 +104,7 @@ fn is_blacklisted_comment(text: &str, blacklist: &[String]) -> bool {
     })
 }
 
-fn filter_blacklisted_comment(
+pub(crate) fn filter_blacklisted_comment(
     comment: Option<String>,
     blacklist: &[String],
 ) -> Option<String> {
@@ -302,10 +302,18 @@ pub(crate) fn marker_comment_strip_candidates(
 ) -> Vec<String> {
     let lines = normalized_body_lines(body);
     let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
-    scan_marker_comments(&lines, blacklist)
-        .selected
-        .map(|comment| comment.strip_candidates(&lines))
-        .unwrap_or_default()
+    let Some(comment) = scan_marker_comments(&lines, blacklist).selected else {
+        return vec![];
+    };
+    let mut candidates = comment.strip_candidates(&lines);
+    if let Some(filtered) =
+        filter_blacklisted_comment(Some(comment.text), blacklist)
+    {
+        candidates.push(filtered);
+    }
+    candidates.sort();
+    candidates.dedup();
+    candidates
 }
 
 fn normalized_body_lines(body: &str) -> Vec<String> {
@@ -1062,6 +1070,16 @@ mod tests {
             marker_comment_strip_candidates(body, &[]),
             vec!["операторське уточнення"]
         );
+    }
+
+    #[test]
+    fn strip_candidates_include_filtered_marker_text() {
+        let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка\n\nКоментар:\n+\nважливе уточнення";
+        let candidates =
+            marker_comment_strip_candidates(body, &["+".to_string()]);
+
+        assert!(candidates.contains(&"+\nважливе уточнення".to_string()));
+        assert!(candidates.contains(&"важливе уточнення".to_string()));
     }
 
     #[test]

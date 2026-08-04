@@ -391,7 +391,9 @@ async fn load_report(
         let Some(timestamp) = report_message_timestamp(&item, &message) else {
             continue;
         };
-        let comments = load_non_empty_comments(dbx, item_id).await.c(h!())?;
+        let comments = load_non_empty_comments(dbx, item_id, &blacklist)
+            .await
+            .c(h!())?;
         if comments.is_empty() {
             continue;
         }
@@ -654,16 +656,32 @@ fn non_empty_comment_exists() -> SimpleExpr {
 async fn load_non_empty_comments(
     dbx: &DatabaseConnection,
     item_id: i64,
+    blacklist: &[String],
 ) -> Result<Vec<String>, AppError> {
-    Ok(sigint_comment::Entity::find()
+    let comments = sigint_comment::Entity::find()
         .filter(sigint_comment::Column::SignalMessageId.eq(item_id))
         .all(dbx)
         .await
         .c(h!())?
         .into_iter()
-        .map(|comment| comment.comment.trim().to_string())
-        .filter(|comment| !comment.is_empty())
-        .collect())
+        .map(|comment| comment.comment)
+        .collect();
+    Ok(filter_report_comments(comments, blacklist))
+}
+
+fn filter_report_comments(
+    comments: Vec<String>,
+    blacklist: &[String],
+) -> Vec<String> {
+    comments
+        .into_iter()
+        .filter_map(|comment| {
+            crate::sigint::parser::filter_blacklisted_comment(
+                Some(comment),
+                blacklist,
+            )
+        })
+        .collect()
 }
 
 fn report_message_timestamp(
@@ -2152,6 +2170,16 @@ mod tests {
     }
 
     #[test]
+    fn report_comments_drop_blacklisted_rows() {
+        let comments = filter_report_comments(
+            vec!["+".to_string(), "важливе уточнення".to_string()],
+            &["+".to_string()],
+        );
+
+        assert_eq!(comments, vec!["важливе уточнення"]);
+    }
+
+    #[test]
     fn report_body_strips_multiline_marker_comment_continuation() {
         let message = signal_message(
             1,
@@ -2199,6 +2227,24 @@ mod tests {
         .unwrap();
 
         assert!(!body.contains("важливе уточнення"));
+        assert!(body.contains("— репліка"));
+    }
+
+    #[test]
+    fn report_body_strips_filtered_multiline_marker() {
+        let message = signal_message(
+            1,
+            "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка\n\nКоментар:\n+\nважливе уточнення",
+        );
+        let body = message_body_without_duplicate_comments(
+            &message,
+            &["важливе уточнення".to_string()],
+            &["+".to_string()],
+        )
+        .unwrap();
+
+        assert!(!body.contains("важливе уточнення"));
+        assert!(!body.lines().any(|line| line.trim() == "+"));
         assert!(body.contains("— репліка"));
     }
 
