@@ -64,23 +64,42 @@ lazy_static! {
     .unwrap();
 }
 
-fn is_ignored_comment(text: &str) -> bool {
-    normalize_comment_key(text) == "службовийрадіообмін"
-}
-
 fn normalize_comment_key(text: &str) -> String {
-    text.chars()
-        .flat_map(|c| c.to_lowercase())
-        .filter(|c| c.is_alphanumeric())
-        .collect()
+    let mut words = text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(|word| word.to_lowercase())
+        .collect::<Vec<_>>();
+    if words
+        .first()
+        .is_some_and(|word| matches!(word.as_str(), "ім" | "йм"))
+    {
+        words.remove(0);
+    }
+    words.concat()
 }
 
-fn filter_ignored_comment(comment: Option<String>) -> Option<String> {
+fn is_blacklisted_comment(text: &str, blacklist: &[String]) -> bool {
+    let normalized = normalize_comment_key(text);
+    blacklist.iter().any(|blacklisted| {
+        let blacklisted_normalized = normalize_comment_key(blacklisted);
+        if normalized.is_empty() || blacklisted_normalized.is_empty() {
+            text.trim() == blacklisted.trim()
+        } else {
+            normalized == blacklisted_normalized
+        }
+    })
+}
+
+fn filter_blacklisted_comment(
+    comment: Option<String>,
+    blacklist: &[String],
+) -> Option<String> {
     let comment = comment?;
     let kept = comment
         .lines()
         .map(str::trim)
-        .filter(|line| !is_ignored_comment(line))
+        .filter(|line| !is_blacklisted_comment(line, blacklist))
         .collect::<Vec<_>>()
         .join("\n");
     if kept.trim().is_empty() {
@@ -199,6 +218,13 @@ fn join_block(lines: &[&str]) -> Option<String> {
 }
 
 pub fn parse_comments(body: &str) -> ParsedComments {
+    parse_comments_with_blacklist(body, &[])
+}
+
+pub fn parse_comments_with_blacklist(
+    body: &str,
+    blacklist: &[String],
+) -> ParsedComments {
     if crate::rer_importer::zp_peleng_extended_format::parse(body).is_some() {
         return ParsedComments::default();
     }
@@ -211,7 +237,7 @@ pub fn parse_comments(body: &str) -> ParsedComments {
     let lines = normalized_body_lines(body);
     let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
 
-    let marker_comment = scan_marker_comment(&lines);
+    let marker_comment = scan_marker_comment(&lines, blacklist);
 
     let anchor = lines.iter().position(|l| is_datetime_header_line(l));
 
@@ -223,8 +249,8 @@ pub fn parse_comments(body: &str) -> ParsedComments {
         .or_else(|| anchor.and_then(|a| parse_tail_comment(&lines[a..])));
 
     ParsedComments {
-        top: filter_ignored_comment(top),
-        bottom: filter_ignored_comment(bottom),
+        top: filter_blacklisted_comment(top, blacklist),
+        bottom: filter_blacklisted_comment(bottom, blacklist),
     }
 }
 
@@ -259,7 +285,7 @@ pub fn extract_text_without_top_comment(
 pub(crate) fn marker_comment_strip_candidates(body: &str) -> Vec<String> {
     let lines = normalized_body_lines(body);
     let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
-    scan_marker_comment(&lines)
+    scan_marker_comment(&lines, &[])
         .map(|comment| comment.strip_candidates(&lines))
         .unwrap_or_default()
 }
@@ -284,10 +310,14 @@ fn has_zp_peleng_vorony_odina_suffix(body: &str) -> bool {
         })
 }
 
-fn scan_marker_comment(lines: &[&str]) -> Option<MarkerComment> {
+fn scan_marker_comment(
+    lines: &[&str],
+    blacklist: &[String],
+) -> Option<MarkerComment> {
     let comment = scan_marker(lines, &COMMENT_MARKER);
     if comment.as_ref().is_some_and(|comment| {
-        filter_ignored_comment(Some(comment.text.clone())).is_none()
+        filter_blacklisted_comment(Some(comment.text.clone()), blacklist)
+            .is_none()
     }) {
         scan_marker(lines, &INTERCEPTION_TAG_MARKER).or(comment)
     } else {
@@ -370,7 +400,7 @@ fn top_comment_line_indices(lines: &[&str]) -> BTreeSet<usize> {
     else {
         return BTreeSet::new();
     };
-    let marker_comment = scan_marker_comment(lines);
+    let marker_comment = scan_marker_comment(lines, &[]);
     let comment_end =
         zp_peleng_vorony_odina_suffix_start(lines, anchor).unwrap_or(anchor);
     let indices: Vec<usize> = lines[..comment_end]
@@ -473,6 +503,63 @@ fn parse_tail_comment(post: &[&str]) -> Option<String> {
 mod tests {
     use super::*;
 
+    const SEEDED_COMMENT_BLACKLIST: &[&str] = &[
+        "Службовий радіообмін",
+        "++",
+        "+",
+        "доповідь по обстановці",
+        "доповідь обстановки",
+        "повсякденна діяльність",
+        "службовий р/о",
+        "перевірка зв'язку",
+        "доповідь про стан справ",
+        "обстановка",
+        "виклик",
+        "встановлення зв'язку",
+        "запит обстановки",
+        "доведення інформації",
+        "доповідь",
+        "доповідав обстановку по позиціям",
+        "запитував обстановку",
+        "намагався встановити зв'язок",
+        "перевірка обстановки",
+        "звіт про ситуацію",
+        "викликав на зв'язок",
+        "здійснював запит обстановки",
+        "здійснював перевірку зв'язку",
+        "запит та доповідь обстановки",
+    ];
+
+    fn parse_comments_with_seeded_blacklist(body: &str) -> ParsedComments {
+        parse_comments_with_blacklist(
+            body,
+            &SEEDED_COMMENT_BLACKLIST
+                .iter()
+                .map(|text| text.to_string())
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    #[test]
+    fn blacklist_matching_ignores_case_affixes_and_symbols() {
+        let blacklist = SEEDED_COMMENT_BLACKLIST
+            .iter()
+            .map(|text| text.to_string())
+            .collect::<Vec<_>>();
+
+        for comment in [
+            "🚨 ПЕРЕВІРКА ЗВ’ЯЗКУ!!!",
+            "йм. Доповідь 🤙",
+            "ім. 🔥 ДОПОВІДЬ",
+        ] {
+            assert!(is_blacklisted_comment(comment, &blacklist), "{comment}");
+        }
+        assert!(!is_blacklisted_comment(
+            "доповідь обстановки противника",
+            &blacklist
+        ));
+    }
+
     // ── Variant 1: top comment ─────────────────────────────────────
 
     #[test]
@@ -530,7 +617,7 @@ mod tests {
     #[test]
     fn top_ignores_service_radio_exchange_comment() {
         let body = "  СЛУЖБОВИЙ...   радіообмін!!!\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка";
-        let res = parse_comments(body);
+        let res = parse_comments_with_seeded_blacklist(body);
         assert_eq!(res.top, None);
         assert_eq!(res.bottom, None);
     }
@@ -538,7 +625,7 @@ mod tests {
     #[test]
     fn top_drops_only_service_radio_exchange_comment_line() {
         let body = "службовий радіообмін\nважливий коментар\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка";
-        let res = parse_comments(body);
+        let res = parse_comments_with_seeded_blacklist(body);
         assert_eq!(res.top.as_deref(), Some("важливий коментар"));
         assert_eq!(res.bottom, None);
     }
@@ -546,7 +633,7 @@ mod tests {
     #[test]
     fn top_keeps_service_radio_exchange_as_part_of_comment_line() {
         let body = "службовий радіообмін противника щодо роботи\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка";
-        let res = parse_comments(body);
+        let res = parse_comments_with_seeded_blacklist(body);
         assert_eq!(
             res.top.as_deref(),
             Some("службовий радіообмін противника щодо роботи")
@@ -686,7 +773,7 @@ mod tests {
     #[test]
     fn bottom_ignores_service_radio_exchange_comment() {
         let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу\n\nКоментар: службовий, радіообмін.";
-        let res = parse_comments(body);
+        let res = parse_comments_with_seeded_blacklist(body);
         assert_eq!(res.top, None);
         assert_eq!(res.bottom, None);
     }
@@ -698,7 +785,7 @@ mod tests {
             let body = format!(
                 "{marker}: службовий радіообмін\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка"
             );
-            let res = parse_comments(&body);
+            let res = parse_comments_with_seeded_blacklist(&body);
             assert_eq!(res.top, None, "marker: {marker}");
             assert_eq!(res.bottom, None, "marker: {marker}");
         }
@@ -707,7 +794,7 @@ mod tests {
     #[test]
     fn bottom_uses_interception_tag_after_ignored_comment() {
         let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу\n\nКоментар: службовий радіообмін\n\nМітки перехоплення: 🚙 - Переміщення";
-        let res = parse_comments(body);
+        let res = parse_comments_with_seeded_blacklist(body);
         assert_eq!(res.top, None);
         assert_eq!(res.bottom.as_deref(), Some("🚙 - Переміщення"));
     }
@@ -715,7 +802,7 @@ mod tests {
     #[test]
     fn bottom_drops_only_service_radio_exchange_comment_line() {
         let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу\n\nКоментар: службовий радіообмін\nважливий рядок";
-        let res = parse_comments(body);
+        let res = parse_comments_with_seeded_blacklist(body);
         assert_eq!(res.top, None);
         assert_eq!(res.bottom.as_deref(), Some("важливий рядок"));
     }
@@ -723,7 +810,7 @@ mod tests {
     #[test]
     fn bottom_keeps_service_radio_exchange_as_part_of_comment_line() {
         let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу\n\nКоментар: службовий радіообмін противника щодо роботи";
-        let res = parse_comments(body);
+        let res = parse_comments_with_seeded_blacklist(body);
         assert_eq!(res.top, None);
         assert_eq!(
             res.bottom.as_deref(),
@@ -737,6 +824,29 @@ mod tests {
         let res = parse_comments(body);
         assert_eq!(res.top, None);
         assert_eq!(res.bottom.as_deref(), Some("перший рядок\nдругий рядок"));
+    }
+
+    #[test]
+    fn interception_tag_before_datetime_is_a_comment() {
+        let body = "Мітка перехоплення: Важливо\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу";
+        let res = parse_comments(body);
+        assert_eq!(res.top, None);
+        assert_eq!(res.bottom.as_deref(), Some("Важливо"));
+    }
+
+    #[test]
+    fn seeded_plus_comments_are_blacklisted() {
+        for comment in ["+", "++"] {
+            let top = format!(
+                "{comment}\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка"
+            );
+            let bottom = format!(
+                "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка\n\nКоментар: {comment}"
+            );
+
+            assert!(parse_comments_with_seeded_blacklist(&top).is_empty());
+            assert!(parse_comments_with_seeded_blacklist(&bottom).is_empty());
+        }
     }
 
     #[test]

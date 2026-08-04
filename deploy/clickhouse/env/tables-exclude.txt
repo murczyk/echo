@@ -17,6 +17,7 @@ public.seaql_echo_gpu_migrations
 public.echo_whatsapp_queue
 public.echo_whatsapp_queue_attachment
 public.echo_automation_send_log
+public.sigint_comment_blacklist
 public.palitra_goi_sync_job
 public.palitra_conversion_job
 public.goi_palitra_sync

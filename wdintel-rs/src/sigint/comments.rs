@@ -32,6 +32,19 @@ struct CommentCsvRow {
     source_organism: String,
 }
 
+pub async fn load_blacklist<C>(dbx: &C) -> Result<Vec<String>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(sigint_comment_blacklist::Entity::find()
+        .select_only()
+        .column(sigint_comment_blacklist::Column::Text)
+        .into_tuple::<String>()
+        .all(dbx)
+        .await
+        .c(h!())?)
+}
+
 pub async fn oneoff_export_sigint_comments(
     mode: Mode,
     ps: &crate::OneoffExportSigintCommentsPs,

@@ -111,7 +111,12 @@ where
             .map(|datetime| {
                 datetime.to_rfc3339_opts(SecondsFormat::Secs, true)
             });
-    let comments = crate::sigint::parser::parse_comments(body);
+    let comment_blacklist =
+        crate::sigint::comments::load_blacklist(&env.dbx).await?;
+    let comments = crate::sigint::parser::parse_comments_with_blacklist(
+        body,
+        &comment_blacklist,
+    );
 
     Ok(DirectSubmitParseRsp {
         text: text.body,

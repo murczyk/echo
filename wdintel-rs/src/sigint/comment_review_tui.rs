@@ -238,7 +238,11 @@ where
         .await
         .c(h!())?;
 
-    Ok(rows.into_iter().filter_map(ReviewEntry::from_row).collect())
+    let blacklist = crate::sigint::comments::load_blacklist(db).await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| ReviewEntry::from_row(row, &blacklist))
+        .collect())
 }
 
 fn build_cursor_filter(cursor: ReviewCursor) -> Condition {
@@ -387,9 +391,11 @@ impl ReviewCursor {
 }
 
 impl ReviewEntry {
-    fn from_row(row: ReviewQueryRow) -> Option<Self> {
+    fn from_row(row: ReviewQueryRow, blacklist: &[String]) -> Option<Self> {
         let body = row.body?;
-        let parsed = crate::sigint::parser::parse_comments(&body);
+        let parsed = crate::sigint::parser::parse_comments_with_blacklist(
+            &body, blacklist,
+        );
         let body_noheader =
             crate::sigint::parser::extract_text_without_top_comment(&body)
                 .map(|body_noheader| body_noheader.body)

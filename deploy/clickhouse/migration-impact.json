@@ -60,6 +60,11 @@
       "changes": [
         { "table": "public.device", "strategy": "mirror_resync" }
       ]
+    },
+    "echo:m20260804_091538_sigint_comment_blacklist": {
+      "changes": [
+        { "table": "public.sigint_comment_blacklist", "strategy": "excluded" }
+      ]
     }
   },
   "dependencies": {}

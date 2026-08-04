@@ -111,6 +111,7 @@ pub use super::sigint_bookmark::Entity as SigintBookmark;
 pub use super::sigint_callsign::Entity as SigintCallsign;
 pub use super::sigint_callsign_changelog::Entity as SigintCallsignChangelog;
 pub use super::sigint_comment::Entity as SigintComment;
+pub use super::sigint_comment_blacklist::Entity as SigintCommentBlacklist;
 pub use super::sigint_important::Entity as SigintImportant;
 pub use super::sigint_inbox_item::Entity as SigintInboxItem;
 pub use super::sigint_inbox_item_metadata::Entity as SigintInboxItemMetadata;
