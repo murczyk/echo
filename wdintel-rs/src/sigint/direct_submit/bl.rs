@@ -112,7 +112,7 @@ where
                 datetime.to_rfc3339_opts(SecondsFormat::Secs, true)
             });
     let comment_blacklist =
-        crate::sigint::comments::load_blacklist(&env.dbx).await?;
+        crate::sigint::comments::load_blacklist(dbx).await?;
     let comments = crate::sigint::parser::parse_comments_with_blacklist(
         body,
         &comment_blacklist,

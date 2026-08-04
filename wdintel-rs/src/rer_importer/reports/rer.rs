@@ -2161,6 +2161,22 @@ mod tests {
     }
 
     #[test]
+    fn report_body_strips_tag_after_legacy_ignored_comment() {
+        let message = signal_message(
+            1,
+            "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка\n\nКоментар: службовий радіообмін\n\nМітки перехоплення: 🚙 - Переміщення",
+        );
+        let body = message_body_without_duplicate_comments(
+            &message,
+            &["🚙 - Переміщення".to_string()],
+        )
+        .unwrap();
+
+        assert!(!body.contains("Переміщення"));
+        assert!(body.contains("— репліка"));
+    }
+
+    #[test]
     fn report_message_timestamp_falls_back_to_signal_timestamp() {
         let item = sigint_inbox_item::Model {
             id: 1,
