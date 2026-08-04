@@ -17,6 +17,8 @@ impl MigrationTrait for Migration {
                     drop constraint device_source_label_not_empty_check,
                     drop column source_label;
                 alter table device
+                    drop constraint device_name_not_empty_check;
+                alter table device
                     alter column name drop not null;
                 alter table device
                     add constraint device_name_not_empty_check
@@ -50,6 +52,9 @@ impl MigrationTrait for Migration {
                 r#"
                 alter table device
                     drop constraint device_name_not_empty_check;
+                alter table device
+                    add constraint device_name_not_empty_check
+                    check (btrim(name) <> '');
                 alter table device
                     add column source_label text;
 
