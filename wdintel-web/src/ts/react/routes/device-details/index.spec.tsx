@@ -133,8 +133,8 @@ describe('DeviceDetailsPage layout', () => {
 
     const leftPanel = container?.querySelector('[data-testid="device-details-left-panel"]');
     const leftPanelText = leftPanel?.textContent ?? '';
-    const externalLink = Array.from(leftPanel?.querySelectorAll('a') ?? []).find(
-      (element) => element.textContent === activeDevice.externalUrl,
+    const deviceNameLink = Array.from(leftPanel?.querySelectorAll('a') ?? []).find(
+      (element) => element.textContent === activeDevice.name,
     );
 
     expect(leftPanelText).toContain('Device Alpha');
@@ -144,7 +144,7 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanelText).toContain('Південь');
     expect(leftPanelText).toContain('Unit Seven');
     expect(leftPanelText).toContain('operator');
-    expect(leftPanelText).toContain('Зовнішнє посилання');
+    expect(leftPanelText).not.toContain('Зовнішнє посилання');
     expect(leftPanelText).toContain('Кастомні поля');
     expect(leftPanelText).toContain('inventory_id');
     expect(leftPanelText).toContain('node-1');
@@ -153,8 +153,9 @@ describe('DeviceDetailsPage layout', () => {
     expect(container?.textContent).not.toContain('Відновити');
     expect(container?.querySelector('[aria-label="Активний"]')).not.toBeNull();
     expect(container?.querySelector('button[aria-label="Редагувати пристрій"]')).not.toBeNull();
-    expect(externalLink?.getAttribute('href')).toBe(activeDevice.externalUrl);
-    expect(externalLink?.getAttribute('target')).toBe('_blank');
+    expect(deviceNameLink?.getAttribute('href')).toBe(activeDevice.externalUrl);
+    expect(deviceNameLink?.getAttribute('target')).toBe('_blank');
+    expect(deviceNameLink?.getAttribute('rel')).toBe('noopener noreferrer');
     expect(leftPanelText.indexOf('Основне')).toBeLessThan(leftPanelText.indexOf('Кастомні поля'));
     expect(leftPanelText.indexOf('Кастомні поля')).toBeLessThan(leftPanelText.indexOf('Додатково'));
     const tabs = Array.from(container?.querySelectorAll('[role="tab"]') ?? []);
@@ -192,6 +193,27 @@ describe('DeviceDetailsPage layout', () => {
     expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).toBeNull();
     expect(container?.querySelector('[data-testid="device-files-panel"]')).not.toBeNull();
     expect(container?.querySelector('button[aria-label="Розгорнути ліву панель"]')).not.toBeNull();
+  });
+
+  it('keeps the device name non-clickable when the external URL is unsafe', () => {
+    pageMock.useDeviceDetailsPage.mockReturnValue(
+      buildPage({
+        device: {
+          ...activeDevice,
+          externalUrl: 'javascript:alert(document.domain)',
+        },
+      }),
+    );
+
+    renderPage();
+
+    const leftPanel = container?.querySelector('[data-testid="device-details-left-panel"]');
+    const deviceNameLink = Array.from(leftPanel?.querySelectorAll('a') ?? []).find(
+      (element) => element.textContent === activeDevice.name,
+    );
+    expect(leftPanel?.textContent).toContain(activeDevice.name);
+    expect(leftPanel?.textContent).not.toContain('javascript:');
+    expect(deviceNameLink).toBeUndefined();
   });
 
   it('keeps archived devices read-only', () => {

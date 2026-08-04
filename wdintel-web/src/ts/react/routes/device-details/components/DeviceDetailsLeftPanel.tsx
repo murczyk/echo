@@ -17,7 +17,7 @@ type FieldConfig = {
 };
 
 function DeviceDetailsLeftPanelSkeleton() {
-  const rowHeights = [36, 36, 36, 36, 36, 36, 36, 36, 36, 36];
+  const rowHeights = [36, 36, 36, 36, 36, 36, 36, 36, 36];
 
   return (
     <Box
@@ -133,17 +133,10 @@ function DeviceAorsValue({ device }: { device: DeviceDetails }) {
 }
 
 function DeviceNameValue({ device }: { device: DeviceDetails }) {
-  return device.name === null ? (
-    <DeviceTextValue muted>—</DeviceTextValue>
-  ) : (
-    <DeviceTextValue>{device.name}</DeviceTextValue>
-  );
-}
+  if (device.name === null) return <DeviceTextValue muted>—</DeviceTextValue>;
 
-function DeviceExternalUrlValue({ device }: { device: DeviceDetails }) {
   const externalUrl = device.externalUrl?.trim() ?? '';
-  if (externalUrl === '') return <DeviceTextValue muted>—</DeviceTextValue>;
-  if (!isSafeExternalUrl(externalUrl)) return <DeviceTextValue>{externalUrl}</DeviceTextValue>;
+  if (!isSafeExternalUrl(externalUrl)) return <DeviceTextValue>{device.name}</DeviceTextValue>;
 
   return (
     <Link
@@ -154,7 +147,7 @@ function DeviceExternalUrlValue({ device }: { device: DeviceDetails }) {
       variant="body2"
       sx={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
     >
-      {externalUrl}
+      {device.name}
     </Link>
   );
 }
@@ -165,11 +158,6 @@ function buildMainFields(device: DeviceDetails): FieldConfig[] {
       key: 'id',
       label: 'ID',
       value: <DeviceTextValue>{device.id}</DeviceTextValue>,
-    },
-    {
-      key: 'externalUrl',
-      label: 'Зовнішнє посилання',
-      value: <DeviceExternalUrlValue device={device} />,
     },
     {
       key: 'name',
