@@ -1,4 +1,5 @@
 use super::entities::file_entry;
+use super::entities::sea_orm_active_enums::FileEntryKind;
 use super::*;
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{
@@ -81,6 +82,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260721_124518_drop_legacy_device_file".to_string(),
             "m20260728_111013_add_file_entry_journal_index".to_string(),
             "m20260728_182132_add_file_entry_content_path".to_string(),
+            "m20260803_164204_file_entry_kind_and_windows_paths".to_string(),
         ]
     );
 }
@@ -141,10 +143,8 @@ async fn assert_file_entry_schema(connection: &DatabaseConnection) {
             ("id", "NO", None, "uuid", "uuid"),
             ("device_id", "NO", None, "uuid", "uuid"),
             ("parent_id", "YES", None, "uuid", "uuid"),
-            ("kind", "NO", None, "text", "text"),
+            ("kind", "NO", None, "USER-DEFINED", "file_entry_kind"),
             ("name", "NO", None, "text", "text"),
-            ("name_key", "NO", None, "bytea", "bytea"),
-            ("path_syntax", "YES", None, "text", "text"),
             ("absolute_path", "YES", None, "text", "text"),
             ("hierarchy_path", "NO", None, "USER-DEFINED", "ltree"),
             ("mime_type", "YES", None, "text", "text"),
@@ -268,14 +268,12 @@ async fn assert_file_entry_constraints(connection: &DatabaseConnection) {
         constraint_names(connection, "file_entry", 'c').await,
         vec![
             "file_entry_absolute_path_length_check".to_string(),
+            "file_entry_absolute_path_windows_check".to_string(),
             "file_entry_directory_content_path_null_check".to_string(),
             "file_entry_directory_metadata_null_check".to_string(),
             "file_entry_extension_check".to_string(),
-            "file_entry_kind_check".to_string(),
             "file_entry_mime_type_check".to_string(),
-            "file_entry_name_key_check".to_string(),
             "file_entry_name_not_empty_check".to_string(),
-            "file_entry_path_syntax_check".to_string(),
             "file_entry_row_shape_check".to_string(),
         ]
     );
@@ -386,27 +384,27 @@ async fn assert_file_entry_indexes(connection: &DatabaseConnection) {
     let expected = [
         (
             "file_entry_children_idx",
-            "CREATE INDEX file_entry_children_idx ON public.file_entry USING btree (device_id, parent_id, kind, name_key, id) WHERE (parent_id IS NOT NULL)",
+            "CREATE INDEX file_entry_children_idx ON public.file_entry USING btree (device_id, parent_id, kind, name, id) WHERE (parent_id IS NOT NULL)",
         ),
         (
             "file_entry_directory_sibling_uidx",
-            "CREATE UNIQUE INDEX file_entry_directory_sibling_uidx ON public.file_entry USING btree (device_id, parent_id, name_key) WHERE ((kind = 'directory'::text) AND (parent_id IS NOT NULL))",
+            "CREATE UNIQUE INDEX file_entry_directory_sibling_uidx ON public.file_entry USING btree (device_id, parent_id, name) WHERE ((kind = 'directory'::file_entry_kind) AND (parent_id IS NOT NULL))",
         ),
         (
             "file_entry_file_extension_idx",
-            "CREATE INDEX file_entry_file_extension_idx ON public.file_entry USING btree (device_id, extension, id) WHERE ((kind = 'file'::text) AND (extension IS NOT NULL))",
+            "CREATE INDEX file_entry_file_extension_idx ON public.file_entry USING btree (device_id, extension, id) WHERE ((kind = 'file'::file_entry_kind) AND (extension IS NOT NULL))",
         ),
         (
             "file_entry_file_mime_idx",
-            "CREATE INDEX file_entry_file_mime_idx ON public.file_entry USING btree (device_id, mime_type, id) WHERE ((kind = 'file'::text) AND (mime_type IS NOT NULL))",
+            "CREATE INDEX file_entry_file_mime_idx ON public.file_entry USING btree (device_id, mime_type, id) WHERE ((kind = 'file'::file_entry_kind) AND (mime_type IS NOT NULL))",
         ),
         (
             "file_entry_file_modified_idx",
-            "CREATE INDEX file_entry_file_modified_idx ON public.file_entry USING btree (device_id, file_metadata_modified_at, id) WHERE ((kind = 'file'::text) AND (file_metadata_modified_at IS NOT NULL))",
+            "CREATE INDEX file_entry_file_modified_idx ON public.file_entry USING btree (device_id, file_metadata_modified_at, id) WHERE ((kind = 'file'::file_entry_kind) AND (file_metadata_modified_at IS NOT NULL))",
         ),
         (
             "file_entry_journal_idx",
-            "CREATE INDEX file_entry_journal_idx ON public.file_entry USING btree (device_id, updated_at DESC, id DESC) WHERE (kind = 'file'::text)",
+            "CREATE INDEX file_entry_journal_idx ON public.file_entry USING btree (device_id, updated_at DESC, id DESC) WHERE (kind = 'file'::file_entry_kind)",
         ),
         (
             "file_entry_hierarchy_gist_idx",
@@ -422,11 +420,11 @@ async fn assert_file_entry_indexes(connection: &DatabaseConnection) {
         ),
         (
             "file_entry_roots_uidx",
-            "CREATE UNIQUE INDEX file_entry_roots_uidx ON public.file_entry USING btree (device_id, path_syntax, name_key) WHERE (parent_id IS NULL)",
+            "CREATE UNIQUE INDEX file_entry_roots_uidx ON public.file_entry USING btree (device_id, name) WHERE (parent_id IS NULL)",
         ),
         (
             "file_entry_search_order_idx",
-            "CREATE INDEX file_entry_search_order_idx ON public.file_entry USING btree (device_id, kind, name_key, id) WHERE (parent_id IS NOT NULL)",
+            "CREATE INDEX file_entry_search_order_idx ON public.file_entry USING btree (device_id, kind, name, id) WHERE (parent_id IS NOT NULL)",
         ),
     ]
     .into_iter()
@@ -466,17 +464,19 @@ async fn assert_file_entry_entity_round_trip(connection: &DatabaseConnection) {
         tree.directory_id,
         &tree.directory_hierarchy_path,
         "app.log",
-        "/var/app.log",
-        "posix",
+        r"C:\var\app.log",
         tree.created_at,
     );
     second_file.content_path =
         Set(Some("devices/018f0000/report.log".to_string()));
     let second_file = second_file.insert(&transaction).await.unwrap();
     assert_eq!(second_file.id, second_file_id);
+    assert_eq!(second_file.kind, FileEntryKind::File);
     assert_eq!(second_file.name, "app.log");
-    assert_eq!(second_file.name_key, b"app.log");
-    assert_eq!(second_file.absolute_path.as_deref(), Some("/var/app.log"));
+    assert_eq!(
+        second_file.absolute_path.as_deref(),
+        Some(r"C:\var\app.log")
+    );
     assert_eq!(
         second_file.content_path.as_deref(),
         Some("devices/018f0000/report.log")
@@ -537,8 +537,7 @@ async fn insert_file_entry_tree(
         directory_id,
         &directory_hierarchy_path,
         "app.log",
-        "/var/app.log",
-        "posix",
+        r"C:\var\app.log",
         created_at,
     )
     .insert(transaction)
@@ -589,10 +588,9 @@ async fn assert_file_entry_rejections(
             orphan_id,
             tree.device_id,
             None,
-            "file",
+            FileEntryKind::File,
             "orphan.log",
-            Some("posix"),
-            Some("/orphan.log"),
+            Some(r"C:\orphan.log"),
             uuid_label(orphan_id),
             tree.created_at,
         )
@@ -608,8 +606,7 @@ async fn assert_file_entry_rejections(
             tree.file_id,
             &tree.file_hierarchy_path,
             "nested.log",
-            "/var/app.log/nested.log",
-            "posix",
+            r"C:\var\app.log\nested.log",
             tree.created_at,
         )
         .insert(transaction),
@@ -627,21 +624,6 @@ async fn assert_file_entry_rejections(
             tree.created_at,
         )
         .insert(transaction),
-    )
-    .await;
-
-    let mut bad_name_key = directory_entry(
-        Uuid::new_v4(),
-        tree.device_id,
-        tree.root_id,
-        &tree.root_hierarchy_path,
-        "wrong-name-key",
-        tree.created_at,
-    );
-    bad_name_key.name_key = Set(b"mismatch".to_vec());
-    assert_file_entry_operation_rejected(
-        transaction,
-        bad_name_key.insert(transaction),
     )
     .await;
 
@@ -676,6 +658,7 @@ async fn assert_file_entry_rejections(
         directory_metadata.insert(transaction),
     )
     .await;
+
     let mut directory_content = directory_entry(
         Uuid::new_v4(),
         tree.device_id,
@@ -692,20 +675,18 @@ async fn assert_file_entry_rejections(
     )
     .await;
 
-    let mut wrong_path_syntax = file_entry_row(
+    let invalid_absolute_path = file_entry_row(
         Uuid::new_v4(),
         tree.device_id,
         tree.root_id,
         &tree.directory_hierarchy_path,
-        "wrong-path-syntax.log",
-        "/var/wrong-path-syntax.log",
-        "posix",
+        "invalid-absolute-path.log",
+        "/var/invalid-absolute-path.log",
         tree.created_at,
     );
-    wrong_path_syntax.path_syntax = Set(Some("windows".to_string()));
     assert_file_entry_operation_rejected(
         transaction,
-        wrong_path_syntax.insert(transaction),
+        invalid_absolute_path.insert(transaction),
     )
     .await;
 
@@ -762,15 +743,13 @@ fn root_entry(
         id,
         device_id,
         None,
-        "directory",
-        "/",
-        Some("posix"),
+        FileEntryKind::Directory,
+        r"C:\",
         None,
         uuid_label(id),
         created_at,
     )
 }
-
 fn directory_entry(
     id: Uuid,
     device_id: Uuid,
@@ -783,9 +762,8 @@ fn directory_entry(
         id,
         device_id,
         Some(parent_id),
-        "directory",
+        FileEntryKind::Directory,
         name,
-        None,
         None,
         format!("{parent_hierarchy_path}.{}", uuid_label(id)),
         created_at,
@@ -799,16 +777,14 @@ fn file_entry_row(
     parent_hierarchy_path: &str,
     name: &str,
     absolute_path: &str,
-    path_syntax: &str,
     created_at: NaiveDateTime,
 ) -> file_entry::ActiveModel {
     let mut entry = base_file_entry(
         id,
         device_id,
         Some(parent_id),
-        "file",
+        FileEntryKind::File,
         name,
-        Some(path_syntax),
         Some(absolute_path),
         format!("{parent_hierarchy_path}.{}", uuid_label(id)),
         created_at,
@@ -825,9 +801,8 @@ fn base_file_entry(
     id: Uuid,
     device_id: Uuid,
     parent_id: Option<Uuid>,
-    kind: &str,
+    kind: FileEntryKind,
     name: &str,
-    path_syntax: Option<&str>,
     absolute_path: Option<&str>,
     hierarchy_path: String,
     created_at: NaiveDateTime,
@@ -836,10 +811,8 @@ fn base_file_entry(
         id: Set(id),
         device_id: Set(device_id),
         parent_id: Set(parent_id),
-        kind: Set(kind.to_string()),
+        kind: Set(kind),
         name: Set(name.to_string()),
-        name_key: Set(name.as_bytes().to_vec()),
-        path_syntax: Set(path_syntax.map(str::to_string)),
         absolute_path: Set(absolute_path.map(str::to_string)),
         hierarchy_path: Set(hierarchy_path),
         mime_type: Set(None),

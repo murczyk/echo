@@ -1,16 +1,15 @@
 use super::super::ltree;
 use super::model;
 use crate::devices::files::{
-    map_database_error, DirectoryScope, DomainFileEntryKind, DomainPathSyntax,
-    EntryQueryScope, EntrySortKey, FileSearchFilters, FilesystemError,
-    KeysetPage, TreeEntry,
+    map_database_error, DirectoryScope, DomainFileEntryKind, EntryQueryScope,
+    EntrySortKey, FileSearchFilters, FilesystemError, KeysetPage, TreeEntry,
 };
 use crate::file_registry::entities::file_entry;
 use crate::h;
 use sea_orm::sea_query::{extension::postgres::PgExpr, Expr, LikeExpr};
 use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect, Select,
+    ActiveEnum, ColumnTrait, Condition, ConnectionTrait, EntityTrait,
+    QueryFilter, QueryOrder, QuerySelect, Select,
 };
 use uuid::Uuid;
 
@@ -42,19 +41,16 @@ pub(super) fn directory_scope_query(
     file_entry::Entity::find()
         .filter(file_entry::Column::DeviceId.eq(device_id))
         .filter(file_entry::Column::Id.eq(entry_id))
-        .filter(
-            file_entry::Column::Kind
-                .eq(DomainFileEntryKind::Directory.as_db_str()),
-        )
+        .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::Directory))
 }
 
 async fn resolve_root_context(
     db: &impl ConnectionTrait,
     device_id: Uuid,
     target_hierarchy_path: &str,
-) -> Result<(Uuid, DomainPathSyntax), FilesystemError> {
-    let root = root_context_query(device_id, target_hierarchy_path)
-        .into_tuple::<(Uuid, Option<String>)>()
+) -> Result<Uuid, FilesystemError> {
+    root_context_query(device_id, target_hierarchy_path)
+        .into_tuple::<Uuid>()
         .one(db)
         .await
         .map_err(|error| {
@@ -62,16 +58,7 @@ async fn resolve_root_context(
         })?
         .ok_or(FilesystemError::Invariant(
             "directory_scope_root_context_missing",
-        ))?;
-    let path_syntax = root
-        .1
-        .as_deref()
-        .ok_or(FilesystemError::Invariant(
-            "directory_scope_root_path_syntax_missing",
         ))
-        .and_then(DomainPathSyntax::try_from)?;
-
-    Ok((root.0, path_syntax))
 }
 
 pub(super) fn root_context_query(
@@ -81,13 +68,9 @@ pub(super) fn root_context_query(
     file_entry::Entity::find()
         .select_only()
         .column(file_entry::Column::Id)
-        .column(file_entry::Column::PathSyntax)
         .filter(file_entry::Column::DeviceId.eq(device_id))
         .filter(file_entry::Column::ParentId.is_null())
-        .filter(
-            file_entry::Column::Kind
-                .eq(DomainFileEntryKind::Directory.as_db_str()),
-        )
+        .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::Directory))
         .filter(ltree::ancestor_expr(target_hierarchy_path))
 }
 
@@ -123,15 +106,8 @@ pub(super) fn apply_search_filters(
     filters: &FileSearchFilters,
 ) -> Select<file_entry::Entity> {
     if !filters.kinds().is_empty() {
-        query = query.filter(
-            file_entry::Column::Kind.is_in(
-                filters
-                    .kinds()
-                    .iter()
-                    .map(|kind| kind.as_db_str())
-                    .collect::<Vec<_>>(),
-            ),
-        );
+        query = query
+            .filter(file_entry::Column::Kind.is_in(filters.kinds().to_vec()));
     }
     if let Some(name_query) = filters.name_query() {
         query = query.filter(
@@ -140,9 +116,8 @@ pub(super) fn apply_search_filters(
         );
     }
     if filters.requires_file_metadata() {
-        query = query.filter(
-            file_entry::Column::Kind.eq(DomainFileEntryKind::File.as_db_str()),
-        );
+        query = query
+            .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::File));
     }
     if !filters.mime_types().is_empty() {
         query = query.filter(
@@ -186,8 +161,7 @@ pub(super) fn apply_root_order(
     query: Select<file_entry::Entity>,
 ) -> Select<file_entry::Entity> {
     query
-        .order_by_asc(file_entry::Column::PathSyntax)
-        .order_by_asc(file_entry::Column::NameKey)
+        .order_by_asc(file_entry::Column::Name)
         .order_by_asc(file_entry::Column::Id)
 }
 
@@ -196,7 +170,7 @@ pub(in crate::devices::files) fn apply_entry_order(
 ) -> Select<file_entry::Entity> {
     query
         .order_by_asc(file_entry::Column::Kind)
-        .order_by_asc(file_entry::Column::NameKey)
+        .order_by_asc(file_entry::Column::Name)
         .order_by_asc(file_entry::Column::Id)
 }
 
@@ -206,12 +180,12 @@ pub(in crate::devices::files) fn entry_strict_after_condition(
     Condition::all().add(
         Expr::tuple([
             Expr::col((file_entry::Entity, file_entry::Column::Kind)).into(),
-            Expr::col((file_entry::Entity, file_entry::Column::NameKey)).into(),
+            Expr::col((file_entry::Entity, file_entry::Column::Name)).into(),
             Expr::col((file_entry::Entity, file_entry::Column::Id)).into(),
         ])
         .gt(Expr::tuple([
-            Expr::val(after.kind().as_db_str()).into(),
-            Expr::val(after.name_key().to_vec()).into(),
+            after.kind().as_enum(),
+            Expr::val(after.name()).into(),
             Expr::val(after.entry_id()).into(),
         ])),
     )
@@ -261,12 +235,12 @@ pub(super) fn entry_sort_key(entry: &TreeEntry) -> EntrySortKey {
     match entry {
         TreeEntry::Directory(directory) => EntrySortKey::new(
             DomainFileEntryKind::Directory,
-            directory.name_key.clone(),
+            directory.name.clone(),
             directory.entry_id,
         ),
         TreeEntry::File(file) => EntrySortKey::new(
             DomainFileEntryKind::File,
-            file.name_key.clone(),
+            file.name.clone(),
             file.file_id,
         ),
     }

@@ -171,13 +171,19 @@ mod write {
         command: CreateDeviceCommand,
     ) -> Result<DeviceCurrentState, AppError> {
         access::require_create(&login.roles).c(h!())?;
+        if command.name.is_some() {
+            access::require_analytical_write(&login.roles).c(h!())?;
+        }
 
         let CreateDeviceCommand {
             name,
             external_url,
             custom_fields,
         } = command;
-        let name = normalize_device_name(&name).c(h!())?;
+        let name = name
+            .map(|name| normalize_device_name(&name))
+            .transpose()
+            .c(h!())?;
         let external_url = external_url
             .map(normalize_present_external_url)
             .transpose()
@@ -394,7 +400,11 @@ mod write {
             DevicePatchField::Missing => None,
         };
         let name = match command.name {
-            DevicePatchField::Value(name) if name != device.name => Some(name),
+            DevicePatchField::Value(name)
+                if device.name.as_deref() != Some(name.as_str()) =>
+            {
+                Some(name)
+            }
             _ => None,
         };
         let aor_ids = match command.aor_ids {

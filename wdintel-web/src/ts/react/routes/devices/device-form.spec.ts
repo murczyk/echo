@@ -45,22 +45,25 @@ describe('device form helpers', () => {
       createDeviceCustomFieldDraft({ key: ' inventory_id ', value: ' node-2 ' }),
     ];
 
-    expect(buildCreateDeviceReq(form)).toEqual({
+    expect(buildCreateDeviceReq(form, ALL_FIELDS)).toEqual({
       name: 'Device Beta',
       externalUrl: 'https://example.test/beta',
       customFields: { inventory_id: ' node-2 ' },
     });
   });
 
-  it('includes the mandatory name in every create request', () => {
+  it('omits analytical fields from Cyber create requests', () => {
     const form = createDefaultDeviceUpsertForm();
-    form.name = '  Device Beta  ';
+    form.name = 'Device Beta';
+    form.externalUrl = 'https://example.test/beta';
 
-    expect(buildCreateDeviceReq(form)).toEqual({
-      name: 'Device Beta',
-      externalUrl: null,
+    expect(buildCreateDeviceReq(form, SOURCE_FIELDS)).toEqual({
+      externalUrl: 'https://example.test/beta',
       customFields: {},
     });
+  });
+  it('maps a missing device name to an empty editable value', () => {
+    expect(deviceDetailsToUpsertForm(buildDevice({ name: null })).name).toBe('');
   });
 
   it('builds a presence-aware update patch for every permitted field group', () => {

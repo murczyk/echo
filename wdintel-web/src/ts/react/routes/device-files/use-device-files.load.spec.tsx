@@ -32,7 +32,6 @@ function buildRoot(entryId: string, name: string): DeviceFileRoot {
     parentEntryId: null,
     kind: 'directory',
     name,
-    pathSyntax: 'posix',
     createdAt: NOW,
     updatedAt: NOW,
   };
@@ -46,8 +45,7 @@ function buildEntry(entryId: string, parentEntryId: string): DeviceFileTreeEntry
     fileId: `${entryId}-file`,
     name: 'duplicate.log',
     pathComponents: ['duplicate.log'],
-    pathSyntax: 'posix',
-    absolutePath: '/duplicate.log',
+    absolutePath: 'C:\\duplicate.log',
     hasContent: false,
     mimeType: 'text/plain',
     extension: 'log',
@@ -86,7 +84,7 @@ async function flush() {
 
 beforeEach(() => {
   apiMock.listDeviceFileRoots.mockResolvedValue({
-    roots: [buildRoot(ROOT_TWO_ID, '/srv'), buildRoot(ROOT_ONE_ID, '/')],
+    roots: [buildRoot(ROOT_TWO_ID, 'D:\\'), buildRoot(ROOT_ONE_ID, 'C:\\')],
   });
   apiMock.searchDeviceFiles.mockResolvedValue({ entries: [], nextCursor: null });
   container = document.createElement('div');
@@ -118,7 +116,7 @@ describe('useDeviceFilesLoad', () => {
     expect(latest?.searchScope).toEqual({
       entryId: ROOT_TWO_ID,
       rootEntryId: ROOT_TWO_ID,
-      label: '/srv',
+      label: 'D:\\',
     });
     expect(apiMock.searchDeviceFiles).not.toHaveBeenCalled();
   });
@@ -144,7 +142,7 @@ describe('useDeviceFilesLoad', () => {
       latest?.selectSearchScope({
         entryId: ROOT_ONE_ID,
         rootEntryId: ROOT_ONE_ID,
-        label: '/',
+        label: 'C:\\',
       }),
     );
     act(() =>
@@ -199,8 +197,8 @@ describe('useDeviceFilesLoad', () => {
     expect(apiMock.searchDeviceFiles.mock.calls[1][0].cursor).toBe('next-page');
     expect(latest?.searchEntries).toHaveLength(2);
     expect(latest?.searchEntries.map((entry) => entry.absolutePath)).toEqual([
-      '/duplicate.log',
-      '/duplicate.log',
+      'C:\\duplicate.log',
+      'C:\\duplicate.log',
     ]);
   });
 

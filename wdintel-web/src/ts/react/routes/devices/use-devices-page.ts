@@ -302,7 +302,7 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
       setCreateServerFieldErrors({});
       setStatus(null);
       try {
-        const device = await createDevice(buildCreateDeviceReq(form));
+        const device = await createDevice(buildCreateDeviceReq(form, permissions.fieldPermissions));
         await loadActions.reloadDevices();
         navigateWithinSpa(`/devices/${device.id}`);
       } catch (error) {

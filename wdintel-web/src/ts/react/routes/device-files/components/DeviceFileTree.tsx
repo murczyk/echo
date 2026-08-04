@@ -18,7 +18,7 @@ import {
   Typography,
 } from '@mui/material';
 
-import type { DeviceFileRoot, DeviceFileTreeEntry, PathSyntax } from '../../../../../Bindings';
+import type { DeviceFileRoot, DeviceFileTreeEntry } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
 import { PowerChip } from '../../../components/PowerChip';
@@ -34,7 +34,6 @@ type DirectoryNode = {
   rootEntryId: string;
   name: string;
   scopeLabel: string;
-  pathSyntax: PathSyntax;
   secondary: string | null;
 };
 
@@ -44,9 +43,8 @@ type DirectoryProps = {
   files: DeviceFilesState;
 };
 
-function joinScopeLabel(parent: string, name: string, pathSyntax: PathSyntax): string {
-  const separator = pathSyntax === 'windows' ? '\\' : '/';
-  return parent.endsWith(separator) ? `${parent}${name}` : `${parent}${separator}${name}`;
+function joinScopeLabel(parent: string, name: string): string {
+  return parent.endsWith('\\') ? `${parent}${name}` : `${parent}\\${name}`;
 }
 
 function fileCountDescription(fileCount: number): string {
@@ -78,8 +76,7 @@ function toDirectoryNode(entry: DeviceFileTreeEntry, parent: DirectoryNode): Dir
     entryId: entry.entryId,
     rootEntryId: parent.rootEntryId,
     name: entry.name,
-    scopeLabel: joinScopeLabel(parent.scopeLabel, entry.name, parent.pathSyntax),
-    pathSyntax: parent.pathSyntax,
+    scopeLabel: joinScopeLabel(parent.scopeLabel, entry.name),
     secondary: null,
   };
 }
@@ -283,8 +280,7 @@ function rootToNode(root: DeviceFileRoot): DirectoryNode {
     rootEntryId: root.entryId,
     name: root.name,
     scopeLabel: root.name,
-    pathSyntax: root.pathSyntax,
-    secondary: root.pathSyntax === 'windows' ? 'Windows' : 'POSIX',
+    secondary: 'Windows',
   };
 }
 

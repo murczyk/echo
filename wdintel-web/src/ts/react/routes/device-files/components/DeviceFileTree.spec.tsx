@@ -18,8 +18,7 @@ const rootEntry: DeviceFileRoot = {
   deviceId: DEVICE_ID,
   parentEntryId: null,
   kind: 'directory',
-  name: '/',
-  pathSyntax: 'posix',
+  name: 'C:\\',
   createdAt: NOW,
   updatedAt: NOW,
 };
@@ -32,8 +31,7 @@ function buildFileEntry(entryId: string, name: string, hasContent: boolean): Dev
     fileId: entryId,
     name,
     pathComponents: [name],
-    pathSyntax: 'posix',
-    absolutePath: `/${name}`,
+    absolutePath: `C:\\${name}`,
     hasContent,
     mimeType: null,
     extension: null,
@@ -118,8 +116,8 @@ describe('DeviceFileTree counters', () => {
     expect(container?.textContent).toContain('Файлова система');
     expect(container?.querySelector('[aria-label="Завантаження кількості файлів"]')).not.toBeNull();
     expect(
-      container?.querySelector('[aria-label^="Вибрати каталог / як область пошуку"]'),
-    ).not.toBeNull();
+      container?.querySelector('[aria-label^="Вибрати каталог"]')?.getAttribute('aria-label'),
+    ).toContain('Вибрати каталог C:\\ як область пошуку');
 
     act(() => {
       root?.render(
@@ -135,8 +133,8 @@ describe('DeviceFileTree counters', () => {
     expect(container?.textContent?.replace(/\s/g, '')).toContain('12345');
     expect(container?.textContent).toContain('Каунтери недоступні');
     expect(
-      container?.querySelector('[aria-label^="Вибрати каталог / як область пошуку"]'),
-    ).not.toBeNull();
+      container?.querySelector('[aria-label^="Вибрати каталог"]')?.getAttribute('aria-label'),
+    ).toContain('Вибрати каталог C:\\ як область пошуку');
 
     const retryButton = Array.from(container?.querySelectorAll('button') ?? []).find(
       (button) => button.textContent === 'Повторити',

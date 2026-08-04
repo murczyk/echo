@@ -75,10 +75,7 @@ pub(super) fn breadcrumbs_query(
 ) -> Select<file_entry::Entity> {
     file_entry::Entity::find()
         .filter(file_entry::Column::DeviceId.eq(scope.device_id()))
-        .filter(
-            file_entry::Column::Kind
-                .eq(DomainFileEntryKind::Directory.as_db_str()),
-        )
+        .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::Directory))
         .filter(ltree::ancestor_expr(scope.hierarchy_path()))
         .order_by_asc(hierarchy_depth_expr())
 }

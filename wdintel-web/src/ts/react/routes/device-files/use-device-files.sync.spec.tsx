@@ -23,8 +23,7 @@ function buildRoot(): DeviceFileRoot {
     deviceId: DEVICE_ID,
     parentEntryId: null,
     kind: 'directory',
-    name: '/',
-    pathSyntax: 'posix',
+    name: 'C:\\',
     createdAt: NOW,
     updatedAt: NOW,
   };
@@ -36,10 +35,9 @@ function buildFile(absolutePath: string): DeviceFile {
     deviceId: DEVICE_ID,
     parentEntryId: ROOT_ID,
     rootEntryId: ROOT_ID,
-    pathSyntax: 'posix',
     absolutePath,
     hasContent: false,
-    name: absolutePath.split('/').at(-1) ?? absolutePath,
+    name: absolutePath.split('\\').at(-1) ?? absolutePath,
     pathComponents: [absolutePath],
     mimeType: null,
     extension: null,
@@ -107,7 +105,7 @@ describe('useDeviceFilesSync', () => {
     apiMock.syncDeviceFiles
       .mockResolvedValueOnce({
         results: [
-          accepted(0, '/accepted.log'),
+          accepted(0, 'C:\\accepted.log'),
           {
             Rejected: {
               index: 1,
@@ -120,17 +118,17 @@ describe('useDeviceFilesSync', () => {
           },
         ],
       })
-      .mockResolvedValueOnce({ results: [accepted(0, '/corrected.log')] });
+      .mockResolvedValueOnce({ results: [accepted(0, 'C:\\corrected.log')] });
     await renderHarness();
 
     act(() => latest?.openSync());
     const firstRowId = latest!.rows[0].localId;
     act(() => {
-      latest?.changeRowField(firstRowId, 'absolutePath', '/accepted.log');
+      latest?.changeRowField(firstRowId, 'absolutePath', 'C:\\accepted.log');
       latest?.addRow();
     });
     const secondRowId = latest!.rows[1].localId;
-    act(() => latest?.changeRowField(secondRowId, 'absolutePath', '/rejected.log'));
+    act(() => latest?.changeRowField(secondRowId, 'absolutePath', 'C:\\rejected.log'));
 
     await act(async () => {
       await latest?.submit();
@@ -140,24 +138,26 @@ describe('useDeviceFilesSync', () => {
       apiMock.syncDeviceFiles.mock.calls[0][0].files.map(
         (file: { absolutePath: string }) => file.absolutePath,
       ),
-    ).toEqual(['/accepted.log', '/rejected.log']);
+    ).toEqual(['C:\\accepted.log', 'C:\\rejected.log']);
     expect(latest!.rows[0].result?.kind).toBe('accepted');
     expect(latest!.rows[1].result?.kind).toBe('rejected');
     expect(latest!.rows[1].fieldErrors.absolutePath).toBe('invalid path');
     expect(onCommitted).toHaveBeenCalledTimes(1);
 
-    act(() => latest?.changeRowField(secondRowId, 'absolutePath', '/corrected.log'));
+    act(() => latest?.changeRowField(secondRowId, 'absolutePath', 'C:\\corrected.log'));
     await act(async () => {
       await latest?.submit();
     });
 
     expect(apiMock.syncDeviceFiles.mock.calls[1][0].files).toHaveLength(1);
-    expect(apiMock.syncDeviceFiles.mock.calls[1][0].files[0].absolutePath).toBe('/corrected.log');
+    expect(apiMock.syncDeviceFiles.mock.calls[1][0].files[0].absolutePath).toBe(
+      'C:\\corrected.log',
+    );
     expect(latest!.rows.every((row) => row.result?.kind === 'accepted')).toBe(true);
     expect(onCommitted).toHaveBeenCalledTimes(2);
   });
 
-  it('submits the selected Windows syntax with the exact path', async () => {
+  it('submits the exact Windows path without a path-syntax selector', async () => {
     const absolutePath =
       'D:\\Counter-Strike Source v34 HD\\cstrike\\sound\\weapons\\csgo\\c4\\c4_disarm.wav';
     apiMock.syncDeviceFiles.mockResolvedValue({ results: [] });
@@ -165,7 +165,6 @@ describe('useDeviceFilesSync', () => {
     act(() => latest?.openSync());
     const rowId = latest!.rows[0].localId;
     act(() => {
-      latest?.setPathSyntax('windows');
       latest?.changeRowField(rowId, 'absolutePath', absolutePath);
     });
 
@@ -175,7 +174,6 @@ describe('useDeviceFilesSync', () => {
 
     expect(apiMock.syncDeviceFiles).toHaveBeenCalledWith({
       deviceId: DEVICE_ID,
-      pathSyntax: 'windows',
       files: [
         expect.objectContaining({
           absolutePath,
@@ -190,21 +188,21 @@ describe('useDeviceFilesSync', () => {
     await renderHarness();
     act(() => latest?.openSync());
     const rowId = latest!.rows[0].localId;
-    act(() => latest?.changeRowField(rowId, 'absolutePath', '/stable.log'));
+    act(() => latest?.changeRowField(rowId, 'absolutePath', 'C:\\stable.log'));
 
     let firstSubmit: Promise<void> | undefined;
     act(() => {
       firstSubmit = latest?.submit();
       void latest?.submit();
-      latest?.changeRowField(rowId, 'absolutePath', '/mutated.log');
+      latest?.changeRowField(rowId, 'absolutePath', 'C:\\mutated.log');
       latest?.addRow();
     });
 
     expect(apiMock.syncDeviceFiles).toHaveBeenCalledTimes(1);
     expect(latest!.rows).toHaveLength(1);
-    expect(latest!.rows[0].absolutePath).toBe('/stable.log');
+    expect(latest!.rows[0].absolutePath).toBe('C:\\stable.log');
 
-    pending.resolve({ results: [accepted(0, '/stable.log')] });
+    pending.resolve({ results: [accepted(0, 'C:\\stable.log')] });
     await act(async () => {
       await firstSubmit;
     });
@@ -215,7 +213,7 @@ describe('useDeviceFilesSync', () => {
     await renderHarness();
     act(() => latest?.openSync());
     const rowId = latest!.rows[0].localId;
-    act(() => latest?.changeRowField(rowId, 'absolutePath', '/uncertain.log'));
+    act(() => latest?.changeRowField(rowId, 'absolutePath', 'C:\\uncertain.log'));
 
     await act(async () => {
       await latest?.submit();
@@ -232,16 +230,16 @@ describe('useDeviceFilesSync', () => {
     await renderHarness();
     act(() => latest?.openSync());
     const rowId = latest!.rows[0].localId;
-    act(() => latest?.changeRowField(rowId, 'absolutePath', '/before-revoke.log'));
+    act(() => latest?.changeRowField(rowId, 'absolutePath', 'C:\\before-revoke.log'));
 
     canSync = false;
     await renderHarness();
     act(() => {
-      latest?.changeRowField(rowId, 'absolutePath', '/after-revoke.log');
+      latest?.changeRowField(rowId, 'absolutePath', 'C:\\after-revoke.log');
       void latest?.submit();
     });
 
-    expect(latest!.rows[0].absolutePath).toBe('/before-revoke.log');
+    expect(latest!.rows[0].absolutePath).toBe('C:\\before-revoke.log');
     expect(latest!.open).toBe(false);
     expect(apiMock.syncDeviceFiles).not.toHaveBeenCalled();
   });

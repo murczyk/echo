@@ -137,7 +137,7 @@ pub struct DeviceStatusCounts {
 #[serde(deny_unknown_fields)]
 pub struct DeviceListItem {
     pub id: String,
-    pub name: String,
+    pub name: Option<String>,
     pub aors: Vec<AorSummary>,
     pub unit: Option<UnitSummary>,
     pub created_by: String,
@@ -180,7 +180,7 @@ pub struct ListDevicesRsp {
 #[serde(deny_unknown_fields)]
 pub struct DeviceDetails {
     pub id: String,
-    pub name: String,
+    pub name: Option<String>,
     pub aors: Vec<AorSummary>,
     pub unit: Option<UnitSummary>,
     pub external_url: Option<String>,
@@ -256,7 +256,7 @@ pub struct DeviceDetailReq {
 )]
 #[serde(deny_unknown_fields)]
 pub struct CreateDeviceReq {
-    pub name: String,
+    pub name: Option<String>,
     pub external_url: Option<String>,
     #[serde(default, skip_serializing_if = "RequiredPatch::is_missing")]
     pub custom_fields: RequiredPatch<BTreeMap<String, String>>,
@@ -302,7 +302,7 @@ mod domain {
 
     #[derive(Debug, PartialEq, Eq)]
     pub(in crate::devices) struct CreateDeviceCommand {
-        pub(in crate::devices) name: String,
+        pub(in crate::devices) name: Option<String>,
         pub(in crate::devices) external_url: Option<String>,
         pub(in crate::devices) custom_fields: Option<BTreeMap<String, String>>,
     }
@@ -417,7 +417,7 @@ mod domain {
     #[derive(Debug, PartialEq, Eq)]
     pub(in crate::devices) struct DeviceCurrentState {
         pub(in crate::devices) id: Uuid,
-        pub(in crate::devices) name: String,
+        pub(in crate::devices) name: Option<String>,
         pub(in crate::devices) aors: Vec<DeviceAorReference>,
         pub(in crate::devices) unit: Option<DeviceUnitReference>,
         pub(in crate::devices) external_url: Option<String>,

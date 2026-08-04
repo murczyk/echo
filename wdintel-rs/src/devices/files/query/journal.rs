@@ -68,9 +68,7 @@ pub(super) fn file_journal_query(
 fn file_journal_scope_query(device_id: Uuid) -> Select<file_entry::Entity> {
     file_entry::Entity::find()
         .filter(file_entry::Column::DeviceId.eq(device_id))
-        .filter(
-            file_entry::Column::Kind.eq(DomainFileEntryKind::File.as_db_str()),
-        )
+        .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::File))
 }
 
 fn file_journal_strict_after_condition(

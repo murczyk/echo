@@ -17,10 +17,10 @@ impl MigrationTrait for Migration {
                     drop constraint device_source_label_not_empty_check,
                     drop column source_label;
                 alter table device
-                    alter column name set not null;
+                    alter column name drop not null;
                 alter table device
                     add constraint device_name_not_empty_check
-                    check (btrim(name) <> '');
+                    check (name is null or btrim(name) <> '');
 
                 update login
                 set roles = (roles - 'DeviceAnalyst')
@@ -51,11 +51,10 @@ impl MigrationTrait for Migration {
                 alter table device
                     drop constraint device_name_not_empty_check;
                 alter table device
-                    alter column name drop not null,
                     add column source_label text;
 
                 update device
-                set source_label = name;
+                set source_label = coalesce(name, id::text);
 
                 alter table device
                     alter column source_label set not null;

@@ -2,67 +2,13 @@ use super::error::{FilesystemError, FilesystemFieldError};
 use chrono::NaiveDateTime;
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(in crate::devices) enum DomainPathSyntax {
-    Posix,
-    Windows,
-}
-
-impl DomainPathSyntax {
-    pub(in crate::devices) fn as_db_str(self) -> &'static str {
-        match self {
-            Self::Posix => "posix",
-            Self::Windows => "windows",
-        }
-    }
-}
-
-impl TryFrom<&str> for DomainPathSyntax {
-    type Error = FilesystemError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "posix" => Ok(Self::Posix),
-            "windows" => Ok(Self::Windows),
-            _ => Err(FilesystemError::Invariant("unknown_path_syntax")),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(in crate::devices) enum DomainFileEntryKind {
-    Directory,
-    File,
-}
-
-impl DomainFileEntryKind {
-    pub(in crate::devices) fn as_db_str(self) -> &'static str {
-        match self {
-            Self::Directory => "directory",
-            Self::File => "file",
-        }
-    }
-}
-
-impl TryFrom<&str> for DomainFileEntryKind {
-    type Error = FilesystemError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "directory" => Ok(Self::Directory),
-            "file" => Ok(Self::File),
-            _ => Err(FilesystemError::Invariant("unknown_file_entry_kind")),
-        }
-    }
-}
+pub(in crate::devices) use crate::file_registry::entities::sea_orm_active_enums::FileEntryKind as DomainFileEntryKind;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct RootEntry {
     pub(in crate::devices) entry_id: Uuid,
     pub(in crate::devices) device_id: Uuid,
     pub(in crate::devices) name: String,
-    pub(in crate::devices) name_key: Vec<u8>,
-    pub(in crate::devices) path_syntax: DomainPathSyntax,
     pub(in crate::devices) hierarchy_path: String,
     pub(in crate::devices) created_at: NaiveDateTime,
     pub(in crate::devices) updated_at: NaiveDateTime,
@@ -86,7 +32,6 @@ pub(in crate::devices) struct DirectoryEntry {
     pub(in crate::devices) device_id: Uuid,
     pub(in crate::devices) parent_entry_id: Uuid,
     pub(in crate::devices) name: String,
-    pub(in crate::devices) name_key: Vec<u8>,
     pub(in crate::devices) hierarchy_path: String,
     pub(in crate::devices) created_at: NaiveDateTime,
     pub(in crate::devices) updated_at: NaiveDateTime,
@@ -98,7 +43,6 @@ pub(in crate::devices) enum DirectoryScope {
     Directory {
         entry: DirectoryEntry,
         root_id: Uuid,
-        path_syntax: DomainPathSyntax,
     },
 }
 
@@ -131,8 +75,6 @@ pub(in crate::devices) struct FileEntry {
     pub(in crate::devices) device_id: Uuid,
     pub(in crate::devices) parent_entry_id: Uuid,
     pub(in crate::devices) name: String,
-    pub(in crate::devices) name_key: Vec<u8>,
-    pub(in crate::devices) path_syntax: DomainPathSyntax,
     pub(in crate::devices) absolute_path: String,
     pub(in crate::devices) hierarchy_path: String,
     pub(in crate::devices) has_content: bool,
@@ -171,32 +113,32 @@ pub(in crate::devices) struct Breadcrumb {
     pub(in crate::devices) name: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct EntrySortKey {
     kind: DomainFileEntryKind,
-    name_key: Vec<u8>,
+    name: String,
     entry_id: Uuid,
 }
 
 impl EntrySortKey {
     pub(super) fn new(
         kind: DomainFileEntryKind,
-        name_key: Vec<u8>,
+        name: String,
         entry_id: Uuid,
     ) -> Self {
         Self {
             kind,
-            name_key,
+            name,
             entry_id,
         }
     }
 
     pub(super) fn kind(&self) -> DomainFileEntryKind {
-        self.kind
+        self.kind.clone()
     }
 
-    pub(super) fn name_key(&self) -> &[u8] {
-        &self.name_key
+    pub(super) fn name(&self) -> &str {
+        &self.name
     }
 
     pub(super) fn entry_id(&self) -> Uuid {
@@ -411,7 +353,6 @@ impl EntryQueryScope<'_> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct ParsedSourcePath {
-    pub(in crate::devices) path_syntax: DomainPathSyntax,
     pub(in crate::devices) absolute_path: String,
     pub(in crate::devices) root_name: String,
     pub(in crate::devices) components: Vec<String>,
@@ -428,7 +369,6 @@ impl ParsedSourcePath {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct SyncFilesCommand {
     pub(in crate::devices) device_id: Uuid,
-    pub(in crate::devices) path_syntax: DomainPathSyntax,
     pub(in crate::devices) files: Vec<SyncFileItemCommand>,
 }
 
@@ -607,24 +547,6 @@ pub enum FileEntryKind {
     PartialEq,
     Eq,
     Clone,
-    Copy,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum PathSyntax {
-    Posix,
-    Windows,
-}
-
-#[derive(
-    Elm,
-    ElmEncode,
-    ElmDecode,
-    Debug,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Eq,
-    Clone,
 )]
 #[serde(deny_unknown_fields)]
 pub struct DeviceFileRoot {
@@ -633,7 +555,6 @@ pub struct DeviceFileRoot {
     pub parent_entry_id: Option<String>,
     pub kind: FileEntryKind,
     pub name: String,
-    pub path_syntax: PathSyntax,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -674,7 +595,6 @@ pub struct DeviceFileTreeEntry {
     pub file_id: Option<String>,
     pub name: String,
     pub path_components: Vec<String>,
-    pub path_syntax: Option<PathSyntax>,
     pub absolute_path: Option<String>,
     pub has_content: bool,
     pub mime_type: Option<String>,
@@ -702,7 +622,6 @@ pub struct DeviceFile {
     pub device_id: String,
     pub parent_entry_id: String,
     pub root_entry_id: String,
-    pub path_syntax: PathSyntax,
     pub absolute_path: String,
     pub has_content: bool,
     pub name: String,
@@ -985,7 +904,6 @@ pub struct SyncDeviceFileItem {
 pub struct SyncDeviceFilesReq {
     #[serde(deserialize_with = "deserialize_canonical_uuid")]
     pub device_id: String,
-    pub path_syntax: PathSyntax,
     pub files: Vec<SyncDeviceFileItem>,
 }
 

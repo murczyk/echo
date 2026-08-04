@@ -32,7 +32,6 @@ function buildRoot(entryId: string, name: string): DeviceFileRoot {
     parentEntryId: null,
     kind: 'directory',
     name,
-    pathSyntax: 'posix',
     createdAt: NOW,
     updatedAt: NOW,
   };
@@ -50,8 +49,7 @@ function buildEntry(
     fileId: kind === 'file' ? `${entryId}-file` : null,
     name: kind === 'directory' ? 'documents' : 'duplicate.log',
     pathComponents: [kind === 'directory' ? 'documents' : 'duplicate.log'],
-    pathSyntax: kind === 'file' ? 'posix' : null,
-    absolutePath: kind === 'file' ? '/duplicate.log' : null,
+    absolutePath: kind === 'file' ? 'C:\\duplicate.log' : null,
     hasContent: false,
     mimeType: kind === 'file' ? 'text/plain' : null,
     extension: kind === 'file' ? 'log' : null,
@@ -68,13 +66,13 @@ function browseResponse(
   nextCursor: string | null = null,
 ): BrowseDeviceFilesRsp {
   return {
-    breadcrumbs: [{ entryId: parentEntryId, name: '/' }],
+    breadcrumbs: [{ entryId: parentEntryId, name: 'C:\\' }],
     entries,
     nextCursor,
   };
 }
 
-const roots = [buildRoot(ROOT_ONE_ID, '/'), buildRoot(ROOT_TWO_ID, '/srv')];
+const roots = [buildRoot(ROOT_ONE_ID, 'C:\\'), buildRoot(ROOT_TWO_ID, 'D:\\')];
 const onDirectoryMissing = vi.fn();
 const onDirectoriesLoaded = vi.fn();
 let container: HTMLDivElement | null = null;
@@ -177,8 +175,8 @@ describe('useDeviceFileTree', () => {
 
     expect(apiMock.browseDeviceFiles.mock.calls[2][0].cursor).toBe('next-page');
     expect(latest?.branches[ROOT_ONE_ID].entries.map((entry) => entry.absolutePath)).toEqual([
-      '/duplicate.log',
-      '/duplicate.log',
+      'C:\\duplicate.log',
+      'C:\\duplicate.log',
     ]);
   });
 

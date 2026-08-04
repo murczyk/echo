@@ -2,7 +2,9 @@ use crate::devices::files::{
     map_database_error, DomainFileEntryKind, FilesystemError, SubtreeFileCount,
 };
 use crate::h;
-use sea_orm::{ConnectionTrait, DbBackend, FromQueryResult, Statement};
+use sea_orm::{
+    ActiveEnum, ConnectionTrait, DbBackend, FromQueryResult, Statement,
+};
 use uuid::Uuid;
 
 #[derive(Debug, FromQueryResult)]
@@ -40,7 +42,7 @@ pub(in crate::devices::files) async fn count_file_subtrees(
                 join file_entry directory
                     on directory.id = requested.entry_id
                     and directory.device_id = $1
-                    and directory.kind = $2
+                    and directory.kind = $2::public.file_entry_kind
                     and directory.parent_id is not distinct from $4::uuid
             ),
             scope as (
@@ -51,7 +53,7 @@ pub(in crate::devices::files) async fn count_file_subtrees(
                 where $4::uuid is not null
                     and parent.id = $4
                     and parent.device_id = $1
-                    and parent.kind = $2
+                    and parent.kind = $2::public.file_entry_kind
 
                 union all
 
@@ -66,7 +68,7 @@ pub(in crate::devices::files) async fn count_file_subtrees(
                 from scope
                 join file_entry file
                     on file.device_id = $1
-                    and file.kind = $5
+                    and file.kind = $5::public.file_entry_kind
                     and (
                         scope.parent_hierarchy_path is null
                         or file.hierarchy_path <@ scope.parent_hierarchy_path
@@ -85,10 +87,10 @@ pub(in crate::devices::files) async fn count_file_subtrees(
             "#,
             vec![
                 device_id.into(),
-                DomainFileEntryKind::Directory.as_db_str().into(),
+                DomainFileEntryKind::Directory.to_value().into(),
                 directory_entry_ids.to_vec().into(),
                 parent_entry_id.into(),
-                DomainFileEntryKind::File.as_db_str().into(),
+                DomainFileEntryKind::File.to_value().into(),
             ],
         ))
         .all(db)
@@ -118,11 +120,11 @@ pub(in crate::devices::files) async fn count_device_files(
             select count(*)::bigint as file_count
             from file_entry
             where device_id = $1
-                and kind = $2
+                and kind = $2::public.file_entry_kind
             "#,
             [
                 device_id.into(),
-                DomainFileEntryKind::File.as_db_str().into(),
+                DomainFileEntryKind::File.to_value().into(),
             ],
         ))
         .one(db)

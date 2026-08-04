@@ -35,8 +35,7 @@ function buildEntry(overrides: Partial<DeviceFileTreeEntry> = {}): DeviceFileTre
     fileId: FILE_ID,
     name: 'звіт %.log',
     pathComponents: ['data', 'звіт %.log'],
-    pathSyntax: 'posix',
-    absolutePath: '/data/звіт %.log',
+    absolutePath: 'C:\\data\\звіт %.log',
     hasContent: false,
     mimeType: 'text/plain',
     extension: 'log',
@@ -54,20 +53,18 @@ function buildRoot(): DeviceFileRoot {
     deviceId: DEVICE_ID,
     parentEntryId: null,
     kind: 'directory',
-    name: '/',
-    pathSyntax: 'posix',
+    name: 'C:\\',
     createdAt: NOW,
     updatedAt: NOW,
   };
 }
 
-function buildFile(absolutePath = '/data/звіт %.log'): DeviceFile {
+function buildFile(absolutePath = 'C:\\data\\звіт %.log'): DeviceFile {
   return {
     fileId: FILE_ID,
     deviceId: DEVICE_ID,
     parentEntryId: ROOT_ID,
     rootEntryId: ROOT_ID,
-    pathSyntax: 'posix',
     absolutePath,
     hasContent: false,
     name: 'звіт %.log',
@@ -149,26 +146,25 @@ describe('device file request helpers', () => {
 });
 
 describe('device file sync helpers', () => {
-  it.each([
-    ['posix', '/дані/  звіт %.log'],
-    ['windows', 'C:\\дані\\  звіт %.log'],
-    ['windows', '\\\\server\\share\\дані\\звіт %.log'],
-  ] as const)('preserves exact %s source paths', (pathSyntax, absolutePath) => {
-    const row = createEmptyDeviceFileSyncRow();
-    row.absolutePath = absolutePath;
+  it.each(['C:\\дані\\  звіт %.log', '\\\\server\\share\\дані\\звіт %.log'] as const)(
+    'preserves exact Windows source path %s',
+    (absolutePath) => {
+      const row = createEmptyDeviceFileSyncRow();
+      row.absolutePath = absolutePath;
 
-    const { req } = buildSyncDeviceFilesReq({ deviceId: DEVICE_ID, pathSyntax, rows: [row] });
+      const { req } = buildSyncDeviceFilesReq({ deviceId: DEVICE_ID, rows: [row] });
 
-    expect(req.files[0].absolutePath).toBe(absolutePath);
-    expect(req.files[0].fileId).toBeNull();
-  });
+      expect(req.files[0].absolutePath).toBe(absolutePath);
+      expect(req.files[0].fileId).toBeNull();
+    },
+  );
 
   it('creates an existing-file row from canonical backend fields', () => {
     const row = createDeviceFileSyncRowFromEntry(buildEntry());
 
     expect(row).toMatchObject({
       fileId: FILE_ID,
-      absolutePath: '/data/звіт %.log',
+      absolutePath: 'C:\\data\\звіт %.log',
       mimeType: 'text/plain',
       extension: 'log',
     });
@@ -176,9 +172,9 @@ describe('device file sync helpers', () => {
 
   it('maps ordered accepted and rejected results to the frozen submit snapshot', () => {
     const acceptedRow = createEmptyDeviceFileSyncRow();
-    acceptedRow.absolutePath = '/accepted.log';
+    acceptedRow.absolutePath = 'C:\\accepted.log';
     const rejectedRow = createEmptyDeviceFileSyncRow();
-    rejectedRow.absolutePath = '/rejected.log';
+    rejectedRow.absolutePath = 'C:\\rejected.log';
     const submittedRowIds = [acceptedRow.localId, rejectedRow.localId];
     const rsp: SyncDeviceFilesRsp = {
       results: [
@@ -197,7 +193,7 @@ describe('device file sync helpers', () => {
             index: 0,
             operation: 'created',
             root: buildRoot(),
-            file: buildFile('/accepted.log'),
+            file: buildFile('C:\\accepted.log'),
           },
         },
       ],
@@ -208,9 +204,9 @@ describe('device file sync helpers', () => {
     expect(rows[0].result).toMatchObject({ kind: 'accepted', operation: 'created' });
     expect(rows[1].result).toMatchObject({ kind: 'rejected' });
     expect(rows[1].fieldErrors.absolutePath).toBe('already exists');
-    expect(
-      buildSyncDeviceFilesReq({ deviceId: DEVICE_ID, pathSyntax: 'posix', rows }).submittedRowIds,
-    ).toEqual([rejectedRow.localId]);
+    expect(buildSyncDeviceFilesReq({ deviceId: DEVICE_ID, rows }).submittedRowIds).toEqual([
+      rejectedRow.localId,
+    ]);
   });
 
   it.each<FileSyncErrorKind>(['validation', 'not_found', 'conflict', 'dependency', 'internal'])(
@@ -230,16 +226,10 @@ describe('device file sync helpers', () => {
   it('binds top-level field errors and marks only transport failures uncertain', () => {
     const row = createEmptyDeviceFileSyncRow();
     const requestError = parseSyncRequestError(
-      new HttpRequestError(
-        400,
-        JSON.stringify([
-          ['path_syntax', 'invalid syntax'],
-          ['files[0].absolute_path', 'invalid path'],
-        ]),
-      ),
+      new HttpRequestError(400, JSON.stringify([['files[0].absolute_path', 'invalid path']])),
       [row.localId],
     );
-    expect(requestError.batchError).toBe('invalid syntax');
+    expect(requestError.batchError).toBe('Виправте помилки в рядках батча.');
     expect(requestError.rowErrors.get(row.localId)?.absolutePath).toBe('invalid path');
     expect(requestError.transportUncertain).toBe(false);
 

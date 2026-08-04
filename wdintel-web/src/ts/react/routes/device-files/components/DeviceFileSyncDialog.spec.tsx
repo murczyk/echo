@@ -21,7 +21,7 @@ function buildRow(localId: string): DeviceFileSyncRow {
   return {
     localId,
     fileId: null,
-    absolutePath: '/rejected.log',
+    absolutePath: 'C:\\rejected.log',
     mimeType: '',
     extension: '',
     fileMetadataCreatedAt: null,
@@ -49,8 +49,7 @@ function buildAcceptedRow(): DeviceFileSyncRow {
         deviceId: DEVICE_ID,
         parentEntryId: null,
         kind: 'directory',
-        name: '/',
-        pathSyntax: 'posix',
+        name: 'C:\\',
         createdAt: NOW,
         updatedAt: NOW,
       },
@@ -59,8 +58,7 @@ function buildAcceptedRow(): DeviceFileSyncRow {
         deviceId: DEVICE_ID,
         parentEntryId: ROOT_ID,
         rootEntryId: ROOT_ID,
-        pathSyntax: 'posix',
-        absolutePath: '/canonical.log',
+        absolutePath: 'C:\\canonical.log',
         name: 'canonical.log',
         pathComponents: ['canonical.log'],
         mimeType: null,
@@ -98,14 +96,12 @@ describe('DeviceFileSyncDialog', () => {
       root?.render(
         <DeviceFileSyncDialog
           open
-          pathSyntax="posix"
           rows={[buildAcceptedRow(), buildRow('rejected')]}
           submitting={false}
           batchError={null}
           transportUncertain={false}
           canSubmit
           onClose={vi.fn()}
-          onPathSyntaxChange={vi.fn()}
           onAddRow={vi.fn()}
           onRemoveRow={vi.fn()}
           onChangeRowField={vi.fn()}
@@ -114,12 +110,14 @@ describe('DeviceFileSyncDialog', () => {
       );
     });
 
-    expect(document.body.textContent).toContain('Оновлено: /canonical.log');
+    expect(document.body.textContent).toContain('Оновлено: C:\\canonical.log');
     expect(document.body.textContent).toContain(`Root ID: ${ROOT_ID}; File ID: ${FILE_ID}`);
     expect(document.body.textContent).toContain('validation: bad path');
-    const pathInput = document.body.querySelector('input[value="/rejected.log"]');
+    const pathInput = document.body.querySelector('input[value="C:\\\\rejected.log"]');
     expect(pathInput).not.toBeNull();
     expect(document.body.textContent).toContain('invalid path');
+    expect(document.body.textContent).toContain('Абсолютний шлях Windows');
+    expect(document.body.textContent).not.toContain('Синтаксис шляхів');
 
     const submitButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
       button.textContent?.includes('Повторити відхилені'),
@@ -133,14 +131,12 @@ describe('DeviceFileSyncDialog', () => {
       root?.render(
         <DeviceFileSyncDialog
           open
-          pathSyntax="windows"
           rows={[buildRow('uncertain')]}
           submitting={false}
           batchError="Результат запиту невідомий"
           transportUncertain
           canSubmit
           onClose={vi.fn()}
-          onPathSyntaxChange={vi.fn()}
           onAddRow={vi.fn()}
           onRemoveRow={vi.fn()}
           onChangeRowField={vi.fn()}

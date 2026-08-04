@@ -20,8 +20,7 @@ function buildEntry(entryId: string, kind: 'directory' | 'file'): DeviceFileTree
     fileId: kind === 'file' ? `${entryId}-file` : null,
     name: kind === 'file' ? 'duplicate.log' : 'nested',
     pathComponents: [kind === 'file' ? 'duplicate.log' : 'nested'],
-    pathSyntax: kind === 'file' ? 'posix' : null,
-    absolutePath: kind === 'file' ? '/duplicate.log' : null,
+    absolutePath: kind === 'file' ? 'C:\\duplicate.log' : null,
     hasContent: false,
     mimeType: kind === 'file' ? 'text/plain' : null,
     extension: kind === 'file' ? 'log' : null,
@@ -60,7 +59,7 @@ describe('DeviceFileEntries', () => {
       root?.render(
         <DeviceFileEntries
           breadcrumbs={[
-            { entryId: ROOT_ID, name: '/' },
+            { entryId: ROOT_ID, name: 'C:\\' },
             { entryId: DIRECTORY_ID, name: 'nested' },
           ]}
           entries={[directory, firstFile, secondFile]}
@@ -81,7 +80,7 @@ describe('DeviceFileEntries', () => {
     });
 
     expect(container?.querySelectorAll('[data-entry-id]')).toHaveLength(3);
-    expect(container?.textContent?.match(/\/duplicate\.log/g)).toHaveLength(2);
+    expect(container?.textContent?.match(/C:\\duplicate\.log/g)).toHaveLength(2);
 
     const directoryButton = Array.from(container?.querySelectorAll('button') ?? []).find(
       (button) => button.textContent === 'nested',
@@ -90,7 +89,7 @@ describe('DeviceFileEntries', () => {
     expect(onOpenDirectory).toHaveBeenCalledWith(DIRECTORY_ID);
 
     const rootBreadcrumb = Array.from(container?.querySelectorAll('button') ?? []).find(
-      (button) => button.textContent === '/',
+      (button) => button.textContent === 'C:\\',
     );
     act(() => rootBreadcrumb?.click());
     expect(onOpenDirectory).toHaveBeenCalledWith(ROOT_ID);

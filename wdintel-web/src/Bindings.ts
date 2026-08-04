@@ -1597,11 +1597,6 @@ export type FileEntryKind =
   | 'file'
 ;
 
-export type PathSyntax =
-  | 'posix'
-  | 'windows'
-;
-
 export type DeviceArchivedFilter =
   | 'active_only'
   | 'archived_only'
@@ -1624,7 +1619,7 @@ export type DeviceStatusCounts = {
 
 export type DeviceListItem = {
   id: string;
-  name: string;
+  name: string | null;
   aors: Array<AorSummary>;
   unit: UnitSummary | null;
   createdBy: string;
@@ -1636,7 +1631,7 @@ export type DeviceListItem = {
 
 export type DeviceDetails = {
   id: string;
-  name: string;
+  name: string | null;
   aors: Array<AorSummary>;
   unit: UnitSummary | null;
   externalUrl: string | null;
@@ -1680,7 +1675,7 @@ export type DeviceDetailReq = {
 };
 
 export type CreateDeviceReq = {
-  name: string;
+  name: string | null;
   externalUrl: string | null;
   customFields: Record<string, string> | null;
 };
@@ -1700,7 +1695,6 @@ export type DeviceFileRoot = {
   parentEntryId: string | null;
   kind: FileEntryKind;
   name: string;
-  pathSyntax: PathSyntax;
   createdAt: string;
   updatedAt: string;
 };
@@ -1717,7 +1711,6 @@ export type DeviceFileTreeEntry = {
   fileId: string | null;
   name: string;
   pathComponents: Array<string>;
-  pathSyntax: PathSyntax | null;
   absolutePath: string | null;
   hasContent: boolean;
   mimeType: string | null;
@@ -1733,7 +1726,6 @@ export type DeviceFile = {
   deviceId: string;
   parentEntryId: string;
   rootEntryId: string;
-  pathSyntax: PathSyntax;
   absolutePath: string;
   hasContent: boolean;
   name: string;
@@ -1856,7 +1848,6 @@ export type FileSyncResult =
 
 export type SyncDeviceFilesReq = {
   deviceId: string;
-  pathSyntax: PathSyntax;
   files: Array<SyncDeviceFileItem>;
 };
 

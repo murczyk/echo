@@ -7,7 +7,8 @@ use crate::file_registry::entities::file_entry;
 use crate::h;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    Condition, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, Select,
+    ActiveEnum, Condition, ConnectionTrait, EntityTrait, QueryFilter,
+    QuerySelect, Select,
 };
 
 pub(in crate::devices::files) async fn list_children(
@@ -56,13 +57,13 @@ fn children_strict_after_condition(
             Expr::col((file_entry::Entity, file_entry::Column::ParentId))
                 .into(),
             Expr::col((file_entry::Entity, file_entry::Column::Kind)).into(),
-            Expr::col((file_entry::Entity, file_entry::Column::NameKey)).into(),
+            Expr::col((file_entry::Entity, file_entry::Column::Name)).into(),
             Expr::col((file_entry::Entity, file_entry::Column::Id)).into(),
         ])
         .gt(Expr::tuple([
             Expr::val(parent_id).into(),
-            Expr::val(after.kind().as_db_str()).into(),
-            Expr::val(after.name_key().to_vec()).into(),
+            after.kind().as_enum(),
+            Expr::val(after.name()).into(),
             Expr::val(after.entry_id()).into(),
         ])),
     )

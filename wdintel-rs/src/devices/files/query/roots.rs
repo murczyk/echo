@@ -24,8 +24,7 @@ pub(super) fn roots_query(device_id: Uuid) -> Select<file_entry::Entity> {
             .filter(file_entry::Column::DeviceId.eq(device_id))
             .filter(file_entry::Column::ParentId.is_null())
             .filter(
-                file_entry::Column::Kind
-                    .eq(DomainFileEntryKind::Directory.as_db_str()),
+                file_entry::Column::Kind.eq(DomainFileEntryKind::Directory),
             ),
     )
 }

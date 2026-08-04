@@ -76,7 +76,7 @@ export function resolveDevicesCapabilities(
 
   return {
     canRead: canReadDevices(roles),
-    canCreate: canWriteAnalyticalData,
+    canCreate: canWriteAnalyticalData || hasAssignedRole('Cyber'),
     canWriteSourceData: canWriteAnalyticalData || hasAssignedRole('Cyber'),
     canWriteAnalyticalData,
   };

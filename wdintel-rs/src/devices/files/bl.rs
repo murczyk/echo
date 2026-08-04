@@ -282,34 +282,24 @@ pub(in crate::devices) async fn sync(
     login: &login::Model,
     command: SyncFilesCommand,
 ) -> Result<SyncFilesResult, AppError> {
-    access::require_source_write(&login.roles).c(h!())?;
+    access::require_file_sync(&login.roles).c(h!())?;
     validate_sync_batch_size(command.files.len())
         .map_err(map_sync_error)
         .c(h!())?;
     let duplicate_file_ids = duplicate_file_ids(&command.files);
-    let SyncFilesCommand {
-        device_id,
-        path_syntax,
-        files,
-    } = command;
+    let SyncFilesCommand { device_id, files } = command;
     let device_id = device_query::authorize_file_registry_access(
         main_db,
         login,
         device_id,
-        FileRegistryDeviceAccess::SourceWrite,
+        FileRegistryDeviceAccess::FileSync,
     )
     .await
     .c(h!())?;
 
-    sync_files(
-        file_registry_db,
-        device_id,
-        path_syntax,
-        files,
-        duplicate_file_ids,
-    )
-    .await
-    .map_err(map_sync_error)
+    sync_files(file_registry_db, device_id, files, duplicate_file_ids)
+        .await
+        .map_err(map_sync_error)
 }
 
 fn validation_form(errors: Vec<FilesystemFieldError>) -> AppError {
@@ -356,6 +346,7 @@ fn map_sync_error(error: FilesystemError) -> AppError {
 }
 
 mod mapping {
+    use super::super::types::FileEntryKind as FileEntryKindDto;
     use super::super::types::{
         BrowseDeviceFilesRsp, CountDeviceFileSubtreesRsp, DeviceFile,
         DeviceFileJournalEntry, DeviceFileRoot, DeviceFileSubtreeCount,
@@ -363,14 +354,10 @@ mod mapping {
         FileSyncOperation, FileSyncResult, JournalDeviceFilesRsp,
         ListDeviceFileRootsRsp, SearchDeviceFilesRsp, SyncDeviceFilesRsp,
     };
-    use super::super::types::{
-        FileEntryKind as FileEntryKindDto, PathSyntax as PathSyntaxDto,
-    };
     use super::super::{
-        Breadcrumb, BrowseFilesResult, DomainPathSyntax, FileEntry,
-        JournalFilesResult, RootEntry, SearchFilesResult, SubtreeFileCount,
-        SyncFileItemOutcome, SyncFileOperation, SyncFileRejectionKind,
-        SyncFilesResult, TreeEntry,
+        Breadcrumb, BrowseFilesResult, FileEntry, JournalFilesResult,
+        RootEntry, SearchFilesResult, SubtreeFileCount, SyncFileItemOutcome,
+        SyncFileOperation, SyncFileRejectionKind, SyncFilesResult, TreeEntry,
     };
     use crate::devices::types::format_datetime;
     use crate::error::AppError;
@@ -514,7 +501,6 @@ mod mapping {
             parent_entry_id: None,
             kind: FileEntryKindDto::Directory,
             name: root.name,
-            path_syntax: map_path_syntax(root.path_syntax),
             created_at: format_datetime(root.created_at),
             updated_at: format_datetime(root.updated_at),
         }
@@ -542,7 +528,6 @@ mod mapping {
                 file_id: None,
                 name: directory.name,
                 path_components,
-                path_syntax: None,
                 absolute_path: None,
                 has_content: false,
                 mime_type: None,
@@ -559,7 +544,6 @@ mod mapping {
                 file_id: Some(file.file_id.hyphenated().to_string()),
                 name: file.name,
                 path_components,
-                path_syntax: Some(map_path_syntax(file.path_syntax)),
                 absolute_path: Some(file.absolute_path),
                 has_content: file.has_content,
                 mime_type: file.mime_type,
@@ -586,7 +570,6 @@ mod mapping {
             device_id: file.device_id.hyphenated().to_string(),
             parent_entry_id: file.parent_entry_id.hyphenated().to_string(),
             root_entry_id: root_entry_id.hyphenated().to_string(),
-            path_syntax: map_path_syntax(file.path_syntax),
             absolute_path: file.absolute_path,
             has_content: file.has_content,
             name: file.name,
@@ -601,13 +584,6 @@ mod mapping {
                 .map(format_datetime),
             created_at: format_datetime(file.created_at),
             updated_at: format_datetime(file.updated_at),
-        }
-    }
-
-    fn map_path_syntax(path_syntax: DomainPathSyntax) -> PathSyntaxDto {
-        match path_syntax {
-            DomainPathSyntax::Posix => PathSyntaxDto::Posix,
-            DomainPathSyntax::Windows => PathSyntaxDto::Windows,
         }
     }
 

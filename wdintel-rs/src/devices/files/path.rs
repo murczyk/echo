@@ -1,57 +1,28 @@
 use super::{
     error::{FilesystemError, FilesystemFieldError},
-    types::{DomainPathSyntax, ParsedSourcePath},
+    types::ParsedSourcePath,
     validation::{
         validate_absolute_path_limits, validate_path_component_limits,
     },
 };
 
 pub(in crate::devices) fn parse(
-    path_syntax: DomainPathSyntax,
     absolute_path: String,
     field_path: &str,
 ) -> Result<ParsedSourcePath, FilesystemError> {
     validate_absolute_path_limits(&absolute_path, field_path)?;
 
-    let (root_name, components) = match path_syntax {
-        DomainPathSyntax::Posix => parse_posix_path(&absolute_path),
-        DomainPathSyntax::Windows => parse_windows_path(&absolute_path),
-    }
-    .ok_or_else(|| invalid_absolute_path(field_path))?;
+    let (root_name, components) = parse_windows_path(&absolute_path)
+        .ok_or_else(|| invalid_absolute_path(field_path))?;
 
     validate_path_component_limits(&components, field_path)?;
     let components = components.into_iter().map(str::to_string).collect();
 
     Ok(ParsedSourcePath {
-        path_syntax,
         absolute_path,
         root_name,
         components,
     })
-}
-
-pub(super) fn name_key(name: &str) -> Vec<u8> {
-    name.as_bytes().to_vec()
-}
-
-fn parse_posix_path(absolute_path: &str) -> Option<(String, Vec<&str>)> {
-    let path_without_root = absolute_path.strip_prefix('/')?;
-    if path_without_root.is_empty()
-        || path_without_root.starts_with('/')
-        || absolute_path.contains('\\')
-    {
-        return None;
-    }
-
-    let components = path_without_root.split('/').collect::<Vec<_>>();
-    if components
-        .iter()
-        .any(|component| !is_valid_component(component))
-    {
-        return None;
-    }
-
-    Some(("/".to_string(), components))
 }
 
 fn parse_windows_path(absolute_path: &str) -> Option<(String, Vec<&str>)> {
@@ -123,8 +94,6 @@ fn is_valid_component(component: &str) -> bool {
 fn invalid_absolute_path(field_path: &str) -> FilesystemError {
     FilesystemError::Validation(vec![FilesystemFieldError {
         path: field_path.to_string(),
-        message:
-            "must be an absolute file path valid for the selected path syntax"
-                .to_string(),
+        message: "must be an absolute Windows file path".to_string(),
     }])
 }

@@ -76,7 +76,7 @@ export function createDefaultDeviceUpsertForm(): DeviceUpsertForm {
 
 export function deviceDetailsToUpsertForm(device: DeviceDetails): DeviceUpsertForm {
   return {
-    name: device.name,
+    name: device.name ?? '',
     aorIds: device.aors.map((aor) => aor.id),
     unitId: device.unit?.id ?? null,
     externalUrl: device.externalUrl ?? '',
@@ -203,13 +203,17 @@ function buildCustomFieldsPatch(
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
-export function buildCreateDeviceReq(form: DeviceUpsertForm): CreateDeviceInput {
+export function buildCreateDeviceReq(
+  form: DeviceUpsertForm,
+  permissions: DeviceFieldPermissions,
+): CreateDeviceInput {
   const externalUrl = form.externalUrl.trim();
-  return {
-    name: form.name.trim(),
+  const req: CreateDeviceInput = {
     externalUrl: externalUrl === '' ? null : externalUrl,
     customFields: normalizeDeviceCustomFields(form.customFields),
   };
+  if (permissions.analyticalData) req.name = form.name.trim();
+  return req;
 }
 
 export function buildUpdateDevicePatch(
@@ -236,7 +240,7 @@ export function buildUpdateDevicePatch(
       form.aorIds.length === deviceAorIds.length &&
       form.aorIds.every((value, index) => value === deviceAorIds[index]);
 
-    if (name !== device.name) req.name = name;
+    if (name !== (device.name ?? '')) req.name = name;
     if (!arraysEqual) req.aorIds = form.aorIds;
     if (form.unitId !== (device.unit?.id ?? null)) req.unitId = form.unitId;
   }

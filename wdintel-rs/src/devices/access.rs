@@ -31,10 +31,16 @@ pub(in crate::devices) fn require_read(
 pub(in crate::devices) fn require_create(
     roles: &serde_json::Value,
 ) -> Result<(), AppError> {
-    require_any_role(roles, &[ROLE_DEVICE_SOURCE, ROLE_ADMIN])
+    require_any_role(roles, &[ROLE_CYBER, ROLE_DEVICE_SOURCE, ROLE_ADMIN])
 }
 
 pub(in crate::devices) fn require_source_write(
+    roles: &serde_json::Value,
+) -> Result<(), AppError> {
+    require_any_role(roles, &[ROLE_CYBER, ROLE_DEVICE_SOURCE, ROLE_ADMIN])
+}
+
+pub(in crate::devices) fn require_file_sync(
     roles: &serde_json::Value,
 ) -> Result<(), AppError> {
     require_any_role(roles, &[ROLE_CYBER, ROLE_DEVICE_SOURCE, ROLE_ADMIN])

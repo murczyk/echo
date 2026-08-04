@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { DeviceFileTreeEntry, PathSyntax } from '../../../../Bindings';
+import type { DeviceFileTreeEntry } from '../../../../Bindings';
 import { syncDeviceFiles } from '../../services/api/devices';
 import {
   applySyncDeviceFilesRsp,
@@ -46,7 +46,6 @@ export function useDeviceFilesSync({
   onCommitted: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const [pathSyntax, setPathSyntaxState] = useState<PathSyntax>('posix');
   const [rows, setRows] = useState<DeviceFileSyncRow[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
@@ -58,7 +57,6 @@ export function useDeviceFilesSync({
   const openSync = useCallback(
     (seed?: DeviceFileSyncSeed) => {
       if (!canSync || submittingRef.current) return;
-      setPathSyntaxState(seed?.pathSyntax ?? 'posix');
       setRows([
         seed?.entry ? createDeviceFileSyncRowFromEntry(seed.entry) : createEmptyDeviceFileSyncRow(),
       ]);
@@ -71,8 +69,8 @@ export function useDeviceFilesSync({
 
   const openSyncForEntry = useCallback(
     (entry: DeviceFileTreeEntry) => {
-      if (entry.kind !== 'file' || entry.pathSyntax === null) return;
-      openSync({ pathSyntax: entry.pathSyntax, entry });
+      if (entry.kind !== 'file') return;
+      openSync({ entry });
     },
     [openSync],
   );
@@ -81,16 +79,6 @@ export function useDeviceFilesSync({
     if (submittingRef.current) return;
     setOpen(false);
   }, []);
-
-  const setPathSyntax = useCallback(
-    (nextPathSyntax: PathSyntax) => {
-      if (!canSync || submittingRef.current) return;
-      setPathSyntaxState(nextPathSyntax);
-      setBatchError(null);
-      setTransportUncertain(false);
-    },
-    [canSync],
-  );
 
   const addRow = useCallback(() => {
     if (!canSync || submittingRef.current) return;
@@ -132,7 +120,6 @@ export function useDeviceFilesSync({
 
     const { req, submittedRowIds } = buildSyncDeviceFilesReq({
       deviceId,
-      pathSyntax,
       rows: validatedRows,
     });
     if (req.files.length === 0) {
@@ -170,7 +157,7 @@ export function useDeviceFilesSync({
       submittingRef.current = false;
       if (!canSyncRef.current) setOpen(false);
     }
-  }, [canSync, deviceId, onCommitted, pathSyntax, rows]);
+  }, [canSync, deviceId, onCommitted, rows]);
 
   useEffect(() => {
     if (!canSync && !submittingRef.current) setOpen(false);
@@ -178,7 +165,6 @@ export function useDeviceFilesSync({
 
   return {
     open,
-    pathSyntax,
     rows,
     submitting,
     batchError,
@@ -187,7 +173,6 @@ export function useDeviceFilesSync({
     openSync,
     openSyncForEntry,
     closeSync,
-    setPathSyntax,
     addRow,
     removeRow,
     changeRowField,

@@ -63,7 +63,7 @@ function useDevicesTableColumns(): MRT_ColumnDef<DeviceRowView>[] {
               fontWeight={600}
               onClick={(event) => handleNavigateWithinSpaClick(event, href)}
             >
-              {row.original.name}
+              {row.original.name ?? 'Без назви'}
             </Link>
           );
         },

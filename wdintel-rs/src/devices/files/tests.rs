@@ -4,8 +4,8 @@ use super::query::{self, capture_transaction_id, handle_commit_error};
 use super::{
     classify_transaction_error, map_transaction_body_error,
     normalize_file_metadata, Breadcrumb, BrowseFilesCommand,
-    DomainFileEntryKind, DomainPathSyntax, EntryQueryScope, EntrySortKey,
-    FileEntry, FileSearchFilters, FilesystemError, KeysetPageRequest,
+    DomainFileEntryKind, EntryQueryScope, EntrySortKey, FileEntry,
+    FileSearchFilters, FilesystemError, KeysetPageRequest,
     PreparedFileMutation, RawFileSearchFilters, SearchEntry,
     SearchFilesCommand, SyncFileItemCommand, SyncFileItemOutcome,
     SyncFileItemResult, SyncFileOperation, SyncFileRejectionKind,
@@ -46,7 +46,7 @@ async fn insert_device(
 ) {
     device::ActiveModel {
         id: Set(id),
-        name: Set("Filesystem fixture device".to_string()),
+        name: Set(Some("Filesystem fixture device".to_string())),
         created_by: Set(owner.login.clone()),
         organism_id: Set(owner.organism_id.unwrap()),
         unit_id: Set(None),
@@ -103,9 +103,8 @@ fn root_entry(
         id,
         device_id,
         None,
-        "directory",
-        "/",
-        Some("posix"),
+        DomainFileEntryKind::Directory,
+        "C:\\",
         None,
         uuid_label(id),
         timestamp,
@@ -124,9 +123,8 @@ fn directory_entry(
         id,
         device_id,
         Some(parent_id),
-        "directory",
+        DomainFileEntryKind::Directory,
         name,
-        None,
         None,
         format!("{parent_hierarchy_path}.{}", uuid_label(id)),
         timestamp,
@@ -146,9 +144,8 @@ fn file_entry_row(
         id,
         device_id,
         Some(parent_id),
-        "file",
+        DomainFileEntryKind::File,
         name,
-        Some("posix"),
         Some(absolute_path),
         format!("{parent_hierarchy_path}.{}", uuid_label(id)),
         timestamp,
@@ -164,9 +161,8 @@ fn base_file_entry(
     id: Uuid,
     device_id: Uuid,
     parent_id: Option<Uuid>,
-    kind: &str,
+    kind: DomainFileEntryKind,
     name: &str,
-    path_syntax: Option<&str>,
     absolute_path: Option<&str>,
     hierarchy_path: String,
     timestamp: NaiveDateTime,
@@ -175,10 +171,8 @@ fn base_file_entry(
         id: Set(id),
         device_id: Set(device_id),
         parent_id: Set(parent_id),
-        kind: Set(kind.to_string()),
+        kind: Set(kind),
         name: Set(name.to_string()),
-        name_key: Set(name.as_bytes().to_vec()),
-        path_syntax: Set(path_syntax.map(str::to_string)),
         absolute_path: Set(absolute_path.map(str::to_string)),
         hierarchy_path: Set(hierarchy_path),
         mime_type: Set(None),
@@ -500,7 +494,7 @@ async fn insert_stage_two_tree(
         reports_id,
         &reports_path,
         "archive",
-        "/reports/archive",
+        r"C:\reports\archive",
         "text/plain",
         "log",
         timestamp,
@@ -514,7 +508,7 @@ async fn insert_stage_two_tree(
         archive_id,
         &archive_path,
         "nested.log",
-        "/reports/archive/nested.log",
+        r"C:\reports\archive\nested.log",
         "text/plain",
         "log",
         timestamp,
@@ -529,7 +523,7 @@ async fn insert_stage_two_tree(
             reports_id,
             &reports_path,
             "duplicate",
-            "/reports/duplicate",
+            r"C:\reports\duplicate",
             "text/plain",
             "log",
             timestamp,
@@ -544,7 +538,7 @@ async fn insert_stage_two_tree(
         reports_id,
         &reports_path,
         "literal%value",
-        "/reports/literal%value",
+        r"C:\reports\literal%value",
         "text/plain",
         "log",
         timestamp,
@@ -558,7 +552,7 @@ async fn insert_stage_two_tree(
         reports_id,
         &reports_path,
         "literalXvalue",
-        "/reports/literalXvalue",
+        r"C:\reports\literalXvalue",
         "text/plain",
         "log",
         timestamp,
@@ -572,7 +566,7 @@ async fn insert_stage_two_tree(
         reports_id,
         &reports_path,
         "under_score",
-        "/reports/under_score",
+        r"C:\reports\under_score",
         "text/plain",
         "log",
         timestamp,
@@ -586,7 +580,7 @@ async fn insert_stage_two_tree(
         reports_id,
         &reports_path,
         "underXscore",
-        "/reports/underXscore",
+        r"C:\reports\underXscore",
         "text/plain",
         "log",
         timestamp,
@@ -600,7 +594,7 @@ async fn insert_stage_two_tree(
         reports_id,
         &reports_path,
         r"back\slash",
-        r"\reports\back\slash",
+        r"C:\reports\back\slash",
         "text/plain",
         "log",
         timestamp,
@@ -614,7 +608,7 @@ async fn insert_stage_two_tree(
         reports_id,
         &reports_path,
         "backXslash",
-        "/reports/backXslash",
+        r"C:\reports\backXslash",
         "text/plain",
         "log",
         timestamp,
@@ -628,7 +622,7 @@ async fn insert_stage_two_tree(
         reports_id,
         &reports_path,
         "metadata.pdf",
-        "/reports/metadata.pdf",
+        r"C:\reports\metadata.pdf",
         "application/pdf",
         "pdf",
         timestamp,
@@ -642,7 +636,7 @@ async fn insert_stage_two_tree(
         reports_id,
         &reports_path,
         "metadata-old.pdf",
-        "/reports/metadata-old.pdf",
+        r"C:\reports\metadata-old.pdf",
         "application/pdf",
         "pdf",
         timestamp,
@@ -656,7 +650,7 @@ async fn insert_stage_two_tree(
         reports_id,
         &reports_path,
         "movable.log",
-        "/reports/movable.log",
+        r"C:\reports\movable.log",
         "text/plain",
         "log",
         timestamp,
@@ -670,7 +664,7 @@ async fn insert_stage_two_tree(
         root_id,
         &root_path,
         "sibling.log",
-        "/sibling.log",
+        r"C:\sibling.log",
         "text/plain",
         "log",
         timestamp,
@@ -689,7 +683,7 @@ async fn insert_stage_two_tree(
         other_root_id,
         &other_root_path,
         "outside.log",
-        "/other/outside.log",
+        r"C:\other\outside.log",
         "text/plain",
         "log",
         timestamp,
@@ -951,7 +945,7 @@ async fn assert_file_move_round_trip(
         format!("{}.{}", tree.archive_path, uuid_label(tree.movable_file_id));
     movable.parent_id = Set(Some(tree.archive_id));
     movable.absolute_path =
-        Set(Some("/reports/archive/movable.log".to_string()));
+        Set(Some(r"C:\reports\archive\movable.log".to_string()));
     movable.hierarchy_path = Set(expected_hierarchy_path.clone());
     movable.updated_at = Set(timestamp + Duration::seconds(1));
     movable.save(db).await.unwrap();
@@ -964,7 +958,7 @@ async fn assert_file_move_round_trip(
     assert_eq!(moved.parent_id, Some(tree.archive_id));
     assert_eq!(
         moved.absolute_path.as_deref(),
-        Some("/reports/archive/movable.log")
+        Some(r"C:\reports\archive\movable.log")
     );
     assert_eq!(moved.hierarchy_path, expected_hierarchy_path);
 }
@@ -1340,7 +1334,7 @@ struct StageThreeForest {
     target_device_id: Uuid,
     other_device_id: Uuid,
     single_root_id: Uuid,
-    target_posix_root_id: Uuid,
+    target_primary_root_id: Uuid,
     target_windows_drive_root_id: Uuid,
     target_windows_unc_root_id: Uuid,
     other_root_id: Uuid,
@@ -1368,7 +1362,7 @@ async fn insert_stage_three_forest(
         Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3300);
     let single_root_id =
         Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3400);
-    let target_posix_root_id =
+    let target_primary_root_id =
         Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3500);
     let target_windows_drive_root_id =
         Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3600);
@@ -1396,9 +1390,9 @@ async fn insert_stage_three_forest(
     let other_file_id =
         Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_4200);
     let single_root_path = uuid_label(single_root_id);
-    let target_posix_root_path = uuid_label(target_posix_root_id);
+    let target_primary_root_path = uuid_label(target_primary_root_id);
     let navigation_path =
-        format!("{target_posix_root_path}.{}", uuid_label(navigation_id));
+        format!("{target_primary_root_path}.{}", uuid_label(navigation_id));
     let same_path =
         format!("{navigation_path}.{}", uuid_label(same_directory_id));
     let other_root_path = uuid_label(other_root_id);
@@ -1409,9 +1403,8 @@ async fn insert_stage_three_forest(
             single_root_id,
             single_root_device_id,
             None,
-            "directory",
-            "/",
-            Some("posix"),
+            DomainFileEntryKind::Directory,
+            "C:\\",
             None,
             single_root_path,
             timestamp,
@@ -1420,7 +1413,7 @@ async fn insert_stage_three_forest(
     .await;
     insert_file_entry(
         db,
-        root_entry(target_posix_root_id, target_device_id, timestamp),
+        root_entry(target_primary_root_id, target_device_id, timestamp),
     )
     .await;
     insert_file_entry(
@@ -1429,9 +1422,8 @@ async fn insert_stage_three_forest(
             target_windows_drive_root_id,
             target_device_id,
             None,
-            "directory",
-            "C:\\",
-            Some("windows"),
+            DomainFileEntryKind::Directory,
+            "D:\\",
             None,
             uuid_label(target_windows_drive_root_id),
             timestamp,
@@ -1444,9 +1436,8 @@ async fn insert_stage_three_forest(
             target_windows_unc_root_id,
             target_device_id,
             None,
-            "directory",
+            DomainFileEntryKind::Directory,
             "\\\\server\\share\\",
-            Some("windows"),
             None,
             uuid_label(target_windows_unc_root_id),
             timestamp,
@@ -1458,8 +1449,8 @@ async fn insert_stage_three_forest(
         directory_entry(
             navigation_id,
             target_device_id,
-            target_posix_root_id,
-            &target_posix_root_path,
+            target_primary_root_id,
+            &target_primary_root_path,
             "navigation",
             timestamp,
         ),
@@ -1497,7 +1488,7 @@ async fn insert_stage_three_forest(
             navigation_id,
             &navigation_path,
             "aaa",
-            "/navigation/aaa",
+            r"C:\navigation\aaa",
             timestamp,
         ),
     )
@@ -1511,7 +1502,7 @@ async fn insert_stage_three_forest(
                 navigation_id,
                 &navigation_path,
                 "same",
-                "/navigation/same",
+                r"C:\navigation\same",
                 timestamp,
             ),
         )
@@ -1525,7 +1516,7 @@ async fn insert_stage_three_forest(
             same_directory_id,
             &same_path,
             "nested",
-            "/navigation/same/nested",
+            r"C:\navigation\same\nested",
             timestamp,
         ),
     )
@@ -1535,10 +1526,10 @@ async fn insert_stage_three_forest(
         file_entry_row(
             sibling_file_id,
             target_device_id,
-            target_posix_root_id,
-            &target_posix_root_path,
+            target_primary_root_id,
+            &target_primary_root_path,
             "sibling",
-            "/sibling",
+            r"C:\sibling",
             timestamp,
         ),
     )
@@ -1556,7 +1547,7 @@ async fn insert_stage_three_forest(
             other_root_id,
             &other_root_path,
             "other",
-            "/other",
+            r"C:\other",
             timestamp,
         ),
     )
@@ -1568,7 +1559,7 @@ async fn insert_stage_three_forest(
         target_device_id,
         other_device_id,
         single_root_id,
-        target_posix_root_id,
+        target_primary_root_id,
         target_windows_drive_root_id,
         target_windows_unc_root_id,
         other_root_id,
@@ -1609,28 +1600,15 @@ async fn assert_stage_three_root_listing(
     assert_eq!(
         roots
             .iter()
-            .map(|root| (
-                root.path_syntax,
-                root.name_key.clone(),
-                root.entry_id
-            ))
+            .map(|root| (root.name.clone(), root.entry_id))
             .collect::<Vec<_>>(),
         vec![
             (
-                DomainPathSyntax::Posix,
-                b"/".to_vec(),
-                forest.target_posix_root_id,
-            ),
-            (
-                DomainPathSyntax::Windows,
-                b"C:\\".to_vec(),
-                forest.target_windows_drive_root_id,
-            ),
-            (
-                DomainPathSyntax::Windows,
-                b"\\\\server\\share\\".to_vec(),
+                "\\\\server\\share\\".to_string(),
                 forest.target_windows_unc_root_id,
             ),
+            ("C:\\".to_string(), forest.target_primary_root_id),
+            ("D:\\".to_string(), forest.target_windows_drive_root_id,),
         ]
     );
     assert!(!roots
@@ -1770,7 +1748,7 @@ async fn assert_stage_three_breadcrumbs(
     let root_scope = query::find_directory_scope(
         repository,
         forest.target_device_id,
-        forest.target_posix_root_id,
+        forest.target_primary_root_id,
     )
     .await
     .unwrap();
@@ -1779,8 +1757,8 @@ async fn assert_stage_three_breadcrumbs(
             .await
             .unwrap(),
         vec![Breadcrumb {
-            entry_id: forest.target_posix_root_id,
-            name: "/".to_string(),
+            entry_id: forest.target_primary_root_id,
+            name: "C:\\".to_string(),
         }]
     );
     assert_eq!(
@@ -1789,8 +1767,8 @@ async fn assert_stage_three_breadcrumbs(
             .unwrap(),
         vec![
             Breadcrumb {
-                entry_id: forest.target_posix_root_id,
-                name: "/".to_string(),
+                entry_id: forest.target_primary_root_id,
+                name: "C:\\".to_string(),
             },
             Breadcrumb {
                 entry_id: forest.navigation_id,
@@ -1858,9 +1836,9 @@ async fn assert_stage_eight_actor_reads(
             .map(|root| root.entry_id)
             .collect::<Vec<_>>(),
         vec![
-            forest.target_posix_root_id,
-            forest.target_windows_drive_root_id,
             forest.target_windows_unc_root_id,
+            forest.target_primary_root_id,
+            forest.target_windows_drive_root_id,
         ]
     );
 
@@ -1982,8 +1960,8 @@ async fn assert_stage_eight_browse_composition(
         default_page.breadcrumbs,
         vec![
             Breadcrumb {
-                entry_id: forest.target_posix_root_id,
-                name: "/".to_string(),
+                entry_id: forest.target_primary_root_id,
+                name: "C:\\".to_string(),
             },
             Breadcrumb {
                 entry_id: forest.navigation_id,
@@ -2628,7 +2606,6 @@ fn assert_dependency_filesystem_error(error: AppError) {
 fn stage_nine_mutation(
     device_id: Uuid,
     file_id: Option<Uuid>,
-    path_syntax: DomainPathSyntax,
     absolute_path: &str,
     mime_type: Option<&str>,
     extension: Option<&str>,
@@ -2636,7 +2613,6 @@ fn stage_nine_mutation(
     file_metadata_modified_at: Option<NaiveDateTime>,
 ) -> PreparedFileMutation {
     let source_path = crate::devices::files::path::parse(
-        path_syntax,
         absolute_path.to_string(),
         "absolute_path",
     )
@@ -2687,15 +2663,13 @@ async fn stage_nine_entries(
 
 fn stage_nine_root<'a>(
     entries: &'a [file_entry::Model],
-    path_syntax: DomainPathSyntax,
     name: &str,
 ) -> &'a file_entry::Model {
     entries
         .iter()
         .find(|entry| {
             entry.parent_id.is_none()
-                && entry.kind == DomainFileEntryKind::Directory.as_db_str()
-                && entry.path_syntax.as_deref() == Some(path_syntax.as_db_str())
+                && entry.kind == DomainFileEntryKind::Directory
                 && entry.name == name
         })
         .unwrap()
@@ -2710,7 +2684,7 @@ fn stage_nine_directory<'a>(
         .iter()
         .find(|entry| {
             entry.parent_id == Some(parent_id)
-                && entry.kind == DomainFileEntryKind::Directory.as_db_str()
+                && entry.kind == DomainFileEntryKind::Directory
                 && entry.name == name
         })
         .unwrap()
@@ -2721,9 +2695,7 @@ fn stage_nine_structure_timestamps(
 ) -> BTreeMap<Uuid, NaiveDateTime> {
     entries
         .iter()
-        .filter(|entry| {
-            entry.kind == DomainFileEntryKind::Directory.as_db_str()
-        })
+        .filter(|entry| entry.kind == DomainFileEntryKind::Directory)
         .map(|entry| (entry.id, entry.updated_at))
         .collect()
 }
@@ -2741,8 +2713,7 @@ async fn stage_nine_mutation_repository_creates_and_reuses_canonical_hierarchy()
         &stage_nine_mutation(
             device_id,
             None,
-            DomainPathSyntax::Posix,
-            "/var/log/app/first.log",
+            r"C:\var\log\app\first.log",
             Some("text/plain"),
             Some("log"),
             None,
@@ -2755,7 +2726,7 @@ async fn stage_nine_mutation_repository_creates_and_reuses_canonical_hierarchy()
 
     let before =
         stage_nine_entries(env.file_registry_db.connection(), device_id).await;
-    let root_id = stage_nine_root(&before, DomainPathSyntax::Posix, "/").id;
+    let root_id = stage_nine_root(&before, "C:\\").id;
     let var_id = stage_nine_directory(&before, root_id, "var").id;
     let log_id = stage_nine_directory(&before, var_id, "log").id;
     let app_id = stage_nine_directory(&before, log_id, "app").id;
@@ -2766,8 +2737,7 @@ async fn stage_nine_mutation_repository_creates_and_reuses_canonical_hierarchy()
         &stage_nine_mutation(
             device_id,
             None,
-            DomainPathSyntax::Posix,
-            "/var/log/app/first.log",
+            r"C:\var\log\app\first.log",
             Some("text/plain"),
             Some("log"),
             None,
@@ -2781,8 +2751,7 @@ async fn stage_nine_mutation_repository_creates_and_reuses_canonical_hierarchy()
         &stage_nine_mutation(
             device_id,
             None,
-            DomainPathSyntax::Posix,
-            "/var/log",
+            r"C:\var\log",
             Some("text/plain"),
             Some("log"),
             None,
@@ -2807,7 +2776,7 @@ async fn stage_nine_mutation_repository_creates_and_reuses_canonical_hierarchy()
             .iter()
             .filter(|entry| {
                 entry.parent_id.is_none()
-                    && entry.kind == DomainFileEntryKind::Directory.as_db_str()
+                    && entry.kind == DomainFileEntryKind::Directory
             })
             .count(),
         1,
@@ -2817,7 +2786,7 @@ async fn stage_nine_mutation_repository_creates_and_reuses_canonical_hierarchy()
             .iter()
             .filter(|entry| {
                 entry.parent_id.is_some()
-                    && entry.kind == DomainFileEntryKind::Directory.as_db_str()
+                    && entry.kind == DomainFileEntryKind::Directory
             })
             .count(),
         3,
@@ -2825,7 +2794,7 @@ async fn stage_nine_mutation_repository_creates_and_reuses_canonical_hierarchy()
     assert_eq!(
         after
             .iter()
-            .filter(|entry| entry.kind == DomainFileEntryKind::File.as_db_str())
+            .filter(|entry| entry.kind == DomainFileEntryKind::File)
             .count(),
         3,
     );
@@ -2835,13 +2804,12 @@ async fn stage_nine_mutation_repository_creates_and_reuses_canonical_hierarchy()
         .iter()
         .find(|entry| {
             entry.id == file_log.file.file_id
-                && entry.kind == DomainFileEntryKind::File.as_db_str()
+                && entry.kind == DomainFileEntryKind::File
         })
         .unwrap();
     assert_eq!(directory_log.id, log_id);
     assert_eq!(directory_log.parent_id, file_log_entry.parent_id);
     assert_eq!(directory_log.name, file_log_entry.name);
-    assert_eq!(directory_log.name_key, file_log_entry.name_key);
     assert_eq!(stage_nine_directory(&after, log_id, "app").id, app_id);
 }
 
@@ -2871,8 +2839,7 @@ async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
         &stage_nine_mutation(
             device_id,
             None,
-            DomainPathSyntax::Posix,
-            "/old/shared/nested/original.log",
+            r"C:\old\shared\nested\original.log",
             Some("text/plain"),
             Some("log"),
             Some(initial_metadata_created_at),
@@ -2886,8 +2853,7 @@ async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
         &stage_nine_mutation(
             device_id,
             None,
-            DomainPathSyntax::Posix,
-            "/old/shared/keep.log",
+            r"C:\old\shared\keep.log",
             Some("text/plain"),
             Some("log"),
             None,
@@ -2898,10 +2864,9 @@ async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
     .unwrap();
     let initial_entries =
         stage_nine_entries(env.file_registry_db.connection(), device_id).await;
-    let posix_root_id =
-        stage_nine_root(&initial_entries, DomainPathSyntax::Posix, "/").id;
+    let primary_root_id = stage_nine_root(&initial_entries, "C:\\").id;
     let old_id =
-        stage_nine_directory(&initial_entries, posix_root_id, "old").id;
+        stage_nine_directory(&initial_entries, primary_root_id, "old").id;
     let shared_id = stage_nine_directory(&initial_entries, old_id, "shared").id;
     let nested_id =
         stage_nine_directory(&initial_entries, shared_id, "nested").id;
@@ -2912,8 +2877,7 @@ async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
         &stage_nine_mutation(
             device_id,
             Some(initial.file.file_id),
-            DomainPathSyntax::Posix,
-            "/old/other/same-root.json",
+            r"C:\old\other\same-root.json",
             Some("application/json"),
             Some("json"),
             Some(updated_metadata_created_at),
@@ -2936,8 +2900,7 @@ async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
     let cross_root_mutation = stage_nine_mutation(
         device_id,
         Some(initial.file.file_id),
-        DomainPathSyntax::Windows,
-        r"C:\archive\cross-root.bin",
+        r"D:\archive\cross-root.bin",
         Some("application/octet-stream"),
         Some("bin"),
         Some(cross_metadata_created_at),
@@ -2957,8 +2920,7 @@ async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
     assert_eq!(cross_root.file.created_at, initial.file.created_at);
     assert!(cross_root.file.updated_at > same_root.file.updated_at);
     assert!(repeated.file.updated_at > cross_root.file.updated_at);
-    assert_eq!(repeated.file.path_syntax, DomainPathSyntax::Windows);
-    assert_eq!(repeated.file.absolute_path, r"C:\archive\cross-root.bin");
+    assert_eq!(repeated.file.absolute_path, r"D:\archive\cross-root.bin");
     assert_eq!(
         repeated.file.mime_type.as_deref(),
         Some("application/octet-stream"),
@@ -2980,17 +2942,14 @@ async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
             .iter()
             .filter(|entry| {
                 entry.parent_id.is_none()
-                    && entry.kind == DomainFileEntryKind::Directory.as_db_str()
+                    && entry.kind == DomainFileEntryKind::Directory
             })
             .count(),
         2,
     );
+    assert_eq!(stage_nine_root(&after_cross, "C:\\").id, primary_root_id,);
     assert_eq!(
-        stage_nine_root(&after_cross, DomainPathSyntax::Posix, "/").id,
-        posix_root_id,
-    );
-    assert_eq!(
-        stage_nine_root(&after_cross, DomainPathSyntax::Windows, "C:\\").id,
+        stage_nine_root(&after_cross, "D:\\").id,
         repeated.root.entry_id,
     );
     assert!(after_cross.iter().any(|entry| entry.id == old_id));
@@ -3003,8 +2962,7 @@ async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
         &stage_nine_mutation(
             Uuid::now_v7(),
             None,
-            DomainPathSyntax::Posix,
-            "/other-device/file.log",
+            r"C:\other-device\file.log",
             Some("text/plain"),
             Some("log"),
             None,
@@ -3021,8 +2979,7 @@ async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
             &stage_nine_mutation(
                 device_id,
                 Some(file_id),
-                DomainPathSyntax::Posix,
-                "/missing/path.log",
+                r"C:\missing\path.log",
                 Some("text/plain"),
                 Some("log"),
                 None,
@@ -3054,8 +3011,7 @@ async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
     let first_create = stage_nine_mutation(
         device_id,
         None,
-        DomainPathSyntax::Posix,
-        "/concurrent/shared/one.log",
+        r"C:\concurrent\shared\one.log",
         Some("text/plain"),
         Some("log"),
         None,
@@ -3064,8 +3020,7 @@ async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
     let second_create = stage_nine_mutation(
         device_id,
         None,
-        DomainPathSyntax::Posix,
-        "/concurrent/shared/two.log",
+        r"C:\concurrent\shared\two.log",
         Some("text/plain"),
         Some("log"),
         None,
@@ -3084,13 +3039,12 @@ async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
     let second = second.unwrap();
 
     let seed_repository = &env.file_registry_db;
-    let windows = query::mutate_file(
+    let secondary = query::mutate_file(
         seed_repository,
         &stage_nine_mutation(
             device_id,
             None,
-            DomainPathSyntax::Windows,
-            r"C:\source\windows.log",
+            r"D:\source\secondary.log",
             Some("text/plain"),
             Some("log"),
             None,
@@ -3102,8 +3056,7 @@ async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
     let first_move = stage_nine_mutation(
         device_id,
         Some(first.file.file_id),
-        DomainPathSyntax::Windows,
-        r"C:\destination\posix.log",
+        r"D:\destination\first.log",
         Some("application/json"),
         Some("json"),
         None,
@@ -3111,9 +3064,8 @@ async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
     );
     let second_move = stage_nine_mutation(
         device_id,
-        Some(windows.file.file_id),
-        DomainPathSyntax::Posix,
-        "/concurrent/destination/windows.log",
+        Some(secondary.file.file_id),
+        r"C:\concurrent\destination\second.log",
         Some("application/json"),
         Some("json"),
         None,
@@ -3132,19 +3084,19 @@ async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
     let second_move = second_move.unwrap();
 
     assert_eq!(first_move.file.file_id, first.file.file_id);
-    assert_eq!(second_move.file.file_id, windows.file.file_id);
+    assert_eq!(second_move.file.file_id, secondary.file.file_id);
     let entries =
         stage_nine_entries(env.file_registry_db.connection(), device_id).await;
     let roots = entries
         .iter()
         .filter(|entry| {
             entry.parent_id.is_none()
-                && entry.kind == DomainFileEntryKind::Directory.as_db_str()
+                && entry.kind == DomainFileEntryKind::Directory
         })
         .collect::<Vec<_>>();
     let root_identities = roots
         .iter()
-        .map(|entry| (entry.path_syntax.clone(), entry.name_key.clone()))
+        .map(|entry| entry.name.clone())
         .collect::<HashSet<_>>();
     assert_eq!(roots.len(), 2);
     assert_eq!(root_identities.len(), roots.len());
@@ -3153,23 +3105,23 @@ async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
         .iter()
         .filter(|entry| {
             entry.parent_id.is_some()
-                && entry.kind == DomainFileEntryKind::Directory.as_db_str()
+                && entry.kind == DomainFileEntryKind::Directory
         })
         .collect::<Vec<_>>();
     let directory_identities = directories
         .iter()
-        .map(|entry| (entry.parent_id.unwrap(), entry.name_key.clone()))
+        .map(|entry| (entry.parent_id.unwrap(), entry.name.clone()))
         .collect::<HashSet<_>>();
     assert_eq!(directory_identities.len(), directories.len());
 
     let files = entries
         .iter()
-        .filter(|entry| entry.kind == DomainFileEntryKind::File.as_db_str())
+        .filter(|entry| entry.kind == DomainFileEntryKind::File)
         .collect::<Vec<_>>();
     let expected_paths = [
-        "/concurrent/shared/two.log",
-        r"C:\destination\posix.log",
-        "/concurrent/destination/windows.log",
+        r"C:\concurrent\shared\two.log",
+        r"D:\destination\first.log",
+        r"C:\concurrent\destination\second.log",
     ]
     .into_iter()
     .map(str::to_string)
@@ -3186,7 +3138,7 @@ async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
             .find(|entry| {
                 entry.id == file.parent_id.unwrap()
                     && entry.device_id == device_id
-                    && entry.kind == DomainFileEntryKind::Directory.as_db_str()
+                    && entry.kind == DomainFileEntryKind::Directory
             })
             .unwrap();
         assert_eq!(
@@ -3194,11 +3146,7 @@ async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
             format!("{}.{}", parent.hierarchy_path, uuid_label(file.id)),
         );
         let root_label = file.hierarchy_path.split('.').next().unwrap();
-        let root = roots
-            .iter()
-            .find(|entry| entry.hierarchy_path == root_label)
-            .unwrap();
-        assert_eq!(file.path_syntax, root.path_syntax);
+        assert!(roots.iter().any(|entry| entry.hierarchy_path == root_label));
         assert!(file.absolute_path.is_some());
     }
 
@@ -3207,14 +3155,9 @@ async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
 
 fn stage_ten_command(
     device_id: Uuid,
-    path_syntax: DomainPathSyntax,
     files: Vec<SyncFileItemCommand>,
 ) -> SyncFilesCommand {
-    SyncFilesCommand {
-        device_id,
-        path_syntax,
-        files,
-    }
+    SyncFilesCommand { device_id, files }
 }
 
 fn stage_ten_file(
@@ -3253,7 +3196,6 @@ fn stage_ten_accepted_file<'a>(
     assert_eq!(*actual_operation, operation);
     assert_eq!(root.name, root_name);
     assert_eq!(file.absolute_path, absolute_path);
-    assert_eq!(file.path_syntax, root.path_syntax);
     assert_eq!(
         path_components,
         &expected_path_components
@@ -3320,7 +3262,6 @@ async fn stage_ten_sync_service_returns_ordered_partial_results() {
         &actor,
         stage_ten_command(
             device_id,
-            DomainPathSyntax::Windows,
             vec![
                 stage_ten_file(None, r"C:\logs\a.log"),
                 stage_ten_file(None, "relative.log"),
@@ -3348,7 +3289,6 @@ async fn stage_ten_sync_service_returns_ordered_partial_results() {
         r"C:\logs\a.log",
         &["logs", "a.log"],
     );
-    assert_eq!(first.path_syntax, DomainPathSyntax::Windows);
     assert_stage_ten_rejected(
         &result.results[1],
         1,
@@ -3357,7 +3297,7 @@ async fn stage_ten_sync_service_returns_ordered_partial_results() {
         false,
         &["files[1].absolute_path"],
     );
-    let unc = stage_ten_accepted_file(
+    stage_ten_accepted_file(
         &result.results[2],
         2,
         SyncFileOperation::Created,
@@ -3365,7 +3305,6 @@ async fn stage_ten_sync_service_returns_ordered_partial_results() {
         r"\\server\share\dir\b.txt",
         &["dir", "b.txt"],
     );
-    assert_eq!(unc.path_syntax, DomainPathSyntax::Windows);
     let repeated = stage_ten_accepted_file(
         &result.results[3],
         3,
@@ -3381,7 +3320,7 @@ async fn stage_ten_sync_service_returns_ordered_partial_results() {
     assert_eq!(
         entries
             .iter()
-            .filter(|entry| entry.kind == DomainFileEntryKind::File.as_db_str())
+            .filter(|entry| entry.kind == DomainFileEntryKind::File)
             .count(),
         3
     );
@@ -3390,7 +3329,7 @@ async fn stage_ten_sync_service_returns_ordered_partial_results() {
             .iter()
             .filter(|entry| {
                 entry.parent_id.is_none()
-                    && entry.kind == DomainFileEntryKind::Directory.as_db_str()
+                    && entry.kind == DomainFileEntryKind::Directory
             })
             .count(),
         2
@@ -3417,8 +3356,7 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
         &stage_nine_mutation(
             target_device_id,
             None,
-            DomainPathSyntax::Posix,
-            "/seed/duplicate.log",
+            r"C:\seed\duplicate.log",
             Some("text/plain"),
             Some("log"),
             None,
@@ -3432,8 +3370,7 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
         &stage_nine_mutation(
             target_device_id,
             None,
-            DomainPathSyntax::Posix,
-            "/existing/README.txt",
+            r"C:\existing\README.txt",
             Some("text/plain"),
             Some("txt"),
             Some(metadata_created_at),
@@ -3459,8 +3396,7 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
         &stage_nine_mutation(
             target_device_id,
             None,
-            DomainPathSyntax::Posix,
-            "/omitted/keep.log",
+            r"C:\omitted\keep.log",
             Some("text/plain"),
             Some("log"),
             None,
@@ -3474,8 +3410,7 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
         &stage_nine_mutation(
             other_device_id,
             None,
-            DomainPathSyntax::Posix,
-            "/foreign/private.log",
+            r"C:\foreign\private.log",
             Some("text/plain"),
             Some("log"),
             None,
@@ -3514,7 +3449,6 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
         &actor,
         stage_ten_command(
             target_device_id,
-            DomainPathSyntax::Windows,
             vec![
                 stage_ten_file(
                     Some(duplicate.file.file_id),
@@ -3662,7 +3596,6 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
         &actor,
         stage_ten_command(
             target_device_id,
-            DomainPathSyntax::Windows,
             vec![stage_ten_file(
                 Some(updated.file.file_id),
                 r"D:\moved\README",
@@ -3706,7 +3639,7 @@ async fn stage_ten_sync_service_gates_registry_writes() {
             &env.dbx,
             &outage_db,
             &unauthorized,
-            stage_ten_command(device_id, DomainPathSyntax::Windows, Vec::new()),
+            stage_ten_command(device_id, Vec::new()),
         )
         .await
         .unwrap_err(),
@@ -3716,7 +3649,7 @@ async fn stage_ten_sync_service_gates_registry_writes() {
             &env.dbx,
             &outage_db,
             &source,
-            stage_ten_command(device_id, DomainPathSyntax::Windows, Vec::new()),
+            stage_ten_command(device_id, Vec::new()),
         )
         .await
         .unwrap_err(),
@@ -3727,14 +3660,10 @@ async fn stage_ten_sync_service_gates_registry_writes() {
         bl::sync(&env.dbx,
         &outage_db,
         &source,
-        stage_ten_command(
-            device_id,
-            DomainPathSyntax::Windows,
-            vec![
-                stage_ten_file(None, r"C:\logs\a.log");
-                DEVICE_FILE_SYNC_BATCH_MAX_COUNT + 1
-            ],
-        ),)
+        stage_ten_command(device_id, vec![
+            stage_ten_file(None, r"C:\logs\a.log");
+            DEVICE_FILE_SYNC_BATCH_MAX_COUNT + 1
+        ]),)
         .await
         .unwrap_err(),
         "files",
@@ -3749,7 +3678,6 @@ async fn stage_ten_sync_service_gates_registry_writes() {
             &source,
             stage_ten_command(
                 Uuid::now_v7(),
-                DomainPathSyntax::Windows,
                 vec![stage_ten_file(None, r"C:\logs\a.log")],
             ),
         )
@@ -3763,7 +3691,6 @@ async fn stage_ten_sync_service_gates_registry_writes() {
             &source,
             stage_ten_command(
                 archived_device_id,
-                DomainPathSyntax::Windows,
                 vec![stage_ten_file(None, r"C:\logs\a.log")],
             ),
         )
@@ -3780,7 +3707,7 @@ async fn stage_ten_sync_service_gates_registry_writes() {
             &env.dbx,
             &env.file_registry_db,
             &source,
-            stage_ten_command(device_id, DomainPathSyntax::Windows, Vec::new()),
+            stage_ten_command(device_id, Vec::new()),
         )
         .await
         .unwrap_err(),
@@ -3814,7 +3741,6 @@ async fn stage_ten_sync_service_main_db_outage_short_circuits_registry() {
         &source,
         stage_ten_command(
             device_id,
-            DomainPathSyntax::Windows,
             vec![stage_ten_file(None, r"C:\logs\a.log")],
         ),
     )
@@ -3922,7 +3848,6 @@ async fn stage_eleven_dispatches_transaction_errors_by_phase() {
         &stage_nine_mutation(
             device_id,
             None,
-            DomainPathSyntax::Windows,
             r"C:\phase\exact.log",
             Some("text/plain"),
             Some("log"),
@@ -4120,7 +4045,6 @@ async fn stage_eleven_reconciles_committed_keyless_create() {
     let mutation = stage_nine_mutation(
         device_id,
         None,
-        DomainPathSyntax::Windows,
         r"C:\lost\create.log",
         Some("text/plain"),
         Some("log"),
@@ -4151,7 +4075,7 @@ async fn stage_eleven_reconciles_committed_keyless_create() {
         entries
             .iter()
             .filter(|entry| {
-                entry.kind == DomainFileEntryKind::File.as_db_str()
+                entry.kind == DomainFileEntryKind::File
                     && entry.id == expected.file.file_id
             })
             .count(),
@@ -4170,7 +4094,6 @@ async fn stage_eleven_aborted_attempt_cannot_borrow_identical_state() {
         &stage_nine_mutation(
             device_id,
             None,
-            DomainPathSyntax::Windows,
             r"C:\original\file.log",
             Some("text/plain"),
             Some("log"),
@@ -4183,7 +4106,6 @@ async fn stage_eleven_aborted_attempt_cannot_borrow_identical_state() {
     let mutation = stage_nine_mutation(
         device_id,
         Some(initial.file.file_id),
-        DomainPathSyntax::Windows,
         r"E:\same\file.log",
         Some("text/plain"),
         Some("log"),
@@ -4229,7 +4151,6 @@ async fn stage_eleven_reconciliation_requires_committed_xid() {
         &stage_nine_mutation(
             device_id,
             None,
-            DomainPathSyntax::Windows,
             r"C:\status\exact.log",
             Some("text/plain"),
             Some("log"),
@@ -4276,7 +4197,6 @@ async fn stage_eleven_registry_outage_keeps_commit_uncertain() {
         &stage_nine_mutation(
             device_id,
             None,
-            DomainPathSyntax::Windows,
             r"C:\outage\exact.log",
             Some("text/plain"),
             Some("log"),
@@ -4322,7 +4242,6 @@ async fn stage_eleven_committed_xid_mismatch_keeps_commit_uncertain() {
         &stage_nine_mutation(
             device_id,
             None,
-            DomainPathSyntax::Windows,
             r"C:\mismatch\before.log",
             Some("text/plain"),
             Some("log"),
@@ -4341,7 +4260,6 @@ async fn stage_eleven_committed_xid_mismatch_keeps_commit_uncertain() {
         &stage_nine_mutation(
             device_id,
             Some(expected.file.file_id),
-            DomainPathSyntax::Windows,
             r"D:\mismatch\after.log",
             Some("application/json"),
             Some("json"),
@@ -4747,9 +4665,8 @@ mod path_tests {
     }
 
     #[test]
-    fn parser_preserves_exact_paths_and_canonicalizes_only_drive_roots() {
+    fn parser_preserves_exact_windows_paths_and_canonicalizes_drive_roots() {
         struct Case {
-            path_syntax: DomainPathSyntax,
             absolute_path: &'static str,
             root_name: &'static str,
             components: &'static [&'static str],
@@ -4757,25 +4674,21 @@ mod path_tests {
 
         let cases = [
             Case {
-                path_syntax: DomainPathSyntax::Posix,
-                absolute_path: "/var/Журнал/app.log",
-                root_name: "/",
+                absolute_path: r"C:\var\Журнал\app.log",
+                root_name: r"C:\",
                 components: &["var", "Журнал", "app.log"],
             },
             Case {
-                path_syntax: DomainPathSyntax::Windows,
                 absolute_path: r"c:\Logs\APP.LOG",
                 root_name: r"C:\",
                 components: &["Logs", "APP.LOG"],
             },
             Case {
-                path_syntax: DomainPathSyntax::Windows,
                 absolute_path: r"\\Server\Share\dir\report.pdf",
                 root_name: r"\\Server\Share\",
                 components: &["dir", "report.pdf"],
             },
             Case {
-                path_syntax: DomainPathSyntax::Windows,
                 absolute_path: r"D:\Counter-Strike Source v34 HD\cstrike\sound\weapons\csgo\c4\c4_disarm.wav",
                 root_name: r"D:\",
                 components: &[
@@ -4789,7 +4702,6 @@ mod path_tests {
                 ],
             },
             Case {
-                path_syntax: DomainPathSyntax::Windows,
                 absolute_path: r"D:\Counter-Strike Source v34 HD\cstrike\sound\weapons\csgo\c4\c4_plant.wav",
                 root_name: r"D:\",
                 components: &[
@@ -4803,13 +4715,6 @@ mod path_tests {
                 ],
             },
             Case {
-                path_syntax: DomainPathSyntax::Posix,
-                absolute_path: "/var/<:|?*>.log",
-                root_name: "/",
-                components: &["var", "<:|?*>.log"],
-            },
-            Case {
-                path_syntax: DomainPathSyntax::Windows,
                 absolute_path: r"C:\<:|?*>\report",
                 root_name: r"C:\",
                 components: &["<:|?*>", "report"],
@@ -4818,13 +4723,11 @@ mod path_tests {
 
         for case in cases {
             let parsed = crate::devices::files::path::parse(
-                case.path_syntax,
                 case.absolute_path.to_string(),
                 "files[3].absolute_path",
             )
             .unwrap();
 
-            assert_eq!(parsed.path_syntax, case.path_syntax);
             assert_eq!(parsed.absolute_path, case.absolute_path);
             assert_eq!(
                 parsed.absolute_path.as_bytes(),
@@ -4843,69 +4746,44 @@ mod path_tests {
     }
 
     #[test]
-    fn name_key_preserves_exact_utf8_bytes() {
-        let name = "Журнал.TXT";
-
-        assert_eq!(name_key(name), name.as_bytes());
-    }
-
-    #[test]
     fn parser_rejects_each_forbidden_path_form_with_exact_field_path() {
         let cases = [
-            (DomainPathSyntax::Posix, "/".to_string()),
-            (DomainPathSyntax::Posix, "relative/file".to_string()),
-            (DomainPathSyntax::Posix, "//dir/file".to_string()),
-            (DomainPathSyntax::Posix, "/dir//file".to_string()),
-            (DomainPathSyntax::Posix, "/dir/".to_string()),
-            (DomainPathSyntax::Posix, "/dir\\file".to_string()),
-            (DomainPathSyntax::Posix, "/./file".to_string()),
-            (DomainPathSyntax::Posix, "/dir/..".to_string()),
-            (DomainPathSyntax::Posix, "/dir/\0file".to_string()),
-            (DomainPathSyntax::Windows, "C:file".to_string()),
-            (DomainPathSyntax::Windows, "\\file".to_string()),
-            (DomainPathSyntax::Windows, "C:\\".to_string()),
-            (DomainPathSyntax::Windows, "C:\\dir/file".to_string()),
-            (DomainPathSyntax::Windows, "C:\\\\file".to_string()),
-            (DomainPathSyntax::Windows, "C:\\dir\\".to_string()),
-            (DomainPathSyntax::Windows, "C:\\.\\file".to_string()),
-            (DomainPathSyntax::Windows, "C:\\dir\\..\\file".to_string()),
-            (DomainPathSyntax::Windows, "C:\\dir\\\0file".to_string()),
-            (DomainPathSyntax::Windows, r"\\?\C:\file".to_string()),
-            (DomainPathSyntax::Windows, r"\\.\C:\file".to_string()),
-            (
-                DomainPathSyntax::Windows,
-                r"\\\server\share\file".to_string(),
-            ),
-            (DomainPathSyntax::Windows, r"\\server\share".to_string()),
-            (DomainPathSyntax::Windows, r"\\server\\file".to_string()),
-            (
-                DomainPathSyntax::Windows,
-                r"\\server\share\dir\\file".to_string(),
-            ),
-            (
-                DomainPathSyntax::Windows,
-                "\\\\server\\share\\dir\\".to_string(),
-            ),
-            (DomainPathSyntax::Windows, r"\\.\share\dir\file".to_string()),
-            (
-                DomainPathSyntax::Windows,
-                r"\\server\share\..\file".to_string(),
-            ),
+            "/".to_string(),
+            "relative/file".to_string(),
+            "//dir/file".to_string(),
+            "/dir//file".to_string(),
+            "/dir/".to_string(),
+            "/dir\\file".to_string(),
+            "/./file".to_string(),
+            "/dir/..".to_string(),
+            "/dir/\0file".to_string(),
+            "C:file".to_string(),
+            "\\file".to_string(),
+            "C:\\".to_string(),
+            "C:\\dir/file".to_string(),
+            "C:\\\\file".to_string(),
+            "C:\\dir\\".to_string(),
+            "C:\\.\\file".to_string(),
+            "C:\\dir\\..\\file".to_string(),
+            "C:\\dir\\\0file".to_string(),
+            r"\\?\C:\file".to_string(),
+            r"\\.\C:\file".to_string(),
+            r"\\\server\share\file".to_string(),
+            r"\\server\share".to_string(),
+            r"\\server\\file".to_string(),
+            r"\\server\share\dir\\file".to_string(),
+            "\\\\server\\share\\dir\\".to_string(),
+            r"\\.\share\dir\file".to_string(),
+            r"\\server\share\..\file".to_string(),
         ];
 
-        for (index, (path_syntax, absolute_path)) in
-            cases.into_iter().enumerate()
-        {
+        for (index, absolute_path) in cases.into_iter().enumerate() {
             let field_path = format!("files[{index}].absolute_path");
             assert_eq!(
-                validation_errors(parse(
-                    path_syntax,
-                    absolute_path,
-                    &field_path,
-                )),
+                validation_errors(parse(absolute_path, &field_path)),
                 vec![FilesystemFieldError {
                     path: field_path,
-                    message: "must be an absolute file path valid for the selected path syntax"
+                    message: "must be an absolute Windows file path"
                         .to_string(),
                 }]
             );
@@ -4918,23 +4796,20 @@ mod path_tests {
         let component_count = DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS
             / DEVICE_FILE_PATH_COMPONENT_MAX_CHARS;
         let component = "a".repeat(DEVICE_FILE_PATH_COMPONENT_MAX_CHARS - 1);
-        let max_path =
-            format!("/{}", vec![component; component_count].join("/"));
+        let final_component =
+            "a".repeat(DEVICE_FILE_PATH_COMPONENT_MAX_CHARS - 3);
+        let mut components = vec![component; component_count];
+        *components.last_mut().unwrap() = final_component;
+        let max_path = format!(r"C:\{}", components.join(r"\"));
         assert_eq!(
             max_path.chars().count(),
             DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS
         );
-        assert!(parse(
-            DomainPathSyntax::Posix,
-            max_path.clone(),
-            "files[0].absolute_path",
-        )
-        .is_ok());
+        assert!(parse(max_path.clone(), "files[0].absolute_path").is_ok());
 
         let scalar_overflow = format!("{max_path}a");
         assert_eq!(
             validation_errors(parse(
-                DomainPathSyntax::Posix,
                 scalar_overflow,
                 "files[0].absolute_path",
             )),
@@ -4946,21 +4821,17 @@ mod path_tests {
             }]
         );
 
-        let max_component =
-            format!("/{}", "💾".repeat(DEVICE_FILE_PATH_COMPONENT_MAX_CHARS));
-        assert!(parse(
-            DomainPathSyntax::Posix,
-            max_component,
-            "files[1].absolute_path",
-        )
-        .is_ok());
+        let max_component = format!(
+            r"C:\{}",
+            "💾".repeat(DEVICE_FILE_PATH_COMPONENT_MAX_CHARS)
+        );
+        assert!(parse(max_component, "files[1].absolute_path").is_ok());
         let component_overflow = format!(
-            "/{}",
+            r"C:\{}",
             "💾".repeat(DEVICE_FILE_PATH_COMPONENT_MAX_CHARS + 1)
         );
         assert_eq!(
             validation_errors(parse(
-                DomainPathSyntax::Posix,
                 component_overflow,
                 "files[1].absolute_path",
             )),
@@ -4973,22 +4844,16 @@ mod path_tests {
         );
 
         let max_component_count = format!(
-            "/{}",
-            vec!["a"; DEVICE_FILE_PATH_COMPONENT_MAX_COUNT].join("/")
+            r"C:\{}",
+            vec!["a"; DEVICE_FILE_PATH_COMPONENT_MAX_COUNT].join(r"\")
         );
-        assert!(parse(
-            DomainPathSyntax::Posix,
-            max_component_count,
-            "files[2].absolute_path",
-        )
-        .is_ok());
+        assert!(parse(max_component_count, "files[2].absolute_path",).is_ok());
         let component_count_overflow = format!(
-            "/{}",
-            vec!["a"; DEVICE_FILE_PATH_COMPONENT_MAX_COUNT + 1].join("/")
+            r"C:\{}",
+            vec!["a"; DEVICE_FILE_PATH_COMPONENT_MAX_COUNT + 1].join(r"\")
         );
         assert_eq!(
             validation_errors(parse(
-                DomainPathSyntax::Posix,
                 component_count_overflow,
                 "files[2].absolute_path",
             )),
@@ -5047,13 +4912,9 @@ mod sync_pipeline_tests {
             sync_file(Some(file_id), "relative.log", None, None),
         ];
 
-        let prepared = prepare_sync_items(
-            Uuid::now_v7(),
-            DomainPathSyntax::Windows,
-            files,
-            &duplicate_file_ids,
-        )
-        .unwrap();
+        let prepared =
+            prepare_sync_items(Uuid::now_v7(), files, &duplicate_file_ids)
+                .unwrap();
         let error_paths = prepared
             .into_iter()
             .map(|prepared| match prepared {
@@ -5088,18 +4949,14 @@ mod sync_pipeline_tests {
 
     #[test]
     fn invalid_timestamp_string_is_an_item_validation_rejection() {
-        let mut file = sync_file(None, "/logs/a.log", None, None);
+        let mut file = sync_file(None, r"C:\logs\a.log", None, None);
         file.file_metadata_created_at = Some("not-a-timestamp".to_string());
         file.file_metadata_modified_at =
             Some("2026-07-23T12:00:00+03:00".to_string());
 
-        let prepared = prepare_sync_items(
-            Uuid::now_v7(),
-            DomainPathSyntax::Posix,
-            vec![file],
-            &HashSet::new(),
-        )
-        .unwrap();
+        let prepared =
+            prepare_sync_items(Uuid::now_v7(), vec![file], &HashSet::new())
+                .unwrap();
         let PreparedSyncFileItem::Rejected(SyncFileItemResult {
             outcome:
                 SyncFileItemOutcome::Rejected {
@@ -5211,7 +5068,6 @@ mod sync_pipeline_tests {
     fn prepared_mutation(absolute_path: &str) -> PreparedFileMutation {
         let prepared = prepare_sync_items(
             Uuid::now_v7(),
-            DomainPathSyntax::Windows,
             vec![sync_file(None, absolute_path, None, None)],
             &HashSet::new(),
         )
@@ -5246,8 +5102,6 @@ mod sync_pipeline_tests {
                 entry_id: root_id,
                 device_id: mutation.device_id,
                 name: mutation.source_path.root_name.clone(),
-                name_key: mutation.source_path.root_name.as_bytes().to_vec(),
-                path_syntax: mutation.source_path.path_syntax,
                 hierarchy_path: root_path,
                 created_at: timestamp,
                 updated_at: timestamp,
@@ -5257,8 +5111,6 @@ mod sync_pipeline_tests {
                 device_id: mutation.device_id,
                 parent_entry_id,
                 name: mutation.source_path.file_name().to_string(),
-                name_key: mutation.source_path.file_name().as_bytes().to_vec(),
-                path_syntax: mutation.source_path.path_syntax,
                 absolute_path: mutation.source_path.absolute_path.clone(),
                 hierarchy_path: file_path,
                 has_content: false,
@@ -5315,7 +5167,6 @@ mod sync_pipeline_tests {
         let mut attempted_paths = Vec::new();
         let result = sync_files_with_mutator(
             Uuid::now_v7(),
-            DomainPathSyntax::Windows,
             vec![
                 sync_file(None, r"C:\retry\rejected.log", None, None),
                 sync_file(None, r"D:\accepted\kept.log", None, None),
@@ -5367,7 +5218,6 @@ mod sync_pipeline_tests {
         let mut attempted_paths = Vec::new();
         let error = sync_files_with_mutator(
             Uuid::now_v7(),
-            DomainPathSyntax::Windows,
             vec![
                 sync_file(None, r"C:\prior\committed.log", None, None),
                 sync_file(None, r"D:\target\uncertain.log", None, None),
@@ -5401,87 +5251,8 @@ mod sync_pipeline_tests {
 }
 
 mod types_tests {
-    use super::super::error::FilesystemError;
     use super::super::types::*;
     use uuid::Uuid;
-
-    #[test]
-    fn path_syntax_db_literals_round_trip() {
-        for (db_literal, expected) in [
-            ("posix", DomainPathSyntax::Posix),
-            ("windows", DomainPathSyntax::Windows),
-        ] {
-            assert_eq!(
-                DomainPathSyntax::try_from(db_literal).unwrap(),
-                expected
-            );
-            assert_eq!(expected.as_db_str(), db_literal);
-        }
-
-        assert!(matches!(
-            DomainPathSyntax::try_from("unknown"),
-            Err(FilesystemError::Invariant("unknown_path_syntax"))
-        ));
-    }
-
-    #[test]
-    fn file_entry_kind_db_literals_round_trip() {
-        for (db_literal, expected) in [
-            ("directory", DomainFileEntryKind::Directory),
-            ("file", DomainFileEntryKind::File),
-        ] {
-            assert_eq!(
-                DomainFileEntryKind::try_from(db_literal).unwrap(),
-                expected
-            );
-            assert_eq!(expected.as_db_str(), db_literal);
-        }
-
-        assert!(matches!(
-            DomainFileEntryKind::try_from("unknown"),
-            Err(FilesystemError::Invariant("unknown_file_entry_kind"))
-        ));
-    }
-
-    #[test]
-    fn entry_sort_key_uses_kind_name_and_uuid_order() {
-        let lowest_id = Uuid::from_u128(1);
-        let highest_id = Uuid::from_u128(2);
-
-        assert!(
-            EntrySortKey::new(
-                DomainFileEntryKind::Directory,
-                b"z".to_vec(),
-                highest_id
-            ) < EntrySortKey::new(
-                DomainFileEntryKind::File,
-                b"a".to_vec(),
-                lowest_id
-            )
-        );
-        assert!(
-            EntrySortKey::new(
-                DomainFileEntryKind::File,
-                b"Z".to_vec(),
-                highest_id
-            ) < EntrySortKey::new(
-                DomainFileEntryKind::File,
-                b"a".to_vec(),
-                lowest_id
-            )
-        );
-        assert!(
-            EntrySortKey::new(
-                DomainFileEntryKind::File,
-                b"same".to_vec(),
-                lowest_id
-            ) < EntrySortKey::new(
-                DomainFileEntryKind::File,
-                b"same".to_vec(),
-                highest_id
-            )
-        );
-    }
 
     #[test]
     fn directory_and_query_scopes_preserve_one_navigation_scope() {
@@ -5496,8 +5267,6 @@ mod types_tests {
             entry_id: root_id,
             device_id,
             name: "root".to_string(),
-            name_key: b"root".to_vec(),
-            path_syntax: DomainPathSyntax::Posix,
             hierarchy_path: "n00000000000000000000000000000002".to_string(),
             created_at: timestamp,
             updated_at: timestamp,
@@ -5508,7 +5277,6 @@ mod types_tests {
                 device_id,
                 parent_entry_id: root_id,
                 name: "directory".to_string(),
-                name_key: b"directory".to_vec(),
                 hierarchy_path:
                     "n00000000000000000000000000000002.n00000000000000000000000000000003"
                         .to_string(),
@@ -5516,7 +5284,6 @@ mod types_tests {
                 updated_at: timestamp,
             },
             root_id,
-            path_syntax: DomainPathSyntax::Posix,
         };
         let filters = FileSearchFilters::try_from(RawFileSearchFilters {
             kinds: vec![DomainFileEntryKind::File],
@@ -5789,7 +5556,7 @@ mod validation_tests {
     fn sync_file(file_id: Option<Uuid>) -> SyncFileItemCommand {
         SyncFileItemCommand {
             file_id,
-            absolute_path: "/logs/a.log".to_string(),
+            absolute_path: r"C:\logs\a.log".to_string(),
             mime_type: None,
             extension: None,
             file_metadata_created_at: None,
@@ -5876,7 +5643,7 @@ mod query_ancestors_tests {
     use super::super::query::ancestors::*;
     use super::super::query::model;
     use super::super::*;
-    use crate::devices::files::{DirectoryEntry, DomainPathSyntax};
+    use crate::devices::files::DirectoryEntry;
     use crate::file_registry::entities::file_entry;
     use chrono::{NaiveDate, NaiveDateTime};
     use uuid::Uuid;
@@ -6209,13 +5976,11 @@ mod query_ancestors_tests {
                 device_id,
                 parent_entry_id: root_id,
                 name: "current".to_string(),
-                name_key: b"current".to_vec(),
                 hierarchy_path: hierarchy_path(&[root_id, current_id]),
                 created_at: timestamp(),
                 updated_at: timestamp(),
             },
             root_id,
-            path_syntax: DomainPathSyntax::Posix,
         }
     }
 
@@ -6224,10 +5989,8 @@ mod query_ancestors_tests {
             id: root_id,
             device_id,
             parent_id: None,
-            kind: DomainFileEntryKind::Directory.as_db_str().to_string(),
-            name: "/".to_string(),
-            name_key: b"/".to_vec(),
-            path_syntax: Some(DomainPathSyntax::Posix.as_db_str().to_string()),
+            kind: DomainFileEntryKind::Directory,
+            name: "C:\\".to_string(),
             absolute_path: None,
             hierarchy_path: hierarchy_path(&[root_id]),
             mime_type: None,
@@ -6250,10 +6013,8 @@ mod query_ancestors_tests {
             id,
             device_id,
             parent_id: Some(parent_id),
-            kind: DomainFileEntryKind::Directory.as_db_str().to_string(),
+            kind: DomainFileEntryKind::Directory,
             name: "current".to_string(),
-            name_key: b"current".to_vec(),
-            path_syntax: None,
             absolute_path: None,
             hierarchy_path: hierarchy_path.to_string(),
             mime_type: None,
@@ -6276,7 +6037,6 @@ mod query_ancestors_tests {
         let mut entry =
             directory_model(device_id, id, parent_id, hierarchy_path);
         entry.name = name.to_string();
-        entry.name_key = name.as_bytes().to_vec();
         entry
     }
 
@@ -6291,11 +6051,9 @@ mod query_ancestors_tests {
             id,
             device_id,
             parent_id: Some(parent_id),
-            kind: DomainFileEntryKind::File.as_db_str().to_string(),
+            kind: DomainFileEntryKind::File,
             name: name.to_string(),
-            name_key: name.as_bytes().to_vec(),
-            path_syntax: Some(DomainPathSyntax::Posix.as_db_str().to_string()),
-            absolute_path: Some(format!("/{name}")),
+            absolute_path: Some(format!(r"C:\{name}")),
             hierarchy_path: hierarchy_path.to_string(),
             mime_type: None,
             extension: None,
@@ -6395,10 +6153,8 @@ mod query_model_tests {
             id: Uuid::from_u128(1),
             device_id: Uuid::from_u128(2),
             parent_id: None,
-            kind: "directory".to_string(),
-            name: "/".to_string(),
-            name_key: b"/".to_vec(),
-            path_syntax: Some("posix".to_string()),
+            kind: DomainFileEntryKind::Directory,
+            name: "C:\\".to_string(),
             absolute_path: None,
             hierarchy_path: "n00000000000000000000000000000001".to_string(),
             mime_type: None,
@@ -6416,8 +6172,6 @@ mod query_model_tests {
         entry.id = Uuid::from_u128(3);
         entry.parent_id = Some(Uuid::from_u128(1));
         entry.name = "reports".to_string();
-        entry.name_key = b"reports".to_vec();
-        entry.path_syntax = None;
         entry.hierarchy_path =
             "n00000000000000000000000000000001.n00000000000000000000000000000003"
                 .to_string();
@@ -6427,11 +6181,9 @@ mod query_model_tests {
     fn file_model() -> file_entry::Model {
         let mut entry = directory_model();
         entry.id = Uuid::from_u128(4);
-        entry.kind = "file".to_string();
+        entry.kind = DomainFileEntryKind::File;
         entry.name = "report.pdf".to_string();
-        entry.name_key = b"report.pdf".to_vec();
-        entry.path_syntax = Some("posix".to_string());
-        entry.absolute_path = Some("/reports/report.pdf".to_string());
+        entry.absolute_path = Some(r"C:\reports\report.pdf".to_string());
         entry.hierarchy_path = "n00000000000000000000000000000001.n00000000000000000000000000000003.n00000000000000000000000000000004".to_string();
         entry.mime_type = Some("application/pdf".to_string());
         entry.extension = Some("pdf".to_string());
@@ -6455,7 +6207,6 @@ mod query_model_tests {
     fn mappers_preserve_all_valid_row_shapes() {
         let root = map_root_model(root_model()).unwrap();
         assert_eq!(root.entry_id, Uuid::from_u128(1));
-        assert_eq!(root.path_syntax, DomainPathSyntax::Posix);
 
         let directory = map_directory_model(directory_model()).unwrap();
         assert_eq!(directory.entry_id, Uuid::from_u128(3));
@@ -6463,7 +6214,7 @@ mod query_model_tests {
 
         let file = map_file_model(file_model()).unwrap();
         assert_eq!(file.file_id, Uuid::from_u128(4));
-        assert_eq!(file.absolute_path, "/reports/report.pdf");
+        assert_eq!(file.absolute_path, r"C:\reports\report.pdf");
         assert!(file.has_content);
 
         assert!(matches!(
@@ -6479,10 +6230,7 @@ mod query_model_tests {
             Ok(DirectoryScope::Root(_))
         ));
         assert!(matches!(
-            map_directory_scope(
-                directory_model(),
-                Some((Uuid::from_u128(1), DomainPathSyntax::Posix)),
-            ),
+            map_directory_scope(directory_model(), Some(Uuid::from_u128(1))),
             Ok(DirectoryScope::Directory { .. })
         ));
     }
@@ -6494,13 +6242,6 @@ mod query_model_tests {
         assert_invariant(
             map_root_model(root_with_parent),
             "root_parent_present",
-        );
-
-        let mut root_without_syntax = root_model();
-        root_without_syntax.path_syntax = None;
-        assert_invariant(
-            map_root_model(root_without_syntax),
-            "root_path_syntax_missing",
         );
 
         let mut root_with_path = root_model();
@@ -6524,15 +6265,8 @@ mod query_model_tests {
             "directory_parent_missing",
         );
 
-        let mut directory_with_syntax = directory_model();
-        directory_with_syntax.path_syntax = Some("posix".to_string());
-        assert_invariant(
-            map_directory_model(directory_with_syntax),
-            "directory_path_syntax_present",
-        );
-
         let mut directory_with_path = directory_model();
-        directory_with_path.absolute_path = Some("/reports".to_string());
+        directory_with_path.absolute_path = Some(r"C:\reports".to_string());
         assert_invariant(
             map_directory_model(directory_with_path),
             "directory_absolute_path_present",
@@ -6620,9 +6354,7 @@ mod mapping_tests {
                 .unwrap(),
             device_id: Uuid::parse_str("018f0000-0000-7000-8000-000000000002")
                 .unwrap(),
-            name: "/".to_string(),
-            name_key: vec![1],
-            path_syntax: DomainPathSyntax::Posix,
+            name: "C:\\".to_string(),
             hierarchy_path: "internal".to_string(),
             created_at: timestamp,
             updated_at: timestamp,
@@ -6636,8 +6368,7 @@ mod mapping_tests {
                     "device_id": "018f0000-0000-7000-8000-000000000002",
                     "parent_entry_id": null,
                     "kind": "directory",
-                    "name": "/",
-                    "path_syntax": "posix",
+                    "name": "C:\\",
                     "created_at": "2026-07-23T09:10:11.123Z",
                     "updated_at": "2026-07-23T09:10:11.123Z"
                 }]
@@ -6703,7 +6434,7 @@ mod mapping_tests {
                 )
                 .unwrap(),
                 name: "report.log".to_string(),
-                absolute_path: "/var/log/report.log".to_string(),
+                absolute_path: r"C:\var\log\report.log".to_string(),
                 has_content: true,
                 synchronized_at,
             }],
@@ -6719,7 +6450,7 @@ mod mapping_tests {
                 "entries": [{
                     "file_id": "018f0000-0000-7000-8000-000000000003",
                     "name": "report.log",
-                    "absolute_path": "/var/log/report.log",
+                    "absolute_path": "C:\\var\\log\\report.log",
                     "has_content": true,
                     "synchronized_at": "2026-07-28T08:15:30Z"
                 }],

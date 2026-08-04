@@ -31,7 +31,7 @@ describe('roles', () => {
   it('resolves Devices capabilities by action instead of role inheritance', () => {
     expect(resolveDevicesCapabilities(['Cyber'])).toEqual({
       canRead: true,
-      canCreate: false,
+      canCreate: true,
       canWriteSourceData: true,
       canWriteAnalyticalData: false,
     });

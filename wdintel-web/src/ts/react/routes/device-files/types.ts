@@ -5,7 +5,6 @@ import type {
   FileEntryKind,
   FileSyncError,
   FileSyncOperation,
-  PathSyntax,
 } from '../../../../Bindings';
 
 export const DEVICE_FILE_PAGE_SIZE = 100;
@@ -60,6 +59,5 @@ export type DeviceFileSyncRow = {
 };
 
 export type DeviceFileSyncSeed = {
-  pathSyntax: PathSyntax;
   entry: DeviceFileTreeEntry | null;
 };

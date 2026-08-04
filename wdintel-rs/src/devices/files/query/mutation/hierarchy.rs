@@ -1,7 +1,6 @@
 use super::super::super::{
     ltree::{child_hierarchy_path, hierarchy_entry_ids, root_hierarchy_path},
     map_transaction_body_error,
-    path::name_key,
     query::{map_directory_model, map_root_model},
     DomainFileEntryKind, FilesystemError, PreparedFileMutation, RootEntry,
 };
@@ -10,8 +9,8 @@ use crate::h;
 use chrono::NaiveDateTime;
 use sea_orm::sea_query::{Expr, OnConflict, SimpleExpr};
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, DatabaseTransaction, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect,
+    ActiveEnum, ActiveValue::Set, ColumnTrait, DatabaseTransaction,
+    EntityTrait, QueryFilter, QueryOrder, QuerySelect,
 };
 use uuid::Uuid;
 
@@ -26,16 +25,13 @@ pub(super) async fn ensure_target_root(
     now: NaiveDateTime,
 ) -> Result<Uuid, FilesystemError> {
     let source_path = &mutation.source_path;
-    let root_name_key = name_key(&source_path.root_name);
     let hierarchy_path = root_hierarchy_path(mutation.candidate_root_entry_id);
     file_entry::Entity::insert(file_entry::ActiveModel {
         id: Set(mutation.candidate_root_entry_id),
         device_id: Set(mutation.device_id),
         parent_id: Set(None),
-        kind: Set(DomainFileEntryKind::Directory.as_db_str().to_string()),
+        kind: Set(DomainFileEntryKind::Directory),
         name: Set(source_path.root_name.clone()),
-        name_key: Set(root_name_key.clone()),
-        path_syntax: Set(Some(source_path.path_syntax.as_db_str().to_string())),
         absolute_path: Set(None),
         hierarchy_path: Set(hierarchy_path),
         mime_type: Set(None),
@@ -49,8 +45,7 @@ pub(super) async fn ensure_target_root(
     .on_conflict(
         OnConflict::columns([
             file_entry::Column::DeviceId,
-            file_entry::Column::PathSyntax,
-            file_entry::Column::NameKey,
+            file_entry::Column::Name,
         ])
         .target_and_where(file_entry::Column::ParentId.is_null())
         .do_nothing()
@@ -65,15 +60,8 @@ pub(super) async fn ensure_target_root(
     let root = file_entry::Entity::find()
         .filter(file_entry::Column::DeviceId.eq(mutation.device_id))
         .filter(file_entry::Column::ParentId.is_null())
-        .filter(
-            file_entry::Column::Kind
-                .eq(DomainFileEntryKind::Directory.as_db_str()),
-        )
-        .filter(
-            file_entry::Column::PathSyntax
-                .eq(source_path.path_syntax.as_db_str()),
-        )
-        .filter(file_entry::Column::NameKey.eq(root_name_key))
+        .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::Directory))
+        .filter(file_entry::Column::Name.eq(source_path.root_name.clone()))
         .one(transaction)
         .await
         .map_err(|error| {
@@ -98,10 +86,7 @@ pub(super) async fn lock_roots(
     let roots = file_entry::Entity::find()
         .filter(file_entry::Column::DeviceId.eq(device_id))
         .filter(file_entry::Column::ParentId.is_null())
-        .filter(
-            file_entry::Column::Kind
-                .eq(DomainFileEntryKind::Directory.as_db_str()),
-        )
+        .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::Directory))
         .filter(file_entry::Column::Id.is_in(root_entry_ids.clone()))
         .order_by_asc(file_entry::Column::Id)
         .lock_exclusive()
@@ -157,7 +142,6 @@ pub(super) async fn ensure_directory_chain(
         .take(directory_component_count)
         .zip(&mutation.candidate_directory_entry_ids)
     {
-        let component_name_key = name_key(component);
         let hierarchy_path = child_hierarchy_path(
             &parent.hierarchy_path,
             *candidate_directory_entry_id,
@@ -166,10 +150,8 @@ pub(super) async fn ensure_directory_chain(
             id: Set(*candidate_directory_entry_id),
             device_id: Set(mutation.device_id),
             parent_id: Set(Some(parent.entry_id)),
-            kind: Set(DomainFileEntryKind::Directory.as_db_str().to_string()),
+            kind: Set(DomainFileEntryKind::Directory),
             name: Set(component.to_string()),
-            name_key: Set(component_name_key.clone()),
-            path_syntax: Set(None),
             absolute_path: Set(None),
             hierarchy_path: Set(hierarchy_path),
             mime_type: Set(None),
@@ -184,15 +166,12 @@ pub(super) async fn ensure_directory_chain(
             OnConflict::columns([
                 file_entry::Column::DeviceId,
                 file_entry::Column::ParentId,
-                file_entry::Column::NameKey,
+                file_entry::Column::Name,
             ])
             .target_and_where(
                 Expr::col(file_entry::Column::Kind)
                     .eq(SimpleExpr::Constant(
-                        DomainFileEntryKind::Directory
-                            .as_db_str()
-                            .to_string()
-                            .into(),
+                        DomainFileEntryKind::Directory.to_value().into(),
                     ))
                     .and(file_entry::Column::ParentId.is_not_null()),
             )
@@ -208,11 +187,8 @@ pub(super) async fn ensure_directory_chain(
         let directory = file_entry::Entity::find()
             .filter(file_entry::Column::DeviceId.eq(mutation.device_id))
             .filter(file_entry::Column::ParentId.eq(parent.entry_id))
-            .filter(
-                file_entry::Column::Kind
-                    .eq(DomainFileEntryKind::Directory.as_db_str()),
-            )
-            .filter(file_entry::Column::NameKey.eq(component_name_key))
+            .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::Directory))
+            .filter(file_entry::Column::Name.eq(component.clone()))
             .one(transaction)
             .await
             .map_err(|error| {
@@ -242,10 +218,7 @@ pub(super) async fn prune_empty_directory_chain(
         let directory = file_entry::Entity::find()
             .filter(file_entry::Column::DeviceId.eq(device_id))
             .filter(file_entry::Column::Id.eq(directory_entry_id))
-            .filter(
-                file_entry::Column::Kind
-                    .eq(DomainFileEntryKind::Directory.as_db_str()),
-            )
+            .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::Directory))
             .lock_exclusive()
             .one(transaction)
             .await
@@ -280,10 +253,7 @@ pub(super) async fn prune_empty_directory_chain(
         let delete_result = file_entry::Entity::delete_many()
             .filter(file_entry::Column::DeviceId.eq(device_id))
             .filter(file_entry::Column::Id.eq(directory.entry_id))
-            .filter(
-                file_entry::Column::Kind
-                    .eq(DomainFileEntryKind::Directory.as_db_str()),
-            )
+            .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::Directory))
             .exec(transaction)
             .await
             .map_err(|error| {

@@ -1,7 +1,6 @@
 use super::super::super::{
     ltree::child_hierarchy_path,
     map_database_error, map_transaction_body_error,
-    path::name_key,
     query::{map_file_model, map_root_model},
     DomainFileEntryKind, FileEntry, FileMutationResult, FilesystemError,
     PreparedFileMutation, RootEntry,
@@ -163,10 +162,7 @@ pub(super) async fn reconcile_file_mutation(
         .filter(file_entry::Column::DeviceId.eq(expected.file.device_id))
         .filter(file_entry::Column::Id.eq(root_entry_id))
         .filter(file_entry::Column::ParentId.is_null())
-        .filter(
-            file_entry::Column::Kind
-                .eq(DomainFileEntryKind::Directory.as_db_str()),
-        )
+        .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::Directory))
         .one(db)
         .await
         .map_err(|error| {
@@ -186,9 +182,7 @@ fn file_query(device_id: Uuid, file_id: Uuid) -> Select<file_entry::Entity> {
     file_entry::Entity::find()
         .filter(file_entry::Column::DeviceId.eq(device_id))
         .filter(file_entry::Column::Id.eq(file_id))
-        .filter(
-            file_entry::Column::Kind.eq(DomainFileEntryKind::File.as_db_str()),
-        )
+        .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::File))
 }
 
 fn locked_target_root(
@@ -215,12 +209,8 @@ async fn insert_file(
         id: Set(mutation.file_id),
         device_id: Set(mutation.device_id),
         parent_id: Set(Some(parent.entry_id)),
-        kind: Set(DomainFileEntryKind::File.as_db_str().to_string()),
+        kind: Set(DomainFileEntryKind::File),
         name: Set(file_name.clone()),
-        name_key: Set(name_key(&file_name)),
-        path_syntax: Set(Some(
-            mutation.source_path.path_syntax.as_db_str().to_string(),
-        )),
         absolute_path: Set(Some(mutation.source_path.absolute_path.clone())),
         hierarchy_path: Set(hierarchy_path),
         mime_type: Set(mutation.metadata.mime_type.clone()),
@@ -257,10 +247,6 @@ async fn update_file_row(
     let mut file = entry.into_active_model();
     file.parent_id = Set(Some(parent.entry_id));
     file.name = Set(file_name.clone());
-    file.name_key = Set(name_key(&file_name));
-    file.path_syntax = Set(Some(
-        mutation.source_path.path_syntax.as_db_str().to_string(),
-    ));
     file.absolute_path = Set(Some(mutation.source_path.absolute_path.clone()));
     file.hierarchy_path = Set(hierarchy_path);
     file.mime_type = Set(mutation.metadata.mime_type.clone());

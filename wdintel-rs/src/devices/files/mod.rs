@@ -17,15 +17,14 @@ pub(in crate::devices::files) use error::{
 pub(in crate::devices) use metadata::normalize_file_metadata;
 pub(in crate::devices) use types::{
     Breadcrumb, BrowseFilesCommand, BrowseFilesResult, DirectoryEntry,
-    DirectoryScope, DomainFileEntryKind, DomainPathSyntax, EntryQueryScope,
-    EntrySortKey, FileEntry, FileJournalEntry, FileJournalSortKey,
-    FileMutationResult, FileSearchFilters, JournalFilesCommand,
-    JournalFilesResult, KeysetPage, KeysetPageRequest, PreparedFileMutation,
-    RawFileSearchFilters, RootEntry, SearchEntry, SearchFilesCommand,
-    SearchFilesResult, SubtreeFileCount, SubtreeFileCountsCommand,
-    SyncFileItemCommand, SyncFileItemOutcome, SyncFileItemResult,
-    SyncFileOperation, SyncFileRejectionKind, SyncFilesCommand,
-    SyncFilesResult, TreeEntry,
+    DirectoryScope, DomainFileEntryKind, EntryQueryScope, EntrySortKey,
+    FileEntry, FileJournalEntry, FileJournalSortKey, FileMutationResult,
+    FileSearchFilters, JournalFilesCommand, JournalFilesResult, KeysetPage,
+    KeysetPageRequest, PreparedFileMutation, RawFileSearchFilters, RootEntry,
+    SearchEntry, SearchFilesCommand, SearchFilesResult, SubtreeFileCount,
+    SubtreeFileCountsCommand, SyncFileItemCommand, SyncFileItemOutcome,
+    SyncFileItemResult, SyncFileOperation, SyncFileRejectionKind,
+    SyncFilesCommand, SyncFilesResult, TreeEntry,
 };
 pub mod types;
 
@@ -35,14 +34,12 @@ use self::bl::{
     map_browse, map_journal, map_roots, map_search, map_subtree_counts,
     map_sync,
 };
+use self::types::FileEntryKind as ApiFileEntryKind;
 use self::types::{
     BrowseDeviceFilesReq, BrowseDeviceFilesRsp, CountDeviceFileSubtreesReq,
     CountDeviceFileSubtreesRsp, JournalDeviceFilesReq, JournalDeviceFilesRsp,
     ListDeviceFileRootsReq, ListDeviceFileRootsRsp, SearchDeviceFilesReq,
     SearchDeviceFilesRsp, SyncDeviceFilesReq, SyncDeviceFilesRsp,
-};
-use self::types::{
-    FileEntryKind as ApiFileEntryKind, PathSyntax as ApiPathSyntax,
 };
 use crate::devices::access;
 use crate::devices::types::{parse_datetime, parse_uuid, RequiredPatch};
@@ -227,7 +224,6 @@ async fn sync_files(
         &login,
         SyncFilesCommand {
             device_id: parse_uuid(&body.device_id),
-            path_syntax: map_path_syntax(body.path_syntax),
             files: body
                 .files
                 .into_iter()
@@ -269,12 +265,5 @@ fn map_entry_kind(kind: ApiFileEntryKind) -> DomainFileEntryKind {
     match kind {
         ApiFileEntryKind::Directory => DomainFileEntryKind::Directory,
         ApiFileEntryKind::File => DomainFileEntryKind::File,
-    }
-}
-
-fn map_path_syntax(path_syntax: ApiPathSyntax) -> DomainPathSyntax {
-    match path_syntax {
-        ApiPathSyntax::Posix => DomainPathSyntax::Posix,
-        ApiPathSyntax::Windows => DomainPathSyntax::Windows,
     }
 }

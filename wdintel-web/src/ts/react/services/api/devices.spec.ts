@@ -71,8 +71,7 @@ function mockRootResponse() {
     device_id: DEVICE_ID,
     parent_entry_id: null,
     kind: 'directory',
-    name: '/',
-    path_syntax: 'posix',
+    name: 'C:\\',
     created_at: CREATED_AT,
     updated_at: UPDATED_AT,
   };
@@ -84,8 +83,7 @@ function mockFileResponse() {
     device_id: DEVICE_ID,
     parent_entry_id: ROOT_ID,
     root_entry_id: ROOT_ID,
-    path_syntax: 'posix',
-    absolute_path: '/report.log',
+    absolute_path: 'C:\\report.log',
     has_content: false,
     name: 'report.log',
     path_components: ['report.log'],
@@ -243,7 +241,6 @@ describe('device filesystem API service routes', () => {
     expect(requestBody()).toEqual({ device_id: DEVICE_ID });
     expect(rsp.roots[0]).toMatchObject({
       entryId: ROOT_ID,
-      pathSyntax: 'posix',
     });
   });
   it('loads subtree counts separately from tree payloads', async () => {
@@ -274,7 +271,7 @@ describe('device filesystem API service routes', () => {
   it('browses a directory with keyset pagination', async () => {
     fetchMock().mockResolvedValueOnce(
       jsonResponse({
-        breadcrumbs: [{ entry_id: ROOT_ID, name: '/' }],
+        breadcrumbs: [{ entry_id: ROOT_ID, name: 'C:\\' }],
         entries: [
           {
             entry_id: ENTRY_ID,
@@ -283,8 +280,7 @@ describe('device filesystem API service routes', () => {
             file_id: FILE_ID,
             name: 'report.log',
             path_components: ['report.log'],
-            path_syntax: 'posix',
-            absolute_path: '/report.log',
+            absolute_path: 'C:\\report.log',
             has_content: true,
             mime_type: 'text/plain',
             extension: 'log',
@@ -418,11 +414,10 @@ describe('device filesystem API service routes', () => {
 
     const rsp = await syncDeviceFiles({
       deviceId: DEVICE_ID,
-      pathSyntax: 'posix',
       files: [
         {
           fileId: null,
-          absolutePath: '/report.log',
+          absolutePath: 'C:\\report.log',
           mimeType: 'text/plain',
           extension: 'log',
           fileMetadataCreatedAt: CREATED_AT,
@@ -430,7 +425,7 @@ describe('device filesystem API service routes', () => {
         },
         {
           fileId: FILE_ID,
-          absolutePath: '/moved.log',
+          absolutePath: 'C:\\moved.log',
           mimeType: null,
           extension: null,
           fileMetadataCreatedAt: null,
@@ -441,10 +436,9 @@ describe('device filesystem API service routes', () => {
 
     expect(requestBody()).toEqual({
       device_id: DEVICE_ID,
-      path_syntax: 'posix',
       files: [
         {
-          absolute_path: '/report.log',
+          absolute_path: 'C:\\report.log',
           mime_type: 'text/plain',
           extension: 'log',
           file_metadata_created_at: CREATED_AT,
@@ -452,7 +446,7 @@ describe('device filesystem API service routes', () => {
         },
         {
           file_id: FILE_ID,
-          absolute_path: '/moved.log',
+          absolute_path: 'C:\\moved.log',
           mime_type: null,
           extension: null,
           file_metadata_created_at: null,
@@ -488,7 +482,6 @@ describe('device filesystem API service routes', () => {
 
     await syncDeviceFiles({
       deviceId: DEVICE_ID,
-      pathSyntax: 'windows',
       files: [
         {
           fileId: null,
@@ -503,7 +496,6 @@ describe('device filesystem API service routes', () => {
 
     expect(requestBody()).toEqual({
       device_id: DEVICE_ID,
-      path_syntax: 'windows',
       files: [
         {
           absolute_path: absolutePath,

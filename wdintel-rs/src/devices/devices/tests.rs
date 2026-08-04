@@ -219,8 +219,8 @@ async fn batch_hydration_preserves_input_order_and_current_references() {
         states.iter().map(|state| state.id).collect::<Vec<_>>(),
         [second_device.id, first_device.id,]
     );
-    assert_eq!(states[0].name, "Second device");
-    assert_eq!(states[1].name, "First device");
+    assert_eq!(states[0].name.as_deref(), Some("Second device"));
+    assert_eq!(states[1].name.as_deref(), Some("First device"));
     assert_eq!(
         states[1].aors.iter().map(|aor| aor.id).collect::<Vec<_>>(),
         [first_aor.id, second_aor.id]
@@ -256,7 +256,7 @@ async fn device_source_create_persists_normalized_state() {
         &main_db,
         &actor,
         CreateDeviceCommand {
-            name: "  Device source  ".to_string(),
+            name: Some("  Device source  ".to_string()),
             external_url: Some(" https://example.com ".to_string()),
             custom_fields: Some(BTreeMap::from([(
                 " inventory_id ".to_string(),
@@ -270,7 +270,7 @@ async fn device_source_create_persists_normalized_state() {
         &main_db,
         &actor,
         CreateDeviceCommand {
-            name: "Another device".to_string(),
+            name: Some("Another device".to_string()),
             external_url: None,
             custom_fields: None,
         },
@@ -279,8 +279,8 @@ async fn device_source_create_persists_normalized_state() {
     .unwrap();
 
     assert_ne!(state.id, another_state.id);
-    assert_eq!(state.name, "Device source");
-    assert_eq!(another_state.name, "Another device");
+    assert_eq!(state.name.as_deref(), Some("Device source"));
+    assert_eq!(another_state.name.as_deref(), Some("Another device"));
     assert!(state.aors.is_empty());
     assert_eq!(state.unit, None);
     assert_eq!(state.external_url.as_deref(), Some("https://example.com/"));
@@ -297,7 +297,7 @@ async fn device_source_create_persists_normalized_state() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(device.name, "Device source");
+    assert_eq!(device.name.as_deref(), Some("Device source"));
     assert_eq!(device.unit_id, None);
     assert_eq!(device.tags, json!([]));
     assert_eq!(device.organism_id, source_login.organism_id.unwrap());
@@ -318,7 +318,7 @@ async fn device_source_mixed_update_is_atomic_and_cyber_cannot_change_analysis()
         &main_db,
         &source,
         CreateDeviceCommand {
-            name: "Initial device".to_string(),
+            name: Some("Initial device".to_string()),
             external_url: None,
             custom_fields: None,
         },
@@ -366,7 +366,7 @@ async fn device_source_mixed_update_is_atomic_and_cyber_cannot_change_analysis()
         updated.custom_fields,
         BTreeMap::from([("inventory_id".to_string(), "node-2".to_string())])
     );
-    assert_eq!(updated.name, "Updated device");
+    assert_eq!(updated.name.as_deref(), Some("Updated device"));
     assert_eq!(
         updated.aors.iter().map(|aor| aor.id).collect::<Vec<_>>(),
         [aor.id]
@@ -388,20 +388,17 @@ async fn device_source_mixed_update_is_atomic_and_cyber_cannot_change_analysis()
             .await
             .unwrap_err(),
     );
-    assert_eq!(
-        device::Entity::find_by_id(created.id)
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap()
-            .name,
-        "Updated device"
-    );
+    let unchanged = device::Entity::find_by_id(created.id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(unchanged.name.as_deref(), Some("Updated device"));
 }
 
 #[tokio::test]
 #[serial_test::serial]
-async fn create_allows_device_source_and_admin_and_rejects_cyber() {
+async fn create_allows_all_device_roles_but_only_sources_may_name() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
     let admin_login = insert_login(&env.dbx, &[ROLE_ADMIN]).await;
@@ -416,7 +413,7 @@ async fn create_allows_device_source_and_admin_and_rejects_cyber() {
             &main_db,
             actor,
             CreateDeviceCommand {
-                name: format!("create-role-{}", Uuid::now_v7()),
+                name: Some(format!("create-role-{}", Uuid::now_v7())),
                 external_url: None,
                 custom_fields: None,
             },
@@ -424,21 +421,25 @@ async fn create_allows_device_source_and_admin_and_rejects_cyber() {
         .await
         .unwrap();
         assert_eq!(state.created_by, login.login);
-        assert!(!state.name.is_empty());
+        assert!(state.name.as_ref().is_some_and(|name| !name.is_empty()));
     }
 
-    assert_forbidden(
-        create(
-            &main_db,
-            &cyber,
-            CreateDeviceCommand {
-                name: "Cyber device".to_string(),
-                external_url: None,
-                custom_fields: None,
-            },
-        )
-        .await
-        .unwrap_err(),
+    let cyber_state = create(
+        &main_db,
+        &cyber,
+        CreateDeviceCommand {
+            name: None,
+            external_url: Some(" https://example.com/cyber ".to_string()),
+            custom_fields: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(cyber_state.created_by, cyber_login.login);
+    assert_eq!(cyber_state.name, None);
+    assert_eq!(
+        cyber_state.external_url.as_deref(),
+        Some("https://example.com/cyber")
     );
 
     assert_forbidden(
@@ -446,8 +447,8 @@ async fn create_allows_device_source_and_admin_and_rejects_cyber() {
             &main_db,
             &cyber,
             CreateDeviceCommand {
-                name: "   ".to_string(),
-                external_url: Some("not a URL".to_string()),
+                name: Some("Cyber device".to_string()),
+                external_url: None,
                 custom_fields: None,
             },
         )
@@ -459,7 +460,7 @@ async fn create_allows_device_source_and_admin_and_rejects_cyber() {
         &main_db,
         &source,
         CreateDeviceCommand {
-            name: "Authorization target".to_string(),
+            name: Some("Authorization target".to_string()),
             external_url: None,
             custom_fields: None,
         },
@@ -473,15 +474,12 @@ async fn create_allows_device_source_and_admin_and_rejects_cyber() {
     assert_forbidden(
         update(&main_db, &cyber, malformed_mixed).await.unwrap_err(),
     );
-    assert_eq!(
-        device::Entity::find_by_id(created.id)
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap()
-            .name,
-        "Authorization target"
-    );
+    let unchanged = device::Entity::find_by_id(created.id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(unchanged.name.as_deref(), Some("Authorization target"));
 }
 
 #[tokio::test]
@@ -499,7 +497,7 @@ async fn patch_presence_and_clears_follow_the_internal_contract() {
         &main_db,
         &source,
         CreateDeviceCommand {
-            name: "Presence device".to_string(),
+            name: Some("Presence device".to_string()),
             external_url: Some("https://example.com/original".to_string()),
             custom_fields: Some(BTreeMap::from([(
                 "source_key".to_string(),
@@ -597,7 +595,7 @@ async fn patch_presence_and_clears_follow_the_internal_contract() {
     clears.unit_id = DevicePatchField::Value(None);
     let cleared = update(&main_db, &source, clears).await.unwrap();
     assert_eq!(cleared.external_url, None);
-    assert_eq!(cleared.name, "Renamed presence device");
+    assert_eq!(cleared.name.as_deref(), Some("Renamed presence device"));
     assert!(cleared.aors.is_empty());
     assert_eq!(cleared.unit, None);
 }
@@ -613,7 +611,7 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
         &main_db,
         &source,
         CreateDeviceCommand {
-            name: "Rollback device".to_string(),
+            name: Some("Rollback device".to_string()),
             external_url: None,
             custom_fields: Some(BTreeMap::from([(
                 "stable".to_string(),
@@ -770,7 +768,7 @@ async fn custom_field_patches_and_effective_no_ops_preserve_state() {
         &main_db,
         &source,
         CreateDeviceCommand {
-            name: "Custom fields device".to_string(),
+            name: Some("Custom fields device".to_string()),
             external_url: None,
             custom_fields: Some(BTreeMap::from([
                 ("remove".to_string(), "value".to_string()),
@@ -865,7 +863,7 @@ async fn custom_field_patches_and_effective_no_ops_preserve_state() {
         &main_db,
         &source,
         CreateDeviceCommand {
-            name: "Full custom fields device".to_string(),
+            name: Some("Full custom fields device".to_string()),
             external_url: None,
             custom_fields: Some(full_custom_fields),
         },
@@ -897,7 +895,7 @@ async fn read_handles_archives_and_deleted_references() {
         &main_db,
         &source,
         CreateDeviceCommand {
-            name: "Read device".to_string(),
+            name: Some("Read device".to_string()),
             external_url: Some("https://example.com/read".to_string()),
             custom_fields: Some(BTreeMap::from([(
                 "read_key".to_string(),
@@ -988,7 +986,7 @@ async fn read_handles_archives_and_deleted_references() {
     )
     .await
     .unwrap();
-    assert_eq!(state.name, "Read device");
+    assert_eq!(state.name.as_deref(), Some("Read device"));
     assert_eq!(
         state.external_url.as_deref(),
         Some("https://example.com/read")
@@ -1372,7 +1370,7 @@ mod mapping_tests {
         DeviceCurrentState {
             id: Uuid::parse_str("018f0000-0000-7000-8000-000000000001")
                 .unwrap(),
-            name: "Mapped device".to_string(),
+            name: Some("Mapped device".to_string()),
             aors: vec![DeviceAorReference {
                 id: 7,
                 name: "AOR".to_string(),
@@ -1801,7 +1799,7 @@ mod query_tests {
                 &env.dbx,
                 &cyber,
                 active.id,
-                FileRegistryDeviceAccess::SourceWrite,
+                FileRegistryDeviceAccess::FileSync,
             )
             .await
             .unwrap(),
@@ -1812,7 +1810,7 @@ mod query_tests {
                 &env.dbx,
                 &source,
                 active.id,
-                FileRegistryDeviceAccess::SourceWrite,
+                FileRegistryDeviceAccess::FileSync,
             )
             .await
             .unwrap(),
@@ -1859,7 +1857,7 @@ mod query_tests {
             &main_pool,
             &actor,
             device.id,
-            FileRegistryDeviceAccess::SourceWrite,
+            FileRegistryDeviceAccess::FileSync,
         )
         .await
         .unwrap();

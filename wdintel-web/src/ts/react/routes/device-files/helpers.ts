@@ -2,7 +2,6 @@ import type {
   BrowseDeviceFilesReq,
   DeviceFileTreeEntry,
   FileSyncError,
-  PathSyntax,
   SearchDeviceFilesReq,
   SyncDeviceFilesReq,
   SyncDeviceFilesRsp,
@@ -158,16 +157,14 @@ function emptyToNull(value: string): string | null {
   return normalized === '' ? null : normalized;
 }
 
-export function buildSyncDeviceFilesReq(params: {
-  deviceId: string;
-  pathSyntax: PathSyntax;
-  rows: DeviceFileSyncRow[];
-}): { req: SyncDeviceFilesReq; submittedRowIds: string[] } {
+export function buildSyncDeviceFilesReq(params: { deviceId: string; rows: DeviceFileSyncRow[] }): {
+  req: SyncDeviceFilesReq;
+  submittedRowIds: string[];
+} {
   const submittedRows = params.rows.filter((row) => row.result?.kind !== 'accepted');
   return {
     req: {
       deviceId: params.deviceId,
-      pathSyntax: params.pathSyntax,
       files: submittedRows.map((row) => ({
         fileId: row.fileId,
         absolutePath: row.absolutePath,
@@ -270,12 +267,12 @@ export function parseSyncRequestError(
   const message = formatDeviceErrorMessage(error);
   const fieldErrors = error instanceof Error ? parseFieldErrorPayload(error.message) : [];
   const rowErrors = mapSyncFieldErrors(fieldErrors, submittedRowIds);
-  const pathSyntaxError = fieldErrors.find(([path]) => path === 'path_syntax')?.[1];
   const transportUncertain = !(error instanceof HttpRequestError) || error.status === 0;
+  const batchError = rowErrors.size > 0 ? 'Виправте помилки в рядках батча.' : message;
   return {
     batchError: transportUncertain
       ? `${message} Результат запиту невідомий: перевірте список файлів перед повторною відправкою.`
-      : (pathSyntaxError ?? message),
+      : batchError,
     rowErrors,
     transportUncertain,
   };

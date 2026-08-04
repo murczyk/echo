@@ -3,3 +3,4 @@
 pub mod prelude;
 
 pub mod file_entry;
+pub mod sea_orm_active_enums;

@@ -31,7 +31,7 @@ import { postJson } from './client';
 import type { JsonBody, RequestOptions } from './client';
 
 export type CreateDeviceInput = {
-  name: CreateDeviceReq['name'];
+  name?: NonNullable<CreateDeviceReq['name']>;
   externalUrl?: CreateDeviceReq['externalUrl'];
   customFields?: Exclude<CreateDeviceReq['customFields'], null>;
 };
@@ -105,7 +105,6 @@ function normalizeDeviceDetails(data: unknown): DeviceDetails {
 function serializeSyncRequest(req: SyncDeviceFilesReq): JsonBody {
   return {
     device_id: req.deviceId,
-    path_syntax: req.pathSyntax,
     files: req.files.map(({ fileId, ...file }) => ({
       ...(fileId === null ? {} : { file_id: fileId }),
       ...transformCamelToSnake<Record<string, JsonBody>>(file),

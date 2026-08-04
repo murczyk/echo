@@ -1,6 +1,9 @@
 use super::{
     error::{FilesystemError, FilesystemFieldError},
-    types::{FileSearchFilters, RawFileSearchFilters, SyncFileItemCommand},
+    types::{
+        DomainFileEntryKind, FileSearchFilters, RawFileSearchFilters,
+        SyncFileItemCommand,
+    },
 };
 use crate::config::{
     DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES, DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS,
@@ -205,7 +208,7 @@ impl TryFrom<RawFileSearchFilters> for FileSearchFilters {
         }
 
         Ok(FileSearchFilters::from_validated_parts(
-            canonicalize_values(kinds),
+            canonicalize_file_kinds(kinds),
             name_query,
             canonicalize_values(mime_types),
             canonicalize_values(extensions),
@@ -213,6 +216,17 @@ impl TryFrom<RawFileSearchFilters> for FileSearchFilters {
             file_metadata_modified_to,
         ))
     }
+}
+
+fn canonicalize_file_kinds(
+    mut kinds: Vec<DomainFileEntryKind>,
+) -> Vec<DomainFileEntryKind> {
+    kinds.sort_by_key(|kind| match kind {
+        DomainFileEntryKind::Directory => 0,
+        DomainFileEntryKind::File => 1,
+    });
+    kinds.dedup();
+    kinds
 }
 
 fn canonicalize_values<T: Ord>(mut values: Vec<T>) -> Vec<T> {

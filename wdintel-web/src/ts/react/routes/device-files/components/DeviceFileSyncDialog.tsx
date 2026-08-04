@@ -5,7 +5,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  MenuItem,
   Paper,
   Stack,
   TextField,
@@ -13,7 +12,6 @@ import {
 } from '@mui/material';
 import dayjs from 'dayjs';
 
-import type { PathSyntax } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
 import { PowerDateTimePicker } from '../../../components/PowerDateTimePicker';
@@ -23,14 +21,12 @@ import type { DeviceFileSyncField, DeviceFileSyncRow } from '../types';
 
 type Props = {
   open: boolean;
-  pathSyntax: PathSyntax;
   rows: DeviceFileSyncRow[];
   submitting: boolean;
   batchError: string | null;
   transportUncertain: boolean;
   canSubmit: boolean;
   onClose: () => void;
-  onPathSyntaxChange: (pathSyntax: PathSyntax) => void;
   onAddRow: () => void;
   onRemoveRow: (localId: string) => void;
   onChangeRowField: (localId: string, field: DeviceFileSyncField, value: string | null) => void;
@@ -76,11 +72,13 @@ function SyncRowFields({
         ) : null}
 
         <TextField
-          label="Абсолютний шлях"
+          label="Абсолютний шлях Windows"
           value={row.absolutePath}
           onChange={(event) => onChange('absolutePath', event.target.value)}
           error={Boolean(row.fieldErrors.absolutePath)}
-          helperText={row.fieldErrors.absolutePath ?? 'Шлях передається без нормалізації'}
+          helperText={
+            row.fieldErrors.absolutePath ?? 'Наприклад, C:\\Users\\... або \\\\server\\share\\...'
+          }
           disabled={disabled}
           required
           fullWidth
@@ -167,14 +165,12 @@ function AcceptedSyncRow({ row }: { row: DeviceFileSyncRow }) {
 
 export function DeviceFileSyncDialog({
   open,
-  pathSyntax,
   rows,
   submitting,
   batchError,
   transportUncertain,
   canSubmit,
   onClose,
-  onPathSyntaxChange,
   onAddRow,
   onRemoveRow,
   onChangeRowField,
@@ -186,19 +182,6 @@ export function DeviceFileSyncDialog({
       <DialogTitle id="file-sync-title">Синхронізація файлових метаданих</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2}>
-          <TextField
-            select
-            label="Синтаксис шляхів"
-            value={pathSyntax}
-            onChange={(event) => onPathSyntaxChange(event.target.value as PathSyntax)}
-            disabled={submitting}
-            size="small"
-            sx={{ maxWidth: 260 }}
-          >
-            <MenuItem value="posix">POSIX</MenuItem>
-            <MenuItem value="windows">Windows</MenuItem>
-          </TextField>
-
           {batchError ? (
             <PowerAlert severity="error" autoHideDuration={null}>
               {batchError}

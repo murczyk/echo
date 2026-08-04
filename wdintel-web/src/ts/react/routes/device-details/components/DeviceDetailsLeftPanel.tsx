@@ -133,7 +133,11 @@ function DeviceAorsValue({ device }: { device: DeviceDetails }) {
 }
 
 function DeviceNameValue({ device }: { device: DeviceDetails }) {
-  return <DeviceTextValue>{device.name}</DeviceTextValue>;
+  return device.name === null ? (
+    <DeviceTextValue muted>—</DeviceTextValue>
+  ) : (
+    <DeviceTextValue>{device.name}</DeviceTextValue>
+  );
 }
 
 function DeviceExternalUrlValue({ device }: { device: DeviceDetails }) {

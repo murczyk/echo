@@ -1,8 +1,8 @@
 use super::{
-    normalize_file_metadata, query, DomainPathSyntax, FileMutationResult,
-    FilesystemError, FilesystemFieldError, PreparedFileMutation,
-    SyncFileItemCommand, SyncFileItemOutcome, SyncFileItemResult,
-    SyncFileRejectionKind, SyncFilesResult,
+    normalize_file_metadata, query, FileMutationResult, FilesystemError,
+    FilesystemFieldError, PreparedFileMutation, SyncFileItemCommand,
+    SyncFileItemOutcome, SyncFileItemResult, SyncFileRejectionKind,
+    SyncFilesResult,
 };
 use crate::config::DEVICE_FILE_SYNC_ITEM_MAX_ATTEMPTS;
 use crate::file_registry::FileRegistryDb;
@@ -21,13 +21,11 @@ pub(super) enum PreparedSyncFileItem {
 pub(super) async fn sync_files(
     file_registry_db: &FileRegistryDb,
     device_id: Uuid,
-    path_syntax: DomainPathSyntax,
     files: Vec<SyncFileItemCommand>,
     duplicate_file_ids: HashSet<Uuid>,
 ) -> Result<SyncFilesResult, FilesystemError> {
     sync_files_with_mutator(
         device_id,
-        path_syntax,
         files,
         duplicate_file_ids,
         |mutation| async move {
@@ -39,7 +37,6 @@ pub(super) async fn sync_files(
 
 pub(super) async fn sync_files_with_mutator<M, Fut>(
     device_id: Uuid,
-    path_syntax: DomainPathSyntax,
     files: Vec<SyncFileItemCommand>,
     duplicate_file_ids: HashSet<Uuid>,
     mut mutate_file: M,
@@ -49,7 +46,7 @@ where
     Fut: Future<Output = Result<FileMutationResult, FilesystemError>>,
 {
     let prepared_files =
-        prepare_sync_items(device_id, path_syntax, files, &duplicate_file_ids)?;
+        prepare_sync_items(device_id, files, &duplicate_file_ids)?;
     let mut results = Vec::with_capacity(prepared_files.len());
 
     for prepared_file in prepared_files {
@@ -103,7 +100,6 @@ where
 
 pub(super) fn prepare_sync_items(
     device_id: Uuid,
-    path_syntax: DomainPathSyntax,
     files: Vec<SyncFileItemCommand>,
     duplicate_file_ids: &HashSet<Uuid>,
 ) -> Result<Vec<PreparedSyncFileItem>, FilesystemError> {
@@ -113,7 +109,6 @@ pub(super) fn prepare_sync_items(
         prepared_files.push(prepare_sync_item(
             index,
             device_id,
-            path_syntax,
             file,
             duplicate_file_ids,
         )?);
@@ -125,7 +120,6 @@ pub(super) fn prepare_sync_items(
 fn prepare_sync_item(
     index: usize,
     device_id: Uuid,
-    path_syntax: DomainPathSyntax,
     file: SyncFileItemCommand,
     duplicate_file_ids: &HashSet<Uuid>,
 ) -> Result<PreparedSyncFileItem, FilesystemError> {
@@ -160,7 +154,6 @@ fn prepare_sync_item(
     }
 
     let source_path = match super::path::parse(
-        path_syntax,
         absolute_path,
         &format!("{field_prefix}.absolute_path"),
     ) {

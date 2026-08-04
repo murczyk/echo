@@ -263,14 +263,13 @@ async fn target_api_smoke_covers_all_routes() {
         "/api/device/files/sync",
         json!({
             "device_id": device_id,
-            "path_syntax": "posix",
             "files": [
                 {
-                    "absolute_path": "/reports/bad.txt",
+                    "absolute_path": r"C:\reports\bad.txt",
                     "file_metadata_created_at": "not-a-timestamp"
                 },
                 {
-                    "absolute_path": "/reports/good.txt",
+                    "absolute_path": r"C:\reports\good.txt",
                     "mime_type": "text/plain",
                     "extension": "txt",
                     "file_metadata_modified_at": "2026-07-23T12:00:00+03:00"
@@ -398,7 +397,6 @@ async fn target_api_smoke_covers_all_routes() {
         "/api/device/files/sync",
         json!({
             "device_id": device_id,
-            "path_syntax": "windows",
             "files": [
                 {
                     "absolute_path": r"D:\Counter-Strike Source v34 HD\cstrike\sound\weapons\csgo\c4\c4_disarm.wav"
@@ -532,6 +530,17 @@ async fn target_api_smoke_covers_all_routes() {
     assert_eq!(response.status(), StatusCode::OK);
     let updated: Value = test::read_body_json(response).await;
     assert_eq!(updated["external_url"], "https://example.com/cyber-update");
+    let response = post_json!(
+        "/api/device/create",
+        json!({"external_url": "https://example.com/cyber-device"})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let cyber_created: Value = test::read_body_json(response).await;
+    assert_eq!(cyber_created["name"], Value::Null);
+    assert_eq!(
+        cyber_created["external_url"],
+        "https://example.com/cyber-device"
+    );
     let response = post_json!(
         "/api/device/update",
         json!({"device_id": device_id, "name": "Forbidden rename"})
@@ -698,7 +707,7 @@ mod access_tests {
     #[test]
     fn access_maps_each_exact_device_role() {
         let cases = [
-            (ROLE_CYBER, (true, false, true, false)),
+            (ROLE_CYBER, (true, true, true, false)),
             (ROLE_DEVICE_SOURCE, (true, true, true, true)),
             (ROLE_ADMIN, (true, true, true, true)),
         ];
@@ -719,7 +728,7 @@ mod access_tests {
                 vec![ROLE_DEVICE_SOURCE, "Unrelated"],
                 (true, true, true, true),
             ),
-            (vec![ROLE_CYBER, "Unrelated"], (true, false, true, false)),
+            (vec![ROLE_CYBER, "Unrelated"], (true, true, true, false)),
         ];
 
         for (roles, expected_capabilities) in cases {
@@ -831,7 +840,7 @@ mod access_tests {
         let login = login.update(&env.dbx).await.unwrap();
 
         let cyber = resolve_login_by_id(&env.dbx, &login_id).await.unwrap();
-        assert_eq!(capabilities(&cyber.roles), (true, false, true, false));
+        assert_eq!(capabilities(&cyber.roles), (true, true, true, false));
 
         let mut login = login.into_active_model();
         login.organism_id = Set(None);
@@ -931,7 +940,7 @@ pub(in crate::devices) mod schema {
             .unwrap()
             .unwrap();
 
-        assert_eq!(fetched.name, "Device name");
+        assert_eq!(fetched.name.as_deref(), Some("Device name"));
         assert_eq!(fetched.custom_fields, custom_fields);
 
         let duplicate_name = device_active_model(
@@ -945,10 +954,9 @@ pub(in crate::devices) mod schema {
         .insert(&env.dbx)
         .await
         .unwrap();
-        assert_eq!(duplicate_name.name, "Device name");
+        assert_eq!(duplicate_name.name.as_deref(), Some("Device name"));
 
-        let transaction = env.dbx.begin().await.unwrap();
-        let missing_name_error = device_active_model(
+        let unnamed = device_active_model(
             &login.login,
             organism.id,
             None,
@@ -956,14 +964,10 @@ pub(in crate::devices) mod schema {
             false,
             None,
         )
-        .insert(&transaction)
+        .insert(&env.dbx)
         .await
-        .unwrap_err();
-        assert!(
-            has_postgres_error_code(&missing_name_error, "23502"),
-            "expected SQLSTATE 23502, got {missing_name_error:?}"
-        );
-        transaction.rollback().await.unwrap();
+        .unwrap();
+        assert_eq!(unnamed.name, None);
 
         assert_device_check_fails(
             &env.dbx,
@@ -1035,7 +1039,7 @@ pub(in crate::devices) mod schema {
             .collect::<Vec<(String, String, Option<String>, String)>>();
         let expected_columns = [
             ("id", "NO", None, "uuid"),
-            ("name", "NO", None, "text"),
+            ("name", "YES", None, "text"),
             ("created_by", "NO", None, "text"),
             ("unit_id", "YES", None, "bigint"),
             ("tags", "NO", Some("'[]'::jsonb"), "jsonb"),
@@ -1054,7 +1058,7 @@ pub(in crate::devices) mod schema {
                 Some("(now() AT TIME ZONE 'utc'::text)"),
                 "timestamp without time zone",
             ),
-            ("custom_fields", "NO", None, "jsonb"),
+            ("custom_fields", "NO", Some("'{}'::jsonb"), "jsonb"),
             ("organism_id", "NO", None, "bigint"),
         ]
         .into_iter()
@@ -1232,7 +1236,7 @@ pub(in crate::devices) mod schema {
     ) -> device::ActiveModel {
         device::ActiveModel {
             id: Set(Uuid::now_v7()),
-            name: name.map(str::to_owned).map_or(NotSet, Set),
+            name: Set(name.map(str::to_owned)),
             created_by: Set(created_by.to_string()),
             organism_id: Set(organism_id),
             unit_id: Set(None),

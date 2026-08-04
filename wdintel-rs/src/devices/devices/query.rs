@@ -33,7 +33,7 @@ pub(in crate::devices) enum DeviceReadScope {
 
 pub(in crate::devices) enum FileRegistryDeviceAccess {
     Read,
-    SourceWrite,
+    FileSync,
 }
 
 pub(in crate::devices) fn visible_devices_query(
@@ -132,8 +132,8 @@ pub(in crate::devices) async fn authorize_file_registry_access(
             .await
             .c(h!())?;
         }
-        FileRegistryDeviceAccess::SourceWrite => {
-            access::require_source_write(&login.roles).c(h!())?;
+        FileRegistryDeviceAccess::FileSync => {
+            access::require_file_sync(&login.roles).c(h!())?;
             find_active_visible_device(dbx, login, device_id)
                 .await
                 .c(h!())?;
@@ -685,7 +685,7 @@ pub(super) async fn apply_device_changes(
         device.custom_fields = Set(custom_fields);
     }
     if let Some(name) = name {
-        device.name = Set(name);
+        device.name = Set(Some(name));
     }
     if let Some(unit_id) = unit_id {
         device.unit_id = Set(unit_id);

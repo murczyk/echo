@@ -150,14 +150,12 @@ export function DeviceFilesPanel({
 
       <DeviceFileSyncDialog
         open={files.sync.open}
-        pathSyntax={files.sync.pathSyntax}
         rows={files.sync.rows}
         submitting={files.sync.submitting}
         batchError={files.sync.batchError}
         transportUncertain={files.sync.transportUncertain}
         canSubmit={files.sync.canSubmit}
         onClose={files.sync.closeSync}
-        onPathSyntaxChange={files.sync.setPathSyntax}
         onAddRow={files.sync.addRow}
         onRemoveRow={files.sync.removeRow}
         onChangeRowField={files.sync.changeRowField}
