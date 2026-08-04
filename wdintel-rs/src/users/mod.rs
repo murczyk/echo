@@ -594,7 +594,11 @@ pub async fn list_logins(
         .join(JoinType::LeftJoin, login::Relation::SigintZone.def())
         .join(JoinType::LeftJoin, login::Relation::Organism.def())
         .join(JoinType::LeftJoin, login::Relation::DeltaLogin.def())
-        .filter(organism::Column::DeletedPermanently.eq(false))
+        .filter(
+            Condition::any()
+                .add(organism::Column::DeletedPermanently.eq(false))
+                .add(login::Column::OrganismId.is_null()),
+        )
         .filter(login::Column::DeletedPermanently.eq(false))
         .select_only()
         .columns([
