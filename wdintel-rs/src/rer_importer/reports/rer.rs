@@ -368,6 +368,7 @@ async fn load_report(
     )
     .await
     .c(h!())?;
+    let blacklist = crate::sigint::comments::load_blacklist(dbx).await?;
     let mut report = RerReport::default();
     for item_id in item_ids {
         if item_has_other_tag(dbx, item_id).await.c(h!())? {
@@ -409,8 +410,10 @@ async fn load_report(
             item_id,
             timestamp,
             comments.join("; "),
-            message_body_without_duplicate_comments(&message, &comments)
-                .c(h!())?,
+            message_body_without_duplicate_comments(
+                &message, &comments, &blacklist,
+            )
+            .c(h!())?,
             parse_callsigns(&item),
             parse_points(&item),
         );
@@ -702,9 +705,10 @@ fn message_body_without_headers(
 fn message_body_without_duplicate_comments(
     message: &signal_message::Model,
     comments: &[String],
+    blacklist: &[String],
 ) -> Result<String, AppError> {
     let body = message_body_without_headers(message).c(h!())?;
-    let comments = parsed_report_comments(message, comments);
+    let comments = parsed_report_comments(message, comments, blacklist);
     if comments.is_empty() {
         return Ok(body);
     }
@@ -714,16 +718,18 @@ fn message_body_without_duplicate_comments(
 fn parsed_report_comments(
     message: &signal_message::Model,
     comments: &[String],
+    blacklist: &[String],
 ) -> Vec<String> {
     let body = message.body.as_deref().unwrap_or_default();
-    let parsed = crate::sigint::parser::parse_comments(body);
+    let parsed =
+        crate::sigint::parser::parse_comments_with_blacklist(body, blacklist);
     let comments: HashSet<String> = comments
         .iter()
         .map(|comment| normalize_report_comment_text(comment))
         .filter(|comment| !comment.is_empty())
         .collect();
     let marker_candidates: HashSet<String> =
-        crate::sigint::parser::marker_comment_strip_candidates(body)
+        crate::sigint::parser::marker_comment_strip_candidates(body, blacklist)
             .into_iter()
             .map(|comment| normalize_report_comment_text(&comment))
             .filter(|comment| !comment.is_empty())
@@ -2136,6 +2142,7 @@ mod tests {
                 "верхній коментар".to_string(),
                 "нижній коментар".to_string(),
             ],
+            &[],
         )
         .unwrap();
 
@@ -2153,6 +2160,7 @@ mod tests {
         let body = message_body_without_duplicate_comments(
             &message,
             &["перший рядок\nдругий рядок".to_string()],
+            &[],
         )
         .unwrap();
 
@@ -2169,10 +2177,28 @@ mod tests {
         let body = message_body_without_duplicate_comments(
             &message,
             &["🚙 - Переміщення".to_string()],
+            &[],
         )
         .unwrap();
 
         assert!(!body.contains("Переміщення"));
+        assert!(body.contains("— репліка"));
+    }
+
+    #[test]
+    fn report_body_strips_later_comment_after_blacklisted_marker() {
+        let message = signal_message(
+            1,
+            "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка\n\nКоментар: +\n\nКоментар: важливе уточнення",
+        );
+        let body = message_body_without_duplicate_comments(
+            &message,
+            &["важливе уточнення".to_string()],
+            &["+".to_string()],
+        )
+        .unwrap();
+
+        assert!(!body.contains("важливе уточнення"));
         assert!(body.contains("— репліка"));
     }
 

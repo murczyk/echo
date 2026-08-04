@@ -296,10 +296,13 @@ pub fn extract_text_without_top_comment(
     )
 }
 
-pub(crate) fn marker_comment_strip_candidates(body: &str) -> Vec<String> {
+pub(crate) fn marker_comment_strip_candidates(
+    body: &str,
+    blacklist: &[String],
+) -> Vec<String> {
     let lines = normalized_body_lines(body);
     let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
-    scan_marker_comments(&lines, &[])
+    scan_marker_comments(&lines, blacklist)
         .selected
         .map(|comment| comment.strip_candidates(&lines))
         .unwrap_or_default()
@@ -1056,7 +1059,7 @@ mod tests {
 
         assert_eq!(res.bottom.as_deref(), Some("операторське уточнення"));
         assert_eq!(
-            marker_comment_strip_candidates(body),
+            marker_comment_strip_candidates(body, &[]),
             vec!["операторське уточнення"]
         );
     }
