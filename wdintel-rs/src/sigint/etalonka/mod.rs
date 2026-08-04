@@ -2374,6 +2374,47 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
+
+        let returning_created_at = now - chrono::Duration::days(1);
+        let returning_left_at = now - chrono::Duration::hours(8);
+        let returning_relinked_at = now - chrono::Duration::hours(4);
+        let returning_callsign = sigint_network_callsign::ActiveModel {
+            sigint_network_id: Set(network.id),
+            sigint_callsign: Set("Returning".to_string()),
+            deleted: Set(false),
+            created_at: Set(returning_created_at),
+            developing: Set(false),
+            unit_developing: Set(false),
+            main_radio_station: Set(false),
+            command_control: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        for (created_at, old_network_id, new_network_id) in [
+            (returning_left_at, network.id, other_network.id),
+            (returning_relinked_at, other_network.id, network.id),
+        ] {
+            sigint_network_callsign_changelog::ActiveModel {
+                sigint_network_callsign_id: Set(returning_callsign.id),
+                login_id: Set(login.id),
+                action: Set(
+                    crate::entities::sea_orm_active_enums::ChangelogActionEnum::Update,
+                ),
+                old_value: Set(Some(json!({
+                    "sigint_network_id": old_network_id,
+                }))),
+                new_value: Set(Some(json!({
+                    "sigint_network_id": new_network_id,
+                }))),
+                created_at: Set(created_at),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
         sigint_network_callsign_changelog::ActiveModel {
             sigint_network_callsign_id: Set(moved_away_callsign.id),
             login_id: Set(login.id),
@@ -2406,6 +2447,40 @@ mod tests {
             radio_freq: Set(freq.clone()),
             sigint_origin_id: Set(None),
             original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let deleted_catalog_callsign = sigint_callsign::ActiveModel {
+            callsign: Set("DeletedLinked".to_string()),
+            position: Set(String::new()),
+            comment: Set(String::new()),
+            full_name: Set(String::new()),
+            unit_id: Set(unit.id),
+            deleted: Set(true),
+            created_at: Set(now - chrono::Duration::days(1)),
+            source_id: Set(None),
+            developing: Set(false),
+            radio_freq: Set(freq.clone()),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let deleted_linked_callsign = sigint_network_callsign::ActiveModel {
+            sigint_network_id: Set(network.id),
+            sigint_callsign: Set("DeletedLinked".to_string()),
+            sigint_callsign_id: Set(Some(deleted_catalog_callsign.id)),
+            deleted: Set(false),
+            created_at: Set(now - chrono::Duration::days(1)),
+            developing: Set(false),
+            unit_developing: Set(false),
+            main_radio_station: Set(false),
+            command_control: Set(false),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -2537,7 +2612,7 @@ mod tests {
             &freq,
             historical_activity_at,
             "uid-historical",
-            &["Relinked", "Moved", "MovedAway"],
+            &["Relinked", "Moved", "MovedAway", "Returning"],
         )
         .await;
         insert_network_activity(
@@ -2557,6 +2632,8 @@ mod tests {
                 "Relinked",
                 "Moved",
                 "MovedAway",
+                "Returning",
+                "DeletedLinked",
             ],
         )
         .await;
@@ -2703,6 +2780,35 @@ mod tests {
             .expect("expected post-assignment moved-away callsign activity");
         assert_eq!(moved_away_unassigned.message_count, 1);
         assert_eq!(moved_away_unassigned.last_datetime, Some(ts));
+        let mut returning = entry
+            .net_callsigns
+            .iter()
+            .filter(|callsign| callsign.id == returning_callsign.id)
+            .collect::<Vec<_>>();
+        returning.sort_by_key(|callsign| callsign.created_at);
+        assert_eq!(returning.len(), 2);
+        assert_eq!(returning[0].message_count, 1);
+        assert_eq!(returning[0].last_datetime, Some(historical_ts));
+        assert_eq!(
+            returning[0].created_at,
+            returning_created_at.and_utc().timestamp_millis()
+        );
+        assert!(!returning[0].active);
+        assert_eq!(returning[1].message_count, 1);
+        assert_eq!(returning[1].last_datetime, Some(ts));
+        assert_eq!(
+            returning[1].created_at,
+            returning_relinked_at.and_utc().timestamp_millis()
+        );
+        assert!(returning[1].active);
+        assert!(entry
+            .net_callsigns
+            .iter()
+            .any(|callsign| callsign.id == deleted_linked_callsign.id));
+        assert!(!entry
+            .callsigns_detailed
+            .iter()
+            .any(|callsign| callsign.callsign == "DeletedLinked"));
         assert!(!entry
             .net_callsigns
             .iter()
