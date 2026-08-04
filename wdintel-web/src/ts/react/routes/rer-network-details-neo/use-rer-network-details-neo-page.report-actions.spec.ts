@@ -270,6 +270,7 @@ describe('useRerNetworkDetailsNeoPageReportActions', () => {
       etalonkaType: {
         AccordingToTheForm: {
           activeFreqsOnly: true,
+          includeCallsignFullNames: false,
           includeSigintSigns: true,
           includeConfirmation: true,
           includeHeadingsAndFreqs: false,

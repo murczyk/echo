@@ -195,6 +195,9 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         onSetProgressExpanded={page.setEtalonkaReportProgressExpanded}
         onTypeChange={page.setEtalonkaReportType}
         onActiveFreqsOnlyChange={page.setEtalonkaReportActiveFreqsOnly}
+        onIncludeFreqActiveFromChange={page.setEtalonkaReportIncludeFreqActiveFrom}
+        onIncludeFreqCreatedAtChange={page.setEtalonkaReportIncludeFreqCreatedAt}
+        onIncludeCallsignFullNamesChange={page.setEtalonkaReportIncludeCallsignFullNames}
         onIncludeSigintSignsChange={page.setEtalonkaReportIncludeSigintSigns}
         onIncludeConfirmationChange={page.setEtalonkaReportIncludeConfirmation}
         onIncludeHeadingsAndFreqsChange={page.setEtalonkaReportIncludeHeadingsAndFreqs}

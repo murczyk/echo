@@ -7,7 +7,9 @@ use crate::error::AppError;
 use crate::rer_importer::analysis::{
     filter_selected_networks, filter_selected_networks_stmt,
 };
-use crate::sigint::callsign::bl_network_callsign::get_callsigns_activity_info;
+use crate::sigint::callsign::bl_network_callsign::{
+    get_callsigns_activity_info, get_unassigned_callsigns_activity_info,
+};
 use crate::sigint::etalonka::types::*;
 use crate::sigint::network::filter::{
     apply_network_list_filters_with_text_search_mode, NetworkTextSearchMode,
@@ -1063,6 +1065,7 @@ async fn find_known_callsigns(
         .column(sigint_callsign::Column::Callsign)
         .column(sigint_callsign::Column::Comment)
         .column(sigint_callsign::Column::Position)
+        .column(sigint_callsign::Column::FullName)
         .column(sigint_callsign::Column::UnitId)
         .column_as(sigint_unit::Column::Name, "unit_name")
         .column(sigint_unit::Column::Regiment)
@@ -1132,6 +1135,7 @@ pub async fn load_callsigns(
         crate::sigint::network::types::SingleNetworkCallsignsSection,
     >,
     filter: Option<&NetworkFreqFilter>,
+    exclude_network_callsign_activity: bool,
 ) -> Result<Vec<CallsignRes>, AppError> {
     let start = std::time::Instant::now();
 
@@ -1197,17 +1201,34 @@ pub async fn load_callsigns(
     // Step 2. Get activity info for callsigns with known_callsigns
     let callsigns = res.iter().map(|c| c.callsign.clone()).collect::<Vec<_>>();
 
-    let known_callsigns_activity_info = get_callsigns_activity_info(
-        db,
-        groups.clone(),
-        network_id,
-        &callsigns,
-        filter,
-    )
-    .await
-    .context(h!())?;
+    let known_callsigns_activity_info = if exclude_network_callsign_activity {
+        get_unassigned_callsigns_activity_info(
+            db,
+            groups.clone(),
+            network_id,
+            &callsigns,
+            filter.context(h!())?,
+        )
+        .await
+        .context(h!())?
+    } else {
+        get_callsigns_activity_info(
+            db,
+            groups.clone(),
+            network_id,
+            &callsigns,
+            filter,
+        )
+        .await
+        .context(h!())?
+    };
 
     apply_activity_info(&mut res, &known_callsigns_activity_info);
+    if exclude_network_callsign_activity {
+        res.retain(|callsign| {
+            known_callsigns_activity_info.contains_key(&callsign.callsign)
+        });
+    }
 
     let duration = start.elapsed();
     trace!(
@@ -1378,7 +1399,9 @@ pub fn build_datetime_filter(
     }
 }
 
-/// Активні позивні на частотах мережі, які не входять до вже прив'язаних до мережі позивних
+/// Активні позивні на частотах мережі.
+/// Поточні прив'язки виключаються лише без історичного фільтра; звіт за період
+/// звіряє позивні з інтервалами прив'язки після завантаження активності.
 pub async fn get_active_callsigns(
     db: &DatabaseConnection,
     groups: &Vec<String>,
@@ -1407,7 +1430,9 @@ pub async fn get_active_callsigns(
         .await
         .context(h!())?;
 
-    let sigint_network_callsigns: Vec<String> =
+    let sigint_network_callsigns: Vec<String> = if filter.is_some() {
+        vec![]
+    } else {
         sigint_network_callsign::Entity::find()
             .select_only()
             .distinct()
@@ -1419,7 +1444,8 @@ pub async fn get_active_callsigns(
             .into_tuple()
             .all(db)
             .await
-            .context(h!())?;
+            .context(h!())?
+    };
 
     let expr_jsonb_callsigns = Expr::cust_with_expr(
         "jsonb_array_elements_text($1)",
@@ -2392,6 +2418,7 @@ mod tests {
             etalonka_type: EtalonkaReportType::AccordingToTheForm(
                 EtalonkaSettings {
                     active_freqs_only: false,
+                    include_callsign_full_names: false,
                     include_sigint_signs: false,
                     include_confirmation: false,
                     include_headings_and_freqs: false,
@@ -2542,6 +2569,7 @@ mod tests {
                 callsign: "KNOWN".to_string(),
                 position: String::new(),
                 comment: String::new(),
+                full_name: String::new(),
                 unit_id: 1,
                 unit_name: "Unit".to_string(),
                 source_name: "Source".to_string(),

@@ -36,6 +36,8 @@ pub struct EtalonkaNetworkBatchReq {
 )]
 pub struct EtalonkaSettings {
     pub active_freqs_only: bool,
+    #[serde(default)]
+    pub include_callsign_full_names: bool,
     pub include_sigint_signs: bool,
     pub include_confirmation: bool,
     #[serde(default)]
@@ -49,12 +51,22 @@ pub struct EtalonkaExtendedSettings {
     pub since_date_inclusive_ms: i64,
     pub till_date_inclusive_ms: Option<i64>,
     pub active_freqs_only: bool,
+    #[serde(default)]
+    pub include_freq_active_from: bool,
+    #[serde(default = "default_include_freq_created_at")]
+    pub include_freq_created_at: bool,
+    #[serde(default)]
+    pub include_callsign_full_names: bool,
     pub include_unit_callsigns: bool,
     pub include_sigint_signs: bool,
     pub include_confirmation: bool,
     pub include_pelengs_map: bool,
     #[serde(default)]
     pub include_headings_and_freqs: bool,
+}
+
+fn default_include_freq_created_at() -> bool {
+    true
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -158,6 +170,7 @@ pub struct KnownCallsignShortRes {
     pub callsign: String,
     pub position: String,
     pub comment: String,
+    pub full_name: String,
     pub unit_id: i64,
     pub unit_name: String,
     pub source_name: String,
@@ -170,6 +183,7 @@ pub struct KnownCallsignRes {
     pub callsign: String,
     pub position: String,
     pub comment: String,
+    pub full_name: String,
     pub unit_id: i64,
     pub unit_name: String,
     pub regiment: Option<String>,
@@ -270,5 +284,29 @@ impl Ord for KnownCallsignShortRes {
 impl PartialOrd for KnownCallsignShortRes {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extended_settings_preserve_frequency_date_defaults() {
+        let settings: EtalonkaExtendedSettings =
+            serde_json::from_value(serde_json::json!({
+                "since_date_inclusive_ms": 0,
+                "till_date_inclusive_ms": null,
+                "active_freqs_only": true,
+                "include_callsign_full_names": false,
+                "include_unit_callsigns": false,
+                "include_sigint_signs": true,
+                "include_confirmation": true,
+                "include_pelengs_map": true
+            }))
+            .unwrap();
+
+        assert!(!settings.include_freq_active_from);
+        assert!(settings.include_freq_created_at);
     }
 }

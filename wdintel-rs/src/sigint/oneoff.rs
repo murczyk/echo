@@ -385,6 +385,7 @@ fn build_etalonka_report_request(
             crate::sigint::etalonka::types::EtalonkaReportType::AccordingToTheForm(
                 crate::sigint::etalonka::types::EtalonkaSettings {
                     active_freqs_only: true,
+                    include_callsign_full_names: false,
                     include_sigint_signs: false,
                     include_confirmation: false,
                     include_headings_and_freqs: false,

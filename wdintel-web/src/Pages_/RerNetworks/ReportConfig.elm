@@ -34,6 +34,7 @@ type ReportTypeOption
 -}
 type alias CommonReportSettings =
     { activeFreqsOnly : Bool
+    , includeCallsignFullNames : Bool
     , includeSigintSigns : Bool
     , includeConfirmation : Bool
     , includeHeadingsAndFreqs : Bool
@@ -44,6 +45,8 @@ type alias CommonReportSettings =
 -}
 type alias ExtendedReportSettings =
     { common : CommonReportSettings
+    , includeFreqActiveFrom : Bool
+    , includeFreqCreatedAt : Bool
     , includeUnitCallsigns : Bool
     , includePelengsMap : Bool
     }
@@ -64,6 +67,7 @@ type alias ReportContext =
 defaultCommonSettings : CommonReportSettings
 defaultCommonSettings =
     { activeFreqsOnly = True
+    , includeCallsignFullNames = False
     , includeSigintSigns = True
     , includeConfirmation = True
     , includeHeadingsAndFreqs = False
@@ -75,6 +79,8 @@ defaultCommonSettings =
 defaultExtendedSettings : ExtendedReportSettings
 defaultExtendedSettings =
     { common = defaultCommonSettings
+    , includeFreqActiveFrom = False
+    , includeFreqCreatedAt = True
     , includeUnitCallsigns = False
     , includePelengsMap = True
     }
@@ -112,6 +118,7 @@ toApiEtalonkaType reportType context =
         AccordingToForm settings ->
             B.AccordingToTheForm
                 { activeFreqsOnly = settings.activeFreqsOnly
+                , includeCallsignFullNames = settings.includeCallsignFullNames
                 , includeSigintSigns = settings.includeSigintSigns
                 , includeConfirmation = settings.includeConfirmation
                 , includeHeadingsAndFreqs = settings.includeHeadingsAndFreqs
@@ -127,6 +134,9 @@ toApiEtalonkaType reportType context =
                     context.toDate
                         |> Maybe.map Time.posixToMillis
                 , activeFreqsOnly = settings.common.activeFreqsOnly
+                , includeFreqActiveFrom = settings.includeFreqActiveFrom
+                , includeFreqCreatedAt = settings.includeFreqCreatedAt
+                , includeCallsignFullNames = settings.common.includeCallsignFullNames
                 , includeUnitCallsigns = settings.includeUnitCallsigns
                 , includeSigintSigns = settings.common.includeSigintSigns
                 , includeConfirmation = settings.common.includeConfirmation

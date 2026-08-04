@@ -86,6 +86,7 @@ function createKnownCallsign(
     callsign: 'Барс-4',
     position: 'ЗКМ',
     comment: 'Збiг',
+    fullName: '',
     unitId: 201,
     unitName: 'арт. дивізіон',
     sourceName: 'Каталог 2024',

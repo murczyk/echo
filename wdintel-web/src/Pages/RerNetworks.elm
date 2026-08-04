@@ -354,9 +354,12 @@ type Msg
     | GoiReportDownloadReturnedByApi (Result ApiError Bytes)
     | ReportTypeChanged ReportConfig.ReportTypeOption
     | ReportActiveFreqsOnlyChanged Bool
+    | ReportIncludeCallsignFullNamesChanged Bool
     | ReportIncludeSigintSignsChanged Bool
     | ReportIncludeConfirmationChanged Bool
     | ReportIncludeHeadingsAndFreqsChanged Bool
+    | ReportIncludeFreqActiveFromChanged Bool
+    | ReportIncludeFreqCreatedAtChanged Bool
     | ReportIncludeUnitCallsignsChanged Bool
     | ReportIncludePelengsMapChanged Bool
     | ReportDateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
@@ -798,6 +801,13 @@ update shared msg model =
             in
             ( { model | report = newReport }, E.none )
 
+        ReportIncludeCallsignFullNamesChanged checked ->
+            let
+                newReport =
+                    ReportUpdate.updateCommonSetting "includeCallsignFullNames" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
         ReportIncludeSigintSignsChanged checked ->
             let
                 newReport =
@@ -816,6 +826,20 @@ update shared msg model =
             let
                 newReport =
                     ReportUpdate.updateCommonSetting "includeHeadingsAndFreqs" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
+        ReportIncludeFreqActiveFromChanged checked ->
+            let
+                newReport =
+                    ReportUpdate.updateExtendedSetting "includeFreqActiveFrom" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
+        ReportIncludeFreqCreatedAtChanged checked ->
+            let
+                newReport =
+                    ReportUpdate.updateExtendedSetting "includeFreqCreatedAt" checked model.report
             in
             ( { model | report = newReport }, E.none )
 
@@ -1726,9 +1750,12 @@ filterPanel user shared model =
             reportFormConfig =
                 { onReportTypeChanged = ReportTypeChanged
                 , onActiveFreqsOnlyChanged = ReportActiveFreqsOnlyChanged
+                , onIncludeCallsignFullNamesChanged = ReportIncludeCallsignFullNamesChanged
                 , onIncludeSigintSignsChanged = ReportIncludeSigintSignsChanged
                 , onIncludeConfirmationChanged = ReportIncludeConfirmationChanged
                 , onIncludeHeadingsAndFreqsChanged = ReportIncludeHeadingsAndFreqsChanged
+                , onIncludeFreqActiveFromChanged = ReportIncludeFreqActiveFromChanged
+                , onIncludeFreqCreatedAtChanged = ReportIncludeFreqCreatedAtChanged
                 , onIncludeUnitCallsignsChanged = ReportIncludeUnitCallsignsChanged
                 , onIncludePelengsMapChanged = ReportIncludePelengsMapChanged
                 , reportFromDate = Just model.reportFromDate
