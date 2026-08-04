@@ -24,7 +24,10 @@ impl FileRegistryDb {
 pub async fn connect_runtime(
     config: &Config,
     mode: Mode,
-) -> Result<FileRegistryDb, AppError> {
+) -> Result<Option<FileRegistryDb>, AppError> {
+    let Some(config) = config.file_registry.as_ref() else {
+        return Ok(None);
+    };
     let connection = crate::new_pg_pool_from_conn_string_with_max_connections(
         crate::mk_wdfile_conn_string(config, mode),
         PG_WDFILE_POOL_MAX_CONNECTIONS,
@@ -36,13 +39,16 @@ pub async fn connect_runtime(
         .await
         .map_err(|error| map_connection_error(error, config, mode))?;
 
-    Ok(FileRegistryDb { connection })
+    Ok(Some(FileRegistryDb { connection }))
 }
 
 pub async fn run_migrations(
     config: &Config,
     mode: Mode,
 ) -> Result<(), AppError> {
+    let Some(config) = config.file_registry.as_ref() else {
+        return Ok(());
+    };
     let connection = crate::new_pg_pool_from_conn_string_with_max_connections(
         crate::mk_wdfile_conn_string(config, mode),
         PG_WDFILE_MIGRATION_POOL_MAX_CONNECTIONS,
@@ -59,7 +65,11 @@ pub async fn run_migrations(
     Ok(())
 }
 
-fn map_connection_error(error: DbErr, config: &Config, mode: Mode) -> AppError {
+fn map_connection_error(
+    error: DbErr,
+    config: &FileRegistryConfig,
+    mode: Mode,
+) -> AppError {
     if has_postgres_error_code(&error, "3D000") {
         let (_, _, _, _, database) =
             crate::wdfile_connection_parts(config, mode);

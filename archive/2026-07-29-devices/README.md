@@ -2,35 +2,14 @@
 
 ## Description
 
-Echo now has a Devices module for registering technical sources, maintaining
-analytical metadata, and synchronizing file metadata.
+Echo has a Devices module for registering technical sources, maintaining
+analytical metadata, and synchronizing file metadata through an optional,
+separately configured file registry.
 
 ## Architecture
 
 The `devices` domain follows the same module layout as the established backend
-domains:
-
-- `devices::devices` owns device routes in `mod.rs`, business logic in `bl.rs`,
-  main-database access in `query.rs`, wire and domain types in `types.rs`, and
-  its tests in `tests.rs`;
-- `devices::files` owns file routes in `mod.rs`, business logic in `bl.rs`,
-  file-registry access through `query.rs`, file types in `types.rs`, and its
-  tests in `tests.rs`;
-- the shared `devices::access` module validates the current login, Devices
-  feature flag, roles, organism scope, device lifecycle, and permitted field
-  groups for both subdomains;
-- the root `types.rs` contains only wire helpers shared by both subdomains, and
-  the root `tests.rs` covers shared access, schema, and route contracts.
-
-The files business logic keeps cohesive filesystem helpers in `cursor.rs`,
-`path.rs`, `metadata.rs`, `validation.rs`, `sync_pipeline.rs`, and `ltree.rs`.
-Its `query.rs` remains the database boundary; the modules under `query/` only
-split the file-registry queries into manageable logical groups. The code uses
-ordinary functions rather than empty service, repository, parser, or codec
-method-holder structures.
-
-The `API` component in the diagrams is the HTTP boundary; its route handlers
-remain in the `mod.rs` of the corresponding `devices` or `files` subdomain.
+domains.
 
 ```mermaid
 flowchart LR
@@ -44,104 +23,31 @@ flowchart LR
             Files["files<br/>file navigation and synchronization"]
         end
 
-        subgraph MainPostgreSQL["Main PostgreSQL"]
-            DeviceTable[("device<br/>source, analytical, ownership, and lifecycle state")]
-            DeviceAorTable[("device_aor<br/>device-to-AOR assignments")]
-            AccessTables[("login · organism · system_settings<br/>authentication and visibility")]
-            SigintTables[("area_of_responsibility · sigint_unit<br/>analytical references")]
+        subgraph MainPostgreSQL["wd"]
+            DeviceTable[("device<br/>")]
+            DeviceAorTable[("device_aor<br/")]
         end
 
-        subgraph FileRegistryPostgreSQL["wd_files PostgreSQL"]
-            FileEntryTable[("file_entry<br/>filesystem hierarchy, metadata, and journal")]
+        subgraph FileRegistryPostgreSQL["wd_files"]
+            FileEntryTable[("file_entry<br/>")]
         end
 
         API -->|"device requests"| Devices
         API -->|"file requests"| Files
         Devices <--> DeviceTable
         Devices <--> DeviceAorTable
-        Devices -->|"resolve access"| AccessTables
-        Devices -->|"load references"| SigintTables
-        Files <--> FileEntryTable
+        Files --> FileEntryTable
     end
 
     Browser --> API
     ExternalSource --> API
 ```
 
-The module reuses authentication and login validation from `users`, reads the
-organism tree for visibility, and uses the existing SIGINT AOR and unit models
-for analytical classification. Device-authorized `/api/device/aors` and
-`/api/device/units` routes expose those reference values without broadening the
-permissions of the legacy SIGINT endpoints. The `file_registry` module owns the
-second connection, generated entities, provisioning, and migrations;
-`devices::files` owns the file metadata behavior built on top of it.
+When `[file_registry]` is configured, file requests cross the databases in two
+ordered steps without a cross-database transaction:
 
-Elm remains responsible for routing and authenticated page composition. It
-mounts React through the `devices-page` and `device-details-page` custom
-elements. React consumes the generated bindings through the typed Devices API
-service; role-based UI controls improve usability, while the backend repeats
-all authorization checks.
+## Database model
 
-File-registry requests deliberately cross the databases in two ordered steps,
-without a cross-database transaction:
-
-```mermaid
-sequenceDiagram
-    actor Browser
-    actor Source as External device source
-    participant API as Devices API
-    participant Files as files
-    participant Devices as devices
-    participant Main as Main PostgreSQL
-    participant Registry as wd_files PostgreSQL
-
-    alt Browser reads file metadata
-        Browser->>API: roots, subtree-counts, browse, search, or journal
-    else External source synchronizes metadata
-        Source->>API: sync batch
-    end
-    API->>Devices: authorize selected device
-    Devices->>Main: validate login, feature, roles, organism, and lifecycle
-    Main-->>Devices: authorized device
-    Devices-->>API: authorized device ID
-    API->>Files: execute parsed file request for the authorized device
-    Files->>Registry: query, snapshot, or isolated transaction on file_entry
-    Registry-->>Files: file metadata result
-    Files-->>API: mapped response
-    alt Browser read
-        API-->>Browser: file metadata
-    else External source sync
-        API-->>Source: ordered per-item results
-    end
-    Note over Main,Registry: No cross-database transaction or foreign key
-```
-
-## Storage boundaries
-
-Device and file metadata are intentionally stored in separate PostgreSQL
-databases:
-
-- the main Echo database stores `device`, `device_aor`, ownership, lifecycle,
-  and analytical relations;
-- the independent `wd_files` database stores the `file_entry` hierarchy and
-  file synchronization history.
-
-Main-database query functions accept a `DatabaseConnection`, while
-file-registry query functions accept `FileRegistryDb`; each stays inside its
-subdomain's `query.rs` boundary. There are no cross-database foreign keys or
-transactions. A file-registry request first validates the device and actor
-against the main database, then performs the isolated file-registry operation.
-
-Both databases have independent migration histories. Main migrations do not
-create `wd_files`; its schema migrations run automatically during backend
-startup after the database has been provisioned.
-
-## Database model (SQL UML)
-
-The Devices feature owns `device` and `device_aor` in the main database, and
-`file_entry` in `wd_files`. The `main.` and `wd_files.` prefixes below identify
-the target database rather than PostgreSQL schemas. Existing main-database
-tables are included only as relationship targets.
 
 ```mermaid
 classDiagram
@@ -176,8 +82,6 @@ classDiagram
         uuid parent_id FK NULL
         text kind
         text name
-        bytea name_key
-        text path_syntax NULL
         text absolute_path NULL
         ltree hierarchy_path
         text mime_type NULL
@@ -225,33 +129,33 @@ no cross-database foreign key or cascade.
 
 ## Deployment
 
-Provision the file-registry database before the first restart of the server or
-background worker. Configure these values in `deploy/config.toml`, or in the
-TOML file selected through `ECHO_CONFIG_PATH`:
+The file-registry database is optional. To enable device file operations,
+configure it in `deploy/config.toml`, or in the TOML file selected through
+`ECHO_CONFIG_PATH`:
 
 ```toml
-pg_wdfile_host = "postgres-host"
-pg_wdfile_port = 5432
-pg_wdfile_user = "wd"
-pg_wdfile_password = "..."
-pg_wdfile_dbname = "wd_files"
+[file_registry]
+pg_host = "postgres-host"
+pg_port = 5432
+pg_user = "wd"
+pg_password = "..."
+pg_dbname = "wd_files"
 ```
 
-Create the database once on the deployment host with the installed backend
-binary. Live mode reads `/etc/echo/config.toml`:
+The section itself is the opt-in switch. When it is absent and Devices is
+disabled, Echo logs a warning. When Devices is enabled, Echo logs an actionable
+error explaining how to add and provision `[file_registry]`. Neither message
+blocks startup, but the six device-file routes remain unavailable.
+
+The section's presence restores fail-fast database behavior: operators must
+provision the configured database before restarting Echo, and connection or
+migration failures block startup. After adding the section, create the database
+once with the installed backend binary:
 
 ```sh
 sudo /usr/bin/wdintel-rs --mode=live oneoff-create-file-registry-database
 ```
 
-Set `ECHO_CONFIG_PATH` when the live configuration is stored elsewhere. The
-configured PostgreSQL user needs `CREATEDB` for this provisioning command and
-normal DDL permissions for the automatic `wdfiles-migration` startup
-migrations. If operations provisions `wd_files` manually instead, the configured
-user still needs connection and DDL rights before Echo is restarted.
-
-Test environments use a paired file-registry database, normally
-`wd_files_test`, selected with `TEST_WDFILE_DB_NAME`.
 
 ## Access and organism visibility
 
@@ -260,8 +164,7 @@ Backend authorization is the source of truth. The effective capabilities are:
 | Role | Read | Source data and file sync | Analytical data |
 | --- | :---: | :---: | :---: |
 | `Cyber` | yes | no | no |
-| `DeviceSource` | yes | yes | no |
-| `DeviceAnalyst` | yes | yes | yes |
+| `DeviceSource` | yes | yes | yes |
 | `Admin` | yes | yes | yes |
 
 Every device stores the organism of the user who created it. A user can see
@@ -273,23 +176,6 @@ statistics, and file-registry handoffs.
 Archived devices remain available to read paths that explicitly include
 archived records, including file metadata. Source and analytical writes require
 an active device.
-
-## Device ownership and lifecycle
-
-Source-owned fields identify the technical source and its connection metadata.
-Analytical fields hold the analyst-assigned name, unit, areas of responsibility,
-and other classification. A source user cannot create or modify analytical
-metadata. Analyst and administrator roles can maintain both groups when an
-operation intentionally combines them.
-
-Creation records both the creator login and creator organism. Updates use
-field-level patches, validate the caller's capabilities before writing, and
-apply combined source and analytical changes atomically in the main database.
-Source labels are unique among active devices. Archived devices do not reserve
-active-only uniqueness.
-
-The backend contains lifecycle rules for active and archived devices, but the
-public Devices API currently exposes neither archive nor restore endpoints.
 
 ## File hierarchy
 
@@ -350,6 +236,11 @@ strictly; malformed shapes and unsupported fields fail instead of being
 silently ignored. Generated backend and frontend DTOs define the current wire
 format.
 
+The seven device routes depend only on the main database. The six device-file
+routes additionally require `[file_registry]`; when it is absent, an otherwise
+authorized file request receives HTTP 503 with `Retry-After`, while the device
+registry remains available.
+
 Sync clients must distinguish request-level HTTP errors from ordered per-item
 results. They must retain the returned `file_id` for every accepted creation
 and use it for subsequent updates or moves. An item without `file_id` is a
@@ -358,14 +249,3 @@ the server neither deduplicates files by path nor exposes an idempotency-key
 protocol. Clients should inspect roots, browse, search, and journal state
 before retrying an outcome they could not confirm.
 
-## Frontend
-
-The user-facing module provides:
-
-- `/devices` for organism-scoped listing, filtering, creation, and editing;
-- `/devices/:id` for analytical details, file-tree browsing, subtree counts,
-  search, and synchronization journal inspection.
-
-Elm route wrappers host React custom elements. React uses the generated API
-bindings and the same backend authorization model; frontend visibility is not a
-security boundary.

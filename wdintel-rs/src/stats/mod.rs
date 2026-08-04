@@ -3478,11 +3478,6 @@ mod tests {
         toml::from_str(
             r#"
 public_host = ""
-pg_wdfile_host = "localhost"
-pg_wdfile_port = 5432
-pg_wdfile_user = "wd"
-pg_wdfile_password = "fee_-_-_-FnoeKFBeebu87bf"
-pg_wdfile_dbname = "wd_files"
 cookie_session_secret = ""
 storage_dir = ""
 signal_api_phone = ""

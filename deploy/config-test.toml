@@ -4,11 +4,6 @@ pg_port = 5432
 pg_user = "wd"
 pg_password = "fee_-_-_-FnoeKFBeebu87bf"
 pg_dbname = "wd_test"
-pg_wdfile_host = "localhost"
-pg_wdfile_port = 5432
-pg_wdfile_user = "wd"
-pg_wdfile_password = "fee_-_-_-FnoeKFBeebu87bf"
-pg_wdfile_dbname = "wd_files_test"
 cookie_session_secret = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 storage_dir = "/Users/kon/Downloads/storage"
 signal_api_phone = ""
@@ -27,6 +22,13 @@ server_id = 37
 # Enable device metrics to Signoz (OTLP gRPC).
 # signoz_metrics_enabled = true
 # signoz_metrics_endpoint = "http://signoz-echo.eagle-atria.ts.net:4317"
+
+[file_registry]
+pg_host = "localhost"
+pg_port = 5432
+pg_user = "wd"
+pg_password = "fee_-_-_-FnoeKFBeebu87bf"
+pg_dbname = "wd_files_test"
 
 [secret_config]
 token_endpoint = ""

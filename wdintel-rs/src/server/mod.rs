@@ -85,6 +85,9 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let file_registry_db = crate::file_registry::connect_runtime(&config, mode)
         .await
         .c(h!())?;
+    if file_registry_db.is_none() {
+        log_missing_file_registry_configuration(&dbx, mode).await;
+    }
     let mut replicas = vec![];
     if let Some(replica_configs) = config.replicas.clone() {
         for replica in replica_configs {
@@ -211,6 +214,51 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     .await
     .c(h!())?;
     Ok(Arc::new(env))
+}
+
+#[derive(Debug, PartialEq)]
+enum MissingFileRegistryConfigurationLog {
+    Warning(String),
+    Error(String),
+}
+
+fn missing_file_registry_configuration_log(
+    devices_enabled: bool,
+    mode: Mode,
+) -> MissingFileRegistryConfigurationLog {
+    if devices_enabled {
+        MissingFileRegistryConfigurationLog::Error(format!(
+            "Devices functionality is enabled, but the [file_registry] configuration section is missing. Add pg_host, pg_port, pg_user, pg_password, and pg_dbname under [file_registry], run `wdintel-rs --mode={mode} oneoff-create-file-registry-database`, then restart the backend. Device file operations are unavailable."
+        ))
+    } else {
+        MissingFileRegistryConfigurationLog::Warning(
+            "The optional [file_registry] configuration section is missing. Startup will continue without the file registry database; device file operations are unavailable. Add and provision [file_registry] before enabling Devices.".to_string(),
+        )
+    }
+}
+
+async fn log_missing_file_registry_configuration(
+    dbx: &sea_orm::DatabaseConnection,
+    mode: Mode,
+) {
+    match crate::system_settings::devices_section_enabled(dbx).await {
+        Ok(devices_enabled) => {
+            match missing_file_registry_configuration_log(devices_enabled, mode)
+            {
+                MissingFileRegistryConfigurationLog::Warning(message) => {
+                    warn!("{message}");
+                }
+                MissingFileRegistryConfigurationLog::Error(message) => {
+                    error!("{message}");
+                }
+            }
+        }
+        Err(error) => {
+            error!(
+                "The [file_registry] configuration section is missing, and checking whether Devices functionality is enabled failed: {error:?}. Startup will continue without the file registry database; add and provision [file_registry] before using Devices."
+            );
+        }
+    }
 }
 
 async fn connect_analytics(config: &Config) -> Option<AnalyticsPool> {
@@ -1287,6 +1335,25 @@ pub async fn main_report_worker(
 mod tests {
     use super::*;
     use actix_web::{http::StatusCode, test, App};
+    #[actix_web::test]
+    async fn missing_file_registry_log_escalates_when_devices_are_enabled() {
+        let MissingFileRegistryConfigurationLog::Warning(warning) =
+            missing_file_registry_configuration_log(false, Mode::Live)
+        else {
+            panic!("disabled Devices should produce a warning");
+        };
+        assert!(warning.contains("Startup will continue"));
+
+        let MissingFileRegistryConfigurationLog::Error(error) =
+            missing_file_registry_configuration_log(true, Mode::Live)
+        else {
+            panic!("enabled Devices should produce an error");
+        };
+        assert!(error.contains("[file_registry]"));
+        assert!(error.contains(
+            "wdintel-rs --mode=live oneoff-create-file-registry-database"
+        ));
+    }
 
     #[actix_web::test]
     async fn test_api_sigint_units_route_is_registered() {

@@ -200,7 +200,8 @@ async fn truncate_file_entries(db: &DatabaseConnection) {
 async fn stage_two_runtime_scopes_filters_ltree_and_cursor_contracts() {
     let config = read_config(Mode::Test).unwrap();
     run_migrations(&config, Mode::Test).await.unwrap();
-    let file_registry_db = connect_runtime(&config, Mode::Test).await.unwrap();
+    let file_registry_db =
+        connect_runtime(&config, Mode::Test).await.unwrap().unwrap();
     let db = file_registry_db.connection();
     truncate_file_entries(db).await;
 
@@ -228,7 +229,8 @@ async fn stage_two_runtime_scopes_filters_ltree_and_cursor_contracts() {
 async fn stage_four_scoped_search_filters_paths_and_cursor() {
     let config = read_config(Mode::Test).unwrap();
     run_migrations(&config, Mode::Test).await.unwrap();
-    let file_registry_db = connect_runtime(&config, Mode::Test).await.unwrap();
+    let file_registry_db =
+        connect_runtime(&config, Mode::Test).await.unwrap().unwrap();
     let db = file_registry_db.connection();
     truncate_file_entries(db).await;
 
@@ -261,7 +263,8 @@ async fn stage_four_scoped_search_filters_paths_and_cursor() {
 async fn stage_three_root_listing_browse_and_breadcrumbs() {
     let config = read_config(Mode::Test).unwrap();
     run_migrations(&config, Mode::Test).await.unwrap();
-    let file_registry_db = connect_runtime(&config, Mode::Test).await.unwrap();
+    let file_registry_db =
+        connect_runtime(&config, Mode::Test).await.unwrap().unwrap();
     let db = file_registry_db.connection();
     truncate_file_entries(db).await;
 
@@ -302,12 +305,16 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
     let (env, _guard) = cleanup_locked().await.unwrap();
     let timestamp = stage_eight_timestamp();
     let owner = insert_device_owner(&env.dbx, "filesystem-stage-eight").await;
-    let forest =
-        insert_stage_three_forest(env.file_registry_db.connection(), timestamp)
-            .await;
-    let tree =
-        insert_stage_two_tree(env.file_registry_db.connection(), timestamp)
-            .await;
+    let forest = insert_stage_three_forest(
+        env.file_registry_db().unwrap().connection(),
+        timestamp,
+    )
+    .await;
+    let tree = insert_stage_two_tree(
+        env.file_registry_db().unwrap().connection(),
+        timestamp,
+    )
+    .await;
     insert_device(&env.dbx, forest.target_device_id, &owner, timestamp).await;
     insert_device(&env.dbx, tree.device_id, &owner, timestamp).await;
     archive_device(&env.dbx, tree.device_id, timestamp).await;
@@ -320,7 +327,7 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
         let actor = access::login_with_roles(&owner, roles);
         assert_stage_eight_actor_reads(
             &env.dbx,
-            &env.file_registry_db,
+            env.file_registry_db().unwrap(),
             &actor,
             &forest,
             &tree,
@@ -331,21 +338,21 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
     let admin = access::login_with_roles(&owner, &[ROLE_ADMIN]);
     assert_stage_eight_browse_composition(
         &env.dbx,
-        &env.file_registry_db,
+        env.file_registry_db().unwrap(),
         &admin,
         &forest,
     )
     .await;
     let duplicate_cursor = assert_stage_eight_search_composition(
         &env.dbx,
-        &env.file_registry_db,
+        env.file_registry_db().unwrap(),
         &admin,
         &tree,
     )
     .await;
     assert_stage_eight_validation_contract(
         &env.dbx,
-        &env.file_registry_db,
+        env.file_registry_db().unwrap(),
         &admin,
         &forest,
         &tree,
@@ -361,25 +368,32 @@ async fn stage_eight_read_service_short_circuits_and_preserves_safe_errors() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let timestamp = stage_eight_timestamp();
     let owner = insert_device_owner(&env.dbx, "filesystem-stage-eight").await;
-    let tree =
-        insert_stage_two_tree(env.file_registry_db.connection(), timestamp)
-            .await;
-    let forest =
-        insert_stage_three_forest(env.file_registry_db.connection(), timestamp)
-            .await;
+    let tree = insert_stage_two_tree(
+        env.file_registry_db().unwrap().connection(),
+        timestamp,
+    )
+    .await;
+    let forest = insert_stage_three_forest(
+        env.file_registry_db().unwrap().connection(),
+        timestamp,
+    )
+    .await;
     insert_device(&env.dbx, tree.device_id, &owner, timestamp).await;
     insert_device(&env.dbx, tree.other_device_id, &owner, timestamp).await;
 
     let actor = access::login_with_roles(&owner, &[ROLE_ADMIN]);
     assert_stage_eight_live_scope_errors(
         &env.dbx,
-        &env.file_registry_db,
+        env.file_registry_db().unwrap(),
         &actor,
         &tree,
     )
     .await;
 
-    let outage_db = connect_runtime(&env.config, Mode::Test).await.unwrap();
+    let outage_db = connect_runtime(&env.config, Mode::Test)
+        .await
+        .unwrap()
+        .unwrap();
     outage_db.connection().clone().close().await.unwrap();
     let unauthorized = access::login_with_roles(&owner, &[]);
     assert_stage_eight_outage_short_circuits(
@@ -2706,7 +2720,7 @@ async fn stage_nine_mutation_repository_creates_and_reuses_canonical_hierarchy()
 {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let device_id = Uuid::now_v7();
-    let repository = &env.file_registry_db;
+    let repository = env.file_registry_db().unwrap();
 
     let first = query::mutate_file(
         repository,
@@ -2724,8 +2738,11 @@ async fn stage_nine_mutation_repository_creates_and_reuses_canonical_hierarchy()
     .unwrap();
     assert_eq!(first.operation, SyncFileOperation::Created);
 
-    let before =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    let before = stage_nine_entries(
+        env.file_registry_db().unwrap().connection(),
+        device_id,
+    )
+    .await;
     let root_id = stage_nine_root(&before, "C:\\").id;
     let var_id = stage_nine_directory(&before, root_id, "var").id;
     let log_id = stage_nine_directory(&before, var_id, "log").id;
@@ -2760,8 +2777,11 @@ async fn stage_nine_mutation_repository_creates_and_reuses_canonical_hierarchy()
     )
     .await
     .unwrap();
-    let after =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    let after = stage_nine_entries(
+        env.file_registry_db().unwrap().connection(),
+        device_id,
+    )
+    .await;
 
     assert_eq!(second.operation, SyncFileOperation::Created);
     assert_ne!(first.file.file_id, second.file.file_id);
@@ -2818,7 +2838,7 @@ async fn stage_nine_mutation_repository_creates_and_reuses_canonical_hierarchy()
 async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let device_id = Uuid::now_v7();
-    let repository = &env.file_registry_db;
+    let repository = env.file_registry_db().unwrap();
     let initial_metadata_created_at = NaiveDate::from_ymd_opt(2026, 7, 22)
         .unwrap()
         .and_hms_milli_opt(8, 0, 0, 0)
@@ -2862,8 +2882,11 @@ async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
     )
     .await
     .unwrap();
-    let initial_entries =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    let initial_entries = stage_nine_entries(
+        env.file_registry_db().unwrap().connection(),
+        device_id,
+    )
+    .await;
     let primary_root_id = stage_nine_root(&initial_entries, "C:\\").id;
     let old_id =
         stage_nine_directory(&initial_entries, primary_root_id, "old").id;
@@ -2891,8 +2914,11 @@ async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
     assert_eq!(same_root.file.device_id, initial.file.device_id);
     assert_eq!(same_root.file.created_at, initial.file.created_at);
     assert!(same_root.file.updated_at > initial.file.updated_at);
-    let after_same =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    let after_same = stage_nine_entries(
+        env.file_registry_db().unwrap().connection(),
+        device_id,
+    )
+    .await;
     let other_id = stage_nine_directory(&after_same, old_id, "other").id;
     assert!(!after_same.iter().any(|entry| entry.id == nested_id));
     assert!(after_same.iter().any(|entry| entry.id == shared_id));
@@ -2935,8 +2961,11 @@ async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
         Some(cross_metadata_modified_at),
     );
 
-    let after_cross =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    let after_cross = stage_nine_entries(
+        env.file_registry_db().unwrap().connection(),
+        device_id,
+    )
+    .await;
     assert_eq!(
         after_cross
             .iter()
@@ -2971,8 +3000,11 @@ async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
     )
     .await
     .unwrap();
-    let before_not_found =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    let before_not_found = stage_nine_entries(
+        env.file_registry_db().unwrap().connection(),
+        device_id,
+    )
+    .await;
     for file_id in [Uuid::now_v7(), shared_id, other_device_file.file.file_id] {
         let error = query::mutate_file(
             repository,
@@ -2991,7 +3023,11 @@ async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
         assert!(matches!(error, FilesystemError::NotFound));
     }
     assert_eq!(
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await,
+        stage_nine_entries(
+            env.file_registry_db().unwrap().connection(),
+            device_id,
+        )
+        .await,
         before_not_found,
     );
 }
@@ -3002,10 +3038,14 @@ async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
 ) {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let device_id = Uuid::now_v7();
-    let first_file_registry_db =
-        connect_runtime(&env.config, Mode::Test).await.unwrap();
-    let second_file_registry_db =
-        connect_runtime(&env.config, Mode::Test).await.unwrap();
+    let first_file_registry_db = connect_runtime(&env.config, Mode::Test)
+        .await
+        .unwrap()
+        .unwrap();
+    let second_file_registry_db = connect_runtime(&env.config, Mode::Test)
+        .await
+        .unwrap()
+        .unwrap();
     let first_repository = &first_file_registry_db;
     let second_repository = &second_file_registry_db;
     let first_create = stage_nine_mutation(
@@ -3038,7 +3078,7 @@ async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
     let first = first.unwrap();
     let second = second.unwrap();
 
-    let seed_repository = &env.file_registry_db;
+    let seed_repository = env.file_registry_db().unwrap();
     let secondary = query::mutate_file(
         seed_repository,
         &stage_nine_mutation(
@@ -3085,8 +3125,11 @@ async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
 
     assert_eq!(first_move.file.file_id, first.file.file_id);
     assert_eq!(second_move.file.file_id, secondary.file.file_id);
-    let entries =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    let entries = stage_nine_entries(
+        env.file_registry_db().unwrap().connection(),
+        device_id,
+    )
+    .await;
     let roots = entries
         .iter()
         .filter(|entry| {
@@ -3258,7 +3301,7 @@ async fn stage_ten_sync_service_returns_ordered_partial_results() {
     let actor = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
     let result = bl::sync(
         &env.dbx,
-        &env.file_registry_db,
+        env.file_registry_db().unwrap(),
         &actor,
         stage_ten_command(
             device_id,
@@ -3315,8 +3358,11 @@ async fn stage_ten_sync_service_returns_ordered_partial_results() {
     );
     assert_ne!(first.file_id, repeated.file_id);
 
-    let entries =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    let entries = stage_nine_entries(
+        env.file_registry_db().unwrap().connection(),
+        device_id,
+    )
+    .await;
     assert_eq!(
         entries
             .iter()
@@ -3348,7 +3394,7 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
     insert_device(&env.dbx, target_device_id, &owner, timestamp).await;
     insert_device(&env.dbx, other_device_id, &owner, timestamp).await;
     let actor = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
-    let repository = &env.file_registry_db;
+    let repository = env.file_registry_db().unwrap();
     let metadata_created_at = timestamp - Duration::hours(2);
     let metadata_modified_at = timestamp - Duration::hours(1);
     let duplicate = query::mutate_file(
@@ -3381,14 +3427,14 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
     .unwrap();
     let content_path = format!("devices/{target_device_id}/content/README");
     let mut updated_file = file_entry::Entity::find_by_id(updated.file.file_id)
-        .one(env.file_registry_db.connection())
+        .one(env.file_registry_db().unwrap().connection())
         .await
         .unwrap()
         .unwrap()
         .into_active_model();
     updated_file.content_path = Set(Some(content_path.clone()));
     updated_file
-        .update(env.file_registry_db.connection())
+        .update(env.file_registry_db().unwrap().connection())
         .await
         .unwrap();
     let omitted = query::mutate_file(
@@ -3419,9 +3465,11 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
     )
     .await
     .unwrap();
-    let target_before =
-        stage_nine_entries(env.file_registry_db.connection(), target_device_id)
-            .await;
+    let target_before = stage_nine_entries(
+        env.file_registry_db().unwrap().connection(),
+        target_device_id,
+    )
+    .await;
     let duplicate_before = target_before
         .iter()
         .find(|entry| entry.id == duplicate.file.file_id)
@@ -3432,9 +3480,11 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
         .find(|entry| entry.id == omitted.file.file_id)
         .unwrap()
         .clone();
-    let foreign_before =
-        stage_nine_entries(env.file_registry_db.connection(), other_device_id)
-            .await;
+    let foreign_before = stage_nine_entries(
+        env.file_registry_db().unwrap().connection(),
+        other_device_id,
+    )
+    .await;
     let device_updated_at_before = device::Entity::find_by_id(target_device_id)
         .one(&env.dbx)
         .await
@@ -3445,7 +3495,7 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
     tokio::time::sleep(std::time::Duration::from_millis(2)).await;
     let result = bl::sync(
         &env.dbx,
-        &env.file_registry_db,
+        env.file_registry_db().unwrap(),
         &actor,
         stage_ten_command(
             target_device_id,
@@ -3551,9 +3601,11 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
         &[],
     );
 
-    let target_after =
-        stage_nine_entries(env.file_registry_db.connection(), target_device_id)
-            .await;
+    let target_after = stage_nine_entries(
+        env.file_registry_db().unwrap().connection(),
+        target_device_id,
+    )
+    .await;
     assert_eq!(
         target_after
             .iter()
@@ -3575,8 +3627,11 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
             && entry.content_path.as_deref() == Some(content_path.as_str())
     }));
     assert_eq!(
-        stage_nine_entries(env.file_registry_db.connection(), other_device_id)
-            .await,
+        stage_nine_entries(
+            env.file_registry_db().unwrap().connection(),
+            other_device_id,
+        )
+        .await,
         foreign_before
     );
     assert_eq!(
@@ -3592,7 +3647,7 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
     tokio::time::sleep(std::time::Duration::from_millis(2)).await;
     let repeated = bl::sync(
         &env.dbx,
-        &env.file_registry_db,
+        env.file_registry_db().unwrap(),
         &actor,
         stage_ten_command(
             target_device_id,
@@ -3631,7 +3686,10 @@ async fn stage_ten_sync_service_gates_registry_writes() {
     archive_device(&env.dbx, archived_device_id, timestamp).await;
     let source = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
     let unauthorized = access::login_with_roles(&owner, &[]);
-    let outage_db = connect_runtime(&env.config, Mode::Test).await.unwrap();
+    let outage_db = connect_runtime(&env.config, Mode::Test)
+        .await
+        .unwrap()
+        .unwrap();
     outage_db.connection().clone().close().await.unwrap();
 
     assert_forbidden(
@@ -3700,12 +3758,14 @@ async fn stage_ten_sync_service_gates_registry_writes() {
         "Архівований пристрій не можна редагувати",
     );
 
-    let before =
-        stage_ten_registry_snapshot(env.file_registry_db.connection()).await;
+    let before = stage_ten_registry_snapshot(
+        env.file_registry_db().unwrap().connection(),
+    )
+    .await;
     assert_form_error(
         bl::sync(
             &env.dbx,
-            &env.file_registry_db,
+            env.file_registry_db().unwrap(),
             &source,
             stage_ten_command(device_id, Vec::new()),
         )
@@ -3715,7 +3775,10 @@ async fn stage_ten_sync_service_gates_registry_writes() {
         "must contain between 1 and 1000 items",
     );
     assert_eq!(
-        stage_ten_registry_snapshot(env.file_registry_db.connection()).await,
+        stage_ten_registry_snapshot(
+            env.file_registry_db().unwrap().connection(),
+        )
+        .await,
         before
     );
 }
@@ -3732,12 +3795,14 @@ async fn stage_ten_sync_service_main_db_outage_short_circuits_registry() {
     let outage_main =
         crate::new_pg_pool_from_config(&env.config).await.unwrap();
     outage_main.clone().close().await.unwrap();
-    let before =
-        stage_ten_registry_snapshot(env.file_registry_db.connection()).await;
+    let before = stage_ten_registry_snapshot(
+        env.file_registry_db().unwrap().connection(),
+    )
+    .await;
 
     let error = bl::sync(
         &outage_main,
-        &env.file_registry_db,
+        env.file_registry_db().unwrap(),
         &source,
         stage_ten_command(
             device_id,
@@ -3749,7 +3814,10 @@ async fn stage_ten_sync_service_main_db_outage_short_circuits_registry() {
 
     assert!(matches!(error, AppError::AnyhowError { .. }));
     assert_eq!(
-        stage_ten_registry_snapshot(env.file_registry_db.connection()).await,
+        stage_ten_registry_snapshot(
+            env.file_registry_db().unwrap().connection(),
+        )
+        .await,
         before
     );
 }
@@ -3842,7 +3910,7 @@ async fn stage_eleven_dispatches_transaction_errors_by_phase() {
 
     let (env, _guard) = cleanup_locked().await.unwrap();
     let device_id = Uuid::now_v7();
-    let repository = &env.file_registry_db;
+    let repository = env.file_registry_db().unwrap();
     let expected = query::mutate_file(
         repository,
         &stage_nine_mutation(
@@ -3858,12 +3926,13 @@ async fn stage_eleven_dispatches_transaction_errors_by_phase() {
     .await
     .unwrap();
     let committed_transaction_id = stage_eleven_committed_transaction_id(
-        env.file_registry_db.connection(),
+        env.file_registry_db().unwrap().connection(),
     )
     .await;
-    let aborted_transaction_id =
-        stage_eleven_aborted_transaction_id(env.file_registry_db.connection())
-            .await;
+    let aborted_transaction_id = stage_eleven_aborted_transaction_id(
+        env.file_registry_db().unwrap().connection(),
+    )
+    .await;
 
     for code in ["40001", "40P01"] {
         assert_eq!(
@@ -4051,14 +4120,20 @@ async fn stage_eleven_reconciles_committed_keyless_create() {
         None,
         None,
     );
-    let transaction = env.file_registry_db.connection().begin().await.unwrap();
+    let transaction = env
+        .file_registry_db()
+        .unwrap()
+        .connection()
+        .begin()
+        .await
+        .unwrap();
     let expected = query::mutate_file_in_transaction(&transaction, &mutation)
         .await
         .unwrap();
     let transaction_id = stage_eleven_transaction_id(&transaction).await;
     transaction.commit().await.unwrap();
 
-    let repository = &env.file_registry_db;
+    let repository = env.file_registry_db().unwrap();
     let reconciled = handle_commit_error(
         repository,
         expected.clone(),
@@ -4069,8 +4144,11 @@ async fn stage_eleven_reconciles_committed_keyless_create() {
     .unwrap();
     assert_eq!(reconciled, expected);
 
-    let entries =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    let entries = stage_nine_entries(
+        env.file_registry_db().unwrap().connection(),
+        device_id,
+    )
+    .await;
     assert_eq!(
         entries
             .iter()
@@ -4088,7 +4166,7 @@ async fn stage_eleven_reconciles_committed_keyless_create() {
 async fn stage_eleven_aborted_attempt_cannot_borrow_identical_state() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let device_id = Uuid::now_v7();
-    let repository = &env.file_registry_db;
+    let repository = env.file_registry_db().unwrap();
     let initial = query::mutate_file(
         repository,
         &stage_nine_mutation(
@@ -4114,14 +4192,26 @@ async fn stage_eleven_aborted_attempt_cannot_borrow_identical_state() {
     );
     let fixed_now = chrono::Utc::now().naive_utc() + Duration::seconds(1);
 
-    let aborted = env.file_registry_db.connection().begin().await.unwrap();
+    let aborted = env
+        .file_registry_db()
+        .unwrap()
+        .connection()
+        .begin()
+        .await
+        .unwrap();
     let aborted_result = query::mutate_file_at(&aborted, &mutation, fixed_now)
         .await
         .unwrap();
     let aborted_transaction_id = stage_eleven_transaction_id(&aborted).await;
     aborted.rollback().await.unwrap();
 
-    let committed = env.file_registry_db.connection().begin().await.unwrap();
+    let committed = env
+        .file_registry_db()
+        .unwrap()
+        .connection()
+        .begin()
+        .await
+        .unwrap();
     let committed_result =
         query::mutate_file_at(&committed, &mutation, fixed_now)
             .await
@@ -4145,7 +4235,7 @@ async fn stage_eleven_aborted_attempt_cannot_borrow_identical_state() {
 async fn stage_eleven_reconciliation_requires_committed_xid() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let device_id = Uuid::now_v7();
-    let repository = &env.file_registry_db;
+    let repository = env.file_registry_db().unwrap();
     let expected = query::mutate_file(
         repository,
         &stage_nine_mutation(
@@ -4161,7 +4251,13 @@ async fn stage_eleven_reconciliation_requires_committed_xid() {
     .await
     .unwrap();
 
-    let transaction = env.file_registry_db.connection().begin().await.unwrap();
+    let transaction = env
+        .file_registry_db()
+        .unwrap()
+        .connection()
+        .begin()
+        .await
+        .unwrap();
     let in_progress_transaction_id =
         stage_eleven_transaction_id(&transaction).await;
     let error = handle_commit_error(
@@ -4191,7 +4287,7 @@ async fn stage_eleven_reconciliation_requires_committed_xid() {
 async fn stage_eleven_registry_outage_keeps_commit_uncertain() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let device_id = Uuid::now_v7();
-    let repository = &env.file_registry_db;
+    let repository = env.file_registry_db().unwrap();
     let expected = query::mutate_file(
         repository,
         &stage_nine_mutation(
@@ -4207,12 +4303,18 @@ async fn stage_eleven_registry_outage_keeps_commit_uncertain() {
     .await
     .unwrap();
     let transaction_id = stage_eleven_committed_transaction_id(
-        env.file_registry_db.connection(),
+        env.file_registry_db().unwrap().connection(),
     )
     .await;
-    let before =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
-    let outage_db = connect_runtime(&env.config, Mode::Test).await.unwrap();
+    let before = stage_nine_entries(
+        env.file_registry_db().unwrap().connection(),
+        device_id,
+    )
+    .await;
+    let outage_db = connect_runtime(&env.config, Mode::Test)
+        .await
+        .unwrap()
+        .unwrap();
     outage_db.connection().clone().close().await.unwrap();
     let outage_repository = &outage_db;
 
@@ -4226,7 +4328,11 @@ async fn stage_eleven_registry_outage_keeps_commit_uncertain() {
     .unwrap_err();
     assert!(matches!(error, FilesystemError::CommitUncertain(_)));
     assert_eq!(
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await,
+        stage_nine_entries(
+            env.file_registry_db().unwrap().connection(),
+            device_id,
+        )
+        .await,
         before,
     );
 }
@@ -4236,7 +4342,7 @@ async fn stage_eleven_registry_outage_keeps_commit_uncertain() {
 async fn stage_eleven_committed_xid_mismatch_keeps_commit_uncertain() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let device_id = Uuid::now_v7();
-    let repository = &env.file_registry_db;
+    let repository = env.file_registry_db().unwrap();
     let expected = query::mutate_file(
         repository,
         &stage_nine_mutation(
@@ -4252,7 +4358,7 @@ async fn stage_eleven_committed_xid_mismatch_keeps_commit_uncertain() {
     .await
     .unwrap();
     let transaction_id = stage_eleven_committed_transaction_id(
-        env.file_registry_db.connection(),
+        env.file_registry_db().unwrap().connection(),
     )
     .await;
     query::mutate_file(
@@ -4269,8 +4375,11 @@ async fn stage_eleven_committed_xid_mismatch_keeps_commit_uncertain() {
     )
     .await
     .unwrap();
-    let before_handler =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    let before_handler = stage_nine_entries(
+        env.file_registry_db().unwrap().connection(),
+        device_id,
+    )
+    .await;
 
     let error = handle_commit_error(
         repository,
@@ -4282,7 +4391,11 @@ async fn stage_eleven_committed_xid_mismatch_keeps_commit_uncertain() {
     .unwrap_err();
     assert!(matches!(error, FilesystemError::CommitUncertain(_)));
     assert_eq!(
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await,
+        stage_nine_entries(
+            env.file_registry_db().unwrap().connection(),
+            device_id,
+        )
+        .await,
         before_handler,
     );
 }

@@ -997,24 +997,24 @@ fn mk_conn_string(config: &Config) -> String {
 }
 
 fn wdfile_connection_parts(
-    config: &Config,
+    config: &FileRegistryConfig,
     mode: Mode,
 ) -> (String, u16, String, String, String) {
     let pg_host = config
-        .pg_wdfile_host
+        .pg_host
         .clone()
         .unwrap_or_else(|| DEFAULT_PG_HOST.to_string());
-    let pg_port = config.pg_wdfile_port.unwrap_or(DEFAULT_PG_PORT);
+    let pg_port = config.pg_port.unwrap_or(DEFAULT_PG_PORT);
     let pg_user = config
-        .pg_wdfile_user
+        .pg_user
         .clone()
         .unwrap_or_else(|| DEFAULT_PG_USER.to_string());
     let pg_password = config
-        .pg_wdfile_password
+        .pg_password
         .clone()
         .unwrap_or_else(|| DEFAULT_PG_PASSWORD.to_string());
     let mut pg_dbname = config
-        .pg_wdfile_dbname
+        .pg_dbname
         .clone()
         .unwrap_or_else(|| DEFAULT_PG_WDFILE_DBNAME.to_string());
 
@@ -1029,7 +1029,7 @@ fn wdfile_connection_parts(
     (pg_host, pg_port, pg_user, pg_password, pg_dbname)
 }
 
-fn mk_wdfile_conn_string(config: &Config, mode: Mode) -> String {
+fn mk_wdfile_conn_string(config: &FileRegistryConfig, mode: Mode) -> String {
     let (pg_host, pg_port, pg_user, pg_password, pg_dbname) =
         wdfile_connection_parts(config, mode);
     format!(

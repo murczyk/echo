@@ -10,6 +10,30 @@ use sea_orm::{
 use std::{collections::BTreeMap, error::Error as StdError, future::Future};
 
 #[tokio::test]
+async fn missing_configuration_skips_connection_and_migrations() {
+    let config: Config = toml::from_str(
+        r#"
+public_host = ""
+cookie_session_secret = ""
+storage_dir = ""
+signal_api_phone = ""
+signal_import_group_name = ""
+signal_import_fiven_name = ""
+static_path = ""
+executable_path = ""
+fill_comp_freq_worker = false
+"#,
+    )
+    .unwrap();
+
+    run_migrations(&config, Mode::Debug).await.unwrap();
+    assert!(connect_runtime(&config, Mode::Debug)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
 #[serial_test::serial]
 async fn missing_file_database_has_actionable_error() {
     let previous = std::env::var_os("TEST_WDFILE_DB_NAME");
@@ -52,7 +76,8 @@ async fn file_registry_schema_and_entity_round_trip() {
     let config = crate::config::read_config(Mode::Test).unwrap();
     run_migrations(&config, Mode::Test).await.unwrap();
     run_migrations(&config, Mode::Test).await.unwrap();
-    let file_registry_db = connect_runtime(&config, Mode::Test).await.unwrap();
+    let file_registry_db =
+        connect_runtime(&config, Mode::Test).await.unwrap().unwrap();
     let connection = file_registry_db.connection();
 
     assert_migration_versions(connection).await;

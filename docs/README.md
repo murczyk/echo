@@ -44,7 +44,7 @@ flowchart LR
         api["Echo API<br/>wdintel-rs"]
         bg["Background workers<br/>wdintel-rs-bgworker"]
         postgres[("PostgreSQL 18 · wd<br/>main system of record")]
-        file_registry[("PostgreSQL 18 · wd_files<br/>required device file registry")]
+        file_registry[("wd_files<br/>optional device file registry")]
         redis[("Redis<br/>sessions + transient state")]
         nlp["wdintel-py<br/>optional NLP API"]
         iggy["Iggy<br/>optional event streaming"]
@@ -55,7 +55,7 @@ flowchart LR
 
         web --> api
         api -->|transactions and queries| postgres
-        api -->|device file metadata| file_registry
+        api -.->|device file metadata| file_registry
         bg -->|queues and message state| postgres
         api --> redis
         bg --> redis
@@ -137,19 +137,21 @@ flowchart LR
     style vllm_spark stroke-width:2px,stroke-dasharray:8 5
     classDef canonical stroke-width:3px
     classDef optional stroke-dasharray:6 4
-    class postgres,file_registry canonical
-    class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm_router,vllm_otel,vllm,hf_cache,gb10 optional
+    class postgres canonical
+    class file_registry,nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm_router,vllm_otel,vllm,hf_cache,gb10 optional
 ```
 
 The diagram focuses on the core web, worker, messenger, storage, observability,
 and analytics paths. Other instance-specific integrations are configured
 independently.
 
-The server requires the `wd_files` database at startup. Its connection uses the
-independent `pg_wdfile_*` settings, and operators must provision the database
-before the first start; startup applies its schema migrations automatically.
-See [File registry database](../deploy/README.md#file-registry-database) for
-configuration and provisioning.
+The `wd_files` database is optional and configured independently under
+`[file_registry]`. Without that section, the backend skips its connection and
+migrations and continues running; device file operations are
+unavailable. When configured, operators must
+provision the database before restart, and startup applies its schema migrations
+automatically. See [File registry database](../deploy/README.md#file-registry-database)
+for configuration and provisioning.
 
 See [Echo GPU audio transcription](ECHO_GPU_TRANSCRIPTION.md) for its
 configuration, network requirements, queue, cache, retry, and REST API flow.

@@ -16,6 +16,7 @@ pub const PG_POOL_DEFAULT_MAX_CONNECTIONS: u32 = 30;
 pub const PG_POOL_BGWORKER_MAX_CONNECTIONS: u32 = 20;
 pub const PG_WDFILE_POOL_MAX_CONNECTIONS: u32 = 10;
 pub const PG_WDFILE_MIGRATION_POOL_MAX_CONNECTIONS: u32 = 1;
+pub const FILE_REGISTRY_UNAVAILABLE_RETRY_AFTER_SECS: u64 = 60;
 pub const PGBACKREST_CONF_PATH: &str = "/etc/pgbackrest/pgbackrest.conf";
 pub const PGBACKREST_CONF_INCLUDE_DIR: &str = "/etc/pgbackrest/conf.d";
 pub const PGBACKREST_STANZA_CONF_PREFIX: &str = "pgbackrest-";
@@ -603,11 +604,7 @@ pub struct Config {
     pub pg_user: Option<String>,
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
-    pub pg_wdfile_host: Option<String>,
-    pub pg_wdfile_port: Option<u16>,
-    pub pg_wdfile_user: Option<String>,
-    pub pg_wdfile_password: Option<String>,
-    pub pg_wdfile_dbname: Option<String>,
+    pub file_registry: Option<FileRegistryConfig>,
     pub cookie_session_secret: String,
     pub storage_dir: String,
     pub signal_api_phone: String,
@@ -673,6 +670,15 @@ pub struct Config {
     pub ai_models_config: Option<ModelsConfig>,
     pub network_invalidation_worker_night_shift_start_hour: Option<u32>,
     pub network_invalidation_worker_night_shift_end_hour: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct FileRegistryConfig {
+    pub pg_host: Option<String>,
+    pub pg_port: Option<u16>,
+    pub pg_user: Option<String>,
+    pub pg_password: Option<String>,
+    pub pg_dbname: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -1114,15 +1120,42 @@ pg_dbname = "echo_analytics_gateway"
 
     #[test]
     #[serial_test::serial]
-    fn file_registry_database_config_is_flat_and_uses_test_override() {
+    fn file_registry_database_config_is_nested_and_uses_test_override() {
         let configured: Config = toml::from_str(
             r#"
 public_host = ""
-pg_wdfile_host = "file-host"
-pg_wdfile_port = 5433
-pg_wdfile_user = "file-user"
-pg_wdfile_password = "file-password"
-pg_wdfile_dbname = "file-db"
+cookie_session_secret = ""
+storage_dir = ""
+signal_api_phone = ""
+signal_import_group_name = ""
+signal_import_fiven_name = ""
+static_path = ""
+executable_path = ""
+fill_comp_freq_worker = false
+
+[file_registry]
+pg_host = "file-host"
+pg_port = 5433
+pg_user = "file-user"
+pg_password = "file-password"
+pg_dbname = "file-db"
+"#,
+        )
+        .unwrap();
+        let file_registry = configured.file_registry.as_ref().unwrap();
+        assert_eq!(file_registry.pg_host.as_deref(), Some("file-host"));
+        assert_eq!(file_registry.pg_port, Some(5433));
+        assert_eq!(file_registry.pg_user.as_deref(), Some("file-user"));
+        assert_eq!(file_registry.pg_password.as_deref(), Some("file-password"));
+        assert_eq!(file_registry.pg_dbname.as_deref(), Some("file-db"));
+        assert_eq!(
+            crate::mk_wdfile_conn_string(file_registry, Mode::Debug),
+            "postgresql://file-user:file-password@file-host:5433/file-db"
+        );
+
+        let absent: Config = toml::from_str(
+            r#"
+public_host = ""
 cookie_session_secret = ""
 storage_dir = ""
 signal_api_phone = ""
@@ -1134,18 +1167,7 @@ fill_comp_freq_worker = false
 "#,
         )
         .unwrap();
-        assert_eq!(configured.pg_wdfile_host.as_deref(), Some("file-host"));
-        assert_eq!(configured.pg_wdfile_port, Some(5433));
-        assert_eq!(configured.pg_wdfile_user.as_deref(), Some("file-user"));
-        assert_eq!(
-            configured.pg_wdfile_password.as_deref(),
-            Some("file-password")
-        );
-        assert_eq!(configured.pg_wdfile_dbname.as_deref(), Some("file-db"));
-        assert_eq!(
-            crate::mk_wdfile_conn_string(&configured, Mode::Debug),
-            "postgresql://file-user:file-password@file-host:5433/file-db"
-        );
+        assert_eq!(absent.file_registry, None);
 
         let defaults: Config = toml::from_str(
             r#"
@@ -1158,13 +1180,16 @@ signal_import_fiven_name = ""
 static_path = ""
 executable_path = ""
 fill_comp_freq_worker = false
+
+[file_registry]
 "#,
         )
         .unwrap();
+        let defaults = defaults.file_registry.as_ref().unwrap();
         let expected_default =
             "postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd_files";
         assert_eq!(
-            crate::mk_wdfile_conn_string(&defaults, Mode::Debug),
+            crate::mk_wdfile_conn_string(defaults, Mode::Debug),
             expected_default
         );
 
@@ -1174,7 +1199,7 @@ fill_comp_freq_worker = false
             "temporary-file-registry-database",
         );
         let test_conn_string =
-            crate::mk_wdfile_conn_string(&defaults, Mode::Test);
+            crate::mk_wdfile_conn_string(defaults, Mode::Test);
         match previous {
             Some(value) => {
                 std::env::set_var("TEST_WDFILE_DB_NAME", value);
@@ -1185,7 +1210,7 @@ fill_comp_freq_worker = false
         }
 
         assert_eq!(
-            crate::mk_wdfile_conn_string(&defaults, Mode::Live),
+            crate::mk_wdfile_conn_string(defaults, Mode::Live),
             expected_default
         );
         assert_eq!(

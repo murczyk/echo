@@ -297,7 +297,7 @@ async fn target_api_smoke_covers_all_routes() {
     )
     .unwrap();
     let mut good_file = file_entry::Entity::find_by_id(good_file_id)
-        .one(env.file_registry_db.connection())
+        .one(env.file_registry_db().unwrap().connection())
         .await
         .unwrap()
         .unwrap()
@@ -305,7 +305,7 @@ async fn target_api_smoke_covers_all_routes() {
     good_file.content_path =
         Set(Some(format!("devices/{device_id}/content/good.txt")));
     good_file
-        .update(env.file_registry_db.connection())
+        .update(env.file_registry_db().unwrap().connection())
         .await
         .unwrap();
     let root_id = sync["results"][1]["root"]["entry_id"]

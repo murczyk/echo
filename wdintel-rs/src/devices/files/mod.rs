@@ -61,7 +61,7 @@ pub(crate) async fn roots(
         .c(h!())?;
     let roots = bl::list_roots(
         &env.dbx,
-        &env.file_registry_db,
+        env.file_registry_db()?,
         &login,
         parse_uuid(&body.device_id),
     )
@@ -80,7 +80,7 @@ pub(crate) async fn subtree_counts(
         .c(h!())?;
     let counts = bl::count_subtrees(
         &env.dbx,
-        &env.file_registry_db,
+        env.file_registry_db()?,
         &login,
         SubtreeFileCountsCommand {
             device_id: parse_uuid(&body.device_id),
@@ -108,7 +108,7 @@ pub(crate) async fn browse(
         .c(h!())?;
     let result = bl::browse(
         &env.dbx,
-        &env.file_registry_db,
+        env.file_registry_db()?,
         &login,
         BrowseFilesCommand {
             device_id: parse_uuid(&body.device_id),
@@ -134,7 +134,7 @@ pub(crate) async fn search(
         .c(h!())?;
     let result = bl::search(
         &env.dbx,
-        &env.file_registry_db,
+        env.file_registry_db()?,
         &login,
         SearchFilesCommand {
             device_id: parse_uuid(&body.device_id),
@@ -178,7 +178,7 @@ pub(crate) async fn journal(
         .c(h!())?;
     let result = bl::journal(
         &env.dbx,
-        &env.file_registry_db,
+        env.file_registry_db()?,
         &login,
         JournalFilesCommand {
             device_id: parse_uuid(&body.device_id),
@@ -220,7 +220,7 @@ async fn sync_files(
         .c(h!())?;
     bl::sync(
         &env.dbx,
-        &env.file_registry_db,
+        env.file_registry_db()?,
         &login,
         SyncFilesCommand {
             device_id: parse_uuid(&body.device_id),

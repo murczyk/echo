@@ -110,7 +110,7 @@ pub struct Env {
     pub s3_config: Option<crate::storage::S3Config>,
     pub dbx: sea_orm::DatabaseConnection,
     pub echo_gpu_client: Arc<echo_gpu_client::EchoGpuClient>,
-    pub file_registry_db: FileRegistryDb,
+    pub file_registry_db: Option<FileRegistryDb>,
     /// GreptimeDB connection via Postgresql driver
     pub greptimedb: Arc<RwLock<Option<deadpool_postgres::Pool>>>,
     pub rq: reqwest::Client,
@@ -185,6 +185,16 @@ impl std::fmt::Display for Mode {
 }
 
 impl Env {
+    pub fn file_registry_db(&self) -> Result<&FileRegistryDb, AppError> {
+        self.file_registry_db
+            .as_ref()
+            .ok_or_else(|| AppError::ServiceUnavailable {
+                msg: "Device file operations are unavailable because the [file_registry] configuration section is missing.".to_string(),
+                retry_after_secs:
+                    crate::config::FILE_REGISTRY_UNAVAILABLE_RETRY_AFTER_SECS,
+            })
+    }
+
     pub fn greptime(&self) -> Option<deadpool_postgres::Pool> {
         let res = self.greptimedb.read();
         if let Ok(greptime) = res {

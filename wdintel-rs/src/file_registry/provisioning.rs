@@ -3,8 +3,15 @@ use crate::types::*;
 
 pub async fn oneoff_create_database(mode: Mode) -> Result<(), AppError> {
     let config = read_config(mode).c(h!())?;
+    let file_registry_config =
+        config
+            .file_registry
+            .as_ref()
+            .ok_or_else(|| AppError::BL {
+                msg: "The [file_registry] section is missing from the Echo configuration. Add pg_host, pg_port, pg_user, pg_password, and pg_dbname under [file_registry], then rerun this command.".to_string(),
+            })?;
     let (host, port, user, password, database) =
-        crate::wdfile_connection_parts(&config, mode);
+        crate::wdfile_connection_parts(file_registry_config, mode);
 
     let mut connection_config = tokio_postgres::Config::new();
     connection_config

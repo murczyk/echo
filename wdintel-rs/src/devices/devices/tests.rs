@@ -1866,10 +1866,12 @@ mod query_tests {
             .await
             .expect("main pool slot was not released")
             .unwrap();
-        let roots =
-            query::list_roots(&env.file_registry_db, verified_device_id)
-                .await
-                .unwrap();
+        let roots = query::list_roots(
+            env.file_registry_db().unwrap(),
+            verified_device_id,
+        )
+        .await
+        .unwrap();
         assert!(roots.is_empty());
         transaction.rollback().await.unwrap();
         main_pool.close().await.unwrap();

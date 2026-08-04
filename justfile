@@ -171,11 +171,11 @@ gen-seaorm-files mode="debug":
         echo "Echo config not found: $config_path" >&2
         exit 1
     }
-    pg_host="$(tq -r -f "$config_path" pg_wdfile_host)"
-    pg_port="$(tq -r -f "$config_path" pg_wdfile_port)"
-    pg_user="$(tq -r -f "$config_path" pg_wdfile_user)"
-    pg_password="$(tq -r -f "$config_path" pg_wdfile_password)"
-    pg_dbname="$(tq -r -f "$config_path" pg_wdfile_dbname)"
+    pg_host="$(tq -r -f "$config_path" file_registry.pg_host)"
+    pg_port="$(tq -r -f "$config_path" file_registry.pg_port)"
+    pg_user="$(tq -r -f "$config_path" file_registry.pg_user)"
+    pg_password="$(tq -r -f "$config_path" file_registry.pg_password)"
+    pg_dbname="$(tq -r -f "$config_path" file_registry.pg_dbname)"
     if [[ "$mode" == "test" && -n "${TEST_WDFILE_DB_NAME:-}" ]]; then
         pg_dbname="$TEST_WDFILE_DB_NAME"
     fi
@@ -196,11 +196,11 @@ check-seaorm-files mode="debug":
         echo "Echo config not found: $config_path" >&2
         exit 1
     }
-    pg_host="$(tq -r -f "$config_path" pg_wdfile_host)"
-    pg_port="$(tq -r -f "$config_path" pg_wdfile_port)"
-    pg_user="$(tq -r -f "$config_path" pg_wdfile_user)"
-    pg_password="$(tq -r -f "$config_path" pg_wdfile_password)"
-    pg_dbname="$(tq -r -f "$config_path" pg_wdfile_dbname)"
+    pg_host="$(tq -r -f "$config_path" file_registry.pg_host)"
+    pg_port="$(tq -r -f "$config_path" file_registry.pg_port)"
+    pg_user="$(tq -r -f "$config_path" file_registry.pg_user)"
+    pg_password="$(tq -r -f "$config_path" file_registry.pg_password)"
+    pg_dbname="$(tq -r -f "$config_path" file_registry.pg_dbname)"
     if [[ "$mode" == "test" && -n "${TEST_WDFILE_DB_NAME:-}" ]]; then
         pg_dbname="$TEST_WDFILE_DB_NAME"
     fi
