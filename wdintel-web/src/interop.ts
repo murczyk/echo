@@ -69,6 +69,7 @@ import './ts/react/rer-networks-neo-element';
 import './ts/react/rer-units-neo-element';
 import './ts/react/unit-attachment-upload-element';
 import './ts/react/orbit-unit-link-dialog-element';
+import './ts/react/device-network-create-dialog-element';
 import './ts/react/importer-beta-element';
 import './ts/react/updates-neo-element';
 import { saveLegacyRerAnalysisQueryState } from './ts/rer-analysis-query-state-legacy';

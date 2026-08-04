@@ -266,6 +266,71 @@ pub async fn create_unit_with_auto_network(
     ))
 }
 
+#[post("/api/sigint/unit/create-device-network")]
+pub async fn create_device_network(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<CreateDeviceNetworkReq>,
+) -> Result<Json<CreateDeviceNetworkRsp>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
+        .await
+        .c(h!())?;
+    let login = login_id_from_identity(&user)?;
+
+    Ok(Json(
+        create_device_network_for_login(&login, &env, req.into_inner())
+            .await
+            .c(h!())?,
+    ))
+}
+
+pub async fn create_device_network_for_login(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: CreateDeviceNetworkReq,
+) -> Result<CreateDeviceNetworkRsp, AppError> {
+    crate::system_settings::ensure_devices_section_enabled(&env.dbx)
+        .await
+        .c(h!())?;
+    let locations = normalize_network_locations(req.locations.clone());
+    if locations.is_empty() {
+        return Err(AppError::BL {
+            msg: "network locations are required".to_string(),
+        });
+    }
+
+    let transaction = env.dbx.begin().await.context(h!())?;
+    let unit = sigint_unit::Entity::find_by_id(req.unit_id)
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .lock_exclusive()
+        .one(&transaction)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    if unit_has_active_network(&transaction, unit.id).await? {
+        return Err(AppError::BL {
+            msg: "unit already has a network".to_string(),
+        });
+    }
+    let network = insert_auto_cyber_network(
+        &transaction,
+        login,
+        &req,
+        unit.id,
+        locations,
+        req.unit_mask.clone(),
+    )
+    .await
+    .c(h!())?;
+    transaction.commit().await.context(h!())?;
+
+    fanout_created_network(env, network.clone()).await?;
+    Ok(CreateDeviceNetworkRsp {
+        network_id: network.id,
+    })
+}
+
 pub async fn create_unit_with_auto_network_for_login(
     login: &uuid::Uuid,
     env: &Env,
@@ -289,9 +354,16 @@ pub async fn create_unit_with_auto_network_for_login(
             });
         }
         Some(
-            insert_auto_cyber_network(&txn, login, &req, unit.id, locations)
-                .await
-                .c(h!())?,
+            insert_auto_cyber_network(
+                &txn,
+                login,
+                &req,
+                unit.id,
+                locations,
+                req.unit_mask.clone(),
+            )
+            .await
+            .c(h!())?,
         )
     };
     if unit.active {
@@ -322,24 +394,7 @@ async fn render_created_unit_with_optional_network(
     fanout_unit_changed_data(env).await?;
 
     if let Some(network) = network.clone() {
-        fanout_network_changed_data(env).await.c(h!())?;
-        crate::sigint::network::etalon_calc::invalidate_network_inbox(
-            network.clone(),
-            vec![],
-            &env.dbx,
-            format!("created cyber network {}", network.id),
-        )
-        .await
-        .c(h!())?;
-        if !crate::sigint::unit_tag::sigint_network_unit_mask(&network)
-            .is_empty()
-        {
-            crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
-                &env.dbx,
-            )
-            .await
-            .c(h!())?;
-        }
+        fanout_created_network(env, network).await?;
     }
 
     let unit = sigint_unit::Entity::find_by_id(unit.id)
@@ -410,19 +465,20 @@ where
     Ok(unit)
 }
 
-async fn insert_auto_cyber_network<'a, 'async_trait, C>(
+async fn insert_auto_cyber_network<'a, 'async_trait, C, R>(
     txn: &'a C,
     login: &uuid::Uuid,
-    req: &CreateUnitWithAutoNetworkReq,
+    req: &R,
     unit_id: i64,
     locations: Vec<String>,
+    unit_mask: Vec<String>,
 ) -> Result<sigint_network::Model, AppError>
 where
     C: ConnectionTrait + 'async_trait,
+    R: serde::Serialize + ?Sized,
 {
     let unit_mask =
-        crate::sigint::unit_tag::normalize_unit_mask(req.unit_mask.clone())
-            .c(h!())?;
+        crate::sigint::unit_tag::normalize_unit_mask(unit_mask).c(h!())?;
     let network = sigint_network::ActiveModel {
         id: NotSet,
         name: Set(SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME.to_string()),
@@ -483,6 +539,49 @@ where
     .context(h!())?;
 
     Ok(network)
+}
+
+pub(super) async fn unit_has_active_network<C>(
+    dbx: &C,
+    unit_id: i64,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(sigint_network::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network::Relation::SigintNetworkUnit.def(),
+        )
+        .filter(sigint_network_unit::Column::UnitId.eq(unit_id))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some())
+}
+
+async fn fanout_created_network(
+    env: &Env,
+    network: sigint_network::Model,
+) -> Result<(), AppError> {
+    fanout_network_changed_data(env).await.c(h!())?;
+    crate::sigint::network::etalon_calc::invalidate_network_inbox(
+        network.clone(),
+        vec![],
+        &env.dbx,
+        format!("created cyber network {}", network.id),
+    )
+    .await
+    .c(h!())?;
+    if !crate::sigint::unit_tag::sigint_network_unit_mask(&network).is_empty() {
+        crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
+            &env.dbx,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
 }
 
 fn normalize_network_locations(locations: Vec<String>) -> Vec<String> {
@@ -1593,6 +1692,68 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn create_device_network_adds_only_one_network_to_existing_unit() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let unit = create_unit_with_auto_network_for_login(
+            &login_id,
+            &env,
+            auto_req(true, vec![], vec![]),
+        )
+        .await
+        .unwrap()
+        .unit;
+        let req = CreateDeviceNetworkReq {
+            unit_id: unit.id,
+            locations: vec![" Роботине ".to_string()],
+            unit_mask: vec!["2 шр 3 ошб 44 осбр".to_string()],
+        };
+
+        let rsp = create_device_network_for_login(&login_id, &env, req.clone())
+            .await
+            .unwrap();
+
+        let network = sigint_network::Entity::find_by_id(rsp.network_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(network.location, "Роботине");
+        assert!(unit_has_active_network(&env.dbx, unit.id).await.unwrap());
+
+        let err = create_device_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::BL { .. }));
+        assert_eq!(network_count(&env.dbx).await, 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_device_network_rejects_when_setting_disabled() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, false).await;
+        let login_id = test_login_id(&env).await;
+
+        let err = create_device_network_for_login(
+            &login_id,
+            &env,
+            CreateDeviceNetworkReq {
+                unit_id: 1,
+                locations: vec!["Роботине".to_string()],
+                unit_mask: vec![],
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, AppError::Forbidden(_)));
+        assert_eq!(network_count(&env.dbx).await, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn orbit_import_creates_hierarchy_link_and_enabled_network() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
@@ -1834,6 +1995,28 @@ mod tests {
         assert_eq!(units[&explicit_false.id], Some(true));
         assert_eq!(units[&unlinked.id], Some(false));
         assert_eq!(units[&explicit_true.id], Some(false));
+
+        crate::orbit::unlink_sigint_unit_with_lock(
+            &env.dbx,
+            explicit_false.id,
+            orbit_unit_id,
+        )
+        .await
+        .unwrap();
+        crate::orbit::unlink_sigint_unit_with_lock(
+            &env.dbx,
+            second.id,
+            orbit_unit_id,
+        )
+        .await
+        .unwrap();
+
+        let remaining = sigint_unit::Entity::find_by_id(first.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(remaining.is_deduplicate_candidate, Some(false));
     }
 
     async fn hierarchy_unit(

@@ -4,6 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  createDeviceNetwork,
   deleteUnitAttachment,
   getUnitDetails,
   getUnitIdsWithVisibleAttachments,
@@ -66,6 +67,26 @@ describe('units API', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ unit_ids: [7, 11] })));
 
     await expect(getUnitIdsWithVisibleAttachments()).resolves.toEqual([7, 11]);
+  });
+
+  it('creates a device network for an existing unit', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ network_id: 23 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      createDeviceNetwork({
+        unitId: 7,
+        locations: ['Роботине'],
+        unitMask: ['2 шр'],
+      }),
+    ).resolves.toEqual({ networkId: 23 });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/sigint/unit/create-device-network');
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      unit_id: 7,
+      locations: ['Роботине'],
+      unit_mask: ['2 шр'],
+    });
   });
 
   it('loads unit details without AOR metadata for non-admins', async () => {

@@ -2,6 +2,8 @@ import type {
   CreateUnitReq,
   CreateUnitWithAutoNetworkReq,
   CreateUnitWithAutoNetworkRsp,
+  CreateDeviceNetworkReq,
+  CreateDeviceNetworkRsp,
   DeleteUnitAttachmentReq,
   DeleteUnitAttachmentRsp,
   DeleteUnitDuplicateReq,
@@ -64,6 +66,16 @@ export async function createUnitWithAutoNetwork(
     transformCamelToSnake(req),
   );
   return transformSnakeToCamel<CreateUnitWithAutoNetworkRsp>(raw);
+}
+
+export async function createDeviceNetwork(
+  req: CreateDeviceNetworkReq,
+): Promise<CreateDeviceNetworkRsp> {
+  const raw = await postJson<unknown>(
+    '/api/sigint/unit/create-device-network',
+    transformCamelToSnake(req),
+  );
+  return transformSnakeToCamel<CreateDeviceNetworkRsp>(raw);
 }
 
 export async function updateUnit(unit: Unit): Promise<Unit> {

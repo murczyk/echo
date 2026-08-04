@@ -72,6 +72,9 @@ pub async fn unit_details(
         && can_edit_units
         && orbit_units.is_empty()
         && has_any_orbit_unit(&env.dbx).await?;
+    let can_create_device_network = can_edit_units
+        && crate::system_settings::devices_section_enabled(&env.dbx).await?
+        && !super::unit_has_active_network(&env.dbx, unit.id).await?;
     let mut unit = render_unit(&unit)?;
     unit.has_orbit = !orbit_units.is_empty();
     Ok(Json(UnitDetailsRsp {
@@ -79,6 +82,7 @@ pub async fn unit_details(
         attachments,
         orbit_units,
         can_link_orbit_unit,
+        can_create_device_network,
     }))
 }
 

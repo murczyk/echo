@@ -6311,6 +6311,34 @@ createUnitWithAutoNetworkRspEncoder struct =
         ]
 
 
+type alias CreateDeviceNetworkReq =
+    { unitId : Int
+    , locations : List (String)
+    , unitMask : List (String)
+    }
+
+
+createDeviceNetworkReqEncoder : CreateDeviceNetworkReq -> Json.Encode.Value
+createDeviceNetworkReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_id", (Json.Encode.int) struct.unitId )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        , ( "unit_mask", (Json.Encode.list (Json.Encode.string)) struct.unitMask )
+        ]
+
+
+type alias CreateDeviceNetworkRsp =
+    { networkId : Int
+    }
+
+
+createDeviceNetworkRspEncoder : CreateDeviceNetworkRsp -> Json.Encode.Value
+createDeviceNetworkRspEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", (Json.Encode.int) struct.networkId )
+        ]
+
+
 type alias DeleteUnitDuplicateReq =
     { cloneToDeleteId : Int
     , originalId : Int
@@ -6538,6 +6566,7 @@ type alias UnitDetailsRsp =
     , attachments : List (UnitAttachment)
     , orbitUnits : List (OrbitUnitDetails)
     , canLinkOrbitUnit : Bool
+    , canCreateDeviceNetwork : Bool
     }
 
 
@@ -6548,6 +6577,7 @@ unitDetailsRspEncoder struct =
         , ( "attachments", (Json.Encode.list (unitAttachmentEncoder)) struct.attachments )
         , ( "orbit_units", (Json.Encode.list (orbitUnitDetailsEncoder)) struct.orbitUnits )
         , ( "can_link_orbit_unit", (Json.Encode.bool) struct.canLinkOrbitUnit )
+        , ( "can_create_device_network", (Json.Encode.bool) struct.canCreateDeviceNetwork )
         ]
 
 
@@ -14662,6 +14692,20 @@ createUnitWithAutoNetworkRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.nullable (Json.Decode.int))))
 
 
+createDeviceNetworkReqDecoder : Json.Decode.Decoder CreateDeviceNetworkReq
+createDeviceNetworkReqDecoder =
+    Json.Decode.succeed CreateDeviceNetworkReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_mask" (Json.Decode.list (Json.Decode.string))))
+
+
+createDeviceNetworkRspDecoder : Json.Decode.Decoder CreateDeviceNetworkRsp
+createDeviceNetworkRspDecoder =
+    Json.Decode.succeed CreateDeviceNetworkRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
+
+
 unitSearchReqDecoder : Json.Decode.Decoder UnitSearchReq
 unitSearchReqDecoder =
     Json.Decode.succeed UnitSearchReq
@@ -14773,6 +14817,7 @@ unitDetailsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments" (Json.Decode.list (unitAttachmentDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_units" (Json.Decode.list (orbitUnitDetailsDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_link_orbit_unit" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_create_device_network" (Json.Decode.bool)))
 
 
 unitAttachmentUnitIdsRspDecoder : Json.Decode.Decoder UnitAttachmentUnitIdsRsp

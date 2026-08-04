@@ -763,7 +763,8 @@ pub async fn delete_sigint_unit_link(
     sigint_unit_id: i64,
     orbit_unit_id: Uuid,
 ) -> Result<bool, AppError> {
-    Ok(orbit_unit_sigint_unit::Entity::update_many()
+    let transaction = db.begin().await.c(h!())?;
+    let rows_affected = orbit_unit_sigint_unit::Entity::update_many()
         .col_expr(orbit_unit_sigint_unit::Column::IsManual, Expr::value(false))
         .col_expr(
             orbit_unit_sigint_unit::Column::IsSuppressed,
@@ -772,11 +773,16 @@ pub async fn delete_sigint_unit_link(
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
         .filter(orbit_unit_sigint_unit::Column::OrbitUnitId.eq(orbit_unit_id))
         .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
-        .exec(db)
+        .exec(&transaction)
         .await
         .c(h!())?
-        .rows_affected
-        > 0)
+        .rows_affected;
+    if rows_affected > 0 {
+        super::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+            .await?;
+    }
+    transaction.commit().await.c(h!())?;
+    Ok(rows_affected > 0)
 }
 
 fn same_data(unit: &ImportUnit, existing: &ExistingUnit) -> bool {

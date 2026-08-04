@@ -2433,6 +2433,16 @@ export type CreateUnitWithAutoNetworkRsp = {
   networkId: number | null;
 };
 
+export type CreateDeviceNetworkReq = {
+  unitId: number;
+  locations: Array<string>;
+  unitMask: Array<string>;
+};
+
+export type CreateDeviceNetworkRsp = {
+  networkId: number;
+};
+
 export type DeleteUnitDuplicateReq = {
   cloneToDeleteId: number;
   originalId: number;
@@ -2523,6 +2533,7 @@ export type UnitDetailsRsp = {
   attachments: Array<UnitAttachment>;
   orbitUnits: Array<OrbitUnitDetails>;
   canLinkOrbitUnit: boolean;
+  canCreateDeviceNetwork: boolean;
 };
 
 export type UnitAttachmentUnitIdsRsp = {

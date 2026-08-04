@@ -122,6 +122,22 @@ pub struct CreateUnitWithAutoNetworkRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct CreateDeviceNetworkReq {
+    pub unit_id: i64,
+    pub locations: Vec<String>,
+    pub unit_mask: Vec<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CreateDeviceNetworkRsp {
+    pub network_id: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct DeleteUnitDuplicateReq {
     pub clone_to_delete_id: i64,
     pub original_id: i64,
@@ -173,6 +189,8 @@ pub struct UnitDetailsRsp {
     pub orbit_units: Vec<OrbitUnitDetails>,
     #[serde(default)]
     pub can_link_orbit_unit: bool,
+    #[serde(default)]
+    pub can_create_device_network: bool,
 }
 
 #[derive(

@@ -2,7 +2,6 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import LinkIcon from '@mui/icons-material/Link';
 import {
-  Autocomplete,
   Button,
   CircularProgress,
   Dialog,
@@ -40,6 +39,7 @@ import {
   uniqueTrimmed,
 } from '../helpers';
 import type { UnitForm } from '../helpers';
+import { AutoNetworkFields } from './AutoNetworkFields';
 
 export type UnitFormSubmit = {
   unit: CreateUnitReq;
@@ -217,91 +217,6 @@ function UnitDetailsFields({
   );
 }
 
-function NetworkFields({
-  form,
-  skipNetworkCreation,
-  locations,
-  unitMask,
-  disabled,
-  onSkipNetworkCreationChange,
-  onLocationsChange,
-  onUnitMaskChange,
-}: {
-  form: UnitForm;
-  skipNetworkCreation: boolean;
-  locations: string[];
-  unitMask: string[];
-  disabled: boolean;
-  onSkipNetworkCreationChange: (value: boolean) => void;
-  onLocationsChange: (value: string[]) => void;
-  onUnitMaskChange: (value: string[]) => void;
-}) {
-  const fieldsDisabled = disabled || skipNetworkCreation;
-
-  return (
-    <>
-      <TextField label="Підрозділ" value={unitName(form) || 'Без назви'} disabled fullWidth />
-      <PowerAlert severity="info" autoHideDuration={null}>
-        Разом з підрозділом буде створена SIGINT мережа, яку можна редагувати у База Даних — Мережі.
-      </PowerAlert>
-      <FormControlLabel
-        control={
-          <Switch
-            checked={skipNetworkCreation}
-            onChange={(event) => onSkipNetworkCreationChange(event.target.checked)}
-            disabled={disabled}
-          />
-        }
-        label="Пропустити створення мережі"
-      />
-      <Typography variant="body2" color="text.secondary">
-        Без мережі вхідні повідомлення не будуть автоматично зіставлятися з цим підрозділом.
-      </Typography>
-      <TextField
-        label="Назва майбутньої мережі"
-        value={`р/м 💻 ${unitName(form) || 'Без назви'}`}
-        disabled
-        fullWidth
-      />
-      <Autocomplete
-        multiple
-        freeSolo
-        options={[]}
-        value={locations}
-        onChange={(_, value) => onLocationsChange(value)}
-        disabled={fieldsDisabled}
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            label="Локації"
-            placeholder="Введіть локацію та натисніть Enter"
-            required={!skipNetworkCreation}
-          />
-        )}
-      />
-      <Typography variant="body2" color="text.secondary">
-        Якщо текст сигналу містить одну з цих назв, повідомлення буде позначено як повідомлення від
-        цього підрозділу.
-      </Typography>
-      <Autocomplete
-        multiple
-        freeSolo
-        options={[]}
-        value={unitMask}
-        onChange={(_, value) => onUnitMaskChange(value)}
-        disabled={fieldsDisabled}
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            label="Маски підрозділу"
-            placeholder="Введіть маску та натисніть Enter"
-          />
-        )}
-      />
-    </>
-  );
-}
-
 function orbitUnitTitle(orbitUnit: OrbitUnitDetails): string {
   return (
     orbitUnit.unitName?.trim() ||
@@ -467,9 +382,10 @@ export function UnitFormDialog({
       <DialogContent>
         <Stack spacing={3} sx={{ pt: 1 }}>
           {networkStep ? (
-            <NetworkFields
-              form={form}
+            <AutoNetworkFields
+              unitName={unitName(form)}
               skipNetworkCreation={skipNetworkCreation}
+              allowSkip
               locations={locations}
               unitMask={unitMask}
               disabled={submitting}
