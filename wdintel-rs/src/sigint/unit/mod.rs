@@ -1745,7 +1745,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn orbit_link_reconciliation_only_updates_unset_candidates() {
+    async fn orbit_link_reconciliation_updates_existing_candidates() {
         let env = cleanup().await.unwrap();
         let orbit_unit_id = uuid::Uuid::new_v4();
         orbit_unit::ActiveModel {
@@ -1831,9 +1831,9 @@ mod tests {
             .collect::<std::collections::HashMap<_, _>>();
         assert_eq!(units[&first.id], Some(true));
         assert_eq!(units[&second.id], Some(true));
-        assert_eq!(units[&explicit_false.id], Some(false));
+        assert_eq!(units[&explicit_false.id], Some(true));
         assert_eq!(units[&unlinked.id], Some(false));
-        assert_eq!(units[&explicit_true.id], Some(true));
+        assert_eq!(units[&explicit_true.id], Some(false));
     }
 
     async fn hierarchy_unit(

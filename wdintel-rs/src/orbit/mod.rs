@@ -7,8 +7,8 @@ use crate::{h, new_pg_pool_from_mode};
 use anyhow::Context;
 use chrono::Utc;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
-    JoinType, QueryFilter, QuerySelect, RelationTrait, Statement,
+    ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, DbBackend,
+    EntityTrait, JoinType, QueryFilter, QuerySelect, RelationTrait, Statement,
     TransactionTrait,
 };
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -95,21 +95,36 @@ where
                 sigint_unit::Column::IsDeduplicateCandidate,
                 sea_orm::sea_query::Expr::value(true),
             )
-            .filter(sigint_unit::Column::IsDeduplicateCandidate.is_null())
-            .filter(sigint_unit::Column::Id.is_in(duplicate_sigint_unit_ids))
+            .filter(
+                Condition::any()
+                    .add(sigint_unit::Column::IsDeduplicateCandidate.ne(true))
+                    .add(sigint_unit::Column::IsDeduplicateCandidate.is_null()),
+            )
+            .filter(
+                sigint_unit::Column::Id
+                    .is_in(duplicate_sigint_unit_ids.iter().copied()),
+            )
             .exec(db)
             .await
             .c(h!())?;
     }
-    sigint_unit::Entity::update_many()
+    let mut non_duplicate_units = sigint_unit::Entity::update_many()
         .col_expr(
             sigint_unit::Column::IsDeduplicateCandidate,
             sea_orm::sea_query::Expr::value(false),
         )
-        .filter(sigint_unit::Column::IsDeduplicateCandidate.is_null())
-        .exec(db)
-        .await
-        .c(h!())?;
+        .filter(
+            Condition::any()
+                .add(sigint_unit::Column::IsDeduplicateCandidate.ne(false))
+                .add(sigint_unit::Column::IsDeduplicateCandidate.is_null()),
+        );
+    if !duplicate_sigint_unit_ids.is_empty() {
+        non_duplicate_units = non_duplicate_units.filter(
+            sigint_unit::Column::Id
+                .is_not_in(duplicate_sigint_unit_ids.iter().copied()),
+        );
+    }
+    non_duplicate_units.exec(db).await.c(h!())?;
     Ok(())
 }
 
