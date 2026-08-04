@@ -750,6 +750,7 @@ pub async fn current_system_settings(
             enable_audio_transcription: settings.enable_audio_transcription,
             show_classic_duty: settings.show_classic_duty,
             show_classic_analysis: settings.show_classic_analysis,
+            hide_orbit_data: settings.hide_orbit_data,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -779,6 +780,7 @@ pub async fn current_system_settings(
             enable_audio_transcription: false,
             show_classic_duty: true,
             show_classic_analysis: true,
+            hide_orbit_data: false,
         },
     }))
 }

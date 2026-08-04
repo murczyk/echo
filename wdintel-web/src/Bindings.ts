@@ -3718,6 +3718,7 @@ export type SystemSettingsCurrentRsp = {
   enableAudioTranscription: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  hideOrbitData: boolean;
 };
 
 export type SystemSettingsItem = {

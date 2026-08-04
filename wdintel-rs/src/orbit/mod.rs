@@ -113,6 +113,25 @@ where
     Ok(())
 }
 
+pub(crate) async fn reevaluate_sigint_unit_deduplicate_candidate<C>(
+    db: &C,
+    sigint_unit_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    sigint_unit::Entity::update_many()
+        .col_expr(
+            sigint_unit::Column::IsDeduplicateCandidate,
+            sea_orm::sea_query::Expr::value(Option::<bool>::None),
+        )
+        .filter(sigint_unit::Column::Id.eq(sigint_unit_id))
+        .exec(db)
+        .await
+        .c(h!())?;
+    reconcile_sigint_unit_deduplicate_candidates(db).await
+}
+
 #[derive(Debug, Clone)]
 pub struct OrbitMatchCandidate {
     pub unit_id: Uuid,

@@ -421,7 +421,7 @@ overviewTab user shared model details =
             else
                 List.map
                     (orbitDataCard
-                        (Core.Auth.hasRole "Rer" user)
+                        (Core.Auth.hasRole "UnitsEditor" user)
                         shared
                         model.orbitUnitUnlinking
                     )

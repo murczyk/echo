@@ -185,7 +185,7 @@ pub async fn orbit_link_candidates(
 ) -> Result<Json<OrbitUnitLinkCandidatesRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
-    ensure_orbit_access(&env.dbx, &login).await?;
+    ensure_orbit_editor_access(&env.dbx, &login).await?;
     let req = req.into_inner();
     let unit = find_available_sigint_unit(&env.dbx, req.unit_id).await?;
     let units = match req.search.as_deref() {
@@ -203,7 +203,7 @@ pub async fn search_orbit_units(
 ) -> Result<Json<OrbitUnitLinkCandidatesRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
-    ensure_orbit_access(&env.dbx, &login).await?;
+    ensure_orbit_editor_access(&env.dbx, &login).await?;
     let units = manual_orbit_link_candidates(&env.dbx, &req.search).await?;
     Ok(Json(OrbitUnitLinkCandidatesRsp { units }))
 }
@@ -216,7 +216,7 @@ pub async fn import_orbit_unit(
 ) -> Result<Json<CreateUnitWithAutoNetworkRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
-    ensure_orbit_access(&env.dbx, &login).await?;
+    ensure_orbit_editor_access(&env.dbx, &login).await?;
     let orbit_unit_id = parse_orbit_unit_id(&req.orbit_unit_id)?;
     Ok(Json(
         import_orbit_unit_for_login(&login, &env, orbit_unit_id).await?,
@@ -231,7 +231,7 @@ pub async fn link_orbit_unit(
 ) -> Result<Json<()>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
-    ensure_orbit_access(&env.dbx, &login).await?;
+    ensure_orbit_editor_access(&env.dbx, &login).await?;
     let req = req.into_inner();
     let orbit_unit_id = parse_orbit_unit_id(&req.orbit_unit_id)?;
     find_available_sigint_unit(&env.dbx, req.sigint_unit_id).await?;
@@ -254,7 +254,7 @@ pub async fn unlink_orbit_unit(
 ) -> Result<Json<()>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
-    ensure_orbit_access(&env.dbx, &login).await?;
+    ensure_orbit_editor_access(&env.dbx, &login).await?;
     let req = req.into_inner();
     let orbit_unit_id = parse_orbit_unit_id(&req.orbit_unit_id)?;
     find_available_sigint_unit(&env.dbx, req.sigint_unit_id).await?;
@@ -280,6 +280,15 @@ async fn ensure_orbit_access(
     }
 }
 
+async fn ensure_orbit_editor_access(
+    dbx: &DatabaseConnection,
+    login: &Uuid,
+) -> Result<(), AppError> {
+    ensure_orbit_access(dbx, login).await?;
+    has_role(dbx, login, "UnitsEditor").await?;
+    Ok(())
+}
+
 fn parse_orbit_unit_id(value: &str) -> Result<Uuid, AppError> {
     Uuid::parse_str(value).map_err(|_| AppError::BL {
         msg: "Invalid ORBIT unit ID".to_string(),
@@ -295,6 +304,11 @@ pub(super) async fn import_orbit_unit_for_login(
         crate::orbit::acquire_import_lock(&env.dbx).await.c(h!())?;
     let orbit_unit =
         find_available_orbit_unit(&transaction, orbit_unit_id).await?;
+    if orbit_unit_has_active_sigint_link(&transaction, orbit_unit_id).await? {
+        return Err(AppError::BL {
+            msg: "ORBIT unit is already linked to a SIGINT unit".to_string(),
+        });
+    }
     let unit_req =
         create_unit_req_from_orbit(&transaction, &orbit_unit, true).await?;
     let unit =
@@ -315,6 +329,12 @@ pub(super) async fn import_orbit_unit_for_login(
     .c(h!())?;
     crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
         .await?;
+    super::reconcile_parent_unit_activity(
+        &transaction,
+        login,
+        std::slice::from_ref(&unit),
+    )
+    .await?;
     transaction.commit().await.c(h!())?;
 
     super::render_created_unit_with_optional_network(login, env, unit, network)
@@ -693,6 +713,27 @@ where
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)
+}
+
+async fn orbit_unit_has_active_sigint_link<C>(
+    dbx: &C,
+    orbit_unit_id: Uuid,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+        )
+        .filter(orbit_unit_sigint_unit::Column::OrbitUnitId.eq(orbit_unit_id))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some())
 }
 
 fn render_match_candidate(

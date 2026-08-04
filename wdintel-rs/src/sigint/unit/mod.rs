@@ -215,7 +215,17 @@ pub async fn create_unit(
     let login = login_id_from_identity(&user)?;
 
     let req = req.into_inner();
-    let unit = insert_unit_with_changelog(&env.dbx, &login, &req).await?;
+    let transaction = env.dbx.begin().await.context(h!())?;
+    let unit = insert_unit_with_changelog(&transaction, &login, &req).await?;
+    if unit.active {
+        reconcile_parent_unit_activity(
+            &transaction,
+            &login,
+            std::slice::from_ref(&unit),
+        )
+        .await?;
+    }
+    transaction.commit().await.context(h!())?;
 
     if unit.active {
         crate::orbit::link_new_sigint_unit_with_lock(&env.dbx, unit.id)
@@ -284,6 +294,14 @@ pub async fn create_unit_with_auto_network_for_login(
                 .c(h!())?,
         )
     };
+    if unit.active {
+        reconcile_parent_unit_activity(
+            &txn,
+            login,
+            std::slice::from_ref(&unit),
+        )
+        .await?;
+    }
     txn.commit().await.context(h!())?;
 
     if unit.active {
@@ -542,7 +560,16 @@ async fn update_unit_for_login(
         .await
         .context(h!())?
         .ok_or(AppError::NotFound)?;
-    let active_changed = unit.active != req.active;
+    let previous_unit = unit.clone();
+    let hierarchy_or_activity_changed = unit.active != req.active
+        || unit_hierarchy(&unit)
+            != [
+                req.company.as_str(),
+                req.battalion.as_str(),
+                req.regiment.as_str(),
+                req.division.as_str(),
+                req.army.as_str(),
+            ];
     let unit_json_old = unit_json(&transaction, req.id).await?;
     let mut unit = unit.into_active_model();
     unit.company = Set(req.company.clone());
@@ -567,8 +594,13 @@ async fn update_unit_for_login(
     unit_after_insert_update(&transaction, req.id)
         .await
         .context(h!())?;
-    if active_changed {
-        update_parent_unit_activity(&transaction, login, &unit).await?;
+    if hierarchy_or_activity_changed {
+        reconcile_parent_unit_activity(
+            &transaction,
+            login,
+            &[previous_unit, unit.clone()],
+        )
+        .await?;
     }
     transaction.commit().await.context(h!())?;
     Ok(unit)
@@ -615,10 +647,10 @@ where
     Ok(())
 }
 
-async fn update_parent_unit_activity<C>(
+async fn reconcile_parent_unit_activity<C>(
     dbx: &C,
     login: &uuid::Uuid,
-    changed_unit: &sigint_unit::Model,
+    changed_units: &[sigint_unit::Model],
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -632,16 +664,18 @@ where
         .iter()
         .enumerate()
         .filter_map(|(index, unit)| {
-            is_parent_unit(unit, changed_unit).then_some(index)
+            changed_units
+                .iter()
+                .any(|changed_unit| is_parent_unit(unit, changed_unit))
+                .then_some(index)
         })
         .collect::<Vec<_>>();
     parent_indexes.sort_by_key(|index| unit_hierarchy_level(&units[*index]));
 
     for parent_index in parent_indexes {
-        let should_be_active = changed_unit.active
-            || units.iter().any(|unit| {
-                unit.active && is_parent_unit(&units[parent_index], unit)
-            });
+        let should_be_active = units.iter().any(|unit| {
+            unit.active && is_parent_unit(&units[parent_index], unit)
+        });
         if units[parent_index].active == should_be_active {
             continue;
         }
@@ -721,43 +755,57 @@ pub async fn delete_unit(
     req: Json<i64>,
 ) -> Result<Json<Unit>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
-        .await
-        .c(h!())?;
-    let unit = find_unit(&env.dbx, req.into_inner()).await.context(h!())?;
-    let unit_json_old = sigint_unit::Entity::find_by_id(unit.id)
-        .into_json()
-        .one(&env.dbx)
+    let login = login_id_from_identity(&user)?;
+    has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
+    let unit =
+        delete_unit_for_login(&env.dbx, &login, req.into_inner()).await?;
+
+    let event = EventMsg::new(EventType::ETUnitChanged);
+    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+
+    Ok(Json(render_unit(&unit)?))
+}
+
+async fn delete_unit_for_login(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    unit_id: i64,
+) -> Result<sigint_unit::Model, AppError> {
+    let transaction = dbx.begin().await.context(h!())?;
+    let unit = sigint_unit::Entity::find_by_id(unit_id)
+        .one(&transaction)
         .await
         .context(h!())?
         .ok_or(AppError::NotFound)?;
+    let previous_unit = unit.clone();
+    let unit_json_old = unit_json(&transaction, unit.id).await?;
     let mut unit = unit.into_active_model();
     unit.deleted = Set(true);
-    let unit = unit.update(&env.dbx).await.context(h!())?;
-    let unit_json_new = sigint_unit::Entity::find_by_id(unit.id)
-        .into_json()
-        .one(&env.dbx)
-        .await
-        .context(h!())?
-        .ok_or(AppError::NotFound)?;
-    let _changelog = sigint_unit_changelog::ActiveModel {
+    let unit = unit.update(&transaction).await.context(h!())?;
+    let unit_json_new = unit_json(&transaction, unit.id).await?;
+    sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(unit.id),
-        login_id: Set(login_id_from_identity(&user)?),
+        login_id: Set(*login),
         action: Set("delete".to_string()),
         created_at: NotSet,
         new_value: Set(Some(unit_json_new)),
         old_value: Set(Some(unit_json_old)),
         req: Set(None),
     }
-    .insert(&env.dbx)
+    .insert(&transaction)
     .await
     .context(h!())?;
-
-    let event = EventMsg::new(EventType::ETUnitChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
-
-    Ok(Json(render_unit(&unit)?))
+    if previous_unit.active {
+        reconcile_parent_unit_activity(
+            &transaction,
+            login,
+            std::slice::from_ref(&previous_unit),
+        )
+        .await?;
+    }
+    transaction.commit().await.context(h!())?;
+    Ok(unit)
 }
 
 #[post("/api/sigint/unit/delete-duplicate")]
@@ -799,6 +847,7 @@ pub async fn merge_units(
     let unit_to_delete =
         find_unit(dbx, unit_to_delete_id).await.context(h!())?;
     let unit_original = find_unit(dbx, original_id).await.context(h!())?;
+    let previous_unit_original = unit_original.clone();
     let unit_original =
         update_original_unit(unit_original, &unit_to_delete, dbx)
             .await
@@ -821,7 +870,7 @@ pub async fn merge_units(
         .context(h!())?
         .ok_or(AppError::NotFound)?;
 
-    let mut unit = unit_to_delete.into_active_model();
+    let mut unit = unit_to_delete.clone().into_active_model();
     unit.deleted = Set(true);
     unit.update(dbx).await.context(h!())?;
 
@@ -838,7 +887,22 @@ pub async fn merge_units(
     .insert(dbx)
     .await
     .context(h!())?;
-    Ok(unit_original)
+    reconcile_parent_unit_activity(
+        dbx,
+        &login,
+        &[
+            unit_to_delete,
+            previous_unit_original,
+            unit_original.clone(),
+        ],
+    )
+    .await?;
+    crate::orbit::reevaluate_sigint_unit_deduplicate_candidate(
+        dbx,
+        unit_original.id,
+    )
+    .await?;
+    find_unit(dbx, unit_original.id).await
 }
 
 pub async fn find_unit(
@@ -1574,6 +1638,18 @@ mod tests {
                 "20 ЗВА 45 див 55 мбр 2 бат 1 рота",
             ]
         );
+        let unit_count_before_retry = unit_count(&env.dbx).await;
+        let network_count_before_retry = network_count(&env.dbx).await;
+        let err = orbit::import_orbit_unit_for_login(
+            &login_id,
+            &env,
+            orbit_fixture.root_unit_id,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, AppError::BL { .. }));
+        assert_eq!(unit_count(&env.dbx).await, unit_count_before_retry);
+        assert_eq!(network_count(&env.dbx).await, network_count_before_retry);
         orbit_unit::Entity::delete_many()
             .filter(orbit_unit::Column::UnitId.is_in(orbit_fixture.unit_ids))
             .exec(&env.dbx)
@@ -1593,10 +1669,6 @@ mod tests {
     async fn oneoff_imports_every_unlinked_orbit_unit_as_inactive() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .unwrap();
-        orbit_unit_echelon::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .unwrap();
@@ -1657,6 +1729,18 @@ mod tests {
                 .unwrap(),
             0
         );
+        orbit_unit::Entity::delete_many()
+            .filter(orbit_unit::Column::UnitId.is_in(orbit_fixture.unit_ids))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        orbit_unit_echelon::Entity::delete_many()
+            .filter(
+                orbit_unit_echelon::Column::Id.is_in(orbit_fixture.echelon_ids),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -1841,6 +1925,81 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn unit_activity_reconciles_create_move_and_delete() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let old_regiment =
+            hierarchy_unit(&env.dbx, ["", "", "44 осбр", "", ""]).await;
+        let old_battalion =
+            hierarchy_unit(&env.dbx, ["", "3 ошб", "44 осбр", "", ""]).await;
+        let new_regiment =
+            hierarchy_unit(&env.dbx, ["", "", "45 осбр", "", ""]).await;
+        let new_battalion =
+            hierarchy_unit(&env.dbx, ["", "4 ошб", "45 осбр", "", ""]).await;
+
+        let created = create_unit_with_auto_network_for_login(
+            &login_id,
+            &env,
+            auto_req(true, vec![], vec![]),
+        )
+        .await
+        .unwrap()
+        .unit;
+        assert!(active(&env.dbx, old_battalion.id).await);
+        assert!(active(&env.dbx, old_regiment.id).await);
+
+        let mut moved = created;
+        moved.battalion = "4 ошб".to_string();
+        moved.regiment = "45 осбр".to_string();
+        let moved = update_unit_for_login(&env.dbx, &login_id, &moved)
+            .await
+            .unwrap();
+        assert!(!active(&env.dbx, old_battalion.id).await);
+        assert!(!active(&env.dbx, old_regiment.id).await);
+        assert!(active(&env.dbx, new_battalion.id).await);
+        assert!(active(&env.dbx, new_regiment.id).await);
+
+        delete_unit_for_login(&env.dbx, &login_id, moved.id)
+            .await
+            .unwrap();
+        assert!(!active(&env.dbx, new_battalion.id).await);
+        assert!(!active(&env.dbx, new_regiment.id).await);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn merge_units_reconciles_enriched_survivor_hierarchy() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let old_parent =
+            hierarchy_unit(&env.dbx, ["", "2 бат", "", "", ""]).await;
+        let new_parent =
+            hierarchy_unit(&env.dbx, ["", "2 бат", "55 мбр", "", ""]).await;
+        let surviving =
+            hierarchy_unit(&env.dbx, ["1 рота", "2 бат", "", "", ""]).await;
+        let duplicate =
+            hierarchy_unit(&env.dbx, ["", "", "55 мбр", "", ""]).await;
+        set_unit_activity(&env.dbx, &login_id, &old_parent, true)
+            .await
+            .unwrap();
+        let surviving =
+            set_unit_activity(&env.dbx, &login_id, &surviving, true)
+                .await
+                .unwrap();
+
+        let merged =
+            merge_units(login_id, &env.dbx, duplicate.id, surviving.id)
+                .await
+                .unwrap();
+
+        assert_eq!(merged.regiment, "55 мбр");
+        assert!(!active(&env.dbx, old_parent.id).await);
+        assert!(active(&env.dbx, new_parent.id).await);
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn hide_orbit_data_disables_orbit_visibility() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, false).await;
@@ -1879,6 +2038,16 @@ mod tests {
         let surviving = crate::functest::tests::mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
+                is_deduplicate_candidate: Set(Some(true)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let remaining_duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                is_deduplicate_candidate: Set(Some(true)),
                 ..Default::default()
             },
         )
@@ -1918,6 +2087,12 @@ mod tests {
                 is_manual: Set(true),
                 is_suppressed: Set(false),
             },
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(second_orbit_unit_id),
+                sigint_unit_id: Set(remaining_duplicate.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
         ])
         .exec(&env.dbx)
         .await
@@ -1930,6 +2105,7 @@ mod tests {
 
         assert_eq!(merged.id, surviving.id);
         assert!(!merged.deleted);
+        assert_eq!(merged.is_deduplicate_candidate, Some(true));
         assert!(orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId.eq(duplicate.id)
@@ -1954,8 +2130,25 @@ mod tests {
             BTreeSet::from([first_orbit_unit_id, second_orbit_unit_id])
         );
         assert!(surviving_links.iter().all(|link| link.is_manual));
+        let merged = merge_units(
+            login_id,
+            &env.dbx,
+            remaining_duplicate.id,
+            surviving.id,
+        )
+        .await
+        .unwrap();
+        assert_eq!(merged.is_deduplicate_candidate, Some(false));
         assert!(
             sigint_unit::Entity::find_by_id(duplicate.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
+        assert!(
+            sigint_unit::Entity::find_by_id(remaining_duplicate.id)
                 .one(&env.dbx)
                 .await
                 .unwrap()

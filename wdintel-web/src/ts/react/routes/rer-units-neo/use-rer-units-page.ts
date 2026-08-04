@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { AlertColor } from '@mui/material';
-import type { OrbitUnitDetails, Unit } from '../../../../Bindings';
+import type { CreateUnitWithAutoNetworkRsp, OrbitUnitDetails, Unit } from '../../../../Bindings';
 import {
   createUnit,
   createUnitWithAutoNetwork,
@@ -58,12 +58,14 @@ export function useRerUnitsPage(authUserRoles: string[]) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [settingsReady, setSettingsReady] = useState(!canEdit);
   const [devicesSectionEnabled, setDevicesSectionEnabled] = useState(false);
+  const [orbitDataHidden, setOrbitDataHidden] = useState(false);
   const [status, setStatus] = useState<Status>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editUnit, setEditUnit] = useState<Unit | null>(null);
   const [editOrbitUnits, setEditOrbitUnits] = useState<OrbitUnitDetails[]>([]);
   const [orbitLinksLoading, setOrbitLinksLoading] = useState(false);
   const [orbitLinksError, setOrbitLinksError] = useState<string | null>(null);
+  const [canLinkEditOrbitUnit, setCanLinkEditOrbitUnit] = useState(false);
   const [unlinkingOrbitUnitId, setUnlinkingOrbitUnitId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Unit | null>(null);
   const [mergeTarget, setMergeTarget] = useState<Unit | null>(null);
@@ -103,10 +105,11 @@ export function useRerUnitsPage(authUserRoles: string[]) {
   }, [loadUnits]);
 
   useEffect(() => {
-    if (editUnit === null || !editUnit.hasOrbit) {
+    if (editUnit === null) {
       setEditOrbitUnits([]);
       setOrbitLinksLoading(false);
       setOrbitLinksError(null);
+      setCanLinkEditOrbitUnit(false);
       return;
     }
 
@@ -114,9 +117,12 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     setEditOrbitUnits([]);
     setOrbitLinksLoading(true);
     setOrbitLinksError(null);
+    setCanLinkEditOrbitUnit(false);
     void getUnitDetails(editUnit.id)
       .then((details) => {
-        if (active) setEditOrbitUnits(details.orbitUnits);
+        if (!active) return;
+        setEditOrbitUnits(details.orbitUnits);
+        setCanLinkEditOrbitUnit(details.canLinkOrbitUnit);
       })
       .catch((error) => {
         if (active) setOrbitLinksError(formatUnitError(error));
@@ -128,7 +134,7 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     return () => {
       active = false;
     };
-  }, [editUnit?.hasOrbit, editUnit?.id]);
+  }, [editUnit?.id]);
 
   useEffect(() => {
     if (!canEdit) {
@@ -142,6 +148,7 @@ export function useRerUnitsPage(authUserRoles: string[]) {
       .then((settings) => {
         if (!active) return;
         setDevicesSectionEnabled(settings.devicesSectionEnabled);
+        setOrbitDataHidden(settings.hideOrbitData);
         setSettingsReady(true);
       })
       .catch((error) => {
@@ -257,6 +264,7 @@ export function useRerUnitsPage(authUserRoles: string[]) {
       );
       const updatedUnit = { ...sigintUnit, hasOrbit: remainingOrbitUnits.length > 0 };
       setEditOrbitUnits(remainingOrbitUnits);
+      setCanLinkEditOrbitUnit(remainingOrbitUnits.length === 0);
       setUnits((current) => replaceUnit(current, updatedUnit));
       setStatus({
         severity: 'success',
@@ -269,6 +277,39 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     }
   }
 
+  async function refreshLinkedEditOrbitUnit() {
+    if (editUnit === null) return;
+    const sigintUnit = editUnit;
+    setOrbitLinksLoading(true);
+    setOrbitLinksError(null);
+    try {
+      const details = await getUnitDetails(sigintUnit.id);
+      setEditOrbitUnits(details.orbitUnits);
+      setCanLinkEditOrbitUnit(details.canLinkOrbitUnit);
+      setUnits((current) => replaceUnit(current, details.unit));
+      setStatus({
+        severity: 'success',
+        text: `Підрозділ «${sigintUnit.name}» прив’язано до Orbit.`,
+      });
+    } catch (error) {
+      setOrbitLinksError(formatUnitError(error));
+    } finally {
+      setOrbitLinksLoading(false);
+    }
+  }
+
+  async function refreshUnitsAfterMutation(successText: string) {
+    try {
+      setUnits(sortUnits(await getUnitsList()));
+      setStatus({ severity: 'success', text: successText });
+    } catch (error) {
+      setStatus({
+        severity: 'warning',
+        text: `${successText} Не вдалося оновити список: ${formatUnitError(error)}`,
+      });
+    }
+  }
+
   async function submitUnit(value: UnitFormSubmit) {
     setSubmitting(true);
     setDialogError(null);
@@ -276,32 +317,22 @@ export function useRerUnitsPage(authUserRoles: string[]) {
       if (editUnit !== null) {
         const updated = await updateUnit({ ...editUnit, ...value.unit });
         setUnits((current) => replaceUnit(current, updated));
-        try {
-          setUnits(sortUnits(await getUnitsList()));
-          setStatus({ severity: 'success', text: `Підрозділ «${updated.name}» оновлено.` });
-        } catch (error) {
-          setStatus({
-            severity: 'warning',
-            text: `Підрозділ «${updated.name}» оновлено, але не вдалося оновити список: ${formatUnitError(error)}`,
-          });
-        }
+        await refreshUnitsAfterMutation(`Підрозділ «${updated.name}» оновлено.`);
       } else if (value.autoNetwork !== undefined) {
         const created = await createUnitWithAutoNetwork({
           unit: value.unit,
           ...value.autoNetwork,
         });
         setUnits((current) => sortUnits([...current, created.unit]));
-        setStatus({
-          severity: 'success',
-          text:
-            created.networkId === null
-              ? `Підрозділ «${created.unit.name}» створено без мережі.`
-              : `Підрозділ «${created.unit.name}» і радіомережу створено.`,
-        });
+        await refreshUnitsAfterMutation(
+          created.networkId === null
+            ? `Підрозділ «${created.unit.name}» створено без мережі.`
+            : `Підрозділ «${created.unit.name}» і радіомережу створено.`,
+        );
       } else {
         const created = await createUnit(value.unit);
         setUnits((current) => sortUnits([...current, created]));
-        setStatus({ severity: 'success', text: `Підрозділ «${created.name}» створено.` });
+        await refreshUnitsAfterMutation(`Підрозділ «${created.name}» створено.`);
       }
       setCreateOpen(false);
       setEditUnit(null);
@@ -310,6 +341,15 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function addImportedOrbitUnit(response: CreateUnitWithAutoNetworkRsp) {
+    setUnits((current) => sortUnits([...current, response.unit]));
+    await refreshUnitsAfterMutation(
+      response.networkId === null
+        ? `Підрозділ «${response.unit.name}» імпортовано з Orbit.`
+        : `Підрозділ «${response.unit.name}» імпортовано з Orbit і створено радіомережу.`,
+    );
   }
 
   async function confirmDelete() {
@@ -324,7 +364,7 @@ export function useRerUnitsPage(authUserRoles: string[]) {
         next.delete(deleteTarget.id);
         return next;
       });
-      setStatus({ severity: 'success', text: `Підрозділ «${deleteTarget.name}» видалено.` });
+      await refreshUnitsAfterMutation(`Підрозділ «${deleteTarget.name}» видалено.`);
       setDeleteTarget(null);
     } catch (error) {
       setDialogError(formatUnitError(error));
@@ -353,10 +393,9 @@ export function useRerUnitsPage(authUserRoles: string[]) {
         if (next.delete(duplicate.id)) next.add(merged.id);
         return next;
       });
-      setStatus({
-        severity: 'success',
-        text: `Підрозділ «${duplicate.name}» об’єднано з «${merged.name}».`,
-      });
+      await refreshUnitsAfterMutation(
+        `Підрозділ «${duplicate.name}» об’єднано з «${merged.name}».`,
+      );
       setMergeTarget(null);
     } catch (error) {
       setDialogError(formatUnitError(error));
@@ -403,6 +442,8 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     loadError,
     loadUnits,
     canEdit,
+    canImportOrbit: canEdit && !orbitDataHidden,
+    orbitDataHidden,
     settingsReady,
     devicesSectionEnabled,
     status,
@@ -411,6 +452,7 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     editOrbitUnits,
     orbitLinksLoading,
     orbitLinksError,
+    canLinkEditOrbitUnit,
     unlinkingOrbitUnitId,
     deleteTarget,
     mergeTarget,
@@ -424,7 +466,9 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     openMergeDialog,
     closeDialogs,
     unlinkEditOrbitUnit,
+    refreshLinkedEditOrbitUnit,
     submitUnit,
+    addImportedOrbitUnit,
     confirmDelete,
     confirmMerge,
     uploadKmz,

@@ -63,7 +63,13 @@ pub async fn unit_details(
     } else {
         Vec::new()
     };
+    let can_edit_units = match has_role(&env.dbx, &login, "UnitsEditor").await {
+        Ok(()) => true,
+        Err(AppError::Forbidden(_)) => false,
+        Err(err) => return Err(err),
+    };
     let can_link_orbit_unit = can_view_orbit
+        && can_edit_units
         && orbit_units.is_empty()
         && has_any_orbit_unit(&env.dbx).await?;
     let mut unit = render_unit(&unit)?;

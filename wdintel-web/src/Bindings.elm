@@ -9607,6 +9607,7 @@ type alias SystemSettingsCurrentRsp =
     , enableAudioTranscription : Bool
     , showClassicDuty : Bool
     , showClassicAnalysis : Bool
+    , hideOrbitData : Bool
     }
 
 
@@ -9639,6 +9640,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
         , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
+        , ( "hide_orbit_data", (Json.Encode.bool) struct.hideOrbitData )
         ]
 
 
@@ -16645,6 +16647,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hide_orbit_data" (Json.Decode.bool)))
 
 
 systemSettingsItemDecoder : Json.Decode.Decoder SystemSettingsItem

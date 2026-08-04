@@ -8,6 +8,10 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { PowerChip } from '../../components/PowerChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import {
+  OrbitUnitImportDialog,
+  OrbitUnitLinkDialog,
+} from '../rer-unit-details/OrbitUnitLinkDialog';
 import { DeleteUnitDialog, MergeUnitDialog } from './components/UnitActionDialogs';
 import { KmzTaskStatus } from './components/KmzTaskStatus';
 import { KmzUploadDialog } from './components/KmzUploadDialog';
@@ -43,17 +47,23 @@ const DEFAULT_COLUMN_ORDER = [
 
 function PageActions({
   canEdit,
+  canImportOrbit,
   createDisabled,
+  orbitImportDisabled,
   kmzDisabled,
   uploadingKmz,
   onCreate,
+  onOpenOrbitImport,
   onOpenKmz,
 }: {
   canEdit: boolean;
+  canImportOrbit: boolean;
   createDisabled: boolean;
+  orbitImportDisabled: boolean;
   kmzDisabled: boolean;
   uploadingKmz: boolean;
   onCreate: () => void;
+  onOpenOrbitImport: () => void;
   onOpenKmz: () => void;
 }) {
   if (!canEdit) return null;
@@ -76,6 +86,18 @@ function PageActions({
       >
         {uploadingKmz ? 'Підвантаження…' : 'Підвантажити KMZ…'}
       </Button>
+      {canImportOrbit ? (
+        <Button
+          variant="outlined"
+          startIcon={
+            <Box component="img" src="/img/delta-icon.webp" alt="" sx={{ width: 20, height: 20 }} />
+          }
+          disabled={orbitImportDisabled}
+          onClick={onOpenOrbitImport}
+        >
+          Імпортувати з Orbit
+        </Button>
+      ) : null}
     </Stack>
   );
 }
@@ -126,6 +148,8 @@ function UnitStatusFilters({
 function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
   const page = useRerUnitsPage(authUserRoles);
   const [kmzDialogOpen, setKmzDialogOpen] = useState(false);
+  const [orbitImportOpen, setOrbitImportOpen] = useState(false);
+  const [orbitLinkOpen, setOrbitLinkOpen] = useState(false);
 
   return (
     <Box
@@ -158,12 +182,15 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
           actions={
             <PageActions
               canEdit={page.canEdit}
+              canImportOrbit={page.canImportOrbit}
               createDisabled={
                 page.loading || page.loadError !== null || page.submitting || !page.settingsReady
               }
               kmzDisabled={page.loading || page.loadError !== null || page.submitting}
+              orbitImportDisabled={page.loading || page.loadError !== null || page.submitting}
               uploadingKmz={page.uploadingKmz}
               onCreate={page.openCreateDialog}
+              onOpenOrbitImport={() => setOrbitImportOpen(true)}
               onOpenKmz={() => setKmzDialogOpen(true)}
             />
           }
@@ -207,9 +234,11 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         orbitUnits={[]}
         orbitLinksLoading={false}
         orbitLinksError={null}
+        canLinkOrbitUnit={false}
         unlinkingOrbitUnitId={null}
         onClose={page.closeDialogs}
         onSubmit={(value) => void page.submitUnit(value)}
+        onLinkOrbitUnit={() => undefined}
         onUnlinkOrbitUnit={() => undefined}
       />
       <UnitFormDialog
@@ -222,9 +251,11 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         orbitUnits={page.editOrbitUnits}
         orbitLinksLoading={page.orbitLinksLoading}
         orbitLinksError={page.orbitLinksError}
+        canLinkOrbitUnit={page.canLinkEditOrbitUnit}
         unlinkingOrbitUnitId={page.unlinkingOrbitUnitId}
         onClose={page.closeDialogs}
         onSubmit={(value) => void page.submitUnit(value)}
+        onLinkOrbitUnit={() => setOrbitLinkOpen(true)}
         onUnlinkOrbitUnit={(orbitUnit) => void page.unlinkEditOrbitUnit(orbitUnit)}
       />
       <DeleteUnitDialog
@@ -248,6 +279,25 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         onClose={() => setKmzDialogOpen(false)}
         onUpload={(file) => void page.uploadKmz(file)}
       />
+      {orbitImportOpen ? (
+        <OrbitUnitImportDialog
+          onClose={() => setOrbitImportOpen(false)}
+          onImported={(response) => {
+            void page.addImportedOrbitUnit(response);
+            setOrbitImportOpen(false);
+          }}
+        />
+      ) : null}
+      {orbitLinkOpen && page.editUnit !== null ? (
+        <OrbitUnitLinkDialog
+          unitId={page.editUnit.id}
+          onClose={() => setOrbitLinkOpen(false)}
+          onLinked={() => {
+            setOrbitLinkOpen(false);
+            void page.refreshLinkedEditOrbitUnit();
+          }}
+        />
+      ) : null}
     </Box>
   );
 }

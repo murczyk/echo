@@ -1,5 +1,6 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import LinkIcon from '@mui/icons-material/Link';
 import {
   Autocomplete,
   Button,
@@ -61,9 +62,11 @@ type Props = {
   orbitUnits: OrbitUnitDetails[];
   orbitLinksLoading: boolean;
   orbitLinksError: string | null;
+  canLinkOrbitUnit: boolean;
   unlinkingOrbitUnitId: string | null;
   onClose: () => void;
   onSubmit: (value: UnitFormSubmit) => void;
+  onLinkOrbitUnit: () => void;
   onUnlinkOrbitUnit: (orbitUnit: OrbitUnitDetails) => void;
 };
 
@@ -312,20 +315,36 @@ function OrbitUnitLinks({
   orbitUnits,
   loading,
   error,
+  canLinkOrbitUnit,
   unlinkingOrbitUnitId,
+  onLink,
   onUnlink,
 }: {
   orbitUnits: OrbitUnitDetails[];
   loading: boolean;
   error: string | null;
+  canLinkOrbitUnit: boolean;
   unlinkingOrbitUnitId: string | null;
+  onLink: () => void;
   onUnlink: (orbitUnit: OrbitUnitDetails) => void;
 }) {
-  if (!loading && error === null && orbitUnits.length === 0) return null;
+  if (!loading && error === null && orbitUnits.length === 0 && !canLinkOrbitUnit) return null;
 
   return (
     <Stack spacing={1.5}>
-      <Typography variant="h6">Прив’язані Orbit підрозділи</Typography>
+      <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">
+        <Typography variant="h6">Прив’язані Orbit підрозділи</Typography>
+        {canLinkOrbitUnit ? (
+          <Button
+            variant="outlined"
+            startIcon={<LinkIcon />}
+            disabled={loading || unlinkingOrbitUnitId !== null}
+            onClick={onLink}
+          >
+            Прив’язати
+          </Button>
+        ) : null}
+      </Stack>
       {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
       {loading ? <CircularProgress size={24} /> : null}
       {orbitUnits.map((orbitUnit) => (
@@ -383,9 +402,11 @@ export function UnitFormDialog({
   orbitUnits,
   orbitLinksLoading,
   orbitLinksError,
+  canLinkOrbitUnit,
   unlinkingOrbitUnitId,
   onClose,
   onSubmit,
+  onLinkOrbitUnit,
   onUnlinkOrbitUnit,
 }: Props) {
   const [form, setForm] = useState<UnitForm>(EMPTY_UNIT_FORM);
@@ -469,7 +490,9 @@ export function UnitFormDialog({
                   orbitUnits={orbitUnits}
                   loading={orbitLinksLoading}
                   error={orbitLinksError}
+                  canLinkOrbitUnit={canLinkOrbitUnit}
                   unlinkingOrbitUnitId={unlinkingOrbitUnitId}
+                  onLink={onLinkOrbitUnit}
                   onUnlink={onUnlinkOrbitUnit}
                 />
               ) : (
