@@ -576,6 +576,7 @@ pub async fn replace_sigint_unit_links(
             .await
             .c(h!())?;
     }
+    super::reconcile_sigint_unit_deduplicate_candidates(&transaction).await?;
     transaction.commit().await.c(h!())?;
     Ok(())
 }
@@ -629,6 +630,7 @@ pub async fn replace_automatic_sigint_unit_links(
         .await
         .c(h!())?;
     }
+    super::reconcile_sigint_unit_deduplicate_candidates(&transaction).await?;
     transaction.commit().await.c(h!())?;
     Ok(())
 }
@@ -751,6 +753,7 @@ pub async fn replace_sigint_unit_link(
     .exec(&transaction)
     .await
     .c(h!())?;
+    super::reconcile_sigint_unit_deduplicate_candidates(&transaction).await?;
     transaction.commit().await.c(h!())?;
     Ok(())
 }

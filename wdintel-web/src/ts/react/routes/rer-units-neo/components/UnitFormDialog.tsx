@@ -10,6 +10,7 @@ import {
   DialogTitle,
   FormControlLabel,
   Link,
+  MenuItem,
   Stack,
   Switch,
   Table,
@@ -138,10 +139,12 @@ function DuplicateHint({ units, form }: { units: Unit[]; form: UnitForm }) {
 
 function UnitDetailsFields({
   form,
+  editing,
   disabled,
   onChange,
 }: {
   form: UnitForm;
+  editing: boolean;
   disabled: boolean;
   onChange: (value: UnitForm) => void;
 }) {
@@ -184,6 +187,28 @@ function UnitDetailsFields({
           }
           label="Активний підрозділ"
         />
+        {editing ? (
+          <TextField
+            select
+            label="Можливо дублікат"
+            value={
+              form.isDeduplicateCandidate === null ? 'unset' : String(form.isDeduplicateCandidate)
+            }
+            onChange={(event) =>
+              onChange({
+                ...form,
+                isDeduplicateCandidate:
+                  event.target.value === 'unset' ? null : event.target.value === 'true',
+              })
+            }
+            disabled={disabled}
+            fullWidth
+          >
+            <MenuItem value="unset">Не визначено</MenuItem>
+            <MenuItem value="true">Так</MenuItem>
+            <MenuItem value="false">Ні</MenuItem>
+          </TextField>
+        ) : null}
       </div>
     </>
   );
@@ -433,7 +458,12 @@ export function UnitFormDialog({
             />
           ) : (
             <>
-              <UnitDetailsFields form={form} disabled={submitting} onChange={setForm} />
+              <UnitDetailsFields
+                form={form}
+                editing={editing}
+                disabled={submitting}
+                onChange={setForm}
+              />
               {editing ? (
                 <OrbitUnitLinks
                   orbitUnits={orbitUnits}

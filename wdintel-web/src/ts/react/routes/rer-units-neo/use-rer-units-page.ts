@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { AlertColor } from '@mui/material';
-import type { CreateUnitWithAutoNetworkRsp, OrbitUnitDetails, Unit } from '../../../../Bindings';
+import type { OrbitUnitDetails, Unit } from '../../../../Bindings';
 import {
   createUnit,
   createUnitWithAutoNetwork,
@@ -18,7 +18,12 @@ import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../se
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { hasRole } from '../../utils/roles';
 import type { UnitFormSubmit } from './components/UnitFormDialog';
-import { formatUnitError } from './helpers';
+import {
+  filterUnitsByStatus,
+  formatUnitError,
+  type UnitStatusFilter,
+  unitStatusCounts,
+} from './helpers';
 
 type Status = {
   severity: AlertColor;
@@ -46,8 +51,8 @@ function replaceUnit(units: Unit[], updated: Unit): Unit[] {
 
 export function useRerUnitsPage(authUserRoles: string[]) {
   const canEdit = useMemo(() => hasRole(authUserRoles, 'UnitsEditor'), [authUserRoles]);
-  const canImportOrbit = useMemo(() => hasRole(authUserRoles, 'Orbit'), [authUserRoles]);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [statusFilter, setStatusFilter] = useState<UnitStatusFilter>('all');
   const [attachmentUnitIds, setAttachmentUnitIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -271,7 +276,15 @@ export function useRerUnitsPage(authUserRoles: string[]) {
       if (editUnit !== null) {
         const updated = await updateUnit({ ...editUnit, ...value.unit });
         setUnits((current) => replaceUnit(current, updated));
-        setStatus({ severity: 'success', text: `Підрозділ «${updated.name}» оновлено.` });
+        try {
+          setUnits(sortUnits(await getUnitsList()));
+          setStatus({ severity: 'success', text: `Підрозділ «${updated.name}» оновлено.` });
+        } catch (error) {
+          setStatus({
+            severity: 'warning',
+            text: `Підрозділ «${updated.name}» оновлено, але не вдалося оновити список: ${formatUnitError(error)}`,
+          });
+        }
       } else if (value.autoNetwork !== undefined) {
         const created = await createUnitWithAutoNetwork({
           unit: value.unit,
@@ -297,17 +310,6 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     } finally {
       setSubmitting(false);
     }
-  }
-
-  function addImportedOrbitUnit(response: CreateUnitWithAutoNetworkRsp) {
-    setUnits((current) => sortUnits([...current, response.unit]));
-    setStatus({
-      severity: 'success',
-      text:
-        response.networkId === null
-          ? `Підрозділ «${response.unit.name}» імпортовано з Orbit.`
-          : `Підрозділ «${response.unit.name}» імпортовано з Orbit і створено радіомережу.`,
-    });
   }
 
   async function confirmDelete() {
@@ -392,12 +394,15 @@ export function useRerUnitsPage(authUserRoles: string[]) {
 
   return {
     units,
+    visibleUnits: filterUnitsByStatus(units, statusFilter),
+    statusCounts: unitStatusCounts(units),
+    statusFilter,
+    setStatusFilter,
     attachmentUnitIds,
     loading,
     loadError,
     loadUnits,
     canEdit,
-    canImportOrbit,
     settingsReady,
     devicesSectionEnabled,
     status,
@@ -420,7 +425,6 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     closeDialogs,
     unlinkEditOrbitUnit,
     submitUnit,
-    addImportedOrbitUnit,
     confirmDelete,
     confirmMerge,
     uploadKmz,

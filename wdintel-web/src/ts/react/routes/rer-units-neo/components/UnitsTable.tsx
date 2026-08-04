@@ -2,7 +2,8 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import MergeIcon from '@mui/icons-material/Merge';
-import { Box, Chip, Link, Stack, Tooltip } from '@mui/material';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import { Box, Checkbox, Chip, Link, Stack, Tooltip } from '@mui/material';
 import {
   type MRT_ColumnDef,
   MaterialReactTable,
@@ -63,6 +64,17 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
               useFlexGap
               sx={{ minWidth: 0, width: '100%' }}
             >
+              <Tooltip title={row.original.active ? 'Активний' : 'Неактивний'}>
+                <Box
+                  sx={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    bgcolor: row.original.active ? '#54c06c' : '#bfbfbf',
+                    flexShrink: 0,
+                  }}
+                />
+              </Tooltip>
               <Tooltip title={row.original.name}>
                 <Link
                   href={detailsHref}
@@ -78,6 +90,11 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
                   {row.original.name}
                 </Link>
               </Tooltip>
+              {row.original.isDeduplicateCandidate === true ? (
+                <Tooltip title="можливо дублікат, перевірте">
+                  <WarningAmberIcon color="warning" fontSize="small" />
+                </Tooltip>
+              ) : null}
               <Stack
                 direction="row"
                 spacing={1}
@@ -99,30 +116,6 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
                         size="small"
                         color="primary"
                         variant="outlined"
-                      />
-                    </Link>
-                  </Tooltip>
-                ) : null}
-                {row.original.hasOrbit ? (
-                  <Tooltip title="Є дані із Orbit">
-                    <Link
-                      href={detailsHref}
-                      underline="none"
-                      aria-label={`Відкрити дані Orbit підрозділу ${row.original.name}`}
-                      onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
-                      sx={{
-                        display: 'inline-flex',
-                        minWidth: 24,
-                        minHeight: 24,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Box
-                        component="img"
-                        src="/img/delta-icon.webp"
-                        alt=""
-                        sx={{ height: 13.2 }}
                       />
                     </Link>
                   </Tooltip>
@@ -157,18 +150,27 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
         ),
       },
       {
-        header: 'Статус',
-        id: 'active',
-        accessorFn: (unit) => (unit.active ? 'Активний' : 'Неактивний'),
-        filterVariant: 'select',
-        filterSelectOptions: ['Активний', 'Неактивний'],
-        size: 130,
+        header: "Прив'язано до Orbit",
+        id: 'hasOrbit',
+        accessorFn: (unit) => unit.hasOrbit,
+        enableColumnFilter: false,
+        size: 170,
         Cell: ({ row }) => (
-          <Chip
-            label={row.original.active ? 'Активний' : 'Неактивний'}
-            color={row.original.active ? 'success' : 'default'}
+          <Checkbox
+            checked={row.original.hasOrbit}
+            disabled
             size="small"
-            variant={row.original.active ? 'filled' : 'outlined'}
+            inputProps={{
+              'aria-label': row.original.hasOrbit
+                ? 'Прив’язано до Orbit'
+                : 'Не прив’язано до Orbit',
+            }}
+            sx={{
+              p: 0,
+              '&.Mui-disabled': {
+                color: row.original.hasOrbit ? 'primary.main' : 'action.disabled',
+              },
+            }}
           />
         ),
       },

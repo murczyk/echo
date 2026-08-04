@@ -5,9 +5,9 @@ import { useState } from 'react';
 
 import { PageErrorState } from '../../components/PageErrorState';
 import { PowerAlert } from '../../components/PowerAlert';
+import { PowerChip } from '../../components/PowerChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
-import { OrbitUnitImportDialog } from '../rer-unit-details/OrbitUnitLinkDialog';
 import { DeleteUnitDialog, MergeUnitDialog } from './components/UnitActionDialogs';
 import { KmzTaskStatus } from './components/KmzTaskStatus';
 import { KmzUploadDialog } from './components/KmzUploadDialog';
@@ -24,7 +24,7 @@ const DEFAULT_COLUMN_VISIBILITY = {
   army: true,
   createdAt: true,
   comment: true,
-  active: true,
+  hasOrbit: true,
 };
 
 const DEFAULT_COLUMN_ORDER = [
@@ -38,66 +38,87 @@ const DEFAULT_COLUMN_ORDER = [
   'army',
   'createdAt',
   'comment',
-  'active',
+  'hasOrbit',
 ];
 
 function PageActions({
   canEdit,
-  canImportOrbit,
   createDisabled,
-  orbitImportDisabled,
   kmzDisabled,
   uploadingKmz,
   onCreate,
-  onOpenOrbitImport,
   onOpenKmz,
 }: {
   canEdit: boolean;
-  canImportOrbit: boolean;
   createDisabled: boolean;
-  orbitImportDisabled: boolean;
   kmzDisabled: boolean;
   uploadingKmz: boolean;
   onCreate: () => void;
-  onOpenOrbitImport: () => void;
   onOpenKmz: () => void;
 }) {
-  if (!canEdit && !canImportOrbit) return null;
+  if (!canEdit) return null;
 
   return (
     <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
-      {canEdit ? (
-        <>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={onCreate}
-            disabled={createDisabled}
-          >
-            Додати підрозділ
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<UploadFileIcon />}
-            disabled={kmzDisabled || uploadingKmz}
-            onClick={onOpenKmz}
-          >
-            {uploadingKmz ? 'Підвантаження…' : 'Підвантажити KMZ…'}
-          </Button>
-        </>
-      ) : null}
-      {canImportOrbit ? (
-        <Button
-          variant="outlined"
-          startIcon={
-            <Box component="img" src="/img/delta-icon.webp" alt="" sx={{ width: 20, height: 20 }} />
-          }
-          disabled={orbitImportDisabled}
-          onClick={onOpenOrbitImport}
-        >
-          Імпортувати з Orbit
-        </Button>
-      ) : null}
+      <Button
+        variant="contained"
+        startIcon={<AddIcon />}
+        onClick={onCreate}
+        disabled={createDisabled}
+      >
+        Додати підрозділ
+      </Button>
+      <Button
+        variant="outlined"
+        startIcon={<UploadFileIcon />}
+        disabled={kmzDisabled || uploadingKmz}
+        onClick={onOpenKmz}
+      >
+        {uploadingKmz ? 'Підвантаження…' : 'Підвантажити KMZ…'}
+      </Button>
+    </Stack>
+  );
+}
+
+function UnitStatusFilters({
+  status,
+  counts,
+  onChange,
+}: {
+  status: 'all' | 'active' | 'inactive';
+  counts: { active: number; inactive: number };
+  onChange: (status: 'all' | 'active' | 'inactive') => void;
+}) {
+  const statusLabel = (color: string, label: string, count: number) => (
+    <Stack direction="row" spacing={0.75} alignItems="center" useFlexGap>
+      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
+      <Box component="span">{`${label} ${count}`}</Box>
+    </Stack>
+  );
+
+  return (
+    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+      <PowerChip
+        selected={status === 'all'}
+        onClick={() => onChange('all')}
+        label="Всі"
+        interactive
+        fontWeight={700}
+      />
+      <PowerChip
+        selected={status === 'active'}
+        onClick={() => onChange('active')}
+        label={statusLabel('#54c06c', 'Активні', counts.active)}
+        interactive
+        fontWeight={700}
+      />
+      <PowerChip
+        selected={status === 'inactive'}
+        onClick={() => onChange('inactive')}
+        label={statusLabel('#bfbfbf', 'Неактивні', counts.inactive)}
+        interactive
+        fontWeight={700}
+      />
     </Stack>
   );
 }
@@ -105,7 +126,6 @@ function PageActions({
 function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
   const page = useRerUnitsPage(authUserRoles);
   const [kmzDialogOpen, setKmzDialogOpen] = useState(false);
-  const [orbitImportOpen, setOrbitImportOpen] = useState(false);
 
   return (
     <Box
@@ -128,18 +148,22 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
           withGlobalTextFilter
           hideGlobalTextFilter={page.loading || page.loadError !== null}
           internalActionsDisabled={page.loading || page.loadError !== null}
+          filter={
+            <UnitStatusFilters
+              status={page.statusFilter}
+              counts={page.statusCounts}
+              onChange={page.setStatusFilter}
+            />
+          }
           actions={
             <PageActions
               canEdit={page.canEdit}
-              canImportOrbit={page.canImportOrbit}
               createDisabled={
                 page.loading || page.loadError !== null || page.submitting || !page.settingsReady
               }
               kmzDisabled={page.loading || page.loadError !== null || page.submitting}
-              orbitImportDisabled={page.loading || page.loadError !== null}
               uploadingKmz={page.uploadingKmz}
               onCreate={page.openCreateDialog}
-              onOpenOrbitImport={() => setOrbitImportOpen(true)}
               onOpenKmz={() => setKmzDialogOpen(true)}
             />
           }
@@ -160,7 +184,7 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
             />
           ) : (
             <UnitsTable
-              units={page.units}
+              units={page.visibleUnits}
               attachmentUnitIds={page.attachmentUnitIds}
               loading={page.loading}
               canEdit={page.canEdit}
@@ -224,15 +248,6 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         onClose={() => setKmzDialogOpen(false)}
         onUpload={(file) => void page.uploadKmz(file)}
       />
-      {orbitImportOpen ? (
-        <OrbitUnitImportDialog
-          onClose={() => setOrbitImportOpen(false)}
-          onImported={(response) => {
-            page.addImportedOrbitUnit(response);
-            setOrbitImportOpen(false);
-          }}
-        />
-      ) : null}
     </Box>
   );
 }

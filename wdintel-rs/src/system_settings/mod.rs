@@ -354,6 +354,16 @@ where
         .unwrap_or(false))
 }
 
+pub async fn orbit_data_hidden<C>(dbx: &C) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let settings = get_active_system_settings(dbx).await.c(h!())?;
+    Ok(settings
+        .map(|settings| settings.hide_orbit_data)
+        .unwrap_or(false))
+}
+
 pub async fn sigint_comment_parsing_enabled<C>(
     dbx: &C,
 ) -> Result<bool, AppError>
@@ -530,6 +540,7 @@ fn system_settings_active_model(
     login: &uuid::Uuid,
     req: &CreateSystemSettingsReq,
     echo_im_sync_cursor: EchoImSyncCursor,
+    hide_orbit_data: bool,
 ) -> Result<system_settings::ActiveModel, AppError> {
     Ok(system_settings::ActiveModel {
         id: sea_orm::ActiveValue::NotSet,
@@ -584,6 +595,7 @@ fn system_settings_active_model(
             .c(h!())?),
         limit_big_reports: Set(req.limit_big_reports),
         enable_audio_transcription: Set(req.enable_audio_transcription),
+        hide_orbit_data: Set(hide_orbit_data),
     })
 }
 
@@ -625,12 +637,21 @@ async fn create_system_settings_for_login(
     validate_rer_duty_test_replay_settings(req)?;
     let txn = dbx.begin().await.c(h!())?;
     let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
+    let hide_orbit_data = get_active_system_settings(&txn)
+        .await
+        .c(h!())?
+        .map(|settings| settings.hide_orbit_data)
+        .unwrap_or(false);
     deactivate_active_settings(&txn, login).await.c(h!())?;
-    let created =
-        system_settings_active_model(login, req, echo_im_sync_cursor)?
-            .insert(&txn)
-            .await
-            .c(h!())?;
+    let created = system_settings_active_model(
+        login,
+        req,
+        echo_im_sync_cursor,
+        hide_orbit_data,
+    )?
+    .insert(&txn)
+    .await
+    .c(h!())?;
     if created.do_not_store_duplicate_echoim_failures {
         crate::messenger::missing_message::delete_duplicate_missing_messages(
             &txn,
@@ -650,6 +671,11 @@ async fn activate_system_settings_for_login(
 ) -> Result<system_settings::Model, AppError> {
     let txn = dbx.begin().await.c(h!())?;
     let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
+    let hide_orbit_data = get_active_system_settings(&txn)
+        .await
+        .c(h!())?
+        .map(|settings| settings.hide_orbit_data)
+        .unwrap_or(false);
     deactivate_active_settings(&txn, login).await.c(h!())?;
 
     let settings = system_settings::Entity::find_by_id(id)
@@ -665,6 +691,7 @@ async fn activate_system_settings_for_login(
     settings.echo_im_sync_since = Set(echo_im_sync_cursor.created_at);
     settings.echo_im_sync_since_inbox_message_id =
         Set(echo_im_sync_cursor.inbox_message_id);
+    settings.hide_orbit_data = Set(hide_orbit_data);
     let settings = settings.update(&txn).await.c(h!())?;
     if settings.do_not_store_duplicate_echoim_failures {
         crate::messenger::missing_message::delete_duplicate_missing_messages(
@@ -918,7 +945,7 @@ mod tests {
         let active_cursor = old_ts();
         let active_cursor_id = 42;
         let stale_cursor = active_cursor - chrono::TimeDelta::hours(1);
-        insert_settings_with_cursor(
+        let active = insert_settings_with_cursor(
             &env.dbx,
             EchoImSyncCursor {
                 created_at: active_cursor,
@@ -927,6 +954,9 @@ mod tests {
             false,
         )
         .await;
+        let mut active = active.into_active_model();
+        active.hide_orbit_data = Set(true);
+        active.update(&env.dbx).await.unwrap();
         let inactive = insert_settings(&env.dbx, stale_cursor, true).await;
         let login_id = test_login_id(&env).await;
 
@@ -938,6 +968,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(created.echo_im_sync_since, active_cursor);
+        assert!(created.hide_orbit_data);
         assert_eq!(
             created.echo_im_sync_since_inbox_message_id,
             active_cursor_id
@@ -962,6 +993,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(activated.echo_im_sync_since, current_cursor.created_at);
+        assert!(activated.hide_orbit_data);
         assert_eq!(
             activated.echo_im_sync_since_inbox_message_id,
             current_cursor.inbox_message_id
@@ -1159,6 +1191,7 @@ mod tests {
             enable_audio_transcription: Set(false),
             show_classic_duty: Set(true),
             show_classic_analysis: Set(true),
+            hide_orbit_data: Set(false),
         }
         .insert(dbx)
         .await

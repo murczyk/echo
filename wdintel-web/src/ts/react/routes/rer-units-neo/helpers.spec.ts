@@ -4,8 +4,12 @@ import type { Unit } from '../../../../Bindings';
 import {
   defaultUnitMasks,
   EMPTY_UNIT_FORM,
+  filterUnitsByStatus,
   findPotentialDuplicates,
   isUnitFormValid,
+  trimUnitForm,
+  unitToForm,
+  unitStatusCounts,
   uniqueTrimmed,
 } from './helpers';
 
@@ -20,6 +24,7 @@ function unit(overrides: Partial<Unit>): Unit {
     comment: '',
     name: '',
     active: true,
+    isDeduplicateCandidate: null,
     createdAt: 0,
     createdByLoginId: '',
     hasOrbit: false,
@@ -61,5 +66,20 @@ describe('rer units helpers', () => {
         regiment: 'бригада',
       }).map(({ id }) => id),
     ).toEqual([1]);
+  });
+
+  it('counts and filters units by activity', () => {
+    const units = [unit({ id: 1, active: true }), unit({ id: 2, active: false })];
+
+    expect(unitStatusCounts(units)).toEqual({ active: 1, inactive: 1 });
+    expect(filterUnitsByStatus(units, 'active').map(({ id }) => id)).toEqual([1]);
+    expect(filterUnitsByStatus(units, 'inactive').map(({ id }) => id)).toEqual([2]);
+  });
+
+  it('preserves the three-state deduplication candidate value', () => {
+    expect(unitToForm(unit({ isDeduplicateCandidate: true })).isDeduplicateCandidate).toBe(true);
+    expect(
+      trimUnitForm({ ...EMPTY_UNIT_FORM, isDeduplicateCandidate: null }).isDeduplicateCandidate,
+    ).toBeNull();
   });
 });

@@ -161,12 +161,6 @@ pub async fn ensure_admin(
     has_role(dbx, &login_id_from_identity(user)?, "Admin").await
 }
 
-fn has_orbit_role(roles: &[String]) -> bool {
-    roles.iter().any(|role| {
-        role == crate::config::ROLE_ADMIN || role == crate::config::ROLE_ORBIT
-    })
-}
-
 // WARNING: need to update Auth.elm too
 pub async fn has_any_role<T>(
     dbx: &sea_orm::DatabaseConnection,
@@ -256,7 +250,6 @@ fn role_matches(roles: &[String], role: &str) -> Result<bool, AppError> {
             roles.contains(&"Admin".to_string())
                 || roles.contains(&"AdvancedReports".to_string())
         }
-        "Orbit" => has_orbit_role(roles),
         "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
         role => {
             return Err(AppError::BL {
@@ -1880,13 +1873,6 @@ mod tests {
         assert!(has_update_login_description(&serde_json::json!({
             "description": "note"
         })));
-    }
-
-    #[test]
-    fn orbit_role_includes_admin_but_not_rer() {
-        assert!(has_orbit_role(&["Orbit".to_string()]));
-        assert!(has_orbit_role(&["Admin".to_string()]));
-        assert!(!has_orbit_role(&["Rer".to_string()]));
     }
 
     async fn create_grouped_message(

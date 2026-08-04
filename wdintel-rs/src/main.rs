@@ -736,6 +736,8 @@ enum Cmd {
     OneoffPrepareOrbitImport(OneoffPrepareOrbitImportPs),
     /// Import ORBIT units from the latest snapshot in an interactive TUI.
     TuiImportOrbitUnits,
+    /// Create inactive SIGINT units for every unlinked ORBIT unit.
+    OneoffImportUnlinkedOrbitUnits,
     TuiImportUnit(ImportTuiPs),
     TuiImportNetwork(ImportTuiPs),
     OneoffImportNetworkDetails(ImportTuiPs),
@@ -1463,6 +1465,9 @@ async fn async_main(
                 .c(h!())?)
         }
         Cmd::TuiImportOrbitUnits => orbit::run_import_tui(mode).await,
+        Cmd::OneoffImportUnlinkedOrbitUnits => {
+            sigint::unit::orbit::oneoff_import_unlinked_orbit_units(mode).await
+        }
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await
         }

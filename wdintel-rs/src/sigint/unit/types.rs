@@ -14,6 +14,7 @@ pub struct Unit {
     pub comment: String,
     pub name: String,
     pub active: bool,
+    pub is_deduplicate_candidate: Option<bool>,
     pub created_at: i64,
     pub created_by_login_id: String,
     #[serde(default, skip_deserializing)]
@@ -42,6 +43,7 @@ mod tests {
         .unwrap();
 
         assert!(!unit.has_orbit);
+        assert_eq!(unit.is_deduplicate_candidate, None);
     }
 }
 
@@ -95,6 +97,7 @@ pub struct CreateUnitReq {
     pub division: String,
     pub army: String,
     pub active: bool,
+    pub is_deduplicate_candidate: Option<bool>,
     pub comment: String,
 }
 

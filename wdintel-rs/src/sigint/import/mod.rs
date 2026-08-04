@@ -1057,6 +1057,7 @@ where
             comment: Set(rec.comment),
             battalion: Set(rec.battalion),
             sigint_origin_id: Set(Some(origin_id)),
+            is_deduplicate_candidate: NotSet,
         };
 
         let new_rec = if new_record {

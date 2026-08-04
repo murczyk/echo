@@ -6173,6 +6173,7 @@ type alias Unit =
     , comment : String
     , name : String
     , active : Bool
+    , isDeduplicateCandidate : Maybe (Bool)
     , createdAt : Int
     , createdByLoginId : String
     , hasOrbit : Bool
@@ -6191,6 +6192,7 @@ unitEncoder struct =
         , ( "comment", (Json.Encode.string) struct.comment )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "active", (Json.Encode.bool) struct.active )
+        , ( "is_deduplicate_candidate", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeduplicateCandidate )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "created_by_login_id", (Json.Encode.string) struct.createdByLoginId )
         , ( "has_orbit", (Json.Encode.bool) struct.hasOrbit )
@@ -6258,6 +6260,7 @@ type alias CreateUnitReq =
     , division : String
     , army : String
     , active : Bool
+    , isDeduplicateCandidate : Maybe (Bool)
     , comment : String
     }
 
@@ -6271,6 +6274,7 @@ createUnitReqEncoder struct =
         , ( "division", (Json.Encode.string) struct.division )
         , ( "army", (Json.Encode.string) struct.army )
         , ( "active", (Json.Encode.bool) struct.active )
+        , ( "is_deduplicate_candidate", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeduplicateCandidate )
         , ( "comment", (Json.Encode.string) struct.comment )
         ]
 
@@ -14594,6 +14598,7 @@ unitDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_deduplicate_candidate" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by_login_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_orbit" (Json.Decode.bool)))
@@ -14635,6 +14640,7 @@ createUnitReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "division" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_deduplicate_candidate" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
 
 

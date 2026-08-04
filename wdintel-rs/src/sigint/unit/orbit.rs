@@ -4,11 +4,10 @@ use super::types::{
     OrbitUnitDetails, OrbitUnitLinkCandidate, OrbitUnitLinkCandidatesReq,
     OrbitUnitLinkCandidatesRsp, OrbitUnitSearchReq,
 };
-use crate::config::ROLE_ORBIT;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-use crate::types::{Env, ShortContext};
+use crate::types::{Env, Mode, ShortContext};
 use crate::users::{ensure_rer_role, has_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::{Data, Json};
@@ -25,7 +24,13 @@ pub async fn can_view_orbit_data(
     dbx: &DatabaseConnection,
     login_id: &Uuid,
 ) -> Result<bool, AppError> {
-    match has_role(dbx, login_id, ROLE_ORBIT).await {
+    if crate::system_settings::orbit_data_hidden(dbx)
+        .await
+        .c(h!())?
+    {
+        return Ok(false);
+    }
+    match has_role(dbx, login_id, "Rer").await {
         Ok(()) => Ok(true),
         Err(AppError::Forbidden(_)) => Ok(false),
         Err(err) => Err(err),
@@ -291,7 +296,7 @@ pub(super) async fn import_orbit_unit_for_login(
     let orbit_unit =
         find_available_orbit_unit(&transaction, orbit_unit_id).await?;
     let unit_req =
-        create_unit_req_from_orbit(&transaction, &orbit_unit).await?;
+        create_unit_req_from_orbit(&transaction, &orbit_unit, true).await?;
     let unit =
         super::insert_unit_with_changelog(&transaction, login, &unit_req)
             .await
@@ -308,10 +313,77 @@ pub(super) async fn import_orbit_unit_for_login(
     .insert(&transaction)
     .await
     .c(h!())?;
+    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+        .await?;
     transaction.commit().await.c(h!())?;
 
     super::render_created_unit_with_optional_network(login, env, unit, network)
         .await
+}
+
+pub async fn oneoff_import_unlinked_orbit_units(
+    mode: Mode,
+) -> Result<(), AppError> {
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
+    let login = crate::users::system_login_id(&dbx).await.c(h!())?;
+    let imported = import_unlinked_orbit_units(&dbx, &login).await?;
+    println!("Imported {imported} unlinked ORBIT units.");
+    Ok(())
+}
+
+pub(super) async fn import_unlinked_orbit_units(
+    dbx: &DatabaseConnection,
+    login: &Uuid,
+) -> Result<usize, AppError> {
+    let transaction = crate::orbit::acquire_import_lock(dbx).await.c(h!())?;
+    let linked_orbit_unit_ids = orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+        )
+        .select_only()
+        .column(orbit_unit_sigint_unit::Column::OrbitUnitId)
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .into_tuple::<Uuid>()
+        .all(&transaction)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let orbit_units = orbit_unit::Entity::find()
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .order_by_asc(orbit_unit::Column::UnitId)
+        .all(&transaction)
+        .await
+        .c(h!())?;
+    let mut imported = 0;
+    for orbit_unit in orbit_units {
+        if linked_orbit_unit_ids.contains(&orbit_unit.unit_id) {
+            continue;
+        }
+        let unit_req =
+            create_unit_req_from_orbit(&transaction, &orbit_unit, false)
+                .await?;
+        let unit =
+            super::insert_unit_with_changelog(&transaction, login, &unit_req)
+                .await
+                .c(h!())?;
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit.unit_id),
+            sigint_unit_id: Set(unit.id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(&transaction)
+        .await
+        .c(h!())?;
+        imported += 1;
+    }
+    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+        .await?;
+    transaction.commit().await.c(h!())?;
+    Ok(imported)
 }
 
 async fn create_imported_unit_network<C>(
@@ -367,6 +439,7 @@ fn imported_unit_masks(unit: &CreateUnitReq) -> Result<Vec<String>, AppError> {
 async fn create_unit_req_from_orbit<C>(
     dbx: &C,
     orbit_unit: &orbit_unit::Model,
+    active: bool,
 ) -> Result<CreateUnitReq, AppError>
 where
     C: ConnectionTrait,
@@ -399,7 +472,8 @@ where
         regiment,
         division,
         army,
-        active: true,
+        active,
+        is_deduplicate_candidate: None,
         comment: String::new(),
     })
 }
@@ -698,6 +772,10 @@ mod tests {
     #[serial]
     async fn manual_search_prioritizes_full_word_matches() {
         let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
         let full_word_match_id = Uuid::new_v4();
         let substring_match_id = Uuid::new_v4();
         orbit_unit::Entity::insert_many([
@@ -727,22 +805,21 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn orbit_role_and_admin_can_view_orbit_data() {
+    async fn rer_role_and_admin_can_view_orbit_data() {
         let env = cleanup().await.unwrap();
-        let orbit_login =
-            create_login_with_roles(&env.dbx, "orbit-role", &["Rer", "Orbit"])
-                .await;
         let admin_login =
             create_login_with_roles(&env.dbx, "orbit-admin", &["Admin"]).await;
         let rer_login =
             create_login_with_roles(&env.dbx, "orbit-rer", &["Rer"]).await;
+        let basic_login =
+            create_login_with_roles(&env.dbx, "orbit-basic", &[]).await;
 
-        assert!(can_view_orbit_data(&env.dbx, &orbit_login.id)
-            .await
-            .unwrap());
         assert!(can_view_orbit_data(&env.dbx, &admin_login.id)
             .await
             .unwrap());
-        assert!(!can_view_orbit_data(&env.dbx, &rer_login.id).await.unwrap());
+        assert!(can_view_orbit_data(&env.dbx, &rer_login.id).await.unwrap());
+        assert!(!can_view_orbit_data(&env.dbx, &basic_login.id)
+            .await
+            .unwrap());
     }
 }

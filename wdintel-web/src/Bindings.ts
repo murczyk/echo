@@ -2385,6 +2385,7 @@ export type Unit = {
   comment: string;
   name: string;
   active: boolean;
+  isDeduplicateCandidate: boolean | null;
   createdAt: number;
   createdByLoginId: string;
   hasOrbit: boolean;
@@ -2416,6 +2417,7 @@ export type CreateUnitReq = {
   division: string;
   army: string;
   active: boolean;
+  isDeduplicateCandidate: boolean | null;
   comment: string;
 };
 

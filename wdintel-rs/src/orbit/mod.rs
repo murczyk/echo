@@ -11,7 +11,7 @@ use sea_orm::{
     JoinType, QueryFilter, QuerySelect, RelationTrait, Statement,
     TransactionTrait,
 };
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -53,6 +53,64 @@ pub(crate) fn echo_echelon(key: &str) -> Option<EchoEchelon> {
         "corps" | "fieldArmy" => Some(EchoEchelon::Army),
         _ => None,
     }
+}
+
+pub(crate) async fn reconcile_sigint_unit_deduplicate_candidates<C>(
+    db: &C,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let links = orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+        )
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .all(db)
+        .await
+        .c(h!())?;
+    let mut sigint_unit_ids_by_orbit_unit =
+        HashMap::<Uuid, HashSet<i64>>::new();
+    for link in links {
+        sigint_unit_ids_by_orbit_unit
+            .entry(link.orbit_unit_id)
+            .or_default()
+            .insert(link.sigint_unit_id);
+    }
+    let duplicate_sigint_unit_ids = sigint_unit_ids_by_orbit_unit
+        .into_values()
+        .filter(|sigint_unit_ids| sigint_unit_ids.len() > 1)
+        .flatten()
+        .collect::<HashSet<_>>();
+    if !duplicate_sigint_unit_ids.is_empty() {
+        sigint_unit::Entity::update_many()
+            .col_expr(
+                sigint_unit::Column::IsDeduplicateCandidate,
+                sea_orm::sea_query::Expr::value(true),
+            )
+            .filter(sigint_unit::Column::IsDeduplicateCandidate.is_null())
+            .filter(sigint_unit::Column::Id.is_in(duplicate_sigint_unit_ids))
+            .exec(db)
+            .await
+            .c(h!())?;
+    }
+    sigint_unit::Entity::update_many()
+        .col_expr(
+            sigint_unit::Column::IsDeduplicateCandidate,
+            sea_orm::sea_query::Expr::value(false),
+        )
+        .filter(sigint_unit::Column::IsDeduplicateCandidate.is_null())
+        .exec(db)
+        .await
+        .c(h!())?;
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -588,6 +646,7 @@ mod tests {
             comment: String::new(),
             sigint_origin_id: None,
             original_id: None,
+            is_deduplicate_candidate: None,
         }
     }
 }

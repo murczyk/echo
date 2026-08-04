@@ -30,6 +30,7 @@ pub struct Model {
     pub battalion: String,
     pub sigint_origin_id: Option<i64>,
     pub original_id: Option<i64>,
+    pub is_deduplicate_candidate: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

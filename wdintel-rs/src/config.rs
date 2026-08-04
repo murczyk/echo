@@ -99,7 +99,6 @@ pub const URL_NEED_VISIT_NOTIFICATION_MINS: i64 = 5;
 pub const IDENTITY_DURATION_HOURS: u64 = 12;
 pub const IDENTITY_SALT: &str = "IUBwdub783736#";
 pub const ROLE_ADMIN: &str = "Admin";
-pub const ROLE_ORBIT: &str = "Orbit";
 pub const DEVICE_CUSTOM_FIELDS_MAX_COUNT: usize = 50;
 pub const DEVICE_CUSTOM_FIELD_KEY_MAX_CHARS: usize = 128;
 pub const DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS: usize = 4096;
