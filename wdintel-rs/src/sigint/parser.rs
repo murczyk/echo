@@ -331,16 +331,14 @@ fn scan_marker_comments(
 ) -> MarkerComments {
     let comments = scan_markers(lines, &COMMENT_MARKER);
     let interception_tags = scan_markers(lines, &INTERCEPTION_TAG_MARKER);
-    let comment = comments.first().cloned();
-    let interception_tag = interception_tags.first().cloned();
-    let selected = if comment.as_ref().is_some_and(|comment| {
-        filter_blacklisted_comment(Some(comment.text.clone()), blacklist)
-            .is_none()
-    }) {
-        interception_tag.clone().or_else(|| comment.clone())
-    } else {
-        comment.clone().or_else(|| interception_tag.clone())
-    };
+    let comment = comments
+        .iter()
+        .find(|comment| {
+            filter_blacklisted_comment(Some(comment.text.clone()), blacklist)
+                .is_some()
+        })
+        .cloned();
+    let selected = comment.or_else(|| interception_tags.first().cloned());
     MarkerComments {
         selected,
         all: comments.into_iter().chain(interception_tags).collect(),
@@ -820,6 +818,15 @@ mod tests {
         let res = parse_comments(body);
         assert_eq!(res.top, None);
         assert_eq!(res.bottom.as_deref(), Some("🚙 - Переміщення"));
+    }
+
+    #[test]
+    fn bottom_uses_later_comment_after_blacklisted_marker() {
+        let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу\n\nКоментар: +\n\nКоментар: важливе уточнення\n\nМітки перехоплення: 🚙 - Переміщення";
+        let res = parse_comments_with_seeded_blacklist(body);
+
+        assert_eq!(res.top, None);
+        assert_eq!(res.bottom.as_deref(), Some("важливе уточнення"));
     }
 
     #[test]
