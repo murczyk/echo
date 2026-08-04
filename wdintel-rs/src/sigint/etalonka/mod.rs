@@ -2487,6 +2487,26 @@ mod tests {
         .await
         .unwrap();
 
+        for created_at in [
+            now - chrono::Duration::days(1),
+            now - chrono::Duration::hours(18),
+        ] {
+            sigint_network_callsign::ActiveModel {
+                sigint_network_id: Set(network.id),
+                sigint_callsign: Set("Overlapping".to_string()),
+                deleted: Set(false),
+                created_at: Set(created_at),
+                developing: Set(false),
+                unit_developing: Set(false),
+                main_radio_station: Set(false),
+                command_control: Set(false),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+
         for (callsign, full_name, created_at) in [
             ("Beta", "Бутилкін Сергій", now - chrono::Duration::days(1)),
             ("Stale", "Старий Позивний", now - chrono::Duration::days(1)),
@@ -2634,6 +2654,7 @@ mod tests {
                 "MovedAway",
                 "Returning",
                 "DeletedLinked",
+                "Overlapping",
             ],
         )
         .await;
@@ -2809,6 +2830,15 @@ mod tests {
             .callsigns_detailed
             .iter()
             .any(|callsign| callsign.callsign == "DeletedLinked"));
+        let overlapping = entry
+            .net_callsigns
+            .iter()
+            .filter(|callsign| callsign.callsign == "Overlapping")
+            .collect::<Vec<_>>();
+        assert_eq!(overlapping.len(), 2);
+        assert!(overlapping.iter().all(|callsign| {
+            callsign.message_count == 1 && callsign.last_datetime == Some(ts)
+        }));
         assert!(!entry
             .net_callsigns
             .iter()

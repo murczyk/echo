@@ -13,7 +13,8 @@ use crate::utils::orm::ArrayColumnOps;
 use chrono::*;
 use sea_orm::*;
 use sea_query::{
-    Alias, CaseStatement, Expr, ExprTrait, Func, JoinType, PgFunc, SimpleExpr,
+    Alias, Expr, ExprTrait, Func, JoinType, PgFunc, SelectStatement,
+    SimpleExpr, UnionType,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -1617,9 +1618,17 @@ where
         }
         ActivityTargetFilter::Include(targets) => sea_query::Query::select()
             .columns(["id", "freq", "activity_datetime", "callsign"])
-            .expr_as(build_activity_target_index_expr(targets), "target_index")
+            .column((
+                Alias::new("activity_targets"),
+                Alias::new("target_index"),
+            ))
             .from_subquery(subquery, "messages")
-            .cond_where(build_activity_targets_condition(targets))
+            .join_subquery(
+                JoinType::InnerJoin,
+                build_activity_targets_query(targets).context(h!())?,
+                Alias::new("activity_targets"),
+                build_activity_targets_join_condition(),
+            )
             .to_owned(),
         ActivityTargetFilter::Exclude(targets) => sea_query::Query::select()
             .columns(["id", "freq", "activity_datetime", "callsign"])
@@ -1681,17 +1690,59 @@ where
     Ok(callsigns_activity_info)
 }
 
-fn build_activity_target_index_expr(
+fn build_activity_targets_query(
     targets: &[NetworkCallsignActivityTarget],
-) -> SimpleExpr {
+) -> Option<SelectStatement> {
     targets
         .iter()
         .enumerate()
-        .fold(CaseStatement::new(), |case_statement, (index, target)| {
-            case_statement
-                .case(build_activity_target_condition(target), index as i64)
+        .map(|(index, target)| {
+            sea_query::Query::select()
+                .expr_as(Expr::value(index as i64), "target_index")
+                .expr_as(
+                    Expr::value(target.callsign.clone()),
+                    "target_callsign",
+                )
+                .expr_as(Expr::value(target.active_from), "active_from")
+                .expr_as(
+                    Expr::value(target.active_to.unwrap_or(target.active_from)),
+                    "active_to",
+                )
+                .expr_as(
+                    Expr::value(target.active_to.is_some()),
+                    "has_active_to",
+                )
+                .to_owned()
         })
-        .into()
+        .reduce(|mut query, next| {
+            query.union(UnionType::All, next);
+            query
+        })
+}
+
+fn build_activity_targets_join_condition() -> Condition {
+    let messages = Alias::new("messages");
+    let targets = Alias::new("activity_targets");
+    Condition::all()
+        .add(
+            Expr::col((messages.clone(), Alias::new("callsign")))
+                .equals((targets.clone(), Alias::new("target_callsign"))),
+        )
+        .add(
+            Expr::col((messages.clone(), Alias::new("activity_datetime")))
+                .gte(Expr::col((targets.clone(), Alias::new("active_from")))),
+        )
+        .add(
+            Condition::any()
+                .add(
+                    Expr::col((targets.clone(), Alias::new("has_active_to")))
+                        .eq(false),
+                )
+                .add(
+                    Expr::col((messages, Alias::new("activity_datetime")))
+                        .lt(Expr::col((targets, Alias::new("active_to")))),
+                ),
+        )
 }
 
 fn build_activity_targets_condition(
