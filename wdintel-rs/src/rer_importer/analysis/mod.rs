@@ -18,7 +18,6 @@ use crate::users::{
     ensure_rer_role, ensure_rer_role_by_id, has_any_role, has_role,
     login_id_from_identity,
 };
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::string::*;
 use crate::utils::*;
 use actix_identity::Identity;
@@ -1532,7 +1531,8 @@ where
             return Ok(q.filter(SimpleExpr::Custom(
                 crate::inbox::callsigns::sql_filter_condition(
                     selected_callsigns,
-                ),
+                )
+                .into(),
             )));
         }
     }
@@ -1587,7 +1587,7 @@ fn get_related_tag_items_filter(
         )
         .filter(
             sigint_inbox_item_tag::Column::TagId
-                .eq_any(unique_tags.into_iter().collect()),
+                .eq_any(unique_tags.into_iter().collect::<Vec<_>>()),
         )
         .filter(
             sigint_inbox_item_tag::Column::Confidence
@@ -1982,7 +1982,9 @@ fn selected_tags_accessible_expr(
 ) -> SimpleExpr {
     let expected_count = unique_tags.len();
     let subquery = tag::Entity::find()
-        .filter(tag::Column::Id.eq_any(unique_tags.into_iter().collect()))
+        .filter(
+            tag::Column::Id.eq_any(unique_tags.into_iter().collect::<Vec<_>>()),
+        )
         .filter(access.owner_condition())
         .select_only()
         .expr(Expr::col((tag::Entity, tag::Column::Id)).count())
@@ -2945,10 +2947,7 @@ where
     if let Some(ref search) = m_str_trim(search) {
         let search_parts = search::parse_search_parts(search).context(h!())?;
         if !search_parts.ts_query.is_empty() {
-            let search_tsv = Expr::col((
-                sigint_search::Entity,
-                sigint_search::Column::SearchTsv,
-            ));
+            let search_tsv = Expr::cust("sigint_search.search_tsv");
             let search_filter =
                 search_tsv.clone().matches(Expr::cust_with_values(
                     "websearch_to_tsquery('russian', $1)",
@@ -3358,7 +3357,7 @@ fn append_summary_table_freq_values(
         }
         if let Some(row) = rows.get_mut(&freq) {
             let values = field(row);
-            if !values.contains(&value) {
+            if !values.iter().any(|existing| existing == &value) {
                 values.push(value);
             }
         }
@@ -3378,7 +3377,8 @@ fn append_summary_table_freq_locations(
             continue;
         };
         for location in to_location_list(&location) {
-            if !location.trim().is_empty() && !row.locations.contains(&location)
+            if !location.trim().is_empty()
+                && !row.locations.iter().any(|existing| existing == &location)
             {
                 row.locations.push(location);
             }
@@ -3450,7 +3450,7 @@ async fn query_summary_table_freq_rows(
     // println!("> summary table main_query sql: {}", sql);
 
     let main_query_res = db
-        .query_all(Statement::from_string(DbBackend::Postgres, sql))
+        .query_all_raw(Statement::from_string(DbBackend::Postgres, sql))
         .await
         .c(h!())?;
 
@@ -3506,7 +3506,9 @@ fn build_summary_table_freq(
             .entry(freq.clone())
             .and_modify(|xs| {
                 for unit in row.units.iter() {
-                    if !xs.contains(unit) && !unit.trim().is_empty() {
+                    if !xs.iter().any(|existing| existing == unit)
+                        && !unit.trim().is_empty()
+                    {
                         xs.push(unit.clone())
                     }
                 }
@@ -3528,7 +3530,9 @@ fn build_summary_table_freq(
             .entry(freq.clone())
             .and_modify(|xs| {
                 for location in locations.iter() {
-                    if !xs.contains(location) && !location.trim().is_empty() {
+                    if !xs.iter().any(|existing| existing == location)
+                        && !location.trim().is_empty()
+                    {
                         xs.push(location.clone())
                     }
                 }
@@ -3545,7 +3549,7 @@ fn build_summary_table_freq(
             callsigns_per_freq
                 .entry(freq.clone())
                 .and_modify(|xs| {
-                    if !xs.contains(callsign) {
+                    if !xs.iter().any(|existing| existing == callsign) {
                         xs.push(callsign.clone())
                     }
                 })
@@ -3698,7 +3702,7 @@ fn collect_summary_table_coordinate_data(
 }
 
 fn push_unique_coord(coords: &mut Vec<LatLng>, coord: LatLng) {
-    if !coords.contains(&coord) {
+    if !coords.iter().any(|existing| existing == &coord) {
         coords.push(coord);
     }
 }
@@ -4009,7 +4013,7 @@ async fn summary_table_related_networks_by_freq_by_login(
         networks_by_freq
             .entry(freq)
             .and_modify(|items| {
-                if !items.contains(&full_name) {
+                if !items.iter().any(|existing| existing == &full_name) {
                     items.push(full_name.clone());
                 }
             })
@@ -4300,7 +4304,7 @@ async fn build_summary_table_report(
             freqs_per_callsign
                 .entry(callsign.clone())
                 .and_modify(|xs| {
-                    if !xs.contains(&row.freq) {
+                    if !xs.iter().any(|existing| existing == &row.freq) {
                         xs.push(row.freq.clone())
                     }
                 })
@@ -6319,7 +6323,7 @@ pub async fn callsign_frequency_matches(
         .collect::<HashSet<_>>()
         .len();
     if selected_callsign_count == 0
-        || req.min_matches.max(1) as usize > selected_callsign_count
+        || std::cmp::max(req.min_matches, 1) as usize > selected_callsign_count
     {
         return Ok(Json(AnalysisCallsignFrequencyMatchesRsp {
             frequencies: Vec::new(),
@@ -7634,9 +7638,10 @@ fn analytics_retry_deadline(retry_cooldown: core::time::Duration) -> u64 {
         retry_cooldown.as_millis(),
     )
     .unwrap_or(u64::MAX);
-    analytics_unix_ms()
-        .saturating_add(retry_cooldown_ms)
-        .min(u64::MAX - 1)
+    std::cmp::min(
+        analytics_unix_ms().saturating_add(retry_cooldown_ms),
+        u64::MAX - 1,
+    )
 }
 
 fn analytics_unix_ms() -> u64 {
@@ -7786,7 +7791,7 @@ async fn ensure_analytics_fresh(
         <i64 as std::convert::TryFrom<u64>>::try_from(freshness_max_age_ms)
             .c(h!())?;
     let health = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
             r#"
 SELECT healthy

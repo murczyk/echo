@@ -206,9 +206,7 @@ pub async fn bl_spawn_worker_if_not_running(
     now: NaiveDateTime,
     datasource: &EchoAccountF1,
 ) -> Result<(), AppError> {
-    if datasource.status
-        != AccountStatus::Active.into_value().value.into_owned()
-    {
+    if datasource.status != AccountStatus::Active.into_value() {
         trace!(
             "datasource {} is {}, skipping worker spawn",
             datasource.id,
@@ -329,7 +327,7 @@ async fn run_new_worker(
                 return Ok(());
             };
             if cli.status
-                != AccountStatus::Active.into_value().value.into_owned()
+                != AccountStatus::Active.into_value()
             {
                 info!("datasource {datasource_id} is paused, stopping worker...");
                 return Ok(());

@@ -19,7 +19,6 @@ use crate::sigint::network::sort as network_sort;
 use crate::sigint::network::types::ListNetworksReq;
 use crate::sigint::signal::types::Signal;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use chrono::prelude::*;
 use futures::stream::TryStreamExt;
@@ -223,7 +222,7 @@ async fn load_freqs_impl(
     // );
 
     let rows = db
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             combined_query.to_string(PostgresQueryBuilder),
         ))
@@ -250,7 +249,7 @@ pub async fn load_network_freq_row(
     )?;
 
     let rows = db
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             combined_query.to_string(PostgresQueryBuilder),
         ))
@@ -502,7 +501,7 @@ async fn load_freqs_with_cached_activity(
         .to_owned();
 
     let rows = db
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             main_query.to_string(PostgresQueryBuilder),
         ))
@@ -1715,7 +1714,7 @@ pub async fn get_callsigns_for_network_freq_batch(
         .to_owned();
 
     let rows = db
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             query.to_string(PostgresQueryBuilder),
         ))
@@ -1873,7 +1872,8 @@ pub async fn bl_get_network_points(
         )
         .join_as(
             JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq.def(),
+            crate::sigint::freq::util::inbox_item_network_freq_relation()
+                .from_alias(nf_alias.clone()),
             nf_alias.clone(),
         )
         .join(

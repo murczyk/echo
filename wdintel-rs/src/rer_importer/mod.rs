@@ -796,7 +796,7 @@ async fn load_rer_importer_callsigns(
             crate::inbox::callsigns::CALLSIGN_BACKFILL_WATERMARK_KEY,
     );
     let rows = dbx
-        .query_all(Statement::from_sql_and_values(
+        .query_all_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
             sql,
             values,
