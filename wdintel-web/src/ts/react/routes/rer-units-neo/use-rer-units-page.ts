@@ -259,13 +259,11 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     setOrbitLinksError(null);
     try {
       await unlinkOrbitUnit({ sigintUnitId: sigintUnit.id, orbitUnitId: orbitUnit.unitId });
-      const remainingOrbitUnits = editOrbitUnits.filter(
-        (candidate) => candidate.unitId !== orbitUnit.unitId,
-      );
-      const updatedUnit = { ...sigintUnit, hasOrbit: remainingOrbitUnits.length > 0 };
-      setEditOrbitUnits(remainingOrbitUnits);
-      setCanLinkEditOrbitUnit(remainingOrbitUnits.length === 0);
-      setUnits((current) => replaceUnit(current, updatedUnit));
+      const details = await getUnitDetails(sigintUnit.id);
+      setEditUnit(details.unit);
+      setEditOrbitUnits(details.orbitUnits);
+      setCanLinkEditOrbitUnit(details.canLinkOrbitUnit);
+      setUnits((current) => replaceUnit(current, details.unit));
       setStatus({
         severity: 'success',
         text: `Прив’язку підрозділу «${sigintUnit.name}» до Orbit видалено.`,
@@ -284,6 +282,7 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     setOrbitLinksError(null);
     try {
       const details = await getUnitDetails(sigintUnit.id);
+      setEditUnit(details.unit);
       setEditOrbitUnits(details.orbitUnits);
       setCanLinkEditOrbitUnit(details.canLinkOrbitUnit);
       setUnits((current) => replaceUnit(current, details.unit));

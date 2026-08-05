@@ -57,6 +57,7 @@ type alias Model =
     , detailsLoadFailed : Bool
     , activeTab : Tab
     , downloadInProgress : Maybe Int
+    , orbitLinkDialogOpen : Bool
     , orbitUnitUnlinking : Maybe String
     , deviceNetworkDialogOpen : Bool
     }
@@ -89,6 +90,7 @@ init _ route _ =
             else
                 Overview
       , downloadInProgress = Nothing
+      , orbitLinkDialogOpen = False
       , orbitUnitUnlinking = Nothing
       , deviceNetworkDialogOpen = False
       }
@@ -120,6 +122,9 @@ type Msg
     | AttachmentsUploaded
     | DownloadAttachment B.UnitAttachment
     | AttachmentDownloaded B.UnitAttachment (Result ApiError Bytes)
+    | OpenOrbitLinkDialog
+    | CloseOrbitLinkDialog
+    | OrbitUnitLinked
     | UnlinkOrbitUnit B.OrbitUnitDetails
     | OrbitUnitUnlinked String (Result ApiError ())
     | OpenDeviceNetworkDialog
@@ -147,6 +152,15 @@ update msg model =
 
         AttachmentDownloaded attachment result ->
             attachmentDownloaded attachment result model
+
+        OpenOrbitLinkDialog ->
+            ( { model | orbitLinkDialogOpen = True }, E.none )
+
+        CloseOrbitLinkDialog ->
+            ( { model | orbitLinkDialogOpen = False }, E.none )
+
+        OrbitUnitLinked ->
+            orbitUnitLinked model
 
         UnlinkOrbitUnit orbitUnit ->
             unlinkOrbitUnit orbitUnit model
@@ -259,6 +273,21 @@ downloadContentType attachment =
 
     else
         attachment.contentType
+
+
+orbitUnitLinked : Model -> ( Model, Effect Msg )
+orbitUnitLinked model =
+    case model.unitId of
+        Nothing ->
+            ( { model | orbitLinkDialogOpen = False }, E.none )
+
+        Just unitId ->
+            ( { model
+                | orbitLinkDialogOpen = False
+                , detailsLoading = True
+              }
+            , loadDetails unitId
+            )
 
 
 unlinkOrbitUnit : B.OrbitUnitDetails -> Model -> ( Model, Effect Msg )
@@ -379,6 +408,7 @@ detailsView user shared model details =
     div [ class "flex flex-col gap-4" ]
         [ detailsHeader model details
         , deviceNetworkDialog model details
+        , orbitLinkDialog model
         , tabsView model.activeTab
         , case model.activeTab of
             Overview ->
@@ -387,6 +417,21 @@ detailsView user shared model details =
             Files ->
                 filesTab user shared model details.attachments
         ]
+
+
+orbitLinkDialog : Model -> Html Msg
+orbitLinkDialog model =
+    case ( model.orbitLinkDialogOpen, model.unitId ) of
+        ( True, Just unitId ) ->
+            node "orbit-unit-link-dialog"
+                [ attribute "data-unit-id" (String.fromInt unitId)
+                , on "orbit-unit-link-close" (Decode.succeed CloseOrbitLinkDialog)
+                , on "orbit-unit-linked" (Decode.succeed OrbitUnitLinked)
+                ]
+                []
+
+        _ ->
+            text ""
 
 
 detailsHeader : Model -> B.UnitDetailsRsp -> Html Msg
@@ -525,7 +570,11 @@ overviewTab user shared model details =
     let
         orbitCards =
             if List.isEmpty details.orbitUnits then
-                []
+                if details.canLinkOrbitUnit then
+                    [ emptyOrbitDataCard ]
+
+                else
+                    []
 
             else
                 List.map
@@ -541,6 +590,32 @@ overviewTab user shared model details =
         , attribute "role" "tabpanel"
         ]
         (unitOverviewCard shared details.unit :: orbitCards)
+
+
+emptyOrbitDataCard : Html Msg
+emptyOrbitDataCard =
+    div [ class "border rounded p-4 bg-card" ]
+        [ h2 [ class "h4 mb-4" ] [ text "Дані із Orbit" ]
+        , p [] [ text "Відсутні дані із системи Orbit." ]
+        , p [ class "mb-0" ]
+            [ button
+                [ class "btn btn-outline-primary d-inline-flex align-items-center gap-2"
+                , type_ "button"
+                , onClick OpenOrbitLinkDialog
+                ]
+                [ img
+                    [ src "/img/delta-icon.webp"
+                    , alt ""
+                    , style "height" "22px"
+                    , style "width" "22px"
+                    ]
+                    []
+                , text "Прив'язати Orbit підрозділ"
+                ]
+            ]
+        ]
+
+
 unitOverviewCard : Shared.Model -> B.Unit -> Html Msg
 unitOverviewCard shared unit =
     div
