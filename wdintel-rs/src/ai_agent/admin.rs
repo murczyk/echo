@@ -138,7 +138,9 @@ pub async fn update_settings(
             .map(str::to_string)
             .or(settings.mattermost_webhook_url.clone())
     };
-    access::validate_mattermost_webhook(mattermost_webhook_url.as_deref())?;
+    if let Some(webhook) = mattermost_webhook_url.as_deref() {
+        access::resolve_mattermost_webhook(webhook).await?;
+    }
     if req.security_review_enabled && mattermost_webhook_url.is_none() {
         return Err(AppError::BL {
             msg: "Mattermost webhook is required while security review is enabled"

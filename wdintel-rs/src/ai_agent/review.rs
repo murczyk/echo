@@ -442,6 +442,7 @@ async fn send_mattermost_alert(
             msg: "Mattermost alert delivery is not configured".to_string(),
         });
     };
+    let webhook = access::resolve_mattermost_webhook(webhook).await?;
     let request = ai_agent_request::Entity::find_by_id(review.request_id)
         .one(&env.dbx)
         .await
@@ -461,14 +462,12 @@ async fn send_mattermost_alert(
         review.severity.as_deref().unwrap_or("high"),
         &categorical_alert_summary(&categories),
     );
-    let client = reqwest::Client::builder()
-        .timeout(StdDuration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC))
-        .build()
-        .map_err(|_| AppError::BL {
-            msg: "Mattermost alert client initialization failed".to_string(),
-        })?;
+    let client = access::mattermost_webhook_client(
+        &webhook,
+        StdDuration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC),
+    )?;
     client
-        .post(webhook)
+        .post(webhook.url().clone())
         .json(&payload)
         .send()
         .await

@@ -13,7 +13,8 @@ use regex::Regex;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::time::Duration;
 use url::Url;
 use uuid::Uuid;
 
@@ -246,6 +247,101 @@ pub fn validate_mattermost_webhook(
     Ok(())
 }
 
+pub struct MattermostWebhookTarget {
+    url: Url,
+    hostname: Option<String>,
+    addresses: Vec<SocketAddr>,
+}
+
+impl MattermostWebhookTarget {
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
+}
+
+pub async fn resolve_mattermost_webhook(
+    webhook: &str,
+) -> Result<MattermostWebhookTarget, AppError> {
+    validate_mattermost_webhook(Some(webhook))?;
+    let url = Url::parse(webhook).map_err(|_| AppError::BL {
+        msg: "Mattermost webhook URL is invalid".to_string(),
+    })?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| AppError::BL {
+            msg: "Mattermost webhook URL is invalid".to_string(),
+        })?
+        .to_string();
+    let port = url.port_or_known_default().ok_or_else(|| AppError::BL {
+        msg: "Mattermost webhook URL is invalid".to_string(),
+    })?;
+    let addresses = tokio::net::lookup_host((host.as_str(), port))
+        .await
+        .map_err(|_| AppError::BL {
+            msg: "Mattermost webhook host did not resolve".to_string(),
+        })?
+        .collect::<Vec<_>>();
+    validate_mattermost_webhook_addresses(&addresses)?;
+    Ok(MattermostWebhookTarget {
+        url,
+        hostname: host.parse::<IpAddr>().is_err().then_some(host),
+        addresses,
+    })
+}
+
+pub fn mattermost_webhook_client(
+    target: &MattermostWebhookTarget,
+    timeout: Duration,
+) -> Result<reqwest::Client, AppError> {
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(timeout);
+    let client = target.hostname.as_deref().map_or(client, |hostname| {
+        client.resolve_to_addrs(hostname, &target.addresses)
+    });
+    client.build().map_err(|_| AppError::BL {
+        msg: "Mattermost client initialization failed".to_string(),
+    })
+}
+
+fn validate_mattermost_webhook_addresses(
+    addresses: &[SocketAddr],
+) -> Result<(), AppError> {
+    if addresses.is_empty()
+        || addresses.iter().any(|address| !is_public_ip(address.ip()))
+    {
+        return Err(AppError::BL {
+            msg: "Mattermost webhook must resolve only to public IPs"
+                .to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn is_public_ip(address: IpAddr) -> bool {
+    match address {
+        IpAddr::V4(address) => {
+            !address.is_private()
+                && !address.is_loopback()
+                && !address.is_link_local()
+                && !address.is_unspecified()
+                && !address.is_multicast()
+                && !address.is_broadcast()
+                && !address.is_documentation()
+        }
+        IpAddr::V6(address) => address.to_ipv4_mapped().map_or_else(
+            || {
+                !address.is_loopback()
+                    && !address.is_unspecified()
+                    && !address.is_multicast()
+                    && !address.is_unique_local()
+                    && !address.is_unicast_link_local()
+            },
+            |address| is_public_ip(IpAddr::V4(address)),
+        ),
+    }
+}
+
 pub fn is_dispatcher_upstream_host(host: &str) -> bool {
     host.parse::<Ipv4Addr>().is_ok() || is_dispatcher_hostname(host)
 }
@@ -253,6 +349,46 @@ pub fn is_dispatcher_upstream_host(host: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn private_mattermost_webhook_addresses_are_rejected() {
+        let addresses = [SocketAddr::from(([127, 0, 0, 1], 443))];
+
+        assert!(validate_mattermost_webhook_addresses(&addresses).is_err());
+    }
+
+    #[tokio::test]
+    async fn mattermost_client_does_not_follow_redirects() {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            use tokio::io::AsyncWriteExt;
+            stream
+                .write_all(
+                    b"HTTP/1.1 307 Temporary Redirect\r\nLocation: http://127.0.0.1/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .unwrap();
+        });
+        let target = MattermostWebhookTarget {
+            url: Url::parse(&format!("http://{address}")).unwrap(),
+            hostname: None,
+            addresses: vec![],
+        };
+
+        let response =
+            mattermost_webhook_client(&target, Duration::from_secs(1))
+                .unwrap()
+                .post(target.url().clone())
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(response.status(), reqwest::StatusCode::TEMPORARY_REDIRECT);
+    }
     use chrono::Utc;
 
     fn engine(

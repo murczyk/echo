@@ -88,6 +88,7 @@ pub async fn export(mode: Mode, output: &Path) -> Result<(), AppError> {
         return Ok(());
     };
     validate_profile(&profile, &config.public_host).c(h!())?;
+    validate_profile_webhook_target(&profile).await.c(h!())?;
     write_profile(output, &profile).c(h!())?;
     println!("Exported local AI agent profile");
     Ok(())
@@ -97,6 +98,7 @@ pub async fn import(mode: Mode, input: &Path) -> Result<(), AppError> {
     let (config, dbx) = config_and_db(mode).await?;
     let profile = read_profile(input).c(h!())?;
     validate_profile(&profile, &config.public_host).c(h!())?;
+    validate_profile_webhook_target(&profile).await.c(h!())?;
     replace_profile(&dbx, &profile).await?;
     validate_restored_profile(&dbx, &config.public_host).await?;
     println!("Restored and validated local AI agent profile");
@@ -360,6 +362,15 @@ fn validate_profile_settings(
             && profile.settings.default_ai_engine_id.is_none())
     {
         anyhow::bail!("local AI agent profile has invalid settings");
+    }
+    Ok(())
+}
+
+async fn validate_profile_webhook_target(
+    profile: &LocalAiAgentProfile,
+) -> anyhow::Result<()> {
+    if let Some(webhook) = profile.settings.mattermost_webhook_url.as_deref() {
+        access::resolve_mattermost_webhook(webhook).await?;
     }
     Ok(())
 }
