@@ -372,7 +372,8 @@ async fn load_goi_association_comment_rows(
             skipped += 1;
             continue;
         };
-        let Some(body) = goi_association_export_body(&association, &messages)
+        let Some((body, message_ts)) =
+            goi_association_export_message(&association, &messages)
         else {
             skipped += 1;
             continue;
@@ -380,9 +381,7 @@ async fn load_goi_association_comment_rows(
         csv_rows.push(CommentCsvRow {
             body,
             comment,
-            message_ts: format_export_ts(goi_association_message_ts(
-                &association,
-            )),
+            message_ts: format_export_ts(message_ts),
             source_login: association.author.unwrap_or_default(),
             source_organism: organism
                 .map(|organism| organism.name)
@@ -407,10 +406,10 @@ fn association_message_uids(
         .collect()
 }
 
-fn goi_association_export_body(
+fn goi_association_export_message(
     association: &goi_association::Model,
     messages: &HashMap<String, SignalMessageExportSource>,
-) -> Option<String> {
+) -> Option<(String, NaiveDateTime)> {
     association
         .message_uid
         .as_deref()
@@ -418,13 +417,14 @@ fn goi_association_export_body(
         .and_then(|message_uid| {
             messages
                 .get(&message_uid)
-                .map(|message| message.body.clone())
+                .map(|message| (message.body.clone(), message.message_ts))
         })
         .or_else(|| {
             crate::organism::goi::message_uid::association_original_message(
                 &association.row,
             )
             .and_then(|body| non_empty_text(Some(body)))
+            .map(|body| (body, goi_association_message_ts(association)))
         })
 }
 
