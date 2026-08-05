@@ -8,7 +8,6 @@ use crate::error::AppError;
 use crate::rer_importer;
 use crate::rer_importer::analysis::*;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use chrono::prelude::*;
 use rer_importer::body_noheader::extract_text;
 // Import necessary items from rust_xlsxwriter
@@ -259,7 +258,7 @@ async fn get_inbox_messages_report(
         build_inbox_messages_report_sql(user_login, env, req).await?;
 
     let results = read_db
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             combined_query,
         ))
@@ -462,13 +461,13 @@ async fn build_inbox_messages_report_sql(
                     ),
                     sigint_inbox_item.unit_v2
                 )
-            "#.to_string()),
+            "#.into()),
             "unit",
         )
         .column_as(
             SimpleExpr::Custom(r#"
                 STRING_AGG(DISTINCT sigint_comment.comment, E'\n')
-            "#.to_string()),
+            "#.into()),
             "comment",
         )
         .column(sigint_inbox_item::Column::Coords)
@@ -479,7 +478,7 @@ async fn build_inbox_messages_report_sql(
         )
         .join(
             JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq.def()
+            crate::sigint::freq::util::inbox_item_network_freq_relation()
                 .on_condition(|_left, right| {
                     Expr::col((right, sigint_network_freq::Column::Deleted))
                         .eq(false)

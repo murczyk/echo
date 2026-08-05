@@ -10,7 +10,6 @@ use crate::event_stream::fanout;
 use crate::event_stream::types::*;
 use crate::types::*;
 use crate::utils::dt_from_millis;
-use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use itertools::Itertools;

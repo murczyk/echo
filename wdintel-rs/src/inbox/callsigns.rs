@@ -706,7 +706,7 @@ where
     C: ConnectionTrait,
 {
     let row = dbx
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "select id from sigint_inbox_item where id = $1 for update",
             [sigint_inbox_item_id.into()],

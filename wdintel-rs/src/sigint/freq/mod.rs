@@ -5,7 +5,6 @@ use crate::rer_importer::analysis::message_in_groups_exists;
 use crate::sigint::sender::message_ids_for_senders;
 use crate::types::*;
 use crate::users::{ensure_rer_role, has_any_role, login_id_from_identity};
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use actix_web::post;
 use actix_web::web::{Data, Json};
@@ -292,7 +291,7 @@ pub async fn list_groups_by_freqs_per_day(
             .await
             .c(h!())?
             .into_iter()
-            .filter(|x| freqs.contains(&x.freq))
+            .filter(|x| freqs.iter().any(|freq| freq == &x.freq))
             .collect()
         } else {
             collect_freq_counts(&env, dt_till, dt_since, freqs, master_keys)
@@ -708,7 +707,10 @@ pub async fn list_freqs(
         FreqPeriodSource::Rows(rows) => rows,
         FreqPeriodSource::Sql(sql) => env
             .dbx
-            .query_all(Statement::from_string(DatabaseBackend::Postgres, sql))
+            .query_all_raw(Statement::from_string(
+                DatabaseBackend::Postgres,
+                sql,
+            ))
             .await
             .c(h!())?
             .iter()
@@ -746,7 +748,7 @@ pub async fn list_freqs(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(before_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(before_till))
-        .group_by(sea_query::expr::SimpleExpr::Custom("freq".to_string()))
+        .group_by(sea_query::expr::SimpleExpr::Custom("freq".into()))
         .order_by_asc(sigint_inbox_item::Column::Freq);
     // let before_count: u64 = before_res.clone().count(&env.dbx).await.c(h!())?;
     // println!("> before count: {}", before_count);
@@ -995,13 +997,12 @@ pub async fn list_freqs_v2(
                 .column(sigint_inbox_item::Column::PostId)
                 .column_as(signal_message::Column::Id.count(), "message_count")
                 .column_as(
-                    SimpleExpr::Custom("sigint_inbox_item.freq".to_string()),
+                    SimpleExpr::Custom("sigint_inbox_item.freq".into()),
                     "freq",
                 )
                 .column_as(
                     SimpleExpr::Custom(
-                        "string_agg(sigint_inbox_item.location_v2, '')"
-                            .to_string(),
+                        "string_agg(sigint_inbox_item.location_v2, '')".into(),
                     ),
                     "location_v2",
                 );
@@ -1054,7 +1055,7 @@ pub async fn list_freqs_v2(
         FreqPeriodSource::Sql(sql) => {
             trace!("> freqs sql: {sql}");
             env.dbx
-                .query_all(Statement::from_string(
+                .query_all_raw(Statement::from_string(
                     DatabaseBackend::Postgres,
                     sql,
                 ))
@@ -1101,7 +1102,7 @@ pub async fn list_freqs_v2(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(before_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(before_till))
-        .group_by(sea_query::expr::SimpleExpr::Custom("freq".to_string()))
+        .group_by(sea_query::expr::SimpleExpr::Custom("freq".into()))
         .order_by_asc(sigint_inbox_item::Column::Freq);
     // let before_count: u64 = before_res.clone().count(&env.dbx).await.c(h!())?;
     // println!("> before count: {}", before_count);
@@ -1129,7 +1130,7 @@ pub async fn list_freqs_v2(
     }
     let mut last_freq = String::from("");
     for (freq, message_count, location_v2, post_id) in freqs_period {
-        if show_load_more && !last_freq.eq(&freq) {
+        if show_load_more && last_freq != freq {
             break;
         }
         if need_skip {

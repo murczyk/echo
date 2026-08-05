@@ -235,7 +235,7 @@ pub(crate) async fn rer_analysis_geojson_bytes(
             if freq_callsigns.len() == 10 {
                 break;
             }
-            if !freq_callsigns.contains(&callsign) {
+            if !freq_callsigns.iter().any(|existing| existing == &callsign) {
                 freq_callsigns.push(callsign);
             }
         }

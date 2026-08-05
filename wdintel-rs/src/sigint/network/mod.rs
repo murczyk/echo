@@ -1718,7 +1718,7 @@ pub async fn network_freqs_activity_one(
 
     let rows = env
         .dbx
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             combined_query,
         ))
@@ -3265,7 +3265,7 @@ async fn cleanup_networks_worker_1(
         let is_recent_network = recent_network_ids.contains(&network.id);
         let do_not_archive = network.do_not_archive;
         for network_freq in network_freqs {
-            let is_deleted = ids.contains(&network_freq.id);
+            let is_deleted = ids.iter().any(|id| *id == network_freq.id);
             if is_deleted && !is_recent_network && !do_not_archive {
                 let mut network_freq = network_freq.into_active_model();
                 network_freq.active_to = Set(Some(Utc::now().naive_utc()));
@@ -3918,14 +3918,14 @@ pub async fn update_network_posts(
     // 3. Determine posts to delete and insert
     let to_delete: Vec<i64> = existing_post_ids
         .iter()
-        .filter(|id| !req.post_ids.contains(id))
+        .filter(|id| !req.post_ids.iter().any(|post_id| post_id == *id))
         .copied()
         .collect();
 
     let to_insert: Vec<i64> = req
         .post_ids
         .iter()
-        .filter(|id| !existing_post_ids.contains(id))
+        .filter(|id| !existing_post_ids.iter().any(|post_id| post_id == *id))
         .copied()
         .collect();
 
@@ -4045,14 +4045,14 @@ pub async fn update_network_units(
     // 3. Determine units to delete and insert
     let to_delete: Vec<i64> = existing_unit_ids
         .iter()
-        .filter(|id| !req.unit_ids.contains(id))
+        .filter(|id| !req.unit_ids.iter().any(|unit_id| unit_id == *id))
         .copied()
         .collect();
 
     let to_insert: Vec<i64> = req
         .unit_ids
         .iter()
-        .filter(|id| !existing_unit_ids.contains(id))
+        .filter(|id| !existing_unit_ids.iter().any(|unit_id| unit_id == *id))
         .copied()
         .collect();
 
@@ -4508,7 +4508,7 @@ fn merge_invalidation_range(
         .flatten()
         .min();
     let till_ts = match (old_active_to, new_active_to) {
-        (Some(old_ts), Some(new_ts)) => Some(old_ts.max(new_ts)),
+        (Some(old_ts), Some(new_ts)) => Some(std::cmp::max(old_ts, new_ts)),
         _ => None,
     };
     (since_ts, till_ts)

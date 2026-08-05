@@ -1244,7 +1244,7 @@ fn callsign_frequency_matches_statement(
         .add_group_by([Expr::col(freq_alias.clone()).into()])
         .and_having(Expr::cust_with_values(
             "COUNT(DISTINCT callsign) >= $1",
-            vec![min_matches.max(1)],
+            vec![std::cmp::max(min_matches, 1)],
         ))
         .order_by_expr(Expr::cust("COUNT(DISTINCT callsign)"), Order::Desc)
         .order_by_expr(Expr::cust("message_count"), Order::Desc)
@@ -2180,7 +2180,7 @@ async fn fetch_freqs_for_login_with_db(
         .context(h!())?
         .into_iter()
         .map(|f| AnalysisStatsFreq {
-            is_new: new_freqs.contains(&f.freq),
+            is_new: new_freqs.iter().any(|freq| freq == &f.freq),
             freq: f.freq,
             count: f.count,
         })
@@ -2994,7 +2994,7 @@ async fn load_callsigns_with_counts(
     );
     let statement =
         Statement::from_sql_and_values(DbBackend::Postgres, sql, values);
-    let rows = db.query_all(statement).await.context(h!())?;
+    let rows = db.query_all_raw(statement).await.context(h!())?;
     let callsigns = rows
         .iter()
         .map(|row| {
@@ -3854,7 +3854,7 @@ pub async fn count_unit_exact_match_breakdown(
             .context(h!())?;
 
     let non_exact_matches_count =
-        (total_matches_count - exact_matches_count).max(0);
+        std::cmp::max(total_matches_count - exact_matches_count, 0);
 
     Ok((exact_matches_count, non_exact_matches_count))
 }
@@ -3896,7 +3896,7 @@ pub(super) async fn count_unit_exact_match_breakdown_raw_with_db(
 
     Ok((
         exact_matches_count,
-        (total_matches_count - exact_matches_count).max(0),
+        std::cmp::max(total_matches_count - exact_matches_count, 0),
     ))
 }
 
