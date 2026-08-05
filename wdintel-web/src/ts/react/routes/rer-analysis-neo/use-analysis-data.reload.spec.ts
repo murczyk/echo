@@ -111,6 +111,7 @@ beforeEach(() => {
   mocks.fetchAnalysisCallsignInfos.mockResolvedValue([]);
   mocks.fetchAnalysisUnits.mockResolvedValue({ units: [] });
   mocks.fetchAnalysisLocations.mockResolvedValue({ locations: [] });
+  mocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
 });
 
 function buildBaseReq() {
