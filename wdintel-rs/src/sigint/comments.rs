@@ -267,7 +267,7 @@ async fn load_echo_commented_message_rows(
                 sigint_comment::Relation::SignalMessage.def(),
             )
             .join(
-                JoinType::LeftJoin,
+                JoinType::InnerJoin,
                 signal_message::Relation::SigintInboxItem.def(),
             )
             .join(JoinType::InnerJoin, sigint_comment::Relation::Login.def())
