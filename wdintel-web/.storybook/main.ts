@@ -77,13 +77,10 @@ const config: StorybookConfig = {
         dedupe: ['react', 'react-dom'],
       },
       optimizeDeps: {
-        include: [
-          'react',
-          'react-dom',
-          '@mui/material',
-          '@mui/icons-material',
-          '@echoua/echo-audio-player/register',
-        ],
+        include: ['react', 'react-dom', '@mui/material', '@mui/icons-material'],
+        // Pre-bundling caches the linked player, so local rebuilds of its
+        // dist/ never reach the browser until the Vite cache is cleared.
+        exclude: ['@echoua/echo-audio-player', '@echoua/echo-audio-player/register'],
       },
     });
   },
