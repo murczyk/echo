@@ -11,7 +11,7 @@ validate_runtime_identifiers
 
 derived_database="${CLICKHOUSE_CURRENT_DB}_derived"
 metadata_database="${CLICKHOUSE_CURRENT_DB}_meta"
-message_callsign_view=message_callsign_v1
+message_callsign_view=message_callsign_v2
 message_aor_link_view=message_aor_link_v1
 message_network_link_view=message_network_link_v1
 network_link_table=sigint_inbox_item_network_by_message_v1
@@ -299,19 +299,71 @@ clickhouse_admin_http "
     sigint_network_id
   FROM \`$derived_database\`.\`$network_link_table\` FINAL
 "
-clickhouse_admin_http "
-  CREATE VIEW IF NOT EXISTS \`$derived_database\`.\`$message_callsign_view\` AS
-  SELECT
-    id AS sigint_inbox_item_id,
-    arrayJoin(
-      JSONExtract(
-        assumeNotNull(callsigns),
-        'Array(Nullable(String))'
+callsign_table_exists=$(clickhouse_admin_http "
+  SELECT count()
+  FROM system.tables
+  WHERE database = '$CLICKHOUSE_CURRENT_DB'
+    AND name = 'sigint_inbox_item_callsign'
+")
+if [[ "$callsign_table_exists" == 1 ]]; then
+  clickhouse_admin_http "
+    CREATE OR REPLACE VIEW \`$derived_database\`.\`$message_callsign_view\` AS
+    WITH
+      (
+        SELECT ifNull(any(JSONExtractInt(v)), 0)
+        FROM \`$CLICKHOUSE_CURRENT_DB\`.\`delta_kv\`
+        WHERE k = 'sigint_inbox_item_callsign_backfill_through_id'
+      ) AS backfill_watermark,
+      normalized_item_ids AS (
+        SELECT DISTINCT sigint_inbox_item_id
+        FROM \`$CLICKHOUSE_CURRENT_DB\`.\`sigint_inbox_item_callsign\`
+        WHERE sigint_inbox_item_id > backfill_watermark
       )
-    ) AS callsign
-  FROM \`$CLICKHOUSE_CURRENT_DB\`.\`sigint_inbox_item\`
-  WHERE callsigns IS NOT NULL
-"
+    SELECT DISTINCT
+      sigint_inbox_item_id,
+      callsign
+    FROM \`$CLICKHOUSE_CURRENT_DB\`.\`sigint_inbox_item_callsign\`
+    WHERE NOT deleted
+    UNION DISTINCT
+    SELECT DISTINCT
+      inbox_item.id AS sigint_inbox_item_id,
+      arrayJoin(
+        arrayConcat(
+          JSONExtract(
+            ifNull(inbox_item.callsigns, '[]'),
+            'Array(Nullable(String))'
+          ),
+          JSONExtract(
+            ifNull(inbox_item.callsigns_alg2, '[]'),
+            'Array(Nullable(String))'
+          )
+        )
+      ) AS callsign
+    FROM \`$CLICKHOUSE_CURRENT_DB\`.\`sigint_inbox_item\` AS inbox_item
+    LEFT ANTI JOIN normalized_item_ids
+      ON normalized_item_ids.sigint_inbox_item_id = inbox_item.id
+    WHERE inbox_item.id > backfill_watermark
+      AND (
+        inbox_item.callsigns IS NOT NULL
+        OR inbox_item.callsigns_alg2 IS NOT NULL
+      )
+  "
+else
+  log "Using legacy callsign view until the normalized table is mirrored"
+  clickhouse_admin_http "
+    CREATE OR REPLACE VIEW \`$derived_database\`.\`$message_callsign_view\` AS
+    SELECT
+      id AS sigint_inbox_item_id,
+      arrayJoin(
+        JSONExtract(
+          assumeNotNull(callsigns),
+          'Array(Nullable(String))'
+        )
+      ) AS callsign
+    FROM \`$CLICKHOUSE_CURRENT_DB\`.\`sigint_inbox_item\`
+    WHERE callsigns IS NOT NULL
+  "
+fi
 clickhouse_admin_http "
   CREATE VIEW IF NOT EXISTS \`$derived_database\`.\`$message_aor_link_view\` AS
   SELECT
@@ -382,6 +434,8 @@ OPTIONS (
   table_name :'message_callsign_view',
   engine 'View'
 );
+ALTER FOREIGN TABLE echo_clickhouse_derived_foreign.message_callsign
+  OPTIONS (SET table_name :'message_callsign_view');
 REVOKE ALL ON TABLE echo_clickhouse_derived_foreign.message_callsign
   FROM PUBLIC;
 DO $$

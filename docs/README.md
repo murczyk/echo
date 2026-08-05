@@ -181,6 +181,10 @@ Historical rows are populated online with
 restartable keyset batches so the API and background workers can continue
 using the database during backfill.
 
+On ClickHouse-enabled instances, the derived callsign relation reads the
+normalized rows and uses the replicated watermark to fall back to legacy JSON
+for unbackfilled tail records without normalized rows.
+
 ## Echo LXC systemd graph
 
 ```mermaid
