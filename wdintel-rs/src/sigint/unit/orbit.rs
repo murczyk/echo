@@ -14,7 +14,7 @@ use actix_web::web::{Data, Json};
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 const ORBIT_LINK_CANDIDATE_LIMIT: u64 = 100;
@@ -356,6 +356,27 @@ pub(super) async fn import_unlinked_orbit_units(
     login: &Uuid,
 ) -> Result<usize, AppError> {
     let transaction = crate::orbit::acquire_import_lock(dbx).await.c(h!())?;
+    let active_linked_orbit_unit_ids = orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .select_only()
+        .column(orbit_unit_sigint_unit::Column::OrbitUnitId)
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(sigint_unit::Column::Active.eq(true))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .into_tuple::<Uuid>()
+        .all(&transaction)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
     let linked_orbit_unit_ids = orbit_unit_sigint_unit::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -377,14 +398,15 @@ pub(super) async fn import_unlinked_orbit_units(
         .all(&transaction)
         .await
         .c(h!())?;
+    let orbit_unit_ids_to_activate =
+        orbit_unit_and_ancestor_ids(&orbit_units, active_linked_orbit_unit_ids);
     let mut imported = 0;
-    for orbit_unit in orbit_units {
+    for orbit_unit in &orbit_units {
         if linked_orbit_unit_ids.contains(&orbit_unit.unit_id) {
             continue;
         }
         let unit_req =
-            create_unit_req_from_orbit(&transaction, &orbit_unit, false)
-                .await?;
+            create_unit_req_from_orbit(&transaction, orbit_unit, false).await?;
         let unit =
             super::insert_unit_with_changelog(&transaction, login, &unit_req)
                 .await
@@ -400,10 +422,87 @@ pub(super) async fn import_unlinked_orbit_units(
         .c(h!())?;
         imported += 1;
     }
+    activate_sigint_units_linked_to_orbit_units(
+        &transaction,
+        login,
+        &orbit_unit_ids_to_activate,
+    )
+    .await?;
     crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
         .await?;
     transaction.commit().await.c(h!())?;
     Ok(imported)
+}
+
+fn orbit_unit_and_ancestor_ids(
+    orbit_units: &[orbit_unit::Model],
+    mut unit_ids: HashSet<Uuid>,
+) -> HashSet<Uuid> {
+    let parent_ids_by_unit_id = orbit_units
+        .iter()
+        .map(|unit| {
+            (
+                unit.unit_id,
+                [
+                    unit.generative_parent_unit_id,
+                    unit.operational_parent_unit_id,
+                ],
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let mut pending = unit_ids.iter().copied().collect::<Vec<_>>();
+    while let Some(unit_id) = pending.pop() {
+        let Some(parent_ids) = parent_ids_by_unit_id.get(&unit_id) else {
+            continue;
+        };
+        for parent_id in parent_ids.iter().flatten() {
+            if parent_ids_by_unit_id.contains_key(parent_id)
+                && unit_ids.insert(*parent_id)
+            {
+                pending.push(*parent_id);
+            }
+        }
+    }
+    unit_ids
+}
+
+async fn activate_sigint_units_linked_to_orbit_units<C>(
+    dbx: &C,
+    login: &Uuid,
+    orbit_unit_ids: &HashSet<Uuid>,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if orbit_unit_ids.is_empty() {
+        return Ok(());
+    }
+    let sigint_unit_ids = orbit_unit_sigint_unit::Entity::find()
+        .select_only()
+        .column(orbit_unit_sigint_unit::Column::SigintUnitId)
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(
+            orbit_unit_sigint_unit::Column::OrbitUnitId
+                .is_in(orbit_unit_ids.iter().copied()),
+        )
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Id.is_in(sigint_unit_ids))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    for unit in units {
+        if !unit.active {
+            super::set_unit_activity(dbx, login, &unit, true).await?;
+        }
+    }
+    Ok(())
 }
 
 async fn create_imported_unit_network<C>(

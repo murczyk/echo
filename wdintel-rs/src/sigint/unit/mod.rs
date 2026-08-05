@@ -1596,6 +1596,23 @@ mod tests {
         }
     }
 
+    async fn update_orbit_parents(
+        dbx: &DatabaseConnection,
+        unit_id: uuid::Uuid,
+        generative_parent_unit_id: Option<uuid::Uuid>,
+        operational_parent_unit_id: Option<uuid::Uuid>,
+    ) {
+        let unit = orbit_unit::Entity::find_by_id(unit_id)
+            .one(dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut unit = unit.into_active_model();
+        unit.generative_parent_unit_id = Set(generative_parent_unit_id);
+        unit.operational_parent_unit_id = Set(operational_parent_unit_id);
+        unit.update(dbx).await.unwrap();
+    }
+
     #[tokio::test]
     #[serial]
     async fn create_unit_with_auto_network_rejects_when_setting_missing() {
@@ -1931,6 +1948,86 @@ mod tests {
             .exec(&env.dbx)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn oneoff_activates_linked_orbit_ancestors_in_both_hierarchies() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let login_id = test_login_id(&env).await;
+        let orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
+        update_orbit_parents(
+            &env.dbx,
+            orbit_fixture.unit_ids[0],
+            Some(orbit_fixture.unit_ids[2]),
+            Some(orbit_fixture.unit_ids[1]),
+        )
+        .await;
+        update_orbit_parents(&env.dbx, orbit_fixture.unit_ids[1], None, None)
+            .await;
+        update_orbit_parents(
+            &env.dbx,
+            orbit_fixture.unit_ids[2],
+            Some(orbit_fixture.unit_ids[3]),
+            None,
+        )
+        .await;
+        update_orbit_parents(
+            &env.dbx,
+            orbit_fixture.unit_ids[3],
+            Some(orbit_fixture.unit_ids[4]),
+            None,
+        )
+        .await;
+        let existing_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_fixture.root_unit_id),
+            sigint_unit_id: Set(existing_unit.id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let imported = orbit::import_unlinked_orbit_units(&env.dbx, &login_id)
+            .await
+            .unwrap();
+
+        assert_eq!(imported, 4);
+        let links = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .is_in(orbit_fixture.unit_ids.clone()),
+            )
+            .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(links.len(), 5);
+        let linked_unit_ids = links
+            .into_iter()
+            .map(|link| link.sigint_unit_id)
+            .collect::<Vec<_>>();
+        let linked_units = sigint_unit::Entity::find()
+            .filter(sigint_unit::Column::Id.is_in(linked_unit_ids))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(linked_units.len(), 5);
+        assert!(linked_units.iter().all(|unit| unit.active));
     }
 
     #[tokio::test]
