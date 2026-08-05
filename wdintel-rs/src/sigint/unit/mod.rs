@@ -216,12 +216,13 @@ pub async fn create_unit(
     req: Json<CreateUnitReq>,
 ) -> Result<Json<Unit>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
-        .await
-        .c(h!())?;
     let login = login_id_from_identity(&user)?;
+    has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
 
-    let req = req.into_inner();
+    let mut req = req.into_inner();
+    let can_view_orbit =
+        clear_create_unit_orbit_note_if_hidden(&env.dbx, &login, &mut req)
+            .await?;
     let transaction = env.dbx.begin().await.context(h!())?;
     let unit = insert_unit_with_changelog(&transaction, &login, &req).await?;
     if unit.active {
@@ -248,7 +249,7 @@ pub async fn create_unit(
     fanout_unit_changed(&env).await?;
 
     let mut unit = render_unit(&unit)?;
-    if orbit::can_view_orbit_data(&env.dbx, &login).await? {
+    if can_view_orbit {
         unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
     } else {
         redact_unit_orbit_data(&mut unit);
@@ -343,11 +344,13 @@ pub async fn create_device_network_for_login(
 pub async fn create_unit_with_auto_network_for_login(
     login: &uuid::Uuid,
     env: &Env,
-    req: CreateUnitWithAutoNetworkReq,
+    mut req: CreateUnitWithAutoNetworkReq,
 ) -> Result<CreateUnitWithAutoNetworkRsp, AppError> {
     crate::system_settings::ensure_devices_section_enabled(&env.dbx)
         .await
         .c(h!())?;
+    clear_create_unit_orbit_note_if_hidden(&env.dbx, login, &mut req.unit)
+        .await?;
 
     let txn = env.dbx.begin().await.context(h!())?;
     let unit = insert_unit_with_changelog(&txn, login, &req.unit)
@@ -392,6 +395,18 @@ pub async fn create_unit_with_auto_network_for_login(
     }
 
     render_created_unit_with_optional_network(login, env, unit, network).await
+}
+
+async fn clear_create_unit_orbit_note_if_hidden(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    req: &mut CreateUnitReq,
+) -> Result<bool, AppError> {
+    let can_view_orbit = orbit::can_view_orbit_data(dbx, login).await?;
+    if !can_view_orbit {
+        req.orbit_note = None;
+    }
+    Ok(can_view_orbit)
 }
 
 async fn render_created_unit_with_optional_network(
@@ -1692,6 +1707,37 @@ mod tests {
         assert_eq!(rsp.network_id, None);
         assert_eq!(unit_count(&env.dbx).await, 1);
         assert_eq!(network_count(&env.dbx).await, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_ignores_orbit_note_when_orbit_data_is_hidden() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let settings = system_settings::Entity::find()
+            .filter(system_settings::Column::Deleted.eq(false))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut settings = settings.into_active_model();
+        settings.hide_orbit_data = Set(true);
+        settings.update(&env.dbx).await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let mut req = auto_req(true, vec![], vec![]);
+        req.unit.active = false;
+        req.unit.orbit_note = Some("Hidden note".to_string());
+
+        let rsp = create_unit_with_auto_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap();
+        let unit = sigint_unit::Entity::find_by_id(rsp.unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(unit.orbit_note, None);
     }
 
     #[tokio::test]
