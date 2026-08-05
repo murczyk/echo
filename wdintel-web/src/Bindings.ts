@@ -2486,7 +2486,7 @@ export type OrbitDictionaryValue = {
 };
 
 export type OrbitParentUnit = {
-  sigintUnitId: number;
+  sigintUnitId: number | null;
   name: string;
 };
 

@@ -6448,7 +6448,7 @@ orbitDictionaryValueEncoder struct =
 
 
 type alias OrbitParentUnit =
-    { sigintUnitId : Int
+    { sigintUnitId : Maybe (Int)
     , name : String
     }
 
@@ -6456,7 +6456,7 @@ type alias OrbitParentUnit =
 orbitParentUnitEncoder : OrbitParentUnit -> Json.Encode.Value
 orbitParentUnitEncoder struct =
     Json.Encode.object
-        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        [ ( "sigint_unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintUnitId )
         , ( "name", (Json.Encode.string) struct.name )
         ]
 
@@ -15404,7 +15404,7 @@ orbitDictionaryValueDecoder =
 orbitParentUnitDecoder : Json.Decode.Decoder OrbitParentUnit
 orbitParentUnitDecoder =
     Json.Decode.succeed OrbitParentUnit
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
 
 

@@ -649,13 +649,17 @@ pub async fn update_unit(
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
-    let unit = update_unit_for_login(&env.dbx, &login, &req).await?;
+    let can_update_orbit_note =
+        orbit::can_view_orbit_data(&env.dbx, &login).await?;
+    let unit =
+        update_unit_for_login(&env.dbx, &login, &req, can_update_orbit_note)
+            .await?;
 
     let event = EventMsg::new(EventType::ETUnitChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
     let mut unit = render_unit(&unit)?;
-    if orbit::can_view_orbit_data(&env.dbx, &login).await? {
+    if can_update_orbit_note {
         unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
     } else {
         redact_unit_orbit_data(&mut unit);
@@ -667,6 +671,7 @@ async fn update_unit_for_login(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
     req: &Unit,
+    can_update_orbit_note: bool,
 ) -> Result<sigint_unit::Model, AppError> {
     let transaction = dbx.begin().await.context(h!())?;
     let unit = sigint_unit::Entity::find_by_id(req.id)
@@ -694,7 +699,9 @@ async fn update_unit_for_login(
     unit.active = Set(req.active);
     unit.name = Set(unit_name(req));
     unit.comment = Set(req.comment.clone());
-    unit.orbit_note = Set(req.orbit_note.clone());
+    if can_update_orbit_note {
+        unit.orbit_note = Set(req.orbit_note.clone());
+    }
     let unit = unit.update(&transaction).await.context(h!())?;
     let unit_json_new = unit_json(&transaction, req.id).await?;
     insert_unit_update_changelog(
@@ -1314,6 +1321,17 @@ async fn update_original_unit(
     }
     if unit_original.comment.is_empty() && !unit_to_merge.comment.is_empty() {
         unit.comment = Set(unit_to_merge.comment.clone());
+    }
+    if unit_original
+        .orbit_note
+        .as_ref()
+        .is_none_or(|note| note.trim().is_empty())
+        && unit_to_merge
+            .orbit_note
+            .as_ref()
+            .is_some_and(|note| !note.trim().is_empty())
+    {
+        unit.orbit_note = Set(unit_to_merge.orbit_note.clone());
     }
     if unit_original.deleted && !unit_to_merge.deleted {
         unit.deleted = Set(false);
@@ -2297,7 +2315,9 @@ mod tests {
     ) {
         let mut req = render_unit(unit).unwrap();
         req.active = active;
-        update_unit_for_login(dbx, login_id, &req).await.unwrap();
+        update_unit_for_login(dbx, login_id, &req, true)
+            .await
+            .unwrap();
     }
 
     async fn active(dbx: &DatabaseConnection, unit_id: i64) -> bool {
@@ -2380,7 +2400,7 @@ mod tests {
         let mut moved = created;
         moved.battalion = "4 ошб".to_string();
         moved.regiment = "45 осбр".to_string();
-        let moved = update_unit_for_login(&env.dbx, &login_id, &moved)
+        let moved = update_unit_for_login(&env.dbx, &login_id, &moved, true)
             .await
             .unwrap();
         assert!(!active(&env.dbx, old_battalion.id).await);
@@ -2468,12 +2488,38 @@ mod tests {
         req.is_deduplicate_candidate = Some(false);
         req.comment = "updated".to_string();
 
-        let unit = update_unit_for_login(&env.dbx, &login_id, &req)
+        let unit = update_unit_for_login(&env.dbx, &login_id, &req, true)
             .await
             .unwrap();
 
         assert_eq!(unit.comment, "updated");
         assert_eq!(unit.is_deduplicate_candidate, Some(true));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_update_preserves_redacted_orbit_note() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                orbit_note: Set(Some("Orbit note".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut req = render_unit(&unit).unwrap();
+        redact_unit_orbit_data(&mut req);
+        req.comment = "updated".to_string();
+
+        let unit = update_unit_for_login(&env.dbx, &login_id, &req, false)
+            .await
+            .unwrap();
+
+        assert_eq!(unit.comment, "updated");
+        assert_eq!(unit.orbit_note.as_deref(), Some("Orbit note"));
     }
 
     #[test]
@@ -2512,6 +2558,7 @@ mod tests {
         let duplicate = crate::functest::tests::mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
+                orbit_note: Set(Some("Duplicate Orbit note".to_string())),
                 ..Default::default()
             },
         )
@@ -2588,6 +2635,7 @@ mod tests {
         assert_eq!(merged.id, surviving.id);
         assert!(!merged.deleted);
         assert_eq!(merged.is_deduplicate_candidate, Some(true));
+        assert_eq!(merged.orbit_note.as_deref(), Some("Duplicate Orbit note"));
         assert!(orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId.eq(duplicate.id)

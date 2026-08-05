@@ -842,8 +842,13 @@ overviewParentUnits labelText parents =
                 parents
                     |> List.map
                         (\parent ->
-                            a [ href ("/rer-units/" ++ String.fromInt parent.sigintUnitId) ]
-                                [ text parent.name ]
+                            case parent.sigintUnitId of
+                                Just sigintUnitId ->
+                                    a [ href ("/rer-units/" ++ String.fromInt sigintUnitId) ]
+                                        [ text parent.name ]
+
+                                Nothing ->
+                                    text parent.name
                         )
                     |> List.intersperse (text " / ")
             )

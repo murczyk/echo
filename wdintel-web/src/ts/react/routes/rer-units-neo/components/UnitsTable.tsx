@@ -175,9 +175,17 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
         Cell: ({ row }) => (
           <Stack direction="row" spacing={1} alignItems="center" justifyContent="center">
             {row.original.hasOrbit ? (
-              <CheckCircleIcon className="text-green-600" fontSize="small" />
+              <CheckCircleIcon
+                className="text-green-600"
+                fontSize="small"
+                titleAccess="Прив’язано до Orbit"
+              />
             ) : (
-              <CancelIcon className="text-red-600" fontSize="small" />
+              <CancelIcon
+                className="text-red-600"
+                fontSize="small"
+                titleAccess="Не прив’язано до Orbit"
+              />
             )}
             {row.original.orbitUnitIds.map((orbitUnitId) => (
               <Tooltip key={orbitUnitId} title="Відкрити підрозділ в Orbit">

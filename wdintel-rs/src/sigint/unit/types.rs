@@ -210,7 +210,7 @@ pub struct OrbitDictionaryValue {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct OrbitParentUnit {
-    pub sigint_unit_id: i64,
+    pub sigint_unit_id: Option<i64>,
     pub name: String,
 }
 
