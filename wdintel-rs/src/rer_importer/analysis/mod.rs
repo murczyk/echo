@@ -1485,12 +1485,10 @@ where
                 } else {
                     nonempty_locations.push(location.clone());
                     let loc = format_location(location);
-                    expressions.push(
-                        sea_orm::sea_query::extension::postgres::PgExpr::contains(
-                            Expr::col(sigint_inbox_item::Column::LocationV2),
-                            loc.clone(),
-                        ),
-                    );
+                    expressions.push(sea_orm::ColumnTrait::contains(
+                        &sigint_inbox_item::Column::LocationV2,
+                        loc,
+                    ));
                 }
             }
             if include_peleng_locations && !nonempty_locations.is_empty() {

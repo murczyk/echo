@@ -1488,7 +1488,9 @@ pub async fn get_active_callsigns(
         .iter()
         .filter_map(|inbox_item_id| callsigns.get(inbox_item_id))
         .flat_map(|callsigns| callsigns.effective())
-        .filter(|callsign| !sigint_network_callsigns.contains(callsign))
+        .filter(|callsign| {
+            filter.is_some() || !sigint_network_callsigns.contains(callsign)
+        })
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
