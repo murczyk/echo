@@ -181,11 +181,22 @@ snapshot_local_ai_agent_profile() {
 }
 
 restore_local_ai_agent_profile() {
-  [[ -n "$local_ai_agent_profile_file" ]] || return
   if $dry_run; then
-    restore_log "Would restore and validate the local AI-agent profile"
+    restore_log "Would discard copied AI-agent runtime"
+    if [[ -n "$local_ai_agent_profile_file" ]]; then
+      restore_log "Would restore and validate the local AI-agent profile"
+    fi
     return
   fi
+
+  restore_log "Discarding copied AI-agent runtime"
+  (
+    cd "$REPO_DIR"
+    cargo run -p wdintel-rs -- --mode=debug \
+      oneoff-discard-copied-ai-agent-runtime
+  )
+
+  [[ -n "$local_ai_agent_profile_file" ]] || return
 
   restore_log "Restoring and validating local AI-agent profile"
   (

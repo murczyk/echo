@@ -141,7 +141,9 @@ pub async fn ensure_linked_agent(
                 .ok_or_else(|| AppError::BL {
                     msg: "Linked AI agent login is missing".to_string(),
                 })?;
-            ensure_link_ownership(&txn, &link, &agent, &linked_name).await?;
+            let agent =
+                reconcile_linked_login_name(&txn, &link, &agent, &linked_name)
+                    .await?;
             (link, agent)
         }
         None => create_link(&txn, &human, linked_name).await?,
@@ -160,26 +162,34 @@ pub async fn ensure_linked_agent(
     })
 }
 
-async fn ensure_link_ownership(
+async fn reconcile_linked_login_name(
     txn: &DatabaseTransaction,
     link: &ai_agent_user_link::Model,
     agent: &login::Model,
     linked_name: &str,
-) -> Result<(), AppError> {
+) -> Result<login::Model, AppError> {
     let name_owner = login::Entity::find()
         .filter(login::Column::Login.eq(linked_name))
         .one(txn)
         .await
         .c(h!())?;
-    if agent.login != linked_name
-        || agent.deleted_permanently
+    if agent.deleted_permanently
         || name_owner.is_some_and(|owner| owner.id != link.agent_login_id)
     {
         return Err(AppError::BL {
             msg: "Linked AI agent UUID/name ownership conflict".to_string(),
         });
     }
-    Ok(())
+    if agent.login == linked_name {
+        return Ok(agent.clone());
+    }
+    let human_login = linked_name
+        .strip_suffix(AI_AGENT_LINKED_LOGIN_SUFFIX)
+        .unwrap_or(linked_name);
+    let mut agent = agent.clone().into_active_model();
+    agent.login = Set(linked_name.to_string());
+    agent.description = Set(Some(format!("AI agent linked to {human_login}")));
+    agent.update(txn).await.c(h!()).map_err(Into::into)
 }
 
 async fn create_link(
@@ -1362,7 +1372,8 @@ async fn activate_login_with_current_scope_in_transaction(
         .ok_or(AppError::NotFound)?;
     let linked_name =
         format!("{}{}", human.login, AI_AGENT_LINKED_LOGIN_SUFFIX);
-    ensure_link_ownership(txn, &link, &agent, &linked_name).await?;
+    let agent =
+        reconcile_linked_login_name(txn, &link, &agent, &linked_name).await?;
     let agent = synchronize_agent_scope(txn, &human, agent).await?;
     synchronize_direct_hidden_groups(txn, human.id, agent.id).await?;
     let mut agent = agent.into_active_model();
@@ -1913,6 +1924,66 @@ mod tests {
                 && membership.secret_group_organism_id == Some(invite.id)
         }));
         assert_eq!(link.agent_login_id, agent.id);
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn activation_reconciles_linked_login_after_human_rename() {
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let human = crate::functest::tests::find_test_login(&env.dbx)
+            .await
+            .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let agent = crate::functest::tests::mk_login(
+            &txn,
+            login::ActiveModel {
+                id: NotSet,
+                login: Set(format!(
+                    "{}{}",
+                    human.login, AI_AGENT_LINKED_LOGIN_SUFFIX
+                )),
+                password: Set(None),
+                password_auth_enabled: Set(false),
+                roles: Set(json!(["ApiAgent", "Rer", "Cyber"])),
+                deleted: Set(true),
+                deactivation_reason: Set(Some(DeactivationReasonEnum::Admin)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        ai_agent_user_link::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            human_login_id: Set(human.id),
+            agent_login_id: Set(agent.id),
+            created_at: Set(Utc::now().naive_utc()),
+            updated_at: Set(Utc::now().naive_utc()),
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let renamed_login = format!("agent-rename-{}", Uuid::now_v7());
+        let mut human = human.into_active_model();
+        human.login = Set(renamed_login.clone());
+        let human = human.update(&txn).await.unwrap();
+
+        let agent = activate_login_with_current_scope_in_transaction(
+            &txn, human.id, agent.id,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            agent.login,
+            format!("{renamed_login}{AI_AGENT_LINKED_LOGIN_SUFFIX}")
+        );
+        assert_eq!(
+            agent.description,
+            Some(format!("AI agent linked to {renamed_login}"))
+        );
 
         txn.rollback().await.unwrap();
     }

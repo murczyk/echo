@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AI_AGENT_GATEWAY_TOKEN_NOTICE,
+  AI_AGENT_TOKEN_WARNING,
   getAiAgentEngineCompatibility,
+  getAiAgentTokenNotice,
   getAiReviewerEngineCompatibility,
   isAiAgentEligibleEngine,
 } from './engine-eligibility';
@@ -86,10 +89,34 @@ describe('isAiAgentEligibleEngine', () => {
         hasToken: true,
         url: 'https://api.openai.com/v1',
       }),
+    ).toEqual({ compatible: true, explanation: 'Доступний через захищений шлюз Echo.' });
+    expect(
+      getAiAgentEngineCompatibility({
+        enabled: true,
+        hasToken: false,
+        url: 'https://api.openai.com/v1',
+      }),
     ).toEqual({
       compatible: false,
-      explanation: 'ШІ агентам потрібен внутрішній HTTP endpoint.',
+      explanation: 'Шлюз Echo для OpenAI потребує токен провайдера.',
     });
+  });
+
+  it('shows token handling according to the provider transport', () => {
+    expect(
+      getAiAgentTokenNotice({
+        enabled: true,
+        hasToken: true,
+        url: 'http://vllm.example:8000/v1',
+      }),
+    ).toEqual({ message: AI_AGENT_TOKEN_WARNING, severity: 'warning' });
+    expect(
+      getAiAgentTokenNotice({
+        enabled: true,
+        hasToken: true,
+        url: 'https://api.openai.com/v1',
+      }),
+    ).toEqual({ message: AI_AGENT_GATEWAY_TOKEN_NOTICE, severity: 'info' });
   });
 
   it('allows enabled HTTPS token providers for trusted backend reviews', () => {

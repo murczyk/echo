@@ -84,9 +84,9 @@ import { listAiEngines } from '../../services/api/ai-engines';
 import { AdminAiCallsignsPage } from '../admin-ai-callsigns';
 import { AiEnginesSection } from '../admin-system-settings-neo/AiEnginesSection';
 import {
-  AI_AGENT_TOKEN_WARNING,
   type AiAgentEngineCompatibility,
   getAiAgentEngineCompatibility,
+  getAiAgentTokenNotice,
   getAiReviewerEngineCompatibility,
 } from './engine-eligibility';
 import { readAiAgentRequestDeepLink } from './url-state';
@@ -1422,6 +1422,7 @@ function providerMenuItem(
 ) {
   const compatibility = options.compatibility ?? getAiAgentEngineCompatibility(engine);
   const disabled = !compatibility.compatible || Boolean(options.disabledReason);
+  const tokenNotice = getAiAgentTokenNotice(engine);
 
   return (
     <MenuItem key={engine.id} value={engine.id} disabled={disabled}>
@@ -1433,14 +1434,17 @@ function providerMenuItem(
             label={compatibility.compatible ? 'Сумісний' : 'Несумісний'}
             color={compatibility.compatible ? 'success' : 'warning'}
           />
-          {engine.hasToken && options.showAgentTokenWarning !== false ? (
-            <Tooltip title={AI_AGENT_TOKEN_WARNING} arrow>
+          {tokenNotice && options.showAgentTokenWarning !== false ? (
+            <Tooltip title={tokenNotice.message} arrow>
               <Box
                 component="span"
-                aria-label={AI_AGENT_TOKEN_WARNING}
+                aria-label={tokenNotice.message}
                 sx={{ display: 'inline-flex', cursor: 'default', lineHeight: 0 }}
               >
-                <InfoOutlinedIcon color="error" sx={{ fontSize: 16 }} />
+                <InfoOutlinedIcon
+                  color={tokenNotice.severity === 'warning' ? 'error' : 'info'}
+                  sx={{ fontSize: 16 }}
+                />
               </Box>
             </Tooltip>
           ) : null}

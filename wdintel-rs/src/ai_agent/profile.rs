@@ -105,6 +105,15 @@ pub async fn import(mode: Mode, input: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
+pub async fn discard_runtime(mode: Mode) -> Result<(), AppError> {
+    let (_, dbx) = config_and_db(mode).await?;
+    let txn = dbx.begin().await.c(h!())?;
+    discard_copied_runtime(&txn).await?;
+    txn.commit().await.c(h!())?;
+    println!("Discarded copied AI agent runtime");
+    Ok(())
+}
+
 async fn config_and_db(
     mode: Mode,
 ) -> Result<(Config, DatabaseConnection), AppError> {

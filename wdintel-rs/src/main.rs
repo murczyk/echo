@@ -884,6 +884,7 @@ enum Cmd {
     OneoffRefreshAiModels,
     OneoffExportLocalAiAgentProfile(OneoffExportLocalAiAgentProfilePs),
     OneoffImportLocalAiAgentProfile(OneoffImportLocalAiAgentProfilePs),
+    OneoffDiscardCopiedAiAgentRuntime,
     OneoffMigrateModulationToEncryption(OneoffMigrateModulationToEncryptionPs),
     OneoffMigrateLargeMediaToPlaintext(OneoffMigrateLargeMediaToPlaintextPs),
     OneoffBackfillAudioTranscriber(OneoffBackfillAudioTranscriberPs),
@@ -1565,6 +1566,9 @@ async fn async_main(
         }
         Cmd::OneoffImportLocalAiAgentProfile(ps) => {
             ai_agent::profile::import(mode, &ps.input).await
+        }
+        Cmd::OneoffDiscardCopiedAiAgentRuntime => {
+            ai_agent::profile::discard_runtime(mode).await
         }
         Cmd::OneoffMigrateModulationToEncryption(ps) => {
             sigint::network::oneoff::oneoff_migrate_modulation_to_encryption(

@@ -714,12 +714,13 @@ For a separately entered command that retains confirmation, use
 
 `deploy/restore-copied-db.sh` snapshots any configured local AI-agent profile
 after confirmation and before replacing `wd`. After the restore and current
-Echo/echo-im migrations it restores that profile, clears copied AI-agent
-conversations, requests, reviews, user links, and container state, then checks
-the local public-host HTTPS proxy and dispatcher template namespace. Dispatcher
-keys and known-hosts stay on the filesystem. If this validation fails, the
-mode-`0600` temporary profile is retained and its path is printed for retry.
-Use `--no-preserve-local-ai-agent-profile` only when the source AI-agent
+Echo/echo-im migrations it always clears copied AI-agent conversations,
+requests, reviews, user links, and container state. When a local profile was
+preserved, it then restores the profile and checks the local public-host HTTPS
+proxy and dispatcher template namespace. Dispatcher keys and known-hosts stay
+on the filesystem. If this validation fails, the mode-`0600` temporary profile
+is retained and its path is printed for retry. Use
+`--no-preserve-local-ai-agent-profile` only when the source AI-agent
 configuration is intentionally wanted.
 
 The coordinator checks for `/etc/echo-peerdb/source.env`. When it is absent,
