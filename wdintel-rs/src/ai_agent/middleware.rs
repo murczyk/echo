@@ -6,7 +6,7 @@ use crate::config::{
     AI_AGENT_CREDENTIAL_TTL_SEC, AI_AGENT_ROLE_API,
     AI_AGENT_SESSION_BINDING_KEY,
 };
-use crate::entities::{ai_agent_request, login, secret_group_user};
+use crate::entities::{ai_agent_request, login};
 use crate::types::{warn, Env};
 use actix_session::SessionExt;
 use actix_web::{
@@ -20,7 +20,6 @@ use sea_orm::{
     ColumnTrait, DatabaseBackend, EntityTrait, FromQueryResult, QueryFilter,
     Statement,
 };
-use std::collections::HashSet;
 use uuid::Uuid;
 
 #[derive(Debug, FromQueryResult)]
@@ -66,14 +65,8 @@ where link.agent_login_id = $1
         .ok_or_else(|| {
             actix_web::error::ErrorUnauthorized("Agent login missing")
         })?;
-    let human = login::Entity::find_by_id(agent_login.human_login_id)
-        .one(&env.dbx)
-        .await
-        .map_err(actix_web::error::ErrorInternalServerError)?
-        .ok_or_else(|| {
-            actix_web::error::ErrorUnauthorized("Linked human login missing")
-        })?;
-    authorize_agent_request(&req, env, &login, &human).await?;
+    authorize_agent_request(&req, env, &login, agent_login.human_login_id)
+        .await?;
     next.call(req).await
 }
 
@@ -89,7 +82,7 @@ async fn authorize_agent_request(
     req: &ServiceRequest,
     env: &actix_web::web::Data<Env>,
     login: &login::Model,
-    human: &login::Model,
+    human_login_id: Uuid,
 ) -> Result<(), Error> {
     let login_id = login.id;
     let path = req.path();
@@ -144,7 +137,14 @@ async fn authorize_agent_request(
         warn!("AI agent denied revoked correlation login_id={login_id}");
         return Err(purge_agent_session(req, "Agent correlation revoked"));
     }
-    if !linked_human_scope_is_current(env, login, human).await? {
+    if !super::access::linked_human_scope_is_current(
+        &env.dbx,
+        human_login_id,
+        login,
+    )
+    .await
+    .map_err(actix_web::error::ErrorInternalServerError)?
+    {
         warn!("AI agent denied changed human access login_id={login_id}");
         return Err(purge_agent_session(req, "Linked human access changed"));
     }
@@ -239,37 +239,6 @@ return value
     Ok(())
 }
 
-async fn linked_human_scope_is_current(
-    env: &actix_web::web::Data<Env>,
-    agent: &login::Model,
-    human: &login::Model,
-) -> Result<bool, Error> {
-    if human.deleted
-        || human.deleted_permanently
-        || !has_rer_role(&human.roles)
-        || agent.sigint_zone_id != human.sigint_zone_id
-        || agent.organism_id != human.organism_id
-    {
-        return Ok(false);
-    }
-    let human_groups = direct_secret_group_keys(env, human.id).await?;
-    let agent_groups = direct_secret_group_keys(env, agent.id).await?;
-    Ok(human_groups == agent_groups)
-}
-
-async fn direct_secret_group_keys(
-    env: &actix_web::web::Data<Env>,
-    login_id: Uuid,
-) -> Result<HashSet<String>, Error> {
-    let groups = secret_group_user::Entity::find()
-        .filter(secret_group_user::Column::LoginId.eq(login_id))
-        .filter(secret_group_user::Column::SecretGroupOrganismId.is_null())
-        .all(&env.dbx)
-        .await
-        .map_err(actix_web::error::ErrorInternalServerError)?;
-    Ok(groups.into_iter().map(|group| group.master_key).collect())
-}
-
 fn purge_agent_session(req: &ServiceRequest, message: &'static str) -> Error {
     req.get_session().purge();
     actix_web::error::ErrorForbidden(message)
@@ -308,13 +277,6 @@ fn has_exact_agent_roles(roles: &serde_json::Value) -> bool {
         ]
 }
 
-fn has_rer_role(roles: &serde_json::Value) -> bool {
-    serde_json::from_value::<Vec<String>>(roles.clone())
-        .unwrap_or_default()
-        .iter()
-        .any(|role| role == crate::config::AI_AGENT_ROLE_RER)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,12 +290,6 @@ mod tests {
             "ApiAgent", "Rer", "Cyber", "Admin"
         ])));
         assert!(!has_exact_agent_roles(&serde_json::json!(["ApiAgent"])));
-    }
-
-    #[test]
-    fn requires_rer_role_for_linked_humans() {
-        assert!(has_rer_role(&serde_json::json!(["Rer", "Cyber"])));
-        assert!(!has_rer_role(&serde_json::json!(["Cyber"])));
     }
 
     #[test]

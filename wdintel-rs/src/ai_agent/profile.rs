@@ -105,12 +105,18 @@ pub async fn import(mode: Mode, input: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-pub async fn discard_runtime(mode: Mode) -> Result<(), AppError> {
+pub async fn discard_runtime(
+    mode: Mode,
+    clear_control_plane: bool,
+) -> Result<(), AppError> {
     let (_, dbx) = config_and_db(mode).await?;
     let txn = dbx.begin().await.c(h!())?;
     discard_copied_runtime(&txn).await?;
+    if clear_control_plane {
+        clear_copied_control_plane(&txn).await?;
+    }
     txn.commit().await.c(h!())?;
-    println!("Discarded copied AI agent runtime");
+    println!("Discarded copied AI agent runtime and control plane={clear_control_plane}");
     Ok(())
 }
 
@@ -437,6 +443,42 @@ where
         .await
         .c(h!())?;
     archive_copied_agent_logins(dbx, &agent_login_ids).await?;
+    Ok(())
+}
+
+async fn clear_copied_control_plane<C>(dbx: &C) -> Result<(), AppError>
+where
+    C: sea_orm::ConnectionTrait,
+{
+    ai_agent_allowed_engine::Entity::delete_many()
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    ai_agent_echo_proxy::Entity::delete_many()
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    ai_agent_dispatcher::Entity::delete_by_id(AI_AGENT_DISPATCHER_ID)
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    let settings = ai_agent_settings::Entity::find_by_id(AI_AGENT_SETTINGS_ID)
+        .one(dbx)
+        .await
+        .c(h!())?;
+    let Some(settings) = settings else {
+        return Ok(());
+    };
+    let mut settings = settings.into_active_model();
+    settings.feature_enabled = Set(false);
+    settings.template_login_id = Set(None);
+    settings.default_ai_engine_id = Set(None);
+    settings.reviewer_ai_engine_id = Set(None);
+    settings.security_review_enabled = Set(false);
+    settings.mattermost_webhook_url = Set(None);
+    settings.mattermost_chat_enabled = Set(false);
+    settings.updated_at = Set(Utc::now().naive_utc());
+    settings.update(dbx).await.c(h!())?;
     Ok(())
 }
 

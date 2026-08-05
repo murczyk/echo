@@ -181,7 +181,29 @@ return {value, calls}
                 && request.correlation_id == Some(grant.correlation_id)
                 && request.ai_engine_id == grant.ai_engine_id
         });
-    if request.is_none() {
+    let Some(request) = request else {
+        return Ok(None);
+    };
+    let agent = login::Entity::find_by_id(grant.login_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?;
+    let Some(agent) = agent else {
+        return Ok(None);
+    };
+    if !super::access::linked_human_scope_is_current(
+        &env.dbx,
+        request.human_login_id,
+        &agent,
+    )
+    .await?
+    {
+        warn!(
+            "AI agent provider capability denied changed human access request_id={}",
+            request.id
+        );
+        revoke_correlation(env, Some(grant.login_id), grant.correlation_id)
+            .await?;
         return Ok(None);
     }
     let ai_engine =

@@ -10,7 +10,7 @@
 
 ## NEXT
 
-- [#2972](https://github.com/echoua/echo/issues/2972) 🛡️👷 ШІ: `copy-db` автоматично зберігає локальний профіль AI-агента, очищує скопійований runtime та перевіряє локальний диспетчер і HTTPS proxy; для свідомого перенесення конфігурації джерела використайте `--no-preserve-local-ai-agent-profile`.
+- [#2972](https://github.com/echoua/echo/issues/2972) 🛡️👷 ШІ: `copy-db` автоматично зберігає локальний профіль AI-агента, очищує скопійований runtime та перевіряє локальний диспетчер і HTTPS proxy; за відсутності локального профілю очищує також control plane, а для свідомого перенесення конфігурації джерела використайте `--no-preserve-local-ai-agent-profile`.
 - [#2972](https://github.com/echoua/echo/issues/2972) ✅🛡️👷 ШІ вікно з запитами.
   - Міграція: [echo-ai-agent/DEPLOYMENT.md](echo-ai-agent/DEPLOYMENT.md).
 - [#2971](https://github.com/echoua/echo/issues/2971) ✅👷 ШІ: додано vLLM Router із `cache_aware` маршрутизацією та передаванням метрик Router/Spark у SigNoz; з операторського checkout виконати `cd echo-vllm-router && just setup && just deploy && just verify-client && just smoke`, потім змінити Base URL існуючого AI engine у staging на `http://100.105.172.96:8000/v1` і лише після успішного запиту повторити зміну в `echo-cbr`.

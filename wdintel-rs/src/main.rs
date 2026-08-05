@@ -721,6 +721,12 @@ pub struct OneoffImportLocalAiAgentProfilePs {
     pub input: std::path::PathBuf,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct OneoffDiscardCopiedAiAgentRuntimePs {
+    #[arg(long)]
+    pub clear_control_plane: bool,
+}
+
 #[derive(clap::Args, Debug, Clone)]
 pub struct OneoffBackfillAudioTranscriberPs {
     #[arg(long)]
@@ -884,7 +890,7 @@ enum Cmd {
     OneoffRefreshAiModels,
     OneoffExportLocalAiAgentProfile(OneoffExportLocalAiAgentProfilePs),
     OneoffImportLocalAiAgentProfile(OneoffImportLocalAiAgentProfilePs),
-    OneoffDiscardCopiedAiAgentRuntime,
+    OneoffDiscardCopiedAiAgentRuntime(OneoffDiscardCopiedAiAgentRuntimePs),
     OneoffMigrateModulationToEncryption(OneoffMigrateModulationToEncryptionPs),
     OneoffMigrateLargeMediaToPlaintext(OneoffMigrateLargeMediaToPlaintextPs),
     OneoffBackfillAudioTranscriber(OneoffBackfillAudioTranscriberPs),
@@ -1567,8 +1573,8 @@ async fn async_main(
         Cmd::OneoffImportLocalAiAgentProfile(ps) => {
             ai_agent::profile::import(mode, &ps.input).await
         }
-        Cmd::OneoffDiscardCopiedAiAgentRuntime => {
-            ai_agent::profile::discard_runtime(mode).await
+        Cmd::OneoffDiscardCopiedAiAgentRuntime(ps) => {
+            ai_agent::profile::discard_runtime(mode, ps.clear_control_plane).await
         }
         Cmd::OneoffMigrateModulationToEncryption(ps) => {
             sigint::network::oneoff::oneoff_migrate_modulation_to_encryption(

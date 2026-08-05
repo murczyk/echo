@@ -1,8 +1,10 @@
 use crate::config::{
-    AI_AGENT_ROLE_API, AI_AGENT_SETTINGS_ID, AI_AGENT_TEMPLATE_LOGIN_ID,
+    AI_AGENT_ROLE_API, AI_AGENT_ROLE_RER, AI_AGENT_SETTINGS_ID,
+    AI_AGENT_TEMPLATE_LOGIN_ID,
 };
 use crate::entities::{
-    ai_agent_allowed_engine, ai_agent_settings, ai_engine, login,
+    ai_agent_allowed_engine, ai_agent_settings, ai_agent_user_link, ai_engine,
+    login, secret_group_user,
 };
 use crate::error::AppError;
 use crate::h;
@@ -13,6 +15,7 @@ use regex::Regex;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
+use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 use url::Url;
@@ -85,6 +88,69 @@ pub async fn current_human_login(
         ));
     }
     Ok(login)
+}
+
+pub async fn linked_human_scope_is_current<C>(
+    dbx: &C,
+    human_login_id: Uuid,
+    agent: &login::Model,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let linked = ai_agent_user_link::Entity::find()
+        .filter(ai_agent_user_link::Column::HumanLoginId.eq(human_login_id))
+        .filter(ai_agent_user_link::Column::AgentLoginId.eq(agent.id))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if !linked {
+        return Ok(false);
+    }
+    let human = login::Entity::find_by_id(human_login_id)
+        .one(dbx)
+        .await
+        .c(h!())?;
+    let Some(human) = human else {
+        return Ok(false);
+    };
+    if human.deleted
+        || human.deleted_permanently
+        || !has_rer_role(&human.roles)
+        || agent.sigint_zone_id != human.sigint_zone_id
+        || agent.organism_id != human.organism_id
+    {
+        return Ok(false);
+    }
+    let human_groups = direct_secret_group_keys(dbx, human.id).await?;
+    let agent_groups = direct_secret_group_keys(dbx, agent.id).await?;
+    Ok(human_groups == agent_groups)
+}
+
+async fn direct_secret_group_keys<C>(
+    dbx: &C,
+    login_id: Uuid,
+) -> Result<HashSet<String>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(secret_group_user::Entity::find()
+        .filter(secret_group_user::Column::LoginId.eq(login_id))
+        .filter(secret_group_user::Column::SecretGroupOrganismId.is_null())
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|group| group.master_key)
+        .collect())
+}
+
+fn has_rer_role(roles: &serde_json::Value) -> bool {
+    serde_json::from_value::<Vec<String>>(roles.clone())
+        .unwrap_or_default()
+        .iter()
+        .any(|role| role == AI_AGENT_ROLE_RER)
 }
 
 pub async fn allowed_engines(
@@ -351,6 +417,12 @@ pub fn is_dispatcher_upstream_host(host: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linked_human_requires_rer_role() {
+        assert!(has_rer_role(&serde_json::json!(["Rer", "Cyber"])));
+        assert!(!has_rer_role(&serde_json::json!(["Cyber"])));
+    }
 
     #[test]
     fn private_mattermost_webhook_addresses_are_rejected() {

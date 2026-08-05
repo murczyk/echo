@@ -183,9 +183,33 @@ snapshot_local_ai_agent_profile() {
 restore_local_ai_agent_profile() {
   if $dry_run; then
     restore_log "Would discard copied AI-agent runtime"
-    if [[ -n "$local_ai_agent_profile_file" ]]; then
+    if ! $preserve_local_ai_agent_profile; then
+      restore_log "Would retain source AI-agent control-plane configuration"
+    elif [[ -n "$local_ai_agent_profile_file" ]]; then
       restore_log "Would restore and validate the local AI-agent profile"
+    else
+      restore_log "Would clear copied AI-agent control-plane configuration"
     fi
+    return
+  fi
+
+  if ! $preserve_local_ai_agent_profile; then
+    restore_log "Discarding copied AI-agent runtime and retaining source control plane"
+    (
+      cd "$REPO_DIR"
+      cargo run -p wdintel-rs -- --mode=debug \
+        oneoff-discard-copied-ai-agent-runtime
+    )
+    return
+  fi
+
+  if [[ -z "$local_ai_agent_profile_file" ]]; then
+    restore_log "Discarding copied AI-agent runtime and control plane"
+    (
+      cd "$REPO_DIR"
+      cargo run -p wdintel-rs -- --mode=debug \
+        oneoff-discard-copied-ai-agent-runtime --clear-control-plane
+    )
     return
   fi
 
@@ -195,8 +219,6 @@ restore_local_ai_agent_profile() {
     cargo run -p wdintel-rs -- --mode=debug \
       oneoff-discard-copied-ai-agent-runtime
   )
-
-  [[ -n "$local_ai_agent_profile_file" ]] || return
 
   restore_log "Restoring and validating local AI-agent profile"
   (
