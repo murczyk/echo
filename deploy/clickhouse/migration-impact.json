@@ -104,7 +104,16 @@
       "changes": [
         { "table": "public.ai_agent_dispatcher", "strategy": "excluded" }
       ]
+    },
+    "echo:m20260805_064150_ai_agent_mattermost_chat": {
+      "changes": [
+        { "table": "public.ai_agent_settings", "strategy": "excluded" },
+        { "table": "public.ai_agent_chat_mattermost_notification", "strategy": "excluded" }
+      ]
     }
   },
-  "dependencies": {}
+  "dependencies": {
+    "echo-im:8758373ccd6e914d68ef4c22dd40d364392074ee": { "changes": [] },
+    "echo-gpu:f1a5d2a9ece1561b89afe7b0ae39e689508a67fe": { "changes": [] }
+  }
 }

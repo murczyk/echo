@@ -1384,9 +1384,29 @@ export async function testConnection(
     payload: RunnerPayload,
   ) => Promise<EchoAuthentication> = exchangeBootstrap,
   emitEvent: (event: JsonObject) => void = emit,
+  request: typeof echoRequest = echoRequest,
 ): Promise<void> {
-  await exchange(payload);
-  const identity = payload.expectedIdentity!;
+  const authentication = await exchange(payload);
+  const response = await request(
+    payload,
+    authentication,
+    "GET",
+    "/api/user",
+    undefined,
+  );
+  if (
+    !response.body ||
+    typeof response.body !== "object" ||
+    Array.isArray(response.body)
+  ) {
+    throw new Error("Echo user response is invalid");
+  }
+  const user = response.body as JsonObject;
+  const identity = validateExpectedIdentity({
+    id: user.id,
+    name: user.name,
+    roles: user.roles,
+  });
   emitEvent({
     type: "identity",
     payload: { id: identity.id, name: identity.name, roles: identity.roles },

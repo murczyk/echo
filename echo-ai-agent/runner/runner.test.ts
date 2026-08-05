@@ -197,7 +197,7 @@ test("rejects an identity-free connection-test contract", () => {
   );
 });
 
-test("connection test performs only the bootstrap exchange", async () => {
+test("connection test emits the identity from the authenticated user request", async () => {
   const payload = validatePayload(
     {
       echoPublicHost: "echo-staging.example.test",
@@ -212,25 +212,45 @@ test("connection test performs only the bootstrap exchange", async () => {
     true,
   );
   let exchangeCount = 0;
+  const authentication = {
+    cookie: "id=session",
+    correlationId: payload.correlationId,
+  };
+  const authenticatedIdentity = {
+    id: "019fc7f7-9770-7f83-9c1a-211af29b02e7",
+    name: "authenticated-ai-agent",
+    roles: ["ApiAgent", "Rer", "Cyber"],
+  };
   const events: Record<string, unknown>[] = [];
 
   await testConnection(
     payload,
     async () => {
       exchangeCount += 1;
-      return {
-        cookie: "id=session",
-        correlationId: payload.correlationId,
-      };
+      return authentication;
     },
     (event) => events.push(event),
+    async (requestPayload, requestAuthentication, method, path, body) => {
+      assert.equal(requestPayload, payload);
+      assert.equal(requestAuthentication, authentication);
+      assert.equal(method, "GET");
+      assert.equal(path, "/api/user");
+      assert.equal(body, undefined);
+      return {
+        body: {
+          ...authenticatedIdentity,
+          deltaLogin: null,
+        },
+        status: 200,
+      };
+    },
   );
 
   assert.equal(exchangeCount, 1);
   assert.deepEqual(events, [
     {
       type: "identity",
-      payload: payload.expectedIdentity,
+      payload: authenticatedIdentity,
     },
   ]);
 });
