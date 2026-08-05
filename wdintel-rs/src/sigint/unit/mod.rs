@@ -665,6 +665,7 @@ async fn update_unit_for_login(
     login: &uuid::Uuid,
     req: &Unit,
 ) -> Result<sigint_unit::Model, AppError> {
+    let can_view_orbit_data = orbit::can_view_orbit_data(dbx, login).await?;
     let transaction = dbx.begin().await.context(h!())?;
     let unit = sigint_unit::Entity::find_by_id(req.id)
         .one(&transaction)
@@ -689,7 +690,9 @@ async fn update_unit_for_login(
     unit.division = Set(req.division.clone());
     unit.army = Set(req.army.clone());
     unit.active = Set(req.active);
-    unit.is_deduplicate_candidate = Set(req.is_deduplicate_candidate);
+    if can_view_orbit_data {
+        unit.is_deduplicate_candidate = Set(req.is_deduplicate_candidate);
+    }
     unit.name = Set(unit_name(req));
     unit.comment = Set(req.comment.clone());
     let unit = unit.update(&transaction).await.context(h!())?;
@@ -2385,6 +2388,42 @@ mod tests {
         assert!(!orbit::can_view_orbit_data(&env.dbx, &login_id)
             .await
             .unwrap());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn hidden_orbit_data_preserves_deduplicate_candidate_on_update() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, false).await;
+        let login_id = test_login_id(&env).await;
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                is_deduplicate_candidate: Set(Some(true)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let settings = system_settings::Entity::find()
+            .filter(system_settings::Column::Deleted.eq(false))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut settings = settings.into_active_model();
+        settings.hide_orbit_data = Set(true);
+        settings.update(&env.dbx).await.unwrap();
+        let mut req = render_unit(&unit).unwrap();
+        redact_unit_orbit_data(&mut req);
+        req.comment = "updated".to_string();
+
+        let unit = update_unit_for_login(&env.dbx, &login_id, &req)
+            .await
+            .unwrap();
+
+        assert_eq!(unit.comment, "updated");
+        assert_eq!(unit.is_deduplicate_candidate, Some(true));
     }
 
     #[test]
