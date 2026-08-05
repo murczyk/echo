@@ -1,6 +1,7 @@
 import type { CreateUnitReq, Unit } from '../../../../Bindings';
 
 export type UnitForm = CreateUnitReq;
+export type UnitStatusFilter = 'all' | 'active' | 'inactive';
 
 export const EMPTY_UNIT_FORM: UnitForm = {
   company: '',
@@ -9,6 +10,7 @@ export const EMPTY_UNIT_FORM: UnitForm = {
   division: '',
   army: '',
   active: true,
+  isDeduplicateCandidate: null,
   comment: '',
 };
 
@@ -20,6 +22,7 @@ export function unitToForm(unit: Unit): UnitForm {
     division: unit.division,
     army: unit.army,
     active: unit.active,
+    isDeduplicateCandidate: unit.isDeduplicateCandidate,
     comment: unit.comment,
   };
 }
@@ -32,6 +35,7 @@ export function trimUnitForm(form: UnitForm): UnitForm {
     division: form.division.trim(),
     army: form.army.trim(),
     active: form.active,
+    isDeduplicateCandidate: form.isDeduplicateCandidate,
     comment: form.comment.trim(),
   };
 }
@@ -82,6 +86,22 @@ export function findPotentialDuplicates(units: Unit[], form: UnitForm): Unit[] {
       return input === '' || (value !== '' && value.includes(input));
     }),
   );
+}
+
+export function unitStatusCounts(units: Unit[]): { active: number; inactive: number } {
+  return units.reduce(
+    (counts, unit) => ({
+      active: counts.active + Number(unit.active),
+      inactive: counts.inactive + Number(!unit.active),
+    }),
+    { active: 0, inactive: 0 },
+  );
+}
+
+export function filterUnitsByStatus(units: Unit[], status: UnitStatusFilter): Unit[] {
+  if (status === 'all') return units;
+  const active = status === 'active';
+  return units.filter((unit) => unit.active === active);
 }
 
 export function formatUnitError(error: unknown): string {

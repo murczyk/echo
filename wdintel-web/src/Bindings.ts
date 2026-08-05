@@ -2385,6 +2385,7 @@ export type Unit = {
   comment: string;
   name: string;
   active: boolean;
+  isDeduplicateCandidate: boolean | null;
   createdAt: number;
   createdByLoginId: string;
   hasOrbit: boolean;
@@ -2416,6 +2417,7 @@ export type CreateUnitReq = {
   division: string;
   army: string;
   active: boolean;
+  isDeduplicateCandidate: boolean | null;
   comment: string;
 };
 
@@ -2429,6 +2431,16 @@ export type CreateUnitWithAutoNetworkReq = {
 export type CreateUnitWithAutoNetworkRsp = {
   unit: Unit;
   networkId: number | null;
+};
+
+export type CreateDeviceNetworkReq = {
+  unitId: number;
+  locations: Array<string>;
+  unitMask: Array<string>;
+};
+
+export type CreateDeviceNetworkRsp = {
+  networkId: number;
 };
 
 export type DeleteUnitDuplicateReq = {
@@ -2503,6 +2515,14 @@ export type OrbitUnitLinkCandidatesRsp = {
   units: Array<OrbitUnitLinkCandidate>;
 };
 
+export type OrbitUnitSearchReq = {
+  search: string;
+};
+
+export type ImportOrbitUnitReq = {
+  orbitUnitId: string;
+};
+
 export type LinkOrbitUnitReq = {
   sigintUnitId: number;
   orbitUnitId: string;
@@ -2513,6 +2533,7 @@ export type UnitDetailsRsp = {
   attachments: Array<UnitAttachment>;
   orbitUnits: Array<OrbitUnitDetails>;
   canLinkOrbitUnit: boolean;
+  canCreateDeviceNetwork: boolean;
 };
 
 export type UnitAttachmentUnitIdsRsp = {
@@ -3708,6 +3729,7 @@ export type SystemSettingsCurrentRsp = {
   enableAudioTranscription: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  hideOrbitData: boolean;
 };
 
 export type SystemSettingsItem = {

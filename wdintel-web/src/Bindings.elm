@@ -6173,6 +6173,7 @@ type alias Unit =
     , comment : String
     , name : String
     , active : Bool
+    , isDeduplicateCandidate : Maybe (Bool)
     , createdAt : Int
     , createdByLoginId : String
     , hasOrbit : Bool
@@ -6191,6 +6192,7 @@ unitEncoder struct =
         , ( "comment", (Json.Encode.string) struct.comment )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "active", (Json.Encode.bool) struct.active )
+        , ( "is_deduplicate_candidate", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeduplicateCandidate )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "created_by_login_id", (Json.Encode.string) struct.createdByLoginId )
         , ( "has_orbit", (Json.Encode.bool) struct.hasOrbit )
@@ -6258,6 +6260,7 @@ type alias CreateUnitReq =
     , division : String
     , army : String
     , active : Bool
+    , isDeduplicateCandidate : Maybe (Bool)
     , comment : String
     }
 
@@ -6271,6 +6274,7 @@ createUnitReqEncoder struct =
         , ( "division", (Json.Encode.string) struct.division )
         , ( "army", (Json.Encode.string) struct.army )
         , ( "active", (Json.Encode.bool) struct.active )
+        , ( "is_deduplicate_candidate", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeduplicateCandidate )
         , ( "comment", (Json.Encode.string) struct.comment )
         ]
 
@@ -6304,6 +6308,34 @@ createUnitWithAutoNetworkRspEncoder struct =
     Json.Encode.object
         [ ( "unit", (unitEncoder) struct.unit )
         , ( "network_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.networkId )
+        ]
+
+
+type alias CreateDeviceNetworkReq =
+    { unitId : Int
+    , locations : List (String)
+    , unitMask : List (String)
+    }
+
+
+createDeviceNetworkReqEncoder : CreateDeviceNetworkReq -> Json.Encode.Value
+createDeviceNetworkReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_id", (Json.Encode.int) struct.unitId )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        , ( "unit_mask", (Json.Encode.list (Json.Encode.string)) struct.unitMask )
+        ]
+
+
+type alias CreateDeviceNetworkRsp =
+    { networkId : Int
+    }
+
+
+createDeviceNetworkRspEncoder : CreateDeviceNetworkRsp -> Json.Encode.Value
+createDeviceNetworkRspEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", (Json.Encode.int) struct.networkId )
         ]
 
 
@@ -6491,6 +6523,30 @@ orbitUnitLinkCandidatesRspEncoder struct =
         ]
 
 
+type alias OrbitUnitSearchReq =
+    { search : String
+    }
+
+
+orbitUnitSearchReqEncoder : OrbitUnitSearchReq -> Json.Encode.Value
+orbitUnitSearchReqEncoder struct =
+    Json.Encode.object
+        [ ( "search", (Json.Encode.string) struct.search )
+        ]
+
+
+type alias ImportOrbitUnitReq =
+    { orbitUnitId : String
+    }
+
+
+importOrbitUnitReqEncoder : ImportOrbitUnitReq -> Json.Encode.Value
+importOrbitUnitReqEncoder struct =
+    Json.Encode.object
+        [ ( "orbit_unit_id", (Json.Encode.string) struct.orbitUnitId )
+        ]
+
+
 type alias LinkOrbitUnitReq =
     { sigintUnitId : Int
     , orbitUnitId : String
@@ -6510,6 +6566,7 @@ type alias UnitDetailsRsp =
     , attachments : List (UnitAttachment)
     , orbitUnits : List (OrbitUnitDetails)
     , canLinkOrbitUnit : Bool
+    , canCreateDeviceNetwork : Bool
     }
 
 
@@ -6520,6 +6577,7 @@ unitDetailsRspEncoder struct =
         , ( "attachments", (Json.Encode.list (unitAttachmentEncoder)) struct.attachments )
         , ( "orbit_units", (Json.Encode.list (orbitUnitDetailsEncoder)) struct.orbitUnits )
         , ( "can_link_orbit_unit", (Json.Encode.bool) struct.canLinkOrbitUnit )
+        , ( "can_create_device_network", (Json.Encode.bool) struct.canCreateDeviceNetwork )
         ]
 
 
@@ -9579,6 +9637,7 @@ type alias SystemSettingsCurrentRsp =
     , enableAudioTranscription : Bool
     , showClassicDuty : Bool
     , showClassicAnalysis : Bool
+    , hideOrbitData : Bool
     }
 
 
@@ -9611,6 +9670,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
         , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
+        , ( "hide_orbit_data", (Json.Encode.bool) struct.hideOrbitData )
         ]
 
 
@@ -14570,6 +14630,7 @@ unitDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_deduplicate_candidate" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by_login_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_orbit" (Json.Decode.bool)))
@@ -14611,6 +14672,7 @@ createUnitReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "division" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_deduplicate_candidate" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
 
 
@@ -14628,6 +14690,20 @@ createUnitWithAutoNetworkRspDecoder =
     Json.Decode.succeed CreateUnitWithAutoNetworkRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (unitDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.nullable (Json.Decode.int))))
+
+
+createDeviceNetworkReqDecoder : Json.Decode.Decoder CreateDeviceNetworkReq
+createDeviceNetworkReqDecoder =
+    Json.Decode.succeed CreateDeviceNetworkReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_mask" (Json.Decode.list (Json.Decode.string))))
+
+
+createDeviceNetworkRspDecoder : Json.Decode.Decoder CreateDeviceNetworkRsp
+createDeviceNetworkRspDecoder =
+    Json.Decode.succeed CreateDeviceNetworkRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
 
 
 unitSearchReqDecoder : Json.Decode.Decoder UnitSearchReq
@@ -14715,6 +14791,18 @@ orbitUnitLinkCandidatesRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (orbitUnitLinkCandidateDecoder))))
 
 
+orbitUnitSearchReqDecoder : Json.Decode.Decoder OrbitUnitSearchReq
+orbitUnitSearchReqDecoder =
+    Json.Decode.succeed OrbitUnitSearchReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.string)))
+
+
+importOrbitUnitReqDecoder : Json.Decode.Decoder ImportOrbitUnitReq
+importOrbitUnitReqDecoder =
+    Json.Decode.succeed ImportOrbitUnitReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_id" (Json.Decode.string)))
+
+
 linkOrbitUnitReqDecoder : Json.Decode.Decoder LinkOrbitUnitReq
 linkOrbitUnitReqDecoder =
     Json.Decode.succeed LinkOrbitUnitReq
@@ -14729,6 +14817,7 @@ unitDetailsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments" (Json.Decode.list (unitAttachmentDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_units" (Json.Decode.list (orbitUnitDetailsDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_link_orbit_unit" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_create_device_network" (Json.Decode.bool)))
 
 
 unitAttachmentUnitIdsRspDecoder : Json.Decode.Decoder UnitAttachmentUnitIdsRsp
@@ -16603,6 +16692,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hide_orbit_data" (Json.Decode.bool)))
 
 
 systemSettingsItemDecoder : Json.Decode.Decoder SystemSettingsItem

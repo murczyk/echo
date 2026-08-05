@@ -72,7 +72,6 @@ const ROLE_OPTIONS = [
   'Cyber',
   'DeviceSource',
   'AdvancedReports',
-  'Orbit',
   'DeleteMsg',
   'NoAutoLogout',
 ];

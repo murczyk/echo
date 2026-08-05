@@ -65,6 +65,16 @@
       "changes": [
         { "table": "public.sigint_comment_blacklist", "strategy": "excluded" }
       ]
+    },
+    "echo:m20260804_093435_hide_orbit_data": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20260804_094408_sigint_unit_deduplicate_candidate": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "cdc_backfill" }
+      ]
     }
   },
   "dependencies": {}

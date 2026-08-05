@@ -47,6 +47,7 @@ pub struct Model {
     pub show_classic_duty: bool,
     pub show_classic_analysis: bool,
     pub rer_duty_test_replay_interval_sec: i64,
+    pub hide_orbit_data: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

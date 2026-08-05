@@ -349,6 +349,8 @@ mod m20260802_174927_rer_duty_test_replay;
 mod m20260803_093803_echo_automation_send_log;
 mod m20260803_130117_device_source_role_and_name;
 mod m20260804_091538_sigint_comment_blacklist;
+mod m20260804_093435_hide_orbit_data;
+mod m20260804_094408_sigint_unit_deduplicate_candidate;
 
 pub struct Migrator;
 
@@ -786,6 +788,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20260803_130117_device_source_role_and_name::Migration),
             Box::new(
                 m20260804_091538_sigint_comment_blacklist::Migration,
+            ),
+            Box::new(m20260804_093435_hide_orbit_data::Migration),
+            Box::new(
+                m20260804_094408_sigint_unit_deduplicate_candidate::Migration,
             ),
         ]
     }

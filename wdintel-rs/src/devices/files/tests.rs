@@ -198,6 +198,7 @@ async fn truncate_file_entries(db: &DatabaseConnection) {
 #[tokio::test]
 #[serial_test::serial]
 async fn stage_two_runtime_scopes_filters_ltree_and_cursor_contracts() {
+    let _cleanup_guard = crate::functest::tests::lock_cleanup().await;
     let config = read_config(Mode::Test).unwrap();
     run_migrations(&config, Mode::Test).await.unwrap();
     let file_registry_db =
@@ -227,6 +228,7 @@ async fn stage_two_runtime_scopes_filters_ltree_and_cursor_contracts() {
 #[tokio::test]
 #[serial_test::serial]
 async fn stage_four_scoped_search_filters_paths_and_cursor() {
+    let _cleanup_guard = crate::functest::tests::lock_cleanup().await;
     let config = read_config(Mode::Test).unwrap();
     run_migrations(&config, Mode::Test).await.unwrap();
     let file_registry_db =
@@ -261,6 +263,7 @@ async fn stage_four_scoped_search_filters_paths_and_cursor() {
 #[tokio::test]
 #[serial_test::serial]
 async fn stage_three_root_listing_browse_and_breadcrumbs() {
+    let _cleanup_guard = crate::functest::tests::lock_cleanup().await;
     let config = read_config(Mode::Test).unwrap();
     run_migrations(&config, Mode::Test).await.unwrap();
     let file_registry_db =

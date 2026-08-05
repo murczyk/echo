@@ -30,6 +30,7 @@ function createSyntheticUnsetUnit(): Unit {
     army: '',
     comment: '',
     active: true,
+    isDeduplicateCandidate: null,
     createdAt: 0,
     createdByLoginId: '',
     hasOrbit: false,

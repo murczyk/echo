@@ -7,11 +7,11 @@ use crate::{h, new_pg_pool_from_mode};
 use anyhow::Context;
 use chrono::Utc;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
-    JoinType, QueryFilter, QuerySelect, RelationTrait, Statement,
+    ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, DbBackend,
+    EntityTrait, JoinType, QueryFilter, QuerySelect, RelationTrait, Statement,
     TransactionTrait,
 };
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -22,6 +22,130 @@ mod persistence;
 mod snapshot;
 mod tui;
 mod types;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum EchoEchelon {
+    Company,
+    Battalion,
+    Regiment,
+    Division,
+    Army,
+}
+
+impl EchoEchelon {
+    pub(crate) fn index(self) -> usize {
+        match self {
+            Self::Company => 0,
+            Self::Battalion => 1,
+            Self::Regiment => 2,
+            Self::Division => 3,
+            Self::Army => 4,
+        }
+    }
+}
+
+pub(crate) fn echo_echelon(key: &str) -> Option<EchoEchelon> {
+    match key {
+        "platoon" | "company" => Some(EchoEchelon::Company),
+        "battalion" => Some(EchoEchelon::Battalion),
+        "regiment" | "brigade" => Some(EchoEchelon::Regiment),
+        "division" => Some(EchoEchelon::Division),
+        "corps" | "fieldArmy" => Some(EchoEchelon::Army),
+        _ => None,
+    }
+}
+
+pub(crate) async fn reconcile_sigint_unit_deduplicate_candidates<C>(
+    db: &C,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let links = orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+        )
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .all(db)
+        .await
+        .c(h!())?;
+    let mut sigint_unit_ids_by_orbit_unit =
+        HashMap::<Uuid, HashSet<i64>>::new();
+    for link in links {
+        sigint_unit_ids_by_orbit_unit
+            .entry(link.orbit_unit_id)
+            .or_default()
+            .insert(link.sigint_unit_id);
+    }
+    let duplicate_sigint_unit_ids = sigint_unit_ids_by_orbit_unit
+        .into_values()
+        .filter(|sigint_unit_ids| sigint_unit_ids.len() > 1)
+        .flatten()
+        .collect::<HashSet<_>>();
+    if !duplicate_sigint_unit_ids.is_empty() {
+        sigint_unit::Entity::update_many()
+            .col_expr(
+                sigint_unit::Column::IsDeduplicateCandidate,
+                sea_orm::sea_query::Expr::value(true),
+            )
+            .filter(
+                Condition::any()
+                    .add(sigint_unit::Column::IsDeduplicateCandidate.ne(true))
+                    .add(sigint_unit::Column::IsDeduplicateCandidate.is_null()),
+            )
+            .filter(
+                sigint_unit::Column::Id
+                    .is_in(duplicate_sigint_unit_ids.iter().copied()),
+            )
+            .exec(db)
+            .await
+            .c(h!())?;
+    }
+    let mut non_duplicate_units = sigint_unit::Entity::update_many()
+        .col_expr(
+            sigint_unit::Column::IsDeduplicateCandidate,
+            sea_orm::sea_query::Expr::value(false),
+        )
+        .filter(
+            Condition::any()
+                .add(sigint_unit::Column::IsDeduplicateCandidate.ne(false))
+                .add(sigint_unit::Column::IsDeduplicateCandidate.is_null()),
+        );
+    if !duplicate_sigint_unit_ids.is_empty() {
+        non_duplicate_units = non_duplicate_units.filter(
+            sigint_unit::Column::Id
+                .is_not_in(duplicate_sigint_unit_ids.iter().copied()),
+        );
+    }
+    non_duplicate_units.exec(db).await.c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn reevaluate_sigint_unit_deduplicate_candidate<C>(
+    db: &C,
+    sigint_unit_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    sigint_unit::Entity::update_many()
+        .col_expr(
+            sigint_unit::Column::IsDeduplicateCandidate,
+            sea_orm::sea_query::Expr::value(Option::<bool>::None),
+        )
+        .filter(sigint_unit::Column::Id.eq(sigint_unit_id))
+        .exec(db)
+        .await
+        .c(h!())?;
+    reconcile_sigint_unit_deduplicate_candidates(db).await
+}
 
 #[derive(Debug, Clone)]
 pub struct OrbitMatchCandidate {
@@ -371,7 +495,7 @@ async fn connect_database(
     ))
 }
 
-async fn acquire_import_lock(
+pub(crate) async fn acquire_import_lock(
     db: &sea_orm::DatabaseConnection,
 ) -> anyhow::Result<DatabaseTransaction> {
     log::info!("waiting for the ORBIT import advisory lock");
@@ -556,6 +680,7 @@ mod tests {
             comment: String::new(),
             sigint_origin_id: None,
             original_id: None,
+            is_deduplicate_candidate: None,
         }
     }
 }

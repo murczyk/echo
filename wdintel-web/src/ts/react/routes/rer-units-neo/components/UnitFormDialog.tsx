@@ -1,7 +1,7 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import LinkIcon from '@mui/icons-material/Link';
 import {
-  Autocomplete,
   Button,
   CircularProgress,
   Dialog,
@@ -10,6 +10,7 @@ import {
   DialogTitle,
   FormControlLabel,
   Link,
+  MenuItem,
   Stack,
   Switch,
   Table,
@@ -38,6 +39,7 @@ import {
   uniqueTrimmed,
 } from '../helpers';
 import type { UnitForm } from '../helpers';
+import { AutoNetworkFields } from './AutoNetworkFields';
 
 export type UnitFormSubmit = {
   unit: CreateUnitReq;
@@ -60,9 +62,11 @@ type Props = {
   orbitUnits: OrbitUnitDetails[];
   orbitLinksLoading: boolean;
   orbitLinksError: string | null;
+  canLinkOrbitUnit: boolean;
   unlinkingOrbitUnitId: string | null;
   onClose: () => void;
   onSubmit: (value: UnitFormSubmit) => void;
+  onLinkOrbitUnit: () => void;
   onUnlinkOrbitUnit: (orbitUnit: OrbitUnitDetails) => void;
 };
 
@@ -138,10 +142,12 @@ function DuplicateHint({ units, form }: { units: Unit[]; form: UnitForm }) {
 
 function UnitDetailsFields({
   form,
+  editing,
   disabled,
   onChange,
 }: {
   form: UnitForm;
+  editing: boolean;
   disabled: boolean;
   onChange: (value: UnitForm) => void;
 }) {
@@ -184,92 +190,29 @@ function UnitDetailsFields({
           }
           label="Активний підрозділ"
         />
-      </div>
-    </>
-  );
-}
-
-function NetworkFields({
-  form,
-  skipNetworkCreation,
-  locations,
-  unitMask,
-  disabled,
-  onSkipNetworkCreationChange,
-  onLocationsChange,
-  onUnitMaskChange,
-}: {
-  form: UnitForm;
-  skipNetworkCreation: boolean;
-  locations: string[];
-  unitMask: string[];
-  disabled: boolean;
-  onSkipNetworkCreationChange: (value: boolean) => void;
-  onLocationsChange: (value: string[]) => void;
-  onUnitMaskChange: (value: string[]) => void;
-}) {
-  const fieldsDisabled = disabled || skipNetworkCreation;
-
-  return (
-    <>
-      <TextField label="Підрозділ" value={unitName(form) || 'Без назви'} disabled fullWidth />
-      <PowerAlert severity="info" autoHideDuration={null}>
-        Разом з підрозділом буде створена SIGINT мережа, яку можна редагувати у База Даних — Мережі.
-      </PowerAlert>
-      <FormControlLabel
-        control={
-          <Switch
-            checked={skipNetworkCreation}
-            onChange={(event) => onSkipNetworkCreationChange(event.target.checked)}
+        {editing ? (
+          <TextField
+            select
+            label="Можливо дублікат"
+            value={
+              form.isDeduplicateCandidate === null ? 'unset' : String(form.isDeduplicateCandidate)
+            }
+            onChange={(event) =>
+              onChange({
+                ...form,
+                isDeduplicateCandidate:
+                  event.target.value === 'unset' ? null : event.target.value === 'true',
+              })
+            }
             disabled={disabled}
-          />
-        }
-        label="Пропустити створення мережі"
-      />
-      <Typography variant="body2" color="text.secondary">
-        Без мережі вхідні повідомлення не будуть автоматично зіставлятися з цим підрозділом.
-      </Typography>
-      <TextField
-        label="Назва майбутньої мережі"
-        value={`р/м 💻 ${unitName(form) || 'Без назви'}`}
-        disabled
-        fullWidth
-      />
-      <Autocomplete
-        multiple
-        freeSolo
-        options={[]}
-        value={locations}
-        onChange={(_, value) => onLocationsChange(value)}
-        disabled={fieldsDisabled}
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            label="Локації"
-            placeholder="Введіть локацію та натисніть Enter"
-            required={!skipNetworkCreation}
-          />
-        )}
-      />
-      <Typography variant="body2" color="text.secondary">
-        Якщо текст сигналу містить одну з цих назв, повідомлення буде позначено як повідомлення від
-        цього підрозділу.
-      </Typography>
-      <Autocomplete
-        multiple
-        freeSolo
-        options={[]}
-        value={unitMask}
-        onChange={(_, value) => onUnitMaskChange(value)}
-        disabled={fieldsDisabled}
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            label="Маски підрозділу"
-            placeholder="Введіть маску та натисніть Enter"
-          />
-        )}
-      />
+            fullWidth
+          >
+            <MenuItem value="unset">Не визначено</MenuItem>
+            <MenuItem value="true">Так</MenuItem>
+            <MenuItem value="false">Ні</MenuItem>
+          </TextField>
+        ) : null}
+      </div>
     </>
   );
 }
@@ -287,20 +230,36 @@ function OrbitUnitLinks({
   orbitUnits,
   loading,
   error,
+  canLinkOrbitUnit,
   unlinkingOrbitUnitId,
+  onLink,
   onUnlink,
 }: {
   orbitUnits: OrbitUnitDetails[];
   loading: boolean;
   error: string | null;
+  canLinkOrbitUnit: boolean;
   unlinkingOrbitUnitId: string | null;
+  onLink: () => void;
   onUnlink: (orbitUnit: OrbitUnitDetails) => void;
 }) {
-  if (!loading && error === null && orbitUnits.length === 0) return null;
+  if (!loading && error === null && orbitUnits.length === 0 && !canLinkOrbitUnit) return null;
 
   return (
     <Stack spacing={1.5}>
-      <Typography variant="h6">Прив’язані Orbit підрозділи</Typography>
+      <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">
+        <Typography variant="h6">Прив’язані Orbit підрозділи</Typography>
+        {canLinkOrbitUnit ? (
+          <Button
+            variant="outlined"
+            startIcon={<LinkIcon />}
+            disabled={loading || unlinkingOrbitUnitId !== null}
+            onClick={onLink}
+          >
+            Прив’язати
+          </Button>
+        ) : null}
+      </Stack>
       {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
       {loading ? <CircularProgress size={24} /> : null}
       {orbitUnits.map((orbitUnit) => (
@@ -358,9 +317,11 @@ export function UnitFormDialog({
   orbitUnits,
   orbitLinksLoading,
   orbitLinksError,
+  canLinkOrbitUnit,
   unlinkingOrbitUnitId,
   onClose,
   onSubmit,
+  onLinkOrbitUnit,
   onUnlinkOrbitUnit,
 }: Props) {
   const [form, setForm] = useState<UnitForm>(EMPTY_UNIT_FORM);
@@ -421,9 +382,10 @@ export function UnitFormDialog({
       <DialogContent>
         <Stack spacing={3} sx={{ pt: 1 }}>
           {networkStep ? (
-            <NetworkFields
-              form={form}
+            <AutoNetworkFields
+              unitName={unitName(form)}
               skipNetworkCreation={skipNetworkCreation}
+              allowSkip
               locations={locations}
               unitMask={unitMask}
               disabled={submitting}
@@ -433,13 +395,20 @@ export function UnitFormDialog({
             />
           ) : (
             <>
-              <UnitDetailsFields form={form} disabled={submitting} onChange={setForm} />
+              <UnitDetailsFields
+                form={form}
+                editing={editing}
+                disabled={submitting}
+                onChange={setForm}
+              />
               {editing ? (
                 <OrbitUnitLinks
                   orbitUnits={orbitUnits}
                   loading={orbitLinksLoading}
                   error={orbitLinksError}
+                  canLinkOrbitUnit={canLinkOrbitUnit}
                   unlinkingOrbitUnitId={unlinkingOrbitUnitId}
+                  onLink={onLinkOrbitUnit}
                   onUnlink={onUnlinkOrbitUnit}
                 />
               ) : (

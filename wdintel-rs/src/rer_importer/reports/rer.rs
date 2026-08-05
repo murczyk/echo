@@ -1535,6 +1535,7 @@ mod tests {
             battalion: battalion.to_string(),
             sigint_origin_id: None,
             original_id: None,
+            is_deduplicate_candidate: None,
         }
     }
 

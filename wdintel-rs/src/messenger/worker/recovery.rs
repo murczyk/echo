@@ -2894,6 +2894,7 @@ mod tests {
             enable_audio_transcription: Set(false),
             show_classic_duty: Set(true),
             show_classic_analysis: Set(true),
+            hide_orbit_data: Set(false),
         }
         .insert(dbx)
         .await
