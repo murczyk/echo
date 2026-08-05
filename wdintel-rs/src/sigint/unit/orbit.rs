@@ -7,7 +7,7 @@ use super::types::{
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-use crate::types::{Env, Mode, ShortContext};
+use crate::types::{warn, Env, Mode, ShortContext};
 use crate::users::{ensure_rer_role, has_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::{Data, Json};
@@ -405,8 +405,21 @@ pub(super) async fn import_unlinked_orbit_units(
         if linked_orbit_unit_ids.contains(&orbit_unit.unit_id) {
             continue;
         }
-        let unit_req =
-            create_unit_req_from_orbit(&transaction, orbit_unit, false).await?;
+        let unit_req = match create_unit_req_from_orbit(
+            &transaction,
+            orbit_unit,
+            false,
+        )
+        .await
+        {
+            Ok(unit_req) => unit_req,
+            Err(err @ (AppError::BL { .. } | AppError::NotFound)) => {
+                let orbit_unit_id = orbit_unit.unit_id;
+                warn!("Skipping unsupported ORBIT unit {orbit_unit_id}: {err}");
+                continue;
+            }
+            Err(err) => return Err(err),
+        };
         let unit =
             super::insert_unit_with_changelog(&transaction, login, &unit_req)
                 .await

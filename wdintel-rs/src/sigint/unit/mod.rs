@@ -1955,6 +1955,53 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn oneoff_skips_unsupported_orbit_units_and_imports_later_units() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let login_id = test_login_id(&env).await;
+        let unsupported_unit_id = uuid::Uuid::from_u128(1);
+        orbit_unit::ActiveModel {
+            unit_id: Set(unsupported_unit_id),
+            unit_name: Set(Some("Unsupported unit".to_string())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
+
+        let imported = orbit::import_unlinked_orbit_units(&env.dbx, &login_id)
+            .await
+            .unwrap();
+
+        assert_eq!(imported, orbit_fixture.unit_ids.len());
+        assert!(orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .eq(unsupported_unit_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            orbit_unit_sigint_unit::Entity::find()
+                .filter(
+                    orbit_unit_sigint_unit::Column::OrbitUnitId
+                        .is_in(orbit_fixture.unit_ids),
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            imported as u64
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn oneoff_activates_linked_orbit_ancestors_in_both_hierarchies() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
