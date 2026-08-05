@@ -13,7 +13,6 @@ use crate::new_pg_pool_from_config;
 use crate::sigint::aor::{load_default_aor, render_aor};
 use crate::types::AppError;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use echo_im::entities::sea_orm_active_enums::*;
 use echo_im::os_specific;
 use echo_im::types::MessageSource;
@@ -37,9 +36,9 @@ pub async fn is_account_linked(
         );
         return AccountSyncResult::default();
     };
-    let source = if datasource.messenger.eq("signal") {
+    let source = if datasource.messenger == "signal" {
         MessageSource::Signal
-    } else if datasource.messenger.eq("whatsapp") {
+    } else if datasource.messenger == "whatsapp" {
         MessageSource::Whatsapp
     } else {
         error!(
@@ -180,12 +179,12 @@ pub async fn link_account(
         .filter(|a| {
             a.system_service_name
                 .clone()
-                .map(|s| s.eq(system_service_name))
+                .map(|s| s == system_service_name)
                 .is_some()
         })
-        .filter(|a| a.phone_number.eq(phone_number))
-        .filter(|a| a.phone_number.eq(phone_number))
-        .find(|a| a.messenger.eq(&src_name));
+        .filter(|a| a.phone_number == phone_number)
+        .filter(|a| a.phone_number == phone_number)
+        .find(|a| a.messenger == src_name);
 
     if let Some(acc) = existing_account {
         let msg = format!("Номером телефону {phone_number} вже прив'язано");
@@ -421,7 +420,7 @@ async fn lock_system_service_name(
     system_service_name: &str,
     txn: &DatabaseTransaction,
 ) -> Result<(), AppError> {
-    txn.query_one(Statement::from_sql_and_values(
+    txn.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "select pg_advisory_xact_lock(hashtextextended($1, 0))",
         [system_service_name.to_string().into()],
@@ -518,7 +517,7 @@ pub async fn get_qr_code(
         .c(h!())?
         .into_iter()
         .filter(|a| a.system_service_name.is_some())
-        .find(|a| a.id.eq(&account_id));
+        .find(|a| a.id == account_id);
 
     let account = match m_account {
         Some(account) => account,
@@ -684,7 +683,7 @@ where
             (
                 a.echo_phone_number.c(h!())?,
                 false,
-                a.source.c(h!())?.into_value().to_string(),
+                a.source.c(h!())?.into_value().value.into_owned(),
             )
         } else {
             let Some(phone) = a.datasource_phone_number else {
@@ -710,7 +709,7 @@ where
         datasources.push(EchoAccountF1 {
             id: a.id,
             area_of_responsibility,
-            status: a.status.into_value().to_string(),
+            status: a.status.into_value().value.into_owned(),
             created_at: a.created_at.and_utc().timestamp_millis(),
             client_id: a.client_id,
             display_name: a.display_name,
@@ -758,7 +757,7 @@ where
             datasources.push(EchoAccountF1 {
                 id: ods.id,
                 area_of_responsibility: aor,
-                status: ods.status.into_value().to_string().to_string(),
+                status: ods.status.into_value().value.into_owned(),
                 created_at: ods.created_at.and_utc().timestamp_millis(),
                 client_id: None,
                 display_name: ods.display_name,
@@ -1092,12 +1091,18 @@ pub async fn sync_signal_once(client_name: String, config: Config) {
     let db = match new_pg_pool_from_config(&config).await.c(h!()) {
         Ok(db) => db,
         Err(e) => {
-            error!("failed to connect to db for initial signal sync, client '{client_name}': {:#?}", e);
+            error!(
+                "failed to connect to db for initial signal sync, client '{client_name}': {:#?}",
+                e
+            );
             return;
         }
     };
     if let Err(e) = signal_worker_tick_once(&client_name, &db).await {
-        error!("failed to perform initial signal sync, client '{client_name}': {:#?}", e);
+        error!(
+            "failed to perform initial signal sync, client '{client_name}': {:#?}",
+            e
+        );
     }
 }
 

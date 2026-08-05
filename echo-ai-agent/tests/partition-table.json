@@ -1,0 +1,23 @@
+{
+  "partitiontable": {
+    "label": "dos",
+    "device": "/dev/sda",
+    "unit": "sectors",
+    "sectorsize": 512,
+    "partitions": [
+      {
+        "node": "/dev/sda1",
+        "start": 2048,
+        "size": 124997632,
+        "type": "83",
+        "bootable": true
+      },
+      {
+        "node": "/dev/sda2",
+        "start": 124999680,
+        "size": 1057794048,
+        "type": "8e"
+      }
+    ]
+  }
+}

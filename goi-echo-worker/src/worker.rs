@@ -7,7 +7,7 @@ use goi_echo_worker::knowledge::{
 use goi_echo_worker::row::{read_association_rows, AssociationRow};
 use goi_echo_worker::xlsx::empty_xlsx_buffer;
 use sea_orm::sea_query::{
-    Alias, BinOper, Condition, Expr, OnConflict, SimpleExpr,
+    Alias, BinOper, Condition, Expr, ExprTrait, OnConflict, SimpleExpr,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
@@ -272,12 +272,7 @@ async fn insert_association_model_batch(
     models_batch: Vec<association::ActiveModel>,
 ) -> Result<()> {
     let result = association::Entity::insert_many(models_batch)
-        .on_conflict(
-            OnConflict::column(association::Column::DedupeKey)
-                .do_nothing()
-                .to_owned(),
-        )
-        .do_nothing()
+        .on_conflict_do_nothing_on([association::Column::DedupeKey])
         .exec(db)
         .await
         .context("inserting association rows")?;
@@ -333,7 +328,6 @@ async fn sync_knowledge_rows(
                 .action_cond_where(knowledge_upsert_has_changes())
                 .to_owned(),
         )
-        .on_empty_do_nothing()
         .exec(&tx)
         .await
         .context("upserting knowledge rows")?;
@@ -423,14 +417,16 @@ fn knowledge_upsert_has_changes() -> Condition {
 }
 
 fn knowledge_row_contents_are_distinct() -> SimpleExpr {
-    knowledge_row_without_layout(
-        Expr::col((knowledge::Entity, knowledge::Column::Row)).into(),
-    )
+    knowledge_row_without_layout(Expr::col((
+        knowledge::Entity,
+        knowledge::Column::Row,
+    )))
     .binary(
         BinOper::Custom("IS DISTINCT FROM"),
-        knowledge_row_without_layout(
-            Expr::col((Alias::new("excluded"), knowledge::Column::Row)).into(),
-        ),
+        knowledge_row_without_layout(Expr::col((
+            Alias::new("excluded"),
+            knowledge::Column::Row,
+        ))),
     )
 }
 

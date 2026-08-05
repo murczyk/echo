@@ -10,8 +10,8 @@ goi_b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
 swapp_alt_app_dir := "/etc/swapp-alt"
-goi_version := "1.5.5"
-goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 goi-prod-05 goi-prod-06 goi-prod-07 goi-prod-08 goi-prod-10 goi-tsur goi-prod-210oshp goi-prod-225oshp goi-159ombr goi-129ovmbr goi-22ombr goi-prod-gorilla goi-25opdbr goi-istar goi-32ombr goi-80odshbr goi-144ombr goi-475oshb goi-152orub goi-154ombr goi-65ombr goi-1kngu"
+goi_version := "1.5.7"
+goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 goi-prod-05 goi-prod-06 goi-prod-07 goi-prod-08 goi-prod-10 goi-tsur goi-prod-210oshp goi-prod-225oshp goi-159ombr goi-129ovmbr goi-22ombr goi-prod-gorilla goi-25opdbr goi-istar goi-32ombr goi-80odshbr goi-144ombr goi-475oshb goi-152orub goi-154ombr goi-65ombr goi-1kngu goi-41ombr goi-41pbps"
 
 default:
     @just --list

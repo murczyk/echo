@@ -36,6 +36,7 @@ type Props = {
   showInvestigatingFilter?: boolean;
   isInvestigating?: boolean;
   selectedUnitFilter?: SelectedSidebarUnitFilter;
+  countLabel?: string;
 };
 
 type TreeLeafNode = {
@@ -177,14 +178,19 @@ function collectExpansionPathToSelectedFilter(
   return path ?? [];
 }
 
+function isSelectedLeafNode(node: TreeLeafNode, selectedUnitFilter?: SelectedSidebarUnitFilter) {
+  if (selectedUnitFilter?.kind !== 'leaf') return false;
+  if (selectedUnitFilter.unitId !== undefined) return selectedUnitFilter.unitId === node.unitId;
+  return selectedUnitFilter.unitName === node.unitName;
+}
+
 function collectExpansionPathToSelectedFilterInner(
   nodes: TreeNode[],
   selectedUnitFilter: SelectedSidebarUnitFilter,
 ): string[] | null {
   for (const node of nodes) {
     if (node.kind === 'leaf') {
-      if (selectedUnitFilter.kind === 'leaf' && node.unitName === selectedUnitFilter.unitName)
-        return [];
+      if (isSelectedLeafNode(node, selectedUnitFilter)) return [];
       continue;
     }
 
@@ -211,6 +217,7 @@ type TreeItemProps = {
   onToggle: (nodeId: string) => void;
   onPickUnitFilter: (filter: SelectedSidebarUnitFilter) => void;
   selectedUnitFilter?: SelectedSidebarUnitFilter;
+  countLabel: string;
 };
 
 function UnitTreeItem({
@@ -220,6 +227,7 @@ function UnitTreeItem({
   onToggle,
   onPickUnitFilter,
   selectedUnitFilter,
+  countLabel,
 }: TreeItemProps) {
   const paddingLeft = 1 + depth * 2;
 
@@ -227,13 +235,16 @@ function UnitTreeItem({
     return (
       <ListItemButton
         onClick={() =>
-          onPickUnitFilter({ kind: 'leaf', label: node.unitName, unitName: node.unitName })
+          onPickUnitFilter({
+            kind: 'leaf',
+            label: node.unitName,
+            unitName: node.unitName,
+            unitId: node.unitId,
+          })
         }
-        selected={
-          selectedUnitFilter?.kind === 'leaf' && selectedUnitFilter.unitName === node.unitName
-        }
+        selected={isSelectedLeafNode(node, selectedUnitFilter)}
         sx={{ pl: paddingLeft + 5, pr: 1.5 }}
-        aria-label={`Фільтрувати за підрозділом ${node.unitName}, позивних ${node.count}`}
+        aria-label={`Фільтрувати за підрозділом ${node.unitName}, ${countLabel.toLocaleLowerCase()} ${node.count}`}
       >
         <ListItemText
           primary={node.unitName}
@@ -282,7 +293,7 @@ function UnitTreeItem({
           }
           selected={isSelected}
           sx={{ minWidth: 0, flex: 1, pr: 1.5 }}
-          aria-label={`Фільтрувати за гілкою ${node.label}, позивних ${node.count}`}
+          aria-label={`Фільтрувати за гілкою ${node.label}, ${countLabel.toLocaleLowerCase()} ${node.count}`}
         >
           <ListItemText
             primary={node.label}
@@ -311,6 +322,7 @@ function UnitTreeItem({
               onToggle={onToggle}
               onPickUnitFilter={onPickUnitFilter}
               selectedUnitFilter={selectedUnitFilter}
+              countLabel={countLabel}
             />
           ))}
         </List>
@@ -344,6 +356,7 @@ export function UnitStatsSidebar({
   showInvestigatingFilter = false,
   isInvestigating = false,
   selectedUnitFilter,
+  countLabel = 'Позивних',
 }: Props) {
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearchInput = useDebouncedValue(searchInput, SIDEBAR_FILTER_DEBOUNCE_MS);
@@ -538,8 +551,8 @@ export function UnitStatsSidebar({
             size="small"
             label={
               normalizedSearchQuery === ''
-                ? `Позивних: ${total}`
-                : `Позивних: ${total} з ${totalOverall}`
+                ? `${countLabel}: ${total}`
+                : `${countLabel}: ${total} з ${totalOverall}`
             }
             interactive={false}
             unselectedOpacity={1}
@@ -592,6 +605,7 @@ export function UnitStatsSidebar({
                 onToggle={onToggle}
                 onPickUnitFilter={onPickUnitFilter}
                 selectedUnitFilter={selectedUnitFilter}
+                countLabel={countLabel}
               />
             ))}
             {stats.length === 0 ? (

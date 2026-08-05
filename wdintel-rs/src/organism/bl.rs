@@ -132,7 +132,7 @@ pub(crate) async fn load_organism_with_children(
             let Some(actual_parent_id) = &o.parent_id else {
                 continue;
             };
-            if parent_id.eq(actual_parent_id) {
+            if parent_id == *actual_parent_id {
                 result.push(o.id);
                 for rec in collect_children(organisms, o.id) {
                     result.push(rec);

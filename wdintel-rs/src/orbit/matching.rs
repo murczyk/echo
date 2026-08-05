@@ -1,16 +1,8 @@
 use crate::config::ORBIT_MATCHING_SIGINT_NAME_BLACKLIST;
 use crate::entities::sigint_unit;
 use crate::orbit::types::SourceUnit;
+use crate::orbit::{echo_echelon, EchoEchelon};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum EchoEchelon {
-    Company,
-    Battalion,
-    Regiment,
-    Division,
-    Army,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct MatchScore {
@@ -428,7 +420,7 @@ fn comparable_path(unit: &SourceUnit) -> anyhow::Result<ComparablePath> {
         else {
             continue;
         };
-        let Some(echelon) = map_echelon(key) else {
+        let Some(echelon) = echo_echelon(key) else {
             continue;
         };
         let names = result.entry(echelon).or_default();
@@ -442,7 +434,7 @@ fn comparable_path(unit: &SourceUnit) -> anyhow::Result<ComparablePath> {
             .unit_echelon
             .as_ref()
             .and_then(|value| value.key.as_str())
-            .and_then(map_echelon),
+            .and_then(echo_echelon),
     })
 }
 
@@ -487,29 +479,6 @@ fn parent_signature(unit: &sigint_unit::Model) -> Vec<(EchoEchelon, String)> {
         (echelon, normalize_sigint_name_for_echelon(echelon, name))
     })
     .collect()
-}
-
-impl EchoEchelon {
-    fn index(self) -> usize {
-        match self {
-            Self::Company => 0,
-            Self::Battalion => 1,
-            Self::Regiment => 2,
-            Self::Division => 3,
-            Self::Army => 4,
-        }
-    }
-}
-
-fn map_echelon(key: &str) -> Option<EchoEchelon> {
-    match key {
-        "platoon" | "company" => Some(EchoEchelon::Company),
-        "battalion" => Some(EchoEchelon::Battalion),
-        "regiment" | "brigade" => Some(EchoEchelon::Regiment),
-        "division" => Some(EchoEchelon::Division),
-        "corps" | "fieldArmy" => Some(EchoEchelon::Army),
-        _ => None,
-    }
 }
 
 fn split_path(value: &str) -> Vec<String> {
@@ -1127,8 +1096,10 @@ mod tests {
             created_by_login_id: Uuid::new_v4(),
             name: String::new(),
             comment: String::new(),
+            search_tsv: None,
             sigint_origin_id: None,
             original_id: None,
+            is_deduplicate_candidate: None,
         }
     }
 }

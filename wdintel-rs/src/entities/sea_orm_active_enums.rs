@@ -13,6 +13,28 @@ use serde::{Deserialize, Serialize};
     Serialize,
     Deserialize,
 )]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
+    enum_name = "sigint_inbox_item_callsign_source"
+)]
+pub enum SigintInboxItemCallsignSource {
+    #[sea_orm(string_value = "primary")]
+    Primary,
+    #[sea_orm(string_value = "alg2")]
+    Alg2,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "account_status")]
 pub enum AccountStatus {
     #[sea_orm(string_value = "ready")]

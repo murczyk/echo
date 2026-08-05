@@ -13,6 +13,7 @@ import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (on, onClick)
 import Json.Decode as Decode
+import Json.Encode as Encode
 import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
@@ -58,6 +59,7 @@ type alias Model =
     , downloadInProgress : Maybe Int
     , orbitLinkDialogOpen : Bool
     , orbitUnitUnlinking : Maybe String
+    , deviceNetworkDialogOpen : Bool
     }
 
 
@@ -90,6 +92,7 @@ init _ route _ =
       , downloadInProgress = Nothing
       , orbitLinkDialogOpen = False
       , orbitUnitUnlinking = Nothing
+      , deviceNetworkDialogOpen = False
       }
     , E.batch initialEffects
     )
@@ -124,6 +127,9 @@ type Msg
     | OrbitUnitLinked
     | UnlinkOrbitUnit B.OrbitUnitDetails
     | OrbitUnitUnlinked String (Result ApiError ())
+    | OpenDeviceNetworkDialog
+    | CloseDeviceNetworkDialog
+    | DeviceNetworkCreated
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -161,6 +167,15 @@ update msg model =
 
         OrbitUnitUnlinked orbitUnitId result ->
             orbitUnitUnlinked orbitUnitId result model
+
+        OpenDeviceNetworkDialog ->
+            ( { model | deviceNetworkDialogOpen = True }, E.none )
+
+        CloseDeviceNetworkDialog ->
+            ( { model | deviceNetworkDialogOpen = False }, E.none )
+
+        DeviceNetworkCreated ->
+            deviceNetworkCreated model
 
 
 updateDetails : Result ApiError B.UnitDetailsRsp -> Model -> ( Model, Effect Msg )
@@ -314,6 +329,21 @@ orbitUnitUnlinked _ result model =
                     )
 
 
+deviceNetworkCreated : Model -> ( Model, Effect Msg )
+deviceNetworkCreated model =
+    case model.unitId of
+        Nothing ->
+            ( { model | deviceNetworkDialogOpen = False }, E.none )
+
+        Just unitId ->
+            ( { model
+                | deviceNetworkDialogOpen = False
+                , detailsLoading = True
+              }
+            , loadDetails unitId
+            )
+
+
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
@@ -376,7 +406,9 @@ detailsErrorView loadFailed =
 detailsView : Auth.User -> Shared.Model -> Model -> B.UnitDetailsRsp -> Html Msg
 detailsView user shared model details =
     div [ class "flex flex-col gap-4" ]
-        [ detailsHeader details
+        [ detailsHeader model details
+        , deviceNetworkDialog model details
+        , orbitLinkDialog model
         , tabsView model.activeTab
         , case model.activeTab of
             Overview ->
@@ -384,28 +416,6 @@ detailsView user shared model details =
 
             Files ->
                 filesTab user shared model details.attachments
-        , orbitLinkDialog model
-        ]
-
-
-detailsHeader : B.UnitDetailsRsp -> Html Msg
-detailsHeader details =
-    div
-        [ class "d-flex align-items-center justify-content-between gap-3 flex-wrap" ]
-        [ div [ class "d-flex align-items-center gap-3 flex-wrap" ]
-            [ a
-                [ class "btn btn-outline-secondary btn-sm"
-                , Route.href
-                    { path = Route.Path.RerUnits
-                    , query = Dict.empty
-                    , hash = Nothing
-                    }
-                ]
-                [ i [ class "bi bi-arrow-left me-2" ] []
-                , text "До підрозділів"
-                ]
-            , h1 [ class "mb-0" ] [ text details.unit.name ]
-            ]
         ]
 
 
@@ -422,6 +432,105 @@ orbitLinkDialog model =
 
         _ ->
             text ""
+
+
+detailsHeader : Model -> B.UnitDetailsRsp -> Html Msg
+detailsHeader model details =
+    div
+        [ class "d-flex align-items-center justify-content-between gap-3 flex-wrap" ]
+        [ div [ class "d-flex align-items-center gap-3 flex-wrap" ]
+            [ a
+                [ class "btn btn-outline-secondary btn-sm"
+                , Route.href
+                    { path = Route.Path.RerUnits
+                    , query = Dict.empty
+                    , hash = Nothing
+                    }
+                ]
+                [ i [ class "bi bi-arrow-left me-2" ] []
+                , text "До підрозділів"
+                ]
+            , div [ class "d-flex align-items-center gap-1" ]
+                [ h1 [ class "mb-0" ] [ text details.unit.name ]
+                , if details.canCreateDeviceNetwork then
+                    deviceNetworkActions model.deviceNetworkDialogOpen
+
+                  else
+                    text ""
+                ]
+            ]
+        ]
+
+
+deviceNetworkActions : Bool -> Html Msg
+deviceNetworkActions dialogOpen =
+    div [ class "dropdown" ]
+        [ button
+            [ class "btn btn-sm btn-link text-secondary p-1"
+            , type_ "button"
+            , disabled dialogOpen
+            , attribute "data-bs-toggle" "dropdown"
+            , attribute "aria-expanded" "false"
+            , attribute "aria-label" "Дії з підрозділом"
+            ]
+            [ i [ class "bi bi-three-dots-vertical" ] [] ]
+        , ul [ class "dropdown-menu dropdown-menu-end" ]
+            [ li []
+                [ button
+                    [ class "dropdown-item d-flex align-items-center gap-2"
+                    , type_ "button"
+                    , onClick OpenDeviceNetworkDialog
+                    ]
+                    [ i [ class "bi bi-router" ] []
+                    , text "Додати мережу пристроя"
+                    ]
+                ]
+            ]
+        ]
+
+
+deviceNetworkDialog : Model -> B.UnitDetailsRsp -> Html Msg
+deviceNetworkDialog model details =
+    if model.deviceNetworkDialogOpen then
+        node "device-network-create-dialog"
+            [ attribute "data-unit-id" (String.fromInt details.unit.id)
+            , attribute "data-unit-name" details.unit.name
+            , attribute "data-unit-mask"
+                (Encode.encode 0 <|
+                    Encode.list Encode.string (defaultUnitMasks details.unit)
+                )
+            , on "device-network-create-close" (Decode.succeed CloseDeviceNetworkDialog)
+            , on "device-network-created" (Decode.succeed DeviceNetworkCreated)
+            ]
+            []
+
+    else
+        text ""
+
+
+defaultUnitMasks : B.Unit -> List String
+defaultUnitMasks unit =
+    let
+        parts =
+            [ unit.company
+            , unit.battalion
+            , unit.regiment
+            , unit.division
+            , unit.army
+            ]
+                |> List.filter (not << String.isEmpty << String.trim)
+
+        forward =
+            String.join " " parts
+
+        backward =
+            String.join " " (List.reverse parts)
+    in
+    if forward == backward then
+        [ forward ]
+
+    else
+        [ forward, backward ]
 
 
 tabsView : Tab -> Html Msg
@@ -470,7 +579,7 @@ overviewTab user shared model details =
             else
                 List.map
                     (orbitDataCard
-                        (Core.Auth.hasRole "Orbit" user)
+                        (Core.Auth.hasRole "UnitsEditor" user)
                         shared
                         model.orbitUnitUnlinking
                     )

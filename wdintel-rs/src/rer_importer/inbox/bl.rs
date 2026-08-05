@@ -16,9 +16,7 @@ use crate::rer_importer::inbox::query::build_inbox_query;
 use crate::rer_importer::signals::*;
 use crate::storage::mk_media_url;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::string::*;
-use crate::utils::*;
 use actix_web::web::Data;
 use chrono::Utc;
 use geoconvert::{LatLon, Mgrs};
@@ -42,8 +40,6 @@ pub struct InboxMessageDesc {
     pub sender: Option<String>,
     pub freq: Option<String>,
     pub coords: Option<String>,
-    pub callsigns: Option<serde_json::Value>,
-    pub callsigns_alg2: Option<serde_json::Value>,
     pub callsign_tokens: Option<serde_json::Value>,
     pub signal_tokens: Option<serde_json::Value>,
     #[allow(dead_code)]
@@ -99,7 +95,7 @@ pub async fn get_inbox_map_items(
 
     let query_res: Vec<QueryResult> = env
         .dbx
-        .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
+        .query_all_raw(Statement::from_string(DatabaseBackend::Postgres, q))
         .await
         .context(h!())?;
     let mut result = vec![];
@@ -285,6 +281,10 @@ pub async fn aggregate_to_inbox_messages(
         crate::system_settings::sigint_comment_parsing_enabled(&env.dbx)
             .await
             .c(h!())?;
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(&env.dbx, &message_ids)
+            .await
+            .c(h!())?;
 
     for message in messages {
         // for message in messages {
@@ -321,10 +321,10 @@ pub async fn aggregate_to_inbox_messages(
         };
         let freq = message.freq.clone();
         let coords = message.coords.clone();
-        let callsigns = match message.callsigns.as_ref() {
-            Some(v) => serde_json::from_value(v.clone()).context(h!())?,
-            None => vec![],
-        };
+        let normalized_callsigns =
+            normalized_callsigns.remove(&message.id).unwrap_or_default();
+        let callsigns = normalized_callsigns.primary;
+        let callsigns_alg2 = normalized_callsigns.alg2;
         let group_entry = groups_map.get(&message.id).and_then(|entries| {
             entries.iter().min_by_key(|(entry, _)| entry.id).cloned()
         });
@@ -462,7 +462,7 @@ pub async fn aggregate_to_inbox_messages(
                     .map(|dg| dg.datasource_id),
                 location,
                 tags: inbox_tag_ids,
-                callsigns_alg2: from_m_val_vec(message.callsigns_alg2.clone())?,
+                callsigns_alg2,
                 network_ids,
                 network_name: message.network,
                 device_name: message.device_name,
@@ -1018,7 +1018,7 @@ pub async fn submit_upsert_inbox_item(
         vec![]
     };
     if let Some(c1) = &coords_s {
-        if !coords_vec.iter().any(|c| c.text.eq(&c1.text)) {
+        if !coords_vec.iter().any(|c| c.text == c1.text) {
             coords_vec.push(c1.clone())
         }
     }
@@ -1171,6 +1171,10 @@ pub async fn submit_upsert_inbox_item(
         .one(txn)
         .await
         .c(h!())?
+        .c(h!())?;
+    let callsigns = crate::inbox::callsigns::from_legacy(&new_item)?;
+    crate::inbox::callsigns::sync(txn, inbox_id, callsigns, *login)
+        .await
         .c(h!())?;
     crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
         vec![new_item],

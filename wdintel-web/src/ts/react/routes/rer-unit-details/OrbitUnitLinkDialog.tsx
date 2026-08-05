@@ -1,3 +1,4 @@
+import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import LinkIcon from '@mui/icons-material/Link';
 import SearchIcon from '@mui/icons-material/Search';
@@ -22,7 +23,7 @@ import {
 } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { OrbitUnitLinkCandidate } from '../../../../Bindings';
+import type { CreateUnitWithAutoNetworkRsp, OrbitUnitLinkCandidate } from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
 import {
   CUSTOM_STYLES,
@@ -40,7 +41,12 @@ import {
   useTableStateContext,
 } from '../../components/mui-customized/table/table-state-provider';
 import { HttpRequestError, isAbortError } from '../../services/api/client';
-import { getOrbitUnitLinkCandidates, linkOrbitUnit } from '../../services/api/units';
+import {
+  getOrbitUnitLinkCandidates,
+  importOrbitUnit,
+  linkOrbitUnit,
+  searchOrbitUnits,
+} from '../../services/api/units';
 
 const defaultMrtOptions = getDefaultMRTOptions<OrbitUnitLinkCandidate>();
 const SEARCH_DEBOUNCE_MS = 300;
@@ -72,14 +78,16 @@ function renderTextValue(value: unknown) {
   return text || '—';
 }
 
-function useOrbitUnitLinkColumns({
+function useOrbitUnitColumns({
+  importing,
   loading,
-  linkingUnitId,
-  onLink,
+  processingUnitId,
+  onAction,
 }: {
+  importing: boolean;
   loading: boolean;
-  linkingUnitId: string | null;
-  onLink: (unit: OrbitUnitLinkCandidate) => void;
+  processingUnitId: string | null;
+  onAction: (unit: OrbitUnitLinkCandidate) => void;
 }): MRT_ColumnDef<OrbitUnitLinkCandidate>[] {
   return useMemo(
     () => [
@@ -141,39 +149,49 @@ function useOrbitUnitLinkColumns({
           <Button
             size="small"
             variant="contained"
-            startIcon={<LinkIcon fontSize="small" />}
-            disabled={loading || linkingUnitId !== null}
-            onClick={() => onLink(row.original)}
+            startIcon={importing ? <AddIcon fontSize="small" /> : <LinkIcon fontSize="small" />}
+            disabled={loading || processingUnitId !== null}
+            onClick={() => onAction(row.original)}
             sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
           >
-            Прив'язати
+            {importing ? 'Імпортувати' : "Прив'язати"}
           </Button>
         ),
       },
     ],
-    [linkingUnitId, loading, onLink],
+    [importing, loading, onAction, processingUnitId],
   );
 }
 
-function OrbitUnitLinkDialogBody({
-  unitId,
-  onClose,
-  onLinked,
-}: {
-  unitId: number;
-  onClose: () => void;
-  onLinked: () => void;
-}) {
+type OrbitUnitDialogProps =
+  | {
+      mode: 'link';
+      unitId: number;
+      onClose: () => void;
+      onCompleted: () => void;
+    }
+  | {
+      mode: 'import';
+      onClose: () => void;
+      onCompleted: (response: CreateUnitWithAutoNetworkRsp) => void;
+    };
+
+function OrbitUnitDialogBody(props: OrbitUnitDialogProps) {
+  const { onClose } = props;
+  const importing = props.mode === 'import';
+  const unitId = props.mode === 'link' ? props.unitId : null;
   const tableStateContext = useTableStateContext();
-  const [advancedSearch, setAdvancedSearch] = useState(false);
+  const [advancedSearch, setAdvancedSearch] = useState(importing);
   const [search, setSearch] = useState('');
   const [units, setUnits] = useState<OrbitUnitLinkCandidate[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!importing);
   const [error, setError] = useState<string | null>(null);
-  const [linkingUnitId, setLinkingUnitId] = useState<string | null>(null);
+  const [processingUnitId, setProcessingUnitId] = useState<string | null>(null);
   const automaticRequestControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    if (unitId === null) return;
+    const linkUnitId = unitId;
     const controller = new AbortController();
     automaticRequestControllerRef.current = controller;
 
@@ -182,7 +200,7 @@ function OrbitUnitLinkDialogBody({
       setError(null);
       try {
         const nextUnits = await getOrbitUnitLinkCandidates(
-          { unitId, search: null },
+          { unitId: linkUnitId, search: null },
           { signal: controller.signal },
         );
         if (controller.signal.aborted) return;
@@ -223,10 +241,13 @@ function OrbitUnitLinkDialogBody({
       setLoading(true);
       setError(null);
       try {
-        const nextUnits = await getOrbitUnitLinkCandidates(
-          { unitId, search: trimmedSearch },
-          { signal: controller.signal },
-        );
+        const nextUnits =
+          unitId === null
+            ? await searchOrbitUnits({ search: trimmedSearch }, { signal: controller.signal })
+            : await getOrbitUnitLinkCandidates(
+                { unitId, search: trimmedSearch },
+                { signal: controller.signal },
+              );
         if (!controller.signal.aborted) setUnits(nextUnits);
       } catch (error) {
         if (!isAbortError(error)) setError(formatError(error));
@@ -241,23 +262,33 @@ function OrbitUnitLinkDialogBody({
     };
   }, [advancedSearch, search, unitId]);
 
-  const handleLink = useCallback(
+  const handleAction = useCallback(
     async (unit: OrbitUnitLinkCandidate) => {
-      setLinkingUnitId(unit.unitId);
+      setProcessingUnitId(unit.unitId);
       setError(null);
       try {
-        await linkOrbitUnit({ sigintUnitId: unitId, orbitUnitId: unit.unitId });
-        onLinked();
+        if (props.mode === 'import') {
+          const response = await importOrbitUnit({ orbitUnitId: unit.unitId });
+          props.onCompleted(response);
+        } else {
+          await linkOrbitUnit({ sigintUnitId: props.unitId, orbitUnitId: unit.unitId });
+          props.onCompleted();
+        }
       } catch (error) {
         setError(formatError(error));
       } finally {
-        setLinkingUnitId(null);
+        setProcessingUnitId(null);
       }
     },
-    [onLinked, unitId],
+    [props],
   );
 
-  const columns = useOrbitUnitLinkColumns({ loading, linkingUnitId, onLink: handleLink });
+  const columns = useOrbitUnitColumns({
+    importing,
+    loading,
+    processingUnitId,
+    onAction: handleAction,
+  });
   const table = useMaterialReactTable({
     ...defaultMrtOptions,
     columns,
@@ -328,19 +359,20 @@ function OrbitUnitLinkDialogBody({
       open
       fullWidth
       maxWidth="xl"
-      onClose={onClose}
+      onClose={processingUnitId === null ? onClose : undefined}
       PaperProps={{ sx: { height: 'min(760px, calc(100vh - 64px))' } }}
     >
       <DialogTitle sx={{ pr: 7 }}>
         <Stack direction="row" spacing={1.5} alignItems="center">
           <Box component="img" src="/img/delta-icon.webp" alt="" sx={{ width: 28, height: 28 }} />
           <Typography component="span" variant="h6">
-            Прив'язати Orbit підрозділ
+            {importing ? 'Пошук' : "Прив'язати Orbit підрозділ"}
           </Typography>
         </Stack>
         <IconButton
           aria-label="Закрити"
           onClick={onClose}
+          disabled={processingUnitId !== null}
           sx={{ position: 'absolute', right: 12, top: 12 }}
         >
           <CloseIcon />
@@ -359,6 +391,7 @@ function OrbitUnitLinkDialogBody({
             placeholder="Повна назва, приналежність або підпорядкування"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
+            disabled={processingUnitId !== null}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -394,25 +427,65 @@ function OrbitUnitLinkDialogBody({
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={onClose}>Закрити</Button>
+        <Button onClick={onClose} disabled={processingUnitId !== null}>
+          Закрити
+        </Button>
       </DialogActions>
     </Dialog>
   );
 }
 
-export function OrbitUnitLinkDialog(props: {
+function OrbitUnitDialog({
+  tableId,
+  ...props
+}: OrbitUnitDialogProps & {
+  tableId: string;
+}) {
+  return (
+    <TableStateProvider
+      tableId={tableId}
+      defaultColumnOrder={DEFAULT_COLUMN_ORDER}
+      defaultColumnVisibility={DEFAULT_COLUMN_VISIBILITY}
+      defaultEnableColumnOrdering={false}
+    >
+      <OrbitUnitDialogBody {...props} />
+    </TableStateProvider>
+  );
+}
+
+export function OrbitUnitLinkDialog({
+  unitId,
+  onClose,
+  onLinked,
+}: {
   unitId: number;
   onClose: () => void;
   onLinked: () => void;
 }) {
   return (
-    <TableStateProvider
+    <OrbitUnitDialog
+      mode="link"
       tableId="orbit-unit-link-candidates"
-      defaultColumnOrder={DEFAULT_COLUMN_ORDER}
-      defaultColumnVisibility={DEFAULT_COLUMN_VISIBILITY}
-      defaultEnableColumnOrdering={false}
-    >
-      <OrbitUnitLinkDialogBody {...props} />
-    </TableStateProvider>
+      unitId={unitId}
+      onClose={onClose}
+      onCompleted={onLinked}
+    />
+  );
+}
+
+export function OrbitUnitImportDialog({
+  onClose,
+  onImported,
+}: {
+  onClose: () => void;
+  onImported: (response: CreateUnitWithAutoNetworkRsp) => void;
+}) {
+  return (
+    <OrbitUnitDialog
+      mode="import"
+      tableId="orbit-unit-import-candidates"
+      onClose={onClose}
+      onCompleted={onImported}
+    />
   );
 }

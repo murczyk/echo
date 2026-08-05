@@ -749,7 +749,7 @@ fn try_discard_by_unit_name(
             continue;
         };
         for network_unit_name in units {
-            if network_unit_name.eq(message_unit_name)
+            if network_unit_name == message_unit_name
                 || is_parent_of(network_unit_name, message_unit_name)
                 || is_parent_of(message_unit_name, network_unit_name)
             {
@@ -1248,9 +1248,11 @@ mod tests {
             created_by_login_id: uuid::Uuid::nil(),
             name: name.to_string(),
             comment: String::new(),
+            search_tsv: None,
             battalion: String::new(),
             sigint_origin_id: None,
             original_id: None,
+            is_deduplicate_candidate: None,
         }
     }
 

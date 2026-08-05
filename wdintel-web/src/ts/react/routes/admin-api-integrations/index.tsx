@@ -1,21 +1,43 @@
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import {
   Autocomplete,
-  Card,
-  CardActions,
-  CardContent,
-  CircularProgress,
+  Box,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   FormControlLabel,
   Stack,
   Switch,
   TextField,
-  Typography,
 } from '@mui/material';
-import React from 'react';
+import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { useEffect, useMemo, useState } from 'react';
 
-import { ApiIntegration, Login, UpsertApiIntegrationReq } from '../../../../Bindings';
-import { PageHeader } from '../../components/PageHeader';
+import type { ApiIntegration, Login, UpsertApiIntegrationReq } from '../../../../Bindings';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
+import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
+import { PageErrorState } from '../../components/PageErrorState';
+import { PageLoadingState } from '../../components/PageLoadingState';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
+import {
+  CUSTOM_CELL_STYLES,
+  CUSTOM_STYLES,
+  getDefaultMrtContainerProps,
+  getDefaultMrtPaperProps,
+} from '../../components/mui-customized/table/custom-styles';
+import {
+  getDefaultMRTOptions,
+  renderColumnActionsMenuItems,
+} from '../../components/mui-customized/table/get-default-table-options';
+import {
+  TableStateProvider,
+  useTableStateContext,
+} from '../../components/mui-customized/table/table-state-provider';
 import {
   deleteApiIntegration,
   listApiIntegrations,
@@ -23,11 +45,6 @@ import {
   upsertApiIntegration,
 } from '../../services/api/api-integrations';
 import { listLogins } from '../../services/api/logins';
-
-type StatusMessage = {
-  kind: 'success' | 'error';
-  message: string;
-} | null;
 
 type ApiIntegrationForm = {
   id: number | null;
@@ -42,18 +59,46 @@ type ApiIntegrationForm = {
   syncEnabled: boolean;
 };
 
-const emptyForm: ApiIntegrationForm = {
-  id: null,
-  description: '',
-  apiUser: '',
-  hasIggyConnection: false,
-  iggyUrl: '',
-  iggyLogin: '',
-  iggyPassword: '',
-  iggyInboxTopic: '',
-  iggyAnalyticsTopic: '',
-  syncEnabled: false,
+type FormStatus = {
+  kind: 'success' | 'error';
+  message: string;
+} | null;
+
+const ROW_ACTIONS_COLUMN_SIZE = 96;
+const DEFAULT_COLUMNS_VISIBILITY = {
+  description: true,
+  api_user: true,
+  has_iggy_connection: true,
+  sync_enabled: true,
+  is_working: true,
+  last_sync_at: true,
 };
+const DEFAULT_COLUMN_ORDER = [
+  'mrt-row-numbers',
+  'mrt-row-actions',
+  'description',
+  'api_user',
+  'has_iggy_connection',
+  'sync_enabled',
+  'is_working',
+  'last_sync_at',
+];
+const defaultMRTOptions = getDefaultMRTOptions<ApiIntegration>();
+
+function emptyForm(): ApiIntegrationForm {
+  return {
+    id: null,
+    description: '',
+    apiUser: '',
+    hasIggyConnection: false,
+    iggyUrl: '',
+    iggyLogin: '',
+    iggyPassword: '',
+    iggyInboxTopic: '',
+    iggyAnalyticsTopic: '',
+    syncEnabled: false,
+  };
+}
 
 function toForm(integration: ApiIntegration): ApiIntegrationForm {
   return {
@@ -86,16 +131,6 @@ function toSaveReq(form: ApiIntegrationForm): UpsertApiIntegrationReq {
   };
 }
 
-function validateForm(form: ApiIntegrationForm): string | null {
-  if (!form.apiUser.trim()) return 'Вкажіть API користувача';
-  if (!form.hasIggyConnection) return null;
-  const connectionError = validateIggyConnection(form);
-  if (connectionError) return connectionError;
-  if (!form.iggyInboxTopic.trim()) return 'Вкажіть тему для вхідних повідомлень';
-  if (!form.iggyAnalyticsTopic.trim()) return 'Вкажіть тему для аналітичної інформації';
-  return null;
-}
-
 function validateIggyConnection(form: ApiIntegrationForm): string | null {
   if (!form.iggyUrl.trim()) return 'Вкажіть Iggy URL';
   if (!form.iggyLogin.trim()) return 'Вкажіть Iggy логін';
@@ -103,315 +138,551 @@ function validateIggyConnection(form: ApiIntegrationForm): string | null {
   return null;
 }
 
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  return 'Невідома помилка';
+function validateForm(form: ApiIntegrationForm): string | null {
+  if (!form.apiUser.trim()) return 'Вкажіть API користувача';
+  if (!form.hasIggyConnection) return null;
+  return (
+    validateIggyConnection(form) ||
+    (!form.iggyInboxTopic.trim() ? 'Вкажіть тему для вхідних повідомлень' : null) ||
+    (!form.iggyAnalyticsTopic.trim() ? 'Вкажіть тему для аналітичної інформації' : null)
+  );
 }
 
-export function AdminApiIntegrationsPage() {
-  const [integrations, setIntegrations] = React.useState<ApiIntegration[]>([]);
-  const [apiUsers, setApiUsers] = React.useState<Login[]>([]);
-  const [form, setForm] = React.useState<ApiIntegrationForm>(emptyForm);
-  const [selectedId, setSelectedId] = React.useState<number | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [saving, setSaving] = React.useState(false);
-  const [checking, setChecking] = React.useState(false);
-  const [status, setStatus] = React.useState<StatusMessage>(null);
+function errorMessage(error: unknown): string {
+  return error instanceof Error && error.message.trim() ? error.message : 'Невідома помилка';
+}
 
-  React.useEffect(() => {
-    void (async () => {
-      try {
-        const [nextIntegrations, logins] = await Promise.all([
-          listApiIntegrations(),
-          listLogins({ sortBy: null, filterByRoles: ['Api'] }),
-        ]);
-        setIntegrations(nextIntegrations);
-        setApiUsers(logins.users.sort((a, b) => a.login.localeCompare(b.login, 'uk')));
-        if (nextIntegrations.length > 0) {
-          setSelectedId(nextIntegrations[0].id);
-          setForm(toForm(nextIntegrations[0]));
-        }
-      } catch (error) {
-        setStatus({ kind: 'error', message: `Помилка завантаження: ${formatErrorMessage(error)}` });
-      } finally {
-        setLoading(false);
-      }
-    })();
+function formatLastSync(value: number | null): string {
+  return value === null ? '—' : new Date(value).toLocaleString('uk-UA');
+}
+
+function ApiIntegrationsTable({
+  integrations,
+  apiUsers,
+  loading,
+  onEdit,
+  onDelete,
+}: {
+  integrations: ApiIntegration[];
+  apiUsers: Login[];
+  loading: boolean;
+  onEdit: (integration: ApiIntegration) => void;
+  onDelete: (integration: ApiIntegration) => void;
+}) {
+  const tableStateContext = useTableStateContext();
+  const userNames = useMemo(
+    () => new Map(apiUsers.map((user) => [user.id, user.login])),
+    [apiUsers],
+  );
+  const columnSizing = useMemo(
+    () => ({
+      ...tableStateContext.columnSizing,
+      'mrt-row-actions': ROW_ACTIONS_COLUMN_SIZE,
+    }),
+    [tableStateContext.columnSizing],
+  );
+  const columns = useMemo<MRT_ColumnDef<ApiIntegration>[]>(
+    () => [
+      {
+        id: 'description',
+        header: 'Опис',
+        accessorFn: (integration) => integration.description ?? '—',
+        size: 220,
+      },
+      {
+        id: 'api_user',
+        header: 'API користувач',
+        accessorFn: (integration) =>
+          userNames.get(integration.apiUserLoginId) ?? integration.apiUserLoginId,
+        size: 180,
+      },
+      {
+        id: 'has_iggy_connection',
+        header: 'Iggy',
+        accessorFn: (integration) => (integration.hasIggyConnection ? 'Так' : 'Ні'),
+        size: 90,
+      },
+      {
+        id: 'sync_enabled',
+        header: 'Синхронізація',
+        accessorFn: (integration) => (integration.syncEnabled ? 'Увімкнена' : 'Вимкнена'),
+        size: 140,
+      },
+      {
+        id: 'is_working',
+        header: 'Стан',
+        accessorFn: (integration) => (integration.isWorking ? 'Працює' : 'Не працює'),
+        size: 130,
+      },
+      {
+        id: 'last_sync_at',
+        header: 'Остання синхронізація',
+        accessorFn: (integration) => formatLastSync(integration.lastSyncAtMs),
+        size: 190,
+      },
+    ],
+    [userNames],
+  );
+
+  const table = useMaterialReactTable({
+    columns,
+    data: integrations,
+    ...defaultMRTOptions,
+    enableSorting: true,
+    enableColumnActions: true,
+    enableRowNumbers: true,
+    enableColumnFilters: true,
+    enableColumnFilterModes: true,
+    enableFacetedValues: true,
+    enableRowVirtualization: false,
+    enableRowActions: true,
+    positionActionsColumn: 'first',
+    renderRowActions: ({ row }) => (
+      <Stack direction="row" spacing={0.5}>
+        <MrtRowActionButton
+          label="Редагувати"
+          onClick={() => onEdit(row.original)}
+          icon={<EditIcon fontSize="small" />}
+          disabled={loading}
+          opensModal
+        />
+        <MrtRowActions forceMenu>
+          <MrtRowActionButton
+            label="Видалити"
+            onClick={() => onDelete(row.original)}
+            icon={<DeleteIcon fontSize="small" />}
+            disabled={loading}
+            tone="danger"
+            opensModal
+          />
+        </MrtRowActions>
+      </Stack>
+    ),
+    enableColumnOrdering: tableStateContext.enableColumnOrdering,
+    enableColumnResizing: tableStateContext.enableColumnResizing,
+    columnFilterDisplayMode: 'popover',
+    globalFilterFn: 'contains',
+    onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
+    onColumnFiltersChange: tableStateContext.onColumnFiltersChange,
+    onColumnOrderChange: tableStateContext.onColumnOrderChange,
+    onColumnSizingChange: tableStateContext.onColumnSizingChange,
+    onSortingChange: tableStateContext.onSortingChange,
+    onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
+    getColumnCanGlobalFilter: (column) => column.getIsVisible(),
+    defaultColumn: { size: 180, renderColumnActionsMenuItems },
+    displayColumnDefOptions: {
+      ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: ROW_ACTIONS_COLUMN_SIZE,
+        minSize: ROW_ACTIONS_COLUMN_SIZE,
+        maxSize: ROW_ACTIONS_COLUMN_SIZE,
+      },
+      'mrt-row-numbers': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
+        muiTableBodyCellProps: () => ({
+          sx: { justifyContent: 'center', ...CUSTOM_CELL_STYLES },
+        }),
+      },
+    },
+    muiTablePaperProps: ({ table }) =>
+      getDefaultMrtPaperProps({ table, loading, layout: 'workspace' }),
+    muiTableContainerProps: ({ table }) =>
+      getDefaultMrtContainerProps({
+        loading,
+        layout: 'workspace',
+        fullScreen: table.getState().isFullScreen,
+        hasRows: integrations.length > 0,
+      }),
+    state: {
+      showAlertBanner: false,
+      showProgressBars: loading,
+      globalFilter: tableStateContext.globalFilter,
+      columnVisibility: tableStateContext.columnVisibility,
+      columnFilters: tableStateContext.columnFilters,
+      density: tableStateContext.density,
+      sorting: tableStateContext.sorting,
+      columnOrder: tableStateContext.columnOrder,
+      columnSizing,
+    },
+  });
+
+  useEffect(() => {
+    tableStateContext.onTableInitialized(table);
+  }, [table]);
+
+  return <MaterialReactTable table={table} />;
+}
+
+function IntegrationEditorDialog({
+  open,
+  form,
+  apiUsers,
+  busy,
+  checking,
+  status,
+  onFormChange,
+  onClose,
+  onSave,
+  onTest,
+}: {
+  open: boolean;
+  form: ApiIntegrationForm;
+  apiUsers: Login[];
+  busy: boolean;
+  checking: boolean;
+  status: FormStatus;
+  onFormChange: (form: ApiIntegrationForm) => void;
+  onClose: () => void;
+  onSave: () => void;
+  onTest: () => void;
+}) {
+  const selectedApiUser = apiUsers.find((user) => user.id === form.apiUser) ?? null;
+  const disabled = busy || checking;
+  const setHasIggyConnection = (hasIggyConnection: boolean) =>
+    onFormChange({
+      ...form,
+      hasIggyConnection,
+      iggyUrl: hasIggyConnection ? form.iggyUrl : '',
+      iggyLogin: hasIggyConnection ? form.iggyLogin : '',
+      iggyPassword: hasIggyConnection ? form.iggyPassword : '',
+      iggyInboxTopic: hasIggyConnection ? form.iggyInboxTopic : '',
+      iggyAnalyticsTopic: hasIggyConnection ? form.iggyAnalyticsTopic : '',
+      syncEnabled: hasIggyConnection ? form.syncEnabled : false,
+    });
+
+  return (
+    <Dialog open={open} onClose={() => !disabled && onClose()} fullWidth maxWidth="md">
+      <DialogTitle>
+        {form.id === null ? 'Створити інтеграцію API' : 'Редагувати інтеграцію API'}
+      </DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ pt: 1 }}>
+          {status ? <PowerAlert severity={status.kind}>{status.message}</PowerAlert> : null}
+          <TextField
+            label="Опис"
+            value={form.description}
+            onChange={(event) => onFormChange({ ...form, description: event.target.value })}
+            multiline
+            minRows={2}
+            fullWidth
+          />
+          <Autocomplete
+            options={apiUsers}
+            value={selectedApiUser}
+            onChange={(_, option) => onFormChange({ ...form, apiUser: option?.id ?? '' })}
+            getOptionLabel={(option) => option.login}
+            isOptionEqualToValue={(option, value) => option.id === value.id}
+            disabled={disabled}
+            renderInput={(params) => (
+              <TextField {...params} label="API користувач" required fullWidth />
+            )}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.hasIggyConnection}
+                onChange={(event) => setHasIggyConnection(event.target.checked)}
+                disabled={disabled}
+              />
+            }
+            label="Є підключення до Iggy"
+          />
+          {form.id !== null ? (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={form.syncEnabled}
+                  onChange={(event) => onFormChange({ ...form, syncEnabled: event.target.checked })}
+                  disabled={disabled || !form.hasIggyConnection}
+                />
+              }
+              label="Увімкнути синхронізацію"
+            />
+          ) : null}
+          <TextField
+            label="Iggy URL"
+            value={form.iggyUrl}
+            onChange={(event) => onFormChange({ ...form, iggyUrl: event.target.value })}
+            placeholder="iggy://localhost:8090"
+            disabled={disabled || !form.hasIggyConnection}
+            required={form.hasIggyConnection}
+            fullWidth
+          />
+          <TextField
+            label="Iggy логін"
+            value={form.iggyLogin}
+            onChange={(event) => onFormChange({ ...form, iggyLogin: event.target.value })}
+            disabled={disabled || !form.hasIggyConnection}
+            required={form.hasIggyConnection}
+            fullWidth
+          />
+          <TextField
+            label="Iggy пароль"
+            type="password"
+            value={form.iggyPassword}
+            onChange={(event) => onFormChange({ ...form, iggyPassword: event.target.value })}
+            disabled={disabled || !form.hasIggyConnection}
+            required={form.hasIggyConnection}
+            fullWidth
+          />
+          <TextField
+            label="Назва топіку для надсилання вхідних повідомлень"
+            value={form.iggyInboxTopic}
+            onChange={(event) => onFormChange({ ...form, iggyInboxTopic: event.target.value })}
+            disabled={disabled || !form.hasIggyConnection}
+            required={form.hasIggyConnection}
+            fullWidth
+          />
+          <TextField
+            label="Назва топіку для отримання аналітичної інформації"
+            value={form.iggyAnalyticsTopic}
+            onChange={(event) => onFormChange({ ...form, iggyAnalyticsTopic: event.target.value })}
+            disabled={disabled || !form.hasIggyConnection}
+            required={form.hasIggyConnection}
+            fullWidth
+          />
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <PowerButton variant="outlined" onClick={onClose} disabled={disabled}>
+          Скасувати
+        </PowerButton>
+        {form.hasIggyConnection ? (
+          <PowerButton variant="outlined" onClick={onTest} disabled={disabled}>
+            Перевірити з'єднання
+          </PowerButton>
+        ) : null}
+        <PowerButton variant="contained" onClick={onSave} disabled={disabled}>
+          {form.id === null ? 'Створити' : 'Зберегти'}
+        </PowerButton>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function AdminApiIntegrationsPageBody() {
+  const [integrations, setIntegrations] = useState<ApiIntegration[]>([]);
+  const [apiUsers, setApiUsers] = useState<Login[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [pageStatus, setPageStatus] = useState<FormStatus>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [form, setForm] = useState<ApiIntegrationForm>(emptyForm);
+  const [formStatus, setFormStatus] = useState<FormStatus>(null);
+  const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ApiIntegration | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [nextIntegrations, logins] = await Promise.all([
+        listApiIntegrations(),
+        listLogins({ sortBy: null, filterByRoles: ['Api'] }),
+      ]);
+      setIntegrations(nextIntegrations);
+      setApiUsers(logins.users.sort((a, b) => a.login.localeCompare(b.login, 'uk')));
+    } catch (error) {
+      setLoadError(`Не вдалося завантажити інтеграції API: ${errorMessage(error)}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
   }, []);
 
-  function selectIntegration(id: number | null) {
-    const integration = integrations.find((item) => item.id === id);
-    setSelectedId(id);
-    setForm(integration ? toForm(integration) : emptyForm);
-    setStatus(null);
+  function openCreate() {
+    setForm(emptyForm());
+    setFormStatus(null);
+    setEditorOpen(true);
   }
 
-  function updateSelectedIntegration(integration: ApiIntegration) {
-    setIntegrations((previous) => {
-      const exists = previous.some((item) => item.id === integration.id);
-      return exists
-        ? previous.map((item) => (item.id === integration.id ? integration : item))
-        : [integration, ...previous];
-    });
-    setSelectedId(integration.id);
+  function openEdit(integration: ApiIntegration) {
     setForm(toForm(integration));
+    setFormStatus(null);
+    setEditorOpen(true);
   }
 
-  function setHasIggyConnection(hasIggyConnection: boolean) {
-    setForm((previous) => ({
-      ...previous,
-      hasIggyConnection,
-      iggyUrl: hasIggyConnection ? previous.iggyUrl : '',
-      iggyLogin: hasIggyConnection ? previous.iggyLogin : '',
-      iggyPassword: hasIggyConnection ? previous.iggyPassword : '',
-      iggyInboxTopic: hasIggyConnection ? previous.iggyInboxTopic : '',
-      iggyAnalyticsTopic: hasIggyConnection ? previous.iggyAnalyticsTopic : '',
-      syncEnabled: hasIggyConnection ? previous.syncEnabled : false,
-    }));
-  }
-
-  async function handleSave() {
+  async function save() {
     const validationError = validateForm(form);
     if (validationError) {
-      setStatus({ kind: 'error', message: validationError });
+      setFormStatus({ kind: 'error', message: validationError });
       return;
     }
     setSaving(true);
-    setStatus(null);
+    setFormStatus(null);
     try {
-      const integration = await upsertApiIntegration(toSaveReq(form));
-      updateSelectedIntegration(integration);
-      setStatus({ kind: 'success', message: 'API інтеграцію збережено' });
+      const saved = await upsertApiIntegration(toSaveReq(form));
+      setIntegrations((current) => {
+        const exists = current.some((integration) => integration.id === saved.id);
+        return exists
+          ? current.map((integration) => (integration.id === saved.id ? saved : integration))
+          : [saved, ...current];
+      });
+      setEditorOpen(false);
+      setPageStatus({ kind: 'success', message: 'Інтеграцію API збережено' });
     } catch (error) {
-      setStatus({ kind: 'error', message: `Помилка збереження: ${formatErrorMessage(error)}` });
+      setFormStatus({ kind: 'error', message: `Помилка збереження: ${errorMessage(error)}` });
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleDelete() {
-    if (!form.id) return;
-    setSaving(true);
-    setStatus(null);
-    try {
-      await deleteApiIntegration(form.id);
-      const nextIntegrations = integrations.filter((item) => item.id !== form.id);
-      setIntegrations(nextIntegrations);
-      const next = nextIntegrations[0];
-      setSelectedId(next?.id ?? null);
-      setForm(next ? toForm(next) : emptyForm);
-      setStatus({ kind: 'success', message: 'API інтеграцію видалено' });
-    } catch (error) {
-      setStatus({ kind: 'error', message: `Помилка видалення: ${formatErrorMessage(error)}` });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleTestConnection() {
+  async function checkConnection() {
     const validationError = validateIggyConnection(form);
     if (validationError) {
-      setStatus({ kind: 'error', message: validationError });
+      setFormStatus({ kind: 'error', message: validationError });
       return;
     }
     setChecking(true);
-    setStatus(null);
+    setFormStatus(null);
     try {
       await testConnection({
         url: form.iggyUrl.trim(),
         login: form.iggyLogin.trim(),
         password: form.iggyPassword.trim(),
       });
-      setStatus({ kind: 'success', message: "З'єднання з Iggy успішне" });
+      setFormStatus({ kind: 'success', message: "З'єднання з Iggy успішне" });
     } catch (error) {
-      setStatus({ kind: 'error', message: `Помилка перевірки: ${formatErrorMessage(error)}` });
+      setFormStatus({ kind: 'error', message: `Помилка перевірки: ${errorMessage(error)}` });
     } finally {
       setChecking(false);
     }
   }
 
-  if (loading) return <PowerAlert severity="info">Завантажую API інтеграції...</PowerAlert>;
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setSaving(true);
+    setPageStatus(null);
+    try {
+      await deleteApiIntegration(deleteTarget.id);
+      setIntegrations((current) =>
+        current.filter((integration) => integration.id !== deleteTarget.id),
+      );
+      setDeleteTarget(null);
+      setPageStatus({ kind: 'success', message: 'Інтеграцію API видалено' });
+    } catch (error) {
+      setPageStatus({ kind: 'error', message: `Помилка видалення: ${errorMessage(error)}` });
+    } finally {
+      setSaving(false);
+    }
+  }
 
-  const selectedApiUser = apiUsers.find((user) => user.id === form.apiUser) ?? null;
-  const disabled = saving || checking;
+  if (loading && integrations.length === 0 && !loadError) {
+    return <PageLoadingState minHeight="100%" />;
+  }
+  if (loadError && integrations.length === 0) {
+    return (
+      <PageErrorState
+        message={loadError}
+        actionLabel="Спробувати ще раз"
+        onAction={() => void load()}
+        minHeight="100%"
+      />
+    );
+  }
 
   return (
-    <Stack spacing={3}>
-      <PageHeader
-        title="Адмін: API Інтеграції"
-        titleInfo="API користувачі та параметри підключення до Apache Iggy."
-      />
-
-      {status ? <PowerAlert severity={status.kind}>{status.message}</PowerAlert> : null}
-
-      <Card variant="outlined">
-        <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
-          <Stack spacing={2}>
-            <div className="flex flex-wrap gap-2">
-              <PowerButton
-                variant="contained"
-                onClick={() => selectIntegration(null)}
-                disabled={disabled}
-              >
-                Нова інтеграція
+    <Box
+      className="w-full"
+      sx={{
+        height: { xs: 'auto', lg: '100%' },
+        minHeight: 0,
+        overflow: { xs: 'visible', lg: 'hidden' },
+      }}
+    >
+      <Stack
+        spacing={3}
+        useFlexGap
+        sx={{
+          height: { xs: 'auto', lg: '100%' },
+          minHeight: 0,
+          overflow: { xs: 'visible', lg: 'hidden' },
+        }}
+      >
+        {pageStatus ? (
+          <PowerAlert severity={pageStatus.kind}>{pageStatus.message}</PowerAlert>
+        ) : null}
+        {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
+        <TablePageToolbar
+          title="Інтеграції API"
+          titleInfo="API користувачі та параметри підключення до Apache Iggy."
+          withGlobalTextFilter
+          hideGlobalTextFilter={loading && integrations.length === 0}
+          internalActionsDisabled={loading && integrations.length === 0}
+          actions={
+            <>
+              <PowerButton variant="outlined" onClick={() => void load()} disabled={loading}>
+                Оновити
               </PowerButton>
-              {disabled ? <CircularProgress size={18} /> : null}
-            </div>
-            {integrations.length === 0 ? (
-              <PowerAlert severity="info">API інтеграцій ще немає.</PowerAlert>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {integrations.map((integration) => (
-                  <PowerButton
-                    key={integration.id}
-                    variant={integration.id === selectedId ? 'contained' : 'outlined'}
-                    onClick={() => selectIntegration(integration.id)}
-                  >
-                    {integration.description ||
-                      apiUsers.find((user) => user.id === integration.apiUserLoginId)?.login ||
-                      integration.apiUserLoginId}
-                  </PowerButton>
-                ))}
-              </div>
-            )}
-          </Stack>
-        </CardContent>
-      </Card>
-
-      <Card variant="outlined">
-        <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
-          <Stack spacing={3}>
-            <Typography variant="h6" className="!font-semibold">
-              {form.id ? `API інтеграція #${form.id}` : 'Нова API інтеграція'}
-            </Typography>
-
-            <TextField
-              label="Опис"
-              value={form.description}
-              onChange={(event) =>
-                setForm((previous) => ({ ...previous, description: event.target.value }))
-              }
-              multiline
-              minRows={2}
-              fullWidth
-            />
-
-            <Autocomplete
-              options={apiUsers}
-              value={selectedApiUser}
-              onChange={(_, option) =>
-                setForm((previous) => ({ ...previous, apiUser: option?.id ?? '' }))
-              }
-              getOptionLabel={(option) => option.login}
-              isOptionEqualToValue={(option, value) => option.id === value.id}
-              renderInput={(params) => (
-                <TextField {...params} label="API користувач" required fullWidth />
-              )}
-            />
-
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={form.hasIggyConnection}
-                  onChange={(event) => setHasIggyConnection(event.target.checked)}
-                />
-              }
-              label="Є підключення до Iggy"
-            />
-
-            {form.id ? (
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={form.syncEnabled}
-                    onChange={(event) =>
-                      setForm((previous) => ({
-                        ...previous,
-                        syncEnabled: event.target.checked,
-                      }))
-                    }
-                    disabled={!form.hasIggyConnection}
-                  />
-                }
-                label="Увімкнути синхронізацію"
-              />
-            ) : null}
-
-            <TextField
-              label="Iggy URL"
-              value={form.iggyUrl}
-              onChange={(event) =>
-                setForm((previous) => ({ ...previous, iggyUrl: event.target.value }))
-              }
-              placeholder="iggy://localhost:8090"
-              disabled={!form.hasIggyConnection}
-              required={form.hasIggyConnection}
-              fullWidth
-            />
-            <TextField
-              label="Iggy логін"
-              value={form.iggyLogin}
-              onChange={(event) =>
-                setForm((previous) => ({ ...previous, iggyLogin: event.target.value }))
-              }
-              disabled={!form.hasIggyConnection}
-              required={form.hasIggyConnection}
-              fullWidth
-            />
-            <TextField
-              label="Iggy пароль"
-              type="password"
-              value={form.iggyPassword}
-              onChange={(event) =>
-                setForm((previous) => ({ ...previous, iggyPassword: event.target.value }))
-              }
-              disabled={!form.hasIggyConnection}
-              required={form.hasIggyConnection}
-              fullWidth
-            />
-            <TextField
-              label="Назва топіку для надсилання вхідних повідомлень"
-              value={form.iggyInboxTopic}
-              onChange={(event) =>
-                setForm((previous) => ({ ...previous, iggyInboxTopic: event.target.value }))
-              }
-              disabled={!form.hasIggyConnection}
-              required={form.hasIggyConnection}
-              fullWidth
-            />
-            <TextField
-              label="Назва топіку для отримання аналітичної інформації"
-              value={form.iggyAnalyticsTopic}
-              onChange={(event) =>
-                setForm((previous) => ({ ...previous, iggyAnalyticsTopic: event.target.value }))
-              }
-              disabled={!form.hasIggyConnection}
-              required={form.hasIggyConnection}
-              fullWidth
-            />
-          </Stack>
-        </CardContent>
-        <CardActions sx={{ px: 3, pb: 3, gap: 1, flexWrap: 'wrap' }}>
-          <PowerButton variant="contained" onClick={handleSave} disabled={disabled}>
-            {form.id ? 'Зберегти' : 'Створити'}
-          </PowerButton>
-          {form.hasIggyConnection ? (
-            <PowerButton variant="outlined" onClick={handleTestConnection} disabled={disabled}>
-              Перевірити з'єднання з Iggy
+              <PowerButton variant="contained" onClick={openCreate} disabled={loading}>
+                Додати інтеграцію
+              </PowerButton>
+            </>
+          }
+        />
+        <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>
+          <ApiIntegrationsTable
+            integrations={integrations}
+            apiUsers={apiUsers}
+            loading={loading || saving}
+            onEdit={openEdit}
+            onDelete={setDeleteTarget}
+          />
+        </Box>
+        <IntegrationEditorDialog
+          open={editorOpen}
+          form={form}
+          apiUsers={apiUsers}
+          busy={saving}
+          checking={checking}
+          status={formStatus}
+          onFormChange={setForm}
+          onClose={() => setEditorOpen(false)}
+          onSave={() => void save()}
+          onTest={() => void checkConnection()}
+        />
+        <Dialog open={deleteTarget !== null} onClose={() => !saving && setDeleteTarget(null)}>
+          <DialogTitle>Видалити інтеграцію API?</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              {deleteTarget?.description ||
+                apiUsers.find((user) => user.id === deleteTarget?.apiUserLoginId)?.login ||
+                'Вибрана інтеграція буде видалена.'}
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+            <PowerButton variant="outlined" onClick={() => setDeleteTarget(null)} disabled={saving}>
+              Скасувати
             </PowerButton>
-          ) : null}
-          {form.id ? (
             <PowerButton
-              variant="outlined"
               color="error"
-              onClick={handleDelete}
-              disabled={disabled}
+              variant="contained"
+              onClick={() => void confirmDelete()}
+              disabled={saving}
             >
               Видалити
             </PowerButton>
-          ) : null}
-        </CardActions>
-      </Card>
-    </Stack>
+          </DialogActions>
+        </Dialog>
+      </Stack>
+    </Box>
+  );
+}
+
+export function AdminApiIntegrationsPage() {
+  return (
+    <TableStateProvider
+      tableId="admin-api-integrations"
+      defaultColumnOrder={DEFAULT_COLUMN_ORDER}
+      defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
+      defaultEnableColumnOrdering={false}
+    >
+      <AdminApiIntegrationsPageBody />
+    </TableStateProvider>
   );
 }

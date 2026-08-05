@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
+pub mod ai_agent;
 pub mod ai_callsign;
 pub mod ai_engine;
 mod alpine;
@@ -25,10 +26,12 @@ pub mod backup;
 pub mod config;
 pub mod datasource;
 pub mod delta;
+pub mod devices;
 pub mod elm;
 pub mod entities;
 pub mod error;
 pub mod event_stream;
+pub mod file_registry;
 pub mod functest;
 pub mod icons;
 pub mod iggy;
@@ -60,6 +63,7 @@ mod stats;
 pub mod storage;
 pub mod system_settings;
 pub mod tags;
+pub mod telemetry;
 pub mod terminal;
 pub mod tests;
 pub mod transcriber;
@@ -211,6 +215,22 @@ pub struct OneoffBackfillInboxNetworksPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillInboxItemCallsignsPs {
+    /// Continue after this sigint_inbox_item ID.
+    #[arg(long)]
+    pub after_id: Option<i64>,
+    /// Stop at this sigint_inbox_item ID (inclusive).
+    #[arg(long)]
+    pub through_id: Option<i64>,
+    /// Number of inbox items committed per transaction.
+    #[arg(long)]
+    pub batch_size: Option<u64>,
+    /// Validate legacy values and print totals without writing.
+    #[arg(long, action)]
+    pub dry_run: bool,
+}
+
+#[derive(clap::Parser, Debug)]
 #[command(
     after_help = "Example:\n  wdintel-rs --mode=live oneoff-backfill-inbox-network-units-tui --start 2026-07-01"
 )]
@@ -286,6 +306,27 @@ pub struct OneoffExportSigintCommentsPs {
     pub from: String,
     #[arg(long)]
     pub to: String,
+    #[arg(long)]
+    pub output: String,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OneoffExportCommentedMessagesKind {
+    EchoComments,
+    GoiAssociations,
+    MappedGoiAssociation,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffExportCommentedMessagesPs {
+    /// Start datetime in UTC (inclusive). Example: `2026-07-15T00:00:00`
+    #[arg(long)]
+    pub since_ts: String,
+    /// End datetime in UTC (non-inclusive). Example: `2026-08-05T00:00:00`
+    #[arg(long)]
+    pub till_ts: String,
+    #[arg(long, value_enum)]
+    pub kind: Option<OneoffExportCommentedMessagesKind>,
     #[arg(long)]
     pub output: String,
 }
@@ -668,6 +709,24 @@ pub struct OneoffMigrateLargeMediaToPlaintextPs {
     pub dry_run: bool,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct OneoffExportLocalAiAgentProfilePs {
+    #[arg(long)]
+    pub output: std::path::PathBuf,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct OneoffImportLocalAiAgentProfilePs {
+    #[arg(long)]
+    pub input: std::path::PathBuf,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct OneoffDiscardCopiedAiAgentRuntimePs {
+    #[arg(long)]
+    pub clear_control_plane: bool,
+}
+
 #[derive(clap::Args, Debug, Clone)]
 pub struct OneoffBackfillAudioTranscriberPs {
     #[arg(long)]
@@ -727,11 +786,14 @@ enum Cmd {
     GenTs,
     #[command(visible_alias = "migration")]
     Migrate,
+    OneoffCreateFileRegistryDatabase,
     NetworkInvalidationTui,
     /// Prepare a normalized ORBIT Parquet snapshot from a JSON export.
     OneoffPrepareOrbitImport(OneoffPrepareOrbitImportPs),
     /// Import ORBIT units from the latest snapshot in an interactive TUI.
     TuiImportOrbitUnits,
+    /// Create inactive SIGINT units for every unlinked ORBIT unit.
+    OneoffImportUnlinkedOrbitUnits,
     TuiImportUnit(ImportTuiPs),
     TuiImportNetwork(ImportTuiPs),
     OneoffImportNetworkDetails(ImportTuiPs),
@@ -760,6 +822,7 @@ enum Cmd {
     OneoffReprocessCallsigns(OneoffReprocessCallsignsPs),
     OneoffReprocessCallsignTokens(OneoffReprocessCallsignTokensPs),
     OneoffExportSigintComments(OneoffExportSigintCommentsPs),
+    OneoffExportCommentedMessages(OneoffExportCommentedMessagesPs),
     OneoffImportSigintComments(OneoffImportSigintCommentsPs),
     OneoffReviewParsedSigintComments(OneoffReviewParsedSigintCommentsPs),
     OneoffTagMessagesReport(OneoffTagMessagesReportPs),
@@ -816,6 +879,7 @@ enum Cmd {
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffBackfillInboxItemCallsigns(OneoffBackfillInboxItemCallsignsPs),
     OneoffBackfillInboxNetworkUnitsTui(OneoffBackfillInboxNetworkUnitsTuiPs),
     OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
@@ -824,6 +888,9 @@ enum Cmd {
     OneoffRestartEcho(OneoffRestartEchoPs),
     OneoffKillOldQueries(OneoffKillOldQueriesPs),
     OneoffRefreshAiModels,
+    OneoffExportLocalAiAgentProfile(OneoffExportLocalAiAgentProfilePs),
+    OneoffImportLocalAiAgentProfile(OneoffImportLocalAiAgentProfilePs),
+    OneoffDiscardCopiedAiAgentRuntime(OneoffDiscardCopiedAiAgentRuntimePs),
     OneoffMigrateModulationToEncryption(OneoffMigrateModulationToEncryptionPs),
     OneoffMigrateLargeMediaToPlaintext(OneoffMigrateLargeMediaToPlaintextPs),
     OneoffBackfillAudioTranscriber(OneoffBackfillAudioTranscriberPs),
@@ -890,8 +957,37 @@ async fn new_pg_pool_from_conn_string_with_timeout(
     connect_timeout: Option<core::time::Duration>,
     connect_lazy: bool,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
+    Ok(new_pg_pool_from_conn_string_with_options(
+        conn_string,
+        pg_pool_max_connections(),
+        connect_timeout,
+        connect_lazy,
+    )
+    .await
+    .c(h!())?)
+}
+
+pub(crate) async fn new_pg_pool_from_conn_string_with_max_connections(
+    conn_string: String,
+    max_connections: u32,
+) -> Result<sea_orm::DatabaseConnection, sea_orm::DbErr> {
+    new_pg_pool_from_conn_string_with_options(
+        conn_string,
+        max_connections,
+        None,
+        false,
+    )
+    .await
+}
+
+async fn new_pg_pool_from_conn_string_with_options(
+    conn_string: String,
+    max_connections: u32,
+    connect_timeout: Option<core::time::Duration>,
+    connect_lazy: bool,
+) -> Result<sea_orm::DatabaseConnection, sea_orm::DbErr> {
     let mut opt = sea_orm::ConnectOptions::new(conn_string);
-    opt.max_connections(pg_pool_max_connections())
+    opt.max_connections(max_connections)
         .min_connections(0)
         .idle_timeout(core::time::Duration::from_secs(30))
         .sqlx_logging(true)
@@ -906,8 +1002,7 @@ async fn new_pg_pool_from_conn_string_with_timeout(
     }
     opt.connect_lazy(connect_lazy);
 
-    let db = sea_orm::Database::connect(opt).await.c(h!())?;
-    Ok(db)
+    sea_orm::Database::connect(opt).await
 }
 
 /// Connect to GreptimeDB similar to Postgresql, except that it's ok to fail, the dependency is optional
@@ -962,6 +1057,47 @@ fn mk_conn_string(config: &Config) -> String {
         "postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_dbname}",
     );
     conn_string
+}
+
+fn wdfile_connection_parts(
+    config: &FileRegistryConfig,
+    mode: Mode,
+) -> (String, u16, String, String, String) {
+    let pg_host = config
+        .pg_host
+        .clone()
+        .unwrap_or_else(|| DEFAULT_PG_HOST.to_string());
+    let pg_port = config.pg_port.unwrap_or(DEFAULT_PG_PORT);
+    let pg_user = config
+        .pg_user
+        .clone()
+        .unwrap_or_else(|| DEFAULT_PG_USER.to_string());
+    let pg_password = config
+        .pg_password
+        .clone()
+        .unwrap_or_else(|| DEFAULT_PG_PASSWORD.to_string());
+    let mut pg_dbname = config
+        .pg_dbname
+        .clone()
+        .unwrap_or_else(|| DEFAULT_PG_WDFILE_DBNAME.to_string());
+
+    if mode == Mode::Test {
+        if let Ok(test_db_name) = std::env::var("TEST_WDFILE_DB_NAME") {
+            if !test_db_name.is_empty() {
+                pg_dbname = test_db_name;
+            }
+        }
+    }
+
+    (pg_host, pg_port, pg_user, pg_password, pg_dbname)
+}
+
+fn mk_wdfile_conn_string(config: &FileRegistryConfig, mode: Mode) -> String {
+    let (pg_host, pg_port, pg_user, pg_password, pg_dbname) =
+        wdfile_connection_parts(config, mode);
+    format!(
+        "postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_dbname}"
+    )
 }
 
 fn mk_replica_conn_string(config: &Config, replica: &ReplicaConfig) -> String {
@@ -1149,6 +1285,9 @@ async fn async_main(
         }
         Cmd::OneoffFixKmz(ps) => kml::oneoff_fix_kml_main(mode, &ps).await,
         Cmd::Migrate => migration::run_migration_1(mode).await,
+        Cmd::OneoffCreateFileRegistryDatabase => {
+            file_registry::provisioning::oneoff_create_database(mode).await
+        }
         Cmd::RenewTailscaleCert(ps) => {
             renew_tailscale_cert(mode, ps.force).await
         }
@@ -1181,6 +1320,10 @@ async fn async_main(
         }
         Cmd::OneoffExportSigintComments(ps) => {
             sigint::comments::oneoff_export_sigint_comments(mode, &ps).await
+        }
+        Cmd::OneoffExportCommentedMessages(ps) => {
+            sigint::comments::oneoff_export_commented_messages(mode, &ps)
+                .await
         }
         Cmd::OneoffImportSigintComments(ps) => {
             sigint::comments::oneoff_import_sigint_comments(mode, &ps).await
@@ -1359,6 +1502,9 @@ async fn async_main(
             )
             .await
         }
+        Cmd::OneoffBackfillInboxItemCallsigns(ps) => {
+            inbox::callsigns::oneoff_backfill(mode, &ps).await
+        }
         Cmd::OneoffReprocessInboxMetadata(ps) => {
             rer_importer::inbox::metadata::oneoff::oneoff_reprocess_inbox_metadata(
                 mode, &ps,
@@ -1387,6 +1533,9 @@ async fn async_main(
                 .c(h!())?)
         }
         Cmd::TuiImportOrbitUnits => orbit::run_import_tui(mode).await,
+        Cmd::OneoffImportUnlinkedOrbitUnits => {
+            sigint::unit::orbit::oneoff_import_unlinked_orbit_units(mode).await
+        }
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await
         }
@@ -1418,6 +1567,15 @@ async fn async_main(
             palitra::oneoff::oneoff_backup_palitras(mode).await
         }
         Cmd::OneoffRefreshAiModels => tags::worker::oneoff_refresh_models(mode).await,
+        Cmd::OneoffExportLocalAiAgentProfile(ps) => {
+            ai_agent::profile::export(mode, &ps.output).await
+        }
+        Cmd::OneoffImportLocalAiAgentProfile(ps) => {
+            ai_agent::profile::import(mode, &ps.input).await
+        }
+        Cmd::OneoffDiscardCopiedAiAgentRuntime(ps) => {
+            ai_agent::profile::discard_runtime(mode, ps.clear_control_plane).await
+        }
         Cmd::OneoffMigrateModulationToEncryption(ps) => {
             sigint::network::oneoff::oneoff_migrate_modulation_to_encryption(
                 mode, ps.dry_run,

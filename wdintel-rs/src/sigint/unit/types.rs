@@ -14,6 +14,7 @@ pub struct Unit {
     pub comment: String,
     pub name: String,
     pub active: bool,
+    pub is_deduplicate_candidate: Option<bool>,
     pub created_at: i64,
     pub created_by_login_id: String,
     #[serde(default, skip_deserializing)]
@@ -42,6 +43,7 @@ mod tests {
         .unwrap();
 
         assert!(!unit.has_orbit);
+        assert_eq!(unit.is_deduplicate_candidate, None);
     }
 }
 
@@ -95,6 +97,7 @@ pub struct CreateUnitReq {
     pub division: String,
     pub army: String,
     pub active: bool,
+    pub is_deduplicate_candidate: Option<bool>,
     pub comment: String,
 }
 
@@ -114,6 +117,22 @@ pub struct CreateUnitWithAutoNetworkReq {
 pub struct CreateUnitWithAutoNetworkRsp {
     pub unit: Unit,
     pub network_id: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CreateDeviceNetworkReq {
+    pub unit_id: i64,
+    pub locations: Vec<String>,
+    pub unit_mask: Vec<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CreateDeviceNetworkRsp {
+    pub network_id: i64,
 }
 
 #[derive(
@@ -170,6 +189,8 @@ pub struct UnitDetailsRsp {
     pub orbit_units: Vec<OrbitUnitDetails>,
     #[serde(default)]
     pub can_link_orbit_unit: bool,
+    #[serde(default)]
+    pub can_create_device_network: bool,
 }
 
 #[derive(
@@ -227,6 +248,20 @@ pub struct OrbitUnitLinkCandidatesReq {
 )]
 pub struct OrbitUnitLinkCandidatesRsp {
     pub units: Vec<OrbitUnitLinkCandidate>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct OrbitUnitSearchReq {
+    pub search: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ImportOrbitUnitReq {
+    pub orbit_unit_id: String,
 }
 
 #[derive(

@@ -161,6 +161,9 @@ navBar user shared activeName props =
             [ internalMenu Route.Path.RerAnalysis "analysis" "Класичний"
             , internalMenu Route.Path.RerAnalysisNeo "rer-analysis-neo" "Новий"
             , MenuSeparator
+            , externalMenu "/docs" "documentation" "Алгоритм роботи"
+            , internalMenu Route.Path.GroupActivity "group-activity" "Активність груп"
+            , MenuSeparator
             , internalMenuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "analysis" ) ], hash = Nothing } "settings-neo-analysis" "Налаштування"
             ]
 
@@ -173,7 +176,7 @@ navBar user shared activeName props =
                   , internalMenu Route.Path.Admin_AorNeo "aor-neo" "Смуги"
                   , internalMenu Route.Path.Admin_SystemSettingsNeo "system-settings-neo" "Налаштування системи"
                   , MenuSeparator
-                  , internalMenu Route.Path.Admin_ApiIntegrations "api-integrations" "API інтеграції"
+                  , internalMenu Route.Path.Admin_ApiIntegrations "api-integrations" "Інтеграції API"
                   ]
                 , ifOrEmpty
                     (shared.systemSettings

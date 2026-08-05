@@ -10,7 +10,6 @@ use crate::rer_importer::points::{
 };
 use crate::rer_importer::types::PalitraPattern;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use sea_orm::prelude::*;
 use sea_orm::*;
 use tokio::sync::RwLock;
@@ -84,7 +83,9 @@ pub async fn palitra_highlight_worker_nofail(
                     suppresed_count += 1;
                 } else {
                     if suppresed_count > 0 {
-                        error!("palitra_highlight_worker error (suppressed {suppresed_count} additional errors): {e:#}");
+                        error!(
+                            "palitra_highlight_worker error (suppressed {suppresed_count} additional errors): {e:#}"
+                        );
                         suppresed_count = 0;
                     } else {
                         error!("palitra_highlight_worker error: {e:#}");

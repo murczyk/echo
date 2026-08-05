@@ -6,6 +6,52 @@ For server setup see [[server.md]]
 
 For CI/testing, use `just setup-test-db [branch_name]` to create branch-specific test databases from the base dump. Use `just cleanup-test-dbs` to remove all test databases. CI automatically handles this for each branch via the `TEST_DB_NAME` environment variable.
 
+### File registry database
+
+The file registry uses an independent, optional PostgreSQL database: `wd_files`
+in live/debug mode. Enable it with a
+`[file_registry]` section in the selected `deploy/config*.toml`:
+
+```toml
+[file_registry]
+pg_host = "postgres-host"
+pg_port = 5432
+pg_user = "wd"
+pg_password = "..."
+pg_dbname = "wd_files"
+```
+
+Without this section, the backend skips the file-registry connection and
+migrations, and device file
+operations return HTTP 503. If Devices is enabled through
+To enable the file registry on a deployment host, add the section and create
+the configured database once before restarting the server or background worker.
+Run the one-off command from the installed backend package:
+
+```bash
+sudo /usr/bin/wdintel-rs --mode=live oneoff-create-file-registry-database
+```
+
+Live mode reads `/etc/echo/config.toml`, just like the systemd services. To use
+a different TOML file, pass it explicitly:
+
+```bash
+sudo env ECHO_CONFIG_PATH=/path/to/config.toml \
+  /usr/bin/wdintel-rs --mode=live oneoff-create-file-registry-database
+```
+
+The command creates only the database. When `[file_registry]` is configured,
+the `wdfiles-migration` schema migrator runs automatically during backend
+startup. The configured PostgreSQL user needs `CREATEDB` to provision the
+database and normal DDL permissions to run its migrations.
+
+Generate the isolated SeaORM entity tree from the same configuration:
+
+```bash
+just gen-seaorm-files --mode=debug
+```
+
+
 ### runtime deps
 
 See "Denendencies" in [[../README.md]]

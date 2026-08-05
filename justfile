@@ -142,9 +142,78 @@ setup-dev:
     npm install uglify-js -g
 
 gen-seaorm:
-    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both -u postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd -o src/entities)
-    python3 deploy/patch_seaorm.py
+    #!/bin/bash
+    set -euo pipefail
+    [[ "$(sea-orm-cli --version)" == "sea-orm-cli 2.0.1" ]]
+    sea-orm-cli generate entity --help | grep -q -- "--include-generated-columns"
+    rm -rf wdintel-rs/src/entities
+    (cd wdintel-rs && sea-orm-cli generate entity --entity-format compact --with-serde both --include-generated-columns -u postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd -o src/entities)
     just fmt
+
+[arg('mode', long='mode')]
+create-file-registry-database mode="debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source deploy/resolve_echo_config_path.sh
+    mode="{{ mode }}"
+    config_path="$(resolve_echo_config_path "$mode")"
+    [[ -f "$config_path" ]] || {
+        echo "Echo config not found: $config_path" >&2
+        exit 1
+    }
+    ECHO_CONFIG_PATH="$config_path" cargo run -p wdintel-rs -- --mode="$mode" oneoff-create-file-registry-database
+
+[arg('mode', long='mode')]
+gen-seaorm-files mode="debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source deploy/resolve_echo_config_path.sh
+    mode="{{ mode }}"
+    config_path="$(resolve_echo_config_path "$mode")"
+    [[ -f "$config_path" ]] || {
+        echo "Echo config not found: $config_path" >&2
+        exit 1
+    }
+    pg_host="$(tq -r -f "$config_path" file_registry.pg_host)"
+    pg_port="$(tq -r -f "$config_path" file_registry.pg_port)"
+    pg_user="$(tq -r -f "$config_path" file_registry.pg_user)"
+    pg_password="$(tq -r -f "$config_path" file_registry.pg_password)"
+    pg_dbname="$(tq -r -f "$config_path" file_registry.pg_dbname)"
+    if [[ "$mode" == "test" && -n "${TEST_WDFILE_DB_NAME:-}" ]]; then
+        pg_dbname="$TEST_WDFILE_DB_NAME"
+    fi
+    database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
+    rm -rf wdintel-rs/src/file_registry/entities
+    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables file_entry --database-url "$database_url" --output-dir src/file_registry/entities)
+    python3 deploy/patch_seaorm_files.py
+    rustfmt --config-path wdintel-rs wdintel-rs/src/file_registry/entities/*.rs
+
+[arg('mode', long='mode')]
+check-seaorm-files mode="debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source deploy/resolve_echo_config_path.sh
+    mode="{{ mode }}"
+    config_path="$(resolve_echo_config_path "$mode")"
+    [[ -f "$config_path" ]] || {
+        echo "Echo config not found: $config_path" >&2
+        exit 1
+    }
+    pg_host="$(tq -r -f "$config_path" file_registry.pg_host)"
+    pg_port="$(tq -r -f "$config_path" file_registry.pg_port)"
+    pg_user="$(tq -r -f "$config_path" file_registry.pg_user)"
+    pg_password="$(tq -r -f "$config_path" file_registry.pg_password)"
+    pg_dbname="$(tq -r -f "$config_path" file_registry.pg_dbname)"
+    if [[ "$mode" == "test" && -n "${TEST_WDFILE_DB_NAME:-}" ]]; then
+        pg_dbname="$TEST_WDFILE_DB_NAME"
+    fi
+    database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
+    entity_dir="$(mktemp -d)"
+    trap 'rm -rf "$entity_dir"' EXIT
+    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables file_entry --database-url "$database_url" --output-dir "$entity_dir")
+    python3 deploy/patch_seaorm_files.py --entity-dir "$entity_dir"
+    rustfmt --config-path wdintel-rs "$entity_dir"/*.rs
+    diff -ru "$entity_dir" wdintel-rs/src/file_registry/entities
 
 gen-front: gen-elm gen-ts
 
@@ -1281,30 +1350,20 @@ copy-db server:
             ;;
     esac
     { set +x; } 2>/dev/null
-    if [[ -f /etc/echo-peerdb/source.env ]] \
-      || sudo -n test -f /etc/echo-peerdb/source.env 2>/dev/null; then
-        cat <<'COMMANDS'
+    cat <<'COMMANDS'
 
-    # PeerDB is configured. This block is safe to paste all at once.
+    # This coordinator is safe to paste all at once. It retains the local
+    # AI-agent profile, discards copied AI-agent runtime state, and coordinates
+    # PeerDB automatically when configured.
     deploy/restore-copied-db.sh --yes /var/tmp/wd-{{ dt1 }}.pgrestore
 
-    # Optional but recommended when copying a live/staging database into dev:
-    cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im-and-goi
-
-    COMMANDS
-    else
-        cat <<'COMMANDS'
-
-    # PostgreSQL-only restore. This block is safe to paste all at once.
-    sudo -u postgres dropdb --force wd
-    sudo -u postgres psql postgres -c "CREATE DATABASE wd"
-    sudo -u postgres pg_restore -d wd /var/tmp/wd-{{ dt1 }}.pgrestore
+    # To intentionally use the source AI-agent configuration instead:
+    # deploy/restore-copied-db.sh --yes --no-preserve-local-ai-agent-profile /var/tmp/wd-{{ dt1 }}.pgrestore
 
     # Optional but recommended when copying a live/staging database into dev:
     cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im-and-goi
 
     COMMANDS
-    fi
 
 [arg('dump', long='dump')]
 restore-copied-db dump:
@@ -2469,6 +2528,26 @@ deploy-stg: prepare-workspace
     scp echo-build-main:~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb "echo-staging":/var/tmp
     ssh echo-build-main 'rm ~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb'
     ssh "echo-staging" 'cd /var/tmp/ && sudo apt install -y --reinstall --allow-downgrades ./wdintel-rs*.deb'
+
+deploy-cbr-stg: prepare-workspace
+    #!/bin/bash
+    set -euxo pipefail
+    ssh echo-build-main "cd ~/workspace/krab/echo-feature/echo && \
+        git fetch origin && \
+        git checkout main && \
+        git checkout {{ branch }} && \
+        git pull && \
+        cd wdintel-web && \
+        git pull && \
+        . ~/.nvm/nvm.sh && \
+        npx npm ci && \
+        npm run build && \
+        cd .. && \
+        touch wdintel-rs/build.rs && \
+        \$HOME/.cargo/bin/cargo deb -p wdintel-rs --fast"
+    scp echo-build-main:~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb "echo-cbr-staging":/var/tmp
+    ssh echo-build-main 'rm ~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb'
+    ssh "echo-cbr-staging" 'cd /var/tmp/ && sudo apt install -y --reinstall --allow-downgrades ./wdintel-rs*.deb'
 
 [arg('server', long='server')]
 transcriber-smoke server:

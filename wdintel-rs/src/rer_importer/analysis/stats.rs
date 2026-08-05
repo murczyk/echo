@@ -967,6 +967,8 @@ fn apply_group_stats_filters(
     let query = apply_metadata_filters(query, req)?;
     let query = filter_search(query, &req.search).context(h!())?;
     let query =
+        filter_selected_device_names(query, &req.selected_device_names)?;
+    let query =
         filter_selected_aors_for_scope(query, &req.selected_aors, scope)?;
     let query = match selected_aor_group_facet_condition(&req.selected_aors) {
         Some(condition) => query.filter(condition),
@@ -1644,6 +1646,8 @@ fn build_senders_filtered_query(
     .context(h!())?;
     let senders_res = apply_metadata_filters(senders_res, &req.0)?;
     let senders_res = filter_search(senders_res, &req.search).context(h!())?;
+    let senders_res =
+        filter_selected_device_names(senders_res, &req.selected_device_names)?;
     filter_selected_aors_for_scope(senders_res, &req.selected_aors, scope)
 }
 
@@ -1777,6 +1781,8 @@ where
     .context(h!())?;
     let query = apply_metadata_filters(query, &req.0)?;
     let query = filter_search(query, &req.search).context(h!())?;
+    let query =
+        filter_selected_device_names(query, &req.selected_device_names)?;
     let query =
         filter_selected_aors_for_scope(query, &req.selected_aors, scope)?;
     if scope.is_some()
@@ -2063,6 +2069,8 @@ fn build_posts_filtered_query(
     .context(h!())?;
     let post_res = apply_metadata_filters(post_res, &req.0)?;
     let post_res = filter_search(post_res, &req.search).context(h!())?;
+    let post_res =
+        filter_selected_device_names(post_res, &req.selected_device_names)?;
     let post_res =
         filter_selected_aors_for_scope(post_res, &req.selected_aors, scope)?;
     Ok(post_res)
@@ -2436,6 +2444,8 @@ fn build_freqs_filtered_query(
     let freqs_res = apply_metadata_filters(freqs_res, &req)?;
     let freqs_res = filter_search(freqs_res, &req.search).context(h!())?;
     let freqs_res =
+        filter_selected_device_names(freqs_res, &req.selected_device_names)?;
+    let freqs_res =
         filter_selected_aors_for_scope(freqs_res, &req.selected_aors, scope)?;
     Ok(freqs_res)
 }
@@ -2491,25 +2501,18 @@ async fn fetch_callsigns_for_login_with_db(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let instant = std::time::Instant::now();
-    let callsigns_res =
-        build_callsigns_query(req, login_str, dt_since, dt_till, master_keys)?;
-    // println!(
-    //     "> callsigns_res: {}",
-    //     callsigns_res.build(DbBackend::Postgres).to_string()
-    // );
-    let callsigns_res: Vec<CallsignsRes> = callsigns_res
-        .into_model::<CallsignsRes>()
-        .all(db)
-        .await
-        .c(h!())?;
-    let mut callsigns = vec![];
-    for x in callsigns_res {
-        let Some(callsign) = x.callsign else { continue };
-        callsigns.push(AnalysisStatsCallsign {
-            callsign,
-            count: x.count,
-        });
-    }
+    let callsigns = load_callsigns_with_counts(
+        db,
+        build_callsign_inbox_item_ids_query(
+            req,
+            login_str,
+            dt_since,
+            dt_till,
+            master_keys,
+        )?,
+    )
+    .await
+    .c(h!())?;
 
     debug!("callsigns op took: {:?}", instant.elapsed());
     Ok(callsigns)
@@ -2592,15 +2595,18 @@ pub(super) async fn count_callsigns_with_db(
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let groups_res = build_callsigns_query(
-        &req.0,
-        &login_value,
-        dt_since,
-        dt_till,
-        master_keys,
-    )?;
-    let count = groups_res.count(db).await.context(h!())?;
-    Ok(count as i64)
+    let callsigns = load_callsigns_with_counts(
+        db,
+        build_callsign_inbox_item_ids_query(
+            &req.0,
+            &login_value,
+            dt_since,
+            dt_till,
+            master_keys,
+        )?,
+    )
+    .await?;
+    Ok(callsigns.len() as i64)
 }
 
 pub(super) async fn count_callsigns_analytics_with_db(
@@ -2944,7 +2950,7 @@ fn metadata_value_expr(
     )
 }
 
-fn build_callsigns_query(
+fn build_callsign_inbox_item_ids_query(
     req: &AnalysisStatsReq,
     login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
@@ -2960,15 +2966,46 @@ fn build_callsigns_query(
         None,
     )?
     .select_only()
-    .column_as(
-        Expr::cust("jsonb_array_elements_text(callsigns)"),
-        "callsign",
-    )
-    .column_as(
-        Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-        "count",
-    )
-    .group_by(SimpleExpr::Custom("callsign".to_string())))
+    .column(sigint_inbox_item::Column::Id)
+    .distinct())
+}
+
+async fn load_callsigns_with_counts(
+    db: &DatabaseConnection,
+    query: Select<sigint_inbox_item::Entity>,
+) -> Result<Vec<AnalysisStatsCallsign>, AppError> {
+    let filtered_items = query.build(DbBackend::Postgres);
+    let values = filtered_items
+        .values
+        .map(|values| values.0)
+        .unwrap_or_default();
+    let callsign_ctes =
+        crate::inbox::callsigns::postgres_effective_callsign_ctes(
+            &filtered_items.sql,
+        );
+    let sql = format!(
+        r#"
+        {callsign_ctes}
+        SELECT callsign, COUNT(*)::bigint AS count
+        FROM all_callsigns
+        GROUP BY callsign
+        ORDER BY callsign
+        "#,
+    );
+    let statement =
+        Statement::from_sql_and_values(DbBackend::Postgres, sql, values);
+    let rows = db.query_all(statement).await.context(h!())?;
+    let callsigns = rows
+        .iter()
+        .map(|row| {
+            Ok(AnalysisStatsCallsign {
+                callsign: row.try_get_by("callsign")?,
+                count: row.try_get_by("count")?,
+            })
+        })
+        .collect::<Result<Vec<_>, DbErr>>()
+        .context(h!())?;
+    Ok(callsigns)
 }
 
 fn build_callsigns_filtered_query(
@@ -3045,6 +3082,10 @@ fn build_callsigns_filtered_query(
     .context(h!())?;
     let callsigns_res = apply_metadata_filters(callsigns_res, &req)?;
     let callsigns_res = filter_search(callsigns_res, &req.search)?;
+    let callsigns_res = filter_selected_device_names(
+        callsigns_res,
+        &req.selected_device_names,
+    )?;
     let callsigns_res = filter_selected_aors_for_scope(
         callsigns_res,
         &req.selected_aors,
@@ -3657,6 +3698,8 @@ fn build_tags_filtered_query_with_owner_condition(
     let tags_res = apply_metadata_filters(tags_res, &req)?;
     let tags_res = filter_search(tags_res, &req.search)?;
     let tags_res =
+        filter_selected_device_names(tags_res, &req.selected_device_names)?;
+    let tags_res =
         filter_selected_aors_for_scope(tags_res, &req.selected_aors, scope)?;
     Ok(tags_res)
 }
@@ -3958,6 +4001,8 @@ fn build_units_filtered_query(
     let units_res = apply_metadata_filters(units_res, &req.0)?;
     let units_res = filter_search(units_res, &req.search).context(h!())?;
     let units_res =
+        filter_selected_device_names(units_res, &req.selected_device_names)?;
+    let units_res =
         filter_selected_aors_for_scope(units_res, &req.selected_aors, scope)?;
     Ok(units_res)
 }
@@ -4245,6 +4290,10 @@ fn build_locations_filtered_query_for_login(
     let locations_res = apply_metadata_filters(locations_res, &req)?;
     let locations_res =
         filter_search(locations_res, &req.search).context(h!())?;
+    let locations_res = filter_selected_device_names(
+        locations_res,
+        &req.selected_device_names,
+    )?;
     let locations_res = filter_selected_aors_for_scope(
         locations_res,
         &req.selected_aors,
@@ -4791,6 +4840,8 @@ fn build_aor_messages_query(
     )
     .context(h!())?;
     let messages = filter_search(messages, &req.search).context(h!())?;
+    let messages =
+        filter_selected_device_names(messages, &req.selected_device_names)?;
     let messages = apply_metadata_filters(messages, req)?;
     filter_selected_aors_for_scope(messages, &req.selected_aors, scope)
 }
@@ -5160,6 +5211,8 @@ fn build_network_analytics_messages_query(
     .context(h!())?;
     let messages = apply_metadata_filters(messages, req)?;
     let messages = filter_search(messages, &req.search).context(h!())?;
+    let messages =
+        filter_selected_device_names(messages, &req.selected_device_names)?;
     let report_tags_only_this_unit =
         req.report_tags_only_this_unit.unwrap_or(false);
     Ok(filter_selected_tags_analytics(
@@ -5862,6 +5915,8 @@ fn build_networks_query_for_login(
     .context(h!())?;
     let messages_q = apply_metadata_filters(messages_q, &req)?;
     let messages_q = filter_search(messages_q, &req.search).context(h!())?;
+    let messages_q =
+        filter_selected_device_names(messages_q, &req.selected_device_names)?;
     let messages_q = filter_selected_tags(
         messages_q,
         &req.selected_tags,
@@ -6246,6 +6301,10 @@ async fn fetch_counts_for_login_with_conn(
         apply_metadata_filters(selected_count_res, &req.0)?;
     let selected_count_res =
         filter_search(selected_count_res, &req.search).context(h!())?;
+    let selected_count_res = filter_selected_device_names(
+        selected_count_res,
+        &req.selected_device_names,
+    )?;
     let selected_count_res = filter_selected_aors_for_scope(
         selected_count_res,
         &req.selected_aors,

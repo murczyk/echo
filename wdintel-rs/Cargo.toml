@@ -8,6 +8,7 @@ description = "ЕХО"
 
 [dependencies]
 echo-migration = { version = "*", path = "../echo-migration" }
+wdfiles-migration = { version = "*", path = "../wdfiles-migration" }
 serde = { workspace = true }
 serde_ignored = "0.1.14"
 serde_json = { workspace = true }
@@ -41,14 +42,14 @@ arrow-array = "59.1.0"
 arrow-schema = "59.1.0"
 parquet = { version = "59.1.0", features = ["arrow"] }
 tokio = { workspace = true }
-tokio-util = { version = "0.7.18", features = ["io"] }
+tokio-util = { version = "0.7.18", features = ["codec", "io"] }
 nipper = "0.1"
 futures-util = "0.3.32"
 futures = "0.3.32"
 fs_extra = "~1.3"
 fs2 = "0.4.3"
 tl = "~0.7.8"
-reqwest = { version = "^0.12.28", default-features = false, features = ["json", "multipart", "blocking", "rustls-tls"] }
+reqwest = { version = "^0.12.28", default-features = false, features = ["json", "multipart", "blocking", "rustls-tls", "stream"] }
 csv = "1.4.0"
 rust_xlsxwriter = "0.90.2"
 # https://github.com/tafia/calamine/issues/498
@@ -108,6 +109,9 @@ ratatui = { version = "0.27.0", default-features = false, features = ["crossterm
 crossterm = "0.27.0"
 tracing-subscriber = { version = "0.3.23", features = ["tracing-log"] }
 unicode-normalization = "0.1.25"
+opentelemetry = { version = "0.30.0", default-features = false, features = ["metrics"] }
+opentelemetry-otlp = { version = "0.30.0", default-features = false, features = ["grpc-tonic", "internal-logs", "metrics"] }
+opentelemetry_sdk = { version = "0.30.0", default-features = false, features = ["internal-logs", "metrics", "rt-tokio", "spec_unstable_metrics_views"] }
 content_disposition = "0.4.0"
 
 [dev-dependencies]
@@ -120,11 +124,11 @@ rev = "c9efd65ccf72bf447867e5f959eec7779771007e"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
-rev = "6351b2f70be5ad75dbb8b48da5b923c01e3f1ecf"
+rev = "8758373ccd6e914d68ef4c22dd40d364392074ee"
 
 [dependencies.echo-gpu-client]
 git = "ssh://git@github.com/echoua/echo-gpu.git"
-rev = "99daf261e61bbb9d1b4ae1bce4ee8258aacff5f6"
+rev = "f1a5d2a9ece1561b89afe7b0ae39e689508a67fe"
 
 [dependencies.milgeo-rs]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"

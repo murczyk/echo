@@ -208,7 +208,10 @@ pub async fn run_inbox_network_daily_consistency_worker_nofail(mode: Mode) {
         if let Err(e) =
             run_inbox_network_daily_consistency_worker_inner(mode).await
         {
-            error!("run_inbox_network_daily_consistency_worker_inner failed: {:#?}", e);
+            error!(
+                "run_inbox_network_daily_consistency_worker_inner failed: {:#?}",
+                e
+            );
         }
         tokio::time::sleep(Duration::from_secs(
             SIGINT_INBOX_NETWORK_CHECK_SLEEP_SECS,
@@ -326,7 +329,10 @@ async fn run_inbox_network_worker_once(
         max_till_ts = min_till_ts;
         fuel -= 1;
         if fuel < 0 {
-            error!("run_inbox_network_worker_once loop error -- unexpected task list: {:?}", task_list);
+            error!(
+                "run_inbox_network_worker_once loop error -- unexpected task list: {:?}",
+                task_list
+            );
             for task in task_list {
                 // process all remaining tasks at once
                 next_tasks.push(task);

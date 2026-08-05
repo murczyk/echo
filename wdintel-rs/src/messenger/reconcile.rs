@@ -514,7 +514,7 @@ async fn copy_annotation_rows(
     promoted_message_id: i64,
     sql: &str,
 ) -> anyhow::Result<()> {
-    txn.execute(Statement::from_sql_and_values(
+    txn.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         sql,
         [original_message_id.into(), promoted_message_id.into()],
@@ -1947,6 +1947,20 @@ async fn reset_machine_derived_inbox_data(
     signal_message_id: i64,
 ) -> anyhow::Result<()> {
     let system_login_id = crate::users::system_login_id(txn).await?;
+    if sigint_inbox_item::Entity::find_by_id(signal_message_id)
+        .one(txn)
+        .await
+        .c(h!())?
+        .is_some()
+    {
+        crate::inbox::callsigns::sync(
+            txn,
+            signal_message_id,
+            crate::inbox::callsigns::InboxItemCallsigns::default(),
+            system_login_id,
+        )
+        .await?;
+    }
     sigint_search::Entity::delete_by_id(signal_message_id)
         .exec(txn)
         .await

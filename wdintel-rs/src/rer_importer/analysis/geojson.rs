@@ -1,6 +1,5 @@
 use super::*;
 use crate::types::ShortContext;
-use crate::utils::orm::ArrayColumnOps;
 use chrono_tz::Tz;
 use std::collections::HashMap;
 use tempfile::TempDir;
@@ -147,6 +146,8 @@ pub(crate) async fn rer_analysis_geojson_bytes(
     .context(h!())?;
     let items = filter_selected_metadata_for_analysis_stats(items, &req)?;
     let items = filter_search(items, &req.search)?;
+    let items =
+        filter_selected_device_names(items, &req.selected_device_names)?;
     let items = filter_selected_locations(
         items,
         &req.selected_locations,
@@ -190,42 +191,55 @@ pub(crate) async fn rer_analysis_geojson_bytes(
 
     // Pre-load callsigns
     #[derive(FromQueryResult)]
-    struct CallsignRes {
-        freq: String,
-        callsign: String,
+    struct CallsignInboxItem {
+        id: i64,
+        freq: Option<String>,
     }
 
-    let callsigns: HashMap<String, Vec<String>> =
-        signal_message::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::SigintInboxItem.def(),
-            )
-            .select_only()
-            .column_as(sigint_inbox_item::Column::Freq, "freq")
-            .column_as(
-                Expr::cust("jsonb_array_elements_text(callsigns)"),
-                "callsign",
-            )
-            .filter(
-                sigint_inbox_item::Column::Freq.eq_any(unique_freqs.clone()),
-            )
-            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since_minus_24h))
-            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-            .filter(signal_message::Column::Deleted.eq(false))
-            .group_by(Expr::cust("1, 2"))
-            .into_model::<CallsignRes>()
-            .all(&env.dbx)
-            .await
-            .context(h!())?
-            .into_iter()
-            .fold(HashMap::new(), |mut acc, row| {
-                let entry = acc.entry(row.freq).or_default();
-                if entry.len() < 10 {
-                    entry.push(row.callsign);
-                }
-                acc
-            });
+    let callsign_inbox_items = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Id, "id")
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .filter(sigint_inbox_item::Column::Freq.eq_any(unique_freqs.clone()))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since_minus_24h))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .into_model::<CallsignInboxItem>()
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
+    let callsign_inbox_item_ids = callsign_inbox_items
+        .iter()
+        .map(|inbox_item| inbox_item.id)
+        .collect_vec();
+    let mut normalized_callsigns = crate::inbox::callsigns::load_by_item_ids(
+        &env.dbx,
+        &callsign_inbox_item_ids,
+    )
+    .await?;
+    let mut callsigns: HashMap<String, Vec<String>> = HashMap::new();
+    for inbox_item in callsign_inbox_items {
+        let Some(freq) = inbox_item.freq else {
+            continue;
+        };
+        let primary = normalized_callsigns
+            .remove(&inbox_item.id)
+            .unwrap_or_default()
+            .primary;
+        let freq_callsigns = callsigns.entry(freq).or_default();
+        for callsign in primary {
+            if freq_callsigns.len() == 10 {
+                break;
+            }
+            if !freq_callsigns.contains(&callsign) {
+                freq_callsigns.push(callsign);
+            }
+        }
+    }
 
     let mut features: HashMap<
         (String, DateTime<Tz>, String, String),

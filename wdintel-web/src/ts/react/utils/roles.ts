@@ -10,8 +10,9 @@ export type UserRole =
   | 'UnitsEditor'
   | 'NetworkEditor'
   | 'CallsignsEditor'
+  | 'Cyber'
+  | 'DeviceSource'
   | 'AdvancedReports'
-  | 'Orbit'
   | 'NoAutoLogout';
 
 export function hasRole(roles: readonly string[] | null | undefined, role: UserRole): boolean {
@@ -40,13 +41,42 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
       return has('Admin') || has('NetworkEditor');
     case 'CallsignsEditor':
       return has('Admin') || has('CallsignsEditor');
+    case 'Cyber':
+      return has('Admin') || has('Cyber');
+    case 'DeviceSource':
+      return has('Admin') || has('DeviceSource');
     case 'AdvancedReports':
       return has('Admin') || has('AdvancedReports');
-    case 'Orbit':
-      return has('Admin') || has('Orbit');
     case 'NoAutoLogout':
       return has('NoAutoLogout');
   }
+}
+
+export function canReadDevices(roles: readonly string[] | null | undefined): boolean {
+  return hasAnyRole(roles, ['Cyber', 'DeviceSource']);
+}
+
+export type DevicesCapabilities = {
+  canRead: boolean;
+  canCreate: boolean;
+  canWriteSourceData: boolean;
+  canWriteAnalyticalData: boolean;
+};
+
+export function resolveDevicesCapabilities(
+  roles: readonly string[] | null | undefined,
+): DevicesCapabilities {
+  const hasAssignedRole = (role: 'Admin' | 'Cyber' | 'DeviceSource') =>
+    Boolean(roles?.includes(role));
+
+  const canWriteAnalyticalData = hasAssignedRole('Admin') || hasAssignedRole('DeviceSource');
+
+  return {
+    canRead: canReadDevices(roles),
+    canCreate: canWriteAnalyticalData || hasAssignedRole('Cyber'),
+    canWriteSourceData: canWriteAnalyticalData || hasAssignedRole('Cyber'),
+    canWriteAnalyticalData,
+  };
 }
 
 export function hasAnyRole(

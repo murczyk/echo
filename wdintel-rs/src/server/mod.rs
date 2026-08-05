@@ -51,6 +51,7 @@ fn systemd_listener() -> Result<Option<TcpListener>, AppError> {
 
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let config = read_config(mode).c(h!())?;
+    let metrics = crate::telemetry::Metrics::from_config(&config);
     let redis = new_redis(&config).await.c(h!())?;
     let stats_redis = new_redis_for_db(&config, config.group_stats_redis_db())
         .await
@@ -62,7 +63,9 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         if mode == Live
             && config.s3_config.clone().c(h!())?.strongbox_key.is_empty()
         {
-            error!("strongbox_key is missing! please run oneoff-generate-strongbox-key, then copy strongbox_key from output and put to config.toml");
+            error!(
+                "strongbox_key is missing! please run oneoff-generate-strongbox-key, then copy strongbox_key from output and put to config.toml"
+            );
             None
         } else {
             Some(s3)
@@ -73,6 +76,12 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     };
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
+    crate::ai_agent::dispatcher::import_legacy_config(
+        &dbx,
+        config.ai_agent_dispatcher.as_ref(),
+    )
+    .await
+    .c(h!())?;
     let echo_gpu_client = Arc::new(
         echo_gpu_client::EchoGpuClient::new(
             dbx.clone(),
@@ -81,6 +90,12 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         .await
         .c(h!())?,
     );
+    let file_registry_db = crate::file_registry::connect_runtime(&config, mode)
+        .await
+        .c(h!())?;
+    if file_registry_db.is_none() {
+        log_missing_file_registry_configuration(&dbx, mode).await;
+    }
     let mut replicas = vec![];
     if let Some(replica_configs) = config.replicas.clone() {
         for replica in replica_configs {
@@ -176,9 +191,11 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         mil_geo: mil_geo.clone(),
         dbx: dbx.clone(),
         echo_gpu_client,
+        file_registry_db,
         rq,
         rq_goi_associations,
         config: config.clone(),
+        metrics,
         greptimedb: Arc::new(RwLock::new(m_greptimedb.clone())),
         settlements: settlements.clone(),
         callsigns_whitelist: callsigns_whitelist.clone(),
@@ -205,6 +222,51 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     .await
     .c(h!())?;
     Ok(Arc::new(env))
+}
+
+#[derive(Debug, PartialEq)]
+enum MissingFileRegistryConfigurationLog {
+    Warning(String),
+    Error(String),
+}
+
+fn missing_file_registry_configuration_log(
+    devices_enabled: bool,
+    mode: Mode,
+) -> MissingFileRegistryConfigurationLog {
+    if devices_enabled {
+        MissingFileRegistryConfigurationLog::Error(format!(
+            "Devices functionality is enabled, but the [file_registry] configuration section is missing. Add pg_host, pg_port, pg_user, pg_password, and pg_dbname under [file_registry], run `wdintel-rs --mode={mode} oneoff-create-file-registry-database`, then restart the backend. Device file operations are unavailable."
+        ))
+    } else {
+        MissingFileRegistryConfigurationLog::Warning(
+            "The optional [file_registry] configuration section is missing. Startup will continue without the file registry database; device file operations are unavailable. Add and provision [file_registry] before enabling Devices.".to_string(),
+        )
+    }
+}
+
+async fn log_missing_file_registry_configuration(
+    dbx: &sea_orm::DatabaseConnection,
+    mode: Mode,
+) {
+    match crate::system_settings::devices_section_enabled(dbx).await {
+        Ok(devices_enabled) => {
+            match missing_file_registry_configuration_log(devices_enabled, mode)
+            {
+                MissingFileRegistryConfigurationLog::Warning(message) => {
+                    warn!("{message}");
+                }
+                MissingFileRegistryConfigurationLog::Error(message) => {
+                    error!("{message}");
+                }
+            }
+        }
+        Err(error) => {
+            error!(
+                "The [file_registry] configuration section is missing, and checking whether Devices functionality is enabled failed: {error:?}. Startup will continue without the file registry database; add and provision [file_registry] before using Devices."
+            );
+        }
+    }
 }
 
 async fn connect_analytics(config: &Config) -> Option<AnalyticsPool> {
@@ -475,6 +537,16 @@ fn spawn_background_workers(
         .await;
     });
 
+    let ai_agent_env = env.clone();
+    let ai_agent_cancellation = cancel_token.clone();
+    spawn_named_worker("ai_agent_worker", bg_set, async move {
+        crate::ai_agent::worker::run_nofail(
+            ai_agent_env,
+            ai_agent_cancellation,
+        )
+        .await;
+    });
+
     spawn_named_worker("signal_cli_verbose_logger", bg_set, async move {
         info!("Starting enable_signal_cli_verbose_logging");
         if let Err(err) = echo_im::enable_signal_cli_verbose_logging(
@@ -674,6 +746,36 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_engine::list_ai_chats)
             .service(crate::ai_engine::get_ai_chat)
             .service(crate::ai_engine::send_ai_chat_message)
+            .service(crate::ai_agent::configuration)
+            .service(crate::ai_agent::list_conversations)
+            .service(crate::ai_agent::create_conversation)
+            .service(crate::ai_agent::get_conversation)
+            .service(crate::ai_agent::update_conversation)
+            .service(crate::ai_agent::delete_conversation)
+            .service(crate::ai_agent::create_request)
+            .service(crate::ai_agent::cancel_request)
+            .service(crate::ai_agent::request_events)
+            .service(crate::ai_agent::auth::exchange_bootstrap)
+            .service(
+                crate::ai_agent::provider_gateway::chat_completions,
+            )
+            .service(crate::ai_agent::admin::get_settings)
+            .service(crate::ai_agent::admin::update_settings)
+            .service(crate::ai_agent::admin::get_dispatcher)
+            .service(crate::ai_agent::admin::update_dispatcher)
+            .service(crate::ai_agent::admin::test_dispatcher)
+            .service(crate::ai_agent::admin::list_echo_proxies)
+            .service(crate::ai_agent::admin::upsert_echo_proxy)
+            .service(crate::ai_agent::admin::delete_echo_proxy)
+            .service(crate::ai_agent::admin::test_echo_proxy)
+            .service(crate::ai_agent::admin::list_containers)
+            .service(crate::ai_agent::admin::list_requests)
+            .service(crate::ai_agent::admin::get_request)
+            .service(crate::ai_agent::admin::retry_review)
+            .service(crate::ai_agent::admin::get_user_agent)
+            .service(crate::ai_agent::admin::start_user_agent)
+            .service(crate::ai_agent::admin::stop_user_agent)
+            .service(crate::ai_agent::admin::test_user_agent)
             .service(crate::ai_callsign::get_ai_callsign_page)
             .service(crate::ai_callsign::create_ai_callsign_test_message)
             .service(crate::ai_callsign::update_ai_callsign_test_message)
@@ -737,6 +839,19 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::api_integrations::upsert_api_integration)
             .service(crate::api_integrations::delete_api_integration)
             .service(crate::api_integrations::test_iggy_connection)
+            .service(crate::devices::devices::list)
+            .service(crate::devices::devices::unit_stats)
+            .service(crate::devices::devices::aors)
+            .service(crate::devices::devices::units)
+            .service(crate::devices::devices::detail)
+            .service(crate::devices::devices::create)
+            .service(crate::devices::devices::update)
+            .service(crate::devices::files::roots)
+            .service(crate::devices::files::subtree_counts)
+            .service(crate::devices::files::browse)
+            .service(crate::devices::files::search)
+            .service(crate::devices::files::journal)
+            .service(crate::devices::files::sync)
             .service(crate::organism::goi::integrations::list_admin_goi_integrations)
             .service(crate::organism::goi::integrations::get_admin_goi_integration)
             .service(crate::organism::goi::integrations::upsert_admin_goi_integration)
@@ -773,12 +888,15 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::unit::list_units_by_id)
             .service(crate::sigint::unit::create_unit)
             .service(crate::sigint::unit::create_unit_with_auto_network)
+            .service(crate::sigint::unit::create_device_network)
             .service(crate::sigint::unit::update_unit)
             .service(crate::sigint::unit::delete_unit)
             .service(crate::sigint::unit::delete_unit_duplicate)
             .service(crate::sigint::unit::units_search)
             .service(crate::sigint::unit::attachment::unit_details)
             .service(crate::sigint::unit::orbit::orbit_link_candidates)
+            .service(crate::sigint::unit::orbit::search_orbit_units)
+            .service(crate::sigint::unit::orbit::import_orbit_unit)
             .service(crate::sigint::unit::orbit::link_orbit_unit)
             .service(crate::sigint::unit::orbit::unlink_orbit_unit)
             .service(
@@ -1024,7 +1142,9 @@ pub async fn main_server(
         info!("port overridden from env: {port}");
         port.parse::<u16>().c(h!())?
     } else {
-        info!("starting echo server on default 8081 port. override it with ECHO_SERVER_PORT variable.");
+        info!(
+            "starting echo server on default 8081 port. override it with ECHO_SERVER_PORT variable."
+        );
         8081
     };
 
@@ -1051,6 +1171,9 @@ pub async fn main_server(
             )
             .wrap(actix_web::middleware::from_fn(
                 middleware::purge_legacy_identity_middleware,
+            ))
+            .wrap(actix_web::middleware::from_fn(
+                crate::ai_agent::middleware::enforce_agent_routes,
             ))
             .wrap(SessionMiddleware::new(
                 redis_session_store.clone(),
@@ -1093,7 +1216,7 @@ pub async fn main_server(
     let mut sigterm = signal(SignalKind::terminate())
         .expect("Failed to register SIGTERM handler");
 
-    shutdown_handle.spawn(async move {
+    let server_result = shutdown_handle.spawn(async move {
         tokio::select! {
             _ = sigint.recv() => {
                 println!("\n[SIGINT / CTRL+C] detected. Signaling shutdown.");
@@ -1119,7 +1242,11 @@ pub async fn main_server(
                 cancel_token.cancel();
             }
         }
-    }).await.c(h!())?;
+    }).await.c(h!());
+    if let Some(metrics) = &env.metrics {
+        metrics.shutdown();
+    }
+    server_result?;
     Ok(())
 }
 
@@ -1264,6 +1391,25 @@ pub async fn main_report_worker(
 mod tests {
     use super::*;
     use actix_web::{http::StatusCode, test, App};
+    #[actix_web::test]
+    async fn missing_file_registry_log_escalates_when_devices_are_enabled() {
+        let MissingFileRegistryConfigurationLog::Warning(warning) =
+            missing_file_registry_configuration_log(false, Mode::Live)
+        else {
+            panic!("disabled Devices should produce a warning");
+        };
+        assert!(warning.contains("Startup will continue"));
+
+        let MissingFileRegistryConfigurationLog::Error(error) =
+            missing_file_registry_configuration_log(true, Mode::Live)
+        else {
+            panic!("enabled Devices should produce an error");
+        };
+        assert!(error.contains("[file_registry]"));
+        assert!(error.contains(
+            "wdintel-rs --mode=live oneoff-create-file-registry-database"
+        ));
+    }
 
     #[actix_web::test]
     async fn test_api_sigint_units_route_is_registered() {

@@ -1,0 +1,14 @@
+[Unit]
+Description=Echo AI agent container isolation firewall
+After=incus.service
+Before=echo-ai-agent-sshd.service
+Requires=incus.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/echo-ai-agent-apply-firewall
+ExecReload=/usr/local/libexec/echo-ai-agent-apply-firewall
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

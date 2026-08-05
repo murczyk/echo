@@ -2,7 +2,6 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::types::{InboxMessage, InboxMessagesReq};
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
 use sea_orm::*;
 use serde::de::DeserializeOwned;

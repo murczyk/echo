@@ -295,8 +295,7 @@ async fn load_live_goi_callsigns(
         else {
             info!(
                 "[goi-sync] Skipping candidate GOI callsign row id={} network_id={} because neither the callsign nor the network has a frequency eligible for GOI sync",
-                callsign.id,
-                callsign.network_id
+                callsign.id, callsign.network_id
             );
             continue;
         };
@@ -304,16 +303,14 @@ async fn load_live_goi_callsigns(
         if callsign_name.is_empty() {
             info!(
                 "[goi-sync] Skipping candidate GOI callsign row id={} network_id={} because callsign is empty after trim",
-                callsign.id,
-                callsign.network_id
+                callsign.id, callsign.network_id
             );
             continue;
         }
         if callsign.sc_deleted == Some(true) {
             info!(
                 "[goi-sync] Candidate GOI callsign row id={} network_id={} references a deleted sigint_callsign; exporting with network-local fields only",
-                callsign.id,
-                callsign.network_id
+                callsign.id, callsign.network_id
             );
         }
         let unit = merged_live_unit_name(&callsign);

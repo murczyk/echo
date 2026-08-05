@@ -64,9 +64,12 @@ type
     | ReportDownloadReturnedByApi (Result ApiError Bytes)
     | ReportTypeChanged ReportConfig.ReportTypeOption
     | ReportActiveFreqsOnlyChanged Bool
+    | ReportIncludeCallsignFullNamesChanged Bool
     | ReportIncludeSigintSignsChanged Bool
     | ReportIncludeConfirmationChanged Bool
     | ReportIncludeHeadingsAndFreqsChanged Bool
+    | ReportIncludeFreqActiveFromChanged Bool
+    | ReportIncludeFreqCreatedAtChanged Bool
     | ReportIncludeUnitCallsignsChanged Bool
     | ReportIncludePelengsMapChanged Bool
     | ReportDateTimeFromMsg (Shared.Components.DateTime.Msg Msg)

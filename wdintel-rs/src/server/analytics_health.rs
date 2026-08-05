@@ -74,7 +74,7 @@ async fn query_health(
     let freshness_max_age_ms = i64::try_from(freshness_max_age_ms).c(h!())?;
     let health = analytics
         .conn
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
             r#"
 SELECT healthy,

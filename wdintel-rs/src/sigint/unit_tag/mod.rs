@@ -12,7 +12,6 @@ use chrono::{Duration, Utc};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::Regex;
-use sea_orm::sea_query::OnConflict;
 use sea_orm::*;
 use std::collections::HashSet;
 
@@ -30,14 +29,9 @@ where
             created_at: NotSet,
         },
     )
-    .on_conflict(
-        OnConflict::column(
-            sigint_inbox_item_unit_tag_queue::Column::SigintInboxItemId,
-        )
-        .do_nothing()
-        .to_owned(),
-    )
-    .do_nothing()
+    .on_conflict_do_nothing_on([
+        sigint_inbox_item_unit_tag_queue::Column::SigintInboxItemId,
+    ])
     .exec(db)
     .await
     .c(h!())?;

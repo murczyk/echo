@@ -2,12 +2,12 @@ import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import UnarchiveOutlinedIcon from '@mui/icons-material/UnarchiveOutlined';
 import {
   Autocomplete,
   Box,
-  CircularProgress,
+  ButtonBase,
   Dialog,
   DialogActions,
   DialogContent,
@@ -93,7 +93,6 @@ import {
   listZoneDatasourceGroups,
   listZoneDatasources,
   updateZoneDatasourceGroup,
-  unarchiveSignalGroup,
 } from '../../services/api/zones';
 import { NO_DATA_LABEL, formatDate } from '../../utils/misc';
 import {
@@ -105,6 +104,7 @@ import {
 import { PowerAlert } from '../../components/PowerAlert';
 import { DatasourceKindIcon } from '../../components/icons';
 import { GroupStatsTimelineCell } from './GroupStatsTimelineCell';
+import { GroupCardView, type GroupCardData } from './GroupCardView';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -212,6 +212,89 @@ type ArchiveState = {
   isSaving: boolean;
   error: string | null;
 };
+
+function getSelectedGroupMasterKey() {
+  return new URLSearchParams(window.location.search).get('group');
+}
+
+function updateSelectedGroupUrl(masterKey: string | null, replace = false) {
+  const url = new URL(window.location.href);
+  if (masterKey) url.searchParams.set('group', masterKey);
+  else url.searchParams.delete('group');
+  const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+  const method = replace ? 'replaceState' : 'pushState';
+  window.history[method](window.history.state, '', nextUrl);
+}
+
+function buildGroupCardData(props: {
+  masterKey: string;
+  groupInfos: Map<string, SignalGroupEntry>;
+  orphanGroups: OrphanSignalGroupEntry[];
+  archivedGroups: OrphanSignalGroupEntry[];
+  zoneGroups: Map<string, ZoneDatasourceGroup[]>;
+  zones: ZoneEntry[];
+  zoneDatasourceIds: Map<number, number[]>;
+  datasourceById: Map<number, Datasource>;
+}): GroupCardData | null {
+  const orphan = [...props.orphanGroups, ...props.archivedGroups].find(
+    (group) => group.masterKey === props.masterKey,
+  );
+  const info = props.groupInfos.get(props.masterKey);
+  const matchingZoneGroups: Array<{
+    zoneName: string;
+    datasourceId: number;
+    group: ZoneDatasourceGroup;
+  }> = [];
+
+  for (const [zoneId, zone] of props.zones) {
+    for (const datasourceId of props.zoneDatasourceIds.get(zoneId) ?? []) {
+      const groups = props.zoneGroups.get(buildGroupKey(zoneId, datasourceId)) ?? [];
+      for (const group of groups) {
+        if (group.groupMasterKey === props.masterKey) {
+          matchingZoneGroups.push({ zoneName: zone.name, datasourceId, group });
+        }
+      }
+    }
+  }
+
+  const firstZoneGroup = matchingZoneGroups[0]?.group;
+  if (!orphan && !info && !firstZoneGroup) return null;
+  const stats = orphan?.groupStats ??
+    info?.groupStats ?? { activityLastDay: 0, activityLastWeek: 0 };
+  const adminData = orphan?.groupAdminData ?? info?.adminData;
+  const aors =
+    orphan?.areasOfResponsibility ??
+    info?.areasOfResponsibility ??
+    firstZoneGroup?.areasOfResponsibility;
+  const datasourceIds = new Set<number>();
+  if (orphan?.datasourceId) datasourceIds.add(orphan.datasourceId);
+  matchingZoneGroups.forEach(({ datasourceId }) => datasourceIds.add(datasourceId));
+
+  return {
+    masterKey: props.masterKey,
+    name: getGroupName(props.masterKey, orphan?.name, props.groupInfos),
+    datasourceLabels: Array.from(datasourceIds).map((id) =>
+      getDatasourceLabel(id, props.datasourceById),
+    ),
+    directionLabels: Array.from(new Set(matchingZoneGroups.map(({ zoneName }) => zoneName))),
+    activityLastDay: stats.activityLastDay,
+    activityLastWeek: stats.activityLastWeek,
+    aorLabels: (aors ?? []).map((aor) => aor.name),
+    shortNote: adminData?.shortNote ?? firstZoneGroup?.shortNote ?? null,
+    longNote: adminData?.longNote ?? firstZoneGroup?.longNote ?? null,
+    interseptionKind:
+      orphan?.interseptionKind ??
+      info?.interseptionKind ??
+      firstZoneGroup?.interseptionKind ??
+      'rer',
+    disableNetworkAssignment:
+      orphan?.disableNetworkAssignment ??
+      info?.disableNetworkAssignment ??
+      firstZoneGroup?.disableNetworkAssignment ??
+      false,
+    isArchived: orphan?.isArchived ?? false,
+  };
+}
 
 const DEFAULT_ORPHAN_COLUMNS_VISIBILITY = {
   group: true,
@@ -627,8 +710,7 @@ function OrphanGroupsTable(props: {
   onAssign?: (group: OrphanSignalGroupEntry) => void;
   onEdit?: (group: OrphanSignalGroupEntry) => void;
   onArchive?: (group: OrphanSignalGroupEntry) => void;
-  onUnarchive?: (group: OrphanSignalGroupEntry) => void;
-  unarchiveInFlightMasterKey?: string | null;
+  onView?: (group: OrphanSignalGroupEntry) => void;
 }) {
   const tableStateContext = useTableStateContext();
   const isLoading = Boolean(props.loading);
@@ -660,7 +742,12 @@ function OrphanGroupsTable(props: {
               : row.original.masterKey.slice(-5);
           return (
             <Tooltip title={name}>
-              <span>{name}</span>
+              <ButtonBase
+                onClick={() => props.onView?.(row.original)}
+                sx={{ color: 'inherit', textAlign: 'left', justifyContent: 'flex-start' }}
+              >
+                {name}
+              </ButtonBase>
             </Tooltip>
           );
         },
@@ -793,10 +880,7 @@ function OrphanGroupsTable(props: {
     columnSizing: tableStateContext.columnSizing,
   };
   const rowActionCount =
-    (props.onAssign ? 1 : 0) +
-    (props.onEdit ? 1 : 0) +
-    (props.onArchive ? 1 : 0) +
-    (props.onUnarchive ? 1 : 0);
+    (props.onAssign ? 1 : 0) + (props.onEdit ? 1 : 0) + (props.onArchive ? 1 : 0);
 
   const table = useMaterialReactTable({
     columns,
@@ -827,15 +911,7 @@ function OrphanGroupsTable(props: {
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) =>
       isLoading || !row.original?.masterKey ? null : (
-        <MrtRowActions>
-          {props.onAssign ? (
-            <MrtRowActionButton
-              label="Додати до напрямку"
-              onClick={() => props.onAssign?.(row.original)}
-              icon={<AddCircleOutlineIcon fontSize="small" />}
-              opensModal
-            />
-          ) : null}
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
           {props.onEdit ? (
             <MrtRowActionButton
               label="Редагувати"
@@ -844,30 +920,33 @@ function OrphanGroupsTable(props: {
               opensModal
             />
           ) : null}
-          {props.onArchive ? (
-            <MrtRowActionButton
-              label="Архівувати"
-              onClick={() => props.onArchive?.(row.original)}
-              icon={<ArchiveOutlinedIcon fontSize="small" />}
-              tone="warning"
-              opensModal
-            />
-          ) : null}
-          {props.onUnarchive ? (
-            <MrtRowActionButton
-              label="Повернути з архіву"
-              onClick={() => props.onUnarchive?.(row.original)}
-              disabled={props.unarchiveInFlightMasterKey === row.original.masterKey}
-              icon={
-                props.unarchiveInFlightMasterKey === row.original.masterKey ? (
-                  <CircularProgress size={16} color="inherit" />
-                ) : (
-                  <UnarchiveOutlinedIcon fontSize="small" />
-                )
-              }
-            />
-          ) : null}
-        </MrtRowActions>
+          <MrtRowActions forceMenu>
+            {props.onView ? (
+              <MrtRowActionButton
+                label="Переглянути"
+                onClick={() => props.onView?.(row.original)}
+                icon={<VisibilityOutlinedIcon fontSize="small" />}
+              />
+            ) : null}
+            {props.onAssign ? (
+              <MrtRowActionButton
+                label="Додати до напрямку"
+                onClick={() => props.onAssign?.(row.original)}
+                icon={<AddCircleOutlineIcon fontSize="small" />}
+                opensModal
+              />
+            ) : null}
+            {props.onArchive ? (
+              <MrtRowActionButton
+                label="Архівувати"
+                onClick={() => props.onArchive?.(row.original)}
+                icon={<ArchiveOutlinedIcon fontSize="small" />}
+                tone="warning"
+                opensModal
+              />
+            ) : null}
+          </MrtRowActions>
+        </Box>
       ),
     defaultColumn: {
       size: 200,
@@ -877,7 +956,7 @@ function OrphanGroupsTable(props: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: mrtRowActionsColumnSize(Math.max(rowActionCount, 1)),
+        size: props.onEdit ? 80 : mrtRowActionsColumnSize(Math.max(rowActionCount, 1)),
       },
     },
     muiTablePaperProps: ({ table }) => {
@@ -967,6 +1046,7 @@ function ZoneGroupsTable(props: {
   onEdit: (zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) => void;
   onDelete: (zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) => void;
   onArchive: (zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) => void;
+  onView: (masterKey: string) => void;
 }) {
   const tableStateContext = useTableStateContext();
   const isLoading = Boolean(props.loading);
@@ -998,7 +1078,12 @@ function ZoneGroupsTable(props: {
             <div className="flex flex-col gap-1">
               <div className="flex flex-wrap items-center gap-2">
                 <Tooltip title={groupName}>
-                  <span>{groupName}</span>
+                  <ButtonBase
+                    onClick={() => props.onView(row.original.group.groupMasterKey)}
+                    sx={{ color: 'inherit', textAlign: 'left' }}
+                  >
+                    {groupName}
+                  </ButtonBase>
                 </Tooltip>
                 {row.original.group.isGroupSecret ? (
                   <PowerChip
@@ -1240,7 +1325,7 @@ function ZoneGroupsTable(props: {
     positionActionsColumn: 'first',
     renderRowActions: ({ row }) =>
       isLoading || !row.original?.group ? null : (
-        <MrtRowActions>
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
           <MrtRowActionButton
             label="Редагувати"
             onClick={() =>
@@ -1249,25 +1334,32 @@ function ZoneGroupsTable(props: {
             icon={<EditIcon fontSize="small" />}
             opensModal
           />
-          <MrtRowActionButton
-            label="Архівувати"
-            onClick={() =>
-              props.onArchive(row.original.zoneId, row.original.datasourceId, row.original.group)
-            }
-            icon={<ArchiveOutlinedIcon fontSize="small" />}
-            tone="warning"
-            opensModal
-          />
-          <MrtRowActionButton
-            label="Видалити"
-            onClick={() =>
-              props.onDelete(row.original.zoneId, row.original.datasourceId, row.original.group)
-            }
-            icon={<DeleteIcon fontSize="small" />}
-            tone="danger"
-            opensModal
-          />
-        </MrtRowActions>
+          <MrtRowActions forceMenu>
+            <MrtRowActionButton
+              label="Переглянути"
+              onClick={() => props.onView(row.original.group.groupMasterKey)}
+              icon={<VisibilityOutlinedIcon fontSize="small" />}
+            />
+            <MrtRowActionButton
+              label="Архівувати"
+              onClick={() =>
+                props.onArchive(row.original.zoneId, row.original.datasourceId, row.original.group)
+              }
+              icon={<ArchiveOutlinedIcon fontSize="small" />}
+              tone="warning"
+              opensModal
+            />
+            <MrtRowActionButton
+              label="Видалити"
+              onClick={() =>
+                props.onDelete(row.original.zoneId, row.original.datasourceId, row.original.group)
+              }
+              icon={<DeleteIcon fontSize="small" />}
+              tone="danger"
+              opensModal
+            />
+          </MrtRowActions>
+        </Box>
       ),
     defaultColumn: {
       size: 200,
@@ -1277,7 +1369,7 @@ function ZoneGroupsTable(props: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: mrtRowActionsColumnSize(3),
+        size: 80,
       },
     },
     muiTablePaperProps: ({ table }) => {
@@ -1365,8 +1457,7 @@ function OrphanGroupsSection(props: {
   onAssign?: (group: OrphanSignalGroupEntry) => void;
   onEdit?: (group: OrphanSignalGroupEntry) => void;
   onArchive?: (group: OrphanSignalGroupEntry) => void;
-  onUnarchive?: (group: OrphanSignalGroupEntry) => void;
-  unarchiveInFlightMasterKey?: string | null;
+  onView?: (group: OrphanSignalGroupEntry) => void;
 }) {
   return (
     <TableStateProvider
@@ -1385,8 +1476,7 @@ function OrphanGroupsSection(props: {
           onAssign={props.onAssign}
           onEdit={props.onEdit}
           onArchive={props.onArchive}
-          onUnarchive={props.onUnarchive}
-          unarchiveInFlightMasterKey={props.unarchiveInFlightMasterKey}
+          onView={props.onView}
         />
       </div>
     </TableStateProvider>
@@ -1405,6 +1495,7 @@ function ZoneGroupsSection(props: {
   onEdit: (zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) => void;
   onDelete: (zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) => void;
   onArchive: (zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) => void;
+  onView: (masterKey: string) => void;
 }) {
   return (
     <TableStateProvider
@@ -1426,6 +1517,7 @@ function ZoneGroupsSection(props: {
           onEdit={props.onEdit}
           onDelete={props.onDelete}
           onArchive={props.onArchive}
+          onView={props.onView}
         />
       </div>
     </TableStateProvider>
@@ -1467,8 +1559,8 @@ function AdminDirectionsNeoPageBody() {
   const [assignDialog, setAssignDialog] = useState<OrphanAssignState | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<DeleteState | null>(null);
   const [archiveDialog, setArchiveDialog] = useState<ArchiveState | null>(null);
-  const [unarchiveInFlightMasterKey, setUnarchiveInFlightMasterKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
+  const [selectedGroupMasterKey, setSelectedGroupMasterKey] = useState(getSelectedGroupMasterKey);
 
   const [logins, setLogins] = useState<Login[]>([]);
   const [supportNonRerInterceptions, setSupportNonRerInterceptions] = useState(false);
@@ -1485,6 +1577,31 @@ function AdminDirectionsNeoPageBody() {
   );
   const aorOptions = useMemo(() => aors, [aors]);
   const aorFilterOptions = useMemo(() => buildAorFilterOptions(aors), [aors]);
+  const selectedGroup = useMemo(
+    () =>
+      selectedGroupMasterKey
+        ? buildGroupCardData({
+            masterKey: selectedGroupMasterKey,
+            groupInfos,
+            orphanGroups,
+            archivedGroups,
+            zoneGroups,
+            zones,
+            zoneDatasourceIds,
+            datasourceById,
+          })
+        : null,
+    [
+      archivedGroups,
+      datasourceById,
+      groupInfos,
+      orphanGroups,
+      selectedGroupMasterKey,
+      zoneDatasourceIds,
+      zoneGroups,
+      zones,
+    ],
+  );
   const directionTabs = useMemo<DirectionsTab[]>(() => {
     if (status === 'loading' || status === 'idle') {
       return [
@@ -1499,6 +1616,7 @@ function AdminDirectionsNeoPageBody() {
               aorFilterOptions={aorFilterOptions}
               onAssign={openAssignDialog}
               onEdit={openOrphanEditDialog}
+              onView={(group) => openGroupCard(group.masterKey)}
             />
           ),
         },
@@ -1512,8 +1630,8 @@ function AdminDirectionsNeoPageBody() {
               loading
               datasourceById={datasourceById}
               aorFilterOptions={aorFilterOptions}
-              onUnarchive={handleUnarchiveGroup}
-              unarchiveInFlightMasterKey={unarchiveInFlightMasterKey}
+              onEdit={openOrphanEditDialog}
+              onView={(group) => openGroupCard(group.masterKey)}
             />
           ),
         },
@@ -1535,6 +1653,7 @@ function AdminDirectionsNeoPageBody() {
               onAssign={openAssignDialog}
               onEdit={openOrphanEditDialog}
               onArchive={openArchiveOrphanDialog}
+              onView={(group) => openGroupCard(group.masterKey)}
             />
           ),
       },
@@ -1584,6 +1703,7 @@ function AdminDirectionsNeoPageBody() {
               onEdit={openEditDialog}
               onDelete={openDeleteDialog}
               onArchive={openArchiveZoneDialog}
+              onView={openGroupCard}
             />
           ),
       });
@@ -1601,8 +1721,8 @@ function AdminDirectionsNeoPageBody() {
             data={archivedGroups}
             datasourceById={datasourceById}
             aorFilterOptions={aorFilterOptions}
-            onUnarchive={handleUnarchiveGroup}
-            unarchiveInFlightMasterKey={unarchiveInFlightMasterKey}
+            onEdit={openOrphanEditDialog}
+            onView={(group) => openGroupCard(group.masterKey)}
           />
         ),
     });
@@ -1617,7 +1737,6 @@ function AdminDirectionsNeoPageBody() {
     loginById,
     organismById,
     orphanGroups,
-    unarchiveInFlightMasterKey,
     zoneDatasourceIds,
     zoneGroups,
     zones,
@@ -1626,6 +1745,25 @@ function AdminDirectionsNeoPageBody() {
   useEffect(() => {
     setActiveTab((current) => Math.min(current, Math.max(directionTabs.length - 1, 0)));
   }, [directionTabs.length]);
+
+  useEffect(() => {
+    function handlePopState() {
+      setSelectedGroupMasterKey(getSelectedGroupMasterKey());
+    }
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  function openGroupCard(masterKey: string) {
+    updateSelectedGroupUrl(masterKey);
+    setSelectedGroupMasterKey(masterKey);
+  }
+
+  function closeGroupCard() {
+    updateSelectedGroupUrl(null, true);
+    setSelectedGroupMasterKey(null);
+  }
 
   async function loadData() {
     setStatus('loading');
@@ -1822,18 +1960,6 @@ function AdminDirectionsNeoPageBody() {
     }
   }
 
-  async function handleUnarchiveGroup(group: OrphanSignalGroupEntry) {
-    setUnarchiveInFlightMasterKey(group.masterKey);
-    try {
-      await unarchiveSignalGroup({ masterKey: group.masterKey });
-      await loadData();
-    } catch (err) {
-      setError('Не вдалося повернути групу з архіву');
-    } finally {
-      setUnarchiveInFlightMasterKey(null);
-    }
-  }
-
   async function handleSaveGroupEdit() {
     if (!editDialog) return;
     setEditDialog({ ...editDialog, isSaving: true, error: null });
@@ -1898,6 +2024,24 @@ function AdminDirectionsNeoPageBody() {
       });
 
       setOrphanGroups((prev) =>
+        prev.map((group) => {
+          if (group.masterKey !== updated.masterKey) return group;
+          return {
+            ...group,
+            groupAdminData:
+              updated.shortNote || updated.longNote
+                ? {
+                    shortNote: updated.shortNote ?? null,
+                    longNote: updated.longNote ?? null,
+                  }
+                : null,
+            areasOfResponsibility: updated.areasOfResponsibility ?? null,
+            interseptionKind: orphanEditDialog.interseptionKind,
+            disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
+          };
+        }),
+      );
+      setArchivedGroups((prev) =>
         prev.map((group) => {
           if (group.masterKey !== updated.masterKey) return group;
           return {
@@ -2051,6 +2195,19 @@ function AdminDirectionsNeoPageBody() {
   const renderContent = () => {
     if (status === 'error') {
       return <PageErrorState message={error || 'Помилка завантаження'} />;
+    }
+
+    if (status === 'success' && selectedGroupMasterKey) {
+      if (!selectedGroup) {
+        return (
+          <PageErrorState
+            message="Групу не знайдено"
+            actionLabel="До списку груп"
+            onAction={closeGroupCard}
+          />
+        );
+      }
+      return <GroupCardView group={selectedGroup} onBack={closeGroupCard} />;
     }
 
     return (

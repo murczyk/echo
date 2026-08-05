@@ -18,6 +18,7 @@ describe('rer-network-details etalonka report helpers', () => {
       etalonkaType: {
         AccordingToTheForm: {
           activeFreqsOnly: true,
+          includeCallsignFullNames: false,
           includeSigintSigns: true,
           includeConfirmation: true,
           includeHeadingsAndFreqs: false,
@@ -32,6 +33,9 @@ describe('rer-network-details etalonka report helpers', () => {
     const report = createDefaultNetworkEtalonkaReportState();
     report.reportType = 'ExtendedReport';
     report.activeFreqsOnly = false;
+    report.includeFreqActiveFrom = true;
+    report.includeFreqCreatedAt = false;
+    report.includeCallsignFullNames = true;
     report.includeSigintSigns = false;
     report.includeConfirmation = true;
     report.includeUnitCallsigns = true;
@@ -47,6 +51,9 @@ describe('rer-network-details etalonka report helpers', () => {
           sinceDateInclusiveMs: combineDateTimeInputToMs('2026-01-15T12:34') ?? 0,
           tillDateInclusiveMs: combineDateTimeInputToMs('2026-01-16T09:05'),
           activeFreqsOnly: false,
+          includeFreqActiveFrom: true,
+          includeFreqCreatedAt: false,
+          includeCallsignFullNames: true,
           includeUnitCallsigns: true,
           includeSigintSigns: false,
           includeConfirmation: true,

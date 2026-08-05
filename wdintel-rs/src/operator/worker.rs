@@ -3,7 +3,6 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Mode, ShortContext};
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::worker_watch;
 use chrono::{NaiveDateTime, Utc};
 use echo_migration::JoinType;
@@ -58,7 +57,9 @@ pub async fn run_operator_inbox_worker_nofail(mode: Mode) {
         }
         if let Err(e) = import_sigint_inbox_message_metadata(&dbx).await.c(h!())
         {
-            println!("> echo_operator::import_sigint_inbox_message_metadata error: {e:?}");
+            println!(
+                "> echo_operator::import_sigint_inbox_message_metadata error: {e:?}"
+            );
         }
     }
 }

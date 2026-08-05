@@ -1,251 +1,319 @@
+import EditIcon from '@mui/icons-material/Edit';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import {
-  Card,
-  CardContent,
+  Box,
   Checkbox,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControl,
   ListItemText,
   MenuItem,
   Select,
-  SelectChangeEvent,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
+  Stack,
   Typography,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
+import {
+  MaterialReactTable,
+  type MRT_ColumnDef,
+  useMaterialReactTable,
+} from 'material-react-table';
+import { useEffect, useMemo, useState } from 'react';
 
+import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
+import { PageErrorState } from '../../components/PageErrorState';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
-import { ELLIPSIS } from '../../utils/misc';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import {
-  AorLocationConfigItem,
+  CUSTOM_CELL_STYLES,
+  CUSTOM_STYLES,
+  getDefaultMrtContainerProps,
+  getDefaultMrtPaperProps,
+} from '../../components/mui-customized/table/custom-styles';
+import {
+  getDefaultMRTOptions,
+  renderColumnActionsMenuItems,
+} from '../../components/mui-customized/table/get-default-table-options';
+import {
+  TableStateProvider,
+  useTableStateContext,
+} from '../../components/mui-customized/table/table-state-provider';
+import {
+  type AorLocationConfigItem,
   listAorLocationConfigs,
   saveAorLocationConfig,
 } from '../../services/api/location-config';
+import { ELLIPSIS } from '../../utils/misc';
 
-type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
-
-type RowState = AorLocationConfigItem & {
-  editedConfigs: string[];
-  isSaving: boolean;
-  saveError: string | null;
-};
-
-function areEqualStringArrays(left: string[], right: string[]): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
+const ROW_ACTIONS_COLUMN_SIZE = 56;
+const DEFAULT_COLUMN_ORDER = ['mrt-row-numbers', 'mrt-row-actions', 'aorName', 'selectedConfigs'];
+const DEFAULT_COLUMN_VISIBILITY = { aorName: true, selectedConfigs: true };
+const defaultMRTOptions = getDefaultMRTOptions<AorLocationConfigItem>();
 
 function formatConfigName(config: string): string {
   return config.split('/').pop() || config;
 }
 
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  try {
-    return JSON.stringify(error);
-  } catch (_) {
-    return 'Невідома помилка';
-  }
+function formatSelectedConfigs(configs: string[]): string {
+  return configs.length > 0
+    ? configs.map(formatConfigName).join(', ')
+    : 'Набір сервера за замовчуванням';
 }
 
-export function AdminLocationConfigsNeoPage() {
-  const [loadStatus, setLoadStatus] = useState<LoadingStatus>('idle');
+function formatErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  return 'Невідома помилка';
+}
+
+function LocationConfigsTable({
+  rows,
+  loading,
+  onEdit,
+}: {
+  rows: AorLocationConfigItem[];
+  loading: boolean;
+  onEdit: (row: AorLocationConfigItem) => void;
+}) {
+  const tableStateContext = useTableStateContext();
+  const columns = useMemo<MRT_ColumnDef<AorLocationConfigItem>[]>(
+    () => [
+      { accessorKey: 'aorName', header: 'AOR (смуга відповідальності)', size: 260 },
+      {
+        id: 'selectedConfigs',
+        accessorFn: (row) => formatSelectedConfigs(row.selectedConfigs),
+        header: 'Файли settlements.json',
+        size: 600,
+        Cell: ({ row }) => (
+          <Typography variant="body2">
+            {formatSelectedConfigs(row.original.selectedConfigs)}
+          </Typography>
+        ),
+      },
+    ],
+    [],
+  );
+  const table = useMaterialReactTable({
+    columns,
+    data: rows,
+    ...defaultMRTOptions,
+    enableSorting: true,
+    enableColumnActions: true,
+    enableRowNumbers: true,
+    enableColumnFilters: true,
+    enableColumnFilterModes: true,
+    enableFacetedValues: true,
+    enableRowActions: true,
+    positionActionsColumn: 'first',
+    renderRowActions: ({ row }) => (
+      <MrtRowActions>
+        <MrtRowActionButton
+          label="Редагувати"
+          icon={<EditIcon fontSize="small" />}
+          onClick={() => onEdit(row.original)}
+          disabled={loading}
+          opensModal
+        />
+      </MrtRowActions>
+    ),
+    enableColumnOrdering: tableStateContext.enableColumnOrdering,
+    enableColumnResizing: tableStateContext.enableColumnResizing,
+    columnFilterDisplayMode: 'popover',
+    globalFilterFn: 'contains',
+    onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
+    onColumnFiltersChange: tableStateContext.onColumnFiltersChange,
+    onColumnOrderChange: tableStateContext.onColumnOrderChange,
+    onColumnSizingChange: tableStateContext.onColumnSizingChange,
+    onSortingChange: tableStateContext.onSortingChange,
+    onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
+    getColumnCanGlobalFilter: (column) => column.getIsVisible(),
+    defaultColumn: { size: 200, renderColumnActionsMenuItems },
+    displayColumnDefOptions: {
+      ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: ROW_ACTIONS_COLUMN_SIZE,
+        minSize: ROW_ACTIONS_COLUMN_SIZE,
+        maxSize: ROW_ACTIONS_COLUMN_SIZE,
+      },
+      'mrt-row-numbers': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
+        muiTableBodyCellProps: () => ({
+          sx: { justifyContent: 'center', ...CUSTOM_CELL_STYLES },
+        }),
+      },
+    },
+    muiTablePaperProps: ({ table }) =>
+      getDefaultMrtPaperProps({ table, loading, layout: 'workspace' }),
+    muiTableContainerProps: ({ table }) =>
+      getDefaultMrtContainerProps({
+        loading,
+        layout: 'workspace',
+        fullScreen: table.getState().isFullScreen,
+        hasRows: rows.length > 0,
+      }),
+    state: {
+      showAlertBanner: false,
+      showProgressBars: loading,
+      globalFilter: tableStateContext.globalFilter,
+      columnVisibility: tableStateContext.columnVisibility,
+      columnFilters: tableStateContext.columnFilters,
+      density: tableStateContext.density,
+      sorting: tableStateContext.sorting,
+      columnOrder: tableStateContext.columnOrder,
+      columnSizing: tableStateContext.columnSizing,
+    },
+  });
+
+  useEffect(() => tableStateContext.onTableInitialized(table), [table]);
+
+  return <MaterialReactTable table={table} />;
+}
+
+function AdminLocationConfigsNeoPageBody() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [availableConfigs, setAvailableConfigs] = useState<string[]>([]);
-  const [rows, setRows] = useState<RowState[]>([]);
+  const [rows, setRows] = useState<AorLocationConfigItem[]>([]);
+  const [editingRow, setEditingRow] = useState<AorLocationConfigItem | null>(null);
+  const [editedConfigs, setEditedConfigs] = useState<string[]>([]);
 
   async function load() {
-    setLoadStatus('loading');
+    setLoading(true);
     setLoadError(null);
     try {
       const data = await listAorLocationConfigs();
       setAvailableConfigs(data.availableConfigs);
-      setRows(
-        data.items.map((item) => ({
-          ...item,
-          editedConfigs: item.selectedConfigs || [],
-          isSaving: false,
-          saveError: null,
-        })),
-      );
-      setLoadStatus('success');
+      setRows(data.items);
     } catch (error) {
-      setLoadStatus('error');
       setLoadError(formatErrorMessage(error));
+    } finally {
+      setLoading(false);
     }
   }
 
   useEffect(() => {
-    load();
+    void load();
   }, []);
 
-  function onSelectChange(aorId: number, event: SelectChangeEvent<string[]>) {
-    const value = event.target.value;
-    const selected = typeof value === 'string' ? value.split(',') : value;
-    setRows((prev) =>
-      prev.map((row) =>
-        row.aorId === aorId
-          ? {
-              ...row,
-              editedConfigs: selected,
-              saveError: null,
-            }
-          : row,
-      ),
-    );
+  function openEditor(row: AorLocationConfigItem) {
+    setEditingRow(row);
+    setEditedConfigs(row.selectedConfigs);
+    setSaveError(null);
   }
 
-  async function onSave(row: RowState) {
-    setRows((prev) =>
-      prev.map((entry) =>
-        entry.aorId === row.aorId
-          ? {
-              ...entry,
-              isSaving: true,
-              saveError: null,
-            }
-          : entry,
-      ),
-    );
-
+  async function save() {
+    if (!editingRow) return;
+    setSaving(true);
+    setSaveError(null);
     try {
-      const saved = await saveAorLocationConfig(row.aorId, row.editedConfigs);
-      setRows((prev) =>
-        prev.map((entry) =>
-          entry.aorId === row.aorId
-            ? {
-                ...entry,
-                selectedConfigs: saved.selectedConfigs,
-                editedConfigs: saved.selectedConfigs,
-                isSaving: false,
-                saveError: null,
-              }
-            : entry,
-        ),
-      );
+      const saved = await saveAorLocationConfig(editingRow.aorId, editedConfigs);
+      setRows((current) => current.map((row) => (row.aorId === saved.aorId ? saved : row)));
+      setEditingRow(null);
     } catch (error) {
-      const saveError = formatErrorMessage(error);
-      setRows((prev) =>
-        prev.map((entry) =>
-          entry.aorId === row.aorId
-            ? {
-                ...entry,
-                isSaving: false,
-                saveError,
-              }
-            : entry,
-        ),
-      );
+      setSaveError(formatErrorMessage(error));
+    } finally {
+      setSaving(false);
     }
   }
 
+  if (loading && rows.length === 0 && !loadError) return <PageLoadingState minHeight="100%" />;
+  if (loadError && rows.length === 0) {
+    return (
+      <PageErrorState
+        message={loadError}
+        actionLabel="Спробувати ще раз"
+        onAction={() => void load()}
+        minHeight="100%"
+      />
+    );
+  }
+
   return (
-    <Card variant="outlined">
-      <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
-        <div className="flex w-full min-w-0 flex-col gap-6">
-          <Typography component="h2" variant="h6" sx={{ m: 0, fontWeight: 600 }}>
-            Файли населених пунктів для AOR
-          </Typography>
-
-          <Typography color="text.secondary">
-            Оберіть один або кілька регіональних JSON-файлів, у яких ECHO шукатиме населені пункти
-            для кожної смуги відповідальності. Порожній вибір використовує набір сервера за
-            замовчуванням.
-          </Typography>
-
-          {loadStatus === 'loading' ? <PageLoadingState /> : null}
-
-          {loadStatus === 'error' ? (
-            <PowerAlert severity="error">{loadError || 'Помилка завантаження'}</PowerAlert>
-          ) : null}
-
-          {loadStatus === 'success' && availableConfigs.length === 0 ? (
-            <PowerAlert severity="warning">
-              У каталозі settlements_json немає доступних регіональних файлів.
-            </PowerAlert>
-          ) : null}
-
-          {loadStatus === 'success' && availableConfigs.length > 0 ? (
-            <Table
-              size="small"
-              sx={{
-                width: '100%',
-                tableLayout: 'fixed',
-              }}
+    <Box sx={{ height: { xs: 'auto', lg: '100%' }, minHeight: 0, overflow: 'hidden' }}>
+      <Stack spacing={3} useFlexGap sx={{ height: '100%', minHeight: 0 }}>
+        {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
+        {availableConfigs.length === 0 ? (
+          <PowerAlert severity="warning">
+            У каталозі settlements_json немає доступних регіональних файлів.
+          </PowerAlert>
+        ) : null}
+        <TablePageToolbar
+          title="Файли населених пунктів для AOR"
+          titleInfo="Регіональні JSON-файли, у яких ECHO шукає населені пункти для кожної смуги відповідальності. Порожній вибір використовує набір сервера за замовчуванням."
+          withGlobalTextFilter
+          internalActionsDisabled={loading && rows.length === 0}
+          actions={
+            <PowerButton
+              variant="outlined"
+              startIcon={<RefreshIcon />}
+              onClick={() => void load()}
+              disabled={loading}
             >
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ width: '20%' }}>AOR (смуга відповідальності)</TableCell>
-                  <TableCell sx={{ width: '70%' }}>Файли settlements.json</TableCell>
-                  <TableCell sx={{ width: '10%' }}>Дія</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {rows.map((row) => {
-                  const isChanged = !areEqualStringArrays(
-                    row.selectedConfigs || [],
-                    row.editedConfigs || [],
-                  );
-                  return (
-                    <TableRow key={row.aorId}>
-                      <TableCell sx={{ width: '10%' }}>{row.aorName}</TableCell>
-                      <TableCell>
-                        <FormControl size="small" fullWidth>
-                          <Select
-                            multiple
-                            displayEmpty
-                            value={row.editedConfigs}
-                            onChange={(event) => onSelectChange(row.aorId, event)}
-                            renderValue={(selected) =>
-                              selected.length > 0
-                                ? selected.map(formatConfigName).join(', ')
-                                : 'Набір сервера за замовчуванням'
-                            }
-                            sx={{
-                              '& .MuiSelect-select': {
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              },
-                            }}
-                          >
-                            {availableConfigs.map((config) => (
-                              <MenuItem value={config} key={config}>
-                                <Checkbox checked={row.editedConfigs.includes(config)} />
-                                <ListItemText primary={formatConfigName(config)} />
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      </TableCell>
-                      <TableCell sx={{ width: '10%' }}>
-                        <div className="flex items-center gap-2">
-                          <PowerButton
-                            variant="contained"
-                            disabled={!isChanged || row.isSaving}
-                            onClick={() => onSave(row)}
-                          >
-                            {row.isSaving ? `Збереження${ELLIPSIS}` : 'Зберегти'}
-                          </PowerButton>
-                          {row.saveError ? (
-                            <Typography color="error" variant="caption">
-                              {row.saveError}
-                            </Typography>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          ) : null}
-        </div>
-      </CardContent>
-    </Card>
+              Оновити
+            </PowerButton>
+          }
+        />
+        <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
+          <LocationConfigsTable rows={rows} loading={loading || saving} onEdit={openEditor} />
+        </Box>
+      </Stack>
+
+      <Dialog open={editingRow !== null} onClose={() => !saving && setEditingRow(null)} fullWidth>
+        <DialogTitle>Редагувати файли для {editingRow?.aorName}</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
+            <FormControl size="small" fullWidth>
+              <Select
+                multiple
+                displayEmpty
+                value={editedConfigs}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setEditedConfigs(typeof value === 'string' ? value.split(',') : value);
+                  setSaveError(null);
+                }}
+                renderValue={(selected) => formatSelectedConfigs(selected)}
+              >
+                {availableConfigs.map((config) => (
+                  <MenuItem value={config} key={config}>
+                    <Checkbox checked={editedConfigs.includes(config)} />
+                    <ListItemText primary={formatConfigName(config)} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+          <PowerButton variant="outlined" onClick={() => setEditingRow(null)} disabled={saving}>
+            Скасувати
+          </PowerButton>
+          <PowerButton variant="contained" onClick={() => void save()} disabled={saving}>
+            {saving ? `Збереження${ELLIPSIS}` : 'Зберегти'}
+          </PowerButton>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+}
+
+export function AdminLocationConfigsNeoPage() {
+  return (
+    <TableStateProvider
+      tableId="admin-location-configs"
+      defaultColumnOrder={DEFAULT_COLUMN_ORDER}
+      defaultColumnVisibility={DEFAULT_COLUMN_VISIBILITY}
+      defaultEnableColumnOrdering={false}
+    >
+      <AdminLocationConfigsNeoPageBody />
+    </TableStateProvider>
   );
 }

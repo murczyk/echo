@@ -3,7 +3,6 @@ use crate::error::AppError;
 use crate::types::*;
 use crate::users::ensure_rer_role;
 use crate::users::login_id_from_identity;
-use crate::utils::orm::ArrayColumnOps;
 use crate::{entities::*, utils::*};
 use actix_identity::Identity;
 use actix_web::post;

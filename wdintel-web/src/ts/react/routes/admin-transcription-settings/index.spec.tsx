@@ -66,6 +66,18 @@ async function clickButton(label: string) {
   });
 }
 
+async function clickDeleteAction() {
+  await clickButton('Дії');
+  const deleteItem = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
+    (item) => item.textContent?.trim() === 'Видалити',
+  );
+  expect(deleteItem).toBeDefined();
+  await act(async () => {
+    deleteItem?.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 410));
+  });
+}
+
 function editorDialog(): HTMLElement {
   const dialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).find(
     (item) => item.textContent?.includes('Echo GPU інстанс'),
@@ -286,7 +298,7 @@ describe('AdminTranscriptionSettingsPage', () => {
     await act(async () => first.root.unmount());
 
     const second = await renderPage();
-    await clickButton('Видалити');
+    await clickDeleteAction();
     expect(mocks.remove).not.toHaveBeenCalled();
     await confirmMutation();
     expect(mocks.remove).toHaveBeenCalledWith(instance.id);
@@ -304,7 +316,7 @@ describe('AdminTranscriptionSettingsPage', () => {
     const { container, root } = await renderPage();
     expect(container.textContent).toContain(instance.name);
 
-    await clickButton('Видалити');
+    await clickDeleteAction();
     await confirmMutation();
 
     expect(container.textContent).not.toContain(instance.name);

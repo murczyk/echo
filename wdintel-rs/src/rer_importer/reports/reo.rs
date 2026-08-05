@@ -6,7 +6,6 @@ use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
 use crate::rer_importer::types::InboxMessagesReq;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
 use chrono::prelude::*;
 use docx_rs::*;
@@ -127,8 +126,6 @@ struct ReoInboxMessageRow {
     pub timestamp: Option<NaiveDateTime>,
     pub freq: Option<String>,
     pub coords: Option<String>,
-    pub callsigns: Option<serde_json::Value>,
-    pub callsigns_alg2: Option<serde_json::Value>,
     pub callsign_tokens: Option<serde_json::Value>,
 }
 
@@ -227,12 +224,12 @@ pub async fn report_docx_kind_reo(
 
     let network_summary_total =
         report.summary.identified_qty + report.summary.unidentified_qty;
-    let network_summary =
-        format!("Відмічено радіомереж (радіонапрямків): {} (визначені - {}, не визначено - {})",
-                network_summary_total,
-                report.summary.identified_qty,
-                report.summary.unidentified_qty
-        );
+    let network_summary = format!(
+        "Відмічено радіомереж (радіонапрямків): {} (визначені - {}, не визначено - {})",
+        network_summary_total,
+        report.summary.identified_qty,
+        report.summary.unidentified_qty
+    );
 
     let result = match req.report_type {
         Some(ReportType::Reo(_, ReoReportFileType::Xlsx)) => {
@@ -275,8 +272,6 @@ async fn load_reo_inbox_messages(
     .column_as(signal_message::Column::Timestamp, "timestamp")
     .column_as(sigint_inbox_item::Column::Freq, "freq")
     .column_as(sigint_inbox_item::Column::Coords, "coords")
-    .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
-    .column_as(sigint_inbox_item::Column::CallsignsAlg2, "callsigns_alg2")
     .column_as(sigint_inbox_item::Column::CallsignTokens, "callsign_tokens")
     .into_model::<ReoInboxMessageRow>()
     .all(dbx)
@@ -294,10 +289,14 @@ async fn load_reo_inbox_messages(
         load_reo_group_master_keys(dbx, login, req, &message_ids)
             .await
             .context(h!())?;
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &message_ids).await?;
 
     rows.into_iter()
         .map(|row| {
             let id = row.id;
+            let callsigns =
+                normalized_callsigns.remove(&id).unwrap_or_default();
             Ok((
                 id,
                 ReoInboxMessage {
@@ -306,10 +305,8 @@ async fn load_reo_inbox_messages(
                     }),
                     freq: row.freq,
                     coords: row.coords,
-                    callsigns: parse_optional_json_vec(row.callsigns)?,
-                    callsigns_alg2: parse_optional_json_vec(
-                        row.callsigns_alg2,
-                    )?,
+                    callsigns: callsigns.primary,
+                    callsigns_alg2: callsigns.alg2,
                     callsign_tokens: parse_optional_json_vec(
                         row.callsign_tokens,
                     )?,
@@ -922,7 +919,7 @@ async fn collect_report(
 
     info!("collect_report: loading unit_callsigns from DB");
     let start = Instant::now();
-    let sigint_network_ids = networks
+    let sigint_network_ids: Vec<i64> = networks
         .network_summaries_dictionary
         .keys()
         .cloned()
@@ -1175,8 +1172,12 @@ async fn collect_report(
             all_undefined_networks.push(row);
         }
     }
-    info!("collect_report: building network rows took: {:?}, identified: {}, undefined: {}",
-          start.elapsed(), all_hostile_networks.len(), all_undefined_networks.len());
+    info!(
+        "collect_report: building network rows took: {:?}, identified: {}, undefined: {}",
+        start.elapsed(),
+        all_hostile_networks.len(),
+        all_undefined_networks.len()
+    );
 
     info!("collect_report: sorting and filtering undefined networks");
     let start = Instant::now();

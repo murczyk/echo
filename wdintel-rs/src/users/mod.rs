@@ -7,7 +7,6 @@ use crate::messenger::group::get_identity_sigint_groups;
 use crate::messenger::group::types::SignalGroupEntryF2;
 use crate::session::{record_new_session, record_page_visit};
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
 use actix_session::SessionExt;
 use actix_web::web::Json;
@@ -161,12 +160,6 @@ pub async fn ensure_admin(
     has_role(dbx, &login_id_from_identity(user)?, "Admin").await
 }
 
-fn has_orbit_role(roles: &[String]) -> bool {
-    roles.iter().any(|role| {
-        role == crate::config::ROLE_ADMIN || role == crate::config::ROLE_ORBIT
-    })
-}
-
 // WARNING: need to update Auth.elm too
 pub async fn has_any_role<T>(
     dbx: &sea_orm::DatabaseConnection,
@@ -189,61 +182,7 @@ where
     let roles: Vec<String> = serde_json::from_value(login_obj.roles).c(h!())?;
     let mut is_any_good = false;
     for role in roles_list.clone() {
-        let is_good = match role {
-            "Admin" => roles.contains(&"Admin".to_string()),
-            "Api" => roles.contains(&"Api".to_string()),
-            "ApiAgent" => roles.contains(&"ApiAgent".to_string()),
-            "Full" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-            }
-            "DeleteMsg" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-                    || roles.contains(&"DeleteMsg".to_string())
-            }
-            "Rer" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-                    || roles.contains(&"Rer".to_string())
-            }
-            "Bpla" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-                    || roles.contains(&"Bpla".to_string())
-            }
-            "Basic" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-                    || roles.contains(&"Bpla".to_string())
-                    || roles.contains(&"Rer".to_string())
-                    || roles.contains(&"Basic".to_string())
-            }
-            "UnitsEditor" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"UnitsEditor".to_string())
-            }
-            "NetworkEditor" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"NetworkEditor".to_string())
-            }
-            "CallsignsEditor" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"CallsignsEditor".to_string())
-            }
-            "AdvancedReports" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"AdvancedReports".to_string())
-            }
-            "Orbit" => has_orbit_role(&roles),
-            "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
-            role => {
-                return Err(AppError::BL {
-                    msg: format!("impossible! unknown role {role}"),
-                })
-            }
-        };
-        is_any_good |= is_good;
+        is_any_good |= role_matches(&roles, role)?;
     }
     if !is_any_good {
         return Err(AppError::Forbidden(format!(
@@ -253,6 +192,70 @@ where
         )));
     }
     Ok(())
+}
+
+fn role_matches(roles: &[String], role: &str) -> Result<bool, AppError> {
+    Ok(match role {
+        "Admin" => roles.contains(&"Admin".to_string()),
+        "Api" => roles.contains(&"Api".to_string()),
+        "ApiAgent" => roles.contains(&"ApiAgent".to_string()),
+        "Full" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+        }
+        "DeleteMsg" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+                || roles.contains(&"DeleteMsg".to_string())
+        }
+        "Rer" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+                || roles.contains(&"Rer".to_string())
+        }
+        "Bpla" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+                || roles.contains(&"Bpla".to_string())
+        }
+        "Basic" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+                || roles.contains(&"Bpla".to_string())
+                || roles.contains(&"Rer".to_string())
+                || roles.contains(&"Basic".to_string())
+        }
+        "UnitsEditor" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"UnitsEditor".to_string())
+        }
+        "NetworkEditor" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"NetworkEditor".to_string())
+        }
+        "CallsignsEditor" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"CallsignsEditor".to_string())
+        }
+        "Cyber" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Cyber".to_string())
+        }
+        "DeviceSource" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"DeviceSource".to_string())
+        }
+        "AdvancedReports" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"AdvancedReports".to_string())
+        }
+        "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
+        role => {
+            return Err(AppError::BL {
+                msg: format!("impossible! unknown role {role}"),
+            });
+        }
+    })
 }
 
 #[post("/api/user/keep-alive")]
@@ -287,10 +290,10 @@ pub async fn update_login(
     let req = req.into_inner();
     let update_description = has_update_login_description(&req);
     let req: UpdateLoginReq = serde_json::from_value(req).c(h!())?;
-
     let txn = env.dbx.begin().await.c(h!())?;
 
     let login_id = Uuid::parse_str(&req.id).c(h!())?;
+    crate::ai_agent::ensure_unmanaged_login(&txn, login_id).await?;
     let login_obj = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Id.eq(login_id))
@@ -431,6 +434,7 @@ pub async fn delete_login(
 
     let txn = env.dbx.begin().await.c(h!())?;
     let login_id = Uuid::parse_str(req.as_str()).c(h!())?;
+    crate::ai_agent::ensure_unmanaged_login(&txn, login_id).await?;
     let login_obj = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Id.eq(login_id))
@@ -455,7 +459,6 @@ pub async fn create_login(
     req: Json<CreateLoginReq>,
 ) -> Result<Json<Login>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-
     let salt_s =
         format!("{}{}", crate::config::IDENTITY_SALT, req.login.clone());
     let salt = salt_s.as_bytes();
@@ -543,7 +546,6 @@ pub async fn create_delta_login(
     has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
         .c(h!())?;
-
     let login = req.login.clone();
     let roles = req.roles.clone();
     let sigint_zone = req.sigint_zone_id;
@@ -594,8 +596,13 @@ pub async fn list_logins(
         .join(JoinType::LeftJoin, login::Relation::SigintZone.def())
         .join(JoinType::LeftJoin, login::Relation::Organism.def())
         .join(JoinType::LeftJoin, login::Relation::DeltaLogin.def())
-        .filter(organism::Column::DeletedPermanently.eq(false))
+        .filter(
+            Condition::any()
+                .add(organism::Column::DeletedPermanently.eq(false))
+                .add(login::Column::OrganismId.is_null()),
+        )
         .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(crate::ai_agent::unmanaged_login_condition())
         .select_only()
         .columns([
             login::Column::Id,
@@ -1381,7 +1388,10 @@ pub async fn validate_login(
     };
     if let Some(organism) = organisms.into_iter().next() {
         if !organism.enabled {
-            println!("user {} not authorized, reason: organism {} (id {}) was disabled", login, organism.name, organism.id);
+            println!(
+                "user {} not authorized, reason: organism {} (id {}) was disabled",
+                login, organism.name, organism.id
+            );
             return Ok(UserValidationResult {
                 login_model: None,
                 is_valid: true,
@@ -1394,7 +1404,9 @@ pub async fn validate_login(
     if login_obj.deleted {
         let (msg, reason) = match login_obj.deactivation_reason {
             Some(DeactivationReasonEnum::Inactive) => {
-                let message = format!("Користувача \"{login}\" було заблоковано як не активного більше {INACTIVE_USERS_DEACTIVATE_AFTER_DAYS} днів. Зверніться до адміністратора");
+                let message = format!(
+                    "Користувача \"{login}\" було заблоковано як не активного більше {INACTIVE_USERS_DEACTIVATE_AFTER_DAYS} днів. Зверніться до адміністратора"
+                );
                 (message, Some(DeactivationReasonEnum::Inactive))
             }
             Some(DeactivationReasonEnum::Admin) => {
@@ -1865,13 +1877,6 @@ mod tests {
         assert!(has_update_login_description(&serde_json::json!({
             "description": "note"
         })));
-    }
-
-    #[test]
-    fn orbit_role_includes_admin_but_not_rer() {
-        assert!(has_orbit_role(&["Orbit".to_string()]));
-        assert!(has_orbit_role(&["Admin".to_string()]));
-        assert!(!has_orbit_role(&["Rer".to_string()]));
     }
 
     async fn create_grouped_message(
@@ -2484,5 +2489,24 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(derived_count, 0);
+    }
+    fn roles(roles: &[&str]) -> Vec<String> {
+        roles.iter().map(|role| (*role).to_owned()).collect()
+    }
+
+    #[test]
+    fn devices_roles_preserve_boundaries() {
+        assert!(role_matches(&roles(&["Cyber"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["DeviceSource"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["Cyber"]), "DeviceSource").unwrap());
+        assert!(
+            role_matches(&roles(&["DeviceSource"]), "DeviceSource").unwrap()
+        );
+        assert!(role_matches(&roles(&["Admin"]), "Cyber").unwrap());
+        assert!(role_matches(&roles(&["Admin"]), "DeviceSource").unwrap());
+        assert!(!role_matches(&roles(&["Api"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["Full"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["Api"]), "DeviceSource").unwrap());
+        assert!(!role_matches(&roles(&["Full"]), "DeviceSource").unwrap());
     }
 }

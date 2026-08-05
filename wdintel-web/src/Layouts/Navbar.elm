@@ -201,12 +201,19 @@ view user activeName shared route { toContentMsg, model, content } =
         supportsFullscreenToggle =
             route.url.path == "/rer-duty" || route.url.path == "/rer-duty-neo"
 
+        isDevicesPath =
+            route.url.path == "/devices" || String.startsWith "/devices/" route.url.path
+
+        isDevicesListPath =
+            route.url.path == "/devices"
+
         usesShellContentGap =
             route.url.path
                 == "/rer-palitra-neo"
                 || route.url.path
                 == "/rer-callsigns-neo"
                 || route.url.path == "/rer-networks-neo"
+                || isDevicesListPath
 
         usesFixedViewportLayout =
             usesShellContentGap
@@ -272,6 +279,8 @@ view user activeName shared route { toContentMsg, model, content } =
                                             , ( "enableAudioTranscription", Encode.bool settings.enableAudioTranscription )
                                             , ( "showClassicDuty", Encode.bool settings.showClassicDuty )
                                             , ( "showClassicAnalysis", Encode.bool settings.showClassicAnalysis )
+                                            , ( "supportNonRerInterceptions", Encode.bool settings.supportNonRerInterceptions )
+                                            , ( "devicesSectionEnabled", Encode.bool settings.devicesSectionEnabled )
                                             ]
                                     Nothing ->
                                         Encode.null
@@ -346,7 +355,7 @@ view user activeName shared route { toContentMsg, model, content } =
              , onClick (toContentMsg (SetOpenDropdown Nothing))
              , attribute "data-auth-user-name" user.name
              ]
-                ++ (if route.url.path == "/rer-duty-neo" || route.url.path == "/rer-callsigns-neo" then
+                ++ (if route.url.path == "/rer-duty-neo" || route.url.path == "/rer-callsigns-neo" || isDevicesPath then
                         [ attribute "data-auth-user-roles" (String.join "," user.roles) ]
 
                     else

@@ -2,16 +2,20 @@ import type {
   CreateUnitReq,
   CreateUnitWithAutoNetworkReq,
   CreateUnitWithAutoNetworkRsp,
+  CreateDeviceNetworkReq,
+  CreateDeviceNetworkRsp,
   DeleteUnitAttachmentReq,
-  LinkOrbitUnitReq,
   DeleteUnitAttachmentRsp,
   DeleteUnitDuplicateReq,
+  ImportOrbitUnitReq,
+  LinkOrbitUnitReq,
   ListUnitsByIdRsp,
   ListUnitsReq,
   ListUnitsRsp,
   OrbitUnitLinkCandidate,
   OrbitUnitLinkCandidatesReq,
   OrbitUnitLinkCandidatesRsp,
+  OrbitUnitSearchReq,
   Unit,
   UnitAttachment,
   UnitAttachmentUnitIdsRsp,
@@ -64,6 +68,16 @@ export async function createUnitWithAutoNetwork(
   return transformSnakeToCamel<CreateUnitWithAutoNetworkRsp>(raw);
 }
 
+export async function createDeviceNetwork(
+  req: CreateDeviceNetworkReq,
+): Promise<CreateDeviceNetworkRsp> {
+  const raw = await postJson<unknown>(
+    '/api/sigint/unit/create-device-network',
+    transformCamelToSnake(req),
+  );
+  return transformSnakeToCamel<CreateDeviceNetworkRsp>(raw);
+}
+
 export async function updateUnit(unit: Unit): Promise<Unit> {
   const raw = await postJson<unknown>('/api/sigint/unit/update', transformCamelToSnake(unit));
   return transformSnakeToCamel<Unit>(raw);
@@ -108,6 +122,28 @@ export async function getOrbitUnitLinkCandidates(
           options,
         );
   return transformSnakeToCamel<OrbitUnitLinkCandidatesRsp>(raw).units ?? [];
+}
+
+export async function searchOrbitUnits(
+  req: OrbitUnitSearchReq,
+  options?: RequestOptions,
+): Promise<OrbitUnitLinkCandidate[]> {
+  const raw =
+    options == null
+      ? await postJson<unknown>('/api/sigint/unit/orbit-search', transformCamelToSnake(req))
+      : await postJson<unknown>(
+          '/api/sigint/unit/orbit-search',
+          transformCamelToSnake(req),
+          options,
+        );
+  return transformSnakeToCamel<OrbitUnitLinkCandidatesRsp>(raw).units ?? [];
+}
+
+export async function importOrbitUnit(
+  req: ImportOrbitUnitReq,
+): Promise<CreateUnitWithAutoNetworkRsp> {
+  const raw = await postJson<unknown>('/api/sigint/unit/orbit-import', transformCamelToSnake(req));
+  return transformSnakeToCamel<CreateUnitWithAutoNetworkRsp>(raw);
 }
 
 export async function linkOrbitUnit(req: LinkOrbitUnitReq): Promise<void> {

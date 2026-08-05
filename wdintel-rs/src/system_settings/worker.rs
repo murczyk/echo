@@ -15,7 +15,6 @@ use crate::system_settings::get_active_system_settings;
 use crate::system_settings::types::RerDutyTestReplayStatusRsp;
 use crate::types::{error, info};
 use crate::types::{Mode, ShortContext};
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::worker_watch;
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use lazy_static::lazy_static;
@@ -189,7 +188,7 @@ where
     C: ConnectionTrait,
 {
     let row = dbx
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "select pg_try_advisory_xact_lock($1) as acquired",
             [RER_DUTY_TEST_REPLAY_ADVISORY_LOCK_KEY.into()],
@@ -201,12 +200,13 @@ where
 }
 
 fn sleep_until(next_emit_at: NaiveDateTime, now: NaiveDateTime) -> u64 {
-    let milliseconds = (next_emit_at - now).num_milliseconds().max(1);
+    let milliseconds =
+        std::cmp::max((next_emit_at - now).num_milliseconds(), 1);
     ((milliseconds + 999) / 1_000) as u64
 }
 
 fn responsive_sleep(sleep_sec: u64) -> u64 {
-    sleep_sec.min(RER_DUTY_TEST_REPLAY_DISABLED_SLEEP_SEC)
+    std::cmp::min(sleep_sec, RER_DUTY_TEST_REPLAY_DISABLED_SLEEP_SEC)
 }
 
 fn replay_interval_sec(interval_sec: i64) -> i64 {
@@ -221,7 +221,8 @@ async fn load_replay_source_ids<C>(
 where
     C: ConnectionTrait,
 {
-    let since = crate::utils::dt_from_millis(since_ms.max(0)).c(h!())?;
+    let since =
+        crate::utils::dt_from_millis(std::cmp::max(since_ms, 0)).c(h!())?;
     let limit = limit.clamp(1, RER_DUTY_TEST_REPLAY_SOURCE_MAX) as u64;
     let replay_comment = Query::select()
         .expr(Expr::value(1))
@@ -258,7 +259,7 @@ where
 }
 
 fn next_source_index(source_ids: &[i64], generated_count: i64) -> usize {
-    generated_count.max(0) as usize % source_ids.len()
+    std::cmp::max(generated_count, 0) as usize % source_ids.len()
 }
 
 async fn cleanup_replayed_messages(
@@ -631,6 +632,11 @@ where
     .insert(dbx)
     .await
     .c(h!())?;
+    let callsigns = crate::inbox::callsigns::from_legacy(&source.inbox_item)?;
+    let system_login_id = crate::users::system_login_id(dbx).await.c(h!())?;
+    crate::inbox::callsigns::sync(dbx, inserted.id, callsigns, system_login_id)
+        .await
+        .c(h!())?;
 
     for metadata in &source.metadata {
         sigint_inbox_item_metadata::ActiveModel {

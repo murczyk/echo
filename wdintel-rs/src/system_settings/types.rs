@@ -31,6 +31,7 @@ pub struct SystemSettingsCurrentRsp {
     pub enable_audio_transcription: bool,
     pub show_classic_duty: bool,
     pub show_classic_analysis: bool,
+    pub hide_orbit_data: bool,
 }
 
 #[derive(

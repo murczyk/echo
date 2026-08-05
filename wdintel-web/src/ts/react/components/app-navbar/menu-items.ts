@@ -71,13 +71,22 @@ export const analysisSubs: Menu[] = [
   },
 ];
 
+const networksDatabaseSub: Menu = {
+  type: 'item',
+  link: { type: 'internal', path: '/rer-networks-neo' },
+  activeName: 'networks-neo',
+  label: 'Мережі',
+};
+
+export const devicesDatabaseSub: Menu = {
+  type: 'item',
+  link: { type: 'internal', path: '/devices' },
+  activeName: 'devices',
+  label: 'Пристрої',
+};
+
 export const databaseSubs: Menu[] = [
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/rer-networks-neo' },
-    activeName: 'networks-neo',
-    label: 'Мережі',
-  },
+  networksDatabaseSub,
   {
     type: 'item',
     link: { type: 'internal', path: '/rer-palitra-neo' },
@@ -110,6 +119,22 @@ export const databaseSubs: Menu[] = [
   },
 ];
 
+export function getDatabaseSubs({
+  includeRerItems,
+  includeDevicesItem,
+}: {
+  includeRerItems: boolean;
+  includeDevicesItem: boolean;
+}): Menu[] {
+  if (!includeRerItems) {
+    return includeDevicesItem ? [devicesDatabaseSub] : [];
+  }
+
+  return includeDevicesItem
+    ? [networksDatabaseSub, devicesDatabaseSub, ...databaseSubs.slice(1)]
+    : databaseSubs;
+}
+
 export const converterSubs: Menu[] = [
   {
     type: 'item',
@@ -140,6 +165,96 @@ export const converterSubs: Menu[] = [
     link: { type: 'internal', path: '/coords-converter' },
     activeName: 'coords-converter',
     label: 'Координати',
+  },
+];
+
+export const aiAgentAdminSubs: Menu[] = [
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/ai/providers' },
+    activeName: 'ai-agent-providers',
+    label: 'Провайдери',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/ai/settings' },
+    activeName: 'ai-agent-settings',
+    label: 'Налаштування ШІ',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/ai/containers' },
+    activeName: 'ai-agent-containers',
+    label: 'Контейнери',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/ai/requests' },
+    activeName: 'ai-agent-requests',
+    label: 'Запити',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/ai/dispatcher' },
+    activeName: 'ai-agent-dispatcher',
+    label: 'Диспетчер',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/ai/echo-proxies' },
+    activeName: 'ai-agent-echo-proxies',
+    label: 'Зворотні проксі',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/ai/callsigns' },
+    activeName: 'ai-agent-callsigns',
+    label: 'Позивні',
+  },
+];
+
+export const adminDatabaseSubs: Menu[] = [
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/api-integrations' },
+    activeName: 'api-integrations',
+    label: 'Інтеграції API',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/transcription-settings' },
+    activeName: 'transcription-settings',
+    label: 'Echo GPU Сервери',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/all-reports' },
+    activeName: 'all-reports',
+    label: 'Всі звіти',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/goi-integrations-neo' },
+    activeName: 'goi-integrations-neo',
+    label: 'ГОІ',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/keys-neo' },
+    activeName: 'keys-neo',
+    label: 'Ключі',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/location-configs-neo' },
+    activeName: 'location-config-neo',
+    label: 'Населені пункти смуг',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/tags-neo' },
+    activeName: 'tags-neo',
+    label: 'Теги',
   },
 ];
 
@@ -182,64 +297,33 @@ export const adminSubs: Menu[] = [
   },
   { type: 'separator' },
   {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/api-integrations' },
-    activeName: 'api-integrations',
-    label: 'API інтеграції',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/transcription-settings' },
-    activeName: 'transcription-settings',
-    label: 'Echo GPU Сервери',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/all-reports' },
-    activeName: 'all-reports',
-    label: 'Всі звіти',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/ai-callsigns' },
-    activeName: 'ai-callsigns',
-    label: 'Позивні',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/goi-integrations-neo' },
-    activeName: 'goi-integrations-neo',
-    label: 'ГОІ',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/keys-neo' },
-    activeName: 'keys-neo',
-    label: 'Ключі',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/location-configs-neo' },
-    activeName: 'location-config-neo',
-    label: 'Населені пункти смуг',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/tags-neo' },
-    activeName: 'tags-neo',
-    label: 'Теги',
+    type: 'group',
+    label: 'Бази',
+    subs: adminDatabaseSubs,
   },
   { type: 'separator' },
   {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/rer-csv-import' },
-    activeName: 'rer-csv-import',
-    label: 'Імпорт CSV',
+    type: 'group',
+    label: 'ШІ',
+    subs: aiAgentAdminSubs,
   },
+  { type: 'separator' },
   {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/rer-delta-import' },
-    activeName: 'rer-delta-import',
-    label: 'Імпорт Delta',
+    type: 'group',
+    label: 'Імпорт',
+    subs: [
+      {
+        type: 'item',
+        link: { type: 'internal', path: '/admin/rer-csv-import' },
+        activeName: 'rer-csv-import',
+        label: 'Імпорт CSV',
+      },
+      {
+        type: 'item',
+        link: { type: 'internal', path: '/admin/rer-delta-import' },
+        activeName: 'rer-delta-import',
+        label: 'Імпорт Delta',
+      },
+    ],
   },
 ];

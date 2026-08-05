@@ -5,7 +5,6 @@ use crate::h;
 use crate::storage;
 use crate::types::{error, warn};
 use crate::types::{Env, ShortContext};
-use crate::utils::orm::ArrayColumnOps;
 use echo_im::types::MessageAttachmentF1;
 use opendal::Operator;
 use sea_orm::{

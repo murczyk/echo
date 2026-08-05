@@ -477,6 +477,7 @@ export type InboxMessagesReq = {
   selectedUnits: Array<string> | null;
   deniedUnits: Array<string> | null;
   selectedLocations: Array<string> | null;
+  selectedDeviceNames: Array<string> | null;
   nolimit: boolean | null;
   orWithExtendedForm: boolean | null;
   loadLatest: boolean | null;
@@ -713,6 +714,7 @@ export type AnalysisStatsReq = {
   selectedCallsigns: Array<string> | null;
   selectedUnits: Array<string> | null;
   selectedLocations: Array<string> | null;
+  selectedDeviceNames: Array<string> | null;
   selectedAors: Array<number> | null;
   orWithExtendedForm: boolean | null;
   orBookmarked: boolean | null;
@@ -867,6 +869,7 @@ export type CallsignsGraphReq = {
   selectedCallsigns: Array<string> | null;
   selectedUnits: Array<string> | null;
   selectedLocations: Array<string> | null;
+  selectedDeviceNames: Array<string> | null;
   orWithExtendedForm: boolean | null;
   orBookmarked: boolean | null;
   orImportant: boolean | null;
@@ -1582,6 +1585,279 @@ export type TestIggyConnectionReq = {
   password: string;
 };
 
+export type AorSummary = {
+  id: number;
+  name: string;
+};
+
+export type UnitSummary = {
+  id: number;
+  name: string;
+};
+
+export type FileEntryKind =
+  | 'directory'
+  | 'file'
+;
+
+export type DeviceArchivedFilter =
+  | 'active_only'
+  | 'archived_only'
+  | 'all'
+;
+
+export type DeviceListSortBy =
+  | 'display_title_asc'
+  | 'display_title_desc'
+  | 'created_at_asc'
+  | 'created_at_desc'
+  | 'updated_at_asc'
+  | 'updated_at_desc'
+;
+
+export type DeviceStatusCounts = {
+  active: number;
+  archived: number;
+};
+
+export type DeviceListItem = {
+  id: string;
+  name: string | null;
+  aors: Array<AorSummary>;
+  unit: UnitSummary | null;
+  createdBy: string;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+};
+
+export type DeviceDetails = {
+  id: string;
+  name: string | null;
+  aors: Array<AorSummary>;
+  unit: UnitSummary | null;
+  externalUrl: string | null;
+  customFields: Record<string, string>;
+  createdBy: string;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+};
+
+export type DeviceUnitStat = {
+  unit: UnitSummary;
+  count: number;
+};
+
+export type ListDevicesReq = {
+  filterText: string | null;
+  archivedFilter: DeviceArchivedFilter | null;
+  aorIds: Array<number> | null;
+  unitIds: Array<number> | null;
+  limit: number | null;
+  offset: number | null;
+  sortBy: Array<DeviceListSortBy>;
+};
+
+export type ListDevicesRsp = {
+  list: Array<DeviceListItem>;
+  total: number;
+  hasMore: boolean;
+  statusCounts: DeviceStatusCounts;
+};
+
+export type DeviceUnitStatsRsp = {
+  units: Array<DeviceUnitStat>;
+};
+
+export type DeviceDetailReq = {
+  deviceId: string;
+  includeArchived: boolean | null;
+};
+
+export type CreateDeviceReq = {
+  name: string | null;
+  externalUrl: string | null;
+  customFields: Record<string, string> | null;
+};
+
+export type UpdateDeviceReq = {
+  deviceId: string;
+  externalUrl: string | null;
+  customFields: Record<string, string | null> | null;
+  name: string | null;
+  aorIds: Array<number> | null;
+  unitId: number | null;
+};
+
+export type DeviceFileRoot = {
+  entryId: string;
+  deviceId: string;
+  parentEntryId: string | null;
+  kind: FileEntryKind;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FileBreadcrumb = {
+  entryId: string;
+  name: string;
+};
+
+export type DeviceFileTreeEntry = {
+  entryId: string;
+  parentEntryId: string;
+  kind: FileEntryKind;
+  fileId: string | null;
+  name: string;
+  pathComponents: Array<string>;
+  absolutePath: string | null;
+  hasContent: boolean;
+  mimeType: string | null;
+  extension: string | null;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DeviceFile = {
+  fileId: string;
+  deviceId: string;
+  parentEntryId: string;
+  rootEntryId: string;
+  absolutePath: string;
+  hasContent: boolean;
+  name: string;
+  pathComponents: Array<string>;
+  mimeType: string | null;
+  extension: string | null;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ListDeviceFileRootsReq = {
+  deviceId: string;
+};
+
+export type ListDeviceFileRootsRsp = {
+  roots: Array<DeviceFileRoot>;
+};
+
+export type DeviceFileSubtreeCount = {
+  entryId: string;
+  fileCount: number;
+};
+
+export type CountDeviceFileSubtreesReq = {
+  deviceId: string;
+  parentEntryId: string | null;
+  directoryEntryIds: Array<string>;
+};
+
+export type CountDeviceFileSubtreesRsp = {
+  counts: Array<DeviceFileSubtreeCount>;
+};
+
+export type BrowseDeviceFilesReq = {
+  deviceId: string;
+  parentEntryId: string;
+  includeBreadcrumbs: boolean | null;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type BrowseDeviceFilesRsp = {
+  breadcrumbs: Array<FileBreadcrumb>;
+  entries: Array<DeviceFileTreeEntry>;
+  nextCursor: string | null;
+};
+
+export type SearchDeviceFilesReq = {
+  deviceId: string;
+  scopeEntryId: string;
+  nameQuery: string | null;
+  kinds: Array<FileEntryKind> | null;
+  mimeTypes: Array<string> | null;
+  extensions: Array<string> | null;
+  fileMetadataModifiedFrom: string | null;
+  fileMetadataModifiedTo: string | null;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type SearchDeviceFilesRsp = {
+  entries: Array<DeviceFileTreeEntry>;
+  nextCursor: string | null;
+};
+
+export type DeviceFileJournalEntry = {
+  fileId: string;
+  name: string;
+  absolutePath: string;
+  hasContent: boolean;
+  synchronizedAt: string;
+};
+
+export type JournalDeviceFilesReq = {
+  deviceId: string;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type JournalDeviceFilesRsp = {
+  entries: Array<DeviceFileJournalEntry>;
+  totalCount: number;
+  nextCursor: string | null;
+};
+
+export type SyncDeviceFileItem = {
+  fileId: string | null;
+  absolutePath: string;
+  mimeType: string | null;
+  extension: string | null;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+};
+
+export type FileSyncOperation =
+  | 'created'
+  | 'updated'
+;
+
+export type FileSyncErrorKind =
+  | 'validation'
+  | 'not_found'
+  | 'conflict'
+  | 'dependency'
+  | 'internal'
+;
+
+export type FileSyncError = {
+  kind: FileSyncErrorKind;
+  message: string;
+  fieldErrors: Array<[string, string]>;
+};
+
+export type FileSyncResult =
+  | { Accepted: { index: number; operation: FileSyncOperation; root: DeviceFileRoot; file: DeviceFile } }
+  | { Rejected: { index: number; error: FileSyncError } }
+;
+
+export type SyncDeviceFilesReq = {
+  deviceId: string;
+  files: Array<SyncDeviceFileItem>;
+};
+
+export type SyncDeviceFilesRsp = {
+  results: Array<FileSyncResult>;
+};
+
 export type Organism = {
   id: number;
   parentId: number | null;
@@ -2112,6 +2388,7 @@ export type Unit = {
   comment: string;
   name: string;
   active: boolean;
+  isDeduplicateCandidate: boolean | null;
   createdAt: number;
   createdByLoginId: string;
   hasOrbit: boolean;
@@ -2143,6 +2420,7 @@ export type CreateUnitReq = {
   division: string;
   army: string;
   active: boolean;
+  isDeduplicateCandidate: boolean | null;
   comment: string;
 };
 
@@ -2156,6 +2434,16 @@ export type CreateUnitWithAutoNetworkReq = {
 export type CreateUnitWithAutoNetworkRsp = {
   unit: Unit;
   networkId: number | null;
+};
+
+export type CreateDeviceNetworkReq = {
+  unitId: number;
+  locations: Array<string>;
+  unitMask: Array<string>;
+};
+
+export type CreateDeviceNetworkRsp = {
+  networkId: number;
 };
 
 export type DeleteUnitDuplicateReq = {
@@ -2230,6 +2518,14 @@ export type OrbitUnitLinkCandidatesRsp = {
   units: Array<OrbitUnitLinkCandidate>;
 };
 
+export type OrbitUnitSearchReq = {
+  search: string;
+};
+
+export type ImportOrbitUnitReq = {
+  orbitUnitId: string;
+};
+
 export type LinkOrbitUnitReq = {
   sigintUnitId: number;
   orbitUnitId: string;
@@ -2240,6 +2536,7 @@ export type UnitDetailsRsp = {
   attachments: Array<UnitAttachment>;
   orbitUnits: Array<OrbitUnitDetails>;
   canLinkOrbitUnit: boolean;
+  canCreateDeviceNetwork: boolean;
 };
 
 export type UnitAttachmentUnitIdsRsp = {
@@ -2547,6 +2844,9 @@ export type EtalonkaExtendedSettings = {
   sinceDateInclusiveMs: number;
   tillDateInclusiveMs: number | null;
   activeFreqsOnly: boolean;
+  includeFreqActiveFrom: boolean;
+  includeFreqCreatedAt: boolean;
+  includeCallsignFullNames: boolean;
   includeUnitCallsigns: boolean;
   includeSigintSigns: boolean;
   includeConfirmation: boolean;
@@ -2567,6 +2867,7 @@ export type EtalonkaNetworkBatchReq = {
 
 export type EtalonkaSettings = {
   activeFreqsOnly: boolean;
+  includeCallsignFullNames: boolean;
   includeSigintSigns: boolean;
   includeConfirmation: boolean;
   includeHeadingsAndFreqs: boolean;
@@ -2610,6 +2911,7 @@ export type KnownCallsignShortRes = {
   callsign: string;
   position: string;
   comment: string;
+  fullName: string;
   unitId: number;
   unitName: string;
   sourceName: string;
@@ -3430,6 +3732,7 @@ export type SystemSettingsCurrentRsp = {
   enableAudioTranscription: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  hideOrbitData: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -3589,6 +3892,251 @@ export type SendAiChatMessageReq = {
   aiEngineId: string;
   chatId: string | null;
   prompt: string;
+};
+
+export type AiAgentProviderItem = {
+  id: string;
+  name: string;
+  modelName: string;
+};
+
+export type AiAgentConfigurationRsp = {
+  featureEnabled: boolean;
+  defaultAiEngineId: string | null;
+  providers: Array<AiAgentProviderItem>;
+};
+
+export type AiAgentConversationSummary = {
+  id: string;
+  title: string;
+  aiEngineId: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AiAgentConversationListRsp = {
+  items: Array<AiAgentConversationSummary>;
+};
+
+export type AiAgentConversationCreateReq = {
+  aiEngineId: string | null;
+  title: string | null;
+};
+
+export type AiAgentConversationIdReq = {
+  id: string;
+};
+
+export type AiAgentConversationUpdateReq = {
+  id: string;
+  title: string;
+};
+
+export type AiAgentMessageItem = {
+  requestId: string;
+  requestState: string;
+  role: string;
+  content: string;
+  createdAt: number;
+};
+
+export type AiAgentConversationDetail = {
+  id: string;
+  title: string;
+  aiEngineId: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: Array<AiAgentMessageItem>;
+};
+
+export type AiAgentRequestCreateReq = {
+  conversationId: string | null;
+  aiEngineId: string | null;
+  prompt: string;
+};
+
+export type AiAgentRequestCreateRsp = {
+  requestId: string;
+  conversationId: string;
+  state: string;
+};
+
+export type AiAgentRequestIdReq = {
+  requestId: string;
+};
+
+export type AiAgentRequestCancelRsp = {
+  state: string;
+};
+
+export type AiAgentAdminSettingsItem = {
+  featureEnabled: boolean;
+  templateLoginId: string;
+  defaultAiEngineId: string | null;
+  reviewerAiEngineId: string | null;
+  securityReviewEnabled: boolean;
+  mattermostChatEnabled: boolean;
+  hasMattermostWebhook: boolean;
+  allowedAiEngineIds: Array<string>;
+};
+
+export type AiAgentAdminSettingsUpdateReq = {
+  featureEnabled: boolean;
+  templateLoginId: string | null;
+  defaultAiEngineId: string | null;
+  reviewerAiEngineId: string | null;
+  securityReviewEnabled: boolean;
+  mattermostChatEnabled: boolean;
+  mattermostWebhookUrl: string | null;
+  clearMattermostWebhook: boolean;
+  allowedAiEngineIds: Array<string>;
+};
+
+export type AiAgentDispatcherItem = {
+  configured: boolean;
+  host: string;
+  sshPort: number;
+  sshUser: string;
+  namespace: string;
+  identityFile: string;
+  knownHostsFile: string;
+  identityFilePresent: boolean;
+  knownHostsFilePresent: boolean;
+  lastTestedAt: number | null;
+  lastTestError: string | null;
+};
+
+export type AiAgentDispatcherUpdateReq = {
+  host: string;
+  sshPort: number;
+  sshUser: string;
+  namespace: string;
+};
+
+export type AiAgentEchoProxyItem = {
+  id: string;
+  hostname: string;
+  upstreamHost: string;
+  upstreamPort: number;
+  enabled: boolean;
+  lastTestedAt: number | null;
+  lastTestError: string | null;
+};
+
+export type AiAgentEchoProxyListRsp = {
+  items: Array<AiAgentEchoProxyItem>;
+};
+
+export type AiAgentEchoProxyUpsertReq = {
+  id: string | null;
+  hostname: string;
+  upstreamHost: string;
+  upstreamPort: number;
+  enabled: boolean;
+};
+
+export type AiAgentIdReq = {
+  id: string;
+};
+
+export type AiAgentContainerItem = {
+  linkedAgentId: string;
+  humanLoginId: string;
+  humanLogin: string;
+  agentLoginId: string;
+  agentLogin: string;
+  instanceName: string;
+  state: string;
+  lastError: string | null;
+  statsJson: string | null;
+  startedAt: number | null;
+  stoppedAt: number | null;
+  lastActivityAt: number | null;
+};
+
+export type AiAgentContainerListRsp = {
+  items: Array<AiAgentContainerItem>;
+};
+
+export type AiAgentAdminRequestListReq = {
+  state: string | null;
+  suspicious: boolean | null;
+  limit: number | null;
+};
+
+export type AiAgentSecurityReviewItem = {
+  state: string;
+  suspicious: boolean | null;
+  severity: string | null;
+  categories: Array<string>;
+  summary: string | null;
+  attemptCount: number;
+  lastError: string | null;
+  alertState: string | null;
+  alertAttemptCount: number;
+  alertLastError: string | null;
+};
+
+export type AiAgentAdminRequestItem = {
+  id: string;
+  conversationId: string;
+  humanLoginId: string;
+  humanLogin: string;
+  aiEngineId: string;
+  aiEngineName: string;
+  prompt: string;
+  response: string | null;
+  state: string;
+  error: string | null;
+  queuedAt: number;
+  startedAt: number | null;
+  completedAt: number | null;
+  review: AiAgentSecurityReviewItem | null;
+};
+
+export type AiAgentAdminRequestListRsp = {
+  items: Array<AiAgentAdminRequestItem>;
+};
+
+export type AiAgentRequestEventItem = {
+  sequence: number;
+  eventType: string;
+  payloadJson: string;
+  createdAt: number;
+};
+
+export type AiAgentAdminRequestDetail = {
+  request: AiAgentAdminRequestItem;
+  conversation: AiAgentConversationDetail;
+  events: Array<AiAgentRequestEventItem>;
+};
+
+export type AiAgentAdminUserReq = {
+  loginId: string;
+};
+
+export type AiAgentAdminUserItem = {
+  humanLoginId: string;
+  humanLogin: string;
+  linkedAgentId: string | null;
+  agentLoginId: string | null;
+  agentLogin: string | null;
+  linkedLoginEnabled: boolean | null;
+  roles: Array<string>;
+  organismId: number | null;
+  organismName: string | null;
+  sigintZoneId: number | null;
+  sigintZoneName: string | null;
+  directHiddenGroups: Array<string>;
+  instanceName: string | null;
+  containerState: string | null;
+  containerLastError: string | null;
+  statsJson: string | null;
+};
+
+export type AiAgentConnectionTestRsp = {
+  ok: boolean;
+  message: string;
 };
 
 export type AiCallsignEngineItem = {
@@ -3984,4 +4532,3 @@ export type UserDutySettingsDto = {
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
 };
-

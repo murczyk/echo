@@ -364,7 +364,7 @@ pub async fn create_polygon(
 ) -> Result<PolygonView> {
     let (name, coordinates) = normalize_polygon_req(req).await.c(h!())?;
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             insert into echo_automation_polygon (name, coordinates, updated_at)
@@ -391,7 +391,7 @@ pub async fn update_polygon(
     req: SavePolygonReq,
 ) -> Result<PolygonView> {
     let (name, coordinates) = normalize_polygon_req(req).await.c(h!())?;
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation_polygon
@@ -414,7 +414,7 @@ pub async fn update_polygon(
 
 pub async fn delete_polygon(db: &DatabaseConnection, id: i64) -> Result<()> {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "select count(*)::bigint as count from echo_automation where polygon_id = $1",
             [id.into()],
@@ -427,7 +427,7 @@ pub async fn delete_polygon(db: &DatabaseConnection, id: i64) -> Result<()> {
     if usage_count > 0 {
         bail!("area of interest is used by automations");
     }
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "delete from echo_automation_polygon where id = $1",
         [id.into()],
@@ -760,7 +760,7 @@ pub async fn create(
     validate_group_accounts(db, &automation).await.c(h!())?;
     validate_polygon_ref(db, &automation).await.c(h!())?;
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             insert into echo_automation (
@@ -815,7 +815,7 @@ pub async fn update(
     let automation = normalize_req(req).await.c(h!())?;
     validate_group_accounts(db, &automation).await.c(h!())?;
     validate_polygon_ref(db, &automation).await.c(h!())?;
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation
@@ -861,7 +861,7 @@ pub async fn update(
 }
 
 pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "delete from echo_automation where id = $1",
         [id.into()],
@@ -876,7 +876,7 @@ pub async fn set_paused(
     id: i64,
     is_paused: bool,
 ) -> Result<AutomationView> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation
@@ -1020,7 +1020,7 @@ async fn validate_polygon_ref(
         return Ok(());
     };
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "select coordinates from echo_automation_polygon where id = $1",
             [polygon_id.into()],
@@ -1043,7 +1043,7 @@ async fn validate_group_accounts(
     automation: &NormalizedAutomation,
 ) -> Result<()> {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             select
@@ -1303,7 +1303,7 @@ async fn plan_send(
     message: &InboxMessageRow,
 ) -> Result<Option<i64>> {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             insert into echo_automation_send_log (
@@ -1337,7 +1337,7 @@ async fn mark_send_sent(
     db: &impl ConnectionTrait,
     send_log_id: i64,
 ) -> Result<()> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation_send_log
@@ -1355,7 +1355,7 @@ pub async fn delete_expired_send_log(db: &DatabaseConnection) -> Result<u64> {
     let cutoff = Utc::now().naive_utc()
         - ChronoDuration::days(AUTOMATION_SEND_LOG_RETENTION_DAYS);
     let result = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "delete from echo_automation_send_log where created_at < $1",
             [cutoff.into()],
@@ -1424,7 +1424,7 @@ async fn advance_empty_checkpoint(
     if checkpoint_at <= automation.checkpoint_at {
         return Ok(());
     }
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation
@@ -1529,7 +1529,7 @@ async fn record_edit_warnings(
     const DESCRIPTION: &str =
         "source message was edited after this automation forwarded it";
     let result = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
         insert into echo_automation_warning (
@@ -1584,7 +1584,7 @@ async fn record_delivery(
     error: Option<&str>,
     is_sent: bool,
 ) -> Result<()> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         insert into echo_automation_delivery (
@@ -1629,7 +1629,7 @@ async fn already_sent(
     message: &InboxMessageRow,
 ) -> Result<bool> {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             select exists (
@@ -1665,7 +1665,7 @@ async fn update_checkpoint(
     inbox_message_id: i32,
     message_at: NaiveDateTime,
 ) -> Result<()> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation
@@ -1693,7 +1693,7 @@ async fn set_status(
     status: &str,
     error: Option<&str>,
 ) -> Result<()> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation
@@ -2331,7 +2331,7 @@ mod tests {
         sql: &str,
         values: Vec<Value>,
     ) -> Result<()> {
-        db.execute(Statement::from_sql_and_values(
+        db.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
             values,
@@ -2347,7 +2347,7 @@ mod tests {
         values: Vec<Value>,
     ) -> Result<i32> {
         let row = db
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 sql,
                 values,
@@ -2365,7 +2365,7 @@ mod tests {
         values: Vec<Value>,
     ) -> Result<i64> {
         let row = db
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 sql,
                 values,
@@ -2506,7 +2506,7 @@ mod tests {
         send_log_id: i64,
     ) -> Result<bool> {
         let row = db
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
                 select exists (

@@ -122,7 +122,7 @@ async fn run_loop(
         match event::read().c(h!())? {
             Event::Key(key) => match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => {
-                    return Ok(LoopOutcome::Quit)
+                    return Ok(LoopOutcome::Quit);
                 }
                 KeyCode::Enter | KeyCode::Right | KeyCode::Char('n') => {
                     if advance_entry(db, &mut state).await? {
@@ -238,7 +238,11 @@ where
         .await
         .c(h!())?;
 
-    Ok(rows.into_iter().filter_map(ReviewEntry::from_row).collect())
+    let blacklist = crate::sigint::comments::load_blacklist(db).await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| ReviewEntry::from_row(row, &blacklist))
+        .collect())
 }
 
 fn build_cursor_filter(cursor: ReviewCursor) -> Condition {
@@ -374,7 +378,7 @@ pub fn parse_since_ts(value: &str) -> Result<NaiveDateTime, AppError> {
 }
 
 fn normalize_limit(limit: Option<u64>) -> u64 {
-    limit.unwrap_or(DEFAULT_PAGE_LIMIT).max(1)
+    std::cmp::max(limit.unwrap_or(DEFAULT_PAGE_LIMIT), 1)
 }
 
 impl ReviewCursor {
@@ -387,9 +391,11 @@ impl ReviewCursor {
 }
 
 impl ReviewEntry {
-    fn from_row(row: ReviewQueryRow) -> Option<Self> {
+    fn from_row(row: ReviewQueryRow, blacklist: &[String]) -> Option<Self> {
         let body = row.body?;
-        let parsed = crate::sigint::parser::parse_comments(&body);
+        let parsed = crate::sigint::parser::parse_comments_with_blacklist(
+            &body, blacklist,
+        );
         let body_noheader =
             crate::sigint::parser::extract_text_without_top_comment(&body)
                 .map(|body_noheader| body_noheader.body)

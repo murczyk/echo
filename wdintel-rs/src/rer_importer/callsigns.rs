@@ -6,7 +6,6 @@ use crate::rer_importer::types::*;
 use crate::types::*;
 use crate::users::ensure_rer_role;
 use crate::users::login_id_from_identity;
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::string::*;
 use crate::utils::*;
 use actix_web::post;
@@ -17,8 +16,16 @@ use lazy_static::lazy_static;
 use rand::prelude::*;
 use regex::Regex;
 use sea_orm::*;
-use sea_query::Expr;
+use sea_query::{
+    Alias, CommonTableExpression, Expr, PostgresQueryBuilder, Query,
+};
 use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(FromQueryResult)]
+struct CallsignGraphItem {
+    freq: Option<String>,
+    callsigns: Option<serde_json::Value>,
+}
 
 pub fn is_numeric_callsign(callsign: &String) -> bool {
     let callsign = callsign.trim();
@@ -1332,7 +1339,6 @@ pub async fn oneoff_reprocess_callsign_tokens(
             start_shifted
         };
         let txn = dbx.begin().await.c(h!())?;
-
         let inbox_items: Vec<(
             sigint_inbox_item::Model,
             Option<signal_message::Model>,
@@ -1401,6 +1407,8 @@ pub async fn oneoff_reprocess_callsigns(
             start_shifted
         };
         let txn = dbx.begin().await.c(h!())?;
+        let system_login_id =
+            crate::users::system_login_id(&txn).await.c(h!())?;
 
         let inbox_items: Vec<(
             sigint_inbox_item::Model,
@@ -1444,13 +1452,32 @@ pub async fn oneoff_reprocess_callsigns(
                 crate::utils::uniq_via_btreeset(&callsigns);
             let callsign_tokens =
                 highlight_callsigns(&rq, &body, &callsigns).await.c(h!())?;
+            let inbox_item_id = inbox_item.id;
+            let alg2: Vec<String> = inbox_item
+                .callsigns_alg2
+                .clone()
+                .map(serde_json::from_value)
+                .transpose()
+                .c(h!())?
+                .unwrap_or_default();
             let mut inbox_item: sigint_inbox_item::ActiveModel =
                 inbox_item.clone().into();
             inbox_item.callsigns =
-                Set(Some(serde_json::to_value(callsigns).c(h!())?));
+                Set(Some(serde_json::to_value(&callsigns).c(h!())?));
             inbox_item.callsign_tokens =
                 Set(Some(serde_json::to_value(callsign_tokens).c(h!())?));
             inbox_item.update(&txn).await.c(h!())?;
+            crate::inbox::callsigns::sync(
+                &txn,
+                inbox_item_id,
+                crate::inbox::callsigns::InboxItemCallsigns {
+                    primary: callsigns,
+                    alg2,
+                },
+                system_login_id,
+            )
+            .await
+            .c(h!())?;
         }
         pb.finish_with_message("done");
 
@@ -1482,6 +1509,7 @@ pub async fn callsigns_graph(
         selected_callsigns: req.selected_callsigns.clone(),
         selected_units: req.selected_units.clone(),
         selected_locations: req.selected_locations.clone(),
+        selected_device_names: req.selected_device_names.clone(),
         selected_networks: req.selected_networks.clone(),
         without_network: req.without_network,
         or_with_extended_form: req.or_with_extended_form,
@@ -1621,11 +1649,6 @@ pub async fn callsigns_graph(
     let all_callsigns: BTreeSet<String> =
         BTreeSet::from_iter(callsigns.iter().map(|x| x.callsign.clone()));
 
-    #[derive(FromQueryResult)]
-    struct Res {
-        freq: Option<String>,
-        callsigns: Option<serde_json::Value>,
-    }
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -1636,8 +1659,9 @@ pub async fn callsigns_graph(
             signal_message::Relation::DatasourceGroup.def(),
         )
         .select_only()
+        .column_as(sigint_inbox_item::Column::Id, "inbox_item_id")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
-        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+        .column_as(sigint_inbox_item::Column::Callsigns, "legacy_callsigns")
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
             datasource_group::Column::GroupMasterKey
@@ -1670,11 +1694,8 @@ pub async fn callsigns_graph(
     )?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
     let q = filter_selected_metadata_for_callsigns_graph(q, &req)?;
-    // println!(
-    //     "> callsigns_graph q: {}",
-    //     q.build(DbBackend::Postgres).to_string()
-    // );
-    let items: Vec<Res> = q.into_model::<Res>().all(&env.dbx).await.c(h!())?;
+    let q = filter_selected_device_names(q, &req.selected_device_names)?;
+    let items = load_callsign_graph_items(&env.dbx, q).await?;
 
     let mut freqs_per_callsign: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for item in items.iter() {
@@ -1775,6 +1796,82 @@ pub async fn callsigns_graph(
         link_categories: Some(link_categories),
         overall_count: Some(overall_count as i64),
     }))
+}
+
+async fn load_callsign_graph_items(
+    dbx: &DatabaseConnection,
+    q: Select<signal_message::Entity>,
+) -> Result<Vec<CallsignGraphItem>, AppError> {
+    let filtered_items_alias = Alias::new("callsign_graph_items");
+    let inbox_item_id_alias = Alias::new("inbox_item_id");
+    let primary_callsigns_alias = Alias::new("primary_callsigns");
+    let callsigns_alias = Alias::new("callsigns");
+    let filtered_items_cte = CommonTableExpression::new()
+        .query(q.into_query())
+        .table_name(filtered_items_alias.clone())
+        .to_owned();
+    let mut filtered_inbox_item_ids = Query::select();
+    filtered_inbox_item_ids
+        .column((filtered_items_alias.clone(), inbox_item_id_alias.clone()))
+        .from(filtered_items_alias.clone());
+    let mut primary_callsigns_q = Query::select();
+    primary_callsigns_q
+        .column(sigint_inbox_item_callsign::Column::SigintInboxItemId)
+        .expr_as(
+            Expr::cust(
+                "jsonb_agg(sigint_inbox_item_callsign.callsign order by \
+                 sigint_inbox_item_callsign.ordering, \
+                 sigint_inbox_item_callsign.id)",
+            ),
+            callsigns_alias.clone(),
+        )
+        .from(sigint_inbox_item_callsign::Entity)
+        .and_where(
+            Expr::col(sigint_inbox_item_callsign::Column::Deleted).eq(false),
+        )
+        .and_where(Expr::cust("sigint_inbox_item_callsign.source = 'primary'"))
+        .and_where(
+            Expr::col(sigint_inbox_item_callsign::Column::SigintInboxItemId)
+                .in_subquery(filtered_inbox_item_ids),
+        )
+        .group_by_col(sigint_inbox_item_callsign::Column::SigintInboxItemId);
+    let primary_callsigns_cte = CommonTableExpression::new()
+        .query(primary_callsigns_q)
+        .table_name(primary_callsigns_alias.clone())
+        .to_owned();
+    let mut callsign_graph_q = Query::select();
+    callsign_graph_q
+        .column((filtered_items_alias.clone(), Alias::new("freq")))
+        .expr_as(
+            Expr::cust(
+                "coalesce(primary_callsigns.callsigns, \
+                 callsign_graph_items.legacy_callsigns)",
+            ),
+            callsigns_alias,
+        )
+        .from(filtered_items_alias.clone())
+        .join(
+            JoinType::LeftJoin,
+            primary_callsigns_alias.clone(),
+            Expr::col((
+                primary_callsigns_alias,
+                sigint_inbox_item_callsign::Column::SigintInboxItemId,
+            ))
+            .equals((filtered_items_alias, inbox_item_id_alias)),
+        );
+    let callsign_graph_sql = Query::with()
+        .cte(filtered_items_cte)
+        .cte(primary_callsigns_cte)
+        .clone()
+        .query(callsign_graph_q)
+        .to_string(PostgresQueryBuilder);
+    Ok(CallsignGraphItem::find_by_statement(Statement::from_string(
+        DbBackend::Postgres,
+        callsign_graph_sql,
+    ))
+    .all(dbx)
+    .await
+    .c(h!())?)
 }
 
 #[cfg(test)]
@@ -2674,8 +2771,7 @@ mod tests {
 
     #[test]
     fn extract_callsigns_dmr_alias_header_handles_slash_and_extra_comma() {
-        let body =
-            "Позивні: `90589=МАЛЫШ, 90734=ШТОРМ, 90588=ВОЛГА,, 1=Гранит, 122024=СЕВЕР/СЕРП`";
+        let body = "Позивні: `90589=МАЛЫШ, 90734=ШТОРМ, 90588=ВОЛГА,, 1=Гранит, 122024=СЕВЕР/СЕРП`";
         let res = extract_dmr_alias_callsigns(body).unwrap();
         let expected: Vec<String> = vec![
             "МАЛЫШ".to_string(),

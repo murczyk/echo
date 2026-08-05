@@ -403,6 +403,7 @@ getBasicInboxParams model =
     , selectedAors = Nothing
     , selectedCallsigns = Nothing
     , selectedUnits = Nothing
+    , selectedDeviceNames = Nothing
     , deniedUnits = Nothing
     , selectedLocations = Nothing
     , includePelengLocations = Nothing

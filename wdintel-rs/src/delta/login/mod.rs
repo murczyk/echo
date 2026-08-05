@@ -63,7 +63,10 @@ pub async fn handle_redirect(
                     }
                 }
                 Err(e) => {
-                    error!("Failed to login, probably EXO account is missing: user_name: {user_name}; error: {:?}", e);
+                    error!(
+                        "Failed to login, probably EXO account is missing: user_name: {user_name}; error: {:?}",
+                        e
+                    );
                     HttpResponse::Found()
                         .insert_header((
                             "Location",
@@ -139,5 +142,9 @@ async fn perform_login(
         .password
         .clone()
         .map(|_| "<...>".to_string());
-    Err(AppError::BL{ msg: format!("unexpected error occurred on login attempt, login={login_obfuscated:?}") })
+    Err(AppError::BL {
+        msg: format!(
+            "unexpected error occurred on login attempt, login={login_obfuscated:?}"
+        ),
+    })
 }

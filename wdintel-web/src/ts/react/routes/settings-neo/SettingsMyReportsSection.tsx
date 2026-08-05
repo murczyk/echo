@@ -45,6 +45,7 @@ import {
   mrtRowActionsColumnSize,
 } from '../../components/MrtRowActionButton';
 import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
+import { AnalysisPaginationControl } from '../rer-analysis-neo/components/AnalysisPaginationControl';
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -76,7 +77,6 @@ export type ReportHistoryTableSectionProps = {
   compactFullHeight?: boolean;
   showReportCount?: boolean;
   loadingRowCount?: number;
-  loadMoreLabel?: string;
   loadReportHistory?: LoadReportHistory;
   loadReportHistoryBatch?: LoadReportHistoryBatch;
 };
@@ -241,6 +241,11 @@ const REPORT_STATUS_LABELS: Record<string, string> = {
   done: 'Готово',
   failed: 'Помилка',
 };
+
+const REPORT_STATUS_FILTER_OPTIONS = Object.entries(REPORT_STATUS_LABELS).map(([value, text]) => ({
+  text,
+  value,
+}));
 
 const REPORT_KIND_LABELS: Record<string, string> = {
   tags: 'З донесенням',
@@ -476,7 +481,6 @@ export function ReportHistoryTableSection({
   compactFullHeight = false,
   showReportCount = false,
   loadingRowCount = REPORT_LOADING_ROW_COUNT,
-  loadMoreLabel = 'Load more',
   loadReportHistory = listReportHistory,
   loadReportHistoryBatch,
 }: ReportHistoryTableSectionProps) {
@@ -492,13 +496,13 @@ export function ReportHistoryTableSection({
   });
   const [totalRows, setTotalRows] = useState<number | null>(null);
   const [hasMoreRows, setHasMoreRows] = useState(false);
-  const [nextOffset, setNextOffset] = useState(0);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageLoading, setPageLoading] = useState(false);
 
   const loadRows = useCallback(
-    async (signal?: AbortSignal, append = false, offset = 0) => {
-      if (append) {
-        setLoadingMore(true);
+    async (signal?: AbortSignal, offset = 0, pageNavigation = false) => {
+      if (pageNavigation) {
+        setPageLoading(true);
       } else {
         setLoadState((current) => (current === 'success' ? current : 'loading'));
       }
@@ -509,27 +513,27 @@ export function ReportHistoryTableSection({
             { ...queryState, offset, limit: REPORT_HISTORY_BATCH_SIZE },
             signal ? { signal } : undefined,
           );
-          setRows((current) => (append ? [...current, ...rsp.rows] : rsp.rows));
+          setRows(rsp.rows);
           setTotalRows(rsp.total);
           setHasMoreRows(rsp.hasMore);
-          setNextOffset(rsp.nextOffset);
+          setPageIndex(Math.floor(offset / REPORT_HISTORY_BATCH_SIZE));
         } else {
           const nextRows = await loadReportHistory(signal ? { signal } : undefined);
           setRows(nextRows);
           setTotalRows(nextRows.length);
           setHasMoreRows(false);
-          setNextOffset(nextRows.length);
+          setPageIndex(0);
         }
         setLoadState('success');
       } catch (loadError) {
         if (signal?.aborted) return;
-        if (!append) {
+        if (!pageNavigation) {
           setRows([]);
           setLoadState('error');
         }
         setError(formatErrorMessage(loadError));
       } finally {
-        setLoadingMore(false);
+        setPageLoading(false);
       }
     },
     [loadReportHistory, loadReportHistoryBatch, queryState],
@@ -578,13 +582,12 @@ export function ReportHistoryTableSection({
       setCancelRow(null);
       setTotalRows(null);
       setHasMoreRows(false);
-      setNextOffset(0);
-      setLoadingMore(false);
+      setPageIndex(0);
+      setPageLoading(false);
     }
   }, [active]);
 
   const useBatchShell = fullHeight && loadReportHistoryBatch !== undefined;
-  const showLoadMoreFooter = loadReportHistoryBatch !== undefined && hasMoreRows && rows.length > 0;
   const contentPadding = fullHeight && compactFullHeight ? 2 : 3;
   const contentStackSpacing = fullHeight && compactFullHeight ? 1.5 : 2;
 
@@ -594,10 +597,14 @@ export function ReportHistoryTableSection({
     );
   }, []);
 
-  const handleLoadMore = useCallback(() => {
-    if (!loadReportHistoryBatch || loadingMore || !hasMoreRows) return;
-    void loadRows(undefined, true, nextOffset);
-  }, [hasMoreRows, loadReportHistoryBatch, loadingMore, loadRows, nextOffset]);
+  const lastPageIndex = Math.max(0, Math.ceil((totalRows ?? 0) / REPORT_HISTORY_BATCH_SIZE) - 1);
+  const openPage = useCallback(
+    (nextPageIndex: number) => {
+      if (!loadReportHistoryBatch || pageLoading) return;
+      void loadRows(undefined, nextPageIndex * REPORT_HISTORY_BATCH_SIZE, true);
+    },
+    [loadReportHistoryBatch, loadRows, pageLoading],
+  );
 
   async function handleDownload(row: ReportHistoryRow) {
     if (!row.hasFile || row.status !== 'done') return;
@@ -768,6 +775,13 @@ export function ReportHistoryTableSection({
         id: 'status',
         accessorFn: (row) => formatReportStatus(row),
         header: 'Статус',
+        ...(includeAuthor
+          ? {
+              filterVariant: 'multi-select' as const,
+              filterSelectOptions: REPORT_STATUS_FILTER_OPTIONS,
+              filterFn: 'arrIncludesSome',
+            }
+          : {}),
         Cell: ({ row }) => {
           const chip = (
             <Chip
@@ -853,27 +867,29 @@ export function ReportHistoryTableSection({
           useFlexGap={fullHeight}
           sx={fullHeight ? REPORTS_FULL_HEIGHT_STACK_SX : undefined}
         >
-          <Stack direction="row" alignItems="baseline" justifyContent="space-between" gap={2}>
-            <Stack direction="row" alignItems="baseline" gap={1}>
-              <Typography
-                component="h1"
-                variant="h5"
-                sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}
-              >
-                {title}
-              </Typography>
-              {showReportCount && loadState === 'success' ? (
+          {!useBatchShell ? (
+            <Stack direction="row" alignItems="baseline" justifyContent="space-between" gap={2}>
+              <Stack direction="row" alignItems="baseline" gap={1}>
                 <Typography
-                  component="span"
-                  variant="subtitle1"
-                  color="text.secondary"
-                  sx={{ fontWeight: 600 }}
+                  component="h1"
+                  variant="h5"
+                  sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}
                 >
-                  {totalRows === null ? rows.length : `${rows.length}/${totalRows}`}
+                  {title}
                 </Typography>
-              ) : null}
+                {showReportCount && loadState === 'success' ? (
+                  <Typography
+                    component="span"
+                    variant="subtitle1"
+                    color="text.secondary"
+                    sx={{ fontWeight: 600 }}
+                  >
+                    {totalRows === null ? rows.length : `${rows.length}/${totalRows}`}
+                  </Typography>
+                ) : null}
+              </Stack>
             </Stack>
-          </Stack>
+          ) : null}
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
 
           <TableStateProvider
@@ -893,20 +909,44 @@ export function ReportHistoryTableSection({
           >
             {useBatchShell ? (
               <>
-                <Stack direction="row" justifyContent="flex-end" alignItems="center" gap={1}>
-                  <InternalTableActions filtersHidden fullScreenEnabled>
-                    <Tooltip title="Оновити">
-                      <span>
-                        <IconButton
-                          size="small"
-                          disabled={loadState === 'loading' || loadingMore}
-                          onClick={() => void loadRows()}
-                        >
-                          <RefreshIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </InternalTableActions>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
+                  <Typography
+                    component="h1"
+                    variant="h5"
+                    sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}
+                  >
+                    {title}
+                  </Typography>
+                  <Stack direction="row" alignItems="center" gap={1}>
+                    <AnalysisPaginationControl
+                      centerTab="messages"
+                      pageIndex={pageIndex}
+                      pageSize={REPORT_HISTORY_BATCH_SIZE}
+                      messagesCount={rows.length}
+                      totalCount={totalRows}
+                      totalLoading={loadState === 'loading' && totalRows === null}
+                      loading={loadState === 'loading'}
+                      noMoreToLoad={!hasMoreRows}
+                      busy={pageLoading}
+                      onFirstPage={() => openPage(0)}
+                      onLastPage={() => openPage(lastPageIndex)}
+                      onPrevPage={() => openPage(pageIndex - 1)}
+                      onNextPage={() => openPage(pageIndex + 1)}
+                    />
+                    <InternalTableActions filtersHidden fullScreenEnabled>
+                      <Tooltip title="Оновити">
+                        <span>
+                          <IconButton
+                            size="small"
+                            disabled={loadState === 'loading' || pageLoading}
+                            onClick={() => openPage(pageIndex)}
+                          >
+                            <RefreshIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </InternalTableActions>
+                  </Stack>
                 </Stack>
                 <Box sx={REPORTS_FULL_HEIGHT_BATCH_SHELL_SX}>
                   <Box sx={REPORTS_FULL_HEIGHT_BATCH_CONTENT_SX}>
@@ -925,37 +965,13 @@ export function ReportHistoryTableSection({
                         layoutMode="grid"
                         showToolbarInternalActions={false}
                         enableTopToolbar={false}
-                        enableBottomToolbar={showLoadMoreFooter}
+                        enableBottomToolbar={false}
                         tableContainerBorderless
                         tablePaperSx={REPORTS_FULL_HEIGHT_BATCH_TABLE_PAPER_SX}
                         tableContainerSx={REPORTS_FULL_HEIGHT_BATCH_TABLE_CONTAINER_SX}
                         tableHeadCellSx={REPORTS_FULL_HEIGHT_BATCH_HEAD_CELL_SX}
                         manualFiltering={loadReportHistoryBatch !== undefined}
                         manualSorting={loadReportHistoryBatch !== undefined}
-                        renderBottomToolbar={
-                          showLoadMoreFooter
-                            ? () => (
-                                <Box
-                                  sx={{
-                                    borderTop: '1px solid',
-                                    borderColor: 'var(--bs-border-color)',
-                                    display: 'flex',
-                                    justifyContent: 'center',
-                                    p: '10px',
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  <Button
-                                    variant="outlined"
-                                    disabled={loadingMore || loadState === 'loading'}
-                                    onClick={handleLoadMore}
-                                  >
-                                    {loadingMore ? 'Завантаження...' : loadMoreLabel}
-                                  </Button>
-                                </Box>
-                              )
-                            : undefined
-                        }
                         onQueryStateChange={handleQueryStateChange}
                       />
                     </Box>
@@ -970,7 +986,7 @@ export function ReportHistoryTableSection({
                       <span>
                         <IconButton
                           size="small"
-                          disabled={loadState === 'loading' || loadingMore}
+                          disabled={loadState === 'loading' || pageLoading}
                           onClick={() => void loadRows()}
                         >
                           <RefreshIcon fontSize="small" />
@@ -1007,17 +1023,6 @@ export function ReportHistoryTableSection({
                     onQueryStateChange={loadReportHistoryBatch ? handleQueryStateChange : undefined}
                   />
                 </Box>
-                {loadReportHistoryBatch && hasMoreRows ? (
-                  <Stack direction="row" justifyContent="center">
-                    <Button
-                      variant="outlined"
-                      disabled={loadingMore || loadState === 'loading'}
-                      onClick={handleLoadMore}
-                    >
-                      {loadingMore ? 'Завантаження...' : loadMoreLabel}
-                    </Button>
-                  </Stack>
-                ) : null}
               </>
             )}
           </TableStateProvider>

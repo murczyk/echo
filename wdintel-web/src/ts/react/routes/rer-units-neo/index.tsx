@@ -5,8 +5,10 @@ import { useState } from 'react';
 
 import { PageErrorState } from '../../components/PageErrorState';
 import { PowerAlert } from '../../components/PowerAlert';
+import { PowerChip } from '../../components/PowerChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import { OrbitUnitLinkDialog } from '../rer-unit-details/OrbitUnitLinkDialog';
 import { DeleteUnitDialog, MergeUnitDialog } from './components/UnitActionDialogs';
 import { KmzTaskStatus } from './components/KmzTaskStatus';
 import { KmzUploadDialog } from './components/KmzUploadDialog';
@@ -23,7 +25,7 @@ const DEFAULT_COLUMN_VISIBILITY = {
   army: true,
   createdAt: true,
   comment: true,
-  active: true,
+  hasOrbit: true,
 };
 
 const DEFAULT_COLUMN_ORDER = [
@@ -37,7 +39,7 @@ const DEFAULT_COLUMN_ORDER = [
   'army',
   'createdAt',
   'comment',
-  'active',
+  'hasOrbit',
 ];
 
 function PageActions({
@@ -79,9 +81,53 @@ function PageActions({
   );
 }
 
+function UnitStatusFilters({
+  status,
+  counts,
+  onChange,
+}: {
+  status: 'all' | 'active' | 'inactive';
+  counts: { active: number; inactive: number };
+  onChange: (status: 'all' | 'active' | 'inactive') => void;
+}) {
+  const statusLabel = (color: string, label: string, count: number) => (
+    <Stack direction="row" spacing={0.75} alignItems="center" useFlexGap>
+      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
+      <Box component="span">{`${label} ${count}`}</Box>
+    </Stack>
+  );
+
+  return (
+    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+      <PowerChip
+        selected={status === 'all'}
+        onClick={() => onChange('all')}
+        label="Всі"
+        interactive
+        fontWeight={700}
+      />
+      <PowerChip
+        selected={status === 'active'}
+        onClick={() => onChange('active')}
+        label={statusLabel('#54c06c', 'Активні', counts.active)}
+        interactive
+        fontWeight={700}
+      />
+      <PowerChip
+        selected={status === 'inactive'}
+        onClick={() => onChange('inactive')}
+        label={statusLabel('#bfbfbf', 'Неактивні', counts.inactive)}
+        interactive
+        fontWeight={700}
+      />
+    </Stack>
+  );
+}
+
 function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
   const page = useRerUnitsPage(authUserRoles);
   const [kmzDialogOpen, setKmzDialogOpen] = useState(false);
+  const [orbitLinkOpen, setOrbitLinkOpen] = useState(false);
 
   return (
     <Box
@@ -104,6 +150,13 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
           withGlobalTextFilter
           hideGlobalTextFilter={page.loading || page.loadError !== null}
           internalActionsDisabled={page.loading || page.loadError !== null}
+          filter={
+            <UnitStatusFilters
+              status={page.statusFilter}
+              counts={page.statusCounts}
+              onChange={page.setStatusFilter}
+            />
+          }
           actions={
             <PageActions
               canEdit={page.canEdit}
@@ -133,7 +186,7 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
             />
           ) : (
             <UnitsTable
-              units={page.units}
+              units={page.visibleUnits}
               attachmentUnitIds={page.attachmentUnitIds}
               loading={page.loading}
               canEdit={page.canEdit}
@@ -156,9 +209,11 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         orbitUnits={[]}
         orbitLinksLoading={false}
         orbitLinksError={null}
+        canLinkOrbitUnit={false}
         unlinkingOrbitUnitId={null}
         onClose={page.closeDialogs}
         onSubmit={(value) => void page.submitUnit(value)}
+        onLinkOrbitUnit={() => undefined}
         onUnlinkOrbitUnit={() => undefined}
       />
       <UnitFormDialog
@@ -171,9 +226,11 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         orbitUnits={page.editOrbitUnits}
         orbitLinksLoading={page.orbitLinksLoading}
         orbitLinksError={page.orbitLinksError}
+        canLinkOrbitUnit={page.canLinkEditOrbitUnit}
         unlinkingOrbitUnitId={page.unlinkingOrbitUnitId}
         onClose={page.closeDialogs}
         onSubmit={(value) => void page.submitUnit(value)}
+        onLinkOrbitUnit={() => setOrbitLinkOpen(true)}
         onUnlinkOrbitUnit={(orbitUnit) => void page.unlinkEditOrbitUnit(orbitUnit)}
       />
       <DeleteUnitDialog
@@ -197,6 +254,16 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         onClose={() => setKmzDialogOpen(false)}
         onUpload={(file) => void page.uploadKmz(file)}
       />
+      {orbitLinkOpen && page.editUnit !== null ? (
+        <OrbitUnitLinkDialog
+          unitId={page.editUnit.id}
+          onClose={() => setOrbitLinkOpen(false)}
+          onLinked={() => {
+            setOrbitLinkOpen(false);
+            void page.refreshLinkedEditOrbitUnit();
+          }}
+        />
+      ) : null}
     </Box>
   );
 }

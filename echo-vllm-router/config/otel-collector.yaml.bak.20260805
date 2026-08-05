@@ -1,0 +1,85 @@
+receivers:
+  prometheus/router:
+    config:
+      scrape_configs:
+        - job_name: echo-vllm-router
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:ROUTER_METRICS_TARGET}"]
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: "vllm_router_.*"
+              action: keep
+
+  prometheus/worker:
+    config:
+      scrape_configs:
+        - job_name: echo-vllm-worker
+          scrape_interval: 15s
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["${env:WORKER_METRICS_TARGET}"]
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: "vllm:.*"
+              action: keep
+
+processors:
+  resource/router:
+    attributes:
+      - key: service.name
+        value: vllm-router
+        action: upsert
+      - key: service.instance.id
+        value: ct-echo-vllm-router
+        action: upsert
+      - key: host.name
+        value: ct-echo-vllm-router
+        action: upsert
+      - key: echo.vllm.role
+        value: router
+        action: upsert
+
+  resource/worker:
+    attributes:
+      - key: service.name
+        value: vllm-worker
+        action: upsert
+      - key: service.instance.id
+        value: echo-gpu-spark
+        action: upsert
+      - key: host.name
+        value: echo-gpu-spark
+        action: upsert
+      - key: echo.vllm.role
+        value: worker
+        action: upsert
+
+  batch/router:
+    timeout: 5s
+
+  batch/worker:
+    timeout: 5s
+
+exporters:
+  otlp_grpc/signoz:
+    endpoint: "${env:OTLP_DESTINATION_ENDPOINT}"
+    tls:
+      insecure: true
+
+service:
+  telemetry:
+    metrics:
+      level: none
+
+  pipelines:
+    metrics/router:
+      receivers: [prometheus/router]
+      processors: [resource/router, batch/router]
+      exporters: [otlp_grpc/signoz]
+
+    metrics/worker:
+      receivers: [prometheus/worker]
+      processors: [resource/worker, batch/worker]
+      exporters: [otlp_grpc/signoz]
+

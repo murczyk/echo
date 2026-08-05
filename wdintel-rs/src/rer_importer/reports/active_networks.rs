@@ -347,8 +347,7 @@ async fn get_signal_message_comments(
         )
         .join(
             JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq
-                .def()
+            crate::sigint::freq::util::inbox_item_network_freq_relation()
                 .on_condition(|_left, right| {
                     Expr::col((right, sigint_network_freq::Column::Deleted))
                         .eq(false)

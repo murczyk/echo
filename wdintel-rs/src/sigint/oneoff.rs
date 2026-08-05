@@ -93,7 +93,9 @@ pub async fn oneoff_suggest_inbox_message_tags(
         .c(h!())?;
 
     let total_len = message_ids.len();
-    info!("oneoff_suggest_inbox_message_tags, about to process {total_len} messages");
+    info!(
+        "oneoff_suggest_inbox_message_tags, about to process {total_len} messages"
+    );
     let mut processed = 0;
     let mut suggested = 0;
     let batch_size = ps
@@ -115,15 +117,21 @@ pub async fn oneoff_suggest_inbox_message_tags(
         processed += chunk.len();
         suggested += result.inserted_count;
 
-        info!("oneoff_suggest_inbox_message_tags, {suggested} tags suggested for {processed}/{total_len} messages");
+        info!(
+            "oneoff_suggest_inbox_message_tags, {suggested} tags suggested for {processed}/{total_len} messages"
+        );
 
         txn.commit().await.c(h!())?;
     }
 
     if suggested == 0 {
-        warn!("no tags suggested for {processed} messages, did you forget to set up tag keywords or run `just ai-sync-from-cloud`?")
+        warn!(
+            "no tags suggested for {processed} messages, did you forget to set up tag keywords or run `just ai-sync-from-cloud`?"
+        )
     } else {
-        info!("done oneoff_suggest_inbox_message_tags, total {suggested} tags suggested for {processed} messages");
+        info!(
+            "done oneoff_suggest_inbox_message_tags, total {suggested} tags suggested for {processed} messages"
+        );
     }
 
     Ok(())
@@ -338,6 +346,7 @@ fn build_analysis_stats_req(
         selected_callsigns: None,
         selected_units: None,
         selected_locations: None,
+        selected_device_names: None,
         selected_aors,
         or_with_extended_form: None,
         or_bookmarked: None,
@@ -385,6 +394,7 @@ fn build_etalonka_report_request(
             crate::sigint::etalonka::types::EtalonkaReportType::AccordingToTheForm(
                 crate::sigint::etalonka::types::EtalonkaSettings {
                     active_freqs_only: true,
+                    include_callsign_full_names: false,
                     include_sigint_signs: false,
                     include_confirmation: false,
                     include_headings_and_freqs: false,
@@ -458,7 +468,7 @@ async fn load_total_message_counts(
     );
 
     let rows = db
-        .query_all(Statement::from_sql_and_values(
+        .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
             [start_utc.into(), end_utc.into()],
@@ -498,7 +508,7 @@ async fn load_tagged_message_counts(
     );
 
     let rows = db
-        .query_all(Statement::from_sql_and_values(
+        .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
             [start_utc.into(), end_utc.into()],

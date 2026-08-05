@@ -48,6 +48,7 @@ type SystemSettingsCurrentRspRaw = {
   default_neo_analysis?: boolean;
   show_classic_duty?: boolean;
   show_classic_analysis?: boolean;
+  hide_orbit_data?: boolean;
   autofix_echoim_missing_messages?: boolean;
   devices_section_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
@@ -148,6 +149,7 @@ export type SystemSettingsCurrent = {
   defaultNeoAnalysis: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  hideOrbitData: boolean;
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
@@ -243,6 +245,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
     showClassicDuty: raw.show_classic_duty ?? true,
     showClassicAnalysis: raw.show_classic_analysis ?? true,
+    hideOrbitData: raw.hide_orbit_data ?? false,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     devicesSectionEnabled: raw.devices_section_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,

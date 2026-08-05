@@ -44,10 +44,13 @@ impl FromRedisValue for RedisSession {
     fn from_redis_value(v: Value) -> Result<Self, ParsingError> {
         match v {
             Value::BulkString(bytes) => {
-                let s = std::str::from_utf8(&bytes).map_err(ParsingError::from)?;
+                let s =
+                    std::str::from_utf8(&bytes).map_err(ParsingError::from)?;
                 parse_redis_session_str_allow_redisjson(s)
             }
-            Value::SimpleString(s) => parse_redis_session_str_allow_redisjson(&s),
+            Value::SimpleString(s) => {
+                parse_redis_session_str_allow_redisjson(&s)
+            }
             other => Err(ParsingError::from(format!(
                 "Response type was not deserializable to RedisSession. (response was {other:?})"
             ))),

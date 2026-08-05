@@ -1965,7 +1965,7 @@ async fn load_network_data(
 
         let imported_network_units = all_imported_network_units
             .iter()
-            .filter(|u| u.network_id.eq(&imported_network.id))
+            .filter(|u| u.network_id == imported_network.id)
             .collect_vec();
         if imported_network_units.len() > 1 {
             let units = imported_network_units
@@ -2108,7 +2108,7 @@ async fn load_unit_data(
             if names_match(&dto, lu) {
                 let lu_name =
                     crate::sigint::unit::unit_name(lu).trim().to_lowercase();
-                if lu_name.eq(&unit_name) {
+                if lu_name == unit_name {
                     perfect_matches.push(l.clone());
                 } else {
                     matches.push(l.clone());
@@ -2196,14 +2196,14 @@ fn names_match(u1: &Unit, u2: &Unit) -> bool {
         let s2 = s2.trim().to_lowercase();
         if is_non_strict_match {
             return (
-                s1.is_empty() || s2.is_empty() || s1.eq(&s2),
+                s1.is_empty() || s2.is_empty() || s1 == s2,
                 is_non_strict_match,
             );
         }
         if s1.is_empty() {
             (s2.is_empty(), true)
         } else {
-            (s1.eq(&s2), false)
+            (s1 == s2, false)
         }
     }
     let mut is_non_strict_match = false;

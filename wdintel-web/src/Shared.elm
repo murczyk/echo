@@ -722,8 +722,16 @@ shouldRedirectUnauthorizedPage path user =
         Route.Path.RerPalitraNeo ->
             not (Core.Auth.hasRole "Rer" user)
 
+        Route.Path.Devices ->
+            not (Core.Auth.canReadDevices user)
+
+        Route.Path.Devices_Id_ _ ->
+            not (Core.Auth.canReadDevices user)
+
         _ ->
             Shared.Components.Navbar.adminRouteIsBlocked path user
+
+
 
 
 formatError : ApiError -> String

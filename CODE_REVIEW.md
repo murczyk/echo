@@ -8,6 +8,11 @@ every updated `echo-im` or `echo-gpu` migration revision must declare its
 analytics impact. The supported strategies are `excluded`,
 `replicated_snapshot`, `cdc_backfill`, and `mirror_resync`.
 
+Treat every schema migration as a coupled change to
+`deploy/clickhouse/migration-impact.json`: review the matching entry in the
+same pull request, and reject missing, stale, or incorrectly scoped impact
+declarations.
+
 For `CREATE TABLE`, confirm whether the table belongs in
 `deploy/clickhouse/env/tables-exclude.txt`. Non-excluded tables are added to
 PeerDB automatically after migration; exclusion changes remain an explicit

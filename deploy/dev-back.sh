@@ -229,7 +229,6 @@ run_server() {
         export RUST_LOG=warn
 
         echo "starting backend in quiet mode on port ${server_port}; successful HTTP access logs are hidden" >&2
-        echo "report workers run separately: just dev-bgworker" >&2
 
         : > "$server_logfile"
         setsid env REPO_ROOT="$repo_root" bash -lc "$cmd" bash "${server_args[@]}" > "$server_logfile" 2>&1 &
@@ -241,7 +240,6 @@ run_server() {
         fi
 
         echo "starting backend on port ${server_port}..." >&2
-        echo "report workers run separately: just dev-bgworker" >&2
 
         setsid env REPO_ROOT="$repo_root" bash -lc "$cmd" bash "${server_args[@]}" &
         pid=$!

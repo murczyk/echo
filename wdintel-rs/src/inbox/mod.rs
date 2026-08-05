@@ -9,6 +9,8 @@ use chrono::Duration;
 use chrono_tz::Tz;
 use sea_orm::*;
 
+pub mod callsigns;
+
 pub struct ConstructInboxItemResult {
     pub spawned_message_ids: Vec<i64>,
     pub changed_inbox_item_id: Option<i64>,
@@ -267,10 +269,10 @@ where
         body_noheader: Set(Some(serde_json::to_value(&body_noheader).c(h!())?)),
         tags: NotSet,
         callsigns_alg1: Set(Some(
-            serde_json::to_value(callsigns_alg1).c(h!())?,
+            serde_json::to_value(&callsigns_alg1).c(h!())?,
         )),
         callsigns_alg2: Set(Some(
-            serde_json::to_value(callsigns_alg2).c(h!())?,
+            serde_json::to_value(&callsigns_alg2).c(h!())?,
         )),
         datetime: NotSet,
         signal_tokens: Set(Some(serde_json::to_value(signal_tokens).c(h!())?)),
@@ -289,6 +291,18 @@ where
         .exec_with_returning(txn)
         .await
         .c(h!())?;
+    let system_login_id = crate::users::system_login_id(txn).await.c(h!())?;
+    callsigns::sync(
+        txn,
+        result.id,
+        callsigns::InboxItemCallsigns {
+            primary: callsigns_alg1,
+            alg2: callsigns_alg2,
+        },
+        system_login_id,
+    )
+    .await
+    .c(h!())?;
 
     crate::rer_importer::inbox::metadata::refresh_metadata_for_body(
         result.id,
@@ -520,12 +534,16 @@ fn extract_generic_body_datetime(
 
     Ok(match Kyiv.from_local_datetime(&dt) {
         chrono::offset::LocalResult::None => {
-            println!("> warning: couldn't convert datetime to Kyiv timezone: {dt:?}; body: {body}");
+            println!(
+                "> warning: couldn't convert datetime to Kyiv timezone: {dt:?}; body: {body}"
+            );
             None
         }
         chrono::offset::LocalResult::Single(v) => Some(v),
         chrono::offset::LocalResult::Ambiguous(v1, v2) => {
-            println!("> warning: couldn't convert datetime to Kyiv timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}");
+            println!(
+                "> warning: couldn't convert datetime to Kyiv timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}"
+            );
             None
         }
     })
@@ -643,7 +661,9 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let system_login_id = crate::users::system_login_id(txn).await.c(h!())?;
-    let parsed = crate::sigint::parser::parse_comments(body);
+    let blacklist = crate::sigint::comments::load_blacklist(txn).await?;
+    let parsed =
+        crate::sigint::parser::parse_comments_with_blacklist(body, &blacklist);
     let mut texts = vec![];
     for text in [parsed.top, parsed.bottom].into_iter().flatten() {
         if !texts.contains(&text) {
@@ -890,8 +910,7 @@ mod tests {
     #[test]
     fn extract_message_datetime_prefers_meow_header_over_body_time() {
         let now = Kyiv.with_ymd_and_hms(2026, 6, 28, 12, 0, 0).unwrap();
-        let body =
-            "50 обрБпС\n05.58 (МСК/Київ) +- 10хв\n\nПерехоплення о 08:30\nрядок 2";
+        let body = "50 обрБпС\n05.58 (МСК/Київ) +- 10хв\n\nПерехоплення о 08:30\nрядок 2";
 
         let (m_dt, meow_format) =
             extract_message_datetime(now, body, false).unwrap();
@@ -939,6 +958,64 @@ mod tests {
              Дата та час: 16.07.2026 11:34:32;\n\
              Умовні координати для бота: MGRS {mgrs};"
         )
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn auto_comments_use_database_blacklist() {
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let body = "++\nважливий коментар\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка\n\nМітка перехоплення: +";
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        insert_missing_auto_comments(&env.dbx, message.id, None, body)
+            .await
+            .unwrap();
+
+        let comments = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].comment, "важливий коментар");
+
+        let system_login_id =
+            crate::users::system_login_id(&env.dbx).await.unwrap();
+        let seeded = sigint_comment_blacklist::Entity::find()
+            .filter(sigint_comment_blacklist::Column::IsPersistent.eq(true))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(seeded.len(), 24);
+        assert!(seeded
+            .iter()
+            .all(|entry| entry.created_by_login_id == system_login_id));
+
+        let manual_text = format!("manual-{}", Uuid::new_v4());
+        let manual = sigint_comment_blacklist::ActiveModel {
+            text: Set(manual_text.clone()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        assert!(!manual.is_persistent);
+        assert_eq!(manual.created_by_login_id, system_login_id);
+        sigint_comment_blacklist::Entity::delete_by_id(manual_text)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

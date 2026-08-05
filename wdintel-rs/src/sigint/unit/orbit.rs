@@ -1,20 +1,20 @@
 use super::types::{
-    LinkOrbitUnitReq, OrbitDictionaryValue, OrbitUnitDetails,
-    OrbitUnitLinkCandidate, OrbitUnitLinkCandidatesReq,
-    OrbitUnitLinkCandidatesRsp,
+    CreateUnitReq, CreateUnitWithAutoNetworkReq, CreateUnitWithAutoNetworkRsp,
+    ImportOrbitUnitReq, LinkOrbitUnitReq, OrbitDictionaryValue,
+    OrbitUnitDetails, OrbitUnitLinkCandidate, OrbitUnitLinkCandidatesReq,
+    OrbitUnitLinkCandidatesRsp, OrbitUnitSearchReq,
 };
-use crate::config::ROLE_ORBIT;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-use crate::types::{Env, ShortContext};
+use crate::types::{warn, Env, Mode, ShortContext};
 use crate::users::{ensure_rer_role, has_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::{Data, Json};
 use sea_orm::sea_query::extension::postgres::PgExpr;
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 const ORBIT_LINK_CANDIDATE_LIMIT: u64 = 100;
@@ -24,7 +24,13 @@ pub async fn can_view_orbit_data(
     dbx: &DatabaseConnection,
     login_id: &Uuid,
 ) -> Result<bool, AppError> {
-    match has_role(dbx, login_id, ROLE_ORBIT).await {
+    if crate::system_settings::orbit_data_hidden(dbx)
+        .await
+        .c(h!())?
+    {
+        return Ok(false);
+    }
+    match has_role(dbx, login_id, "Rer").await {
         Ok(()) => Ok(true),
         Err(AppError::Forbidden(_)) => Ok(false),
         Err(err) => Err(err),
@@ -179,7 +185,7 @@ pub async fn orbit_link_candidates(
 ) -> Result<Json<OrbitUnitLinkCandidatesRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
-    ensure_orbit_access(&env.dbx, &login).await?;
+    ensure_orbit_editor_access(&env.dbx, &login).await?;
     let req = req.into_inner();
     let unit = find_available_sigint_unit(&env.dbx, req.unit_id).await?;
     let units = match req.search.as_deref() {
@@ -187,6 +193,34 @@ pub async fn orbit_link_candidates(
         None => automatic_orbit_link_candidates(&env.dbx, &unit).await?,
     };
     Ok(Json(OrbitUnitLinkCandidatesRsp { units }))
+}
+
+#[post("/api/sigint/unit/orbit-search")]
+pub async fn search_orbit_units(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<OrbitUnitSearchReq>,
+) -> Result<Json<OrbitUnitLinkCandidatesRsp>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    ensure_orbit_editor_access(&env.dbx, &login).await?;
+    let units = manual_orbit_link_candidates(&env.dbx, &req.search).await?;
+    Ok(Json(OrbitUnitLinkCandidatesRsp { units }))
+}
+
+#[post("/api/sigint/unit/orbit-import")]
+pub async fn import_orbit_unit(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<ImportOrbitUnitReq>,
+) -> Result<Json<CreateUnitWithAutoNetworkRsp>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    ensure_orbit_editor_access(&env.dbx, &login).await?;
+    let orbit_unit_id = parse_orbit_unit_id(&req.orbit_unit_id)?;
+    Ok(Json(
+        import_orbit_unit_for_login(&login, &env, orbit_unit_id).await?,
+    ))
 }
 
 #[post("/api/sigint/unit/orbit-link")]
@@ -197,12 +231,9 @@ pub async fn link_orbit_unit(
 ) -> Result<Json<()>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
-    ensure_orbit_access(&env.dbx, &login).await?;
+    ensure_orbit_editor_access(&env.dbx, &login).await?;
     let req = req.into_inner();
-    let orbit_unit_id =
-        Uuid::parse_str(&req.orbit_unit_id).map_err(|_| AppError::BL {
-            msg: "Invalid ORBIT unit ID".to_string(),
-        })?;
+    let orbit_unit_id = parse_orbit_unit_id(&req.orbit_unit_id)?;
     find_available_sigint_unit(&env.dbx, req.sigint_unit_id).await?;
     find_available_orbit_unit(&env.dbx, orbit_unit_id).await?;
     crate::orbit::link_sigint_unit_if_unlinked_with_lock(
@@ -223,12 +254,9 @@ pub async fn unlink_orbit_unit(
 ) -> Result<Json<()>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
-    ensure_orbit_access(&env.dbx, &login).await?;
+    ensure_orbit_editor_access(&env.dbx, &login).await?;
     let req = req.into_inner();
-    let orbit_unit_id =
-        Uuid::parse_str(&req.orbit_unit_id).map_err(|_| AppError::BL {
-            msg: "Invalid ORBIT unit ID".to_string(),
-        })?;
+    let orbit_unit_id = parse_orbit_unit_id(&req.orbit_unit_id)?;
     find_available_sigint_unit(&env.dbx, req.sigint_unit_id).await?;
     find_available_orbit_unit(&env.dbx, orbit_unit_id).await?;
     crate::orbit::unlink_sigint_unit_with_lock(
@@ -250,6 +278,421 @@ async fn ensure_orbit_access(
     } else {
         Err(AppError::Forbidden("ORBIT data access denied".to_string()))
     }
+}
+
+async fn ensure_orbit_editor_access(
+    dbx: &DatabaseConnection,
+    login: &Uuid,
+) -> Result<(), AppError> {
+    ensure_orbit_access(dbx, login).await?;
+    has_role(dbx, login, "UnitsEditor").await?;
+    Ok(())
+}
+
+fn parse_orbit_unit_id(value: &str) -> Result<Uuid, AppError> {
+    Uuid::parse_str(value).map_err(|_| AppError::BL {
+        msg: "Invalid ORBIT unit ID".to_string(),
+    })
+}
+
+pub(super) async fn import_orbit_unit_for_login(
+    login: &Uuid,
+    env: &Env,
+    orbit_unit_id: Uuid,
+) -> Result<CreateUnitWithAutoNetworkRsp, AppError> {
+    let transaction =
+        crate::orbit::acquire_import_lock(&env.dbx).await.c(h!())?;
+    let orbit_unit =
+        find_available_orbit_unit(&transaction, orbit_unit_id).await?;
+    if orbit_unit_has_active_sigint_link(&transaction, orbit_unit_id).await? {
+        return Err(AppError::BL {
+            msg: "ORBIT unit is already linked to a SIGINT unit".to_string(),
+        });
+    }
+    let unit_req =
+        create_unit_req_from_orbit(&transaction, &orbit_unit, true).await?;
+    let unit =
+        super::insert_unit_with_changelog(&transaction, login, &unit_req)
+            .await
+            .c(h!())?;
+    let network =
+        create_imported_unit_network(&transaction, login, &unit_req, unit.id)
+            .await?;
+    orbit_unit_sigint_unit::ActiveModel {
+        orbit_unit_id: Set(orbit_unit_id),
+        sigint_unit_id: Set(unit.id),
+        is_manual: Set(true),
+        is_suppressed: Set(false),
+    }
+    .insert(&transaction)
+    .await
+    .c(h!())?;
+    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+        .await?;
+    super::reconcile_parent_unit_activity(
+        &transaction,
+        login,
+        std::slice::from_ref(&unit),
+    )
+    .await?;
+    transaction.commit().await.c(h!())?;
+
+    super::render_created_unit_with_optional_network(login, env, unit, network)
+        .await
+}
+
+pub async fn oneoff_import_unlinked_orbit_units(
+    mode: Mode,
+) -> Result<(), AppError> {
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
+    let login = crate::users::system_login_id(&dbx).await.c(h!())?;
+    let imported = import_unlinked_orbit_units(&dbx, &login).await?;
+    println!("Imported {imported} unlinked ORBIT units.");
+    Ok(())
+}
+
+pub(super) async fn import_unlinked_orbit_units(
+    dbx: &DatabaseConnection,
+    login: &Uuid,
+) -> Result<usize, AppError> {
+    let transaction = crate::orbit::acquire_import_lock(dbx).await.c(h!())?;
+    let active_linked_orbit_unit_ids = orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .select_only()
+        .column(orbit_unit_sigint_unit::Column::OrbitUnitId)
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(sigint_unit::Column::Active.eq(true))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .into_tuple::<Uuid>()
+        .all(&transaction)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let linked_orbit_unit_ids = orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+        )
+        .select_only()
+        .column(orbit_unit_sigint_unit::Column::OrbitUnitId)
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .into_tuple::<Uuid>()
+        .all(&transaction)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let orbit_units = orbit_unit::Entity::find()
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .order_by_asc(orbit_unit::Column::UnitId)
+        .all(&transaction)
+        .await
+        .c(h!())?;
+    let orbit_unit_ids_to_activate =
+        orbit_unit_and_ancestor_ids(&orbit_units, active_linked_orbit_unit_ids);
+    let mut imported = 0;
+    for orbit_unit in &orbit_units {
+        if linked_orbit_unit_ids.contains(&orbit_unit.unit_id) {
+            continue;
+        }
+        let unit_req = match create_unit_req_from_orbit(
+            &transaction,
+            orbit_unit,
+            false,
+        )
+        .await
+        {
+            Ok(unit_req) => unit_req,
+            Err(err @ (AppError::BL { .. } | AppError::NotFound)) => {
+                let orbit_unit_id = orbit_unit.unit_id;
+                warn!("Skipping unsupported ORBIT unit {orbit_unit_id}: {err}");
+                continue;
+            }
+            Err(err) => return Err(err),
+        };
+        let unit =
+            super::insert_unit_with_changelog(&transaction, login, &unit_req)
+                .await
+                .c(h!())?;
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit.unit_id),
+            sigint_unit_id: Set(unit.id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(&transaction)
+        .await
+        .c(h!())?;
+        imported += 1;
+    }
+    activate_sigint_units_linked_to_orbit_units(
+        &transaction,
+        login,
+        &orbit_unit_ids_to_activate,
+    )
+    .await?;
+    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+        .await?;
+    transaction.commit().await.c(h!())?;
+    Ok(imported)
+}
+
+fn orbit_unit_and_ancestor_ids(
+    orbit_units: &[orbit_unit::Model],
+    mut unit_ids: HashSet<Uuid>,
+) -> HashSet<Uuid> {
+    let parent_ids_by_unit_id = orbit_units
+        .iter()
+        .map(|unit| {
+            (
+                unit.unit_id,
+                [
+                    unit.generative_parent_unit_id,
+                    unit.operational_parent_unit_id,
+                ],
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let mut pending = unit_ids.iter().copied().collect::<Vec<_>>();
+    while let Some(unit_id) = pending.pop() {
+        let Some(parent_ids) = parent_ids_by_unit_id.get(&unit_id) else {
+            continue;
+        };
+        for parent_id in parent_ids.iter().flatten() {
+            if parent_ids_by_unit_id.contains_key(parent_id)
+                && unit_ids.insert(*parent_id)
+            {
+                pending.push(*parent_id);
+            }
+        }
+    }
+    unit_ids
+}
+
+async fn activate_sigint_units_linked_to_orbit_units<C>(
+    dbx: &C,
+    login: &Uuid,
+    orbit_unit_ids: &HashSet<Uuid>,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if orbit_unit_ids.is_empty() {
+        return Ok(());
+    }
+    let sigint_unit_ids = orbit_unit_sigint_unit::Entity::find()
+        .select_only()
+        .column(orbit_unit_sigint_unit::Column::SigintUnitId)
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(
+            orbit_unit_sigint_unit::Column::OrbitUnitId
+                .is_in(orbit_unit_ids.iter().copied()),
+        )
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Id.is_in(sigint_unit_ids))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    for unit in units {
+        if !unit.active {
+            super::set_unit_activity(dbx, login, &unit, true).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn create_imported_unit_network<C>(
+    transaction: &C,
+    login: &Uuid,
+    unit: &CreateUnitReq,
+    unit_id: i64,
+) -> Result<Option<sigint_network::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if !crate::system_settings::devices_section_enabled(transaction)
+        .await
+        .c(h!())?
+    {
+        return Ok(None);
+    }
+    let req = CreateUnitWithAutoNetworkReq {
+        unit: unit.clone(),
+        skip_network_creation: false,
+        locations: Vec::new(),
+        unit_mask: imported_unit_masks(unit)?,
+    };
+    Ok(Some(
+        super::insert_auto_cyber_network(
+            transaction,
+            login,
+            &req,
+            unit_id,
+            Vec::new(),
+            req.unit_mask.clone(),
+        )
+        .await
+        .c(h!())?,
+    ))
+}
+
+fn imported_unit_masks(unit: &CreateUnitReq) -> Result<Vec<String>, AppError> {
+    let parts = [
+        unit.company.as_str(),
+        unit.battalion.as_str(),
+        unit.regiment.as_str(),
+        unit.division.as_str(),
+        unit.army.as_str(),
+    ]
+    .into_iter()
+    .filter(|part| !part.is_empty())
+    .collect::<Vec<_>>();
+    let forward = parts.join(" ");
+    let backward = parts.into_iter().rev().collect::<Vec<_>>().join(" ");
+    crate::sigint::unit_tag::normalize_unit_mask(vec![forward, backward])
+}
+
+async fn create_unit_req_from_orbit<C>(
+    dbx: &C,
+    orbit_unit: &orbit_unit::Model,
+    active: bool,
+) -> Result<CreateUnitReq, AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut hierarchy = std::array::from_fn(|_| String::new());
+    fill_orbit_hierarchy_level(dbx, orbit_unit, &mut hierarchy).await?;
+    fill_orbit_parent_chain(
+        dbx,
+        orbit_unit,
+        OrbitParentKind::Operational,
+        &mut hierarchy,
+    )
+    .await?;
+    fill_orbit_parent_chain(
+        dbx,
+        orbit_unit,
+        OrbitParentKind::Generative,
+        &mut hierarchy,
+    )
+    .await?;
+    if hierarchy.iter().all(String::is_empty) {
+        return Err(AppError::BL {
+            msg: "ORBIT unit has no supported hierarchy levels".to_string(),
+        });
+    }
+    let [company, battalion, regiment, division, army] = hierarchy;
+    Ok(CreateUnitReq {
+        company,
+        battalion,
+        regiment,
+        division,
+        army,
+        active,
+        is_deduplicate_candidate: None,
+        comment: String::new(),
+    })
+}
+
+#[derive(Clone, Copy)]
+enum OrbitParentKind {
+    Generative,
+    Operational,
+}
+
+impl OrbitParentKind {
+    fn parent_id(self, unit: &orbit_unit::Model) -> Option<Uuid> {
+        match self {
+            Self::Generative => unit.generative_parent_unit_id,
+            Self::Operational => unit.operational_parent_unit_id,
+        }
+    }
+}
+
+async fn fill_orbit_parent_chain<C>(
+    dbx: &C,
+    root: &orbit_unit::Model,
+    parent_kind: OrbitParentKind,
+    hierarchy: &mut [String; 5],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut seen = HashSet::from([root.unit_id]);
+    let mut parent_id = parent_kind.parent_id(root);
+    while let Some(unit_id) = parent_id {
+        if !seen.insert(unit_id) {
+            return Err(AppError::BL {
+                msg: "ORBIT unit hierarchy contains a cycle".to_string(),
+            });
+        }
+        let parent = find_available_orbit_unit(dbx, unit_id).await?;
+        parent_id = parent_kind.parent_id(&parent);
+        fill_orbit_hierarchy_level(dbx, &parent, hierarchy).await?;
+    }
+    Ok(())
+}
+
+async fn fill_orbit_hierarchy_level<C>(
+    dbx: &C,
+    unit: &orbit_unit::Model,
+    hierarchy: &mut [String; 5],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let Some(echelon_id) = unit.unit_echelon_id else {
+        return Ok(());
+    };
+    let Some(echelon) = orbit_unit_echelon::Entity::find_by_id(echelon_id)
+        .one(dbx)
+        .await
+        .c(h!())?
+    else {
+        return Ok(());
+    };
+    let Some(name) = preferred_orbit_unit_name(unit) else {
+        return Ok(());
+    };
+    let Some(index) = crate::orbit::echo_echelon(&echelon.key)
+        .map(crate::orbit::EchoEchelon::index)
+    else {
+        return Ok(());
+    };
+    if hierarchy[index].is_empty() {
+        hierarchy[index] = name;
+    }
+    Ok(())
+}
+
+fn preferred_orbit_unit_name(unit: &orbit_unit::Model) -> Option<String> {
+    [
+        unit.unit_name_short.as_deref(),
+        unit.unit_name.as_deref(),
+        unit.unit_name_original.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .find(|name| !name.is_empty())
+    .map(ToString::to_string)
 }
 
 pub async fn has_any_orbit_unit(
@@ -282,6 +725,16 @@ async fn manual_orbit_link_candidates(
     if words.is_empty() {
         return Ok(Vec::new());
     }
+    let units = manual_orbit_link_candidates_query(&words)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(units.into_iter().map(render_orbit_unit_candidate).collect())
+}
+
+fn manual_orbit_link_candidates_query(
+    words: &[String],
+) -> Select<orbit_unit::Entity> {
     let mut condition =
         Condition::all().add(orbit_unit::Column::Deleted.eq(false));
     for word in words {
@@ -302,16 +755,38 @@ async fn manual_orbit_link_candidates(
                 ),
         );
     }
-    let units = orbit_unit::Entity::find()
+    orbit_unit::Entity::find()
         .filter(condition)
+        .order_by_desc(orbit_full_word_match_score(words))
         .order_by_asc(orbit_unit::Column::GenerativeUnitNameFull)
         .order_by_asc(orbit_unit::Column::OperationalUnitNameFull)
         .order_by_asc(orbit_unit::Column::UnitId)
         .limit(ORBIT_LINK_CANDIDATE_LIMIT)
-        .all(dbx)
-        .await
-        .c(h!())?;
-    Ok(units.into_iter().map(render_orbit_unit_candidate).collect())
+}
+
+fn orbit_full_word_match_score(words: &[String]) -> SimpleExpr {
+    let mut words = words.iter();
+    let first_word = words
+        .next()
+        .expect("manual Orbit search words must not be empty");
+    words.fold(orbit_full_word_match(first_word), |score, word| {
+        score.add(orbit_full_word_match(word))
+    })
+}
+
+fn orbit_full_word_match(word: &str) -> SimpleExpr {
+    let full_word_match = Expr::cust_with_exprs(
+        "concat(' ', regexp_replace(lower(concat_ws(' ', $1, $2, $3)), '[[:punct:][:space:]]+', ' ', 'g'), ' ') ilike $4",
+        [
+            Expr::col(orbit_unit::Column::UnitName).into_simple_expr(),
+            Expr::col(orbit_unit::Column::GenerativeUnitNameFull)
+                .into_simple_expr(),
+            Expr::col(orbit_unit::Column::OperationalUnitNameFull)
+                .into_simple_expr(),
+            Expr::val(format!("% {word} %")).into_simple_expr(),
+        ],
+    );
+    Expr::case(full_word_match, 1).finally(0).into()
 }
 
 fn orbit_search_words(search: &str) -> Vec<String> {
@@ -351,6 +826,27 @@ where
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)
+}
+
+async fn orbit_unit_has_active_sigint_link<C>(
+    dbx: &C,
+    orbit_unit_id: Uuid,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+        )
+        .filter(orbit_unit_sigint_unit::Column::OrbitUnitId.eq(orbit_unit_id))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some())
 }
 
 fn render_match_candidate(
@@ -428,22 +924,56 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn orbit_role_and_admin_can_view_orbit_data() {
+    async fn manual_search_prioritizes_full_word_matches() {
         let env = cleanup().await.unwrap();
-        let orbit_login =
-            create_login_with_roles(&env.dbx, "orbit-role", &["Rer", "Orbit"])
-                .await;
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let full_word_match_id = Uuid::new_v4();
+        let substring_match_id = Uuid::new_v4();
+        orbit_unit::Entity::insert_many([
+            orbit_unit::ActiveModel {
+                unit_id: Set(full_word_match_id),
+                unit_name: Set(Some("55 мбр".to_string())),
+                ..Default::default()
+            },
+            orbit_unit::ActiveModel {
+                unit_id: Set(substring_match_id),
+                unit_name: Set(Some("1557 омбр".to_string())),
+                ..Default::default()
+            },
+        ])
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+
+        let candidates = manual_orbit_link_candidates(&env.dbx, "55 мбр")
+            .await
+            .unwrap();
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].unit_id, full_word_match_id.to_string());
+        assert_eq!(candidates[1].unit_id, substring_match_id.to_string());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rer_role_and_admin_can_view_orbit_data() {
+        let env = cleanup().await.unwrap();
         let admin_login =
             create_login_with_roles(&env.dbx, "orbit-admin", &["Admin"]).await;
         let rer_login =
             create_login_with_roles(&env.dbx, "orbit-rer", &["Rer"]).await;
+        let basic_login =
+            create_login_with_roles(&env.dbx, "orbit-basic", &[]).await;
 
-        assert!(can_view_orbit_data(&env.dbx, &orbit_login.id)
-            .await
-            .unwrap());
         assert!(can_view_orbit_data(&env.dbx, &admin_login.id)
             .await
             .unwrap());
-        assert!(!can_view_orbit_data(&env.dbx, &rer_login.id).await.unwrap());
+        assert!(can_view_orbit_data(&env.dbx, &rer_login.id).await.unwrap());
+        assert!(!can_view_orbit_data(&env.dbx, &basic_login.id)
+            .await
+            .unwrap());
     }
 }

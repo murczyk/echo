@@ -13,13 +13,19 @@ dump_file=
 analytics_enabled=false
 analytics_ssh_target=
 table_reconcile_timer_should_start=false
+preserve_local_ai_agent_profile=true
+local_ai_agent_profile_file=
+local_ai_agent_profile_retry=true
 
 usage() {
   cat <<'EOF'
-Usage: deploy/restore-copied-db.sh [--yes] [--dry-run] DUMP_FILE
+Usage: deploy/restore-copied-db.sh [--yes] [--dry-run]
+                                  [--no-preserve-local-ai-agent-profile] DUMP_FILE
 
 Replace the local wd database from a copy-db archive. If the source-side
 PeerDB configuration exists, pause and resync the paired analytics stack too.
+By default, retain the local AI-agent dispatcher, proxy, and engine settings
+while discarding copied AI-agent runtime state.
 EOF
 }
 
@@ -40,6 +46,9 @@ parse_args() {
         ;;
       --dry-run)
         dry_run=true
+        ;;
+      --no-preserve-local-ai-agent-profile)
+        preserve_local_ai_agent_profile=false
         ;;
       -h|--help)
         usage
@@ -129,7 +138,98 @@ resume_table_reconcile_timer() {
     sudo systemctl start echo-peerdb-table-reconcile.timer \
       || restore_log "WARNING: could not restart automatic table reconciliation"
   fi
+  cleanup_local_ai_agent_profile
   exit "$status"
+}
+
+cleanup_local_ai_agent_profile() {
+  [[ -n "$local_ai_agent_profile_file" ]] || return
+  [[ -f "$local_ai_agent_profile_file" ]] || return
+  if $local_ai_agent_profile_retry; then
+    restore_log \
+      "Local AI-agent profile retained for retry: $local_ai_agent_profile_file"
+    return
+  fi
+  rm -f -- "$local_ai_agent_profile_file"
+}
+
+snapshot_local_ai_agent_profile() {
+  if ! $preserve_local_ai_agent_profile; then
+    restore_log "Local AI-agent profile preservation was disabled"
+    return
+  fi
+  if $dry_run; then
+    restore_log "Would snapshot the local AI-agent profile"
+    return
+  fi
+
+  require_command mktemp
+  local_ai_agent_profile_file=$(mktemp /var/tmp/echo-local-ai-agent-profile.XXXXXX)
+  chmod 600 "$local_ai_agent_profile_file"
+  restore_log "Snapshotting local AI-agent profile"
+  (
+    cd "$REPO_DIR"
+    cargo run -p wdintel-rs -- --mode=debug \
+      oneoff-export-local-ai-agent-profile \
+      --output "$local_ai_agent_profile_file"
+  )
+  if [[ ! -s "$local_ai_agent_profile_file" ]]; then
+    rm -f -- "$local_ai_agent_profile_file"
+    local_ai_agent_profile_file=
+    restore_log "No local AI-agent profile is configured; continuing"
+  fi
+}
+
+restore_local_ai_agent_profile() {
+  if $dry_run; then
+    restore_log "Would discard copied AI-agent runtime"
+    if ! $preserve_local_ai_agent_profile; then
+      restore_log "Would retain source AI-agent control-plane configuration"
+    elif [[ -n "$local_ai_agent_profile_file" ]]; then
+      restore_log "Would restore and validate the local AI-agent profile"
+    else
+      restore_log "Would clear copied AI-agent control-plane configuration"
+    fi
+    return
+  fi
+
+  if ! $preserve_local_ai_agent_profile; then
+    restore_log "Discarding copied AI-agent runtime and retaining source control plane"
+    (
+      cd "$REPO_DIR"
+      cargo run -p wdintel-rs -- --mode=debug \
+        oneoff-discard-copied-ai-agent-runtime
+    )
+    return
+  fi
+
+  if [[ -z "$local_ai_agent_profile_file" ]]; then
+    restore_log "Discarding copied AI-agent runtime and control plane"
+    (
+      cd "$REPO_DIR"
+      cargo run -p wdintel-rs -- --mode=debug \
+        oneoff-discard-copied-ai-agent-runtime --clear-control-plane
+    )
+    return
+  fi
+
+  restore_log "Discarding copied AI-agent runtime"
+  (
+    cd "$REPO_DIR"
+    cargo run -p wdintel-rs -- --mode=debug \
+      oneoff-discard-copied-ai-agent-runtime
+  )
+
+  restore_log "Restoring and validating local AI-agent profile"
+  (
+    cd "$REPO_DIR"
+    cargo run -p wdintel-rs -- --mode=debug \
+      oneoff-import-local-ai-agent-profile \
+      --input "$local_ai_agent_profile_file"
+  )
+  rm -f -- "$local_ai_agent_profile_file"
+  local_ai_agent_profile_file=
+  local_ai_agent_profile_retry=false
 }
 
 pause_table_reconcile_timer() {
@@ -280,11 +380,14 @@ main() {
   load_optional_analytics
   preflight_analytics
   confirm_restore
+  snapshot_local_ai_agent_profile
+  trap cleanup_local_ai_agent_profile EXIT
   pause_table_reconcile_timer
   stop_analytics
   wait_for_inactive_logical_slots
   restore_database
   run_migrations
+  restore_local_ai_agent_profile
   reconfigure_analytics_source
   start_and_resync_analytics
   restore_log "Database restore completed"

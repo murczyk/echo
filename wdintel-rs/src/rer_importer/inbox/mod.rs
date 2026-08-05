@@ -16,7 +16,6 @@ use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
 use crate::session::record_page_visit;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
 use actix_web::web::{Data, Json};
 use actix_web::{get, post};
@@ -489,19 +488,19 @@ async fn inbox_messages(
     env: actix_web::web::Data<Env>,
     req: Json<InboxMessagesReq>,
 ) -> Result<Json<InboxMessagesRsp>, AppError> {
-    has_any_role(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        vec!["Rer", "ApiAgent"],
-    )
-    .await
-    .c(h!())?;
-    let is_admin = has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
-        .await
-        .is_ok();
     let user_id = login_id_from_identity(&user)?;
+    has_any_role(&env.dbx, &user_id, vec!["Rer", "ApiAgent"])
+        .await
+        .c(h!())?;
+    let is_admin = has_role(&env.dbx, &user_id, "Admin").await.is_ok();
     let page_id = req.page_id.clone();
     let req = req.into_inner();
+    if has_role(&env.dbx, &user_id, AI_AGENT_ROLE_API)
+        .await
+        .is_ok()
+    {
+        validate_agent_inbox_request(&req)?;
+    }
     let skip_group_stats = req.skip_group_stats.unwrap_or(false);
 
     let payload = serde_json::to_value(&req).context(h!())?;
@@ -578,6 +577,46 @@ async fn inbox_messages(
     }))
 }
 
+fn validate_agent_inbox_request(
+    req: &InboxMessagesReq,
+) -> Result<(), AppError> {
+    let (Some(since_ms), Some(till_ms)) =
+        (req.since_date_inclusive_ms, req.till_date_inclusive_ms)
+    else {
+        return Err(AppError::BL {
+            msg: "AI agent inbox requests require both date boundaries"
+                .to_string(),
+        });
+    };
+    if since_ms > till_ms {
+        return Err(AppError::BL {
+            msg: "AI agent inbox date boundaries are reversed".to_string(),
+        });
+    }
+    let since_date = DateTime::from_timestamp_millis(since_ms)
+        .context(h!())?
+        .with_timezone(&Kyiv)
+        .date_naive();
+    let till_date = DateTime::from_timestamp_millis(till_ms)
+        .context(h!())?
+        .with_timezone(&Kyiv)
+        .date_naive();
+    if (till_date - since_date).num_days() >= AI_AGENT_INBOX_MAX_DAYS {
+        return Err(AppError::BL {
+            msg: format!(
+                "AI agent inbox period cannot exceed {AI_AGENT_INBOX_MAX_DAYS} days"
+            ),
+        });
+    }
+    if req.nolimit.is_some() || req.load_latest.is_some() {
+        return Err(AppError::BL {
+            msg: "AI agent inbox requests must use standard pagination"
+                .to_string(),
+        });
+    }
+    Ok(())
+}
+
 #[post("/api/rer-importer/get-inbox-group-stats")]
 async fn inbox_group_stats(
     user: Identity,
@@ -650,7 +689,7 @@ async fn query_inbox_digest(
     query: String,
 ) -> Result<InboxDigest, AppError> {
     let query_res = db
-        .query_one(Statement::from_string(DatabaseBackend::Postgres, query))
+        .query_one_raw(Statement::from_string(DatabaseBackend::Postgres, query))
         .await
         .c(h!())?
         .context(h!())?;
@@ -2253,7 +2292,7 @@ async fn fetch_inbox_messages_with_statement(
     req: &InboxMessagesReq,
     statement: Statement,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let results = dbx.query_all(statement).await.context(h!())?;
+    let results = dbx.query_all_raw(statement).await.context(h!())?;
 
     let messages: Vec<InboxMessageDesc> = results
         .iter()
@@ -2313,7 +2352,7 @@ async fn get_freq_pelengs_summary(
 
     let query_res = env
         .dbx
-        .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
+        .query_all_raw(Statement::from_string(DatabaseBackend::Postgres, q))
         .await
         .context(h!())?;
 
@@ -2431,6 +2470,63 @@ mod tests {
             dmr: vec![],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn agent_inbox_requires_ordered_bounded_dates() {
+        let valid = InboxMessagesReq {
+            since_date_inclusive_ms: Some(
+                "2026-10-01T21:00:00Z"
+                    .parse::<DateTime<Utc>>()
+                    .unwrap()
+                    .timestamp_millis(),
+            ),
+            till_date_inclusive_ms: Some(
+                "2026-11-01T21:59:59.999Z"
+                    .parse::<DateTime<Utc>>()
+                    .unwrap()
+                    .timestamp_millis(),
+            ),
+            newest_first: Some(true),
+            before_id_noninclusive: Some(42),
+            ..Default::default()
+        };
+        validate_agent_inbox_request(&valid).unwrap();
+
+        let mut invalid = valid.clone();
+        invalid.since_date_inclusive_ms = None;
+        assert!(validate_agent_inbox_request(&invalid).is_err());
+
+        let mut invalid = valid.clone();
+        invalid.since_date_inclusive_ms =
+            invalid.till_date_inclusive_ms.map(|value| value + 1);
+        assert!(validate_agent_inbox_request(&invalid).is_err());
+
+        let mut invalid = valid;
+        invalid.till_date_inclusive_ms = Some(
+            "2026-11-02T21:59:59.999Z"
+                .parse::<DateTime<Utc>>()
+                .unwrap()
+                .timestamp_millis(),
+        );
+        assert!(validate_agent_inbox_request(&invalid).is_err());
+    }
+
+    #[test]
+    fn agent_inbox_forbids_limit_bypasses() {
+        let valid = InboxMessagesReq {
+            since_date_inclusive_ms: Some(1_700_000_000_000),
+            till_date_inclusive_ms: Some(1_700_086_400_000),
+            ..Default::default()
+        };
+
+        let mut invalid = valid.clone();
+        invalid.nolimit = Some(false);
+        assert!(validate_agent_inbox_request(&invalid).is_err());
+
+        let mut invalid = valid;
+        invalid.load_latest = Some(false);
+        assert!(validate_agent_inbox_request(&invalid).is_err());
     }
 
     #[test]
@@ -3794,7 +3890,7 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn test_get_inbox_map_items_respects_reduced_organism_groups() {
+    async fn test_inbox_reads_respect_reduced_organism_groups() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource = find_test_datasource(&env.dbx).await.unwrap();
@@ -3935,6 +4031,17 @@ mod tests {
             .any(|point| point.message_id == hidden_message.id));
 
         let logins = vec![login.id];
+        let loaded_messages =
+            get_inbox_messages(&login.id, &logins, &env, &req)
+                .await
+                .unwrap();
+        assert!(loaded_messages
+            .iter()
+            .any(|(id, _)| *id == visible_message.id));
+        assert!(!loaded_messages
+            .iter()
+            .any(|(id, _)| *id == hidden_message.id));
+
         let hidden_messages = messages_by_id_bl(
             &login.id,
             &logins,

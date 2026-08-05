@@ -2,7 +2,6 @@ use crate::config::DATASOURCE_GROUP_LAST_SYNC_TOUCH_MINUTES;
 use crate::entities::sea_orm_active_enums::*;
 use crate::entities::*;
 use crate::error::*;
-use crate::utils::orm::ArrayColumnOps;
 use crate::{
     messenger::{group::ensure_signal_group, worker::sources_eq},
     types::*,
@@ -241,7 +240,7 @@ pub async fn sync_groups(
         let datasource_group = datasource_groups
             .iter()
             .filter(|d| d.group_master_key == g.id)
-            .find(|d| d.datasource_id.eq(&datasource_id))
+            .find(|d| d.datasource_id == datasource_id)
             .cloned();
         match datasource_group {
             None => {
@@ -290,7 +289,7 @@ pub async fn sync_groups(
     for g in deleted_noname_signal_groups {
         let Some((name, deleted)) = group_statuses
             .iter()
-            .filter(|(id, _name, _deleted)| g.master_key.eq(id))
+            .filter(|(id, _name, _deleted)| g.master_key == *id)
             .map(|(_id, name, deleted)| (name.clone(), *deleted))
             .reduce(|(a_name, a_deleted), (b_name, b_deleted)| {
                 (
@@ -301,7 +300,7 @@ pub async fn sync_groups(
         else {
             continue;
         };
-        if g.name.eq(&Some(name.clone())) && g.deleted == deleted {
+        if g.name == Some(name.clone()) && g.deleted == deleted {
             continue;
         }
         let mut rec = g.into_active_model();

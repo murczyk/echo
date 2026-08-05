@@ -24,6 +24,9 @@ export class HttpRequestError extends Error {
 export function isUnauthorizedError(error: unknown): boolean {
   return error instanceof HttpRequestError && error.status === 401;
 }
+export function isNetworkRequestError(error: unknown): boolean {
+  return error instanceof HttpRequestError && error.status === 0;
+}
 
 export function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';

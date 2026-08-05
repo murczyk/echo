@@ -32,7 +32,7 @@ pub async fn run_healthcheck_worker(
 ) -> anyhow::Result<Option<NaiveDateTime>> {
     if let Some(last_notified_at) = last_notified_at {
         let hour_ago = Utc::now() - TimeDelta::minutes(60);
-        if last_notified_at.gt(&hour_ago.naive_utc()) {
+        if last_notified_at > hour_ago.naive_utc() {
             return Ok(None);
         }
     }
@@ -51,7 +51,10 @@ pub async fn run_healthcheck_worker(
         .await
         .c(h!())?;
     if timeouts > 4 {
-        let content = format!("Почалися таймаути на спробах отримати повідомлення, переприв'яжіть Signal на сервері {}", config.public_host);
+        let content = format!(
+            "Почалися таймаути на спробах отримати повідомлення, переприв'яжіть Signal на сервері {}",
+            config.public_host
+        );
         crate::server::discord::discord_notify(
             config,
             crate::config::DISCORD_WEBHOOK_ALERT,

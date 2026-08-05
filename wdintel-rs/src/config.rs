@@ -3,6 +3,7 @@ use crate::types::*;
 use anyhow::Result;
 use chrono::Timelike;
 use opendal::Operator;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 pub const DEFAULT_PG_HOST: &str = "localhost";
@@ -10,8 +11,12 @@ pub const DEFAULT_PG_PORT: u16 = 5432;
 pub const DEFAULT_PG_USER: &str = "wd";
 pub const DEFAULT_PG_PASSWORD: &str = "fee_-_-_-FnoeKFBeebu87bf";
 pub const DEFAULT_PG_DBNAME: &str = "wd";
+pub const DEFAULT_PG_WDFILE_DBNAME: &str = "wd_files";
 pub const PG_POOL_DEFAULT_MAX_CONNECTIONS: u32 = 30;
 pub const PG_POOL_BGWORKER_MAX_CONNECTIONS: u32 = 20;
+pub const PG_WDFILE_POOL_MAX_CONNECTIONS: u32 = 10;
+pub const PG_WDFILE_MIGRATION_POOL_MAX_CONNECTIONS: u32 = 1;
+pub const FILE_REGISTRY_UNAVAILABLE_RETRY_AFTER_SECS: u64 = 60;
 pub const PGBACKREST_CONF_PATH: &str = "/etc/pgbackrest/pgbackrest.conf";
 pub const PGBACKREST_CONF_INCLUDE_DIR: &str = "/etc/pgbackrest/conf.d";
 pub const PGBACKREST_STANZA_CONF_PREFIX: &str = "pgbackrest-";
@@ -19,6 +24,9 @@ pub const PGBACKREST_STANZA_CONF_SUFFIX: &str = ".conf";
 pub const PG_SLOW_STATEMENT_THRESHOLD_MS: u64 = 5_000;
 pub const ONEOFF_KILL_OLD_QUERIES_DEFAULT_MINUTES: u64 = 3;
 pub const ONEOFF_KILL_OLD_QUERIES_QUERY_PREVIEW_CHARS: usize = 500;
+pub const INBOX_ITEM_CALLSIGN_BACKFILL_BATCH_SIZE: u64 = 500;
+pub const INBOX_ITEM_CALLSIGN_SYNC_INSERT_BATCH_SIZE: usize = 1_000;
+pub const INBOX_ITEM_CALLSIGN_LOAD_BATCH_SIZE: usize = 20_000;
 pub const NLP_ADDR: &str = "http://127.0.0.1:5000";
 pub const RQ_TIMEOUT: u64 = 10;
 pub const AI_ENGINE_REQUEST_TIMEOUT_SEC: u64 = 300;
@@ -46,6 +54,101 @@ pub const AI_CALLSIGN_DEFAULT_PROMPT: &str = r#"Знайди всі позивн
 pub const AI_CHAT_ROLE_SYSTEM: &str = "system";
 pub const AI_CHAT_ROLE_USER: &str = "user";
 pub const AI_CHAT_ROLE_ASSISTANT: &str = "assistant";
+pub const AI_AGENT_SETTINGS_ID: i16 = 1;
+pub const AI_AGENT_DISPATCHER_ID: i16 = 1;
+pub const AI_AGENT_TEMPLATE_LOGIN_ID: &str =
+    "019fc7f7-9770-7f83-9c1a-211af29b02e6";
+pub const AI_AGENT_TEMPLATE_LOGIN_NAME: &str = "ai-agent";
+pub const AI_AGENT_LINKED_LOGIN_SUFFIX: &str = "-ai-agent";
+pub const AI_AGENT_COPIED_LOGIN_PREFIX: &str = "copied-ai-agent-";
+pub const AI_AGENT_CONTAINER_NAME_PREFIX: &str = "echo-ai-agent-";
+pub const AI_AGENT_ROLE_API: &str = "ApiAgent";
+pub const AI_AGENT_ROLE_RER: &str = "Rer";
+pub const AI_AGENT_ROLE_CYBER: &str = "Cyber";
+pub const AI_AGENT_CORRELATION_HEADER: &str = "X-Echo-Agent-Session";
+pub const AI_AGENT_BOOTSTRAP_REDIS_PREFIX: &str = "ai-agent:bootstrap:";
+pub const AI_AGENT_PENDING_BOOTSTRAP_REDIS_PREFIX: &str =
+    "ai-agent:pending-bootstrap:";
+pub const AI_AGENT_CREDENTIAL_REDIS_PREFIX: &str = "ai-agent:credential:";
+pub const AI_AGENT_LOGIN_CREDENTIALS_REDIS_PREFIX: &str =
+    "ai-agent:login-credentials:";
+pub const AI_AGENT_CORRELATION_SESSION_REDIS_PREFIX: &str =
+    "ai-agent:correlation-session:";
+pub const AI_AGENT_SESSION_BINDING_KEY: &str = "ai_agent.session_binding";
+pub const AI_AGENT_BOOTSTRAP_TTL_SEC: u64 = 120;
+pub const AI_AGENT_CREDENTIAL_TTL_SEC: u64 = 6 * 60 * 60;
+pub const AI_AGENT_REQUEST_PROMPT_MAX_CHARS: usize = 100_000;
+pub const AI_AGENT_CONVERSATION_TITLE_MAX_CHARS: usize = 120;
+pub const AI_AGENT_EVENT_PAYLOAD_MAX_BYTES: usize = 256 * 1024;
+pub const AI_AGENT_REQUEST_MAX_RUNNER_EVENTS: usize = 10_000;
+pub const AI_AGENT_REQUEST_MAX_EVENT_BYTES: usize = 16 * 1024 * 1024;
+pub const AI_AGENT_RESPONSE_MAX_BYTES: usize = 2 * 1024 * 1024;
+pub const AI_AGENT_RESPONSE_MAX_CHARS: usize = 500_000;
+pub const AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES: usize = 500 * 1024;
+pub const AI_AGENT_ERROR_MAX_CHARS: usize = 12 * 1024;
+pub const AI_AGENT_PROGRESS_MAX_CHARS: usize = 500;
+pub const AI_AGENT_MAX_RUNNING_CONTAINERS: u64 = 6;
+pub const AI_AGENT_REQUEST_WORKER_COUNT: usize = 6;
+pub const AI_AGENT_HISTORY_MAX_TURNS: u64 = 100;
+pub const AI_AGENT_WORKER_SHUTDOWN_GRACE_SEC: u64 = 30;
+pub const AI_AGENT_WORKER_IDLE_SLEEP_MS: u64 = 500;
+pub const AI_AGENT_WORKER_ERROR_SLEEP_SEC: u64 = 5;
+pub const AI_AGENT_WORKER_LEASE_ADVISORY_LOCK_KEY: i64 = 0x4543_484f_4149_3031;
+pub const AI_AGENT_WORKER_LEASE_RETRY_MS: u64 = 1_000;
+pub const AI_AGENT_WORKER_LEASE_HEARTBEAT_SEC: u64 = 1;
+pub const AI_AGENT_WORKER_LEASE_HEARTBEAT_TIMEOUT_SEC: u64 = 3;
+pub const AI_AGENT_WORKER_LEASE_TAKEOVER_GRACE_SEC: u64 =
+    AI_AGENT_WORKER_LEASE_HEARTBEAT_SEC
+        + AI_AGENT_WORKER_LEASE_HEARTBEAT_TIMEOUT_SEC
+        + AI_AGENT_WORKER_SHUTDOWN_GRACE_SEC
+        + 1;
+pub const AI_AGENT_IDLE_STOP_MINUTES: i64 = 5;
+pub const AI_AGENT_DESTROY_STOPPED_DAYS: i64 = 7;
+pub const AI_AGENT_REVIEW_MAX_ATTEMPTS: i32 = 8;
+pub const AI_AGENT_REVIEW_RETRY_BASE_SEC: i64 = 10;
+pub const AI_AGENT_REVIEW_RETRY_MAX_SEC: i64 = 15 * 60;
+pub const AI_AGENT_REVIEW_CLAIM_LEASE_SEC: i64 = 10 * 60;
+pub const AI_AGENT_SSE_POLL_MS: u64 = 500;
+pub const AI_AGENT_ADMIN_REQUEST_LIMIT_DEFAULT: i32 = 100;
+pub const AI_AGENT_ADMIN_REQUEST_LIMIT_MAX: i32 = 500;
+pub const AI_AGENT_DISPATCHER_PORT_DEFAULT: u16 = 22031;
+pub const AI_AGENT_DISPATCHER_IDENTITY_FILE: &str =
+    "/etc/echo/ai-agent/dispatcher_ed25519";
+pub const AI_AGENT_DISPATCHER_KNOWN_HOSTS_FILE: &str =
+    "/etc/echo/ai-agent/known_hosts";
+pub const AI_AGENT_DISPATCHER_TIMEOUT_SEC: u64 = 10 * 60;
+pub const AI_AGENT_DISPATCHER_CONTROL_TIMEOUT_SEC: u64 = 30;
+pub const AI_AGENT_DISPATCHER_MAX_FRAME_BYTES: usize = 1024 * 1024;
+pub const AI_AGENT_DISPATCHER_CONTROL_MAX_FRAMES: usize = 32;
+pub const AI_AGENT_DISPATCHER_CONTROL_MAX_BYTES: usize = 2 * 1024 * 1024;
+pub const AI_AGENT_ECHO_PROXY_TEST_TIMEOUT_SEC: u64 = 5;
+pub const AI_AGENT_ECHO_PROXY_PING_PATH: &str = "/api/ping";
+pub const AI_AGENT_API_CALL_LIMIT: i64 = 128;
+pub const AI_AGENT_API_CALL_COUNT_REDIS_PREFIX: &str = "ai-agent:api-calls:";
+pub const AI_AGENT_PROVIDER_CAPABILITY_REDIS_PREFIX: &str =
+    "ai-agent:provider-capability:";
+pub const AI_AGENT_PROVIDER_CAPABILITY_CALLS_REDIS_PREFIX: &str =
+    "ai-agent:provider-capability-calls:";
+pub const AI_AGENT_PROVIDER_CAPABILITY_CORRELATION_REDIS_PREFIX: &str =
+    "ai-agent:provider-capability-correlation:";
+pub const AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC: u64 = 11 * 60;
+pub const AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT: i64 = 256;
+pub const AI_AGENT_PROVIDER_REQUEST_MAX_BYTES: usize = 2 * 1024 * 1024;
+pub const AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES: usize = 2 * 1024 * 1024;
+pub const AI_AGENT_PROVIDER_ERROR_MAX_BYTES: usize = 64 * 1024;
+pub const AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 5 * 60;
+pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
+    "/api/ai-agent/provider/v1/chat/completions";
+pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
+pub const AI_AGENT_INBOX_MAX_DAYS: i64 = 31;
+pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
+    "Не вдалося виконати запит. Спробуйте ще раз.";
+pub const AI_AGENT_MATTERMOST_TIMEOUT_SEC: u64 = 5;
+pub const AI_AGENT_MATTERMOST_CHAT_MAX_ATTEMPTS: i32 = 8;
+pub const AI_AGENT_MATTERMOST_CHAT_RETRY_BASE_SEC: i64 = 10;
+pub const AI_AGENT_MATTERMOST_CHAT_RETRY_MAX_SEC: i64 = 15 * 60;
+pub const AI_AGENT_MATTERMOST_CHAT_CLAIM_LEASE_SEC: i64 = 30;
+pub const AI_AGENT_MATTERMOST_CHAT_PROMPT_MAX_CHARS: usize = 12 * 1024;
 pub const ECHO_AUDIO_TRANSCRIPTION_CONCURRENCY: usize = 1;
 pub const ECHO_AUDIO_TRANSCRIPTION_RETENTION_DAYS: i64 = 2;
 pub const ECHO_AUDIO_TRANSCRIPTION_MAX_BYTES: i64 = 104_857_600;
@@ -94,7 +197,29 @@ pub const URL_NEED_VISIT_NOTIFICATION_MINS: i64 = 5;
 pub const IDENTITY_DURATION_HOURS: u64 = 12;
 pub const IDENTITY_SALT: &str = "IUBwdub783736#";
 pub const ROLE_ADMIN: &str = "Admin";
-pub const ROLE_ORBIT: &str = "Orbit";
+pub const DEVICE_CUSTOM_FIELDS_MAX_COUNT: usize = 50;
+pub const DEVICE_CUSTOM_FIELD_KEY_MAX_CHARS: usize = 128;
+pub const DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS: usize = 4096;
+pub const DEVICE_NAME_MAX_CHARS: usize = 255;
+pub const DEVICE_EXTERNAL_URL_MAX_CHARS: usize = 4096;
+pub const DEVICE_LIST_DEFAULT_LIMIT: u64 = 100;
+pub const DEVICE_LIST_MAX_LIMIT: u64 = 100;
+pub const DEVICE_FILE_PAGE_DEFAULT_LIMIT: u64 = 100;
+pub const DEVICE_FILE_PAGE_MAX_LIMIT: u64 = 100;
+pub const DEVICE_FILE_SYNC_BATCH_MAX_COUNT: usize = 1_000;
+pub const DEVICE_FILE_SUBTREE_COUNT_MAX_DIRECTORIES: usize = 100;
+pub const DEVICE_FILE_SYNC_ITEM_MAX_ATTEMPTS: usize = 3;
+pub const DEVICE_FILE_SEARCH_FILTER_MAX_VALUES: usize = 50;
+pub const DEVICE_FILE_SEARCH_NAME_QUERY_MIN_CHARS: usize = 3;
+pub const DEVICE_FILE_SEARCH_NAME_QUERY_MAX_CHARS: usize = 255;
+pub const DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS: usize = 16_384;
+pub const DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES: usize = 65_536;
+pub const DEVICE_FILE_PATH_COMPONENT_MAX_COUNT: usize = 256;
+pub const DEVICE_FILE_PATH_COMPONENT_MAX_CHARS: usize = 1_024;
+pub const DEVICE_FILE_PATH_COMPONENTS_MAX_CHARS: usize = 16_384;
+pub const DEVICE_FILE_MIME_TYPE_MAX_CHARS: usize = 255;
+pub const DEVICE_FILE_EXTENSION_MAX_CHARS: usize = 255;
+pub const DEVICE_FILE_CURSOR_MAX_BYTES: usize = 4096;
 pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this upload limit synchronized with
 /// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES`, frontend
@@ -385,6 +510,9 @@ pub const GENERATE_MESSAGE_UID_TILL_MAX_DAYS: i64 = 20;
 pub const UNKNOWN_GROUP_MASTER_KEY: &str = "undefined_group";
 pub const OPERATOR_INBOX_WORKER_LOOKBACK_HOURS: i64 = 3;
 pub const REDIS_MGS_ID_TTL: i32 = 3600;
+pub const SIGNOZ_METRICS_EXPORT_INTERVAL_SECS: u64 = 60;
+pub const SIGNOZ_METRICS_SERVICE_NAME: &str = "wdintel-rs";
+pub const SIGNOZ_METRICS_SERVICE_NAMESPACE: &str = "echo";
 // for xlsx import
 pub const MESSENGER_WORKER_POOL_DEFAULT_CAPACITY: usize = 10;
 /// Jun 1st 2024
@@ -396,6 +524,7 @@ pub const FEATURE_ACCESS_LOG_DEFAULT: bool = false;
 pub const FEATURE_SIGINT_COMMENT_PARSING_DEFAULT: bool = false;
 pub const FEATURE_SIGINT_COMMENT_PARSING_ENV: &str =
     "ECHO_FEATURE_SIGINT_COMMENT_PARSING";
+pub const SIGINT_COMMENT_LEGACY_BLACKLIST_TEXT: &str = "Службовий радіообмін";
 pub const DEVICE_NAME_SEARCH_LIMIT: u64 = 20;
 pub const SETTLEMENTS_LEGACY_FILE: &str = "settlements.json";
 pub const SETTLEMENTS_REGIONS_DIR: &str = "settlements_json";
@@ -479,6 +608,7 @@ pub const ORGANISM_GOI_MESSAGE_UID_LOOKBACK_HOURS: i64 = 24;
 pub const ORGANISM_GOI_MESSAGE_UID_ONEOFF_DEFAULT_LIMIT: u64 = 10;
 pub const ORGANISM_GOI_ORIGINAL_MESSAGE_CELL_INDEX: usize = 13;
 pub const ORGANISM_GOI_MESSAGE_UID_PROBE_CHARS: usize = 20;
+pub const ORGANISM_GOI_MESSAGE_UID_SOURCE_DATE_TOLERANCE_MINUTES: i64 = 5;
 pub const ORGANISM_GOI_MESSAGE_UID_WORKER_SLEEP_SEC: u64 = 60;
 pub const ORGANISM_GOI_API_TIMEOUT_SEC: u64 = 120;
 pub const ORGANISM_GOI_ASSOCIATIONS_INSERT_BATCH_SIZE: usize = 1_000;
@@ -573,6 +703,7 @@ pub struct Config {
     pub pg_user: Option<String>,
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
+    pub file_registry: Option<FileRegistryConfig>,
     pub cookie_session_secret: String,
     pub storage_dir: String,
     pub signal_api_phone: String,
@@ -606,6 +737,10 @@ pub struct Config {
     pub signoz_logs_enabled: Option<bool>,
     /// Signoz JSON receiver endpoint, e.g. http://signoz-echo.eagle-atria.ts.net:8082.
     pub signoz_logs_endpoint: Option<String>,
+    /// Enable device metrics export to Signoz over OTLP gRPC.
+    pub signoz_metrics_enabled: Option<bool>,
+    /// Signoz OTLP gRPC endpoint, e.g. http://signoz-echo.eagle-atria.ts.net:4317.
+    pub signoz_metrics_endpoint: Option<String>,
     pub session_activity_queue_capacity: Option<usize>,
     pub session_activity_payload_max_bytes: Option<usize>,
     pub session_activity_greptime_get_timeout_ms: Option<u64>,
@@ -634,6 +769,16 @@ pub struct Config {
     pub ai_models_config: Option<ModelsConfig>,
     pub network_invalidation_worker_night_shift_start_hour: Option<u32>,
     pub network_invalidation_worker_night_shift_end_hour: Option<u32>,
+    pub ai_agent_dispatcher: Option<AiAgentDispatcherConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct FileRegistryConfig {
+    pub pg_host: Option<String>,
+    pub pg_port: Option<u16>,
+    pub pg_user: Option<String>,
+    pub pg_password: Option<String>,
+    pub pg_dbname: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -659,6 +804,16 @@ pub struct ReplicaConfig {
     pub pg_user: Option<String>,
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct AiAgentDispatcherConfig {
+    pub host: String,
+    pub port: Option<u16>,
+    pub user: String,
+    pub identity_file: String,
+    pub known_hosts_file: String,
+    pub namespace: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -1000,6 +1155,11 @@ mod config_tests {
         parsed: bool,
     }
 
+    #[derive(Debug, Deserialize)]
+    struct TestAiAgentDispatcherSection {
+        ai_agent_dispatcher: AiAgentDispatcherConfig,
+    }
+
     #[test]
     fn deserialize_config_reports_unused_keys() {
         let input = r#"
@@ -1043,6 +1203,26 @@ migrated = "database"
     }
 
     #[test]
+    fn ai_agent_dispatcher_uses_nested_section() {
+        let config: TestAiAgentDispatcherSection = toml::from_str(
+            r#"
+[ai_agent_dispatcher]
+host = "echo-ai-agent-vm.example"
+port = 22031
+user = "echo-ai-agent-cbr"
+identity_file = "/etc/echo/ai-agent/dispatcher_ed25519"
+known_hosts_file = "/etc/echo/ai-agent/known_hosts"
+namespace = "echo-cbr"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.ai_agent_dispatcher.namespace, "echo-cbr");
+        assert_eq!(config.ai_agent_dispatcher.user, "echo-ai-agent-cbr");
+        assert_eq!(config.ai_agent_dispatcher.port, Some(22031));
+    }
+
+    #[test]
     fn analytics_config_uses_bounded_default_timeouts() {
         let analytics: AnalyticsConfig = toml::from_str(
             r#"
@@ -1070,6 +1250,107 @@ pg_dbname = "echo_analytics_gateway"
         assert_eq!(
             analytics.retry_cooldown_ms(),
             ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn file_registry_database_config_is_nested_and_uses_test_override() {
+        let configured: Config = toml::from_str(
+            r#"
+public_host = ""
+cookie_session_secret = ""
+storage_dir = ""
+signal_api_phone = ""
+signal_import_group_name = ""
+signal_import_fiven_name = ""
+static_path = ""
+executable_path = ""
+fill_comp_freq_worker = false
+
+[file_registry]
+pg_host = "file-host"
+pg_port = 5433
+pg_user = "file-user"
+pg_password = "file-password"
+pg_dbname = "file-db"
+"#,
+        )
+        .unwrap();
+        let file_registry = configured.file_registry.as_ref().unwrap();
+        assert_eq!(file_registry.pg_host.as_deref(), Some("file-host"));
+        assert_eq!(file_registry.pg_port, Some(5433));
+        assert_eq!(file_registry.pg_user.as_deref(), Some("file-user"));
+        assert_eq!(file_registry.pg_password.as_deref(), Some("file-password"));
+        assert_eq!(file_registry.pg_dbname.as_deref(), Some("file-db"));
+        assert_eq!(
+            crate::mk_wdfile_conn_string(file_registry, Mode::Debug),
+            "postgresql://file-user:file-password@file-host:5433/file-db"
+        );
+
+        let absent: Config = toml::from_str(
+            r#"
+public_host = ""
+cookie_session_secret = ""
+storage_dir = ""
+signal_api_phone = ""
+signal_import_group_name = ""
+signal_import_fiven_name = ""
+static_path = ""
+executable_path = ""
+fill_comp_freq_worker = false
+"#,
+        )
+        .unwrap();
+        assert_eq!(absent.file_registry, None);
+
+        let defaults: Config = toml::from_str(
+            r#"
+public_host = ""
+cookie_session_secret = ""
+storage_dir = ""
+signal_api_phone = ""
+signal_import_group_name = ""
+signal_import_fiven_name = ""
+static_path = ""
+executable_path = ""
+fill_comp_freq_worker = false
+
+[file_registry]
+"#,
+        )
+        .unwrap();
+        let defaults = defaults.file_registry.as_ref().unwrap();
+        let expected_default =
+            "postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd_files";
+        assert_eq!(
+            crate::mk_wdfile_conn_string(defaults, Mode::Debug),
+            expected_default
+        );
+
+        let previous = std::env::var_os("TEST_WDFILE_DB_NAME");
+        std::env::set_var(
+            "TEST_WDFILE_DB_NAME",
+            "temporary-file-registry-database",
+        );
+        let test_conn_string =
+            crate::mk_wdfile_conn_string(defaults, Mode::Test);
+        match previous {
+            Some(value) => {
+                std::env::set_var("TEST_WDFILE_DB_NAME", value);
+            }
+            None => {
+                std::env::remove_var("TEST_WDFILE_DB_NAME");
+            }
+        }
+
+        assert_eq!(
+            crate::mk_wdfile_conn_string(defaults, Mode::Live),
+            expected_default
+        );
+        assert_eq!(
+            test_conn_string,
+            "postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/temporary-file-registry-database"
         );
     }
 }

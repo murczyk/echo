@@ -9,13 +9,15 @@ use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::NetworkFreqFilter;
 use crate::sigint::network::bl::find_network;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use chrono::*;
 use sea_orm::*;
-use sea_query::{Alias, Expr, Func, JoinType, PgFunc};
-use std::collections::HashMap;
+use sea_query::{
+    Alias, Expr, ExprTrait, Func, JoinType, PgFunc, SelectStatement,
+    SimpleExpr, UnionType,
+};
+use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, FromQueryResult)]
+#[derive(Clone, Debug, FromQueryResult)]
 pub struct NetworkCallsignResult {
     pub id: i64,
     pub sigint_network_id: i64,
@@ -769,6 +771,33 @@ pub async fn bl_get_network_callsigns_list(
     user_id: &uuid::Uuid,
     dbx: &DatabaseConnection,
 ) -> Result<Vec<NetworkCallsign>, AppError> {
+    bl_get_network_callsigns_list_impl(req, user_id, dbx, None).await
+}
+
+pub async fn bl_get_network_callsigns_list_for_period(
+    req: &ListNetworkCallsignsReq,
+    user_id: &uuid::Uuid,
+    dbx: &DatabaseConnection,
+    filter: &NetworkFreqFilter,
+) -> Result<Vec<NetworkCallsign>, AppError> {
+    bl_get_network_callsigns_list_impl(req, user_id, dbx, Some(filter)).await
+}
+
+async fn bl_get_network_callsigns_list_impl(
+    req: &ListNetworkCallsignsReq,
+    user_id: &uuid::Uuid,
+    dbx: &DatabaseConnection,
+    filter: Option<&NetworkFreqFilter>,
+) -> Result<Vec<NetworkCallsign>, AppError> {
+    let network_callsign_ids = if filter.is_some() {
+        Some(
+            network_callsign_ids_for_period(dbx, req.network_id)
+                .await
+                .context(h!())?,
+        )
+    } else {
+        None
+    };
     let mut query = sigint_network_callsign::Entity::find()
         .join(
             JoinType::LeftJoin,
@@ -785,16 +814,24 @@ pub async fn bl_get_network_callsigns_list(
             Alias::new("nc_unit"),
         );
     query = add_network_callsign_query_columns(query);
-    query = query
-        .filter(
+    query = if let Some(network_callsign_ids) = network_callsign_ids {
+        query.filter(
+            sigint_network_callsign::Column::Id.is_in(network_callsign_ids),
+        )
+    } else {
+        query.filter(
             sigint_network_callsign::Column::SigintNetworkId.eq(req.network_id),
         )
-        .filter(sigint_network_callsign::Column::Deleted.eq(false))
-        .filter(
-            Condition::any()
-                .add(sigint_callsign::Column::Deleted.eq(false))
-                .add(sigint_callsign::Column::Deleted.is_null()),
-        );
+    };
+    if filter.is_none() {
+        query = query
+            .filter(sigint_network_callsign::Column::Deleted.eq(false))
+            .filter(
+                Condition::any()
+                    .add(sigint_callsign::Column::Deleted.eq(false))
+                    .add(sigint_callsign::Column::Deleted.is_null()),
+            );
+    }
 
     // Apply sorting based on request
     query = if let Some(sort_by) = &req.sort_by {
@@ -837,14 +874,24 @@ pub async fn bl_get_network_callsigns_list(
         .await
         .context(h!())?;
 
-    let activity_callsigns =
-        network_callsigns_activity_targets(&network_callsigns);
-
     let groups =
         crate::messenger::group::get_identity_sigint_groups(dbx, user_id)
             .await
             .context(h!())?;
 
+    if let Some(filter) = filter {
+        return render_network_callsigns_for_period(
+            dbx,
+            groups,
+            req.network_id,
+            network_callsigns,
+            filter,
+        )
+        .await;
+    }
+
+    let activity_callsigns =
+        network_callsigns_activity_targets(&network_callsigns);
     let activity_info = get_callsigns_activity_info(
         dbx,
         groups,
@@ -854,11 +901,19 @@ pub async fn bl_get_network_callsigns_list(
     )
     .await
     .context(h!())?;
+    let activity_info = network_callsigns
+        .iter()
+        .filter_map(|network_callsign| {
+            activity_info
+                .get(&network_callsign.sigint_callsign)
+                .cloned()
+                .map(|activity_info| (network_callsign.id, activity_info))
+        })
+        .collect::<HashMap<_, _>>();
 
     let mut res = vec![];
     for network_callsign in network_callsigns {
-        let callsign_activity =
-            activity_info.get(&network_callsign.sigint_callsign);
+        let callsign_activity = activity_info.get(&network_callsign.id);
         let nc = render_network_callsign(&network_callsign, callsign_activity)?;
         res.push(nc);
     }
@@ -866,9 +921,76 @@ pub async fn bl_get_network_callsigns_list(
     Ok(res)
 }
 
+async fn render_network_callsigns_for_period(
+    dbx: &DatabaseConnection,
+    groups: Vec<String>,
+    network_id: i64,
+    network_callsigns: Vec<NetworkCallsignResult>,
+    filter: &NetworkFreqFilter,
+) -> Result<Vec<NetworkCallsign>, AppError> {
+    let activity_targets = network_callsigns_activity_targets_for_period(
+        dbx,
+        &network_callsigns,
+        network_id,
+    )
+    .await
+    .context(h!())?;
+    let activity_info = get_callsigns_activity_info_for_targets(
+        dbx,
+        groups,
+        network_id,
+        &activity_targets,
+        filter,
+    )
+    .await
+    .context(h!())?;
+    let network_callsigns = network_callsigns
+        .iter()
+        .map(|network_callsign| (network_callsign.id, network_callsign))
+        .collect::<HashMap<_, _>>();
+
+    let mut res = Vec::with_capacity(activity_info.len());
+    for (target_index, target) in activity_targets.iter().enumerate() {
+        let Some(activity_info) = activity_info.get(&target_index) else {
+            continue;
+        };
+        let network_callsign =
+            network_callsigns.get(&target.id).context(h!())?;
+        let mut network_callsign =
+            render_network_callsign(network_callsign, Some(activity_info))?;
+        network_callsign.network_id = network_id;
+        network_callsign.active = target.active_to.is_none();
+        network_callsign.created_at =
+            target.active_from.and_utc().timestamp_millis();
+        res.push(network_callsign);
+    }
+    Ok(res)
+}
+
 pub async fn find_network_callsigns_batch<'a, 'async_trait, C>(
     network_callsign_ids: Vec<i64>,
     txn: &'a C,
+) -> Result<Vec<NetworkCallsignResult>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    find_network_callsigns_batch_impl(network_callsign_ids, txn, false).await
+}
+
+async fn find_network_callsigns_batch_for_period<'a, 'async_trait, C>(
+    network_callsign_ids: Vec<i64>,
+    txn: &'a C,
+) -> Result<Vec<NetworkCallsignResult>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    find_network_callsigns_batch_impl(network_callsign_ids, txn, true).await
+}
+
+async fn find_network_callsigns_batch_impl<'a, 'async_trait, C>(
+    network_callsign_ids: Vec<i64>,
+    txn: &'a C,
+    include_deleted_linked_callsigns: bool,
 ) -> Result<Vec<NetworkCallsignResult>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -889,15 +1011,16 @@ where
             Alias::new("nc_unit"),
         );
     query = add_network_callsign_query_columns(query);
-    query = query
-        .filter(
-            sigint_network_callsign::Column::Id.eq_any(network_callsign_ids),
-        )
-        .filter(
+    query = query.filter(
+        sigint_network_callsign::Column::Id.eq_any(network_callsign_ids),
+    );
+    if !include_deleted_linked_callsigns {
+        query = query.filter(
             Condition::any()
                 .add(sigint_callsign::Column::Deleted.eq(false))
                 .add(sigint_callsign::Column::Deleted.is_null()),
         );
+    }
 
     // println!(
     //     "> bl_network_callsign_batch sql: {}",
@@ -1023,6 +1146,225 @@ fn network_callsigns_activity_targets(
         .collect()
 }
 
+#[derive(Debug)]
+struct NetworkCallsignActivityTarget {
+    id: i64,
+    callsign: String,
+    active_from: NaiveDateTime,
+    active_to: Option<NaiveDateTime>,
+}
+
+async fn network_callsign_ids_for_period<'a, 'async_trait, C>(
+    txn: &'a C,
+    network_id: i64,
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut ids = sigint_network_callsign::Entity::find()
+        .select_only()
+        .column(sigint_network_callsign::Column::Id)
+        .filter(sigint_network_callsign::Column::SigintNetworkId.eq(network_id))
+        .into_tuple::<i64>()
+        .all(txn)
+        .await
+        .context(h!())?;
+    let network_value = serde_json::json!({
+        "sigint_network_id": network_id,
+    });
+    let historical_ids = sigint_network_callsign_changelog::Entity::find()
+        .select_only()
+        .column(
+            sigint_network_callsign_changelog::Column::SigintNetworkCallsignId,
+        )
+        .filter(
+            Condition::any()
+                .add(Expr::cust_with_exprs(
+                    "$1 @> $2::jsonb",
+                    [
+                        Expr::col(
+                            sigint_network_callsign_changelog::Column::OldValue,
+                        ),
+                        Expr::value(network_value.clone()),
+                    ],
+                ))
+                .add(Expr::cust_with_exprs(
+                    "$1 @> $2::jsonb",
+                    [
+                        Expr::col(
+                            sigint_network_callsign_changelog::Column::NewValue,
+                        ),
+                        Expr::value(network_value),
+                    ],
+                )),
+        )
+        .into_tuple::<i64>()
+        .all(txn)
+        .await
+        .context(h!())?;
+    ids.extend(historical_ids);
+    ids.sort_unstable();
+    ids.dedup();
+    Ok(ids)
+}
+
+async fn network_callsigns_activity_targets_for_period<'a, 'async_trait, C>(
+    txn: &'a C,
+    network_callsigns: &[NetworkCallsignResult],
+    network_id: i64,
+) -> Result<Vec<NetworkCallsignActivityTarget>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let network_callsign_ids = network_callsigns
+        .iter()
+        .map(|network_callsign| network_callsign.id)
+        .collect::<Vec<_>>();
+    let changelog_records = sigint_network_callsign_changelog::Entity::find()
+        .filter(
+            sigint_network_callsign_changelog::Column::SigintNetworkCallsignId
+                .is_in(network_callsign_ids),
+        )
+        .order_by_asc(sigint_network_callsign_changelog::Column::CreatedAt)
+        .order_by_asc(sigint_network_callsign_changelog::Column::Id)
+        .all(txn)
+        .await
+        .context(h!())?;
+    Ok(build_network_callsign_activity_targets(
+        network_callsigns,
+        &changelog_records,
+        network_id,
+    ))
+}
+
+fn build_network_callsign_activity_targets(
+    network_callsigns: &[NetworkCallsignResult],
+    changelog_records: &[sigint_network_callsign_changelog::Model],
+    network_id: i64,
+) -> Vec<NetworkCallsignActivityTarget> {
+    let mut changelog_by_callsign = HashMap::new();
+    for changelog_record in changelog_records {
+        changelog_by_callsign
+            .entry(changelog_record.sigint_network_callsign_id)
+            .or_insert_with(Vec::new)
+            .push(changelog_record);
+    }
+
+    network_callsigns
+        .iter()
+        .flat_map(|network_callsign| {
+            let changelog_records = changelog_by_callsign
+                .get(&network_callsign.id)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            build_network_callsign_activity_targets_for_row(
+                network_callsign,
+                changelog_records,
+                network_id,
+            )
+        })
+        .collect()
+}
+
+fn changelog_network_id(value: Option<&serde_json::Value>) -> Option<i64> {
+    value?
+        .get("sigint_network_id")
+        .and_then(serde_json::Value::as_i64)
+}
+
+fn build_network_callsign_activity_targets_for_row(
+    network_callsign: &NetworkCallsignResult,
+    changelog_records: &[&sigint_network_callsign_changelog::Model],
+    network_id: i64,
+) -> Vec<NetworkCallsignActivityTarget> {
+    if network_callsign.sigint_callsign.trim().is_empty() {
+        return vec![];
+    }
+    let first_network_transition =
+        changelog_records.iter().find_map(|record| {
+            changelog_network_transition(record).filter(|(old, new)| old != new)
+        });
+    let mut assigned_network_id = first_network_transition
+        .map(|(old_network_id, _)| old_network_id)
+        .unwrap_or(network_callsign.sigint_network_id);
+    let mut active_from = network_callsign.created_at;
+    let mut targets = vec![];
+
+    for changelog_record in changelog_records {
+        if changelog_record.action == ChangelogActionEnum::Delete {
+            push_network_callsign_activity_target(
+                &mut targets,
+                network_callsign,
+                assigned_network_id,
+                network_id,
+                active_from,
+                Some(changelog_record.created_at),
+            );
+            return targets;
+        }
+        let Some((old_network_id, new_network_id)) =
+            changelog_network_transition(changelog_record)
+        else {
+            continue;
+        };
+        if old_network_id == new_network_id {
+            continue;
+        }
+        push_network_callsign_activity_target(
+            &mut targets,
+            network_callsign,
+            assigned_network_id,
+            network_id,
+            active_from,
+            Some(changelog_record.created_at),
+        );
+        assigned_network_id = new_network_id;
+        active_from = changelog_record.created_at;
+    }
+
+    if !network_callsign.deleted {
+        push_network_callsign_activity_target(
+            &mut targets,
+            network_callsign,
+            assigned_network_id,
+            network_id,
+            active_from,
+            None,
+        );
+    }
+    targets
+}
+
+fn changelog_network_transition(
+    changelog_record: &sigint_network_callsign_changelog::Model,
+) -> Option<(i64, i64)> {
+    Some((
+        changelog_network_id(changelog_record.old_value.as_ref())?,
+        changelog_network_id(changelog_record.new_value.as_ref())?,
+    ))
+}
+
+fn push_network_callsign_activity_target(
+    targets: &mut Vec<NetworkCallsignActivityTarget>,
+    network_callsign: &NetworkCallsignResult,
+    assigned_network_id: i64,
+    network_id: i64,
+    active_from: NaiveDateTime,
+    active_to: Option<NaiveDateTime>,
+) {
+    if assigned_network_id != network_id
+        || active_to.is_some_and(|active_to| active_to < active_from)
+    {
+        return;
+    }
+    targets.push(NetworkCallsignActivityTarget {
+        id: network_callsign.id,
+        callsign: network_callsign.sigint_callsign.clone(),
+        active_from,
+        active_to,
+    });
+}
+
 pub async fn bl_get_network_callsigns_info_batch<'a, 'async_trait, C>(
     txn: &'a C,
     user_id: &uuid::Uuid,
@@ -1075,6 +1417,119 @@ pub async fn get_callsigns_activity_info<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    let rows = get_callsigns_activity_info_impl(
+        txn,
+        groups,
+        network_id,
+        callsigns,
+        filter,
+        ActivityTargetFilter::All,
+    )
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.callsign, row.activity_info))
+        .collect())
+}
+
+async fn get_callsigns_activity_info_for_targets<'a, 'async_trait, C>(
+    txn: &'a C,
+    groups: Vec<String>,
+    network_id: i64,
+    targets: &[NetworkCallsignActivityTarget],
+    filter: &NetworkFreqFilter,
+) -> Result<HashMap<usize, CallsignActivityInfo>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let callsigns = targets
+        .iter()
+        .map(|target| target.callsign.clone())
+        .collect::<Vec<_>>();
+    let rows = get_callsigns_activity_info_impl(
+        txn,
+        groups,
+        network_id,
+        &callsigns,
+        Some(filter),
+        ActivityTargetFilter::Include(targets),
+    )
+    .await?;
+    let mut activity_info = HashMap::with_capacity(rows.len());
+    for row in rows {
+        let target_index =
+            usize::try_from(row.target_index.context(h!())?).context(h!())?;
+        activity_info.insert(target_index, row.activity_info);
+    }
+    Ok(activity_info)
+}
+
+pub async fn get_unassigned_callsigns_activity_info<'a, 'async_trait, C>(
+    txn: &'a C,
+    groups: Vec<String>,
+    network_id: i64,
+    callsigns: &[String],
+    filter: &NetworkFreqFilter,
+) -> Result<HashMap<String, CallsignActivityInfo>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let network_callsign_ids =
+        network_callsign_ids_for_period(txn, network_id).await?;
+    let network_callsigns =
+        find_network_callsigns_batch_for_period(network_callsign_ids, txn)
+            .await?;
+    let callsigns_set =
+        callsigns.iter().map(String::as_str).collect::<HashSet<_>>();
+    let mut targets = network_callsigns_activity_targets_for_period(
+        txn,
+        &network_callsigns,
+        network_id,
+    )
+    .await?;
+    targets.retain(|target| callsigns_set.contains(target.callsign.as_str()));
+    let rows = get_callsigns_activity_info_impl(
+        txn,
+        groups,
+        network_id,
+        callsigns,
+        Some(filter),
+        ActivityTargetFilter::Exclude(&targets),
+    )
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.callsign, row.activity_info))
+        .collect())
+}
+
+enum ActivityTargetFilter<'a> {
+    All,
+    Include(&'a [NetworkCallsignActivityTarget]),
+    Exclude(&'a [NetworkCallsignActivityTarget]),
+}
+
+struct CallsignActivityInfoRow {
+    target_index: Option<i64>,
+    callsign: String,
+    activity_info: CallsignActivityInfo,
+}
+
+async fn get_callsigns_activity_info_impl<'a, 'async_trait, C>(
+    txn: &'a C,
+    groups: Vec<String>,
+    network_id: i64,
+    callsigns: &[String],
+    filter: Option<&NetworkFreqFilter>,
+    target_filter: ActivityTargetFilter<'_>,
+) -> Result<Vec<CallsignActivityInfoRow>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if callsigns.is_empty() {
+        return Ok(Default::default());
+    }
+
     let Some(network) = sigint_network::Entity::find()
         .filter(sigint_network::Column::Id.eq(network_id))
         .filter(sigint_network::Column::Deleted.eq(false))
@@ -1102,12 +1557,18 @@ where
     );
 
     let expr_callsigns = Expr::value(callsigns.to_owned());
+    let activity_datetime: SimpleExpr = Func::coalesce([
+        sigint_inbox_item::Column::Datetime.into_simple_expr(),
+        signal_message::Column::Timestamp.into_simple_expr(),
+        signal_message::Column::CreatedAt.into_simple_expr(),
+    ])
+    .into();
 
     let subquery = sigint_inbox_item_network::Entity::find()
         .select_only()
         .column(sigint_inbox_item::Column::Id)
         .column(sigint_inbox_item::Column::Freq)
-        .column(sigint_inbox_item::Column::Datetime)
+        .expr_as(activity_datetime, "activity_datetime")
         .expr_as(expr_jsonb_callsigns, "callsign")
         .join(
             JoinType::InnerJoin,
@@ -1147,18 +1608,47 @@ where
         .filter(build_datetime_filter(filter)?)
         .into_query();
 
-    let query = sea_query::Query::select()
-        .from_subquery(subquery, "messages")
+    let has_targets = matches!(target_filter, ActivityTargetFilter::Include(_));
+    let activity_subquery = match target_filter {
+        ActivityTargetFilter::All | ActivityTargetFilter::Exclude([]) => {
+            subquery
+        }
+        ActivityTargetFilter::Include(targets) => sea_query::Query::select()
+            .columns(["id", "freq", "activity_datetime", "callsign"])
+            .column((
+                Alias::new("activity_targets"),
+                Alias::new("target_index"),
+            ))
+            .from_subquery(subquery, "messages")
+            .join_subquery(
+                JoinType::InnerJoin,
+                build_activity_targets_query(targets).context(h!())?,
+                Alias::new("activity_targets"),
+                build_activity_targets_join_condition(),
+            )
+            .to_owned(),
+        ActivityTargetFilter::Exclude(targets) => sea_query::Query::select()
+            .columns(["id", "freq", "activity_datetime", "callsign"])
+            .from_subquery(subquery, "messages")
+            .cond_where(build_activity_targets_condition(targets).not())
+            .to_owned(),
+    };
+
+    let mut query = sea_query::Query::select()
+        .from_subquery(activity_subquery, "messages")
         .column("callsign")
         .expr_as(Expr::cust("COUNT(DISTINCT id)"), "message_count")
-        .expr_as(Expr::cust("MAX(datetime)"), "last_datetime")
+        .expr_as(Expr::cust("MAX(activity_datetime)"), "last_datetime")
         .expr_as(Expr::cust("ARRAY_AGG(DISTINCT freq)"), "freqs")
         .and_where(Expr::column("callsign").eq(PgFunc::any(expr_callsigns)))
         .group_by_col("callsign")
         .to_owned();
+    if has_targets {
+        query.column("target_index").group_by_col("target_index");
+    }
 
     let statement = txn.get_database_backend().build(&query);
-    let results = txn.query_all(statement).await.context(h!())?;
+    let results = txn.query_all_raw(statement).await.context(h!())?;
 
     let network_names = if network.name.is_empty() {
         vec![]
@@ -1166,27 +1656,111 @@ where
         vec![format!("р/м {}", &network.name)]
     };
 
-    let mut callsigns_activity_info = HashMap::with_capacity(results.len());
+    let mut callsigns_activity_info = Vec::with_capacity(results.len());
     for query_result in results {
+        let target_index = if has_targets {
+            query_result.try_get("", "target_index").context(h!())?
+        } else {
+            None
+        };
         let callsign: String =
             query_result.try_get("", "callsign").context(h!())?;
         let message_count: i64 =
             query_result.try_get("", "message_count").context(h!())?;
-        let last_datetime: Option<NaiveDateTime> =
+        let last_datetime: NaiveDateTime =
             query_result.try_get("", "last_datetime").context(h!())?;
         let freqs: Vec<String> =
             query_result.try_get("", "freqs").context(h!())?;
 
         let activity_info = CallsignActivityInfo {
             message_count,
-            last_datetime: last_datetime
-                .map(|ts| ts.and_utc().timestamp_millis()),
+            last_datetime: Some(last_datetime.and_utc().timestamp_millis()),
             freqs: Some(freqs),
             network_names: Some(network_names.clone()),
         };
-        callsigns_activity_info.insert(callsign, activity_info);
+        callsigns_activity_info.push(CallsignActivityInfoRow {
+            target_index,
+            callsign,
+            activity_info,
+        });
     }
     Ok(callsigns_activity_info)
+}
+
+fn build_activity_targets_query(
+    targets: &[NetworkCallsignActivityTarget],
+) -> Option<SelectStatement> {
+    targets
+        .iter()
+        .enumerate()
+        .map(|(index, target)| {
+            sea_query::Query::select()
+                .expr_as(Expr::value(index as i64), "target_index")
+                .expr_as(
+                    Expr::value(target.callsign.clone()),
+                    "target_callsign",
+                )
+                .expr_as(Expr::value(target.active_from), "active_from")
+                .expr_as(
+                    Expr::value(target.active_to.unwrap_or(target.active_from)),
+                    "active_to",
+                )
+                .expr_as(
+                    Expr::value(target.active_to.is_some()),
+                    "has_active_to",
+                )
+                .to_owned()
+        })
+        .reduce(|mut query, next| {
+            query.union(UnionType::All, next);
+            query
+        })
+}
+
+fn build_activity_targets_join_condition() -> Condition {
+    let messages = Alias::new("messages");
+    let targets = Alias::new("activity_targets");
+    Condition::all()
+        .add(
+            Expr::col((messages.clone(), Alias::new("callsign")))
+                .equals((targets.clone(), Alias::new("target_callsign"))),
+        )
+        .add(
+            Expr::col((messages.clone(), Alias::new("activity_datetime")))
+                .gte(Expr::col((targets.clone(), Alias::new("active_from")))),
+        )
+        .add(
+            Condition::any()
+                .add(
+                    Expr::col((targets.clone(), Alias::new("has_active_to")))
+                        .eq(false),
+                )
+                .add(
+                    Expr::col((messages, Alias::new("activity_datetime")))
+                        .lt(Expr::col((targets, Alias::new("active_to")))),
+                ),
+        )
+}
+
+fn build_activity_targets_condition(
+    targets: &[NetworkCallsignActivityTarget],
+) -> Condition {
+    targets.iter().fold(Condition::any(), |condition, target| {
+        condition.add(build_activity_target_condition(target))
+    })
+}
+
+fn build_activity_target_condition(
+    target: &NetworkCallsignActivityTarget,
+) -> Condition {
+    let mut condition = Condition::all()
+        .add(Expr::column("callsign").eq(target.callsign.clone()))
+        .add(Expr::column("activity_datetime").gte(target.active_from));
+    if let Some(active_to) = target.active_to {
+        condition =
+            condition.add(Expr::column("activity_datetime").lt(active_to));
+    }
+    condition
 }
 
 pub fn render_network_callsign(
@@ -1333,6 +1907,69 @@ mod tests {
             original_id: None,
             command_control: false,
             full_name: None,
+        }
+    }
+
+    fn network_callsign_result(
+        id: i64,
+        callsign: &str,
+        created_at: NaiveDateTime,
+        deleted: bool,
+    ) -> NetworkCallsignResult {
+        NetworkCallsignResult {
+            id,
+            sigint_network_id: 2,
+            sigint_callsign: callsign.to_string(),
+            sigint_callsign_id: Some(3),
+            position: None,
+            comment: None,
+            full_name: None,
+            source_id: None,
+            radio_freq: None,
+            developing: false,
+            unit_developing: false,
+            main_radio_station: false,
+            command_control: false,
+            created_at,
+            deleted,
+            sc_callsign: Some(callsign.to_string()),
+            sc_position: None,
+            sc_comment: None,
+            sc_full_name: None,
+            sc_source_id: None,
+            sc_radio_freq: None,
+            sc_developing: Some(false),
+            sc_deleted: Some(false),
+            sc_unit_id: None,
+            sc_unit_name: None,
+            unit_id: None,
+            unit_name: None,
+        }
+    }
+
+    fn network_callsign_changelog(
+        id: i64,
+        network_callsign_id: i64,
+        action: ChangelogActionEnum,
+        created_at: NaiveDateTime,
+        old_network_id: Option<i64>,
+        new_network_id: Option<i64>,
+    ) -> sigint_network_callsign_changelog::Model {
+        sigint_network_callsign_changelog::Model {
+            id,
+            sigint_network_callsign_id: network_callsign_id,
+            login_id: uuid::Uuid::nil(),
+            action,
+            created_at,
+            old_value: old_network_id.map(|network_id| {
+                serde_json::json!({ "sigint_network_id": network_id })
+            }),
+            new_value: new_network_id.map(|network_id| {
+                serde_json::json!({ "sigint_network_id": network_id })
+            }),
+            req: None,
+            sigint_origin_id: None,
+            original_id: None,
         }
     }
 
@@ -1619,36 +2256,87 @@ mod tests {
     }
 
     #[test]
+    fn deleted_network_callsign_keeps_its_historical_activity_interval() {
+        let active_from =
+            NaiveDateTime::parse_from_str("2026-06-01 00:00:00", "%F %T")
+                .unwrap();
+        let active_to =
+            NaiveDateTime::parse_from_str("2026-06-15 00:00:00", "%F %T")
+                .unwrap();
+        let callsigns = vec![
+            network_callsign_result(1, "historical", active_from, true),
+            network_callsign_result(2, "unknown", active_from, true),
+        ];
+        let changelog_records = vec![network_callsign_changelog(
+            1,
+            1,
+            ChangelogActionEnum::Delete,
+            active_to,
+            None,
+            None,
+        )];
+
+        let targets = build_network_callsign_activity_targets(
+            &callsigns,
+            &changelog_records,
+            2,
+        );
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].id, 1);
+        assert_eq!(targets[0].callsign, "historical");
+        assert_eq!(targets[0].active_from, active_from);
+        assert_eq!(targets[0].active_to, Some(active_to));
+    }
+
+    #[test]
+    fn moved_network_callsign_starts_activity_at_reassignment() {
+        let created_at =
+            NaiveDateTime::parse_from_str("2026-06-01 00:00:00", "%F %T")
+                .unwrap();
+        let reassigned_at =
+            NaiveDateTime::parse_from_str("2026-06-15 00:00:00", "%F %T")
+                .unwrap();
+        let callsigns =
+            vec![network_callsign_result(1, "moved", created_at, false)];
+        let changelog_records = vec![network_callsign_changelog(
+            1,
+            1,
+            ChangelogActionEnum::Update,
+            reassigned_at,
+            Some(1),
+            Some(2),
+        )];
+
+        let targets = build_network_callsign_activity_targets(
+            &callsigns,
+            &changelog_records,
+            2,
+        );
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].active_from, reassigned_at);
+
+        let original_network_targets = build_network_callsign_activity_targets(
+            &callsigns,
+            &changelog_records,
+            1,
+        );
+
+        assert_eq!(original_network_targets.len(), 1);
+        assert_eq!(original_network_targets[0].active_from, created_at);
+        assert_eq!(original_network_targets[0].active_to, Some(reassigned_at));
+    }
+
+    #[test]
     fn linked_network_callsign_reload_uses_updated_catalog_full_name() {
-        let network_callsign = NetworkCallsignResult {
-            id: 1,
-            sigint_network_id: 2,
-            sigint_callsign: "сокіл-1".to_string(),
-            sigint_callsign_id: Some(3),
-            position: None,
-            comment: None,
-            full_name: None,
-            source_id: None,
-            radio_freq: None,
-            developing: false,
-            unit_developing: false,
-            main_radio_station: false,
-            command_control: false,
-            created_at: NaiveDateTime::default(),
-            deleted: false,
-            sc_callsign: Some("сокіл-1".to_string()),
-            sc_position: None,
-            sc_comment: None,
-            sc_full_name: Some("Петренко Петро".to_string()),
-            sc_source_id: None,
-            sc_radio_freq: None,
-            sc_developing: Some(false),
-            sc_deleted: Some(false),
-            sc_unit_id: None,
-            sc_unit_name: None,
-            unit_id: None,
-            unit_name: None,
-        };
+        let mut network_callsign = network_callsign_result(
+            1,
+            "сокіл-1",
+            NaiveDateTime::default(),
+            false,
+        );
+        network_callsign.sc_full_name = Some("Петренко Петро".to_string());
 
         let rendered =
             render_network_callsign(&network_callsign, None).unwrap();

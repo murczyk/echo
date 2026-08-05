@@ -9,7 +9,6 @@ use crate::types::*;
 use crate::users::{
     ensure_rer_role, has_any_role, has_role, login_id_from_identity,
 };
-use crate::utils::orm::ArrayColumnOps;
 use actix_web::http::header;
 use actix_web::http::StatusCode;
 use actix_web::web::{Bytes, Json};
@@ -17,12 +16,11 @@ use actix_web::{get, post, HttpRequest, HttpResponse};
 use chrono::prelude::*;
 use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
-use itertools::Itertools;
 use rand::prelude::IndexedRandom;
 use sea_orm::sea_query::{Expr, Func};
 use sea_orm::*;
 use sqlx::Row;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::io::{BufWriter, Seek, Write};
 use time::{Duration as TimeDuration, OffsetDateTime, PrimitiveDateTime};
 use tokio_util::io::ReaderStream;
@@ -112,7 +110,7 @@ fn parse_byte_range_spec(
         if suffix_len == 0 || total == 0 {
             return Some(ParsedByteRangeSpec::Unsatisfiable);
         }
-        let suffix_len = suffix_len.min(total);
+        let suffix_len = std::cmp::min(suffix_len, total);
         let start = total - suffix_len;
         return Some(ParsedByteRangeSpec::Satisfiable(start, total - 1));
     }
@@ -131,7 +129,7 @@ fn parse_byte_range_spec(
     if start >= total {
         return Some(ParsedByteRangeSpec::Unsatisfiable);
     }
-    let end = requested_end.unwrap_or(total - 1).min(total - 1);
+    let end = std::cmp::min(requested_end.unwrap_or(total - 1), total - 1);
     Some(ParsedByteRangeSpec::Satisfiable(start, end))
 }
 
@@ -680,47 +678,144 @@ async fn rer_importer_callsigns(
         sixty_days_ago_offset.date(),
         sixty_days_ago_offset.time(),
     );
-    let res1_rows = sqlx::query(
-        r#"
-select
-  jsonb_array_elements_text(sii.callsigns) as callsign,
-  array_agg(distinct coalesce(sii.freq, '')) as freqs
-from sigint_inbox_item sii
-inner join signal_message sm on sm.id = sii.id
-inner join datasource d on d.id=sm.datasource_id
-inner join sigint_zone_datasource szd on szd.datasource_id = d.id
-inner join sigint_zone sz on sz.id=szd.sigint_zone_id
-inner join login l on l.sigint_zone_id = sz.id
-where sm.created_at >= $1 and sii.checked and l.id=$2
- group by 1"#,
+    let callsigns = load_rer_importer_callsigns(
+        &env.dbx,
+        sixty_days_ago_primitive,
+        login_id_from_identity(&user)?,
+        req.filter.as_ref(),
     )
-    .bind(sixty_days_ago_primitive)
-    .bind(login_id_from_identity(&user)?)
-    .fetch_all(env.dbx.get_postgres_connection_pool())
-    .await
-    .c(h!())?;
+    .await?;
+    Ok(Json(callsigns))
+}
 
-    let mut res = vec![];
-    for row in res1_rows.iter() {
-        let callsign: Option<String> = row.try_get("callsign").ok();
-        let freqs: Option<Vec<String>> = row.try_get("freqs").ok();
-        if req.filter.is_none() || (callsign == req.filter.clone()) {
-            if let Some(callsign) = callsign.clone() {
-                if let Some(freqs) = freqs.clone() {
-                    res.push(CallsignWithFrequencies {
-                        callsign,
-                        frequencies: freqs
-                            .iter()
-                            .filter(|x| !x.is_empty())
-                            .cloned()
-                            .collect(),
-                    })
-                }
-            }
-        }
-    }
+#[derive(FromQueryResult)]
+struct RerImporterCallsignFrequency {
+    callsign: String,
+    frequencies: Option<Vec<String>>,
+}
 
-    Ok(Json(res))
+async fn load_rer_importer_callsigns(
+    dbx: &DatabaseConnection,
+    since: PrimitiveDateTime,
+    login_id: uuid::Uuid,
+    filter: Option<&String>,
+) -> Result<Vec<CallsignWithFrequencies>, AppError> {
+    let datasource_ids = datasource::Entity::find()
+        .select_only()
+        .column(datasource::Column::Id)
+        .join(
+            JoinType::InnerJoin,
+            datasource::Relation::SigintZoneDatasource.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_zone_datasource::Relation::SigintZone.def(),
+        )
+        .join(JoinType::InnerJoin, sigint_zone::Relation::Login.def())
+        .filter(login::Column::Id.eq(login_id))
+        .into_query();
+    let filtered_items = sigint_inbox_item::Entity::find()
+        .select_only()
+        .columns([
+            sigint_inbox_item::Column::Id,
+            sigint_inbox_item::Column::Freq,
+            sigint_inbox_item::Column::Callsigns,
+        ])
+        .inner_join(signal_message::Entity)
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .filter(signal_message::Column::CreatedAt.gte(since))
+        .filter(sigint_inbox_item::Column::Checked.eq(true))
+        .filter(
+            datasource_group::Column::DatasourceId.in_subquery(datasource_ids),
+        );
+    let filtered_items = filtered_items.build(DbBackend::Postgres);
+    let values = filtered_items
+        .values
+        .map(|values| values.0)
+        .unwrap_or_default();
+    let sql = format!(
+        r#"
+        WITH filtered_items AS ({})
+        , normalized_callsigns AS (
+            SELECT DISTINCT
+                siic.sigint_inbox_item_id AS inbox_item_id,
+                siic.callsign
+            FROM sigint_inbox_item_callsign AS siic
+            INNER JOIN filtered_items
+                ON filtered_items.id = siic.sigint_inbox_item_id
+            WHERE siic.source = 'primary'::sigint_inbox_item_callsign_source
+              AND NOT siic.deleted
+        )
+        , legacy_callsigns AS (
+            SELECT DISTINCT
+                item.id AS inbox_item_id,
+                legacy.callsign
+            FROM filtered_items
+            INNER JOIN sigint_inbox_item AS item ON item.id = filtered_items.id
+            CROSS JOIN LATERAL jsonb_array_elements_text(
+                CASE
+                    WHEN jsonb_typeof(item.callsigns) = 'array'
+                        THEN item.callsigns
+                    ELSE '[]'::jsonb
+                END
+            ) AS legacy(callsign)
+            WHERE item.id > coalesce((
+                SELECT nullif(dk.v #>> '{{}}', '')::bigint
+                FROM delta_kv AS dk
+                WHERE dk.k = '{watermark_key}'
+            ), 0)
+              AND NOT EXISTS (
+                SELECT 1
+                FROM sigint_inbox_item_callsign AS siic
+                WHERE siic.sigint_inbox_item_id = item.id
+            )
+        )
+        , all_callsigns AS (
+            SELECT inbox_item_id, callsign FROM normalized_callsigns
+            UNION ALL
+            SELECT inbox_item_id, callsign FROM legacy_callsigns
+        )
+        SELECT
+            all_callsigns.callsign,
+            array_agg(DISTINCT filtered_items.freq ORDER BY filtered_items.freq)
+                FILTER (
+                    WHERE filtered_items.freq IS NOT NULL
+                      AND filtered_items.freq <> ''
+                ) AS frequencies
+        FROM all_callsigns
+        INNER JOIN filtered_items
+            ON filtered_items.id = all_callsigns.inbox_item_id
+        GROUP BY all_callsigns.callsign
+        ORDER BY all_callsigns.callsign
+        "#,
+        filtered_items.sql,
+        watermark_key =
+            crate::inbox::callsigns::CALLSIGN_BACKFILL_WATERMARK_KEY,
+    );
+    let rows = dbx
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            sql,
+            values,
+        ))
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|row| RerImporterCallsignFrequency::from_query_result(&row, ""))
+        .collect::<Result<Vec<_>, DbErr>>()
+        .c(h!())?;
+    let callsigns = rows
+        .into_iter()
+        .filter(|row| !filter.is_some_and(|filter| filter != &row.callsign))
+        .map(|row| CallsignWithFrequencies {
+            callsign: row.callsign,
+            frequencies: row.frequencies.unwrap_or_default(),
+        })
+        .collect();
+    Ok(callsigns)
 }
 
 #[get("/api/rer-importer/grafana/messages")]
@@ -1117,7 +1212,7 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
 
     // println!("Query: {}", q);
 
-    let res = dbx.execute(q).await.c(h!())?;
+    let res = dbx.execute_raw(q).await.c(h!())?;
 
     println!("> rounded {} freqs", res.rows_affected());
     if res.rows_affected() > 0 {

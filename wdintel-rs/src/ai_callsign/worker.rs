@@ -247,7 +247,7 @@ async fn complete_job(
         let mut inbox_item = inbox_item.into_active_model();
         if callsigns_changed {
             inbox_item.callsigns =
-                Set(Some(serde_json::to_value(callsigns).c(h!())?));
+                Set(Some(serde_json::to_value(&callsigns).c(h!())?));
             inbox_item.callsign_tokens = Set(Some(
                 serde_json::to_value(Vec::<serde_json::Value>::new())
                     .c(h!())?,
@@ -256,6 +256,19 @@ async fn complete_job(
         inbox_item.callsigns_alg2 =
             Set(Some(serde_json::to_value(Vec::<String>::new()).c(h!())?));
         inbox_item.update(&transaction).await.c(h!())?;
+        let system_login_id =
+            crate::users::system_login_id(&transaction).await.c(h!())?;
+        crate::inbox::callsigns::sync(
+            &transaction,
+            sigint_inbox_item_id,
+            crate::inbox::callsigns::InboxItemCallsigns {
+                primary: callsigns,
+                alg2: vec![],
+            },
+            system_login_id,
+        )
+        .await
+        .c(h!())?;
     }
     delete_job(&transaction, sigint_inbox_item_id).await?;
     transaction.commit().await.c(h!())?;

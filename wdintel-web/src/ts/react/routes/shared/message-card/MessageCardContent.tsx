@@ -1,13 +1,16 @@
 import type {
   CallsignInfoRes,
+  ContentNode,
   InboxMessage,
   MessageComment,
   Network,
   Tag,
   Unit,
 } from '../../../../../Bindings';
-import { CircularProgress, Typography } from '@mui/material';
+import { Button, CircularProgress, Typography } from '@mui/material';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isPresent } from '../../../utils/misc';
 import {
@@ -45,6 +48,31 @@ import { collectMessageDocuments } from './message-card-document-utils';
 import { blurActiveElement } from '../../../utils/focus';
 
 export type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
+
+const MESSAGE_TEXT_PREVIEW_LINE_LIMIT = 20;
+
+function hasMoreThanPreviewLineLimit(messageText: string): boolean {
+  return messageText.split(/\r?\n/).length > MESSAGE_TEXT_PREVIEW_LINE_LIMIT;
+}
+
+function previewTextRows(messageText: string): string {
+  return messageText.split(/\r?\n/).slice(0, MESSAGE_TEXT_PREVIEW_LINE_LIMIT).join('\n');
+}
+
+function previewMarkedTextRows(nodes: ContentNode[]): ContentNode[] {
+  const previewNodes: ContentNode[] = [];
+  let renderedLineBreaks = 0;
+
+  for (const node of nodes) {
+    if (node === 'CNNewlineC') {
+      if (renderedLineBreaks === MESSAGE_TEXT_PREVIEW_LINE_LIMIT - 1) break;
+      renderedLineBreaks += 1;
+    }
+    previewNodes.push(node);
+  }
+
+  return previewNodes;
+}
 
 export function MessageCardMessageBody({
   compact = false,
@@ -94,6 +122,9 @@ export function MessageCardMessageBody({
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
 }) {
   const images = collectMessageImages(msg);
+  const messageText = msg.text ?? '';
+  const hasMessageTextOverflow = hasMoreThanPreviewLineLimit(messageText);
+  const [isMessageTextExpanded, setIsMessageTextExpanded] = useState(false);
   const [activeDownloadKeys, setActiveDownloadKeys] = useState<Set<string>>(() => new Set());
   const activeDownloadKeysRef = useRef<Set<string>>(new Set());
   const downloadCooldownTimersRef = useRef<Map<string, number>>(new Map());
@@ -126,6 +157,9 @@ export function MessageCardMessageBody({
       downloadCooldownTimersRef.current.clear();
     };
   }, []);
+  useEffect(() => {
+    setIsMessageTextExpanded(false);
+  }, [messageText]);
   const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
   const [videoPreviewIndex, setVideoPreviewIndex] = useState<number | null>(null);
 
@@ -177,6 +211,7 @@ export function MessageCardMessageBody({
     unitsMap,
     searchText,
     onOpenPointsOnMap,
+    hasMessageTextOverflow && !isMessageTextExpanded,
   );
   const hasTextPrimary = Array.isArray(textPrimary)
     ? textPrimary.some((node) => isPresent(node))
@@ -280,7 +315,7 @@ export function MessageCardMessageBody({
           onDownloadStart={onDownloadStart}
         />
       ) : null}
-      {hasTextPrimary ? (
+      {hasTextPrimary || hasMessageTextOverflow ? (
         <div
           className={
             msg.textMarked && msg.textMarked.length > 0
@@ -293,6 +328,44 @@ export function MessageCardMessageBody({
           }}
         >
           {textPrimary}
+          {hasMessageTextOverflow ? (
+            <Button
+              size="small"
+              color="inherit"
+              variant="text"
+              onClick={() => setIsMessageTextExpanded((value) => !value)}
+              aria-expanded={isMessageTextExpanded}
+              aria-label={
+                isMessageTextExpanded
+                  ? 'Згорнути текст повідомлення'
+                  : 'Показати текст повідомлення'
+              }
+              endIcon={
+                isMessageTextExpanded ? (
+                  <ExpandLessIcon fontSize="inherit" aria-hidden />
+                ) : (
+                  <ExpandMoreIcon fontSize="inherit" aria-hidden />
+                )
+              }
+              sx={{
+                display: 'flex',
+                width: 'fit-content',
+                flexShrink: 0,
+                minHeight: 27,
+                py: 0,
+                px: 0.5,
+                mt: 0.5,
+                fontSize: '0.875rem',
+                fontWeight: 400,
+                textTransform: 'none',
+                color: 'var(--color-action)',
+                '& .MuiButton-endIcon': { ml: 1, mr: 0, '& i': { fontSize: '0.875rem' } },
+                alignSelf: 'flex-start',
+              }}
+            >
+              {isMessageTextExpanded ? 'Згорнути' : 'Показати більше'}
+            </Button>
+          ) : null}
         </div>
       ) : null}
       {hasCoordinatePreviewCandidate(msg, tagsMap) ? (
@@ -365,23 +438,31 @@ function useMemoText(
   unitsMap?: Record<number, Unit>,
   searchText?: string | null,
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void,
+  showTextPreview = false,
 ) {
+  const messageText = msg.text ?? '';
+  const visibleText = showTextPreview ? previewTextRows(messageText) : messageText;
   return msg.textMarked && msg.textMarked.length > 0
-    ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg, tagsMap), {
-        showPointLinks,
-        message: msg,
-        onOpenPointsOnMap,
-        callsignInfoMap,
-        networks,
-        unitsMap,
-        freq: msg.freq ?? null,
-        networkIds: msg.networkIds ?? null,
-        searchText,
-      })
+    ? renderMarkedText(
+        showTextPreview ? previewMarkedTextRows(msg.textMarked) : msg.textMarked,
+        visibleText,
+        getPointEtalonsFromMessage(msg, tagsMap),
+        {
+          showPointLinks,
+          message: msg,
+          onOpenPointsOnMap,
+          callsignInfoMap,
+          networks,
+          unitsMap,
+          freq: msg.freq ?? null,
+          networkIds: msg.networkIds ?? null,
+          searchText,
+        },
+      )
     : (() => {
-        const text = msg.text?.trim() ?? '';
+        const text = visibleText.trim();
         if (text === '' || text === '—' || text === '-') return null;
-        return renderLinkifiedText(msg.text);
+        return renderLinkifiedText(visibleText);
       })();
 }
 

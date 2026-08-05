@@ -1,9 +1,12 @@
 # Echo architecture
 
 Echo is a SIGINT analytical web application deployed as one application
-container per installation. PostgreSQL 18 is the system of record. An
-installation may also have one paired analytics container that maintains a
-derived ClickHouse copy for expensive counters and reports.
+container per installation. PostgreSQL 18 stores authoritative data in two
+required databases: the main `wd` database and the independent `wd_files`
+device file registry. They use separate connections and may share one
+PostgreSQL instance. An installation may also have one paired analytics
+container that maintains a derived ClickHouse copy for expensive counters and
+reports.
 
 The analytics container is optional: omitting the `[analytics]` section from
 Echo configuration leaves the application on its existing PostgreSQL path.
@@ -40,7 +43,8 @@ flowchart LR
         web["Web application<br/>wdintel-web + nginx"]
         api["Echo API<br/>wdintel-rs"]
         bg["Background workers<br/>wdintel-rs-bgworker"]
-        postgres[("PostgreSQL 18<br/>system of record")]
+        postgres[("PostgreSQL 18 · wd<br/>main system of record")]
+        file_registry[("wd_files<br/>optional device file registry")]
         redis[("Redis<br/>sessions + transient state")]
         nlp["wdintel-py<br/>optional NLP API"]
         iggy["Iggy<br/>optional event streaming"]
@@ -51,6 +55,7 @@ flowchart LR
 
         web --> api
         api -->|transactions and queries| postgres
+        api -.->|device file metadata| file_registry
         bg -->|queues and message state| postgres
         api --> redis
         bg --> redis
@@ -133,12 +138,20 @@ flowchart LR
     classDef canonical stroke-width:3px
     classDef optional stroke-dasharray:6 4
     class postgres canonical
-    class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm_router,vllm_otel,vllm,hf_cache,gb10 optional
+    class file_registry,nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm_router,vllm_otel,vllm,hf_cache,gb10 optional
 ```
 
 The diagram focuses on the core web, worker, messenger, storage, observability,
 and analytics paths. Other instance-specific integrations are configured
 independently.
+
+The `wd_files` database is optional and configured independently under
+`[file_registry]`. Without that section, the backend skips its connection and
+migrations and continues running; device file operations are
+unavailable. When configured, operators must
+provision the database before restart, and startup applies its schema migrations
+automatically. See [File registry database](../deploy/README.md#file-registry-database)
+for configuration and provisioning.
 
 See [Echo GPU audio transcription](ECHO_GPU_TRANSCRIPTION.md) for its
 configuration, network requirements, queue, cache, retry, and REST API flow.
@@ -153,6 +166,66 @@ See [Echo vLLM](../echo-vllm/README.md) for the `echo-gpu-spark` worker and
 deployment, verification, and rollback commands. Echo uses the router as its
 normal OpenAI-compatible endpoint; direct Spark access is retained only as a
 fallback.
+
+### Per-user AI agent harness
+
+The optional agent harness runs outside the Echo LXC on
+`echo-ai-agent-vm`. Echo stores linked identities, conversations, ordered audit
+events, lifecycle state, and security reviews in PostgreSQL. Redis stores only
+single-use bootstrap credentials and other transient request state. Each
+effective `Rer` user receives a disabled, passwordless linked `ApiAgent`
+identity and an isolated Incus container cloned from a fixed template.
+
+Multiple Echo deployments share the VM. Each reaches the host through its own
+SSH key, Unix identity, namespace mapping, and isolated runtime home; the
+server-side forced command accepts only the namespaced JSON/JSONL operation
+allowlist. The six-container capacity is enforced globally across namespaces.
+Agent containers have no route to Echo, vLLM, Tailscale, private, link-local,
+or host networks. Their only service access uses Incus instance-bound proxy
+devices:
+TLS for the configured Echo public hostname, backed by an HTTPS upstream whose
+certificate matches that hostname, and loopback port `18000` for a selected
+internal OpenAI-compatible engine. Echo validates the TLS/SNI route with
+`/api/ping` before it is used. An exact `https://api.openai.com/v1` engine uses
+the same Echo TLS route as a capability gateway: only the capability enters the
+container, while Echo injects the stored OpenAI token and streams the fixed Chat
+Completions route. Internet egress remains available.
+
+Requests use one-time, hashed Redis bootstrap tokens to obtain a short-lived
+agent session inside the container. Every agent API call carries its request
+correlation header and is checked against the centrally maintained read-only
+route registry. Mutating or unknown routes and recursive calls to harness APIs
+are rejected and audited. Credentials are revoked on every terminal path.
+Raw hidden reasoning is neither accepted into the event stream nor persisted.
+
+The bgworker serializes requests per human user, resumes queued work after a
+restart, interrupts orphaned running work without replaying it, stops idle
+containers after five minutes, and destroys stopped instances after seven
+days while retaining canonical Echo history. Completed requests are reviewed
+asynchronously; review failures remain explicit and retryable. Suspicious
+reviews send only redacted metadata to Mattermost.
+
+Reusable host operations and security boundaries are documented in
+[AI agent harness](../echo-ai-agent/README.md). The initial deployment record
+is [2026-08-03 AI agent harness](../archive/2026-08-03-ai-agent-harness/README.md).
+
+## Inbox callsign storage
+
+Parsed inbox callsigns are stored as ordered, source-specific rows in
+`sigint_inbox_item_callsign`. Active `primary` and `alg2` rows are the
+authoritative representation; the legacy JSONB columns remain dual-written as
+a compatibility fallback until a later cleanup rollout. Callsign replacement,
+soft deletion, reactivation, ordering, and login attribution are committed in
+the same PostgreSQL transaction as the inbox-item change.
+
+Historical rows are populated online with
+`oneoff-backfill-inbox-item-callsigns`. The command processes short,
+restartable keyset batches so the API and background workers can continue
+using the database during backfill.
+
+On ClickHouse-enabled instances, the derived callsign relation reads the
+normalized rows and uses the replicated watermark to fall back to legacy JSON
+for unbackfilled tail records without normalized rows.
 
 ## Echo LXC systemd graph
 

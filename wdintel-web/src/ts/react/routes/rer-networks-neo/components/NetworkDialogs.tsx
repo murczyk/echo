@@ -130,6 +130,15 @@ export function NetworkDialogs({ page }: Props) {
         onActiveFreqsOnlyChange={(activeFreqsOnly) =>
           page.setEtalonkaReport((current) => ({ ...current, activeFreqsOnly }))
         }
+        onIncludeFreqActiveFromChange={(includeFreqActiveFrom) =>
+          page.setEtalonkaReport((current) => ({ ...current, includeFreqActiveFrom }))
+        }
+        onIncludeFreqCreatedAtChange={(includeFreqCreatedAt) =>
+          page.setEtalonkaReport((current) => ({ ...current, includeFreqCreatedAt }))
+        }
+        onIncludeCallsignFullNamesChange={(includeCallsignFullNames) =>
+          page.setEtalonkaReport((current) => ({ ...current, includeCallsignFullNames }))
+        }
         onIncludeSigintSignsChange={(includeSigintSigns) =>
           page.setEtalonkaReport((current) => ({ ...current, includeSigintSigns }))
         }

@@ -450,7 +450,7 @@ fn capture_library_unit(text: &str) -> Vec<UnitInfo> {
                 } else {
                     let old_cropped_name = cropped_name.clone();
                     cropped_name = crop_prefix(&cropped_name, &PREFIX_RE);
-                    if old_cropped_name.eq(&cropped_name) {
+                    if old_cropped_name == cropped_name {
                         break;
                     }
                 }
@@ -637,8 +637,10 @@ mod tests {
             name: name.to_string(),
             comment: String::new(),
             battalion: battalion.to_string(),
+            search_tsv: None,
             sigint_origin_id: None,
             original_id: None,
+            is_deduplicate_candidate: None,
         }
     }
 
