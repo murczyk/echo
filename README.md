@@ -174,7 +174,7 @@ read echo-im repo instructions
 For server like echo-kherson do:
 
 ```
-just builder=$BUILDER server=$SERVER deploy
+just deploy --server=$SERVER
 ```
 
 Batch-deploy:
