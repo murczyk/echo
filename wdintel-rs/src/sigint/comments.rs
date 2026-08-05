@@ -923,7 +923,7 @@ async fn find_best_message(
         .into_iter()
         .filter(|(message, _)| {
             message.body.as_deref().is_some_and(|candidate_body| {
-                crate::organism::goi::message_uid::message_bodies_match(
+                crate::organism::goi::message_uid::message_bodies_equal(
                     body,
                     candidate_body,
                 )

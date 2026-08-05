@@ -653,14 +653,18 @@ fn prepare_message_candidate(
 }
 
 fn candidate_message_body(row: &MessageCandidate) -> Option<String> {
-    let body = row
-        .body_noheader
+    row.body_noheader
         .as_ref()
         .and_then(|body_noheader| body_noheader.get("body"))
         .and_then(serde_json::Value::as_str)
-        .or(row.body.as_deref())?;
-    let body = normalize_message_body(body);
-    (!body.is_empty()).then_some(body)
+        .map(normalize_message_body)
+        .filter(|body| !body.is_empty())
+        .or_else(|| {
+            row.body
+                .as_deref()
+                .map(normalize_message_body)
+                .filter(|body| !body.is_empty())
+        })
 }
 
 impl MessageCandidateSelection {
@@ -822,10 +826,8 @@ fn select_matching_original_message_uid(
     .message_uid()
 }
 
-pub(crate) fn message_bodies_match(left: &str, right: &str) -> bool {
-    let left = normalize_message_body(left);
-    let right = normalize_message_body(right);
-    normalized_message_bodies_match(&left, &right)
+pub(crate) fn message_bodies_equal(left: &str, right: &str) -> bool {
+    normalize_message_body(left) == normalize_message_body(right)
 }
 
 fn normalized_message_bodies_match(left: &str, right: &str) -> bool {
@@ -975,7 +977,7 @@ mod tests {
             normalize_message_body("first_x000d_\r\n second\tthird"),
             "first second third"
         );
-        assert!(message_bodies_match(
+        assert!(message_bodies_equal(
             "prefix_x000d_message",
             "prefix message"
         ));
@@ -1007,10 +1009,9 @@ mod tests {
     }
 
     #[test]
-    fn message_bodies_match_in_both_directions() {
-        assert!(message_bodies_match("prefix message suffix", "message"));
-        assert!(message_bodies_match("message", "prefix message suffix"));
-        assert!(!message_bodies_match("message one", "message two"));
+    fn message_bodies_equal_only_after_normalization() {
+        assert!(message_bodies_equal("first_x000d_ second", "first second"));
+        assert!(!message_bodies_equal("message", "prefix message suffix"));
     }
 
     #[test]
@@ -1111,6 +1112,21 @@ mod tests {
 
         assert_eq!(candidate.body, "transcript");
         assert_eq!(candidate.probe_body, "transport header transcript");
+    }
+
+    #[test]
+    fn candidate_body_falls_back_from_empty_inbox_body() {
+        let row = MessageCandidate {
+            id: 1,
+            timestamp: Some(test_timestamp()),
+            body: Some("transport header transcript".to_string()),
+            body_noheader: Some(serde_json::json!({ "body": "  " })),
+            message_uid: Some("uid".to_string()),
+        };
+
+        let candidate = prepare_message_candidate(row).unwrap();
+
+        assert_eq!(candidate.body, "transport header transcript");
     }
 
     #[test]
