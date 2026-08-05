@@ -17,12 +17,11 @@ use actix_web::{get, post, HttpRequest, HttpResponse};
 use chrono::prelude::*;
 use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
-use itertools::Itertools;
 use rand::prelude::IndexedRandom;
 use sea_orm::sea_query::{Expr, Func};
 use sea_orm::*;
 use sqlx::Row;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::io::{BufWriter, Seek, Write};
 use time::{Duration as TimeDuration, OffsetDateTime, PrimitiveDateTime};
 use tokio_util::io::ReaderStream;
@@ -680,35 +679,28 @@ async fn rer_importer_callsigns(
         sixty_days_ago_offset.date(),
         sixty_days_ago_offset.time(),
     );
-    let inbox_items = load_rer_importer_callsign_inbox_items(
+    let callsigns = load_rer_importer_callsigns(
         &env.dbx,
         sixty_days_ago_primitive,
         login_id_from_identity(&user)?,
+        req.filter.as_ref(),
     )
     .await?;
-    let inbox_item_ids = inbox_items.iter().map(|item| item.id).collect_vec();
-    let primary_callsigns_by_item =
-        load_rer_importer_primary_callsigns(&env.dbx, &inbox_item_ids).await?;
-
-    Ok(Json(aggregate_rer_importer_callsigns(
-        inbox_items,
-        primary_callsigns_by_item,
-        req.filter.as_ref(),
-    )?))
+    Ok(Json(callsigns))
 }
 
 #[derive(FromQueryResult)]
-struct RerImporterCallsignInboxItem {
-    id: i64,
-    freq: Option<String>,
-    callsigns: Option<serde_json::Value>,
+struct RerImporterCallsignFrequency {
+    callsign: String,
+    frequencies: Option<Vec<String>>,
 }
 
-async fn load_rer_importer_callsign_inbox_items(
+async fn load_rer_importer_callsigns(
     dbx: &DatabaseConnection,
     since: PrimitiveDateTime,
     login_id: uuid::Uuid,
-) -> Result<Vec<RerImporterCallsignInboxItem>, AppError> {
+    filter: Option<&String>,
+) -> Result<Vec<CallsignWithFrequencies>, AppError> {
     let datasource_ids = datasource::Entity::find()
         .select_only()
         .column(datasource::Column::Id)
@@ -723,7 +715,7 @@ async fn load_rer_importer_callsign_inbox_items(
         .join(JoinType::InnerJoin, sigint_zone::Relation::Login.def())
         .filter(login::Column::Id.eq(login_id))
         .into_query();
-    Ok(sigint_inbox_item::Entity::find()
+    let filtered_items = sigint_inbox_item::Entity::find()
         .select_only()
         .columns([
             sigint_inbox_item::Column::Id,
@@ -739,97 +731,92 @@ async fn load_rer_importer_callsign_inbox_items(
         .filter(sigint_inbox_item::Column::Checked.eq(true))
         .filter(
             datasource_group::Column::DatasourceId.in_subquery(datasource_ids),
+        );
+    let filtered_items = filtered_items.build(DbBackend::Postgres);
+    let values = filtered_items
+        .values
+        .map(|values| values.0)
+        .unwrap_or_default();
+    let sql = format!(
+        r#"
+        WITH filtered_items AS ({})
+        , normalized_callsigns AS (
+            SELECT DISTINCT
+                siic.sigint_inbox_item_id AS inbox_item_id,
+                siic.callsign
+            FROM sigint_inbox_item_callsign AS siic
+            INNER JOIN filtered_items
+                ON filtered_items.id = siic.sigint_inbox_item_id
+            WHERE siic.source = 'primary'::sigint_inbox_item_callsign_source
+              AND NOT siic.deleted
         )
-        .into_model::<RerImporterCallsignInboxItem>()
-        .all(dbx)
-        .await
-        .c(h!())?)
-}
-
-#[derive(FromQueryResult)]
-struct RerImporterPrimaryCallsign {
-    sigint_inbox_item_id: i64,
-    callsign: String,
-}
-
-async fn load_rer_importer_primary_callsigns(
-    dbx: &DatabaseConnection,
-    inbox_item_ids: &[i64],
-) -> Result<HashMap<i64, Vec<String>>, AppError> {
-    let mut primary_callsigns_by_item: HashMap<i64, Vec<String>> =
-        HashMap::new();
-    for inbox_item_ids in inbox_item_ids
-        .chunks(crate::config::RER_CALLSIGN_QUERY_PARAM_CHUNK_SIZE)
-    {
-        let callsign_rows = sigint_inbox_item_callsign::Entity::find()
-            .select_only()
-            .columns([
-                sigint_inbox_item_callsign::Column::SigintInboxItemId,
-                sigint_inbox_item_callsign::Column::Callsign,
-            ])
-            .filter(
-                sigint_inbox_item_callsign::Column::SigintInboxItemId
-                    .is_in(inbox_item_ids.to_vec()),
+        , legacy_callsigns AS (
+            SELECT DISTINCT
+                item.id AS inbox_item_id,
+                legacy.callsign
+            FROM filtered_items
+            INNER JOIN sigint_inbox_item AS item ON item.id = filtered_items.id
+            CROSS JOIN LATERAL jsonb_array_elements_text(
+                CASE
+                    WHEN jsonb_typeof(item.callsigns) = 'array'
+                        THEN item.callsigns
+                    ELSE '[]'::jsonb
+                END
+            ) AS legacy(callsign)
+            WHERE item.id > coalesce((
+                SELECT nullif(dk.v #>> '{{}}', '')::bigint
+                FROM delta_kv AS dk
+                WHERE dk.k = '{watermark_key}'
+            ), 0)
+              AND NOT EXISTS (
+                SELECT 1
+                FROM sigint_inbox_item_callsign AS siic
+                WHERE siic.sigint_inbox_item_id = item.id
             )
-            .filter(sigint_inbox_item_callsign::Column::Deleted.eq(false))
-            .filter(sigint_inbox_item_callsign::Column::Source.eq(
-                sea_orm_active_enums::SigintInboxItemCallsignSource::Primary,
-            ))
-            .order_by_asc(sigint_inbox_item_callsign::Column::SigintInboxItemId)
-            .order_by_asc(sigint_inbox_item_callsign::Column::Ordering)
-            .order_by_asc(sigint_inbox_item_callsign::Column::Id)
-            .into_model::<RerImporterPrimaryCallsign>()
-            .all(dbx)
-            .await
-            .c(h!())?;
-        for row in callsign_rows {
-            primary_callsigns_by_item
-                .entry(row.sigint_inbox_item_id)
-                .or_default()
-                .push(row.callsign);
-        }
-    }
-    Ok(primary_callsigns_by_item)
-}
-
-fn aggregate_rer_importer_callsigns(
-    inbox_items: Vec<RerImporterCallsignInboxItem>,
-    mut primary_callsigns_by_item: HashMap<i64, Vec<String>>,
-    filter: Option<&String>,
-) -> Result<Vec<CallsignWithFrequencies>, AppError> {
-    let mut frequencies_by_callsign: BTreeMap<String, BTreeSet<String>> =
-        BTreeMap::new();
-    for inbox_item in inbox_items {
-        let callsigns = match primary_callsigns_by_item.remove(&inbox_item.id) {
-            Some(callsigns) => callsigns,
-            None => inbox_item
-                .callsigns
-                .map(serde_json::from_value)
-                .transpose()
-                .c(h!())?
-                .unwrap_or_default(),
-        };
-        for callsign in callsigns {
-            if filter.is_some_and(|filter| filter != &callsign) {
-                continue;
-            }
-            let frequencies =
-                frequencies_by_callsign.entry(callsign).or_default();
-            if let Some(freq) =
-                inbox_item.freq.as_ref().filter(|freq| !freq.is_empty())
-            {
-                frequencies.insert(freq.clone());
-            }
-        }
-    }
-
-    Ok(frequencies_by_callsign
+        )
+        , all_callsigns AS (
+            SELECT inbox_item_id, callsign FROM normalized_callsigns
+            UNION ALL
+            SELECT inbox_item_id, callsign FROM legacy_callsigns
+        )
+        SELECT
+            all_callsigns.callsign,
+            array_agg(DISTINCT filtered_items.freq ORDER BY filtered_items.freq)
+                FILTER (
+                    WHERE filtered_items.freq IS NOT NULL
+                      AND filtered_items.freq <> ''
+                ) AS frequencies
+        FROM all_callsigns
+        INNER JOIN filtered_items
+            ON filtered_items.id = all_callsigns.inbox_item_id
+        GROUP BY all_callsigns.callsign
+        ORDER BY all_callsigns.callsign
+        "#,
+        filtered_items.sql,
+        watermark_key =
+            crate::inbox::callsigns::CALLSIGN_BACKFILL_WATERMARK_KEY,
+    );
+    let rows = dbx
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            sql,
+            values,
+        ))
+        .await
+        .c(h!())?
         .into_iter()
-        .map(|(callsign, frequencies)| CallsignWithFrequencies {
-            callsign,
-            frequencies: frequencies.into_iter().collect(),
+        .map(|row| RerImporterCallsignFrequency::from_query_result(&row, ""))
+        .collect::<Result<Vec<_>, DbErr>>()
+        .c(h!())?;
+    let callsigns = rows
+        .into_iter()
+        .filter(|row| !filter.is_some_and(|filter| filter != &row.callsign))
+        .map(|row| CallsignWithFrequencies {
+            callsign: row.callsign,
+            frequencies: row.frequencies.unwrap_or_default(),
         })
-        .collect())
+        .collect();
+    Ok(callsigns)
 }
 
 #[get("/api/rer-importer/grafana/messages")]
