@@ -60,7 +60,10 @@ timeout --foreground 30s \
 reconciliation_complete=false
 warn_if_incomplete() {
   $reconciliation_complete && return 0
-  log "Table reconciliation did not complete; the mirror may remain paused and retained WAL will grow. Fix the error and rerun this command."
+  log "Table reconciliation did not complete; the mirror may remain paused to avoid resuming mismatched schemas."
+  log "Retained WAL will grow until the issue is fixed. Resolve the reported error and rerun this command promptly."
+  log "If this followed a schema migration, verify deploy/clickhouse/migration-impact.json."
+  log "See deploy/clickhouse/README.md: Mirror, current views, and gateway."
 }
 trap warn_if_incomplete EXIT
 
