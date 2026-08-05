@@ -631,7 +631,7 @@ function NetworkDetailsFrequenciesTableContent({
         sx={{
           minHeight: 0,
           minWidth: 0,
-          flex: isCompactLoadedLayout ? '0 0 auto' : 1,
+          flex: 1,
           width: '100%',
         }}
       >
@@ -652,12 +652,12 @@ function NetworkDetailsFrequenciesTableContent({
         </Box>
         <Box
           sx={{
-            flex: isCompactLoadedLayout ? '0 0 auto' : 1,
+            flex: 1,
             minHeight: 0,
             minWidth: 0,
             display: 'flex',
             width: '100%',
-            overflowX: 'auto',
+            overflow: 'auto',
           }}
         >
           <Box
