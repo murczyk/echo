@@ -829,8 +829,7 @@ fn select_matching_original_message_uid(
     .message_uid()
 }
 
-#[cfg(test)]
-fn message_bodies_match(left: &str, right: &str) -> bool {
+pub(crate) fn message_bodies_match(left: &str, right: &str) -> bool {
     let left = normalize_message_body(left);
     let right = normalize_message_body(right);
     normalized_message_bodies_match(&left, &right)

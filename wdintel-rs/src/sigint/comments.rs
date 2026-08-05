@@ -361,6 +361,10 @@ async fn load_goi_association_comment_rows(
     let associations = load_goi_associations_with_notes(dbx, since_ts, till_ts)
         .await
         .c(h!())?;
+    let message_uids = association_message_uids(&associations);
+    let messages = load_signal_messages_by_uid(dbx, message_uids)
+        .await
+        .c(h!())?;
     let mut csv_rows = Vec::new();
     let mut skipped = 0_usize;
     for (association, organism) in associations {
@@ -368,11 +372,7 @@ async fn load_goi_association_comment_rows(
             skipped += 1;
             continue;
         };
-        let Some(body) =
-            crate::organism::goi::message_uid::association_original_message(
-                &association.row,
-            )
-            .and_then(|body| non_empty_text(Some(body)))
+        let Some(body) = goi_association_export_body(&association, &messages)
         else {
             skipped += 1;
             continue;
@@ -397,6 +397,37 @@ async fn load_goi_association_comment_rows(
     Ok(csv_rows)
 }
 
+fn association_message_uids(
+    associations: &[(goi_association::Model, Option<organism::Model>)],
+) -> Vec<String> {
+    associations
+        .iter()
+        .filter_map(|(association, _)| association.message_uid.clone())
+        .filter(|message_uid| !message_uid.trim().is_empty())
+        .collect()
+}
+
+fn goi_association_export_body(
+    association: &goi_association::Model,
+    messages: &HashMap<String, SignalMessageExportSource>,
+) -> Option<String> {
+    association
+        .message_uid
+        .as_deref()
+        .and_then(|message_uid| non_empty_text(Some(message_uid)))
+        .and_then(|message_uid| {
+            messages
+                .get(&message_uid)
+                .map(|message| message.body.clone())
+        })
+        .or_else(|| {
+            crate::organism::goi::message_uid::association_original_message(
+                &association.row,
+            )
+            .and_then(|body| non_empty_text(Some(body)))
+        })
+}
+
 async fn load_mapped_goi_association_comment_rows(
     dbx: &DatabaseConnection,
     since_ts: NaiveDateTime,
@@ -405,11 +436,7 @@ async fn load_mapped_goi_association_comment_rows(
     let associations = load_goi_associations_with_notes(dbx, since_ts, till_ts)
         .await
         .c(h!())?;
-    let message_uids = associations
-        .iter()
-        .filter_map(|(association, _)| association.message_uid.clone())
-        .filter(|message_uid| !message_uid.trim().is_empty())
-        .collect::<Vec<_>>();
+    let message_uids = association_message_uids(&associations);
     let messages = load_signal_messages_by_uid(dbx, message_uids)
         .await
         .c(h!())?;
@@ -485,6 +512,7 @@ async fn load_signal_messages_by_uid(
             .filter(signal_message::Column::MessageUid.is_in(chunk.to_vec()))
             .filter(signal_message::Column::MessageUid.is_not_null())
             .filter(signal_message::Column::MessageUid.ne(""))
+            .filter(sigint_inbox_item::Column::Id.is_not_null())
             .find_also_related(sigint_inbox_item::Entity)
             .all(dbx)
             .await
@@ -880,15 +908,57 @@ async fn find_best_message(
 ) -> Result<Option<(signal_message::Model, NaiveDateTime)>, AppError> {
     let from_ts = message_ts - Duration::minutes(15);
     let to_ts = message_ts + Duration::minutes(15);
-    let candidates = signal_message::Entity::find()
-        .filter(signal_message::Column::Body.eq(body))
+    let exact_candidates =
+        load_import_message_candidates(dbx, Some(body), from_ts, to_ts)
+            .await
+            .c(h!())?;
+    if let Some(message) = select_best_message(exact_candidates, message_ts) {
+        return Ok(Some(message));
+    }
+
+    let candidates = load_import_message_candidates(dbx, None, from_ts, to_ts)
+        .await
+        .c(h!())?;
+    let candidates = candidates
+        .into_iter()
+        .filter(|(message, _)| {
+            message.body.as_deref().is_some_and(|candidate_body| {
+                crate::organism::goi::message_uid::message_bodies_match(
+                    body,
+                    candidate_body,
+                )
+            })
+        })
+        .collect();
+    Ok(select_best_message(candidates, message_ts))
+}
+
+async fn load_import_message_candidates(
+    dbx: &DatabaseConnection,
+    body: Option<&str>,
+    from_ts: NaiveDateTime,
+    to_ts: NaiveDateTime,
+) -> Result<
+    Vec<(signal_message::Model, Option<sigint_inbox_item::Model>)>,
+    AppError,
+> {
+    let mut query = signal_message::Entity::find()
         .filter(message_time_condition(from_ts, to_ts))
-        .filter(sigint_inbox_item::Column::Id.is_not_null())
+        .filter(sigint_inbox_item::Column::Id.is_not_null());
+    if let Some(body) = body {
+        query = query.filter(signal_message::Column::Body.eq(body));
+    }
+    Ok(query
         .find_also_related(sigint_inbox_item::Entity)
         .all(dbx)
         .await
-        .c(h!())?;
+        .c(h!())?)
+}
 
+fn select_best_message(
+    candidates: Vec<(signal_message::Model, Option<sigint_inbox_item::Model>)>,
+    message_ts: NaiveDateTime,
+) -> Option<(signal_message::Model, NaiveDateTime)> {
     let mut best: Option<(signal_message::Model, NaiveDateTime, i64)> = None;
     for (message, inbox_opt) in candidates {
         let resolved_ts = resolve_message_ts(
@@ -906,11 +976,7 @@ async fn find_best_message(
         }
     }
 
-    if let Some((message, resolved_ts, _)) = best {
-        Ok(Some((message, resolved_ts)))
-    } else {
-        Ok(None)
-    }
+    best.map(|(message, resolved_ts, _)| (message, resolved_ts))
 }
 
 fn format_body_sample(body: &str) -> String {
