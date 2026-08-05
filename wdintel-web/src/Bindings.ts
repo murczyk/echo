@@ -477,6 +477,7 @@ export type InboxMessagesReq = {
   selectedUnits: Array<string> | null;
   deniedUnits: Array<string> | null;
   selectedLocations: Array<string> | null;
+  selectedDeviceNames: Array<string> | null;
   nolimit: boolean | null;
   orWithExtendedForm: boolean | null;
   loadLatest: boolean | null;
@@ -713,6 +714,7 @@ export type AnalysisStatsReq = {
   selectedCallsigns: Array<string> | null;
   selectedUnits: Array<string> | null;
   selectedLocations: Array<string> | null;
+  selectedDeviceNames: Array<string> | null;
   selectedAors: Array<number> | null;
   orWithExtendedForm: boolean | null;
   orBookmarked: boolean | null;
@@ -867,6 +869,7 @@ export type CallsignsGraphReq = {
   selectedCallsigns: Array<string> | null;
   selectedUnits: Array<string> | null;
   selectedLocations: Array<string> | null;
+  selectedDeviceNames: Array<string> | null;
   orWithExtendedForm: boolean | null;
   orBookmarked: boolean | null;
   orImportant: boolean | null;

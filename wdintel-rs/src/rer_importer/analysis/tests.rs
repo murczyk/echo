@@ -113,6 +113,7 @@ fn mk_analysis_stats_req(
         selected_callsigns: None,
         selected_units: None,
         selected_locations: None,
+        selected_device_names: None,
         selected_aors: None,
         or_with_extended_form: None,
         or_bookmarked: None,

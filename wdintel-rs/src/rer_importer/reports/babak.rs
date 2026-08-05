@@ -74,6 +74,7 @@ pub async fn collect_babak_report_data(
         selected_callsigns: inbox_req.selected_callsigns,
         selected_units: inbox_req.selected_units,
         selected_locations: inbox_req.selected_locations,
+        selected_device_names: inbox_req.selected_device_names,
         or_with_extended_form: inbox_req.or_with_extended_form,
         or_bookmarked: inbox_req.or_bookmarked,
         or_important: inbox_req.or_important,

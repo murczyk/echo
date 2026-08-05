@@ -1539,6 +1539,30 @@ where
     Ok(q)
 }
 
+pub fn filter_selected_device_names<Q>(
+    q: Q,
+    selected_device_names: &Option<Vec<String>>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let Some(selected_device_names) = selected_device_names
+        .as_ref()
+        .filter(|names| !names.is_empty())
+    else {
+        return Ok(q);
+    };
+
+    let device_name_ids = device_name::Entity::find()
+        .select_only()
+        .column(device_name::Column::Id)
+        .filter(device_name::Column::Name.is_in(selected_device_names.clone()))
+        .into_query();
+    Ok(q.filter(
+        sigint_inbox_item::Column::DeviceNameId.in_subquery(device_name_ids),
+    ))
+}
+
 fn get_related_tag_items_filter(
     unique_tags: BTreeSet<i64>,
     tag_filter_option: TagFilterOption,
@@ -3802,7 +3826,8 @@ fn build_summary_table_filtered_messages_query_with_access(
     )
     .context(h!())?;
     let q = filter_selected_metadata_for_analysis_stats(q, req)?;
-    filter_search(q, &req.search)
+    let q = filter_search(q, &req.search)?;
+    filter_selected_device_names(q, &req.selected_device_names)
 }
 
 async fn summary_table_last_datetime_by_freq_by_login(
@@ -4437,9 +4462,15 @@ fn describe_analysis_stats_req(
         Some(units) => format!("Підрозділи: {}. ", units.join(", ")),
         None => "".to_string(),
     };
+    let selected_device_names_s = match req.selected_device_names {
+        Some(device_names) => {
+            format!("Пристрої: {}. ", device_names.join(", "))
+        }
+        None => "".to_string(),
+    };
 
     Ok(format!(
-        "Період: {} - {}. {selected_groups_s}{selected_senders_s}{selected_freqs_s}{selected_callsigns_s}{selected_units_s}",
+        "Період: {} - {}. {selected_groups_s}{selected_senders_s}{selected_freqs_s}{selected_callsigns_s}{selected_units_s}{selected_device_names_s}",
         dt_since.format("%d.%m.%Y %H:%M:%S"),
         dt_till.format("%d.%m.%Y %H:%M:%S"),
     ))
@@ -4644,7 +4675,8 @@ fn build_correlated_freq_messages_query(
     } else {
         query
     };
-    filter_selected_metadata_for_analysis_stats(query, req)
+    let query = filter_selected_metadata_for_analysis_stats(query, req)?;
+    filter_selected_device_names(query, &req.selected_device_names)
 }
 
 async fn load_correlated_freqs_analytics(
@@ -4896,6 +4928,8 @@ pub async fn edit_freq_unit_name(
     let rows_res =
         filter_selected_metadata_for_analysis_stats(rows_res, &reqan)?;
     let rows_res = filter_search(rows_res, &req.search)?;
+    let rows_res =
+        filter_selected_device_names(rows_res, &reqan.selected_device_names)?;
     // println!(
     //     "> freq edit query: {}",
     //     rows_res.build(DbBackend::Postgres).to_string()
@@ -5678,6 +5712,8 @@ fn build_new_callsign_filtered_items_query(
         scope,
     )?;
     let query = filter_search(query, &req.search)?;
+    let query =
+        filter_selected_device_names(query, &req.selected_device_names)?;
     let query = match callsign_source {
         crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres => {
             filter_selected_tags(

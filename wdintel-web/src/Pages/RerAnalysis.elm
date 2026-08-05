@@ -355,6 +355,7 @@ getInboxReq model =
             |> emptyToNothing
     , selectedCallsigns = emptyToNothing model.callsignsSelected
     , selectedUnits = emptyToNothing model.unitsSelected
+    , selectedDeviceNames = Nothing
     , deniedUnits = Nothing
     , selectedLocations = emptyToNothing model.locationsSelected
     , includePelengLocations = Just model.includePelengLocations
@@ -443,6 +444,7 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
                     |> List.filterMap String.toInt
                     |> emptyToNothing
             , selectedUnits = emptyToNothing model.unitsSelected
+            , selectedDeviceNames = Nothing
             , selectedLocations = emptyToNothing model.locationsSelected
             , includePelengLocations = Just model.includePelengLocations
             , orWithExtendedForm = Just model.orWithExtendedForm

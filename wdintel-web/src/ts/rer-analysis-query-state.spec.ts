@@ -147,12 +147,13 @@ describe('rer analysis query state', () => {
       search: 'uid-1',
       includeOnlyNewFreqs: true,
       freqsSelected: ['123.4', '123.5'],
+      deviceNamesSelected: ['cyber-echo-01'],
       includePelengLocations: true,
       groupsSelected: [],
     });
 
     expect(params.toString()).toBe(
-      'foo=bar&fromDateTime=2026-03-27T21%3A52&toDateTime=2026-03-28T09%3A52&onlyNewFreqs=true&freqs=123.4&freqs=123.5&search=uid-1',
+      'foo=bar&fromDateTime=2026-03-27T21%3A52&toDateTime=2026-03-28T09%3A52&onlyNewFreqs=true&freqs=123.4&freqs=123.5&deviceNames=cyber-echo-01&search=uid-1',
     );
   });
 
@@ -169,7 +170,7 @@ describe('rer analysis query state', () => {
 
   it('parses flat query params into canonical query state', () => {
     const params = new URLSearchParams(
-      'fromDateTime=2026-03-27T21%3A52&toDateTime=2026-03-28T09%3A52&onlyNewFreqs=true&freqs=123.4&freqs=123.5&withoutNetwork=true&tags=7&tags=11&filterTagsOption=AllTags',
+      'fromDateTime=2026-03-27T21%3A52&toDateTime=2026-03-28T09%3A52&onlyNewFreqs=true&freqs=123.4&freqs=123.5&deviceNames=cyber-echo-01&withoutNetwork=true&tags=7&tags=11&filterTagsOption=AllTags',
     );
 
     expect(parseRerAnalysisQueryStateFromSearchParams(params)).toEqual({
@@ -177,6 +178,7 @@ describe('rer analysis query state', () => {
       toDateTimeStr: '2026-03-28T09:52',
       includeOnlyNewFreqs: true,
       freqsSelected: ['123.4', '123.5'],
+      deviceNamesSelected: ['cyber-echo-01'],
       withoutNetwork: true,
       tags: [7, 11],
       filterTagsOption: 'AllTags',

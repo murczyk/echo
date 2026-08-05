@@ -427,6 +427,7 @@ where
     let q = filter_denied_posts(q, &req.denied_posts)?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
     let q = filter_search(q, &req.search)?;
+    let q = filter_selected_device_names(q, &req.selected_device_names)?;
     let q = filter_selected_units(
         q,
         &req.selected_units,
