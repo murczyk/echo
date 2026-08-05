@@ -565,6 +565,7 @@ where
         )
         .filter(sigint_network_unit::Column::UnitId.eq(unit_id))
         .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::ActiveTo.is_null())
         .one(dbx)
         .await
         .c(h!())?
@@ -1737,7 +1738,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn create_device_network_adds_only_one_network_to_existing_unit() {
+    async fn create_device_network_allows_replacing_inactive_network() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
         let login_id = test_login_id(&env).await;
@@ -1767,11 +1768,20 @@ mod tests {
         assert_eq!(network.location, "Роботине");
         assert!(unit_has_active_network(&env.dbx, unit.id).await.unwrap());
 
+        let mut network = network.into_active_model();
+        network.active_to = Set(Some(Utc::now().naive_utc()));
+        network.update(&env.dbx).await.unwrap();
+        assert!(!unit_has_active_network(&env.dbx, unit.id).await.unwrap());
+
+        create_device_network_for_login(&login_id, &env, req.clone())
+            .await
+            .unwrap();
+
         let err = create_device_network_for_login(&login_id, &env, req)
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::BL { .. }));
-        assert_eq!(network_count(&env.dbx).await, 1);
+        assert_eq!(network_count(&env.dbx).await, 2);
     }
 
     #[tokio::test]
