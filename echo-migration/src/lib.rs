@@ -349,9 +349,12 @@ mod m20260801_085538_suppress_deleted_orbit_links;
 mod m20260802_174927_rer_duty_test_replay;
 mod m20260803_093803_echo_automation_send_log;
 mod m20260803_130117_device_source_role_and_name;
+mod m20260803_212227_ai_agent_harness;
 mod m20260804_091538_sigint_comment_blacklist;
 mod m20260804_093435_hide_orbit_data;
 mod m20260804_094408_sigint_unit_deduplicate_candidate;
+mod m20260804_095344_ai_agent_dispatcher;
+mod m20260805_064150_ai_agent_mattermost_chat;
 
 pub struct Migrator;
 
@@ -790,6 +793,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260721_124518_drop_legacy_device_file::Migration),
             Box::new(m20260729_143549_add_device_organism::Migration),
             Box::new(m20260803_130117_device_source_role_and_name::Migration),
+            Box::new(m20260803_212227_ai_agent_harness::Migration),
             Box::new(
                 m20260804_091538_sigint_comment_blacklist::Migration,
             ),
@@ -797,6 +801,8 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260804_094408_sigint_unit_deduplicate_candidate::Migration,
             ),
+            Box::new(m20260804_095344_ai_agent_dispatcher::Migration),
+            Box::new(m20260805_064150_ai_agent_mattermost_chat::Migration),
         ]
     }
 }

@@ -41,3 +41,16 @@ public.ai_callsign_settings
 public.ai_callsign_test_message
 public.ai_callsign_parse_result
 public.ai_callsign_worker_job
+
+# Per-user AI agent control plane, audit history, and operational state.
+public.ai_agent_settings
+public.ai_agent_allowed_engine
+public.ai_agent_dispatcher
+public.ai_agent_echo_proxy
+public.ai_agent_user_link
+public.ai_agent_container
+public.ai_agent_conversation
+public.ai_agent_request
+public.ai_agent_request_event
+public.ai_agent_security_review
+public.ai_agent_chat_mattermost_notification

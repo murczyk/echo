@@ -1,0 +1,38 @@
+Port 22031
+AddressFamily inet
+ListenAddress 0.0.0.0
+Protocol 2
+HostKey /etc/echo-ai-agent/ssh_host_ed25519_key
+HostKeyAlgorithms ssh-ed25519
+PidFile /run/echo-ai-agent-sshd.pid
+
+AuthenticationMethods publickey
+AuthorizedKeysFile /etc/echo-ai-agent/authorized_keys/%u
+PubkeyAuthentication yes
+PubkeyAcceptedAlgorithms ssh-ed25519
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PermitEmptyPasswords no
+PermitRootLogin no
+UsePAM no
+
+AllowAgentForwarding no
+AllowStreamLocalForwarding no
+AllowTcpForwarding no
+DisableForwarding yes
+GatewayPorts no
+PermitTunnel no
+PermitTTY no
+X11Forwarding no
+PermitUserEnvironment no
+ForceCommand /usr/local/libexec/echo-ai-agent-force-command
+
+AllowGroups echo-ai-agent-dispatch
+ClientAliveInterval 30
+ClientAliveCountMax 2
+LoginGraceTime 20
+MaxAuthTries 3
+MaxSessions 32
+StrictModes yes
+LogLevel VERBOSE

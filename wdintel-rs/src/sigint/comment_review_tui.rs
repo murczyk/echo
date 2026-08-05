@@ -122,7 +122,7 @@ async fn run_loop(
         match event::read().c(h!())? {
             Event::Key(key) => match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => {
-                    return Ok(LoopOutcome::Quit)
+                    return Ok(LoopOutcome::Quit);
                 }
                 KeyCode::Enter | KeyCode::Right | KeyCode::Char('n') => {
                     if advance_entry(db, &mut state).await? {
@@ -378,7 +378,7 @@ pub fn parse_since_ts(value: &str) -> Result<NaiveDateTime, AppError> {
 }
 
 fn normalize_limit(limit: Option<u64>) -> u64 {
-    limit.unwrap_or(DEFAULT_PAGE_LIMIT).max(1)
+    std::cmp::max(limit.unwrap_or(DEFAULT_PAGE_LIMIT), 1)
 }
 
 impl ReviewCursor {

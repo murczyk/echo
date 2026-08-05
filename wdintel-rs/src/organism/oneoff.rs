@@ -84,7 +84,7 @@ async fn deleted_goi_knowledge_bounds(
     integration_id: Option<i64>,
 ) -> Result<Option<DeletedGoiKnowledgeBounds>, AppError> {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
             r#"
                 select
@@ -113,7 +113,7 @@ async fn deleted_goi_knowledge_count(
     integration_id: Option<i64>,
 ) -> Result<i64, AppError> {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
             r#"
                 select count(*)::bigint as row_count
@@ -137,7 +137,7 @@ async fn delete_deleted_goi_knowledge_batch(
     batch_size: i64,
 ) -> Result<DeletedGoiKnowledgeBatch, AppError> {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
             r#"
                 with batch as materialized (

@@ -1173,6 +1173,24 @@ sl-tooltip {
   justify-content: center;
 }
 
+.app-navbar-flyout-item {
+  position: relative;
+}
+
+.app-navbar-flyout {
+  position: absolute;
+  top: -0.5rem;
+  left: 100%;
+  z-index: 3002;
+  display: none;
+  width: 16rem;
+}
+
+.app-navbar-flyout-item:hover > .app-navbar-flyout,
+.app-navbar-flyout-item:focus-within > .app-navbar-flyout {
+  display: block;
+}
+
 @media (min-width: 1024px) {
   .app-navbar-submenu-wrap {
     width: auto;

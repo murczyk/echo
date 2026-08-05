@@ -68,7 +68,10 @@ pub async fn process_queue(
                     Ok(res) => res,
                     Err(e) => {
                         // The join pool is poisoned, finish already-processed items and halt
-                        error!("unexpected error occurred while processing inbox messages: {:#?}", e);
+                        error!(
+                            "unexpected error occurred while processing inbox messages: {:#?}",
+                            e
+                        );
                         // this will get us closer to "break" the loop by emptying the queue
                         item_queue.clear();
                         continue;
@@ -150,7 +153,10 @@ async fn wait_for_remaining_tasks(
         let result = match res {
             Ok(res) => res,
             Err(e) => {
-                error!("unexpected error occurred while processing inbox messages: {:#?}", e);
+                error!(
+                    "unexpected error occurred while processing inbox messages: {:#?}",
+                    e
+                );
                 continue;
             }
         };
@@ -405,7 +411,10 @@ async fn process_item_once(
             uploaded_files_ready_for_deletion
                 .extend(result.uploaded_files_ready_for_deletion);
         } else {
-            warn!("[{client_name}] skipping message {:?} with no group, possibly a private message", m.id);
+            warn!(
+                "[{client_name}] skipping message {:?} with no group, possibly a private message",
+                m.id
+            );
         }
     }
     txn.commit().await.c(h!())?;

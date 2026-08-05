@@ -1,7 +1,6 @@
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use crate::{config, h};
 use anyhow::Context;
 use chrono::*;
@@ -82,9 +81,8 @@ pub async fn oneoff_populate_signal_message_group_ids(
     let mut counter = 1;
     let count = datasource_groups.len();
     for datasource_group in datasource_groups {
-        let group_filter = if datasource_group
-            .group_master_key
-            .eq(config::UNKNOWN_GROUP_MASTER_KEY)
+        let group_filter = if datasource_group.group_master_key
+            == config::UNKNOWN_GROUP_MASTER_KEY
         {
             datasource_group::Column::GroupMasterKey.is_null()
         } else {
@@ -118,7 +116,10 @@ pub async fn oneoff_populate_signal_message_group_ids(
                 counter += 1;
                 break;
             } else {
-                info!("[{counter}/{count}] updating signal_message.group_id values for datasource_group {}...", datasource_group.id);
+                info!(
+                    "[{counter}/{count}] updating signal_message.group_id values for datasource_group {}...",
+                    datasource_group.id
+                );
             }
             signal_message::Entity::update_many()
                 .filter(signal_message::Column::Id.eq_any(messages_to_update))
@@ -150,7 +151,9 @@ where
         .await
         .context(h!())?;
     if pending_messages_count > 0 {
-        error!("Oneoff command 'oneoff_populate_signal_message_group_ids' should be executed! Pending signal messages: {pending_messages_count}");
+        error!(
+            "Oneoff command 'oneoff_populate_signal_message_group_ids' should be executed! Pending signal messages: {pending_messages_count}"
+        );
     }
     Ok(())
 }
@@ -260,11 +263,11 @@ async fn fix_retro_signal_group_mappings(
     for (group_id, internal_id) in keys_mapping {
         let from_groups = datasource_groups
             .iter()
-            .filter(|g| g.group_master_key.eq(&internal_id))
+            .filter(|g| g.group_master_key == internal_id)
             .collect::<Vec<_>>();
         let to_groups = datasource_groups
             .iter()
-            .filter(|g| g.group_master_key.eq(&group_id))
+            .filter(|g| g.group_master_key == group_id)
             .collect::<Vec<_>>();
         info!("{internal_id} => {group_id}: ");
         info!("from: {:?}", from_groups);
@@ -272,11 +275,18 @@ async fn fix_retro_signal_group_mappings(
         for source_group in from_groups {
             let target_group_id = to_groups
                 .iter()
-                .find(|g| g.datasource_id.eq(&source_group.datasource_id))
+                .find(|g| g.datasource_id == source_group.datasource_id)
                 .map(|g| g.id);
             if target_group_id.is_none() {
                 if interactive {
-                    let prompt = format!("Do you want to change master key of datasource group {} (id={}, datasource_id={}) from {} to {}?", source_group.name, source_group.id, source_group.datasource_id, source_group.group_master_key, group_id);
+                    let prompt = format!(
+                        "Do you want to change master key of datasource group {} (id={}, datasource_id={}) from {} to {}?",
+                        source_group.name,
+                        source_group.id,
+                        source_group.datasource_id,
+                        source_group.group_master_key,
+                        group_id
+                    );
                     let confirmed =
                         Confirm::with_theme(&ColorfulTheme::default())
                             .with_prompt(prompt)
@@ -287,7 +297,14 @@ async fn fix_retro_signal_group_mappings(
                         continue;
                     };
                 } else {
-                    info!("Changing master key of datasource group {} (id={}, datasource_id={}) from {} to {}", source_group.name, source_group.id, source_group.datasource_id, source_group.group_master_key, group_id);
+                    info!(
+                        "Changing master key of datasource group {} (id={}, datasource_id={}) from {} to {}",
+                        source_group.name,
+                        source_group.id,
+                        source_group.datasource_id,
+                        source_group.group_master_key,
+                        group_id
+                    );
                 }
 
                 let id = source_group.id;

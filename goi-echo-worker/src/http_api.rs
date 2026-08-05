@@ -253,7 +253,7 @@ mod tests {
             .expect("write readonly xlsx");
 
         let state = AppState {
-            db: DatabaseConnection::Disconnected,
+            db: DatabaseConnection::default(),
             config: Config {
                 pg_host: None,
                 pg_port: None,

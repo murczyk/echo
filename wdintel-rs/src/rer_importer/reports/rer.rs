@@ -514,7 +514,7 @@ fn insert_report_message(
         .entry(item_id)
         .and_modify(|message| {
             message.points.extend(points.iter().cloned());
-            if !comment.is_empty() && !message.comment.contains(&comment) {
+            if !comment.is_empty() && message.comment.find(&comment).is_none() {
                 message.comment = [message.comment.as_str(), comment.as_str()]
                     .into_iter()
                     .filter(|value| !value.is_empty())
@@ -1533,6 +1533,7 @@ mod tests {
             name: name.to_string(),
             comment: String::new(),
             battalion: battalion.to_string(),
+            search_tsv: None,
             sigint_origin_id: None,
             original_id: None,
             is_deduplicate_candidate: None,
@@ -1636,8 +1637,14 @@ mod tests {
         let sql_with_network =
             query_with_network.build(DbBackend::Postgres).to_string();
 
-        assert!(!sql_without_network.contains("sigint_inbox_item_network"));
-        assert!(sql_with_network.contains("sigint_inbox_item_network"));
+        assert!(!str::contains(
+            &sql_without_network,
+            "sigint_inbox_item_network"
+        ));
+        assert!(str::contains(
+            &sql_with_network,
+            "sigint_inbox_item_network"
+        ));
     }
 
     #[test]
@@ -1906,8 +1913,8 @@ mod tests {
             }) + prev_idx;
             prev_idx = idx;
         }
-        assert!(!xml.contains("Network"));
-        assert!(xml.contains("<w:br"));
+        assert!(!str::contains(&xml, "Network"));
+        assert!(str::contains(&xml, "<w:br"));
     }
 
     #[test]
@@ -1962,7 +1969,7 @@ mod tests {
         }
         assert_blank_paragraph_after(&xml, "Другий рядок");
         assert_blank_paragraph_after(&xml, "Наступна доба");
-        assert!(xml.contains("<w:br"));
+        assert!(str::contains(&xml, "<w:br"));
     }
 
     #[test]
@@ -1998,8 +2005,8 @@ mod tests {
             text,
             "ручний підрозділ\n2026-07-01\n06-45-00\nfoo\n\n14-47-00\nbar\n"
         );
-        assert!(!text.contains("50 обрБпС"));
-        assert!(!text.contains("33hhfg50d"));
+        assert!(!str::contains(&text, "50 обрБпС"));
+        assert!(!str::contains(&text, "33hhfg50d"));
     }
 
     #[test]
@@ -2165,9 +2172,9 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!body.contains("верхній коментар"));
-        assert!(!body.contains("нижній коментар"));
-        assert!(body.contains("— репліка"));
+        assert!(!str::contains(&body, "верхній коментар"));
+        assert!(!str::contains(&body, "нижній коментар"));
+        assert!(str::contains(&body, "— репліка"));
     }
 
     #[test]
@@ -2193,8 +2200,8 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!body.contains("другий рядок"));
-        assert!(body.contains("— репліка"));
+        assert!(!str::contains(&body, "другий рядок"));
+        assert!(str::contains(&body, "— репліка"));
     }
 
     #[test]
@@ -2210,8 +2217,8 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!body.contains("Переміщення"));
-        assert!(body.contains("— репліка"));
+        assert!(!str::contains(&body, "Переміщення"));
+        assert!(str::contains(&body, "— репліка"));
     }
 
     #[test]
@@ -2227,8 +2234,8 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!body.contains("важливе уточнення"));
-        assert!(body.contains("— репліка"));
+        assert!(!str::contains(&body, "важливе уточнення"));
+        assert!(str::contains(&body, "— репліка"));
     }
 
     #[test]
@@ -2244,9 +2251,9 @@ mod tests {
         )
         .unwrap();
 
-        assert!(!body.contains("важливе уточнення"));
+        assert!(!str::contains(&body, "важливе уточнення"));
         assert!(!body.lines().any(|line| line.trim() == "+"));
-        assert!(body.contains("— репліка"));
+        assert!(str::contains(&body, "— репліка"));
     }
 
     #[test]

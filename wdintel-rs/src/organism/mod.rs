@@ -7,7 +7,6 @@ use crate::users::{
     ensure_admin, ensure_rer_role, has_any_role, has_role,
     login_id_from_identity,
 };
-use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::sea_query::Expr;
@@ -142,6 +141,7 @@ pub async fn organism_active_logins(
         .filter(login::Column::OrganismId.eq(req.0))
         .filter(login::Column::Deleted.eq(false))
         .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(crate::ai_agent::unmanaged_login_condition())
         .all(&env.dbx)
         .await
         .c(h!())?
@@ -207,6 +207,7 @@ pub async fn organism_logins(
     let logins = login::Entity::find()
         .filter(login::Column::OrganismId.eq(organism_id))
         .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(crate::ai_agent::unmanaged_login_condition())
         .order_by_asc(login::Column::Login)
         .all(&env.dbx)
         .await
@@ -239,7 +240,7 @@ pub async fn my_scope(
         None => {
             return Err(AppError::BL {
                 msg: "User without organism_id is not supported".to_string(),
-            })
+            });
         }
     };
 

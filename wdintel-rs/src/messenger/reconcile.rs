@@ -514,7 +514,7 @@ async fn copy_annotation_rows(
     promoted_message_id: i64,
     sql: &str,
 ) -> anyhow::Result<()> {
-    txn.execute(Statement::from_sql_and_values(
+    txn.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         sql,
         [original_message_id.into(), promoted_message_id.into()],

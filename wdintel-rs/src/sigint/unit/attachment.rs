@@ -679,7 +679,7 @@ async fn parse_attachment_upload(
             _ => {
                 return Err(AppError::BL {
                     msg: format!("Unknown multipart field: {field_name}"),
-                })
+                });
             }
         }
     }

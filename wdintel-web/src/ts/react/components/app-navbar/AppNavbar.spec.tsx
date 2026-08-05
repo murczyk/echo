@@ -197,6 +197,22 @@ describe('AppNavbar', () => {
     expect(container.textContent).toContain('Адмін');
   });
 
+  it('renders admin groups as right-side flyout menus', () => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Admin'] },
+    });
+    const importTrigger = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="menu"]'),
+    ).find((button) => button.textContent?.includes('Імпорт'));
+
+    expect(importTrigger).toBeDefined();
+    expect(importTrigger?.parentElement?.classList.contains('app-navbar-flyout-item')).toBe(true);
+    expect(importTrigger?.nextElementSibling?.classList.contains('app-navbar-flyout')).toBe(true);
+    expect(importTrigger?.nextElementSibling?.textContent).toContain('Імпорт CSV');
+    expect(importTrigger?.nextElementSibling?.textContent).toContain('Імпорт Delta');
+  });
+
   it('shows Echo GPU servers after API integrations only when transcription is enabled', () => {
     const disabled = renderComponent({
       ...defaultProps,
@@ -240,7 +256,7 @@ describe('AppNavbar', () => {
     });
     const content = enabled.container.textContent ?? '';
     expect(content).toContain('Echo GPU Сервери');
-    expect(content.indexOf('API інтеграції')).toBeLessThan(content.indexOf('Echo GPU Сервери'));
+    expect(content.indexOf('Інтеграції API')).toBeLessThan(content.indexOf('Echo GPU Сервери'));
   });
 
   it('updates Echo GPU servers when shared transcription settings change', () => {
@@ -454,5 +470,18 @@ describe('AppNavbar', () => {
     const { container } = renderComponent(defaultProps);
     expect(container.querySelector('[data-testid="mock-changelog-dropdown"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="mock-profile-dropdown"]')).not.toBeNull();
+  });
+
+  it('shows a spinner instead of the anonymous profile while the user is loading', () => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, name: 'anonymous' },
+      shared: { ...defaultProps.shared, userLoaded: false },
+    });
+
+    expect(container.querySelector('[data-testid="mock-profile-dropdown"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Завантаження користувача"]')).not.toBeNull();
+    expect(container.querySelector('.MuiCircularProgress-root')).not.toBeNull();
+    expect(container.textContent).not.toContain('anonymous');
   });
 });

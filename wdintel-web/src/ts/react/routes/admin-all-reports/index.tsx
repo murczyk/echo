@@ -11,9 +11,7 @@ export function AdminAllReportsPage() {
       includeAuthor
       fullHeight
       compactFullHeight
-      showReportCount
       loadingRowCount={FULL_HEIGHT_LOADING_ROW_COUNT}
-      loadMoreLabel="Завантажити ще"
       loadReportHistoryBatch={listAllReportHistory}
     />
   );

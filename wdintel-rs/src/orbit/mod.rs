@@ -504,7 +504,7 @@ pub(crate) async fn acquire_import_lock(
         .await
         .c("failed to begin the ORBIT import lock transaction")?;
     transaction
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
             "select pg_advisory_xact_lock($1)",
             [crate::config::ORBIT_IMPORT_ADVISORY_LOCK_KEY.into()],
@@ -648,7 +648,7 @@ mod tests {
         };
 
         let row = second_transaction
-            .query_one(statement())
+            .query_one_raw(statement())
             .await
             .unwrap()
             .unwrap();
@@ -656,7 +656,7 @@ mod tests {
 
         first_lock.rollback().await.unwrap();
         let row = second_transaction
-            .query_one(statement())
+            .query_one_raw(statement())
             .await
             .unwrap()
             .unwrap();
@@ -678,6 +678,7 @@ mod tests {
             created_by_login_id: Uuid::new_v4(),
             name: "1 мсб ТрО 4 омсбр 3 ЗВА".to_string(),
             comment: String::new(),
+            search_tsv: None,
             sigint_origin_id: None,
             original_id: None,
             is_deduplicate_candidate: None,

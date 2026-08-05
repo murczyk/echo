@@ -10066,6 +10066,624 @@ sendAiChatMessageReqEncoder struct =
         ]
 
 
+type alias AiAgentProviderItem =
+    { id : String
+    , name : String
+    , modelName : String
+    }
+
+
+aiAgentProviderItemEncoder : AiAgentProviderItem -> Json.Encode.Value
+aiAgentProviderItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "modelName", (Json.Encode.string) struct.modelName )
+        ]
+
+
+type alias AiAgentConfigurationRsp =
+    { featureEnabled : Bool
+    , defaultAiEngineId : Maybe (String)
+    , providers : List (AiAgentProviderItem)
+    }
+
+
+aiAgentConfigurationRspEncoder : AiAgentConfigurationRsp -> Json.Encode.Value
+aiAgentConfigurationRspEncoder struct =
+    Json.Encode.object
+        [ ( "featureEnabled", (Json.Encode.bool) struct.featureEnabled )
+        , ( "defaultAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.defaultAiEngineId )
+        , ( "providers", (Json.Encode.list (aiAgentProviderItemEncoder)) struct.providers )
+        ]
+
+
+type alias AiAgentConversationSummary =
+    { id : String
+    , title : String
+    , aiEngineId : String
+    , createdAt : Int
+    , updatedAt : Int
+    }
+
+
+aiAgentConversationSummaryEncoder : AiAgentConversationSummary -> Json.Encode.Value
+aiAgentConversationSummaryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "title", (Json.Encode.string) struct.title )
+        , ( "aiEngineId", (Json.Encode.string) struct.aiEngineId )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        ]
+
+
+type alias AiAgentConversationListRsp =
+    { items : List (AiAgentConversationSummary)
+    }
+
+
+aiAgentConversationListRspEncoder : AiAgentConversationListRsp -> Json.Encode.Value
+aiAgentConversationListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (aiAgentConversationSummaryEncoder)) struct.items )
+        ]
+
+
+type alias AiAgentConversationCreateReq =
+    { aiEngineId : Maybe (String)
+    , title : Maybe (String)
+    }
+
+
+aiAgentConversationCreateReqEncoder : AiAgentConversationCreateReq -> Json.Encode.Value
+aiAgentConversationCreateReqEncoder struct =
+    Json.Encode.object
+        [ ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        , ( "title", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.title )
+        ]
+
+
+type alias AiAgentConversationIdReq =
+    { id : String
+    }
+
+
+aiAgentConversationIdReqEncoder : AiAgentConversationIdReq -> Json.Encode.Value
+aiAgentConversationIdReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        ]
+
+
+type alias AiAgentConversationUpdateReq =
+    { id : String
+    , title : String
+    }
+
+
+aiAgentConversationUpdateReqEncoder : AiAgentConversationUpdateReq -> Json.Encode.Value
+aiAgentConversationUpdateReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "title", (Json.Encode.string) struct.title )
+        ]
+
+
+type alias AiAgentMessageItem =
+    { requestId : String
+    , requestState : String
+    , role : String
+    , content : String
+    , createdAt : Int
+    }
+
+
+aiAgentMessageItemEncoder : AiAgentMessageItem -> Json.Encode.Value
+aiAgentMessageItemEncoder struct =
+    Json.Encode.object
+        [ ( "requestId", (Json.Encode.string) struct.requestId )
+        , ( "requestState", (Json.Encode.string) struct.requestState )
+        , ( "role", (Json.Encode.string) struct.role )
+        , ( "content", (Json.Encode.string) struct.content )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        ]
+
+
+type alias AiAgentConversationDetail =
+    { id : String
+    , title : String
+    , aiEngineId : String
+    , createdAt : Int
+    , updatedAt : Int
+    , messages : List (AiAgentMessageItem)
+    }
+
+
+aiAgentConversationDetailEncoder : AiAgentConversationDetail -> Json.Encode.Value
+aiAgentConversationDetailEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "title", (Json.Encode.string) struct.title )
+        , ( "aiEngineId", (Json.Encode.string) struct.aiEngineId )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        , ( "messages", (Json.Encode.list (aiAgentMessageItemEncoder)) struct.messages )
+        ]
+
+
+type alias AiAgentRequestCreateReq =
+    { conversationId : Maybe (String)
+    , aiEngineId : Maybe (String)
+    , prompt : String
+    }
+
+
+aiAgentRequestCreateReqEncoder : AiAgentRequestCreateReq -> Json.Encode.Value
+aiAgentRequestCreateReqEncoder struct =
+    Json.Encode.object
+        [ ( "conversationId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.conversationId )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        , ( "prompt", (Json.Encode.string) struct.prompt )
+        ]
+
+
+type alias AiAgentRequestCreateRsp =
+    { requestId : String
+    , conversationId : String
+    , state : String
+    }
+
+
+aiAgentRequestCreateRspEncoder : AiAgentRequestCreateRsp -> Json.Encode.Value
+aiAgentRequestCreateRspEncoder struct =
+    Json.Encode.object
+        [ ( "requestId", (Json.Encode.string) struct.requestId )
+        , ( "conversationId", (Json.Encode.string) struct.conversationId )
+        , ( "state", (Json.Encode.string) struct.state )
+        ]
+
+
+type alias AiAgentRequestIdReq =
+    { requestId : String
+    }
+
+
+aiAgentRequestIdReqEncoder : AiAgentRequestIdReq -> Json.Encode.Value
+aiAgentRequestIdReqEncoder struct =
+    Json.Encode.object
+        [ ( "requestId", (Json.Encode.string) struct.requestId )
+        ]
+
+
+type alias AiAgentRequestCancelRsp =
+    { state : String
+    }
+
+
+aiAgentRequestCancelRspEncoder : AiAgentRequestCancelRsp -> Json.Encode.Value
+aiAgentRequestCancelRspEncoder struct =
+    Json.Encode.object
+        [ ( "state", (Json.Encode.string) struct.state )
+        ]
+
+
+type alias AiAgentAdminSettingsItem =
+    { featureEnabled : Bool
+    , templateLoginId : String
+    , defaultAiEngineId : Maybe (String)
+    , reviewerAiEngineId : Maybe (String)
+    , securityReviewEnabled : Bool
+    , mattermostChatEnabled : Bool
+    , hasMattermostWebhook : Bool
+    , allowedAiEngineIds : List (String)
+    }
+
+
+aiAgentAdminSettingsItemEncoder : AiAgentAdminSettingsItem -> Json.Encode.Value
+aiAgentAdminSettingsItemEncoder struct =
+    Json.Encode.object
+        [ ( "featureEnabled", (Json.Encode.bool) struct.featureEnabled )
+        , ( "templateLoginId", (Json.Encode.string) struct.templateLoginId )
+        , ( "defaultAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.defaultAiEngineId )
+        , ( "reviewerAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.reviewerAiEngineId )
+        , ( "securityReviewEnabled", (Json.Encode.bool) struct.securityReviewEnabled )
+        , ( "mattermostChatEnabled", (Json.Encode.bool) struct.mattermostChatEnabled )
+        , ( "hasMattermostWebhook", (Json.Encode.bool) struct.hasMattermostWebhook )
+        , ( "allowedAiEngineIds", (Json.Encode.list (Json.Encode.string)) struct.allowedAiEngineIds )
+        ]
+
+
+type alias AiAgentAdminSettingsUpdateReq =
+    { featureEnabled : Bool
+    , templateLoginId : Maybe (String)
+    , defaultAiEngineId : Maybe (String)
+    , reviewerAiEngineId : Maybe (String)
+    , securityReviewEnabled : Bool
+    , mattermostChatEnabled : Bool
+    , mattermostWebhookUrl : Maybe (String)
+    , clearMattermostWebhook : Bool
+    , allowedAiEngineIds : List (String)
+    }
+
+
+aiAgentAdminSettingsUpdateReqEncoder : AiAgentAdminSettingsUpdateReq -> Json.Encode.Value
+aiAgentAdminSettingsUpdateReqEncoder struct =
+    Json.Encode.object
+        [ ( "featureEnabled", (Json.Encode.bool) struct.featureEnabled )
+        , ( "templateLoginId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.templateLoginId )
+        , ( "defaultAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.defaultAiEngineId )
+        , ( "reviewerAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.reviewerAiEngineId )
+        , ( "securityReviewEnabled", (Json.Encode.bool) struct.securityReviewEnabled )
+        , ( "mattermostChatEnabled", (Json.Encode.bool) struct.mattermostChatEnabled )
+        , ( "mattermostWebhookUrl", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mattermostWebhookUrl )
+        , ( "clearMattermostWebhook", (Json.Encode.bool) struct.clearMattermostWebhook )
+        , ( "allowedAiEngineIds", (Json.Encode.list (Json.Encode.string)) struct.allowedAiEngineIds )
+        ]
+
+
+type alias AiAgentDispatcherItem =
+    { configured : Bool
+    , host : String
+    , sshPort : Int
+    , sshUser : String
+    , namespace : String
+    , identityFile : String
+    , knownHostsFile : String
+    , identityFilePresent : Bool
+    , knownHostsFilePresent : Bool
+    , lastTestedAt : Maybe (Int)
+    , lastTestError : Maybe (String)
+    }
+
+
+aiAgentDispatcherItemEncoder : AiAgentDispatcherItem -> Json.Encode.Value
+aiAgentDispatcherItemEncoder struct =
+    Json.Encode.object
+        [ ( "configured", (Json.Encode.bool) struct.configured )
+        , ( "host", (Json.Encode.string) struct.host )
+        , ( "sshPort", (Json.Encode.int) struct.sshPort )
+        , ( "sshUser", (Json.Encode.string) struct.sshUser )
+        , ( "namespace", (Json.Encode.string) struct.namespace )
+        , ( "identityFile", (Json.Encode.string) struct.identityFile )
+        , ( "knownHostsFile", (Json.Encode.string) struct.knownHostsFile )
+        , ( "identityFilePresent", (Json.Encode.bool) struct.identityFilePresent )
+        , ( "knownHostsFilePresent", (Json.Encode.bool) struct.knownHostsFilePresent )
+        , ( "lastTestedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastTestedAt )
+        , ( "lastTestError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastTestError )
+        ]
+
+
+type alias AiAgentDispatcherUpdateReq =
+    { host : String
+    , sshPort : Int
+    , sshUser : String
+    , namespace : String
+    }
+
+
+aiAgentDispatcherUpdateReqEncoder : AiAgentDispatcherUpdateReq -> Json.Encode.Value
+aiAgentDispatcherUpdateReqEncoder struct =
+    Json.Encode.object
+        [ ( "host", (Json.Encode.string) struct.host )
+        , ( "sshPort", (Json.Encode.int) struct.sshPort )
+        , ( "sshUser", (Json.Encode.string) struct.sshUser )
+        , ( "namespace", (Json.Encode.string) struct.namespace )
+        ]
+
+
+type alias AiAgentEchoProxyItem =
+    { id : String
+    , hostname : String
+    , upstreamHost : String
+    , upstreamPort : Int
+    , enabled : Bool
+    , lastTestedAt : Maybe (Int)
+    , lastTestError : Maybe (String)
+    }
+
+
+aiAgentEchoProxyItemEncoder : AiAgentEchoProxyItem -> Json.Encode.Value
+aiAgentEchoProxyItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "hostname", (Json.Encode.string) struct.hostname )
+        , ( "upstreamHost", (Json.Encode.string) struct.upstreamHost )
+        , ( "upstreamPort", (Json.Encode.int) struct.upstreamPort )
+        , ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "lastTestedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastTestedAt )
+        , ( "lastTestError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastTestError )
+        ]
+
+
+type alias AiAgentEchoProxyListRsp =
+    { items : List (AiAgentEchoProxyItem)
+    }
+
+
+aiAgentEchoProxyListRspEncoder : AiAgentEchoProxyListRsp -> Json.Encode.Value
+aiAgentEchoProxyListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (aiAgentEchoProxyItemEncoder)) struct.items )
+        ]
+
+
+type alias AiAgentEchoProxyUpsertReq =
+    { id : Maybe (String)
+    , hostname : String
+    , upstreamHost : String
+    , upstreamPort : Int
+    , enabled : Bool
+    }
+
+
+aiAgentEchoProxyUpsertReqEncoder : AiAgentEchoProxyUpsertReq -> Json.Encode.Value
+aiAgentEchoProxyUpsertReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.id )
+        , ( "hostname", (Json.Encode.string) struct.hostname )
+        , ( "upstreamHost", (Json.Encode.string) struct.upstreamHost )
+        , ( "upstreamPort", (Json.Encode.int) struct.upstreamPort )
+        , ( "enabled", (Json.Encode.bool) struct.enabled )
+        ]
+
+
+type alias AiAgentIdReq =
+    { id : String
+    }
+
+
+aiAgentIdReqEncoder : AiAgentIdReq -> Json.Encode.Value
+aiAgentIdReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        ]
+
+
+type alias AiAgentContainerItem =
+    { linkedAgentId : String
+    , humanLoginId : String
+    , humanLogin : String
+    , agentLoginId : String
+    , agentLogin : String
+    , instanceName : String
+    , state : String
+    , lastError : Maybe (String)
+    , statsJson : Maybe (String)
+    , startedAt : Maybe (Int)
+    , stoppedAt : Maybe (Int)
+    , lastActivityAt : Maybe (Int)
+    }
+
+
+aiAgentContainerItemEncoder : AiAgentContainerItem -> Json.Encode.Value
+aiAgentContainerItemEncoder struct =
+    Json.Encode.object
+        [ ( "linkedAgentId", (Json.Encode.string) struct.linkedAgentId )
+        , ( "humanLoginId", (Json.Encode.string) struct.humanLoginId )
+        , ( "humanLogin", (Json.Encode.string) struct.humanLogin )
+        , ( "agentLoginId", (Json.Encode.string) struct.agentLoginId )
+        , ( "agentLogin", (Json.Encode.string) struct.agentLogin )
+        , ( "instanceName", (Json.Encode.string) struct.instanceName )
+        , ( "state", (Json.Encode.string) struct.state )
+        , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "statsJson", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.statsJson )
+        , ( "startedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.startedAt )
+        , ( "stoppedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.stoppedAt )
+        , ( "lastActivityAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastActivityAt )
+        ]
+
+
+type alias AiAgentContainerListRsp =
+    { items : List (AiAgentContainerItem)
+    }
+
+
+aiAgentContainerListRspEncoder : AiAgentContainerListRsp -> Json.Encode.Value
+aiAgentContainerListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (aiAgentContainerItemEncoder)) struct.items )
+        ]
+
+
+type alias AiAgentAdminRequestListReq =
+    { state : Maybe (String)
+    , suspicious : Maybe (Bool)
+    , limit : Maybe (Int)
+    }
+
+
+aiAgentAdminRequestListReqEncoder : AiAgentAdminRequestListReq -> Json.Encode.Value
+aiAgentAdminRequestListReqEncoder struct =
+    Json.Encode.object
+        [ ( "state", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.state )
+        , ( "suspicious", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.suspicious )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        ]
+
+
+type alias AiAgentSecurityReviewItem =
+    { state : String
+    , suspicious : Maybe (Bool)
+    , severity : Maybe (String)
+    , categories : List (String)
+    , summary : Maybe (String)
+    , attemptCount : Int
+    , lastError : Maybe (String)
+    , alertState : Maybe (String)
+    , alertAttemptCount : Int
+    , alertLastError : Maybe (String)
+    }
+
+
+aiAgentSecurityReviewItemEncoder : AiAgentSecurityReviewItem -> Json.Encode.Value
+aiAgentSecurityReviewItemEncoder struct =
+    Json.Encode.object
+        [ ( "state", (Json.Encode.string) struct.state )
+        , ( "suspicious", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.suspicious )
+        , ( "severity", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.severity )
+        , ( "categories", (Json.Encode.list (Json.Encode.string)) struct.categories )
+        , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.summary )
+        , ( "attemptCount", (Json.Encode.int) struct.attemptCount )
+        , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "alertState", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.alertState )
+        , ( "alertAttemptCount", (Json.Encode.int) struct.alertAttemptCount )
+        , ( "alertLastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.alertLastError )
+        ]
+
+
+type alias AiAgentAdminRequestItem =
+    { id : String
+    , conversationId : String
+    , humanLoginId : String
+    , humanLogin : String
+    , aiEngineId : String
+    , aiEngineName : String
+    , prompt : String
+    , response : Maybe (String)
+    , state : String
+    , error : Maybe (String)
+    , queuedAt : Int
+    , startedAt : Maybe (Int)
+    , completedAt : Maybe (Int)
+    , review : Maybe (AiAgentSecurityReviewItem)
+    }
+
+
+aiAgentAdminRequestItemEncoder : AiAgentAdminRequestItem -> Json.Encode.Value
+aiAgentAdminRequestItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "conversationId", (Json.Encode.string) struct.conversationId )
+        , ( "humanLoginId", (Json.Encode.string) struct.humanLoginId )
+        , ( "humanLogin", (Json.Encode.string) struct.humanLogin )
+        , ( "aiEngineId", (Json.Encode.string) struct.aiEngineId )
+        , ( "aiEngineName", (Json.Encode.string) struct.aiEngineName )
+        , ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "response", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.response )
+        , ( "state", (Json.Encode.string) struct.state )
+        , ( "error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.error )
+        , ( "queuedAt", (Json.Encode.int) struct.queuedAt )
+        , ( "startedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.startedAt )
+        , ( "completedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.completedAt )
+        , ( "review", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentSecurityReviewItemEncoder)) struct.review )
+        ]
+
+
+type alias AiAgentAdminRequestListRsp =
+    { items : List (AiAgentAdminRequestItem)
+    }
+
+
+aiAgentAdminRequestListRspEncoder : AiAgentAdminRequestListRsp -> Json.Encode.Value
+aiAgentAdminRequestListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (aiAgentAdminRequestItemEncoder)) struct.items )
+        ]
+
+
+type alias AiAgentRequestEventItem =
+    { sequence : Int
+    , eventType : String
+    , payloadJson : String
+    , createdAt : Int
+    }
+
+
+aiAgentRequestEventItemEncoder : AiAgentRequestEventItem -> Json.Encode.Value
+aiAgentRequestEventItemEncoder struct =
+    Json.Encode.object
+        [ ( "sequence", (Json.Encode.int) struct.sequence )
+        , ( "eventType", (Json.Encode.string) struct.eventType )
+        , ( "payloadJson", (Json.Encode.string) struct.payloadJson )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        ]
+
+
+type alias AiAgentAdminRequestDetail =
+    { request : AiAgentAdminRequestItem
+    , conversation : AiAgentConversationDetail
+    , events : List (AiAgentRequestEventItem)
+    }
+
+
+aiAgentAdminRequestDetailEncoder : AiAgentAdminRequestDetail -> Json.Encode.Value
+aiAgentAdminRequestDetailEncoder struct =
+    Json.Encode.object
+        [ ( "request", (aiAgentAdminRequestItemEncoder) struct.request )
+        , ( "conversation", (aiAgentConversationDetailEncoder) struct.conversation )
+        , ( "events", (Json.Encode.list (aiAgentRequestEventItemEncoder)) struct.events )
+        ]
+
+
+type alias AiAgentAdminUserReq =
+    { loginId : String
+    }
+
+
+aiAgentAdminUserReqEncoder : AiAgentAdminUserReq -> Json.Encode.Value
+aiAgentAdminUserReqEncoder struct =
+    Json.Encode.object
+        [ ( "loginId", (Json.Encode.string) struct.loginId )
+        ]
+
+
+type alias AiAgentAdminUserItem =
+    { humanLoginId : String
+    , humanLogin : String
+    , linkedAgentId : Maybe (String)
+    , agentLoginId : Maybe (String)
+    , agentLogin : Maybe (String)
+    , linkedLoginEnabled : Maybe (Bool)
+    , roles : List (String)
+    , organismId : Maybe (Int)
+    , organismName : Maybe (String)
+    , sigintZoneId : Maybe (Int)
+    , sigintZoneName : Maybe (String)
+    , directHiddenGroups : List (String)
+    , instanceName : Maybe (String)
+    , containerState : Maybe (String)
+    , containerLastError : Maybe (String)
+    , statsJson : Maybe (String)
+    }
+
+
+aiAgentAdminUserItemEncoder : AiAgentAdminUserItem -> Json.Encode.Value
+aiAgentAdminUserItemEncoder struct =
+    Json.Encode.object
+        [ ( "humanLoginId", (Json.Encode.string) struct.humanLoginId )
+        , ( "humanLogin", (Json.Encode.string) struct.humanLogin )
+        , ( "linkedAgentId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.linkedAgentId )
+        , ( "agentLoginId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.agentLoginId )
+        , ( "agentLogin", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.agentLogin )
+        , ( "linkedLoginEnabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.linkedLoginEnabled )
+        , ( "roles", (Json.Encode.list (Json.Encode.string)) struct.roles )
+        , ( "organismId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.organismId )
+        , ( "organismName", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.organismName )
+        , ( "sigintZoneId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintZoneId )
+        , ( "sigintZoneName", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sigintZoneName )
+        , ( "directHiddenGroups", (Json.Encode.list (Json.Encode.string)) struct.directHiddenGroups )
+        , ( "instanceName", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.instanceName )
+        , ( "containerState", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.containerState )
+        , ( "containerLastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.containerLastError )
+        , ( "statsJson", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.statsJson )
+        ]
+
+
+type alias AiAgentConnectionTestRsp =
+    { ok : Bool
+    , message : String
+    }
+
+
+aiAgentConnectionTestRspEncoder : AiAgentConnectionTestRsp -> Json.Encode.Value
+aiAgentConnectionTestRspEncoder struct =
+    Json.Encode.object
+        [ ( "ok", (Json.Encode.bool) struct.ok )
+        , ( "message", (Json.Encode.string) struct.message )
+        ]
+
+
 type alias AiCallsignEngineItem =
     { id : String
     , name : String
@@ -16895,6 +17513,315 @@ sendAiChatMessageReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chatId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+
+
+aiAgentProviderItemDecoder : Json.Decode.Decoder AiAgentProviderItem
+aiAgentProviderItemDecoder =
+    Json.Decode.succeed AiAgentProviderItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
+
+
+aiAgentConfigurationRspDecoder : Json.Decode.Decoder AiAgentConfigurationRsp
+aiAgentConfigurationRspDecoder =
+    Json.Decode.succeed AiAgentConfigurationRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "featureEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "defaultAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "providers" (Json.Decode.list (aiAgentProviderItemDecoder))))
+
+
+aiAgentConversationSummaryDecoder : Json.Decode.Decoder AiAgentConversationSummary
+aiAgentConversationSummaryDecoder =
+    Json.Decode.succeed AiAgentConversationSummary
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+
+
+aiAgentConversationListRspDecoder : Json.Decode.Decoder AiAgentConversationListRsp
+aiAgentConversationListRspDecoder =
+    Json.Decode.succeed AiAgentConversationListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiAgentConversationSummaryDecoder))))
+
+
+aiAgentConversationCreateReqDecoder : Json.Decode.Decoder AiAgentConversationCreateReq
+aiAgentConversationCreateReqDecoder =
+    Json.Decode.succeed AiAgentConversationCreateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiAgentConversationIdReqDecoder : Json.Decode.Decoder AiAgentConversationIdReq
+aiAgentConversationIdReqDecoder =
+    Json.Decode.succeed AiAgentConversationIdReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+
+
+aiAgentConversationUpdateReqDecoder : Json.Decode.Decoder AiAgentConversationUpdateReq
+aiAgentConversationUpdateReqDecoder =
+    Json.Decode.succeed AiAgentConversationUpdateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+
+
+aiAgentMessageItemDecoder : Json.Decode.Decoder AiAgentMessageItem
+aiAgentMessageItemDecoder =
+    Json.Decode.succeed AiAgentMessageItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestState" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "role" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+
+
+aiAgentConversationDetailDecoder : Json.Decode.Decoder AiAgentConversationDetail
+aiAgentConversationDetailDecoder =
+    Json.Decode.succeed AiAgentConversationDetail
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (aiAgentMessageItemDecoder))))
+
+
+aiAgentRequestCreateReqDecoder : Json.Decode.Decoder AiAgentRequestCreateReq
+aiAgentRequestCreateReqDecoder =
+    Json.Decode.succeed AiAgentRequestCreateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conversationId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+
+
+aiAgentRequestCreateRspDecoder : Json.Decode.Decoder AiAgentRequestCreateRsp
+aiAgentRequestCreateRspDecoder =
+    Json.Decode.succeed AiAgentRequestCreateRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conversationId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+
+
+aiAgentRequestIdReqDecoder : Json.Decode.Decoder AiAgentRequestIdReq
+aiAgentRequestIdReqDecoder =
+    Json.Decode.succeed AiAgentRequestIdReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.string)))
+
+
+aiAgentRequestCancelRspDecoder : Json.Decode.Decoder AiAgentRequestCancelRsp
+aiAgentRequestCancelRspDecoder =
+    Json.Decode.succeed AiAgentRequestCancelRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+
+
+aiAgentAdminSettingsItemDecoder : Json.Decode.Decoder AiAgentAdminSettingsItem
+aiAgentAdminSettingsItemDecoder =
+    Json.Decode.succeed AiAgentAdminSettingsItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "featureEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "templateLoginId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "defaultAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reviewerAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "securityReviewEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostChatEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasMattermostWebhook" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowedAiEngineIds" (Json.Decode.list (Json.Decode.string))))
+
+
+aiAgentAdminSettingsUpdateReqDecoder : Json.Decode.Decoder AiAgentAdminSettingsUpdateReq
+aiAgentAdminSettingsUpdateReqDecoder =
+    Json.Decode.succeed AiAgentAdminSettingsUpdateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "featureEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "templateLoginId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "defaultAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reviewerAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "securityReviewEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostChatEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostWebhookUrl" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clearMattermostWebhook" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowedAiEngineIds" (Json.Decode.list (Json.Decode.string))))
+
+
+aiAgentDispatcherItemDecoder : Json.Decode.Decoder AiAgentDispatcherItem
+aiAgentDispatcherItemDecoder =
+    Json.Decode.succeed AiAgentDispatcherItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "configured" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "host" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sshPort" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sshUser" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "namespace" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "identityFile" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "knownHostsFile" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "identityFilePresent" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "knownHostsFilePresent" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastTestedAt" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastTestError" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiAgentDispatcherUpdateReqDecoder : Json.Decode.Decoder AiAgentDispatcherUpdateReq
+aiAgentDispatcherUpdateReqDecoder =
+    Json.Decode.succeed AiAgentDispatcherUpdateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "host" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sshPort" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sshUser" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "namespace" (Json.Decode.string)))
+
+
+aiAgentEchoProxyItemDecoder : Json.Decode.Decoder AiAgentEchoProxyItem
+aiAgentEchoProxyItemDecoder =
+    Json.Decode.succeed AiAgentEchoProxyItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hostname" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "upstreamHost" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "upstreamPort" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastTestedAt" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastTestError" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiAgentEchoProxyListRspDecoder : Json.Decode.Decoder AiAgentEchoProxyListRsp
+aiAgentEchoProxyListRspDecoder =
+    Json.Decode.succeed AiAgentEchoProxyListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiAgentEchoProxyItemDecoder))))
+
+
+aiAgentEchoProxyUpsertReqDecoder : Json.Decode.Decoder AiAgentEchoProxyUpsertReq
+aiAgentEchoProxyUpsertReqDecoder =
+    Json.Decode.succeed AiAgentEchoProxyUpsertReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hostname" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "upstreamHost" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "upstreamPort" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+
+
+aiAgentIdReqDecoder : Json.Decode.Decoder AiAgentIdReq
+aiAgentIdReqDecoder =
+    Json.Decode.succeed AiAgentIdReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+
+
+aiAgentContainerItemDecoder : Json.Decode.Decoder AiAgentContainerItem
+aiAgentContainerItemDecoder =
+    Json.Decode.succeed AiAgentContainerItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "linkedAgentId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "humanLoginId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "humanLogin" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "agentLoginId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "agentLogin" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "instanceName" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "statsJson" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "startedAt" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "stoppedAt" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastActivityAt" (Json.Decode.nullable (Json.Decode.int))))
+
+
+aiAgentContainerListRspDecoder : Json.Decode.Decoder AiAgentContainerListRsp
+aiAgentContainerListRspDecoder =
+    Json.Decode.succeed AiAgentContainerListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiAgentContainerItemDecoder))))
+
+
+aiAgentAdminRequestListReqDecoder : Json.Decode.Decoder AiAgentAdminRequestListReq
+aiAgentAdminRequestListReqDecoder =
+    Json.Decode.succeed AiAgentAdminRequestListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "suspicious" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+
+
+aiAgentSecurityReviewItemDecoder : Json.Decode.Decoder AiAgentSecurityReviewItem
+aiAgentSecurityReviewItemDecoder =
+    Json.Decode.succeed AiAgentSecurityReviewItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "suspicious" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "severity" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "categories" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attemptCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "alertState" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "alertAttemptCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "alertLastError" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiAgentAdminRequestItemDecoder : Json.Decode.Decoder AiAgentAdminRequestItem
+aiAgentAdminRequestItemDecoder =
+    Json.Decode.succeed AiAgentAdminRequestItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conversationId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "humanLoginId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "humanLogin" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineName" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "response" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "queuedAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "startedAt" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completedAt" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "review" (Json.Decode.nullable (aiAgentSecurityReviewItemDecoder))))
+
+
+aiAgentAdminRequestListRspDecoder : Json.Decode.Decoder AiAgentAdminRequestListRsp
+aiAgentAdminRequestListRspDecoder =
+    Json.Decode.succeed AiAgentAdminRequestListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiAgentAdminRequestItemDecoder))))
+
+
+aiAgentRequestEventItemDecoder : Json.Decode.Decoder AiAgentRequestEventItem
+aiAgentRequestEventItemDecoder =
+    Json.Decode.succeed AiAgentRequestEventItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sequence" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "eventType" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "payloadJson" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+
+
+aiAgentAdminRequestDetailDecoder : Json.Decode.Decoder AiAgentAdminRequestDetail
+aiAgentAdminRequestDetailDecoder =
+    Json.Decode.succeed AiAgentAdminRequestDetail
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "request" (aiAgentAdminRequestItemDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conversation" (aiAgentConversationDetailDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "events" (Json.Decode.list (aiAgentRequestEventItemDecoder))))
+
+
+aiAgentAdminUserReqDecoder : Json.Decode.Decoder AiAgentAdminUserReq
+aiAgentAdminUserReqDecoder =
+    Json.Decode.succeed AiAgentAdminUserReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "loginId" (Json.Decode.string)))
+
+
+aiAgentAdminUserItemDecoder : Json.Decode.Decoder AiAgentAdminUserItem
+aiAgentAdminUserItemDecoder =
+    Json.Decode.succeed AiAgentAdminUserItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "humanLoginId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "humanLogin" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "linkedAgentId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "agentLoginId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "agentLogin" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "linkedLoginEnabled" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organismId" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organismName" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigintZoneId" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigintZoneName" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "directHiddenGroups" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "instanceName" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "containerState" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "containerLastError" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "statsJson" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiAgentConnectionTestRspDecoder : Json.Decode.Decoder AiAgentConnectionTestRsp
+aiAgentConnectionTestRspDecoder =
+    Json.Decode.succeed AiAgentConnectionTestRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ok" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
 
 
 aiCallsignEngineItemDecoder : Json.Decode.Decoder AiCallsignEngineItem

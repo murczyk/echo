@@ -11,7 +11,7 @@ use sea_orm::sea_query::{
 };
 use sea_orm::{
     ActiveEnum, ColumnTrait, Condition, ConnectionTrait, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect, Select,
+    ExprTrait, QueryFilter, QueryOrder, QuerySelect, Select,
 };
 use uuid::Uuid;
 
@@ -195,14 +195,14 @@ pub(in crate::devices::files) fn entry_strict_after_condition(
 ) -> Condition {
     Condition::all().add(
         Expr::tuple([
-            Expr::col((file_entry::Entity, file_entry::Column::Kind)).into(),
+            Expr::col((file_entry::Entity, file_entry::Column::Kind)),
             utf8_name_bytes_expr(),
-            Expr::col((file_entry::Entity, file_entry::Column::Id)).into(),
+            Expr::col((file_entry::Entity, file_entry::Column::Id)),
         ])
         .gt(Expr::tuple([
-            after.kind().as_enum(),
+            ActiveEnum::as_enum(&after.kind()),
             utf8_bytes_value(after.name()),
-            Expr::val(after.entry_id()).into(),
+            Expr::val(after.entry_id()),
         ])),
     )
 }

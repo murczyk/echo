@@ -9,7 +9,6 @@ use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::NetworkFreqFilter;
 use crate::sigint::network::bl::find_network;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use chrono::*;
 use sea_orm::*;
 use sea_query::{
@@ -1185,8 +1184,7 @@ where
                     [
                         Expr::col(
                             sigint_network_callsign_changelog::Column::OldValue,
-                        )
-                        .into(),
+                        ),
                         Expr::value(network_value.clone()),
                     ],
                 ))
@@ -1195,8 +1193,7 @@ where
                     [
                         Expr::col(
                             sigint_network_callsign_changelog::Column::NewValue,
-                        )
-                        .into(),
+                        ),
                         Expr::value(network_value),
                     ],
                 )),
@@ -1651,7 +1648,7 @@ where
     }
 
     let statement = txn.get_database_backend().build(&query);
-    let results = txn.query_all(statement).await.context(h!())?;
+    let results = txn.query_all_raw(statement).await.context(h!())?;
 
     let network_names = if network.name.is_empty() {
         vec![]

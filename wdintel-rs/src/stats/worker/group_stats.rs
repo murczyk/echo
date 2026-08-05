@@ -14,7 +14,10 @@ pub async fn worker_calculate_group_stats(mode: Mode) {
                 last_calculated = ts;
             }
             Err(e) => {
-                error!("worker_calculate_group_stats_inner encountered an error: {:#?}", e);
+                error!(
+                    "worker_calculate_group_stats_inner encountered an error: {:#?}",
+                    e
+                );
             }
         }
         sleep(Duration::from_secs(WORKER_CALCULATE_GROUP_STATS_SLEEP_SEC))

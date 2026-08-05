@@ -15,6 +15,7 @@ import type {
   MessageMediaInfo,
   Network,
   Tag,
+  ContentNode,
 } from '../../../../../Bindings';
 import { ELLIPSIS } from '../../../utils/misc';
 import { inboxMessageWithMockImages } from '../../rer-duty-neo/inbox-message-mocks';
@@ -1105,6 +1106,57 @@ describe('MessageCard', () => {
     expect(link?.textContent).toBe(url);
     expect(link?.getAttribute('target')).toBe('_blank');
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('folds marked message text after twenty source rows', async () => {
+    const rows = Array.from({ length: 21 }, (_, index) => `Рядок ${index + 1}`);
+    const textMarked: ContentNode[] = rows.flatMap((row, index) => [
+      index === 0
+        ? { CNHighlightC: { text: row, begin: 0, end: row.length } }
+        : { CNTextC: { text: row } },
+      ...(index < rows.length - 1 ? (['CNNewlineC'] as ContentNode[]) : []),
+    ]);
+    const view = await renderCard({
+      msg: buildMessage({ text: rows.join('\n'), textMarked }),
+    });
+    rendered.push(view);
+
+    const messageText = view.container.querySelector('.text-marked');
+    expect(messageText?.textContent).toContain('Рядок 1');
+    expect(messageText?.textContent).toContain('Рядок 20');
+    expect(messageText?.textContent).not.toContain('Рядок 21');
+
+    const showMoreButton = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Показати текст повідомлення"]',
+    );
+    if (showMoreButton == null) throw new Error('Show more button not found');
+    expect(showMoreButton.getAttribute('aria-expanded')).toBe('false');
+
+    await click(showMoreButton);
+
+    expect(messageText?.textContent).toContain('Рядок 21');
+    const collapseButton = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Згорнути текст повідомлення"]',
+    );
+    if (collapseButton == null) throw new Error('Collapse button not found');
+    expect(collapseButton.getAttribute('aria-expanded')).toBe('true');
+
+    await click(collapseButton);
+
+    expect(messageText?.textContent).not.toContain('Рядок 21');
+  });
+
+  it('does not fold message text with twenty source rows', async () => {
+    const rows = Array.from({ length: 20 }, (_, index) => `Рядок ${index + 1}`);
+    const view = await renderCard({
+      msg: buildMessage({ text: rows.join('\n'), textMarked: [] }),
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Рядок 20');
+    expect(
+      view.container.querySelector('button[aria-label="Показати текст повідомлення"]'),
+    ).toBeNull();
   });
 
   it('renders the network label in the header as bold text', async () => {

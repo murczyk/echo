@@ -5,7 +5,6 @@ use crate::rer_importer::types::{InboxMapItem, MapPointsFilter};
 use crate::sigint::network::types::*;
 use crate::types::*;
 use crate::users::ensure_rer_role;
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use actix_web::web::Json;
 use chrono::*;

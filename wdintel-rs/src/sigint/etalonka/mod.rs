@@ -378,7 +378,9 @@ pub(crate) async fn collect_etalonka_data_with_progress(
         let unit_name = &unit_key.unit_name;
         if show_logs {
             units_remaining -= 1;
-            info!("[trace_id={trace_id}] collecting report data for unit '{unit_name}', {units_remaining} left");
+            info!(
+                "[trace_id={trace_id}] collecting report data for unit '{unit_name}', {units_remaining} left"
+            );
         } else if let Some(progress) = progress {
             progress.start_unit(unit_name, unit_networks.len());
         }
@@ -388,7 +390,9 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             let network_id = network.id;
             if show_logs {
                 network_remaining -= 1;
-                info!("[trace_id={trace_id}] collecting report data for network id={network_id}, {network_remaining} left");
+                info!(
+                    "[trace_id={trace_id}] collecting report data for network id={network_id}, {network_remaining} left"
+                );
             }
             let key = EtalonkaEntryKey {
                 unit_name: unit_name.to_string(),

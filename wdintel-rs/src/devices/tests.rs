@@ -1015,7 +1015,7 @@ pub(in crate::devices) mod schema {
 
     async fn assert_exact_device_columns(dbx: &DatabaseConnection) {
         let columns = dbx
-            .query_all(Statement::from_string(
+            .query_all_raw(Statement::from_string(
                 DbBackend::Postgres,
                 r#"
     select column_name, is_nullable, column_default, data_type
@@ -1079,7 +1079,7 @@ pub(in crate::devices) mod schema {
         dbx: &DatabaseConnection,
     ) {
         let legacy_table: Option<String> = dbx
-            .query_one(Statement::from_string(
+            .query_one_raw(Statement::from_string(
                 DbBackend::Postgres,
                 "select to_regclass('public.device_file')::text as table_name"
                     .to_string(),
@@ -1095,7 +1095,7 @@ pub(in crate::devices) mod schema {
 
     async fn assert_device_aor_schema(dbx: &DatabaseConnection) {
         let constraints = dbx
-            .query_all(Statement::from_string(
+            .query_all_raw(Statement::from_string(
                 DbBackend::Postgres,
                 r#"
     select conname, contype::text, pg_get_constraintdef(oid)
@@ -1152,7 +1152,7 @@ pub(in crate::devices) mod schema {
         );
 
         let indexes = dbx
-            .query_all(Statement::from_string(
+            .query_all_raw(Statement::from_string(
                 DbBackend::Postgres,
                 r#"
     select indexname, indexdef
@@ -1256,6 +1256,26 @@ pub(in crate::devices) mod schema {
     ) -> bool {
         let mut source = Some(error);
         while let Some(error) = source {
+            if let Some(
+                sea_orm::DbErr::Conn(sea_orm::RuntimeErr::SqlxError(
+                    sqlx_error,
+                ))
+                | sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(
+                    sqlx_error,
+                ))
+                | sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(
+                    sqlx_error,
+                )),
+            ) = error.downcast_ref::<sea_orm::DbErr>()
+            {
+                if let sqlx::Error::Database(database_error) =
+                    sqlx_error.as_ref()
+                {
+                    if database_error.code().as_deref() == Some(code) {
+                        return true;
+                    }
+                }
+            }
             if let Some(sqlx::Error::Database(database_error)) =
                 error.downcast_ref::<sqlx::Error>()
             {

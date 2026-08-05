@@ -42,7 +42,6 @@ where
         name: Set(Some(name.clone())),
         login_id: Set(login),
         created_at: NotSet,
-        search_tsv: NotSet,
     };
     let device_name = device_name::Entity::insert(device_name)
         .exec(dbx)

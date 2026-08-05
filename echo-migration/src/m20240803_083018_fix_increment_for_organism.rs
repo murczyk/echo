@@ -10,7 +10,7 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
 
         let result = db
-            .query_one(Statement::from_string(
+            .query_one_raw(Statement::from_string(
                 DbBackend::Postgres,
                 "SELECT COALESCE(MAX(id), 0) as max_id FROM organism"
                     .to_owned(),

@@ -420,6 +420,31 @@ function useUsersColumns(): MRT_ColumnDef<Login>[] {
       {
         header: 'Логін',
         accessorKey: 'login',
+        Cell: ({ row }) => (
+          <Box
+            component="a"
+            href={`/admin/users-neo/${encodeURIComponent(row.original.id)}`}
+            onClick={(event) => {
+              if (
+                event.button === 0 &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.shiftKey &&
+                !event.altKey
+              ) {
+                event.preventDefault();
+                window.history.pushState(
+                  {},
+                  '',
+                  `/admin/users-neo/${encodeURIComponent(row.original.id)}`,
+                );
+                window.dispatchEvent(new PopStateEvent('popstate'));
+              }
+            }}
+          >
+            {row.original.login}
+          </Box>
+        ),
         size: 200,
       },
       {

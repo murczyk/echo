@@ -273,7 +273,10 @@ async fn run_goi_api_job(env: &Env, job: GoiApiJob) -> GoiApiJobResult {
             Err(err) => {
                 result.knowledge_sync_success = Some(false);
                 let label = job.integration.server_label.clone();
-                warn!("[goi_association_worker] Skipping GOI knowledge sync for {label}: {:#?}", err);
+                warn!(
+                    "[goi_association_worker] Skipping GOI knowledge sync for {label}: {:#?}",
+                    err
+                );
             }
         }
     }
@@ -748,7 +751,6 @@ async fn upsert_goi_knowledge_snapshot(
                 .action_cond_where(goi_knowledge_upsert_has_changes())
                 .to_owned(),
             )
-            .on_empty_do_nothing()
             .exec(&tx)
             .await
             .c(h!())?;
@@ -817,7 +819,7 @@ async fn prune_old_deleted_goi_knowledge(
     integration_id: i64,
 ) -> Result<(), AppError> {
     let deleted = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
             r#"
                 delete from goi_knowledge

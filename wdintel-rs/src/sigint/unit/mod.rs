@@ -9,7 +9,6 @@ use crate::types::*;
 use crate::users::{
     ensure_rer_role, has_any_role, has_role, login_id_from_identity,
 };
-use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
@@ -1269,7 +1268,6 @@ async fn move_orbit_unit_links(
                 ])
                 .to_owned(),
             )
-            .do_nothing()
             .exec_without_returning(&transaction)
             .await
             .context(h!())?;
@@ -1352,7 +1350,7 @@ where
                 WHERE id = $1"#,
         [unit_id.into()],
     );
-    txn.execute(statement).await.context(h!())?;
+    txn.execute_raw(statement).await.context(h!())?;
     Ok(())
 }
 

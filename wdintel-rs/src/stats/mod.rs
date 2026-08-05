@@ -8,7 +8,6 @@ use crate::rer_importer::types::*;
 use crate::sigint::freq::types::FreqGroupsMessageCountByDay;
 use crate::types::*;
 use crate::types::{Env, Mode, ShortContext};
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::{dt_from_millis, parse_local_datetime};
 use crate::{h, OneoffCalculateHistoricStatsPs, OneoffCalculateStatsPs};
 use anyhow::Context;
@@ -152,7 +151,9 @@ pub async fn oneoff_calculate_historic_stats(
         );
         let since_ts = start_of_day(previous_date).c(h!())?;
         let duration = (since_ts - min_since_ts).num_days();
-        info!("oneoff_calculate_historic_stats: from {since_ts} to {till_ts}, remaining {duration} days");
+        info!(
+            "oneoff_calculate_historic_stats: from {since_ts} to {till_ts}, remaining {duration} days"
+        );
         recalculate_group_stats(
             &dbx,
             &stats_redis,
@@ -246,10 +247,11 @@ where
     let mut enqueued = false;
     for row in message_rows {
         let since_ts = start_of_day(get_local_date(row.message_ts)).c(h!())?;
-        let till_ts =
+        let till_ts = std::cmp::min(
             start_of_day(get_local_date(row.message_ts) + Duration::days(1))
-                .c(h!())?
-                .min(now);
+                .c(h!())?,
+            now,
+        );
         if till_ts <= since_ts {
             continue;
         }
@@ -308,9 +310,11 @@ where
     };
 
     let since_ts = start_of_day(get_local_date(raw_since_ts)).c(h!())?;
-    let till_ts = start_of_day(get_local_date(raw_till_ts) + Duration::days(1))
-        .c(h!())?
-        .min(Utc::now().naive_utc());
+    let till_ts = std::cmp::min(
+        start_of_day(get_local_date(raw_till_ts) + Duration::days(1))
+            .c(h!())?,
+        Utc::now().naive_utc(),
+    );
     if till_ts <= since_ts {
         return Ok(None);
     }
@@ -353,7 +357,7 @@ where
     "#;
     loop {
         let result = dbx
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 sql,
                 vec![
@@ -390,9 +394,11 @@ pub async fn process_pending_group_stats_recalculation_task(
         return Ok(false);
     };
 
-    let chunk_till_ts = (task.since_ts
-        + Duration::days(GROUP_STATS_RECALCULATION_TASK_CHUNK_DAYS))
-    .min(task.till_ts);
+    let chunk_till_ts = std::cmp::min(
+        task.since_ts
+            + Duration::days(GROUP_STATS_RECALCULATION_TASK_CHUNK_DAYS),
+        task.till_ts,
+    );
     info!(
         "recalculating queued group stats task id={} group={} from={} till={} remaining_till={} reason={}",
         task.id,
@@ -619,7 +625,7 @@ fn stats_aggregated_time_range_for_config(
     now: NaiveDateTime,
 ) -> anyhow::Result<Option<(NaiveDateTime, NaiveDateTime)>> {
     let dt_since = round_up_to_5min(dt_since)?;
-    let dt_till = round_up_to_5min(dt_till.min(now))?;
+    let dt_till = round_up_to_5min(std::cmp::min(dt_till, now))?;
     Ok(can_read_stats_aggregated_at(config, dt_since, dt_till, now)
         .then_some((dt_since, dt_till)))
 }
@@ -725,7 +731,7 @@ pub async fn get_last_hour_stats(
         Ok(buckets) => buckets,
         Err(error) => {
             warn!(
-                        "Redis last-hour stats missed a bucket; rebuilding from PostgreSQL: {error:#}"
+                "Redis last-hour stats missed a bucket; rebuilding from PostgreSQL: {error:#}"
             );
             repair_redis_general_stats(
                 env,
@@ -2143,8 +2149,10 @@ async fn write_redis_general_days(
     let mut date = since_date;
     while date <= till_date {
         let day_since = start_of_day(date).c(h!())?;
-        let day_till =
-            start_of_day(date + Duration::days(1)).c(h!())?.min(till_ts);
+        let day_till = std::cmp::min(
+            start_of_day(date + Duration::days(1)).c(h!())?,
+            till_ts,
+        );
         let timestamps = five_minute_timestamps(day_since, day_till);
         let calculated = calculated_buckets.and_then(|buckets| {
             timestamps
@@ -2293,7 +2301,9 @@ async fn update_network_freq_last_seen(
         {
             last_seen
                 .entry(freq_range.id)
-                .and_modify(|current| *current = (*current).max(timestamp))
+                .and_modify(|current| {
+                    *current = std::cmp::max(*current, timestamp)
+                })
                 .or_insert(timestamp);
         }
     }
@@ -2421,9 +2431,12 @@ pub async fn recalculate_last_seen_for_networks_exact(
            and nf.network_id in ({network_ids_sql}){active_freq_filter}"
     );
 
-    dbx.execute(Statement::from_string(DatabaseBackend::Postgres, reset_sql))
-        .await
-        .c(h!())?;
+    dbx.execute_raw(Statement::from_string(
+        DatabaseBackend::Postgres,
+        reset_sql,
+    ))
+    .await
+    .c(h!())?;
 
     let update_sql = format!(
         "update sigint_network_freq as nf
@@ -2450,7 +2463,7 @@ pub async fn recalculate_last_seen_for_networks_exact(
          where nf.id = sub.network_freq_id"
     );
 
-    dbx.execute(Statement::from_string(
+    dbx.execute_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         update_sql,
     ))

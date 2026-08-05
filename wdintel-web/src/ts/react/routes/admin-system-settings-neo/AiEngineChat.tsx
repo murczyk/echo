@@ -3,7 +3,6 @@ import SendIcon from '@mui/icons-material/Send';
 import {
   Box,
   CircularProgress,
-  Divider,
   List,
   ListItemButton,
   ListItemText,
@@ -18,6 +17,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { AiChatDetail, AiChatSummary, AiEngineItem } from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
+import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { getAiChat, listAiChats, sendAiChatMessage } from '../../services/api/ai-engines';
 
 function errorMessage(error: unknown): string {
@@ -48,7 +48,7 @@ function ChatMessages({ aiChat }: { aiChat: AiChatDetail | null }) {
   }
 
   return (
-    <Stack spacing={2} sx={{ p: 2 }}>
+    <Stack spacing={2} sx={{ p: 2, width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
       {aiChat.messages.map((message) => {
         const isUser = message.role === 'user';
         return (
@@ -82,6 +82,7 @@ export function AiEngineChat({ aiEngine }: { aiEngine: AiEngineItem }) {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -165,92 +166,120 @@ export function AiEngineChat({ aiEngine }: { aiEngine: AiEngineItem }) {
 
   return (
     <Stack spacing={2}>
-      <Box>
-        <Typography component="h3" variant="h6">
-          Тестовий чат
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Запити надсилаються через OpenAI Chat Completions API.
-        </Typography>
-      </Box>
-
       {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
 
       <Paper
         variant="outlined"
         sx={{
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', md: '280px minmax(0, 1fr)' },
+          display: 'flex',
+          flexDirection: 'column',
           minHeight: 560,
           overflow: 'hidden',
           borderRadius: 0,
         }}
       >
         <Box
-          sx={{ borderRight: { md: 1 }, borderBottom: { xs: 1, md: 0 }, borderColor: 'divider' }}
+          sx={{
+            px: 1,
+            py: 0.5,
+            borderBottom: 1,
+            borderColor: 'divider',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 1,
+          }}
         >
-          <Box sx={{ p: 1.5 }}>
-            <PowerButton
-              type="button"
-              fullWidth
-              variant="outlined"
-              onClick={startNewChat}
-              startIcon={<AddCommentOutlinedIcon />}
-            >
-              Новий чат
-            </PowerButton>
-          </Box>
-          <Divider />
-          <List dense disablePadding sx={{ maxHeight: { xs: 220, md: 500 }, overflowY: 'auto' }}>
-            {aiChats.map((chat) => (
-              <ListItemButton
-                key={chat.id}
-                selected={chat.id === selectedChatId}
-                onClick={() => void selectChat(chat.id)}
-              >
-                <ListItemText
-                  primary={chat.title}
-                  secondary={`${chat.createdBy} · ${formatDate(chat.updatedAt)}`}
-                  primaryTypographyProps={{ noWrap: true }}
-                  secondaryTypographyProps={{ noWrap: true }}
-                />
-              </ListItemButton>
-            ))}
-            {!loading && aiChats.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
-                Попередніх чатів немає.
-              </Typography>
-            ) : null}
-          </List>
+          <SidePanelToggleButton
+            side="left"
+            active={historyOpen}
+            label={historyOpen ? 'Згорнути ліву панель' : 'Розгорнути ліву панель'}
+            onClick={() => setHistoryOpen((current) => !current)}
+          />
+          <PowerButton
+            type="button"
+            size="small"
+            variant="outlined"
+            onClick={startNewChat}
+            startIcon={<AddCommentOutlinedIcon />}
+          >
+            Новий чат
+          </PowerButton>
         </Box>
-
-        <Box sx={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', minWidth: 0 }}>
-          <Box sx={{ display: 'flex', overflowY: 'auto', maxHeight: 480 }}>
-            {loading ? <CircularProgress sx={{ m: 'auto' }} /> : <ChatMessages aiChat={aiChat} />}
-          </Box>
-          <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-            <Stack direction="row" spacing={1} alignItems="flex-end">
-              <TextField
-                fullWidth
-                multiline
-                maxRows={6}
-                label="Повідомлення"
-                value={prompt}
-                disabled={sending}
-                onChange={(event) => setPrompt(event.target.value)}
-                onKeyDown={handlePromptKeyDown}
-              />
-              <PowerButton
-                type="button"
-                variant="contained"
-                disabled={sending || !prompt.trim()}
-                onClick={() => void sendMessage()}
-                startIcon={sending ? <CircularProgress size={18} /> : <SendIcon />}
-                sx={{ minHeight: 56 }}
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: historyOpen
+              ? { xs: '1fr', md: '280px minmax(0, 1fr)' }
+              : 'minmax(0, 1fr)',
+            flex: 1,
+            minHeight: 0,
+          }}
+        >
+          {historyOpen ? (
+            <Box
+              sx={{
+                borderRight: { md: 1 },
+                borderBottom: { xs: 1, md: 0 },
+                borderColor: 'divider',
+              }}
+            >
+              <List
+                dense
+                disablePadding
+                sx={{ maxHeight: { xs: 220, md: 500 }, overflowY: 'auto' }}
               >
-                Надіслати
-              </PowerButton>
-            </Stack>
+                {aiChats.map((chat) => (
+                  <ListItemButton
+                    key={chat.id}
+                    selected={chat.id === selectedChatId}
+                    onClick={() => void selectChat(chat.id)}
+                  >
+                    <ListItemText
+                      primary={chat.title}
+                      secondary={`${chat.createdBy} · ${formatDate(chat.updatedAt)}`}
+                      primaryTypographyProps={{ noWrap: true }}
+                      secondaryTypographyProps={{ noWrap: true }}
+                    />
+                  </ListItemButton>
+                ))}
+                {!loading && aiChats.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+                    Попередніх чатів немає.
+                  </Typography>
+                ) : null}
+              </List>
+            </Box>
+          ) : null}
+
+          <Box sx={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', minWidth: 0 }}>
+            <Box sx={{ display: 'flex', overflowY: 'auto', maxHeight: 480 }}>
+              {loading ? <CircularProgress sx={{ m: 'auto' }} /> : <ChatMessages aiChat={aiChat} />}
+            </Box>
+            <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
+              <Stack direction="row" spacing={1} alignItems="flex-end">
+                <TextField
+                  fullWidth
+                  multiline
+                  maxRows={6}
+                  label="Повідомлення"
+                  value={prompt}
+                  disabled={sending}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  onKeyDown={handlePromptKeyDown}
+                />
+                <PowerButton
+                  type="button"
+                  variant="contained"
+                  disabled={sending || !prompt.trim()}
+                  onClick={() => void sendMessage()}
+                  startIcon={sending ? <CircularProgress size={18} /> : <SendIcon />}
+                  sx={{ minHeight: 56 }}
+                >
+                  Надіслати
+                </PowerButton>
+              </Stack>
+            </Box>
           </Box>
         </Box>
       </Paper>

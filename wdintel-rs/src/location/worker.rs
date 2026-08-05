@@ -56,7 +56,10 @@ pub async fn run_process_coords_locations_worker(
                     .await
                     .c(h!())?
                 else {
-                    error!("[run_process_coords_locations_worker] failed to find inbox item {}", peleng.source_inbox_item_id);
+                    error!(
+                        "[run_process_coords_locations_worker] failed to find inbox item {}",
+                        peleng.source_inbox_item_id
+                    );
                     offset += 1;
                     continue;
                 };

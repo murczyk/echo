@@ -7,7 +7,6 @@ use crate::messenger::group::get_identity_sigint_groups;
 use crate::messenger::group::types::SignalGroupEntryF2;
 use crate::session::{record_new_session, record_page_visit};
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
 use actix_session::SessionExt;
 use actix_web::web::Json;
@@ -254,7 +253,7 @@ fn role_matches(roles: &[String], role: &str) -> Result<bool, AppError> {
         role => {
             return Err(AppError::BL {
                 msg: format!("impossible! unknown role {role}"),
-            })
+            });
         }
     })
 }
@@ -291,10 +290,10 @@ pub async fn update_login(
     let req = req.into_inner();
     let update_description = has_update_login_description(&req);
     let req: UpdateLoginReq = serde_json::from_value(req).c(h!())?;
-
     let txn = env.dbx.begin().await.c(h!())?;
 
     let login_id = Uuid::parse_str(&req.id).c(h!())?;
+    crate::ai_agent::ensure_unmanaged_login(&txn, login_id).await?;
     let login_obj = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Id.eq(login_id))
@@ -435,6 +434,7 @@ pub async fn delete_login(
 
     let txn = env.dbx.begin().await.c(h!())?;
     let login_id = Uuid::parse_str(req.as_str()).c(h!())?;
+    crate::ai_agent::ensure_unmanaged_login(&txn, login_id).await?;
     let login_obj = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Id.eq(login_id))
@@ -459,7 +459,6 @@ pub async fn create_login(
     req: Json<CreateLoginReq>,
 ) -> Result<Json<Login>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-
     let salt_s =
         format!("{}{}", crate::config::IDENTITY_SALT, req.login.clone());
     let salt = salt_s.as_bytes();
@@ -547,7 +546,6 @@ pub async fn create_delta_login(
     has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
         .c(h!())?;
-
     let login = req.login.clone();
     let roles = req.roles.clone();
     let sigint_zone = req.sigint_zone_id;
@@ -604,6 +602,7 @@ pub async fn list_logins(
                 .add(login::Column::OrganismId.is_null()),
         )
         .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(crate::ai_agent::unmanaged_login_condition())
         .select_only()
         .columns([
             login::Column::Id,
@@ -1389,7 +1388,10 @@ pub async fn validate_login(
     };
     if let Some(organism) = organisms.into_iter().next() {
         if !organism.enabled {
-            println!("user {} not authorized, reason: organism {} (id {}) was disabled", login, organism.name, organism.id);
+            println!(
+                "user {} not authorized, reason: organism {} (id {}) was disabled",
+                login, organism.name, organism.id
+            );
             return Ok(UserValidationResult {
                 login_model: None,
                 is_valid: true,
@@ -1402,7 +1404,9 @@ pub async fn validate_login(
     if login_obj.deleted {
         let (msg, reason) = match login_obj.deactivation_reason {
             Some(DeactivationReasonEnum::Inactive) => {
-                let message = format!("Користувача \"{login}\" було заблоковано як не активного більше {INACTIVE_USERS_DEACTIVATE_AFTER_DAYS} днів. Зверніться до адміністратора");
+                let message = format!(
+                    "Користувача \"{login}\" було заблоковано як не активного більше {INACTIVE_USERS_DEACTIVATE_AFTER_DAYS} днів. Зверніться до адміністратора"
+                );
                 (message, Some(DeactivationReasonEnum::Inactive))
             }
             Some(DeactivationReasonEnum::Admin) => {

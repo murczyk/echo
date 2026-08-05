@@ -139,7 +139,10 @@ pub async fn load_coordinates_from_kmz(
                 let coordinates = match load_coordinates_from_kml(path).await {
                     Ok(c) => c,
                     Err(e) => {
-                        error!("failed to read all coordinates from kmz {:?}, bad file at {:?}: {:?}", kmz_path, path, e);
+                        error!(
+                            "failed to read all coordinates from kmz {:?}, bad file at {:?}: {:?}",
+                            kmz_path, path, e
+                        );
                         continue;
                     }
                 };
@@ -221,7 +224,10 @@ pub async fn load_coordinates_from_kml(
                                 }
                             }
                             Err(e) => {
-                                error!("Failed to parse line coordinates {coords}: {:?}", e)
+                                error!(
+                                    "Failed to parse line coordinates {coords}: {:?}",
+                                    e
+                                )
                             }
                         }
                     }

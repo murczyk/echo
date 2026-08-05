@@ -2,7 +2,6 @@ use crate::entities::*;
 use crate::sigint::network::types::{
     ListNetworksReq, ListNetworksStatusFilter,
 };
-use crate::utils::orm::ArrayColumnOps;
 use sea_orm::sea_query::*;
 use sea_orm::*;
 

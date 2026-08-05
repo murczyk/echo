@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
+pub mod ai_agent;
 pub mod ai_callsign;
 pub mod ai_engine;
 mod alpine;
@@ -708,6 +709,24 @@ pub struct OneoffMigrateLargeMediaToPlaintextPs {
     pub dry_run: bool,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct OneoffExportLocalAiAgentProfilePs {
+    #[arg(long)]
+    pub output: std::path::PathBuf,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct OneoffImportLocalAiAgentProfilePs {
+    #[arg(long)]
+    pub input: std::path::PathBuf,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct OneoffDiscardCopiedAiAgentRuntimePs {
+    #[arg(long)]
+    pub clear_control_plane: bool,
+}
+
 #[derive(clap::Args, Debug, Clone)]
 pub struct OneoffBackfillAudioTranscriberPs {
     #[arg(long)]
@@ -869,6 +888,9 @@ enum Cmd {
     OneoffRestartEcho(OneoffRestartEchoPs),
     OneoffKillOldQueries(OneoffKillOldQueriesPs),
     OneoffRefreshAiModels,
+    OneoffExportLocalAiAgentProfile(OneoffExportLocalAiAgentProfilePs),
+    OneoffImportLocalAiAgentProfile(OneoffImportLocalAiAgentProfilePs),
+    OneoffDiscardCopiedAiAgentRuntime(OneoffDiscardCopiedAiAgentRuntimePs),
     OneoffMigrateModulationToEncryption(OneoffMigrateModulationToEncryptionPs),
     OneoffMigrateLargeMediaToPlaintext(OneoffMigrateLargeMediaToPlaintextPs),
     OneoffBackfillAudioTranscriber(OneoffBackfillAudioTranscriberPs),
@@ -1545,6 +1567,15 @@ async fn async_main(
             palitra::oneoff::oneoff_backup_palitras(mode).await
         }
         Cmd::OneoffRefreshAiModels => tags::worker::oneoff_refresh_models(mode).await,
+        Cmd::OneoffExportLocalAiAgentProfile(ps) => {
+            ai_agent::profile::export(mode, &ps.output).await
+        }
+        Cmd::OneoffImportLocalAiAgentProfile(ps) => {
+            ai_agent::profile::import(mode, &ps.input).await
+        }
+        Cmd::OneoffDiscardCopiedAiAgentRuntime(ps) => {
+            ai_agent::profile::discard_runtime(mode, ps.clear_control_plane).await
+        }
         Cmd::OneoffMigrateModulationToEncryption(ps) => {
             sigint::network::oneoff::oneoff_migrate_modulation_to_encryption(
                 mode, ps.dry_run,

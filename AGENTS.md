@@ -165,3 +165,7 @@ Solve tasks correctly with strong reasoning, but minimize visible output tokens.
 - Start markers such as `**A.**` and `**B.**` in new paragraphs.
 - Separate them from preceding text with a blank line.
 - Never rely on a single source newline to create a visible line break.
+
+## Notifications
+
+- When done planning, implementing a plan, a feature, finishing a review or any other work taking more than 3 minutes, and .env contains a MATTERMOST_NOTIFICATION_HOOK, notify once you're done with the work

@@ -6,7 +6,6 @@ use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
 use crate::rer_importer::types::InboxMessagesReq;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
 use chrono::prelude::*;
 use docx_rs::*;
@@ -225,12 +224,12 @@ pub async fn report_docx_kind_reo(
 
     let network_summary_total =
         report.summary.identified_qty + report.summary.unidentified_qty;
-    let network_summary =
-        format!("Відмічено радіомереж (радіонапрямків): {} (визначені - {}, не визначено - {})",
-                network_summary_total,
-                report.summary.identified_qty,
-                report.summary.unidentified_qty
-        );
+    let network_summary = format!(
+        "Відмічено радіомереж (радіонапрямків): {} (визначені - {}, не визначено - {})",
+        network_summary_total,
+        report.summary.identified_qty,
+        report.summary.unidentified_qty
+    );
 
     let result = match req.report_type {
         Some(ReportType::Reo(_, ReoReportFileType::Xlsx)) => {
@@ -920,7 +919,7 @@ async fn collect_report(
 
     info!("collect_report: loading unit_callsigns from DB");
     let start = Instant::now();
-    let sigint_network_ids = networks
+    let sigint_network_ids: Vec<i64> = networks
         .network_summaries_dictionary
         .keys()
         .cloned()
@@ -1173,8 +1172,12 @@ async fn collect_report(
             all_undefined_networks.push(row);
         }
     }
-    info!("collect_report: building network rows took: {:?}, identified: {}, undefined: {}",
-          start.elapsed(), all_hostile_networks.len(), all_undefined_networks.len());
+    info!(
+        "collect_report: building network rows took: {:?}, identified: {}, undefined: {}",
+        start.elapsed(),
+        all_hostile_networks.len(),
+        all_undefined_networks.len()
+    );
 
     info!("collect_report: sorting and filtering undefined networks");
     let start = Instant::now();

@@ -257,7 +257,7 @@ async fn add_tag_keywords(
     let tag_keywords_to_insert = try_join_all(keywords_task).await.c(h!())?;
 
     let res = tag_keyword::Entity::insert_many(tag_keywords_to_insert)
-        .exec_with_returning_many(&env.dbx)
+        .exec_with_returning(&env.dbx)
         .await
         .c(h!())?;
 
@@ -605,7 +605,11 @@ async fn inbox_message_tags_model_error(
             .unwrap_or_else(|| "unknown-model".to_string());
         info!(
             "bot tag removal requested: tag_id={} model={} confidence={:.3} by user={} (sigint_inbox_item={})",
-            tag.tag_id, model_name, tag.confidence, user_id, tag.sigint_inbox_item_id
+            tag.tag_id,
+            model_name,
+            tag.confidence,
+            user_id,
+            tag.sigint_inbox_item_id
         );
         error_records.push(sigint_inbox_tag_model_error::ActiveModel {
             sigint_inbox_item_id: Set(tag.sigint_inbox_item_id),

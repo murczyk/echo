@@ -981,12 +981,12 @@ async fn fetch_analytics_network_count_for_req(
         crate::utils::dt_from_millis(req.till_date_noninclusive_ms)?,
         master_keys,
     )?;
-    assert!(statement.sql.contains("UNION ALL"));
-    assert!(statement.sql.contains("COUNT(DISTINCT network_id)"));
-    assert!(!statement.sql.contains("SELECT DISTINCT"));
-    assert!(!statement.sql.contains("WITH "));
-    assert!(!statement.sql.contains("FROM \"login\""));
-    assert!(!statement.sql.contains("JOIN \"login\""));
+    assert!(statement.sql.find("UNION ALL").is_some());
+    assert!(statement.sql.find("COUNT(DISTINCT network_id)").is_some());
+    assert!(statement.sql.find("SELECT DISTINCT").is_none());
+    assert!(statement.sql.find("WITH ").is_none());
+    assert!(statement.sql.find("FROM \"login\"").is_none());
+    assert!(statement.sql.find("JOIN \"login\"").is_none());
     Ok(AnalyticsCountQueryResult::find_by_statement(statement)
         .one(&env.dbx)
         .await
@@ -1052,10 +1052,10 @@ async fn fetch_analytics_tag_count_for_req(
         master_keys,
     )?;
     let statement = query.build(DbBackend::Postgres);
-    assert!(statement.sql.contains("COUNT(DISTINCT"));
-    assert!(!statement.sql.contains("owner_organism_id"));
-    assert!(!statement.sql.contains("FROM \"login\""));
-    assert!(!statement.sql.contains("JOIN \"login\""));
+    assert!(statement.sql.find("COUNT(DISTINCT").is_some());
+    assert!(statement.sql.find("owner_organism_id").is_none());
+    assert!(statement.sql.find("FROM \"login\"").is_none());
+    assert!(statement.sql.find("JOIN \"login\"").is_none());
     Ok(query
         .into_model::<AnalyticsCountQueryResult>()
         .one(&env.dbx)
@@ -1234,9 +1234,9 @@ fn filter_selected_metadata_without_metadata_ignores_concrete_filters() {
 
     let sql = q.build(DbBackend::Postgres).to_string();
 
-    assert!(sql.contains("NOT EXISTS"));
-    assert!(!sql.contains("sender_id"));
-    assert!(!sql.contains("sender_name"));
+    assert!(str::contains(&sql, "NOT EXISTS"));
+    assert!(!str::contains(&sql, "sender_id"));
+    assert!(!str::contains(&sql, "sender_name"));
 }
 
 #[test]
@@ -1259,26 +1259,35 @@ fn postgres_tags_query_filters_inbox_ids_before_joining_result_tags() {
         "{sql}"
     );
     assert!(
-        sql.contains(", \"matching_unit_inbox_item_ids\" AS"),
+        str::contains(&sql, ", \"matching_unit_inbox_item_ids\" AS"),
         "{sql}"
     );
-    assert_eq!(sql.matches("MATERIALIZED").count(), 3, "{sql}");
-    assert!(sql.contains(" UNION ALL "), "{sql}");
-    assert!(sql.contains(", \"filtered_inbox_items\" AS"), "{sql}");
-    assert!(sql.contains("MATERIALIZED ("));
+    assert_eq!(str::matches(&sql, "MATERIALIZED").count(), 3, "{sql}");
+    assert!(str::contains(&sql, " UNION ALL "), "{sql}");
+    assert!(
+        str::contains(&sql, ", \"filtered_inbox_items\" AS"),
+        "{sql}"
+    );
+    assert!(str::contains(&sql, "MATERIALIZED ("));
     let filtered_ids_start = sql
         .find("IN (SELECT \"filtered_inbox_items\".\"id\"")
         .expect("missing materialized inbox-ID reference");
     let filtered_ids_sql = &sql[filtered_ids_start..];
 
-    assert!(sql.contains("FROM \"sigint_inbox_item_tag\" INNER JOIN \"tag\""));
-    assert!(!filtered_ids_sql.contains("JOIN \"sigint_inbox_item_tag\""));
+    assert!(str::contains(
+        &sql,
+        "FROM \"sigint_inbox_item_tag\" INNER JOIN \"tag\""
+    ));
+    assert!(!str::contains(
+        filtered_ids_sql,
+        "JOIN \"sigint_inbox_item_tag\""
+    ));
     assert!(
-        !filtered_ids_sql.contains("\"selected_unit_inbox_network\""),
+        !str::contains(filtered_ids_sql, "\"selected_unit_inbox_network\""),
         "{filtered_ids_sql}"
     );
     assert_eq!(
-        sql.matches("\"sigint_inbox_item_tag\".\"model\" IS NULL")
+        str::matches(&sql, "\"sigint_inbox_item_tag\".\"model\" IS NULL")
             .count(),
         0
     );
@@ -1301,11 +1310,17 @@ fn analytics_tags_query_keeps_flat_result_tag_join() {
     .unwrap();
     let sql = query.build(DbBackend::Postgres).to_string();
 
-    assert!(sql.contains("INNER JOIN \"sigint_inbox_item_tag\""));
-    assert!(!sql.contains("WITH \"filtered_inbox_items\""));
-    assert!(!sql.contains("WITH \"matching_unit_network_ids\""));
-    assert!(!sql.contains("WITH \"matching_unit_inbox_item_ids\""));
-    assert!(sql.contains("\"selected_unit_inbox_network\""), "{sql}");
+    assert!(str::contains(&sql, "INNER JOIN \"sigint_inbox_item_tag\""));
+    assert!(!str::contains(&sql, "WITH \"filtered_inbox_items\""));
+    assert!(!str::contains(&sql, "WITH \"matching_unit_network_ids\""));
+    assert!(!str::contains(
+        &sql,
+        "WITH \"matching_unit_inbox_item_ids\""
+    ));
+    assert!(
+        str::contains(&sql, "\"selected_unit_inbox_network\""),
+        "{sql}"
+    );
 }
 
 #[test]
@@ -1325,25 +1340,28 @@ fn analytics_tags_selected_networks_use_flat_joins() {
     let sql = query.build(DbBackend::Postgres).to_string();
 
     assert!(
-        sql.contains(
+        str::contains(
+            &sql,
             "INNER JOIN \"sigint_inbox_item_network\" AS \
              \"analytics_network_filter_link\""
         ),
         "{sql}"
     );
     assert!(
-        sql.contains(
+        str::contains(
+            &sql,
             "INNER JOIN \"sigint_network\" AS \"analytics_network_filter\""
         ),
         "{sql}"
     );
     assert!(
-        sql.contains(
+        str::contains(
+            &sql,
             "\"analytics_network_filter_link\".\"sigint_network_id\" IN (1, 2)"
         ),
         "{sql}"
     );
-    assert!(!sql.contains("\"iin_network_filter\""), "{sql}");
+    assert!(!str::contains(&sql, "\"iin_network_filter\""), "{sql}");
 }
 
 #[test]
@@ -1360,8 +1378,11 @@ fn postgres_tags_selected_networks_keep_correlated_filter() {
     .unwrap();
     let sql = query.to_string(PostgresQueryBuilder);
 
-    assert!(sql.contains("\"iin_network_filter\""), "{sql}");
-    assert!(!sql.contains("\"analytics_network_filter_link\""), "{sql}");
+    assert!(str::contains(&sql, "\"iin_network_filter\""), "{sql}");
+    assert!(
+        !str::contains(&sql, "\"analytics_network_filter_link\""),
+        "{sql}"
+    );
 }
 
 #[test]
@@ -1384,24 +1405,33 @@ fn analytics_freqs_selected_networks_use_scoped_flat_joins() {
     let sql = query.build(DbBackend::Postgres).to_string();
 
     assert!(
-        sql.contains(
+        str::contains(
+            &sql,
             "INNER JOIN \"sigint_inbox_item_network\" AS \
              \"analytics_network_filter_link\""
         ),
         "{sql}"
     );
     assert!(
-        sql.contains(
+        str::contains(
+            &sql,
             "\"analytics_network_filter_link\".\"sigint_network_id\" IN (1, 2)"
         ),
         "{sql}"
     );
-    assert!(sql.contains("\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20"));
-    assert!(sql.contains("\"signal_message\".\"id\" BETWEEN 10 AND 20"));
-    assert!(sql.contains(
+    assert!(str::contains(
+        &sql,
+        "\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20"
+    ));
+    assert!(str::contains(
+        &sql,
+        "\"signal_message\".\"id\" BETWEEN 10 AND 20"
+    ));
+    assert!(str::contains(
+        &sql,
         "\"analytics_message_access\".\"signal_message_id\" BETWEEN 10 AND 20"
     ));
-    assert!(!sql.contains("\"iin_network_filter\""), "{sql}");
+    assert!(!str::contains(&sql, "\"iin_network_filter\""), "{sql}");
 }
 
 #[test]
@@ -1419,8 +1449,11 @@ fn postgres_freqs_selected_networks_keep_correlated_filter() {
     .unwrap();
     let sql = query.build(DbBackend::Postgres).to_string();
 
-    assert!(sql.contains("\"iin_network_filter\""), "{sql}");
-    assert!(!sql.contains("\"analytics_network_filter_link\""), "{sql}");
+    assert!(str::contains(&sql, "\"iin_network_filter\""), "{sql}");
+    assert!(
+        !str::contains(&sql, "\"analytics_network_filter_link\""),
+        "{sql}"
+    );
 }
 
 #[test]
@@ -1442,19 +1475,28 @@ fn analytics_groups_selected_networks_use_scoped_flat_joins() {
     .unwrap();
     let sql = query.build(DbBackend::Postgres).to_string();
 
-    assert!(sql.contains(
+    assert!(str::contains(
+        &sql,
         "INNER JOIN \"sigint_inbox_item_network\" AS \
          \"analytics_network_filter_link\""
     ));
-    assert!(sql.contains(
+    assert!(str::contains(
+        &sql,
         "\"analytics_network_filter_link\".\"sigint_network_id\" IN (1, 2)"
     ));
-    assert!(sql.contains("\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20"));
-    assert!(sql.contains("\"signal_message\".\"id\" BETWEEN 10 AND 20"));
-    assert!(sql.contains(
+    assert!(str::contains(
+        &sql,
+        "\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20"
+    ));
+    assert!(str::contains(
+        &sql,
+        "\"signal_message\".\"id\" BETWEEN 10 AND 20"
+    ));
+    assert!(str::contains(
+        &sql,
         "\"signal_message_group\".\"signal_message_id\" BETWEEN 10 AND 20"
     ));
-    assert!(!sql.contains("\"iin_network_filter\""), "{sql}");
+    assert!(!str::contains(&sql, "\"iin_network_filter\""), "{sql}");
 }
 
 #[test]
@@ -1472,8 +1514,11 @@ fn postgres_groups_selected_networks_keep_correlated_filter() {
     .unwrap();
     let sql = query.build(DbBackend::Postgres).to_string();
 
-    assert!(sql.contains("\"iin_network_filter\""), "{sql}");
-    assert!(!sql.contains("\"analytics_network_filter_link\""), "{sql}");
+    assert!(str::contains(&sql, "\"iin_network_filter\""), "{sql}");
+    assert!(
+        !str::contains(&sql, "\"analytics_network_filter_link\""),
+        "{sql}"
+    );
 }
 
 #[test]
@@ -1497,47 +1542,59 @@ fn analytics_networks_query_scopes_both_union_arms() {
     .unwrap();
     let sql = statement.sql;
 
-    assert!(sql.contains("UNION ALL"), "{sql}");
+    assert!(str::contains(&sql, "UNION ALL"), "{sql}");
     assert!(
-        sql.matches("\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20")
+        str::matches(&sql, "\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20")
             .count()
             >= 2,
         "{sql}"
     );
     assert!(
-        sql.matches("\"signal_message\".\"id\" BETWEEN 10 AND 20")
+        str::matches(&sql, "\"signal_message\".\"id\" BETWEEN 10 AND 20")
             .count()
             >= 2,
         "{sql}"
     );
     assert!(
-        sql.matches(
+        str::matches(
+            &sql,
             "\"signal_message_group\".\"signal_message_id\" BETWEEN 10 AND 20"
         )
         .count()
             >= 2,
         "{sql}"
     );
-    assert!(sql.contains(
+    assert!(str::contains(
+        &sql,
         "\"analytics_linked_network_link\".\"sigint_inbox_item_id\" \
          BETWEEN 10 AND 20"
     ));
     assert!(
-        sql.contains(
+        str::contains(
+            &sql,
             "\"echo_clickhouse_derived\".\"message_network_link\" \
              AS \"analytics_linked_network_link\""
         ),
         "{sql}"
     );
     assert!(
-        sql.contains("JOIN \"signal_group\" AS \"analytics_frequency_group\""),
+        str::contains(
+            &sql,
+            "JOIN \"signal_group\" AS \"analytics_frequency_group\""
+        ),
         "{sql}"
     );
     assert!(
-        sql.contains("JOIN \"signal_group\" AS \"analytics_linked_group\""),
+        str::contains(
+            &sql,
+            "JOIN \"signal_group\" AS \"analytics_linked_group\""
+        ),
         "{sql}"
     );
-    assert!(!sql.contains("JOIN (SELECT \"signal_group\""), "{sql}");
+    assert!(
+        !str::contains(&sql, "JOIN (SELECT \"signal_group\""),
+        "{sql}"
+    );
 }
 
 #[test]
@@ -1551,11 +1608,20 @@ fn analytics_group_activity_query_is_bounded_and_aggregated() {
     );
     let sql = query.build(DbBackend::Postgres).to_string();
 
-    assert!(sql.contains("COUNT(*) FILTER (WHERE"), "{sql}");
-    assert!(sql.contains("\"sigint_inbox_item\".\"id\" >= 10"), "{sql}");
-    assert!(sql.contains("\"signal_message\".\"id\" >= 10"), "{sql}");
+    assert!(str::contains(&sql, "COUNT(*) FILTER (WHERE"), "{sql}");
     assert!(
-        sql.contains("\"signal_message_group\".\"signal_message_id\" >= 10"),
+        str::contains(&sql, "\"sigint_inbox_item\".\"id\" >= 10"),
+        "{sql}"
+    );
+    assert!(
+        str::contains(&sql, "\"signal_message\".\"id\" >= 10"),
+        "{sql}"
+    );
+    assert!(
+        str::contains(
+            &sql,
+            "\"signal_message_group\".\"signal_message_id\" >= 10"
+        ),
         "{sql}"
     );
 }
@@ -1579,20 +1645,32 @@ fn analytics_senders_selected_networks_use_scoped_flat_joins() {
     .unwrap();
     let sql = query.build(DbBackend::Postgres).to_string();
 
-    assert!(sql.contains(
+    assert!(str::contains(
+        &sql,
         "INNER JOIN \"sigint_inbox_item_network\" AS \
          \"analytics_network_filter_link\""
     ));
-    assert!(sql.contains(
+    assert!(str::contains(
+        &sql,
         "\"analytics_network_filter_link\".\"sigint_network_id\" IN (1, 2)"
     ));
-    assert!(sql.contains("\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20"));
-    assert!(sql.contains("\"signal_message\".\"id\" BETWEEN 10 AND 20"));
-    assert!(sql.contains(
+    assert!(str::contains(
+        &sql,
+        "\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20"
+    ));
+    assert!(str::contains(
+        &sql,
+        "\"signal_message\".\"id\" BETWEEN 10 AND 20"
+    ));
+    assert!(str::contains(
+        &sql,
         "\"signal_message_group\".\"signal_message_id\" BETWEEN 10 AND 20"
     ));
-    assert!(!sql.contains("\"iin_network_filter\""), "{sql}");
-    assert!(!sql.contains("FROM \"signal_message_group\""), "{sql}");
+    assert!(!str::contains(&sql, "\"iin_network_filter\""), "{sql}");
+    assert!(
+        !str::contains(&sql, "FROM \"signal_message_group\""),
+        "{sql}"
+    );
 }
 
 #[test]
@@ -1610,9 +1688,15 @@ fn postgres_senders_selected_networks_keep_correlated_filter() {
     .unwrap();
     let sql = query.build(DbBackend::Postgres).to_string();
 
-    assert!(sql.contains("\"iin_network_filter\""), "{sql}");
-    assert!(!sql.contains("\"analytics_network_filter_link\""), "{sql}");
-    assert!(!sql.contains("FROM \"signal_message_group\""), "{sql}");
+    assert!(str::contains(&sql, "\"iin_network_filter\""), "{sql}");
+    assert!(
+        !str::contains(&sql, "\"analytics_network_filter_link\""),
+        "{sql}"
+    );
+    assert!(
+        !str::contains(&sql, "FROM \"signal_message_group\""),
+        "{sql}"
+    );
 }
 
 #[test]
@@ -1638,15 +1722,15 @@ fn postgres_tags_exact_unit_query_only_uses_linked_candidates() {
     let matching_ids_sql = &sql[matching_ids_start..filtered_ids_start];
 
     assert!(
-        matching_ids_sql.contains("\"selected_linked_unit_inbox_item\""),
+        str::contains(matching_ids_sql, "\"selected_linked_unit_inbox_item\""),
         "{matching_ids_sql}"
     );
     assert!(
-        !matching_ids_sql.contains("\"selected_header_unit_inbox_item\""),
+        !str::contains(matching_ids_sql, "\"selected_header_unit_inbox_item\""),
         "{matching_ids_sql}"
     );
     assert!(
-        !matching_ids_sql.contains("UNION ALL"),
+        !str::contains(matching_ids_sql, "UNION ALL"),
         "{matching_ids_sql}"
     );
 }
@@ -6350,42 +6434,66 @@ async fn rer_analysis_analytics_tag_access_matches_source_authorization() {
     let access = stats::resolve_analytics_tag_access(db, &login.id, true)
         .await
         .unwrap();
-    assert!(access.accessible_tag_ids.contains(&public_tag.id));
-    assert!(access.accessible_tag_ids.contains(&owner_tag.id));
-    assert!(!access.accessible_tag_ids.contains(&other_tag.id));
-    assert!(access.unit_login_ids.contains(&login.id));
-    assert!(access.unit_login_ids.contains(&same_organism_login.id));
-    assert!(access.unit_login_ids.contains(&deleted_login.id));
-    assert!(!access.unit_login_ids.contains(&other_organism_login.id));
-    assert!(!access.unit_login_ids.contains(&no_organism_login.id));
+    assert!(access
+        .accessible_tag_ids
+        .as_slice()
+        .contains(&public_tag.id));
+    assert!(access.accessible_tag_ids.as_slice().contains(&owner_tag.id));
+    assert!(!access.accessible_tag_ids.as_slice().contains(&other_tag.id));
+    assert!(access.unit_login_ids.as_slice().contains(&login.id));
+    assert!(access
+        .unit_login_ids
+        .as_slice()
+        .contains(&same_organism_login.id));
+    assert!(access.unit_login_ids.as_slice().contains(&deleted_login.id));
+    assert!(!access
+        .unit_login_ids
+        .as_slice()
+        .contains(&other_organism_login.id));
+    assert!(!access
+        .unit_login_ids
+        .as_slice()
+        .contains(&no_organism_login.id));
 
     let access =
         stats::resolve_analytics_tag_access(db, &other_organism_login.id, true)
             .await
             .unwrap();
-    assert!(access.accessible_tag_ids.contains(&public_tag.id));
-    assert!(!access.accessible_tag_ids.contains(&owner_tag.id));
-    assert!(access.accessible_tag_ids.contains(&other_tag.id));
-    assert!(access.unit_login_ids.contains(&other_organism_login.id));
-    assert!(!access.unit_login_ids.contains(&login.id));
+    assert!(access
+        .accessible_tag_ids
+        .as_slice()
+        .contains(&public_tag.id));
+    assert!(!access.accessible_tag_ids.as_slice().contains(&owner_tag.id));
+    assert!(access.accessible_tag_ids.as_slice().contains(&other_tag.id));
+    assert!(access
+        .unit_login_ids
+        .as_slice()
+        .contains(&other_organism_login.id));
+    assert!(!access.unit_login_ids.as_slice().contains(&login.id));
 
     let access =
         stats::resolve_analytics_tag_access(db, &no_organism_login.id, true)
             .await
             .unwrap();
-    assert!(access.accessible_tag_ids.contains(&public_tag.id));
-    assert!(!access.accessible_tag_ids.contains(&owner_tag.id));
-    assert!(!access.accessible_tag_ids.contains(&other_tag.id));
+    assert!(access
+        .accessible_tag_ids
+        .as_slice()
+        .contains(&public_tag.id));
+    assert!(!access.accessible_tag_ids.as_slice().contains(&owner_tag.id));
+    assert!(!access.accessible_tag_ids.as_slice().contains(&other_tag.id));
     assert!(access.unit_login_ids.is_empty());
 
     let access =
         stats::resolve_analytics_tag_access(db, &deleted_login.id, true)
             .await
             .unwrap();
-    assert!(access.accessible_tag_ids.contains(&public_tag.id));
-    assert!(!access.accessible_tag_ids.contains(&owner_tag.id));
-    assert!(!access.accessible_tag_ids.contains(&other_tag.id));
-    assert!(access.unit_login_ids.contains(&login.id));
+    assert!(access
+        .accessible_tag_ids
+        .as_slice()
+        .contains(&public_tag.id));
+    assert!(!access.accessible_tag_ids.as_slice().contains(&owner_tag.id));
+    assert!(!access.accessible_tag_ids.as_slice().contains(&other_tag.id));
+    assert!(access.unit_login_ids.as_slice().contains(&login.id));
 
     let mut owner_tag = owner_tag.into_active_model();
     owner_tag.owner_organism_id = Set(Some(other_organism.id));
@@ -6393,7 +6501,7 @@ async fn rer_analysis_analytics_tag_access_matches_source_authorization() {
     let access = stats::resolve_analytics_tag_access(db, &login.id, false)
         .await
         .unwrap();
-    assert!(!access.accessible_tag_ids.contains(&owner_tag.id));
+    assert!(!access.accessible_tag_ids.as_slice().contains(&owner_tag.id));
 }
 
 #[tokio::test]

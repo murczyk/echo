@@ -7,7 +7,6 @@ use crate::sigint::callsign::bl_network_callsign::bl_get_network_callsigns_list;
 use crate::sigint::callsign::types::ListNetworkCallsignsReq;
 use crate::sigint::network::types::*;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::{DateTime, NaiveDateTime, Utc};

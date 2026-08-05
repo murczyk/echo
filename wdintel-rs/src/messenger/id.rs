@@ -4,7 +4,6 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::*;
 use crate::types::{Mode, ShortContext};
-use crate::utils::orm::ArrayColumnOps;
 use chrono::*;
 use echo_migration::Expr;
 use itertools::Itertools;
@@ -112,7 +111,9 @@ pub async fn oneoff_assign_message_ids(
     };
     info!("oneoff_assign_message_ids dry_run={dry_run}");
     if dry_run {
-        info!(" > running in dry run mode, no changes applied. to apply changes re-run with --dry-run=false");
+        info!(
+            " > running in dry run mode, no changes applied. to apply changes re-run with --dry-run=false"
+        );
     }
     let mut offset = 0;
     let mut id_set = HashMap::new();
@@ -149,7 +150,9 @@ pub async fn oneoff_assign_message_ids(
                 }
                 Some(muid) => {
                     if muid != mid && dry_run {
-                        debug!("issue occurred on generating ID; expected ID to be {mid}, but present in db: {muid}")
+                        debug!(
+                            "issue occurred on generating ID; expected ID to be {mid}, but present in db: {muid}"
+                        )
                     }
                 }
             }
@@ -186,9 +189,9 @@ pub async fn oneoff_assign_message_ids(
             let err_msg = format!(
                 "collision #{actual_collisions_num} occurred: \n{m1:?}\n{m2:?}"
             );
-            let same_group = m1.datasource_group_id.eq(&m2.datasource_group_id);
-            let same_body = m1.body.eq(&m2.body);
-            let same_sender = m1.sender.eq(&m2.sender);
+            let same_group = m1.datasource_group_id == m2.datasource_group_id;
+            let same_body = m1.body == m2.body;
+            let same_sender = m1.sender == m2.sender;
             if same_group && same_sender && same_body {
                 if dry_run {
                     warn!("duplicated messages occurred: id{x}, id{y}");

@@ -132,7 +132,9 @@ pub async fn serve_assets(
             }
         }
         None => {
-            warn!("unexpected filename format: {filename}, expected UUID + '.' + extension");
+            warn!(
+                "unexpected filename format: {filename}, expected UUID + '.' + extension"
+            );
             filename.to_string()
         }
     };

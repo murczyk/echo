@@ -6,7 +6,6 @@ use crate::sigint::aor::bl::collect_group_aors;
 use crate::sigint::aor::render_aor;
 use crate::types::*;
 use crate::users::{ensure_admin, has_any_role, login_id_from_identity};
-use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
@@ -648,6 +647,7 @@ where
     let mut query = login::Entity::find()
         .filter(login::Column::Deleted.eq(false))
         .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(crate::ai_agent::unmanaged_login_condition())
         .select_only()
         .column(login::Column::Id)
         .order_by_asc(login::Column::Id);
@@ -827,15 +827,7 @@ fn render_group_logins(
 ) -> Vec<SignalGroupLogin> {
     logins
         .into_iter()
-        .map(|login_id| {
-            group_login_map.get(&login_id).cloned().unwrap_or_else(|| {
-                SignalGroupLogin {
-                    login: login_id.clone(),
-                    login_id,
-                    delta_login: None,
-                }
-            })
-        })
+        .filter_map(|login_id| group_login_map.get(&login_id).cloned())
         .collect()
 }
 
@@ -864,6 +856,7 @@ where
     let rows = login::Entity::find()
         .join(JoinType::LeftJoin, login::Relation::DeltaLogin.def())
         .filter(login::Column::Id.eq_any(login_ids))
+        .filter(crate::ai_agent::unmanaged_login_condition())
         .select_only()
         .column(login::Column::Id)
         .column(login::Column::Login)
@@ -921,7 +914,9 @@ fn log_sigint_zone_datasource_event(
     let key = &szd.group_master_key;
     let datasource_id = &szd.datasource_id;
     let sigint_zone_id = &szd.sigint_zone_id;
-    info!("{event_name} login={user_login} master_key={key} datasource_id={datasource_id} sigint_zone_id={sigint_zone_id}");
+    info!(
+        "{event_name} login={user_login} master_key={key} datasource_id={datasource_id} sigint_zone_id={sigint_zone_id}"
+    );
 }
 
 pub fn filter_out_ineligible_secret_chats<E: EntityTrait>(

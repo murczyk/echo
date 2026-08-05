@@ -1,27 +1,71 @@
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
+import { Box, Chip, Stack, Tooltip } from '@mui/material';
 import {
-  Box,
-  IconButton,
-  Menu,
-  MenuItem,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Tooltip,
-  Typography,
-} from '@mui/material';
-import { useState } from 'react';
+  MaterialReactTable,
+  type MRT_ColumnDef,
+  useMaterialReactTable,
+} from 'material-react-table';
+import { useEffect, useMemo } from 'react';
 
 import type { AiEngineItem } from '../../../../Bindings';
+import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PowerButton } from '../../components/PowerButton';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
+import {
+  CUSTOM_CELL_STYLES,
+  CUSTOM_STYLES,
+  getDefaultMrtContainerProps,
+  getDefaultMrtPaperProps,
+} from '../../components/mui-customized/table/custom-styles';
+import {
+  getDefaultMRTOptions,
+  renderColumnActionsMenuItems,
+} from '../../components/mui-customized/table/get-default-table-options';
+import {
+  TableStateProvider,
+  useTableStateContext,
+} from '../../components/mui-customized/table/table-state-provider';
+import { AI_AGENT_TOKEN_WARNING } from '../admin-ai-agent/engine-eligibility';
+
+const ROW_ACTIONS_COLUMN_SIZE = 96;
+const DEFAULT_COLUMN_ORDER = [
+  'mrt-row-numbers',
+  'mrt-row-actions',
+  'name',
+  'modelName',
+  'url',
+  'enabled',
+  'hasToken',
+  'updatedAt',
+];
+const AI_AGENT_COLUMN_ORDER = [
+  'mrt-row-numbers',
+  'mrt-row-actions',
+  'name',
+  'aiAgentCompatibility',
+  'modelName',
+  'url',
+  'enabled',
+  'hasToken',
+  'updatedAt',
+];
+const DEFAULT_COLUMN_VISIBILITY = {
+  name: true,
+  modelName: true,
+  url: true,
+  enabled: true,
+  hasToken: true,
+  updatedAt: true,
+};
+const AI_AGENT_COLUMN_VISIBILITY = {
+  ...DEFAULT_COLUMN_VISIBILITY,
+  aiAgentCompatibility: true,
+};
+const defaultMRTOptions = getDefaultMRTOptions<AiEngineItem>();
 
 function formatDate(timestamp: number): string {
   return new Intl.DateTimeFormat('uk-UA', {
@@ -30,137 +74,218 @@ function formatDate(timestamp: number): string {
   }).format(timestamp);
 }
 
-export function AiEnginesTable({
-  aiEngines,
-  onCreate,
-  onDelete,
-  onEdit,
-  onView,
-}: {
+type Props = {
   aiEngines: AiEngineItem[];
+  getCompatibility?: AiEngineCompatibilityResolver;
   onCreate: () => void;
   onDelete: (aiEngine: AiEngineItem) => void;
   onEdit: (aiEngine: AiEngineItem) => void;
   onView: (aiEngine: AiEngineItem) => void;
+};
+
+export type AiEngineCompatibilityResolver = (aiEngine: AiEngineItem) => {
+  compatible: boolean;
+  explanation: string;
+};
+
+export function AiEngineCompatibilityStatus({
+  aiEngine,
+  getCompatibility,
+}: {
+  aiEngine: AiEngineItem;
+  getCompatibility: AiEngineCompatibilityResolver;
 }) {
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
-  const [menuAiEngine, setMenuAiEngine] = useState<AiEngineItem | null>(null);
+  const compatibility = getCompatibility(aiEngine);
+  const explanation = aiEngine.hasToken
+    ? `${AI_AGENT_TOKEN_WARNING} ${compatibility.explanation}`
+    : compatibility.explanation;
+  return (
+    <Stack direction="row" spacing={0.5} alignItems="center">
+      <Chip
+        size="small"
+        label={compatibility.compatible ? 'Сумісний' : 'Несумісний'}
+        color={compatibility.compatible ? 'success' : 'warning'}
+      />
+      <Tooltip title={explanation} arrow>
+        <Box
+          component="span"
+          aria-label={explanation}
+          sx={{ display: 'inline-flex', color: 'text.secondary', cursor: 'default', lineHeight: 0 }}
+        >
+          <InfoOutlinedIcon color={aiEngine.hasToken ? 'error' : 'inherit'} sx={{ fontSize: 16 }} />
+        </Box>
+      </Tooltip>
+    </Stack>
+  );
+}
 
-  function openMenu(element: HTMLElement, aiEngine: AiEngineItem) {
-    setMenuAnchor(element);
-    setMenuAiEngine(aiEngine);
-  }
+function AiEnginesTableBody({
+  aiEngines,
+  getCompatibility,
+  onCreate,
+  onDelete,
+  onEdit,
+  onView,
+}: Props) {
+  const tableStateContext = useTableStateContext();
+  const columns = useMemo<MRT_ColumnDef<AiEngineItem>[]>(
+    () => [
+      { accessorKey: 'name', header: 'Назва', size: 180 },
+      ...(getCompatibility
+        ? [
+            {
+              id: 'aiAgentCompatibility',
+              accessorFn: (aiEngine: AiEngineItem) =>
+                getCompatibility(aiEngine).compatible ? 'Сумісний' : 'Несумісний',
+              header: 'ШІ агент',
+              size: 160,
+              Cell: ({ row }: { row: { original: AiEngineItem } }) => (
+                <AiEngineCompatibilityStatus
+                  aiEngine={row.original}
+                  getCompatibility={getCompatibility}
+                />
+              ),
+            } satisfies MRT_ColumnDef<AiEngineItem>,
+          ]
+        : []),
+      { accessorKey: 'modelName', header: 'Модель', size: 220 },
+      { accessorKey: 'url', header: 'URL', size: 320 },
+      {
+        id: 'enabled',
+        accessorFn: (aiEngine) => (aiEngine.enabled ? 'Увімкнено' : 'Вимкнено'),
+        header: 'Стан',
+        size: 140,
+      },
+      {
+        id: 'hasToken',
+        accessorFn: (aiEngine) => (aiEngine.hasToken ? 'Задано' : 'Не задано'),
+        header: 'Токен',
+        size: 140,
+      },
+      {
+        id: 'updatedAt',
+        accessorFn: (aiEngine) => formatDate(aiEngine.updatedAt),
+        header: 'Оновлено',
+        size: 180,
+      },
+    ],
+    [getCompatibility],
+  );
+  const table = useMaterialReactTable({
+    columns,
+    data: aiEngines,
+    ...defaultMRTOptions,
+    enableSorting: true,
+    enableColumnActions: true,
+    enableRowNumbers: true,
+    enableColumnFilters: true,
+    enableColumnFilterModes: true,
+    enableFacetedValues: true,
+    enableRowActions: true,
+    positionActionsColumn: 'first',
+    renderRowActions: ({ row }) => (
+      <Stack direction="row" spacing={0.5}>
+        <MrtRowActionButton
+          label="Переглянути"
+          icon={<VisibilityOutlinedIcon fontSize="small" />}
+          onClick={() => onView(row.original)}
+        />
+        <MrtRowActions forceMenu>
+          <MrtRowActionButton
+            label="Редагувати"
+            icon={<EditOutlinedIcon fontSize="small" />}
+            onClick={() => onEdit(row.original)}
+          />
+          <MrtRowActionButton
+            label="Видалити"
+            icon={<DeleteOutlineIcon fontSize="small" />}
+            onClick={() => onDelete(row.original)}
+            tone="danger"
+            opensModal
+          />
+        </MrtRowActions>
+      </Stack>
+    ),
+    enableColumnOrdering: tableStateContext.enableColumnOrdering,
+    enableColumnResizing: tableStateContext.enableColumnResizing,
+    columnFilterDisplayMode: 'popover',
+    globalFilterFn: 'contains',
+    onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
+    onColumnFiltersChange: tableStateContext.onColumnFiltersChange,
+    onColumnOrderChange: tableStateContext.onColumnOrderChange,
+    onColumnSizingChange: tableStateContext.onColumnSizingChange,
+    onSortingChange: tableStateContext.onSortingChange,
+    onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
+    getColumnCanGlobalFilter: (column) => column.getIsVisible(),
+    defaultColumn: { size: 200, renderColumnActionsMenuItems },
+    displayColumnDefOptions: {
+      ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: ROW_ACTIONS_COLUMN_SIZE,
+        minSize: ROW_ACTIONS_COLUMN_SIZE,
+        maxSize: ROW_ACTIONS_COLUMN_SIZE,
+      },
+      'mrt-row-numbers': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
+        muiTableBodyCellProps: () => ({
+          sx: { justifyContent: 'center', ...CUSTOM_CELL_STYLES },
+        }),
+      },
+    },
+    muiTablePaperProps: ({ table }) =>
+      getDefaultMrtPaperProps({ table, loading: false, layout: 'workspace' }),
+    muiTableContainerProps: ({ table }) =>
+      getDefaultMrtContainerProps({
+        loading: false,
+        layout: 'workspace',
+        fullScreen: table.getState().isFullScreen,
+        hasRows: aiEngines.length > 0,
+      }),
+    state: {
+      showAlertBanner: false,
+      globalFilter: tableStateContext.globalFilter,
+      columnVisibility: tableStateContext.columnVisibility,
+      columnFilters: tableStateContext.columnFilters,
+      density: tableStateContext.density,
+      sorting: tableStateContext.sorting,
+      columnOrder: tableStateContext.columnOrder,
+      columnSizing: tableStateContext.columnSizing,
+    },
+  });
 
-  function closeMenu() {
-    setMenuAnchor(null);
-    setMenuAiEngine(null);
-  }
+  useEffect(() => {
+    tableStateContext.onTableInitialized(table);
+  }, [table]);
 
   return (
-    <>
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 2,
-        }}
-      >
-        <Box>
-          <Typography component="h2" variant="h6">
-            ШІ движки
-          </Typography>
-          <Typography color="text.secondary" variant="body2">
-            OpenAI та OpenAI-сумісні vLLM API
-          </Typography>
-        </Box>
-        <PowerButton type="button" variant="contained" onClick={onCreate} startIcon={<AddIcon />}>
-          Додати
-        </PowerButton>
-      </Box>
+    <Stack spacing={2}>
+      <TablePageToolbar
+        title="Провайдери ШІ"
+        titleInfo="OpenAI та OpenAI-сумісні vLLM API"
+        withGlobalTextFilter
+        actions={
+          <PowerButton type="button" variant="contained" onClick={onCreate} startIcon={<AddIcon />}>
+            Додати
+          </PowerButton>
+        }
+      />
+      <MaterialReactTable table={table} />
+    </Stack>
+  );
+}
 
-      <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 0 }}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell padding="checkbox">Дії</TableCell>
-              <TableCell>Назва</TableCell>
-              <TableCell>Модель</TableCell>
-              <TableCell>URL</TableCell>
-              <TableCell>Стан</TableCell>
-              <TableCell>Токен</TableCell>
-              <TableCell>Оновлено</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {aiEngines.map((aiEngine) => (
-              <TableRow key={aiEngine.id} hover>
-                <TableCell padding="checkbox">
-                  <Box sx={{ display: 'flex' }}>
-                    <Tooltip title="Переглянути">
-                      <IconButton
-                        type="button"
-                        aria-label={`Переглянути ${aiEngine.name}`}
-                        onClick={() => onView(aiEngine)}
-                      >
-                        <VisibilityOutlinedIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Інші дії">
-                      <IconButton
-                        type="button"
-                        aria-label={`Дії для ${aiEngine.name}`}
-                        onClick={(event) => openMenu(event.currentTarget, aiEngine)}
-                      >
-                        <MoreVertIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </Box>
-                </TableCell>
-                <TableCell>{aiEngine.name}</TableCell>
-                <TableCell>{aiEngine.modelName}</TableCell>
-                <TableCell sx={{ maxWidth: 320, overflowWrap: 'anywhere' }}>
-                  {aiEngine.url}
-                </TableCell>
-                <TableCell>{aiEngine.enabled ? 'Увімкнено' : 'Вимкнено'}</TableCell>
-                <TableCell>{aiEngine.hasToken ? 'Задано' : 'Не задано'}</TableCell>
-                <TableCell>{formatDate(aiEngine.updatedAt)}</TableCell>
-              </TableRow>
-            ))}
-            {aiEngines.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7}>
-                  <Typography color="text.secondary" align="center" sx={{ py: 4 }}>
-                    ШІ движків ще немає.
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            ) : null}
-          </TableBody>
-        </Table>
-      </TableContainer>
-
-      <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={closeMenu}>
-        <MenuItem
-          onClick={() => {
-            if (menuAiEngine) onEdit(menuAiEngine);
-            closeMenu();
-          }}
-        >
-          <EditOutlinedIcon fontSize="small" sx={{ mr: 1 }} />
-          Редагувати
-        </MenuItem>
-        <MenuItem
-          onClick={() => {
-            if (menuAiEngine) onDelete(menuAiEngine);
-            closeMenu();
-          }}
-          sx={{ color: 'error.main' }}
-        >
-          <DeleteOutlineIcon fontSize="small" sx={{ mr: 1 }} />
-          Видалити
-        </MenuItem>
-      </Menu>
-    </>
+export function AiEnginesTable(props: Props) {
+  return (
+    <TableStateProvider
+      tableId="admin-ai-providers"
+      defaultColumnOrder={props.getCompatibility ? AI_AGENT_COLUMN_ORDER : DEFAULT_COLUMN_ORDER}
+      defaultColumnVisibility={
+        props.getCompatibility ? AI_AGENT_COLUMN_VISIBILITY : DEFAULT_COLUMN_VISIBILITY
+      }
+      defaultEnableColumnOrdering={false}
+    >
+      <AiEnginesTableBody {...props} />
+    </TableStateProvider>
   );
 }

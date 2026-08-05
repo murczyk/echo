@@ -7,8 +7,8 @@ use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Utc};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
-    DatabaseConnection, EntityTrait, FromQueryResult, JoinType, NotSet,
-    QueryFilter, QueryOrder, QuerySelect, RelationTrait, Set,
+    DatabaseConnection, EntityTrait, ExprTrait, FromQueryResult, JoinType,
+    NotSet, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Set,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -645,11 +645,15 @@ pub async fn oneoff_import_sigint_comments(
                 let Some(target_organism) = organisms.get(target_organism_id)
                 else {
                     return Err(AppError::BL {
-                        msg: format!("target login organism not found or deleted: {target_organism_id}"),
+                        msg: format!(
+                            "target login organism not found or deleted: {target_organism_id}"
+                        ),
                     });
                 };
 
-                info!("loaded mapping '{source_organism}/{source_login}' to '{target_organism}/{target_login}'");
+                info!(
+                    "loaded mapping '{source_organism}/{source_login}' to '{target_organism}/{target_login}'"
+                );
             }
         }
     } else {
@@ -710,14 +714,18 @@ pub async fn oneoff_import_sigint_comments(
             login_name = target_login.clone();
             let target_organism = &organisms[target_organism_id];
 
-            info!("detected mapping{dry_run} '{source_organism}/{source_login}' to '{target_organism}/{target_login}'");
+            info!(
+                "detected mapping{dry_run} '{source_organism}/{source_login}' to '{target_organism}/{target_login}'"
+            );
             organism_mapping.insert(source_login.clone(), target_login);
         } else {
             not_mapped += 1;
             if logins_to_map.insert((source_organism, source_login)) {
                 let source_organism = &row.source_organism;
                 let source_login = &row.source_login;
-                error!("missing mapping{dry_run} for '{source_organism}/{source_login}', target login doesn't exist or has no organism");
+                error!(
+                    "missing mapping{dry_run} for '{source_organism}/{source_login}', target login doesn't exist or has no organism"
+                );
             }
             continue;
         }
@@ -805,10 +813,10 @@ pub async fn oneoff_import_sigint_comments(
                 Err(err) => {
                     failed += 1;
                     error!(
-                    "row {}: failed to insert comment for message {}: {err}",
-                    idx + 1,
-                    message.id
-                );
+                        "row {}: failed to insert comment for message {}: {err}",
+                        idx + 1,
+                        message.id
+                    );
                 }
             }
         }
@@ -829,8 +837,12 @@ pub async fn oneoff_import_sigint_comments(
 
         warn!("{count} not mapped logins found");
         println!("missing mappings:\n{json}");
-        println!("fill it and provide it with --organism_login_mapping <path to mapping.json>");
-        println!("or exclude using --excluded-organisms <organism 1> <organism2> --excluded-logins <login 1> <login2> flags");
+        println!(
+            "fill it and provide it with --organism_login_mapping <path to mapping.json>"
+        );
+        println!(
+            "or exclude using --excluded-organisms <organism 1> <organism2> --excluded-logins <login 1> <login2> flags"
+        );
     }
 
     Ok(())

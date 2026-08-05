@@ -2019,7 +2019,7 @@ async fn recover_interrupted_reports(env: &Env) -> Result<(), AppError> {
             STATUS_IN_PROGRESS.into(),
         ],
     );
-    env.dbx.execute(stmt).await.c(h!())?;
+    env.dbx.execute_raw(stmt).await.c(h!())?;
     Ok(())
 }
 

@@ -156,7 +156,8 @@ pub async fn rer_delta_kmz_import_go(
         return Err(AppError::BL {
             msg: format!(
                 "Signal group for import not found: {}; edit config.signal_admin_api_recepients",
-                config.signal_import_group_name)
+                config.signal_import_group_name
+            ),
         });
     };
     let group_id = group.master_key;
@@ -181,7 +182,8 @@ pub async fn rer_delta_kmz_import_go(
         return Err(AppError::BL {
             msg: format!(
                 "Signal profile for import not found: {}; edit config.signal_admin_api_recepients",
-                config.signal_import_fiven_name)
+                config.signal_import_fiven_name
+            ),
         });
     };
     let source_uuid = signal_profile.uuid;

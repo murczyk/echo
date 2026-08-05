@@ -1,0 +1,31 @@
+{
+  "report": [
+    {
+      "pv": [
+        {
+          "pv_name": "/dev/sda2",
+          "vg_name": "ai-agents"
+        }
+      ],
+      "vg": [
+        {
+          "vg_name": "ai-agents",
+          "pv_count": "1",
+          "lv_count": "2"
+        }
+      ],
+      "lv": [
+        {
+          "vg_name": "ai-agents",
+          "lv_name": "IncusThinPool",
+          "segtype": "thin-pool"
+        },
+        {
+          "vg_name": "ai-agents",
+          "lv_name": "images_80f6001b3309f69849d26e0cef921b102f96c0835564cc3dd5bfddeb4c4ebfbd",
+          "segtype": "thin"
+        }
+      ]
+    }
+  ]
+}

@@ -7,8 +7,8 @@ use crate::file_registry::entities::file_entry;
 use crate::h;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect, Select,
+    ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
+    QueryFilter, QueryOrder, QuerySelect, Select,
 };
 use uuid::Uuid;
 
@@ -76,13 +76,12 @@ fn file_journal_strict_after_condition(
 ) -> Condition {
     Condition::all().add(
         Expr::tuple([
-            Expr::col((file_entry::Entity, file_entry::Column::UpdatedAt))
-                .into(),
-            Expr::col((file_entry::Entity, file_entry::Column::Id)).into(),
+            Expr::col((file_entry::Entity, file_entry::Column::UpdatedAt)),
+            Expr::col((file_entry::Entity, file_entry::Column::Id)),
         ])
         .lt(Expr::tuple([
-            Expr::val(after.synchronized_at()).into(),
-            Expr::val(after.file_id()).into(),
+            Expr::val(after.synchronized_at()),
+            Expr::val(after.file_id()),
         ])),
     )
 }

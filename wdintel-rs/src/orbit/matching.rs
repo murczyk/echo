@@ -1096,6 +1096,7 @@ mod tests {
             created_by_login_id: Uuid::new_v4(),
             name: String::new(),
             comment: String::new(),
+            search_tsv: None,
             sigint_origin_id: None,
             original_id: None,
             is_deduplicate_candidate: None,

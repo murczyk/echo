@@ -167,6 +167,48 @@ deployment, verification, and rollback commands. Echo uses the router as its
 normal OpenAI-compatible endpoint; direct Spark access is retained only as a
 fallback.
 
+### Per-user AI agent harness
+
+The optional agent harness runs outside the Echo LXC on
+`echo-ai-agent-vm`. Echo stores linked identities, conversations, ordered audit
+events, lifecycle state, and security reviews in PostgreSQL. Redis stores only
+single-use bootstrap credentials and other transient request state. Each
+effective `Rer` user receives a disabled, passwordless linked `ApiAgent`
+identity and an isolated Incus container cloned from a fixed template.
+
+Multiple Echo deployments share the VM. Each reaches the host through its own
+SSH key, Unix identity, namespace mapping, and isolated runtime home; the
+server-side forced command accepts only the namespaced JSON/JSONL operation
+allowlist. The six-container capacity is enforced globally across namespaces.
+Agent containers have no route to Echo, vLLM, Tailscale, private, link-local,
+or host networks. Their only service access uses Incus instance-bound proxy
+devices:
+TLS for the configured Echo public hostname, backed by an HTTPS upstream whose
+certificate matches that hostname, and loopback port `18000` for a selected
+internal OpenAI-compatible engine. Echo validates the TLS/SNI route with
+`/api/ping` before it is used. An exact `https://api.openai.com/v1` engine uses
+the same Echo TLS route as a capability gateway: only the capability enters the
+container, while Echo injects the stored OpenAI token and streams the fixed Chat
+Completions route. Internet egress remains available.
+
+Requests use one-time, hashed Redis bootstrap tokens to obtain a short-lived
+agent session inside the container. Every agent API call carries its request
+correlation header and is checked against the centrally maintained read-only
+route registry. Mutating or unknown routes and recursive calls to harness APIs
+are rejected and audited. Credentials are revoked on every terminal path.
+Raw hidden reasoning is neither accepted into the event stream nor persisted.
+
+The bgworker serializes requests per human user, resumes queued work after a
+restart, interrupts orphaned running work without replaying it, stops idle
+containers after five minutes, and destroys stopped instances after seven
+days while retaining canonical Echo history. Completed requests are reviewed
+asynchronously; review failures remain explicit and retryable. Suspicious
+reviews send only redacted metadata to Mattermost.
+
+Reusable host operations and security boundaries are documented in
+[AI agent harness](../echo-ai-agent/README.md). The initial deployment record
+is [2026-08-03 AI agent harness](../archive/2026-08-03-ai-agent-harness/README.md).
+
 ## Inbox callsign storage
 
 Parsed inbox callsigns are stored as ordered, source-specific rows in

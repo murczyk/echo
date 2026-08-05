@@ -464,7 +464,7 @@ async fn fill_comp_freq(
     let pb = ProgressBar::new(count);
 
     let mut stream = signal_message::Entity::find()
-        .find_with_related(datasource_group::Entity)
+        .find_also_related(datasource_group::Entity)
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),

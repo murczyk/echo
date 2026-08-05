@@ -4,6 +4,7 @@ use sea_orm::sea_query::{
     extension::postgres::{PgExpr, PgLTree},
     Expr, SimpleExpr,
 };
+use sea_orm::ExprTrait;
 use std::fmt::Write;
 use uuid::Uuid;
 
