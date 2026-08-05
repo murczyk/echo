@@ -662,7 +662,7 @@ type ReloadParams = {
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, CallsignInfoRes>>;
   setTagsMap: Setter<Record<number, Tag>>;
-  setTagsOrder?: Setter<number[]>;
+  setTagsOrder: Setter<number[]>;
   setTopCallsigns: Setter<AnalysisCountItem[]>;
   setTopFreqs: Setter<AnalysisCountItem[]>;
   setTopLocations: Setter<AnalysisCountItem[]>;
@@ -1088,7 +1088,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         );
         if (isStaleReload() || params.signal?.aborted) return;
         params.setTagsMap(tagsDisplay.tagsMap);
-        params.setTagsOrder?.(tagsDisplay.tagsOrder);
+        params.setTagsOrder(tagsDisplay.tagsOrder);
       } catch (loadError) {
         if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return;
         if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
