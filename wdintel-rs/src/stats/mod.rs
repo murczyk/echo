@@ -652,6 +652,9 @@ pub(crate) fn req_allows_stats_aggregated(req: &AnalysisStatsReq) -> bool {
     if !is_filter_empty(&req.selected_locations) {
         return false;
     }
+    if !is_filter_empty(&req.selected_device_names) {
+        return false;
+    }
     if !is_filter_empty(&req.selected_aors) {
         return false;
     }
@@ -3052,6 +3055,16 @@ mod tests {
     fn test_should_read_stats_aggregated_false_for_only_with_metadata() {
         let req = AnalysisStatsReq {
             only_with_metadata: Some(true),
+            ..analysis_stats_req0()
+        };
+
+        assert!(!req_allows_stats_aggregated(&req));
+    }
+
+    #[test]
+    fn test_should_read_stats_aggregated_false_for_selected_device_names() {
+        let req = AnalysisStatsReq {
+            selected_device_names: Some(vec!["Cyber Echo".to_string()]),
             ..analysis_stats_req0()
         };
 
