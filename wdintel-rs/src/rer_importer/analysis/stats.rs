@@ -2491,25 +2491,18 @@ async fn fetch_callsigns_for_login_with_db(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let instant = std::time::Instant::now();
-    let callsigns_res =
-        build_callsigns_query(req, login_str, dt_since, dt_till, master_keys)?;
-    // println!(
-    //     "> callsigns_res: {}",
-    //     callsigns_res.build(DbBackend::Postgres).to_string()
-    // );
-    let callsigns_res: Vec<CallsignsRes> = callsigns_res
-        .into_model::<CallsignsRes>()
-        .all(db)
-        .await
-        .c(h!())?;
-    let mut callsigns = vec![];
-    for x in callsigns_res {
-        let Some(callsign) = x.callsign else { continue };
-        callsigns.push(AnalysisStatsCallsign {
-            callsign,
-            count: x.count,
-        });
-    }
+    let callsigns = load_callsigns_with_counts(
+        db,
+        build_callsign_inbox_item_ids_query(
+            req,
+            login_str,
+            dt_since,
+            dt_till,
+            master_keys,
+        )?,
+    )
+    .await
+    .c(h!())?;
 
     debug!("callsigns op took: {:?}", instant.elapsed());
     Ok(callsigns)
@@ -2592,15 +2585,18 @@ pub(super) async fn count_callsigns_with_db(
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let groups_res = build_callsigns_query(
-        &req.0,
-        &login_value,
-        dt_since,
-        dt_till,
-        master_keys,
-    )?;
-    let count = groups_res.count(db).await.context(h!())?;
-    Ok(count as i64)
+    let callsigns = load_callsigns_with_counts(
+        db,
+        build_callsign_inbox_item_ids_query(
+            &req.0,
+            &login_value,
+            dt_since,
+            dt_till,
+            master_keys,
+        )?,
+    )
+    .await?;
+    Ok(callsigns.len() as i64)
 }
 
 pub(super) async fn count_callsigns_analytics_with_db(
@@ -2944,7 +2940,7 @@ fn metadata_value_expr(
     )
 }
 
-fn build_callsigns_query(
+fn build_callsign_inbox_item_ids_query(
     req: &AnalysisStatsReq,
     login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
@@ -2960,15 +2956,46 @@ fn build_callsigns_query(
         None,
     )?
     .select_only()
-    .column_as(
-        Expr::cust("jsonb_array_elements_text(callsigns)"),
-        "callsign",
-    )
-    .column_as(
-        Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-        "count",
-    )
-    .group_by(SimpleExpr::Custom("callsign".to_string())))
+    .column(sigint_inbox_item::Column::Id)
+    .distinct())
+}
+
+async fn load_callsigns_with_counts(
+    db: &DatabaseConnection,
+    query: Select<sigint_inbox_item::Entity>,
+) -> Result<Vec<AnalysisStatsCallsign>, AppError> {
+    let filtered_items = query.build(DbBackend::Postgres);
+    let values = filtered_items
+        .values
+        .map(|values| values.0)
+        .unwrap_or_default();
+    let callsign_ctes =
+        crate::inbox::callsigns::postgres_effective_callsign_ctes(
+            &filtered_items.sql,
+        );
+    let sql = format!(
+        r#"
+        {callsign_ctes}
+        SELECT callsign, COUNT(*)::bigint AS count
+        FROM all_callsigns
+        GROUP BY callsign
+        ORDER BY callsign
+        "#,
+    );
+    let statement =
+        Statement::from_sql_and_values(DbBackend::Postgres, sql, values);
+    let rows = db.query_all(statement).await.context(h!())?;
+    let callsigns = rows
+        .iter()
+        .map(|row| {
+            Ok(AnalysisStatsCallsign {
+                callsign: row.try_get_by("callsign")?,
+                count: row.try_get_by("count")?,
+            })
+        })
+        .collect::<Result<Vec<_>, DbErr>>()
+        .context(h!())?;
+    Ok(callsigns)
 }
 
 fn build_callsigns_filtered_query(

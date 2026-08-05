@@ -1479,115 +1479,99 @@ pub async fn network_callsigns(
         }
     }
 
-    let mut network_messages = Query::select()
-        .expr_as(
-            Expr::col((
-                SigintInboxItemNetwork::Table,
-                SigintInboxItemNetwork::SigintNetworkId,
-            )),
-            Alias::new("network_id"),
-        )
-        .expr_as(
-            Expr::cust(
-                "jsonb_array_elements_text(sigint_inbox_item.callsigns)",
-            ),
-            Alias::new("callsign"),
-        )
-        .from(SignalMessage::Table)
+    let callsigns = load_network_callsigns_from_messages(
+        &env.dbx,
+        &groups,
+        &req.network_ids,
+        cutoff_since,
+    )
+    .await?;
+    Ok(Json(callsigns))
+}
+
+#[derive(FromQueryResult)]
+struct NetworkCallsignInboxItem {
+    network_id: i64,
+    inbox_item_id: i64,
+}
+
+async fn load_network_callsigns_from_messages(
+    dbx: &DatabaseConnection,
+    groups: &[String],
+    network_ids: &[i64],
+    cutoff_since: Option<PrimitiveDateTime>,
+) -> Result<HashMap<String, Vec<String>>, AppError> {
+    let mut query = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
-            SigintInboxItem::Table,
-            Expr::col((SignalMessage::Table, SignalMessage::Id))
-                .equals((SigintInboxItem::Table, SigintInboxItem::Id)),
-        )
-        .join(
-            JoinType::InnerJoin,
-            DatasourceGroup::Table,
-            Expr::col((SignalMessage::Table, SignalMessage::DatasourceGroupId))
-                .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
-        )
-        .join(
-            JoinType::InnerJoin,
-            SigintInboxItemNetwork::Table,
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Id)).equals((
-                SigintInboxItemNetwork::Table,
-                SigintInboxItemNetwork::SigintInboxItemId,
-            )),
+            signal_message::Relation::SigintInboxItem.def(),
         )
         .join(
             JoinType::InnerJoin,
-            SigintNetwork::Table,
-            Expr::col((
-                SigintInboxItemNetwork::Table,
-                SigintInboxItemNetwork::SigintNetworkId,
-            ))
-            .equals((SigintNetwork::Table, SigintNetwork::Id)),
+            signal_message::Relation::DatasourceGroup.def(),
         )
-        .and_where(
-            Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
         )
-        .and_where(datasource_group::Column::GroupMasterKey.eq_any(groups))
-        .and_where(
-            Expr::col((
-                SigintInboxItemNetwork::Table,
-                SigintInboxItemNetwork::SigintNetworkId,
-            ))
-            .is_in(req.network_ids.clone()),
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Relation::SigintNetwork.def(),
         )
-        .and_where(
-            Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
+        .select_only()
+        .column_as(
+            sigint_inbox_item_network::Column::SigintNetworkId,
+            "network_id",
         )
-        .to_owned();
-    if let Some(cut) = cutoff_since {
-        network_messages.and_where(
+        .column_as(sigint_inbox_item::Column::Id, "inbox_item_id")
+        .distinct()
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            datasource_group::Column::GroupMasterKey.eq_any(groups.to_vec()),
+        )
+        .filter(
+            sigint_inbox_item_network::Column::SigintNetworkId
+                .eq_any(network_ids.to_vec()),
+        )
+        .filter(sigint_network::Column::Deleted.eq(false));
+    if let Some(cutoff_since) = cutoff_since {
+        query = query.filter(
             Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                .gte(cut),
+                .gte(cutoff_since),
         );
     }
-    let network_messages_cte = CommonTableExpression::new()
-        .query(network_messages)
-        .table_name(Alias::new("network_messages"))
-        .to_owned();
-
-    let nm = Alias::new("network_messages");
-    let main_query = Query::select()
-        .expr_as(Expr::col((nm.clone(), "network_id")), Alias::new("id"))
-        .expr_as(
-            Expr::cust(
-                "array_to_json(array_agg(DISTINCT network_messages.callsign))",
-            ),
-            Alias::new("callsigns"),
-        )
-        .from_as(nm.clone(), nm.clone())
-        .group_by_col((nm.clone(), "network_id"))
-        .to_owned();
-
-    let combined_query = Query::with()
-        .cte(network_messages_cte)
-        .clone()
-        .query(main_query)
-        .to_string(PostgresQueryBuilder);
-
-    let rows = env
-        .dbx
-        .query_all(Statement::from_string(
-            DatabaseBackend::Postgres,
-            combined_query,
-        ))
+    let inbox_items = query
+        .into_model::<NetworkCallsignInboxItem>()
+        .all(dbx)
         .await
         .context(h!())?;
-    let mut callsigns = HashMap::new();
-    for row in rows {
-        let id: i64 = row.try_get("", "id").context(h!())?;
-        let row_callsigns: serde_json::Value =
-            row.try_get("", "callsigns").context(h!())?;
-        let all_callsigns =
-            serde_json::from_value::<Vec<String>>(row_callsigns)
-                .unwrap_or_default();
-        callsigns.insert(id.to_string(), all_callsigns);
+    let inbox_item_ids = inbox_items
+        .iter()
+        .map(|inbox_item| inbox_item.inbox_item_id)
+        .collect_vec();
+    let callsigns_by_item_id =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &inbox_item_ids).await?;
+    let mut callsigns_by_network_id =
+        HashMap::<String, BTreeSet<String>>::new();
+    for inbox_item in inbox_items {
+        let Some(callsigns) =
+            callsigns_by_item_id.get(&inbox_item.inbox_item_id)
+        else {
+            continue;
+        };
+        for callsign in callsigns.primary.iter().chain(&callsigns.alg2) {
+            callsigns_by_network_id
+                .entry(inbox_item.network_id.to_string())
+                .or_default()
+                .insert(callsign.clone());
+        }
     }
-
-    Ok(Json(callsigns))
+    Ok(callsigns_by_network_id
+        .into_iter()
+        .map(|(network_id, callsigns)| {
+            (network_id, callsigns.into_iter().collect())
+        })
+        .collect())
 }
 
 #[post("/api/sigint/network-group-activity-one")]

@@ -5,9 +5,7 @@ use crate::error::AppError;
 use crate::rer_importer::report_chunking::{
     report_period_chunks, ReportPeriodChunk, ReportPeriodEnd,
 };
-use crate::rer_importer::reports::inbox_light::{
-    blank_inbox_message, parse_optional_json_vec,
-};
+use crate::rer_importer::reports::inbox_light::blank_inbox_message;
 use crate::types::*;
 use crate::utils::*;
 use anyhow::Context;
@@ -36,7 +34,6 @@ struct MouseReportMessageRow {
     timestamp: Option<NaiveDateTime>,
     freq: Option<String>,
     coords: Option<String>,
-    callsigns: Option<serde_json::Value>,
     date: Option<String>,
     time: Option<String>,
     unit: Option<String>,
@@ -1318,7 +1315,6 @@ async fn load_mouse_report_messages_chunk(
         .column_as(signal_message::Column::Timestamp, "timestamp")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .column_as(sigint_inbox_item::Column::Coords, "coords")
-        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .column_as(sigint_inbox_item::Column::Date, "date")
         .column_as(sigint_inbox_item::Column::Time, "time")
         .column_as(sigint_inbox_item::Column::UnitV2, "unit");
@@ -1337,16 +1333,22 @@ async fn load_mouse_report_messages_chunk(
     } else {
         BTreeMap::new()
     };
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &message_ids).await?;
 
     rows.into_iter()
         .map(|row| {
+            let callsigns = normalized_callsigns
+                .remove(&row.id)
+                .unwrap_or_default()
+                .primary;
             let mut message = blank_inbox_message();
             message.timestamp = row
                 .timestamp
                 .map(|timestamp| timestamp.and_utc().timestamp_millis());
             message.freq = row.freq;
             message.coords = row.coords;
-            message.callsigns = parse_optional_json_vec(row.callsigns)?;
+            message.callsigns = callsigns;
             message.date = row.date;
             message.time = row.time;
             message.unit = row.unit;

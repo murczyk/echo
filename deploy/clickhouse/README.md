@@ -146,6 +146,12 @@ password stays in `echo-peerdb-<source-hostname>`.
 Exclusions may name optional tables that are absent on an instance; if such a
 table is created later, it remains excluded automatically.
 
+Durable normalized domain tables, including
+`sigint_inbox_item_callsign`, are intentionally not excluded. The automatic
+table reconciler adds them to PeerDB after the source migration; verify the raw
+ClickHouse table and current-state gateway view before considering the
+deployment complete.
+
 The source monitor installer records its invoking Unix account in a systemd
 drop-in. Automatic table reconciliation runs as that account so it can reuse
 the same SSH identity and known-hosts file as manual reconciliation. Run the
@@ -433,7 +439,10 @@ The same reconciliation installs versioned ClickHouse derived views and
 exposes owner-owned compatibility views over private foreign tables in the
 gateway:
 
-- `echo_clickhouse_derived.message_callsign` expands JSON callsign arrays.
+- `echo_clickhouse_derived.message_callsign` exposes distinct active callsigns
+  from `sigint_inbox_item_callsign`. During its online backfill, records above
+  the replicated watermark without normalized rows fall back to the legacy JSON
+  arrays.
 - `echo_clickhouse_derived.message_aor_link` combines group and explicit
   network AOR links into message ID and AOR-bound rows.
 - `echo_clickhouse_derived.message_network_link` exposes current network links

@@ -127,8 +127,6 @@ struct ReoInboxMessageRow {
     pub timestamp: Option<NaiveDateTime>,
     pub freq: Option<String>,
     pub coords: Option<String>,
-    pub callsigns: Option<serde_json::Value>,
-    pub callsigns_alg2: Option<serde_json::Value>,
     pub callsign_tokens: Option<serde_json::Value>,
 }
 
@@ -275,8 +273,6 @@ async fn load_reo_inbox_messages(
     .column_as(signal_message::Column::Timestamp, "timestamp")
     .column_as(sigint_inbox_item::Column::Freq, "freq")
     .column_as(sigint_inbox_item::Column::Coords, "coords")
-    .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
-    .column_as(sigint_inbox_item::Column::CallsignsAlg2, "callsigns_alg2")
     .column_as(sigint_inbox_item::Column::CallsignTokens, "callsign_tokens")
     .into_model::<ReoInboxMessageRow>()
     .all(dbx)
@@ -294,10 +290,14 @@ async fn load_reo_inbox_messages(
         load_reo_group_master_keys(dbx, login, req, &message_ids)
             .await
             .context(h!())?;
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &message_ids).await?;
 
     rows.into_iter()
         .map(|row| {
             let id = row.id;
+            let callsigns =
+                normalized_callsigns.remove(&id).unwrap_or_default();
             Ok((
                 id,
                 ReoInboxMessage {
@@ -306,10 +306,8 @@ async fn load_reo_inbox_messages(
                     }),
                     freq: row.freq,
                     coords: row.coords,
-                    callsigns: parse_optional_json_vec(row.callsigns)?,
-                    callsigns_alg2: parse_optional_json_vec(
-                        row.callsigns_alg2,
-                    )?,
+                    callsigns: callsigns.primary,
+                    callsigns_alg2: callsigns.alg2,
                     callsign_tokens: parse_optional_json_vec(
                         row.callsign_tokens,
                     )?,

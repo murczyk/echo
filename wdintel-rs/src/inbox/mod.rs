@@ -9,6 +9,8 @@ use chrono::Duration;
 use chrono_tz::Tz;
 use sea_orm::*;
 
+pub mod callsigns;
+
 pub struct ConstructInboxItemResult {
     pub spawned_message_ids: Vec<i64>,
     pub changed_inbox_item_id: Option<i64>,
@@ -267,10 +269,10 @@ where
         body_noheader: Set(Some(serde_json::to_value(&body_noheader).c(h!())?)),
         tags: NotSet,
         callsigns_alg1: Set(Some(
-            serde_json::to_value(callsigns_alg1).c(h!())?,
+            serde_json::to_value(&callsigns_alg1).c(h!())?,
         )),
         callsigns_alg2: Set(Some(
-            serde_json::to_value(callsigns_alg2).c(h!())?,
+            serde_json::to_value(&callsigns_alg2).c(h!())?,
         )),
         datetime: NotSet,
         signal_tokens: Set(Some(serde_json::to_value(signal_tokens).c(h!())?)),
@@ -289,6 +291,18 @@ where
         .exec_with_returning(txn)
         .await
         .c(h!())?;
+    let system_login_id = crate::users::system_login_id(txn).await.c(h!())?;
+    callsigns::sync(
+        txn,
+        result.id,
+        callsigns::InboxItemCallsigns {
+            primary: callsigns_alg1,
+            alg2: callsigns_alg2,
+        },
+        system_login_id,
+    )
+    .await
+    .c(h!())?;
 
     crate::rer_importer::inbox::metadata::refresh_metadata_for_body(
         result.id,

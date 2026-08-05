@@ -27,7 +27,6 @@ struct Message {
     pub date: Option<String>,
     pub time: Option<String>,
     pub freq: Option<String>,
-    pub callsigns: Option<serde_json::Value>,
     pub checked: Option<bool>,
     pub unit: Option<String>,
     pub location: Option<String>,
@@ -61,7 +60,6 @@ pub async fn get_inbox_messages_report(
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
         .column(sigint_inbox_item::Column::Freq)
-        .column(sigint_inbox_item::Column::Callsigns)
         .column(sigint_inbox_item::Column::Checked)
         .column_as(sigint_inbox_item::Column::LocationV2, "location")
         .column_as(
@@ -259,9 +257,15 @@ pub async fn get_inbox_messages_report(
         "[get_inbox_messages_report] {}: query completed",
         Utc::now()
     );
+    let callsign_item_ids = items_map.keys().copied().collect_vec();
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(&read_db, &callsign_item_ids)
+            .await?;
 
     let mut res: Vec<(i64, Option<(f64, f64)>, InboxMessage)> = vec![];
     for (id, m) in items_map {
+        let callsigns =
+            normalized_callsigns.remove(&id).unwrap_or_default().primary;
         let locations_w_coords = match pelengs_map.get(&id) {
             None => vec![(m.location.clone(), None, None)],
             Some(pelengs) => {
@@ -289,10 +293,7 @@ pub async fn get_inbox_messages_report(
                     date: m.date.clone(),
                     time: m.time.clone(),
                     freq: m.freq.clone(),
-                    callsigns: serde_json::from_value(
-                        m.callsigns.clone().unwrap_or_default(),
-                    )
-                    .unwrap_or_else(|_| vec![]),
+                    callsigns: callsigns.clone(),
                     checked: m.checked.unwrap_or(false),
                     important: false,
                     bookmarked: false,
@@ -623,7 +624,6 @@ mod tests {
                 date: None,
                 time: None,
                 freq: None,
-                callsigns: None,
                 checked: None,
                 unit: None,
                 location: None,
@@ -636,7 +636,6 @@ mod tests {
                 date: None,
                 time: None,
                 freq: None,
-                callsigns: None,
                 checked: None,
                 unit: None,
                 location: None,

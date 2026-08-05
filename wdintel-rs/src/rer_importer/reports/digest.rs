@@ -89,8 +89,6 @@ struct DigestMessageRow {
     timestamp: Option<NaiveDateTime>,
     freq: Option<String>,
     coords: Option<String>,
-    callsigns: Option<serde_json::Value>,
-    callsigns_alg2: Option<serde_json::Value>,
     callsign_tokens: Option<serde_json::Value>,
     location: Option<String>,
     location_v2: Option<String>,
@@ -321,8 +319,6 @@ async fn load_digest_messages(
     .column_as(signal_message::Column::Timestamp, "timestamp")
     .column_as(sigint_inbox_item::Column::Freq, "freq")
     .column_as(sigint_inbox_item::Column::Coords, "coords")
-    .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
-    .column_as(sigint_inbox_item::Column::CallsignsAlg2, "callsigns_alg2")
     .column_as(sigint_inbox_item::Column::CallsignTokens, "callsign_tokens")
     .column_as(sigint_inbox_item::Column::Location, "location")
     .column_as(sigint_inbox_item::Column::LocationV2, "location_v2")
@@ -338,9 +334,13 @@ async fn load_digest_messages(
         load_message_group_info(dbx, login, req, &message_ids)
             .await
             .context(h!())?;
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &message_ids).await?;
 
     rows.into_iter()
         .map(|row| {
+            let callsigns =
+                normalized_callsigns.remove(&row.id).unwrap_or_default();
             let group_info = groups_by_message.remove(&row.id);
             let mut message = blank_inbox_message();
             message.message_uid = row.message_uid;
@@ -350,9 +350,8 @@ async fn load_digest_messages(
                 .map(|timestamp| timestamp.and_utc().timestamp_millis());
             message.freq = row.freq;
             message.coords = row.coords;
-            message.callsigns = parse_optional_json_vec(row.callsigns)?;
-            message.callsigns_alg2 =
-                parse_optional_json_vec(row.callsigns_alg2)?;
+            message.callsigns = callsigns.primary;
+            message.callsigns_alg2 = callsigns.alg2;
             message.callsign_tokens =
                 Some(parse_optional_json_vec(row.callsign_tokens)?);
             message.location =

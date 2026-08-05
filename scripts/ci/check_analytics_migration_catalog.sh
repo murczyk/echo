@@ -20,7 +20,7 @@ fi
 
 catalog_dir=$(mktemp -d "$REPO_ROOT/target/analytics-migration-catalog.XXXXXX")
 base_worktree="$catalog_dir/base"
-base_target_dir="$REPO_ROOT/target/analytics-migration-base"
+base_target_dir="$catalog_dir/target-base"
 before="$catalog_dir/before.tsv"
 after="$catalog_dir/after.tsv"
 
@@ -35,7 +35,6 @@ git worktree add --detach "$base_worktree" "$base_revision" >/dev/null
 echo "Applying base migrations for analytics catalog comparison"
 (
   cd "$base_worktree"
-  # Keep base artifacts from replacing HEAD path-dependency artifacts.
   CARGO_TARGET_DIR="$base_target_dir" \
     cargo run -p wdintel-rs -- --mode=test migrate
 )

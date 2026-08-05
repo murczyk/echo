@@ -299,6 +299,10 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        delta_kv::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         system_settings::Entity::delete_many()
             .exec(&env.dbx)
             .await
