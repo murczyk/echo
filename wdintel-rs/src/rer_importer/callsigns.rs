@@ -6,7 +6,6 @@ use crate::rer_importer::types::*;
 use crate::types::*;
 use crate::users::ensure_rer_role;
 use crate::users::login_id_from_identity;
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::string::*;
 use crate::utils::*;
 use actix_web::post;
@@ -2770,8 +2769,7 @@ mod tests {
 
     #[test]
     fn extract_callsigns_dmr_alias_header_handles_slash_and_extra_comma() {
-        let body =
-            "Позивні: `90589=МАЛЫШ, 90734=ШТОРМ, 90588=ВОЛГА,, 1=Гранит, 122024=СЕВЕР/СЕРП`";
+        let body = "Позивні: `90589=МАЛЫШ, 90734=ШТОРМ, 90588=ВОЛГА,, 1=Гранит, 122024=СЕВЕР/СЕРП`";
         let res = extract_dmr_alias_callsigns(body).unwrap();
         let expected: Vec<String> = vec![
             "МАЛЫШ".to_string(),

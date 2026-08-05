@@ -10,8 +10,8 @@ use sea_orm::sea_query::{
     Alias, CommonTableExpression, Condition, Expr, JoinType,
 };
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
-    QueryTrait, Select,
+    ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
+    QuerySelect, QueryTrait, Select,
 };
 
 pub(in crate::devices::files) async fn search_entries(

@@ -93,6 +93,18 @@ fn has_postgres_error_code(
 ) -> bool {
     let mut source = Some(error);
     while let Some(error) = source {
+        if let Some(
+            DbErr::Conn(sea_orm::RuntimeErr::SqlxError(sqlx_error))
+            | DbErr::Exec(sea_orm::RuntimeErr::SqlxError(sqlx_error))
+            | DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx_error)),
+        ) = error.downcast_ref::<DbErr>()
+        {
+            if let sqlx::Error::Database(database_error) = sqlx_error.as_ref() {
+                if database_error.code().as_deref() == Some(code) {
+                    return true;
+                }
+            }
+        }
         if let Some(sqlx::Error::Database(database_error)) =
             error.downcast_ref::<sqlx::Error>()
         {

@@ -53,20 +53,22 @@ pub async fn oneoff_reprocess_search_index(
     match (start_dt, end_dt) {
         (Some(start), Some(end)) => {
             loop {
-                let deleted_rows = sqlx::query(&full_delete_query)
-                    .bind(start)
-                    .bind(end)
-                    .bind(batch_size)
-                    .execute(pool)
-                    .await
-                    .c(h!())?;
+                let deleted_rows = sqlx::query(sqlx::AssertSqlSafe(
+                    full_delete_query.as_str(),
+                ))
+                .bind(start)
+                .bind(end)
+                .bind(batch_size)
+                .execute(pool)
+                .await
+                .c(h!())?;
                 if deleted_rows.rows_affected() == 0 {
                     break;
                 }
 
                 println!("Deleted {} rows...", deleted_rows.rows_affected());
             }
-            sqlx::query(&full_insert_query)
+            sqlx::query(sqlx::AssertSqlSafe(full_insert_query.as_str()))
                 .bind(start)
                 .bind(end)
                 .execute(pool)
@@ -75,19 +77,21 @@ pub async fn oneoff_reprocess_search_index(
         }
         (Some(start), None) => {
             loop {
-                let deleted_rows = sqlx::query(&full_delete_query)
-                    .bind(start)
-                    .bind(batch_size)
-                    .execute(pool)
-                    .await
-                    .c(h!())?;
+                let deleted_rows = sqlx::query(sqlx::AssertSqlSafe(
+                    full_delete_query.as_str(),
+                ))
+                .bind(start)
+                .bind(batch_size)
+                .execute(pool)
+                .await
+                .c(h!())?;
                 if deleted_rows.rows_affected() == 0 {
                     break;
                 }
 
                 println!("Deleted {} rows...", deleted_rows.rows_affected());
             }
-            sqlx::query(&full_insert_query)
+            sqlx::query(sqlx::AssertSqlSafe(full_insert_query.as_str()))
                 .bind(start)
                 .execute(pool)
                 .await
@@ -95,30 +99,32 @@ pub async fn oneoff_reprocess_search_index(
         }
         (None, Some(end)) => {
             loop {
-                let deleted_rows = sqlx::query(&full_delete_query)
-                    .bind(end)
-                    .bind(batch_size)
-                    .execute(pool)
-                    .await
-                    .c(h!())?;
+                let deleted_rows = sqlx::query(sqlx::AssertSqlSafe(
+                    full_delete_query.as_str(),
+                ))
+                .bind(end)
+                .bind(batch_size)
+                .execute(pool)
+                .await
+                .c(h!())?;
                 if deleted_rows.rows_affected() == 0 {
                     break;
                 }
 
                 println!("Deleted {} rows...", deleted_rows.rows_affected());
             }
-            sqlx::query(&full_insert_query)
+            sqlx::query(sqlx::AssertSqlSafe(full_insert_query.as_str()))
                 .bind(end)
                 .execute(pool)
                 .await
                 .c(h!())?;
         }
         (None, None) => {
-            sqlx::query(&full_delete_query)
+            sqlx::query(sqlx::AssertSqlSafe(full_delete_query.as_str()))
                 .execute(pool)
                 .await
                 .c(h!())?;
-            sqlx::query(&full_insert_query)
+            sqlx::query(sqlx::AssertSqlSafe(full_insert_query.as_str()))
                 .execute(pool)
                 .await
                 .c(h!())?;

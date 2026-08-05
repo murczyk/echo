@@ -89,7 +89,7 @@ async fn file_registry_schema_and_entity_round_trip() {
 
 async fn assert_migration_versions(connection: &DatabaseConnection) {
     let migration_versions = connection
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DbBackend::Postgres,
             "select version from seaql_migrations order by version".to_string(),
         ))
@@ -114,7 +114,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
 
 async fn assert_public_extensions(connection: &DatabaseConnection) {
     let extensions = connection
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DbBackend::Postgres,
             r#"
 select extname, extnamespace::regnamespace::text as schema_name
@@ -146,7 +146,7 @@ order by extname
 
 async fn assert_legacy_file_table_is_absent(connection: &DatabaseConnection) {
     let legacy_table: Option<String> = connection
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
             "select to_regclass('public.device_file')::text as table_name"
                 .to_string(),
@@ -217,7 +217,7 @@ async fn assert_exact_columns(
     expected: &[(&str, &str, Option<&str>, &str, &str)],
 ) {
     let columns = connection
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DbBackend::Postgres,
             format!(
                 r#"
@@ -263,7 +263,7 @@ async fn constraint_names(
     constraint_type: char,
 ) -> Vec<String> {
     connection
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DbBackend::Postgres,
             format!(
                 "select conname from pg_constraint where conrelid = 'public.{table_name}'::regclass and contype = '{constraint_type}' order by conname"
@@ -304,7 +304,7 @@ async fn assert_file_entry_constraints(connection: &DatabaseConnection) {
     );
 
     let parent_definition: String = connection
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
             "select pg_get_constraintdef(oid) as definition from pg_constraint where conname = 'file_entry_parent_fk'".to_string(),
         ))
@@ -321,7 +321,7 @@ async fn assert_file_entry_constraints(connection: &DatabaseConnection) {
 
 async fn assert_file_entry_triggers(connection: &DatabaseConnection) {
     let triggers = connection
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DbBackend::Postgres,
             r#"
 select tgname, tgdeferrable, tginitdeferred, pg_get_triggerdef(oid) as definition
@@ -366,7 +366,7 @@ order by tgname
 
 async fn assert_file_entry_indexes(connection: &DatabaseConnection) {
     let indexes = connection
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DbBackend::Postgres,
             "select indexname, indexdef from pg_indexes where schemaname = 'public' and tablename = 'file_entry' order by indexname".to_string(),
         ))
@@ -860,6 +860,18 @@ fn has_postgres_error_code(
 ) -> bool {
     let mut source = Some(error);
     while let Some(error) = source {
+        if let Some(
+            DbErr::Conn(sea_orm::RuntimeErr::SqlxError(sqlx_error))
+            | DbErr::Exec(sea_orm::RuntimeErr::SqlxError(sqlx_error))
+            | DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx_error)),
+        ) = error.downcast_ref::<DbErr>()
+        {
+            if let sqlx::Error::Database(database_error) = sqlx_error.as_ref() {
+                if database_error.code().as_deref() == Some(code) {
+                    return true;
+                }
+            }
+        }
         if let Some(sqlx::Error::Database(database_error)) =
             error.downcast_ref::<sqlx::Error>()
         {

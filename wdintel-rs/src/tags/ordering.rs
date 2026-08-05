@@ -89,7 +89,7 @@ async fn ensure_matching_ordering(
         .await
         .c(h!())?;
     for o in orderings.into_iter() {
-        if tag_ids_string.eq(&o.tag_ids_list) {
+        if tag_ids_string == o.tag_ids_list {
             matching_ordering = Some(o);
         } else {
             // deactivate deprecated because now other tags are enabled

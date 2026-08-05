@@ -8,7 +8,6 @@ use crate::palitra::{cancel_palitra_conversion, schedule_palitra_goi_delete};
 use crate::sigint::aor::bl::expand_aor_ids_to_descendants;
 use crate::types::*;
 use crate::users::has_role;
-use crate::utils::orm::ArrayColumnOps;
 use crate::{h, nlp};
 use actix_web::web::Data;
 use anyhow::Context;
@@ -625,7 +624,7 @@ pub async fn suggest_palitra_point_labels(
     if prefix.is_empty() {
         return Ok(vec![]);
     }
-    let limit = req.limit.unwrap_or(15).min(50);
+    let limit = std::cmp::min(req.limit.unwrap_or(15), 50);
     let normalized_prefix = prefix.to_lowercase();
     let prefix_pattern = build_label_pattern(&normalized_prefix, false);
 
@@ -805,7 +804,7 @@ pub(crate) fn palitra_suggest_cache_key(
     palitra_ids.sort_unstable();
     palitra_ids.dedup();
     let prefix = normalize_label_cache(&req.prefix).unwrap_or_default();
-    let limit = req.limit.unwrap_or(15).min(50);
+    let limit = std::cmp::min(req.limit.unwrap_or(15), 50);
     format!(
         "palitra:points:label-suggest:{login}:{}:{prefix}:{limit}",
         palitra_ids.iter().join(",")
@@ -1586,7 +1585,7 @@ where
         SET center = NULL
         WHERE id = $1;
     ";
-    dbx.execute(Statement::from_sql_and_values(
+    dbx.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         reset_query,
         [palitra_geometry_id.into()],
@@ -1612,7 +1611,7 @@ where
             p.id = $1
             AND p.id = sub.palitra_geometry_id;
     ";
-    dbx.execute(Statement::from_sql_and_values(
+    dbx.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         calculate_query,
         [palitra_geometry_id.into()],
@@ -1635,7 +1634,7 @@ where
         SET convex_hull = NULL
         WHERE id = $1;
     ";
-    dbx.execute(Statement::from_sql_and_values(
+    dbx.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         reset_query,
         [palitra_geometry_id.into()],
@@ -1662,7 +1661,7 @@ where
         WHERE
             id = $1;
     ";
-    dbx.execute(Statement::from_sql_and_values(
+    dbx.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         calculate_query,
         [palitra_geometry_id.into()],
@@ -1881,7 +1880,7 @@ pub async fn rewrite_palitra_points(
         if is_fallback_color {
             points_with_fallback_color += 1;
         }
-        if !is_fallback_color && !palitra_geometry.hex.eq(&point_color) {
+        if !is_fallback_color && palitra_geometry.hex != point_color {
             skipped_points_with_unexpected_color += 1;
             continue;
         }
@@ -1954,7 +1953,7 @@ pub async fn rewrite_palitra_line_strings(
             multi_line_string = NULL
         WHERE id = $1;
     ";
-    txn.execute(Statement::from_sql_and_values(
+    txn.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         reset_query,
         [palitra_geometry_id.into()],
@@ -1975,7 +1974,7 @@ pub async fn rewrite_palitra_line_strings(
         if is_fallback_color {
             lines_with_fallback_color += 1;
         }
-        if !is_fallback_color && !palitra_geometry.hex.eq(&line_color) {
+        if !is_fallback_color && palitra_geometry.hex != line_color {
             skipped_lines_with_unexpected_color += 1;
             continue;
         }
@@ -2034,7 +2033,7 @@ pub async fn rewrite_palitra_line_strings(
             "
         }
     };
-    txn.execute(Statement::from_sql_and_values(
+    txn.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         update_query,
         [palitra_geometry_id.into(), wkt.into()],
@@ -2052,7 +2051,7 @@ async fn insert_many_points(
     let mut point_lexeme_actives: Vec<palitra_point_lexeme::ActiveModel> =
         Vec::new();
     let inserted_points = palitra_point::Entity::insert_many(points_batch)
-        .exec_with_returning_many(txn)
+        .exec_with_returning(txn)
         .await
         .context(h!())?;
 

@@ -235,6 +235,7 @@ describe('SettingsMyReportsSection', () => {
 
     const columns = (capturedSettingsNeoTableProps?.columns as Array<Record<string, any>>) ?? [];
     const executionTimeColumn = columns.find((column) => column.id === 'executionTime');
+    const statusColumn = columns.find((column) => column.id === 'status');
     const completedRow = {
       ...sampleRunningRow,
       status: 'done',
@@ -254,6 +255,61 @@ describe('SettingsMyReportsSection', () => {
     expect(capturedTableStateProviderProps?.defaultColumnVisibility).toMatchObject({
       executionTime: true,
     });
+    expect(statusColumn).toMatchObject({
+      filterVariant: 'multi-select',
+      filterFn: 'arrIncludesSome',
+      filterSelectOptions: [
+        { text: 'Очікує запуску', value: 'planned' },
+        { text: 'Формується', value: 'in_progress' },
+        { text: 'Готово', value: 'done' },
+        { text: 'Помилка', value: 'failed' },
+      ],
+    });
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it('pages through batch report history with the analysis pagination control', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const loadReportHistoryBatch = vi.fn(async (req: { offset: number }) => ({
+      rows: [sampleRunningRow],
+      total: 401,
+      hasMore: req.offset < 400,
+      nextOffset: req.offset + 200,
+    }));
+
+    await act(async () => {
+      root.render(
+        <ReportHistoryTableSection
+          active
+          title="Всі звіти"
+          tableId="admin-all-reports-v2"
+          fullHeight
+          loadReportHistoryBatch={loadReportHistoryBatch}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('1-1 з 401');
+    expect(container.textContent).not.toContain('1/401');
+    expect(capturedSettingsNeoTableProps?.enableBottomToolbar).toBe(false);
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Наступна сторінка"]')?.click();
+      await Promise.resolve();
+    });
+
+    expect(loadReportHistoryBatch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 200, limit: 200 }),
+      undefined,
+    );
+    expect(container.textContent).toContain('201-201 з 401');
 
     act(() => {
       root.unmount();

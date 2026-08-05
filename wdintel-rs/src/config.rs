@@ -54,6 +54,101 @@ pub const AI_CALLSIGN_DEFAULT_PROMPT: &str = r#"Знайди всі позивн
 pub const AI_CHAT_ROLE_SYSTEM: &str = "system";
 pub const AI_CHAT_ROLE_USER: &str = "user";
 pub const AI_CHAT_ROLE_ASSISTANT: &str = "assistant";
+pub const AI_AGENT_SETTINGS_ID: i16 = 1;
+pub const AI_AGENT_DISPATCHER_ID: i16 = 1;
+pub const AI_AGENT_TEMPLATE_LOGIN_ID: &str =
+    "019fc7f7-9770-7f83-9c1a-211af29b02e6";
+pub const AI_AGENT_TEMPLATE_LOGIN_NAME: &str = "ai-agent";
+pub const AI_AGENT_LINKED_LOGIN_SUFFIX: &str = "-ai-agent";
+pub const AI_AGENT_COPIED_LOGIN_PREFIX: &str = "copied-ai-agent-";
+pub const AI_AGENT_CONTAINER_NAME_PREFIX: &str = "echo-ai-agent-";
+pub const AI_AGENT_ROLE_API: &str = "ApiAgent";
+pub const AI_AGENT_ROLE_RER: &str = "Rer";
+pub const AI_AGENT_ROLE_CYBER: &str = "Cyber";
+pub const AI_AGENT_CORRELATION_HEADER: &str = "X-Echo-Agent-Session";
+pub const AI_AGENT_BOOTSTRAP_REDIS_PREFIX: &str = "ai-agent:bootstrap:";
+pub const AI_AGENT_PENDING_BOOTSTRAP_REDIS_PREFIX: &str =
+    "ai-agent:pending-bootstrap:";
+pub const AI_AGENT_CREDENTIAL_REDIS_PREFIX: &str = "ai-agent:credential:";
+pub const AI_AGENT_LOGIN_CREDENTIALS_REDIS_PREFIX: &str =
+    "ai-agent:login-credentials:";
+pub const AI_AGENT_CORRELATION_SESSION_REDIS_PREFIX: &str =
+    "ai-agent:correlation-session:";
+pub const AI_AGENT_SESSION_BINDING_KEY: &str = "ai_agent.session_binding";
+pub const AI_AGENT_BOOTSTRAP_TTL_SEC: u64 = 120;
+pub const AI_AGENT_CREDENTIAL_TTL_SEC: u64 = 6 * 60 * 60;
+pub const AI_AGENT_REQUEST_PROMPT_MAX_CHARS: usize = 100_000;
+pub const AI_AGENT_CONVERSATION_TITLE_MAX_CHARS: usize = 120;
+pub const AI_AGENT_EVENT_PAYLOAD_MAX_BYTES: usize = 256 * 1024;
+pub const AI_AGENT_REQUEST_MAX_RUNNER_EVENTS: usize = 10_000;
+pub const AI_AGENT_REQUEST_MAX_EVENT_BYTES: usize = 16 * 1024 * 1024;
+pub const AI_AGENT_RESPONSE_MAX_BYTES: usize = 2 * 1024 * 1024;
+pub const AI_AGENT_RESPONSE_MAX_CHARS: usize = 500_000;
+pub const AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES: usize = 500 * 1024;
+pub const AI_AGENT_ERROR_MAX_CHARS: usize = 12 * 1024;
+pub const AI_AGENT_PROGRESS_MAX_CHARS: usize = 500;
+pub const AI_AGENT_MAX_RUNNING_CONTAINERS: u64 = 6;
+pub const AI_AGENT_REQUEST_WORKER_COUNT: usize = 6;
+pub const AI_AGENT_HISTORY_MAX_TURNS: u64 = 100;
+pub const AI_AGENT_WORKER_SHUTDOWN_GRACE_SEC: u64 = 30;
+pub const AI_AGENT_WORKER_IDLE_SLEEP_MS: u64 = 500;
+pub const AI_AGENT_WORKER_ERROR_SLEEP_SEC: u64 = 5;
+pub const AI_AGENT_WORKER_LEASE_ADVISORY_LOCK_KEY: i64 = 0x4543_484f_4149_3031;
+pub const AI_AGENT_WORKER_LEASE_RETRY_MS: u64 = 1_000;
+pub const AI_AGENT_WORKER_LEASE_HEARTBEAT_SEC: u64 = 1;
+pub const AI_AGENT_WORKER_LEASE_HEARTBEAT_TIMEOUT_SEC: u64 = 3;
+pub const AI_AGENT_WORKER_LEASE_TAKEOVER_GRACE_SEC: u64 =
+    AI_AGENT_WORKER_LEASE_HEARTBEAT_SEC
+        + AI_AGENT_WORKER_LEASE_HEARTBEAT_TIMEOUT_SEC
+        + AI_AGENT_WORKER_SHUTDOWN_GRACE_SEC
+        + 1;
+pub const AI_AGENT_IDLE_STOP_MINUTES: i64 = 5;
+pub const AI_AGENT_DESTROY_STOPPED_DAYS: i64 = 7;
+pub const AI_AGENT_REVIEW_MAX_ATTEMPTS: i32 = 8;
+pub const AI_AGENT_REVIEW_RETRY_BASE_SEC: i64 = 10;
+pub const AI_AGENT_REVIEW_RETRY_MAX_SEC: i64 = 15 * 60;
+pub const AI_AGENT_REVIEW_CLAIM_LEASE_SEC: i64 = 10 * 60;
+pub const AI_AGENT_SSE_POLL_MS: u64 = 500;
+pub const AI_AGENT_ADMIN_REQUEST_LIMIT_DEFAULT: i32 = 100;
+pub const AI_AGENT_ADMIN_REQUEST_LIMIT_MAX: i32 = 500;
+pub const AI_AGENT_DISPATCHER_PORT_DEFAULT: u16 = 22031;
+pub const AI_AGENT_DISPATCHER_IDENTITY_FILE: &str =
+    "/etc/echo/ai-agent/dispatcher_ed25519";
+pub const AI_AGENT_DISPATCHER_KNOWN_HOSTS_FILE: &str =
+    "/etc/echo/ai-agent/known_hosts";
+pub const AI_AGENT_DISPATCHER_TIMEOUT_SEC: u64 = 10 * 60;
+pub const AI_AGENT_DISPATCHER_CONTROL_TIMEOUT_SEC: u64 = 30;
+pub const AI_AGENT_DISPATCHER_MAX_FRAME_BYTES: usize = 1024 * 1024;
+pub const AI_AGENT_DISPATCHER_CONTROL_MAX_FRAMES: usize = 32;
+pub const AI_AGENT_DISPATCHER_CONTROL_MAX_BYTES: usize = 2 * 1024 * 1024;
+pub const AI_AGENT_ECHO_PROXY_TEST_TIMEOUT_SEC: u64 = 5;
+pub const AI_AGENT_ECHO_PROXY_PING_PATH: &str = "/api/ping";
+pub const AI_AGENT_API_CALL_LIMIT: i64 = 128;
+pub const AI_AGENT_API_CALL_COUNT_REDIS_PREFIX: &str = "ai-agent:api-calls:";
+pub const AI_AGENT_PROVIDER_CAPABILITY_REDIS_PREFIX: &str =
+    "ai-agent:provider-capability:";
+pub const AI_AGENT_PROVIDER_CAPABILITY_CALLS_REDIS_PREFIX: &str =
+    "ai-agent:provider-capability-calls:";
+pub const AI_AGENT_PROVIDER_CAPABILITY_CORRELATION_REDIS_PREFIX: &str =
+    "ai-agent:provider-capability-correlation:";
+pub const AI_AGENT_PROVIDER_CAPABILITY_TTL_SEC: u64 = 11 * 60;
+pub const AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT: i64 = 256;
+pub const AI_AGENT_PROVIDER_REQUEST_MAX_BYTES: usize = 2 * 1024 * 1024;
+pub const AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES: usize = 2 * 1024 * 1024;
+pub const AI_AGENT_PROVIDER_ERROR_MAX_BYTES: usize = 64 * 1024;
+pub const AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 5 * 60;
+pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
+    "/api/ai-agent/provider/v1/chat/completions";
+pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
+pub const AI_AGENT_INBOX_MAX_DAYS: i64 = 31;
+pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
+    "Не вдалося виконати запит. Спробуйте ще раз.";
+pub const AI_AGENT_MATTERMOST_TIMEOUT_SEC: u64 = 5;
+pub const AI_AGENT_MATTERMOST_CHAT_MAX_ATTEMPTS: i32 = 8;
+pub const AI_AGENT_MATTERMOST_CHAT_RETRY_BASE_SEC: i64 = 10;
+pub const AI_AGENT_MATTERMOST_CHAT_RETRY_MAX_SEC: i64 = 15 * 60;
+pub const AI_AGENT_MATTERMOST_CHAT_CLAIM_LEASE_SEC: i64 = 30;
+pub const AI_AGENT_MATTERMOST_CHAT_PROMPT_MAX_CHARS: usize = 12 * 1024;
 pub const ECHO_AUDIO_TRANSCRIPTION_CONCURRENCY: usize = 1;
 pub const ECHO_AUDIO_TRANSCRIPTION_RETENTION_DAYS: i64 = 2;
 pub const ECHO_AUDIO_TRANSCRIPTION_MAX_BYTES: i64 = 104_857_600;
@@ -674,6 +769,7 @@ pub struct Config {
     pub ai_models_config: Option<ModelsConfig>,
     pub network_invalidation_worker_night_shift_start_hour: Option<u32>,
     pub network_invalidation_worker_night_shift_end_hour: Option<u32>,
+    pub ai_agent_dispatcher: Option<AiAgentDispatcherConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -708,6 +804,16 @@ pub struct ReplicaConfig {
     pub pg_user: Option<String>,
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct AiAgentDispatcherConfig {
+    pub host: String,
+    pub port: Option<u16>,
+    pub user: String,
+    pub identity_file: String,
+    pub known_hosts_file: String,
+    pub namespace: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -1049,6 +1155,11 @@ mod config_tests {
         parsed: bool,
     }
 
+    #[derive(Debug, Deserialize)]
+    struct TestAiAgentDispatcherSection {
+        ai_agent_dispatcher: AiAgentDispatcherConfig,
+    }
+
     #[test]
     fn deserialize_config_reports_unused_keys() {
         let input = r#"
@@ -1089,6 +1200,26 @@ migrated = "database"
         let error = read_from_path::<TestConfig>(path.clone()).unwrap_err();
 
         assert!(format!("{error:?}").contains(&path.display().to_string()));
+    }
+
+    #[test]
+    fn ai_agent_dispatcher_uses_nested_section() {
+        let config: TestAiAgentDispatcherSection = toml::from_str(
+            r#"
+[ai_agent_dispatcher]
+host = "echo-ai-agent-vm.example"
+port = 22031
+user = "echo-ai-agent-cbr"
+identity_file = "/etc/echo/ai-agent/dispatcher_ed25519"
+known_hosts_file = "/etc/echo/ai-agent/known_hosts"
+namespace = "echo-cbr"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.ai_agent_dispatcher.namespace, "echo-cbr");
+        assert_eq!(config.ai_agent_dispatcher.user, "echo-ai-agent-cbr");
+        assert_eq!(config.ai_agent_dispatcher.port, Some(22031));
     }
 
     #[test]

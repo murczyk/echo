@@ -87,7 +87,7 @@ async fn print_datasource_group_size(
     label: &str,
 ) -> Result<(), AppError> {
     let row = dbx
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             r#"
             select

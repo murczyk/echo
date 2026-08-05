@@ -7,8 +7,8 @@ use crate::file_registry::entities::file_entry;
 use crate::h;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveEnum, Condition, ConnectionTrait, EntityTrait, QueryFilter,
-    QuerySelect, Select,
+    ActiveEnum, Condition, ConnectionTrait, EntityTrait, ExprTrait,
+    QueryFilter, QuerySelect, Select,
 };
 
 pub(in crate::devices::files) async fn list_children(
@@ -54,17 +54,16 @@ fn children_strict_after_condition(
 ) -> Condition {
     Condition::all().add(
         Expr::tuple([
-            Expr::col((file_entry::Entity, file_entry::Column::ParentId))
-                .into(),
-            Expr::col((file_entry::Entity, file_entry::Column::Kind)).into(),
-            Expr::col((file_entry::Entity, file_entry::Column::Name)).into(),
-            Expr::col((file_entry::Entity, file_entry::Column::Id)).into(),
+            Expr::col((file_entry::Entity, file_entry::Column::ParentId)),
+            Expr::col((file_entry::Entity, file_entry::Column::Kind)),
+            Expr::col((file_entry::Entity, file_entry::Column::Name)),
+            Expr::col((file_entry::Entity, file_entry::Column::Id)),
         ])
         .gt(Expr::tuple([
-            Expr::val(parent_id).into(),
-            after.kind().as_enum(),
-            Expr::val(after.name()).into(),
-            Expr::val(after.entry_id()).into(),
+            Expr::val(parent_id),
+            ActiveEnum::as_enum(&after.kind()),
+            Expr::val(after.name()),
+            Expr::val(after.entry_id()),
         ])),
     )
 }

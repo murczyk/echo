@@ -534,12 +534,16 @@ fn extract_generic_body_datetime(
 
     Ok(match Kyiv.from_local_datetime(&dt) {
         chrono::offset::LocalResult::None => {
-            println!("> warning: couldn't convert datetime to Kyiv timezone: {dt:?}; body: {body}");
+            println!(
+                "> warning: couldn't convert datetime to Kyiv timezone: {dt:?}; body: {body}"
+            );
             None
         }
         chrono::offset::LocalResult::Single(v) => Some(v),
         chrono::offset::LocalResult::Ambiguous(v1, v2) => {
-            println!("> warning: couldn't convert datetime to Kyiv timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}");
+            println!(
+                "> warning: couldn't convert datetime to Kyiv timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}"
+            );
             None
         }
     })
@@ -906,8 +910,7 @@ mod tests {
     #[test]
     fn extract_message_datetime_prefers_meow_header_over_body_time() {
         let now = Kyiv.with_ymd_and_hms(2026, 6, 28, 12, 0, 0).unwrap();
-        let body =
-            "50 обрБпС\n05.58 (МСК/Київ) +- 10хв\n\nПерехоплення о 08:30\nрядок 2";
+        let body = "50 обрБпС\n05.58 (МСК/Київ) +- 10хв\n\nПерехоплення о 08:30\nрядок 2";
 
         let (m_dt, meow_format) =
             extract_message_datetime(now, body, false).unwrap();

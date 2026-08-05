@@ -8,7 +8,6 @@ use crate::messenger::types::Message;
 use crate::types::Env;
 use crate::types::ShortContext;
 use crate::users::{has_role, login_id_from_identity};
-use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::Utc;
@@ -177,7 +176,7 @@ async fn ensure_profile(
     let already_exists = old_name.is_some();
     let up_to_date = match &old_name {
         None => false,
-        Some(nm) => profile.name.eq(nm),
+        Some(nm) => profile.name == *nm,
     };
     if already_exists && up_to_date {
         return Ok(echo_id);

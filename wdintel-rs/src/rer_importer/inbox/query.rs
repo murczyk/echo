@@ -5,7 +5,6 @@ use crate::rer_importer::analysis::*;
 use crate::rer_importer::types::*;
 use crate::sigint::sender::preferred_sender_expr;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
@@ -21,18 +20,16 @@ fn since_id_null_bucket_filter(
 }
 
 fn inbox_items_cte_id_expr() -> SimpleExpr {
-    Expr::col((Alias::new("inbox_items_cte"), Alias::new("id"))).into()
+    Expr::col((Alias::new("inbox_items_cte"), Alias::new("id")))
 }
 
 fn inbox_items_cte_cursor_expr(req_sort_by: InboxMessagesSortBy) -> SimpleExpr {
     match req_sort_by {
         InboxMessagesSortBy::IMSDatetime => {
             Expr::col((Alias::new("inbox_items_cte"), Alias::new("datetime")))
-                .into()
         }
         InboxMessagesSortBy::IMSTimestamp => {
             Expr::col((Alias::new("inbox_items_cte"), Alias::new("timestamp")))
-                .into()
         }
     }
 }
@@ -657,7 +654,7 @@ async fn resolve_analytics_inbox_message_id_scope(
                         .context(h!())?;
                 since_date =
                     Some(since_date.map_or(cursor_date, |since_date| {
-                        since_date.max(cursor_date)
+                        std::cmp::max(since_date, cursor_date)
                     }));
             }
             if let Some(cursor_id) = req.before_id_noninclusive {
@@ -672,7 +669,7 @@ async fn resolve_analytics_inbox_message_id_scope(
                         .flatten()
                         .context(h!())?;
                 till_date = Some(till_date.map_or(cursor_date, |till_date| {
-                    till_date.min(cursor_date)
+                    std::cmp::min(till_date, cursor_date)
                 }));
             }
         }
@@ -689,7 +686,7 @@ async fn resolve_analytics_inbox_message_id_scope(
                     .context(h!())?;
                 since_date =
                     Some(since_date.map_or(cursor_date, |since_date| {
-                        since_date.max(cursor_date)
+                        std::cmp::max(since_date, cursor_date)
                     }));
             }
             if let Some(cursor_id) = req.before_id_noninclusive {
@@ -703,7 +700,7 @@ async fn resolve_analytics_inbox_message_id_scope(
                     .flatten()
                     .context(h!())?;
                 till_date = Some(till_date.map_or(cursor_date, |till_date| {
-                    till_date.min(cursor_date)
+                    std::cmp::min(till_date, cursor_date)
                 }));
             }
         }
@@ -1511,9 +1508,8 @@ mod tests {
     fn null_bucket_filter_renders_expected_sql() {
         let expr = since_id_null_bucket_filter(
             TEST_CURSOR_ID,
-            Expr::col((Alias::new("inbox_items_cte"), Alias::new("timestamp")))
-                .into(),
-            Expr::col((Alias::new("inbox_items_cte"), Alias::new("id"))).into(),
+            Expr::col((Alias::new("inbox_items_cte"), Alias::new("timestamp"))),
+            Expr::col((Alias::new("inbox_items_cte"), Alias::new("id"))),
         );
 
         let sql = Query::select().expr(expr).to_string(PostgresQueryBuilder);

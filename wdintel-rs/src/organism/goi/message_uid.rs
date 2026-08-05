@@ -14,7 +14,6 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::types::{info, warn, Env, Mode, ShortContext};
-use crate::utils::orm::ArrayColumnOps;
 use crate::{h, new_pg_pool_from_mode};
 use chrono::{
     DateTime, Duration as ChronoDuration, FixedOffset, NaiveDateTime, Utc,
@@ -126,10 +125,10 @@ pub async fn goi_association_message_uid_worker_nofail(env: Arc<Env>) {
                 "GOI association message UID worker pass completed: scanned={}, filled={}",
                 stats.scanned, stats.filled
             ),
-            Ok(None) => {},
-            Err(err) => warn!(
-                "GOI association message UID worker pass failed: {err:#}"
-            ),
+            Ok(None) => {}
+            Err(err) => {
+                warn!("GOI association message UID worker pass failed: {err:#}")
+            }
         }
         tokio::time::sleep(Duration::from_secs(
             ORGANISM_GOI_MESSAGE_UID_WORKER_SLEEP_SEC,

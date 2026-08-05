@@ -33,7 +33,6 @@ import {
 } from '../../services/api/system-settings';
 import { APP_TIME_ZONE } from '../../utils/misc';
 import { AdminControlPanelNeoSection } from '../admin-control-panel-neo';
-import { AiEnginesSection } from './AiEnginesSection';
 import { CacheBackfillSection } from './CacheBackfillSection';
 import {
   readSystemSettingsTab,
@@ -1046,12 +1045,6 @@ export function AdminSystemSettingsNeoPage() {
                 id="system-settings-neo-tab-cache"
                 aria-controls="system-settings-neo-panel-cache"
               />
-              <Tab
-                value="ai"
-                label="ШІ"
-                id="system-settings-neo-tab-ai"
-                aria-controls="system-settings-neo-panel-ai"
-              />
             </Tabs>
 
             <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
@@ -1154,18 +1147,9 @@ export function AdminSystemSettingsNeoPage() {
                       </Stack>
                     ) : null}
                   </Box>
-
-                  <Box
-                    id="system-settings-neo-panel-ai"
-                    role="tabpanel"
-                    hidden={activeTab !== 'ai'}
-                    aria-labelledby="system-settings-neo-tab-ai"
-                  >
-                    {activeTab === 'ai' ? <AiEnginesSection /> : null}
-                  </Box>
                 </Box>
 
-                {activeTab !== 'ai' && activeTab !== 'cache' ? (
+                {activeTab !== 'cache' ? (
                   <Box
                     sx={{
                       display: 'flex',

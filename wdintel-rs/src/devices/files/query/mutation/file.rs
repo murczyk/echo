@@ -123,7 +123,7 @@ pub(super) async fn reconcile_file_mutation(
     transaction_id: &str,
 ) -> Result<bool, FilesystemError> {
     let status = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
             "select pg_xact_status($1::text::xid8) as status",
             [transaction_id.into()],

@@ -180,7 +180,7 @@ pub async fn run_inbox_network_unit_backfill_tui(
 ) -> Result<(), AppError> {
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
     let since_ts = parse_start_date(&ps.start)?;
-    let limit = ps.limit.unwrap_or(DEFAULT_PAGE_LIMIT).max(1);
+    let limit = std::cmp::max(ps.limit.unwrap_or(DEFAULT_PAGE_LIMIT), 1);
     let load = load_backfill_entries(&db, since_ts, limit).await?;
     if load.rows.is_empty() {
         let newest = newest_eligible_datetime(&db).await?;
@@ -773,9 +773,11 @@ fn render_summary(frame: &mut Frame<'_>, area: Rect, app: &BackfillApp) {
             app.stale,
             app.failed,
         )),
-        Line::from(app.message.as_deref().unwrap_or(
-            "Review each preview before applying changes.",
-        )),
+        Line::from(
+            app.message
+                .as_deref()
+                .unwrap_or("Review each preview before applying changes."),
+        ),
     ];
     frame.render_widget(
         Paragraph::new(text)
@@ -980,8 +982,8 @@ fn render_apply_all_confirmation(frame: &mut Frame<'_>, ready: usize) {
 }
 
 fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
-    let width = width.min(area.width);
-    let height = height.min(area.height);
+    let width = std::cmp::min(width, area.width);
+    let height = std::cmp::min(height, area.height);
     Rect {
         x: area.x + area.width.saturating_sub(width) / 2,
         y: area.y + area.height.saturating_sub(height) / 2,

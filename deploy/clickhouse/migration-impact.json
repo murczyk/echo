@@ -72,6 +72,19 @@
         { "table": "public.device", "strategy": "mirror_resync" }
       ]
     },
+    "echo:m20260803_212227_ai_agent_harness": {
+      "changes": [
+        { "table": "public.ai_agent_settings", "strategy": "excluded" },
+        { "table": "public.ai_agent_allowed_engine", "strategy": "excluded" },
+        { "table": "public.ai_agent_echo_proxy", "strategy": "excluded" },
+        { "table": "public.ai_agent_user_link", "strategy": "excluded" },
+        { "table": "public.ai_agent_container", "strategy": "excluded" },
+        { "table": "public.ai_agent_conversation", "strategy": "excluded" },
+        { "table": "public.ai_agent_request", "strategy": "excluded" },
+        { "table": "public.ai_agent_request_event", "strategy": "excluded" },
+        { "table": "public.ai_agent_security_review", "strategy": "excluded" }
+      ]
+    },
     "echo:m20260804_091538_sigint_comment_blacklist": {
       "changes": [
         { "table": "public.sigint_comment_blacklist", "strategy": "excluded" }
@@ -85,6 +98,11 @@
     "echo:m20260804_094408_sigint_unit_deduplicate_candidate": {
       "changes": [
         { "table": "public.sigint_unit", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20260804_095344_ai_agent_dispatcher": {
+      "changes": [
+        { "table": "public.ai_agent_dispatcher", "strategy": "excluded" }
       ]
     }
   },

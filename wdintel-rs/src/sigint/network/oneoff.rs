@@ -215,14 +215,20 @@ pub async fn oneoff_migrate_modulation_to_encryption(
             });
         }
 
-        println!("\n══ Data-міграція modulation → encryption ══════════════════════════════════");
+        println!(
+            "\n══ Data-міграція modulation → encryption ══════════════════════════════════"
+        );
 
         preflight(&db).await?;
         print_migration_preview(&db).await?;
 
         println!(
             "── Виконання{} ─────────────────────────────────────────────────────────────",
-            if dry_run { " [dry-run, буде відкат]" } else { "" }
+            if dry_run {
+                " [dry-run, буде відкат]"
+            } else {
+                ""
+            }
         );
 
         let txn = db.begin().await.c(h!())?;
@@ -240,7 +246,9 @@ pub async fn oneoff_migrate_modulation_to_encryption(
             );
         }
     } else {
-        println!("\n══ Data-fix (немає незмігрованих рядків modulation_id) ════════════════════");
+        println!(
+            "\n══ Data-fix (немає незмігрованих рядків modulation_id) ════════════════════"
+        );
         print_data_fix_preview(&db).await?;
 
         let txn = db.begin().await.c(h!())?;
@@ -263,7 +271,7 @@ async fn table_exists(
     name: &str,
 ) -> Result<bool, AppError> {
     Ok(db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
             format!(
                 "SELECT 1 FROM information_schema.tables \
@@ -277,7 +285,7 @@ async fn table_exists(
 
 async fn migration_pending(db: &DatabaseConnection) -> Result<bool, AppError> {
     let freq_pending = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
             "SELECT 1 FROM sigint_network_freq \
              WHERE encryption_id IS NULL \
@@ -293,7 +301,7 @@ async fn migration_pending(db: &DatabaseConnection) -> Result<bool, AppError> {
     }
 
     let key_pending = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
             "SELECT 1 FROM sigint_network_encryption_key \
              WHERE modulation_id IS NOT NULL AND encryption_id IS NULL \
@@ -308,14 +316,16 @@ async fn migration_pending(db: &DatabaseConnection) -> Result<bool, AppError> {
 }
 
 async fn preflight(db: &DatabaseConnection) -> Result<(), AppError> {
-    println!("\n── Preflight перевірки ─────────────────────────────────────────────────────");
+    println!(
+        "\n── Preflight перевірки ─────────────────────────────────────────────────────"
+    );
 
     let mut errors: Vec<String> = vec![];
     let mut warnings: Vec<String> = vec![];
 
     // 1. Orphaned FK in sigint_network_freq
     let orphaned_freq: i64 = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
             "SELECT COUNT(*) AS cnt FROM sigint_network_freq snf \
              WHERE snf.modulation_id IS NOT NULL \
@@ -336,7 +346,7 @@ async fn preflight(db: &DatabaseConnection) -> Result<(), AppError> {
 
     // 2. Orphaned FK in sigint_network_encryption_key
     let orphaned_keys: i64 = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
             "SELECT COUNT(*) AS cnt FROM sigint_network_encryption_key k \
              WHERE k.modulation_id IS NOT NULL \
@@ -359,7 +369,7 @@ async fn preflight(db: &DatabaseConnection) -> Result<(), AppError> {
     let known = "'NFM','AM','DMR','DMR (ARC40)','DMR (AES256)','HYTERA','HYTERA (256 bit)',\
                  'TYT','TYT (16 bit)','TYT (128 bit)','TETRA','Граніт','GSM','Умовна'";
     let unknown_names: Vec<String> = db
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DbBackend::Postgres,
             format!(
                 "SELECT DISTINCT m.name AS name \
@@ -377,7 +387,7 @@ async fn preflight(db: &DatabaseConnection) -> Result<(), AppError> {
 
     if !unknown_names.is_empty() {
         let unknown_cnt: i64 = db
-            .query_one(Statement::from_string(
+            .query_one_raw(Statement::from_string(
                 DbBackend::Postgres,
                 format!(
                     "SELECT COUNT(*) AS cnt \
@@ -424,7 +434,9 @@ async fn preflight(db: &DatabaseConnection) -> Result<(), AppError> {
 async fn print_migration_preview(
     db: &DatabaseConnection,
 ) -> Result<(), AppError> {
-    println!("── Попередній перегляд змін ────────────────────────────────────────────────");
+    println!(
+        "── Попередній перегляд змін ────────────────────────────────────────────────"
+    );
     println!(
         "  {:<8} {:<22} → {:<6} {:<22} {:>7}",
         "kind", "модуляція (стара)", "мод", "шифрування (нова)", "рядків"
@@ -432,7 +444,7 @@ async fn print_migration_preview(
     println!("  {}", "─".repeat(74));
 
     let rows = db
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DbBackend::Postgres,
             "WITH mapped AS (
                  SELECT
@@ -491,7 +503,7 @@ async fn print_data_fix_preview(
     db: &DatabaseConnection,
 ) -> Result<(), AppError> {
     let fix_count: i64 = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
             "SELECT COUNT(*) AS cnt FROM sigint_network_freq
              WHERE (
@@ -537,7 +549,9 @@ async fn run_data_migration(
     .await
     .c(h!())?;
 
-    info!("Step 2: setting modulation text + encryption_id on sigint_network_freq");
+    info!(
+        "Step 2: setting modulation text + encryption_id on sigint_network_freq"
+    );
     txn.execute_unprepared(
         "WITH freq_mods AS (
              SELECT snf.id, snf.kind::text AS kind, m.name AS old_mod

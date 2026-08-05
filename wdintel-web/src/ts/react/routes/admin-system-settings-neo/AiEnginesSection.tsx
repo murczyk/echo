@@ -17,20 +17,29 @@ import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { deleteAiEngine, getAiEngine, listAiEngines } from '../../services/api/ai-engines';
 import { AiEngineDetails } from './AiEngineDetails';
 import { AiEngineEditor } from './AiEngineEditor';
-import { AiEnginesTable } from './AiEnginesTable';
-import { readAiEngineUrlScreen, returnToAiEngineList, updateAiEngineUrl } from './url-state';
+import { AiEnginesTable, type AiEngineCompatibilityResolver } from './AiEnginesTable';
+import {
+  readAiEngineUrlScreen,
+  returnToAiEngineList,
+  shouldReturnAiEngineEditToDetails,
+  updateAiEngineUrl,
+} from './url-state';
 
 type AiEngineScreen =
   | { kind: 'list' }
   | { kind: 'create' }
   | { kind: 'details'; aiEngine: AiEngineItem }
-  | { kind: 'edit'; aiEngine: AiEngineItem };
+  | { kind: 'edit'; aiEngine: AiEngineItem; returnTo: 'list' | 'details' };
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function AiEnginesSection() {
+export function AiEnginesSection({
+  getCompatibility,
+}: {
+  getCompatibility?: AiEngineCompatibilityResolver;
+} = {}) {
   const [aiEngines, setAiEngines] = useState<AiEngineItem[]>([]);
   const [screen, setScreen] = useState<AiEngineScreen>({ kind: 'list' });
   const [deleteTarget, setDeleteTarget] = useState<AiEngineItem | null>(null);
@@ -38,6 +47,11 @@ export function AiEnginesSection() {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { notify } = usePowerSnackbar();
+
+  function showError(message: string) {
+    setError(message);
+    notify({ severity: 'error', message });
+  }
 
   useEffect(() => {
     void loadInitialScreen();
@@ -57,7 +71,7 @@ export function AiEnginesSection() {
     try {
       setAiEngines(await listAiEngines());
     } catch (loadError) {
-      setError(`Помилка завантаження ШІ движків: ${errorMessage(loadError)}`);
+      showError(`Помилка завантаження ШІ движків: ${errorMessage(loadError)}`);
       setLoading(false);
       return;
     }
@@ -75,9 +89,17 @@ export function AiEnginesSection() {
       }
       const aiEngine = await getAiEngine(requestedScreen.aiEngineId);
       upsertAiEngine(aiEngine);
-      setScreen({ kind: requestedScreen.kind, aiEngine });
+      setScreen(
+        requestedScreen.kind === 'edit'
+          ? {
+              kind: 'edit',
+              aiEngine,
+              returnTo: shouldReturnAiEngineEditToDetails(aiEngine.id) ? 'details' : 'list',
+            }
+          : { kind: 'details', aiEngine },
+      );
     } catch (loadError) {
-      setError(`Помилка завантаження ШІ движка: ${errorMessage(loadError)}`);
+      showError(`Помилка завантаження ШІ движка: ${errorMessage(loadError)}`);
     } finally {
       setLoading(false);
     }
@@ -101,7 +123,7 @@ export function AiEnginesSection() {
       updateAiEngineUrl(freshAiEngine.id, 'details', 'push');
       setScreen({ kind: 'details', aiEngine: freshAiEngine });
     } catch (loadError) {
-      setError(`Помилка завантаження ШІ движка: ${errorMessage(loadError)}`);
+      showError(`Помилка завантаження ШІ движка: ${errorMessage(loadError)}`);
     } finally {
       setLoading(false);
     }
@@ -124,7 +146,7 @@ export function AiEnginesSection() {
       }
       notify({ severity: 'success', message: 'ШІ движок видалено.' });
     } catch (deleteError) {
-      setError(`Помилка видалення ШІ движка: ${errorMessage(deleteError)}`);
+      showError(`Помилка видалення ШІ движка: ${errorMessage(deleteError)}`);
     } finally {
       setDeleting(false);
     }
@@ -139,7 +161,20 @@ export function AiEnginesSection() {
 
   function openEdit(aiEngine: AiEngineItem, mode: 'push' | 'replace') {
     updateAiEngineUrl(aiEngine.id, 'edit', mode);
-    setScreen({ kind: 'edit', aiEngine });
+    setScreen({
+      kind: 'edit',
+      aiEngine,
+      returnTo: mode === 'replace' ? 'details' : 'list',
+    });
+  }
+
+  function closeEditor(aiEngine: AiEngineItem, returnTo: 'list' | 'details') {
+    if (returnTo === 'list') {
+      returnToAiEngineList();
+      return;
+    }
+    updateAiEngineUrl(aiEngine.id, 'details', 'replace');
+    setScreen({ kind: 'details', aiEngine });
   }
 
   if (loading && aiEngines.length === 0) {
@@ -153,6 +188,7 @@ export function AiEnginesSection() {
       {screen.kind === 'list' ? (
         <AiEnginesTable
           aiEngines={aiEngines}
+          getCompatibility={getCompatibility}
           onCreate={() => setScreen({ kind: 'create' })}
           onView={(aiEngine) => void openDetails(aiEngine)}
           onEdit={(aiEngine) => openEdit(aiEngine, 'push')}
@@ -167,7 +203,7 @@ export function AiEnginesSection() {
       {screen.kind === 'edit' ? (
         <AiEngineEditor
           aiEngine={screen.aiEngine}
-          onBack={returnToAiEngineList}
+          onBack={() => closeEditor(screen.aiEngine, screen.returnTo)}
           onSaved={handleSaved}
         />
       ) : null}

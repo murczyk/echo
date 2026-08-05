@@ -10,6 +10,9 @@
 
 ## NEXT
 
+- [#2972](https://github.com/echoua/echo/issues/2972) 🛡️👷 ШІ: `copy-db` автоматично зберігає локальний профіль AI-агента, очищує скопійований runtime та перевіряє локальний диспетчер і HTTPS proxy; для свідомого перенесення конфігурації джерела використайте `--no-preserve-local-ai-agent-profile`.
+- [#2972](https://github.com/echoua/echo/issues/2972) ✅🛡️👷 ШІ вікно з запитами.
+  - Міграція: [echo-ai-agent/DEPLOYMENT.md](echo-ai-agent/DEPLOYMENT.md).
 - [#2971](https://github.com/echoua/echo/issues/2971) ✅👷 ШІ: додано vLLM Router із `cache_aware` маршрутизацією та передаванням метрик Router/Spark у SigNoz; з операторського checkout виконати `cd echo-vllm-router && just setup && just deploy && just verify-client && just smoke`, потім змінити Base URL існуючого AI engine у staging на `http://100.105.172.96:8000/v1` і лише після успішного запиту повторити зміну в `echo-cbr`.
 - [#2607](https://github.com/echoua/echo/issues/2607) 👷🚨 Пристрої: додано сторінку й API створення та синхронізації пристроїв; перед перезапуском Echo перенести `pg_wdfile_*` у секцію `[file_registry]` як `pg_host`, `pg_port`, `pg_user`, `pg_password` і `pg_dbname`, а якщо база ще не створена — виконати `sudo /usr/bin/wdintel-rs --mode=live oneoff-create-file-registry-database`; без секції сервер стартує, але файлові операції пристроїв недоступні.
 - [#3021](https://github.com/echoua/echo/issues/3021) ✅🐞👷 Аналіз, Звіти: додано підтримку розширеного формату повідомлень пеленгації, збереження об’єктів пеленгації, уточнено опис звіту 1.2.5 та відфільтровано службові автокоментарі; стандартні `just deploy` і `just deploy-from-local` синхронізують виключення автоматично, а при ручному застосуванні міграцій на інстансах з ClickHouse перед ними виконати `/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes`, щоб виключити `sigint_comment_blacklist` із дзеркала.

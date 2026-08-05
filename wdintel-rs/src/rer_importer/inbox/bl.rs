@@ -16,7 +16,6 @@ use crate::rer_importer::inbox::query::build_inbox_query;
 use crate::rer_importer::signals::*;
 use crate::storage::mk_media_url;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::string::*;
 use actix_web::web::Data;
 use chrono::Utc;
@@ -96,7 +95,7 @@ pub async fn get_inbox_map_items(
 
     let query_res: Vec<QueryResult> = env
         .dbx
-        .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
+        .query_all_raw(Statement::from_string(DatabaseBackend::Postgres, q))
         .await
         .context(h!())?;
     let mut result = vec![];
@@ -1019,7 +1018,7 @@ pub async fn submit_upsert_inbox_item(
         vec![]
     };
     if let Some(c1) = &coords_s {
-        if !coords_vec.iter().any(|c| c.text.eq(&c1.text)) {
+        if !coords_vec.iter().any(|c| c.text == c1.text) {
             coords_vec.push(c1.clone())
         }
     }

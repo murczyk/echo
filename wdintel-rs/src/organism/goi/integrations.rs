@@ -1441,7 +1441,8 @@ fn accessible_goi_data_integration_ids(
                 .integration
                 .server_label
                 .to_lowercase()
-                .contains(pattern),
+                .find(pattern)
+                .is_some(),
         })
         .map(|item| item.integration.id)
         .collect()
@@ -2096,7 +2097,7 @@ async fn replace_goi_integration_access(
         .c(h!())?;
 
     let mut organism_ids = req.access_organism_ids.clone();
-    if !organism_ids.contains(&req.owner_organism_id) {
+    if !organism_ids.as_slice().contains(&req.owner_organism_id) {
         organism_ids.push(req.owner_organism_id);
     }
     organism_ids.sort_unstable();

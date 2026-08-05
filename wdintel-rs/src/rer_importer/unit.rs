@@ -1,7 +1,6 @@
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use actix_web::web::Json;
 use sea_orm::*;
 use std::io::BufRead;
@@ -108,7 +107,7 @@ pub async fn export_unit(
         let unit_id = unit.id;
         let signals = all_signals
             .iter()
-            .filter(|s| s.unit.filter(|u| unit_id.eq(u)).is_some())
+            .filter(|s| s.unit == Some(unit_id))
             .cloned()
             .map(|s| JsonSignal {
                 id: s.id,
@@ -127,7 +126,9 @@ pub async fn export_unit(
         file.write_all(content.as_bytes()).await.c(h!())?;
         info!("done writing result to {path}")
     } else {
-        info!("skipping writing result to file. \npass dest_path variable if you want to write it to filesystem.")
+        info!(
+            "skipping writing result to file. \npass dest_path variable if you want to write it to filesystem."
+        )
     }
     Ok(())
 }

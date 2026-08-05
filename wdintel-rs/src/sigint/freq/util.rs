@@ -1,7 +1,14 @@
-use crate::entities::sigint_network_freq;
+use crate::entities::{sigint_inbox_item, sigint_network_freq};
 use chrono::NaiveDateTime;
 use echo_migration::SimpleExpr;
-use sea_orm::ColumnTrait;
+use sea_orm::{ColumnTrait, EntityTrait, ExprTrait, RelationDef};
+
+pub(crate) fn inbox_item_network_freq_relation() -> RelationDef {
+    sigint_inbox_item::Entity::belongs_to(sigint_network_freq::Entity)
+        .from(sigint_inbox_item::Column::Freq)
+        .to(sigint_network_freq::Column::Freq)
+        .into()
+}
 
 pub fn filter_by_active_ts(
     dt_since: NaiveDateTime,

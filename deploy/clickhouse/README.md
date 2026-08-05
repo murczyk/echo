@@ -701,11 +701,9 @@ schema changes. Deployment never starts a full mirror resync implicitly.
 
 ### Replacing a development source database
 
-`just copy-db --server <source>` downloads a dump and prints a pasteable block
-selected from the local configuration. Without `/etc/echo-peerdb/source.env`,
-it prints the original PostgreSQL commands. With PeerDB configured, it prints
-the non-interactive coordinated restore command; do not manually drop and
-restore `wd` while PeerDB is attached:
+`just copy-db --server <source>` downloads a dump and always prints the
+non-interactive coordinated restore command. Do not manually drop and restore
+`wd`; the coordinator handles both PostgreSQL-only and PeerDB-attached setups:
 
 ```bash
 deploy/restore-copied-db.sh --yes /var/tmp/wd-<timestamp>.pgrestore
@@ -714,16 +712,26 @@ deploy/restore-copied-db.sh --yes /var/tmp/wd-<timestamp>.pgrestore
 For a separately entered command that retains confirmation, use
 `just restore-copied-db --dump /var/tmp/wd-<timestamp>.pgrestore`.
 
-`deploy/restore-copied-db.sh` checks for `/etc/echo-peerdb/source.env`. When it
-is absent, it performs a PostgreSQL-only restore and current Echo/echo-im
-migrations. When present, it verifies SSH and every required recovery script
-before confirmation or mutation. It then pauses automatic table reconciliation
-under the shared lock, stops the paired analytics stack, and waits for its
-logical slot to become inactive. It restores and migrates `wd`, reconciles the
-source role/publication, starts analytics, requests a clean PeerDB resync, and
-finally re-enables the table timer. It waits for the replacement snapshot,
-refreshes both view layers, and runs the end-to-end replication health check
-before returning.
+`deploy/restore-copied-db.sh` snapshots any configured local AI-agent profile
+after confirmation and before replacing `wd`. After the restore and current
+Echo/echo-im migrations it restores that profile, clears copied AI-agent
+conversations, requests, reviews, user links, and container state, then checks
+the local public-host HTTPS proxy and dispatcher template namespace. Dispatcher
+keys and known-hosts stay on the filesystem. If this validation fails, the
+mode-`0600` temporary profile is retained and its path is printed for retry.
+Use `--no-preserve-local-ai-agent-profile` only when the source AI-agent
+configuration is intentionally wanted.
+
+The coordinator checks for `/etc/echo-peerdb/source.env`. When it is absent,
+it performs a PostgreSQL-only restore and current Echo/echo-im migrations. When
+present, it verifies SSH and every required recovery script before confirmation
+or mutation. It then pauses automatic table reconciliation under the shared
+lock, stops the paired analytics stack, and waits for its logical slot to
+become inactive. It restores and migrates `wd`, reconciles the source
+role/publication, starts analytics, requests a clean PeerDB resync, and finally
+re-enables the table timer. It waits for the replacement snapshot, refreshes
+both view layers, and runs the end-to-end replication health check before
+returning.
 Echo continues through PostgreSQL fallback while the command waits. The default
 resync timeout is two hours; override it with `MIRROR_RESYNC_TIMEOUT_SECONDS` in
 the analytics instance configuration. Transient freshness failures are retried

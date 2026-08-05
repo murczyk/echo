@@ -480,7 +480,7 @@ fn callsigns_sort_radio_freq_expr() -> SimpleExpr {
 }
 
 fn callsigns_id_expr() -> SimpleExpr {
-    Expr::col((sigint_callsign::Entity, sigint_callsign::Column::Id)).into()
+    Expr::col((sigint_callsign::Entity, sigint_callsign::Column::Id))
 }
 
 async fn load_callsign_seek_cursor(

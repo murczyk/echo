@@ -9,7 +9,6 @@ use crate::types::*;
 use crate::users::{
     ensure_rer_role, has_any_role, has_role, login_id_from_identity,
 };
-use crate::utils::orm::ArrayColumnOps;
 use actix_web::http::header;
 use actix_web::http::StatusCode;
 use actix_web::web::{Bytes, Json};
@@ -111,7 +110,7 @@ fn parse_byte_range_spec(
         if suffix_len == 0 || total == 0 {
             return Some(ParsedByteRangeSpec::Unsatisfiable);
         }
-        let suffix_len = suffix_len.min(total);
+        let suffix_len = std::cmp::min(suffix_len, total);
         let start = total - suffix_len;
         return Some(ParsedByteRangeSpec::Satisfiable(start, total - 1));
     }
@@ -130,7 +129,7 @@ fn parse_byte_range_spec(
     if start >= total {
         return Some(ParsedByteRangeSpec::Unsatisfiable);
     }
-    let end = requested_end.unwrap_or(total - 1).min(total - 1);
+    let end = std::cmp::min(requested_end.unwrap_or(total - 1), total - 1);
     Some(ParsedByteRangeSpec::Satisfiable(start, end))
 }
 
@@ -1213,7 +1212,7 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
 
     // println!("Query: {}", q);
 
-    let res = dbx.execute(q).await.c(h!())?;
+    let res = dbx.execute_raw(q).await.c(h!())?;
 
     println!("> rounded {} freqs", res.rows_affected());
     if res.rows_affected() > 0 {

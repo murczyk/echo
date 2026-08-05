@@ -545,17 +545,13 @@ async fn restore_media_encryption_after_invalid_plaintext(
         .c(h!())?
     {
         None => {
-            delete_plaintext_migration_marker_best_effort(
-                migration, media_id,
-            )
-            .await;
+            delete_plaintext_migration_marker_best_effort(migration, media_id)
+                .await;
             Ok(())
         }
         Some(media) if media.is_encrypted => {
-            delete_plaintext_migration_marker_best_effort(
-                migration, media_id,
-            )
-            .await;
+            delete_plaintext_migration_marker_best_effort(migration, media_id)
+                .await;
             Ok(())
         }
         Some(_) => Err(AppError::BL {

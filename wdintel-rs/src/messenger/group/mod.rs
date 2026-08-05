@@ -4,7 +4,6 @@ use crate::organism::types::OrganismGroups;
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
 use crate::users::login_id_from_identity;
-use crate::utils::orm::ArrayColumnOps;
 use chrono::Utc;
 use echo_migration::{Expr, JoinType};
 use sea_orm::*;
@@ -278,7 +277,9 @@ where
         .context(h!())?;
 
     if existing_aors > 0 {
-        info!("[group={master_key}] skipped assigning group's area of responsibility: group already has AOR assignments");
+        info!(
+            "[group={master_key}] skipped assigning group's area of responsibility: group already has AOR assignments"
+        );
         return Ok(None);
     }
 
@@ -293,7 +294,9 @@ where
     {
         Some(dg) => dg.datasource_id,
         None => {
-            info!("[group={master_key}] skipped assigning group's area of responsibility: no datasource mapping found for the group");
+            info!(
+                "[group={master_key}] skipped assigning group's area of responsibility: no datasource mapping found for the group"
+            );
             return Ok(None);
         }
     };
@@ -307,7 +310,9 @@ where
         .await
         .context(h!())?;
     let Some(aor) = aor else {
-        info!("[group={master_key}] skipped assigning group's area of responsibility: no area of responsibility is assigned for datasource {datasource_id}");
+        info!(
+            "[group={master_key}] skipped assigning group's area of responsibility: no area of responsibility is assigned for datasource {datasource_id}"
+        );
         return Ok(None);
     };
     let model = signal_group_aor::ActiveModel {

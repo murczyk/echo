@@ -11,7 +11,10 @@ pub async fn run_cleanup_worker(mode: Mode) {
         let db = match new_pg_pool_from_mode(mode).await {
             Ok(db) => db,
             Err(e) => {
-                error!("Messenger Cleanup worker failed, cannot establish db connection: {:#?}", e);
+                error!(
+                    "Messenger Cleanup worker failed, cannot establish db connection: {:#?}",
+                    e
+                );
                 sleep(Duration::from_secs(MESSENGER_CLEANUP_ERR_SLEEP_SEC))
                     .await;
                 continue;

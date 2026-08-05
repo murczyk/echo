@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  adminDatabaseSubs,
+  adminSubs,
+  aiAgentAdminSubs,
   getDatabaseSubs,
   goiExternalUrl,
   isActiveName,
@@ -105,5 +108,71 @@ describe('menu-items', () => {
       expect(goiExternalUrl('http://insecure.com')).toBe('http://insecure.com');
       expect(goiExternalUrl('HTTPS://UPPER.COM')).toBe('HTTPS://UPPER.COM');
     });
+  });
+
+  it('exposes the first-class ШІ administration sections', () => {
+    expect(aiAgentAdminSubs.flatMap((item) => (item.type === 'item' ? [item.label] : []))).toEqual([
+      'Провайдери',
+      'Налаштування ШІ',
+      'Контейнери',
+      'Запити',
+      'Диспетчер',
+      'Зворотні проксі',
+      'Позивні',
+    ]);
+
+    const aiGroupIndex = adminSubs.findIndex(
+      (item) => item.type === 'group' && item.label === 'ШІ',
+    );
+    const aiGroup = adminSubs[aiGroupIndex];
+    expect(aiGroup).toEqual({ type: 'group', label: 'ШІ', subs: aiAgentAdminSubs });
+    expect(adminSubs[aiGroupIndex - 1]).toEqual({ type: 'separator' });
+    expect(adminSubs[aiGroupIndex + 1]).toEqual({ type: 'separator' });
+    if (!aiGroup) throw new Error('ШІ group was not found');
+    expect(menuIsActive('ai-agent-requests', aiGroup)).toBe(true);
+  });
+
+  it('groups admin import links under Імпорт', () => {
+    const importGroup = adminSubs.find(
+      (item): item is Extract<Menu, { type: 'group' }> =>
+        item.type === 'group' && item.label === 'Імпорт',
+    );
+
+    expect(importGroup?.subs).toEqual([
+      {
+        type: 'item',
+        link: { type: 'internal', path: '/admin/rer-csv-import' },
+        activeName: 'rer-csv-import',
+        label: 'Імпорт CSV',
+      },
+      {
+        type: 'item',
+        link: { type: 'internal', path: '/admin/rer-delta-import' },
+        activeName: 'rer-delta-import',
+        label: 'Імпорт Delta',
+      },
+    ]);
+    expect(menuIsActive('rer-delta-import', importGroup!)).toBe(true);
+  });
+
+  it('groups the database administration block under Бази', () => {
+    const databaseGroup = adminSubs.find(
+      (item): item is Extract<Menu, { type: 'group' }> =>
+        item.type === 'group' && item.label === 'Бази',
+    );
+
+    expect(databaseGroup?.subs).toBe(adminDatabaseSubs);
+    expect(
+      databaseGroup?.subs.flatMap((item) => (item.type === 'item' ? [item.label] : [])),
+    ).toEqual([
+      'Інтеграції API',
+      'Echo GPU Сервери',
+      'Всі звіти',
+      'ГОІ',
+      'Ключі',
+      'Населені пункти смуг',
+      'Теги',
+    ]);
+    expect(menuIsActive('tags-neo', databaseGroup!)).toBe(true);
   });
 });

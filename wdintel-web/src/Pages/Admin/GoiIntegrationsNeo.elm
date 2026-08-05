@@ -61,7 +61,9 @@ view : Model -> View Msg
 view _ =
     { title = "Адмін: ГОІ"
     , body =
-        [ div [ class "mt-4 px-4 w-5/6 mx-auto" ]
-            [ node "goi-integrations-neo" [] [] ]
+        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 pt-2 pb-6 w-full flex flex-col overflow-visible lg:overflow-hidden" ]
+            [ div [ class "flex-1 min-h-0 w-full" ]
+                [ node "goi-integrations-neo" [ class "react-fill-host block w-full h-full" ] [] ]
+            ]
         ]
     }

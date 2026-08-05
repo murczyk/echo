@@ -37,7 +37,7 @@ pub(in crate::devices) async fn capture_transaction_id(
     transaction: &DatabaseTransaction,
 ) -> Result<String, FilesystemError> {
     let row = transaction
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DbBackend::Postgres,
             "select pg_current_xact_id()::text as transaction_id".to_string(),
         ))

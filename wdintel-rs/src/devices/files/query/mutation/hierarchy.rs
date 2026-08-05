@@ -10,7 +10,7 @@ use chrono::NaiveDateTime;
 use sea_orm::sea_query::{Expr, OnConflict, SimpleExpr};
 use sea_orm::{
     ActiveEnum, ActiveValue::Set, ColumnTrait, DatabaseTransaction,
-    EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    EntityTrait, ExprTrait, QueryFilter, QueryOrder, QuerySelect,
 };
 use uuid::Uuid;
 

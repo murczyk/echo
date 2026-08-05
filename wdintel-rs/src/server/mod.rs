@@ -63,7 +63,9 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         if mode == Live
             && config.s3_config.clone().c(h!())?.strongbox_key.is_empty()
         {
-            error!("strongbox_key is missing! please run oneoff-generate-strongbox-key, then copy strongbox_key from output and put to config.toml");
+            error!(
+                "strongbox_key is missing! please run oneoff-generate-strongbox-key, then copy strongbox_key from output and put to config.toml"
+            );
             None
         } else {
             Some(s3)
@@ -74,6 +76,12 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     };
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
+    crate::ai_agent::dispatcher::import_legacy_config(
+        &dbx,
+        config.ai_agent_dispatcher.as_ref(),
+    )
+    .await
+    .c(h!())?;
     let echo_gpu_client = Arc::new(
         echo_gpu_client::EchoGpuClient::new(
             dbx.clone(),
@@ -529,6 +537,16 @@ fn spawn_background_workers(
         .await;
     });
 
+    let ai_agent_env = env.clone();
+    let ai_agent_cancellation = cancel_token.clone();
+    spawn_named_worker("ai_agent_worker", bg_set, async move {
+        crate::ai_agent::worker::run_nofail(
+            ai_agent_env,
+            ai_agent_cancellation,
+        )
+        .await;
+    });
+
     spawn_named_worker("signal_cli_verbose_logger", bg_set, async move {
         info!("Starting enable_signal_cli_verbose_logging");
         if let Err(err) = echo_im::enable_signal_cli_verbose_logging(
@@ -728,6 +746,36 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_engine::list_ai_chats)
             .service(crate::ai_engine::get_ai_chat)
             .service(crate::ai_engine::send_ai_chat_message)
+            .service(crate::ai_agent::configuration)
+            .service(crate::ai_agent::list_conversations)
+            .service(crate::ai_agent::create_conversation)
+            .service(crate::ai_agent::get_conversation)
+            .service(crate::ai_agent::update_conversation)
+            .service(crate::ai_agent::delete_conversation)
+            .service(crate::ai_agent::create_request)
+            .service(crate::ai_agent::cancel_request)
+            .service(crate::ai_agent::request_events)
+            .service(crate::ai_agent::auth::exchange_bootstrap)
+            .service(
+                crate::ai_agent::provider_gateway::chat_completions,
+            )
+            .service(crate::ai_agent::admin::get_settings)
+            .service(crate::ai_agent::admin::update_settings)
+            .service(crate::ai_agent::admin::get_dispatcher)
+            .service(crate::ai_agent::admin::update_dispatcher)
+            .service(crate::ai_agent::admin::test_dispatcher)
+            .service(crate::ai_agent::admin::list_echo_proxies)
+            .service(crate::ai_agent::admin::upsert_echo_proxy)
+            .service(crate::ai_agent::admin::delete_echo_proxy)
+            .service(crate::ai_agent::admin::test_echo_proxy)
+            .service(crate::ai_agent::admin::list_containers)
+            .service(crate::ai_agent::admin::list_requests)
+            .service(crate::ai_agent::admin::get_request)
+            .service(crate::ai_agent::admin::retry_review)
+            .service(crate::ai_agent::admin::get_user_agent)
+            .service(crate::ai_agent::admin::start_user_agent)
+            .service(crate::ai_agent::admin::stop_user_agent)
+            .service(crate::ai_agent::admin::test_user_agent)
             .service(crate::ai_callsign::get_ai_callsign_page)
             .service(crate::ai_callsign::create_ai_callsign_test_message)
             .service(crate::ai_callsign::update_ai_callsign_test_message)
@@ -1094,7 +1142,9 @@ pub async fn main_server(
         info!("port overridden from env: {port}");
         port.parse::<u16>().c(h!())?
     } else {
-        info!("starting echo server on default 8081 port. override it with ECHO_SERVER_PORT variable.");
+        info!(
+            "starting echo server on default 8081 port. override it with ECHO_SERVER_PORT variable."
+        );
         8081
     };
 
@@ -1121,6 +1171,9 @@ pub async fn main_server(
             )
             .wrap(actix_web::middleware::from_fn(
                 middleware::purge_legacy_identity_middleware,
+            ))
+            .wrap(actix_web::middleware::from_fn(
+                crate::ai_agent::middleware::enforce_agent_routes,
             ))
             .wrap(SessionMiddleware::new(
                 redis_session_store.clone(),

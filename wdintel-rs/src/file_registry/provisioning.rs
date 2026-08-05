@@ -55,11 +55,15 @@ pub async fn oneoff_create_database(mode: Mode) -> Result<(), AppError> {
             println!("File database \"{database}\" created.");
             Ok(())
         }
-        Err(error) if error.code().is_some_and(|code| code.code() == "42P04") => {
+        Err(error)
+            if error.code().is_some_and(|code| code.code() == "42P04") =>
+        {
             println!("File database \"{database}\" already exists.");
             Ok(())
         }
-        Err(error) if error.code().is_some_and(|code| code.code() == "42501") => {
+        Err(error)
+            if error.code().is_some_and(|code| code.code() == "42501") =>
+        {
             Err(AppError::BL {
                 msg: format!(
                     "File database \"{database}\" was not created: PostgreSQL user \"{user}\" needs CREATEDB. Grant it or create the database manually, then restart the backend."

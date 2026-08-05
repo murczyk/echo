@@ -282,7 +282,7 @@ fn run_start_menu(
                 return Ok(None);
             }
             KeyCode::Enter if key.modifiers.is_empty() => {
-                return Ok(Some(actions[selected]))
+                return Ok(Some(actions[selected]));
             }
             KeyCode::Up if key.modifiers.is_empty() => {
                 selected = selected.saturating_sub(1)
@@ -324,7 +324,7 @@ fn run_text_prompt(
             KeyCode::Enter
                 if key.modifiers.is_empty() && !input.trim().is_empty() =>
             {
-                return Ok(Some(input.trim().to_string()))
+                return Ok(Some(input.trim().to_string()));
             }
             KeyCode::Backspace if key.modifiers.is_empty() => {
                 input.pop();
@@ -370,7 +370,7 @@ fn run_match_selector(
                 return Ok(None);
             }
             KeyCode::Enter if key.modifiers.is_empty() => {
-                return Ok(Some(selected))
+                return Ok(Some(selected));
             }
             KeyCode::Up if key.modifiers.is_empty() => {
                 selected = selected.saturating_sub(1)
@@ -410,15 +410,15 @@ fn run_unchanged_archive_confirmation(
         }
         match key.code {
             KeyCode::Enter | KeyCode::Char('y') if key.modifiers.is_empty() => {
-                return Ok(true)
+                return Ok(true);
             }
             KeyCode::Esc | KeyCode::Char('n') if key.modifiers.is_empty() => {
-                return Ok(false)
+                return Ok(false);
             }
             KeyCode::Char('c')
                 if key.modifiers.contains(KeyModifiers::CONTROL) =>
             {
-                return Ok(false)
+                return Ok(false);
             }
             _ => {}
         }

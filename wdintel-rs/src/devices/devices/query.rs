@@ -19,9 +19,9 @@ use sea_orm::sea_query::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
-    DatabaseConnection, DatabaseTransaction, EntityTrait, FromQueryResult,
-    IntoSimpleExpr, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
-    QueryTrait, RelationTrait, Select, Set,
+    DatabaseConnection, DatabaseTransaction, EntityTrait, ExprTrait,
+    FromQueryResult, IntoSimpleExpr, PaginatorTrait, QueryFilter, QueryOrder,
+    QuerySelect, QueryTrait, RelationTrait, Select, Set,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -539,7 +539,7 @@ fn archived_count_expr(archived: bool) -> SimpleExpr {
         .finally(0_i32),
     )
     .into();
-    Func::coalesce([count, Expr::val(0_i64).into()]).into()
+    Func::coalesce([count, Expr::val(0_i64)]).into()
 }
 
 fn literal_substring_pattern(value: &str) -> String {

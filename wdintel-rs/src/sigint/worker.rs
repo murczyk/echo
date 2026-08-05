@@ -92,7 +92,7 @@ where
                 set search_tsv = excluded.search_tsv"#,
         [db_message_id.into()],
     );
-    txn.execute(statement).await.c(h!())?;
+    txn.execute_raw(statement).await.c(h!())?;
     Ok(())
 }
 

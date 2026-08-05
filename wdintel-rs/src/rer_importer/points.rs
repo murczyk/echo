@@ -9,7 +9,6 @@ use crate::palitra::types::PalitraAccess;
 use crate::rer_importer::highlight::CNPoint;
 use crate::rer_importer::types::{PalitraLexeme, PalitraPattern};
 use crate::types::ShortContext;
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::string::byte_to_char_index;
 use itertools::Itertools;
 use sea_orm::prelude::*;
@@ -540,7 +539,10 @@ mod tests {
 61-й, передайте информацию 065-му, пусть возьмет данные хозяева этого участка
 "#;
         let (cut, offset) = cut_body(body);
-        assert_eq!(cut, "\n61-й, передайте информацию 065-му, пусть возьмет данные хозяева этого участка\n");
+        assert_eq!(
+            cut,
+            "\n61-й, передайте информацию 065-му, пусть возьмет данные хозяева этого участка\n"
+        );
         assert_eq!(offset, 76);
     }
 

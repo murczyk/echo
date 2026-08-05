@@ -9,7 +9,6 @@ use crate::messenger::types::*;
 use crate::sigint::aor::{load_default_aor, render_aor};
 use crate::types::{AppError, Env, ShortContext};
 use crate::users::{ensure_admin, has_any_role, login_id_from_identity};
-use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::{Duration, Utc};

@@ -230,8 +230,7 @@ pub(crate) async fn reconcile_goi_palitras(env: &Env) -> anyhow::Result<()> {
         if let Err(err) = reconcile_goi_target(env, &target).await {
             warn!(
                 "GOI palitra reconciliation failed for integration {} ({}): {err:#}",
-                target.integration.id,
-                target.integration.server_label
+                target.integration.id, target.integration.server_label
             );
         }
     }

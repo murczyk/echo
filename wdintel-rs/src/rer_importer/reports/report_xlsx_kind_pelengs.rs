@@ -7,7 +7,6 @@ use crate::location::peleng::{
 use crate::rer_importer::analysis::*;
 use crate::sigint::sender::preferred_sender_sql_snippet;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use anyhow::bail;
 use chrono::prelude::*;
 use echo_migration::IntoCondition;
@@ -90,7 +89,7 @@ pub async fn get_inbox_messages_report(
                     ),
                     sigint_inbox_item.unit_v2
                 )
-            "#.to_string()),
+            "#.into()),
             "unit",
         )
         .filter(signal_message::Column::Deleted.eq(false))
@@ -98,7 +97,7 @@ pub async fn get_inbox_messages_report(
         .filter(inbox_item_has_active_peleng_exists())
         .join(
             JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq.def()
+            crate::sigint::freq::util::inbox_item_network_freq_relation()
                 .on_condition(|_left, right| {
                     Expr::col((right, sigint_network_freq::Column::Deleted))
                         .eq(false)

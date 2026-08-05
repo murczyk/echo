@@ -1,5 +1,5 @@
 export type SystemSettingsTab =
-  'main' | 'duty' | 'analysis' | 'control' | 'pelengs' | 'notifications' | 'cache' | 'ai';
+  'main' | 'duty' | 'analysis' | 'control' | 'pelengs' | 'notifications' | 'cache';
 
 export type AiEngineUrlScreen =
   { kind: 'list' } | { kind: 'details'; aiEngineId: string } | { kind: 'edit'; aiEngineId: string };
@@ -12,9 +12,9 @@ const SYSTEM_SETTINGS_TABS = new Set<SystemSettingsTab>([
   'pelengs',
   'notifications',
   'cache',
-  'ai',
 ]);
 const AI_ENGINE_HISTORY_ENTRY = 'systemSettingsAiEngineHistoryEntry';
+const AI_ENGINE_EDIT_RETURN_TO_DETAILS = 'systemSettingsAiEngineEditReturnToDetails';
 
 function hashParts(hash: string): string[] {
   return hash
@@ -49,13 +49,17 @@ export function readSystemSettingsTab(hash = window.location.hash): SystemSettin
 
 export function readAiEngineUrlScreen(hash = window.location.hash): AiEngineUrlScreen {
   const [tab, section, aiEngineId, action] = hashParts(hash);
-  if (tab !== 'ai' || section !== 'engines' || !aiEngineId) {
+  const legacyPath = tab === 'ai' && section === 'engines';
+  const providerPath = tab === 'engines';
+  const id = providerPath ? section : aiEngineId;
+  const requestedAction = providerPath ? aiEngineId : action;
+  if ((!legacyPath && !providerPath) || !id) {
     return { kind: 'list' };
   }
-  if (action === 'edit') {
-    return { kind: 'edit', aiEngineId };
+  if (requestedAction === 'edit') {
+    return { kind: 'edit', aiEngineId: id };
   }
-  return { kind: 'details', aiEngineId };
+  return { kind: 'details', aiEngineId: id };
 }
 
 export function replaceSystemSettingsTabUrl(tab: SystemSettingsTab): void {
@@ -68,12 +72,23 @@ export function updateAiEngineUrl(
   mode: 'push' | 'replace',
 ): void {
   const suffix = screen === 'edit' ? '/edit' : '';
-  const nextUrl = buildHashUrl(`ai/engines/${encodeURIComponent(aiEngineId)}${suffix}`);
+  const nextUrl = buildHashUrl(`engines/${encodeURIComponent(aiEngineId)}${suffix}`);
+  const currentState = historyStateWithAiEngineMarker();
+  const nextState = { ...currentState };
+  if (screen === 'edit' && mode === 'replace') {
+    nextState[AI_ENGINE_EDIT_RETURN_TO_DETAILS] = aiEngineId;
+  } else {
+    delete nextState[AI_ENGINE_EDIT_RETURN_TO_DETAILS];
+  }
   if (mode === 'push') {
-    window.history.pushState(historyStateWithAiEngineMarker(), '', nextUrl);
+    window.history.pushState(nextState, '', nextUrl);
     return;
   }
-  window.history.replaceState(window.history.state, '', nextUrl);
+  window.history.replaceState(nextState, '', nextUrl);
+}
+
+export function shouldReturnAiEngineEditToDetails(aiEngineId: string): boolean {
+  return window.history.state?.[AI_ENGINE_EDIT_RETURN_TO_DETAILS] === aiEngineId;
 }
 
 export function returnToAiEngineList(): void {
@@ -81,6 +96,10 @@ export function returnToAiEngineList(): void {
     window.history.back();
     return;
   }
-  replaceSystemSettingsTabUrl('ai');
+  window.history.replaceState(
+    window.history.state,
+    '',
+    `${window.location.pathname}${window.location.search}`,
+  );
   window.dispatchEvent(new PopStateEvent('popstate'));
 }

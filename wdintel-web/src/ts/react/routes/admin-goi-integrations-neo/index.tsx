@@ -1,21 +1,47 @@
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import {
   Autocomplete,
-  Card,
-  CardActions,
-  CardContent,
+  Box,
   Checkbox,
-  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   FormControlLabel,
   MenuItem,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
+import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import React from 'react';
 
 import { Login, Organism } from '../../../../Bindings';
-import { PageHeader } from '../../components/PageHeader';
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
+import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
+import { PageErrorState } from '../../components/PageErrorState';
+import { PageLoadingState } from '../../components/PageLoadingState';
 import { PowerButton } from '../../components/PowerButton';
+import { PowerIconButton } from '../../components/PowerIconButton';
+import {
+  CUSTOM_CELL_STYLES,
+  CUSTOM_STYLES,
+  getDefaultMrtContainerProps,
+  getDefaultMrtPaperProps,
+} from '../../components/mui-customized/table/custom-styles';
+import {
+  getDefaultMRTOptions,
+  renderColumnActionsMenuItems,
+} from '../../components/mui-customized/table/get-default-table-options';
+import {
+  TableStateProvider,
+  useTableStateContext,
+} from '../../components/mui-customized/table/table-state-provider';
 import {
   checkGoiConnection,
   deleteGoiAdminIntegration,
@@ -28,6 +54,8 @@ import {
 import { listLogins } from '../../services/api/logins';
 import { listOrganisms } from '../../services/api/organisms';
 import { PowerAlert } from '../../components/PowerAlert';
+import { GlobalFilterTextField } from '../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
+import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import {
   GOI_INTEGRATION_TYPE_FULL,
   GOI_INTEGRATION_TYPE_SIMPLE,
@@ -38,6 +66,26 @@ import { buildLoginOptions, selectedLoginIds, selectLoginOptions } from '../../u
 const GOI_SSH_PORT_DEFAULT = 22;
 const GOI_API_PORT_DEFAULT = 8088;
 const GOI_PATH_DEFAULT = '/etc/goi/data/palettes';
+const ROW_ACTIONS_COLUMN_SIZE = 96;
+const DEFAULT_COLUMNS_VISIBILITY = {
+  owner: true,
+  server: true,
+  integration_type: true,
+  maintainer: true,
+  worker: true,
+  access: true,
+};
+const DEFAULT_COLUMN_ORDER = [
+  'mrt-row-numbers',
+  'mrt-row-actions',
+  'owner',
+  'server',
+  'integration_type',
+  'maintainer',
+  'worker',
+  'access',
+];
+const defaultMRTOptions = getDefaultMRTOptions<GoiAdminIntegration>();
 
 type StatusMessage = {
   kind: 'success' | 'error';
@@ -81,6 +129,148 @@ const emptyForm: GoiForm = {
   accessOrganismIds: [],
   accessLogins: [],
 };
+
+function GoiIntegrationsTable({
+  integrations,
+  loading,
+  onEdit,
+  onDelete,
+}: {
+  integrations: GoiAdminIntegration[];
+  loading: boolean;
+  onEdit: (integration: GoiAdminIntegration) => void;
+  onDelete: (integration: GoiAdminIntegration) => void;
+}) {
+  const tableStateContext = useTableStateContext();
+  const columnSizing = React.useMemo(
+    () => ({
+      ...tableStateContext.columnSizing,
+      'mrt-row-actions': ROW_ACTIONS_COLUMN_SIZE,
+    }),
+    [tableStateContext.columnSizing],
+  );
+  const columns = React.useMemo<MRT_ColumnDef<GoiAdminIntegration>[]>(
+    () => [
+      { id: 'owner', header: 'Організм-власник', accessorKey: 'ownerOrganismName', size: 200 },
+      { id: 'server', header: 'Сервер', accessorKey: 'serverLabel', size: 190 },
+      {
+        id: 'integration_type',
+        header: 'Тип',
+        accessorFn: (integration) =>
+          integration.integrationType === GOI_INTEGRATION_TYPE_SIMPLE ? 'Проста' : 'Повна',
+        size: 100,
+      },
+      {
+        id: 'maintainer',
+        header: 'Відповідальний',
+        accessorFn: (integration) => integration.maintainerLoginId || '—',
+        size: 180,
+      },
+      {
+        id: 'worker',
+        header: 'Воркер',
+        accessorFn: (integration) => (integration.pauseWorker ? 'Призупинено' : 'Активний'),
+        size: 130,
+      },
+      {
+        id: 'access',
+        header: 'Доступ',
+        accessorFn: (integration) =>
+          `${integration.accessOrganismIds.length} орг. / ${integration.accessLogins.length} лог.`,
+        size: 150,
+      },
+    ],
+    [],
+  );
+  const table = useMaterialReactTable({
+    columns,
+    data: integrations,
+    ...defaultMRTOptions,
+    enableSorting: true,
+    enableColumnActions: true,
+    enableRowNumbers: true,
+    enableColumnFilters: true,
+    enableColumnFilterModes: true,
+    enableFacetedValues: true,
+    enableRowVirtualization: false,
+    enableRowActions: true,
+    positionActionsColumn: 'first',
+    renderRowActions: ({ row }) => (
+      <Stack direction="row" spacing={0.5}>
+        <MrtRowActionButton
+          label="Редагувати"
+          onClick={() => onEdit(row.original)}
+          icon={<EditIcon fontSize="small" />}
+          disabled={loading}
+          opensModal
+        />
+        <MrtRowActions forceMenu>
+          <MrtRowActionButton
+            label="Видалити"
+            onClick={() => onDelete(row.original)}
+            icon={<DeleteIcon fontSize="small" />}
+            disabled={loading}
+            tone="danger"
+            opensModal
+          />
+        </MrtRowActions>
+      </Stack>
+    ),
+    enableColumnOrdering: tableStateContext.enableColumnOrdering,
+    enableColumnResizing: tableStateContext.enableColumnResizing,
+    columnFilterDisplayMode: 'popover',
+    globalFilterFn: 'contains',
+    onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
+    onColumnFiltersChange: tableStateContext.onColumnFiltersChange,
+    onColumnOrderChange: tableStateContext.onColumnOrderChange,
+    onColumnSizingChange: tableStateContext.onColumnSizingChange,
+    onSortingChange: tableStateContext.onSortingChange,
+    onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
+    getColumnCanGlobalFilter: (column) => column.getIsVisible(),
+    defaultColumn: { size: 180, renderColumnActionsMenuItems },
+    displayColumnDefOptions: {
+      ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: ROW_ACTIONS_COLUMN_SIZE,
+        minSize: ROW_ACTIONS_COLUMN_SIZE,
+        maxSize: ROW_ACTIONS_COLUMN_SIZE,
+      },
+      'mrt-row-numbers': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
+        muiTableBodyCellProps: () => ({
+          sx: { justifyContent: 'center', ...CUSTOM_CELL_STYLES },
+        }),
+      },
+    },
+    muiTablePaperProps: ({ table }) =>
+      getDefaultMrtPaperProps({ table, loading, layout: 'workspace' }),
+    muiTableContainerProps: ({ table }) =>
+      getDefaultMrtContainerProps({
+        loading,
+        layout: 'workspace',
+        fullScreen: table.getState().isFullScreen,
+        hasRows: integrations.length > 0,
+      }),
+    state: {
+      showAlertBanner: false,
+      showProgressBars: loading,
+      globalFilter: tableStateContext.globalFilter,
+      columnVisibility: tableStateContext.columnVisibility,
+      columnFilters: tableStateContext.columnFilters,
+      density: tableStateContext.density,
+      sorting: tableStateContext.sorting,
+      columnOrder: tableStateContext.columnOrder,
+      columnSizing,
+    },
+  });
+
+  React.useEffect(() => {
+    tableStateContext.onTableInitialized(table);
+  }, [table]);
+
+  return <MaterialReactTable table={table} />;
+}
 
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) return error.message;
@@ -203,7 +393,8 @@ function validateForm(form: GoiForm): string | null {
   return null;
 }
 
-export function AdminGoiIntegrationsNeoPage() {
+function AdminGoiIntegrationsNeoPageBody() {
+  const tableStateContext = useTableStateContext();
   const [integrations, setIntegrations] = React.useState<GoiAdminIntegration[]>([]);
   const [organisms, setOrganisms] = React.useState<Organism[]>([]);
   const [logins, setLogins] = React.useState<Login[]>([]);
@@ -212,37 +403,44 @@ export function AdminGoiIntegrationsNeoPage() {
   const [checking, setChecking] = React.useState(false);
   const [settingUpWorker, setSettingUpWorker] = React.useState(false);
   const [status, setStatus] = React.useState<StatusMessage>(null);
-  const [selectedId, setSelectedId] = React.useState<number | null>(null);
   const [form, setForm] = React.useState<GoiForm>(emptyForm);
+  const [editorOpen, setEditorOpen] = React.useState(false);
+  const [deleteTarget, setDeleteTarget] = React.useState<GoiAdminIntegration | null>(null);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [nextIntegrations, nextOrganisms, nextLogins] = await Promise.all([
+        listGoiAdminIntegrations(),
+        listOrganisms({ sortBy: 'OrganismNameAsc' }),
+        listLogins({ sortBy: null, filterByRoles: null }),
+      ]);
+      setIntegrations(nextIntegrations);
+      setOrganisms(nextOrganisms);
+      setLogins(buildLoginOptions(nextLogins.users));
+    } catch (error) {
+      setLoadError(`Не вдалося завантажити інтеграції ГОІ: ${formatErrorMessage(error)}`);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   React.useEffect(() => {
-    void (async () => {
-      try {
-        const [nextIntegrations, nextOrganisms, nextLogins] = await Promise.all([
-          listGoiAdminIntegrations(),
-          listOrganisms({ sortBy: 'OrganismNameAsc' }),
-          listLogins({ sortBy: null, filterByRoles: null }),
-        ]);
-        setIntegrations(nextIntegrations);
-        setOrganisms(nextOrganisms);
-        setLogins(buildLoginOptions(nextLogins.users));
-        if (nextIntegrations.length > 0) {
-          setSelectedId(nextIntegrations[0].id);
-          setForm(toForm(nextIntegrations[0]));
-        }
-      } catch (error) {
-        setStatus({ kind: 'error', message: `Помилка завантаження: ${formatErrorMessage(error)}` });
-      } finally {
-        setLoading(false);
-      }
-    })();
+    void load();
   }, []);
 
-  function selectIntegration(id: number | null) {
-    setSelectedId(id);
-    const integration = integrations.find((item) => item.id === id);
-    setForm(integration ? toForm(integration) : emptyForm);
+  function openCreate() {
+    setForm(emptyForm);
     setStatus(null);
+    setEditorOpen(true);
+  }
+
+  function openEdit(integration: GoiAdminIntegration) {
+    setForm(toForm(integration));
+    setStatus(null);
+    setEditorOpen(true);
   }
 
   function updateSelectedIntegration(nextIntegration: GoiAdminIntegration) {
@@ -253,7 +451,6 @@ export function AdminGoiIntegrationsNeoPage() {
         : [nextIntegration, ...prev];
       return next.sort((a, b) => a.serverLabel.localeCompare(b.serverLabel, 'uk'));
     });
-    setSelectedId(nextIntegration.id);
     setForm(toForm(nextIntegration));
   }
 
@@ -289,6 +486,7 @@ export function AdminGoiIntegrationsNeoPage() {
     try {
       const saved = await upsertGoiAdminIntegration(toSaveReq(form));
       updateSelectedIntegration(saved);
+      setEditorOpen(false);
       setStatus({ kind: 'success', message: 'Інтеграцію ГОІ збережено' });
     } catch (error) {
       setStatus({ kind: 'error', message: `Помилка збереження: ${formatErrorMessage(error)}` });
@@ -298,18 +496,13 @@ export function AdminGoiIntegrationsNeoPage() {
   }
 
   async function handleDelete() {
-    if (!form.id) return;
+    if (!deleteTarget) return;
     setSaving(true);
     setStatus(null);
     try {
-      await deleteGoiAdminIntegration(form.id);
-      const nextIntegrations = integrations.filter((item) => item.id !== form.id);
-      setIntegrations(nextIntegrations);
-      if (nextIntegrations.length > 0) {
-        selectIntegration(nextIntegrations[0].id);
-      } else {
-        selectIntegration(null);
-      }
+      await deleteGoiAdminIntegration(deleteTarget.id);
+      setIntegrations((current) => current.filter((item) => item.id !== deleteTarget.id));
+      setDeleteTarget(null);
       setStatus({ kind: 'success', message: 'Інтеграцію ГОІ видалено' });
     } catch (error) {
       setStatus({ kind: 'error', message: `Помилка видалення: ${formatErrorMessage(error)}` });
@@ -379,8 +572,18 @@ export function AdminGoiIntegrationsNeoPage() {
     }
   }
 
-  if (loading) {
-    return <PowerAlert severity="info">Завантажую інтеграції ГОІ...</PowerAlert>;
+  if (loading && integrations.length === 0 && !loadError) {
+    return <PageLoadingState minHeight="100%" />;
+  }
+  if (loadError && integrations.length === 0) {
+    return (
+      <PageErrorState
+        message={loadError}
+        actionLabel="Спробувати ще раз"
+        onAction={() => void load()}
+        minHeight="100%"
+      />
+    );
   }
 
   const ownerOptions = organisms;
@@ -388,323 +591,416 @@ export function AdminGoiIntegrationsNeoPage() {
   const isGoiToEchoPalitraSyncToggleDisabled = !hasMaintainerLogin(form);
 
   return (
-    <Stack spacing={3}>
-      <PageHeader
-        title="Адмін: ГОІ"
-        titleInfo="Окремі інтеграції ГОІ з власником, доступом для організмів і логінів, та керуванням worker/SSH."
-      />
-
-      {status ? <PowerAlert severity={status.kind}>{status.message}</PowerAlert> : null}
-
-      <Card variant="outlined">
-        <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
-          <Stack spacing={2}>
-            <div className="flex flex-wrap gap-2">
-              <PowerButton
-                variant="contained"
-                onClick={() => selectIntegration(null)}
-                disabled={saving || checking || settingUpWorker}
+    <Box
+      className="w-full"
+      sx={{
+        height: '100%',
+        minHeight: 0,
+        p: 2,
+        boxSizing: 'border-box',
+        overflow: { xs: 'visible', lg: 'hidden' },
+      }}
+    >
+      <Stack
+        spacing={1.5}
+        useFlexGap
+        sx={{
+          height: { xs: 'auto', lg: '100%' },
+          minHeight: 0,
+          overflow: { xs: 'visible', lg: 'hidden' },
+        }}
+      >
+        {status && !editorOpen ? (
+          <PowerAlert severity={status.kind}>{status.message}</PowerAlert>
+        ) : null}
+        {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
+        <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          alignItems={{ xs: 'stretch', md: 'center' }}
+          justifyContent="space-between"
+          gap={2}
+        >
+          <Stack direction="row" alignItems="center" gap={2} sx={{ minWidth: 0 }}>
+            <Stack direction="row" alignItems="center" gap={0.75} sx={{ flexShrink: 0 }}>
+              <Typography
+                component="h1"
+                variant="h5"
+                sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}
               >
-                Нова інтеграція
-              </PowerButton>
-              {saving || checking || settingUpWorker ? <CircularProgress size={18} /> : null}
-            </div>
-            {integrations.length === 0 ? (
-              <PowerAlert severity="info">Інтеграцій ГОІ ще немає.</PowerAlert>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {integrations.map((integration) => (
-                  <PowerButton
-                    key={integration.id}
-                    variant={integration.id === selectedId ? 'contained' : 'outlined'}
-                    onClick={() => selectIntegration(integration.id)}
-                  >
-                    {integration.ownerOrganismName} / {integration.serverLabel}
-                  </PowerButton>
-                ))}
-              </div>
+                ГОІ
+              </Typography>
+              <Tooltip
+                title="Інтеграції ГОІ з власником, доступом для організмів і логінів та керуванням worker/SSH."
+                arrow
+                placement="right-start"
+              >
+                <Box component="span" aria-label="Інформація про сторінку" sx={{ lineHeight: 0 }}>
+                  <InfoOutlinedIcon fontSize="small" />
+                </Box>
+              </Tooltip>
+            </Stack>
+            {loading && integrations.length === 0 ? null : (
+              <Box sx={{ width: 360, maxWidth: '100%' }}>
+                <GlobalFilterTextField
+                  className="!min-w-0 !w-full"
+                  globalFilter={tableStateContext.globalFilter}
+                  setGlobalFilter={tableStateContext.onChangeGlobalFilter}
+                />
+              </Box>
             )}
           </Stack>
-        </CardContent>
-      </Card>
-
-      <Card variant="outlined">
-        <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
-          <Stack spacing={3}>
-            <Typography variant="h6" className="!font-semibold">
-              {form.id ? `Інтеграція #${form.id}` : 'Нова інтеграція'}
-            </Typography>
-
-            <Autocomplete
-              options={ownerOptions}
-              value={selectedOwner}
-              onChange={(_, option) =>
-                setForm((prev) => ({ ...prev, ownerOrganismId: option?.id ?? null }))
-              }
-              getOptionLabel={(option) => option.name || `ID ${option.id}`}
-              isOptionEqualToValue={(option, value) => option.id === value.id}
-              renderOption={(props, option) => (
-                <li {...props} key={option.id}>
-                  {option.name || `ID ${option.id}`}
-                </li>
-              )}
-              renderInput={(params) => <TextField {...params} label="Організм-власник" fullWidth />}
-            />
-
-            <TextField
-              select
-              label="Тип інтеграції"
-              value={form.integrationType}
-              onChange={(event) =>
-                handleIntegrationTypeChange(event.target.value as GoiIntegrationType)
-              }
-              fullWidth
+          <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+            <PowerButton variant="contained" size="small" onClick={openCreate} disabled={loading}>
+              Додати інтеграцію
+            </PowerButton>
+            <InternalTableActions
+              table={tableStateContext.tableInstance}
+              columnsVisibilityDisabled={loading && integrations.length === 0}
+              colOrderDisabled={loading && integrations.length === 0}
+              filtersDisabled={loading && integrations.length === 0}
             >
-              <MenuItem value={GOI_INTEGRATION_TYPE_SIMPLE}>Проста</MenuItem>
-              <MenuItem value={GOI_INTEGRATION_TYPE_FULL}>Повна</MenuItem>
-            </TextField>
+              <Tooltip title="Оновити">
+                <span>
+                  <PowerIconButton
+                    aria-label="Оновити"
+                    size="small"
+                    onClick={() => void load()}
+                    disabled={loading}
+                  >
+                    <RefreshIcon fontSize="small" />
+                  </PowerIconButton>
+                </span>
+              </Tooltip>
+            </InternalTableActions>
+          </Stack>
+        </Stack>
+        <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>
+          <GoiIntegrationsTable
+            integrations={integrations}
+            loading={loading || saving || checking || settingUpWorker}
+            onEdit={openEdit}
+            onDelete={setDeleteTarget}
+          />
+        </Box>
 
-            <Autocomplete
-              options={logins}
-              value={
-                form.maintainerLoginId
-                  ? selectLoginOptions([form.maintainerLoginId], logins)[0]
-                  : null
-              }
-              onChange={(_, value) =>
-                setForm((prev) => ({
-                  ...prev,
-                  maintainerLoginId: value?.id ?? '',
-                  disableGoiToEchoPalitraSync: value ? prev.disableGoiToEchoPalitraSync : true,
-                }))
-              }
-              getOptionLabel={(option) => option.login}
-              isOptionEqualToValue={(option, value) => option.id === value.id}
-              renderOption={(props, option) => {
-                const { key: _unusedKey, ...optionProps } = props;
-                return (
-                  <li {...optionProps} key={option.id}>
-                    {option.login}
+        <Dialog
+          open={editorOpen}
+          onClose={() => !saving && !checking && !settingUpWorker && setEditorOpen(false)}
+          fullWidth
+          maxWidth="lg"
+        >
+          <DialogTitle>
+            {form.id ? 'Редагувати інтеграцію ГОІ' : 'Створити інтеграцію ГОІ'}
+          </DialogTitle>
+          <DialogContent>
+            <Stack spacing={3}>
+              {status ? <PowerAlert severity={status.kind}>{status.message}</PowerAlert> : null}
+
+              <Autocomplete
+                options={ownerOptions}
+                value={selectedOwner}
+                onChange={(_, option) =>
+                  setForm((prev) => ({ ...prev, ownerOrganismId: option?.id ?? null }))
+                }
+                getOptionLabel={(option) => option.name || `ID ${option.id}`}
+                isOptionEqualToValue={(option, value) => option.id === value.id}
+                renderOption={(props, option) => (
+                  <li {...props} key={option.id}>
+                    {option.name || `ID ${option.id}`}
                   </li>
-                );
-              }}
-              renderInput={(params) => (
-                <TextField {...params} label="Відповідальний логін" fullWidth />
-              )}
-            />
+                )}
+                renderInput={(params) => (
+                  <TextField {...params} label="Організм-власник" fullWidth />
+                )}
+              />
 
-            <Stack spacing={1}>
+              <TextField
+                select
+                label="Тип інтеграції"
+                value={form.integrationType}
+                onChange={(event) =>
+                  handleIntegrationTypeChange(event.target.value as GoiIntegrationType)
+                }
+                fullWidth
+              >
+                <MenuItem value={GOI_INTEGRATION_TYPE_SIMPLE}>Проста</MenuItem>
+                <MenuItem value={GOI_INTEGRATION_TYPE_FULL}>Повна</MenuItem>
+              </TextField>
+
+              <Autocomplete
+                options={logins}
+                value={
+                  form.maintainerLoginId
+                    ? selectLoginOptions([form.maintainerLoginId], logins)[0]
+                    : null
+                }
+                onChange={(_, value) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    maintainerLoginId: value?.id ?? '',
+                    disableGoiToEchoPalitraSync: value ? prev.disableGoiToEchoPalitraSync : true,
+                  }))
+                }
+                getOptionLabel={(option) => option.login}
+                isOptionEqualToValue={(option, value) => option.id === value.id}
+                renderOption={(props, option) => {
+                  const { key: _unusedKey, ...optionProps } = props;
+                  return (
+                    <li {...optionProps} key={option.id}>
+                      {option.login}
+                    </li>
+                  );
+                }}
+                renderInput={(params) => (
+                  <TextField {...params} label="Відповідальний логін" fullWidth />
+                )}
+              />
+
+              <Stack spacing={1}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={
+                        isGoiToEchoPalitraSyncToggleDisabled
+                          ? true
+                          : form.disableGoiToEchoPalitraSync
+                      }
+                      disabled={isGoiToEchoPalitraSyncToggleDisabled}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          disableGoiToEchoPalitraSync: event.target.checked,
+                        }))
+                      }
+                    />
+                  }
+                  label="Вимкнути перенесення палітр з ГОІ в Echo"
+                />
+                {isGoiToEchoPalitraSyncToggleDisabled ? (
+                  <PowerAlert severity="warning">
+                    Щоб увімкнути перенесення палітр з ГОІ в Echo, спочатку призначте окремий
+                    відповідальний логін для цієї інтеграції. Зверніться до адміністратора, щоб
+                    увімкнути цю можливість.
+                  </PowerAlert>
+                ) : null}
+              </Stack>
+
               <FormControlLabel
                 control={
                   <Checkbox
-                    checked={
-                      isGoiToEchoPalitraSyncToggleDisabled ? true : form.disableGoiToEchoPalitraSync
-                    }
-                    disabled={isGoiToEchoPalitraSyncToggleDisabled}
+                    checked={form.pauseWorker}
                     onChange={(event) =>
                       setForm((prev) => ({
                         ...prev,
-                        disableGoiToEchoPalitraSync: event.target.checked,
+                        pauseWorker: event.target.checked,
                       }))
                     }
                   />
                 }
-                label="Вимкнути перенесення палітр з ГОІ в Echo"
+                label="Призупинити воркер"
               />
-              {isGoiToEchoPalitraSyncToggleDisabled ? (
-                <PowerAlert severity="warning">
-                  Щоб увімкнути перенесення палітр з ГОІ в Echo, спочатку призначте окремий
-                  відповідальний логін для цієї інтеграції. Зверніться до адміністратора, щоб
-                  увімкнути цю можливість.
-                </PowerAlert>
-              ) : null}
-            </Stack>
 
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={form.pauseWorker}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      pauseWorker: event.target.checked,
-                    }))
-                  }
-                />
-              }
-              label="Призупинити воркер"
-            />
-
-            {form.integrationType === GOI_INTEGRATION_TYPE_SIMPLE ? (
-              <TextField
-                label="GOI URL"
-                value={form.apiHost}
-                onChange={(event) => setForm((prev) => ({ ...prev, apiHost: event.target.value }))}
-                fullWidth
-              />
-            ) : (
-              <>
+              {form.integrationType === GOI_INTEGRATION_TYPE_SIMPLE ? (
                 <TextField
-                  label="SSH host"
-                  value={form.sshHost}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, sshHost: event.target.value }))
-                  }
-                  fullWidth
-                />
-                <TextField
-                  label="SSH user"
-                  value={form.sshUser}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, sshUser: event.target.value }))
-                  }
-                  fullWidth
-                />
-                <TextField
-                  label="SSH порт"
-                  type="number"
-                  value={form.sshPort}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      sshPort: Number(event.target.value) || GOI_SSH_PORT_DEFAULT,
-                    }))
-                  }
-                  fullWidth
-                />
-                <TextField
-                  label="Шлях до палітр"
-                  value={form.path}
-                  onChange={(event) => setForm((prev) => ({ ...prev, path: event.target.value }))}
-                  fullWidth
-                />
-                <TextField
-                  label="API host"
+                  label="GOI URL"
                   value={form.apiHost}
                   onChange={(event) =>
                     setForm((prev) => ({ ...prev, apiHost: event.target.value }))
                   }
                   fullWidth
                 />
-                <TextField
-                  label="API порт"
-                  type="number"
-                  value={form.apiPort}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      apiPort: Number(event.target.value) || GOI_API_PORT_DEFAULT,
-                    }))
-                  }
-                  fullWidth
-                />
-                <TextField
-                  label="API логін"
-                  value={form.apiLogin}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, apiLogin: event.target.value }))
-                  }
-                  fullWidth
-                />
-                <TextField
-                  label="API пароль"
-                  type="password"
-                  value={form.apiPassword}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, apiPassword: event.target.value }))
-                  }
-                  fullWidth
-                />
-              </>
-            )}
-
-            <TextField
-              select
-              label="Доступ для організмів"
-              value={form.accessOrganismIds}
-              onChange={(event) =>
-                setForm((prev) => ({
-                  ...prev,
-                  accessOrganismIds: asNumberArray(event.target.value),
-                }))
-              }
-              SelectProps={{
-                multiple: true,
-                renderValue: (selected) =>
-                  (selected as number[])
-                    .map((id) => organisms.find((item) => item.id === id)?.name || String(id))
-                    .join(', ') || '—',
-              }}
-              fullWidth
-            >
-              {organisms.map((organism) => (
-                <MenuItem key={organism.id} value={organism.id}>
-                  {organism.name}
-                </MenuItem>
-              ))}
-            </TextField>
-
-            <Autocomplete
-              multiple
-              options={logins}
-              value={selectLoginOptions(form.accessLogins, logins)}
-              onChange={(_, values) =>
-                setForm((prev) => ({ ...prev, accessLogins: selectedLoginIds(values) }))
-              }
-              getOptionLabel={(option) => option.login}
-              isOptionEqualToValue={(option, value) => option.id === value.id}
-              renderOption={(props, option) => {
-                const { key: _unusedKey, ...optionProps } = props;
-                return (
-                  <li {...optionProps} key={option.id}>
-                    {option.login}
-                  </li>
-                );
-              }}
-              renderInput={(params) => (
-                <TextField {...params} label="Доступ для логінів" fullWidth />
+              ) : (
+                <>
+                  <TextField
+                    label="SSH host"
+                    value={form.sshHost}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, sshHost: event.target.value }))
+                    }
+                    fullWidth
+                  />
+                  <TextField
+                    label="SSH user"
+                    value={form.sshUser}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, sshUser: event.target.value }))
+                    }
+                    fullWidth
+                  />
+                  <TextField
+                    label="SSH порт"
+                    type="number"
+                    value={form.sshPort}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        sshPort: Number(event.target.value) || GOI_SSH_PORT_DEFAULT,
+                      }))
+                    }
+                    fullWidth
+                  />
+                  <TextField
+                    label="Шлях до палітр"
+                    value={form.path}
+                    onChange={(event) => setForm((prev) => ({ ...prev, path: event.target.value }))}
+                    fullWidth
+                  />
+                  <TextField
+                    label="API host"
+                    value={form.apiHost}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, apiHost: event.target.value }))
+                    }
+                    fullWidth
+                  />
+                  <TextField
+                    label="API порт"
+                    type="number"
+                    value={form.apiPort}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        apiPort: Number(event.target.value) || GOI_API_PORT_DEFAULT,
+                      }))
+                    }
+                    fullWidth
+                  />
+                  <TextField
+                    label="API логін"
+                    value={form.apiLogin}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, apiLogin: event.target.value }))
+                    }
+                    fullWidth
+                  />
+                  <TextField
+                    label="API пароль"
+                    type="password"
+                    value={form.apiPassword}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, apiPassword: event.target.value }))
+                    }
+                    fullWidth
+                  />
+                </>
               )}
-            />
-          </Stack>
-        </CardContent>
-        <CardActions sx={{ px: 3, pb: 3, gap: 1, flexWrap: 'wrap' }}>
-          <PowerButton
-            variant="contained"
-            onClick={handleSave}
-            disabled={saving || checking || settingUpWorker}
-          >
-            {form.id ? 'Зберегти' : 'Створити'}
-          </PowerButton>
-          {form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
+
+              <TextField
+                select
+                label="Доступ для організмів"
+                value={form.accessOrganismIds}
+                onChange={(event) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    accessOrganismIds: asNumberArray(event.target.value),
+                  }))
+                }
+                SelectProps={{
+                  multiple: true,
+                  renderValue: (selected) =>
+                    (selected as number[])
+                      .map((id) => organisms.find((item) => item.id === id)?.name || String(id))
+                      .join(', ') || '—',
+                }}
+                fullWidth
+              >
+                {organisms.map((organism) => (
+                  <MenuItem key={organism.id} value={organism.id}>
+                    {organism.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              <Autocomplete
+                multiple
+                options={logins}
+                value={selectLoginOptions(form.accessLogins, logins)}
+                onChange={(_, values) =>
+                  setForm((prev) => ({ ...prev, accessLogins: selectedLoginIds(values) }))
+                }
+                getOptionLabel={(option) => option.login}
+                isOptionEqualToValue={(option, value) => option.id === value.id}
+                renderOption={(props, option) => {
+                  const { key: _unusedKey, ...optionProps } = props;
+                  return (
+                    <li {...optionProps} key={option.id}>
+                      {option.login}
+                    </li>
+                  );
+                }}
+                renderInput={(params) => (
+                  <TextField {...params} label="Доступ для логінів" fullWidth />
+                )}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
             <PowerButton
               variant="outlined"
-              onClick={handleCheckConnection}
+              onClick={() => setEditorOpen(false)}
               disabled={saving || checking || settingUpWorker}
             >
-              Перевірити з'єднання
+              Скасувати
             </PowerButton>
-          ) : null}
-          {form.id && form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
+            {form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
+              <PowerButton
+                variant="outlined"
+                onClick={handleCheckConnection}
+                disabled={saving || checking || settingUpWorker}
+              >
+                Перевірити з'єднання
+              </PowerButton>
+            ) : null}
+            {form.id && form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
+              <PowerButton
+                variant="outlined"
+                onClick={handleSetupWorker}
+                disabled={saving || checking || settingUpWorker}
+              >
+                Налаштувати воркер
+              </PowerButton>
+            ) : null}
             <PowerButton
-              variant="outlined"
-              onClick={handleSetupWorker}
+              variant="contained"
+              onClick={handleSave}
               disabled={saving || checking || settingUpWorker}
             >
-              Налаштувати воркер
+              {form.id ? 'Зберегти' : 'Створити'}
             </PowerButton>
-          ) : null}
-          {form.id ? (
-            <PowerButton
-              variant="outlined"
-              color="error"
-              onClick={handleDelete}
-              disabled={saving || checking || settingUpWorker}
-            >
+          </DialogActions>
+        </Dialog>
+        <Dialog open={deleteTarget !== null} onClose={() => !saving && setDeleteTarget(null)}>
+          <DialogTitle>Видалити інтеграцію ГОІ?</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              {deleteTarget
+                ? `${deleteTarget.ownerOrganismName} / ${deleteTarget.serverLabel}`
+                : ''}
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+            <PowerButton variant="outlined" onClick={() => setDeleteTarget(null)} disabled={saving}>
+              Скасувати
+            </PowerButton>
+            <PowerButton color="error" variant="contained" onClick={handleDelete} disabled={saving}>
               Видалити
             </PowerButton>
-          ) : null}
-        </CardActions>
-      </Card>
-    </Stack>
+          </DialogActions>
+        </Dialog>
+      </Stack>
+    </Box>
+  );
+}
+
+export function AdminGoiIntegrationsNeoPage() {
+  return (
+    <TableStateProvider
+      tableId="admin-goi-integrations"
+      defaultColumnOrder={DEFAULT_COLUMN_ORDER}
+      defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
+      defaultEnableColumnOrdering={false}
+    >
+      <AdminGoiIntegrationsNeoPageBody />
+    </TableStateProvider>
   );
 }

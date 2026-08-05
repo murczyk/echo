@@ -44,7 +44,6 @@ vi.mock('../../components/PowerButton', () => ({
   ),
 }));
 vi.mock('../admin-control-panel-neo', () => ({ AdminControlPanelNeoSection: () => null }));
-vi.mock('./AiEnginesSection', () => ({ AiEnginesSection: () => <div>ШІ движки</div> }));
 vi.mock('./CacheBackfillSection', () => ({
   CacheBackfillSection: () => <div>Перерахунок кешу</div>,
 }));
@@ -192,19 +191,20 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     await act(async () => root.unmount());
   });
 
-  it('reads the active tab from the anchor and replaces it on tab changes', async () => {
+  it('reads the active tab from the anchor and has no provider tab', async () => {
     window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
     const replaceState = vi.spyOn(window.history, 'replaceState');
     const pushState = vi.spyOn(window.history, 'pushState');
     const { container, root } = await renderPage();
     const tabs = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'));
     const dutyTab = tabs.find((tab) => tab.textContent?.includes('Оперативний'));
-    const aiTab = tabs.find((tab) => tab.textContent?.includes('ШІ'));
+    const analysisTab = tabs.find((tab) => tab.textContent?.includes('Аналіз'));
 
     expect(dutyTab?.getAttribute('aria-selected')).toBe('true');
-    await act(async () => aiTab?.click());
+    expect(tabs.some((tab) => tab.textContent?.includes('ШІ'))).toBe(false);
+    await act(async () => analysisTab?.click());
 
-    expect(window.location.hash).toBe('#ai');
+    expect(window.location.hash).toBe('#analysis');
     expect(replaceState).toHaveBeenCalledOnce();
     expect(pushState).not.toHaveBeenCalled();
     await act(async () => root.unmount());

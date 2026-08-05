@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+set -euo pipefail
+
+export PI_OFFLINE=1
+exec /usr/local/bin/node --experimental-strip-types \
+  /opt/echo-ai-agent/pi/runner.ts "$@"

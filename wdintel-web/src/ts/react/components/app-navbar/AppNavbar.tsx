@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { CircularProgress } from '@mui/material';
 import {
   Link,
   Menu,
@@ -16,6 +17,18 @@ import { ProfileDropdown } from './ProfileDropdown';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { fetchUserSettings, USER_SETTINGS_UPDATED_EVENT } from '../../services/api/user-settings';
 import { canReadDevices, hasRole } from '../../utils/roles';
+
+function filterTranscriptionSettings(items: Menu[], enabled: boolean): Menu[] {
+  return items.flatMap<Menu>((item): Menu[] => {
+    if (item.type === 'item' && item.activeName === 'transcription-settings' && !enabled) {
+      return [];
+    }
+    if (item.type === 'group') {
+      return [{ ...item, subs: filterTranscriptionSettings(item.subs, enabled) }];
+    }
+    return [item];
+  });
+}
 
 export interface AppNavbarProps {
   user: {
@@ -183,11 +196,9 @@ export function AppNavbar({
   });
 
   const goiMenuIsVisible = serverModeIsLive && isRer && user.goiIntegrations?.length > 0;
-  const visibleAdminSubs = adminSubs.filter(
-    (item) =>
-      item.type !== 'item' ||
-      item.activeName !== 'transcription-settings' ||
-      loadedAudioTranscription === true,
+  const visibleAdminSubs = filterTranscriptionSettings(
+    adminSubs,
+    loadedAudioTranscription === true,
   );
   const showClassicDuty = loadedShowClassicDuty !== false || userShowClassicDuty;
   const showClassicAnalysis = loadedShowClassicAnalysis !== false || userShowClassicAnalysis;
@@ -306,13 +317,20 @@ export function AppNavbar({
     } else if (sub.type === 'group') {
       const active = menuIsActive(activeName, sub);
       return (
-        <li key={index} className="px-2 py-1">
-          <div
-            className={`px-2 py-1 text-xs font-semibold uppercase tracking-wide ${active ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'}`}
+        <li key={index} className="app-navbar-flyout-item">
+          <button
+            type="button"
+            role="menuitem"
+            aria-haspopup="menu"
+            className={`flex w-full items-center justify-between rounded px-4 py-2 text-[var(--color-text)] transition-all duration-200 hover:bg-black/10 dark:hover:bg-white/10 ${active ? 'font-medium' : ''}`}
           >
-            {sub.label}
-          </div>
-          <ul className="ml-3 border-l border-[var(--color-border)] pl-2">
+            <span>{sub.label}</span>
+            <i className="bi bi-chevron-right ml-3 text-xs text-[var(--color-icons)]" />
+          </button>
+          <ul
+            className="app-navbar-flyout rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-2 shadow-lg"
+            role="menu"
+          >
             {sub.subs.map((s, i) => renderDropdownItem(s, i))}
           </ul>
         </li>
@@ -510,17 +528,27 @@ export function AppNavbar({
               </button>
             )}
 
-            <ProfileDropdown
-              user={user}
-              shared={shared}
-              isBasic={isBasic}
-              openDropdown={openDropdown}
-              setOpenDropdown={setOpenDropdown}
-              onThemeChange={onThemeChange}
-              onLogout={onLogout}
-              handleInternalLinkClick={handleInternalLinkClick}
-              closeDropdowns={closeDropdowns}
-            />
+            {shared.userLoaded ? (
+              <ProfileDropdown
+                user={user}
+                shared={shared}
+                isBasic={isBasic}
+                openDropdown={openDropdown}
+                setOpenDropdown={setOpenDropdown}
+                onThemeChange={onThemeChange}
+                onLogout={onLogout}
+                handleInternalLinkClick={handleInternalLinkClick}
+                closeDropdowns={closeDropdowns}
+              />
+            ) : (
+              <span
+                className="flex min-w-20 items-center justify-center px-2 py-2"
+                role="status"
+                aria-label="Завантаження користувача"
+              >
+                <CircularProgress color="inherit" size={18} thickness={5} />
+              </span>
+            )}
           </div>
         </div>
       </nav>

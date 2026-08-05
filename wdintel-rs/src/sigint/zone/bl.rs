@@ -3,7 +3,6 @@ use crate::entities::*;
 use crate::sigint::types::InterseptionKind;
 use crate::sigint::zone::ZoneDatasourceGroup;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use chrono::Utc;
 use sea_orm::sea_query::Expr;
 use sea_orm::*;
@@ -386,6 +385,9 @@ async fn replace_secret_group_access(
     user_logins: Vec<String>,
     organism_ids: Vec<i64>,
 ) -> Result<(), AppError> {
+    let user_logins = normalize_login_list(user_logins)?;
+    crate::ai_agent::ensure_unmanaged_logins(txn, &user_logins).await?;
+
     secret_group_user::Entity::delete_many()
         .filter(secret_group_user::Column::MasterKey.eq(master_key))
         .exec(txn)
@@ -402,7 +404,7 @@ async fn replace_secret_group_access(
         return Ok(());
     }
 
-    for login in normalize_login_list(user_logins)? {
+    for login in user_logins {
         secret_group_user::Entity::insert(secret_group_user::ActiveModel {
             id: NotSet,
             master_key: Set(master_key.to_string()),
@@ -488,7 +490,17 @@ pub async fn replace_group_admin_logins(
         .into_iter()
         .map(|login| login.trim().to_string())
         .filter(|login| !login.is_empty())
-        .collect::<HashSet<_>>();
+        .map(|login| {
+            uuid::Uuid::parse_str(&login)
+                .c(h!())
+                .map_err(AppError::from)
+        })
+        .collect::<Result<HashSet<_>, AppError>>()?;
+    crate::ai_agent::ensure_unmanaged_logins(
+        txn,
+        &admin_logins.iter().copied().collect::<Vec<_>>(),
+    )
+    .await?;
 
     signal_group_admin::Entity::update_many()
         .col_expr(signal_group_admin::Column::Deleted, Expr::value(true))
@@ -498,7 +510,6 @@ pub async fn replace_group_admin_logins(
         .c(h!())?;
 
     for login in admin_logins {
-        let login = uuid::Uuid::parse_str(&login).c(h!())?;
         let existing = signal_group_admin::Entity::find_by_id((
             master_key.to_string(),
             login,
@@ -773,8 +784,8 @@ where
         }
         let is_active = groups
             .iter()
-            .filter(|g| g.group_master_key.eq(master_key))
-            .any(|g| g.datasource_id.eq(&rec.datasource_id));
+            .filter(|g| g.group_master_key == *master_key)
+            .any(|g| g.datasource_id == rec.datasource_id);
         if !is_active {
             continue;
         }

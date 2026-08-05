@@ -1,0 +1,58 @@
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+[arg('server', long='server')]
+preflight server:
+    target=$(./bin/server-target.sh admin "{{ server }}"); ./bin/preflight.sh "$target"
+
+[arg('dangerously_acknowledge', long='dangerously-acknowledge', value='true')]
+[arg('server', long='server')]
+setup server dangerously_acknowledge:
+    target=$(./bin/server-target.sh bootstrap "{{ server }}"); ./bin/setup.sh "$target" "{{ dangerously_acknowledge }}"
+
+[arg('server', long='server')]
+preflight-bootstrap server:
+    target=$(./bin/server-target.sh bootstrap "{{ server }}"); ./bin/preflight.sh "$target" bootstrap
+
+[arg('dangerously_acknowledge', long='dangerously-acknowledge', value='true')]
+[arg('server', long='server')]
+deploy-host server dangerously_acknowledge:
+    target=$(./bin/server-target.sh admin "{{ server }}"); ./bin/deploy-host.sh "$target" "{{ dangerously_acknowledge }}"
+
+[arg('dangerously_acknowledge', long='dangerously-acknowledge', value='true')]
+[arg('server', long='server')]
+build-template server dangerously_acknowledge:
+    target=$(./bin/server-target.sh admin "{{ server }}"); ./bin/build-template.sh "$target" "{{ dangerously_acknowledge }}"
+
+[arg('dangerously_acknowledge', long='dangerously-acknowledge', value='true')]
+[arg('echo_server', long='echo-server')]
+[arg('server', long='server')]
+provision-key public_key server echo_server dangerously_acknowledge:
+    target=$(./bin/server-target.sh admin "{{ server }}"); ./bin/provision-key.sh "$target" "{{ public_key }}" "{{ echo_server }}" "{{ dangerously_acknowledge }}"
+
+[arg('echo_server', long='echo-server')]
+dispatcher-user echo_server:
+    ./bin/dispatcher-identity.sh "{{ echo_server }}"
+
+[arg('server', long='server')]
+host-key server:
+    target=$(./bin/server-target.sh admin "{{ server }}"); dispatcher=$(./bin/server-target.sh dispatcher "{{ server }}"); DISPATCH_HOST="$dispatcher" ./bin/host-key.sh "$target"
+
+[arg('server', long='server')]
+verify server:
+    target=$(./bin/server-target.sh admin "{{ server }}"); ./bin/verify.sh "$target"
+
+[arg('server', long='server')]
+status server:
+    target=$(./bin/server-target.sh admin "{{ server }}"); ./bin/service.sh status "$target"
+
+[arg('server', long='server')]
+logs server:
+    target=$(./bin/server-target.sh admin "{{ server }}"); ./bin/service.sh logs "$target"
+
+[arg('dangerously_acknowledge', long='dangerously-acknowledge', value='true')]
+[arg('server', long='server')]
+rollback server dangerously_acknowledge:
+    target=$(./bin/server-target.sh admin "{{ server }}"); ./bin/rollback.sh "$target" "{{ dangerously_acknowledge }}"
+
+check:
+    ./bin/check.sh

@@ -110,7 +110,9 @@ pub async fn oneoff_highlight_inbox_message_palitra_points(
             do_palitra_highlight(chunk.to_vec(), &rq, &dbx, &context).await?;
         message_count += chunk.len();
         total_palitra_points += total;
-        println!("processed {message_count} messages, palitra points so far: {total_palitra_points}");
+        println!(
+            "processed {message_count} messages, palitra points so far: {total_palitra_points}"
+        );
     }
 
     println!(

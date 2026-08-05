@@ -142,9 +142,12 @@ setup-dev:
     npm install uglify-js -g
 
 gen-seaorm:
+    #!/bin/bash
+    set -euo pipefail
+    [[ "$(sea-orm-cli --version)" == "sea-orm-cli 2.0.1" ]]
+    sea-orm-cli generate entity --help | grep -q -- "--include-generated-columns"
     rm -rf wdintel-rs/src/entities
-    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both -u postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd -o src/entities)
-    python3 deploy/patch_seaorm.py
+    (cd wdintel-rs && sea-orm-cli generate entity --entity-format compact --with-serde both --include-generated-columns -u postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd -o src/entities)
     just fmt
 
 [arg('mode', long='mode')]
@@ -1347,30 +1350,20 @@ copy-db server:
             ;;
     esac
     { set +x; } 2>/dev/null
-    if [[ -f /etc/echo-peerdb/source.env ]] \
-      || sudo -n test -f /etc/echo-peerdb/source.env 2>/dev/null; then
-        cat <<'COMMANDS'
+    cat <<'COMMANDS'
 
-    # PeerDB is configured. This block is safe to paste all at once.
+    # This coordinator is safe to paste all at once. It retains the local
+    # AI-agent profile, discards copied AI-agent runtime state, and coordinates
+    # PeerDB automatically when configured.
     deploy/restore-copied-db.sh --yes /var/tmp/wd-{{ dt1 }}.pgrestore
 
-    # Optional but recommended when copying a live/staging database into dev:
-    cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im-and-goi
-
-    COMMANDS
-    else
-        cat <<'COMMANDS'
-
-    # PostgreSQL-only restore. This block is safe to paste all at once.
-    sudo -u postgres dropdb --force wd
-    sudo -u postgres psql postgres -c "CREATE DATABASE wd"
-    sudo -u postgres pg_restore -d wd /var/tmp/wd-{{ dt1 }}.pgrestore
+    # To intentionally use the source AI-agent configuration instead:
+    # deploy/restore-copied-db.sh --yes --no-preserve-local-ai-agent-profile /var/tmp/wd-{{ dt1 }}.pgrestore
 
     # Optional but recommended when copying a live/staging database into dev:
     cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im-and-goi
 
     COMMANDS
-    fi
 
 [arg('dump', long='dump')]
 restore-copied-db dump:

@@ -3,7 +3,6 @@ use crate::error::AppError;
 use crate::rer_importer::analysis::*;
 use crate::sigint::network::display_network_type;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use chrono::{NaiveDateTime, TimeZone};
 use docx_rs::*;
@@ -264,8 +263,7 @@ pub async fn get_inbox_messages_report_network(
         )
         .join(
             JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq
-                .def()
+            crate::sigint::freq::util::inbox_item_network_freq_relation()
                 .on_condition(|_left, right| {
                     Expr::col((right, sigint_network_freq::Column::Deleted))
                         .eq(false)

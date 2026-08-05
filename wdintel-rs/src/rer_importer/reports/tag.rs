@@ -2,7 +2,6 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::reports::types::TagReportSortBy;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use docx_rs::AlignmentType;
 use docx_rs::LineSpacing;
@@ -337,7 +336,8 @@ async fn load_tag_report_datasources<'a>(
     }
     Ok(datasource::Entity::find()
         .filter(
-            datasource::Column::Id.eq_any(datasource_ids.into_iter().collect()),
+            datasource::Column::Id
+                .eq_any(datasource_ids.into_iter().collect::<Vec<_>>()),
         )
         .all(txn)
         .await

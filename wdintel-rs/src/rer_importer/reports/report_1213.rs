@@ -11,7 +11,6 @@ use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::rer_importer::types::{InboxMessage, InboxMessageMetadata};
 use crate::types::*;
 use crate::utils::dt_zoned_from_millis;
-use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use docx_rs::{
@@ -28,8 +27,7 @@ const REPORT_1213_EMPTY_TEXT: &str =
     "За обраний період даних для звіту 1.2.13 не виявлено";
 const REPORT_1213_UNKNOWN_TEXT: &str = "Не встановлено";
 const REPORT_1213_DOC_NAME: &str = "Форма №1.2.13/ГУР";
-const REPORT_1213_DOC_HEADER: &str =
-    "Донесення за результатами функціонування тактичної радіопеленгаторної мережі у зоні відповідальності УОС (УВ (с), УСіЗ)";
+const REPORT_1213_DOC_HEADER: &str = "Донесення за результатами функціонування тактичної радіопеленгаторної мережі у зоні відповідальності УОС (УВ (с), УСіЗ)";
 
 const REPORT_1213_P1: &str = "  1. Склад сил і засобів, які розгорнуті для визначення місцеположення джерел (об’єктів) розвідки:";
 const REPORT_1213_P2: &str = "Для визначення місцезнаходження джерел (об’єктів ) розвідки задіяно ... операторів з моніторингу радіомереж, розгорнуто ....";
@@ -94,8 +92,8 @@ impl Report1213Accumulator {
     }
 
     fn observe_datetime(&mut self, seen_at: NaiveDateTime) {
-        self.first_seen_at = self.first_seen_at.min(seen_at);
-        self.last_seen_at = self.last_seen_at.max(seen_at);
+        self.first_seen_at = std::cmp::min(self.first_seen_at, seen_at);
+        self.last_seen_at = std::cmp::max(self.last_seen_at, seen_at);
     }
 
     fn apply_activity_range(&mut self, range: &Report1213ActivityRange) {
@@ -172,7 +170,7 @@ fn observe_report_1213_texts(
             .entry(value.clone())
             .and_modify(|stat| {
                 stat.count += 1;
-                stat.last_seen_at = stat.last_seen_at.max(seen_at);
+                stat.last_seen_at = std::cmp::max(stat.last_seen_at, seen_at);
             })
             .or_insert(Report1213ObservedTextStat {
                 count: 1,
@@ -202,8 +200,8 @@ impl Report1213ActivityRange {
     }
 
     fn observe(&mut self, seen_at: NaiveDateTime) {
-        self.first_seen_at = self.first_seen_at.min(seen_at);
-        self.last_seen_at = self.last_seen_at.max(seen_at);
+        self.first_seen_at = std::cmp::min(self.first_seen_at, seen_at);
+        self.last_seen_at = std::cmp::max(self.last_seen_at, seen_at);
     }
 }
 

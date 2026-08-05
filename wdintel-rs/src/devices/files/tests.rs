@@ -3718,13 +3718,18 @@ async fn stage_ten_sync_service_gates_registry_writes() {
         "must contain between 1 and 1000 items",
     );
     assert_form_error(
-        bl::sync(&env.dbx,
-        &outage_db,
-        &source,
-        stage_ten_command(device_id, vec![
-            stage_ten_file(None, r"C:\logs\a.log");
-            DEVICE_FILE_SYNC_BATCH_MAX_COUNT + 1
-        ]),)
+        bl::sync(
+            &env.dbx,
+            &outage_db,
+            &source,
+            stage_ten_command(
+                device_id,
+                vec![
+                    stage_ten_file(None, r"C:\logs\a.log");
+                    DEVICE_FILE_SYNC_BATCH_MAX_COUNT + 1
+                ],
+            ),
+        )
         .await
         .unwrap_err(),
         "files",
@@ -4518,8 +4523,7 @@ mod ltree_tests {
     fn expected_hierarchy_path_requires_exact_nonempty_uuid_chain() {
         let root_id = Uuid::from_u128(1);
         let directory_id = Uuid::from_u128(2);
-        let expected =
-            "n00000000000000000000000000000001.n00000000000000000000000000000002";
+        let expected = "n00000000000000000000000000000001.n00000000000000000000000000000002";
 
         assert_eq!(
             expected_hierarchy_path(&[root_id, directory_id]).unwrap(),
@@ -4925,10 +4929,9 @@ mod path_tests {
 
         let scalar_overflow = format!("{max_path}a");
         assert_eq!(
-            validation_errors(parse(
-                scalar_overflow,
-                "files[0].absolute_path",
-            )),
+            validation_errors(
+                parse(scalar_overflow, "files[0].absolute_path",)
+            ),
             vec![FilesystemFieldError {
                 path: "files[0].absolute_path".to_string(),
                 message: format!(
@@ -5712,7 +5715,9 @@ mod validation_tests {
                 .map(|value| Uuid::from_u128(value as u128))
                 .collect::<Vec<_>>();
             assert_eq!(
-                path_validation_errors(validate_subtree_count_directories(&entry_ids)),
+                path_validation_errors(validate_subtree_count_directories(
+                    &entry_ids
+                )),
                 vec![FilesystemFieldError {
                     path: "directory_entry_ids".to_string(),
                     message: format!(

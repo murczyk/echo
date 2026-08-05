@@ -593,7 +593,7 @@ async fn persist_display_name<C>(
 where
     C: ConnectionTrait,
 {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "update echo_client set display_name = $1 where name = $2",
         vec![
@@ -615,7 +615,7 @@ where
     C: ConnectionTrait,
 {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "
             select coalesce(nullif(display_name, ''), $2) as display_name
@@ -988,7 +988,7 @@ async fn sync_state_is_paused(
     key: &str,
 ) -> Result<bool> {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "select paused from echo_swapp_sync_state where key = $1",
             [key.into()],
@@ -1006,7 +1006,7 @@ async fn set_sync_state_paused(
     key: &str,
     is_paused: bool,
 ) -> Result<()> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "
         insert into echo_swapp_sync_state (key, paused, updated_at)

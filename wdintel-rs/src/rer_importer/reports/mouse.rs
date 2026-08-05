@@ -10,7 +10,6 @@ use crate::types::*;
 use crate::utils::*;
 use anyhow::Context;
 // Add this import if h!() uses anyhow::Context
-use crate::utils::orm::ArrayColumnOps;
 use chrono::prelude::*;
 use docx_rs::AlignmentType;
 use docx_rs::LineSpacing;

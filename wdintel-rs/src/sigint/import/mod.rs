@@ -9,7 +9,6 @@ use crate::sigint::aor::load_default_aor;
 use crate::sigint::import::types::*;
 use crate::types::Mode;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
 use dialoguer::{theme::ColorfulTheme, Confirm};
 use itertools::Itertools;
@@ -50,7 +49,9 @@ pub async fn oneoff_import_etalon_data(
         true => "autocommit on",
         false => "autocommit off",
     };
-    info!("importing etalon from server {origin_name}, file {path}, {autocommit_txt}");
+    info!(
+        "importing etalon from server {origin_name}, file {path}, {autocommit_txt}"
+    );
 
     let mut file_read = File::open(path).await.context(h!())?;
     let mut buffer = Vec::new();
