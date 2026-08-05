@@ -1,5 +1,7 @@
 import AddCommentOutlinedIcon from '@mui/icons-material/AddCommentOutlined';
 import CloseIcon from '@mui/icons-material/Close';
+import CloseFullscreenOutlinedIcon from '@mui/icons-material/CloseFullscreenOutlined';
+import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
 import {
@@ -271,22 +273,89 @@ function MarkdownContent({ children }: { children: string }) {
   );
 }
 
-function ConversationMessage({ message }: { message: AiAgentMessage }) {
-  const assistant = message.role === 'assistant';
-  const stateMessage =
-    message.role !== 'user'
-      ? null
-      : message.requestState === 'failed'
-        ? GENERIC_REQUEST_FAILURE
-        : message.requestState === 'cancelled'
-          ? 'Запит скасовано.'
-          : null;
+function AssistantMessage({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const expandLabel = expanded ? 'Повернути звичайну ширину' : 'Розгорнути відповідь';
+
   return (
     <Box
       sx={{
-        alignSelf: assistant ? 'flex-start' : 'flex-end',
+        position: expanded ? 'fixed' : 'relative',
+        inset: expanded ? { xs: 1, md: 3 } : undefined,
+        zIndex: expanded ? (theme) => theme.zIndex.modal + 1 : undefined,
+        alignSelf: 'flex-start',
+        width: expanded ? 'auto' : undefined,
+        maxWidth: expanded ? 'none' : { xs: '95%', md: '80%' },
+        maxHeight: expanded ? 'auto' : undefined,
+        overflow: expanded ? 'auto' : undefined,
+        bgcolor: 'background.paper',
+        border: 1,
+        borderColor: 'divider',
+        borderRadius: 1,
+        boxShadow: expanded ? 24 : undefined,
+        px: 2,
+        py: 1.5,
+        '&:hover .ai-agent-answer-expand, &:focus-within .ai-agent-answer-expand': {
+          opacity: 1,
+        },
+      }}
+      onKeyDown={(event) => {
+        if (expanded && event.key === 'Escape') {
+          setExpanded(false);
+        }
+      }}
+    >
+      <Tooltip title={expandLabel}>
+        <IconButton
+          aria-label={expandLabel}
+          aria-pressed={expanded}
+          className="ai-agent-answer-expand"
+          size="small"
+          onClick={() => setExpanded((current) => !current)}
+          sx={{
+            position: 'absolute',
+            top: 4,
+            right: 4,
+            zIndex: 1,
+            opacity: { xs: 1, md: expanded ? 1 : 0 },
+            color: 'text.secondary',
+            bgcolor: 'action.hover',
+            transition: 'opacity 150ms ease',
+          }}
+        >
+          {expanded ? (
+            <CloseFullscreenOutlinedIcon fontSize="small" />
+          ) : (
+            <OpenInFullOutlinedIcon fontSize="small" />
+          )}
+        </IconButton>
+      </Tooltip>
+      <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5, pr: 4 }}>
+        ЕХО Агент
+      </Typography>
+      <MarkdownContent>{content}</MarkdownContent>
+    </Box>
+  );
+}
+
+function ConversationMessage({ message }: { message: AiAgentMessage }) {
+  if (message.role === 'assistant') {
+    return <AssistantMessage content={message.content} />;
+  }
+
+  const stateMessage =
+    message.requestState === 'failed'
+      ? GENERIC_REQUEST_FAILURE
+      : message.requestState === 'cancelled'
+        ? 'Запит скасовано.'
+        : null;
+
+  return (
+    <Box
+      sx={{
+        alignSelf: 'flex-end',
         maxWidth: { xs: '95%', md: '80%' },
-        bgcolor: assistant ? 'background.paper' : 'action.selected',
+        bgcolor: 'action.selected',
         border: 1,
         borderColor: 'divider',
         borderRadius: 1,
@@ -295,15 +364,11 @@ function ConversationMessage({ message }: { message: AiAgentMessage }) {
       }}
     >
       <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
-        {assistant ? 'ЕХО Агент' : 'Ви'}
+        Ви
       </Typography>
-      {assistant ? (
-        <MarkdownContent>{message.content}</MarkdownContent>
-      ) : (
-        <Typography component="div" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-          {message.content}
-        </Typography>
-      )}
+      <Typography component="div" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+        {message.content}
+      </Typography>
       {stateMessage ? (
         <Typography
           variant="body2"
@@ -349,24 +414,7 @@ function LiveResponse({ request }: { request: LiveRequest }) {
         </Card>
       ) : null}
 
-      {request.assistantText ? (
-        <Box
-          sx={{
-            maxWidth: { xs: '95%', md: '80%' },
-            border: 1,
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-            borderRadius: 1,
-            px: 2,
-            py: 1.5,
-          }}
-        >
-          <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
-            ЕХО Агент
-          </Typography>
-          <MarkdownContent>{request.assistantText}</MarkdownContent>
-        </Box>
-      ) : null}
+      {request.assistantText ? <AssistantMessage content={request.assistantText} /> : null}
 
       {request.state === 'failed' ? (
         <PowerAlert severity="error">{GENERIC_REQUEST_FAILURE}</PowerAlert>
@@ -980,7 +1028,7 @@ export function AiAgentChat({
                 !pendingSubmission ? (
                 <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', py: 5 }}>
                   <Typography color="text.secondary" align="center">
-                    Поставте запитання про дані ЕХО
+                    Спитайте ЕХО
                   </Typography>
                 </Box>
               ) : (
@@ -1023,7 +1071,16 @@ export function AiAgentChat({
             <Box
               component="form"
               onSubmit={submit}
-              sx={{ border: 1, borderColor: 'divider', borderRadius: 3, px: 1.5, py: 1 }}
+              sx={{
+                width: '100%',
+                maxWidth: 768,
+                alignSelf: 'center',
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 3,
+                px: 1.5,
+                py: 1,
+              }}
             >
               <TextField
                 fullWidth
@@ -1052,7 +1109,7 @@ export function AiAgentChat({
                   variant="standard"
                   disableUnderline
                   value={providerId}
-                  disabled={interactionLocked}
+                  disabled={interactionLocked || Boolean(activeConversationId)}
                   onChange={(event) => setProviderId(event.target.value)}
                   inputProps={{ 'aria-label': 'Провайдер ШІ' }}
                   sx={{

@@ -140,6 +140,7 @@ pub const AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 5 * 60;
 pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
     "/api/ai-agent/provider/v1/chat/completions";
 pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
+pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
 pub const AI_AGENT_INBOX_MAX_DAYS: i64 = 31;
 pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
     "Не вдалося виконати запит. Спробуйте ще раз.";

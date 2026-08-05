@@ -1,8 +1,8 @@
 use super::auth;
 use crate::config::{
-    AI_AGENT_OPENAI_API_BASE, AI_AGENT_PROVIDER_ERROR_MAX_BYTES,
-    AI_AGENT_PROVIDER_GATEWAY_PATH, AI_AGENT_PROVIDER_REQUEST_MAX_BYTES,
-    AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC,
+    AI_AGENT_OPENAI_API_BASE, AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
+    AI_AGENT_PROVIDER_ERROR_MAX_BYTES, AI_AGENT_PROVIDER_GATEWAY_PATH,
+    AI_AGENT_PROVIDER_REQUEST_MAX_BYTES, AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC,
     AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES,
 };
 use crate::error::AppError;
@@ -101,9 +101,24 @@ fn validate_request_body(
         Some(streamed) => streamed.as_bool()?,
         None => false,
     };
-    body.remove("reasoning_effort");
+    normalize_reasoning_effort(body, expected_model_name);
     body.insert("store".to_string(), Value::Bool(false));
     Some((Value::Object(body.clone()), streamed))
+}
+
+fn normalize_reasoning_effort(
+    body: &mut serde_json::Map<String, Value>,
+    expected_model_name: &str,
+) {
+    body.remove("reasoning_effort");
+    if expected_model_name
+        .starts_with(AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX)
+    {
+        body.insert(
+            "reasoning_effort".to_string(),
+            Value::String("none".to_string()),
+        );
+    }
 }
 
 async fn proxy_openai_request(
@@ -361,6 +376,17 @@ mod tests {
         assert!(body.get("reasoning_effort").is_none());
         assert!(validate_request_body(body.to_string().as_bytes(), "other")
             .is_none());
+    }
+
+    #[test]
+    fn forces_reasoning_effort_none_for_gpt_5_models() {
+        let body = br#"{
+            "model":"gpt-5.6-luna",
+            "messages":[{"role":"user","content":"hello"}],
+            "reasoning_effort":"high"
+        }"#;
+        let (body, _) = validate_request_body(body, "gpt-5.6-luna").unwrap();
+        assert_eq!(body["reasoning_effort"], "none");
     }
 
     #[test]
