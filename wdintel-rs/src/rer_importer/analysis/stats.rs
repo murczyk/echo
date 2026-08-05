@@ -2964,20 +2964,86 @@ async fn load_callsigns_with_counts(
     db: &DatabaseConnection,
     query: Select<sigint_inbox_item::Entity>,
 ) -> Result<Vec<AnalysisStatsCallsign>, AppError> {
-    let inbox_item_ids =
-        query.into_tuple::<i64>().all(db).await.context(h!())?;
-    let callsigns_by_item_id =
-        crate::inbox::callsigns::load_by_item_ids(db, &inbox_item_ids).await?;
-    let mut counts = BTreeMap::<String, i64>::new();
-    for callsigns in callsigns_by_item_id.into_values() {
-        for callsign in callsigns.effective() {
-            *counts.entry(callsign).or_default() += 1;
-        }
-    }
-    Ok(counts
-        .into_iter()
-        .map(|(callsign, count)| AnalysisStatsCallsign { callsign, count })
-        .collect())
+    let filtered_items = query.build(DbBackend::Postgres);
+    let values = filtered_items
+        .values
+        .map(|values| values.0)
+        .unwrap_or_default();
+    let sql = format!(
+        r#"
+        WITH filtered_items AS ({})
+        , normalized_callsigns AS (
+            SELECT DISTINCT
+                callsign.sigint_inbox_item_id AS inbox_item_id,
+                callsign.callsign
+            FROM sigint_inbox_item_callsign AS callsign
+            INNER JOIN filtered_items
+                ON filtered_items.id = callsign.sigint_inbox_item_id
+            WHERE callsign.deleted = FALSE
+        )
+        , legacy_callsigns AS (
+            SELECT DISTINCT
+                item.id AS inbox_item_id,
+                legacy.callsign
+            FROM filtered_items
+            INNER JOIN sigint_inbox_item AS item ON item.id = filtered_items.id
+            CROSS JOIN LATERAL jsonb_array_elements_text(
+                CASE
+                    WHEN jsonb_typeof(item.callsigns) = 'array'
+                        THEN item.callsigns
+                    ELSE '[]'::jsonb
+                END
+            ) AS legacy(callsign)
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM sigint_inbox_item_callsign AS callsign
+                WHERE callsign.sigint_inbox_item_id = item.id
+            )
+            UNION
+            SELECT DISTINCT
+                item.id AS inbox_item_id,
+                legacy.callsign
+            FROM filtered_items
+            INNER JOIN sigint_inbox_item AS item ON item.id = filtered_items.id
+            CROSS JOIN LATERAL jsonb_array_elements_text(
+                CASE
+                    WHEN jsonb_typeof(item.callsigns_alg2) = 'array'
+                        THEN item.callsigns_alg2
+                    ELSE '[]'::jsonb
+                END
+            ) AS legacy(callsign)
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM sigint_inbox_item_callsign AS callsign
+                WHERE callsign.sigint_inbox_item_id = item.id
+            )
+        )
+        , all_callsigns AS (
+            SELECT inbox_item_id, callsign FROM normalized_callsigns
+            UNION ALL
+            SELECT inbox_item_id, callsign FROM legacy_callsigns
+        )
+        SELECT callsign, COUNT(*)::bigint AS count
+        FROM all_callsigns
+        GROUP BY callsign
+        ORDER BY callsign
+        "#,
+        filtered_items.sql
+    );
+    let statement =
+        Statement::from_sql_and_values(DbBackend::Postgres, sql, values);
+    let rows = db.query_all(statement).await.context(h!())?;
+    let callsigns = rows
+        .iter()
+        .map(|row| {
+            Ok(AnalysisStatsCallsign {
+                callsign: row.try_get_by("callsign")?,
+                count: row.try_get_by("count")?,
+            })
+        })
+        .collect::<Result<Vec<_>, DbErr>>()
+        .context(h!())?;
+    Ok(callsigns)
 }
 
 fn build_callsigns_filtered_query(
