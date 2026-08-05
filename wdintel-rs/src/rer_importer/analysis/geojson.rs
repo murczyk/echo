@@ -147,6 +147,8 @@ pub(crate) async fn rer_analysis_geojson_bytes(
     .context(h!())?;
     let items = filter_selected_metadata_for_analysis_stats(items, &req)?;
     let items = filter_search(items, &req.search)?;
+    let items =
+        filter_selected_device_names(items, &req.selected_device_names)?;
     let items = filter_selected_locations(
         items,
         &req.selected_locations,

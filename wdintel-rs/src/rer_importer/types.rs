@@ -373,6 +373,8 @@ pub struct InboxMessagesReq {
     pub selected_units: Option<Vec<String>>,
     pub denied_units: Option<Vec<String>>,
     pub selected_locations: Option<Vec<String>>,
+    #[serde(default)]
+    pub selected_device_names: Option<Vec<String>>,
     pub nolimit: Option<bool>,
     pub or_with_extended_form: Option<bool>,
     pub load_latest: Option<bool>,
@@ -810,6 +812,8 @@ pub struct AnalysisStatsReq {
     pub selected_callsigns: Option<Vec<String>>,
     pub selected_units: Option<Vec<String>>,
     pub selected_locations: Option<Vec<String>>,
+    #[serde(default)]
+    pub selected_device_names: Option<Vec<String>>,
     pub selected_aors: Option<Vec<i64>>,
     pub or_with_extended_form: Option<bool>,
     pub or_bookmarked: Option<bool>,
@@ -873,6 +877,8 @@ pub struct CallsignsGraphReq {
     pub selected_callsigns: Option<Vec<String>>,
     pub selected_units: Option<Vec<String>>,
     pub selected_locations: Option<Vec<String>>,
+    #[serde(default)]
+    pub selected_device_names: Option<Vec<String>>,
     pub or_with_extended_form: Option<bool>,
     pub or_bookmarked: Option<bool>,
     pub or_important: Option<bool>,

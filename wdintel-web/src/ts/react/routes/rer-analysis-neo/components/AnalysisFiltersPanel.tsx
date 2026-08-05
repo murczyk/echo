@@ -43,6 +43,7 @@ export function AnalysisFiltersPanel({
     isDirty,
     counts,
     canResetFilters,
+    cyberEchoEnabled,
     aorEntries,
     countsLoading,
     filtersLoading,
@@ -192,6 +193,7 @@ export function AnalysisFiltersPanel({
                 <AnalysisFiltersPanelSections
                   counts={counts}
                   countsLoading={countsLoading}
+                  cyberEchoEnabled={cyberEchoEnabled}
                   derived={derived}
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
@@ -252,6 +254,7 @@ export function AnalysisFiltersPanel({
                 <AnalysisFiltersPanelSections
                   counts={counts}
                   countsLoading={countsLoading}
+                  cyberEchoEnabled={cyberEchoEnabled}
                   derived={derived}
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}

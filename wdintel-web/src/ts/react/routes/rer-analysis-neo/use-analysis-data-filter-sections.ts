@@ -43,6 +43,7 @@ const GLOBAL_OPTION_QUERY_FIELDS: Array<keyof AnalysisQueryState> = [
   'toDateTimeStr',
   'freqsSelected',
   'search',
+  'deviceNamesSelected',
   'includeOnlyNewFreqs',
   'adjacentFreqsRange',
   'orWithExtendedForm',

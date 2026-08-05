@@ -50,6 +50,7 @@ function buildGroupMessagesRequest(masterKey: string): InboxMessagesReq {
     deniedFreqs: null,
     selectedCallsigns: null,
     selectedUnits: null,
+    selectedDeviceNames: null,
     deniedUnits: null,
     selectedLocations: null,
     nolimit: null,

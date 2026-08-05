@@ -26,6 +26,7 @@ export type AnalysisFiltersPanelPage = Pick<
   | 'groupInfos'
   | 'networkDisplayMap'
   | 'networks'
+  | 'cyberEchoEnabled'
   | 'queryState'
   | 'unitsExactMatchOnlyDefault'
   | 'saveInFlight'
@@ -64,6 +65,7 @@ export type FilterSectionId =
   | 'freqs'
   | 'callsigns'
   | 'units'
+  | 'devices'
   | 'locations'
   | 'posts'
   | 'metadata';
@@ -78,6 +80,7 @@ const defaultExpandedSections: Record<FilterSectionId, boolean> = {
   freqs: false,
   callsigns: false,
   units: false,
+  devices: false,
   locations: false,
   posts: false,
   metadata: false,

@@ -243,6 +243,16 @@ describe('rer-analysis-neo helpers', () => {
     ).toEqual(['alpha', 'Bravo']);
   });
 
+  it('persists device-name selections in requests and saved filters', () => {
+    const state = createQueryState({ deviceNamesSelected: ['cyber-echo-01'] });
+    const savedFilter = createSavedFilter(state);
+    const restored = queryStateFromSavedFilter(savedFilter, createResetQueryState());
+
+    expect(buildAnalysisReq(state)?.selectedDeviceNames).toEqual(['cyber-echo-01']);
+    expect(buildInboxReq(state)?.selectedDeviceNames).toEqual(['cyber-echo-01']);
+    expect(restored.deviceNamesSelected).toEqual(['cyber-echo-01']);
+  });
+
   it('normalizes legacy unit aliases in query state normalization', () => {
     expect(
       normalizeQueryState(createQueryState({ unitsSelected: ['Не визначено', 'Unit A', ''] }))

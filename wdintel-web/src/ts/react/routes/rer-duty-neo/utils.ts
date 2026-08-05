@@ -293,6 +293,7 @@ export function buildInboxReq(opts: {
     deniedFreqs: emptyArrToNull(opts.expandedFreqsDenied ?? f.freqsDenied ?? null),
     selectedCallsigns: null,
     selectedUnits: emptyArrToNull(f.unitsSelected ?? null),
+    selectedDeviceNames: null,
     deniedUnits: emptyArrToNull(f.unitsDenied ?? null),
     selectedLocations: null,
     nolimit: opts.nolimit ?? null,

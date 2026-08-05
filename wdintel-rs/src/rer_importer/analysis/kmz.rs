@@ -91,6 +91,8 @@ pub(crate) async fn rer_analysis_kmz_bytes(
     .context(h!())?;
     let items = filter_selected_metadata_for_analysis_stats(items, &req)?;
     let items = filter_search(items, &req.search)?;
+    let items =
+        filter_selected_device_names(items, &req.selected_device_names)?;
     let items = items.group_by(Expr::cust("1, 2, 3"));
     // println!(
     //     "> download kmz items query: {}",

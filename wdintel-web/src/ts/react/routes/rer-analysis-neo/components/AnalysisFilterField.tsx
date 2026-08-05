@@ -36,6 +36,7 @@ type Props = {
   bulkPasteMenuLabel?: string;
   bulkPasteDialogTitle?: string;
   bulkPasteInputLabel?: string;
+  onInputChange?: (inputValue: string) => void;
   onChange: (next: string[]) => void;
 };
 
@@ -168,6 +169,7 @@ export function AnalysisFilterField({
   bulkPasteMenuLabel,
   bulkPasteDialogTitle,
   bulkPasteInputLabel,
+  onInputChange,
   onChange,
 }: Props) {
   const autocompleteOptions = options.map(toAutocompleteOption);
@@ -275,6 +277,7 @@ export function AnalysisFilterField({
           return;
         }
         setInputValue(nextInputValue);
+        onInputChange?.(nextInputValue);
       }}
       renderTags={(tagValue, getTagProps) =>
         tagValue.map((option, index) => {
