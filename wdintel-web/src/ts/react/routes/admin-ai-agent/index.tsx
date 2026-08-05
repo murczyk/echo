@@ -1510,6 +1510,12 @@ function SettingsPage() {
       <PageFailure message={error ?? 'Налаштування не знайдено.'} onRetry={() => void load()} />
     );
 
+  const showMattermostWebhook =
+    settings.mattermostChatEnabled ||
+    settings.reviewEnabled ||
+    settings.mattermostWebhookConfigured ||
+    settings.mattermostWebhookUrl.length > 0;
+
   return (
     <Stack spacing={2}>
       <PageHeader title="Налаштування ШІ агентів" />
@@ -1628,46 +1634,6 @@ function SettingsPage() {
                 )}
               </Select>
             </FormControl>
-            <TextField
-              type="url"
-              label="Mattermost webhook"
-              value={settings.mattermostWebhookUrl}
-              disabled={settings.clearMattermostWebhook}
-              placeholder={
-                settings.mattermostWebhookConfigured ? 'Налаштовано (введіть для заміни)' : ''
-              }
-              helperText="Порожнє поле зберігає наявний секрет без змін"
-              onChange={(event) =>
-                setSettings((current) =>
-                  current
-                    ? {
-                        ...current,
-                        mattermostWebhookUrl: event.target.value,
-                        clearMattermostWebhook: false,
-                      }
-                    : current,
-                )
-              }
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={settings.mattermostChatEnabled}
-                  disabled={settings.clearMattermostWebhook}
-                  onChange={(event) =>
-                    setSettings((current) =>
-                      current
-                        ? { ...current, mattermostChatEnabled: event.target.checked }
-                        : current,
-                    )
-                  }
-                />
-              }
-              label="Надсилати запити ШІ чату до Mattermost"
-            />
-            <Typography variant="caption" color="text.secondary">
-              Надсилає текст кожного запиту користувача, провайдера та посилання на аудит.
-            </Typography>
             {settings.mattermostWebhookConfigured ? (
               <FormControlLabel
                 control={
@@ -1692,6 +1658,48 @@ function SettingsPage() {
                   />
                 }
                 label="Очистити налаштований Mattermost webhook"
+              />
+            ) : null}
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={settings.mattermostChatEnabled}
+                  disabled={settings.clearMattermostWebhook}
+                  onChange={(event) =>
+                    setSettings((current) =>
+                      current
+                        ? { ...current, mattermostChatEnabled: event.target.checked }
+                        : current,
+                    )
+                  }
+                />
+              }
+              label="Надсилати запити ШІ чату до Mattermost"
+            />
+            <Typography variant="caption" color="text.secondary">
+              Надсилає текст кожного запиту користувача, провайдера та посилання на аудит.
+            </Typography>
+            {showMattermostWebhook ? (
+              <TextField
+                type="url"
+                label="Mattermost webhook"
+                value={settings.mattermostWebhookUrl}
+                disabled={settings.clearMattermostWebhook}
+                placeholder={
+                  settings.mattermostWebhookConfigured ? 'Налаштовано (введіть для заміни)' : ''
+                }
+                helperText="Порожнє поле зберігає наявний секрет без змін"
+                onChange={(event) =>
+                  setSettings((current) =>
+                    current
+                      ? {
+                          ...current,
+                          mattermostWebhookUrl: event.target.value,
+                          clearMattermostWebhook: false,
+                        }
+                      : current,
+                  )
+                }
               />
             ) : null}
             <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
