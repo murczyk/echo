@@ -3,7 +3,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::{error, info, warn};
 use crate::types::{Mode, ShortContext};
-use chrono::{Duration, NaiveDateTime};
+use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Utc};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
@@ -182,6 +182,383 @@ pub async fn oneoff_export_sigint_comments(
         exported, skipped, ps.output
     );
     Ok(())
+}
+
+const COMMENTED_MESSAGES_EXPORT_KIND_VALUES: &[&str] = &[
+    "echo-comments",
+    "goi-associations",
+    "mapped-goi-association",
+];
+
+#[derive(Debug, FromQueryResult)]
+struct EchoCommentedMessageExportRow {
+    source_login: String,
+    source_organism: Option<String>,
+    comment: String,
+    body: Option<String>,
+    message_created_at: NaiveDateTime,
+    message_timestamp: Option<NaiveDateTime>,
+    inbox_datetime: Option<NaiveDateTime>,
+}
+
+#[derive(Debug)]
+struct SignalMessageExportSource {
+    id: i64,
+    body: String,
+    message_ts: NaiveDateTime,
+}
+
+pub async fn oneoff_export_commented_messages(
+    mode: Mode,
+    ps: &crate::OneoffExportCommentedMessagesPs,
+) -> Result<(), AppError> {
+    let Some(kind) = ps.kind else {
+        print_commented_messages_kind_values();
+        return Ok(());
+    };
+    let since_ts = parse_naive_datetime(&ps.since_ts)?;
+    let till_ts = parse_naive_datetime(&ps.till_ts)?;
+    if since_ts >= till_ts {
+        return Err(AppError::BL {
+            msg: format!(
+                "since_ts must be older than till_ts: since_ts={since_ts}, till_ts={till_ts}"
+            ),
+        });
+    }
+
+    info!(
+        "starting oneoff_export_commented_messages kind={:?} since_ts={} till_ts={} output={}",
+        kind, ps.since_ts, ps.till_ts, ps.output
+    );
+    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
+    let rows = match kind {
+        crate::OneoffExportCommentedMessagesKind::EchoComments => {
+            load_echo_commented_message_rows(&dbx, since_ts, till_ts).await?
+        }
+        crate::OneoffExportCommentedMessagesKind::GoiAssociations => {
+            load_goi_association_comment_rows(&dbx, since_ts, till_ts).await?
+        }
+        crate::OneoffExportCommentedMessagesKind::MappedGoiAssociation => {
+            load_mapped_goi_association_comment_rows(&dbx, since_ts, till_ts)
+                .await?
+        }
+    };
+    write_comment_csv_rows(&ps.output, rows)?;
+    Ok(())
+}
+
+fn print_commented_messages_kind_values() {
+    println!("possible values for --kind:");
+    for value in COMMENTED_MESSAGES_EXPORT_KIND_VALUES {
+        println!("  {value}");
+    }
+}
+
+async fn load_echo_commented_message_rows(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+) -> Result<Vec<CommentCsvRow>, AppError> {
+    let system_login_id = crate::users::system_login_id(dbx).await.c(h!())?;
+    let rows: Vec<EchoCommentedMessageExportRow> =
+        sigint_comment::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_comment::Relation::SignalMessage.def(),
+            )
+            .join(
+                JoinType::LeftJoin,
+                signal_message::Relation::SigintInboxItem.def(),
+            )
+            .join(JoinType::InnerJoin, sigint_comment::Relation::Login.def())
+            .join(JoinType::LeftJoin, login::Relation::Organism.def())
+            .filter(sigint_comment::Column::LoginId.ne(system_login_id))
+            .filter(sigint_comment::Column::Comment.ne(""))
+            .filter(sigint_comment::Column::CreatedAt.gte(since_ts))
+            .filter(sigint_comment::Column::CreatedAt.lt(till_ts))
+            .select_only()
+            .column(sigint_comment::Column::Comment)
+            .column_as(
+                Expr::col((login::Entity, login::Column::Login)),
+                "source_login",
+            )
+            .column_as(
+                Expr::col((organism::Entity, organism::Column::Name)),
+                "source_organism",
+            )
+            .column_as(
+                Expr::col((
+                    signal_message::Entity,
+                    signal_message::Column::Body,
+                )),
+                "body",
+            )
+            .column_as(
+                Expr::col((
+                    signal_message::Entity,
+                    signal_message::Column::CreatedAt,
+                )),
+                "message_created_at",
+            )
+            .column_as(
+                Expr::col((
+                    signal_message::Entity,
+                    signal_message::Column::Timestamp,
+                )),
+                "message_timestamp",
+            )
+            .column_as(
+                Expr::col((
+                    sigint_inbox_item::Entity,
+                    sigint_inbox_item::Column::Datetime,
+                )),
+                "inbox_datetime",
+            )
+            .order_by_asc(sigint_comment::Column::CreatedAt)
+            .order_by_asc(sigint_comment::Column::Id)
+            .into_model::<EchoCommentedMessageExportRow>()
+            .all(dbx)
+            .await
+            .c(h!())?;
+
+    let mut csv_rows = Vec::new();
+    let mut skipped = 0_usize;
+    for row in rows {
+        let Some(comment) = non_empty_text(Some(row.comment.as_str())) else {
+            skipped += 1;
+            continue;
+        };
+        let Some(body) = non_empty_text(row.body.as_deref()) else {
+            skipped += 1;
+            continue;
+        };
+        let message_ts = resolve_message_ts(
+            row.inbox_datetime,
+            row.message_timestamp,
+            row.message_created_at,
+        );
+        csv_rows.push(CommentCsvRow {
+            body,
+            comment,
+            message_ts: format_export_ts(message_ts),
+            source_login: row.source_login,
+            source_organism: row.source_organism.unwrap_or_default(),
+        });
+    }
+    info!(
+        "prepared {} echo comment rows (skipped {})",
+        csv_rows.len(),
+        skipped
+    );
+    Ok(csv_rows)
+}
+
+async fn load_goi_association_comment_rows(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+) -> Result<Vec<CommentCsvRow>, AppError> {
+    let associations = load_goi_associations_with_notes(dbx, since_ts, till_ts)
+        .await
+        .c(h!())?;
+    let mut csv_rows = Vec::new();
+    let mut skipped = 0_usize;
+    for (association, organism) in associations {
+        let Some(comment) = non_empty_text(association.note.as_deref()) else {
+            skipped += 1;
+            continue;
+        };
+        let Some(body) =
+            crate::organism::goi::message_uid::association_original_message(
+                &association.row,
+            )
+            .and_then(|body| non_empty_text(Some(body)))
+        else {
+            skipped += 1;
+            continue;
+        };
+        csv_rows.push(CommentCsvRow {
+            body,
+            comment,
+            message_ts: format_export_ts(goi_association_message_ts(
+                &association,
+            )),
+            source_login: association.author.unwrap_or_default(),
+            source_organism: organism
+                .map(|organism| organism.name)
+                .unwrap_or_default(),
+        });
+    }
+    info!(
+        "prepared {} goi association comment rows (skipped {})",
+        csv_rows.len(),
+        skipped
+    );
+    Ok(csv_rows)
+}
+
+async fn load_mapped_goi_association_comment_rows(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+) -> Result<Vec<CommentCsvRow>, AppError> {
+    let associations = load_goi_associations_with_notes(dbx, since_ts, till_ts)
+        .await
+        .c(h!())?;
+    let message_uids = associations
+        .iter()
+        .filter_map(|(association, _)| association.message_uid.clone())
+        .filter(|message_uid| !message_uid.trim().is_empty())
+        .collect::<Vec<_>>();
+    let messages = load_signal_messages_by_uid(dbx, message_uids)
+        .await
+        .c(h!())?;
+
+    let mut csv_rows = Vec::new();
+    let mut skipped = 0_usize;
+    for (association, organism) in associations {
+        let Some(comment) = non_empty_text(association.note.as_deref()) else {
+            skipped += 1;
+            continue;
+        };
+        let Some(message_uid) = association
+            .message_uid
+            .as_deref()
+            .and_then(|message_uid| non_empty_text(Some(message_uid)))
+        else {
+            skipped += 1;
+            continue;
+        };
+        let Some(message) = messages.get(&message_uid) else {
+            skipped += 1;
+            continue;
+        };
+        csv_rows.push(CommentCsvRow {
+            body: message.body.clone(),
+            comment,
+            message_ts: format_export_ts(message.message_ts),
+            source_login: association.author.unwrap_or_default(),
+            source_organism: organism
+                .map(|organism| organism.name)
+                .unwrap_or_default(),
+        });
+    }
+    info!(
+        "prepared {} mapped goi association comment rows (skipped {})",
+        csv_rows.len(),
+        skipped
+    );
+    Ok(csv_rows)
+}
+
+async fn load_goi_associations_with_notes(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+) -> Result<Vec<(goi_association::Model, Option<organism::Model>)>, AppError> {
+    let since_ts = fixed_offset_utc(since_ts);
+    let till_ts = fixed_offset_utc(till_ts);
+    Ok(goi_association::Entity::find()
+        .filter(goi_association::Column::SourceCreatedAt.gte(since_ts))
+        .filter(goi_association::Column::SourceCreatedAt.lt(till_ts))
+        .filter(goi_association::Column::Note.is_not_null())
+        .filter(goi_association::Column::Note.ne(""))
+        .find_also_related(organism::Entity)
+        .order_by_asc(goi_association::Column::SourceCreatedAt)
+        .order_by_asc(goi_association::Column::Id)
+        .all(dbx)
+        .await
+        .c(h!())?)
+}
+
+async fn load_signal_messages_by_uid(
+    dbx: &DatabaseConnection,
+    mut message_uids: Vec<String>,
+) -> Result<HashMap<String, SignalMessageExportSource>, AppError> {
+    message_uids.sort();
+    message_uids.dedup();
+    let mut messages: HashMap<String, SignalMessageExportSource> =
+        HashMap::new();
+    for chunk in message_uids.chunks(1_000) {
+        let rows = signal_message::Entity::find()
+            .filter(signal_message::Column::MessageUid.is_in(chunk.to_vec()))
+            .filter(signal_message::Column::MessageUid.is_not_null())
+            .filter(signal_message::Column::MessageUid.ne(""))
+            .find_also_related(sigint_inbox_item::Entity)
+            .all(dbx)
+            .await
+            .c(h!())?;
+        for (message, inbox_item) in rows {
+            let Some(message_uid) = message
+                .message_uid
+                .as_deref()
+                .and_then(|message_uid| non_empty_text(Some(message_uid)))
+            else {
+                continue;
+            };
+            let Some(body) = non_empty_text(message.body.as_deref()) else {
+                continue;
+            };
+            let message_ts = resolve_message_ts(
+                inbox_item.and_then(|inbox_item| inbox_item.datetime),
+                message.timestamp,
+                message.created_at,
+            );
+            let source = SignalMessageExportSource {
+                id: message.id,
+                body,
+                message_ts,
+            };
+            let should_replace =
+                messages.get(&message_uid).is_none_or(|current| {
+                    (source.message_ts, source.id)
+                        > (current.message_ts, current.id)
+                });
+            if should_replace {
+                messages.insert(message_uid, source);
+            }
+        }
+    }
+    Ok(messages)
+}
+
+fn write_comment_csv_rows(
+    output: &str,
+    rows: Vec<CommentCsvRow>,
+) -> Result<(), AppError> {
+    let mut writer = csv::Writer::from_path(output).c(h!())?;
+    let mut exported = 0_usize;
+    for row in rows {
+        writer.serialize(&row).c(h!())?;
+        exported += 1;
+    }
+    writer.flush().c(h!())?;
+    info!("export completed: exported {exported} comments to {output}");
+    Ok(())
+}
+
+fn non_empty_text(value: Option<&str>) -> Option<String> {
+    let value = value?;
+    (!value.trim().is_empty()).then(|| value.to_string())
+}
+
+fn format_export_ts(ts: NaiveDateTime) -> String {
+    ts.format("%Y-%m-%dT%H:%M:%S").to_string()
+}
+
+fn goi_association_message_ts(
+    association: &goi_association::Model,
+) -> NaiveDateTime {
+    association
+        .source_date
+        .as_ref()
+        .unwrap_or(&association.source_created_at)
+        .with_timezone(&Utc)
+        .naive_utc()
+}
+
+fn fixed_offset_utc(ts: NaiveDateTime) -> DateTime<FixedOffset> {
+    DateTime::<Utc>::from_naive_utc_and_offset(ts, Utc).fixed_offset()
 }
 
 pub async fn oneoff_import_sigint_comments(

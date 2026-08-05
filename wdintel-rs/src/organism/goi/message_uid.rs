@@ -4,11 +4,13 @@ use crate::config::{
     ORGANISM_GOI_MESSAGE_UID_LOOKBACK_HOURS,
     ORGANISM_GOI_MESSAGE_UID_ONEOFF_DEFAULT_LIMIT,
     ORGANISM_GOI_MESSAGE_UID_PROBE_CHARS,
+    ORGANISM_GOI_MESSAGE_UID_SOURCE_DATE_TOLERANCE_MINUTES,
     ORGANISM_GOI_MESSAGE_UID_WORKER_SLEEP_SEC,
     ORGANISM_GOI_ORIGINAL_MESSAGE_CELL_INDEX,
 };
 use crate::entities::{
-    datasource_group, goi_association, signal_message, signal_message_group,
+    datasource_group, goi_association, sigint_inbox_item, signal_message,
+    signal_message_group,
 };
 use crate::error::AppError;
 use crate::types::{info, warn, Env, Mode, ShortContext};
@@ -34,6 +36,7 @@ struct MessageCandidate {
     id: i64,
     timestamp: Option<NaiveDateTime>,
     body: Option<String>,
+    body_noheader: Option<serde_json::Value>,
     message_uid: Option<String>,
 }
 
@@ -42,6 +45,7 @@ struct PreparedMessageCandidate {
     id: i64,
     timestamp: NaiveDateTime,
     body: String,
+    probe_body: String,
     message_uid: String,
 }
 
@@ -63,8 +67,9 @@ struct AssociationMessageWorkItem {
     association: goi_association::Model,
     association_message: String,
     probe: String,
-    window_start: NaiveDateTime,
-    window_end: NaiveDateTime,
+    signal_window_start: NaiveDateTime,
+    signal_window_end: NaiveDateTime,
+    inbox_datetime_window: Option<(NaiveDateTime, NaiveDateTime)>,
     group_keys: Arc<Vec<String>>,
 }
 
@@ -274,17 +279,22 @@ async fn prepare_association_message_work_item(
     if group_keys.is_empty() {
         return Ok(None);
     }
-    let window_anchor = message_window_anchor(
-        association.source_date.as_ref(),
-        &association.source_created_at,
-    );
-    let (window_start, window_end) = signal_message_window(window_anchor);
+    let (signal_window_start, signal_window_end) =
+        signal_message_timestamp_window(
+            association.source_date.as_ref(),
+            &association.source_created_at,
+        );
+    let inbox_datetime_window = association
+        .source_date
+        .as_ref()
+        .map(source_date_inbox_datetime_window);
     Ok(Some(AssociationMessageWorkItem {
         association,
         association_message,
         probe,
-        window_start,
-        window_end,
+        signal_window_start,
+        signal_window_end,
+        inbox_datetime_window,
         group_keys,
     }))
 }
@@ -308,8 +318,9 @@ async fn fill_organism_association_message_uids(
             &group_keys,
             &work_item.association_message,
             &work_item.probe,
-            work_item.window_start,
-            work_item.window_end,
+            work_item.signal_window_start,
+            work_item.signal_window_end,
+            work_item.inbox_datetime_window,
         )
         .await
         .c(h!())?
@@ -387,8 +398,9 @@ async fn find_matching_message_uid(
     group_keys: &[String],
     association_message: &str,
     probe: &str,
-    window_start: NaiveDateTime,
-    window_end: NaiveDateTime,
+    signal_window_start: NaiveDateTime,
+    signal_window_end: NaiveDateTime,
+    inbox_datetime_window: Option<(NaiveDateTime, NaiveDateTime)>,
 ) -> Result<Option<String>, AppError> {
     let mut selection = MessageCandidateSelection::default();
     if !datasource_group_ids.is_empty() {
@@ -398,15 +410,16 @@ async fn find_matching_message_uid(
                 datasource_group_message_candidate_query(
                     datasource_group_ids,
                     probe,
-                    window_start,
-                    window_end,
+                    signal_window_start,
+                    signal_window_end,
+                    inbox_datetime_window,
                     cursor,
                 )
             },
             association_message,
             probe,
-            window_start,
-            window_end,
+            signal_window_start,
+            signal_window_end,
         )
         .await
         .c(h!())?;
@@ -418,15 +431,16 @@ async fn find_matching_message_uid(
             linked_message_candidate_query(
                 group_keys,
                 probe,
-                window_start,
-                window_end,
+                signal_window_start,
+                signal_window_end,
+                inbox_datetime_window,
                 cursor,
             )
         },
         association_message,
         probe,
-        window_start,
-        window_end,
+        signal_window_start,
+        signal_window_end,
     )
     .await
     .c(h!())?;
@@ -456,8 +470,8 @@ async fn scan_message_candidate_pages<F>(
     mut query_page: F,
     association_message: &str,
     probe: &str,
-    window_start: NaiveDateTime,
-    window_end: NaiveDateTime,
+    signal_window_start: NaiveDateTime,
+    signal_window_end: NaiveDateTime,
 ) -> Result<MessageCandidateSelection, AppError>
 where
     F: FnMut(Option<(NaiveDateTime, i64)>) -> Select<signal_message::Entity>,
@@ -476,8 +490,8 @@ where
         selection.merge(select_matching_message_candidates(
             association_message,
             probe,
-            window_start,
-            window_end,
+            signal_window_start,
+            signal_window_end,
             &candidates,
         ));
         if selection.newest_original.is_some()
@@ -492,40 +506,55 @@ where
 fn datasource_group_message_candidate_query(
     datasource_group_ids: &[i64],
     probe: &str,
-    window_start: NaiveDateTime,
-    window_end: NaiveDateTime,
+    signal_window_start: NaiveDateTime,
+    signal_window_end: NaiveDateTime,
+    inbox_datetime_window: Option<(NaiveDateTime, NaiveDateTime)>,
     cursor: Option<(NaiveDateTime, i64)>,
 ) -> Select<signal_message::Entity> {
-    message_candidate_base_query(probe, window_start, window_end, cursor)
-        .filter(
-            signal_message::Column::DatasourceGroupId
-                .eq_any(datasource_group_ids.to_vec()),
-        )
+    message_candidate_base_query(
+        probe,
+        signal_window_start,
+        signal_window_end,
+        inbox_datetime_window,
+        cursor,
+    )
+    .filter(
+        signal_message::Column::DatasourceGroupId
+            .eq_any(datasource_group_ids.to_vec()),
+    )
 }
 
 fn linked_message_candidate_query(
     group_keys: &[String],
     probe: &str,
-    window_start: NaiveDateTime,
-    window_end: NaiveDateTime,
+    signal_window_start: NaiveDateTime,
+    signal_window_end: NaiveDateTime,
+    inbox_datetime_window: Option<(NaiveDateTime, NaiveDateTime)>,
     cursor: Option<(NaiveDateTime, i64)>,
 ) -> Select<signal_message::Entity> {
-    message_candidate_base_query(probe, window_start, window_end, cursor)
-        .distinct()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SignalMessageGroup.def(),
-        )
-        .filter(
-            signal_message_group::Column::GroupMasterKey
-                .eq_any(group_keys.to_vec()),
-        )
+    message_candidate_base_query(
+        probe,
+        signal_window_start,
+        signal_window_end,
+        inbox_datetime_window,
+        cursor,
+    )
+    .distinct()
+    .join(
+        JoinType::InnerJoin,
+        signal_message::Relation::SignalMessageGroup.def(),
+    )
+    .filter(
+        signal_message_group::Column::GroupMasterKey
+            .eq_any(group_keys.to_vec()),
+    )
 }
 
 fn message_candidate_base_query(
     probe: &str,
-    window_start: NaiveDateTime,
-    window_end: NaiveDateTime,
+    signal_window_start: NaiveDateTime,
+    signal_window_end: NaiveDateTime,
+    inbox_datetime_window: Option<(NaiveDateTime, NaiveDateTime)>,
     cursor: Option<(NaiveDateTime, i64)>,
 ) -> Select<signal_message::Entity> {
     signal_message::Entity::find()
@@ -533,9 +562,19 @@ fn message_candidate_base_query(
         .column(signal_message::Column::Id)
         .column(signal_message::Column::Timestamp)
         .column(signal_message::Column::Body)
+        .column_as(sigint_inbox_item::Column::BodyNoheader, "body_noheader")
         .column(signal_message::Column::MessageUid)
-        .filter(signal_message::Column::Timestamp.gte(window_start))
-        .filter(signal_message::Column::Timestamp.lte(window_end))
+        .join(
+            JoinType::LeftJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .filter(signal_message::Column::Timestamp.gte(signal_window_start))
+        .filter(signal_message::Column::Timestamp.lte(signal_window_end))
+        .apply_if(inbox_datetime_window, |query, (start, end)| {
+            query
+                .filter(sigint_inbox_item::Column::Datetime.gte(start))
+                .filter(sigint_inbox_item::Column::Datetime.lte(end))
+        })
         .filter(signal_message::Column::MessageUid.is_not_null())
         .filter(signal_message::Column::MessageUid.ne(""))
         .filter(
@@ -589,10 +628,11 @@ fn prepare_message_candidate(
     row: MessageCandidate,
 ) -> Option<PreparedMessageCandidate> {
     let timestamp = row.timestamp?;
-    let body = normalize_message_body(row.body.as_deref()?);
-    if body.is_empty() {
+    let probe_body = normalize_message_body(row.body.as_deref()?);
+    if probe_body.is_empty() {
         return None;
     }
+    let body = candidate_message_body(&row)?;
     let message_uid = row
         .message_uid
         .filter(|message_uid| !message_uid.is_empty())?;
@@ -600,8 +640,20 @@ fn prepare_message_candidate(
         id: row.id,
         timestamp,
         body,
+        probe_body,
         message_uid,
     })
+}
+
+fn candidate_message_body(row: &MessageCandidate) -> Option<String> {
+    let body = row
+        .body_noheader
+        .as_ref()
+        .and_then(|body_noheader| body_noheader.get("body"))
+        .and_then(serde_json::Value::as_str)
+        .or(row.body.as_deref())?;
+    let body = normalize_message_body(body);
+    (!body.is_empty()).then_some(body)
 }
 
 impl MessageCandidateSelection {
@@ -645,7 +697,9 @@ fn replace_with_newer_candidate(
     }
 }
 
-fn association_original_message(row: &serde_json::Value) -> Option<&str> {
+pub(crate) fn association_original_message(
+    row: &serde_json::Value,
+) -> Option<&str> {
     row.get("cells")?
         .get(ORGANISM_GOI_ORIGINAL_MESSAGE_CELL_INDEX)?
         .get("value")?
@@ -696,11 +750,31 @@ fn signal_message_window(
     (window_start, window_end)
 }
 
-fn message_window_anchor<'a>(
-    source_date: Option<&'a DateTime<FixedOffset>>,
-    source_created_at: &'a DateTime<FixedOffset>,
-) -> &'a DateTime<FixedOffset> {
-    source_date.unwrap_or(source_created_at)
+fn signal_message_timestamp_window(
+    source_date: Option<&DateTime<FixedOffset>>,
+    source_created_at: &DateTime<FixedOffset>,
+) -> (NaiveDateTime, NaiveDateTime) {
+    match source_date {
+        Some(source_date) => {
+            let window_start = source_date.with_timezone(&Utc).naive_utc()
+                - ChronoDuration::hours(
+                    ORGANISM_GOI_MESSAGE_UID_LOOKBACK_HOURS,
+                );
+            let window_end = source_created_at.with_timezone(&Utc).naive_utc();
+            (window_start, window_end)
+        }
+        None => signal_message_window(source_created_at),
+    }
+}
+
+fn source_date_inbox_datetime_window(
+    source_date: &DateTime<FixedOffset>,
+) -> (NaiveDateTime, NaiveDateTime) {
+    let source_date = source_date.with_timezone(&Utc).naive_utc();
+    let tolerance = ChronoDuration::minutes(
+        ORGANISM_GOI_MESSAGE_UID_SOURCE_DATE_TOLERANCE_MINUTES,
+    );
+    (source_date - tolerance, source_date + tolerance)
 }
 
 fn select_matching_message_candidates(
@@ -717,7 +791,7 @@ fn select_matching_message_candidates(
         {
             continue;
         }
-        if !candidate.body.contains(probe)
+        if !candidate.probe_body.contains(probe)
             || !normalized_message_bodies_match(
                 association_message,
                 &candidate.body,
@@ -803,6 +877,7 @@ mod tests {
             window_start,
             window_end,
             None,
+            None,
         )
         .build(DbBackend::Postgres)
         .to_string();
@@ -811,6 +886,7 @@ mod tests {
             "matching-probe",
             window_start,
             window_end,
+            None,
             None,
         )
         .build(DbBackend::Postgres)
@@ -821,11 +897,36 @@ mod tests {
         assert!(linked_sql.starts_with("SELECT DISTINCT"));
         assert!(direct_sql.contains("datasource_group_id"));
         for sql in [linked_sql, direct_sql] {
+            assert!(sql.contains("sigint_inbox_item"));
+            assert!(sql.contains("body_noheader"));
             assert!(sql.contains("\"signal_message\".\"timestamp\" >="));
             assert!(sql.contains("\"signal_message\".\"timestamp\" <="));
             assert!(sql.contains("LIKE '%matching-probe%'"));
             assert!(sql.contains("LIMIT 1000"));
         }
+    }
+
+    #[test]
+    fn source_date_candidate_query_filters_inbox_datetime_window() {
+        let (window_start, window_end) = test_window();
+        let inbox_datetime_window = (
+            test_timestamp() - ChronoDuration::minutes(5),
+            test_timestamp() + ChronoDuration::minutes(5),
+        );
+        let sql = datasource_group_message_candidate_query(
+            &[1],
+            "matching-probe",
+            window_start,
+            window_end,
+            Some(inbox_datetime_window),
+            None,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(sql.contains("sigint_inbox_item"));
+        assert!(sql.contains("\"sigint_inbox_item\".\"datetime\" >="));
+        assert!(sql.contains("\"sigint_inbox_item\".\"datetime\" <="));
     }
 
     #[test]
@@ -836,6 +937,7 @@ mod tests {
             "matching-probe",
             window_start,
             window_end,
+            None,
             Some((test_timestamp(), 42)),
         )
         .build(DbBackend::Postgres)
@@ -931,21 +1033,109 @@ mod tests {
     }
 
     #[test]
-    fn message_window_anchor_prefers_source_date_and_falls_back_to_created_at()
-    {
+    fn source_date_timestamp_window_ends_at_created_at() {
         let source_date =
             DateTime::parse_from_rfc3339("2026-06-15T08:00:00Z").unwrap();
         let source_created_at =
-            DateTime::parse_from_rfc3339("2026-07-21T10:00:00Z").unwrap();
+            DateTime::parse_from_rfc3339("2026-06-15T08:30:00Z").unwrap();
+
+        let (start, end) = signal_message_timestamp_window(
+            Some(&source_date),
+            &source_created_at,
+        );
 
         assert_eq!(
-            message_window_anchor(Some(&source_date), &source_created_at),
-            &source_date
+            start,
+            Utc.with_ymd_and_hms(2026, 6, 14, 8, 0, 0)
+                .unwrap()
+                .naive_utc()
         );
         assert_eq!(
-            message_window_anchor(None, &source_created_at),
-            &source_created_at
+            end,
+            Utc.with_ymd_and_hms(2026, 6, 15, 8, 30, 0)
+                .unwrap()
+                .naive_utc()
         );
+    }
+
+    #[test]
+    fn missing_source_date_timestamp_window_uses_created_at_lookback() {
+        let source_created_at =
+            DateTime::parse_from_rfc3339("2026-07-21T10:00:00Z").unwrap();
+
+        let (start, end) =
+            signal_message_timestamp_window(None, &source_created_at);
+
+        assert_eq!(
+            end,
+            Utc.with_ymd_and_hms(2026, 7, 21, 10, 0, 0)
+                .unwrap()
+                .naive_utc()
+        );
+        assert_eq!(start, end - ChronoDuration::hours(24));
+    }
+
+    #[test]
+    fn source_date_inbox_datetime_window_uses_tolerance() {
+        let source_date =
+            DateTime::parse_from_rfc3339("2026-06-15T08:00:00Z").unwrap();
+
+        let (start, end) = source_date_inbox_datetime_window(&source_date);
+
+        assert_eq!(
+            start,
+            Utc.with_ymd_and_hms(2026, 6, 15, 7, 55, 0)
+                .unwrap()
+                .naive_utc()
+        );
+        assert_eq!(
+            end,
+            Utc.with_ymd_and_hms(2026, 6, 15, 8, 5, 0)
+                .unwrap()
+                .naive_utc()
+        );
+    }
+
+    #[test]
+    fn candidate_body_prefers_inbox_body_noheader() {
+        let row = MessageCandidate {
+            id: 1,
+            timestamp: Some(test_timestamp()),
+            body: Some("transport header transcript".to_string()),
+            body_noheader: Some(serde_json::json!({
+                "body": "transcript"
+            })),
+            message_uid: Some("uid".to_string()),
+        };
+
+        let candidate = prepare_message_candidate(row).unwrap();
+
+        assert_eq!(candidate.body, "transcript");
+        assert_eq!(candidate.probe_body, "transport header transcript");
+    }
+
+    #[test]
+    fn matching_uses_signal_body_for_probe_and_noheader_body_for_final_match() {
+        let (window_start, window_end) = test_window();
+        let candidate = PreparedMessageCandidate {
+            id: 1,
+            timestamp: test_timestamp(),
+            body: normalize_message_body("transcript"),
+            probe_body: normalize_message_body(
+                "03.08.2026, transport header transcript",
+            ),
+            message_uid: "uid".to_string(),
+        };
+
+        let selected = select_matching_original_message_uid(
+            "03.08.2026, transport header transcript",
+            "03.08.2026,",
+            window_start,
+            window_end,
+            &[candidate],
+        );
+
+        assert_eq!(selected.as_deref(), Some("uid"));
     }
 
     #[test]
@@ -1002,6 +1192,7 @@ mod tests {
             id,
             timestamp: test_timestamp(),
             body: normalize_message_body(body),
+            probe_body: normalize_message_body(body),
             message_uid: message_uid.to_string(),
         }
     }

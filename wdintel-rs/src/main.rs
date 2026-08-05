@@ -293,6 +293,27 @@ pub struct OneoffExportSigintCommentsPs {
     pub output: String,
 }
 
+#[derive(clap::ValueEnum, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OneoffExportCommentedMessagesKind {
+    EchoComments,
+    GoiAssociations,
+    MappedGoiAssociation,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffExportCommentedMessagesPs {
+    /// Start datetime in UTC (inclusive). Example: `2026-07-15T00:00:00`
+    #[arg(long)]
+    pub since_ts: String,
+    /// End datetime in UTC (non-inclusive). Example: `2026-08-05T00:00:00`
+    #[arg(long)]
+    pub till_ts: String,
+    #[arg(long, value_enum)]
+    pub kind: Option<OneoffExportCommentedMessagesKind>,
+    #[arg(long)]
+    pub output: String,
+}
+
 #[derive(clap::Parser, Debug)]
 pub struct OneoffImportSigintCommentsPs {
     #[arg(long)]
@@ -766,6 +787,7 @@ enum Cmd {
     OneoffReprocessCallsigns(OneoffReprocessCallsignsPs),
     OneoffReprocessCallsignTokens(OneoffReprocessCallsignTokensPs),
     OneoffExportSigintComments(OneoffExportSigintCommentsPs),
+    OneoffExportCommentedMessages(OneoffExportCommentedMessagesPs),
     OneoffImportSigintComments(OneoffImportSigintCommentsPs),
     OneoffReviewParsedSigintComments(OneoffReviewParsedSigintCommentsPs),
     OneoffTagMessagesReport(OneoffTagMessagesReportPs),
@@ -1259,6 +1281,10 @@ async fn async_main(
         }
         Cmd::OneoffExportSigintComments(ps) => {
             sigint::comments::oneoff_export_sigint_comments(mode, &ps).await
+        }
+        Cmd::OneoffExportCommentedMessages(ps) => {
+            sigint::comments::oneoff_export_commented_messages(mode, &ps)
+                .await
         }
         Cmd::OneoffImportSigintComments(ps) => {
             sigint::comments::oneoff_import_sigint_comments(mode, &ps).await
