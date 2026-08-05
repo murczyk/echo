@@ -1059,6 +1059,7 @@ where
             battalion: Set(rec.battalion),
             sigint_origin_id: Set(Some(origin_id)),
             is_deduplicate_candidate: NotSet,
+            orbit_note: NotSet,
         };
 
         let new_rec = if new_record {

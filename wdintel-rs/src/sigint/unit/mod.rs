@@ -76,7 +76,9 @@ pub async fn list_units(
     if can_view_orbit {
         let orbit_unit_ids = orbit::unit_ids_with_orbit(&env.dbx).await?;
         for unit in &mut response.units {
-            unit.has_orbit = orbit_unit_ids.contains(&unit.id);
+            unit.orbit_unit_ids =
+                orbit_unit_ids.get(&unit.id).cloned().unwrap_or_default();
+            unit.has_orbit = !unit.orbit_unit_ids.is_empty();
         }
     } else {
         for unit in &mut response.units {
@@ -441,6 +443,7 @@ where
         created_at: NotSet,
         created_by_login_id: Set(*login),
         comment: Set(req.comment.clone()),
+        orbit_note: Set(req.orbit_note.clone()),
         name: Set(unit_name_req(req)),
         deleted: Set(false),
         sigint_origin_id: NotSet,
@@ -691,6 +694,7 @@ async fn update_unit_for_login(
     unit.active = Set(req.active);
     unit.name = Set(unit_name(req));
     unit.comment = Set(req.comment.clone());
+    unit.orbit_note = Set(req.orbit_note.clone());
     let unit = unit.update(&transaction).await.context(h!())?;
     let unit_json_new = unit_json(&transaction, req.id).await?;
     insert_unit_update_changelog(
@@ -1046,15 +1050,19 @@ pub fn render_unit(unit: &sigint_unit::Model) -> Result<Unit, AppError> {
         active: unit.active,
         is_deduplicate_candidate: unit.is_deduplicate_candidate,
         comment: unit.comment.clone(),
+        orbit_note: unit.orbit_note.clone(),
         name: unit.name.clone(),
         created_at: unit.created_at.and_utc().timestamp_millis(),
         created_by_login_id: unit.created_by_login_id.to_string(),
         has_orbit: false,
+        orbit_unit_ids: Vec::new(),
     })
 }
 
 pub(crate) fn redact_unit_orbit_data(unit: &mut Unit) {
     unit.has_orbit = false;
+    unit.orbit_unit_ids.clear();
+    unit.orbit_note = None;
     unit.is_deduplicate_candidate = None;
 }
 
@@ -1462,6 +1470,7 @@ mod tests {
             active: true,
             is_deduplicate_candidate: None,
             comment: "main section".to_string(),
+            orbit_note: None,
         }
     }
 
@@ -2477,17 +2486,21 @@ mod tests {
             division: String::new(),
             army: String::new(),
             comment: String::new(),
+            orbit_note: Some("Orbit note".to_string()),
             name: String::new(),
             active: true,
             is_deduplicate_candidate: Some(true),
             created_at: 0,
             created_by_login_id: String::new(),
             has_orbit: true,
+            orbit_unit_ids: vec![Uuid::nil().to_string()],
         };
 
         redact_unit_orbit_data(&mut unit);
 
         assert!(!unit.has_orbit);
+        assert!(unit.orbit_unit_ids.is_empty());
+        assert_eq!(unit.orbit_note, None);
         assert_eq!(unit.is_deduplicate_candidate, None);
     }
 

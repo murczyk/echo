@@ -1,8 +1,8 @@
 use super::types::{
     CreateUnitReq, CreateUnitWithAutoNetworkReq, CreateUnitWithAutoNetworkRsp,
     ImportOrbitUnitReq, LinkOrbitUnitReq, OrbitDictionaryValue,
-    OrbitUnitDetails, OrbitUnitLinkCandidate, OrbitUnitLinkCandidatesReq,
-    OrbitUnitLinkCandidatesRsp, OrbitUnitSearchReq,
+    OrbitParentUnit, OrbitUnitDetails, OrbitUnitLinkCandidate,
+    OrbitUnitLinkCandidatesReq, OrbitUnitLinkCandidatesRsp, OrbitUnitSearchReq,
 };
 use crate::entities::*;
 use crate::error::AppError;
@@ -39,20 +39,27 @@ pub async fn can_view_orbit_data(
 
 pub async fn unit_ids_with_orbit(
     dbx: &DatabaseConnection,
-) -> Result<HashSet<i64>, AppError> {
-    Ok(orbit_unit_sigint_unit::Entity::find()
+) -> Result<HashMap<i64, Vec<String>>, AppError> {
+    let mut unit_ids = HashMap::<i64, Vec<String>>::new();
+    for link in orbit_unit_sigint_unit::Entity::find()
         .join(
             JoinType::InnerJoin,
             orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
         )
         .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .filter(orbit_unit::Column::Deleted.eq(false))
+        .order_by_asc(orbit_unit_sigint_unit::Column::SigintUnitId)
+        .order_by_asc(orbit_unit_sigint_unit::Column::OrbitUnitId)
         .all(dbx)
         .await
         .c(h!())?
-        .into_iter()
-        .map(|link| link.sigint_unit_id)
-        .collect())
+    {
+        unit_ids
+            .entry(link.sigint_unit_id)
+            .or_default()
+            .push(link.orbit_unit_id.to_string());
+    }
+    Ok(unit_ids)
 }
 
 pub async fn unit_has_orbit(
@@ -101,6 +108,18 @@ async fn render_orbit_unit_details(
     dbx: &DatabaseConnection,
     unit: orbit_unit::Model,
 ) -> Result<OrbitUnitDetails, AppError> {
+    let generative_parent_units = orbit_parent_units(
+        dbx,
+        unit.generative_parent_unit_id,
+        OrbitParentKind::Generative,
+    )
+    .await?;
+    let operational_parent_units = orbit_parent_units(
+        dbx,
+        unit.operational_parent_unit_id,
+        OrbitParentKind::Operational,
+    )
+    .await?;
     let unit_echelon = unit
         .find_related(orbit_unit_echelon::Entity)
         .one(dbx)
@@ -141,10 +160,56 @@ async fn render_orbit_unit_details(
         operational_parent_unit_id: unit
             .operational_parent_unit_id
             .map(|unit_id| unit_id.to_string()),
+        generative_parent_units,
+        operational_parent_units,
         deleted: unit.deleted,
         created_at: unit.created_at.and_utc().timestamp_millis(),
         updated_at: unit.updated_at.and_utc().timestamp_millis(),
     })
+}
+
+async fn orbit_parent_units(
+    dbx: &DatabaseConnection,
+    mut orbit_unit_id: Option<Uuid>,
+    parent_kind: OrbitParentKind,
+) -> Result<Vec<OrbitParentUnit>, AppError> {
+    let mut parents = Vec::new();
+    let mut seen = HashSet::new();
+    while let Some(parent_unit_id) = orbit_unit_id {
+        if !seen.insert(parent_unit_id) {
+            break;
+        }
+        let Some((parent, link)) =
+            orbit_unit::Entity::find_by_id(parent_unit_id)
+                .find_also_related(orbit_unit_sigint_unit::Entity)
+                .filter(orbit_unit::Column::Deleted.eq(false))
+                .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+                .order_by_asc(orbit_unit_sigint_unit::Column::SigintUnitId)
+                .one(dbx)
+                .await
+                .c(h!())?
+        else {
+            break;
+        };
+        let Some(link) = link else {
+            break;
+        };
+        let name = parent
+            .unit_name
+            .clone()
+            .or(parent.unit_name_short.clone())
+            .or(parent.unit_number.clone())
+            .unwrap_or_else(|| parent.unit_id.to_string());
+        parents.push(OrbitParentUnit {
+            sigint_unit_id: link.sigint_unit_id,
+            name,
+        });
+        orbit_unit_id = match parent_kind {
+            OrbitParentKind::Operational => parent.operational_parent_unit_id,
+            OrbitParentKind::Generative => parent.generative_parent_unit_id,
+        };
+    }
+    Ok(parents)
 }
 
 fn render_unit_echelon(
@@ -608,6 +673,7 @@ where
         active,
         is_deduplicate_candidate: None,
         comment: String::new(),
+        orbit_note: None,
     })
 }
 

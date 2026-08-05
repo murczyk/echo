@@ -1,9 +1,11 @@
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
+import CancelIcon from '@mui/icons-material/Cancel';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import MergeIcon from '@mui/icons-material/Merge';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import { Box, Checkbox, Chip, Link, Stack, Tooltip } from '@mui/material';
+import { Box, Chip, Link, Stack, Tooltip } from '@mui/material';
 import {
   type MRT_ColumnDef,
   MaterialReactTable,
@@ -150,28 +152,51 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
         ),
       },
       {
-        header: "Прив'язано до Orbit",
+        header: 'Примітка Orbit',
+        accessorKey: 'orbitNote',
+        size: 300,
+        Cell: ({ cell }) => (
+          <Box sx={{ whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>
+            {String(cell.getValue() ?? '')}
+          </Box>
+        ),
+      },
+      {
+        header: 'Orbit',
+        Header: () => (
+          <Tooltip title="Індикатор чи є дані підрозділу синхронізовані із модулем Orbit системи Delta для роботи із даними про підрозділи противника.">
+            <Box component="span">Orbit</Box>
+          </Tooltip>
+        ),
         id: 'hasOrbit',
         accessorFn: (unit) => unit.hasOrbit,
         enableColumnFilter: false,
         size: 170,
         Cell: ({ row }) => (
-          <Checkbox
-            checked={row.original.hasOrbit}
-            disabled
-            size="small"
-            inputProps={{
-              'aria-label': row.original.hasOrbit
-                ? 'Прив’язано до Orbit'
-                : 'Не прив’язано до Orbit',
-            }}
-            sx={{
-              p: 0,
-              '&.Mui-disabled': {
-                color: row.original.hasOrbit ? 'primary.main' : 'action.disabled',
-              },
-            }}
-          />
+          <Stack direction="row" spacing={1} alignItems="center" justifyContent="center">
+            {row.original.hasOrbit ? (
+              <CheckCircleIcon className="text-green-600" fontSize="small" />
+            ) : (
+              <CancelIcon className="text-red-600" fontSize="small" />
+            )}
+            {row.original.orbitUnitIds.map((orbitUnitId) => (
+              <Tooltip key={orbitUnitId} title="Відкрити підрозділ в Orbit">
+                <Link
+                  href={`https://delta.mil.gov.ua/orbit/units/${orbitUnitId}/organizational-structure`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Відкрити ${row.original.name} в Orbit`}
+                >
+                  <Box
+                    component="img"
+                    src="/img/delta-icon.webp"
+                    alt=""
+                    sx={{ width: 22, height: 22 }}
+                  />
+                </Link>
+              </Tooltip>
+            ))}
+          </Stack>
         ),
       },
     ],

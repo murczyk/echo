@@ -22,12 +22,14 @@ function unit(overrides: Partial<Unit>): Unit {
     division: '',
     army: '',
     comment: '',
+    orbitNote: null,
     name: '',
     active: true,
     isDeduplicateCandidate: null,
     createdAt: 0,
     createdByLoginId: '',
     hasOrbit: false,
+    orbitUnitIds: [],
     ...overrides,
   };
 }

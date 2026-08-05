@@ -25,6 +25,7 @@ const DEFAULT_COLUMN_VISIBILITY = {
   army: true,
   createdAt: true,
   comment: true,
+  orbitNote: true,
   hasOrbit: true,
 };
 
@@ -39,6 +40,7 @@ const DEFAULT_COLUMN_ORDER = [
   'army',
   'createdAt',
   'comment',
+  'orbitNote',
   'hasOrbit',
 ];
 

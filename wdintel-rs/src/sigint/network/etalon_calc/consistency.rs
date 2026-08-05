@@ -1253,6 +1253,7 @@ mod tests {
             sigint_origin_id: None,
             original_id: None,
             is_deduplicate_candidate: None,
+            orbit_note: None,
         }
     }
 

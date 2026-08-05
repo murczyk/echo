@@ -12,6 +12,7 @@ pub struct Unit {
     pub division: String,
     pub army: String,
     pub comment: String,
+    pub orbit_note: Option<String>,
     pub name: String,
     pub active: bool,
     pub is_deduplicate_candidate: Option<bool>,
@@ -19,6 +20,8 @@ pub struct Unit {
     pub created_by_login_id: String,
     #[serde(default, skip_deserializing)]
     pub has_orbit: bool,
+    #[serde(default, skip_deserializing)]
+    pub orbit_unit_ids: Vec<String>,
 }
 
 #[cfg(test)]
@@ -99,6 +102,7 @@ pub struct CreateUnitReq {
     pub active: bool,
     pub is_deduplicate_candidate: Option<bool>,
     pub comment: String,
+    pub orbit_note: Option<String>,
 }
 
 #[derive(
@@ -205,6 +209,14 @@ pub struct OrbitDictionaryValue {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct OrbitParentUnit {
+    pub sigint_unit_id: i64,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct OrbitUnitDetails {
     pub unit_id: String,
     pub unit_name: Option<String>,
@@ -220,6 +232,8 @@ pub struct OrbitUnitDetails {
     pub grouping_of_forces: Vec<OrbitDictionaryValue>,
     pub generative_parent_unit_id: Option<String>,
     pub operational_parent_unit_id: Option<String>,
+    pub generative_parent_units: Vec<OrbitParentUnit>,
+    pub operational_parent_units: Vec<OrbitParentUnit>,
     pub deleted: bool,
     pub created_at: i64,
     pub updated_at: i64,
