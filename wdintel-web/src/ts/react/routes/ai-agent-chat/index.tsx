@@ -953,6 +953,9 @@ export function AiAgentChat({
         ) : null}
         <Box
           sx={{
+            width: '100%',
+            maxWidth: 800,
+            mx: 'auto',
             px: { xs: 1, md: 2 },
             py: { xs: 1, md: 2 },
             pl: historyOpen ? { xs: 1, md: 2 } : { xs: 6, md: 7 },
