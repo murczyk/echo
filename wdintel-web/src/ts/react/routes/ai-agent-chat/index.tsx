@@ -1,7 +1,5 @@
 import AddCommentOutlinedIcon from '@mui/icons-material/AddCommentOutlined';
 import CloseIcon from '@mui/icons-material/Close';
-import CloseFullscreenOutlinedIcon from '@mui/icons-material/CloseFullscreenOutlined';
-import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
 import {
@@ -274,63 +272,21 @@ function MarkdownContent({ children }: { children: string }) {
 }
 
 function AssistantMessage({ content }: { content: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const expandLabel = expanded ? 'Повернути звичайну ширину' : 'Розгорнути відповідь';
-
   return (
     <Box
       sx={{
-        position: expanded ? 'fixed' : 'relative',
-        inset: expanded ? { xs: 1, md: 3 } : undefined,
-        zIndex: expanded ? (theme) => theme.zIndex.modal + 1 : undefined,
         alignSelf: 'flex-start',
-        width: expanded ? 'auto' : undefined,
-        maxWidth: expanded ? 'none' : { xs: '95%', md: '80%' },
-        maxHeight: expanded ? 'auto' : undefined,
-        overflow: expanded ? 'auto' : undefined,
+        width: '100%',
+        maxWidth: '100%',
         bgcolor: 'background.paper',
         border: 1,
         borderColor: 'divider',
         borderRadius: 1,
-        boxShadow: expanded ? 24 : undefined,
         px: 2,
         py: 1.5,
-        '&:hover .ai-agent-answer-expand, &:focus-within .ai-agent-answer-expand': {
-          opacity: 1,
-        },
-      }}
-      onKeyDown={(event) => {
-        if (expanded && event.key === 'Escape') {
-          setExpanded(false);
-        }
       }}
     >
-      <Tooltip title={expandLabel}>
-        <IconButton
-          aria-label={expandLabel}
-          aria-pressed={expanded}
-          className="ai-agent-answer-expand"
-          size="small"
-          onClick={() => setExpanded((current) => !current)}
-          sx={{
-            position: 'absolute',
-            top: 4,
-            right: 4,
-            zIndex: 1,
-            opacity: { xs: 1, md: expanded ? 1 : 0 },
-            color: 'text.secondary',
-            bgcolor: 'action.hover',
-            transition: 'opacity 150ms ease',
-          }}
-        >
-          {expanded ? (
-            <CloseFullscreenOutlinedIcon fontSize="small" />
-          ) : (
-            <OpenInFullOutlinedIcon fontSize="small" />
-          )}
-        </IconButton>
-      </Tooltip>
-      <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5, pr: 4 }}>
+      <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
         ЕХО Агент
       </Typography>
       <MarkdownContent>{content}</MarkdownContent>
@@ -1002,7 +958,7 @@ export function AiAgentChat({
         <Box
           sx={{
             width: '100%',
-            maxWidth: 800,
+            maxWidth: 1300,
             mx: 'auto',
             px: { xs: 1, md: 2 },
             py: { xs: 1, md: 2 },

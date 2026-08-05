@@ -247,29 +247,6 @@ describe('AiAgentChat request queue', () => {
     expect(request.querySelectorAll('td')).toHaveLength(2);
   });
 
-  it('expands an assistant response for wide content', async () => {
-    mocks.submit.mockResolvedValueOnce({
-      id: 'request-expand',
-      conversationId: CONVERSATION.id,
-      state: 'running',
-    });
-
-    setTextarea('Покажи широку таблицю');
-    submitForm();
-    await flush();
-    await act(async () => streamEvent('request-expand', 1, 'assistant_delta', 'Відповідь'));
-
-    const request = container.querySelector(
-      '[data-testid="live-request-request-expand"]',
-    ) as HTMLElement;
-    const expand = request.querySelector(
-      'button[aria-label="Розгорнути відповідь"]',
-    ) as HTMLButtonElement;
-    await act(async () => expand.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-
-    expect(request.querySelector('button[aria-label="Повернути звичайну ширину"]')).not.toBeNull();
-  });
-
   it('serializes request creation, then streams and cancels requests independently', async () => {
     let resolveFirst:
       ((value: { id: string; conversationId: string; state: 'queued' }) => void) | null = null;
