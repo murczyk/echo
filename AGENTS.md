@@ -48,15 +48,6 @@
 
 ## Migrations
 
-- Keep normal deployments independently runnable for each environment. Do not
-  introduce a migration that requires coordinated deployment of multiple
-  environments or a manual analytics mirror resync unless the user explicitly
-  authorizes that operational requirement.
-- Before dropping, renaming, or changing the type of a column on a
-  PeerDB-replicated table, prefer a backwards-compatible expand/migrate/contract
-  sequence that the standard deployment can reconcile. If no such approach is
-  practical, stop and obtain explicit user approval for the manual mirror
-  resync before implementing the migration.
 - When you want to change the database schema -- create new file in
   `echo-migration/src` and use the style of one of existing files
 - make pure sql migrations, see

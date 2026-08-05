@@ -8,15 +8,6 @@ every updated `echo-im` or `echo-gpu` migration revision must declare its
 analytics impact. The supported strategies are `excluded`,
 `replicated_snapshot`, `cdc_backfill`, and `mirror_resync`.
 
-Normal deployments must remain independently runnable for each environment.
-Reject migrations that require coordinated deployment of multiple environments
-or a manual analytics mirror resync unless that operational requirement was
-explicitly approved by the user before implementation. For drops, renames, and
-type changes on replicated tables, require a backwards-compatible
-expand/migrate/contract design that the standard deployment can reconcile when
-practical; declaring `mirror_resync` in the impact catalog is not sufficient
-authorization by itself.
-
 For `CREATE TABLE`, confirm whether the table belongs in
 `deploy/clickhouse/env/tables-exclude.txt`. Non-excluded tables are added to
 PeerDB automatically after migration; exclusion changes remain an explicit
