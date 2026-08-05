@@ -24,6 +24,33 @@ receivers:
               regex: "vllm:.*"
               action: keep
 
+  # Host-level metrics for ct-echo-vllm-router itself
+  hostmetrics:
+    collection_interval: 60s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      disk: {}
+      filesystem:
+        metrics:
+          system.filesystem.utilization:
+            enabled: true
+      load: {}
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      network: {}
+      paging: {}
+      system: {}
+
+  journald:
+    directory: /var/log/journal
+    start_at: end
+    storage: file_storage/journald
+
 processors:
   resource/router:
     attributes:
@@ -61,16 +88,34 @@ processors:
   batch/worker:
     timeout: 5s
 
+  resource/host:
+    attributes:
+      - key: host.name
+        value: ct-echo-vllm-router
+        action: upsert
+      - key: service.name
+        value: echo-vllm-router-host
+        action: upsert
+
+  batch/host:
+    timeout: 10s
+
 exporters:
   otlp_grpc/signoz:
     endpoint: "${env:OTLP_DESTINATION_ENDPOINT}"
     tls:
       insecure: true
 
+extensions:
+  file_storage/journald:
+    directory: /var/lib/echo-vllm-router-otel/file_storage
+
 service:
   telemetry:
     metrics:
       level: none
+
+  extensions: [file_storage/journald]
 
   pipelines:
     metrics/router:
@@ -81,5 +126,15 @@ service:
     metrics/worker:
       receivers: [prometheus/worker]
       processors: [resource/worker, batch/worker]
+      exporters: [otlp_grpc/signoz]
+
+    metrics/host:
+      receivers: [hostmetrics]
+      processors: [resource/host, batch/host]
+      exporters: [otlp_grpc/signoz]
+
+    logs/host:
+      receivers: [journald]
+      processors: [resource/host, batch/host]
       exporters: [otlp_grpc/signoz]
 
