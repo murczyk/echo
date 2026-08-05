@@ -151,6 +151,7 @@ async fn send_mattermost_chat(
     notification: &ai_agent_chat_mattermost_notification::Model,
     webhook: &str,
 ) -> Result<(), AppError> {
+    access::validate_mattermost_webhook(Some(webhook))?;
     let request = ai_agent_request::Entity::find_by_id(notification.request_id)
         .one(&env.dbx)
         .await
@@ -174,12 +175,7 @@ async fn send_mattermost_chat(
         &ai_engine.model_name,
         &request.prompt,
     );
-    let client = reqwest::Client::builder()
-        .timeout(StdDuration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC))
-        .build()
-        .map_err(|_| AppError::BL {
-            msg: "Mattermost chat client initialization failed".to_string(),
-        })?;
+    let client = mattermost_client()?;
     client
         .post(webhook)
         .json(&payload)
@@ -193,6 +189,16 @@ async fn send_mattermost_chat(
             msg: "Mattermost chat endpoint rejected the request".to_string(),
         })?;
     Ok(())
+}
+
+fn mattermost_client() -> Result<reqwest::Client, AppError> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(StdDuration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC))
+        .build()
+        .map_err(|_| AppError::BL {
+            msg: "Mattermost chat client initialization failed".to_string(),
+        })
 }
 
 async fn mark_sent(
@@ -335,6 +341,33 @@ fn sanitize_character(character: char) -> char {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn client_does_not_follow_mattermost_redirects() {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            use tokio::io::AsyncWriteExt;
+            stream
+                .write_all(
+                    b"HTTP/1.1 307 Temporary Redirect\r\nLocation: http://127.0.0.1/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .await
+                .unwrap();
+        });
+
+        let response = mattermost_client()
+            .unwrap()
+            .post(format!("http://{address}"))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), reqwest::StatusCode::TEMPORARY_REDIRECT);
+    }
 
     #[test]
     fn payload_includes_chat_prompt_and_audit_link() {

@@ -22,7 +22,6 @@ use sea_orm::{
     IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 use std::collections::HashSet;
-use std::net::IpAddr;
 use std::time::Duration;
 use url::Url;
 use uuid::Uuid;
@@ -139,7 +138,7 @@ pub async fn update_settings(
             .map(str::to_string)
             .or(settings.mattermost_webhook_url.clone())
     };
-    validate_mattermost_webhook(mattermost_webhook_url.as_deref())?;
+    access::validate_mattermost_webhook(mattermost_webhook_url.as_deref())?;
     if req.security_review_enabled && mattermost_webhook_url.is_none() {
         return Err(AppError::BL {
             msg: "Mattermost webhook is required while security review is enabled"
@@ -297,46 +296,6 @@ async fn validate_reviewer_engine(
             msg: "Reviewer must be an enabled provider".to_string(),
         })?;
     let _ = reviewer;
-    Ok(())
-}
-
-fn validate_mattermost_webhook(webhook: Option<&str>) -> Result<(), AppError> {
-    let Some(webhook) = webhook else {
-        return Ok(());
-    };
-    let url = Url::parse(webhook).map_err(|_| AppError::BL {
-        msg: "Mattermost webhook URL is invalid".to_string(),
-    })?;
-    let host_is_safe = url.host_str().is_some_and(|host| {
-        host.parse::<IpAddr>().map_or_else(
-            |_| access::is_dispatcher_hostname(host),
-            |address| match address {
-                IpAddr::V4(address) => {
-                    !address.is_private()
-                        && !address.is_loopback()
-                        && !address.is_link_local()
-                        && !address.is_unspecified()
-                        && !address.is_multicast()
-                }
-                IpAddr::V6(address) => {
-                    !address.is_loopback()
-                        && !address.is_unspecified()
-                        && !address.is_multicast()
-                        && !address.is_unique_local()
-                }
-            },
-        )
-    });
-    if url.scheme() != "https"
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || !host_is_safe
-    {
-        return Err(AppError::BL {
-            msg: "Mattermost webhook must use HTTPS without embedded credentials or private IPs"
-                .to_string(),
-        });
-    }
     Ok(())
 }
 

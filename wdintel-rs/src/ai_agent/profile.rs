@@ -304,6 +304,23 @@ fn validate_profile_engines(
 fn validate_profile_settings(
     profile: &LocalAiAgentProfile,
 ) -> anyhow::Result<()> {
+    access::validate_mattermost_webhook(
+        profile.settings.mattermost_webhook_url.as_deref(),
+    )?;
+    if profile.settings.security_review_enabled
+        && profile.settings.mattermost_webhook_url.is_none()
+    {
+        anyhow::bail!(
+            "Mattermost webhook is required while security review is enabled"
+        );
+    }
+    if profile.settings.mattermost_chat_enabled
+        && profile.settings.mattermost_webhook_url.is_none()
+    {
+        anyhow::bail!(
+            "Mattermost webhook is required while chat monitoring is enabled"
+        );
+    }
     let engine_ids = profile
         .engines
         .iter()
@@ -805,5 +822,22 @@ mod tests {
             fs::metadata(path).unwrap().permissions().mode() & 0o777,
             0o600
         );
+    }
+
+    #[test]
+    fn profile_validation_rejects_private_mattermost_webhooks() {
+        let mut profile = profile("ziggy.example.com");
+        profile.settings.mattermost_webhook_url =
+            Some("http://127.0.0.1/hooks/private".to_string());
+
+        assert!(validate_profile(&profile, "ziggy.example.com").is_err());
+    }
+
+    #[test]
+    fn profile_validation_requires_webhook_for_enabled_monitoring() {
+        let mut profile = profile("ziggy.example.com");
+        profile.settings.mattermost_webhook_url = None;
+
+        assert!(validate_profile(&profile, "ziggy.example.com").is_err());
     }
 }

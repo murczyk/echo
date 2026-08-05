@@ -13,7 +13,7 @@ use regex::Regex;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 use url::Url;
 use uuid::Uuid;
 
@@ -202,6 +202,48 @@ pub fn is_dispatcher_hostname(hostname: &str) -> bool {
     !hostname.is_empty()
         && hostname.len() <= 253
         && DISPATCHER_HOSTNAME_RE.is_match(hostname)
+}
+
+pub fn validate_mattermost_webhook(
+    webhook: Option<&str>,
+) -> Result<(), AppError> {
+    let Some(webhook) = webhook else {
+        return Ok(());
+    };
+    let url = Url::parse(webhook).map_err(|_| AppError::BL {
+        msg: "Mattermost webhook URL is invalid".to_string(),
+    })?;
+    let host_is_safe = url.host_str().is_some_and(|host| {
+        host.parse::<IpAddr>().map_or_else(
+            |_| is_dispatcher_hostname(host),
+            |address| match address {
+                IpAddr::V4(address) => {
+                    !address.is_private()
+                        && !address.is_loopback()
+                        && !address.is_link_local()
+                        && !address.is_unspecified()
+                        && !address.is_multicast()
+                }
+                IpAddr::V6(address) => {
+                    !address.is_loopback()
+                        && !address.is_unspecified()
+                        && !address.is_multicast()
+                        && !address.is_unique_local()
+                }
+            },
+        )
+    });
+    if url.scheme() != "https"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || !host_is_safe
+    {
+        return Err(AppError::BL {
+            msg: "Mattermost webhook must use HTTPS without embedded credentials or private IPs"
+                .to_string(),
+        });
+    }
+    Ok(())
 }
 
 pub fn is_dispatcher_upstream_host(host: &str) -> bool {
