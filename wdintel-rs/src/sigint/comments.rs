@@ -459,6 +459,7 @@ async fn load_goi_associations_with_notes(
     let since_ts = fixed_offset_utc(since_ts);
     let till_ts = fixed_offset_utc(till_ts);
     Ok(goi_association::Entity::find()
+        .filter(goi_association::Column::Deleted.eq(false))
         .filter(goi_association::Column::SourceCreatedAt.gte(since_ts))
         .filter(goi_association::Column::SourceCreatedAt.lt(till_ts))
         .filter(goi_association::Column::Note.is_not_null())

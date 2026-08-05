@@ -571,9 +571,7 @@ fn message_candidate_base_query(
         .filter(signal_message::Column::Timestamp.gte(signal_window_start))
         .filter(signal_message::Column::Timestamp.lte(signal_window_end))
         .apply_if(inbox_datetime_window, |query, (start, end)| {
-            query
-                .filter(sigint_inbox_item::Column::Datetime.gte(start))
-                .filter(sigint_inbox_item::Column::Datetime.lte(end))
+            query.filter(inbox_datetime_or_missing_condition(start, end))
         })
         .filter(signal_message::Column::MessageUid.is_not_null())
         .filter(signal_message::Column::MessageUid.ne(""))
@@ -595,6 +593,15 @@ fn message_candidate_base_query(
         .order_by_desc(signal_message::Column::Timestamp)
         .order_by_desc(signal_message::Column::Id)
         .limit(ORGANISM_GOI_MESSAGE_UID_CANDIDATE_BATCH_SIZE)
+}
+
+fn inbox_datetime_or_missing_condition(
+    start: NaiveDateTime,
+    end: NaiveDateTime,
+) -> Condition {
+    Condition::any()
+        .add(sigint_inbox_item::Column::Datetime.between(start, end))
+        .add(sigint_inbox_item::Column::Datetime.is_null())
 }
 
 fn message_candidate_page_cursor(
@@ -907,7 +914,7 @@ mod tests {
     }
 
     #[test]
-    fn source_date_candidate_query_filters_inbox_datetime_window() {
+    fn source_date_candidate_query_uses_inbox_datetime_with_null_fallback() {
         let (window_start, window_end) = test_window();
         let inbox_datetime_window = (
             test_timestamp() - ChronoDuration::minutes(5),
@@ -925,8 +932,8 @@ mod tests {
         .to_string();
 
         assert!(sql.contains("sigint_inbox_item"));
-        assert!(sql.contains("\"sigint_inbox_item\".\"datetime\" >="));
-        assert!(sql.contains("\"sigint_inbox_item\".\"datetime\" <="));
+        assert!(sql.contains("\"sigint_inbox_item\".\"datetime\" BETWEEN"));
+        assert!(sql.contains("\"sigint_inbox_item\".\"datetime\" IS NULL"));
     }
 
     #[test]
