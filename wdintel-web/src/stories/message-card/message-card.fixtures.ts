@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react';
-import type { InboxMessage, MessageMediaInfo, Network, Tag } from '../../../Bindings';
+import type { InboxMessage, MessageMediaInfo, Network, Tag } from '../../Bindings';
 import { emptyFilter } from '../../ts/react/routes/rer-duty-neo/utils';
 import { MessageCard } from '../../ts/react/routes/shared/message-card/MessageCard';
 import sampleSrc from '../fixtures/sample.wav';
