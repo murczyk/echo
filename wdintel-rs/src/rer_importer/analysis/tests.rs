@@ -6925,3 +6925,143 @@ async fn count_stats_analytics_half_open_failure_reopens_circuit() {
     assert_ne!(retry_deadline, u64::MAX);
     assert!(retry_deadline > analytics_unix_ms());
 }
+
+fn callsign_aggregate_test_query(
+    selected_freqs: &[String],
+) -> Select<signal_message::Entity> {
+    signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Id, "id")
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
+        .expr_as(
+            correlated_freq_is_selected_expr(selected_freqs),
+            "selected_freq",
+        )
+}
+
+#[test]
+fn correlated_frequency_query_is_aggregated_for_both_databases() {
+    let statement = correlated_freq_callsign_pairs_statement(
+        callsign_aggregate_test_query(&["100".to_string()]),
+        &["ALPHA".to_string(), "BRAVO".to_string()],
+    );
+    assert!(statement.sql.contains("SELECT DISTINCT"));
+    assert!(statement
+        .sql
+        .contains("all_callsigns.callsign IN ('ALPHA', 'BRAVO')"));
+    assert!(!statement.sql.contains("jsonb_agg"));
+
+    let (analytics_query, callsign_alias) = join_analytics_message_callsign(
+        callsign_aggregate_test_query(&["100".to_string()]),
+        "test_correlated_callsign",
+        None,
+    );
+    let sql = analytics_query
+        .select_only()
+        .expr(Expr::col((callsign_alias, Alias::new("callsign"))))
+        .distinct()
+        .build(DbBackend::Postgres)
+        .to_string();
+    assert!(
+        sql.contains(r#""echo_clickhouse_derived"."message_callsign""#),
+        "{sql}"
+    );
+    assert!(sql.starts_with("SELECT DISTINCT"), "{sql}");
+}
+
+#[test]
+fn new_callsign_queries_return_only_aggregates() {
+    let query = callsign_aggregate_test_query(&["100".to_string()]);
+    let current = effective_callsign_values_statement(query.clone());
+    let lookback = new_callsign_last_seen_statement(query.clone());
+
+    assert!(current
+        .sql
+        .contains("SELECT DISTINCT all_callsigns.callsign"));
+    assert!(lookback
+        .sql
+        .contains("MAX(filtered_items.timestamp) AS last_seen"));
+    assert!(!current.sql.contains("jsonb_agg(all_callsigns.callsign"));
+
+    let (analytics_query, callsign_alias) =
+        join_analytics_message_callsign(query, "test_new_callsign", None);
+    let sql = analytics_query
+        .select_only()
+        .expr(Expr::col((callsign_alias.clone(), Alias::new("callsign"))))
+        .expr_as(Expr::cust("MAX(sigint_inbox_item.datetime)"), "last_seen")
+        .group_by(Expr::col((callsign_alias, Alias::new("callsign"))))
+        .build(DbBackend::Postgres)
+        .to_string();
+    assert!(
+        sql.contains(r#""echo_clickhouse_derived"."message_callsign""#),
+        "{sql}"
+    );
+    assert!(sql.contains("MAX(sigint_inbox_item.datetime)"), "{sql}");
+
+    let selected_callsign_query = filter_selected_callsigns_for_source(
+        callsign_aggregate_test_query(&["100".to_string()]),
+        &Some(vec!["ALPHA".to_string()]),
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Analytics,
+        None,
+    )
+    .unwrap();
+    let (selected_callsign_query, _) = join_analytics_message_callsign(
+        selected_callsign_query,
+        "test_new_callsign_output",
+        None,
+    );
+    let sql = selected_callsign_query
+        .build(DbBackend::Postgres)
+        .to_string();
+    assert_eq!(
+        sql.matches(r#""echo_clickhouse_derived"."message_callsign""#)
+            .count(),
+        2,
+        "{sql}"
+    );
+    assert!(!sql.contains("EXISTS"), "{sql}");
+}
+
+#[test]
+fn new_callsign_thresholds_keep_existing_boundary_semantics() {
+    let report_since = test_dt(2026, 2, 1, 0, 0);
+    let callsigns = ["exact-24h", "exact-30d", "exact-7d", "never", "recent"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    let last_seen = BTreeMap::from([
+        (
+            "exact-24h".to_string(),
+            report_since - chrono::Duration::hours(24),
+        ),
+        (
+            "exact-7d".to_string(),
+            report_since - chrono::Duration::days(7),
+        ),
+        (
+            "exact-30d".to_string(),
+            report_since - chrono::Duration::days(30),
+        ),
+        (
+            "recent".to_string(),
+            report_since - chrono::Duration::hours(1),
+        ),
+    ]);
+
+    let result = classify_new_callsigns(callsigns, &last_seen, report_since);
+
+    assert_eq!(
+        result.not_seen_24h,
+        vec!["exact-24h", "exact-30d", "exact-7d", "never"]
+    );
+    assert_eq!(
+        result.not_seen_7days,
+        vec!["exact-30d", "exact-7d", "never"]
+    );
+    assert_eq!(result.not_seen_30days, vec!["exact-30d", "never"]);
+}

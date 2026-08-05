@@ -2969,78 +2969,18 @@ async fn load_callsigns_with_counts(
         .values
         .map(|values| values.0)
         .unwrap_or_default();
+    let callsign_ctes =
+        crate::inbox::callsigns::postgres_effective_callsign_ctes(
+            &filtered_items.sql,
+        );
     let sql = format!(
         r#"
-        WITH filtered_items AS ({})
-        , normalized_callsigns AS (
-            SELECT DISTINCT
-                callsign.sigint_inbox_item_id AS inbox_item_id,
-                callsign.callsign
-            FROM sigint_inbox_item_callsign AS callsign
-            INNER JOIN filtered_items
-                ON filtered_items.id = callsign.sigint_inbox_item_id
-            WHERE callsign.deleted = FALSE
-        )
-        , legacy_callsigns AS (
-            SELECT DISTINCT
-                item.id AS inbox_item_id,
-                legacy.callsign
-            FROM filtered_items
-            INNER JOIN sigint_inbox_item AS item ON item.id = filtered_items.id
-            CROSS JOIN LATERAL jsonb_array_elements_text(
-                CASE
-                    WHEN jsonb_typeof(item.callsigns) = 'array'
-                        THEN item.callsigns
-                    ELSE '[]'::jsonb
-                END
-            ) AS legacy(callsign)
-            WHERE item.id > coalesce((
-                SELECT nullif(dk.v #>> '{{}}', '')::bigint
-                FROM delta_kv AS dk
-                WHERE dk.k = '{watermark_key}'
-            ), 0)
-              AND NOT EXISTS (
-                SELECT 1
-                FROM sigint_inbox_item_callsign AS callsign
-                WHERE callsign.sigint_inbox_item_id = item.id
-            )
-            UNION
-            SELECT DISTINCT
-                item.id AS inbox_item_id,
-                legacy.callsign
-            FROM filtered_items
-            INNER JOIN sigint_inbox_item AS item ON item.id = filtered_items.id
-            CROSS JOIN LATERAL jsonb_array_elements_text(
-                CASE
-                    WHEN jsonb_typeof(item.callsigns_alg2) = 'array'
-                        THEN item.callsigns_alg2
-                    ELSE '[]'::jsonb
-                END
-            ) AS legacy(callsign)
-            WHERE item.id > coalesce((
-                SELECT nullif(dk.v #>> '{{}}', '')::bigint
-                FROM delta_kv AS dk
-                WHERE dk.k = '{watermark_key}'
-            ), 0)
-              AND NOT EXISTS (
-                SELECT 1
-                FROM sigint_inbox_item_callsign AS callsign
-                WHERE callsign.sigint_inbox_item_id = item.id
-            )
-        )
-        , all_callsigns AS (
-            SELECT inbox_item_id, callsign FROM normalized_callsigns
-            UNION ALL
-            SELECT inbox_item_id, callsign FROM legacy_callsigns
-        )
+        {callsign_ctes}
         SELECT callsign, COUNT(*)::bigint AS count
         FROM all_callsigns
         GROUP BY callsign
         ORDER BY callsign
         "#,
-        filtered_items.sql,
-        watermark_key =
-            crate::inbox::callsigns::CALLSIGN_BACKFILL_WATERMARK_KEY,
     );
     let statement =
         Statement::from_sql_and_values(DbBackend::Postgres, sql, values);

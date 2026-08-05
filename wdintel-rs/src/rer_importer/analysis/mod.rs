@@ -4454,8 +4454,9 @@ async fn correlated_freqs(
 ) -> Result<Json<CorrelatedFreqsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    let req = req.into_inner();
     let empty = CorrelatedFreqsRsp { freqs: vec![] };
-    let Some(selected_freqs) = req.selected_freqs.clone() else {
+    let Some(selected_freqs) = req.selected_freqs.as_ref() else {
         return Ok(Json(empty));
     };
     if selected_freqs.is_empty() {
@@ -4464,7 +4465,7 @@ async fn correlated_freqs(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
 
-    // if dt_since is earlier than 7 days before dt_till -- put it to dt_till - 7 days
+    // Keep correlated-frequency analysis within its configured maximum period.
     let dt_since = if dt_till - dt_since
         > chrono::Duration::days(CORRELATED_FREQS_MAX_DAYS)
     {
@@ -4473,16 +4474,149 @@ async fn correlated_freqs(
         dt_since
     };
 
-    #[derive(FromQueryResult)]
-    struct CorrelatedFreqInboxItem {
-        id: i64,
-        freq: Option<String>,
-    }
     let accessible_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
-    let q = signal_message::Entity::find()
+    let analytics_groups = accessible_groups.clone();
+    let postgres_groups = accessible_groups;
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let freqs = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis correlated frequencies",
+        true,
+        |db| async move {
+            let scope = stats::resolve_analytics_message_id_scope_for_range(
+                dt_since,
+                dt_till,
+                &db,
+                freshness_max_age_ms,
+            )
+            .await?;
+            load_correlated_freqs_with_db(
+                analytics_req,
+                analytics_groups,
+                dt_since,
+                dt_till,
+                &db,
+                Some(&scope),
+                crate::inbox::callsigns::EffectiveCallsignSqlSource::Analytics,
+            )
+            .await
+        },
+        |db| async move {
+            load_correlated_freqs_with_db(
+                postgres_req,
+                postgres_groups,
+                dt_since,
+                dt_till,
+                &db,
+                None,
+                crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
+            )
+            .await
+        },
+    )
+    .await?;
+
+    Ok(Json(CorrelatedFreqsRsp { freqs }))
+}
+
+#[derive(FromQueryResult)]
+struct CorrelatedFreqCallsignRow {
+    callsign: String,
+}
+
+#[derive(FromQueryResult)]
+struct CorrelatedFreqCallsignPairRow {
+    freq: String,
+    callsign: String,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn load_correlated_freqs_with_db(
+    req: &AnalysisStatsReq,
+    accessible_groups: Vec<String>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    db: &DatabaseConnection,
+    scope: Option<&AnalyticsMessageIdScope>,
+    callsign_source: crate::inbox::callsigns::EffectiveCallsignSqlSource,
+) -> Result<Vec<CorrelatedFreq>, AppError> {
+    let selected_freqs = req.selected_freqs.as_ref().context(h!())?;
+    let query = build_correlated_freq_messages_query(
+        req,
+        accessible_groups,
+        dt_since,
+        dt_till,
+        scope,
+    )?;
+    match callsign_source {
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres => {
+            load_correlated_freqs_postgres(query, selected_freqs, db).await
+        }
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Analytics => {
+            load_correlated_freqs_analytics(query, selected_freqs, db, scope)
+                .await
+        }
+    }
+}
+
+async fn load_correlated_freqs_postgres(
+    query: Select<signal_message::Entity>,
+    selected_freqs: &[String],
+    db: &DatabaseConnection,
+) -> Result<Vec<CorrelatedFreq>, AppError> {
+    let selected_callsigns = CorrelatedFreqCallsignRow::find_by_statement(
+        effective_callsign_values_statement(
+            query
+                .clone()
+                .filter(correlated_freq_is_selected_expr(selected_freqs))
+                .select_only()
+                .column_as(sigint_inbox_item::Column::Id, "id")
+                .distinct(),
+        ),
+    )
+    .all(db)
+    .await
+    .c(h!())?
+    .into_iter()
+    .map(|row| row.callsign)
+    .collect::<Vec<_>>();
+    if selected_callsigns.is_empty() {
+        return Ok(Vec::new());
+    }
+    let query = query
+        .filter(correlated_freq_is_selected_expr(selected_freqs).not())
+        .filter(sigint_inbox_item::Column::Freq.is_not_null())
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Id, "id")
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .distinct();
+    let rows = CorrelatedFreqCallsignPairRow::find_by_statement(
+        correlated_freq_callsign_pairs_statement(query, &selected_callsigns),
+    )
+    .all(db)
+    .await
+    .c(h!())?;
+    Ok(correlated_freqs_from_pairs(rows))
+}
+
+fn build_correlated_freq_messages_query(
+    req: &AnalysisStatsReq,
+    accessible_groups: Vec<String>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<signal_message::Entity>, AppError> {
+    let query = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
@@ -4494,85 +4628,187 @@ async fn correlated_freqs(
         .filter(
             datasource_group::Column::GroupMasterKey.eq_any(accessible_groups),
         )
-        .select_only()
-        .column_as(sigint_inbox_item::Column::Id, "id")
-        .column_as(sigint_inbox_item::Column::Freq, "freq")
-        .distinct()
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
-    let q = filter_selected_metadata_for_analysis_stats(q, &req)?;
-    let inbox_items = q
-        .into_model::<CorrelatedFreqInboxItem>()
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
-    let inbox_item_ids = inbox_items
-        .iter()
-        .map(|inbox_item| inbox_item.id)
-        .collect_vec();
-    let callsigns_by_item_id =
-        crate::inbox::callsigns::load_by_item_ids(&env.dbx, &inbox_item_ids)
-            .await?;
-    let mut selected_freq_callsigns = BTreeSet::new();
-    for inbox_item in &inbox_items {
-        if !analysis_freq_is_selected(
-            inbox_item.freq.as_deref(),
-            &selected_freqs,
-        ) {
-            continue;
-        }
-        if let Some(callsigns) = callsigns_by_item_id.get(&inbox_item.id) {
-            selected_freq_callsigns.extend(callsigns.effective());
-        }
-    }
-    let mut freq_common_callsigns = BTreeMap::<String, BTreeSet<String>>::new();
-    for inbox_item in inbox_items {
-        let Some(freq) = inbox_item.freq else {
-            continue;
-        };
-        let Some(callsigns) = callsigns_by_item_id.get(&inbox_item.id) else {
-            continue;
-        };
-        for callsign in callsigns.effective() {
-            if selected_freq_callsigns.contains(&callsign) {
-                freq_common_callsigns
-                    .entry(freq.clone())
-                    .or_default()
-                    .insert(callsign);
-            }
-        }
-    }
-    let mut freqs = freq_common_callsigns
-        .into_iter()
-        .filter(|(freq, _)| !selected_freqs.contains(freq))
-        .map(|(freq, callsigns)| CorrelatedFreq {
-            freq,
-            common_callsigns: callsigns.into_iter().collect(),
-        })
-        .collect::<Vec<_>>();
-    freqs.sort_by(|a, b| {
-        b.common_callsigns
-            .len()
-            .partial_cmp(&a.common_callsigns.len())
-            .unwrap()
-    });
-
-    Ok(Json(CorrelatedFreqsRsp { freqs }))
+    let query = if let Some(scope) = scope {
+        query
+            .filter(scope.condition((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Id,
+            )))
+            .filter(scope.condition((
+                signal_message::Entity,
+                signal_message::Column::Id,
+            )))
+    } else {
+        query
+    };
+    filter_selected_metadata_for_analysis_stats(query, req)
 }
 
-fn analysis_freq_is_selected(
-    freq: Option<&str>,
+async fn load_correlated_freqs_analytics(
+    query: Select<signal_message::Entity>,
     selected_freqs: &[String],
-) -> bool {
-    selected_freqs.is_empty()
-        || selected_freqs.iter().any(|selected_freq| {
-            if selected_freq.is_empty() {
-                freq.is_none_or(str::is_empty)
-            } else {
-                freq == Some(selected_freq)
-            }
+    db: &DatabaseConnection,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Vec<CorrelatedFreq>, AppError> {
+    let (query, callsign_alias) = join_analytics_message_callsign(
+        query,
+        "correlated_freq_callsign",
+        scope,
+    );
+    let selected_callsigns = query
+        .clone()
+        .filter(correlated_freq_is_selected_expr(selected_freqs))
+        .select_only()
+        .column_as(
+            Expr::col((callsign_alias.clone(), Alias::new("callsign"))),
+            "callsign",
+        )
+        .filter(
+            Expr::col((callsign_alias.clone(), Alias::new("callsign")))
+                .is_not_null(),
+        )
+        .distinct()
+        .into_model::<CorrelatedFreqCallsignRow>()
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|row| row.callsign)
+        .collect::<Vec<_>>();
+    if selected_callsigns.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = query
+        .filter(correlated_freq_is_selected_expr(selected_freqs).not())
+        .filter(sigint_inbox_item::Column::Freq.is_not_null())
+        .filter(
+            Expr::col((callsign_alias.clone(), Alias::new("callsign")))
+                .is_in(selected_callsigns),
+        )
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .column_as(
+            Expr::col((callsign_alias, Alias::new("callsign"))),
+            "callsign",
+        )
+        .distinct()
+        .into_model::<CorrelatedFreqCallsignPairRow>()
+        .all(db)
+        .await
+        .c(h!())?;
+    Ok(correlated_freqs_from_pairs(rows))
+}
+
+fn correlated_freqs_from_pairs(
+    rows: Vec<CorrelatedFreqCallsignPairRow>,
+) -> Vec<CorrelatedFreq> {
+    let mut callsigns_by_freq = BTreeMap::<String, BTreeSet<String>>::new();
+    for row in rows {
+        callsigns_by_freq
+            .entry(row.freq)
+            .or_default()
+            .insert(row.callsign);
+    }
+    let mut freqs = callsigns_by_freq
+        .into_iter()
+        .map(|(freq, common_callsigns)| CorrelatedFreq {
+            freq,
+            common_callsigns: common_callsigns.into_iter().collect(),
         })
+        .collect::<Vec<_>>();
+    freqs.sort_by(|left, right| {
+        right
+            .common_callsigns
+            .len()
+            .cmp(&left.common_callsigns.len())
+            .then_with(|| left.freq.cmp(&right.freq))
+    });
+    freqs
+}
+
+fn join_analytics_message_callsign<E>(
+    mut query: Select<E>,
+    alias: &str,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> (Select<E>, Alias)
+where
+    E: EntityTrait,
+{
+    let callsign_alias = Alias::new(alias);
+    QuerySelect::query(&mut query).join_as(
+        JoinType::InnerJoin,
+        (
+            Alias::new("echo_clickhouse_derived"),
+            Alias::new("message_callsign"),
+        ),
+        callsign_alias.clone(),
+        Expr::col((callsign_alias.clone(), Alias::new("sigint_inbox_item_id")))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+    );
+    if let Some(scope) = scope {
+        QuerySelect::query(&mut query).cond_where(scope.condition((
+            callsign_alias.clone(),
+            Alias::new("sigint_inbox_item_id"),
+        )));
+    }
+    (query, callsign_alias)
+}
+
+fn correlated_freq_is_selected_expr(selected_freqs: &[String]) -> SimpleExpr {
+    let includes_empty = selected_freqs.iter().any(String::is_empty);
+    let selected_freqs = selected_freqs
+        .iter()
+        .filter(|freq| !freq.is_empty())
+        .cloned()
+        .collect::<Vec<_>>();
+    match (includes_empty, selected_freqs.is_empty()) {
+        (true, true) => Expr::cust(
+            "sigint_inbox_item.freq IS NULL OR sigint_inbox_item.freq = ''",
+        ),
+        (true, false) => Expr::cust_with_values(
+            "sigint_inbox_item.freq IS NULL OR sigint_inbox_item.freq = '' OR sigint_inbox_item.freq = ANY($1)",
+            vec![selected_freqs],
+        ),
+        (false, false) => Expr::cust_with_values(
+            "COALESCE(sigint_inbox_item.freq = ANY($1), FALSE)",
+            vec![selected_freqs],
+        ),
+        (false, true) => Expr::value(false),
+    }
+}
+
+fn correlated_freq_callsign_pairs_statement(
+    query: Select<signal_message::Entity>,
+    selected_callsigns: &[String],
+) -> Statement {
+    let filtered_items = query.build(DbBackend::Postgres);
+    let values = filtered_items
+        .values
+        .map(|values| values.0)
+        .unwrap_or_default();
+    let callsign_ctes =
+        crate::inbox::callsigns::postgres_effective_callsign_ctes(
+            &filtered_items.sql,
+        );
+    let selected_callsigns =
+        crate::inbox::callsigns::sql_string_literals(selected_callsigns);
+    let sql = format!(
+        r#"
+{callsign_ctes}
+SELECT DISTINCT
+    filtered_items.freq,
+    all_callsigns.callsign
+FROM filtered_items
+INNER JOIN all_callsigns
+    ON all_callsigns.inbox_item_id = filtered_items.id
+WHERE all_callsigns.callsign IN ({selected_callsigns})
+ORDER BY filtered_items.freq, all_callsigns.callsign
+"#,
+    );
+    Statement::from_sql_and_values(DbBackend::Postgres, sql, values)
 }
 
 #[post("/api/rer/analysis/freq-edit-unit-name")]
@@ -4962,68 +5198,86 @@ pub async fn bi_new_callsigns(
     let group_master_keys = get_identity_sigint_groups(&env.dbx, user_id)
         .await
         .c(h!())?;
-    let rows = load_new_callsign_rows(
-        user_id,
+    let analytics_supported = analytics_count_request_supported(req);
+    let analytics_tag_access = if env.analytics.is_some() && analytics_supported
+    {
+        Some(
+            stats::resolve_analytics_tag_access(
+                &env.dbx,
+                user_id,
+                req.report_tags_only_this_unit.unwrap_or(false),
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    let (report_since, report_till, lookback_since) =
+        new_callsign_periods(req)?;
+    let analytics_groups = group_master_keys.clone();
+    let postgres_groups = group_master_keys;
+    let analytics_req = req;
+    let postgres_req = req;
+    let analytics_user_id = user_id;
+    let postgres_user_id = user_id;
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    with_analytics_read_fallback(
         env,
-        req,
-        req.since_date_inclusive_ms,
-        req.till_date_noninclusive_ms,
-        ReportPeriodEnd::NonInclusive,
-        &group_master_keys,
-        true,
+        "analysis new callsigns",
+        analytics_supported,
+        |db| async move {
+            let (current_scope, lookback_scope) = tokio::try_join!(
+                stats::resolve_analytics_message_id_scope_for_range(
+                    report_since,
+                    report_till,
+                    &db,
+                    freshness_max_age_ms,
+                ),
+                stats::resolve_analytics_message_id_scope_for_range(
+                    lookback_since,
+                    report_since,
+                    &db,
+                    freshness_max_age_ms,
+                ),
+            )?;
+            load_new_callsigns_with_db(
+                analytics_user_id,
+                analytics_req,
+                analytics_groups,
+                &db,
+                crate::inbox::callsigns::EffectiveCallsignSqlSource::Analytics,
+                analytics_tag_access.as_ref(),
+                Some(NewCallsignAnalyticsScopes {
+                    current: current_scope,
+                    lookback: lookback_scope,
+                }),
+            )
+            .await
+        },
+        |db| async move {
+            load_new_callsigns_with_db(
+                postgres_user_id,
+                postgres_req,
+                postgres_groups,
+                &db,
+                crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
+                None,
+                None,
+            )
+            .await
+        },
     )
-    .await?;
-    let callsigns_in_period = rows
-        .into_iter()
-        .flat_map(|row| row.callsigns)
-        .collect::<BTreeSet<_>>();
-    let lookback_since = req
-        .since_date_inclusive_ms
-        .checked_sub(chrono::Duration::days(30).num_milliseconds())
-        .context(h!())?;
-    let rows = load_new_callsign_rows(
-        user_id,
-        env,
-        req,
-        lookback_since,
-        req.since_date_inclusive_ms,
-        ReportPeriodEnd::NonInclusive,
-        &group_master_keys,
-        false,
-    )
-    .await?;
-    let mut callsign_last_seen = BTreeMap::new();
-    for row in rows {
-        let Some(timestamp) = row.timestamp else {
-            continue;
-        };
-        for callsign in row.callsigns {
-            callsign_last_seen
-                .entry(callsign)
-                .and_modify(|last_seen| {
-                    if *last_seen < timestamp {
-                        *last_seen = timestamp;
-                    }
-                })
-                .or_insert(timestamp);
-        }
-    }
-    Ok(classify_new_callsigns(
-        callsigns_in_period,
-        &callsign_last_seen,
-        dt_from_millis(req.since_date_inclusive_ms)?,
-    ))
+    .await
 }
 
-struct NewCallsignQueryRow {
-    callsigns: Vec<String>,
-    timestamp: Option<NaiveDateTime>,
-}
-
-#[derive(FromQueryResult)]
-struct NewCallsignDbRow {
-    id: i64,
-    timestamp: Option<NaiveDateTime>,
+struct NewCallsignAnalyticsScopes {
+    current: AnalyticsMessageIdScope,
+    lookback: AnalyticsMessageIdScope,
 }
 
 pub async fn bi_new_callsigns_chunked(
@@ -5052,20 +5306,22 @@ pub async fn bi_new_callsigns_chunked(
             chunk.since_ms,
             chunk.till_ms
         );
-        for row in load_new_callsign_rows(
-            user_id,
-            env,
-            req,
-            chunk.since_ms,
-            chunk.till_ms,
-            chunk.end,
-            &group_master_keys,
-            true,
-        )
-        .await?
-        {
-            callsigns_in_period.extend(row.callsigns);
-        }
+        callsigns_in_period.extend(
+            load_new_callsigns_in_range_with_db(
+                user_id,
+                req,
+                chunk.since_ms,
+                chunk.till_ms,
+                chunk.end,
+                &group_master_keys,
+                true,
+                &env.dbx,
+                crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
+                None,
+                None,
+            )
+            .await?,
+        );
     }
 
     let lookback_since = req
@@ -5089,31 +5345,29 @@ pub async fn bi_new_callsigns_chunked(
             chunk.since_ms,
             chunk.till_ms
         );
-        for row in load_new_callsign_rows(
+        for (callsign, timestamp) in load_new_callsign_last_seen_with_db(
             user_id,
-            env,
             req,
             chunk.since_ms,
             chunk.till_ms,
             chunk.end,
             &group_master_keys,
             false,
+            &env.dbx,
+            crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
+            None,
+            None,
         )
         .await?
         {
-            let Some(timestamp) = row.timestamp else {
-                continue;
-            };
-            for callsign in row.callsigns {
-                callsign_last_seen
-                    .entry(callsign)
-                    .and_modify(|last_seen| {
-                        if *last_seen < timestamp {
-                            *last_seen = timestamp;
-                        }
-                    })
-                    .or_insert(timestamp);
-            }
+            callsign_last_seen
+                .entry(callsign)
+                .and_modify(|last_seen| {
+                    if *last_seen < timestamp {
+                        *last_seen = timestamp;
+                    }
+                })
+                .or_insert(timestamp);
         }
     }
 
@@ -5125,19 +5379,242 @@ pub async fn bi_new_callsigns_chunked(
     ))
 }
 
-async fn load_new_callsign_rows(
+fn new_callsign_periods(
+    req: &AnalysisStatsReq,
+) -> Result<(NaiveDateTime, NaiveDateTime, NaiveDateTime), AppError> {
+    let report_since = dt_from_millis(req.since_date_inclusive_ms)?;
+    let report_till = dt_from_millis(req.till_date_noninclusive_ms)?;
+    let lookback_since = report_since
+        .checked_sub_signed(chrono::Duration::days(30))
+        .context(h!())?;
+    Ok((report_since, report_till, lookback_since))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn load_new_callsigns_with_db(
     user_id: &uuid::Uuid,
-    env: &Env,
+    req: &AnalysisStatsReq,
+    group_master_keys: Vec<String>,
+    db: &DatabaseConnection,
+    callsign_source: crate::inbox::callsigns::EffectiveCallsignSqlSource,
+    analytics_tag_access: Option<&stats::AnalyticsTagAccess>,
+    analytics_scopes: Option<NewCallsignAnalyticsScopes>,
+) -> Result<NewCallsignsRes, AppError> {
+    let callsigns_in_period = load_new_callsigns_in_range_with_db(
+        user_id,
+        req,
+        req.since_date_inclusive_ms,
+        req.till_date_noninclusive_ms,
+        ReportPeriodEnd::NonInclusive,
+        &group_master_keys,
+        true,
+        db,
+        callsign_source,
+        analytics_tag_access,
+        analytics_scopes.as_ref().map(|scopes| &scopes.current),
+    )
+    .await?;
+    if callsigns_in_period.is_empty() {
+        return Ok(classify_new_callsigns(
+            callsigns_in_period,
+            &BTreeMap::new(),
+            dt_from_millis(req.since_date_inclusive_ms)?,
+        ));
+    }
+    let lookback_since = req
+        .since_date_inclusive_ms
+        .checked_sub(chrono::Duration::days(30).num_milliseconds())
+        .context(h!())?;
+    let callsign_last_seen = load_new_callsign_last_seen_with_db(
+        user_id,
+        req,
+        lookback_since,
+        req.since_date_inclusive_ms,
+        ReportPeriodEnd::NonInclusive,
+        &group_master_keys,
+        false,
+        db,
+        callsign_source,
+        analytics_tag_access,
+        analytics_scopes.as_ref().map(|scopes| &scopes.lookback),
+    )
+    .await?;
+    Ok(classify_new_callsigns(
+        callsigns_in_period,
+        &callsign_last_seen,
+        dt_from_millis(req.since_date_inclusive_ms)?,
+    ))
+}
+
+#[derive(FromQueryResult)]
+struct NewCallsignValueRow {
+    callsign: String,
+}
+
+#[derive(FromQueryResult)]
+struct NewCallsignLastSeenRow {
+    callsign: String,
+    last_seen: Option<NaiveDateTime>,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn load_new_callsigns_in_range_with_db(
+    user_id: &uuid::Uuid,
     req: &AnalysisStatsReq,
     since_ms: i64,
     till_ms: i64,
     period_end: ReportPeriodEnd,
     group_master_keys: &[String],
     include_aor_filter: bool,
-) -> Result<Vec<NewCallsignQueryRow>, AppError> {
+    db: &DatabaseConnection,
+    callsign_source: crate::inbox::callsigns::EffectiveCallsignSqlSource,
+    analytics_tag_access: Option<&stats::AnalyticsTagAccess>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<BTreeSet<String>, AppError> {
+    let query = build_new_callsign_filtered_items_query(
+        user_id,
+        req,
+        since_ms,
+        till_ms,
+        period_end,
+        group_master_keys,
+        include_aor_filter,
+        callsign_source,
+        analytics_tag_access,
+        scope,
+    )?;
+    let rows = match callsign_source {
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres => {
+            NewCallsignValueRow::find_by_statement(
+                effective_callsign_values_statement(query),
+            )
+            .all(db)
+            .await
+            .c(h!())?
+        }
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Analytics => {
+            let (query, callsign_alias) = join_analytics_message_callsign(
+                query,
+                "new_callsign_value",
+                scope,
+            );
+            query
+                .select_only()
+                .column_as(
+                    Expr::col((callsign_alias.clone(), Alias::new("callsign"))),
+                    "callsign",
+                )
+                .filter(
+                    Expr::col((callsign_alias.clone(), Alias::new("callsign")))
+                        .is_not_null(),
+                )
+                .distinct()
+                .order_by_asc(Expr::col((
+                    callsign_alias,
+                    Alias::new("callsign"),
+                )))
+                .into_model::<NewCallsignValueRow>()
+                .all(db)
+                .await
+                .c(h!())?
+        }
+    };
+    Ok(rows.into_iter().map(|row| row.callsign).collect())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn load_new_callsign_last_seen_with_db(
+    user_id: &uuid::Uuid,
+    req: &AnalysisStatsReq,
+    since_ms: i64,
+    till_ms: i64,
+    period_end: ReportPeriodEnd,
+    group_master_keys: &[String],
+    include_aor_filter: bool,
+    db: &DatabaseConnection,
+    callsign_source: crate::inbox::callsigns::EffectiveCallsignSqlSource,
+    analytics_tag_access: Option<&stats::AnalyticsTagAccess>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<BTreeMap<String, NaiveDateTime>, AppError> {
+    let query = build_new_callsign_filtered_items_query(
+        user_id,
+        req,
+        since_ms,
+        till_ms,
+        period_end,
+        group_master_keys,
+        include_aor_filter,
+        callsign_source,
+        analytics_tag_access,
+        scope,
+    )?;
+    let rows = match callsign_source {
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres => {
+            NewCallsignLastSeenRow::find_by_statement(
+                new_callsign_last_seen_statement(query),
+            )
+            .all(db)
+            .await
+            .c(h!())?
+        }
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Analytics => {
+            let (query, callsign_alias) = join_analytics_message_callsign(
+                query,
+                "new_callsign_last_seen",
+                scope,
+            );
+            query
+                .select_only()
+                .column_as(
+                    Expr::col((callsign_alias.clone(), Alias::new("callsign"))),
+                    "callsign",
+                )
+                .expr_as(
+                    Expr::cust("MAX(sigint_inbox_item.datetime)"),
+                    "last_seen",
+                )
+                .filter(
+                    Expr::col((callsign_alias.clone(), Alias::new("callsign")))
+                        .is_not_null(),
+                )
+                .group_by(Expr::col((
+                    callsign_alias.clone(),
+                    Alias::new("callsign"),
+                )))
+                .order_by_asc(Expr::col((
+                    callsign_alias,
+                    Alias::new("callsign"),
+                )))
+                .into_model::<NewCallsignLastSeenRow>()
+                .all(db)
+                .await
+                .c(h!())?
+        }
+    };
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            row.last_seen.map(|last_seen| (row.callsign, last_seen))
+        })
+        .collect())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_new_callsign_filtered_items_query(
+    user_id: &uuid::Uuid,
+    req: &AnalysisStatsReq,
+    since_ms: i64,
+    till_ms: i64,
+    period_end: ReportPeriodEnd,
+    group_master_keys: &[String],
+    include_aor_filter: bool,
+    callsign_source: crate::inbox::callsigns::EffectiveCallsignSqlSource,
+    analytics_tag_access: Option<&stats::AnalyticsTagAccess>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<signal_message::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let rows = signal_message::Entity::find()
+    let query = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
@@ -5168,68 +5645,207 @@ async fn load_new_callsign_rows(
                 sigint_inbox_item::Column::Datetime.lt(dt_from_millis(till_ms)?)
             }
         });
-    let rows = filter_selected_senders(rows, &req.selected_senders)?;
-    let rows = filter_selected_freqs(rows, &req.selected_freqs)?;
-    let rows = filter_selected_posts(rows, &req.selected_posts)?;
-    let rows = filter_selected_units(
-        rows,
+    let query = if let Some(scope) = scope {
+        query
+            .filter(scope.condition((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Id,
+            )))
+            .filter(scope.condition((
+                signal_message::Entity,
+                signal_message::Column::Id,
+            )))
+    } else {
+        query
+    };
+    let query = filter_selected_senders(query, &req.selected_senders)?;
+    let query = filter_selected_freqs(query, &req.selected_freqs)?;
+    let query = filter_selected_posts(query, &req.selected_posts)?;
+    let query = filter_selected_units(
+        query,
         &req.selected_units,
         &req.units_exact_match_only,
     )?;
-    let rows = filter_selected_locations(
-        rows,
+    let query = filter_selected_locations(
+        query,
         &req.selected_locations,
         include_peleng_locations,
     )?;
-    let rows = filter_selected_callsigns(rows, &req.selected_callsigns)?;
-    let rows = filter_search(rows, &req.search)?;
-    let rows = filter_selected_tags(
-        rows,
-        &req.selected_tags,
-        &req.denied_tags,
-        &req.tag_presence,
-        &req.or_bookmarked,
-        &req.or_important,
-        &req.or_with_coords,
-        &req.or_without_coords,
-        &req.or_with_extended_form,
-        &req.filter_tags_option,
-        &req.without_model_tags,
-        user_id,
-        req.report_tags_only_this_unit.unwrap_or(false),
+    let query = filter_selected_callsigns_for_source(
+        query,
+        &req.selected_callsigns,
+        callsign_source,
+        scope,
     )?;
-    let rows = if include_aor_filter {
-        filter_selected_aors(rows, &req.selected_aors).c(h!())?
-    } else {
-        rows
+    let query = filter_search(query, &req.search)?;
+    let query = match callsign_source {
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres => {
+            filter_selected_tags(
+                query,
+                &req.selected_tags,
+                &req.denied_tags,
+                &req.tag_presence,
+                &req.or_bookmarked,
+                &req.or_important,
+                &req.or_with_coords,
+                &req.or_without_coords,
+                &req.or_with_extended_form,
+                &req.filter_tags_option,
+                &req.without_model_tags,
+                user_id,
+                req.report_tags_only_this_unit.unwrap_or(false),
+            )?
+        }
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Analytics => {
+            let analytics_tag_access = analytics_tag_access.context(h!())?;
+            filter_selected_tags_analytics(
+                query,
+                &req.selected_tags,
+                &req.denied_tags,
+                &req.tag_presence,
+                &req.or_bookmarked,
+                &req.or_important,
+                &req.or_with_coords,
+                &req.or_without_coords,
+                &req.or_with_extended_form,
+                &req.filter_tags_option,
+                &req.without_model_tags,
+                user_id,
+                req.report_tags_only_this_unit.unwrap_or(false),
+                &analytics_tag_access.accessible_tag_ids,
+                &analytics_tag_access.unit_login_ids,
+                scope,
+            )?
+        }
     };
-    let rows = filter_selected_networks(
-        rows,
+    let query = if include_aor_filter {
+        filter_selected_aors(query, &req.selected_aors).c(h!())?
+    } else {
+        query
+    };
+    let query = filter_selected_networks(
+        query,
         &req.selected_networks,
         &req.without_network,
     )
     .c(h!())?;
-    let rows = filter_selected_metadata_for_analysis_stats(rows, req)?;
-    let rows = rows
-        .distinct()
-        .into_model::<NewCallsignDbRow>()
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
-    let inbox_item_ids = rows.iter().map(|row| row.id).collect_vec();
-    let callsigns_by_item_id =
-        crate::inbox::callsigns::load_by_item_ids(&env.dbx, &inbox_item_ids)
-            .await?;
-    Ok(rows
-        .into_iter()
-        .map(|row| NewCallsignQueryRow {
-            callsigns: callsigns_by_item_id
-                .get(&row.id)
-                .map(|callsigns| callsigns.effective())
-                .unwrap_or_default(),
-            timestamp: row.timestamp,
-        })
-        .collect())
+    let query = filter_selected_metadata_for_analysis_stats(query, req)?;
+    Ok(match callsign_source {
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres => {
+            query.distinct()
+        }
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Analytics => query,
+    })
+}
+
+fn filter_selected_callsigns_for_source<Q>(
+    query: Q,
+    selected_callsigns: &Option<Vec<String>>,
+    callsign_source: crate::inbox::callsigns::EffectiveCallsignSqlSource,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QuerySelect,
+{
+    let Some(selected_callsigns) = selected_callsigns
+        .as_ref()
+        .filter(|callsigns| !callsigns.is_empty())
+    else {
+        return Ok(query);
+    };
+    match callsign_source {
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres => {
+            filter_selected_callsigns(query, &Some(selected_callsigns.clone()))
+        }
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Analytics => {
+            let callsign_alias = Alias::new("new_callsign_filter");
+            let mut query = query;
+            QuerySelect::query(&mut query).join_as(
+                JoinType::InnerJoin,
+                (
+                    Alias::new("echo_clickhouse_derived"),
+                    Alias::new("message_callsign"),
+                ),
+                callsign_alias.clone(),
+                Condition::all()
+                    .add(
+                        Expr::col((
+                            callsign_alias.clone(),
+                            Alias::new("sigint_inbox_item_id"),
+                        ))
+                        .equals((
+                            sigint_inbox_item::Entity,
+                            sigint_inbox_item::Column::Id,
+                        )),
+                    )
+                    .add(
+                        Expr::col((
+                            callsign_alias.clone(),
+                            Alias::new("callsign"),
+                        ))
+                        .is_in(selected_callsigns.clone()),
+                    ),
+            );
+            if let Some(scope) = scope {
+                QuerySelect::query(&mut query).cond_where(scope.condition((
+                    callsign_alias,
+                    Alias::new("sigint_inbox_item_id"),
+                )));
+            }
+            Ok(query)
+        }
+    }
+}
+
+fn effective_callsign_values_statement(
+    query: Select<signal_message::Entity>,
+) -> Statement {
+    new_callsign_statement(
+        query,
+        r#"
+SELECT DISTINCT all_callsigns.callsign
+FROM all_callsigns
+ORDER BY all_callsigns.callsign
+"#,
+    )
+}
+
+fn new_callsign_last_seen_statement(
+    query: Select<signal_message::Entity>,
+) -> Statement {
+    new_callsign_statement(
+        query,
+        r#"
+SELECT
+    all_callsigns.callsign,
+    MAX(filtered_items.timestamp) AS last_seen
+FROM all_callsigns
+INNER JOIN filtered_items
+    ON filtered_items.id = all_callsigns.inbox_item_id
+GROUP BY all_callsigns.callsign
+ORDER BY all_callsigns.callsign
+"#,
+    )
+}
+
+fn new_callsign_statement(
+    query: Select<signal_message::Entity>,
+    result_sql: &str,
+) -> Statement {
+    let filtered_items = query.build(DbBackend::Postgres);
+    let values = filtered_items
+        .values
+        .map(|values| values.0)
+        .unwrap_or_default();
+    let callsign_ctes =
+        crate::inbox::callsigns::postgres_effective_callsign_ctes(
+            &filtered_items.sql,
+        );
+    Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        format!("{callsign_ctes}\n{result_sql}"),
+        values,
+    )
 }
 
 fn classify_new_callsigns(

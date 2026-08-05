@@ -14,6 +14,83 @@ use uuid::Uuid;
 pub const CALLSIGN_BACKFILL_WATERMARK_KEY: &str =
     "sigint_inbox_item_callsign_backfill_through_id";
 
+#[derive(Clone, Copy)]
+pub(crate) enum EffectiveCallsignSqlSource {
+    Postgres,
+    Analytics,
+}
+
+pub(crate) fn postgres_effective_callsign_ctes(
+    filtered_items_sql: &str,
+) -> String {
+    format!(
+        r#"
+WITH filtered_items AS ({filtered_items_sql})
+, normalized_callsigns AS (
+    SELECT DISTINCT
+        callsign.sigint_inbox_item_id AS inbox_item_id,
+        callsign.callsign
+    FROM sigint_inbox_item_callsign AS callsign
+    INNER JOIN filtered_items
+        ON filtered_items.id = callsign.sigint_inbox_item_id
+    WHERE callsign.deleted = FALSE
+)
+, legacy_callsigns AS (
+    SELECT DISTINCT
+        item.id AS inbox_item_id,
+        legacy.callsign
+    FROM filtered_items
+    INNER JOIN sigint_inbox_item AS item ON item.id = filtered_items.id
+    CROSS JOIN LATERAL jsonb_array_elements_text(
+        CASE
+            WHEN jsonb_typeof(item.callsigns) = 'array'
+                THEN item.callsigns
+            ELSE '[]'::jsonb
+        END
+    ) AS legacy(callsign)
+    WHERE item.id > coalesce((
+        SELECT nullif(dk.v #>> '{{}}', '')::bigint
+        FROM delta_kv AS dk
+        WHERE dk.k = '{CALLSIGN_BACKFILL_WATERMARK_KEY}'
+    ), 0)
+      AND NOT EXISTS (
+        SELECT 1
+        FROM sigint_inbox_item_callsign AS callsign
+        WHERE callsign.sigint_inbox_item_id = item.id
+    )
+    UNION
+    SELECT DISTINCT
+        item.id AS inbox_item_id,
+        legacy.callsign
+    FROM filtered_items
+    INNER JOIN sigint_inbox_item AS item ON item.id = filtered_items.id
+    CROSS JOIN LATERAL jsonb_array_elements_text(
+        CASE
+            WHEN jsonb_typeof(item.callsigns_alg2) = 'array'
+                THEN item.callsigns_alg2
+            ELSE '[]'::jsonb
+        END
+    ) AS legacy(callsign)
+    WHERE item.id > coalesce((
+        SELECT nullif(dk.v #>> '{{}}', '')::bigint
+        FROM delta_kv AS dk
+        WHERE dk.k = '{CALLSIGN_BACKFILL_WATERMARK_KEY}'
+    ), 0)
+      AND NOT EXISTS (
+        SELECT 1
+        FROM sigint_inbox_item_callsign AS callsign
+        WHERE callsign.sigint_inbox_item_id = item.id
+    )
+)
+, all_callsigns AS (
+    SELECT inbox_item_id, callsign FROM normalized_callsigns
+    UNION ALL
+    SELECT inbox_item_id, callsign FROM legacy_callsigns
+)
+"#,
+    )
+}
+
 pub async fn oneoff_backfill(
     mode: Mode,
     ps: &crate::OneoffBackfillInboxItemCallsignsPs,
@@ -228,11 +305,7 @@ pub fn from_legacy_values(
 }
 
 pub fn sql_filter_condition(selected_callsigns: &[String]) -> String {
-    let selected_callsigns = selected_callsigns
-        .iter()
-        .map(|callsign| format!("'{}'", callsign.replace('\'', "''")))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let selected_callsigns = sql_string_literals(selected_callsigns);
     format!(
         r#"(
 exists (
@@ -262,6 +335,14 @@ or (
     )"#,
         watermark_key = CALLSIGN_BACKFILL_WATERMARK_KEY,
     )
+}
+
+pub(crate) fn sql_string_literals(values: &[String]) -> String {
+    values
+        .iter()
+        .map(|callsign| format!("'{}'", callsign.replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn sql_exists_condition(inbox_alias: &str) -> String {
@@ -762,5 +843,17 @@ mod tests {
         let condition = sql_exists_condition("sigint_inbox_item");
         assert!(condition.contains("not exists"));
         assert_eq!(condition.matches("and not siic.deleted").count(), 1);
+    }
+
+    #[test]
+    fn postgres_effective_cte_includes_both_legacy_sources() {
+        let sql =
+            postgres_effective_callsign_ctes("SELECT id FROM filtered_source");
+
+        assert!(sql.contains("sigint_inbox_item_callsign"));
+        assert!(sql.contains("item.callsigns)"));
+        assert!(sql.contains("item.callsigns_alg2)"));
+        assert!(sql.contains(CALLSIGN_BACKFILL_WATERMARK_KEY));
+        assert_eq!(sql.matches("AND NOT EXISTS").count(), 2);
     }
 }
