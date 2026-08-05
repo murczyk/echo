@@ -29,11 +29,13 @@ function createSyntheticUnsetUnit(): Unit {
     division: '',
     army: '',
     comment: '',
+    orbitNote: null,
     active: true,
     isDeduplicateCandidate: null,
     createdAt: 0,
     createdByLoginId: '',
     hasOrbit: false,
+    orbitUnitIds: [],
   };
 }
 

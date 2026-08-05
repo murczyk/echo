@@ -38,6 +38,8 @@ pub struct Model {
     pub sigint_origin_id: Option<i64>,
     pub original_id: Option<i64>,
     pub is_deduplicate_candidate: Option<bool>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub orbit_note: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

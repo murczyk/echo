@@ -308,6 +308,7 @@ mod tests {
             sigint_origin_id: Default::default(),
             original_id: Default::default(),
             is_deduplicate_candidate: Default::default(),
+            orbit_note: Default::default(),
         }];
         let mut unit_mapping = Default::default();
         let mut suggested_mapping = Default::default();
@@ -346,6 +347,7 @@ mod tests {
             sigint_origin_id: Default::default(),
             original_id: Default::default(),
             is_deduplicate_candidate: Default::default(),
+            orbit_note: Default::default(),
         }];
         let mut unit_mapping = Default::default();
         let mut suggested_mapping = Default::default();

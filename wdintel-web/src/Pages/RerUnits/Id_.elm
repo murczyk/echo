@@ -649,6 +649,16 @@ unitOverviewCard shared unit =
                     ]
                     [ text (textOrDash unit.comment) ]
                 ]
+            , div [ class "col-12" ]
+                [ div [ class "text-secondary text-sm mb-1" ] [ text "Примітка Orbit" ]
+                , div
+                    [ class "border rounded p-3"
+                    , style "min-height" "72px"
+                    , style "white-space" "pre-wrap"
+                    , style "overflow-wrap" "anywhere"
+                    ]
+                    [ text (textOrDash (Maybe.withDefault "" unit.orbitNote)) ]
+                ]
             ]
         ]
 
@@ -755,10 +765,12 @@ orbitUnitDetails shared orbitUnit =
         , div [ class "row g-4" ]
             [ overviewField "ID підрозділу" orbitUnit.unitId
             , overviewMaybeField "Оригінальна назва" orbitUnit.unitNameOriginal
-            , overviewMaybeField "Повна назва" orbitUnit.generativeUnitNameFull
-            , overviewMaybeField
-                "Підпорядкування"
-                (Maybe.map orbitParentPath orbitUnit.operationalUnitNameFull)
+            , overviewParentUnits
+                "Структурне підпорядкування"
+                orbitUnit.generativeParentUnits
+            , overviewParentUnits
+                "Оперативне підпорядкування"
+                orbitUnit.operationalParentUnits
             , overviewMaybeField "Номер підрозділу" orbitUnit.unitNumber
             , overviewMaybeListField "Альтернативні назви" orbitUnit.unitAlternateNames
             , overviewMaybeListField "Альтернативні номери" orbitUnit.unitAlternateNumbers
@@ -815,12 +827,32 @@ orbitDictionaryValue value =
         |> Maybe.withDefault ""
 
 
-orbitParentPath : String -> String
-orbitParentPath value =
-    value
-        |> String.split " / "
-        |> List.drop 1
-        |> String.join " / "
+overviewParentUnits : String -> List B.OrbitParentUnit -> Html Msg
+overviewParentUnits labelText parents =
+    div [ class "col-md-6" ]
+        [ div [ class "text-secondary text-sm mb-1" ] [ text labelText ]
+        , div
+            [ class "fw-semibold"
+            , style "overflow-wrap" "anywhere"
+            ]
+            (if List.isEmpty parents then
+                [ text "—" ]
+
+             else
+                parents
+                    |> List.map
+                        (\parent ->
+                            case parent.sigintUnitId of
+                                Just sigintUnitId ->
+                                    a [ href ("/rer-units/" ++ String.fromInt sigintUnitId) ]
+                                        [ text parent.name ]
+
+                                Nothing ->
+                                    text parent.name
+                        )
+                    |> List.intersperse (text " / ")
+            )
+        ]
 
 
 overviewField : String -> String -> Html Msg
