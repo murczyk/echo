@@ -22,6 +22,12 @@ pub async fn oneoff_backfill(
     let batch_size = ps
         .batch_size
         .unwrap_or(crate::config::INBOX_ITEM_CALLSIGN_BACKFILL_BATCH_SIZE);
+    if batch_size == 0 {
+        return Err(AppError::BL {
+            msg: "inbox item callsign backfill batch size must be greater than zero"
+                .to_string(),
+        });
+    }
     let through_id = match ps.through_id {
         Some(through_id) => through_id,
         None => sigint_inbox_item::Entity::find()
@@ -35,6 +41,13 @@ pub async fn oneoff_backfill(
             .unwrap_or(0),
     };
     let watermark = backfill_watermark(&dbx).await?;
+    if ps.after_id.is_some_and(|after_id| after_id > watermark) {
+        return Err(AppError::BL {
+            msg: format!(
+                "inbox item callsign backfill after_id must not exceed the stored watermark ({watermark})"
+            ),
+        });
+    }
     let mut after_id = ps.after_id.unwrap_or(watermark);
     let mut processed = 0_u64;
     let mut expected_rows = 0_usize;
