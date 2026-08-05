@@ -7092,7 +7092,7 @@ mod tests {
     fn distinct_count_query_aggregates_without_grouping() {
         let query = build_distinct_count_query(
             sigint_inbox_item::Entity::find(),
-            Expr::col(sigint_inbox_item::Column::Freq).into(),
+            Expr::col(sigint_inbox_item::Column::Freq),
         )
         .build(DbBackend::Postgres)
         .to_string();
