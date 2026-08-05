@@ -28,7 +28,6 @@ use chrono::prelude::*;
 use itertools::Itertools;
 use redis::AsyncCommands;
 use rust_xlsxwriter::{Format, Workbook};
-use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::{prelude::Expr, sea_query::Alias, *};
 use sea_query::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -1487,8 +1486,10 @@ where
                     nonempty_locations.push(location.clone());
                     let loc = format_location(location);
                     expressions.push(
-                        sigint_inbox_item::Column::LocationV2
-                            .contains(loc.clone()),
+                        sea_orm::sea_query::extension::postgres::PgExpr::contains(
+                            Expr::col(sigint_inbox_item::Column::LocationV2),
+                            loc.clone(),
+                        ),
                     );
                 }
             }
@@ -2949,19 +2950,27 @@ where
         if !search_parts.ts_query.is_empty() {
             let search_tsv = Expr::cust("sigint_search.search_tsv");
             let search_filter =
-                search_tsv.clone().matches(Expr::cust_with_values(
-                    "websearch_to_tsquery('russian', $1)",
-                    vec![search_parts.ts_query.clone()],
-                ));
-            let search_filter =
-                match search::ts_prefix_query(&search_parts.ts_query) {
-                    Some(ts_prefix_query) => search_filter.or(search_tsv
-                        .matches(Expr::cust_with_values(
+                sea_orm::sea_query::extension::postgres::PgExpr::matches(
+                    search_tsv.clone(),
+                    Expr::cust_with_values(
+                        "websearch_to_tsquery('russian', $1)",
+                        vec![search_parts.ts_query.clone()],
+                    ),
+                );
+            let search_filter = match search::ts_prefix_query(
+                &search_parts.ts_query,
+            ) {
+                Some(ts_prefix_query) => search_filter.or(
+                    sea_orm::sea_query::extension::postgres::PgExpr::matches(
+                        search_tsv,
+                        Expr::cust_with_values(
                             "to_tsquery('russian', $1)",
                             vec![ts_prefix_query],
-                        ))),
-                    None => search_filter,
-                };
+                        ),
+                    ),
+                ),
+                None => search_filter,
+            };
             q2 = q2
                 .join(
                     JoinType::InnerJoin,

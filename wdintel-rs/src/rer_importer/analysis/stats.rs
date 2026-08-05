@@ -1241,14 +1241,14 @@ fn callsign_frequency_matches_statement(
             "callsign = ANY($1)",
             vec![required_callsigns],
         ))
-        .add_group_by([Expr::col(freq_alias.clone()).into()])
+        .add_group_by([Expr::col(freq_alias.clone())])
         .and_having(Expr::cust_with_values(
             "COUNT(DISTINCT callsign) >= $1",
             vec![std::cmp::max(min_matches, 1)],
         ))
         .order_by_expr(Expr::cust("COUNT(DISTINCT callsign)"), Order::Desc)
         .order_by_expr(Expr::cust("message_count"), Order::Desc)
-        .order_by_expr(Expr::col(freq_alias).into(), Order::Asc)
+        .order_by_expr(Expr::col(freq_alias), Order::Asc)
         .to_owned();
     matches_query.limit(ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT);
     let matches_query = Query::with()
@@ -1563,8 +1563,7 @@ pub(super) async fn count_senders_with_db(
         Expr::col((
             signal_message_group::Entity,
             signal_message_group::Column::Sender,
-        ))
-        .into(),
+        )),
         db,
     )
     .await
@@ -3331,7 +3330,7 @@ fn build_tags_count_query(
         build_tags_query_parts(req, login_str, dt_since, dt_till, master_keys)?;
     let tags_res = build_distinct_count_query(
         tags_res,
-        Expr::col(sigint_inbox_item_tag::Column::TagId).into(),
+        Expr::col(sigint_inbox_item_tag::Column::TagId),
     );
     Ok(build_tags_with_query(ctes, tags_res))
 }
@@ -3534,7 +3533,7 @@ fn build_tags_analytics_count_query_with_scope(
             true,
             None,
         )?,
-        Expr::col(sigint_inbox_item_tag::Column::TagId).into(),
+        Expr::col(sigint_inbox_item_tag::Column::TagId),
     ))
 }
 
@@ -5401,8 +5400,8 @@ fn build_network_frequency_analytics_arm(
         group_aor_alias,
         group_value_alias,
         effective_groups,
-        Expr::col((network_alias.clone(), Alias::new("n_left"))).into(),
-        Expr::col((network_alias, Alias::new("n_right"))).into(),
+        Expr::col((network_alias.clone(), Alias::new("n_left"))),
+        Expr::col((network_alias, Alias::new("n_right"))),
     );
     matches.to_owned()
 }
@@ -5502,13 +5501,11 @@ fn build_network_linked_analytics_arm(
         Expr::col((
             network_value_alias.clone(),
             area_of_responsibility::Column::LeftBound,
-        ))
-        .into(),
+        )),
         Expr::col((
             network_value_alias.clone(),
             area_of_responsibility::Column::RightBound,
-        ))
-        .into(),
+        )),
     );
     matches.and_where(
         Expr::col((network_alias, sigint_network::Column::Deleted)).eq(false),
@@ -5986,8 +5983,8 @@ fn build_networks_query_for_login(
             network_stats_group_join_condition(
                 m.clone(),
                 g.clone(),
-                Expr::col((n.clone(), Alias::new("n_left"))).into(),
-                Expr::col((n.clone(), Alias::new("n_right"))).into(),
+                Expr::col((n.clone(), Alias::new("n_left"))),
+                Expr::col((n.clone(), Alias::new("n_right"))),
             ),
         );
 
@@ -6066,13 +6063,11 @@ fn build_networks_query_for_login(
                 Expr::col((
                     linked_network_value.clone(),
                     area_of_responsibility::Column::LeftBound,
-                ))
-                .into(),
+                )),
                 Expr::col((
                     linked_network_value.clone(),
                     area_of_responsibility::Column::RightBound,
-                ))
-                .into(),
+                )),
             ),
         )
         .and_where(

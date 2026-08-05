@@ -223,12 +223,12 @@ fn write_profile(
     bytes.push(b'\n');
     let mut file = OpenOptions::new()
         .create(true)
+        .truncate(true)
         .write(true)
         .mode(0o600)
         .open(path)
         .c(h!())?;
     fs::set_permissions(path, fs::Permissions::from_mode(0o600)).c(h!())?;
-    file.set_len(0).c(h!())?;
     file.write_all(&bytes).c(h!())?;
     file.sync_all().c(h!())?;
     Ok(())
