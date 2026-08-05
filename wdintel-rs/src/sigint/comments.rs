@@ -410,22 +410,20 @@ fn goi_association_export_message(
     association: &goi_association::Model,
     messages: &HashMap<String, SignalMessageExportSource>,
 ) -> Option<(String, NaiveDateTime)> {
-    association
+    if let Some(message_uid) = association
         .message_uid
         .as_deref()
         .and_then(|message_uid| non_empty_text(Some(message_uid)))
-        .and_then(|message_uid| {
-            messages
-                .get(&message_uid)
-                .map(|message| (message.body.clone(), message.message_ts))
-        })
-        .or_else(|| {
-            crate::organism::goi::message_uid::association_original_message(
-                &association.row,
-            )
-            .and_then(|body| non_empty_text(Some(body)))
-            .map(|body| (body, goi_association_message_ts(association)))
-        })
+    {
+        return messages
+            .get(&message_uid)
+            .map(|message| (message.body.clone(), message.message_ts));
+    }
+    crate::organism::goi::message_uid::association_original_message(
+        &association.row,
+    )
+    .and_then(|body| non_empty_text(Some(body)))
+    .map(|body| (body, goi_association_message_ts(association)))
 }
 
 async fn load_mapped_goi_association_comment_rows(
