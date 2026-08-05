@@ -506,6 +506,7 @@ where
                 sigint_inbox_item_callsign::Column::SigintInboxItemId
                     .is_in(item_ids.to_vec()),
             )
+            .filter(sigint_inbox_item_callsign::Column::Deleted.eq(false))
             .order_by_asc(sigint_inbox_item_callsign::Column::SigintInboxItemId)
             .order_by_asc(sigint_inbox_item_callsign::Column::Source)
             .order_by_asc(sigint_inbox_item_callsign::Column::Ordering)
@@ -513,14 +514,11 @@ where
             .all(dbx)
             .await
             .c(h!())?;
-        let normalized_item_ids = rows
+        let active_item_ids = rows
             .iter()
             .map(|row| row.sigint_inbox_item_id)
             .collect::<HashSet<_>>();
         for row in rows {
-            if row.deleted {
-                continue;
-            }
             let callsigns: &mut InboxItemCallsigns =
                 result.entry(row.sigint_inbox_item_id).or_default();
             match row.source {
@@ -535,13 +533,45 @@ where
         let fallback_item_ids = item_ids
             .iter()
             .filter(|item_id| {
-                **item_id > watermark && !normalized_item_ids.contains(item_id)
+                **item_id > watermark && !active_item_ids.contains(item_id)
             })
             .copied()
+            .collect::<Vec<_>>();
+        let normalized_item_ids =
+            load_normalized_item_ids(dbx, &fallback_item_ids).await?;
+        let fallback_item_ids = fallback_item_ids
+            .into_iter()
+            .filter(|item_id| !normalized_item_ids.contains(item_id))
             .collect::<Vec<_>>();
         load_legacy_by_item_ids(dbx, &fallback_item_ids, &mut result).await?;
     }
     Ok(result)
+}
+
+async fn load_normalized_item_ids<C>(
+    dbx: &C,
+    item_ids: &[i64],
+) -> Result<HashSet<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if item_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    Ok(sigint_inbox_item_callsign::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item_callsign::Column::SigintInboxItemId)
+        .filter(
+            sigint_inbox_item_callsign::Column::SigintInboxItemId
+                .is_in(item_ids.to_vec()),
+        )
+        .distinct()
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect())
 }
 
 async fn load_legacy_by_item_ids<C>(
