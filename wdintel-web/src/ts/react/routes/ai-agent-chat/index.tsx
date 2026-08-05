@@ -80,10 +80,7 @@ const GENERIC_REQUEST_FAILURE = 'Не вдалося виконати запит
 const GENERIC_STREAM_FAILURE = 'Не вдалося відновити з’єднання з потоком відповіді.';
 const ACTIVE_CONVERSATION_STORAGE_KEY = 'echo.ai-agent.active-conversation-id';
 
-export const AI_AGENT_CHAT_CARD_HEIGHT = {
-  xs: 'calc(100dvh - 9.5rem)',
-  md: 'min(960px, calc(100dvh - 11rem))',
-} as const;
+export const AI_AGENT_CHAT_CARD_HEIGHT = '100%';
 
 export function historyPaneMotionStyles(open: boolean) {
   return {
@@ -298,7 +295,7 @@ function ConversationMessage({ message }: { message: AiAgentMessage }) {
       }}
     >
       <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
-        {assistant ? 'ШІ' : 'Ви'}
+        {assistant ? 'ЕХО Агент' : 'Ви'}
       </Typography>
       {assistant ? (
         <MarkdownContent>{message.content}</MarkdownContent>
@@ -365,7 +362,7 @@ function LiveResponse({ request }: { request: LiveRequest }) {
           }}
         >
           <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
-            ШІ
+            ЕХО Агент
           </Typography>
           <MarkdownContent>{request.assistantText}</MarkdownContent>
         </Box>
@@ -426,7 +423,7 @@ function LiveRequestView({
               },
             }}
           >
-            {request.state === 'queued' ? 'Готуємо запит…' : 'ШІ готує відповідь…'}
+            {request.state === 'queued' ? 'Готуємо запит…' : 'ЕХО Агент готує відповідь…'}
           </Typography>
           <Tooltip title="Скасувати запит">
             <span>
@@ -848,7 +845,13 @@ export function AiAgentChat({
   const visibleMessages = messages.filter((message) => !liveRequestIds.has(message.requestId));
   const interactionLocked = submitting || activeRequestExists;
 
-  if (!configuration) return null;
+  if (!configuration) {
+    return (
+      <Box sx={{ height: '100%', display: 'grid', placeItems: 'center' }}>
+        <CircularProgress aria-label="Завантаження ШІ чату" />
+      </Box>
+    );
+  }
   if (loading && configuration.enabled) {
     return (
       <Box sx={{ py: 6, display: 'flex', justifyContent: 'center' }}>
@@ -859,16 +862,14 @@ export function AiAgentChat({
   if (!configuration.enabled) return null;
 
   return (
-    <Card
-      variant="outlined"
+    <Box
       sx={{
-        borderRadius: 0,
         width: '100%',
         height: AI_AGENT_CHAT_CARD_HEIGHT,
         display: 'flex',
         position: 'relative',
         overflow: 'hidden',
-        bgcolor: 'var(--color-card)',
+        bgcolor: 'var(--background-color)',
       }}
     >
       <Box
@@ -886,13 +887,16 @@ export function AiAgentChat({
           overflowY: 'auto',
         }}
       >
-        <Stack direction="row" alignItems="center" sx={{ minHeight: 56, px: 1.5 }}>
+        <Stack direction="row" alignItems="center" sx={{ minHeight: 40, px: 1.5 }}>
           <Typography variant="h6" fontWeight={600} sx={{ flex: 1 }}>
             Розмови
           </Typography>
-          <IconButton aria-label="Закрити історію розмов" onClick={() => setHistoryOpen(false)}>
-            <CloseIcon />
-          </IconButton>
+          <SidePanelToggleButton
+            side="left"
+            active
+            label="Згорнути ліву панель"
+            onClick={() => setHistoryOpen(false)}
+          />
         </Stack>
         <Divider />
         <List sx={{ px: 1, py: 1 }}>
@@ -924,28 +928,15 @@ export function AiAgentChat({
           ))}
         </List>
       </Box>
-      <CardContent
-        sx={{
-          p: { xs: 2, md: 3 },
-          flex: 1,
-          minWidth: 0,
-          minHeight: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          '&:last-child': { pb: { xs: 2, md: 3 } },
-        }}
-      >
-        <Stack spacing={2} sx={{ flex: 1, minHeight: 0 }}>
-          <Stack direction="row" gap={1} alignItems="center">
+      <Stack sx={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
+        {!historyOpen ? (
+          <Stack spacing={0.5} sx={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }}>
             <SidePanelToggleButton
               side="left"
-              active={historyOpen}
-              label={historyOpen ? 'Згорнути ліву панель' : 'Розгорнути ліву панель'}
-              onClick={() => setHistoryOpen((current) => !current)}
+              active={false}
+              label="Розгорнути ліву панель"
+              onClick={() => setHistoryOpen(true)}
             />
-            <Typography component="h2" variant="h5" fontWeight={600} sx={{ flex: 1 }}>
-              ШІ
-            </Typography>
             <Tooltip title="Нова розмова">
               <span>
                 <IconButton
@@ -959,135 +950,153 @@ export function AiAgentChat({
               </span>
             </Tooltip>
           </Stack>
+        ) : null}
+        <Box
+          sx={{
+            px: { xs: 1, md: 2 },
+            py: { xs: 1, md: 2 },
+            pl: historyOpen ? { xs: 1, md: 2 } : { xs: 6, md: 7 },
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            '&:last-child': { pb: { xs: 1, md: 2 } },
+          }}
+        >
+          <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0 }}>
+            {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
 
-          {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
-          <Divider />
-
-          <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.5 }}>
-            {loadingConversation ? (
-              <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center', py: 5 }}>
-                <CircularProgress />
-              </Box>
-            ) : visibleMessages.length === 0 && liveRequests.length === 0 && !pendingSubmission ? (
-              <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', py: 5 }}>
-                <Typography color="text.secondary" align="center">
-                  Поставте запитання про дані ЕХО
-                </Typography>
-              </Box>
-            ) : (
-              visibleMessages.map((message) => (
-                <ConversationMessage key={message.id} message={message} />
-              ))
-            )}
-            {liveRequests.map((request) => (
-              <LiveRequestView
-                key={request.id}
-                request={request}
-                cancelling={cancellingIds.has(request.id)}
-                onCancel={(id) => void cancelRequest(id)}
-                onReconnect={(current) => void connectToRequest(current.id, current.conversationId)}
-              />
-            ))}
-            {pendingSubmission ? (
-              <Stack spacing={1} data-testid="pending-ai-agent-request">
-                <ConversationMessage
-                  message={{
-                    id: pendingSubmission.id,
-                    requestId: pendingSubmission.id,
-                    requestState: 'queued',
-                    role: 'user',
-                    content: pendingSubmission.prompt,
-                    createdAt: pendingSubmission.createdAt,
-                  }}
+            <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', pr: 0.5 }}>
+              {loadingConversation ? (
+                <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center', py: 5 }}>
+                  <CircularProgress />
+                </Box>
+              ) : visibleMessages.length === 0 &&
+                liveRequests.length === 0 &&
+                !pendingSubmission ? (
+                <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', py: 5 }}>
+                  <Typography color="text.secondary" align="center">
+                    Поставте запитання про дані ЕХО
+                  </Typography>
+                </Box>
+              ) : (
+                visibleMessages.map((message) => (
+                  <ConversationMessage key={message.id} message={message} />
+                ))
+              )}
+              {liveRequests.map((request) => (
+                <LiveRequestView
+                  key={request.id}
+                  request={request}
+                  cancelling={cancellingIds.has(request.id)}
+                  onCancel={(id) => void cancelRequest(id)}
+                  onReconnect={(current) =>
+                    void connectToRequest(current.id, current.conversationId)
+                  }
                 />
-                <Stack direction="row" spacing={1} alignItems="center" color="text.secondary">
-                  <CircularProgress size={13} color="inherit" />
-                  <Typography variant="body2">Надсилаємо…</Typography>
+              ))}
+              {pendingSubmission ? (
+                <Stack spacing={1} data-testid="pending-ai-agent-request">
+                  <ConversationMessage
+                    message={{
+                      id: pendingSubmission.id,
+                      requestId: pendingSubmission.id,
+                      requestState: 'queued',
+                      role: 'user',
+                      content: pendingSubmission.prompt,
+                      createdAt: pendingSubmission.createdAt,
+                    }}
+                  />
+                  <Stack direction="row" spacing={1} alignItems="center" color="text.secondary">
+                    <CircularProgress size={13} color="inherit" />
+                    <Typography variant="body2">Надсилаємо…</Typography>
+                  </Stack>
                 </Stack>
-              </Stack>
-            ) : null}
-            <Box ref={outputAnchorRef} aria-hidden />
-          </Stack>
-
-          <Box
-            component="form"
-            onSubmit={submit}
-            sx={{ border: 1, borderColor: 'divider', borderRadius: 3, px: 1.5, py: 1 }}
-          >
-            <TextField
-              fullWidth
-              multiline
-              maxRows={5}
-              variant="standard"
-              placeholder="Повідомлення"
-              value={draft}
-              disabled={submitting || loadingConversation || !selectedProvider}
-              slotProps={{ input: { disableUnderline: true } }}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
-                  event.currentTarget.closest('form')?.requestSubmit();
-                }
-              }}
-            />
-            <Stack
-              direction="row"
-              alignItems="center"
-              justifyContent="space-between"
-              sx={{ mt: 0.5 }}
-            >
-              <Select
-                variant="standard"
-                disableUnderline
-                value={providerId}
-                disabled={interactionLocked}
-                onChange={(event) => setProviderId(event.target.value)}
-                inputProps={{ 'aria-label': 'Провайдер ШІ' }}
-                sx={{
-                  maxWidth: '70%',
-                  color: 'text.secondary',
-                  fontSize: '0.75rem',
-                  opacity: 0.65,
-                  '& .MuiSelect-select': { py: 0.25, pr: 3 },
-                }}
-              >
-                {configuration.providers.map((provider) => (
-                  <MenuItem
-                    key={provider.id}
-                    value={provider.id}
-                    disabled={providerOptionDisabled(
-                      provider.enabled,
-                      activeConversationId,
-                      providerId,
-                      provider.id,
-                    )}
-                  >
-                    {provider.name}
-                  </MenuItem>
-                ))}
-              </Select>
-              <IconButton
-                type="submit"
-                aria-label="Надіслати"
-                disabled={submitting || !draft.trim() || !selectedProvider}
-                size="small"
-                sx={{
-                  bgcolor: 'text.primary',
-                  color: 'background.paper',
-                  '&:hover': { bgcolor: 'text.secondary' },
-                }}
-              >
-                {submitting ? (
-                  <CircularProgress size={16} color="inherit" />
-                ) : (
-                  <SendOutlinedIcon fontSize="small" />
-                )}
-              </IconButton>
+              ) : null}
+              <Box ref={outputAnchorRef} aria-hidden />
             </Stack>
-          </Box>
-        </Stack>
-      </CardContent>
-    </Card>
+
+            <Box
+              component="form"
+              onSubmit={submit}
+              sx={{ border: 1, borderColor: 'divider', borderRadius: 3, px: 1.5, py: 1 }}
+            >
+              <TextField
+                fullWidth
+                multiline
+                maxRows={5}
+                variant="standard"
+                placeholder="Повідомлення"
+                value={draft}
+                disabled={submitting || loadingConversation || !selectedProvider}
+                slotProps={{ input: { disableUnderline: true } }}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    event.currentTarget.closest('form')?.requestSubmit();
+                  }
+                }}
+              />
+              <Stack
+                direction="row"
+                alignItems="center"
+                justifyContent="space-between"
+                sx={{ mt: 0.5 }}
+              >
+                <Select
+                  variant="standard"
+                  disableUnderline
+                  value={providerId}
+                  disabled={interactionLocked}
+                  onChange={(event) => setProviderId(event.target.value)}
+                  inputProps={{ 'aria-label': 'Провайдер ШІ' }}
+                  sx={{
+                    maxWidth: '70%',
+                    color: 'text.secondary',
+                    fontSize: '0.75rem',
+                    opacity: 0.65,
+                    '& .MuiSelect-select': { py: 0.25, pr: 3 },
+                  }}
+                >
+                  {configuration.providers.map((provider) => (
+                    <MenuItem
+                      key={provider.id}
+                      value={provider.id}
+                      disabled={providerOptionDisabled(
+                        provider.enabled,
+                        activeConversationId,
+                        providerId,
+                        provider.id,
+                      )}
+                    >
+                      {provider.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+                <IconButton
+                  type="submit"
+                  aria-label="Надіслати"
+                  disabled={submitting || !draft.trim() || !selectedProvider}
+                  size="small"
+                  sx={{
+                    bgcolor: 'text.primary',
+                    color: 'background.paper',
+                    '&:hover': { bgcolor: 'text.secondary' },
+                  }}
+                >
+                  {submitting ? (
+                    <CircularProgress size={16} color="inherit" />
+                  ) : (
+                    <SendOutlinedIcon fontSize="small" />
+                  )}
+                </IconButton>
+              </Stack>
+            </Box>
+          </Stack>
+        </Box>
+      </Stack>
+    </Box>
   );
 }

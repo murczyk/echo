@@ -296,9 +296,11 @@ pub fn mattermost_webhook_client(
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(timeout);
-    let client = target.hostname.as_deref().map_or(client, |hostname| {
+    let client = if let Some(hostname) = target.hostname.as_deref() {
         client.resolve_to_addrs(hostname, &target.addresses)
-    });
+    } else {
+        client
+    };
     client.build().map_err(|_| AppError::BL {
         msg: "Mattermost client initialization failed".to_string(),
     })

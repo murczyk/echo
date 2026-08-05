@@ -23,7 +23,7 @@ use sea_orm::{
 use uuid::Uuid;
 
 #[derive(Debug, FromQueryResult)]
-struct AgentLoginMarker {
+struct ManagedAgentLoginMarker {
     id: Uuid,
 }
 
@@ -40,26 +40,20 @@ where
     let Some(env) = req.app_data::<actix_web::web::Data<Env>>() else {
         return next.call(req).await;
     };
-    let agent_login =
-        AgentLoginMarker::find_by_statement(Statement::from_sql_and_values(
+    let agent_login = ManagedAgentLoginMarker::find_by_statement(
+        Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
-select login.id
-from login
-where login.id = $1
-  and (
-      login.roles @> '["ApiAgent"]'::jsonb
-      or exists (
-          select 1 from ai_agent_user_link link
-          where link.agent_login_id = login.id
-      )
-  )
+select link.agent_login_id as id
+from ai_agent_user_link link
+where link.agent_login_id = $1
         "#,
             [login_id.into()],
-        ))
-        .one(&env.dbx)
-        .await
-        .map_err(actix_web::error::ErrorInternalServerError)?;
+        ),
+    )
+    .one(&env.dbx)
+    .await
+    .map_err(actix_web::error::ErrorInternalServerError)?;
     let Some(agent_login) = agent_login else {
         return next.call(req).await;
     };

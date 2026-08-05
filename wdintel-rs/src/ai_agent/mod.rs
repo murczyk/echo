@@ -63,26 +63,22 @@ where
     .one(dbx)
     .await
     .c(h!())?;
-    let login = login::Entity::find_by_id(login_id).one(dbx).await.c(h!())?;
     let default_template_id =
         Uuid::parse_str(crate::config::AI_AGENT_TEMPLATE_LOGIN_ID).c(h!())?;
-    let has_reserved_role = login
-        .as_ref()
-        .map(|login| {
-            serde_json::from_value::<Vec<String>>(login.roles.clone())
-                .c(h!())
-                .map(|roles| has_reserved_agent_role(&roles))
-        })
-        .transpose()?
-        .unwrap_or(false);
     let template = login_id == default_template_id
         || settings
             .and_then(|settings| settings.template_login_id)
             .is_some_and(|template_login_id| template_login_id == login_id)
-        || login.as_ref().is_some_and(|login| {
-            login.login == crate::config::AI_AGENT_TEMPLATE_LOGIN_NAME
-        });
-    if linked || template || has_reserved_role {
+        || login::Entity::find_by_id(login_id)
+            .filter(
+                login::Column::Login
+                    .eq(crate::config::AI_AGENT_TEMPLATE_LOGIN_NAME),
+            )
+            .one(dbx)
+            .await
+            .c(h!())?
+            .is_some();
+    if linked || template {
         return Err(AppError::Forbidden(
             "AI agent accounts are managed only through the AI control plane"
                 .to_string(),
@@ -102,9 +98,6 @@ pub fn unmanaged_login_condition() -> Condition {
             login::Column::Login
                 .ne(crate::config::AI_AGENT_TEMPLATE_LOGIN_NAME),
         )
-        .add(Expr::cust(
-            "not (login.roles ?| array['ApiAgent', 'Cyber'])",
-        ))
         .add(Expr::cust(
             "not exists (select 1 from ai_agent_user_link link where link.agent_login_id = login.id)",
         ))
@@ -155,25 +148,6 @@ where
     Ok(())
 }
 
-pub fn ensure_no_reserved_agent_roles(
-    roles: &[String],
-) -> Result<(), AppError> {
-    if has_reserved_agent_role(roles) {
-        return Err(AppError::Forbidden(
-            "ApiAgent and Cyber roles are reserved for managed AI accounts"
-                .to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn has_reserved_agent_role(roles: &[String]) -> bool {
-    roles.iter().any(|role| {
-        role == crate::config::AI_AGENT_ROLE_API
-            || role == crate::config::AI_AGENT_ROLE_CYBER
-    })
-}
-
 pub async fn ensure_valid_human_target<C>(
     dbx: &C,
     login_id: Uuid,
@@ -181,14 +155,7 @@ pub async fn ensure_valid_human_target<C>(
 where
     C: ConnectionTrait,
 {
-    ensure_unmanaged_login(dbx, login_id).await?;
-    let login = login::Entity::find_by_id(login_id)
-        .one(dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
-    let roles: Vec<String> = serde_json::from_value(login.roles).c(h!())?;
-    ensure_no_reserved_agent_roles(&roles)
+    ensure_unmanaged_login(dbx, login_id).await
 }
 
 #[get("/api/ai-agent/configuration")]

@@ -98,7 +98,7 @@ async function selectConversation() {
   await act(async () => historyButton.dispatchEvent(new MouseEvent('click', { bubbles: true })));
   await flush();
   const historyPanel = container.querySelector('aside');
-  expect(historyPanel?.parentElement?.classList.contains('MuiCard-root')).toBe(true);
+  expect(historyPanel?.closest('.MuiCard-root')).toBeNull();
   const option = Array.from(document.body.querySelectorAll('[role="button"]')).find((item) =>
     item.textContent?.includes(CONVERSATION.title),
   );

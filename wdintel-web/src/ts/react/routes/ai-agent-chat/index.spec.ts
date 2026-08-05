@@ -10,9 +10,8 @@ import {
 } from '.';
 
 describe('AI_AGENT_CHAT_CARD_HEIGHT', () => {
-  it('fills the available viewport height with a sensible desktop cap', () => {
-    expect(AI_AGENT_CHAT_CARD_HEIGHT.xs).toContain('100dvh');
-    expect(AI_AGENT_CHAT_CARD_HEIGHT.md).toBe('min(960px, calc(100dvh - 11rem))');
+  it('fills the height assigned by the application shell', () => {
+    expect(AI_AGENT_CHAT_CARD_HEIGHT).toBe('100%');
   });
 });
 

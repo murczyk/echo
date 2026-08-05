@@ -161,6 +161,9 @@ navBar user shared activeName props =
             [ internalMenu Route.Path.RerAnalysis "analysis" "Класичний"
             , internalMenu Route.Path.RerAnalysisNeo "rer-analysis-neo" "Новий"
             , MenuSeparator
+            , externalMenu "/docs" "documentation" "Алгоритм роботи"
+            , internalMenu Route.Path.GroupActivity "group-activity" "Активність груп"
+            , MenuSeparator
             , internalMenuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "analysis" ) ], hash = Nothing } "settings-neo-analysis" "Налаштування"
             ]
 

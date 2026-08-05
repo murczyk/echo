@@ -290,10 +290,6 @@ pub async fn update_login(
     let req = req.into_inner();
     let update_description = has_update_login_description(&req);
     let req: UpdateLoginReq = serde_json::from_value(req).c(h!())?;
-    if let Some(roles) = req.roles.as_deref() {
-        crate::ai_agent::ensure_no_reserved_agent_roles(roles)?;
-    }
-
     let txn = env.dbx.begin().await.c(h!())?;
 
     let login_id = Uuid::parse_str(&req.id).c(h!())?;
@@ -463,8 +459,6 @@ pub async fn create_login(
     req: Json<CreateLoginReq>,
 ) -> Result<Json<Login>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-    crate::ai_agent::ensure_no_reserved_agent_roles(&req.roles)?;
-
     let salt_s =
         format!("{}{}", crate::config::IDENTITY_SALT, req.login.clone());
     let salt = salt_s.as_bytes();
@@ -552,8 +546,6 @@ pub async fn create_delta_login(
     has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
         .c(h!())?;
-    crate::ai_agent::ensure_no_reserved_agent_roles(&req.roles)?;
-
     let login = req.login.clone();
     let roles = req.roles.clone();
     let sigint_zone = req.sigint_zone_id;
