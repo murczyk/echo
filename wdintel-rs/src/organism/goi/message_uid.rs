@@ -762,14 +762,7 @@ fn signal_message_timestamp_window(
     source_created_at: &DateTime<FixedOffset>,
 ) -> (NaiveDateTime, NaiveDateTime) {
     match source_date {
-        Some(source_date) => {
-            let window_start = source_date.with_timezone(&Utc).naive_utc()
-                - ChronoDuration::hours(
-                    ORGANISM_GOI_MESSAGE_UID_LOOKBACK_HOURS,
-                );
-            let window_end = source_created_at.with_timezone(&Utc).naive_utc();
-            (window_start, window_end)
-        }
+        Some(source_date) => signal_message_window(source_date),
         None => signal_message_window(source_created_at),
     }
 }
@@ -1039,7 +1032,7 @@ mod tests {
     }
 
     #[test]
-    fn source_date_timestamp_window_ends_at_created_at() {
+    fn source_date_timestamp_window_ends_at_source_date() {
         let source_date =
             DateTime::parse_from_rfc3339("2026-06-15T08:00:00Z").unwrap();
         let source_created_at =
@@ -1058,7 +1051,7 @@ mod tests {
         );
         assert_eq!(
             end,
-            Utc.with_ymd_and_hms(2026, 6, 15, 8, 30, 0)
+            Utc.with_ymd_and_hms(2026, 6, 15, 8, 0, 0)
                 .unwrap()
                 .naive_utc()
         );
