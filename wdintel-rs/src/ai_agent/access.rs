@@ -417,11 +417,95 @@ pub fn is_dispatcher_upstream_host(host: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sea_orm::{
+        ActiveModelTrait,
+        ActiveValue::{NotSet, Set},
+        TransactionTrait,
+    };
+    use serial_test::serial;
 
     #[test]
     fn linked_human_requires_rer_role() {
         assert!(has_rer_role(&serde_json::json!(["Rer", "Cyber"])));
         assert!(!has_rer_role(&serde_json::json!(["Cyber"])));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn linked_human_scope_rejects_removed_direct_group() {
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let human = crate::functest::tests::find_test_login(&env.dbx)
+            .await
+            .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let agent = crate::functest::tests::mk_login(
+            &txn,
+            login::ActiveModel {
+                id: NotSet,
+                login: Set(format!("access-agent-{}", Uuid::now_v7())),
+                sigint_zone_id: Set(human.sigint_zone_id),
+                organism_id: Set(human.organism_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        ai_agent_user_link::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            human_login_id: Set(human.id),
+            agent_login_id: Set(agent.id),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            updated_at: Set(chrono::Utc::now().naive_utc()),
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let groups = secret_group_user::Entity::find()
+            .filter(secret_group_user::Column::LoginId.eq(human.id))
+            .filter(secret_group_user::Column::SecretGroupOrganismId.is_null())
+            .all(&txn)
+            .await
+            .unwrap();
+        for group in groups {
+            secret_group_user::ActiveModel {
+                id: NotSet,
+                master_key: Set(group.master_key),
+                login_id: Set(agent.id),
+                secret_group_organism_id: Set(None),
+            }
+            .insert(&txn)
+            .await
+            .unwrap();
+        }
+        assert!(linked_human_scope_is_current(&txn, human.id, &agent)
+            .await
+            .unwrap());
+
+        let group = crate::functest::tests::mk_signal_group(
+            &txn,
+            crate::entities::signal_group::ActiveModel {
+                master_key: Set(format!("access-revoked-{}", Uuid::now_v7())),
+                is_secret: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        secret_group_user::ActiveModel {
+            id: NotSet,
+            master_key: Set(group.master_key),
+            login_id: Set(human.id),
+            secret_group_organism_id: Set(None),
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+
+        assert!(!linked_human_scope_is_current(&txn, human.id, &agent)
+            .await
+            .unwrap());
+        txn.rollback().await.unwrap();
     }
 
     #[test]
