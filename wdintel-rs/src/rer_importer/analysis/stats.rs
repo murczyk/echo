@@ -2994,7 +2994,12 @@ async fn load_callsigns_with_counts(
                     ELSE '[]'::jsonb
                 END
             ) AS legacy(callsign)
-            WHERE NOT EXISTS (
+            WHERE item.id > coalesce((
+                SELECT nullif(dk.v #>> '{{}}', '')::bigint
+                FROM delta_kv AS dk
+                WHERE dk.k = '{watermark_key}'
+            ), 0)
+              AND NOT EXISTS (
                 SELECT 1
                 FROM sigint_inbox_item_callsign AS callsign
                 WHERE callsign.sigint_inbox_item_id = item.id
@@ -3012,7 +3017,12 @@ async fn load_callsigns_with_counts(
                     ELSE '[]'::jsonb
                 END
             ) AS legacy(callsign)
-            WHERE NOT EXISTS (
+            WHERE item.id > coalesce((
+                SELECT nullif(dk.v #>> '{{}}', '')::bigint
+                FROM delta_kv AS dk
+                WHERE dk.k = '{watermark_key}'
+            ), 0)
+              AND NOT EXISTS (
                 SELECT 1
                 FROM sigint_inbox_item_callsign AS callsign
                 WHERE callsign.sigint_inbox_item_id = item.id
@@ -3028,7 +3038,9 @@ async fn load_callsigns_with_counts(
         GROUP BY callsign
         ORDER BY callsign
         "#,
-        filtered_items.sql
+        filtered_items.sql,
+        watermark_key =
+            crate::inbox::callsigns::CALLSIGN_BACKFILL_WATERMARK_KEY,
     );
     let statement =
         Statement::from_sql_and_values(DbBackend::Postgres, sql, values);
