@@ -6,6 +6,8 @@ log_sql="false"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 pidfile="${repo_root}/.dev-runtime/dev-bgworker.pid"
+report_pidfile="${repo_root}/.dev-runtime/dev-report-worker.pid"
+report_logfile="${repo_root}/.dev-runtime/dev-report-worker.log"
 
 usage() {
     cat >&2 <<'EOF'
@@ -126,6 +128,25 @@ is_expected_process() {
     return 1
 }
 
+is_expected_report_process() {
+    local pid="$1"
+    local cwd cmdline
+
+    pid_exists "$pid" || return 1
+    cwd="$(pid_cwd "$pid")"
+    if [ -n "$cwd" ] && [ "$cwd" != "${repo_root}/wdintel-rs" ]; then
+        return 1
+    fi
+
+    cmdline="$(pid_cmdline "$pid")"
+    case "$cmdline" in
+        *" --mode=debug report-worker "*|*" --mode=debug report-worker"|*" --mode=debug report-worker;"*)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
 stop_existing_bgworker() {
     local pid
 
@@ -146,12 +167,28 @@ stop_existing_bgworker() {
     rm -f "$pidfile"
 }
 
+stop_existing_report_worker() {
+    local pid
+
+    if [ ! -f "$report_pidfile" ]; then
+        return 0
+    fi
+
+    pid="$(cat "$report_pidfile" 2>/dev/null || true)"
+    if [ -n "$pid" ] && is_expected_report_process "$pid"; then
+        stop_pid_and_group "$pid"
+    fi
+
+    rm -f "$report_pidfile"
+}
+
 run_bgworker() {
     local worker_args=("$@")
     local cmd='cd "$REPO_ROOT/wdintel-rs" && RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug bgworker "$@"'
 
     ensure_pid_dir
     stop_existing_bgworker
+    stop_existing_report_worker
 
     if [ "$log_sql" = "true" ]; then
         export RUST_LOG=sqlx=trace,seaorm=trace
@@ -166,13 +203,28 @@ run_bgworker() {
     local pid=$!
     echo "$pid" > "$pidfile"
 
+    local report_cmd='cd "$REPO_ROOT/wdintel-rs" && RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug report-worker'
+    if [ "$quiet" = "true" ]; then
+        : > "$report_logfile"
+        setsid env REPO_ROOT="$repo_root" bash -lc "$report_cmd" bash > "$report_logfile" 2>&1 &
+    else
+        setsid env REPO_ROOT="$repo_root" bash -lc "$report_cmd" bash &
+    fi
+    local report_pid=$!
+    echo "$report_pid" > "$report_pidfile"
+    echo "report worker is running alongside the background workers" >&2
+
     cleanup() {
         local cleanup_pid="$1"
 
         if [ -n "$cleanup_pid" ]; then
             stop_pid_and_group "$cleanup_pid"
         fi
+        if is_expected_report_process "$report_pid"; then
+            stop_pid_and_group "$report_pid"
+        fi
         rm -f "$pidfile"
+        rm -f "$report_pidfile"
     }
     trap "cleanup '$pid'" EXIT INT TERM
 
