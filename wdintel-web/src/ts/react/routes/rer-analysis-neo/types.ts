@@ -74,6 +74,7 @@ export type AnalysisQueryState = Omit<
   includeOnlyNewFreqs: boolean;
   onlyWithMedia: boolean;
   reportTagsOnlyThisUnit: boolean;
+  deviceNamesSelected: string[];
 };
 
 export type AnalysisFilterOptions = {

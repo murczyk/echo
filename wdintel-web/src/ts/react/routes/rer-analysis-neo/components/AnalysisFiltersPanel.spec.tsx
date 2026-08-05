@@ -283,6 +283,7 @@ function buildProps(
         metadata: 'idle',
       },
       aorEntries: [],
+      cyberEchoEnabled: false,
       includeOnlyNewFreqs: false,
       loadedSavedFilter: null,
       messagesOverallCount: null,
@@ -388,6 +389,15 @@ describe('AnalysisFiltersPanel', () => {
 
     const counter = view.container.querySelector('[role="status"]');
     expect(counter?.textContent).toBe('— з —');
+  });
+
+  it('shows the device filter only when Cyber Echo is enabled', async () => {
+    const disabled = await renderComponent(buildProps());
+    const enabled = await renderComponent(buildProps({ cyberEchoEnabled: true }));
+    rendered.push(disabled, enabled);
+
+    expect(disabled.container.textContent).not.toContain('Пристрої');
+    expect(enabled.container.textContent).toContain('Пристрої');
   });
 
   it('passes Elm-parity disabled states into the frequency and network filters', async () => {

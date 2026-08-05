@@ -1510,6 +1510,7 @@ pub async fn callsigns_graph(
         selected_callsigns: req.selected_callsigns.clone(),
         selected_units: req.selected_units.clone(),
         selected_locations: req.selected_locations.clone(),
+        selected_device_names: req.selected_device_names.clone(),
         selected_networks: req.selected_networks.clone(),
         without_network: req.without_network,
         or_with_extended_form: req.or_with_extended_form,
@@ -1694,6 +1695,7 @@ pub async fn callsigns_graph(
     )?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
     let q = filter_selected_metadata_for_callsigns_graph(q, &req)?;
+    let q = filter_selected_device_names(q, &req.selected_device_names)?;
     let items = load_callsign_graph_items(&env.dbx, q).await?;
 
     let mut freqs_per_callsign: BTreeMap<String, Vec<String>> = BTreeMap::new();
