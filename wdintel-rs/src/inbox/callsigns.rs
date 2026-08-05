@@ -1,5 +1,7 @@
 use crate::entities::sea_orm_active_enums::SigintInboxItemCallsignSource;
-use crate::entities::{sigint_inbox_item, sigint_inbox_item_callsign};
+use crate::entities::{
+    delta_kv, sigint_inbox_item, sigint_inbox_item_callsign,
+};
 use crate::error::AppError;
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
@@ -8,6 +10,9 @@ use sea_orm::prelude::{Expr, Json};
 use sea_orm::*;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
+
+pub const CALLSIGN_BACKFILL_WATERMARK_KEY: &str =
+    "sigint_inbox_item_callsign_backfill_through_id";
 
 pub async fn oneoff_backfill(
     mode: Mode,
@@ -29,7 +34,8 @@ pub async fn oneoff_backfill(
             .flatten()
             .unwrap_or(0),
     };
-    let mut after_id = ps.after_id.unwrap_or(0);
+    let watermark = backfill_watermark(&dbx).await?;
+    let mut after_id = ps.after_id.unwrap_or(watermark);
     let mut processed = 0_u64;
     let mut expected_rows = 0_usize;
     let system_login_id = crate::users::system_login_id(&dbx).await.c(h!())?;
@@ -116,6 +122,7 @@ pub async fn oneoff_backfill(
             txn.rollback().await.c(h!())?;
         } else {
             txn.commit().await.c(h!())?;
+            update_backfill_watermark(&dbx, after_id).await?;
         }
         println!(
             "> processed={processed} expected_rows={expected_rows} last_committed_id={after_id}"
@@ -124,6 +131,35 @@ pub async fn oneoff_backfill(
     println!(
         "> inbox item callsign backfill complete: processed={processed} expected_rows={expected_rows} through_id={through_id}"
     );
+    if !ps.dry_run {
+        update_backfill_watermark(&dbx, through_id).await?;
+    }
+    Ok(())
+}
+
+async fn backfill_watermark<C>(dbx: &C) -> Result<i64, AppError>
+where
+    C: ConnectionTrait,
+{
+    let value = delta_kv::Entity::find()
+        .filter(delta_kv::Column::K.eq(CALLSIGN_BACKFILL_WATERMARK_KEY))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .map(|value| serde_json::from_value::<i64>(value.v))
+        .transpose()
+        .c(h!())?;
+    Ok(value.unwrap_or_default())
+}
+
+async fn update_backfill_watermark(
+    dbx: &DatabaseConnection,
+    watermark: i64,
+) -> Result<(), AppError> {
+    if watermark > backfill_watermark(dbx).await? {
+        crate::kv::put_kv(dbx, CALLSIGN_BACKFILL_WATERMARK_KEY, watermark)
+            .await?;
+    }
     Ok(())
 }
 
@@ -194,6 +230,12 @@ exists (
       and siic.callsign in ({selected_callsigns})
 )
 or (
+    sigint_inbox_item.id > coalesce((
+        select nullif(dk.v #>> '{{}}', '')::bigint
+        from delta_kv dk
+        where dk.k = '{watermark_key}'
+    ), 0)
+    and
     not exists (
         select 1
         from sigint_inbox_item_callsign siic
@@ -204,7 +246,8 @@ or (
         or coalesce(sigint_inbox_item.callsigns_alg2, '[]'::jsonb) ?| array[{selected_callsigns}]
     )
 )
-)"#
+    )"#,
+        watermark_key = CALLSIGN_BACKFILL_WATERMARK_KEY,
     )
 }
 
@@ -218,6 +261,12 @@ exists (
       and not siic.deleted
 )
 or (
+    {inbox_alias}.id > coalesce((
+        select nullif(dk.v #>> '{{}}', '')::bigint
+        from delta_kv dk
+        where dk.k = '{watermark_key}'
+    ), 0)
+    and
     not exists (
         select 1
         from sigint_inbox_item_callsign siic
@@ -230,7 +279,8 @@ or (
             and {inbox_alias}.callsigns_alg2 <> '[]'::jsonb)
     )
 )
-)"#
+        )"#,
+        watermark_key = CALLSIGN_BACKFILL_WATERMARK_KEY,
     )
 }
 
@@ -445,6 +495,7 @@ where
     if item_ids.is_empty() {
         return Ok(HashMap::new());
     }
+    let watermark = backfill_watermark(dbx).await?;
     let item_ids = crate::utils::uniq_via_btreeset(item_ids);
     let mut result = HashMap::new();
     for item_ids in
@@ -483,7 +534,9 @@ where
         }
         let fallback_item_ids = item_ids
             .iter()
-            .filter(|item_id| !normalized_item_ids.contains(item_id))
+            .filter(|item_id| {
+                **item_id > watermark && !normalized_item_ids.contains(item_id)
+            })
             .copied()
             .collect::<Vec<_>>();
         load_legacy_by_item_ids(dbx, &fallback_item_ids, &mut result).await?;
