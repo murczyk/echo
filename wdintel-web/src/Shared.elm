@@ -25,7 +25,7 @@ import Random
 import Route exposing (Route)
 import Route.Path
 import Set exposing (Set)
-import Shared.Components.Navbar
+import Shared.Components.AdminRoute
 import Shared.Components.Toast
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
@@ -729,7 +729,7 @@ shouldRedirectUnauthorizedPage path user =
             not (Core.Auth.canReadDevices user)
 
         _ ->
-            Shared.Components.Navbar.adminRouteIsBlocked path user
+            Shared.Components.AdminRoute.adminRouteIsBlocked path user
 
 
 

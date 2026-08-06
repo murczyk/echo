@@ -65,6 +65,19 @@ export const analysisSubs: Menu[] = [
   { type: 'separator' },
   {
     type: 'item',
+    link: { type: 'external', link: '/docs' },
+    activeName: 'documentation',
+    label: 'Документація',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/group-activity' },
+    activeName: 'group-activity',
+    label: 'Статистика',
+  },
+  { type: 'separator' },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/settings-neo?section=analysis' },
     activeName: 'settings-neo-analysis',
     label: 'Налаштування',

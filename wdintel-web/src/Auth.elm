@@ -16,7 +16,7 @@ import Dict
 import Route exposing (Route)
 import Route.Path
 import Shared
-import Shared.Components.Navbar
+import Shared.Components.AdminRoute
 import View exposing (View)
 
 
@@ -42,7 +42,7 @@ onPageLoad : Shared.Model -> Route () -> Auth.Action.Action User
 onPageLoad shared route =
     case shared.user of
         Just user ->
-            if user.name /= "anonymous" && Shared.Components.Navbar.adminRouteIsBlocked route.path user then
+            if user.name /= "anonymous" && Shared.Components.AdminRoute.adminRouteIsBlocked route.path user then
                 Auth.Action.pushRoute
                     { path = Route.Path.Home_
                     , query = Dict.empty

@@ -70,11 +70,11 @@ subscriptions _ =
 
 view : Model -> View Msg
 view model =
-    { title = "Активність груп"
+    { title = "Статистика"
     , body =
         [ div [ class "app-shell-fill-height box-border min-h-0 w-full bg-[var(--background-color)] px-6 py-4 flex flex-col overflow-hidden" ]
             [ div [ class "relative flex flex-1 min-h-0 min-w-0 flex-col overflow-hidden" ]
-                [ h1 [ class "m-0 px-2 pt-2 text-lg font-semibold" ] [ text "Активність груп" ]
+                [ h1 [ class "m-0 px-2 pt-2 text-lg font-semibold" ] [ text "Статистика" ]
                 , div [ class "flex-1 min-h-0 min-w-0 overflow-hidden mt-5" ]
                     [ if hasActivityData model.stats then
                         Html.node "dashboard-chart"

@@ -15,7 +15,6 @@ import Process
 import Route exposing (Route)
 import Shared
 import Shared.Msg
-import Shared.Components.Navbar
 import Shared.Components.Toast as Toast
 import Shared.Model
 import Task
