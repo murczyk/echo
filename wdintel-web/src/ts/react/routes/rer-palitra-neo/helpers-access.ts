@@ -166,7 +166,7 @@ export function palitraToForm(palitra: Palitra): PalitraFormState {
       name: palitra.name,
       colorHex: palitra.colorHex,
       accessType: 'logins',
-      logins: palitra.accessLogins.map((entry) => entry.id),
+      logins: palitra.accessLogins.map((entry) => entry.login),
       organismIds: [],
       aorIds: [],
     };
