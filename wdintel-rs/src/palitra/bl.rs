@@ -2897,6 +2897,26 @@ where
     .c(h!())
 }
 
+async fn resolve_palitra_access_login_ids<'a, 'async_trait, C>(
+    txn: &'a C,
+    login_values: Vec<String>,
+) -> anyhow::Result<Vec<Uuid>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut login_ids = Vec::with_capacity(login_values.len());
+    for login_value in login_values {
+        let login_id = match Uuid::parse_str(&login_value) {
+            Ok(login_id) => login_id,
+            Err(_) => crate::users::login_id_by_name(txn, &login_value)
+                .await
+                .c(h!())?,
+        };
+        login_ids.push(login_id);
+    }
+    Ok(login_ids)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::config::{
@@ -3964,24 +3984,4 @@ mod tests {
         assert_eq!(replace_folder_exact(Some("foo/baz"), "foo", "bar"), None);
         assert_eq!(replace_folder_exact(Some("foobar"), "foo", "bar"), None);
     }
-}
-
-async fn resolve_palitra_access_login_ids<'a, 'async_trait, C>(
-    txn: &'a C,
-    login_values: Vec<String>,
-) -> anyhow::Result<Vec<Uuid>>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let mut login_ids = Vec::with_capacity(login_values.len());
-    for login_value in login_values {
-        let login_id = match Uuid::parse_str(&login_value) {
-            Ok(login_id) => login_id,
-            Err(_) => crate::users::login_id_by_name(txn, &login_value)
-                .await
-                .c(h!())?,
-        };
-        login_ids.push(login_id);
-    }
-    Ok(login_ids)
 }
