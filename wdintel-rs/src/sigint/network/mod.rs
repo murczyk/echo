@@ -138,6 +138,8 @@ fn build_networks_query_with_text_search_mode(
             || req.filter_location.is_some()
             || req.status_filter.is_some()
             || req.filter_unit.is_some()
+            || req.filter_unit_army_region.is_some()
+            || req.filter_unit_military_district.is_some()
             || req.filter_unit_army.is_some()
             || req.filter_unit_division.is_some()
             || req.filter_unit_regiment.is_some()
@@ -4625,6 +4627,8 @@ mod tests {
         ListNetworksReq {
             filter_freq: None,
             filter_unit: None,
+            filter_unit_army_region: None,
+            filter_unit_military_district: None,
             filter_unit_army: None,
             filter_unit_division: None,
             filter_unit_regiment: None,

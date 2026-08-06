@@ -352,6 +352,19 @@ async fn list_callsigns_impl(
             ));
         }
     }
+    if let Some(filter_unit_army_region) = &req.filter_unit_army_region {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::ArmyRegion.eq(filter_unit_army_region.clone()),
+        );
+    }
+    if let Some(filter_unit_military_district) =
+        &req.filter_unit_military_district
+    {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::MilitaryDistrict
+                .eq(filter_unit_military_district.clone()),
+        );
+    }
     if let Some(filter_unit_army) = &req.filter_unit_army {
         callsigns = callsigns
             .filter(sigint_unit::Column::Army.eq(filter_unit_army.clone()));
@@ -1334,6 +1347,8 @@ mod tests {
             filter_full_name: None,
             filter_comment: None,
             filter_unit: None,
+            filter_unit_army_region: None,
+            filter_unit_military_district: None,
             filter_unit_army: None,
             filter_unit_division: None,
             filter_unit_regiment: None,
@@ -1546,6 +1561,8 @@ mod tests {
             regiment: Set("11".to_string()),
             division: Set("3".to_string()),
             army: Set("A".to_string()),
+            military_district: Set("D1".to_string()),
+            army_region: Set("R1".to_string()),
             active: Set(true),
             deleted: Set(false),
             created_at: Set(now),
@@ -1559,16 +1576,38 @@ mod tests {
         .await
         .unwrap();
 
-        let other_division_unit = sigint_unit::ActiveModel {
+        let other_district_unit = sigint_unit::ActiveModel {
             company: Set("C".to_string()),
             regiment: Set("11".to_string()),
-            division: Set("5".to_string()),
+            division: Set("3".to_string()),
             army: Set("A".to_string()),
+            military_district: Set("D2".to_string()),
+            army_region: Set("R1".to_string()),
             active: Set(true),
             deleted: Set(false),
             created_at: Set(now),
             created_by_login_id: Set(login.id),
-            name: Set("OtherDivisionUnit".to_string()),
+            name: Set("OtherDistrictUnit".to_string()),
+            comment: Set(String::new()),
+            battalion: Set("B".to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let other_region_unit = sigint_unit::ActiveModel {
+            company: Set("C".to_string()),
+            regiment: Set("11".to_string()),
+            division: Set("3".to_string()),
+            army: Set("A".to_string()),
+            military_district: Set("D1".to_string()),
+            army_region: Set("R2".to_string()),
+            active: Set(true),
+            deleted: Set(false),
+            created_at: Set(now),
+            created_by_login_id: Set(login.id),
+            name: Set("OtherRegionUnit".to_string()),
             comment: Set(String::new()),
             battalion: Set("B".to_string()),
             ..Default::default()
@@ -1581,8 +1620,16 @@ mod tests {
             .await;
         insert_test_callsign(
             &env.dbx,
-            other_division_unit.id,
+            other_district_unit.id,
             "bravo",
+            now,
+            "",
+        )
+        .await;
+        insert_test_callsign(
+            &env.dbx,
+            other_region_unit.id,
+            "charlie",
             now,
             "",
         )
@@ -1590,6 +1637,8 @@ mod tests {
 
         let mut req =
             list_req(None, Some(100), ListCallsignsSortBy::CallsignAsc);
+        req.filter_unit_army_region = Some("R1".to_string());
+        req.filter_unit_military_district = Some("D1".to_string());
         req.filter_unit_army = Some("A".to_string());
         req.filter_unit_division = Some("3".to_string());
 

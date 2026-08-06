@@ -65,6 +65,8 @@ function getUnitsInfoByIds(unitIds: number[], unitsMap: Record<number, Unit>): U
 
 function isSameOrChildUnit(child: Unit, parent: Unit): boolean {
   const childParts = [
+    child.armyRegion,
+    child.militaryDistrict,
     child.army,
     child.division,
     child.regiment,
@@ -72,6 +74,8 @@ function isSameOrChildUnit(child: Unit, parent: Unit): boolean {
     child.company,
   ].map((value) => value?.trim() ?? '');
   const parentParts = [
+    parent.armyRegion,
+    parent.militaryDistrict,
     parent.army,
     parent.division,
     parent.regiment,

@@ -2028,12 +2028,17 @@ fn build_etalonka_networks_query(
     text_search_mode: NetworkTextSearchMode,
 ) -> Select<sigint_network::Entity> {
     let filter_unit = req.filter_unit.clone();
+    let filter_unit_army_region = req.filter_unit_army_region.clone();
+    let filter_unit_military_district =
+        req.filter_unit_military_district.clone();
     let filter_unit_army = req.filter_unit_army.clone();
     let filter_unit_division = req.filter_unit_division.clone();
     let filter_unit_regiment = req.filter_unit_regiment.clone();
     let filter_unit_battalion = req.filter_unit_battalion.clone();
     let mut report_req = req.clone();
     report_req.filter_unit = None;
+    report_req.filter_unit_army_region = None;
+    report_req.filter_unit_military_district = None;
     report_req.filter_unit_army = None;
     report_req.filter_unit_division = None;
     report_req.filter_unit_regiment = None;
@@ -2109,6 +2114,19 @@ fn build_etalonka_networks_query(
         ));
     }
 
+    if let Some(filter_unit_army_region) = filter_unit_army_region.as_deref() {
+        networks = networks.filter(
+            sigint_unit::Column::ArmyRegion.eq(filter_unit_army_region),
+        );
+    }
+    if let Some(filter_unit_military_district) =
+        filter_unit_military_district.as_deref()
+    {
+        networks = networks.filter(
+            sigint_unit::Column::MilitaryDistrict
+                .eq(filter_unit_military_district),
+        );
+    }
     if let Some(filter_unit_army) = filter_unit_army.as_deref() {
         networks =
             networks.filter(sigint_unit::Column::Army.eq(filter_unit_army));
@@ -2184,6 +2202,8 @@ pub async fn load_networks_by_id(
     let sort_req = ListNetworksReq {
         filter_freq: None,
         filter_unit: None,
+        filter_unit_army_region: None,
+        filter_unit_military_district: None,
         filter_unit_army: None,
         filter_unit_division: None,
         filter_unit_regiment: None,
@@ -2250,6 +2270,8 @@ mod tests {
         ListNetworksReq {
             filter_freq: None,
             filter_unit: None,
+            filter_unit_army_region: None,
+            filter_unit_military_district: None,
             filter_unit_army: None,
             filter_unit_division: None,
             filter_unit_regiment: None,

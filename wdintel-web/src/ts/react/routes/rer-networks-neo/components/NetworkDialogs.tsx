@@ -18,6 +18,8 @@ function getEtalonkaLaunchWarning(request: ListNetworksReq | null | undefined): 
     (request.aorIds === null || request.aorIds.length === 0) &&
     request.filterFreq === null &&
     request.filterUnit === null &&
+    request.filterUnitArmyRegion === null &&
+    request.filterUnitMilitaryDistrict === null &&
     request.filterUnitArmy === null &&
     request.filterUnitDivision === null &&
     request.filterUnitRegiment === null &&

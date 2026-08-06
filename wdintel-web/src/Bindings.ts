@@ -2718,6 +2718,8 @@ export type ListCallsignsReq = {
   filterFullName: string | null;
   filterComment: string | null;
   filterUnit: string | null;
+  filterUnitArmyRegion: string | null;
+  filterUnitMilitaryDistrict: string | null;
   filterUnitArmy: string | null;
   filterUnitDivision: string | null;
   filterUnitRegiment: string | null;
@@ -3366,6 +3368,8 @@ export type UpdFreqNetwork = {
 export type ListNetworksReq = {
   filterFreq: string | null;
   filterUnit: string | null;
+  filterUnitArmyRegion: string | null;
+  filterUnitMilitaryDistrict: string | null;
   filterUnitArmy: string | null;
   filterUnitDivision: string | null;
   filterUnitRegiment: string | null;

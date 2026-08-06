@@ -22,6 +22,8 @@ function buildUnit(overrides: Partial<Unit>): Unit {
     regiment: '',
     division: '',
     army: '',
+    militaryDistrict: '',
+    armyRegion: '',
     comment: '',
     name: 'Unit',
     active: true,
@@ -127,6 +129,8 @@ describe('devices list query mapping', () => {
       {
         unitId: 7,
         unitName: 'Visible unit',
+        armyRegion: '',
+        militaryDistrict: '',
         army: '',
         division: '',
         regiment: '',
@@ -138,9 +142,9 @@ describe('devices list query mapping', () => {
 
   it('resolves sidebar leaf and hierarchy filters to deterministic unit ids', () => {
     const units = [
-      buildUnit({ id: 4, name: 'Beta', army: 'A', division: 'D1' }),
-      buildUnit({ id: 2, name: 'Alpha', army: 'A', division: 'D2' }),
-      buildUnit({ id: 3, name: 'Beta', army: 'B', division: 'D3' }),
+      buildUnit({ id: 4, name: 'Beta', armyRegion: 'R1', army: 'A', division: 'D1' }),
+      buildUnit({ id: 2, name: 'Alpha', armyRegion: 'R1', army: 'A', division: 'D2' }),
+      buildUnit({ id: 3, name: 'Beta', armyRegion: 'R2', army: 'A', division: 'D3' }),
     ];
 
     expect(
@@ -157,7 +161,14 @@ describe('devices list query mapping', () => {
         {
           kind: 'group',
           label: 'A',
-          hierarchy: { army: 'A', division: null, regiment: null, battalion: null },
+          hierarchy: {
+            armyRegion: 'R1',
+            militaryDistrict: null,
+            army: 'A',
+            division: null,
+            regiment: null,
+            battalion: null,
+          },
         },
         units,
       ),
@@ -168,7 +179,14 @@ describe('devices list query mapping', () => {
     const selectedSidebarUnitFilter = {
       kind: 'group' as const,
       label: 'Army A',
-      hierarchy: { army: 'A', division: null, regiment: null, battalion: null },
+      hierarchy: {
+        armyRegion: null,
+        militaryDistrict: null,
+        army: 'A',
+        division: null,
+        regiment: null,
+        battalion: null,
+      },
     };
     const columnFilters = buildDevicesColumnFilters({
       archivedFilter: 'archived',

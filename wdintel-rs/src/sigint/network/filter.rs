@@ -419,7 +419,9 @@ fn network_unit_hierarchy_filter(
     query: Select<sigint_network::Entity>,
     req: &ListNetworksReq,
 ) -> Select<sigint_network::Entity> {
-    let has_unit_hierarchy_filter = req.filter_unit_army.is_some()
+    let has_unit_hierarchy_filter = req.filter_unit_army_region.is_some()
+        || req.filter_unit_military_district.is_some()
+        || req.filter_unit_army.is_some()
         || req.filter_unit_division.is_some()
         || req.filter_unit_regiment.is_some()
         || req.filter_unit_battalion.is_some();
@@ -441,6 +443,21 @@ fn network_unit_hierarchy_filter(
             Alias::new("sigint_unit"),
         );
 
+    if let Some(filter_unit_army_region) =
+        req.filter_unit_army_region.as_deref()
+    {
+        unit_exists = unit_exists.filter(
+            sigint_unit::Column::ArmyRegion.eq(filter_unit_army_region),
+        );
+    }
+    if let Some(filter_unit_military_district) =
+        req.filter_unit_military_district.as_deref()
+    {
+        unit_exists = unit_exists.filter(
+            sigint_unit::Column::MilitaryDistrict
+                .eq(filter_unit_military_district),
+        );
+    }
     if let Some(filter_unit_army) = req.filter_unit_army.as_deref() {
         unit_exists =
             unit_exists.filter(sigint_unit::Column::Army.eq(filter_unit_army));

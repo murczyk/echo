@@ -59,6 +59,8 @@ export async function getNetworksList(options?: RequestOptions): Promise<Network
   const req: ListNetworksReq = {
     filterFreq: null,
     filterUnit: null,
+    filterUnitArmyRegion: null,
+    filterUnitMilitaryDistrict: null,
     filterUnitArmy: null,
     filterUnitDivision: null,
     filterUnitRegiment: null,

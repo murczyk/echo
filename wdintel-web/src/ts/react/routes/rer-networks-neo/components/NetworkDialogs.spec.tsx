@@ -150,6 +150,8 @@ function buildBroadReportRequest() {
   return {
     filterFreq: null,
     filterUnit: null,
+    filterUnitArmyRegion: null,
+    filterUnitMilitaryDistrict: null,
     filterUnitArmy: null,
     filterUnitDivision: null,
     filterUnitRegiment: null,

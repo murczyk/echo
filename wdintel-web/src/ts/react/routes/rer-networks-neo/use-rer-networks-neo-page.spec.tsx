@@ -968,6 +968,8 @@ describe('useRerNetworksNeoPage', () => {
       req: {
         filterFreq: null,
         filterUnit: null,
+        filterUnitArmyRegion: null,
+        filterUnitMilitaryDistrict: null,
         filterUnitArmy: null,
         filterUnitDivision: null,
         filterUnitRegiment: null,
@@ -1153,6 +1155,8 @@ describe('useRerNetworksNeoPage', () => {
       {
         filterFreq: null,
         filterUnit: null,
+        filterUnitArmyRegion: null,
+        filterUnitMilitaryDistrict: null,
         filterUnitArmy: null,
         filterUnitDivision: null,
         filterUnitRegiment: null,
@@ -1189,6 +1193,8 @@ describe('useRerNetworksNeoPage', () => {
         statusFilter: null,
         showInactive: false,
         showOnlyDeleted: false,
+        filterUnitArmyRegion: null,
+        filterUnitMilitaryDistrict: null,
         filterUnitArmy: null,
         filterUnitDivision: null,
         filterUnitRegiment: null,
