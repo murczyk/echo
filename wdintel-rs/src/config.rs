@@ -145,6 +145,7 @@ pub const AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT: i64 = 256;
 pub const AI_AGENT_PROVIDER_REQUEST_MAX_BYTES: usize = 2 * 1024 * 1024;
 pub const AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES: usize = 2 * 1024 * 1024;
 pub const AI_AGENT_PROVIDER_ERROR_MAX_BYTES: usize = 64 * 1024;
+pub const AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS: usize = 4 * 1024;
 pub const AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 5 * 60;
 pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
     "/api/ai-agent/provider/v1/chat/completions";

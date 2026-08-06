@@ -1,7 +1,8 @@
 use super::auth;
 use crate::config::{
     AI_AGENT_OPENAI_API_BASE, AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
-    AI_AGENT_PROVIDER_ERROR_MAX_BYTES, AI_AGENT_PROVIDER_GATEWAY_PATH,
+    AI_AGENT_PROVIDER_ERROR_MAX_BYTES,
+    AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS, AI_AGENT_PROVIDER_GATEWAY_PATH,
     AI_AGENT_PROVIDER_REQUEST_MAX_BYTES, AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC,
     AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES,
 };
@@ -178,7 +179,7 @@ async fn proxy_openai_request(
     if !status.is_success() {
         let metadata = read_provider_error_metadata(response).await;
         info!(
-            "AI agent provider gateway response engine_id={} status={} duration_ms={} upstream_request_id={:?} reasoning_effort_present={} error_type={:?} error_code={:?} error_param={:?} error_kind={:?}",
+            "AI agent provider gateway response engine_id={} status={} duration_ms={} upstream_request_id={:?} reasoning_effort_present={} error_type={:?} error_code={:?} error_param={:?} error_kind={:?} error_message={:?}",
             ai_engine.id,
             status,
             started_at.elapsed().as_millis(),
@@ -187,7 +188,8 @@ async fn proxy_openai_request(
             metadata.error_type,
             metadata.error_code,
             metadata.error_param,
-            metadata.error_kind
+            metadata.error_kind,
+            metadata.error_message
         );
         return Ok(provider_error(status, "Provider request failed"));
     }
@@ -263,6 +265,7 @@ struct ProviderErrorMetadata {
     error_code: Option<String>,
     error_param: Option<String>,
     error_kind: Option<&'static str>,
+    error_message: Option<String>,
 }
 
 async fn read_provider_error_metadata(
@@ -296,6 +299,7 @@ fn parse_provider_error_metadata(body: &[u8]) -> ProviderErrorMetadata {
         error_code: sanitized_provider_error_field(error.get("code")),
         error_param: sanitized_provider_error_field(error.get("param")),
         error_kind: provider_error_kind(error.get("message")),
+        error_message: truncated_provider_error_message(error.get("message")),
     }
 }
 
@@ -327,6 +331,16 @@ fn sanitized_provider_error_field(value: Option<&Value>) -> Option<String> {
                 || matches!(byte, b'_' | b'-' | b'.' | b'[' | b']')
         }))
     .then(|| value.to_string())
+}
+
+fn truncated_provider_error_message(value: Option<&Value>) -> Option<String> {
+    let value = value?.as_str()?.trim();
+    (!value.is_empty()).then(|| {
+        super::access::truncate(
+            value,
+            AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS,
+        )
+    })
 }
 
 fn provider_error(status: StatusCode, message: &'static str) -> HttpResponse {
@@ -407,9 +421,9 @@ mod tests {
     }
 
     #[test]
-    fn extracts_only_sanitized_provider_error_metadata() {
+    fn extracts_provider_error_metadata() {
         let metadata = parse_provider_error_metadata(
-            br#"{"error":{"message":"secret prompt","type":"invalid_request_error","code":"bad_schema","param":"tools[0].function.parameters"}}"#,
+            br#"{"error":{"message":"Unsupported value: 'none' does not support reasoning_effort.","type":"invalid_request_error","code":"bad_schema","param":"tools[0].function.parameters"}}"#,
         );
         assert_eq!(
             metadata.error_type.as_deref(),
@@ -420,7 +434,13 @@ mod tests {
             metadata.error_param.as_deref(),
             Some("tools[0].function.parameters")
         );
-        assert!(metadata.error_kind.is_none());
+        assert_eq!(metadata.error_kind, Some("unsupported_value"));
+        assert_eq!(
+            metadata.error_message.as_deref(),
+            Some(
+                "Unsupported value: 'none' does not support reasoning_effort."
+            )
+        );
 
         let metadata = parse_provider_error_metadata(
             br#"{"error":{"type":"invalid request\nsecret","param":"tools: secret"}}"#,
@@ -432,5 +452,17 @@ mod tests {
             br#"{"error":{"message":"Unsupported value for a field","param":"reasoning_effort"}}"#,
         );
         assert_eq!(metadata.error_kind, Some("unsupported_value"));
+
+        let metadata = parse_provider_error_metadata(
+            format!(
+                r#"{{"error":{{"message":"{}"}}}}"#,
+                "x".repeat(AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS + 1)
+            )
+            .as_bytes(),
+        );
+        assert_eq!(
+            metadata.error_message.as_ref().map(String::len),
+            Some(AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS)
+        );
     }
 }
