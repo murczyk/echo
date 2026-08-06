@@ -12,7 +12,7 @@ use crate::users::{ensure_rer_role, has_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::{Data, Json};
 use sea_orm::sea_query::extension::postgres::PgExpr;
-use sea_orm::sea_query::{Expr, SimpleExpr};
+use sea_orm::sea_query::{Expr, OnConflict, SimpleExpr};
 use sea_orm::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use uuid::Uuid;
@@ -467,19 +467,103 @@ where
                 }
                 Err(err) => return Err(err),
             };
-        let unit = super::insert_unit_with_changelog(dbx, login, &unit_req)
-            .await
-            .c(h!())?;
+        let unit = match find_existing_sigint_unit(dbx, &unit_req).await? {
+            Some(unit) => unit,
+            None => super::insert_unit_with_changelog(dbx, login, &unit_req)
+                .await
+                .c(h!())?,
+        };
+        link_orbit_ancestor(dbx, ancestor.unit_id, unit.id).await?;
+    }
+    Ok(())
+}
+
+async fn find_existing_sigint_unit<C>(
+    dbx: &C,
+    unit: &CreateUnitReq,
+) -> Result<Option<sigint_unit::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(normalized_hierarchy_value_eq(
+            sigint_unit::Column::Company,
+            &unit.company,
+        ))
+        .filter(normalized_hierarchy_value_eq(
+            sigint_unit::Column::Battalion,
+            &unit.battalion,
+        ))
+        .filter(normalized_hierarchy_value_eq(
+            sigint_unit::Column::Regiment,
+            &unit.regiment,
+        ))
+        .filter(normalized_hierarchy_value_eq(
+            sigint_unit::Column::Division,
+            &unit.division,
+        ))
+        .filter(normalized_hierarchy_value_eq(
+            sigint_unit::Column::Army,
+            &unit.army,
+        ))
+        .filter(normalized_hierarchy_value_eq(
+            sigint_unit::Column::MilitaryDistrict,
+            &unit.military_district,
+        ))
+        .filter(normalized_hierarchy_value_eq(
+            sigint_unit::Column::ArmyRegion,
+            &unit.army_region,
+        ))
+        .order_by_asc(sigint_unit::Column::Id)
+        .one(dbx)
+        .await
+        .c(h!())?)
+}
+
+fn normalized_hierarchy_value_eq(
+    column: sigint_unit::Column,
+    value: &str,
+) -> SimpleExpr {
+    Expr::cust_with_exprs(
+        "lower(btrim($1)) = $2",
+        [
+            Expr::col(column).into_simple_expr(),
+            Expr::val(value.trim().to_lowercase()).into_simple_expr(),
+        ],
+    )
+}
+
+async fn link_orbit_ancestor<C>(
+    dbx: &C,
+    orbit_unit_id: Uuid,
+    sigint_unit_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    orbit_unit_sigint_unit::Entity::insert(
         orbit_unit_sigint_unit::ActiveModel {
-            orbit_unit_id: Set(ancestor.unit_id),
-            sigint_unit_id: Set(unit.id),
+            orbit_unit_id: Set(orbit_unit_id),
+            sigint_unit_id: Set(sigint_unit_id),
             is_manual: Set(true),
             is_suppressed: Set(false),
-        }
-        .insert(dbx)
-        .await
-        .c(h!())?;
-    }
+        },
+    )
+    .on_conflict(
+        OnConflict::columns([
+            orbit_unit_sigint_unit::Column::OrbitUnitId,
+            orbit_unit_sigint_unit::Column::SigintUnitId,
+        ])
+        .update_columns([
+            orbit_unit_sigint_unit::Column::IsManual,
+            orbit_unit_sigint_unit::Column::IsSuppressed,
+        ])
+        .to_owned(),
+    )
+    .exec_without_returning(dbx)
+    .await
+    .c(h!())?;
     Ok(())
 }
 

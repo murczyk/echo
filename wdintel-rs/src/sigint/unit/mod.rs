@@ -2154,6 +2154,41 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn orbit_import_links_existing_hierarchy_ancestor_without_duplicate()
+    {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, false).await;
+        let login_id = test_login_id(&env).await;
+        let orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
+        let existing_parent = extended_hierarchy_unit(
+            &env.dbx,
+            ["", "", "", "", " 20 зва ", "Західний ВО", "ЗС РФ"],
+        )
+        .await;
+
+        orbit::import_orbit_unit_for_login(
+            &login_id,
+            &env,
+            orbit_fixture.root_unit_id,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(unit_count(&env.dbx).await, 7);
+        let link = orbit_unit_sigint_unit::Entity::find_by_id((
+            orbit_fixture.unit_ids[4],
+            existing_parent.id,
+        ))
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(link.is_manual);
+        assert!(!link.is_suppressed);
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn oneoff_imports_every_unlinked_orbit_unit_as_inactive() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
