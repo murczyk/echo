@@ -1074,6 +1074,11 @@ pub async fn submit_upsert_inbox_item(
     if invalidate_body_derived_fields {
         clear_body_derived_fields(txn, id).await.c(h!())?;
     }
+    let datetime_neo = crate::inbox::datetime::from_date_time_text(
+        message.date.as_deref(),
+        message.time.as_deref(),
+    )
+    .c(h!())?;
 
     let insert_res =
         sigint_inbox_item::Entity::insert(sigint_inbox_item::ActiveModel {
@@ -1112,6 +1117,7 @@ pub async fn submit_upsert_inbox_item(
             callsigns_alg2: NotSet,
             signal_tokens: NotSet,
             datetime: NotSet,
+            datetime_neo: Set(datetime_neo),
             body_noheader: Set(Some(
                 serde_json::to_value(&body_noheader).context(h!())?,
             )),
@@ -1126,6 +1132,7 @@ pub async fn submit_upsert_inbox_item(
                 .update_columns([
                     sigint_inbox_item::Column::Date,
                     sigint_inbox_item::Column::Time,
+                    sigint_inbox_item::Column::DatetimeNeo,
                     sigint_inbox_item::Column::Freq,
                     sigint_inbox_item::Column::Coords,
                     sigint_inbox_item::Column::Callsigns,

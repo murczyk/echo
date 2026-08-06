@@ -560,6 +560,9 @@ where
 {
     let body = build_replay_body(source.message.body.as_deref(), replay_ts);
     let (date, time) = format_date_time_fields(replay_ts);
+    let datetime_neo =
+        crate::inbox::datetime::from_date_time_text(Some(&date), Some(&time))
+            .c(h!())?;
 
     let inserted = signal_message::ActiveModel {
         id: NotSet,
@@ -620,6 +623,7 @@ where
         callsigns_alg2: Set(source.inbox_item.callsigns_alg2.clone()),
         callsigns_alg1: Set(source.inbox_item.callsigns_alg1.clone()),
         datetime: NotSet,
+        datetime_neo: Set(datetime_neo),
         signal_tokens: Set(source.inbox_item.signal_tokens.clone()),
         body_noheader: Set(source.inbox_item.body_noheader.clone()),
         location_v2: Set(source.inbox_item.location_v2.clone()),

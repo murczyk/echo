@@ -928,6 +928,7 @@ enum Cmd {
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
     OneoffBackfillInboxItemCallsigns(OneoffBackfillInboxItemCallsignsPs),
+    OneoffBackfillSigintInboxItemDatetimeNeo,
     OneoffBackfillInboxNetworkUnitsTui(OneoffBackfillInboxNetworkUnitsTuiPs),
     OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
@@ -1647,6 +1648,9 @@ async fn async_main(
         }
         Cmd::OneoffBackfillInboxItemCallsigns(ps) => {
             inbox::callsigns::oneoff_backfill(mode, &ps).await
+        }
+        Cmd::OneoffBackfillSigintInboxItemDatetimeNeo => {
+            inbox::datetime::oneoff_backfill(mode).await
         }
         Cmd::OneoffReprocessInboxMetadata(ps) => {
             rer_importer::inbox::metadata::oneoff::oneoff_reprocess_inbox_metadata(

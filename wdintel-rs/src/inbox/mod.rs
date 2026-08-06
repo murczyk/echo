@@ -10,6 +10,7 @@ use chrono_tz::Tz;
 use sea_orm::*;
 
 pub mod callsigns;
+pub mod datetime;
 
 pub struct ConstructInboxItemResult {
     pub spawned_message_ids: Vec<i64>,
@@ -246,6 +247,9 @@ where
         None => (default_date_v, default_time_v),
         Some((d, t)) => (Some(d), Some(t)),
     };
+    let datetime_neo =
+        datetime::from_date_time_text(date_v.as_deref(), time_v.as_deref())
+            .c(h!())?;
 
     let result = sigint_inbox_item::ActiveModel {
         id: Set(message.id),
@@ -275,6 +279,7 @@ where
             serde_json::to_value(&callsigns_alg2).c(h!())?,
         )),
         datetime: NotSet,
+        datetime_neo: Set(datetime_neo),
         signal_tokens: Set(Some(serde_json::to_value(signal_tokens).c(h!())?)),
         post_id: Set(post_id),
         device_name_id: Set(None),
@@ -414,10 +419,11 @@ where
     Ok(ConstructInboxItemResult::changed(message.id))
 }
 
-fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 23] {
+fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 24] {
     [
         sigint_inbox_item::Column::Date,
         sigint_inbox_item::Column::Time,
+        sigint_inbox_item::Column::DatetimeNeo,
         sigint_inbox_item::Column::Freq,
         sigint_inbox_item::Column::Coords,
         sigint_inbox_item::Column::Lat,
@@ -880,6 +886,11 @@ mod tests {
             .iter()
             .all(|column| {
                 !matches!(column, sigint_inbox_item::Column::Datetime)
+            }));
+        assert!(reprocessed_inbox_item_update_columns()
+            .iter()
+            .any(|column| {
+                matches!(column, sigint_inbox_item::Column::DatetimeNeo)
             }));
     }
 
