@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT_PATH = Path(__file__).with_name("check_analytics_migrations.py")
@@ -42,7 +43,9 @@ class AnalyticsMigrationCheckTests(unittest.TestCase):
             {"changes": [{"table": "public.sample", "strategy": "cdc_backfill"}]},
             set(),
         )
-        self.assertTrue(any("without post-DDL DML" in error for error in errors))
+        self.assertTrue(
+            any("without reviewed backfill DML" in error for error in errors)
+        )
 
     def test_cdc_backfill_accepts_update(self) -> None:
         contents = """
@@ -56,6 +59,30 @@ update sample set enabled = false;
             {"changes": [{"table": "public.sample", "strategy": "cdc_backfill"}]},
             set(),
         )
+        self.assertEqual(errors, [])
+
+    def test_cdc_backfill_accepts_rust_backfill(self) -> None:
+        contents = "alter table sample add column enabled boolean default false;"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            backfill = root / "backfill.rs"
+            backfill.write_text("sample::Entity::update_many();")
+            with mock.patch.object(MODULE, "REPO_ROOT", root):
+                errors = MODULE.validate_change(
+                    "echo:m1",
+                    contents,
+                    MODULE.detect_ddl(contents),
+                    {
+                        "changes": [
+                            {
+                                "table": "public.sample",
+                                "strategy": "cdc_backfill",
+                                "backfill": "backfill.rs",
+                            }
+                        ]
+                    },
+                    set(),
+                )
         self.assertEqual(errors, [])
 
     def test_catalog_comparison_returns_changed_tables(self) -> None:

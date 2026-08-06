@@ -5,6 +5,7 @@ use chrono::{
 };
 use chrono_tz::Europe::Kyiv;
 use indicatif::ProgressBar;
+use sea_orm::sea_query::{CaseStatement, Expr};
 use sea_orm::*;
 
 use crate::config::{
@@ -120,40 +121,117 @@ struct BackfillBatch {
     cursor: Option<BackfillCursor>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, FromQueryResult, PartialEq)]
+struct BackfillRow {
+    id: i64,
+    datetime: NaiveDateTime,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BackfillEntry {
+    id: i64,
+    datetime_neo: NaiveDateTime,
+}
+
 async fn backfill_batch(
     txn: &DatabaseTransaction,
     cursor: Option<BackfillCursor>,
     batch_size: u64,
 ) -> anyhow::Result<BackfillBatch> {
-    let batch_size = i64::try_from(batch_size).context(h!())?;
-    let (cursor_datetime, cursor_id) = cursor
-        .map(|cursor| (Some(cursor.datetime), Some(cursor.id)))
-        .unwrap_or_default();
-    let result = txn
-        .query_one_raw(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            echo_migration::DATETIME_NEO_BACKFILL_BATCH_SQL,
-            [cursor_datetime.into(), cursor_id.into(), batch_size.into()],
-        ))
-        .await
-        .context(h!())?
-        .context(h!())?;
-    let selected: i64 = result.try_get("", "selected_count").context(h!())?;
-    let updated: i64 = result.try_get("", "updated_count").context(h!())?;
-    let cursor_datetime: Option<NaiveDateTime> =
-        result.try_get("", "cursor_datetime").context(h!())?;
-    let cursor_id: Option<i64> =
-        result.try_get("", "cursor_id").context(h!())?;
-    let cursor = match (cursor_datetime, cursor_id) {
-        (Some(datetime), Some(id)) => Some(BackfillCursor { datetime, id }),
-        (None, None) => None,
-        _ => anyhow::bail!("incomplete sigint inbox datetime backfill cursor"),
-    };
+    let rows = fetch_backfill_rows(txn, cursor, batch_size).await?;
+    let selected = u64::try_from(rows.len()).context(h!())?;
+    let cursor = rows.last().map(|row| BackfillCursor {
+        datetime: row.datetime,
+        id: row.id,
+    });
+    let entries = prepare_backfill_entries(rows);
+    let updated = update_backfill_entries(txn, &entries).await?;
     Ok(BackfillBatch {
-        selected: u64::try_from(selected).context(h!())?,
-        updated: u64::try_from(updated).context(h!())?,
+        selected,
+        updated,
         cursor,
     })
+}
+
+async fn fetch_backfill_rows<C>(
+    dbx: &C,
+    cursor: Option<BackfillCursor>,
+    batch_size: u64,
+) -> anyhow::Result<Vec<BackfillRow>>
+where
+    C: ConnectionTrait,
+{
+    let mut query = sigint_inbox_item::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item::Column::Id)
+        .column(sigint_inbox_item::Column::Datetime)
+        .filter(sigint_inbox_item::Column::Datetime.is_not_null())
+        .filter(sigint_inbox_item::Column::DatetimeNeo.is_null());
+    if let Some(cursor) = cursor {
+        query = query.filter(backfill_cursor_filter(cursor));
+    }
+    query
+        .order_by_asc(sigint_inbox_item::Column::Datetime)
+        .order_by_asc(sigint_inbox_item::Column::Id)
+        .limit(batch_size)
+        .into_model::<BackfillRow>()
+        .all(dbx)
+        .await
+        .context(h!())
+}
+
+fn backfill_cursor_filter(cursor: BackfillCursor) -> Condition {
+    Condition::any()
+        .add(sigint_inbox_item::Column::Datetime.gt(cursor.datetime))
+        .add(
+            Condition::all()
+                .add(sigint_inbox_item::Column::Datetime.eq(cursor.datetime))
+                .add(sigint_inbox_item::Column::Id.gt(cursor.id)),
+        )
+}
+
+fn prepare_backfill_entries(rows: Vec<BackfillRow>) -> Vec<BackfillEntry> {
+    rows.into_iter()
+        .map(|row| BackfillEntry {
+            id: row.id,
+            datetime_neo: row.datetime,
+        })
+        .collect()
+}
+
+fn build_backfill_update(
+    entries: &[BackfillEntry],
+) -> UpdateMany<sigint_inbox_item::Entity> {
+    let datetime_neo = entries
+        .iter()
+        .fold(CaseStatement::new(), |statement, entry| {
+            statement.case(
+                sigint_inbox_item::Column::Id.eq(entry.id),
+                Expr::value(entry.datetime_neo),
+            )
+        })
+        .finally(Expr::col(sigint_inbox_item::Column::DatetimeNeo));
+    sigint_inbox_item::Entity::update_many()
+        .col_expr(sigint_inbox_item::Column::DatetimeNeo, datetime_neo.into())
+        .filter(
+            sigint_inbox_item::Column::Id
+                .is_in(entries.iter().map(|entry| entry.id)),
+        )
+        .filter(sigint_inbox_item::Column::DatetimeNeo.is_null())
+}
+
+async fn update_backfill_entries(
+    txn: &DatabaseTransaction,
+    entries: &[BackfillEntry],
+) -> anyhow::Result<u64> {
+    if entries.is_empty() {
+        return Ok(0);
+    }
+    Ok(build_backfill_update(entries)
+        .exec(txn)
+        .await
+        .context(h!())?
+        .rows_affected)
 }
 
 #[cfg(test)]

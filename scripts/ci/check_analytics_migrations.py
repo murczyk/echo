@@ -151,8 +151,12 @@ def validate_change(
                 rf"\b(?:update|insert\s+into|delete\s+from)\s+(?:public\.)?{relation}\b",
                 re.IGNORECASE,
             )
-            if not dml.search(contents):
-                errors.append(f"{key}: {table} uses cdc_backfill without post-DDL DML")
+            backfill_dml, backfill_errors = validate_backfill(change, table)
+            errors.extend(f"{key}: {error}" for error in backfill_errors)
+            if not dml.search(contents) and not backfill_dml:
+                errors.append(
+                    f"{key}: {table} uses cdc_backfill without reviewed backfill DML"
+                )
 
     detected_tables = {change.table for change in detected}
     if detected_tables != declared_tables:
@@ -163,6 +167,35 @@ def validate_change(
             f"(missing={missing}, unexpected={unexpected})"
         )
     return errors
+
+
+def validate_backfill(change: dict[str, Any], table: str) -> tuple[bool, list[str]]:
+    backfill = change.get("backfill")
+    if backfill is None:
+        return False, []
+    if not isinstance(backfill, str) or not backfill:
+        return False, [f"{table} has an invalid backfill path"]
+
+    backfill_path = (REPO_ROOT / backfill).resolve()
+    try:
+        backfill_path.relative_to(REPO_ROOT.resolve())
+    except ValueError:
+        return False, [f"{table} backfill path escapes the repository: {backfill}"]
+    if not backfill_path.is_file():
+        return False, [f"{table} backfill path does not exist: {backfill}"]
+
+    contents = backfill_path.read_text()
+    relation = re.escape(table.split(".", 1)[1])
+    sql_dml = re.compile(
+        rf"\b(?:update|insert\s+into|delete\s+from)\s+(?:public\.)?{relation}\b",
+        re.IGNORECASE,
+    )
+    orm_dml = re.compile(
+        rf"\b{relation}::Entity::(?:update_many|insert_many|delete_many)\s*\("
+    )
+    if not sql_dml.search(contents) and not orm_dml.search(contents):
+        return False, [f"{table} backfill file has no recognized DML: {backfill}"]
+    return True, []
 
 
 def cargo_toml_at(revision: str) -> str:
