@@ -425,7 +425,17 @@ where
             continue;
         }
         let unit_req =
-            create_unit_req_from_orbit(dbx, &ancestor, false).await?;
+            match create_unit_req_from_orbit(dbx, &ancestor, false).await {
+                Ok(unit_req) => unit_req,
+                Err(err @ AppError::BL { .. }) => {
+                    let orbit_unit_id = ancestor.unit_id;
+                    warn!(
+                    "Skipping unsupported ORBIT ancestor {orbit_unit_id}: {err}"
+                );
+                    continue;
+                }
+                Err(err) => return Err(err),
+            };
         let unit = super::insert_unit_with_changelog(dbx, login, &unit_req)
             .await
             .c(h!())?;
@@ -715,7 +725,12 @@ where
     C: ConnectionTrait,
 {
     let mut hierarchy = std::array::from_fn(|_| String::new());
-    fill_orbit_hierarchy_level(dbx, orbit_unit, &mut hierarchy).await?;
+    if !fill_orbit_hierarchy_level(dbx, orbit_unit, &mut hierarchy).await? {
+        return Err(AppError::BL {
+            msg: "ORBIT unit has no supported hierarchy level or name"
+                .to_string(),
+        });
+    }
     fill_orbit_parent_chain(
         dbx,
         orbit_unit,
@@ -795,32 +810,33 @@ async fn fill_orbit_hierarchy_level<C>(
     dbx: &C,
     unit: &orbit_unit::Model,
     hierarchy: &mut [String; 7],
-) -> Result<(), AppError>
+) -> Result<bool, AppError>
 where
     C: ConnectionTrait,
 {
     let Some(echelon_id) = unit.unit_echelon_id else {
-        return Ok(());
+        return Ok(false);
     };
     let Some(echelon) = orbit_unit_echelon::Entity::find_by_id(echelon_id)
         .one(dbx)
         .await
         .c(h!())?
     else {
-        return Ok(());
+        return Ok(false);
     };
     let Some(name) = preferred_orbit_unit_name(unit) else {
-        return Ok(());
+        return Ok(false);
     };
     let Some(index) = crate::orbit::echo_echelon(&echelon.key)
         .map(crate::orbit::EchoEchelon::index)
     else {
-        return Ok(());
+        return Ok(false);
     };
     if hierarchy[index].is_empty() {
         hierarchy[index] = name;
+        return Ok(true);
     }
-    Ok(())
+    Ok(false)
 }
 
 fn preferred_orbit_unit_name(unit: &orbit_unit::Model) -> Option<String> {

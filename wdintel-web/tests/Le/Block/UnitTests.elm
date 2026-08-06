@@ -79,6 +79,26 @@ suite =
                         in
                         Unit.isSameOrChildUnit regimentUnit companyUnit
                             |> Expect.equal True
+                , test "Військовий округ входить до складу армійського регіону" <|
+                    \_ ->
+                        let
+                            regionUnitBase =
+                                createUnit 30 "" "" "" "" "" "ЗС РФ"
+
+                            regionUnit =
+                                { regionUnitBase | armyRegion = "ЗС РФ" }
+
+                            districtUnitBase =
+                                createUnit 31 "" "" "" "" "" "Західний ВО ЗС РФ"
+
+                            districtUnit =
+                                { districtUnitBase
+                                    | armyRegion = "ЗС РФ"
+                                    , militaryDistrict = "Західний ВО"
+                                }
+                        in
+                        Unit.isSameOrChildUnit regionUnit districtUnit
+                            |> Expect.equal True
                 ]
             , describe "Різні підрозділи НЕ повинні бути пов'язані"
                 [ test "Різні дивізії однієї армії НЕ пов'язані між собою" <|
@@ -111,6 +131,29 @@ suite =
 
                             unit2 =
                                 createUnit 14 "2-га армія" "" "" "" "" "2-га армія"
+                        in
+                        Unit.isSameOrChildUnit unit1 unit2
+                            |> Expect.equal False
+                , test "Округи різних армійських регіонів НЕ пов'язані" <|
+                    \_ ->
+                        let
+                            unit1Base =
+                                createUnit 32 "" "" "" "" "" "Західний ВО"
+
+                            unit1 =
+                                { unit1Base
+                                    | armyRegion = "ЗС РФ"
+                                    , militaryDistrict = "Західний ВО"
+                                }
+
+                            unit2Base =
+                                createUnit 33 "" "" "" "" "" "Західний ВО"
+
+                            unit2 =
+                                { unit2Base
+                                    | armyRegion = "Інший регіон"
+                                    , militaryDistrict = "Західний ВО"
+                                }
                         in
                         Unit.isSameOrChildUnit unit1 unit2
                             |> Expect.equal False

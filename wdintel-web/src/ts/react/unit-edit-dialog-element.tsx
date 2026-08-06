@@ -5,14 +5,6 @@ import { transformCamelToSnake, transformSnakeToCamel } from '../snake-to-camel'
 import { NeoMuiThemeProvider } from './mui-theme';
 import { UnitFormDialog } from './routes/rer-units-neo/components/UnitFormDialog';
 
-function parseUnit(element: Element): Unit | null {
-  try {
-    return transformSnakeToCamel<Unit>(JSON.parse(element.getAttribute('data-unit') ?? 'null'));
-  } catch {
-    return null;
-  }
-}
-
 function UnitEditDialog({
   unit,
   submitting,
@@ -47,6 +39,8 @@ function UnitEditDialog({
 
 class UnitEditDialogElement extends HTMLElement {
   private root: Root | null = null;
+  private parsedUnitData: string | null | undefined;
+  private parsedUnit: Unit | null = null;
 
   static get observedAttributes() {
     return ['data-unit', 'data-submitting'];
@@ -66,9 +60,21 @@ class UnitEditDialogElement extends HTMLElement {
     );
   };
 
+  private parseUnit() {
+    const unitData = this.getAttribute('data-unit');
+    if (unitData === this.parsedUnitData) return this.parsedUnit;
+    this.parsedUnitData = unitData;
+    try {
+      this.parsedUnit = transformSnakeToCamel<Unit>(JSON.parse(unitData ?? 'null'));
+    } catch {
+      this.parsedUnit = null;
+    }
+    return this.parsedUnit;
+  }
+
   private renderRoot() {
     if (!this.root) return;
-    const unit = parseUnit(this);
+    const unit = this.parseUnit();
     if (unit === null) {
       this.root.render(null);
       return;

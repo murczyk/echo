@@ -21,55 +21,35 @@ pub mod orbit;
 pub mod types;
 
 pub fn unit_name(unit: &Unit) -> String {
-    let mut parts = vec![];
-    if !unit.company.is_empty() {
-        parts.push(unit.company.clone());
-    }
-    if !unit.battalion.is_empty() {
-        parts.push(unit.battalion.clone());
-    }
-    if !unit.regiment.is_empty() {
-        parts.push(unit.regiment.clone());
-    }
-    if !unit.division.is_empty() {
-        parts.push(unit.division.clone());
-    }
-    if !unit.army.is_empty() {
-        parts.push(unit.army.clone());
-    }
-    if !unit.military_district.is_empty() {
-        parts.push(unit.military_district.clone());
-    }
-    if !unit.army_region.is_empty() {
-        parts.push(unit.army_region.clone());
-    }
-    parts.join(" ")
+    unit_name_from_hierarchy([
+        &unit.company,
+        &unit.battalion,
+        &unit.regiment,
+        &unit.division,
+        &unit.army,
+        &unit.military_district,
+        &unit.army_region,
+    ])
 }
 
 pub fn unit_name_req(req: &CreateUnitReq) -> String {
-    let mut parts = vec![];
-    if !req.company.is_empty() {
-        parts.push(req.company.clone());
-    }
-    if !req.battalion.is_empty() {
-        parts.push(req.battalion.clone());
-    }
-    if !req.regiment.is_empty() {
-        parts.push(req.regiment.clone());
-    }
-    if !req.division.is_empty() {
-        parts.push(req.division.clone());
-    }
-    if !req.army.is_empty() {
-        parts.push(req.army.clone());
-    }
-    if !req.military_district.is_empty() {
-        parts.push(req.military_district.clone());
-    }
-    if !req.army_region.is_empty() {
-        parts.push(req.army_region.clone());
-    }
-    parts.join(" ")
+    unit_name_from_hierarchy([
+        &req.company,
+        &req.battalion,
+        &req.regiment,
+        &req.division,
+        &req.army,
+        &req.military_district,
+        &req.army_region,
+    ])
+}
+
+fn unit_name_from_hierarchy(hierarchy: [&str; 7]) -> String {
+    hierarchy
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[post("/api/sigint/units")]
@@ -683,7 +663,7 @@ async fn fanout_network_changed_data(env: &Env) -> Result<(), AppError> {
 pub async fn update_unit(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
-    req: Json<Unit>,
+    req: Json<UpdateUnitReq>,
 ) -> Result<Json<Unit>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
@@ -709,7 +689,7 @@ pub async fn update_unit(
 async fn update_unit_for_login(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
-    req: &Unit,
+    req: &UpdateUnitReq,
     can_update_orbit_note: bool,
 ) -> Result<sigint_unit::Model, AppError> {
     let transaction = dbx.begin().await.context(h!())?;
@@ -718,6 +698,14 @@ async fn update_unit_for_login(
         .await
         .context(h!())?
         .ok_or(AppError::NotFound)?;
+    let military_district = req
+        .military_district
+        .clone()
+        .unwrap_or_else(|| unit.military_district.clone());
+    let army_region = req
+        .army_region
+        .clone()
+        .unwrap_or_else(|| unit.army_region.clone());
     let previous_unit = unit.clone();
     let hierarchy_or_activity_changed = unit.active != req.active
         || unit_hierarchy(&unit)
@@ -727,8 +715,8 @@ async fn update_unit_for_login(
                 req.regiment.as_str(),
                 req.division.as_str(),
                 req.army.as_str(),
-                req.military_district.as_str(),
-                req.army_region.as_str(),
+                military_district.as_str(),
+                army_region.as_str(),
             ];
     let unit_json_old = unit_json(&transaction, req.id).await?;
     let mut unit = unit.into_active_model();
@@ -737,13 +725,23 @@ async fn update_unit_for_login(
     unit.regiment = Set(req.regiment.clone());
     unit.division = Set(req.division.clone());
     unit.army = Set(req.army.clone());
-    unit.military_district = Set(req.military_district.clone());
-    unit.army_region = Set(req.army_region.clone());
+    unit.military_district = Set(military_district.clone());
+    unit.army_region = Set(army_region.clone());
     unit.active = Set(req.active);
-    unit.name = Set(unit_name(req));
+    unit.name = Set(unit_name_from_hierarchy([
+        &req.company,
+        &req.battalion,
+        &req.regiment,
+        &req.division,
+        &req.army,
+        &military_district,
+        &army_region,
+    ]));
     unit.comment = Set(req.comment.clone());
     if can_update_orbit_note {
-        unit.orbit_note = Set(req.orbit_note.clone());
+        if let Some(orbit_note) = &req.orbit_note {
+            unit.orbit_note = Set(orbit_note.clone());
+        }
     }
     let unit = unit.update(&transaction).await.context(h!())?;
     let unit_json_new = unit_json(&transaction, req.id).await?;
@@ -1349,6 +1347,21 @@ async fn update_original_unit(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<sigint_unit::Model> {
     let mut unit = unit_original.clone().into_active_model();
+    unit.name = Set(unit_name_from_hierarchy([
+        merged_unit_value(&unit_original.company, &unit_to_merge.company),
+        merged_unit_value(&unit_original.battalion, &unit_to_merge.battalion),
+        merged_unit_value(&unit_original.regiment, &unit_to_merge.regiment),
+        merged_unit_value(&unit_original.division, &unit_to_merge.division),
+        merged_unit_value(&unit_original.army, &unit_to_merge.army),
+        merged_unit_value(
+            &unit_original.military_district,
+            &unit_to_merge.military_district,
+        ),
+        merged_unit_value(
+            &unit_original.army_region,
+            &unit_to_merge.army_region,
+        ),
+    ]));
 
     if unit_original.company.is_empty() && !unit_to_merge.company.is_empty() {
         unit.company = Set(unit_to_merge.company.clone());
@@ -1394,7 +1407,17 @@ async fn update_original_unit(
         unit.deleted = Set(false);
     }
 
-    unit.update(dbx).await.context(h!())
+    let unit = unit.update(dbx).await.context(h!())?;
+    unit_after_insert_update(dbx, unit.id).await.context(h!())?;
+    Ok(unit)
+}
+
+fn merged_unit_value<'a>(original: &'a str, to_merge: &'a str) -> &'a str {
+    if original.is_empty() {
+        to_merge
+    } else {
+        original
+    }
 }
 
 /// Oneoff function to reprocess the search index for units.
@@ -1930,7 +1953,37 @@ mod tests {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
         let login_id = test_login_id(&env).await;
-        let orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
+        let mut orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
+        let unsupported_echelon_id = uuid::Uuid::new_v4();
+        orbit_unit_echelon::ActiveModel {
+            id: Set(unsupported_echelon_id),
+            key: Set("other".to_string()),
+            name: Set(format!("Інше-{}", uuid::Uuid::new_v4())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let unsupported_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(unsupported_unit_id),
+            unit_name_short: Set(Some("ВМФ".to_string())),
+            unit_echelon_id: Set(Some(unsupported_echelon_id)),
+            operational_parent_unit_id: Set(Some(orbit_fixture.unit_ids[5])),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        update_orbit_parents(
+            &env.dbx,
+            orbit_fixture.unit_ids[4],
+            None,
+            Some(unsupported_unit_id),
+        )
+        .await;
+        orbit_fixture.unit_ids.push(unsupported_unit_id);
+        orbit_fixture.echelon_ids.push(unsupported_echelon_id);
 
         let rsp = orbit::import_orbit_unit_for_login(
             &login_id,
@@ -1983,6 +2036,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(links.len(), 7);
+        assert!(!links
+            .iter()
+            .any(|link| link.orbit_unit_id == unsupported_unit_id));
         let linked_unit_ids = links
             .into_iter()
             .map(|link| link.sigint_unit_id)
@@ -2108,16 +2164,17 @@ mod tests {
             .await
             .unwrap();
         let login_id = test_login_id(&env).await;
+        let orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
         let unsupported_unit_id = uuid::Uuid::from_u128(1);
         orbit_unit::ActiveModel {
             unit_id: Set(unsupported_unit_id),
             unit_name: Set(Some("Unsupported unit".to_string())),
+            operational_parent_unit_id: Set(Some(orbit_fixture.unit_ids[6])),
             ..Default::default()
         }
         .insert(&env.dbx)
         .await
         .unwrap();
-        let orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
 
         let imported = orbit::import_unlinked_orbit_units(&env.dbx, &login_id)
             .await
@@ -2430,6 +2487,7 @@ mod tests {
     ) {
         let mut req = render_unit(unit).unwrap();
         req.active = active;
+        let req = UpdateUnitReq::from(req);
         update_unit_for_login(dbx, login_id, &req, true)
             .await
             .unwrap();
@@ -2515,6 +2573,7 @@ mod tests {
         let mut moved = created;
         moved.battalion = "4 ошб".to_string();
         moved.regiment = "45 осбр".to_string();
+        let moved = UpdateUnitReq::from(moved);
         let moved = update_unit_for_login(&env.dbx, &login_id, &moved, true)
             .await
             .unwrap();
@@ -2557,8 +2616,57 @@ mod tests {
                 .unwrap();
 
         assert_eq!(merged.regiment, "55 мбр");
+        assert_eq!(merged.name, "1 рота 2 бат 55 мбр");
         assert!(!active(&env.dbx, old_parent.id).await);
         assert!(active(&env.dbx, new_parent.id).await);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn merge_units_updates_name_and_search_for_extended_hierarchy() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let surviving = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                company: Set("CompanyToken".to_string()),
+                name: Set("CompanyToken".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                military_district: Set("DistrictToken".to_string()),
+                army_region: Set("RegionToken".to_string()),
+                name: Set("DistrictToken RegionToken".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let merged =
+            merge_units(login_id, &env.dbx, duplicate.id, surviving.id)
+                .await
+                .unwrap();
+
+        assert_eq!(merged.name, "CompanyToken DistrictToken RegionToken");
+        let search_matches = env
+            .dbx
+            .query_one_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT search_tsv @@ plainto_tsquery('russian', $1) AS matches FROM sigint_unit WHERE id = $2",
+                ["DistrictToken".into(), merged.id.into()],
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get::<bool>("", "matches")
+            .unwrap();
+        assert!(search_matches);
     }
 
     #[tokio::test]
@@ -2602,6 +2710,7 @@ mod tests {
         let mut req = render_unit(&unit).unwrap();
         req.is_deduplicate_candidate = Some(false);
         req.comment = "updated".to_string();
+        let req = UpdateUnitReq::from(req);
 
         let unit = update_unit_for_login(&env.dbx, &login_id, &req, true)
             .await
@@ -2628,6 +2737,7 @@ mod tests {
         let mut req = render_unit(&unit).unwrap();
         redact_unit_orbit_data(&mut req);
         req.comment = "updated".to_string();
+        let req = UpdateUnitReq::from(req);
 
         let unit = update_unit_for_login(&env.dbx, &login_id, &req, false)
             .await
@@ -2635,6 +2745,44 @@ mod tests {
 
         assert_eq!(unit.comment, "updated");
         assert_eq!(unit.orbit_note.as_deref(), Some("Orbit note"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_update_preserves_fields_omitted_by_older_clients() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                military_district: Set("Західний ВО".to_string()),
+                army_region: Set("ЗС РФ".to_string()),
+                orbit_note: Set(Some("Orbit note".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let req: UpdateUnitReq = serde_json::from_value(serde_json::json!({
+            "id": unit.id,
+            "company": unit.company,
+            "battalion": unit.battalion,
+            "regiment": unit.regiment,
+            "division": unit.division,
+            "army": unit.army,
+            "active": unit.active,
+            "comment": "updated"
+        }))
+        .unwrap();
+
+        let unit = update_unit_for_login(&env.dbx, &login_id, &req, true)
+            .await
+            .unwrap();
+
+        assert_eq!(unit.military_district, "Західний ВО");
+        assert_eq!(unit.army_region, "ЗС РФ");
+        assert_eq!(unit.orbit_note.as_deref(), Some("Orbit note"));
+        assert_eq!(unit.comment, "updated");
     }
 
     #[test]

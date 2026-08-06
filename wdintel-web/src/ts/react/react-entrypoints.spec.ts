@@ -16,6 +16,7 @@ const ENTRYPOINTS = [
   { modulePath: './rer-units-neo-element', tag: 'rer-units-neo' },
   { modulePath: './unit-attachment-upload-element', tag: 'unit-attachment-upload' },
   { modulePath: './orbit-unit-link-dialog-element', tag: 'orbit-unit-link-dialog' },
+  { modulePath: './unit-edit-dialog-element', tag: 'unit-edit-dialog' },
   { modulePath: './tags-neo-element', tag: 'tags-neo' },
   { modulePath: './admin-all-reports-element', tag: 'admin-all-reports' },
   { modulePath: './admin-ai-callsigns-element', tag: 'admin-ai-callsigns' },

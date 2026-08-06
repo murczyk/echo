@@ -84,5 +84,17 @@ suite =
                         |> .armies
                         |> List.length
                         |> Expect.equal 1
+            , test "uses upper echelons instead of an empty army group" <|
+                \_ ->
+                    let
+                        units =
+                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "", militaryDistrict = "Західний ВО", armyRegion = "ЗС РФ", comment = "", orbitNote = Nothing, name = "Західний ВО ЗС РФ", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
+                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "", militaryDistrict = "", armyRegion = "ЗС РФ", comment = "", orbitNote = Nothing, name = "ЗС РФ", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
+                            ]
+                    in
+                    Core.UnitHierarchy.buildHierarchy units
+                        |> .armies
+                        |> List.map Tuple.first
+                        |> Expect.equal (List.sort [ "Західний ВО", "ЗС РФ" ])
             ]
         ]

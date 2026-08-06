@@ -51,7 +51,9 @@ isChildOf : B.Unit -> B.Unit -> Bool
 isChildOf parentUnit childUnit =
     let
         parentLevels =
-            [ parentUnit.army
+            [ parentUnit.armyRegion
+            , parentUnit.militaryDistrict
+            , parentUnit.army
             , parentUnit.division
             , parentUnit.regiment
             , parentUnit.battalion
@@ -59,7 +61,9 @@ isChildOf parentUnit childUnit =
             ]
 
         childLevels =
-            [ childUnit.army
+            [ childUnit.armyRegion
+            , childUnit.militaryDistrict
+            , childUnit.army
             , childUnit.division
             , childUnit.regiment
             , childUnit.battalion

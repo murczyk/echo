@@ -758,9 +758,14 @@ tabsView activeTab =
 overviewTab : Auth.User -> Shared.Model -> Model -> B.UnitDetailsRsp -> Html Msg
 overviewTab user shared model details =
     let
+        hasOrbitNote =
+            details.unit.orbitNote
+                |> Maybe.map (not << String.isEmpty << String.trim)
+                |> Maybe.withDefault False
+
         orbitCards =
             if List.isEmpty details.orbitUnits then
-                if details.canLinkOrbitUnit || details.unit.orbitNote /= Nothing then
+                if details.canLinkOrbitUnit || hasOrbitNote then
                     [ emptyOrbitDataCard details.canLinkOrbitUnit details.unit.orbitNote ]
 
                 else
