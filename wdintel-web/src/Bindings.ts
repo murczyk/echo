@@ -1220,6 +1220,11 @@ export type PalitraChangelogEntry = {
   description: string;
 };
 
+export type PalitraAccessLogin = {
+  id: string;
+  login: string;
+};
+
 export type Palitra = {
   id: number;
   name: string;
@@ -1241,7 +1246,7 @@ export type Palitra = {
   geometry: Geometry | null;
   accessAorId: Array<number>;
   accessOrganismIds: Array<number>;
-  accessLogins: Array<string>;
+  accessLogins: Array<PalitraAccessLogin>;
 };
 
 export type PalitraDetails = {

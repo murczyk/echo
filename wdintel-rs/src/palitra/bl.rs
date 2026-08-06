@@ -2288,6 +2288,10 @@ where
                 .await
                 .c(h!())?
         };
+    let access_login_names =
+        crate::users::login_names_by_ids(dbx, access_logins.clone())
+            .await
+            .c(h!())?;
     let author = match palitra_model.author_login_id {
         Some(author_login_id) => {
             crate::users::login_names_by_ids(dbx, vec![author_login_id])
@@ -2320,7 +2324,16 @@ where
         access_organism_ids,
         access_logins: access_logins
             .into_iter()
-            .map(|login_id| login_id.to_string())
+            .map(|login_id| {
+                let login = access_login_names
+                    .get(&login_id)
+                    .cloned()
+                    .unwrap_or_else(|| login_id.to_string());
+                PalitraAccessLogin {
+                    id: login_id.to_string(),
+                    login,
+                }
+            })
             .collect(),
     })
 }
@@ -2808,10 +2821,9 @@ where
             if logins.is_empty() {
                 return Ok(());
             }
-            let logins = logins
-                .into_iter()
-                .map(|login_id| Uuid::parse_str(&login_id).c(h!()))
-                .collect::<Result<Vec<_>, _>>()?
+            let logins = resolve_palitra_access_login_ids(txn, logins)
+                .await
+                .c(h!())?
                 .into_iter()
                 .map(|login| palitra_access_login::ActiveModel {
                     id: NotSet,
@@ -2887,6 +2899,28 @@ where
     .insert(txn)
     .await
     .c(h!())
+}
+
+async fn resolve_palitra_access_login_ids<'a, 'async_trait, C>(
+    txn: &'a C,
+    login_values: Vec<String>,
+) -> anyhow::Result<Vec<Uuid>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut login_ids = Vec::with_capacity(login_values.len());
+    for login_value in login_values {
+        let login_id =
+            match crate::users::login_id_by_name(txn, &login_value).await {
+                Ok(login_id) => login_id,
+                Err(crate::error::AppError::NotFound) => {
+                    Uuid::parse_str(&login_value).c(h!())?
+                }
+                Err(error) => return Err(anyhow::Error::new(error)),
+            };
+        login_ids.push(login_id);
+    }
+    Ok(login_ids)
 }
 
 #[cfg(test)]

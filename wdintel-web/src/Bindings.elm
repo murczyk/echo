@@ -3176,6 +3176,20 @@ palitraChangelogEntryEncoder struct =
         ]
 
 
+type alias PalitraAccessLogin =
+    { id : String
+    , login : String
+    }
+
+
+palitraAccessLoginEncoder : PalitraAccessLogin -> Json.Encode.Value
+palitraAccessLoginEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "login", (Json.Encode.string) struct.login )
+        ]
+
+
 type alias Palitra =
     { id : Int
     , name : String
@@ -3197,7 +3211,7 @@ type alias Palitra =
     , geometry : Maybe (Geometry)
     , accessAorId : List (Int)
     , accessOrganismIds : List (Int)
-    , accessLogins : List (String)
+    , accessLogins : List (PalitraAccessLogin)
     }
 
 
@@ -3224,7 +3238,7 @@ palitraEncoder struct =
         , ( "geometry", (Maybe.withDefault Json.Encode.null << Maybe.map (geometryEncoder)) struct.geometry )
         , ( "access_aor_id", (Json.Encode.list (Json.Encode.int)) struct.accessAorId )
         , ( "access_organism_ids", (Json.Encode.list (Json.Encode.int)) struct.accessOrganismIds )
-        , ( "access_logins", (Json.Encode.list (Json.Encode.string)) struct.accessLogins )
+        , ( "access_logins", (Json.Encode.list (palitraAccessLoginEncoder)) struct.accessLogins )
         ]
 
 
@@ -13269,6 +13283,13 @@ palitraChangelogEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.string)))
 
 
+palitraAccessLoginDecoder : Json.Decode.Decoder PalitraAccessLogin
+palitraAccessLoginDecoder =
+    Json.Decode.succeed PalitraAccessLogin
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
+
+
 palitraDecoder : Json.Decode.Decoder Palitra
 palitraDecoder =
     Json.Decode.succeed Palitra
@@ -13292,7 +13313,7 @@ palitraDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "geometry" (Json.Decode.nullable (geometryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_aor_id" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_organism_ids" (Json.Decode.list (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_logins" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_logins" (Json.Decode.list (palitraAccessLoginDecoder))))
 
 
 palitraDetailsDecoder : Json.Decode.Decoder PalitraDetails

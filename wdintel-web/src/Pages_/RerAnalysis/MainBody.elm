@@ -1132,7 +1132,7 @@ view user model shared route =
                                         , ( "geometry", (Maybe.withDefault Encode.null << Maybe.map B.geometryEncoder) palitra.geometry )
                                         , ( "access_aor_id", Encode.list Encode.int palitra.accessAorId )
                                         , ( "access_organism_ids", Encode.list Encode.int palitra.accessOrganismIds )
-                                        , ( "access_logins", Encode.list Encode.string palitra.accessLogins )
+                                        , ( "access_logins", Encode.list Encode.string (List.map .id palitra.accessLogins) )
                                         ]
                                   )
                                 , ( "points", Encode.list B.palitraPointEncoder palitraPoints )

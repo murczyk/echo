@@ -6,6 +6,7 @@ import {
   MyScope,
   Organism,
   Palitra,
+  PalitraAccessLogin,
   PalitraAccess,
   PalitraChangelogEntry,
   PalitraDetails,
@@ -105,8 +106,13 @@ type PalitraLike = {
   access_aor_id?: Array<number | string> | null;
   accessOrganismIds?: Array<number | string> | null;
   access_organism_ids?: Array<number | string> | null;
-  accessLogins?: Array<string> | null;
-  access_logins?: Array<string> | null;
+  accessLogins?: Array<PalitraAccessLoginLike | string> | null;
+  access_logins?: Array<PalitraAccessLoginLike | string> | null;
+};
+
+type PalitraAccessLoginLike = {
+  id?: string;
+  login?: string;
 };
 
 type PalitraChangelogEntryLike = {
@@ -281,7 +287,15 @@ function normalizePalitra(raw: PalitraLike | null | undefined): Palitra {
     geometry: normalizeGeometry(raw?.geometry),
     accessAorId: normalizeNumberArray(raw?.accessAorId ?? raw?.access_aor_id),
     accessOrganismIds: normalizeNumberArray(raw?.accessOrganismIds ?? raw?.access_organism_ids),
-    accessLogins: raw?.accessLogins ?? raw?.access_logins ?? [],
+    accessLogins: (raw?.accessLogins ?? raw?.access_logins ?? []).map(normalizePalitraAccessLogin),
+  };
+}
+
+function normalizePalitraAccessLogin(raw: PalitraAccessLoginLike | string): PalitraAccessLogin {
+  if (typeof raw === 'string') return { id: raw, login: raw };
+  return {
+    id: raw.id ?? '',
+    login: raw.login ?? raw.id ?? '',
   };
 }
 

@@ -41,6 +41,7 @@ type Props = {
   user: User | null;
   myScope: MyScope | null;
   allLogins: string[];
+  loginIdsByName: Record<string, string>;
   palitraRows: PalitraRowView[];
   selectedPalitraIds: number[];
   folderActionsBlocked: boolean;
@@ -601,11 +602,14 @@ export function createPalitraPageActionHandlers(props: Props) {
 
         const results = await Promise.allSettled(
           selectedOptions.map((option) => {
-            const req = toCreateReq({
-              ...normalizedForm,
-              colorHex: option.colorHex,
-              name: buildPalitraNameWithSuffix(normalizedForm.name, option.suffix),
-            });
+            const req = toCreateReq(
+              {
+                ...normalizedForm,
+                colorHex: option.colorHex,
+                name: buildPalitraNameWithSuffix(normalizedForm.name, option.suffix),
+              },
+              props.loginIdsByName,
+            );
             return createPalitraWithKmz(req, props.kmzFile!);
           }),
         );
@@ -635,10 +639,13 @@ export function createPalitraPageActionHandlers(props: Props) {
       }
 
       const createdPalitra = await createPalitraBasicWithKmz(
-        toCreateReq({
-          ...normalizedForm,
-          colorHex: props.selectedColorFromKmz,
-        }),
+        toCreateReq(
+          {
+            ...normalizedForm,
+            colorHex: props.selectedColorFromKmz,
+          },
+          props.loginIdsByName,
+        ),
         props.kmzFile,
       );
       props.setPalitras((prev) => [createdPalitra, ...prev]);
@@ -668,7 +675,10 @@ export function createPalitraPageActionHandlers(props: Props) {
     props.setStatus(null);
 
     try {
-      const details = await updatePalitra(props.editPalitraId, toCreateReq(normalizedForm));
+      const details = await updatePalitra(
+        props.editPalitraId,
+        toCreateReq(normalizedForm, props.loginIdsByName),
+      );
       props.setPalitras((prev) =>
         prev.map((palitra) => (palitra.id === props.editPalitraId ? details.palitra : palitra)),
       );
