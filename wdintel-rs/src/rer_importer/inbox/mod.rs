@@ -2917,6 +2917,14 @@ mod tests {
         for (date, time, expected) in [
             (
                 "2026-01-15",
+                "12:34",
+                NaiveDate::from_ymd_opt(2026, 1, 15)
+                    .unwrap()
+                    .and_hms_opt(10, 34, 0)
+                    .unwrap(),
+            ),
+            (
+                "2026-01-15",
                 "12:34:56",
                 NaiveDate::from_ymd_opt(2026, 1, 15)
                     .unwrap()
@@ -2929,6 +2937,22 @@ mod tests {
                 NaiveDate::from_ymd_opt(2026, 7, 15)
                     .unwrap()
                     .and_hms_opt(9, 34, 56)
+                    .unwrap(),
+            ),
+            (
+                "2024-03-31",
+                "03:30:00",
+                NaiveDate::from_ymd_opt(2024, 3, 31)
+                    .unwrap()
+                    .and_hms_opt(1, 30, 0)
+                    .unwrap(),
+            ),
+            (
+                "2024-10-27",
+                "03:30:00",
+                NaiveDate::from_ymd_opt(2024, 10, 27)
+                    .unwrap()
+                    .and_hms_opt(1, 30, 0)
                     .unwrap(),
             ),
         ] {

@@ -5,7 +5,6 @@ use chrono::{
 };
 use chrono_tz::Europe::Kyiv;
 use indicatif::ProgressBar;
-use sea_orm::prelude::Expr;
 use sea_orm::*;
 
 use crate::config::{
@@ -25,7 +24,8 @@ pub fn from_date_time_text(
         return Ok(None);
     };
     let date = NaiveDate::parse_from_str(date, "%Y-%m-%d")?;
-    let time = NaiveTime::parse_from_str(time, "%H:%M:%S%.f")?;
+    let time = NaiveTime::parse_from_str(time, "%H:%M:%S%.f")
+        .or_else(|_| NaiveTime::parse_from_str(time, "%H:%M"))?;
     let local_datetime = date.and_time(time);
     Ok(Some(kyiv_local_to_utc(local_datetime)?))
 }
@@ -58,20 +58,23 @@ pub async fn oneoff_backfill(mode: Mode) -> Result<(), AppError> {
     progress.set_style(crate::utils::get_pb_style()?);
     println!("> backfilling {total} sigint inbox item datetime values");
 
+    let mut cursor = None;
     loop {
         let txn = dbx.begin().await.c(h!())?;
-        let updated =
-            backfill_batch(&txn, SIGINT_INBOX_DATETIME_NEO_BACKFILL_BATCH_SIZE)
-                .await
-                .c(h!())?;
+        let batch = backfill_batch(
+            &txn,
+            cursor,
+            SIGINT_INBOX_DATETIME_NEO_BACKFILL_BATCH_SIZE,
+        )
+        .await
+        .c(h!())?;
         txn.commit().await.c(h!())?;
-        if updated == 0 {
+        if batch.selected == 0 {
             break;
         }
-        progress.inc(updated);
-        if updated < SIGINT_INBOX_DATETIME_NEO_BACKFILL_BATCH_SIZE
-            || progress.position() >= total
-        {
+        progress.inc(batch.updated);
+        cursor = batch.cursor;
+        if batch.selected < SIGINT_INBOX_DATETIME_NEO_BACKFILL_BATCH_SIZE {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_secs(
@@ -81,11 +84,11 @@ pub async fn oneoff_backfill(mode: Mode) -> Result<(), AppError> {
     }
 
     progress.finish_with_message("done");
-    let mismatch_count = mismatch_count(&dbx).await.c(h!())?;
-    if mismatch_count != 0 {
+    let remaining = missing_count(&dbx).await.c(h!())?;
+    if remaining != 0 {
         return Err(AppError::BL {
             msg: format!(
-                "{mismatch_count} sigint inbox item datetime values still differ"
+                "{remaining} sigint inbox item datetime values are still missing"
             ),
         });
     }
@@ -104,53 +107,53 @@ where
         .context(h!())
 }
 
-async fn mismatch_count<C>(dbx: &C) -> anyhow::Result<u64>
-where
-    C: ConnectionTrait,
-{
-    sigint_inbox_item::Entity::find()
-        .filter(Expr::cust("datetime_neo is distinct from datetime"))
-        .count(dbx)
-        .await
-        .context(h!())
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BackfillCursor {
+    datetime: NaiveDateTime,
+    id: i64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BackfillBatch {
+    selected: u64,
+    updated: u64,
+    cursor: Option<BackfillCursor>,
 }
 
 async fn backfill_batch(
     txn: &DatabaseTransaction,
+    cursor: Option<BackfillCursor>,
     batch_size: u64,
-) -> anyhow::Result<u64> {
+) -> anyhow::Result<BackfillBatch> {
     let batch_size = i64::try_from(batch_size).context(h!())?;
+    let (cursor_datetime, cursor_id) = cursor
+        .map(|cursor| (Some(cursor.datetime), Some(cursor.id)))
+        .unwrap_or_default();
     let result = txn
         .query_one_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
-            r#"
-with batch as materialized (
-    select id
-    from sigint_inbox_item
-    where datetime is not null
-        and datetime_neo is null
-    order by datetime asc, id asc
-    limit $1
-),
-updated as (
-    update sigint_inbox_item as item
-    set datetime_neo = item.datetime
-    from batch
-    where item.id = batch.id
-        and item.datetime_neo is null
-    returning item.id
-)
-select count(*)::bigint as updated_count
-from updated
-            "#,
-            [batch_size.into()],
+            echo_migration::DATETIME_NEO_BACKFILL_BATCH_SQL,
+            [cursor_datetime.into(), cursor_id.into(), batch_size.into()],
         ))
         .await
         .context(h!())?
         .context(h!())?;
-    let updated_count: i64 =
-        result.try_get("", "updated_count").context(h!())?;
-    u64::try_from(updated_count).context(h!())
+    let selected: i64 = result.try_get("", "selected_count").context(h!())?;
+    let updated: i64 = result.try_get("", "updated_count").context(h!())?;
+    let cursor_datetime: Option<NaiveDateTime> =
+        result.try_get("", "cursor_datetime").context(h!())?;
+    let cursor_id: Option<i64> =
+        result.try_get("", "cursor_id").context(h!())?;
+    let cursor = match (cursor_datetime, cursor_id) {
+        (Some(datetime), Some(id)) => Some(BackfillCursor { datetime, id }),
+        (None, None) => None,
+        _ => anyhow::bail!("incomplete sigint inbox datetime backfill cursor"),
+    };
+    Ok(BackfillBatch {
+        selected: u64::try_from(selected).context(h!())?,
+        updated: u64::try_from(updated).context(h!())?,
+        cursor,
+    })
 }
 
 #[cfg(test)]
@@ -208,12 +211,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn date_time_text_accepts_minute_precision() {
+        assert_eq!(
+            from_date_time_text(Some("2026-01-15"), Some("12:34")).unwrap(),
+            Some(
+                NaiveDate::from_ymd_opt(2026, 1, 15)
+                    .unwrap()
+                    .and_hms_opt(10, 34, 0)
+                    .unwrap()
+            )
+        );
+    }
+
     #[serial]
     #[tokio::test]
     async fn backfill_updates_oldest_missing_rows_and_is_idempotent() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let mut ids = Vec::new();
-        for date in ["2026-01-03", "2026-01-01", "2026-01-02"] {
+        for date in [
+            "2026-01-03",
+            "2026-01-01",
+            "2026-01-01",
+            "2026-01-01",
+            "2026-01-02",
+        ] {
             let inbox_item = mk_sigint_inbox_item(
                 &env.dbx,
                 sigint_inbox_item::ActiveModel {
@@ -227,28 +249,50 @@ mod tests {
             .unwrap();
             ids.push(inbox_item.id);
         }
-        assert_eq!(missing_count(&env.dbx).await.unwrap(), 3);
+        assert_eq!(missing_count(&env.dbx).await.unwrap(), 5);
 
         let txn = env.dbx.begin().await.unwrap();
-        assert_eq!(backfill_batch(&txn, 2).await.unwrap(), 2);
+        let first_batch = backfill_batch(&txn, None, 2).await.unwrap();
+        assert_eq!(first_batch.selected, 2);
+        assert_eq!(first_batch.updated, 2);
         txn.commit().await.unwrap();
         let inbox_items = sigint_inbox_item::Entity::find()
             .filter(sigint_inbox_item::Column::Id.is_in(ids))
             .order_by_asc(sigint_inbox_item::Column::Datetime)
+            .order_by_asc(sigint_inbox_item::Column::Id)
             .all(&env.dbx)
             .await
             .unwrap();
         assert!(inbox_items[0].datetime_neo.is_some());
         assert!(inbox_items[1].datetime_neo.is_some());
         assert!(inbox_items[2].datetime_neo.is_none());
+        assert!(inbox_items[3].datetime_neo.is_none());
+        assert!(inbox_items[4].datetime_neo.is_none());
 
         let txn = env.dbx.begin().await.unwrap();
-        assert_eq!(backfill_batch(&txn, 2).await.unwrap(), 1);
+        let second_batch =
+            backfill_batch(&txn, first_batch.cursor, 2).await.unwrap();
+        assert_eq!(second_batch.selected, 2);
+        assert_eq!(second_batch.updated, 2);
         txn.commit().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
-        assert_eq!(backfill_batch(&txn, 2).await.unwrap(), 0);
+        let third_batch =
+            backfill_batch(&txn, second_batch.cursor, 2).await.unwrap();
+        assert_eq!(third_batch.selected, 1);
+        assert_eq!(third_batch.updated, 1);
+        txn.commit().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let final_batch =
+            backfill_batch(&txn, third_batch.cursor, 2).await.unwrap();
+        assert_eq!(final_batch.selected, 0);
+        assert_eq!(final_batch.updated, 0);
         txn.commit().await.unwrap();
         assert_eq!(missing_count(&env.dbx).await.unwrap(), 0);
-        assert_eq!(mismatch_count(&env.dbx).await.unwrap(), 0);
+
+        let txn = env.dbx.begin().await.unwrap();
+        let rerun_batch = backfill_batch(&txn, None, 2).await.unwrap();
+        assert_eq!(rerun_batch.selected, 0);
+        assert_eq!(rerun_batch.updated, 0);
+        txn.commit().await.unwrap();
     }
 }
