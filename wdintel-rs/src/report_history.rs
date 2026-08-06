@@ -27,7 +27,7 @@ use actix_web::web::Json;
 use actix_web::{post, HttpResponse};
 use chrono::{Datelike, Duration, Utc};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
-use log::{error, warn};
+use log::{error, info, warn};
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
@@ -1288,11 +1288,53 @@ pub async fn enqueue_report(
     file_name: Option<String>,
     content_type: Option<String>,
 ) -> Result<report_history::Model, AppError> {
-    Ok(report_history::ActiveModel {
+    let request = serde_json::to_value(request).c(h!())?;
+    let txn = dbx.begin().await.c(h!())?;
+    lock_report_request(&txn, requested_by_login_id, report_kind, &request)
+        .await?;
+
+    if let Some(report_history) = find_active_duplicate_report(
+        &txn,
+        requested_by_login_id,
+        report_kind,
+        &request,
+    )
+    .await?
+    {
+        let message = duplicate_report_log_message(&report_history);
+        let report_log = append_log_entry(
+            report_history.log.clone(),
+            &requested_by_login_id.to_string(),
+            &message,
+        );
+        let mut report_history = report_history.into_active_model();
+        report_history.log = Set(report_log);
+        let report_history = report_history.update(&txn).await.c(h!())?;
+        txn.commit().await.c(h!())?;
+        info!("{message}");
+        return Ok(report_history);
+    }
+
+    if let Some(report_history) = find_failed_duplicate_report(
+        &txn,
+        requested_by_login_id,
+        report_kind,
+        &request,
+    )
+    .await?
+    {
+        let report_history =
+            reset_failed_report(&txn, report_history, requested_by_login_id)
+                .await?;
+        txn.commit().await.c(h!())?;
+        return Ok(report_history);
+    }
+
+    let report_history = report_history::ActiveModel {
         id: NotSet,
         report_kind: Set(report_kind.to_string()),
         requested_by_login_id: Set(*requested_by_login_id),
-        request: Set(serde_json::to_value(request).c(h!())?),
+        request: Set(request),
         created_at: Set(Utc::now().naive_utc()),
         status: Set(STATUS_PLANNED.to_string()),
         retry_count: Set(0),
@@ -1308,9 +1350,137 @@ pub async fn enqueue_report(
         legacy_log_id: Set(None),
         legacy_report_path: Set(None),
     }
-    .insert(dbx)
+    .insert(&txn)
     .await
-    .c(h!())?)
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(report_history)
+}
+
+async fn lock_report_request<C>(
+    dbx: &C,
+    requested_by_login_id: &uuid::Uuid,
+    report_kind: &str,
+    request: &serde_json::Value,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    dbx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        select pg_advisory_xact_lock(
+            hashtextextended(
+                jsonb_build_array($1::text, $2::text, $3::jsonb)::text,
+                0
+            )
+        )
+        "#,
+        [
+            requested_by_login_id.to_string().into(),
+            report_kind.into(),
+            request.clone().into(),
+        ],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn find_active_duplicate_report<C>(
+    dbx: &C,
+    requested_by_login_id: &uuid::Uuid,
+    report_kind: &str,
+    request: &serde_json::Value,
+) -> Result<Option<report_history::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(ReportHistory::find()
+        .filter(
+            report_history::Column::RequestedByLoginId
+                .eq(*requested_by_login_id),
+        )
+        .filter(report_history::Column::ReportKind.eq(report_kind))
+        .filter(report_history::Column::Request.eq(request.clone()))
+        .filter(
+            report_history::Column::Status
+                .is_in([STATUS_PLANNED, STATUS_IN_PROGRESS]),
+        )
+        .order_by_asc(report_history::Column::CreatedAt)
+        .order_by_asc(report_history::Column::Id)
+        .lock_exclusive()
+        .one(dbx)
+        .await
+        .c(h!())?)
+}
+
+async fn find_failed_duplicate_report<C>(
+    dbx: &C,
+    requested_by_login_id: &uuid::Uuid,
+    report_kind: &str,
+    request: &serde_json::Value,
+) -> Result<Option<report_history::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(ReportHistory::find()
+        .filter(
+            report_history::Column::RequestedByLoginId
+                .eq(*requested_by_login_id),
+        )
+        .filter(report_history::Column::ReportKind.eq(report_kind))
+        .filter(report_history::Column::Request.eq(request.clone()))
+        .filter(report_history::Column::Status.eq(STATUS_FAILED))
+        .order_by_desc(report_history::Column::CreatedAt)
+        .order_by_desc(report_history::Column::Id)
+        .lock_exclusive()
+        .one(dbx)
+        .await
+        .c(h!())?)
+}
+
+fn duplicate_report_log_message(
+    report_history: &report_history::Model,
+) -> String {
+    format!(
+        "skipping duplicate report: id={}, kind={}, requested_by_login_id={}, status={}, request={}",
+        report_history.id,
+        report_history.report_kind,
+        report_history.requested_by_login_id,
+        report_history.status,
+        report_history.request,
+    )
+}
+
+async fn reset_failed_report<C>(
+    dbx: &C,
+    report_history: report_history::Model,
+    retried_by_login_id: &uuid::Uuid,
+) -> Result<report_history::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    if report_history.status != STATUS_FAILED {
+        return Err(AppError::BL {
+            msg: "Only failed reports can be retried".to_string(),
+        });
+    }
+    let report_log = append_log_entry(
+        report_history.log.clone(),
+        &retried_by_login_id.to_string(),
+        "user requested another attempt for a failed task",
+    );
+    let mut report_history = report_history.into_active_model();
+    report_history.status = Set(STATUS_PLANNED.to_string());
+    report_history.retry_count = Set(0);
+    report_history.planned_for_ts = Set(None);
+    report_history.started_at = Set(None);
+    report_history.completed_at = Set(None);
+    report_history.bgtask_id = Set(None);
+    report_history.last_error = Set(None);
+    report_history.log = Set(report_log);
+    Ok(report_history.update(dbx).await.c(h!())?)
 }
 
 pub async fn record_completed_report_nofail(
@@ -1763,21 +1933,23 @@ pub async fn report_history_retry(
             msg: "Only failed reports can be retried".to_string(),
         });
     }
-
-    let mut report_history = report_history.into_active_model();
-    report_history.status = Set(STATUS_PLANNED.to_string());
-    report_history.retry_count = Set(0);
-    report_history.planned_for_ts = Set(None);
-    report_history.started_at = Set(None);
-    report_history.completed_at = Set(None);
-    report_history.bgtask_id = Set(None);
-    report_history.last_error = Set(None);
-    report_history.log = Set(append_log_entry(
-        report_history.log.unwrap(),
-        &user_login.to_string(),
-        "user requested another attempt for a failed task",
-    ));
-    let report_history = report_history.update(&env.dbx).await.c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    lock_report_request(
+        &txn,
+        &report_history.requested_by_login_id,
+        &report_history.report_kind,
+        &report_history.request,
+    )
+    .await?;
+    let report_history = ReportHistory::find_by_id(report_history.id)
+        .lock_exclusive()
+        .one(&txn)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    let report_history =
+        reset_failed_report(&txn, report_history, &user_login).await?;
+    txn.commit().await.c(h!())?;
     Ok(Json(
         build_report_history_row(&env.dbx, report_history, false).await?,
     ))
@@ -1794,52 +1966,18 @@ pub async fn report_history_cancel(
     let report_history = find_report_for_user(&env.dbx, req.id, &user_login)
         .await?
         .ok_or(AppError::NotFound)?;
-    if report_history.status != STATUS_PLANNED
-        && report_history.status != STATUS_IN_PROGRESS
-    {
-        return Err(AppError::BL {
-            msg: "Only queued or running reports can be cancelled".to_string(),
-        });
-    }
-
     let reason = "Скасовано користувачем".to_string();
-    let res = ReportHistory::update_many()
-        .col_expr(
-            report_history::Column::Status,
-            Expr::value(STATUS_FAILED.to_string()),
-        )
-        .col_expr(
-            report_history::Column::CompletedAt,
-            Expr::value(Some(Utc::now().naive_utc())),
-        )
-        .col_expr(
-            report_history::Column::PlannedForTs,
-            Expr::value(None::<chrono::NaiveDateTime>),
-        )
-        .col_expr(
-            report_history::Column::LastError,
-            Expr::value(Some(reason.clone())),
-        )
-        .filter(report_history::Column::Id.eq(report_history.id))
-        .filter(
-            report_history::Column::Status
-                .is_in([STATUS_PLANNED, STATUS_IN_PROGRESS]),
-        )
-        .exec(&env.dbx)
-        .await
-        .c(h!())?;
-    if res.rows_affected == 0 {
-        return Err(AppError::BL {
-            msg: "Report could not be cancelled because it already finished"
-                .to_string(),
-        });
-    }
-
-    let updated = ReportHistory::find_by_id(report_history.id)
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    lock_report_request(
+        &txn,
+        &report_history.requested_by_login_id,
+        &report_history.report_kind,
+        &report_history.request,
+    )
+    .await?;
+    let updated =
+        mark_report_cancelled(&txn, report_history.id, &reason).await?;
+    txn.commit().await.c(h!())?;
 
     if let Some(bgtask_id) = updated.bgtask_id {
         let res: Result<(), AppError> = Err(AppError::BL { msg: reason });
@@ -1849,6 +1987,36 @@ pub async fn report_history_cancel(
     Ok(Json(
         build_report_history_row(&env.dbx, updated, true).await?,
     ))
+}
+
+async fn mark_report_cancelled<C>(
+    dbx: &C,
+    report_history_id: i64,
+    reason: &str,
+) -> Result<report_history::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    let report_history = ReportHistory::find_by_id(report_history_id)
+        .lock_exclusive()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    if report_history.status != STATUS_PLANNED
+        && report_history.status != STATUS_IN_PROGRESS
+    {
+        return Err(AppError::BL {
+            msg: "Only queued or running reports can be cancelled".to_string(),
+        });
+    }
+
+    let mut report_history = report_history.into_active_model();
+    report_history.status = Set(STATUS_FAILED.to_string());
+    report_history.completed_at = Set(Some(Utc::now().naive_utc()));
+    report_history.planned_for_ts = Set(None);
+    report_history.last_error = Set(Some(reason.to_string()));
+    Ok(report_history.update(dbx).await.c(h!())?)
 }
 
 #[post("/api/report-history/download")]
@@ -3097,6 +3265,494 @@ mod tests {
         timestamp
             .with_nanosecond((timestamp.nanosecond() / 1_000) * 1_000)
             .unwrap_or(timestamp)
+    }
+
+    async fn create_report_history_test_login(
+        dbx: &DatabaseConnection,
+        name: &str,
+    ) -> Result<login::Model, AppError> {
+        Ok(mk_login(
+            dbx,
+            login::ActiveModel {
+                id: NotSet,
+                login: Set(name.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?)
+    }
+
+    fn goi_report_request(payload: serde_json::Value) -> ReportHistoryRequest {
+        ReportHistoryRequest::GoiReport { payload }
+    }
+
+    async fn report_history_count_for_login(
+        dbx: &DatabaseConnection,
+        login_id: uuid::Uuid,
+    ) -> Result<u64, AppError> {
+        Ok(ReportHistory::find()
+            .filter(report_history::Column::RequestedByLoginId.eq(login_id))
+            .count(dbx)
+            .await
+            .c(h!())?)
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn enqueue_reuses_queued_delayed_and_running_duplicate(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-history-duplicate-active",
+        )
+        .await?;
+
+        let report = enqueue_report(
+            &env.dbx,
+            &login.id,
+            KIND_GOI,
+            goi_report_request(json!({})),
+            Some("first.xlsx".to_string()),
+            Some("application/octet-stream".to_string()),
+        )
+        .await?;
+        let report_id = report.id;
+
+        let duplicate = enqueue_report(
+            &env.dbx,
+            &login.id,
+            KIND_GOI,
+            goi_report_request(json!({})),
+            Some("ignored.xlsx".to_string()),
+            None,
+        )
+        .await?;
+        assert_eq!(duplicate.id, report_id);
+        assert_eq!(duplicate.file_name.as_deref(), Some("first.xlsx"));
+
+        let mut duplicate = duplicate.into_active_model();
+        duplicate.planned_for_ts =
+            Set(Some(Utc::now().naive_utc() + Duration::minutes(5)));
+        duplicate.update(&env.dbx).await.c(h!())?;
+        let delayed_duplicate = enqueue_report(
+            &env.dbx,
+            &login.id,
+            KIND_GOI,
+            goi_report_request(json!({})),
+            None,
+            None,
+        )
+        .await?;
+        assert_eq!(delayed_duplicate.id, report_id);
+
+        let mut delayed_duplicate = delayed_duplicate.into_active_model();
+        delayed_duplicate.status = Set(STATUS_IN_PROGRESS.to_string());
+        delayed_duplicate.started_at = Set(Some(Utc::now().naive_utc()));
+        delayed_duplicate.planned_for_ts = Set(None);
+        let running = delayed_duplicate.update(&env.dbx).await.c(h!())?;
+        let running_duplicate = enqueue_report(
+            &env.dbx,
+            &login.id,
+            KIND_GOI,
+            goi_report_request(json!({})),
+            None,
+            None,
+        )
+        .await?;
+        assert_eq!(running_duplicate.id, report_id);
+
+        let bgtask = create_running_bgtask(&env.dbx).await?;
+        let mut running = running.into_active_model();
+        running.bgtask_id = Set(Some(bgtask.id));
+        running.update(&env.dbx).await.c(h!())?;
+        let attached_duplicate = enqueue_report(
+            &env.dbx,
+            &login.id,
+            KIND_GOI,
+            goi_report_request(json!({})),
+            None,
+            None,
+        )
+        .await?;
+
+        assert_eq!(attached_duplicate.id, report_id);
+        assert_eq!(attached_duplicate.bgtask_id, Some(bgtask.id));
+        assert_eq!(
+            report_history_count_for_login(&env.dbx, login.id).await?,
+            1
+        );
+        assert!(attached_duplicate
+            .log
+            .as_array()
+            .and_then(|entries| entries.last())
+            .and_then(|entry| entry.get("message"))
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|message| {
+                message.starts_with("skipping duplicate report:")
+            }));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn enqueue_retries_newest_failed_duplicate_including_cancelled(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-history-duplicate-failed",
+        )
+        .await?;
+        let created_at = Utc::now().naive_utc();
+        let older = insert_report_history(
+            &env.dbx,
+            &login.login,
+            KIND_GOI,
+            STATUS_FAILED,
+            created_at,
+            Some(created_at),
+            None,
+        )
+        .await?;
+        let newer = insert_report_history(
+            &env.dbx,
+            &login.login,
+            KIND_GOI,
+            STATUS_FAILED,
+            created_at + Duration::seconds(1),
+            Some(created_at + Duration::seconds(1)),
+            None,
+        )
+        .await?;
+        let mut newer = newer.into_active_model();
+        newer.retry_count = Set(2);
+        newer.completed_at = Set(Some(created_at + Duration::seconds(2)));
+        newer.last_error = Set(Some("Скасовано користувачем".to_string()));
+        let newer = newer.update(&env.dbx).await.c(h!())?;
+
+        let retried = enqueue_report(
+            &env.dbx,
+            &login.id,
+            KIND_GOI,
+            goi_report_request(json!({})),
+            None,
+            None,
+        )
+        .await?;
+
+        assert_eq!(retried.id, newer.id);
+        assert_ne!(retried.id, older.id);
+        assert_eq!(retried.status, STATUS_PLANNED);
+        assert_eq!(retried.retry_count, 0);
+        assert_eq!(retried.planned_for_ts, None);
+        assert_eq!(retried.started_at, None);
+        assert_eq!(retried.completed_at, None);
+        assert_eq!(retried.bgtask_id, None);
+        assert_eq!(retried.last_error, None);
+        assert!(!report_history_is_cancelled(&retried));
+        assert_eq!(
+            report_history_count_for_login(&env.dbx, login.id).await?,
+            2
+        );
+        assert!(retried
+            .log
+            .as_array()
+            .and_then(|entries| entries.last())
+            .and_then(|entry| entry.get("message"))
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|message| message.contains("another attempt")));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn enqueue_reuses_oldest_preexisting_active_duplicate(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-history-duplicate-oldest-active",
+        )
+        .await?;
+        let created_at = Utc::now().naive_utc();
+        let older = insert_report_history(
+            &env.dbx,
+            &login.login,
+            KIND_GOI,
+            STATUS_IN_PROGRESS,
+            created_at,
+            Some(created_at),
+            None,
+        )
+        .await?;
+        let newer = insert_report_history(
+            &env.dbx,
+            &login.login,
+            KIND_GOI,
+            STATUS_PLANNED,
+            created_at + Duration::seconds(1),
+            None,
+            None,
+        )
+        .await?;
+
+        let reused = enqueue_report(
+            &env.dbx,
+            &login.id,
+            KIND_GOI,
+            goi_report_request(json!({})),
+            None,
+            None,
+        )
+        .await?;
+
+        assert_eq!(reused.id, older.id);
+        assert_ne!(reused.id, newer.id);
+        assert_eq!(
+            report_history_count_for_login(&env.dbx, login.id).await?,
+            2
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn enqueue_creates_new_row_after_success() -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-history-duplicate-done",
+        )
+        .await?;
+        let report = enqueue_report(
+            &env.dbx,
+            &login.id,
+            KIND_GOI,
+            goi_report_request(json!({})),
+            None,
+            None,
+        )
+        .await?;
+        let mut report = report.into_active_model();
+        report.status = Set(STATUS_DONE.to_string());
+        report.completed_at = Set(Some(Utc::now().naive_utc()));
+        let report = report.update(&env.dbx).await.c(h!())?;
+
+        let repeated = enqueue_report(
+            &env.dbx,
+            &login.id,
+            KIND_GOI,
+            goi_report_request(json!({})),
+            None,
+            None,
+        )
+        .await?;
+
+        assert_ne!(repeated.id, report.id);
+        assert_eq!(repeated.status, STATUS_PLANNED);
+        assert_eq!(
+            report_history_count_for_login(&env.dbx, login.id).await?,
+            2
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn enqueue_matches_exact_user_kind_and_array_order(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        let alice = create_report_history_test_login(
+            &env.dbx,
+            "report-history-exact-alice",
+        )
+        .await?;
+        let bob = create_report_history_test_login(
+            &env.dbx,
+            "report-history-exact-bob",
+        )
+        .await?;
+        let first = enqueue_report(
+            &env.dbx,
+            &alice.id,
+            KIND_GOI,
+            goi_report_request(json!({ "values": [1, 2] })),
+            None,
+            None,
+        )
+        .await?;
+        let reordered = enqueue_report(
+            &env.dbx,
+            &alice.id,
+            KIND_GOI,
+            goi_report_request(json!({ "values": [2, 1] })),
+            None,
+            None,
+        )
+        .await?;
+        let other_kind = enqueue_report(
+            &env.dbx,
+            &alice.id,
+            KIND_ETALONKA,
+            goi_report_request(json!({ "values": [1, 2] })),
+            None,
+            None,
+        )
+        .await?;
+        let other_user = enqueue_report(
+            &env.dbx,
+            &bob.id,
+            KIND_GOI,
+            goi_report_request(json!({ "values": [1, 2] })),
+            None,
+            None,
+        )
+        .await?;
+
+        let ids = HashSet::from([
+            first.id,
+            reordered.id,
+            other_kind.id,
+            other_user.id,
+        ]);
+        assert_eq!(ids.len(), 4);
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn concurrent_identical_enqueues_return_one_report_id(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-history-duplicate-concurrent",
+        )
+        .await?;
+        let mut handles = vec![];
+        for _ in 0..8 {
+            let dbx = env.dbx.clone();
+            let login_id = login.id;
+            handles.push(tokio::spawn(async move {
+                enqueue_report(
+                    &dbx,
+                    &login_id,
+                    KIND_GOI,
+                    goi_report_request(json!({})),
+                    None,
+                    None,
+                )
+                .await
+            }));
+        }
+
+        let mut ids = HashSet::new();
+        for handle in handles {
+            ids.insert(handle.await.expect("enqueue task failed")?.id);
+        }
+
+        assert_eq!(ids.len(), 1);
+        assert_eq!(
+            report_history_count_for_login(&env.dbx, login.id).await?,
+            1
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn enqueue_waits_for_cancellation_and_retries_cancelled_report(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-history-cancel-enqueue-race",
+        )
+        .await?;
+        let report = enqueue_report(
+            &env.dbx,
+            &login.id,
+            KIND_GOI,
+            goi_report_request(json!({})),
+            None,
+            None,
+        )
+        .await?;
+
+        let txn = env.dbx.begin().await.c(h!())?;
+        lock_report_request(
+            &txn,
+            &report.requested_by_login_id,
+            &report.report_kind,
+            &report.request,
+        )
+        .await?;
+
+        let dbx = env.dbx.clone();
+        let login_id = login.id;
+        let mut enqueue = tokio::spawn(async move {
+            enqueue_report(
+                &dbx,
+                &login_id,
+                KIND_GOI,
+                goi_report_request(json!({})),
+                None,
+                None,
+            )
+            .await
+        });
+        assert!(tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            &mut enqueue,
+        )
+        .await
+        .is_err());
+
+        let cancelled =
+            mark_report_cancelled(&txn, report.id, "Скасовано користувачем")
+                .await?;
+        assert_eq!(cancelled.status, STATUS_FAILED);
+        txn.commit().await.c(h!())?;
+
+        let requeued = enqueue.await.expect("enqueue task failed")?;
+        assert_eq!(requeued.id, report.id);
+        assert_eq!(requeued.status, STATUS_PLANNED);
+        assert_eq!(requeued.last_error, None);
+        assert_eq!(
+            report_history_count_for_login(&env.dbx, login.id).await?,
+            1
+        );
+        Ok(())
     }
 
     #[tokio::test]
