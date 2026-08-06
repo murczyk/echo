@@ -1,10 +1,11 @@
 #[cfg(test)]
 pub mod test {
     // use crate::entities::user;
-    use crate::config::AnalyticsConfig;
+    use crate::config::{AnalyticsConfig, PostgresRuntimeConfig};
     use crate::types::Mode;
     use crate::{
         mk_analytics_conn_string, mk_conn_string, new_pg_pool_from_analytics,
+        new_pg_runtime_pool_from_config, PgRuntimePoolRole,
     };
     use ctor::ctor;
     use echo_migration::*;
@@ -128,6 +129,128 @@ pub mod test {
         };
 
         assert!(new_pg_pool_from_analytics(&analytics).await.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn runtime_pool_uses_guardrails_and_operator_pool_remains_uncapped() {
+        let mut config = crate::config::read_config(Mode::Test).unwrap();
+        config.postgres_runtime = Some(PostgresRuntimeConfig {
+            statement_timeout_ms: 25,
+            lock_timeout_ms: 15,
+            idle_in_transaction_session_timeout_ms: 50,
+        });
+
+        let runtime =
+            new_pg_runtime_pool_from_config(&config, PgRuntimePoolRole::Web)
+                .await
+                .unwrap();
+        assert_eq!(
+            postgres_setting(&runtime, "statement_timeout").await,
+            "25ms"
+        );
+        assert_eq!(postgres_setting(&runtime, "lock_timeout").await, "15ms");
+        assert_eq!(
+            postgres_setting(&runtime, "idle_in_transaction_session_timeout",)
+                .await,
+            "50ms"
+        );
+
+        let error = runtime
+            .execute_unprepared("select pg_sleep(0.1)")
+            .await
+            .unwrap_err();
+        assert!(has_postgres_error_code(&error, "57014"));
+
+        let operator = crate::new_pg_pool_from_config(&config).await.unwrap();
+        operator
+            .execute_unprepared("select pg_sleep(0.1)")
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn runtime_pool_exposes_application_name_in_pg_stat_activity() {
+        let mut config = crate::config::read_config(Mode::Test).unwrap();
+        config.postgres_runtime = Some(PostgresRuntimeConfig {
+            statement_timeout_ms: 100,
+            lock_timeout_ms: 50,
+            idle_in_transaction_session_timeout_ms: 200,
+        });
+
+        let runtime = new_pg_runtime_pool_from_config(
+            &config,
+            PgRuntimePoolRole::ReportWorker,
+        )
+        .await
+        .unwrap();
+        let statement = Statement::from_string(
+            DbBackend::Postgres,
+            "select pg_backend_pid()",
+        );
+        let pid: i32 = runtime
+            .query_one_raw(statement)
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get_by_index(0)
+            .unwrap();
+        let operator = crate::new_pg_pool_from_config(&config).await.unwrap();
+        let statement = Statement::from_string(
+            DbBackend::Postgres,
+            format!("select application_name from pg_stat_activity where pid = {pid}"),
+        );
+        let application_name: String = operator
+            .query_one_raw(statement)
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get_by_index(0)
+            .unwrap();
+
+        assert_eq!(application_name, "echo-report-worker");
+    }
+
+    async fn postgres_setting(
+        db: &DatabaseConnection,
+        setting: &str,
+    ) -> String {
+        let statement = Statement::from_string(
+            DbBackend::Postgres,
+            format!("show {setting}"),
+        );
+        db.query_one_raw(statement)
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get_by_index(0)
+            .unwrap()
+    }
+
+    fn has_postgres_error_code(
+        error: &(dyn std::error::Error + 'static),
+        code: &str,
+    ) -> bool {
+        let mut source = Some(error);
+        while let Some(error) = source {
+            if let Some(
+                DbErr::Conn(sea_orm::RuntimeErr::SqlxError(sqlx_error))
+                | DbErr::Exec(sea_orm::RuntimeErr::SqlxError(sqlx_error))
+                | DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx_error)),
+            ) = error.downcast_ref::<DbErr>()
+            {
+                if let sqlx::Error::Database(database_error) =
+                    sqlx_error.as_ref()
+                {
+                    if database_error.code().as_deref() == Some(code) {
+                        return true;
+                    }
+                }
+            }
+            source = error.source();
+        }
+        false
     }
 
     #[ctor]
