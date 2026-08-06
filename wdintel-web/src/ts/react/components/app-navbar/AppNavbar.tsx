@@ -30,6 +30,46 @@ function filterTranscriptionSettings(items: Menu[], enabled: boolean): Menu[] {
   });
 }
 
+function filterAnalysisMenuItemsByAiChat(items: Menu[], aiChatEnabled: boolean): Menu[] {
+  if (aiChatEnabled) {
+    return items;
+  }
+
+  const filtered = items.filter((item) => {
+    if (item.type !== 'item') {
+      return true;
+    }
+
+    return item.activeName !== 'documentation' && item.activeName !== 'group-activity';
+  });
+
+  const withoutExtraSeparators: Menu[] = [];
+
+  for (const item of filtered) {
+    if (item.type === 'separator') {
+      if (withoutExtraSeparators.length === 0) {
+        continue;
+      }
+
+      const previous = withoutExtraSeparators[withoutExtraSeparators.length - 1];
+      if (previous.type === 'separator') {
+        continue;
+      }
+    }
+
+    withoutExtraSeparators.push(item);
+  }
+
+  if (
+    withoutExtraSeparators.length > 0 &&
+    withoutExtraSeparators[withoutExtraSeparators.length - 1].type === 'separator'
+  ) {
+    withoutExtraSeparators.pop();
+  }
+
+  return withoutExtraSeparators;
+}
+
 export interface AppNavbarProps {
   user: {
     name: string;
@@ -187,6 +227,8 @@ export function AppNavbar({
   const isAdminMenuVisible = hasRole(user?.roles, 'Admin');
   const isBasic = hasRole(user?.roles, 'Basic');
   const isRer = hasRole(user?.roles, 'Rer');
+  const isApiAgent = hasRole(user?.roles, 'ApiAgent');
+  const isAiChatUser = isRer && !isApiAgent;
   const devicesReadable = canReadDevices(user?.roles);
   const devicesMenuIsVisible =
     serverModeIsLive && loadedDevicesSectionEnabled === true && devicesReadable;
@@ -209,13 +251,37 @@ export function AppNavbar({
         ? { ...item, label: 'Оперативний' }
         : item,
     );
-  const visibleAnalysisSubs = analysisSubs
-    .filter((item) => item.type !== 'item' || item.activeName !== 'analysis' || showClassicAnalysis)
-    .map((item) =>
-      !showClassicAnalysis && item.type === 'item' && item.activeName === 'rer-analysis-neo'
-        ? { ...item, label: 'Аналіз' }
-        : item,
-    );
+  const [isAiChatEnabled, setIsAiChatEnabled] = useState<boolean | null>(null);
+
+  const allowAnalysisDocsAndStatsLinks = isAiChatUser ? isAiChatEnabled !== false : true;
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ enabled?: boolean }>).detail;
+      if (typeof detail?.enabled === 'boolean') {
+        setIsAiChatEnabled(detail.enabled);
+      }
+    };
+
+    window.addEventListener('ai-agent-availability', handler);
+
+    return () => {
+      window.removeEventListener('ai-agent-availability', handler);
+    };
+  }, []);
+
+  const visibleAnalysisSubs = filterAnalysisMenuItemsByAiChat(
+    analysisSubs
+      .filter(
+        (item) => item.type !== 'item' || item.activeName !== 'analysis' || showClassicAnalysis,
+      )
+      .map((item) =>
+        !showClassicAnalysis && item.type === 'item' && item.activeName === 'rer-analysis-neo'
+          ? { ...item, label: 'Аналіз' }
+          : item,
+      ),
+    allowAnalysisDocsAndStatsLinks,
+  );
 
   const openGoiSubs: Menu[] = (user.goiIntegrations || []).flatMap((integration) => {
     if (!integration.goiUrl) return [];

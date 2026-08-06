@@ -189,6 +189,41 @@ describe('AppNavbar', () => {
     ).toBe('Аналіз');
   });
 
+  it('hides documentation and statistics analysis links when AI chat is disabled', () => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Rer'] },
+    });
+
+    expect(container.textContent).toContain('Документація');
+    expect(container.textContent).toContain('Статистика');
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('ai-agent-availability', { detail: { enabled: false } }),
+      );
+    });
+
+    expect(container.textContent).not.toContain('Документація');
+    expect(container.textContent).not.toContain('Статистика');
+  });
+
+  it('keeps documentation and statistics links for users without AI chat role', () => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Rer', 'ApiAgent'] },
+    });
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('ai-agent-availability', { detail: { enabled: false } }),
+      );
+    });
+
+    expect(container.textContent).toContain('Документація');
+    expect(container.textContent).toContain('Статистика');
+  });
+
   it('renders Admin menu when user has Admin role', () => {
     const { container } = renderComponent({
       ...defaultProps,
