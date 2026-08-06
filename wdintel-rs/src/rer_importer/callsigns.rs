@@ -1237,7 +1237,7 @@ fn avia_format_lines(lines: &Vec<String>) -> Result<usize, AppError> {
         static ref RE_SEPARATOR: Regex =
             Regex::new(r"^-{5,}\s*$").unwrap();
         static ref RE_DATE: Regex =
-            Regex::new(r"^\s*\d{2}.\d{2}.\d{4},\s+\d{2}:\d{2}:\d{2}\s*$")
+            Regex::new(r"^\s*\d{2}\.\d{2}\.\d{4},?\s+\d{2}:\d{2}:\d{2}\s*$")
                 .unwrap();
         static ref RE_FREQ: Regex =
             Regex::new(r"^\s*\d{3}.\d{3,4}\s*$").unwrap();
@@ -3820,6 +3820,22 @@ async fn test_extract_callsigns_avia_format_spaces_in_separator() {
             .collect::<Vec<_>>(),
         vec!["06969", "КРЕМНИЙ"]
     )
+}
+
+#[tokio::test]
+async fn test_extract_callsigns_avia_format_date_without_comma() {
+    let body = r#"Отримано з поста "31_1"
+--------------------------------------
+06.08.2026 01:56:25
+128.5000
+🟠 УКХ р/м Єдиної системи управління повітряним рухом ПКС зс рф  (ПОВІТРЯНИЙ ПРОСТІР ЗС РФ)
+78669
+САКСОФОН
+
+— подходим к точке Имбал"#;
+    let res = extract_callsigns(body).unwrap();
+    let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
+    assert_eq!(ress, vec!["САКСОФОН".to_string(), "78669".to_string()]);
 }
 
 #[test]
