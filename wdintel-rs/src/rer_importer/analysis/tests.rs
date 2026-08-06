@@ -6929,6 +6929,7 @@ async fn analytics_fallback_maps_capped_postgres_query_to_one_timeout_error() {
         crate::config::read_config(crate::types::Mode::Test).unwrap();
     config.postgres_runtime = Some(crate::config::PostgresRuntimeConfig {
         statement_timeout_ms: 25,
+        report_worker_statement_timeout_ms: 25,
         lock_timeout_ms: 15,
         idle_in_transaction_session_timeout_ms: 50,
     });

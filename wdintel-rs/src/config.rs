@@ -23,6 +23,8 @@ pub const PGBACKREST_STANZA_CONF_PREFIX: &str = "pgbackrest-";
 pub const PGBACKREST_STANZA_CONF_SUFFIX: &str = ".conf";
 pub const PG_SLOW_STATEMENT_THRESHOLD_MS: u64 = 5_000;
 pub const POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT: u64 = 20_000;
+pub const POSTGRES_RUNTIME_REPORT_WORKER_STATEMENT_TIMEOUT_MS_DEFAULT: u64 =
+    60_000;
 pub const POSTGRES_RUNTIME_LOCK_TIMEOUT_MS_DEFAULT: u64 = 3_000;
 pub const POSTGRES_RUNTIME_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_MS_DEFAULT: u64 =
     120_000;
@@ -817,6 +819,7 @@ pub struct ReplicaConfig {
 #[serde(try_from = "PostgresRuntimeConfigRaw")]
 pub struct PostgresRuntimeConfig {
     pub statement_timeout_ms: u64,
+    pub report_worker_statement_timeout_ms: u64,
     pub lock_timeout_ms: u64,
     pub idle_in_transaction_session_timeout_ms: u64,
 }
@@ -825,6 +828,8 @@ pub struct PostgresRuntimeConfig {
 struct PostgresRuntimeConfigRaw {
     #[serde(default)]
     statement_timeout_ms: Option<u64>,
+    #[serde(default)]
+    report_worker_statement_timeout_ms: Option<u64>,
     #[serde(default)]
     lock_timeout_ms: Option<u64>,
     #[serde(default)]
@@ -841,6 +846,11 @@ impl TryFrom<PostgresRuntimeConfigRaw> for PostgresRuntimeConfig {
             statement_timeout_ms: config
                 .statement_timeout_ms
                 .unwrap_or(POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT),
+            report_worker_statement_timeout_ms: config
+                .report_worker_statement_timeout_ms
+                .unwrap_or(
+                    POSTGRES_RUNTIME_REPORT_WORKER_STATEMENT_TIMEOUT_MS_DEFAULT,
+                ),
             lock_timeout_ms: config
                 .lock_timeout_ms
                 .unwrap_or(POSTGRES_RUNTIME_LOCK_TIMEOUT_MS_DEFAULT),
@@ -860,6 +870,10 @@ impl PostgresRuntimeConfig {
         validate_postgres_runtime_timeout(
             "statement_timeout_ms",
             self.statement_timeout_ms,
+        )?;
+        validate_postgres_runtime_timeout(
+            "report_worker_statement_timeout_ms",
+            self.report_worker_statement_timeout_ms,
         )?;
         validate_postgres_runtime_timeout(
             "lock_timeout_ms",
@@ -1354,6 +1368,10 @@ pg_dbname = "echo_analytics_gateway"
             POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT
         );
         assert_eq!(
+            postgres_runtime.report_worker_statement_timeout_ms,
+            POSTGRES_RUNTIME_REPORT_WORKER_STATEMENT_TIMEOUT_MS_DEFAULT
+        );
+        assert_eq!(
             postgres_runtime.lock_timeout_ms,
             POSTGRES_RUNTIME_LOCK_TIMEOUT_MS_DEFAULT
         );
@@ -1373,6 +1391,10 @@ statement_timeout_ms = 0
             r#"
 [postgres_runtime]
 lock_timeout_ms = 2147483648
+"#,
+            r#"
+[postgres_runtime]
+report_worker_statement_timeout_ms = 2147483648
 "#,
         ] {
             let error = toml::from_str::<TestPostgresRuntimeSection>(input)

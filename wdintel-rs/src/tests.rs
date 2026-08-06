@@ -137,6 +137,7 @@ pub mod test {
         let mut config = crate::config::read_config(Mode::Test).unwrap();
         config.postgres_runtime = Some(PostgresRuntimeConfig {
             statement_timeout_ms: 25,
+            report_worker_statement_timeout_ms: 25,
             lock_timeout_ms: 15,
             idle_in_transaction_session_timeout_ms: 50,
         });
@@ -175,6 +176,7 @@ pub mod test {
         let mut config = crate::config::read_config(Mode::Test).unwrap();
         config.postgres_runtime = Some(PostgresRuntimeConfig {
             statement_timeout_ms: 100,
+            report_worker_statement_timeout_ms: 200,
             lock_timeout_ms: 50,
             idle_in_transaction_session_timeout_ms: 200,
         });
@@ -210,6 +212,10 @@ pub mod test {
             .unwrap();
 
         assert_eq!(application_name, "echo-report-worker");
+        assert_eq!(
+            postgres_setting(&runtime, "statement_timeout").await,
+            "200ms"
+        );
     }
 
     async fn postgres_setting(

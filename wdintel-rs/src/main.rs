@@ -1139,9 +1139,17 @@ fn pg_runtime_pool_options(
 ) -> Option<PgRuntimePoolOptions> {
     let postgres_runtime = postgres_runtime?;
     let role = role?;
+    let statement_timeout_ms = match role {
+        PgRuntimePoolRole::ReportWorker => {
+            postgres_runtime.report_worker_statement_timeout_ms
+        }
+        PgRuntimePoolRole::Web | PgRuntimePoolRole::Bgworker => {
+            postgres_runtime.statement_timeout_ms
+        }
+    };
     Some(PgRuntimePoolOptions {
         application_name: role.application_name(),
-        statement_timeout_ms: postgres_runtime.statement_timeout_ms,
+        statement_timeout_ms,
         lock_timeout_ms: postgres_runtime.lock_timeout_ms,
         idle_in_transaction_session_timeout_ms: postgres_runtime
             .idle_in_transaction_session_timeout_ms,
