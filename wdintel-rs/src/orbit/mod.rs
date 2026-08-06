@@ -205,7 +205,21 @@ pub async fn link_sigint_unit_if_unlinked_with_lock(
     sigint_unit_id: i64,
     orbit_unit_id: Uuid,
 ) -> Result<(), AppError> {
-    let _import_lock = acquire_import_lock(db).await.c(h!())?;
+    let transaction = acquire_import_lock(db).await.c(h!())?;
+    link_sigint_unit_if_unlinked(&transaction, sigint_unit_id, orbit_unit_id)
+        .await?;
+    transaction.commit().await.c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn link_sigint_unit_if_unlinked<C>(
+    db: &C,
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
     if !active_orbit_unit_exists(db, orbit_unit_id).await? {
         return Err(AppError::NotFound);
     }
@@ -214,8 +228,12 @@ pub async fn link_sigint_unit_if_unlinked_with_lock(
             msg: "SIGINT unit already has a linked ORBIT unit".to_string(),
         });
     }
-    persistence::replace_sigint_unit_link(db, sigint_unit_id, orbit_unit_id)
-        .await
+    persistence::replace_sigint_unit_link_in_transaction(
+        db,
+        sigint_unit_id,
+        orbit_unit_id,
+    )
+    .await
 }
 
 pub async fn unlink_sigint_unit_with_lock(
@@ -237,7 +255,7 @@ pub async fn link_new_sigint_unit_with_lock(
     db: &sea_orm::DatabaseConnection,
     sigint_unit_id: i64,
 ) -> anyhow::Result<()> {
-    let _import_lock = acquire_import_lock(db).await?;
+    let transaction = acquire_import_lock(db).await?;
     if persistence::load_latest_sync(db).await.c(h!())?.is_none() {
         return Ok(());
     }
@@ -247,7 +265,7 @@ pub async fn link_new_sigint_unit_with_lock(
     let sigint_units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(sigint_unit::Column::Active.eq(true))
-        .all(db)
+        .all(&transaction)
         .await
         .c("failed to load active SIGINT units for ORBIT matching")?;
     let sigint_unit_ids_by_orbit_unit =
@@ -260,13 +278,22 @@ pub async fn link_new_sigint_unit_with_lock(
                 .then_some(orbit_unit_id)
         })
         .collect::<BTreeSet<_>>();
-    persistence::replace_automatic_sigint_unit_links(
-        db,
+    persistence::replace_automatic_sigint_unit_links_in_transaction(
+        &transaction,
         sigint_unit_id,
         &orbit_unit_ids,
     )
     .await
     .c("failed to link the new SIGINT unit to ORBIT")?;
+    let login = crate::users::system_login_id(&transaction).await.c(h!())?;
+    crate::sigint::unit::orbit::materialize_automatic_link_parent_chains(
+        &transaction,
+        &login,
+        &orbit_unit_ids,
+    )
+    .await
+    .c("failed to materialize parent chains for the new ORBIT link")?;
+    transaction.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -421,9 +448,26 @@ async fn rebuild_sigint_unit_links(
         "matched {} ORBIT roots to active SIGINT units",
         sigint_unit_ids_by_orbit_unit.len()
     );
-    persistence::replace_sigint_unit_links(db, &sigint_unit_ids_by_orbit_unit)
-        .await
-        .c("failed to replace ORBIT-to-SIGINT links")?;
+    let transaction = db.begin().await.c(h!())?;
+    persistence::replace_sigint_unit_links_in_transaction(
+        &transaction,
+        &sigint_unit_ids_by_orbit_unit,
+    )
+    .await
+    .c("failed to replace ORBIT-to-SIGINT links")?;
+    let login = crate::users::system_login_id(&transaction).await.c(h!())?;
+    let orbit_unit_ids = sigint_unit_ids_by_orbit_unit
+        .keys()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    crate::sigint::unit::orbit::materialize_automatic_link_parent_chains(
+        &transaction,
+        &login,
+        &orbit_unit_ids,
+    )
+    .await
+    .c("failed to materialize parent chains for automatic ORBIT links")?;
+    transaction.commit().await.c(h!())?;
     Ok(())
 }
 
