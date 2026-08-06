@@ -2325,10 +2325,14 @@ where
         access_logins: access_logins
             .into_iter()
             .map(|login_id| {
-                access_login_names
+                let login = access_login_names
                     .get(&login_id)
                     .cloned()
-                    .unwrap_or_else(|| login_id.to_string())
+                    .unwrap_or_else(|| login_id.to_string());
+                PalitraAccessLogin {
+                    id: login_id.to_string(),
+                    login,
+                }
             })
             .collect(),
     })
@@ -2906,12 +2910,14 @@ where
 {
     let mut login_ids = Vec::with_capacity(login_values.len());
     for login_value in login_values {
-        let login_id = match Uuid::parse_str(&login_value) {
-            Ok(login_id) => login_id,
-            Err(_) => crate::users::login_id_by_name(txn, &login_value)
-                .await
-                .c(h!())?,
-        };
+        let login_id =
+            match crate::users::login_id_by_name(txn, &login_value).await {
+                Ok(login_id) => login_id,
+                Err(crate::error::AppError::NotFound) => {
+                    Uuid::parse_str(&login_value).c(h!())?
+                }
+                Err(error) => return Err(anyhow::Error::new(error)),
+            };
         login_ids.push(login_id);
     }
     Ok(login_ids)

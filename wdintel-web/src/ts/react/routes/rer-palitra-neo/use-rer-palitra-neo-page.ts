@@ -59,10 +59,6 @@ export function useRerPalitraNeoPage() {
   const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
   const [allLogins, setAllLogins] = useState<string[]>([]);
   const [loginIdsByName, setLoginIdsByName] = useState<Record<string, string>>({});
-  const loginNamesById = useMemo(
-    () => Object.fromEntries(Object.entries(loginIdsByName).map(([name, id]) => [id, name])),
-    [loginIdsByName],
-  );
 
   const [loading, setLoading] = useState(true);
   const [referenceDataReady, setReferenceDataReady] = useState(false);
@@ -137,7 +133,6 @@ export function useRerPalitraNeoPage() {
         myScope,
         organisms,
         aors,
-        loginNamesById,
         inFlightArchiveId,
         inFlightDeleteId,
         inFlightDownloadId,
@@ -151,7 +146,6 @@ export function useRerPalitraNeoPage() {
       myScope,
       organisms,
       aors,
-      loginNamesById,
       inFlightArchiveId,
       inFlightDeleteId,
       inFlightDownloadId,

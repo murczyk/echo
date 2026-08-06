@@ -166,7 +166,7 @@ export function palitraToForm(palitra: Palitra): PalitraFormState {
       name: palitra.name,
       colorHex: palitra.colorHex,
       accessType: 'logins',
-      logins: [...palitra.accessLogins],
+      logins: palitra.accessLogins.map((entry) => entry.id),
       organismIds: [],
       aorIds: [],
     };
@@ -224,15 +224,13 @@ export function getAccessSummary(
   myScope: MyScope | null,
   organisms: Organism[],
   aors: AreaOfResponsibility[],
-  loginNamesById: Record<string, string> = {},
 ): string {
   const admin = isAdmin(user);
   const isAuthor = palitra.author === user?.name;
   if (!admin && !isAuthor) return '—';
 
   if (palitra.accessLogins.length > 0) {
-    const loginNames = palitra.accessLogins.map((loginId) => loginNamesById[loginId] ?? loginId);
-    return 'Логіни: ' + loginNames.join(', ');
+    return 'Логіни: ' + palitra.accessLogins.map((entry) => entry.login).join(', ');
   }
 
   if (palitra.accessOrganismIds.length > 0) {

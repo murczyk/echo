@@ -15,7 +15,6 @@ export function mapPalitraToRowView({
   myScope,
   organisms,
   aors,
-  loginNamesById,
   inFlightArchiveId,
   inFlightDeleteId,
   inFlightDownloadId,
@@ -29,7 +28,6 @@ export function mapPalitraToRowView({
   myScope: MyScope | null;
   organisms: Organism[];
   aors: AreaOfResponsibility[];
-  loginNamesById?: Record<string, string>;
   inFlightArchiveId: number | null;
   inFlightDeleteId: number | null;
   inFlightDownloadId: number | null;
@@ -56,7 +54,7 @@ export function mapPalitraToRowView({
     sourceFileName: palitra.sourceFileName,
     lastUploadedAtTs: palitra.lastUploadedAtTs,
     author: palitra.author,
-    accessSummary: getAccessSummary(palitra, user, myScope, organisms, aors, loginNamesById),
+    accessSummary: getAccessSummary(palitra, user, myScope, organisms, aors),
     canModify,
     canRetryGoiSourceConversion: canManagePalitraAccess(user),
     canSelect:
@@ -81,7 +79,6 @@ export function buildTableRows(args: {
   myScope: MyScope | null;
   organisms: Organism[];
   aors: AreaOfResponsibility[];
-  loginNamesById?: Record<string, string>;
   inFlightArchiveId: number | null;
   inFlightDeleteId: number | null;
   inFlightDownloadId: number | null;
@@ -96,7 +93,6 @@ export function buildTableRows(args: {
     myScope,
     organisms,
     aors,
-    loginNamesById,
     inFlightArchiveId,
     inFlightDeleteId,
     inFlightDownloadId,
@@ -169,7 +165,6 @@ export function buildTableRows(args: {
           myScope,
           organisms,
           aors,
-          loginNamesById,
           inFlightArchiveId,
           inFlightDeleteId,
           inFlightDownloadId,

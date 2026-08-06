@@ -1979,10 +1979,14 @@ async fn render_created_palitra_response(
         access_logins: access_logins
             .into_iter()
             .map(|login_id| {
-                access_login_names
+                let login = access_login_names
                     .get(&login_id)
                     .cloned()
-                    .unwrap_or_else(|| login_id.to_string())
+                    .unwrap_or_else(|| login_id.to_string());
+                PalitraAccessLogin {
+                    id: login_id.to_string(),
+                    login,
+                }
             })
             .collect(),
     })
