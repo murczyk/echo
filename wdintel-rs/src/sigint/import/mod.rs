@@ -1048,6 +1048,8 @@ where
             regiment: Set(rec.regiment),
             division: Set(rec.division),
             army: Set(rec.army),
+            army_region: Set(rec.army_region),
+            military_district: Set(rec.military_district),
             active: Set(rec.active),
             deleted: Set(rec.deleted),
             created_at: Set(rec.created_at),

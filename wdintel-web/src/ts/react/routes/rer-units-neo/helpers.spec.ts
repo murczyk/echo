@@ -21,6 +21,8 @@ function unit(overrides: Partial<Unit>): Unit {
     regiment: '',
     division: '',
     army: '',
+    militaryDistrict: '',
+    armyRegion: '',
     comment: '',
     orbitNote: null,
     name: '',

@@ -2390,6 +2390,8 @@ export type Unit = {
   regiment: string;
   division: string;
   army: string;
+  militaryDistrict: string;
+  armyRegion: string;
   comment: string;
   orbitNote: string | null;
   name: string;
@@ -2426,6 +2428,8 @@ export type CreateUnitReq = {
   regiment: string;
   division: string;
   army: string;
+  militaryDistrict: string;
+  armyRegion: string;
   active: boolean;
   isDeduplicateCandidate: boolean | null;
   comment: string;

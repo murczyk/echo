@@ -37,6 +37,12 @@ pub fn unit_name(unit: &Unit) -> String {
     if !unit.army.is_empty() {
         parts.push(unit.army.clone());
     }
+    if !unit.military_district.is_empty() {
+        parts.push(unit.military_district.clone());
+    }
+    if !unit.army_region.is_empty() {
+        parts.push(unit.army_region.clone());
+    }
     parts.join(" ")
 }
 
@@ -56,6 +62,12 @@ pub fn unit_name_req(req: &CreateUnitReq) -> String {
     }
     if !req.army.is_empty() {
         parts.push(req.army.clone());
+    }
+    if !req.military_district.is_empty() {
+        parts.push(req.military_district.clone());
+    }
+    if !req.army_region.is_empty() {
+        parts.push(req.army_region.clone());
     }
     parts.join(" ")
 }
@@ -144,6 +156,12 @@ pub(crate) async fn read_units(
                     find_unit(dbx, *after_unit_id).await.c(h!())?;
                 units = units.filter(
                     Expr::tuple([
+                        sigint_unit::Column::ArmyRegion
+                            .into_column_ref()
+                            .into(),
+                        sigint_unit::Column::MilitaryDistrict
+                            .into_column_ref()
+                            .into(),
                         sigint_unit::Column::Army.into_column_ref().into(),
                         sigint_unit::Column::Division.into_column_ref().into(),
                         sigint_unit::Column::Regiment.into_column_ref().into(),
@@ -152,6 +170,8 @@ pub(crate) async fn read_units(
                         sigint_unit::Column::Id.into_column_ref().into(),
                     ])
                     .gt(SimpleExpr::Tuple(vec![
+                        after_unit.army_region.into(),
+                        after_unit.military_district.into(),
                         after_unit.army.into(),
                         after_unit.division.into(),
                         after_unit.regiment.into(),
@@ -161,6 +181,8 @@ pub(crate) async fn read_units(
                     ])),
                 );
             }
+            units = units.order_by_asc(sigint_unit::Column::ArmyRegion);
+            units = units.order_by_asc(sigint_unit::Column::MilitaryDistrict);
             units = units.order_by_asc(sigint_unit::Column::Army);
             units = units.order_by_asc(sigint_unit::Column::Division);
             units = units.order_by_asc(sigint_unit::Column::Regiment);
@@ -453,6 +475,8 @@ where
         regiment: Set(req.regiment.clone()),
         division: Set(req.division.clone()),
         army: Set(req.army.clone()),
+        military_district: Set(req.military_district.clone()),
+        army_region: Set(req.army_region.clone()),
         active: Set(req.active),
         is_deduplicate_candidate: Set(req.is_deduplicate_candidate),
         created_at: NotSet,
@@ -703,6 +727,8 @@ async fn update_unit_for_login(
                 req.regiment.as_str(),
                 req.division.as_str(),
                 req.army.as_str(),
+                req.military_district.as_str(),
+                req.army_region.as_str(),
             ];
     let unit_json_old = unit_json(&transaction, req.id).await?;
     let mut unit = unit.into_active_model();
@@ -711,6 +737,8 @@ async fn update_unit_for_login(
     unit.regiment = Set(req.regiment.clone());
     unit.division = Set(req.division.clone());
     unit.army = Set(req.army.clone());
+    unit.military_district = Set(req.military_district.clone());
+    unit.army_region = Set(req.army_region.clone());
     unit.active = Set(req.active);
     unit.name = Set(unit_name(req));
     unit.comment = Set(req.comment.clone());
@@ -874,13 +902,15 @@ fn is_parent_unit(
         })
 }
 
-fn unit_hierarchy(unit: &sigint_unit::Model) -> [&str; 5] {
+fn unit_hierarchy(unit: &sigint_unit::Model) -> [&str; 7] {
     [
         unit.company.as_str(),
         unit.battalion.as_str(),
         unit.regiment.as_str(),
         unit.division.as_str(),
         unit.army.as_str(),
+        unit.military_district.as_str(),
+        unit.army_region.as_str(),
     ]
 }
 
@@ -1069,6 +1099,8 @@ pub fn render_unit(unit: &sigint_unit::Model) -> Result<Unit, AppError> {
         regiment: unit.regiment.clone(),
         division: unit.division.clone(),
         army: unit.army.clone(),
+        military_district: unit.military_district.clone(),
+        army_region: unit.army_region.clone(),
         active: unit.active,
         is_deduplicate_candidate: unit.is_deduplicate_candidate,
         comment: unit.comment.clone(),
@@ -1334,6 +1366,16 @@ async fn update_original_unit(
     if unit_original.army.is_empty() && !unit_to_merge.army.is_empty() {
         unit.army = Set(unit_to_merge.army.clone());
     }
+    if unit_original.military_district.is_empty()
+        && !unit_to_merge.military_district.is_empty()
+    {
+        unit.military_district = Set(unit_to_merge.military_district.clone());
+    }
+    if unit_original.army_region.is_empty()
+        && !unit_to_merge.army_region.is_empty()
+    {
+        unit.army_region = Set(unit_to_merge.army_region.clone());
+    }
     if unit_original.comment.is_empty() && !unit_to_merge.comment.is_empty() {
         unit.comment = Set(unit_to_merge.comment.clone());
     }
@@ -1500,6 +1542,8 @@ mod tests {
             regiment: "44 осбр".to_string(),
             division: String::new(),
             army: String::new(),
+            military_district: String::new(),
+            army_region: String::new(),
             active: true,
             is_deduplicate_candidate: None,
             comment: "main section".to_string(),
@@ -1588,6 +1632,8 @@ mod tests {
             ("brigade", "55 мбр"),
             ("division", "45 див"),
             ("fieldArmy", "20 ЗВА"),
+            ("militaryDistrict", "Західний ВО"),
+            ("armyRegion", "ЗС РФ"),
         ];
         let echelon_ids = levels
             .iter()
@@ -1880,7 +1926,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn orbit_import_creates_hierarchy_link_and_enabled_network() {
+    async fn orbit_import_creates_hierarchy_ancestors_and_enabled_network() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
         let login_id = test_login_id(&env).await;
@@ -1899,6 +1945,8 @@ mod tests {
         assert_eq!(rsp.unit.regiment, "55 мбр");
         assert_eq!(rsp.unit.division, "45 див");
         assert_eq!(rsp.unit.army, "20 ЗВА");
+        assert_eq!(rsp.unit.military_district, "Західний ВО");
+        assert_eq!(rsp.unit.army_region, "ЗС РФ");
         assert!(rsp.unit.active);
         assert!(orbit::unit_has_orbit(&env.dbx, rsp.unit.id).await.unwrap());
         let link = orbit_unit_sigint_unit::Entity::find_by_id((
@@ -1921,10 +1969,31 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<Vec<String>>(network.unit_mask).unwrap(),
             vec![
-                "1 рота 2 бат 55 мбр 45 див 20 ЗВА",
-                "20 ЗВА 45 див 55 мбр 2 бат 1 рота",
+                "1 рота 2 бат 55 мбр 45 див 20 ЗВА Західний ВО ЗС РФ",
+                "ЗС РФ Західний ВО 20 ЗВА 45 див 55 мбр 2 бат 1 рота",
             ]
         );
+        let links = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .is_in(orbit_fixture.unit_ids.clone()),
+            )
+            .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(links.len(), 7);
+        let linked_unit_ids = links
+            .into_iter()
+            .map(|link| link.sigint_unit_id)
+            .collect::<Vec<_>>();
+        let linked_units = sigint_unit::Entity::find()
+            .filter(sigint_unit::Column::Id.is_in(linked_unit_ids))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(linked_units.len(), 7);
+        assert!(linked_units.iter().all(|unit| unit.active));
         let unit_count_before_retry = unit_count(&env.dbx).await;
         let network_count_before_retry = network_count(&env.dbx).await;
         let err = orbit::import_orbit_unit_for_login(
@@ -1970,7 +2039,7 @@ mod tests {
         .await
         .unwrap();
         orbit_unit_sigint_unit::ActiveModel {
-            orbit_unit_id: Set(orbit_fixture.unit_ids[4]),
+            orbit_unit_id: Set(orbit_fixture.unit_ids[6]),
             sigint_unit_id: Set(existing_unit.id),
             is_manual: Set(true),
             is_suppressed: Set(false),
@@ -1983,7 +2052,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(imported, 4);
+        assert_eq!(imported, 6);
         let links = orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::OrbitUnitId
@@ -1993,7 +2062,7 @@ mod tests {
             .all(&env.dbx)
             .await
             .unwrap();
-        assert_eq!(links.len(), 5);
+        assert_eq!(links.len(), 7);
         let imported_unit_ids = links
             .into_iter()
             .map(|link| link.sigint_unit_id)
@@ -2004,7 +2073,7 @@ mod tests {
             .all(&env.dbx)
             .await
             .unwrap();
-        assert_eq!(imported_units.len(), 4);
+        assert_eq!(imported_units.len(), 6);
         assert!(imported_units.iter().all(|unit| !unit.active));
         assert!(imported_units
             .iter()
@@ -2133,7 +2202,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(imported, 4);
+        assert_eq!(imported, 6);
         let links = orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::OrbitUnitId
@@ -2143,7 +2212,7 @@ mod tests {
             .all(&env.dbx)
             .await
             .unwrap();
-        assert_eq!(links.len(), 5);
+        assert_eq!(links.len(), 7);
         let linked_unit_ids = links
             .into_iter()
             .map(|link| link.sigint_unit_id)
@@ -2153,7 +2222,7 @@ mod tests {
             .all(&env.dbx)
             .await
             .unwrap();
-        assert_eq!(linked_units.len(), 5);
+        assert_eq!(linked_units.len(), 7);
         assert!(linked_units.iter().all(|unit| unit.active));
     }
 
@@ -2577,6 +2646,8 @@ mod tests {
             regiment: String::new(),
             division: String::new(),
             army: String::new(),
+            military_district: String::new(),
+            army_region: String::new(),
             comment: String::new(),
             orbit_note: Some("Orbit note".to_string()),
             name: String::new(),

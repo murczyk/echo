@@ -9,6 +9,8 @@ import Test exposing (Test, describe, test)
 createUnit : Int -> String -> String -> String -> String -> String -> String -> B.Unit
 createUnit id army division regiment battalion company name =
     { id = id
+    , armyRegion = ""
+    , militaryDistrict = ""
     , army = army
     , division = division
     , regiment = regiment

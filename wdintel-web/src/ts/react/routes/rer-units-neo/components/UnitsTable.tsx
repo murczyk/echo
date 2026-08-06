@@ -58,8 +58,10 @@ const SEARCHABLE_TEXT_COLUMN_IDS = [
   'regiment',
   'division',
   'army',
+  'militaryDistrict',
+  'armyRegion',
   'comment',
-  'orbitNote',
+  'hasOrbit',
 ] as const;
 const isColumnSearchMatch = (rowValue: unknown, filterValue: unknown) => {
   if (typeof filterValue !== 'string' || filterValue.trim() === '') return true;
@@ -238,6 +240,57 @@ function formatDateTime(value: number): string {
   }).format(date);
 }
 
+function OrbitCell({ unit }: { unit: Unit }) {
+  return (
+    <Stack direction="row" spacing={1} alignItems="center" sx={{ width: '100%', minWidth: 0 }}>
+      {unit.hasOrbit ? (
+        <CheckCircleIcon
+          className="text-green-600"
+          fontSize="small"
+          titleAccess="Прив’язано до Orbit"
+          sx={{ flexShrink: 0 }}
+        />
+      ) : (
+        <CancelIcon
+          className="text-red-600"
+          fontSize="small"
+          titleAccess="Не прив’язано до Orbit"
+          sx={{ flexShrink: 0 }}
+        />
+      )}
+      {unit.orbitUnitIds.map((orbitUnitId) => (
+        <Tooltip key={orbitUnitId} title="Відкрити підрозділ в Orbit">
+          <Link
+            href={`https://delta.mil.gov.ua/orbit/units/${orbitUnitId}/organizational-structure`}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Відкрити ${unit.name} в Orbit`}
+            sx={{ display: 'flex', flexShrink: 0 }}
+          >
+            <Box component="img" src="/img/delta-icon.webp" alt="" sx={{ width: 22, height: 22 }} />
+          </Link>
+        </Tooltip>
+      ))}
+      {unit.orbitNote ? (
+        <Tooltip title={<Box sx={{ whiteSpace: 'pre-wrap' }}>{unit.orbitNote}</Box>}>
+          <Box
+            component="span"
+            sx={{
+              minWidth: 0,
+              flex: 1,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {unit.orbitNote}
+          </Box>
+        </Tooltip>
+      ) : null}
+    </Stack>
+  );
+}
+
 function useUnitColumns(
   attachmentUnitIds: Set<number>,
   searchMode: UnitSearchMode,
@@ -397,6 +450,30 @@ function useUnitColumns(
         size: 180,
       },
       {
+        header: 'Група армій/Фронт/Види та роди ЗС',
+        accessorKey: 'militaryDistrict',
+        filterFn: getColumnFilterFn(searchMode),
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'military-district',
+        }),
+        size: 280,
+      },
+      {
+        header: 'Регіон/ТВД/Збройні Сили',
+        accessorKey: 'armyRegion',
+        filterFn: getColumnFilterFn(searchMode),
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'army-region',
+        }),
+        size: 220,
+      },
+      {
         header: 'Створено',
         id: 'createdAt',
         accessorFn: (unit) => formatDateTime(unit.createdAt),
@@ -423,23 +500,6 @@ function useUnitColumns(
         ),
       },
       {
-        header: 'Примітка Orbit',
-        accessorKey: 'orbitNote',
-        filterFn: getColumnFilterFn(searchMode),
-        Filter: buildTextColumnFilter({
-          searchMode,
-          onSearchModeChange,
-          compactSearchMode,
-          menuIdPrefix: 'orbit-note',
-        }),
-        size: 300,
-        Cell: ({ cell }) => (
-          <Box sx={{ whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>
-            {String(cell.getValue() ?? '')}
-          </Box>
-        ),
-      },
-      {
         header: 'Orbit',
         Header: () => (
           <Tooltip title="Індикатор чи є дані підрозділу синхронізовані із модулем Orbit системи Delta для роботи із даними про підрозділи противника.">
@@ -447,43 +507,16 @@ function useUnitColumns(
           </Tooltip>
         ),
         id: 'hasOrbit',
-        accessorFn: (unit) => unit.hasOrbit,
-        enableColumnFilter: false,
+        accessorFn: (unit) => unit.orbitNote ?? '',
+        filterFn: getColumnFilterFn(searchMode),
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'orbit',
+        }),
         size: 170,
-        Cell: ({ row }) => (
-          <Stack direction="row" spacing={1} alignItems="center" justifyContent="center">
-            {row.original.hasOrbit ? (
-              <CheckCircleIcon
-                className="text-green-600"
-                fontSize="small"
-                titleAccess="Прив’язано до Orbit"
-              />
-            ) : (
-              <CancelIcon
-                className="text-red-600"
-                fontSize="small"
-                titleAccess="Не прив’язано до Orbit"
-              />
-            )}
-            {row.original.orbitUnitIds.map((orbitUnitId) => (
-              <Tooltip key={orbitUnitId} title="Відкрити підрозділ в Orbit">
-                <Link
-                  href={`https://delta.mil.gov.ua/orbit/units/${orbitUnitId}/organizational-structure`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Відкрити ${row.original.name} в Orbit`}
-                >
-                  <Box
-                    component="img"
-                    src="/img/delta-icon.webp"
-                    alt=""
-                    sx={{ width: 22, height: 22 }}
-                  />
-                </Link>
-              </Tooltip>
-            ))}
-          </Stack>
-        ),
+        Cell: ({ row }) => <OrbitCell unit={row.original} />,
       },
     ],
     [attachmentUnitIds, searchMode, onSearchModeChange, compactSearchMode],

@@ -35,8 +35,8 @@ suite =
                 \_ ->
                     let
                         units =
-                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "", comment = "", orbitNote = Nothing, name = "Unit 1", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
-                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "", comment = "", orbitNote = Nothing, name = "Unit 2", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
+                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "Unit 1", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
+                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "Unit 2", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
                             ]
 
                         unitStats =
@@ -52,9 +52,9 @@ suite =
                 \_ ->
                     let
                         units =
-                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "Army A", comment = "", orbitNote = Nothing, name = "Unit 1", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
-                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "Army B", comment = "", orbitNote = Nothing, name = "Unit 2", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
-                            , { id = 3, company = "", battalion = "", regiment = "", division = "", army = "Army A", comment = "", orbitNote = Nothing, name = "Unit 3", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
+                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "Army A", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "Unit 1", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
+                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "Army B", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "Unit 2", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
+                            , { id = 3, company = "", battalion = "", regiment = "", division = "", army = "Army A", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "Unit 3", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
                             ]
                     in
                     Core.UnitHierarchy.buildHierarchy units
@@ -65,8 +65,8 @@ suite =
                 \_ ->
                     let
                         units =
-                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "Army A", comment = "", orbitNote = Nothing, name = "Unit 1", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
-                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "Army B", comment = "", orbitNote = Nothing, name = "Unit 2", active = False, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
+                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "Army A", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "Unit 1", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
+                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "Army B", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "Unit 2", active = False, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
                             ]
                     in
                     Core.UnitHierarchy.buildHierarchy units
@@ -77,7 +77,7 @@ suite =
                 \_ ->
                     let
                         units =
-                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "управління авіацією ПКС зс рф", comment = "", orbitNote = Nothing, name = "управління авіацією ПКС зс рф", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
+                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "управління авіацією ПКС зс рф", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "управління авіацією ПКС зс рф", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
                             ]
                     in
                     Core.UnitHierarchy.buildHierarchy units

@@ -15,6 +15,8 @@ export function buildUnitSearchText(unit: Unit): string {
     unit.regiment,
     unit.division,
     unit.army,
+    unit.militaryDistrict,
+    unit.armyRegion,
     unit.comment,
     unit.orbitNote,
   ]

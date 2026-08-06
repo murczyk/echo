@@ -60,6 +60,8 @@ type alias Model =
     , orbitLinkDialogOpen : Bool
     , orbitUnitUnlinking : Maybe String
     , deviceNetworkDialogOpen : Bool
+    , unitEditDialogOpen : Bool
+    , unitUpdating : Bool
     }
 
 
@@ -93,6 +95,8 @@ init _ route _ =
       , orbitLinkDialogOpen = False
       , orbitUnitUnlinking = Nothing
       , deviceNetworkDialogOpen = False
+      , unitEditDialogOpen = False
+      , unitUpdating = False
       }
     , E.batch initialEffects
     )
@@ -130,6 +134,12 @@ type Msg
     | OpenDeviceNetworkDialog
     | CloseDeviceNetworkDialog
     | DeviceNetworkCreated
+    | OpenUnitEditDialog
+    | CloseUnitEditDialog
+    | SubmitUnitEdit B.CreateUnitReq
+    | UnitEditUpdated (Result ApiError B.Unit)
+    | SetUnitActive Bool
+    | UnitActiveUpdated (Result ApiError B.Unit)
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -176,6 +186,24 @@ update msg model =
 
         DeviceNetworkCreated ->
             deviceNetworkCreated model
+
+        OpenUnitEditDialog ->
+            ( { model | unitEditDialogOpen = True }, E.none )
+
+        CloseUnitEditDialog ->
+            ( { model | unitEditDialogOpen = False }, E.none )
+
+        SubmitUnitEdit req ->
+            submitUnitEdit req model
+
+        UnitEditUpdated result ->
+            unitEditUpdated result model
+
+        SetUnitActive active ->
+            setUnitActive active model
+
+        UnitActiveUpdated result ->
+            unitActiveUpdated result model
 
 
 updateDetails : Result ApiError B.UnitDetailsRsp -> Model -> ( Model, Effect Msg )
@@ -344,6 +372,104 @@ deviceNetworkCreated model =
             )
 
 
+submitUnitEdit : B.CreateUnitReq -> Model -> ( Model, Effect Msg )
+submitUnitEdit req model =
+    case model.details of
+        Nothing ->
+            ( model, E.none )
+
+        Just details ->
+            let
+                unit =
+                    details.unit
+
+                updatedUnit =
+                    { unit
+                        | company = req.company
+                        , battalion = req.battalion
+                        , regiment = req.regiment
+                        , division = req.division
+                        , army = req.army
+                        , militaryDistrict = req.militaryDistrict
+                        , armyRegion = req.armyRegion
+                        , active = req.active
+                        , isDeduplicateCandidate = req.isDeduplicateCandidate
+                        , comment = req.comment
+                        , orbitNote = req.orbitNote
+                    }
+            in
+            ( { model | unitUpdating = True }
+            , E.sendCmd <| Api.sigint_unit_update UnitEditUpdated updatedUnit
+            )
+
+
+unitEditUpdated : Result ApiError B.Unit -> Model -> ( Model, Effect Msg )
+unitEditUpdated result model =
+    case result of
+        Err err ->
+            ( { model | unitUpdating = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка редагування підрозділу" err
+            )
+
+        Ok unit ->
+            case model.details of
+                Nothing ->
+                    ( { model | unitUpdating = False, unitEditDialogOpen = False }, E.none )
+
+                Just details ->
+                    ( { model
+                        | details = Just { details | unit = unit }
+                        , unitUpdating = False
+                        , unitEditDialogOpen = False
+                      }
+                    , E.none
+                    )
+
+
+setUnitActive : Bool -> Model -> ( Model, Effect Msg )
+setUnitActive active model =
+    case model.details of
+        Just details ->
+            if model.unitUpdating then
+                ( model, E.none )
+
+            else
+                let
+                    unit =
+                        details.unit
+                in
+                ( { model | unitUpdating = True }
+                , E.sendCmd <|
+                    Api.sigint_unit_update UnitActiveUpdated
+                        { unit | active = active }
+                )
+
+        Nothing ->
+            ( model, E.none )
+
+
+unitActiveUpdated : Result ApiError B.Unit -> Model -> ( Model, Effect Msg )
+unitActiveUpdated result model =
+    case result of
+        Err err ->
+            ( { model | unitUpdating = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка зміни статусу підрозділу" err
+            )
+
+        Ok unit ->
+            case model.details of
+                Nothing ->
+                    ( { model | unitUpdating = False }, E.none )
+
+                Just details ->
+                    ( { model
+                        | details = Just { details | unit = unit }
+                        , unitUpdating = False
+                      }
+                    , E.none
+                    )
+
+
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
@@ -406,8 +532,9 @@ detailsErrorView loadFailed =
 detailsView : Auth.User -> Shared.Model -> Model -> B.UnitDetailsRsp -> Html Msg
 detailsView user shared model details =
     div [ class "flex flex-col gap-4" ]
-        [ detailsHeader model details
+        [ detailsHeader user model details
         , deviceNetworkDialog model details
+        , unitEditDialog model details.unit
         , orbitLinkDialog model
         , tabsView model.activeTab
         , case model.activeTab of
@@ -434,8 +561,8 @@ orbitLinkDialog model =
             text ""
 
 
-detailsHeader : Model -> B.UnitDetailsRsp -> Html Msg
-detailsHeader model details =
+detailsHeader : Auth.User -> Model -> B.UnitDetailsRsp -> Html Msg
+detailsHeader user model details =
     div
         [ class "d-flex align-items-center justify-content-between gap-3 flex-wrap" ]
         [ div [ class "d-flex align-items-center gap-3 flex-wrap" ]
@@ -450,25 +577,23 @@ detailsHeader model details =
                 [ i [ class "bi bi-arrow-left me-2" ] []
                 , text "До підрозділів"
                 ]
-            , div [ class "d-flex align-items-center gap-1" ]
-                [ h1 [ class "mb-0" ] [ text details.unit.name ]
-                , if details.canCreateDeviceNetwork then
-                    deviceNetworkActions model.deviceNetworkDialogOpen
-
-                  else
-                    text ""
-                ]
+            , h1 [ class "mb-0" ] [ text details.unit.name ]
             ]
+        , if Core.Auth.hasRole "UnitsEditor" user then
+            unitActions model details
+
+          else
+            text ""
         ]
 
 
-deviceNetworkActions : Bool -> Html Msg
-deviceNetworkActions dialogOpen =
+unitActions : Model -> B.UnitDetailsRsp -> Html Msg
+unitActions model details =
     div [ class "dropdown" ]
         [ button
             [ class "btn btn-sm btn-link text-secondary p-1"
             , type_ "button"
-            , disabled dialogOpen
+            , disabled (model.unitEditDialogOpen || model.deviceNetworkDialogOpen || model.unitUpdating)
             , attribute "data-bs-toggle" "dropdown"
             , attribute "aria-expanded" "false"
             , attribute "aria-label" "Дії з підрозділом"
@@ -479,14 +604,77 @@ deviceNetworkActions dialogOpen =
                 [ button
                     [ class "dropdown-item d-flex align-items-center gap-2"
                     , type_ "button"
-                    , onClick OpenDeviceNetworkDialog
+                    , onClick OpenUnitEditDialog
                     ]
-                    [ i [ class "bi bi-router" ] []
-                    , text "Додати мережу пристроя"
+                    [ i [ class "bi bi-pencil" ] []
+                    , text "Редагувати"
                     ]
                 ]
+            , li []
+                [ button
+                    [ class "dropdown-item d-flex align-items-center gap-2"
+                    , type_ "button"
+                    , onClick (SetUnitActive (not details.unit.active))
+                    ]
+                    [ i
+                        [ class
+                            (if details.unit.active then
+                                "bi bi-toggle-off"
+
+                             else
+                                "bi bi-toggle-on"
+                            )
+                        ]
+                        []
+                    , text
+                        (if details.unit.active then
+                            "Деактивувати"
+
+                         else
+                            "Активувати"
+                        )
+                    ]
+                ]
+            , if details.canCreateDeviceNetwork then
+                li []
+                    [ button
+                        [ class "dropdown-item d-flex align-items-center gap-2"
+                        , type_ "button"
+                        , onClick OpenDeviceNetworkDialog
+                        ]
+                        [ i [ class "bi bi-router" ] []
+                        , text "Додати мережу пристроя"
+                        ]
+                    ]
+
+              else
+                text ""
             ]
         ]
+
+
+unitEditDialog : Model -> B.Unit -> Html Msg
+unitEditDialog model unit =
+    if model.unitEditDialogOpen then
+        node "unit-edit-dialog"
+            [ attribute "data-unit" (Encode.encode 0 (B.unitEncoder unit))
+            , attribute "data-submitting"
+                (if model.unitUpdating then
+                    "true"
+
+                 else
+                    "false"
+                )
+            , on "unit-edit-close" (Decode.succeed CloseUnitEditDialog)
+            , on "unit-edit-submit"
+                (Decode.map SubmitUnitEdit <|
+                    Decode.at [ "detail" ] B.createUnitReqDecoder
+                )
+            ]
+            []
+
+    else
+        text ""
 
 
 deviceNetworkDialog : Model -> B.UnitDetailsRsp -> Html Msg
@@ -517,6 +705,8 @@ defaultUnitMasks unit =
             , unit.regiment
             , unit.division
             , unit.army
+            , unit.militaryDistrict
+            , unit.armyRegion
             ]
                 |> List.filter (not << String.isEmpty << String.trim)
 
@@ -570,18 +760,21 @@ overviewTab user shared model details =
     let
         orbitCards =
             if List.isEmpty details.orbitUnits then
-                if details.canLinkOrbitUnit then
-                    [ emptyOrbitDataCard ]
+                if details.canLinkOrbitUnit || details.unit.orbitNote /= Nothing then
+                    [ emptyOrbitDataCard details.canLinkOrbitUnit details.unit.orbitNote ]
 
                 else
                     []
 
             else
-                List.map
-                    (orbitDataCard
-                        (Core.Auth.hasRole "UnitsEditor" user)
-                        shared
-                        model.orbitUnitUnlinking
+                List.indexedMap
+                    (\index ->
+                        orbitDataCard
+                            (Core.Auth.hasRole "UnitsEditor" user)
+                            shared
+                            model.orbitUnitUnlinking
+                            (index == 0)
+                            details.unit.orbitNote
                     )
                     details.orbitUnits
     in
@@ -592,27 +785,32 @@ overviewTab user shared model details =
         (unitOverviewCard shared details.unit :: orbitCards)
 
 
-emptyOrbitDataCard : Html Msg
-emptyOrbitDataCard =
+emptyOrbitDataCard : Bool -> Maybe String -> Html Msg
+emptyOrbitDataCard canLinkOrbitUnit orbitNote =
     div [ class "border rounded p-4 bg-card" ]
         [ h2 [ class "h4 mb-4" ] [ text "Дані із Orbit" ]
+        , orbitNoteView orbitNote
         , p [] [ text "Відсутні дані із системи Orbit." ]
-        , p [ class "mb-0" ]
-            [ button
-                [ class "btn btn-outline-primary d-inline-flex align-items-center gap-2"
-                , type_ "button"
-                , onClick OpenOrbitLinkDialog
-                ]
-                [ img
-                    [ src "/img/delta-icon.webp"
-                    , alt ""
-                    , style "height" "22px"
-                    , style "width" "22px"
+        , if canLinkOrbitUnit then
+            p [ class "mb-0" ]
+                [ button
+                    [ class "btn btn-outline-primary d-inline-flex align-items-center gap-2"
+                    , type_ "button"
+                    , onClick OpenOrbitLinkDialog
                     ]
-                    []
-                , text "Прив'язати Orbit підрозділ"
+                    [ img
+                        [ src "/img/delta-icon.webp"
+                        , alt ""
+                        , style "height" "22px"
+                        , style "width" "22px"
+                        ]
+                        []
+                    , text "Прив'язати Orbit підрозділ"
+                    ]
                 ]
-            ]
+
+          else
+            text ""
         ]
 
 
@@ -626,6 +824,8 @@ unitOverviewCard shared unit =
             , overviewField "Полк/Бригада" unit.regiment
             , overviewField "Дивізія" unit.division
             , overviewField "Корпус/Армія" unit.army
+            , overviewField "Група армій/Фронт/Види та роди ЗС" unit.militaryDistrict
+            , overviewField "Регіон/ТВД/Збройні Сили" unit.armyRegion
             , overviewField
                 "Статус"
                 (if unit.active then
@@ -649,22 +849,26 @@ unitOverviewCard shared unit =
                     ]
                     [ text (textOrDash unit.comment) ]
                 ]
-            , div [ class "col-12" ]
-                [ div [ class "text-secondary text-sm mb-1" ] [ text "Примітка Orbit" ]
-                , div
-                    [ class "border rounded p-3"
-                    , style "min-height" "72px"
-                    , style "white-space" "pre-wrap"
-                    , style "overflow-wrap" "anywhere"
-                    ]
-                    [ text (textOrDash (Maybe.withDefault "" unit.orbitNote)) ]
-                ]
             ]
         ]
 
 
-orbitDataCard : Bool -> Shared.Model -> Maybe String -> B.OrbitUnitDetails -> Html Msg
-orbitDataCard canManageOrbitData shared orbitUnitUnlinking orbitUnit =
+orbitNoteView : Maybe String -> Html Msg
+orbitNoteView orbitNote =
+    div [ class "mb-4" ]
+        [ div [ class "text-secondary text-sm mb-1" ] [ text "Примітка Orbit" ]
+        , div
+            [ class "border rounded p-3"
+            , style "min-height" "72px"
+            , style "white-space" "pre-wrap"
+            , style "overflow-wrap" "anywhere"
+            ]
+            [ text (textOrDash (Maybe.withDefault "" orbitNote)) ]
+        ]
+
+
+orbitDataCard : Bool -> Shared.Model -> Maybe String -> Bool -> Maybe String -> B.OrbitUnitDetails -> Html Msg
+orbitDataCard canManageOrbitData shared orbitUnitUnlinking showOrbitNote orbitNote orbitUnit =
     div [ class "border rounded p-4 bg-card" ]
         [ div [ class "d-flex align-items-center justify-content-between gap-3 mb-4" ]
             [ h2 [ class "h4 mb-0" ] [ text "Дані із Orbit" ]
@@ -674,6 +878,11 @@ orbitDataCard canManageOrbitData shared orbitUnitUnlinking orbitUnit =
               else
                 text ""
             ]
+        , if showOrbitNote then
+            orbitNoteView orbitNote
+
+          else
+            text ""
         , orbitUnitDetails shared orbitUnit
         ]
 

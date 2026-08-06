@@ -9,6 +9,8 @@ export const EMPTY_UNIT_FORM: UnitForm = {
   regiment: '',
   division: '',
   army: '',
+  militaryDistrict: '',
+  armyRegion: '',
   active: true,
   isDeduplicateCandidate: null,
   comment: '',
@@ -22,6 +24,8 @@ export function unitToForm(unit: Unit): UnitForm {
     regiment: unit.regiment,
     division: unit.division,
     army: unit.army,
+    militaryDistrict: unit.militaryDistrict,
+    armyRegion: unit.armyRegion,
     active: unit.active,
     isDeduplicateCandidate: unit.isDeduplicateCandidate,
     comment: unit.comment,
@@ -36,6 +40,8 @@ export function trimUnitForm(form: UnitForm): UnitForm {
     regiment: form.regiment.trim(),
     division: form.division.trim(),
     army: form.army.trim(),
+    militaryDistrict: form.militaryDistrict.trim(),
+    armyRegion: form.armyRegion.trim(),
     active: form.active,
     isDeduplicateCandidate: form.isDeduplicateCandidate,
     comment: form.comment.trim(),
@@ -44,7 +50,15 @@ export function trimUnitForm(form: UnitForm): UnitForm {
 }
 
 export function unitNameParts(form: UnitForm): string[] {
-  return [form.company, form.battalion, form.regiment, form.division, form.army]
+  return [
+    form.company,
+    form.battalion,
+    form.regiment,
+    form.division,
+    form.army,
+    form.militaryDistrict,
+    form.armyRegion,
+  ]
     .map((value) => value.trim())
     .filter(Boolean);
 }
@@ -78,7 +92,15 @@ export function defaultUnitMasks(form: UnitForm): string[] {
 }
 
 export function findPotentialDuplicates(units: Unit[], form: UnitForm): Unit[] {
-  const fields = ['company', 'battalion', 'regiment', 'division', 'army'] as const;
+  const fields = [
+    'company',
+    'battalion',
+    'regiment',
+    'division',
+    'army',
+    'militaryDistrict',
+    'armyRegion',
+  ] as const;
   const inputs = fields.map((field) => form[field].trim().toLocaleLowerCase());
   if (inputs.every((value) => value === '')) return [];
 

@@ -11,6 +11,10 @@ pub struct Unit {
     pub regiment: String,
     pub division: String,
     pub army: String,
+    #[serde(default)]
+    pub military_district: String,
+    #[serde(default)]
+    pub army_region: String,
     pub comment: String,
     pub orbit_note: Option<String>,
     pub name: String,
@@ -47,6 +51,8 @@ mod tests {
 
         assert!(!unit.has_orbit);
         assert_eq!(unit.is_deduplicate_candidate, None);
+        assert_eq!(unit.military_district, "");
+        assert_eq!(unit.army_region, "");
     }
 }
 
@@ -99,6 +105,10 @@ pub struct CreateUnitReq {
     pub regiment: String,
     pub division: String,
     pub army: String,
+    #[serde(default)]
+    pub military_district: String,
+    #[serde(default)]
+    pub army_region: String,
     pub active: bool,
     pub is_deduplicate_candidate: Option<bool>,
     pub comment: String,

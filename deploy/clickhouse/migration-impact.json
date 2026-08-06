@@ -125,6 +125,11 @@
         { "table": "public.sigint_unit", "strategy": "cdc_backfill" }
       ]
     },
+    "echo:m20260806_134330_sigint_unit_extended_echelons": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "cdc_backfill" }
+      ]
+    },
     "echo:m20260806_141904_report_history_duplicate_lookup": {
       "changes": []
     }

@@ -25,6 +25,8 @@ describe('isUnitSearchMatchForUnit', () => {
       regiment: '27 омсбр',
       division: '',
       army: '',
+      militaryDistrict: '',
+      armyRegion: '',
       comment: 'додаток',
       orbitNote: null,
       active: true,

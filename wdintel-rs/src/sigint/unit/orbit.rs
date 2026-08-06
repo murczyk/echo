@@ -379,6 +379,7 @@ pub(super) async fn import_orbit_unit_for_login(
             msg: "ORBIT unit is already linked to a SIGINT unit".to_string(),
         });
     }
+    import_missing_orbit_ancestors(&transaction, login, &orbit_unit).await?;
     let unit_req =
         create_unit_req_from_orbit(&transaction, &orbit_unit, true).await?;
     let unit =
@@ -409,6 +410,70 @@ pub(super) async fn import_orbit_unit_for_login(
 
     super::render_created_unit_with_optional_network(login, env, unit, network)
         .await
+}
+
+async fn import_missing_orbit_ancestors<C>(
+    dbx: &C,
+    login: &Uuid,
+    root: &orbit_unit::Model,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    for ancestor in orbit_ancestors(dbx, root).await? {
+        if orbit_unit_has_active_sigint_link(dbx, ancestor.unit_id).await? {
+            continue;
+        }
+        let unit_req =
+            create_unit_req_from_orbit(dbx, &ancestor, false).await?;
+        let unit = super::insert_unit_with_changelog(dbx, login, &unit_req)
+            .await
+            .c(h!())?;
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(ancestor.unit_id),
+            sigint_unit_id: Set(unit.id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn orbit_ancestors<C>(
+    dbx: &C,
+    root: &orbit_unit::Model,
+) -> Result<Vec<orbit_unit::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut seen = HashSet::from([root.unit_id]);
+    let mut pending = [
+        root.generative_parent_unit_id,
+        root.operational_parent_unit_id,
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    let mut ancestors = Vec::new();
+    while let Some(unit_id) = pending.pop() {
+        if !seen.insert(unit_id) {
+            continue;
+        }
+        let ancestor = find_available_orbit_unit(dbx, unit_id).await?;
+        pending.extend(
+            [
+                ancestor.generative_parent_unit_id,
+                ancestor.operational_parent_unit_id,
+            ]
+            .into_iter()
+            .flatten(),
+        );
+        ancestors.push(ancestor);
+    }
+    Ok(ancestors)
 }
 
 pub async fn oneoff_import_unlinked_orbit_units(
@@ -630,6 +695,8 @@ fn imported_unit_masks(unit: &CreateUnitReq) -> Result<Vec<String>, AppError> {
         unit.regiment.as_str(),
         unit.division.as_str(),
         unit.army.as_str(),
+        unit.military_district.as_str(),
+        unit.army_region.as_str(),
     ]
     .into_iter()
     .filter(|part| !part.is_empty())
@@ -668,13 +735,16 @@ where
             msg: "ORBIT unit has no supported hierarchy levels".to_string(),
         });
     }
-    let [company, battalion, regiment, division, army] = hierarchy;
+    let [company, battalion, regiment, division, army, military_district, army_region] =
+        hierarchy;
     Ok(CreateUnitReq {
         company,
         battalion,
         regiment,
         division,
         army,
+        military_district,
+        army_region,
         active,
         is_deduplicate_candidate: None,
         comment: String::new(),
@@ -701,7 +771,7 @@ async fn fill_orbit_parent_chain<C>(
     dbx: &C,
     root: &orbit_unit::Model,
     parent_kind: OrbitParentKind,
-    hierarchy: &mut [String; 5],
+    hierarchy: &mut [String; 7],
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -724,7 +794,7 @@ where
 async fn fill_orbit_hierarchy_level<C>(
     dbx: &C,
     unit: &orbit_unit::Model,
-    hierarchy: &mut [String; 5],
+    hierarchy: &mut [String; 7],
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
