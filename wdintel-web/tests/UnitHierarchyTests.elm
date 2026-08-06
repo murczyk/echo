@@ -95,6 +95,19 @@ suite =
                     Core.UnitHierarchy.buildHierarchy units
                         |> .armies
                         |> List.map Tuple.first
-                        |> Expect.equal (List.sort [ "Західний ВО", "ЗС РФ" ])
+                        |> Expect.equal (List.sort [ "Західний ВО ЗС РФ", "ЗС РФ" ])
+            , test "keeps same-named armies in different districts and regions separate" <|
+                \_ ->
+                    let
+                        units =
+                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "1 А", militaryDistrict = "Західний ВО", armyRegion = "ЗС РФ", comment = "", orbitNote = Nothing, name = "1 А Західний ВО ЗС РФ", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
+                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "1 А", militaryDistrict = "Східний ВО", armyRegion = "ЗС РФ", comment = "", orbitNote = Nothing, name = "1 А Східний ВО ЗС РФ", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
+                            , { id = 3, company = "", battalion = "", regiment = "", division = "", army = "1 А", militaryDistrict = "Західний ВО", armyRegion = "Інший регіон", comment = "", orbitNote = Nothing, name = "1 А Західний ВО Інший регіон", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [] }
+                            ]
+                    in
+                    Core.UnitHierarchy.buildHierarchy units
+                        |> .armies
+                        |> List.map Tuple.first
+                        |> Expect.equal (List.sort [ "1 А Західний ВО ЗС РФ", "1 А Східний ВО ЗС РФ", "1 А Західний ВО Інший регіон" ])
             ]
         ]
