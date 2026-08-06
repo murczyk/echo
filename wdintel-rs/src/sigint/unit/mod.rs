@@ -896,7 +896,9 @@ fn is_parent_unit(
         .iter()
         .zip(&child_hierarchy[parent_level..])
         .all(|(parent, child)| {
-            parent.trim().to_lowercase() == child.trim().to_lowercase()
+            let parent = parent.trim();
+            parent.is_empty()
+                || parent.to_lowercase() == child.trim().to_lowercase()
         })
 }
 
@@ -2458,6 +2460,25 @@ mod tests {
         dbx: &DatabaseConnection,
         hierarchy: [&str; 5],
     ) -> sigint_unit::Model {
+        extended_hierarchy_unit(
+            dbx,
+            [
+                hierarchy[0],
+                hierarchy[1],
+                hierarchy[2],
+                hierarchy[3],
+                hierarchy[4],
+                "",
+                "",
+            ],
+        )
+        .await
+    }
+
+    async fn extended_hierarchy_unit(
+        dbx: &DatabaseConnection,
+        hierarchy: [&str; 7],
+    ) -> sigint_unit::Model {
         crate::functest::tests::mk_sigint_unit(
             dbx,
             sigint_unit::ActiveModel {
@@ -2466,6 +2487,8 @@ mod tests {
                 regiment: Set(hierarchy[2].to_string()),
                 division: Set(hierarchy[3].to_string()),
                 army: Set(hierarchy[4].to_string()),
+                military_district: Set(hierarchy[5].to_string()),
+                army_region: Set(hierarchy[6].to_string()),
                 active: Set(false),
                 name: Set(hierarchy
                     .into_iter()
@@ -2542,6 +2565,45 @@ mod tests {
         for parent_id in [army.id, division.id, regiment.id, battalion.id] {
             assert!(!active(&env.dbx, parent_id).await);
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_activity_propagates_to_legacy_parent_without_army_region() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let legacy_parent = extended_hierarchy_unit(
+            &env.dbx,
+            ["", "", "", "", "20 ЗВА", "Західний ВО", ""],
+        )
+        .await;
+        let other_district_parent = extended_hierarchy_unit(
+            &env.dbx,
+            ["", "", "", "", "20 ЗВА", "Південний ВО", ""],
+        )
+        .await;
+        let child = extended_hierarchy_unit(
+            &env.dbx,
+            [
+                "1 рота",
+                "2 бат",
+                "55 мбр",
+                "45 див",
+                "20 ЗВА",
+                "Західний ВО",
+                "ЗС РФ",
+            ],
+        )
+        .await;
+
+        set_activity(&env.dbx, &login_id, &child, true).await;
+
+        assert!(active(&env.dbx, legacy_parent.id).await);
+        assert!(!active(&env.dbx, other_district_parent.id).await);
+
+        set_activity(&env.dbx, &login_id, &child, false).await;
+
+        assert!(!active(&env.dbx, legacy_parent.id).await);
     }
 
     #[tokio::test]
