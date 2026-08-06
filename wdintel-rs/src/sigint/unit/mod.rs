@@ -1793,6 +1793,9 @@ mod tests {
             .unwrap();
         assert_eq!(linked_units.len(), 7);
         assert!(linked_units.iter().all(|unit| unit.active));
+        assert!(linked_units
+            .iter()
+            .all(|unit| unit.is_deduplicate_candidate == Some(false)));
     }
 
     #[tokio::test]

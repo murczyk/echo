@@ -333,6 +333,8 @@ pub(super) async fn link_orbit_unit_for_login(
     )
     .await?;
     import_missing_orbit_ancestors(&transaction, login, &orbit_unit).await?;
+    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+        .await?;
     if sigint_unit.active {
         super::reconcile_parent_unit_activity(
             &transaction,
@@ -515,6 +517,7 @@ where
     for orbit_unit in linked_orbit_units {
         import_missing_orbit_ancestors(dbx, login, &orbit_unit).await?;
     }
+    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx).await?;
     let linked_sigint_unit_ids = links
         .into_iter()
         .map(|link| link.sigint_unit_id)
