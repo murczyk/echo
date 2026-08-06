@@ -73,13 +73,12 @@ isChildOf parentUnit childUnit =
     isChildUnitByLevels parentLevels childLevels
 
 
-{-| Перевіряє чи є childLevels дитячими для parentLevels
-Простий алгоритм: дитина має починатися так само як батько + мати додаткову інформацію
+{-| Перевіряє чи є childLevels дитячими для parentLevels.
+Порожні вищі рівні батька вважаються невідомими, а не конфліктними.
 -}
 isChildUnitByLevels : List String -> List String -> Bool
 isChildUnitByLevels parentLevels childLevels =
     let
-        -- Збираємо пари (індекс, значення) для заповнених рівнів
         getFilledLevels levels =
             levels
                 |> List.indexedMap (\i level -> ( i, level ))
@@ -91,26 +90,22 @@ isChildUnitByLevels parentLevels childLevels =
         childFilled =
             getFilledLevels childLevels
 
-        -- Батько не може бути порожнім
         parentNotEmpty =
             not (List.isEmpty parentFilled)
 
-        -- Дитина має мати більше заповнених рівнів
         childMoreSpecific =
-            List.length childFilled > List.length parentFilled
+            case ( List.reverse parentFilled |> List.head, List.reverse childFilled |> List.head ) of
+                ( Just ( parentLevel, _ ), Just ( childLevel, _ ) ) ->
+                    childLevel > parentLevel
 
-        -- Всі заповнені рівні батька мають точно співпадати з початком дитини
-        parentMatchesChildPrefix =
-            let
-                parentLength =
-                    List.length parentFilled
+                _ ->
+                    False
 
-                childPrefix =
-                    List.take parentLength childFilled
-            in
-            parentFilled == childPrefix
+        parentMatchesChild =
+            List.map2 Tuple.pair parentLevels childLevels
+                |> List.all (\( parent, child ) -> String.isEmpty parent || parent == child)
     in
-    parentNotEmpty && childMoreSpecific && parentMatchesChildPrefix
+    parentNotEmpty && childMoreSpecific && parentMatchesChild
 
 
 boldMasterUnit : Dict Int B.Unit -> B.Network -> Html msg
