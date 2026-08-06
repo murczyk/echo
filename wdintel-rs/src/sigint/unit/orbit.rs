@@ -14,7 +14,7 @@ use actix_web::web::{Data, Json};
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use uuid::Uuid;
 
 const ORBIT_LINK_CANDIDATE_LIMIT: u64 = 100;
@@ -304,9 +304,8 @@ pub async fn link_orbit_unit(
     ensure_orbit_editor_access(&env.dbx, &login).await?;
     let req = req.into_inner();
     let orbit_unit_id = parse_orbit_unit_id(&req.orbit_unit_id)?;
-    find_available_sigint_unit(&env.dbx, req.sigint_unit_id).await?;
-    find_available_orbit_unit(&env.dbx, orbit_unit_id).await?;
-    crate::orbit::link_sigint_unit_if_unlinked_with_lock(
+    link_orbit_unit_for_login(
+        &login,
         &env.dbx,
         req.sigint_unit_id,
         orbit_unit_id,
@@ -314,6 +313,36 @@ pub async fn link_orbit_unit(
     .await?;
     super::fanout_unit_changed(&env).await?;
     Ok(Json(()))
+}
+
+pub(super) async fn link_orbit_unit_for_login(
+    login: &Uuid,
+    dbx: &DatabaseConnection,
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+) -> Result<(), AppError> {
+    let transaction = crate::orbit::acquire_import_lock(dbx).await.c(h!())?;
+    let sigint_unit =
+        find_available_sigint_unit(&transaction, sigint_unit_id).await?;
+    let orbit_unit =
+        find_available_orbit_unit(&transaction, orbit_unit_id).await?;
+    crate::orbit::link_sigint_unit_if_unlinked(
+        &transaction,
+        sigint_unit_id,
+        orbit_unit_id,
+    )
+    .await?;
+    import_missing_orbit_ancestors(&transaction, login, &orbit_unit).await?;
+    if sigint_unit.active {
+        super::reconcile_parent_unit_activity(
+            &transaction,
+            login,
+            std::slice::from_ref(&sigint_unit),
+        )
+        .await?;
+    }
+    transaction.commit().await.c(h!())?;
+    Ok(())
 }
 
 #[post("/api/sigint/unit/orbit-unlink")]
@@ -449,6 +478,56 @@ where
         .await
         .c(h!())?;
     }
+    Ok(())
+}
+
+pub(crate) async fn materialize_automatic_link_parent_chains<C>(
+    dbx: &C,
+    login: &Uuid,
+    orbit_unit_ids: &BTreeSet<Uuid>,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if orbit_unit_ids.is_empty() {
+        return Ok(());
+    }
+    let links = orbit_unit_sigint_unit::Entity::find()
+        .filter(orbit_unit_sigint_unit::Column::IsManual.eq(false))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(
+            orbit_unit_sigint_unit::Column::OrbitUnitId
+                .is_in(orbit_unit_ids.iter().copied()),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let linked_orbit_unit_ids = links
+        .iter()
+        .map(|link| link.orbit_unit_id)
+        .collect::<HashSet<_>>();
+    let linked_orbit_units = orbit_unit::Entity::find()
+        .filter(orbit_unit::Column::UnitId.is_in(linked_orbit_unit_ids))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    for orbit_unit in linked_orbit_units {
+        import_missing_orbit_ancestors(dbx, login, &orbit_unit).await?;
+    }
+    let linked_sigint_unit_ids = links
+        .into_iter()
+        .map(|link| link.sigint_unit_id)
+        .collect::<HashSet<_>>();
+    let linked_sigint_units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Id.is_in(linked_sigint_unit_ids))
+        .filter(sigint_unit::Column::Active.eq(true))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    super::reconcile_parent_unit_activity(dbx, login, &linked_sigint_units)
+        .await?;
     Ok(())
 }
 

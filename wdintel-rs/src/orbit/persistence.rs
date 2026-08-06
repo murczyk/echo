@@ -543,18 +543,35 @@ pub async fn soft_delete(
     Ok(())
 }
 
+#[cfg(test)]
 pub async fn replace_sigint_unit_links(
     db: &DatabaseConnection,
     sigint_unit_ids_by_orbit_unit: &HashMap<Uuid, BTreeSet<i64>>,
 ) -> Result<(), AppError> {
     let transaction = db.begin().await.c(h!())?;
+    replace_sigint_unit_links_in_transaction(
+        &transaction,
+        sigint_unit_ids_by_orbit_unit,
+    )
+    .await?;
+    transaction.commit().await.c(h!())?;
+    Ok(())
+}
+
+pub(super) async fn replace_sigint_unit_links_in_transaction<C>(
+    db: &C,
+    sigint_unit_ids_by_orbit_unit: &HashMap<Uuid, BTreeSet<i64>>,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
     let manually_linked_sigint_unit_ids =
-        active_manually_linked_sigint_unit_ids(&transaction).await?;
-    let suppressed_links = suppressed_sigint_unit_links(&transaction).await?;
+        active_manually_linked_sigint_unit_ids(db).await?;
+    let suppressed_links = suppressed_sigint_unit_links(db).await?;
     orbit_unit_sigint_unit::Entity::delete_many()
         .filter(orbit_unit_sigint_unit::Column::IsManual.eq(false))
         .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
-        .exec(&transaction)
+        .exec(db)
         .await
         .c(h!())?;
 
@@ -563,7 +580,7 @@ pub async fn replace_sigint_unit_links(
         .copied()
         .collect::<Vec<_>>();
     let active_orbit_unit_ids =
-        active_orbit_unit_ids(&transaction, &orbit_unit_ids).await?;
+        active_orbit_unit_ids(db, &orbit_unit_ids).await?;
     let links = automatic_sigint_unit_links(
         sigint_unit_ids_by_orbit_unit,
         &active_orbit_unit_ids,
@@ -572,29 +589,47 @@ pub async fn replace_sigint_unit_links(
     );
     if !links.is_empty() {
         orbit_unit_sigint_unit::Entity::insert_many(links)
-            .exec(&transaction)
+            .exec(db)
             .await
             .c(h!())?;
     }
-    super::reconcile_sigint_unit_deduplicate_candidates(&transaction).await?;
-    transaction.commit().await.c(h!())?;
+    super::reconcile_sigint_unit_deduplicate_candidates(db).await?;
     Ok(())
 }
 
+#[cfg(test)]
 pub async fn replace_automatic_sigint_unit_links(
     db: &DatabaseConnection,
     sigint_unit_id: i64,
     orbit_unit_ids: &BTreeSet<Uuid>,
 ) -> Result<(), AppError> {
     let transaction = db.begin().await.c(h!())?;
-    let manually_linked_sigint_unit_ids =
-        active_manually_linked_sigint_unit_ids(&transaction).await?;
-    let mut active_orbit_unit_ids = active_orbit_unit_ids(
+    replace_automatic_sigint_unit_links_in_transaction(
         &transaction,
+        sigint_unit_id,
+        orbit_unit_ids,
+    )
+    .await?;
+    transaction.commit().await.c(h!())?;
+    Ok(())
+}
+
+pub(super) async fn replace_automatic_sigint_unit_links_in_transaction<C>(
+    db: &C,
+    sigint_unit_id: i64,
+    orbit_unit_ids: &BTreeSet<Uuid>,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let manually_linked_sigint_unit_ids =
+        active_manually_linked_sigint_unit_ids(db).await?;
+    let mut active_orbit_unit_ids = active_orbit_unit_ids(
+        db,
         &orbit_unit_ids.iter().copied().collect::<Vec<_>>(),
     )
     .await?;
-    let suppressed_links = suppressed_sigint_unit_links(&transaction).await?;
+    let suppressed_links = suppressed_sigint_unit_links(db).await?;
     active_orbit_unit_ids.retain(|orbit_unit_id| {
         !suppressed_links.contains(&(*orbit_unit_id, sigint_unit_id))
     });
@@ -612,7 +647,7 @@ pub async fn replace_automatic_sigint_unit_links(
         .filter(orbit_unit_sigint_unit::Column::IsManual.eq(false))
         .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .filter(links_to_delete)
-        .exec(&transaction)
+        .exec(db)
         .await
         .c(h!())?;
     if can_link_automatically && !active_orbit_unit_ids.is_empty() {
@@ -626,12 +661,11 @@ pub async fn replace_automatic_sigint_unit_links(
                 }
             }),
         )
-        .exec(&transaction)
+        .exec(db)
         .await
         .c(h!())?;
     }
-    super::reconcile_sigint_unit_deduplicate_candidates(&transaction).await?;
-    transaction.commit().await.c(h!())?;
+    super::reconcile_sigint_unit_deduplicate_candidates(db).await?;
     Ok(())
 }
 
@@ -729,6 +763,24 @@ pub async fn replace_sigint_unit_link(
     orbit_unit_id: Uuid,
 ) -> Result<(), AppError> {
     let transaction = db.begin().await.c(h!())?;
+    replace_sigint_unit_link_in_transaction(
+        &transaction,
+        sigint_unit_id,
+        orbit_unit_id,
+    )
+    .await?;
+    transaction.commit().await.c(h!())?;
+    Ok(())
+}
+
+pub(super) async fn replace_sigint_unit_link_in_transaction<C>(
+    db: &C,
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
     orbit_unit_sigint_unit::Entity::delete_many()
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
         .filter(
@@ -739,7 +791,7 @@ pub async fn replace_sigint_unit_link(
                         .eq(orbit_unit_id),
                 ),
         )
-        .exec(&transaction)
+        .exec(db)
         .await
         .c(h!())?;
     orbit_unit_sigint_unit::Entity::insert(
@@ -750,11 +802,10 @@ pub async fn replace_sigint_unit_link(
             is_suppressed: Set(false),
         },
     )
-    .exec(&transaction)
+    .exec(db)
     .await
     .c(h!())?;
-    super::reconcile_sigint_unit_deduplicate_candidates(&transaction).await?;
-    transaction.commit().await.c(h!())?;
+    super::reconcile_sigint_unit_deduplicate_candidates(db).await?;
     Ok(())
 }
 

@@ -1724,6 +1724,77 @@ mod tests {
         unit.update(dbx).await.unwrap();
     }
 
+    async fn split_orbit_parent_chains(
+        dbx: &DatabaseConnection,
+        orbit_fixture: &OrbitHierarchyFixture,
+    ) {
+        let ids = &orbit_fixture.unit_ids;
+        for (index, generative_parent_index, operational_parent_index) in [
+            (0, Some(2), Some(1)),
+            (1, None, Some(5)),
+            (2, Some(3), None),
+            (3, Some(4), None),
+            (4, Some(6), None),
+            (5, None, Some(6)),
+        ] {
+            update_orbit_parents(
+                dbx,
+                ids[index],
+                generative_parent_index.map(|parent_index| ids[parent_index]),
+                operational_parent_index.map(|parent_index| ids[parent_index]),
+            )
+            .await;
+        }
+    }
+
+    async fn active_full_hierarchy_unit(
+        dbx: &DatabaseConnection,
+    ) -> sigint_unit::Model {
+        crate::functest::tests::mk_sigint_unit(
+            dbx,
+            sigint_unit::ActiveModel {
+                company: Set("1 рота".to_string()),
+                battalion: Set("2 бат".to_string()),
+                regiment: Set("55 мбр".to_string()),
+                division: Set("45 див".to_string()),
+                army: Set("20 ЗВА".to_string()),
+                military_district: Set("Західний ВО".to_string()),
+                army_region: Set("ЗС РФ".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+    }
+
+    async fn assert_full_active_orbit_hierarchy(
+        dbx: &DatabaseConnection,
+        orbit_unit_ids: Vec<uuid::Uuid>,
+    ) {
+        let links = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .is_in(orbit_unit_ids),
+            )
+            .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+            .all(dbx)
+            .await
+            .unwrap();
+        assert_eq!(links.len(), 7);
+        let linked_unit_ids = links
+            .into_iter()
+            .map(|link| link.sigint_unit_id)
+            .collect::<Vec<_>>();
+        let linked_units = sigint_unit::Entity::find()
+            .filter(sigint_unit::Column::Id.is_in(linked_unit_ids))
+            .all(dbx)
+            .await
+            .unwrap();
+        assert_eq!(linked_units.len(), 7);
+        assert!(linked_units.iter().all(|unit| unit.active));
+    }
+
     #[tokio::test]
     #[serial]
     async fn create_unit_with_auto_network_rejects_when_setting_missing() {
@@ -2203,6 +2274,58 @@ mod tests {
                 .unwrap(),
             imported as u64
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn manual_orbit_link_creates_and_activates_both_parent_chains() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
+        split_orbit_parent_chains(&env.dbx, &orbit_fixture).await;
+        let linked_unit = active_full_hierarchy_unit(&env.dbx).await;
+
+        orbit::link_orbit_unit_for_login(
+            &login_id,
+            &env.dbx,
+            linked_unit.id,
+            orbit_fixture.root_unit_id,
+        )
+        .await
+        .unwrap();
+
+        assert_full_active_orbit_hierarchy(&env.dbx, orbit_fixture.unit_ids)
+            .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn automatic_orbit_link_creates_and_activates_both_parent_chains() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
+        split_orbit_parent_chains(&env.dbx, &orbit_fixture).await;
+        let linked_unit = active_full_hierarchy_unit(&env.dbx).await;
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_fixture.root_unit_id),
+            sigint_unit_id: Set(linked_unit.id),
+            is_manual: Set(false),
+            is_suppressed: Set(false),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        orbit::materialize_automatic_link_parent_chains(
+            &env.dbx,
+            &login_id,
+            &BTreeSet::from([orbit_fixture.root_unit_id]),
+        )
+        .await
+        .unwrap();
+
+        assert_full_active_orbit_hierarchy(&env.dbx, orbit_fixture.unit_ids)
+            .await;
     }
 
     #[tokio::test]
