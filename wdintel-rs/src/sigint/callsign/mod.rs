@@ -743,6 +743,10 @@ fn apply_callsigns_after_cursor(
         ),
         ListCallsignsSortBy::CallsignUnitAsc => callsigns.filter(
             Expr::tuple([
+                sigint_unit::Column::ArmyRegion.into_column_ref().into(),
+                sigint_unit::Column::MilitaryDistrict
+                    .into_column_ref()
+                    .into(),
                 sigint_unit::Column::Army.into_column_ref().into(),
                 sigint_unit::Column::Division.into_column_ref().into(),
                 sigint_unit::Column::Regiment.into_column_ref().into(),
@@ -752,6 +756,8 @@ fn apply_callsigns_after_cursor(
                 callsigns_id_expr(),
             ])
             .gt(SimpleExpr::Tuple(vec![
+                cursor.unit.army_region.clone().into(),
+                cursor.unit.military_district.clone().into(),
                 cursor.unit.army.clone().into(),
                 cursor.unit.division.clone().into(),
                 cursor.unit.regiment.clone().into(),
@@ -763,6 +769,10 @@ fn apply_callsigns_after_cursor(
         ),
         ListCallsignsSortBy::CallsignUnitDesc => callsigns.filter(
             Expr::tuple([
+                sigint_unit::Column::ArmyRegion.into_column_ref().into(),
+                sigint_unit::Column::MilitaryDistrict
+                    .into_column_ref()
+                    .into(),
                 sigint_unit::Column::Army.into_column_ref().into(),
                 sigint_unit::Column::Division.into_column_ref().into(),
                 sigint_unit::Column::Regiment.into_column_ref().into(),
@@ -772,6 +782,8 @@ fn apply_callsigns_after_cursor(
                 callsigns_id_expr(),
             ])
             .lt(SimpleExpr::Tuple(vec![
+                cursor.unit.army_region.clone().into(),
+                cursor.unit.military_district.clone().into(),
                 cursor.unit.army.clone().into(),
                 cursor.unit.division.clone().into(),
                 cursor.unit.regiment.clone().into(),
@@ -832,6 +844,8 @@ fn apply_callsigns_sort(
             .order_by_desc(callsigns_sort_created_at_expr())
             .order_by_desc(sigint_callsign::Column::Id),
         ListCallsignsSortBy::CallsignUnitAsc => callsigns
+            .order_by_asc(sigint_unit::Column::ArmyRegion)
+            .order_by_asc(sigint_unit::Column::MilitaryDistrict)
             .order_by_asc(sigint_unit::Column::Army)
             .order_by_asc(sigint_unit::Column::Division)
             .order_by_asc(sigint_unit::Column::Regiment)
@@ -840,6 +854,8 @@ fn apply_callsigns_sort(
             .order_by_asc(sigint_callsign::Column::Callsign)
             .order_by_asc(sigint_callsign::Column::Id),
         ListCallsignsSortBy::CallsignUnitDesc => callsigns
+            .order_by_desc(sigint_unit::Column::ArmyRegion)
+            .order_by_desc(sigint_unit::Column::MilitaryDistrict)
             .order_by_desc(sigint_unit::Column::Army)
             .order_by_desc(sigint_unit::Column::Division)
             .order_by_desc(sigint_unit::Column::Regiment)
@@ -1260,11 +1276,23 @@ mod tests {
         login: &uuid::Uuid,
         name: &str,
     ) -> sigint_unit::Model {
+        insert_test_unit_with_upper_hierarchy(dbx, login, name, "", "").await
+    }
+
+    async fn insert_test_unit_with_upper_hierarchy(
+        dbx: &DatabaseConnection,
+        login: &uuid::Uuid,
+        name: &str,
+        army_region: &str,
+        military_district: &str,
+    ) -> sigint_unit::Model {
         sigint_unit::ActiveModel {
             company: Set("C".to_string()),
             regiment: Set("R".to_string()),
             division: Set("D".to_string()),
             army: Set("A".to_string()),
+            army_region: Set(army_region.to_string()),
+            military_district: Set(military_district.to_string()),
             active: Set(true),
             deleted: Set(false),
             created_at: Set(Utc::now().naive_utc()),
@@ -1547,6 +1575,71 @@ mod tests {
         }
 
         assert_eq!(paged_ids, full_ids);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_list_callsigns_unit_sort_paginates_extended_hierarchy() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let r2_d1 = insert_test_unit_with_upper_hierarchy(
+            &env.dbx, &login.id, "R2 D1", "R2", "D1",
+        )
+        .await;
+        let r1_d2 = insert_test_unit_with_upper_hierarchy(
+            &env.dbx, &login.id, "R1 D2", "R1", "D2",
+        )
+        .await;
+        let r1_d1 = insert_test_unit_with_upper_hierarchy(
+            &env.dbx, &login.id, "R1 D1", "R1", "D1",
+        )
+        .await;
+        let alpha =
+            insert_test_callsign(&env.dbx, r2_d1.id, "alpha", now, "").await;
+        let bravo =
+            insert_test_callsign(&env.dbx, r1_d2.id, "bravo", now, "").await;
+        let charlie =
+            insert_test_callsign(&env.dbx, r1_d1.id, "charlie", now, "").await;
+
+        for (sort_by, expected_ids) in [
+            (
+                ListCallsignsSortBy::CallsignUnitAsc,
+                vec![charlie.id, bravo.id, alpha.id],
+            ),
+            (
+                ListCallsignsSortBy::CallsignUnitDesc,
+                vec![alpha.id, bravo.id, charlie.id],
+            ),
+        ] {
+            let full = list_callsigns_impl(
+                &env.dbx,
+                &list_req(None, None, sort_by.clone()),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                full.iter().map(|callsign| callsign.id).collect::<Vec<_>>(),
+                expected_ids,
+            );
+
+            let mut paged_ids = vec![];
+            let mut after_id = None;
+            for _ in 0..=expected_ids.len() {
+                let page = list_callsigns_impl(
+                    &env.dbx,
+                    &list_req(after_id, Some(1), sort_by.clone()),
+                )
+                .await
+                .unwrap();
+                if page.is_empty() {
+                    break;
+                }
+                after_id = page.last().map(|callsign| callsign.id);
+                paged_ids.extend(page.into_iter().map(|callsign| callsign.id));
+            }
+            assert_eq!(paged_ids, expected_ids);
+        }
     }
 
     #[serial]
