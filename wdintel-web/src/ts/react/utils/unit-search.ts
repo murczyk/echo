@@ -28,6 +28,8 @@ function createSyntheticUnsetUnit(): Unit {
     regiment: '',
     division: '',
     army: '',
+    militaryDistrict: '',
+    armyRegion: '',
     comment: '',
     orbitNote: null,
     active: true,

@@ -38,9 +38,10 @@ const DEFAULT_COLUMN_VISIBILITY = {
   regiment: true,
   division: true,
   army: true,
+  militaryDistrict: true,
+  armyRegion: true,
   createdAt: true,
   comment: true,
-  orbitNote: true,
   hasOrbit: true,
 };
 
@@ -53,9 +54,10 @@ const DEFAULT_COLUMN_ORDER = [
   'regiment',
   'division',
   'army',
+  'militaryDistrict',
+  'armyRegion',
   'createdAt',
   'comment',
-  'orbitNote',
   'hasOrbit',
 ];
 

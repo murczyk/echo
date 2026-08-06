@@ -30,6 +30,8 @@ pub(crate) enum EchoEchelon {
     Regiment,
     Division,
     Army,
+    MilitaryDistrict,
+    ArmyRegion,
 }
 
 impl EchoEchelon {
@@ -40,6 +42,8 @@ impl EchoEchelon {
             Self::Regiment => 2,
             Self::Division => 3,
             Self::Army => 4,
+            Self::MilitaryDistrict => 5,
+            Self::ArmyRegion => 6,
         }
     }
 }
@@ -51,6 +55,8 @@ pub(crate) fn echo_echelon(key: &str) -> Option<EchoEchelon> {
         "regiment" | "brigade" => Some(EchoEchelon::Regiment),
         "division" => Some(EchoEchelon::Division),
         "corps" | "fieldArmy" => Some(EchoEchelon::Army),
+        "militaryDistrict" => Some(EchoEchelon::MilitaryDistrict),
+        "armyRegion" => Some(EchoEchelon::ArmyRegion),
         _ => None,
     }
 }
@@ -533,6 +539,8 @@ fn sigint_unit_full_name(unit: &sigint_unit::Model) -> String {
         unit.regiment.as_str(),
         unit.division.as_str(),
         unit.army.as_str(),
+        unit.military_district.as_str(),
+        unit.army_region.as_str(),
     ]
     .into_iter()
     .filter(|part| !part.is_empty())
@@ -608,6 +616,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn maps_all_orbit_echelons_to_sigint_hierarchy() {
+        assert_eq!(echo_echelon("platoon"), Some(EchoEchelon::Company));
+        assert_eq!(echo_echelon("company"), Some(EchoEchelon::Company));
+        assert_eq!(echo_echelon("battalion"), Some(EchoEchelon::Battalion));
+        assert_eq!(echo_echelon("regiment"), Some(EchoEchelon::Regiment));
+        assert_eq!(echo_echelon("brigade"), Some(EchoEchelon::Regiment));
+        assert_eq!(echo_echelon("division"), Some(EchoEchelon::Division));
+        assert_eq!(echo_echelon("corps"), Some(EchoEchelon::Army));
+        assert_eq!(echo_echelon("fieldArmy"), Some(EchoEchelon::Army));
+        assert_eq!(
+            echo_echelon("militaryDistrict"),
+            Some(EchoEchelon::MilitaryDistrict)
+        );
+        assert_eq!(echo_echelon("armyRegion"), Some(EchoEchelon::ArmyRegion));
+    }
+
+    #[test]
     fn finds_sigint_unit_by_normalized_full_name() {
         let mut higher_id = sigint_unit();
         higher_id.id = 2;
@@ -672,6 +697,8 @@ mod tests {
             regiment: "4 омсбр".to_string(),
             division: String::new(),
             army: "3 ЗВА".to_string(),
+            army_region: String::new(),
+            military_district: String::new(),
             active: true,
             deleted: false,
             created_at: Utc::now().naive_utc(),

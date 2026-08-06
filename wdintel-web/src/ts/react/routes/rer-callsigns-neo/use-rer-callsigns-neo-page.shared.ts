@@ -18,6 +18,8 @@ const EMPTY_HIERARCHY_PARAM = '__EMPTY__';
 
 export const FILTERS_DEBOUNCE_MS = 500;
 export const HIERARCHY_LABELS = {
+  armyRegion: 'Армійський регіон',
+  militaryDistrict: 'Військовий округ',
   army: 'Армія',
   division: 'Дивізія',
   regiment: 'Полк',
@@ -117,6 +119,8 @@ export function readInitialSidebarSelectedUnitFromUrl(): string | null {
 export function readInitialSidebarHierarchyFilterFromUrl(): UnitHierarchyFilter | null {
   const params = new URLSearchParams(window.location.search);
   const hierarchy = {
+    armyRegion: decodeHierarchyParam(params.get('unit_army_region')),
+    militaryDistrict: decodeHierarchyParam(params.get('unit_military_district')),
     army: decodeHierarchyParam(params.get('unit_army')),
     division: decodeHierarchyParam(params.get('unit_division')),
     regiment: decodeHierarchyParam(params.get('unit_regiment')),
@@ -178,6 +182,8 @@ export function areSidebarFiltersEqual(
 
   if (left.kind === 'group' && right.kind === 'group') {
     return (
+      left.hierarchy.armyRegion === right.hierarchy.armyRegion &&
+      left.hierarchy.militaryDistrict === right.hierarchy.militaryDistrict &&
       left.hierarchy.army === right.hierarchy.army &&
       left.hierarchy.division === right.hierarchy.division &&
       left.hierarchy.regiment === right.hierarchy.regiment &&
@@ -234,6 +240,20 @@ export function syncCallsignsStateToUrl(
     setOrDelete('full_name', filters.filterFullName.trim() || null);
     setOrDelete('comment', filters.filterComment.trim() || null);
     setOrDelete('unit', filters.filterUnit.trim() || null);
+    setHierarchyParam(
+      params,
+      'unit_army_region',
+      selectedSidebarUnitFilter?.kind === 'group'
+        ? selectedSidebarUnitFilter.hierarchy.armyRegion
+        : null,
+    );
+    setHierarchyParam(
+      params,
+      'unit_military_district',
+      selectedSidebarUnitFilter?.kind === 'group'
+        ? selectedSidebarUnitFilter.hierarchy.militaryDistrict
+        : null,
+    );
     setHierarchyParam(
       params,
       'unit_army',

@@ -74,6 +74,11 @@ fn match_score(
         (EchoEchelon::Regiment, sigint_unit.regiment.as_str()),
         (EchoEchelon::Division, sigint_unit.division.as_str()),
         (EchoEchelon::Army, sigint_unit.army.as_str()),
+        (
+            EchoEchelon::MilitaryDistrict,
+            sigint_unit.military_district.as_str(),
+        ),
+        (EchoEchelon::ArmyRegion, sigint_unit.army_region.as_str()),
     ]
     .into_iter()
     .all(|(echelon, echo_name)| {
@@ -179,6 +184,11 @@ fn search_score(
         (EchoEchelon::Regiment, sigint_unit.regiment.as_str()),
         (EchoEchelon::Division, sigint_unit.division.as_str()),
         (EchoEchelon::Army, sigint_unit.army.as_str()),
+        (
+            EchoEchelon::MilitaryDistrict,
+            sigint_unit.military_district.as_str(),
+        ),
+        (EchoEchelon::ArmyRegion, sigint_unit.army_region.as_str()),
     ]
     .into_iter()
     .filter(|(echelon, name)| {
@@ -451,6 +461,11 @@ fn sigint_unit_identity(
         (EchoEchelon::Regiment, unit.regiment.as_str()),
         (EchoEchelon::Division, unit.division.as_str()),
         (EchoEchelon::Army, unit.army.as_str()),
+        (
+            EchoEchelon::MilitaryDistrict,
+            unit.military_district.as_str(),
+        ),
+        (EchoEchelon::ArmyRegion, unit.army_region.as_str()),
     ]
     .into_iter()
     .find_map(|(echelon, name)| {
@@ -467,6 +482,11 @@ fn parent_signature(unit: &sigint_unit::Model) -> Vec<(EchoEchelon, String)> {
         (EchoEchelon::Regiment, unit.regiment.as_str()),
         (EchoEchelon::Division, unit.division.as_str()),
         (EchoEchelon::Army, unit.army.as_str()),
+        (
+            EchoEchelon::MilitaryDistrict,
+            unit.military_district.as_str(),
+        ),
+        (EchoEchelon::ArmyRegion, unit.army_region.as_str()),
     ]
     .into_iter()
     .filter(|(echelon, name)| {
@@ -634,6 +654,25 @@ mod tests {
             &unit,
             &echo_unit("взвод", "", "", "", "невідомо")
         ));
+    }
+
+    #[test]
+    fn extended_orbit_echelons_participate_in_matching() {
+        let unit = source_unit(
+            "1 рота / Західний ВО / ЗС РФ",
+            vec![
+                ("company", "1 рота", 2),
+                ("militaryDistrict", "Західний ВО", 1),
+                ("armyRegion", "ЗС РФ", 0),
+            ],
+        );
+        let mut sigint_unit = echo_unit("1 рота", "", "", "", "");
+        sigint_unit.military_district = "Західний ВО".to_string();
+        sigint_unit.army_region = "ЗС РФ".to_string();
+        assert!(matches_sigint_unit(&unit, &sigint_unit));
+
+        sigint_unit.military_district = "Східний ВО".to_string();
+        assert!(!matches_sigint_unit(&unit, &sigint_unit));
     }
 
     #[test]
@@ -1090,6 +1129,8 @@ mod tests {
             regiment: regiment.to_string(),
             division: division.to_string(),
             army: army.to_string(),
+            army_region: String::new(),
+            military_district: String::new(),
             active: true,
             deleted: false,
             created_at: Utc::now().naive_utc(),

@@ -41,6 +41,8 @@ export type CallsignsFilterState = {
 };
 
 export type UnitHierarchyFilter = {
+  armyRegion: string | null;
+  militaryDistrict: string | null;
   army: string | null;
   division: string | null;
   regiment: string | null;
@@ -109,6 +111,8 @@ export type CallsignRowView = Callsign & {
 
 export type UnitStatView = CallsignUnitStatRow & {
   unitName: string;
+  armyRegion: string;
+  militaryDistrict: string;
   army: string;
   division: string;
   regiment: string;

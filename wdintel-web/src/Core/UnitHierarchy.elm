@@ -132,20 +132,27 @@ filterActiveUnits units =
     List.filter .active units
 
 
+armyBranchName : B.Unit -> String
+armyBranchName unit =
+    [ unit.army, unit.militaryDistrict, unit.armyRegion ]
+        |> List.filter (not << String.isEmpty)
+        |> String.join " "
+
+
 
 -- Internal hierarchy building functions
 
 
 buildArmies : List B.Unit -> List ( String, List B.Unit )
 buildArmies units =
-    groupByField .army (filterActiveUnits units)
+    groupByField armyBranchName (filterActiveUnits units)
 
 
 buildDivisions : String -> List B.Unit -> List ( String, List B.Unit )
 buildDivisions armyName units =
     units
         |> filterActiveUnits
-        |> List.filter (\u -> u.army == armyName)
+        |> List.filter (\u -> armyBranchName u == armyName)
         |> groupByField .division
 
 
@@ -153,7 +160,7 @@ buildRegiments : String -> String -> List B.Unit -> List ( String, List B.Unit )
 buildRegiments armyName divisionName units =
     units
         |> filterActiveUnits
-        |> List.filter (\u -> u.army == armyName && u.division == divisionName)
+        |> List.filter (\u -> armyBranchName u == armyName && u.division == divisionName)
         |> groupByField .regiment
 
 
@@ -161,7 +168,7 @@ buildRegimentsUnderArmy : String -> List B.Unit -> List ( String, List B.Unit )
 buildRegimentsUnderArmy armyName units =
     units
         |> filterActiveUnits
-        |> List.filter (\u -> u.army == armyName && String.isEmpty u.division && not (String.isEmpty u.regiment))
+        |> List.filter (\u -> armyBranchName u == armyName && String.isEmpty u.division && not (String.isEmpty u.regiment))
         |> groupByField .regiment
 
 
@@ -169,7 +176,7 @@ buildBattalions : String -> String -> String -> List B.Unit -> List ( String, Li
 buildBattalions armyName divisionName regimentName units =
     units
         |> filterActiveUnits
-        |> List.filter (\u -> u.army == armyName && u.division == divisionName && u.regiment == regimentName)
+        |> List.filter (\u -> armyBranchName u == armyName && u.division == divisionName && u.regiment == regimentName)
         |> groupByField .battalion
 
 
@@ -177,7 +184,7 @@ buildBattalionsUnderArmy : String -> String -> List B.Unit -> List ( String, Lis
 buildBattalionsUnderArmy armyName regimentName units =
     units
         |> filterActiveUnits
-        |> List.filter (\u -> u.army == armyName && String.isEmpty u.division && u.regiment == regimentName)
+        |> List.filter (\u -> armyBranchName u == armyName && String.isEmpty u.division && u.regiment == regimentName)
         |> groupByField .battalion
 
 
@@ -185,7 +192,7 @@ buildCompanies : String -> String -> String -> String -> List B.Unit -> List B.U
 buildCompanies armyName divisionName regimentName battalionName units =
     units
         |> filterActiveUnits
-        |> List.filter (\u -> u.army == armyName && u.division == divisionName && u.regiment == regimentName && u.battalion == battalionName)
+        |> List.filter (\u -> armyBranchName u == armyName && u.division == divisionName && u.regiment == regimentName && u.battalion == battalionName)
         |> sortUnitsByName
 
 
@@ -208,7 +215,7 @@ countUnitsUnderArmy : String -> List B.Unit -> Int
 countUnitsUnderArmy armyName units =
     units
         |> filterActiveUnits
-        |> List.filter (\u -> u.army == armyName)
+        |> List.filter (\u -> armyBranchName u == armyName)
         |> List.length
 
 
@@ -218,7 +225,7 @@ countUnitsUnderDivision : String -> String -> List B.Unit -> Int
 countUnitsUnderDivision armyName divisionName units =
     units
         |> filterActiveUnits
-        |> List.filter (\u -> u.army == armyName && u.division == divisionName)
+        |> List.filter (\u -> armyBranchName u == armyName && u.division == divisionName)
         |> List.length
 
 
@@ -228,7 +235,7 @@ countUnitsUnderRegiment : String -> String -> String -> List B.Unit -> Int
 countUnitsUnderRegiment armyName divisionName regimentName units =
     units
         |> filterActiveUnits
-        |> List.filter (\u -> u.army == armyName && u.division == divisionName && u.regiment == regimentName)
+        |> List.filter (\u -> armyBranchName u == armyName && u.division == divisionName && u.regiment == regimentName)
         |> List.length
 
 

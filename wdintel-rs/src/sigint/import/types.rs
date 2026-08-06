@@ -66,3 +66,65 @@ pub struct EtalonImportResult {
 pub trait Id: Sized + Ord + Copy + Debug {}
 impl Id for i32 {}
 impl Id for i64 {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_etalon_units_default_extended_hierarchy_fields() {
+        let unit = sigint_unit::Model {
+            id: 1,
+            company: String::new(),
+            regiment: String::new(),
+            division: String::new(),
+            army: "20 ЗВА".to_string(),
+            active: true,
+            deleted: false,
+            created_at: Default::default(),
+            created_by_login_id: uuid::Uuid::nil(),
+            name: "20 ЗВА".to_string(),
+            comment: String::new(),
+            battalion: String::new(),
+            search_tsv: None,
+            sigint_origin_id: None,
+            original_id: None,
+            is_deduplicate_candidate: None,
+            orbit_note: None,
+            army_region: "ЗС РФ".to_string(),
+            military_district: "Західний ВО".to_string(),
+        };
+        let etalon = EtalonData {
+            area_of_responsibility: vec![],
+            sigint_signal: vec![],
+            sigint_signal_changelog: vec![],
+            sigint_unit: vec![unit],
+            sigint_network: vec![],
+            sigint_network_aor: vec![],
+            sigint_network_changelog: vec![],
+            sigint_network_description: vec![],
+            sigint_network_freq: vec![],
+            sigint_network_freq_changelog: vec![],
+            sigint_network_unit: vec![],
+            sigint_network_unit_changelog: vec![],
+            sigint_callsign: vec![],
+            sigint_callsign_changelog: vec![],
+            encryption: vec![],
+            source: vec![],
+            sigint_post: vec![],
+            sigint_zone_aor: vec![],
+            sigint_network_post: vec![],
+            sigint_network_callsign: vec![],
+            sigint_network_callsign_changelog: vec![],
+        };
+        let mut value = serde_json::to_value(etalon).unwrap();
+        let unit = value["sigint_unit"][0].as_object_mut().unwrap();
+        unit.remove("army_region");
+        unit.remove("military_district");
+
+        let imported: EtalonData = serde_json::from_value(value).unwrap();
+
+        assert_eq!(imported.sigint_unit[0].army_region, "");
+        assert_eq!(imported.sigint_unit[0].military_district, "");
+    }
+}

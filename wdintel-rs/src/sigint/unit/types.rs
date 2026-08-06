@@ -1,5 +1,16 @@
 use elm_rs::{Elm, ElmDecode, ElmEncode};
+use serde::Deserializer;
 use serde::{Deserialize, Serialize};
+
+fn deserialize_optional_update<'de, D, T>(
+    deserializer: D,
+) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
@@ -11,6 +22,10 @@ pub struct Unit {
     pub regiment: String,
     pub division: String,
     pub army: String,
+    #[serde(default)]
+    pub military_district: String,
+    #[serde(default)]
+    pub army_region: String,
     pub comment: String,
     pub orbit_note: Option<String>,
     pub name: String,
@@ -47,6 +62,8 @@ mod tests {
 
         assert!(!unit.has_orbit);
         assert_eq!(unit.is_deduplicate_candidate, None);
+        assert_eq!(unit.military_district, "");
+        assert_eq!(unit.army_region, "");
     }
 }
 
@@ -99,10 +116,50 @@ pub struct CreateUnitReq {
     pub regiment: String,
     pub division: String,
     pub army: String,
+    #[serde(default)]
+    pub military_district: String,
+    #[serde(default)]
+    pub army_region: String,
     pub active: bool,
     pub is_deduplicate_candidate: Option<bool>,
     pub comment: String,
     pub orbit_note: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateUnitReq {
+    pub id: i64,
+    pub company: String,
+    pub battalion: String,
+    pub regiment: String,
+    pub division: String,
+    pub army: String,
+    #[serde(default)]
+    pub military_district: Option<String>,
+    #[serde(default)]
+    pub army_region: Option<String>,
+    pub active: bool,
+    pub comment: String,
+    #[serde(default, deserialize_with = "deserialize_optional_update")]
+    pub orbit_note: Option<Option<String>>,
+}
+
+impl From<Unit> for UpdateUnitReq {
+    fn from(unit: Unit) -> Self {
+        Self {
+            id: unit.id,
+            company: unit.company,
+            battalion: unit.battalion,
+            regiment: unit.regiment,
+            division: unit.division,
+            army: unit.army,
+            military_district: Some(unit.military_district),
+            army_region: Some(unit.army_region),
+            active: unit.active,
+            comment: unit.comment,
+            orbit_note: Some(unit.orbit_note),
+        }
+    }
 }
 
 #[derive(

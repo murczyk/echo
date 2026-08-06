@@ -59,8 +59,8 @@ fn deepest_shared_hierarchy_level(
 }
 
 fn has_known_parent_conflict(
-    hierarchy1: &[&str; 5],
-    hierarchy2: &[&str; 5],
+    hierarchy1: &[&str; 7],
+    hierarchy2: &[&str; 7],
     shared_level: usize,
 ) -> bool {
     hierarchy1
@@ -72,8 +72,10 @@ fn has_known_parent_conflict(
         })
 }
 
-fn unit_hierarchy(unit: &sigint_unit::Model) -> [&str; 5] {
+fn unit_hierarchy(unit: &sigint_unit::Model) -> [&str; 7] {
     [
+        unit.army_region.trim(),
+        unit.military_district.trim(),
         unit.army.trim(),
         unit.division.trim(),
         unit.regiment.trim(),
@@ -627,6 +629,8 @@ mod tests {
             regiment: regiment.to_string(),
             division: division.to_string(),
             army: army.to_string(),
+            army_region: String::new(),
+            military_district: String::new(),
             active: true,
             deleted: false,
             created_at: chrono::NaiveDate::from_ymd_opt(2026, 1, 1)

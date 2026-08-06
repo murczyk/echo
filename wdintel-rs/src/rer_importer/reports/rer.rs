@@ -1527,6 +1527,8 @@ mod tests {
             regiment: regiment.to_string(),
             division: division.to_string(),
             army: army.to_string(),
+            army_region: String::new(),
+            military_district: String::new(),
             active: true,
             deleted: false,
             created_at: dt(0, 0),

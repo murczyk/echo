@@ -6190,6 +6190,8 @@ type alias Unit =
     , regiment : String
     , division : String
     , army : String
+    , militaryDistrict : String
+    , armyRegion : String
     , comment : String
     , orbitNote : Maybe (String)
     , name : String
@@ -6211,6 +6213,8 @@ unitEncoder struct =
         , ( "regiment", (Json.Encode.string) struct.regiment )
         , ( "division", (Json.Encode.string) struct.division )
         , ( "army", (Json.Encode.string) struct.army )
+        , ( "military_district", (Json.Encode.string) struct.militaryDistrict )
+        , ( "army_region", (Json.Encode.string) struct.armyRegion )
         , ( "comment", (Json.Encode.string) struct.comment )
         , ( "orbit_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.orbitNote )
         , ( "name", (Json.Encode.string) struct.name )
@@ -6283,6 +6287,8 @@ type alias CreateUnitReq =
     , regiment : String
     , division : String
     , army : String
+    , militaryDistrict : String
+    , armyRegion : String
     , active : Bool
     , isDeduplicateCandidate : Maybe (Bool)
     , comment : String
@@ -6298,6 +6304,8 @@ createUnitReqEncoder struct =
         , ( "regiment", (Json.Encode.string) struct.regiment )
         , ( "division", (Json.Encode.string) struct.division )
         , ( "army", (Json.Encode.string) struct.army )
+        , ( "military_district", (Json.Encode.string) struct.militaryDistrict )
+        , ( "army_region", (Json.Encode.string) struct.armyRegion )
         , ( "active", (Json.Encode.bool) struct.active )
         , ( "is_deduplicate_candidate", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeduplicateCandidate )
         , ( "comment", (Json.Encode.string) struct.comment )
@@ -7044,6 +7052,8 @@ type alias ListCallsignsReq =
     , filterFullName : Maybe (String)
     , filterComment : Maybe (String)
     , filterUnit : Maybe (String)
+    , filterUnitArmyRegion : Maybe (String)
+    , filterUnitMilitaryDistrict : Maybe (String)
     , filterUnitArmy : Maybe (String)
     , filterUnitDivision : Maybe (String)
     , filterUnitRegiment : Maybe (String)
@@ -7067,6 +7077,8 @@ listCallsignsReqEncoder struct =
         , ( "filter_full_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterFullName )
         , ( "filter_comment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterComment )
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnit )
+        , ( "filter_unit_army_region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitArmyRegion )
+        , ( "filter_unit_military_district", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitMilitaryDistrict )
         , ( "filter_unit_army", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitArmy )
         , ( "filter_unit_division", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitDivision )
         , ( "filter_unit_regiment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitRegiment )
@@ -8686,6 +8698,8 @@ updFreqNetworkEncoder struct =
 type alias ListNetworksReq =
     { filterFreq : Maybe (String)
     , filterUnit : Maybe (String)
+    , filterUnitArmyRegion : Maybe (String)
+    , filterUnitMilitaryDistrict : Maybe (String)
     , filterUnitArmy : Maybe (String)
     , filterUnitDivision : Maybe (String)
     , filterUnitRegiment : Maybe (String)
@@ -8710,6 +8724,8 @@ listNetworksReqEncoder struct =
     Json.Encode.object
         [ ( "filter_freq", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterFreq )
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnit )
+        , ( "filter_unit_army_region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitArmyRegion )
+        , ( "filter_unit_military_district", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitMilitaryDistrict )
         , ( "filter_unit_army", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitArmy )
         , ( "filter_unit_division", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitDivision )
         , ( "filter_unit_regiment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitRegiment )
@@ -15299,6 +15315,8 @@ unitDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "regiment" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "division" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "military_district" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army_region" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
@@ -15345,6 +15363,8 @@ createUnitReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "regiment" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "division" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "military_district" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army_region" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_deduplicate_candidate" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
@@ -15882,6 +15902,8 @@ listCallsignsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_full_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_comment" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_army_region" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_military_district" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_army" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_division" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_regiment" (Json.Decode.nullable (Json.Decode.string))))
@@ -16749,6 +16771,8 @@ listNetworksReqDecoder =
     Json.Decode.succeed ListNetworksReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_freq" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_army_region" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_military_district" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_army" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_division" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_regiment" (Json.Decode.nullable (Json.Decode.string))))

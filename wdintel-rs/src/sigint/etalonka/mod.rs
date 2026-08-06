@@ -2670,6 +2670,8 @@ mod tests {
             req: ListNetworksReq {
                 filter_freq: None,
                 filter_unit: None,
+                filter_unit_army_region: None,
+                filter_unit_military_district: None,
                 filter_unit_army: None,
                 filter_unit_division: None,
                 filter_unit_regiment: None,

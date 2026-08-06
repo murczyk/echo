@@ -40,6 +40,12 @@ pub struct Model {
     pub is_deduplicate_candidate: Option<bool>,
     #[sea_orm(column_type = "Text", nullable)]
     pub orbit_note: Option<String>,
+    #[sea_orm(column_type = "Text")]
+    #[serde(default)]
+    pub army_region: String,
+    #[sea_orm(column_type = "Text")]
+    #[serde(default)]
+    pub military_district: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

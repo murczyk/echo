@@ -1239,6 +1239,8 @@ mod tests {
             regiment: regiment.to_string(),
             division: String::new(),
             army: String::new(),
+            army_region: String::new(),
+            military_district: String::new(),
             active: true,
             deleted: false,
             created_at: chrono::NaiveDate::from_ymd_opt(2026, 1, 1)

@@ -71,7 +71,10 @@ type Props = {
 };
 
 const HIERARCHY_FIELDS: Array<{
-  key: keyof Pick<UnitForm, 'company' | 'battalion' | 'regiment' | 'division' | 'army'>;
+  key: keyof Pick<
+    UnitForm,
+    'company' | 'battalion' | 'regiment' | 'division' | 'army' | 'militaryDistrict' | 'armyRegion'
+  >;
   label: string;
   placeholder: string;
 }> = [
@@ -80,6 +83,16 @@ const HIERARCHY_FIELDS: Array<{
   { key: 'regiment', label: 'Полк/Бригада', placeholder: 'Наприклад, 123 бригада' },
   { key: 'division', label: 'Дивізія', placeholder: 'Назва дивізії' },
   { key: 'army', label: 'Корпус/Армія', placeholder: 'Назва корпусу або армії' },
+  {
+    key: 'militaryDistrict',
+    label: 'Група армій/Фронт/Види та роди ЗС',
+    placeholder: 'Назва групи армій, фронту або виду ЗС',
+  },
+  {
+    key: 'armyRegion',
+    label: 'Регіон/ТВД/Збройні Сили',
+    placeholder: 'Назва регіону, ТВД або збройних сил',
+  },
 ];
 
 function DuplicateHint({ units, form }: { units: Unit[]; form: UnitForm }) {
@@ -101,6 +114,8 @@ function DuplicateHint({ units, form }: { units: Unit[]; form: UnitForm }) {
                 <TableCell>Полк/Бригада</TableCell>
                 <TableCell>Дивізія</TableCell>
                 <TableCell>Корпус/Армія</TableCell>
+                <TableCell>Група армій/Фронт/Види та роди ЗС</TableCell>
+                <TableCell>Регіон/ТВД/Збройні Сили</TableCell>
                 <TableCell>Статус</TableCell>
               </TableRow>
             </TableHead>
@@ -122,6 +137,8 @@ function DuplicateHint({ units, form }: { units: Unit[]; form: UnitForm }) {
                     <TableCell>{unit.regiment}</TableCell>
                     <TableCell>{unit.division}</TableCell>
                     <TableCell>{unit.army}</TableCell>
+                    <TableCell>{unit.militaryDistrict}</TableCell>
+                    <TableCell>{unit.armyRegion}</TableCell>
                     <TableCell>{unit.active ? 'Активний' : 'Неактивний'}</TableCell>
                   </TableRow>
                 );

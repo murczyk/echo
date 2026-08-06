@@ -53,6 +53,8 @@ export type NetworkRowAction = 'report' | 'direction' | 'edit' | 'delete';
 export type NetworkUnitStatView = {
   unitId: number;
   unitName: string;
+  armyRegion: string;
+  militaryDistrict: string;
   army: string;
   division: string;
   regiment: string;
@@ -73,6 +75,8 @@ export const NETWORK_STATUS_ARCHIVED_COLOR = '#6b6b6b';
 
 type NetworkUnitFilterFields = {
   filterUnit: string | null;
+  filterUnitArmyRegion: string | null;
+  filterUnitMilitaryDistrict: string | null;
   filterUnitArmy: string | null;
   filterUnitDivision: string | null;
   filterUnitRegiment: string | null;
@@ -276,6 +280,8 @@ export function mergeNetworkUnitStatsWithUnits(
       return {
         unitId: stat.unitId,
         unitName: unit.name,
+        armyRegion: unit.armyRegion,
+        militaryDistrict: unit.militaryDistrict,
         army: unit.army,
         division: unit.division,
         regiment: unit.regiment,
@@ -363,6 +369,12 @@ export function buildNetworkUnitFilterFields(params: {
   if (params.selectedSidebarUnitFilter?.kind === 'group') {
     return {
       filterUnit: null,
+      filterUnitArmyRegion: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.armyRegion,
+      ),
+      filterUnitMilitaryDistrict: normalizeUnitHierarchyFilterValue(
+        params.selectedSidebarUnitFilter.hierarchy.militaryDistrict,
+      ),
       filterUnitArmy: normalizeUnitHierarchyFilterValue(
         params.selectedSidebarUnitFilter.hierarchy.army,
       ),
@@ -385,6 +397,8 @@ export function buildNetworkUnitFilterFields(params: {
 
   return {
     filterUnit: normalizeUnitFilterValue(selectedUnitLabel),
+    filterUnitArmyRegion: null,
+    filterUnitMilitaryDistrict: null,
     filterUnitArmy: null,
     filterUnitDivision: null,
     filterUnitRegiment: null,

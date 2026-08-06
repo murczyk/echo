@@ -176,6 +176,8 @@ describe('rer-callsigns helpers', () => {
       sort: { column: 'unit', direction: 'asc' },
       query: { afterId: null, limit: 100 },
       sidebarUnitHierarchyFilter: {
+        armyRegion: 'R',
+        militaryDistrict: 'D',
         army: 'A',
         division: '',
         regiment: null,
@@ -183,6 +185,8 @@ describe('rer-callsigns helpers', () => {
       },
     });
 
+    expect(req.filterUnitArmyRegion).toBe('R');
+    expect(req.filterUnitMilitaryDistrict).toBe('D');
     expect(req.filterUnitArmy).toBe('A');
     expect(req.filterUnitDivision).toBe('');
     expect(req.filterUnitRegiment).toBeNull();
@@ -214,6 +218,8 @@ describe('rer-callsigns helpers', () => {
         {
           id: 10,
           name: '11 АК',
+          armyRegion: 'ЗС РФ',
+          militaryDistrict: 'Західний ВО',
           army: '1 ОА',
           division: '3 мсд',
           regiment: '11 мсп',
@@ -227,6 +233,8 @@ describe('rer-callsigns helpers', () => {
         unitId: 10,
         count: 4,
         unitName: '11 АК',
+        armyRegion: 'ЗС РФ',
+        militaryDistrict: 'Західний ВО',
         army: '1 ОА',
         division: '3 мсд',
         regiment: '11 мсп',
@@ -242,6 +250,8 @@ describe('rer-callsigns helpers', () => {
         {
           id: 10,
           name: '11 АК',
+          armyRegion: '',
+          militaryDistrict: '',
           army: '1 ОА',
           division: '3 мсд',
           regiment: '',
@@ -274,6 +284,35 @@ describe('rer-callsigns helpers', () => {
       }),
     ]);
     expect(JSON.stringify(tree)).not.toContain('#99');
+  });
+
+  it('separates same-named armies by region and district', () => {
+    const tree = buildUnitTree([
+      {
+        unitId: 1,
+        count: 2,
+        unitName: 'A D1 R1',
+        armyRegion: 'R1',
+        militaryDistrict: 'D1',
+        army: 'A',
+        division: '',
+        regiment: '',
+        battalion: '',
+      },
+      {
+        unitId: 2,
+        count: 3,
+        unitName: 'A D1 R2',
+        armyRegion: 'R2',
+        militaryDistrict: 'D1',
+        army: 'A',
+        division: '',
+        regiment: '',
+        battalion: '',
+      },
+    ]);
+
+    expect(tree.map((node) => ('label' in node ? node.label : null))).toEqual(['R1', 'R2']);
   });
 
   it('keeps callsign edit access aligned with backend roles', () => {

@@ -29,6 +29,8 @@ export type DeviceLookupOption = {
 export type DeviceUnitStatView = {
   unitId: number;
   unitName: string;
+  armyRegion: string;
+  militaryDistrict: string;
   army: string;
   division: string;
   regiment: string;
@@ -46,7 +48,14 @@ export type DeviceRowView = DeviceListItem & {
 
 export const DEVICES_LIST_PAGE_SIZE = 100;
 export const DEFAULT_DEVICES_SORTING: MRT_SortingState = [{ id: 'updatedAt', desc: true }];
-const DEVICE_UNIT_HIERARCHY_KEYS = ['army', 'division', 'regiment', 'battalion'] as const;
+const DEVICE_UNIT_HIERARCHY_KEYS = [
+  'armyRegion',
+  'militaryDistrict',
+  'army',
+  'division',
+  'regiment',
+  'battalion',
+] as const;
 
 export function createDefaultDevicesFilterState(): DevicesFilterState {
   return {
@@ -216,6 +225,8 @@ export function mergeDeviceUnitStatsWithUnits(
       return {
         unitId: stat.unit.id,
         unitName: stat.unit.name,
+        armyRegion: unit?.armyRegion ?? '',
+        militaryDistrict: unit?.militaryDistrict ?? '',
         army: unit?.army ?? '',
         division: unit?.division ?? '',
         regiment: unit?.regiment ?? '',

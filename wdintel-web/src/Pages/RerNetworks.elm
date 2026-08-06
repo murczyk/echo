@@ -256,6 +256,8 @@ listNetworksReq : Model -> B.ListNetworksReq
 listNetworksReq model =
     { filterFreq = emptySToNothing model.filterState.freq
     , filterUnit = emptySToNothing model.filterState.unit
+    , filterUnitArmyRegion = Nothing
+    , filterUnitMilitaryDistrict = Nothing
     , filterUnitArmy = Nothing
     , filterUnitDivision = Nothing
     , filterUnitRegiment = Nothing
@@ -721,6 +723,8 @@ update shared msg model =
                 req =
                     { filterFreq = emptySToNothing model.filterState.freq
                     , filterUnit = emptySToNothing model.filterState.unit
+                    , filterUnitArmyRegion = Nothing
+                    , filterUnitMilitaryDistrict = Nothing
                     , filterUnitArmy = Nothing
                     , filterUnitDivision = Nothing
                     , filterUnitRegiment = Nothing

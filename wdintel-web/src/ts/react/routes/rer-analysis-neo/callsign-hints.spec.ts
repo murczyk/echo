@@ -5,6 +5,7 @@ import {
   formatCallsignHintTooltip,
   formatCallsignHintTooltipData,
   getCallsignHintResult,
+  isCallsignRelatedToNetworks,
   resolveNetworkCallsignHints,
 } from './callsign-hints';
 import {
@@ -20,6 +21,8 @@ const unitsMap: Record<number, Unit> = {
     regiment: '100',
     division: '1000',
     army: 'A',
+    militaryDistrict: 'D1',
+    armyRegion: 'R1',
     comment: '',
     name: 'Unit A parent',
     active: true,
@@ -33,6 +36,8 @@ const unitsMap: Record<number, Unit> = {
     regiment: '100',
     division: '1000',
     army: 'A',
+    militaryDistrict: 'D1',
+    armyRegion: 'R1',
     comment: '',
     name: 'Unit A child',
     active: true,
@@ -46,6 +51,8 @@ const unitsMap: Record<number, Unit> = {
     regiment: '200',
     division: '2000',
     army: 'B',
+    militaryDistrict: 'D2',
+    armyRegion: 'R2',
     comment: '',
     name: 'Unit B',
     active: true,
@@ -480,6 +487,37 @@ describe('rer-analysis-neo callsign hints', () => {
     expect(formatCallsignHintTooltip(result)).toBe(
       'Позивні підрозділів мережі:\n🐷 командир взводу 3 тр',
     );
+  });
+
+  it('does not relate matching lower hierarchies from another region', () => {
+    const unitsInDifferentRegions = {
+      ...unitsMap,
+      4: {
+        ...unitsMap[2],
+        id: 4,
+        armyRegion: 'R2',
+        name: 'Unit in another region',
+      },
+    };
+
+    expect(
+      isCallsignRelatedToNetworks(
+        [
+          {
+            id: 4,
+            callsign: 'wolf',
+            position: 'командир',
+            comment: '',
+            unit1: 'інший регіон',
+            unit2: '',
+            unitId: 4,
+            networkIdsReportedIn: [999],
+          },
+        ],
+        [networks[0]],
+        unitsInDifferentRegions,
+      ),
+    ).toBe(false);
   });
 
   it('returns no tooltip when a catalog-only callsign is absent from the frequency network', () => {
