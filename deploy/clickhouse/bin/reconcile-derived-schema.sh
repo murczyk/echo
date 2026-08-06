@@ -423,6 +423,65 @@ BEGIN
   END IF;
 END
 $$;
+DO $$
+DECLARE
+  relation_name text;
+  relation_kind "char";
+  relation_server oid;
+  expected_server oid;
+BEGIN
+  SELECT oid
+  INTO expected_server
+  FROM pg_foreign_server
+  WHERE srvname = 'echo_clickhouse';
+
+  IF expected_server IS NULL THEN
+    RAISE EXCEPTION 'foreign server echo_clickhouse is missing';
+  END IF;
+
+  FOR relation_name IN
+    SELECT unnest(ARRAY[
+      'message_callsign',
+      'message_aor_link',
+      'message_network_link'
+    ])
+  LOOP
+    relation_kind := NULL;
+    relation_server := NULL;
+    SELECT relation.relkind, foreign_table.ftserver
+    INTO relation_kind, relation_server
+    FROM pg_class relation
+    JOIN pg_namespace namespace
+      ON namespace.oid = relation.relnamespace
+    LEFT JOIN pg_foreign_table foreign_table
+      ON foreign_table.ftrelid = relation.oid
+    WHERE namespace.nspname = 'echo_clickhouse_derived_foreign'
+      AND relation.relname = relation_name;
+
+    IF relation_kind IS NULL THEN
+      CONTINUE;
+    END IF;
+    IF relation_kind <> 'f' THEN
+      RAISE EXCEPTION
+        'unexpected relation kind for echo_clickhouse_derived_foreign.%: %',
+        relation_name,
+        relation_kind;
+    END IF;
+    IF relation_server IS DISTINCT FROM expected_server THEN
+      EXECUTE format(
+        'DROP VIEW IF EXISTS %I.%I',
+        'echo_clickhouse_derived',
+        relation_name
+      );
+      EXECUTE format(
+        'DROP FOREIGN TABLE %I.%I',
+        'echo_clickhouse_derived_foreign',
+        relation_name
+      );
+    END IF;
+  END LOOP;
+END
+$$;
 CREATE FOREIGN TABLE IF NOT EXISTS
 echo_clickhouse_derived_foreign.message_callsign (
   sigint_inbox_item_id bigint NOT NULL,
