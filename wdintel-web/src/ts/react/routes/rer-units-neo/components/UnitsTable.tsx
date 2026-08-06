@@ -5,13 +5,30 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import MergeIcon from '@mui/icons-material/Merge';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import { Box, Chip, Link, Stack, Tooltip } from '@mui/material';
+import ClearIcon from '@mui/icons-material/Clear';
+import SearchIcon from '@mui/icons-material/Search';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import {
+  Box,
+  Chip,
+  ListItemText,
+  Menu,
+  MenuItem,
+  IconButton,
+  InputAdornment,
+  Link,
+  Stack,
+  TextField,
+  Tooltip,
+  useMediaQuery,
+  useTheme,
+} from '@mui/material';
 import {
   type MRT_ColumnDef,
   MaterialReactTable,
   useMaterialReactTable,
 } from 'material-react-table';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { Unit } from '../../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
@@ -28,9 +45,189 @@ import {
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
+import { isUnitSearchMatch, isUnitSearchMatchForUnit, type UnitSearchMode } from '../search-mode';
 
 const defaultMrtOptions = getDefaultMRTOptions<Unit>();
 const ROW_ACTIONS_COLUMN_SIZE = 76;
+const GLOBAL_SEARCH_FILTER_FN_STRICT = 'unitSearchStrictGlobal';
+const COLUMN_SEARCH_FILTER_FN_STRICT = 'unitSearchStrictColumn';
+const SEARCHABLE_TEXT_COLUMN_IDS = [
+  'name',
+  'company',
+  'battalion',
+  'regiment',
+  'division',
+  'army',
+  'comment',
+  'orbitNote',
+] as const;
+const isColumnSearchMatch = (rowValue: unknown, filterValue: unknown) => {
+  if (typeof filterValue !== 'string' || filterValue.trim() === '') return true;
+  return isUnitSearchMatch(String(rowValue ?? ''), filterValue);
+};
+
+const isGlobalSearchMatch = (rowValue: Unit, filterValue: unknown) => {
+  if (typeof filterValue !== 'string' || filterValue.trim() === '') return true;
+  return isUnitSearchMatchForUnit(rowValue, filterValue);
+};
+
+function SearchModeSettingsButton({
+  compact,
+  searchMode,
+  onSearchModeChange,
+  menuId,
+}: {
+  compact: boolean;
+  searchMode: UnitSearchMode;
+  onSearchModeChange: (searchMode: UnitSearchMode) => void;
+  menuId: string;
+}) {
+  const [anchorElement, setAnchorElement] = useState<HTMLElement | null>(null);
+  const menuOpen = Boolean(anchorElement);
+
+  const closeMenu = () => {
+    setAnchorElement(null);
+  };
+
+  const changeMode = (mode: UnitSearchMode) => {
+    onSearchModeChange(mode);
+    closeMenu();
+  };
+
+  return (
+    <>
+      <IconButton
+        size="small"
+        aria-label="Налаштування пошуку"
+        aria-controls={menuOpen ? menuId : undefined}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen ? 'true' : undefined}
+        onClick={(event) => {
+          event.stopPropagation();
+          setAnchorElement(event.currentTarget);
+        }}
+        sx={{
+          width: compact ? 40 : 32,
+          height: compact ? 40 : 32,
+          borderRadius: 1,
+          border: '1px solid',
+          borderColor: 'divider',
+          color: 'text.secondary',
+        }}
+      >
+        <SettingsOutlinedIcon sx={{ fontSize: compact ? 20 : 18 }} />
+      </IconButton>
+      <Menu
+        id={menuId}
+        anchorEl={anchorElement}
+        open={menuOpen}
+        onClose={closeMenu}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ list: { 'aria-label': 'Налаштування пошуку' } }}
+      >
+        <MenuItem
+          role="menuitemradio"
+          aria-checked={searchMode === 'strict'}
+          selected={searchMode === 'strict'}
+          onClick={() => changeMode('strict')}
+        >
+          <ListItemText>Строгий пошук</ListItemText>
+        </MenuItem>
+        <MenuItem
+          role="menuitemradio"
+          aria-checked={searchMode === 'relaxed'}
+          selected={searchMode === 'relaxed'}
+          onClick={() => changeMode('relaxed')}
+        >
+          <ListItemText>Нечіткий пошук</ListItemText>
+        </MenuItem>
+      </Menu>
+    </>
+  );
+}
+
+const TEXT_FILTER_HELPERS: Record<UnitSearchMode, string> = {
+  strict: 'Режим: строгий',
+  relaxed: 'Режим: нечіткий',
+};
+
+function getColumnFilterFn(searchMode: UnitSearchMode): string {
+  return searchMode === 'strict' ? COLUMN_SEARCH_FILTER_FN_STRICT : 'fuzzy';
+}
+
+function buildTextColumnFilter({
+  searchMode,
+  onSearchModeChange,
+  compactSearchMode,
+  menuIdPrefix,
+}: {
+  searchMode: UnitSearchMode;
+  onSearchModeChange: (searchMode: UnitSearchMode) => void;
+  compactSearchMode: boolean;
+  menuIdPrefix: string;
+}) {
+  return ({ column }) => {
+    const sharedFilterProps = getSharedFilterTextFieldProps(column.columnDef.filterVariant);
+    const filterValue = column.getFilterValue();
+    const inputValue = typeof filterValue === 'string' ? filterValue : '';
+
+    return (
+      <TextField
+        fullWidth
+        size="small"
+        variant="standard"
+        value={inputValue}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+        onChange={(event) => column.setFilterValue(event.target.value)}
+        placeholder="Пошук"
+        helperText={TEXT_FILTER_HELPERS[searchMode]}
+        slotProps={{
+          ...(sharedFilterProps.slotProps ?? {}),
+          input: {
+            ...(sharedFilterProps.slotProps?.input ?? {}),
+            autoComplete: 'new-password',
+            readOnly: false,
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
+              </InputAdornment>
+            ),
+            endAdornment: (
+              <InputAdornment position="end" sx={{ gap: 0.75 }}>
+                <SearchModeSettingsButton
+                  compact={compactSearchMode}
+                  searchMode={searchMode}
+                  onSearchModeChange={onSearchModeChange}
+                  menuId={`column-search-mode-${menuIdPrefix}`}
+                />
+                <IconButton
+                  size="small"
+                  aria-label="Очистити фільтр"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    column.setFilterValue('');
+                  }}
+                  disabled={inputValue.length === 0}
+                >
+                  <ClearIcon sx={{ color: 'text.secondary', fontSize: 18 }} />
+                </IconButton>
+              </InputAdornment>
+            ),
+          },
+        }}
+        sx={{
+          ...sharedFilterProps.sx,
+          '& .MuiInput-root': {
+            ...(sharedFilterProps.sx?.['& .MuiInput-root'] ?? {}),
+            pb: 0.75,
+          },
+        }}
+      />
+    );
+  };
+}
 
 function formatDateTime(value: number): string {
   const date = new Date(value);
@@ -41,12 +238,24 @@ function formatDateTime(value: number): string {
   }).format(date);
 }
 
-function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
+function useUnitColumns(
+  attachmentUnitIds: Set<number>,
+  searchMode: UnitSearchMode,
+  onSearchModeChange: (searchMode: UnitSearchMode) => void,
+  compactSearchMode: boolean,
+): MRT_ColumnDef<Unit>[] {
   return useMemo(
     () => [
       {
         header: 'Назва',
         accessorKey: 'name',
+        filterFn: getColumnFilterFn(searchMode),
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'name',
+        }),
         size: 240,
         muiTableBodyCellProps: {
           sx: {
@@ -127,11 +336,66 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
           );
         },
       },
-      { header: 'Рота/Взвод', accessorKey: 'company', size: 160 },
-      { header: 'Батальйон', accessorKey: 'battalion', size: 160 },
-      { header: 'Полк/Бригада', accessorKey: 'regiment', size: 180 },
-      { header: 'Дивізія', accessorKey: 'division', size: 160 },
-      { header: 'Корпус/Армія', accessorKey: 'army', size: 180 },
+      {
+        header: 'Рота/Взвод',
+        accessorKey: 'company',
+        filterFn: getColumnFilterFn(searchMode),
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'company',
+        }),
+        size: 160,
+      },
+      {
+        header: 'Батальйон',
+        accessorKey: 'battalion',
+        filterFn: getColumnFilterFn(searchMode),
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'battalion',
+        }),
+        size: 160,
+      },
+      {
+        header: 'Полк/Бригада',
+        accessorKey: 'regiment',
+        filterFn: getColumnFilterFn(searchMode),
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'regiment',
+        }),
+        size: 180,
+      },
+      {
+        header: 'Дивізія',
+        accessorKey: 'division',
+        filterFn: getColumnFilterFn(searchMode),
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'division',
+        }),
+        size: 160,
+      },
+      {
+        header: 'Корпус/Армія',
+        accessorKey: 'army',
+        filterFn: getColumnFilterFn(searchMode),
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'army',
+        }),
+        size: 180,
+      },
       {
         header: 'Створено',
         id: 'createdAt',
@@ -144,6 +408,13 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
       {
         header: 'Коментар',
         accessorKey: 'comment',
+        filterFn: getColumnFilterFn(searchMode),
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'comment',
+        }),
         size: 300,
         Cell: ({ cell }) => (
           <Box sx={{ whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>
@@ -154,6 +425,13 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
       {
         header: 'Примітка Orbit',
         accessorKey: 'orbitNote',
+        filterFn: getColumnFilterFn(searchMode),
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'orbit-note',
+        }),
         size: 300,
         Cell: ({ cell }) => (
           <Box sx={{ whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>
@@ -208,7 +486,7 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
         ),
       },
     ],
-    [attachmentUnitIds],
+    [attachmentUnitIds, searchMode, onSearchModeChange, compactSearchMode],
   );
 }
 
@@ -221,6 +499,8 @@ export function UnitsTable({
   onEdit,
   onDelete,
   onMerge,
+  searchMode,
+  onSearchModeChange,
 }: {
   units: Unit[];
   attachmentUnitIds: Set<number>;
@@ -230,9 +510,13 @@ export function UnitsTable({
   onEdit: (unit: Unit) => void;
   onDelete: (unit: Unit) => void;
   onMerge: (unit: Unit) => void;
+  searchMode: UnitSearchMode;
+  onSearchModeChange: (searchMode: UnitSearchMode) => void;
 }) {
   const tableStateContext = useTableStateContext();
-  const columns = useUnitColumns(attachmentUnitIds);
+  const theme = useTheme();
+  const isSmallScreen = useMediaQuery(theme.breakpoints.down('lg'));
+  const columns = useUnitColumns(attachmentUnitIds, searchMode, onSearchModeChange, isSmallScreen);
   const table = useMaterialReactTable({
     ...defaultMrtOptions,
     columns,
@@ -254,6 +538,13 @@ export function UnitsTable({
     onColumnSizingChange: tableStateContext.onColumnSizingChange,
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
+    filterFns: {
+      [GLOBAL_SEARCH_FILTER_FN_STRICT]: (row, _columnId, filterValue) =>
+        isGlobalSearchMatch(row.original, filterValue),
+      [COLUMN_SEARCH_FILTER_FN_STRICT]: (row, columnId, filterValue) =>
+        isColumnSearchMatch(row.getValue(columnId), filterValue),
+    },
+    globalFilterFn: searchMode === 'strict' ? GLOBAL_SEARCH_FILTER_FN_STRICT : 'fuzzy',
     muiFilterTextFieldProps: ({ column }) => ({
       ...getSharedFilterTextFieldProps(column.columnDef.filterVariant),
       helperText: getFilterModeHelperText(column.columnDef.filterVariant),
@@ -325,6 +616,21 @@ export function UnitsTable({
       columnVisibility: tableStateContext.columnVisibility,
     },
   });
+
+  useEffect(() => {
+    const columnSearchFilterFn = getColumnFilterFn(searchMode);
+    table._getFilteredRowModel = undefined;
+    table.setGlobalFilterFn(searchMode === 'strict' ? GLOBAL_SEARCH_FILTER_FN_STRICT : 'fuzzy');
+    table.setColumnFilterFns((previousColumnFilterFns) => {
+      const nextColumnFilterFns = { ...previousColumnFilterFns };
+
+      SEARCHABLE_TEXT_COLUMN_IDS.forEach((columnId) => {
+        nextColumnFilterFns[columnId] = columnSearchFilterFn;
+      });
+
+      return nextColumnFilterFns;
+    });
+  }, [searchMode, table]);
 
   useEffect(() => {
     tableStateContext.onTableInitialized(table);

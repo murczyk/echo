@@ -1,13 +1,27 @@
 import AddIcon from '@mui/icons-material/Add';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import { Box, Button, Stack } from '@mui/material';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import {
+  Box,
+  Button,
+  IconButton,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Stack,
+  Tooltip,
+  useMediaQuery,
+  useTheme,
+} from '@mui/material';
 import { useState } from 'react';
 
 import { PageErrorState } from '../../components/PageErrorState';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerChip } from '../../components/PowerChip';
+import { GlobalFilterTextField } from '../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 import { OrbitUnitLinkDialog } from '../rer-unit-details/OrbitUnitLinkDialog';
 import { DeleteUnitDialog, MergeUnitDialog } from './components/UnitActionDialogs';
 import { KmzTaskStatus } from './components/KmzTaskStatus';
@@ -15,6 +29,7 @@ import { KmzUploadDialog } from './components/KmzUploadDialog';
 import { UnitFormDialog } from './components/UnitFormDialog';
 import { UnitsTable } from './components/UnitsTable';
 import { useRerUnitsPage } from './use-rer-units-page';
+import { type UnitSearchMode } from './search-mode';
 
 const DEFAULT_COLUMN_VISIBILITY = {
   name: true,
@@ -43,6 +58,78 @@ const DEFAULT_COLUMN_ORDER = [
   'orbitNote',
   'hasOrbit',
 ];
+
+function SearchModeSettingsButton({
+  compact,
+  searchMode,
+  onSearchModeChange,
+}: {
+  compact: boolean;
+  searchMode: UnitSearchMode;
+  onSearchModeChange: (searchMode: UnitSearchMode) => void;
+}) {
+  const [anchorElement, setAnchorElement] = useState<HTMLElement | null>(null);
+  const menuOpen = Boolean(anchorElement);
+  const menuId = 'unit-search-mode-menu';
+
+  const closeMenu = () => {
+    setAnchorElement(null);
+  };
+
+  const changeMode = (mode: UnitSearchMode) => {
+    onSearchModeChange(mode);
+    closeMenu();
+  };
+
+  return (
+    <>
+      <Tooltip title="Налаштування пошуку" arrow>
+        <IconButton
+          aria-label="Налаштування пошуку"
+          aria-controls={menuOpen ? menuId : undefined}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen ? 'true' : undefined}
+          onClick={(event) => setAnchorElement(event.currentTarget)}
+          sx={{
+            width: compact ? 40 : 32,
+            height: compact ? 40 : 32,
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <SettingsOutlinedIcon sx={{ fontSize: compact ? 20 : 18 }} />
+        </IconButton>
+      </Tooltip>
+      <Menu
+        id={menuId}
+        anchorEl={anchorElement}
+        open={menuOpen}
+        onClose={closeMenu}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ list: { 'aria-label': 'Налаштування пошуку' } }}
+      >
+        <MenuItem
+          role="menuitemradio"
+          aria-checked={searchMode === 'strict'}
+          selected={searchMode === 'strict'}
+          onClick={() => changeMode('strict')}
+        >
+          <ListItemText>Строгий пошук</ListItemText>
+        </MenuItem>
+        <MenuItem
+          role="menuitemradio"
+          aria-checked={searchMode === 'relaxed'}
+          selected={searchMode === 'relaxed'}
+          onClick={() => changeMode('relaxed')}
+        >
+          <ListItemText>Нечіткий пошук</ListItemText>
+        </MenuItem>
+      </Menu>
+    </>
+  );
+}
 
 function PageActions({
   canEdit,
@@ -128,8 +215,12 @@ function UnitStatusFilters({
 
 function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
   const page = useRerUnitsPage(authUserRoles);
+  const tableState = useTableStateContext();
+  const theme = useTheme();
+  const isSmallScreen = useMediaQuery(theme.breakpoints.down('lg'));
   const [kmzDialogOpen, setKmzDialogOpen] = useState(false);
   const [orbitLinkOpen, setOrbitLinkOpen] = useState(false);
+  const [searchMode, setSearchMode] = useState<UnitSearchMode>('strict');
 
   return (
     <Box
@@ -149,16 +240,35 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
       >
         <TablePageToolbar
           title="Підрозділи противника"
-          withGlobalTextFilter
+          withGlobalTextFilter={false}
+          filter={
+            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+              <Stack
+                direction="row"
+                spacing={1}
+                alignItems="center"
+                sx={{ width: { xs: '100%', sm: 360 }, maxWidth: '100%', minWidth: 0 }}
+              >
+                <GlobalFilterTextField
+                  globalFilter={tableState.globalFilter}
+                  setGlobalFilter={tableState.onChangeGlobalFilter}
+                  disabled={page.loading || page.loadError !== null}
+                />
+                <SearchModeSettingsButton
+                  compact={isSmallScreen}
+                  searchMode={searchMode}
+                  onSearchModeChange={setSearchMode}
+                />
+              </Stack>
+              <UnitStatusFilters
+                status={page.statusFilter}
+                counts={page.statusCounts}
+                onChange={page.setStatusFilter}
+              />
+            </Stack>
+          }
           hideGlobalTextFilter={page.loading || page.loadError !== null}
           internalActionsDisabled={page.loading || page.loadError !== null}
-          filter={
-            <UnitStatusFilters
-              status={page.statusFilter}
-              counts={page.statusCounts}
-              onChange={page.setStatusFilter}
-            />
-          }
           actions={
             <PageActions
               canEdit={page.canEdit}
@@ -196,6 +306,8 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
               onEdit={page.openEditDialog}
               onDelete={page.openDeleteDialog}
               onMerge={page.openMergeDialog}
+              searchMode={searchMode}
+              onSearchModeChange={setSearchMode}
             />
           )}
         </Box>
