@@ -1966,52 +1966,18 @@ pub async fn report_history_cancel(
     let report_history = find_report_for_user(&env.dbx, req.id, &user_login)
         .await?
         .ok_or(AppError::NotFound)?;
-    if report_history.status != STATUS_PLANNED
-        && report_history.status != STATUS_IN_PROGRESS
-    {
-        return Err(AppError::BL {
-            msg: "Only queued or running reports can be cancelled".to_string(),
-        });
-    }
-
     let reason = "Скасовано користувачем".to_string();
-    let res = ReportHistory::update_many()
-        .col_expr(
-            report_history::Column::Status,
-            Expr::value(STATUS_FAILED.to_string()),
-        )
-        .col_expr(
-            report_history::Column::CompletedAt,
-            Expr::value(Some(Utc::now().naive_utc())),
-        )
-        .col_expr(
-            report_history::Column::PlannedForTs,
-            Expr::value(None::<chrono::NaiveDateTime>),
-        )
-        .col_expr(
-            report_history::Column::LastError,
-            Expr::value(Some(reason.clone())),
-        )
-        .filter(report_history::Column::Id.eq(report_history.id))
-        .filter(
-            report_history::Column::Status
-                .is_in([STATUS_PLANNED, STATUS_IN_PROGRESS]),
-        )
-        .exec(&env.dbx)
-        .await
-        .c(h!())?;
-    if res.rows_affected == 0 {
-        return Err(AppError::BL {
-            msg: "Report could not be cancelled because it already finished"
-                .to_string(),
-        });
-    }
-
-    let updated = ReportHistory::find_by_id(report_history.id)
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    lock_report_request(
+        &txn,
+        &report_history.requested_by_login_id,
+        &report_history.report_kind,
+        &report_history.request,
+    )
+    .await?;
+    let updated =
+        mark_report_cancelled(&txn, report_history.id, &reason).await?;
+    txn.commit().await.c(h!())?;
 
     if let Some(bgtask_id) = updated.bgtask_id {
         let res: Result<(), AppError> = Err(AppError::BL { msg: reason });
@@ -2021,6 +1987,36 @@ pub async fn report_history_cancel(
     Ok(Json(
         build_report_history_row(&env.dbx, updated, true).await?,
     ))
+}
+
+async fn mark_report_cancelled<C>(
+    dbx: &C,
+    report_history_id: i64,
+    reason: &str,
+) -> Result<report_history::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    let report_history = ReportHistory::find_by_id(report_history_id)
+        .lock_exclusive()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    if report_history.status != STATUS_PLANNED
+        && report_history.status != STATUS_IN_PROGRESS
+    {
+        return Err(AppError::BL {
+            msg: "Only queued or running reports can be cancelled".to_string(),
+        });
+    }
+
+    let mut report_history = report_history.into_active_model();
+    report_history.status = Set(STATUS_FAILED.to_string());
+    report_history.completed_at = Set(Some(Utc::now().naive_utc()));
+    report_history.planned_for_ts = Set(None);
+    report_history.last_error = Set(Some(reason.to_string()));
+    Ok(report_history.update(dbx).await.c(h!())?)
 }
 
 #[post("/api/report-history/download")]
@@ -3682,6 +3678,76 @@ mod tests {
         }
 
         assert_eq!(ids.len(), 1);
+        assert_eq!(
+            report_history_count_for_login(&env.dbx, login.id).await?,
+            1
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn enqueue_waits_for_cancellation_and_retries_cancelled_report(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-history-cancel-enqueue-race",
+        )
+        .await?;
+        let report = enqueue_report(
+            &env.dbx,
+            &login.id,
+            KIND_GOI,
+            goi_report_request(json!({})),
+            None,
+            None,
+        )
+        .await?;
+
+        let txn = env.dbx.begin().await.c(h!())?;
+        lock_report_request(
+            &txn,
+            &report.requested_by_login_id,
+            &report.report_kind,
+            &report.request,
+        )
+        .await?;
+
+        let dbx = env.dbx.clone();
+        let login_id = login.id;
+        let mut enqueue = tokio::spawn(async move {
+            enqueue_report(
+                &dbx,
+                &login_id,
+                KIND_GOI,
+                goi_report_request(json!({})),
+                None,
+                None,
+            )
+            .await
+        });
+        assert!(tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            &mut enqueue,
+        )
+        .await
+        .is_err());
+
+        let cancelled =
+            mark_report_cancelled(&txn, report.id, "Скасовано користувачем")
+                .await?;
+        assert_eq!(cancelled.status, STATUS_FAILED);
+        txn.commit().await.c(h!())?;
+
+        let requeued = enqueue.await.expect("enqueue task failed")?;
+        assert_eq!(requeued.id, report.id);
+        assert_eq!(requeued.status, STATUS_PLANNED);
+        assert_eq!(requeued.last_error, None);
         assert_eq!(
             report_history_count_for_login(&env.dbx, login.id).await?,
             1
