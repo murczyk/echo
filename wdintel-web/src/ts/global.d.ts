@@ -14,6 +14,16 @@ declare var NetJSONGraph: any;
 
 declare module '*.css';
 
+declare module '*.wav' {
+  const src: string;
+  export default src;
+}
+
+declare module '*.png' {
+  const src: string;
+  export default src;
+}
+
 declare module 'mammoth' {
   export type ConvertToHtmlResult = {
     value: string;

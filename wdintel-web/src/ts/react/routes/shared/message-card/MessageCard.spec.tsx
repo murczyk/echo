@@ -2239,7 +2239,7 @@ describe('MessageCard', () => {
       view.container
         .querySelector('[data-audio-player-host]')
         ?.getAttribute('data-audio-player-min-height-px'),
-    ).toBe('72');
+    ).toBe('48');
     expect(
       view.container
         .querySelector('[data-audio-player-host]')
