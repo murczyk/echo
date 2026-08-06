@@ -5,7 +5,7 @@ use chrono::{
 };
 use chrono_tz::Europe::Kyiv;
 use indicatif::ProgressBar;
-use sea_orm::sea_query::{CaseStatement, Expr};
+use sea_orm::sea_query::Expr;
 use sea_orm::*;
 
 use crate::config::{
@@ -127,12 +127,6 @@ struct BackfillRow {
     datetime: NaiveDateTime,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct BackfillEntry {
-    id: i64,
-    datetime_neo: NaiveDateTime,
-}
-
 async fn backfill_batch(
     txn: &DatabaseTransaction,
     cursor: Option<BackfillCursor>,
@@ -144,8 +138,7 @@ async fn backfill_batch(
         datetime: row.datetime,
         id: row.id,
     });
-    let entries = prepare_backfill_entries(rows);
-    let updated = update_backfill_entries(txn, &entries).await?;
+    let updated = update_backfill_rows(txn, &rows).await?;
     Ok(BackfillBatch {
         selected,
         updated,
@@ -190,44 +183,29 @@ fn backfill_cursor_filter(cursor: BackfillCursor) -> Condition {
         )
 }
 
-fn prepare_backfill_entries(rows: Vec<BackfillRow>) -> Vec<BackfillEntry> {
-    rows.into_iter()
-        .map(|row| BackfillEntry {
-            id: row.id,
-            datetime_neo: row.datetime,
-        })
-        .collect()
-}
-
 fn build_backfill_update(
-    entries: &[BackfillEntry],
+    rows: &[BackfillRow],
 ) -> UpdateMany<sigint_inbox_item::Entity> {
-    let datetime_neo = entries
-        .iter()
-        .fold(CaseStatement::new(), |statement, entry| {
-            statement.case(
-                sigint_inbox_item::Column::Id.eq(entry.id),
-                Expr::value(entry.datetime_neo),
-            )
-        })
-        .finally(Expr::col(sigint_inbox_item::Column::DatetimeNeo));
     sigint_inbox_item::Entity::update_many()
-        .col_expr(sigint_inbox_item::Column::DatetimeNeo, datetime_neo.into())
-        .filter(
-            sigint_inbox_item::Column::Id
-                .is_in(entries.iter().map(|entry| entry.id)),
+        .col_expr(
+            sigint_inbox_item::Column::DatetimeNeo,
+            Expr::col(sigint_inbox_item::Column::Datetime),
         )
+        .filter(
+            sigint_inbox_item::Column::Id.is_in(rows.iter().map(|row| row.id)),
+        )
+        .filter(sigint_inbox_item::Column::Datetime.is_not_null())
         .filter(sigint_inbox_item::Column::DatetimeNeo.is_null())
 }
 
-async fn update_backfill_entries(
+async fn update_backfill_rows(
     txn: &DatabaseTransaction,
-    entries: &[BackfillEntry],
+    rows: &[BackfillRow],
 ) -> anyhow::Result<u64> {
-    if entries.is_empty() {
+    if rows.is_empty() {
         return Ok(0);
     }
-    Ok(build_backfill_update(entries)
+    Ok(build_backfill_update(rows)
         .exec(txn)
         .await
         .context(h!())?
@@ -372,5 +350,48 @@ mod tests {
         assert_eq!(rerun_batch.selected, 0);
         assert_eq!(rerun_batch.updated, 0);
         txn.commit().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn backfill_skips_row_if_datetime_becomes_unavailable() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                date: Set(Some("2026-01-01".to_string())),
+                time: Set(Some("12:00:00".to_string())),
+                datetime_neo: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let txn = env.dbx.begin().await.unwrap();
+        let rows = fetch_backfill_rows(&txn, None, 1).await.unwrap();
+        sigint_inbox_item::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item::Column::Date,
+                Expr::value(None::<String>),
+            )
+            .col_expr(
+                sigint_inbox_item::Column::Time,
+                Expr::value(None::<String>),
+            )
+            .filter(sigint_inbox_item::Column::Id.eq(inbox_item.id))
+            .exec(&txn)
+            .await
+            .unwrap();
+        assert_eq!(update_backfill_rows(&txn, &rows).await.unwrap(), 0);
+        txn.commit().await.unwrap();
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(inbox_item.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.datetime, None);
+        assert_eq!(inbox_item.datetime_neo, None);
     }
 }
