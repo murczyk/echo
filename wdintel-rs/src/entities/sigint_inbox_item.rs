@@ -55,6 +55,7 @@ pub struct Model {
     pub device_name_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub network: Option<String>,
+    pub datetime_neo: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

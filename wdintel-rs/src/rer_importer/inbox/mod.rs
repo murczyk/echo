@@ -2906,6 +2906,89 @@ mod tests {
 
     #[serial]
     #[tokio::test]
+    async fn test_submit_upsert_synchronizes_datetime_neo_on_create_and_edit() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let message = mk_signal_message(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let logins = vec![login.id];
+
+        for (date, time, expected) in [
+            (
+                "2026-01-15",
+                "12:34",
+                NaiveDate::from_ymd_opt(2026, 1, 15)
+                    .unwrap()
+                    .and_hms_opt(10, 34, 0)
+                    .unwrap(),
+            ),
+            (
+                "2026-01-15",
+                "12:34:56",
+                NaiveDate::from_ymd_opt(2026, 1, 15)
+                    .unwrap()
+                    .and_hms_opt(10, 34, 56)
+                    .unwrap(),
+            ),
+            (
+                "2026-07-15",
+                "12:34:56",
+                NaiveDate::from_ymd_opt(2026, 7, 15)
+                    .unwrap()
+                    .and_hms_opt(9, 34, 56)
+                    .unwrap(),
+            ),
+            (
+                "2024-03-31",
+                "03:30:00",
+                NaiveDate::from_ymd_opt(2024, 3, 31)
+                    .unwrap()
+                    .and_hms_opt(1, 30, 0)
+                    .unwrap(),
+            ),
+            (
+                "2024-10-27",
+                "03:30:00",
+                NaiveDate::from_ymd_opt(2024, 10, 27)
+                    .unwrap()
+                    .and_hms_opt(1, 30, 0)
+                    .unwrap(),
+            ),
+        ] {
+            let txn = env.dbx.begin().await.unwrap();
+            submit_upsert_inbox_item(
+                env.settlements.clone(),
+                &txn,
+                message.id,
+                &InboxMessage::from(InboxInsertPayload {
+                    text: "datetime neo submit".to_string(),
+                    date: Some(date.to_string()),
+                    time: Some(time.to_string()),
+                    ..Default::default()
+                }),
+                &login.id,
+                &logins,
+                InboxLocationSubmitMode::PreserveTyped,
+                true,
+                false,
+            )
+            .await
+            .unwrap();
+            txn.commit().await.unwrap();
+
+            let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(inbox_item.datetime, Some(expected));
+            assert_eq!(inbox_item.datetime_neo, inbox_item.datetime);
+        }
+    }
+
+    #[serial]
+    #[tokio::test]
     async fn test_submit_parse_location_v2_keeps_parser_behavior() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();

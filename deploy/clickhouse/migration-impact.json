@@ -1,5 +1,14 @@
 {
   "migrations": {
+    "echo:m20260806_091349_add_sigint_inbox_item_datetime_neo": {
+      "changes": [
+        {
+          "table": "public.sigint_inbox_item",
+          "strategy": "cdc_backfill",
+          "backfill": "wdintel-rs/src/inbox/datetime.rs"
+        }
+      ]
+    },
     "echo:m20260802_174927_rer_duty_test_replay": {
       "changes": [
         {

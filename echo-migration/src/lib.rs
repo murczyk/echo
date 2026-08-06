@@ -356,6 +356,7 @@ mod m20260804_094408_sigint_unit_deduplicate_candidate;
 mod m20260804_095344_ai_agent_dispatcher;
 mod m20260805_064150_ai_agent_mattermost_chat;
 mod m20260805_135334_sigint_unit_orbit_note;
+mod m20260806_091349_add_sigint_inbox_item_datetime_neo;
 
 pub struct Migrator;
 
@@ -805,6 +806,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260804_095344_ai_agent_dispatcher::Migration),
             Box::new(m20260805_064150_ai_agent_mattermost_chat::Migration),
             Box::new(m20260805_135334_sigint_unit_orbit_note::Migration),
+            Box::new(
+                m20260806_091349_add_sigint_inbox_item_datetime_neo::Migration,
+            ),
         ]
     }
 }
