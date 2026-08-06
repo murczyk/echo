@@ -2154,15 +2154,14 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn orbit_import_links_existing_hierarchy_ancestor_without_duplicate()
-    {
+    async fn orbit_import_links_existing_legacy_ancestor_without_duplicate() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, false).await;
         let login_id = test_login_id(&env).await;
         let orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
         let existing_parent = extended_hierarchy_unit(
             &env.dbx,
-            ["", "", "", "", " 20 зва ", "Західний ВО", "ЗС РФ"],
+            ["", "", "", "", " 20 зва ", "Західний ВО", ""],
         )
         .await;
 

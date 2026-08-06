@@ -485,36 +485,39 @@ async fn find_existing_sigint_unit<C>(
 where
     C: ConnectionTrait,
 {
-    Ok(sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .filter(normalized_hierarchy_value_eq(
-            sigint_unit::Column::Company,
-            &unit.company,
-        ))
-        .filter(normalized_hierarchy_value_eq(
-            sigint_unit::Column::Battalion,
-            &unit.battalion,
-        ))
-        .filter(normalized_hierarchy_value_eq(
-            sigint_unit::Column::Regiment,
-            &unit.regiment,
-        ))
-        .filter(normalized_hierarchy_value_eq(
-            sigint_unit::Column::Division,
-            &unit.division,
-        ))
-        .filter(normalized_hierarchy_value_eq(
-            sigint_unit::Column::Army,
-            &unit.army,
-        ))
-        .filter(normalized_hierarchy_value_eq(
+    let hierarchy = [
+        (sigint_unit::Column::Company, unit.company.as_str()),
+        (sigint_unit::Column::Battalion, unit.battalion.as_str()),
+        (sigint_unit::Column::Regiment, unit.regiment.as_str()),
+        (sigint_unit::Column::Division, unit.division.as_str()),
+        (sigint_unit::Column::Army, unit.army.as_str()),
+        (
             sigint_unit::Column::MilitaryDistrict,
-            &unit.military_district,
-        ))
-        .filter(normalized_hierarchy_value_eq(
-            sigint_unit::Column::ArmyRegion,
-            &unit.army_region,
-        ))
+            unit.military_district.as_str(),
+        ),
+        (sigint_unit::Column::ArmyRegion, unit.army_region.as_str()),
+    ];
+    let Some(unit_level) = hierarchy
+        .iter()
+        .position(|(_, value)| !value.trim().is_empty())
+    else {
+        return Ok(None);
+    };
+    let mut query = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false));
+    for (level, (column, value)) in hierarchy.into_iter().enumerate() {
+        let value_eq = normalized_hierarchy_value_eq(column, value);
+        query = if level > unit_level {
+            query.filter(
+                Condition::any()
+                    .add(value_eq)
+                    .add(normalized_hierarchy_value_eq(column, "")),
+            )
+        } else {
+            query.filter(value_eq)
+        };
+    }
+    Ok(query
         .order_by_asc(sigint_unit::Column::Id)
         .one(dbx)
         .await
