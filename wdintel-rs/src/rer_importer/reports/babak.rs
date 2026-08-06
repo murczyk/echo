@@ -2098,7 +2098,6 @@ mod tests {
             sigint_inbox_item::ActiveModel {
                 id: Set(message.id),
                 freq: Set(Some("123.45".to_string())),
-                callsigns: Set(Some(json!(["Alpha"]))),
                 lat: Set(Some(50.0)),
                 lng: Set(Some(30.0)),
                 tags: Set(Some(json!([bpla_tag.id]))),
@@ -2133,7 +2132,6 @@ mod tests {
             sigint_inbox_item::ActiveModel {
                 id: Set(second_message.id),
                 freq: Set(Some("123.45".to_string())),
-                callsigns: Set(Some(json!(["Beta"]))),
                 lat: Set(Some(50.0)),
                 lng: Set(Some(30.0)),
                 tags: Set(Some(json!([bpla_tag.id]))),

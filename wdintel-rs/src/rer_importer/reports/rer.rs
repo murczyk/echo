@@ -406,6 +406,12 @@ async fn load_report(
         else {
             continue;
         };
+        let callsigns =
+            crate::inbox::callsigns::load_by_item_ids(dbx, &[item_id])
+                .await?
+                .remove(&item_id)
+                .unwrap_or_default()
+                .effective();
         insert_report_message(
             &mut report,
             target,
@@ -416,7 +422,7 @@ async fn load_report(
                 &message, &comments, &blacklist,
             )
             .c(h!())?,
-            parse_callsigns(&item),
+            parse_callsigns(&callsigns),
             parse_points(&item),
         );
     }
@@ -1094,11 +1100,10 @@ fn unit_identity(unit: &sigint_unit::Model) -> Option<UnitIdentity> {
     })
 }
 
-fn parse_callsigns(item: &sigint_inbox_item::Model) -> Vec<String> {
-    item.callsigns
-        .clone()
-        .and_then(|value| serde_json::from_value::<Vec<String>>(value).ok())
-        .unwrap_or_default()
+fn parse_callsigns(callsigns: &[String]) -> Vec<String> {
+    callsigns
+        .iter()
+        .cloned()
         .into_iter()
         .map(|callsign| callsign.trim().to_uppercase())
         .filter(|callsign| !callsign.is_empty())
@@ -1839,7 +1844,7 @@ mod tests {
         };
 
         assert_eq!(
-            parse_callsigns(&item),
+            parse_callsigns(&[]),
             vec!["БАРС".to_string(), "СОВА".to_string()]
         );
     }

@@ -519,11 +519,13 @@ async fn fill_comp_freq(
                     per_freq_seen.insert(key.clone(), timestamp);
                 }
             }
-            for callsign in serde_json::from_value::<Vec<String>>(
-                inbox.callsigns.clone().unwrap_or(serde_json::Value::Null),
-            )
-            .context(h!())?
-            {
+            let callsigns =
+                crate::inbox::callsigns::load_by_item_ids(dbx, &[inbox.id])
+                    .await?
+                    .remove(&inbox.id)
+                    .unwrap_or_default()
+                    .effective();
+            for callsign in callsigns {
                 let key = (*zone_id, freq.clone(), callsign.clone());
                 match per_freq_callsign_seen.get(&key) {
                     Some(first_seen) => {
