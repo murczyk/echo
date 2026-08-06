@@ -8,6 +8,7 @@ import {
   Autocomplete,
   Box,
   ButtonBase,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -42,6 +43,7 @@ import {
   Organism,
   OrphanSignalGroupEntry,
   SigintZone,
+  SignalGroupLogin,
   SignalGroupEntry,
   SignalGroupStatsTimelinePoint,
   ZoneDatasourceGroup,
@@ -97,9 +99,8 @@ import {
 import { NO_DATA_LABEL, formatDate } from '../../utils/misc';
 import {
   buildLoginOptions,
-  formatLoginIds,
+  preserveAiManagedLoginIds,
   selectedLoginIds,
-  selectLoginOptions,
 } from '../../utils/login-options';
 import { PowerAlert } from '../../components/PowerAlert';
 import { DatasourceKindIcon } from '../../components/icons';
@@ -176,8 +177,10 @@ type GroupEditState = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   selectedUsers: string[];
+  selectedUserDetails: SignalGroupLogin[];
   selectedOrganismIds: number[];
   selectedAdmins: string[];
+  selectedAdminDetails: SignalGroupLogin[];
   shortNote: string;
   longNote: string;
   selectedAorIds: number[];
@@ -500,17 +503,31 @@ function getOrganismLabel(organismId: number, organismById: OrganismById) {
 
 function buildAccessLabel(
   users: string[] | null | undefined,
+  userDetails: SignalGroupLogin[] | null | undefined,
   organismIds: number[] | null | undefined,
   organismById: OrganismById,
   loginById: Map<string, Login>,
 ) {
   const parts: string[] = [];
-  if (users && users.length > 0) parts.push(formatLoginIds(users, loginById));
+  if (users && users.length > 0) {
+    parts.push(formatZoneGroupLoginIds(users, userDetails ?? [], loginById));
+  }
 
   const organismLabels = (organismIds ?? []).map((id) => getOrganismLabel(id, organismById));
   if (organismLabels.length > 0) parts.push(`Організми: ${organismLabels.join(', ')}`);
 
   return parts.length > 0 ? parts.join('; ') : 'без обмежень';
+}
+
+function formatZoneGroupLoginIds(
+  loginIds: string[],
+  details: SignalGroupLogin[],
+  loginById: Map<string, Login>,
+) {
+  const detailsById = new Map(details.map((detail) => [detail.loginId, detail]));
+  return loginIds
+    .map((id) => detailsById.get(id)?.login ?? loginById.get(id)?.login ?? id)
+    .join(', ');
 }
 
 function selectedOrganisms(selectedIds: number[], options: Organism[]) {
@@ -523,14 +540,38 @@ function LoginAutocomplete(props: {
   label: string;
   options: Login[];
   selectedIds: string[];
+  selectedDetails: SignalGroupLogin[];
   onChange: (loginIds: string[]) => void;
 }) {
+  const options = props.options.map(({ id, login }) => ({ id, login }));
+  const optionsById = new Map(options.map((option) => [option.id, option]));
+  const detailsById = new Map(props.selectedDetails.map((detail) => [detail.loginId, detail]));
+  const selectedOptions = props.selectedIds.map((id) => {
+    const detail = detailsById.get(id);
+    if (detail) {
+      return {
+        id: detail.loginId,
+        login: detail.login,
+        isAiManaged: detail.isAiManaged,
+      };
+    }
+    return optionsById.get(id) ?? { id, login: id, isAiManaged: false };
+  });
+
   return (
-    <Autocomplete
+    <Autocomplete<{ id: string; login: string; isAiManaged?: boolean }, true>
       multiple
-      options={props.options}
-      value={selectLoginOptions(props.selectedIds, props.options)}
-      onChange={(_, value) => props.onChange(selectedLoginIds(value))}
+      options={options}
+      value={selectedOptions}
+      onChange={(_, value) =>
+        props.onChange(
+          preserveAiManagedLoginIds(
+            props.selectedIds,
+            selectedLoginIds(value),
+            props.selectedDetails,
+          ),
+        )
+      }
       getOptionLabel={(option) => option.login}
       isOptionEqualToValue={(option, value) => option.id === value.id}
       renderOption={(optionProps, option) => {
@@ -541,6 +582,21 @@ function LoginAutocomplete(props: {
           </Box>
         );
       }}
+      renderTags={(value, getTagProps) =>
+        value.map((option, index) => {
+          const tagProps = getTagProps({ index });
+          return (
+            <Chip
+              {...tagProps}
+              key={option.id}
+              label={option.login}
+              onDelete={option.isAiManaged ? undefined : tagProps.onDelete}
+              title={option.isAiManaged ? 'Керується AI control plane' : undefined}
+              size="small"
+            />
+          );
+        })
+      }
       renderInput={(params) => <TextField {...params} label={props.label} />}
     />
   );
@@ -650,8 +706,10 @@ function buildZoneLoadingRows(): ZoneGroupRow[] {
       interseptionKind: 'rer',
       disableNetworkAssignment: false,
       allowedUsers: [],
+      allowedUserDetails: [],
       allowedOrganismIds: [],
       adminLogins: [],
+      adminLoginDetails: [],
       areasOfResponsibility: null,
       shortNote: null,
       longNote: null,
@@ -1174,6 +1232,7 @@ function ZoneGroupsTable(props: {
         accessorFn: (row) =>
           buildAccessLabel(
             row?.group?.allowedUsers,
+            row?.group?.allowedUserDetails,
             row?.group?.allowedOrganismIds,
             props.organismById,
             props.loginById,
@@ -1181,6 +1240,7 @@ function ZoneGroupsTable(props: {
         Cell: ({ row }) => {
           const label = buildAccessLabel(
             row.original?.group?.allowedUsers,
+            row.original?.group?.allowedUserDetails,
             row.original?.group?.allowedOrganismIds,
             props.organismById,
             props.loginById,
@@ -1198,12 +1258,20 @@ function ZoneGroupsTable(props: {
         id: 'admins',
         accessorFn: (row) =>
           row?.group?.adminLogins?.length > 0
-            ? formatLoginIds(row.group.adminLogins, props.loginById)
+            ? formatZoneGroupLoginIds(
+                row.group.adminLogins,
+                row.group.adminLoginDetails,
+                props.loginById,
+              )
             : NO_DATA_LABEL,
         Cell: ({ row }) => {
           const label =
             row.original?.group?.adminLogins?.length > 0
-              ? formatLoginIds(row.original.group.adminLogins, props.loginById)
+              ? formatZoneGroupLoginIds(
+                  row.original.group.adminLogins,
+                  row.original.group.adminLoginDetails,
+                  props.loginById,
+                )
               : NO_DATA_LABEL;
           return (
             <Tooltip title={label}>
@@ -1868,8 +1936,10 @@ function AdminDirectionsNeoPageBody() {
       interseptionKind: group.interseptionKind,
       disableNetworkAssignment: group.disableNetworkAssignment,
       selectedUsers: group.allowedUsers,
+      selectedUserDetails: group.allowedUserDetails,
       selectedOrganismIds: group.allowedOrganismIds,
       selectedAdmins: group.adminLogins,
+      selectedAdminDetails: group.adminLoginDetails,
       shortNote: group.shortNote ?? '',
       longNote: group.longNote ?? '',
       selectedAorIds: (group.areasOfResponsibility ?? []).map((aor) => aor.id),
@@ -2362,6 +2432,7 @@ function AdminDirectionsNeoPageBody() {
               label="Користувачі"
               options={logins}
               selectedIds={editDialog.selectedUsers}
+              selectedDetails={editDialog.selectedUserDetails}
               onChange={(selectedUsers) =>
                 editDialog &&
                 setEditDialog({
@@ -2400,6 +2471,7 @@ function AdminDirectionsNeoPageBody() {
             label="Адміністратори групи"
             options={logins}
             selectedIds={editDialog?.selectedAdmins ?? []}
+            selectedDetails={editDialog?.selectedAdminDetails ?? []}
             onChange={(selectedAdmins) =>
               editDialog &&
               setEditDialog({
@@ -2650,6 +2722,7 @@ function AdminDirectionsNeoPageBody() {
               label="Користувачі"
               options={logins}
               selectedIds={assignDialog.selectedUsers}
+              selectedDetails={[]}
               onChange={(selectedUsers) =>
                 assignDialog &&
                 setAssignDialog({
@@ -2688,6 +2761,7 @@ function AdminDirectionsNeoPageBody() {
             label="Адміністратори групи"
             options={logins}
             selectedIds={assignDialog?.selectedAdmins ?? []}
+            selectedDetails={[]}
             onChange={(selectedAdmins) =>
               assignDialog &&
               setAssignDialog({

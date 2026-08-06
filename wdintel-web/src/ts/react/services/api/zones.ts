@@ -157,10 +157,14 @@ type ZoneDatasourceGroupLike = {
   disable_network_assignment?: boolean;
   allowedUsers?: string[] | null;
   allowed_users?: string[] | null;
+  allowedUserDetails?: SignalGroupLoginLike[] | null;
+  allowed_user_details?: SignalGroupLoginLike[] | null;
   allowedOrganismIds?: Array<number | string> | null;
   allowed_organism_ids?: Array<number | string> | null;
   adminLogins?: string[] | null;
   admin_logins?: string[] | null;
+  adminLoginDetails?: SignalGroupLoginLike[] | null;
+  admin_login_details?: SignalGroupLoginLike[] | null;
   shortNote?: string | null;
   short_note?: string | null;
   longNote?: string | null;
@@ -182,6 +186,8 @@ type SignalGroupLoginLike =
       login?: string;
       deltaLogin?: string | null;
       delta_login?: string | null;
+      isAiManaged?: boolean;
+      is_ai_managed?: boolean;
     };
 
 type MyAdminSignalGroupLike = {
@@ -411,6 +417,8 @@ function normalizeOrphanSignalGroupEntry(raw: OrphanSignalGroupEntryLike): Orpha
 }
 
 function normalizeZoneDatasourceGroup(raw: ZoneDatasourceGroupLike): ZoneDatasourceGroup {
+  const allowedUsers = raw.allowedUsers ?? raw.allowed_users ?? [];
+  const adminLogins = raw.adminLogins ?? raw.admin_logins ?? [];
   return {
     sigintZoneDatasourceId: raw.sigintZoneDatasourceId ?? raw.sigint_zone_datasource_id ?? 0,
     groupMasterKey: raw.groupMasterKey ?? raw.group_master_key ?? '',
@@ -418,9 +426,15 @@ function normalizeZoneDatasourceGroup(raw: ZoneDatasourceGroupLike): ZoneDatasou
     interseptionKind: normalizeInterseptionKind(raw),
     disableNetworkAssignment:
       raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
-    allowedUsers: raw.allowedUsers ?? raw.allowed_users ?? [],
+    allowedUsers,
+    allowedUserDetails: (raw.allowedUserDetails ?? raw.allowed_user_details ?? []).map(
+      normalizeSignalGroupLogin,
+    ),
     allowedOrganismIds: normalizeNumberArray(raw.allowedOrganismIds ?? raw.allowed_organism_ids),
-    adminLogins: raw.adminLogins ?? raw.admin_logins ?? [],
+    adminLogins,
+    adminLoginDetails: (raw.adminLoginDetails ?? raw.admin_login_details ?? []).map(
+      normalizeSignalGroupLogin,
+    ),
     shortNote: raw.shortNote ?? raw.short_note ?? null,
     longNote: raw.longNote ?? raw.long_note ?? null,
     areasOfResponsibility:
@@ -599,12 +613,13 @@ function normalizeZoneDatasourceGroupAddRsp(
 
 function normalizeSignalGroupLogin(raw: SignalGroupLoginLike): SignalGroupLogin {
   if (typeof raw === 'string') {
-    return { loginId: raw, login: raw, deltaLogin: null };
+    return { loginId: raw, login: raw, deltaLogin: null, isAiManaged: false };
   }
   return {
     loginId: raw.loginId ?? raw.login_id ?? raw.login ?? '',
     login: raw.login ?? '',
     deltaLogin: raw.deltaLogin ?? raw.delta_login ?? null,
+    isAiManaged: raw.isAiManaged ?? raw.is_ai_managed ?? false,
   };
 }
 

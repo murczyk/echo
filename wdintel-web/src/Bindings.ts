@@ -2115,8 +2115,10 @@ export type ZoneDatasourceGroup = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   allowedUsers: Array<string>;
+  allowedUserDetails: Array<SignalGroupLogin>;
   allowedOrganismIds: Array<number>;
   adminLogins: Array<string>;
+  adminLoginDetails: Array<SignalGroupLogin>;
   shortNote: string | null;
   longNote: string | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -2162,6 +2164,7 @@ export type SignalGroupLogin = {
   loginId: string;
   login: string;
   deltaLogin: string | null;
+  isAiManaged: boolean;
 };
 
 export type MyAdminSignalGroup = {

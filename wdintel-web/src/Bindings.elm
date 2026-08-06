@@ -5482,8 +5482,10 @@ type alias ZoneDatasourceGroup =
     , interseptionKind : InterseptionKind
     , disableNetworkAssignment : Bool
     , allowedUsers : List (String)
+    , allowedUserDetails : List (SignalGroupLogin)
     , allowedOrganismIds : List (Int)
     , adminLogins : List (String)
+    , adminLoginDetails : List (SignalGroupLogin)
     , shortNote : Maybe (String)
     , longNote : Maybe (String)
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
@@ -5499,8 +5501,10 @@ zoneDatasourceGroupEncoder struct =
         , ( "interseption_kind", (interseptionKindEncoder) struct.interseptionKind )
         , ( "disable_network_assignment", (Json.Encode.bool) struct.disableNetworkAssignment )
         , ( "allowed_users", (Json.Encode.list (Json.Encode.string)) struct.allowedUsers )
+        , ( "allowed_user_details", (Json.Encode.list (signalGroupLoginEncoder)) struct.allowedUserDetails )
         , ( "allowed_organism_ids", (Json.Encode.list (Json.Encode.int)) struct.allowedOrganismIds )
         , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
+        , ( "admin_login_details", (Json.Encode.list (signalGroupLoginEncoder)) struct.adminLoginDetails )
         , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.shortNote )
         , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.longNote )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
@@ -5599,6 +5603,7 @@ type alias SignalGroupLogin =
     { loginId : String
     , login : String
     , deltaLogin : Maybe (String)
+    , isAiManaged : Bool
     }
 
 
@@ -5608,6 +5613,7 @@ signalGroupLoginEncoder struct =
         [ ( "login_id", (Json.Encode.string) struct.loginId )
         , ( "login", (Json.Encode.string) struct.login )
         , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deltaLogin )
+        , ( "is_ai_managed", (Json.Encode.bool) struct.isAiManaged )
         ]
 
 
@@ -15033,8 +15039,10 @@ zoneDatasourceGroupDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (interseptionKindDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_user_details" (Json.Decode.list (signalGroupLoginDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_organism_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_login_details" (Json.Decode.list (signalGroupLoginDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
@@ -15090,6 +15098,7 @@ signalGroupLoginDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_ai_managed" (Json.Decode.bool)))
 
 
 myAdminSignalGroupDecoder : Json.Decode.Decoder MyAdminSignalGroup
