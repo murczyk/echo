@@ -24,7 +24,8 @@ pub fn from_date_time_text(
     let (Some(date), Some(time)) = (date, time) else {
         return Ok(None);
     };
-    let date = NaiveDate::parse_from_str(date, "%Y-%m-%d")?;
+    let date = NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .or_else(|_| NaiveDate::parse_from_str(date, "%d.%m.%Y"))?;
     let time = NaiveTime::parse_from_str(time, "%H:%M:%S%.f")
         .or_else(|_| NaiveTime::parse_from_str(time, "%H:%M"))?;
     let local_datetime = date.and_time(time);
@@ -275,6 +276,19 @@ mod tests {
                 NaiveDate::from_ymd_opt(2026, 1, 15)
                     .unwrap()
                     .and_hms_opt(10, 34, 0)
+                    .unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn date_time_text_accepts_legacy_date_format() {
+        assert_eq!(
+            from_date_time_text(Some("25.06.2026"), Some("12:34:56")).unwrap(),
+            Some(
+                NaiveDate::from_ymd_opt(2026, 6, 25)
+                    .unwrap()
+                    .and_hms_opt(9, 34, 56)
                     .unwrap()
             )
         );
