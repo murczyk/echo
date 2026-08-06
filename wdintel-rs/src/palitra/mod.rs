@@ -1935,6 +1935,10 @@ async fn render_created_palitra_response(
                 .await
                 .c(h!())?
         };
+    let access_login_names =
+        crate::users::login_names_by_ids(dbx, access_logins.clone())
+            .await
+            .c(h!())?;
     let author = match palitra.author_login_id {
         Some(author_login_id) => {
             crate::users::login_names_by_ids(dbx, vec![author_login_id])
@@ -1974,7 +1978,12 @@ async fn render_created_palitra_response(
         access_organism_ids,
         access_logins: access_logins
             .into_iter()
-            .map(|login_id| login_id.to_string())
+            .map(|login_id| {
+                access_login_names
+                    .get(&login_id)
+                    .cloned()
+                    .unwrap_or_else(|| login_id.to_string())
+            })
             .collect(),
     })
 }

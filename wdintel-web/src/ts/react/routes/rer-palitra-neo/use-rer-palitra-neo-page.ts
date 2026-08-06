@@ -58,6 +58,11 @@ export function useRerPalitraNeoPage() {
   const [organisms, setOrganisms] = useState<Organism[]>([]);
   const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
   const [allLogins, setAllLogins] = useState<string[]>([]);
+  const [loginIdsByName, setLoginIdsByName] = useState<Record<string, string>>({});
+  const loginNamesById = useMemo(
+    () => Object.fromEntries(Object.entries(loginIdsByName).map(([name, id]) => [id, name])),
+    [loginIdsByName],
+  );
 
   const [loading, setLoading] = useState(true);
   const [referenceDataReady, setReferenceDataReady] = useState(false);
@@ -132,6 +137,7 @@ export function useRerPalitraNeoPage() {
         myScope,
         organisms,
         aors,
+        loginNamesById,
         inFlightArchiveId,
         inFlightDeleteId,
         inFlightDownloadId,
@@ -145,6 +151,7 @@ export function useRerPalitraNeoPage() {
       myScope,
       organisms,
       aors,
+      loginNamesById,
       inFlightArchiveId,
       inFlightDeleteId,
       inFlightDownloadId,
@@ -301,6 +308,15 @@ export function useRerPalitraNeoPage() {
           if (cancelled) return;
 
           setMyScope(references.myScope);
+          setLoginIdsByName(
+            Object.fromEntries([
+              [currentUser.name, currentUser.id] as const,
+              ...(references.logins?.users ?? []).map((entry): [string, string] => [
+                entry.login,
+                entry.id,
+              ]),
+            ]),
+          );
           setAllLogins(
             references.logins?.users.map((entry) => entry.login) ?? references.organismLogins ?? [],
           );
@@ -391,6 +407,7 @@ export function useRerPalitraNeoPage() {
     user,
     myScope,
     allLogins,
+    loginIdsByName,
     palitraRows,
     selectedPalitraIds,
     folderActionsBlocked,

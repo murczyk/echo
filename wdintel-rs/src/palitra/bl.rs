@@ -2288,6 +2288,10 @@ where
                 .await
                 .c(h!())?
         };
+    let access_login_names =
+        crate::users::login_names_by_ids(dbx, access_logins.clone())
+            .await
+            .c(h!())?;
     let author = match palitra_model.author_login_id {
         Some(author_login_id) => {
             crate::users::login_names_by_ids(dbx, vec![author_login_id])
@@ -2320,7 +2324,12 @@ where
         access_organism_ids,
         access_logins: access_logins
             .into_iter()
-            .map(|login_id| login_id.to_string())
+            .map(|login_id| {
+                access_login_names
+                    .get(&login_id)
+                    .cloned()
+                    .unwrap_or_else(|| login_id.to_string())
+            })
             .collect(),
     })
 }
@@ -2808,10 +2817,9 @@ where
             if logins.is_empty() {
                 return Ok(());
             }
-            let logins = logins
-                .into_iter()
-                .map(|login_id| Uuid::parse_str(&login_id).c(h!()))
-                .collect::<Result<Vec<_>, _>>()?
+            let logins = resolve_palitra_access_login_ids(txn, logins)
+                .await
+                .c(h!())?
                 .into_iter()
                 .map(|login| palitra_access_login::ActiveModel {
                     id: NotSet,
@@ -3956,4 +3964,24 @@ mod tests {
         assert_eq!(replace_folder_exact(Some("foo/baz"), "foo", "bar"), None);
         assert_eq!(replace_folder_exact(Some("foobar"), "foo", "bar"), None);
     }
+}
+
+async fn resolve_palitra_access_login_ids<'a, 'async_trait, C>(
+    txn: &'a C,
+    login_values: Vec<String>,
+) -> anyhow::Result<Vec<Uuid>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut login_ids = Vec::with_capacity(login_values.len());
+    for login_value in login_values {
+        let login_id = match Uuid::parse_str(&login_value) {
+            Ok(login_id) => login_id,
+            Err(_) => crate::users::login_id_by_name(txn, &login_value)
+                .await
+                .c(h!())?,
+        };
+        login_ids.push(login_id);
+    }
+    Ok(login_ids)
 }
