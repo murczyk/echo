@@ -22,6 +22,11 @@ pub const PGBACKREST_CONF_INCLUDE_DIR: &str = "/etc/pgbackrest/conf.d";
 pub const PGBACKREST_STANZA_CONF_PREFIX: &str = "pgbackrest-";
 pub const PGBACKREST_STANZA_CONF_SUFFIX: &str = ".conf";
 pub const PG_SLOW_STATEMENT_THRESHOLD_MS: u64 = 5_000;
+pub const POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT: u64 = 20_000;
+pub const POSTGRES_RUNTIME_LOCK_TIMEOUT_MS_DEFAULT: u64 = 3_000;
+pub const POSTGRES_RUNTIME_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_MS_DEFAULT: u64 =
+    120_000;
+pub const POSTGRES_RUNTIME_TIMEOUT_MS_MAX: u64 = i32::MAX as u64;
 pub const ONEOFF_KILL_OLD_QUERIES_DEFAULT_MINUTES: u64 = 3;
 pub const ONEOFF_KILL_OLD_QUERIES_QUERY_PREVIEW_CHARS: usize = 500;
 pub const INBOX_ITEM_CALLSIGN_BACKFILL_BATCH_SIZE: u64 = 500;
@@ -753,6 +758,7 @@ pub struct Config {
     pub disable_inactive_users_worker: Option<bool>,
     pub replicas: Option<Vec<ReplicaConfig>>,
     pub analytics: Option<AnalyticsConfig>,
+    pub postgres_runtime: Option<PostgresRuntimeConfig>,
     /// A unique identifier for the server.
     ///
     /// This is an arbitrary integer value in the range **1-16**.
@@ -805,6 +811,78 @@ pub struct ReplicaConfig {
     pub pg_user: Option<String>,
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[serde(try_from = "PostgresRuntimeConfigRaw")]
+pub struct PostgresRuntimeConfig {
+    pub statement_timeout_ms: u64,
+    pub lock_timeout_ms: u64,
+    pub idle_in_transaction_session_timeout_ms: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct PostgresRuntimeConfigRaw {
+    #[serde(default)]
+    statement_timeout_ms: Option<u64>,
+    #[serde(default)]
+    lock_timeout_ms: Option<u64>,
+    #[serde(default)]
+    idle_in_transaction_session_timeout_ms: Option<u64>,
+}
+
+impl TryFrom<PostgresRuntimeConfigRaw> for PostgresRuntimeConfig {
+    type Error = String;
+
+    fn try_from(
+        config: PostgresRuntimeConfigRaw,
+    ) -> std::result::Result<Self, Self::Error> {
+        let config = Self {
+            statement_timeout_ms: config
+                .statement_timeout_ms
+                .unwrap_or(POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT),
+            lock_timeout_ms: config
+                .lock_timeout_ms
+                .unwrap_or(POSTGRES_RUNTIME_LOCK_TIMEOUT_MS_DEFAULT),
+            idle_in_transaction_session_timeout_ms: config
+                .idle_in_transaction_session_timeout_ms
+                .unwrap_or(
+                    POSTGRES_RUNTIME_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_MS_DEFAULT,
+                ),
+        };
+        config.validate()?;
+        Ok(config)
+    }
+}
+
+impl PostgresRuntimeConfig {
+    fn validate(&self) -> Result<(), String> {
+        validate_postgres_runtime_timeout(
+            "statement_timeout_ms",
+            self.statement_timeout_ms,
+        )?;
+        validate_postgres_runtime_timeout(
+            "lock_timeout_ms",
+            self.lock_timeout_ms,
+        )?;
+        validate_postgres_runtime_timeout(
+            "idle_in_transaction_session_timeout_ms",
+            self.idle_in_transaction_session_timeout_ms,
+        )?;
+        Ok(())
+    }
+}
+
+fn validate_postgres_runtime_timeout(
+    name: &str,
+    value: u64,
+) -> std::result::Result<(), String> {
+    if !(1..=POSTGRES_RUNTIME_TIMEOUT_MS_MAX).contains(&value) {
+        return Err(format!(
+            "[postgres_runtime].{name} must be between 1 and {POSTGRES_RUNTIME_TIMEOUT_MS_MAX} milliseconds"
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -1161,6 +1239,11 @@ mod config_tests {
         ai_agent_dispatcher: AiAgentDispatcherConfig,
     }
 
+    #[derive(Debug, Deserialize)]
+    struct TestPostgresRuntimeSection {
+        postgres_runtime: Option<PostgresRuntimeConfig>,
+    }
+
     #[test]
     fn deserialize_config_reports_unused_keys() {
         let input = r#"
@@ -1252,6 +1335,50 @@ pg_dbname = "echo_analytics_gateway"
             analytics.retry_cooldown_ms(),
             ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT
         );
+    }
+
+    #[test]
+    fn postgres_runtime_config_is_opt_in_and_uses_defaults() {
+        let missing: TestPostgresRuntimeSection = toml::from_str("").unwrap();
+        assert!(missing.postgres_runtime.is_none());
+
+        let configured: TestPostgresRuntimeSection = toml::from_str(
+            r#"
+[postgres_runtime]
+"#,
+        )
+        .unwrap();
+        let postgres_runtime = configured.postgres_runtime.unwrap();
+        assert_eq!(
+            postgres_runtime.statement_timeout_ms,
+            POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT
+        );
+        assert_eq!(
+            postgres_runtime.lock_timeout_ms,
+            POSTGRES_RUNTIME_LOCK_TIMEOUT_MS_DEFAULT
+        );
+        assert_eq!(
+            postgres_runtime.idle_in_transaction_session_timeout_ms,
+            POSTGRES_RUNTIME_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_MS_DEFAULT
+        );
+    }
+
+    #[test]
+    fn postgres_runtime_config_rejects_invalid_timeouts() {
+        for input in [
+            r#"
+[postgres_runtime]
+statement_timeout_ms = 0
+"#,
+            r#"
+[postgres_runtime]
+lock_timeout_ms = 2147483648
+"#,
+        ] {
+            let error = toml::from_str::<TestPostgresRuntimeSection>(input)
+                .unwrap_err();
+            assert!(error.to_string().contains("[postgres_runtime]"));
+        }
     }
 
     #[test]

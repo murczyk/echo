@@ -31,6 +31,7 @@ use rust_xlsxwriter::{Format, Workbook};
 use sea_orm::{prelude::Expr, sea_query::Alias, *};
 use sea_query::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::error::Error as StdError;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tempfile::TempDir;
 
@@ -7472,7 +7473,9 @@ where
         }
     }
 
-    postgres_query.await
+    postgres_query.await.map_err(|error| {
+        map_postgres_runtime_timeout(error, "analysis stats count")
+    })
 }
 
 pub(crate) async fn with_analytics_read_fallback<T, A, AFut, P, PFut>(
@@ -7604,9 +7607,58 @@ where
     }
 
     let started = std::time::Instant::now();
-    let response = postgres_query(env.replica()).await?;
+    let response = postgres_query(env.replica())
+        .await
+        .map_err(|error| map_postgres_runtime_timeout(error, operation))?;
     trace!("{operation} used PostgreSQL in {:?}", started.elapsed());
     Ok(response)
+}
+
+fn map_postgres_runtime_timeout(error: AppError, operation: &str) -> AppError {
+    if !has_postgres_error_code(&error, "57014") {
+        return error;
+    }
+
+    warn!(
+        target: "postgres_runtime_timeout",
+        "postgres_runtime_timeout operation={} postgres_sqlstate=57014",
+        operation
+    );
+    AppError::ServiceUnavailable {
+        msg: "Аналітичний запит перевищив допустимий час виконання. Спробуйте звузити параметри пошуку."
+            .to_string(),
+        retry_after_secs: 1,
+    }
+}
+
+fn has_postgres_error_code(
+    error: &(dyn StdError + 'static),
+    code: &str,
+) -> bool {
+    let mut source = Some(error);
+    while let Some(error) = source {
+        if let Some(
+            DbErr::Conn(sea_orm::RuntimeErr::SqlxError(sqlx_error))
+            | DbErr::Exec(sea_orm::RuntimeErr::SqlxError(sqlx_error))
+            | DbErr::Query(sea_orm::RuntimeErr::SqlxError(sqlx_error)),
+        ) = error.downcast_ref::<DbErr>()
+        {
+            if let sqlx::Error::Database(database_error) = sqlx_error.as_ref() {
+                if database_error.code().as_deref() == Some(code) {
+                    return true;
+                }
+            }
+        }
+        if let Some(sqlx::Error::Database(database_error)) =
+            error.downcast_ref::<sqlx::Error>()
+        {
+            if database_error.code().as_deref() == Some(code) {
+                return true;
+            }
+        }
+        source = error.source();
+    }
+    false
 }
 
 fn analytics_retry_attempt(

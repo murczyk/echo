@@ -3,10 +3,11 @@ use crate::functest::tests::*;
 use crate::h;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::*;
+use crate::{new_pg_runtime_pool_from_config, PgRuntimePoolRole};
 use actix_web::web::{Data, Json};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
-    FromQueryResult, QueryFilter,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
+    EntityTrait, FromQueryResult, QueryFilter,
 };
 use serial_test::serial;
 
@@ -6919,6 +6920,58 @@ async fn count_stats_analytics_timeout_retries_postgres() {
     .unwrap();
 
     assert_eq!(result, "postgres");
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_fallback_maps_capped_postgres_query_to_one_timeout_error() {
+    let mut config =
+        crate::config::read_config(crate::types::Mode::Test).unwrap();
+    config.postgres_runtime = Some(crate::config::PostgresRuntimeConfig {
+        statement_timeout_ms: 25,
+        lock_timeout_ms: 15,
+        idle_in_transaction_session_timeout_ms: 50,
+    });
+    let db = new_pg_runtime_pool_from_config(&config, PgRuntimePoolRole::Web)
+        .await
+        .unwrap();
+    let postgres_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let postgres_attempts_query = postgres_attempts.clone();
+
+    let error = with_count_stats_analytics_fallback(
+        Some(async {
+            Err::<&str, AppError>(
+                anyhow::anyhow!("analytics unavailable").into(),
+            )
+        }),
+        core::time::Duration::from_secs(1),
+        async move {
+            postgres_attempts_query
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            db.execute_unprepared("select pg_sleep(0.1)")
+                .await
+                .c(h!())?;
+            Ok::<_, AppError>("postgres")
+        },
+        None,
+        core::time::Duration::from_secs(30),
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        postgres_attempts.load(std::sync::atomic::Ordering::SeqCst),
+        1
+    );
+    let AppError::ServiceUnavailable {
+        msg,
+        retry_after_secs,
+    } = error
+    else {
+        panic!("expected PostgreSQL timeout error");
+    };
+    assert_eq!(retry_after_secs, 1);
+    assert!(msg.contains("перевищив допустимий час"));
 }
 
 #[test]
