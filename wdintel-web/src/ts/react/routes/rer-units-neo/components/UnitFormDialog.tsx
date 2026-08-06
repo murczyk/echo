@@ -180,6 +180,17 @@ function UnitDetailsFields({
           fullWidth
           sx={{ gridColumn: { md: '1 / -1' } }}
         />
+        <TextField
+          label="Примітка Orbit"
+          placeholder="Причина відсутності прив’язки до Orbit"
+          value={form.orbitNote ?? ''}
+          onChange={(event) => onChange({ ...form, orbitNote: event.target.value || null })}
+          disabled={disabled}
+          multiline
+          minRows={3}
+          fullWidth
+          sx={{ gridColumn: { md: '1 / -1' } }}
+        />
         <FormControlLabel
           control={
             <Switch

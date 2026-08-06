@@ -1,8 +1,8 @@
 use super::types::{
     CreateUnitReq, CreateUnitWithAutoNetworkReq, CreateUnitWithAutoNetworkRsp,
     ImportOrbitUnitReq, LinkOrbitUnitReq, OrbitDictionaryValue,
-    OrbitUnitDetails, OrbitUnitLinkCandidate, OrbitUnitLinkCandidatesReq,
-    OrbitUnitLinkCandidatesRsp, OrbitUnitSearchReq,
+    OrbitParentUnit, OrbitUnitDetails, OrbitUnitLinkCandidate,
+    OrbitUnitLinkCandidatesReq, OrbitUnitLinkCandidatesRsp, OrbitUnitSearchReq,
 };
 use crate::entities::*;
 use crate::error::AppError;
@@ -39,20 +39,27 @@ pub async fn can_view_orbit_data(
 
 pub async fn unit_ids_with_orbit(
     dbx: &DatabaseConnection,
-) -> Result<HashSet<i64>, AppError> {
-    Ok(orbit_unit_sigint_unit::Entity::find()
+) -> Result<HashMap<i64, Vec<String>>, AppError> {
+    let mut unit_ids = HashMap::<i64, Vec<String>>::new();
+    for link in orbit_unit_sigint_unit::Entity::find()
         .join(
             JoinType::InnerJoin,
             orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
         )
         .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .filter(orbit_unit::Column::Deleted.eq(false))
+        .order_by_asc(orbit_unit_sigint_unit::Column::SigintUnitId)
+        .order_by_asc(orbit_unit_sigint_unit::Column::OrbitUnitId)
         .all(dbx)
         .await
         .c(h!())?
-        .into_iter()
-        .map(|link| link.sigint_unit_id)
-        .collect())
+    {
+        unit_ids
+            .entry(link.sigint_unit_id)
+            .or_default()
+            .push(link.orbit_unit_id.to_string());
+    }
+    Ok(unit_ids)
 }
 
 pub async fn unit_has_orbit(
@@ -101,6 +108,18 @@ async fn render_orbit_unit_details(
     dbx: &DatabaseConnection,
     unit: orbit_unit::Model,
 ) -> Result<OrbitUnitDetails, AppError> {
+    let generative_parent_units = orbit_parent_units(
+        dbx,
+        unit.generative_parent_unit_id,
+        OrbitParentKind::Generative,
+    )
+    .await?;
+    let operational_parent_units = orbit_parent_units(
+        dbx,
+        unit.operational_parent_unit_id,
+        OrbitParentKind::Operational,
+    )
+    .await?;
     let unit_echelon = unit
         .find_related(orbit_unit_echelon::Entity)
         .one(dbx)
@@ -141,10 +160,61 @@ async fn render_orbit_unit_details(
         operational_parent_unit_id: unit
             .operational_parent_unit_id
             .map(|unit_id| unit_id.to_string()),
+        generative_parent_units,
+        operational_parent_units,
         deleted: unit.deleted,
         created_at: unit.created_at.and_utc().timestamp_millis(),
         updated_at: unit.updated_at.and_utc().timestamp_millis(),
     })
+}
+
+async fn orbit_parent_units(
+    dbx: &DatabaseConnection,
+    mut orbit_unit_id: Option<Uuid>,
+    parent_kind: OrbitParentKind,
+) -> Result<Vec<OrbitParentUnit>, AppError> {
+    let mut parents = Vec::new();
+    let mut seen = HashSet::new();
+    while let Some(parent_unit_id) = orbit_unit_id {
+        if !seen.insert(parent_unit_id) {
+            break;
+        }
+        let Some(parent) = orbit_unit::Entity::find_by_id(parent_unit_id)
+            .filter(orbit_unit::Column::Deleted.eq(false))
+            .one(dbx)
+            .await
+            .c(h!())?
+        else {
+            break;
+        };
+        let sigint_unit_id = orbit_unit_sigint_unit::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+            )
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId.eq(parent_unit_id),
+            )
+            .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+            .filter(sigint_unit::Column::Deleted.eq(false))
+            .order_by_asc(orbit_unit_sigint_unit::Column::SigintUnitId)
+            .one(dbx)
+            .await
+            .c(h!())?
+            .map(|link| link.sigint_unit_id);
+        let name = parent
+            .unit_name
+            .clone()
+            .or(parent.unit_name_short.clone())
+            .or(parent.unit_number.clone())
+            .unwrap_or_else(|| parent.unit_id.to_string());
+        parents.push(OrbitParentUnit {
+            sigint_unit_id,
+            name,
+        });
+        orbit_unit_id = parent_kind.parent_id(&parent);
+    }
+    Ok(parents)
 }
 
 fn render_unit_echelon(
@@ -608,6 +678,7 @@ where
         active,
         is_deduplicate_candidate: None,
         comment: String::new(),
+        orbit_note: None,
     })
 }
 
@@ -882,7 +953,9 @@ fn render_orbit_unit_candidate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functest::tests::{cleanup, mk_login, mk_organism};
+    use crate::functest::tests::{
+        cleanup, mk_login, mk_organism, mk_sigint_unit,
+    };
     use serial_test::serial;
 
     async fn create_login_with_roles(
@@ -955,6 +1028,90 @@ mod tests {
         assert_eq!(candidates.len(), 2);
         assert_eq!(candidates[0].unit_id, full_word_match_id.to_string());
         assert_eq!(candidates[1].unit_id, substring_match_id.to_string());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn parent_units_include_unlinked_parents_and_skip_deleted_links() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let outer_parent_id = Uuid::new_v4();
+        let inner_parent_id = Uuid::new_v4();
+        orbit_unit::Entity::insert_many([
+            orbit_unit::ActiveModel {
+                unit_id: Set(outer_parent_id),
+                unit_name: Set(Some("Outer parent".to_string())),
+                ..Default::default()
+            },
+            orbit_unit::ActiveModel {
+                unit_id: Set(inner_parent_id),
+                unit_name: Set(Some("Inner parent".to_string())),
+                operational_parent_unit_id: Set(Some(outer_parent_id)),
+                ..Default::default()
+            },
+        ])
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        let linked_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let deleted_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                deleted: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::Entity::insert_many([
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(outer_parent_id),
+                sigint_unit_id: Set(linked_unit.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(inner_parent_id),
+                sigint_unit_id: Set(deleted_unit.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
+        ])
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+
+        let parents = orbit_parent_units(
+            &env.dbx,
+            Some(inner_parent_id),
+            OrbitParentKind::Operational,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            parents,
+            vec![
+                OrbitParentUnit {
+                    sigint_unit_id: None,
+                    name: "Inner parent".to_string(),
+                },
+                OrbitParentUnit {
+                    sigint_unit_id: Some(linked_unit.id),
+                    name: "Outer parent".to_string(),
+                },
+            ]
+        );
     }
 
     #[tokio::test]

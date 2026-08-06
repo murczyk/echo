@@ -28,7 +28,7 @@ use sea_orm::*;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
 };
-use sea_query::{extension::postgres::PgExpr, Alias, Expr, Query};
+use sea_query::{Alias, Expr, Query};
 use serde_json;
 use sqlx::FromRow;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -1705,10 +1705,10 @@ pub async fn network_freqs_activity_one(
     )
     .and_where(Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false))
     .add_group_by([
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into(),
+        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)),
         Expr::cust("day"),
     ])
-    .order_by_expr(Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into(), Order::Asc)
+    .order_by_expr(Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)), Order::Asc)
     .order_by_expr(Expr::cust("day"), Order::Asc)
     .to_owned();
 
@@ -3265,7 +3265,7 @@ async fn cleanup_networks_worker_1(
         let is_recent_network = recent_network_ids.contains(&network.id);
         let do_not_archive = network.do_not_archive;
         for network_freq in network_freqs {
-            let is_deleted = ids.iter().any(|id| *id == network_freq.id);
+            let is_deleted = ids.contains(&network_freq.id);
             if is_deleted && !is_recent_network && !do_not_archive {
                 let mut network_freq = network_freq.into_active_model();
                 network_freq.active_to = Set(Some(Utc::now().naive_utc()));
@@ -4549,10 +4549,10 @@ pub async fn network_search(
         .filter(sigint_network::Column::Deleted.eq(false));
 
     if !search_phrase.is_empty() {
-        query = query.filter(
-            Expr::col(sigint_network::Column::Name)
-                .ilike(format!("%{}%", search_phrase)),
-        );
+        query = query.filter(sea_query::extension::postgres::PgExpr::ilike(
+            Expr::col(sigint_network::Column::Name),
+            format!("%{}%", search_phrase),
+        ));
     }
 
     let networks_db = query

@@ -18,12 +18,14 @@ createUnit id army division regiment battalion company name =
     , battalion = battalion
     , company = company
     , comment = ""
+    , orbitNote = Nothing
     , name = name
     , active = True
     , isDeduplicateCandidate = Nothing
     , createdAt = 0
     , createdByLoginId = ""
     , hasOrbit = False
+    , orbitUnitIds = []
     }
 
 

@@ -464,7 +464,7 @@ describe('AiAgentChat request queue', () => {
 
 describe('AiAgentChat conversation controls', () => {
   it('renders the polished empty state, provider control, and hidden history pane', () => {
-    expect(container.textContent).toContain('Поставте запитання про дані ЕХО');
+    expect(container.textContent).toContain('Спитайте ЕХО');
     expect(container.textContent).not.toContain('Поставте запитання про дані ECHO.');
     expect(
       container.querySelector('[aria-label="Провайдер ШІ"]')?.getAttribute('aria-disabled'),
@@ -530,7 +530,7 @@ describe('AiAgentChat conversation controls', () => {
     expect(document.body.querySelector('aside')?.getAttribute('aria-hidden')).toBe('true');
     expect(
       container.querySelector('[aria-label="Провайдер ШІ"]')?.getAttribute('aria-disabled'),
-    ).not.toBe('true');
+    ).toBe('true');
     expect(document.body.querySelector('[aria-label="Перейменувати розмову"]')).toBeNull();
     expect(document.body.querySelector('[aria-label="Видалити розмову"]')).toBeNull();
   });

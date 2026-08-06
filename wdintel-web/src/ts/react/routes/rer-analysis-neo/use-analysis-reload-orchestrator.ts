@@ -91,6 +91,7 @@ type Params = {
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, import('../../../../Bindings').CallsignInfoRes>>;
   setTagsMap: Setter<Record<number, Tag>>;
+  setTagsOrder: Setter<number[]>;
   setTopCallsigns: Setter<AnalysisCountItem[]>;
   setTopFreqs: Setter<AnalysisCountItem[]>;
   setTopLocations: Setter<AnalysisCountItem[]>;
@@ -161,6 +162,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     setProfiles,
     setSummaryCallsignsInfo,
     setTagsMap,
+    setTagsOrder,
     setTopCallsigns,
     setTopFreqs,
     setTopLocations,
@@ -231,6 +233,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           setProfiles,
           setSummaryCallsignsInfo,
           setTagsMap,
+          setTagsOrder,
           setTopCallsigns,
           setTopFreqs,
           setTopLocations,
@@ -305,6 +308,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       setProfiles,
       setSummaryCallsignsInfo,
       setTagsMap,
+      setTagsOrder,
       setTopCallsigns,
       setTopFreqs,
       setTopLocations,

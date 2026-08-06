@@ -78,6 +78,10 @@ pub async fn unit_details(
     let mut unit = render_unit(&unit)?;
     if can_view_orbit {
         unit.has_orbit = !orbit_units.is_empty();
+        unit.orbit_unit_ids = orbit_units
+            .iter()
+            .map(|orbit_unit| orbit_unit.unit_id.clone())
+            .collect();
     } else {
         redact_unit_orbit_data(&mut unit);
     }

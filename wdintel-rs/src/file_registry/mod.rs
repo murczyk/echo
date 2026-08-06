@@ -25,19 +25,21 @@ pub async fn connect_runtime(
     config: &Config,
     mode: Mode,
 ) -> Result<Option<FileRegistryDb>, AppError> {
-    let Some(config) = config.file_registry.as_ref() else {
+    let Some(file_registry) = config.file_registry.as_ref() else {
         return Ok(None);
     };
-    let connection = crate::new_pg_pool_from_conn_string_with_max_connections(
-        crate::mk_wdfile_conn_string(config, mode),
-        PG_WDFILE_POOL_MAX_CONNECTIONS,
-    )
-    .await
-    .map_err(|error| map_connection_error(error, config, mode))?;
+    let connection =
+        crate::new_pg_runtime_pool_from_conn_string_with_max_connections(
+            crate::mk_wdfile_conn_string(file_registry, mode),
+            PG_WDFILE_POOL_MAX_CONNECTIONS,
+            config,
+        )
+        .await
+        .map_err(|error| map_connection_error(error, file_registry, mode))?;
     connection
         .execute_unprepared("select 1")
         .await
-        .map_err(|error| map_connection_error(error, config, mode))?;
+        .map_err(|error| map_connection_error(error, file_registry, mode))?;
 
     Ok(Some(FileRegistryDb { connection }))
 }

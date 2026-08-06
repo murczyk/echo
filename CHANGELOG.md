@@ -11,6 +11,7 @@
 ## NEXT
 
 - [#3035](https://github.com/echoua/echo/issues/3035) ✅ Аналіз/Оперативнийдодано: покращено вигляд аудіоплеєра, додано Storybook для картки повідомлення з варіантами аудіоплеєра.
+- [#3079](https://github.com/echoua/echo/issues/3079) ✅🐞👷 Аналіз: для runtime-сервісів увімкнено обмеження PostgreSQL запитів (`statement_timeout`, `lock_timeout`, `idle_in_transaction_session_timeout`), щоб запобігати зависанням аналітики та звітів на великих запитах; увімкніть секцію `[postgres_runtime]` і перезапустіть runtime служби для активації.
 - [#2972](https://github.com/echoua/echo/issues/2972) 🛡️👷 ШІ: `copy-db` автоматично зберігає локальний профіль AI-агента, очищує скопійований runtime та перевіряє локальний диспетчер і HTTPS proxy; за відсутності локального профілю очищує також control plane, а для свідомого перенесення конфігурації джерела використайте `--no-preserve-local-ai-agent-profile`.
 - [#2972](https://github.com/echoua/echo/issues/2972) ✅🛡️👷 ШІ вікно з запитами.
   - Міграція: [echo-ai-agent/DEPLOYMENT.md](echo-ai-agent/DEPLOYMENT.md).

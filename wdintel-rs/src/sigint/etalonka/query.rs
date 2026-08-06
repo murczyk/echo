@@ -271,7 +271,7 @@ fn build_network_freqs_query(
     let join_condition =
         build_network_freq_join_condition(filter, true).c(h!())?;
     let callsigns_expr: SimpleExpr = if include_callsigns {
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Callsigns)).into()
+        Expr::col((SigintInboxItem::Table, SigintInboxItem::Callsigns))
     } else {
         Expr::cust("NULL")
     };
@@ -363,8 +363,7 @@ fn build_network_freqs_query(
         .add_group_by([Expr::col((
             NetworkMessages::Table,
             NetworkMessages::NetworkFreqId,
-        ))
-        .into()]);
+        ))]);
 
     let aggregated_cte = CommonTableExpression::new()
         .query(q_agg)
@@ -1289,7 +1288,6 @@ pub fn build_network_freq_join_condition(
         )
     } else {
         Expr::col((Alias::new("network_freqs"), Alias::new("active_from")))
-            .into()
     };
 
     let upper_bound = if let Some(till_ms) = till_ms {
@@ -1490,7 +1488,9 @@ pub async fn get_active_callsigns(
         .iter()
         .filter_map(|inbox_item_id| callsigns.get(inbox_item_id))
         .flat_map(|callsigns| callsigns.effective())
-        .filter(|callsign| !sigint_network_callsigns.contains(callsign))
+        .filter(|callsign| {
+            filter.is_some() || !sigint_network_callsigns.contains(callsign)
+        })
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -1708,7 +1708,7 @@ pub async fn get_callsigns_for_network_freq_batch(
             "sigint_inbox_item",
         )))
         .order_by_expr(
-            Expr::col((nf.clone(), SigintNetworkFreq::Id)).into(),
+            Expr::col((nf.clone(), SigintNetworkFreq::Id)),
             Order::Asc,
         )
         .to_owned();

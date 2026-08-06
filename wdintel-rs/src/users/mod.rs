@@ -194,7 +194,10 @@ where
     Ok(())
 }
 
-fn role_matches(roles: &[String], role: &str) -> Result<bool, AppError> {
+pub(crate) fn role_matches(
+    roles: &[String],
+    role: &str,
+) -> Result<bool, AppError> {
     Ok(match role {
         "Admin" => roles.contains(&"Admin".to_string()),
         "Api" => roles.contains(&"Api".to_string()),

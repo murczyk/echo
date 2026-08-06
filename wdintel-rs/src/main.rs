@@ -11,7 +11,7 @@ use clap::Parser;
 use redis::aio::ConnectionManager;
 use redis::ConnectionLike;
 use rustls::crypto::ring;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU8, AtomicUsize, Ordering};
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
@@ -84,14 +84,62 @@ macro_rules! h {
 static RUNTIME_THREAD_INDEX: AtomicUsize = AtomicUsize::new(0);
 static PG_POOL_MAX_CONNECTIONS: AtomicU32 =
     AtomicU32::new(PG_POOL_DEFAULT_MAX_CONNECTIONS);
+static PG_RUNTIME_POOL_ROLE: AtomicU8 = AtomicU8::new(0);
 
-pub fn use_bgworker_pg_pool_limits() {
-    PG_POOL_MAX_CONNECTIONS
-        .store(PG_POOL_BGWORKER_MAX_CONNECTIONS, Ordering::Relaxed);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PgRuntimePoolRole {
+    Web,
+    Bgworker,
+    ReportWorker,
+}
+
+impl PgRuntimePoolRole {
+    fn application_name(self) -> &'static str {
+        match self {
+            Self::Web => "echo-web",
+            Self::Bgworker => "echo-bgworker",
+            Self::ReportWorker => "echo-report-worker",
+        }
+    }
+
+    fn max_connections(self) -> u32 {
+        match self {
+            Self::Web => PG_POOL_DEFAULT_MAX_CONNECTIONS,
+            Self::Bgworker | Self::ReportWorker => {
+                PG_POOL_BGWORKER_MAX_CONNECTIONS
+            }
+        }
+    }
+
+    fn as_u8(self) -> u8 {
+        match self {
+            Self::Web => 1,
+            Self::Bgworker => 2,
+            Self::ReportWorker => 3,
+        }
+    }
+
+    fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(Self::Web),
+            2 => Some(Self::Bgworker),
+            3 => Some(Self::ReportWorker),
+            _ => None,
+        }
+    }
+}
+
+pub fn use_pg_runtime_pool(role: PgRuntimePoolRole) {
+    PG_POOL_MAX_CONNECTIONS.store(role.max_connections(), Ordering::Relaxed);
+    PG_RUNTIME_POOL_ROLE.store(role.as_u8(), Ordering::Relaxed);
 }
 
 fn pg_pool_max_connections() -> u32 {
     PG_POOL_MAX_CONNECTIONS.load(Ordering::Relaxed)
+}
+
+fn pg_runtime_pool_role() -> Option<PgRuntimePoolRole> {
+    PgRuntimePoolRole::from_u8(PG_RUNTIME_POOL_ROLE.load(Ordering::Relaxed))
 }
 
 pub async fn renew_tailscale_cert(
@@ -921,7 +969,27 @@ pub async fn new_pg_pool_from_config(
     config: &Config,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
     let conn_string = mk_conn_string(config);
-    new_pg_pool_from_conn_string(conn_string).await
+    new_pg_pool_from_conn_string_with_runtime_config(
+        conn_string,
+        pg_pool_max_connections(),
+        config.postgres_runtime.as_ref(),
+        pg_runtime_pool_role(),
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(crate) async fn new_pg_runtime_pool_from_config(
+    config: &Config,
+    role: PgRuntimePoolRole,
+) -> Result<sea_orm::DatabaseConnection, AppError> {
+    new_pg_pool_from_conn_string_with_runtime_config(
+        mk_conn_string(config),
+        pg_pool_max_connections(),
+        config.postgres_runtime.as_ref(),
+        Some(role),
+    )
+    .await
 }
 
 pub async fn new_pg_pool_from_replica(
@@ -929,7 +997,13 @@ pub async fn new_pg_pool_from_replica(
     replica: &ReplicaConfig,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
     let conn_string = mk_replica_conn_string(config, replica);
-    new_pg_pool_from_conn_string(conn_string).await
+    new_pg_pool_from_conn_string_with_runtime_config(
+        conn_string,
+        pg_pool_max_connections(),
+        config.postgres_runtime.as_ref(),
+        pg_runtime_pool_role(),
+    )
+    .await
 }
 
 pub async fn new_pg_pool_from_analytics(
@@ -946,10 +1020,21 @@ pub async fn new_pg_pool_from_analytics(
     .await
 }
 
-async fn new_pg_pool_from_conn_string(
+async fn new_pg_pool_from_conn_string_with_runtime_config(
     conn_string: String,
+    max_connections: u32,
+    postgres_runtime: Option<&PostgresRuntimeConfig>,
+    role: Option<PgRuntimePoolRole>,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
-    new_pg_pool_from_conn_string_with_timeout(conn_string, None, false).await
+    Ok(new_pg_pool_from_conn_string_with_options(
+        conn_string,
+        max_connections,
+        None,
+        false,
+        pg_runtime_pool_options(postgres_runtime, role),
+    )
+    .await
+    .c(h!())?)
 }
 
 async fn new_pg_pool_from_conn_string_with_timeout(
@@ -962,6 +1047,7 @@ async fn new_pg_pool_from_conn_string_with_timeout(
         pg_pool_max_connections(),
         connect_timeout,
         connect_lazy,
+        None,
     )
     .await
     .c(h!())?)
@@ -976,6 +1062,25 @@ pub(crate) async fn new_pg_pool_from_conn_string_with_max_connections(
         max_connections,
         None,
         false,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn new_pg_runtime_pool_from_conn_string_with_max_connections(
+    conn_string: String,
+    max_connections: u32,
+    config: &Config,
+) -> Result<sea_orm::DatabaseConnection, sea_orm::DbErr> {
+    new_pg_pool_from_conn_string_with_options(
+        conn_string,
+        max_connections,
+        None,
+        false,
+        pg_runtime_pool_options(
+            config.postgres_runtime.as_ref(),
+            pg_runtime_pool_role(),
+        ),
     )
     .await
 }
@@ -985,6 +1090,7 @@ async fn new_pg_pool_from_conn_string_with_options(
     max_connections: u32,
     connect_timeout: Option<core::time::Duration>,
     connect_lazy: bool,
+    runtime: Option<PgRuntimePoolOptions>,
 ) -> Result<sea_orm::DatabaseConnection, sea_orm::DbErr> {
     let mut opt = sea_orm::ConnectOptions::new(conn_string);
     opt.max_connections(max_connections)
@@ -1002,7 +1108,44 @@ async fn new_pg_pool_from_conn_string_with_options(
     }
     opt.connect_lazy(connect_lazy);
 
+    if let Some(runtime) = runtime {
+        opt.set_application_name(runtime.application_name);
+        opt.map_sqlx_postgres_opts(move |options| {
+            options.options([
+                ("statement_timeout", runtime.statement_timeout_ms),
+                ("lock_timeout", runtime.lock_timeout_ms),
+                (
+                    "idle_in_transaction_session_timeout",
+                    runtime.idle_in_transaction_session_timeout_ms,
+                ),
+            ])
+        });
+    }
+
     sea_orm::Database::connect(opt).await
+}
+
+#[derive(Clone, Copy)]
+struct PgRuntimePoolOptions {
+    application_name: &'static str,
+    statement_timeout_ms: u64,
+    lock_timeout_ms: u64,
+    idle_in_transaction_session_timeout_ms: u64,
+}
+
+fn pg_runtime_pool_options(
+    postgres_runtime: Option<&PostgresRuntimeConfig>,
+    role: Option<PgRuntimePoolRole>,
+) -> Option<PgRuntimePoolOptions> {
+    let postgres_runtime = postgres_runtime?;
+    let role = role?;
+    Some(PgRuntimePoolOptions {
+        application_name: role.application_name(),
+        statement_timeout_ms: postgres_runtime.statement_timeout_ms,
+        lock_timeout_ms: postgres_runtime.lock_timeout_ms,
+        idle_in_transaction_session_timeout_ms: postgres_runtime
+            .idle_in_transaction_session_timeout_ms,
+    })
 }
 
 /// Connect to GreptimeDB similar to Postgresql, except that it's ok to fail, the dependency is optional

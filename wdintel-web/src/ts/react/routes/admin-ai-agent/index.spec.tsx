@@ -175,9 +175,14 @@ describe('AdminAiAgentPage settings', () => {
   });
 
   it('enables Mattermost chat monitoring', async () => {
+    expect(container.querySelector('input[type="url"]')).toBeNull();
+
     await act(async () =>
       controlLabel('Надсилати запити ШІ чату до Mattermost').querySelector('input')?.click(),
     );
+
+    expect(container.querySelector('input[type="url"]')).not.toBeNull();
+
     await act(async () => clickSave());
     await flush();
 
@@ -185,6 +190,29 @@ describe('AdminAiAgentPage settings', () => {
       ...SETTINGS,
       mattermostChatEnabled: true,
     });
+  });
+
+  it('places the Mattermost clear control before the chat toggle and webhook field', async () => {
+    mocks.getSettings.mockResolvedValueOnce({
+      ...SETTINGS,
+      mattermostWebhookConfigured: true,
+    });
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<AdminAiAgentPage section="settings" />));
+    await flush();
+
+    const labels = Array.from(container.querySelectorAll('label'));
+    const indexOfLabel = (text: string) =>
+      labels.findIndex((label) => label.textContent?.trim() === text);
+
+    expect(indexOfLabel('Очистити налаштований Mattermost webhook')).toBeLessThan(
+      indexOfLabel('Надсилати запити ШІ чату до Mattermost'),
+    );
+    expect(indexOfLabel('Надсилати запити ШІ чату до Mattermost')).toBeLessThan(
+      indexOfLabel('Mattermost webhook'),
+    );
   });
 
   it('selects an HTTPS token reviewer after enabling asynchronous security review', async () => {

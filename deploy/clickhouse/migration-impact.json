@@ -110,6 +110,11 @@
         { "table": "public.ai_agent_settings", "strategy": "excluded" },
         { "table": "public.ai_agent_chat_mattermost_notification", "strategy": "excluded" }
       ]
+    },
+    "echo:m20260805_135334_sigint_unit_orbit_note": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "cdc_backfill" }
+      ]
     }
   },
   "dependencies": {

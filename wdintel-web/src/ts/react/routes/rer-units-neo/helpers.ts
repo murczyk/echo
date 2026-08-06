@@ -12,6 +12,7 @@ export const EMPTY_UNIT_FORM: UnitForm = {
   active: true,
   isDeduplicateCandidate: null,
   comment: '',
+  orbitNote: null,
 };
 
 export function unitToForm(unit: Unit): UnitForm {
@@ -24,6 +25,7 @@ export function unitToForm(unit: Unit): UnitForm {
     active: unit.active,
     isDeduplicateCandidate: unit.isDeduplicateCandidate,
     comment: unit.comment,
+    orbitNote: unit.orbitNote,
   };
 }
 
@@ -37,6 +39,7 @@ export function trimUnitForm(form: UnitForm): UnitForm {
     active: form.active,
     isDeduplicateCandidate: form.isDeduplicateCandidate,
     comment: form.comment.trim(),
+    orbitNote: form.orbitNote?.trim() || null,
   };
 }
 

@@ -147,10 +147,10 @@ where
 }
 
 fn has_rer_role(roles: &serde_json::Value) -> bool {
-    serde_json::from_value::<Vec<String>>(roles.clone())
-        .unwrap_or_default()
-        .iter()
-        .any(|role| role == AI_AGENT_ROLE_RER)
+    let Ok(roles) = serde_json::from_value::<Vec<String>>(roles.clone()) else {
+        return false;
+    };
+    crate::users::role_matches(&roles, AI_AGENT_ROLE_RER).unwrap_or(false)
 }
 
 pub async fn allowed_engines(
@@ -427,6 +427,8 @@ mod tests {
     #[test]
     fn linked_human_requires_rer_role() {
         assert!(has_rer_role(&serde_json::json!(["Rer", "Cyber"])));
+        assert!(has_rer_role(&serde_json::json!(["Admin", "NoAutoLogout"])));
+        assert!(has_rer_role(&serde_json::json!(["Full"])));
         assert!(!has_rer_role(&serde_json::json!(["Cyber"])));
     }
 

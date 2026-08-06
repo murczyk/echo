@@ -117,6 +117,7 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
       SetStateAction<Record<string, import('../../../../Bindings').CallsignInfoRes>>
     >,
     setTagsMap: noopSetter as Dispatch<SetStateAction<Record<number, Tag>>>,
+    setTagsOrder: noopSetter as Dispatch<SetStateAction<number[]>>,
     setTopCallsigns: noopSetter as Dispatch<SetStateAction<AnalysisCountItem[]>>,
     setTopFreqs: noopSetter as Dispatch<SetStateAction<AnalysisCountItem[]>>,
     setTopLocations: noopSetter as Dispatch<SetStateAction<AnalysisCountItem[]>>,

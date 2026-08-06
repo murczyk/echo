@@ -293,8 +293,12 @@ async fn connect_analytics(config: &Config) -> Option<AnalyticsPool> {
     }
 }
 
-async fn init_runtime_env(mode: Mode) -> Result<Arc<Env>, AppError> {
+async fn init_runtime_env(
+    mode: Mode,
+    role: crate::PgRuntimePoolRole,
+) -> Result<Arc<Env>, AppError> {
     crate::migration::run_migration_1(mode).await.c(h!())?;
+    crate::use_pg_runtime_pool(role);
     let env = new_env(mode).await.c(h!())?;
     let config = env.config.clone();
     if let Err(err) =
@@ -1070,7 +1074,9 @@ pub async fn main_server(
     cancel_token: CancellationToken,
     shutdown_handle: Handle,
 ) -> Result<(), AppError> {
-    let env = init_runtime_env(mode).await.c(h!())?;
+    let env = init_runtime_env(mode, crate::PgRuntimePoolRole::Web)
+        .await
+        .c(h!())?;
     let config = env.config.clone();
 
     let redis_session_store =
@@ -1255,8 +1261,9 @@ pub async fn main_bgworker(
     cancel_token: CancellationToken,
     shutdown_handle: Handle,
 ) -> Result<(), AppError> {
-    crate::use_bgworker_pg_pool_limits();
-    let env = init_runtime_env(mode).await.c(h!())?;
+    let env = init_runtime_env(mode, crate::PgRuntimePoolRole::Bgworker)
+        .await
+        .c(h!())?;
     crate::migration::request_analytics_table_reconciliation().await;
     let mut background_tasks: JoinSet<()> = JoinSet::new();
     let mut transcriber_tasks: JoinSet<()> = JoinSet::new();
@@ -1348,7 +1355,7 @@ pub async fn main_report_worker(
     cancel_token: CancellationToken,
     shutdown_handle: Handle,
 ) -> Result<(), AppError> {
-    crate::use_bgworker_pg_pool_limits();
+    crate::use_pg_runtime_pool(crate::PgRuntimePoolRole::ReportWorker);
     let env = new_env(mode).await.c(h!())?;
     crate::report_history::reset_in_progress_nofail(env.as_ref()).await;
 

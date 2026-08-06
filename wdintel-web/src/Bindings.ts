@@ -2386,12 +2386,14 @@ export type Unit = {
   division: string;
   army: string;
   comment: string;
+  orbitNote: string | null;
   name: string;
   active: boolean;
   isDeduplicateCandidate: boolean | null;
   createdAt: number;
   createdByLoginId: string;
   hasOrbit: boolean;
+  orbitUnitIds: Array<string>;
 };
 
 export type ListUnitsReq = {
@@ -2422,6 +2424,7 @@ export type CreateUnitReq = {
   active: boolean;
   isDeduplicateCandidate: boolean | null;
   comment: string;
+  orbitNote: string | null;
 };
 
 export type CreateUnitWithAutoNetworkReq = {
@@ -2482,6 +2485,11 @@ export type OrbitDictionaryValue = {
   name: string;
 };
 
+export type OrbitParentUnit = {
+  sigintUnitId: number | null;
+  name: string;
+};
+
 export type OrbitUnitDetails = {
   unitId: string;
   unitName: string | null;
@@ -2497,6 +2505,8 @@ export type OrbitUnitDetails = {
   groupingOfForces: Array<OrbitDictionaryValue>;
   generativeParentUnitId: string | null;
   operationalParentUnitId: string | null;
+  generativeParentUnits: Array<OrbitParentUnit>;
+  operationalParentUnits: Array<OrbitParentUnit>;
   deleted: boolean;
   createdAt: number;
   updatedAt: number;
