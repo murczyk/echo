@@ -6483,6 +6483,36 @@ orbitParentUnitEncoder struct =
         ]
 
 
+type alias OrbitChildUnit =
+    { orbitUnitId : String
+    , sigintUnitId : Int
+    , name : String
+    }
+
+
+orbitChildUnitEncoder : OrbitChildUnit -> Json.Encode.Value
+orbitChildUnitEncoder struct =
+    Json.Encode.object
+        [ ( "orbit_unit_id", (Json.Encode.string) struct.orbitUnitId )
+        , ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias UnitOrbitChildrenRsp =
+    { generativeUnits : List (OrbitChildUnit)
+    , operationalUnits : List (OrbitChildUnit)
+    }
+
+
+unitOrbitChildrenRspEncoder : UnitOrbitChildrenRsp -> Json.Encode.Value
+unitOrbitChildrenRspEncoder struct =
+    Json.Encode.object
+        [ ( "generative_units", (Json.Encode.list (orbitChildUnitEncoder)) struct.generativeUnits )
+        , ( "operational_units", (Json.Encode.list (orbitChildUnitEncoder)) struct.operationalUnits )
+        ]
+
+
 type alias OrbitUnitDetails =
     { unitId : String
     , unitName : Maybe (String)
@@ -15447,6 +15477,21 @@ orbitParentUnitDecoder =
     Json.Decode.succeed OrbitParentUnit
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+orbitChildUnitDecoder : Json.Decode.Decoder OrbitChildUnit
+orbitChildUnitDecoder =
+    Json.Decode.succeed OrbitChildUnit
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+unitOrbitChildrenRspDecoder : Json.Decode.Decoder UnitOrbitChildrenRsp
+unitOrbitChildrenRspDecoder =
+    Json.Decode.succeed UnitOrbitChildrenRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generative_units" (Json.Decode.list (orbitChildUnitDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operational_units" (Json.Decode.list (orbitChildUnitDecoder))))
 
 
 orbitUnitDetailsDecoder : Json.Decode.Decoder OrbitUnitDetails

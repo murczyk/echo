@@ -2839,7 +2839,7 @@ mod tests {
 
         assert_eq!(merged.regiment, "55 мбр");
         assert_eq!(merged.name, "1 рота 2 бат 55 мбр");
-        assert!(!active(&env.dbx, old_parent.id).await);
+        assert!(active(&env.dbx, old_parent.id).await);
         assert!(active(&env.dbx, new_parent.id).await);
     }
 

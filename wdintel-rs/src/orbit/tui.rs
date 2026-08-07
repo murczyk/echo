@@ -65,6 +65,7 @@ impl Drop for OrbitTerminal {
 pub enum StartAction {
     Import,
     FindMatch,
+    Reimport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,6 +141,20 @@ pub fn confirm_unchanged_archive(
     );
     restore_terminal(&mut terminal).c(h!())?;
     result
+}
+
+pub fn confirm_reimport() -> Result<bool, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_text_prompt(
+        &mut terminal,
+        "Type REIMPORT to erase all ORBIT data and reimport (Esc: cancel)",
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    Ok(is_reimport_confirmed(result?.as_deref()))
+}
+
+fn is_reimport_confirmed(input: Option<&str>) -> bool {
+    input == Some("REIMPORT")
 }
 
 pub fn setup_terminal() -> io::Result<OrbitTerminal> {
@@ -259,7 +274,11 @@ fn run_start_menu(
     terminal: &mut OrbitTerminal,
 ) -> Result<Option<StartAction>, AppError> {
     let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
-    let actions = [StartAction::Import, StartAction::FindMatch];
+    let actions = [
+        StartAction::Import,
+        StartAction::FindMatch,
+        StartAction::Reimport,
+    ];
     let mut selected = 0;
     loop {
         terminal
@@ -426,10 +445,11 @@ fn run_unchanged_archive_confirmation(
 }
 
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
-    let area = centered_area(frame, 70, 6);
+    let area = centered_area(frame, 70, 7);
     let options = [
         "Sync ORBIT units and rebuild SIGINT links",
         "Search an ORBIT unit by SIGINT unit name",
+        "Erase and reimport all ORBIT data",
     ];
     let items = options.into_iter().map(ListItem::new);
     let list = List::new(items)
@@ -638,5 +658,12 @@ mod tests {
             ),
             Some(Decision::Quit)
         );
+    }
+
+    #[test]
+    fn reimport_confirmation_requires_exact_confirmation_text() {
+        assert!(is_reimport_confirmed(Some("REIMPORT")));
+        assert!(!is_reimport_confirmed(Some("reimport")));
+        assert!(!is_reimport_confirmed(None));
     }
 }

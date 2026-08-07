@@ -15,7 +15,7 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
     ConnectionTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
     JoinType, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
-    TransactionTrait,
+    TransactionSession, TransactionTrait,
 };
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -179,9 +179,12 @@ pub fn classify(
     }
 }
 
-pub async fn load_existing(
-    db: &DatabaseConnection,
-) -> Result<HashMap<Uuid, ExistingUnit>, AppError> {
+pub async fn load_existing<C>(
+    db: &C,
+) -> Result<HashMap<Uuid, ExistingUnit>, AppError>
+where
+    C: ConnectionTrait,
+{
     Ok(
         attach_groupings(db, orbit_unit::Entity::find().all(db).await.c(h!())?)
             .await?
@@ -191,9 +194,12 @@ pub async fn load_existing(
     )
 }
 
-pub async fn load_latest_sync(
-    db: &DatabaseConnection,
-) -> Result<Option<orbit_sync::Model>, AppError> {
+pub async fn load_latest_sync<C>(
+    db: &C,
+) -> Result<Option<orbit_sync::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
     Ok(orbit_sync::Entity::find()
         .order_by_desc(orbit_sync::Column::SyncedAt)
         .order_by_desc(orbit_sync::Column::Id)
@@ -202,11 +208,14 @@ pub async fn load_latest_sync(
         .c(h!())?)
 }
 
-pub async fn record_sync(
-    db: &DatabaseConnection,
+pub async fn record_sync<C>(
+    db: &C,
     archive_md5: &str,
     synced_at: NaiveDateTime,
-) -> Result<orbit_sync::Model, AppError> {
+) -> Result<orbit_sync::Model, AppError>
+where
+    C: ConnectionTrait,
+{
     Ok(orbit_sync::ActiveModel {
         synced_at: Set(synced_at),
         archive_md5: Set(archive_md5.to_string()),
@@ -217,9 +226,12 @@ pub async fn record_sync(
     .c(h!())?)
 }
 
-pub async fn load_latest_synced_source_units(
-    db: &DatabaseConnection,
-) -> anyhow::Result<Vec<SourceUnit>> {
+pub async fn load_latest_synced_source_units<C>(
+    db: &C,
+) -> anyhow::Result<Vec<SourceUnit>>
+where
+    C: ConnectionTrait,
+{
     let sync = load_latest_sync(db).await.c(h!())?.ok_or_else(|| {
         anyhow::anyhow!("ORBIT data has not been synchronized")
     })?;
@@ -387,11 +399,14 @@ where
         .collect())
 }
 
-pub async fn insert_unit(
-    db: &DatabaseConnection,
+pub async fn insert_unit<C>(
+    db: &C,
     unit: &ImportUnit,
     started_at: NaiveDateTime,
-) -> Result<ExistingUnit, AppError> {
+) -> Result<ExistingUnit, AppError>
+where
+    C: ConnectionTrait + TransactionTrait,
+{
     let transaction = db.begin().await.c(h!())?;
     let inserted = orbit_unit::ActiveModel {
         unit_id: Set(unit.unit_id),
@@ -428,12 +443,15 @@ pub async fn insert_unit(
     })
 }
 
-pub async fn update_unit(
-    db: &DatabaseConnection,
+pub async fn update_unit<C>(
+    db: &C,
     existing: ExistingUnit,
     unit: &ImportUnit,
     started_at: NaiveDateTime,
-) -> Result<ExistingUnit, AppError> {
+) -> Result<ExistingUnit, AppError>
+where
+    C: ConnectionTrait + TransactionTrait,
+{
     let transaction = db.begin().await.c(h!())?;
     let mut existing = existing.unit.into_active_model();
     existing.unit_name = Set(unit.unit_name.clone());
@@ -495,11 +513,14 @@ where
     Ok(())
 }
 
-pub async fn touch_unit(
-    db: &DatabaseConnection,
+pub async fn touch_unit<C>(
+    db: &C,
     unit_id: Uuid,
     started_at: NaiveDateTime,
-) -> Result<(), AppError> {
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
     orbit_unit::Entity::update_many()
         .col_expr(
             orbit_unit::Column::UpdatedAt,
@@ -512,11 +533,14 @@ pub async fn touch_unit(
     Ok(())
 }
 
-pub async fn load_stale(
-    db: &DatabaseConnection,
+pub async fn load_stale<C>(
+    db: &C,
     started_at: NaiveDateTime,
     snapshot_unit_ids: &HashSet<Uuid>,
-) -> Result<Vec<ExistingUnit>, AppError> {
+) -> Result<Vec<ExistingUnit>, AppError>
+where
+    C: ConnectionTrait,
+{
     let stale_before =
         started_at - Duration::seconds(ORBIT_STALE_GRACE_SECONDS);
     let units = orbit_unit::Entity::find()
@@ -531,11 +555,14 @@ pub async fn load_stale(
     attach_groupings(db, units).await
 }
 
-pub async fn soft_delete(
-    db: &DatabaseConnection,
+pub async fn soft_delete<C>(
+    db: &C,
     unit: ExistingUnit,
     started_at: NaiveDateTime,
-) -> Result<(), AppError> {
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
     let mut unit = unit.unit.into_active_model();
     unit.deleted = Set(true);
     unit.updated_at = Set(started_at);
@@ -938,6 +965,13 @@ mod tests {
     async fn persists_hierarchy_touches_reactivation_and_soft_delete() {
         crate::tests::test::init().await;
         let db = crate::new_pg_pool_from_mode(Mode::Test).await.unwrap();
+        let preexisting_unit_ids = orbit_unit::Entity::find()
+            .all(&db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|unit| unit.unit_id)
+            .collect::<HashSet<_>>();
         let dictionaries = DictionaryMaps::load(&db).await.unwrap();
         let echelon_id = dictionaries
             .resolve(
@@ -1009,10 +1043,13 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(child_row.updated_at, touched_at);
-        let stale =
-            load_stale(&db, touched_at + Duration::seconds(5), &HashSet::new())
-                .await
-                .unwrap();
+        let stale = load_stale(
+            &db,
+            touched_at + Duration::seconds(5),
+            &preexisting_unit_ids,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             stale
                 .into_iter()
@@ -1020,10 +1057,12 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![parent.unit_id]
         );
+        let mut snapshot_unit_ids = preexisting_unit_ids;
+        snapshot_unit_ids.insert(parent.unit_id);
         let stale = load_stale(
             &db,
             touched_at + Duration::seconds(5),
-            &HashSet::from([parent.unit_id]),
+            &snapshot_unit_ids,
         )
         .await
         .unwrap();

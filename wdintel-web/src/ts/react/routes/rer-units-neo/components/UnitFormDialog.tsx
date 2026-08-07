@@ -68,6 +68,7 @@ type Props = {
   onSubmit: (value: UnitFormSubmit) => void;
   onLinkOrbitUnit: () => void;
   onUnlinkOrbitUnit: (orbitUnit: OrbitUnitDetails) => void;
+  editSection?: 'all' | 'unit' | 'orbit';
 };
 
 const HIERARCHY_FIELDS: Array<{
@@ -161,13 +162,30 @@ function UnitDetailsFields({
   form,
   editing,
   disabled,
+  editSection,
   onChange,
 }: {
   form: UnitForm;
   editing: boolean;
   disabled: boolean;
+  editSection: 'all' | 'unit' | 'orbit';
   onChange: (value: UnitForm) => void;
 }) {
+  if (editSection === 'orbit') {
+    return (
+      <TextField
+        label="Примітка Orbit"
+        placeholder="Причина відсутності прив’язки до Orbit"
+        value={form.orbitNote ?? ''}
+        onChange={(event) => onChange({ ...form, orbitNote: event.target.value || null })}
+        disabled={disabled}
+        multiline
+        minRows={3}
+        fullWidth
+      />
+    );
+  }
+
   return (
     <>
       <Typography color="text.secondary">
@@ -197,28 +215,32 @@ function UnitDetailsFields({
           fullWidth
           sx={{ gridColumn: { md: '1 / -1' } }}
         />
-        <TextField
-          label="Примітка Orbit"
-          placeholder="Причина відсутності прив’язки до Orbit"
-          value={form.orbitNote ?? ''}
-          onChange={(event) => onChange({ ...form, orbitNote: event.target.value || null })}
-          disabled={disabled}
-          multiline
-          minRows={3}
-          fullWidth
-          sx={{ gridColumn: { md: '1 / -1' } }}
-        />
-        <FormControlLabel
-          control={
-            <Switch
-              checked={form.active}
-              onChange={(event) => onChange({ ...form, active: event.target.checked })}
+        {editSection === 'all' ? (
+          <>
+            <TextField
+              label="Примітка Orbit"
+              placeholder="Причина відсутності прив’язки до Orbit"
+              value={form.orbitNote ?? ''}
+              onChange={(event) => onChange({ ...form, orbitNote: event.target.value || null })}
               disabled={disabled}
+              multiline
+              minRows={3}
+              fullWidth
+              sx={{ gridColumn: { md: '1 / -1' } }}
             />
-          }
-          label="Активний підрозділ"
-        />
-        {editing ? (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={form.active}
+                  onChange={(event) => onChange({ ...form, active: event.target.checked })}
+                  disabled={disabled}
+                />
+              }
+              label="Активний підрозділ"
+            />
+          </>
+        ) : null}
+        {editing && editSection === 'all' ? (
           <TextField
             select
             label="Можливо дублікат"
@@ -351,6 +373,7 @@ export function UnitFormDialog({
   onSubmit,
   onLinkOrbitUnit,
   onUnlinkOrbitUnit,
+  editSection = 'all',
 }: Props) {
   const [form, setForm] = useState<UnitForm>(EMPTY_UNIT_FORM);
   const [networkStep, setNetworkStep] = useState(false);
@@ -366,7 +389,7 @@ export function UnitFormDialog({
     setSkipNetworkCreation(false);
     setLocations([]);
     setUnitMask([]);
-  }, [open, unit]);
+  }, [editSection, open, unit]);
 
   function continueFromDetails() {
     if (!devicesSectionEnabled || editing) {
@@ -398,14 +421,18 @@ export function UnitFormDialog({
       open={open}
       onClose={submitting || unlinkingOrbitUnitId !== null ? undefined : onClose}
       fullWidth
-      maxWidth={networkStep ? 'sm' : 'lg'}
+      maxWidth={networkStep || editSection === 'orbit' ? 'sm' : 'lg'}
     >
       <DialogTitle>
-        {editing
-          ? 'Редагувати підрозділ'
-          : networkStep
-            ? 'Налаштування радіомережі'
-            : 'Новий підрозділ'}
+        {editing && editSection === 'unit'
+          ? 'Редагувати дані підрозділу'
+          : editing && editSection === 'orbit'
+            ? 'Редагувати примітку Orbit'
+            : editing
+              ? 'Редагувати підрозділ'
+              : networkStep
+                ? 'Налаштування радіомережі'
+                : 'Новий підрозділ'}
       </DialogTitle>
       <DialogContent>
         <Stack spacing={3} sx={{ pt: 1 }}>
@@ -427,9 +454,10 @@ export function UnitFormDialog({
                 form={form}
                 editing={editing}
                 disabled={submitting}
+                editSection={editSection}
                 onChange={setForm}
               />
-              {editing ? (
+              {editing && editSection === 'all' ? (
                 <OrbitUnitLinks
                   orbitUnits={orbitUnits}
                   loading={orbitLinksLoading}
