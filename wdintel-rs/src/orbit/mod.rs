@@ -9,7 +9,7 @@ use chrono::Utc;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, DbBackend,
     EntityTrait, JoinType, QueryFilter, QuerySelect, RelationTrait, Statement,
-    TransactionTrait,
+    TransactionSession, TransactionTrait,
 };
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
@@ -366,16 +366,22 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
 
 async fn run_reimport(mode: Mode) -> anyhow::Result<()> {
     let snapshot = snapshot::load_latest_snapshot(mode).await?;
+    if !tui::confirm_reimport()? {
+        return Ok(());
+    }
     let db = connect_database(mode).await?;
-    let _import_lock = acquire_import_lock(&db).await?;
-    erase_orbit_data(&db).await?;
-    sync_snapshot_units(&db, &snapshot).await?;
-    rebuild_sigint_unit_links(&db).await
+    let transaction = acquire_import_lock(&db).await?;
+    erase_orbit_data(&transaction).await?;
+    sync_snapshot_units(&transaction, &snapshot).await?;
+    rebuild_sigint_unit_links(&transaction).await?;
+    transaction.commit().await.c(h!())?;
+    Ok(())
 }
 
-async fn erase_orbit_data(
-    db: &sea_orm::DatabaseConnection,
-) -> anyhow::Result<()> {
+async fn erase_orbit_data<C>(db: &C) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     db.execute_unprepared(
         r#"
 truncate table
@@ -394,10 +400,13 @@ restart identity;
     Ok(())
 }
 
-async fn sync_snapshot_units(
-    db: &sea_orm::DatabaseConnection,
+async fn sync_snapshot_units<C>(
+    db: &C,
     snapshot: &snapshot::OrbitSnapshot,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + TransactionTrait,
+{
     dictionary::ensure_dictionary_entries(db, &snapshot.dictionaries)
         .await
         .c(h!())?;
@@ -458,9 +467,10 @@ async fn sync_snapshot_units(
     Ok(())
 }
 
-async fn rebuild_sigint_unit_links(
-    db: &sea_orm::DatabaseConnection,
-) -> anyhow::Result<()> {
+async fn rebuild_sigint_unit_links<C>(db: &C) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + TransactionTrait,
+{
     if persistence::load_latest_sync(db).await.c(h!())?.is_none() {
         return Ok(());
     }
@@ -631,11 +641,14 @@ fn normalize_full_name(value: &str) -> String {
         .to_lowercase()
 }
 
-async fn review_stale_units(
-    db: &sea_orm::DatabaseConnection,
+async fn review_stale_units<C>(
+    db: &C,
     started_at: chrono::NaiveDateTime,
     snapshot_unit_ids: &HashSet<Uuid>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     let stale =
         persistence::load_stale(db, started_at, snapshot_unit_ids).await?;
     if stale.is_empty() {
@@ -648,12 +661,15 @@ async fn review_stale_units(
     result
 }
 
-async fn review_stale_units_inner(
-    db: &sea_orm::DatabaseConnection,
+async fn review_stale_units_inner<C>(
+    db: &C,
     terminal: &mut tui::OrbitTerminal,
     stale: Vec<ExistingUnit>,
     started_at: chrono::NaiveDateTime,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     let total = stale.len();
     for (index, unit) in stale.into_iter().enumerate() {
         let name = unit
@@ -689,6 +705,8 @@ async fn review_stale_units_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+    use serial_test::serial;
 
     #[test]
     fn maps_all_orbit_echelons_to_sigint_hierarchy() {
@@ -762,6 +780,39 @@ mod tests {
             .unwrap();
         assert!(row.try_get::<bool>("", "acquired").unwrap());
         second_transaction.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orbit_data_erase_rolls_back_with_its_transaction() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let orbit_unit_id = Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let transaction = env.dbx.begin().await.unwrap();
+
+        erase_orbit_data(&transaction).await.unwrap();
+
+        assert!(orbit_unit::Entity::find_by_id(orbit_unit_id)
+            .one(&transaction)
+            .await
+            .unwrap()
+            .is_none());
+        transaction.rollback().await.unwrap();
+        assert!(orbit_unit::Entity::find_by_id(orbit_unit_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
     }
 
     fn sigint_unit() -> sigint_unit::Model {

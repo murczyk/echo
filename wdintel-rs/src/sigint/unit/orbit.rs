@@ -453,6 +453,12 @@ where
 {
     for ancestor in orbit_ancestors(dbx, root).await? {
         if orbit_unit_has_active_sigint_link(dbx, ancestor.unit_id).await? {
+            activate_sigint_units_linked_to_orbit_units(
+                dbx,
+                login,
+                &HashSet::from([ancestor.unit_id]),
+            )
+            .await?;
             continue;
         }
         let unit_req =
@@ -1370,6 +1376,64 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn materializing_parents_activates_an_inactive_linked_unit() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let login =
+            create_login_with_roles(&env.dbx, "orbit-parent-activation", &[])
+                .await;
+        let sigint_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let parent_id = Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(parent_id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let root = orbit_unit::ActiveModel {
+            unit_id: Set(Uuid::new_v4()),
+            operational_parent_unit_id: Set(Some(parent_id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(parent_id),
+            sigint_unit_id: Set(sigint_unit.id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        import_missing_orbit_ancestors(&env.dbx, &login.id, &root)
+            .await
+            .unwrap();
+
+        let sigint_unit = sigint_unit::Entity::find_by_id(sigint_unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(sigint_unit.active);
     }
 
     #[tokio::test]

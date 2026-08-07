@@ -143,6 +143,20 @@ pub fn confirm_unchanged_archive(
     result
 }
 
+pub fn confirm_reimport() -> Result<bool, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_text_prompt(
+        &mut terminal,
+        "Type REIMPORT to erase all ORBIT data and reimport (Esc: cancel)",
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    Ok(is_reimport_confirmed(result?.as_deref()))
+}
+
+fn is_reimport_confirmed(input: Option<&str>) -> bool {
+    input == Some("REIMPORT")
+}
+
 pub fn setup_terminal() -> io::Result<OrbitTerminal> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -644,5 +658,12 @@ mod tests {
             ),
             Some(Decision::Quit)
         );
+    }
+
+    #[test]
+    fn reimport_confirmation_requires_exact_confirmation_text() {
+        assert!(is_reimport_confirmed(Some("REIMPORT")));
+        assert!(!is_reimport_confirmed(Some("reimport")));
+        assert!(!is_reimport_confirmed(None));
     }
 }

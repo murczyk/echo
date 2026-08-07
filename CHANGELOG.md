@@ -10,6 +10,7 @@
 
 ## NEXT
 
+- [#3026](https://github.com/echoua/echo/issues/3026) ✅ ORBIT: додано безпечний повний повторний імпорт даних та активацію батьківських підрозділів.
 - [#3052](https://github.com/echoua/echo/issues/3052) ✅🐞 Палітра. Виправлено проблему зі створенням палітри з доступом на рівні логінів.
 - [#3050](https://github.com/echoua/echo/issues/3050) 👷 Аналіз: підготовлено нове поле часу повідомлення; після деплою запустити `sudo /usr/bin/wdintel-rs --mode=live oneoff-backfill-sigint-inbox-item-datetime-neo`, а на інстансах з ClickHouse до переведення коду на читання нового поля підтвердити узгодження схеми, current view і gateway та справність аналітики.
 - [#3035](https://github.com/echoua/echo/issues/3035) ✅ Аналіз/Оперативнийдодано: покращено вигляд аудіоплеєра, додано Storybook для картки повідомлення з варіантами аудіоплеєра.

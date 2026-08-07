@@ -456,10 +456,11 @@ snapshot, synchronizes every root and ancestor to PostgreSQL parent-first, and
 then matches using only rows from the latest recorded database sync. The
 `orbit_sync` table records the archive MD5 and sync timestamp; an unchanged MD5
 skips data synchronization after explicit operator confirmation. Stale deletion
-decisions remain interactive. The third main-menu action erases all seven ORBIT
-tables before importing the latest snapshot as a first synchronization. Manual
-lookup by exact SIGINT full name also reads ORBIT roots and parent chains only
-from PostgreSQL.
+decisions remain interactive. After an operator types `REIMPORT`, the third
+main-menu action atomically erases all seven ORBIT tables and imports the latest
+snapshot as a first synchronization; failures roll back the full reimport.
+Manual lookup by exact SIGINT full name also reads ORBIT roots and parent chains
+only from PostgreSQL.
 After synchronization, matched ORBIT roots are linked to their active Echo
 SIGINT units for access-controlled display in the RER unit list and details
 page. Missing operational and generative ancestors imported as SIGINT units are

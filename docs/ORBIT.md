@@ -143,10 +143,11 @@ links are replaced with the selected root; ORBIT unit data is not changed.
 
 ### Erase and reimport all ORBIT data
 
-This workflow truncates all seven `orbit_*` tables, including synchronization
-history and ORBIT-to-SIGINT links, and then imports the latest snapshot and
-rebuilds links as an initial synchronization. Existing SIGINT units are not
-deleted.
+After the operator types `REIMPORT`, this workflow atomically truncates all
+seven `orbit_*` tables, including synchronization history and ORBIT-to-SIGINT
+links, imports the latest snapshot, and rebuilds links as an initial
+synchronization. A failure rolls back the whole reimport. Existing SIGINT units
+are not deleted.
 
 Common controls are:
 

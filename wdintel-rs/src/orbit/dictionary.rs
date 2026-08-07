@@ -4,7 +4,7 @@ use crate::entities::{
 use crate::orbit::types::{DictionaryValue, SourceUnit};
 use crate::types::ShortContext;
 use crate::{h, AppError};
-use sea_orm::{ActiveValue::Set, DatabaseConnection, EntityTrait};
+use sea_orm::{ActiveValue::Set, ConnectionTrait, EntityTrait};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use uuid::Uuid;
@@ -40,7 +40,10 @@ pub struct DictionaryMaps {
 }
 
 impl DictionaryMaps {
-    pub async fn load(db: &DatabaseConnection) -> Result<Self, AppError> {
+    pub async fn load<C>(db: &C) -> Result<Self, AppError>
+    where
+        C: ConnectionTrait,
+    {
         let grouping = orbit_grouping_of_forces::Entity::find()
             .all(db)
             .await
@@ -175,10 +178,13 @@ impl DictionaryKind {
     }
 }
 
-pub async fn ensure_dictionary_entries(
-    db: &DatabaseConnection,
+pub async fn ensure_dictionary_entries<C>(
+    db: &C,
     entries: &DictionaryEntries,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     ensure_grouping_of_forces(
         db,
         entries
@@ -209,10 +215,13 @@ pub async fn ensure_dictionary_entries(
     Ok(())
 }
 
-async fn ensure_grouping_of_forces(
-    db: &DatabaseConnection,
+async fn ensure_grouping_of_forces<C>(
+    db: &C,
     entries: &[DictionaryEntry],
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     let existing = orbit_grouping_of_forces::Entity::find()
         .all(db)
         .await
@@ -248,10 +257,13 @@ async fn ensure_grouping_of_forces(
     Ok(())
 }
 
-async fn ensure_combat_unit_types(
-    db: &DatabaseConnection,
+async fn ensure_combat_unit_types<C>(
+    db: &C,
     entries: &[DictionaryEntry],
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     let existing = orbit_combat_unit_type::Entity::find()
         .all(db)
         .await
@@ -287,10 +299,13 @@ async fn ensure_combat_unit_types(
     Ok(())
 }
 
-async fn ensure_unit_echelons(
-    db: &DatabaseConnection,
+async fn ensure_unit_echelons<C>(
+    db: &C,
     entries: &[DictionaryEntry],
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     let existing = orbit_unit_echelon::Entity::find().all(db).await.c(h!())?;
     validate_dictionary_ids(
         DictionaryKind::UnitEchelon,
