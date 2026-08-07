@@ -65,6 +65,7 @@ impl Drop for OrbitTerminal {
 pub enum StartAction {
     Import,
     FindMatch,
+    Reimport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -259,7 +260,11 @@ fn run_start_menu(
     terminal: &mut OrbitTerminal,
 ) -> Result<Option<StartAction>, AppError> {
     let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
-    let actions = [StartAction::Import, StartAction::FindMatch];
+    let actions = [
+        StartAction::Import,
+        StartAction::FindMatch,
+        StartAction::Reimport,
+    ];
     let mut selected = 0;
     loop {
         terminal
@@ -426,10 +431,11 @@ fn run_unchanged_archive_confirmation(
 }
 
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
-    let area = centered_area(frame, 70, 6);
+    let area = centered_area(frame, 70, 7);
     let options = [
         "Sync ORBIT units and rebuild SIGINT links",
         "Search an ORBIT unit by SIGINT unit name",
+        "Erase and reimport all ORBIT data",
     ];
     let items = options.into_iter().map(ListItem::new);
     let list = List::new(items)

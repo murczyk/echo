@@ -98,7 +98,7 @@ sudo wdintel-rs --mode=live tui-import-orbit-units
 The importer downloads and unpacks the newest timestamped snapshot. It fails
 before starting if no snapshot exists. Database-mutating import sessions are
 serialized, so a second importer waits until the active import releases its
-PostgreSQL advisory lock. The first screen offers two workflows.
+PostgreSQL advisory lock. The first screen offers three workflows.
 
 ### Sync ORBIT units and rebuild links
 
@@ -125,6 +125,10 @@ selected unless SIGINT parent evidence ranks a longer path higher.
 ORBIT-to-SIGINT links are replaced from those database-derived matches even
 when the stale-deletion review is quit.
 
+Missing SIGINT units created for the matched roots' operational and generative
+parent chains are active. Existing inactive SIGINT units reused for those
+parents are activated.
+
 ### Search by SIGINT unit name
 
 Enter the exact full name assembled from the SIGINT unit's populated company,
@@ -136,6 +140,13 @@ instead of reopening Parquet. The TUI displays all equally closest candidates
 with their ORBIT UUID, operational full name, generative full name, and original
 name. Select a result with Up/Down and Enter. That SIGINT unit's existing ORBIT
 links are replaced with the selected root; ORBIT unit data is not changed.
+
+### Erase and reimport all ORBIT data
+
+This workflow truncates all seven `orbit_*` tables, including synchronization
+history and ORBIT-to-SIGINT links, and then imports the latest snapshot and
+rebuilds links as an initial synchronization. Existing SIGINT units are not
+deleted.
 
 Common controls are:
 

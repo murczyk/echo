@@ -339,6 +339,7 @@ async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
         Some(tui::StartAction::FindMatch) => {
             run_match_search(mode).await.c(h!())
         }
+        Some(tui::StartAction::Reimport) => run_reimport(mode).await.c(h!()),
         None => Ok(()),
     }
 }
@@ -361,6 +362,36 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
         sync_snapshot_units(&db, &snapshot).await?;
     }
     rebuild_sigint_unit_links(&db).await
+}
+
+async fn run_reimport(mode: Mode) -> anyhow::Result<()> {
+    let snapshot = snapshot::load_latest_snapshot(mode).await?;
+    let db = connect_database(mode).await?;
+    let _import_lock = acquire_import_lock(&db).await?;
+    erase_orbit_data(&db).await?;
+    sync_snapshot_units(&db, &snapshot).await?;
+    rebuild_sigint_unit_links(&db).await
+}
+
+async fn erase_orbit_data(
+    db: &sea_orm::DatabaseConnection,
+) -> anyhow::Result<()> {
+    db.execute_unprepared(
+        r#"
+truncate table
+    orbit_unit_sigint_unit,
+    orbit_unit_grouping_of_forces,
+    orbit_unit,
+    orbit_sync,
+    orbit_unit_echelon,
+    orbit_combat_unit_type,
+    orbit_grouping_of_forces
+restart identity;
+"#,
+    )
+    .await
+    .c("failed to erase ORBIT data")?;
+    Ok(())
 }
 
 async fn sync_snapshot_units(

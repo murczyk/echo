@@ -456,7 +456,7 @@ where
             continue;
         }
         let unit_req =
-            match create_unit_req_from_orbit(dbx, &ancestor, false).await {
+            match create_unit_req_from_orbit(dbx, &ancestor, true).await {
                 Ok(unit_req) => unit_req,
                 Err(err @ AppError::BL { .. }) => {
                     let orbit_unit_id = ancestor.unit_id;
@@ -473,6 +473,9 @@ where
                 .await
                 .c(h!())?,
         };
+        if !unit.active {
+            super::set_unit_activity(dbx, login, &unit, true).await?;
+        }
         link_orbit_ancestor(dbx, ancestor.unit_id, unit.id).await?;
     }
     Ok(())
