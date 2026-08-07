@@ -6646,9 +6646,21 @@ mod tests {
                 &env.dbx,
                 sigint_inbox_item::ActiveModel {
                     freq: Set(Some(freq.to_string())),
-                    callsigns: Set(Some(callsigns)),
                     ..Default::default()
                 },
+            )
+            .await
+            .unwrap();
+            let actor_id =
+                crate::users::system_login_id(&env.dbx).await.unwrap();
+            crate::inbox::callsigns::sync(
+                &env.dbx,
+                inbox_item.id,
+                crate::inbox::callsigns::InboxItemCallsigns {
+                    primary: serde_json::from_value(callsigns).unwrap(),
+                    alg2: Vec::new(),
+                },
+                actor_id,
             )
             .await
             .unwrap();
@@ -6658,7 +6670,12 @@ mod tests {
             .select_only()
             .column_as(sigint_inbox_item::Column::Id, "message_id")
             .column_as(sigint_inbox_item::Column::Freq, "freq")
-            .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+            .column_as(
+                Expr::cust(
+                    "(select jsonb_agg(siic.callsign order by siic.ordering, siic.id) from sigint_inbox_item_callsign siic where siic.sigint_inbox_item_id = sigint_inbox_item.id and not siic.deleted)",
+                ),
+                "callsigns",
+            )
             .filter(sigint_inbox_item::Column::Id.is_in(message_ids));
         let statement = callsign_frequency_matches_statement(
             filtered_messages,

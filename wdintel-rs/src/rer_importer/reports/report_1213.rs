@@ -1089,7 +1089,7 @@ mod tests {
         .await
         .context(h!())?;
 
-        mk_sigint_inbox_item(
+        let inbox_item = mk_sigint_inbox_item(
             dbx,
             sigint_inbox_item::ActiveModel {
                 id: Set(signal_message.id),
@@ -1106,6 +1106,21 @@ mod tests {
                 parsed_unit_v2: Set(false),
                 ..Default::default()
             },
+        )
+        .await
+        .context(h!())?;
+        let actor_id = crate::users::system_login_id(dbx).await?;
+        crate::inbox::callsigns::sync(
+            dbx,
+            inbox_item.id,
+            crate::inbox::callsigns::InboxItemCallsigns {
+                primary: callsigns
+                    .iter()
+                    .map(|callsign| callsign.to_string())
+                    .collect(),
+                alg2: Vec::new(),
+            },
+            actor_id,
         )
         .await
         .context(h!())?;
