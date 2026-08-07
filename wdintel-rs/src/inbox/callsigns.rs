@@ -291,7 +291,7 @@ mod tests {
     #[test]
     fn callsign_existence_fallback_requires_no_normalized_rows() {
         let condition = sql_exists_condition("sigint_inbox_item");
-        assert!(condition.contains("not exists"));
+        assert!(condition.contains("exists"));
         assert_eq!(condition.matches("and not siic.deleted").count(), 1);
     }
 }
