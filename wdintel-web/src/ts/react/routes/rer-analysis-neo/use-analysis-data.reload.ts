@@ -1025,7 +1025,12 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             : [];
         if (isStaleReload() || params.signal?.aborted) return;
         const referencedUnitIds = Array.from(
-          new Set(networksByAnalysisIds.flatMap((network) => network.unitIds ?? [])),
+          new Set([
+            ...networksByAnalysisIds.flatMap((network) => network.unitIds ?? []),
+            ...criticalData.inboxRsp.callsigns.flatMap((callsign) =>
+              callsign.res.flatMap((info) => (info.unitId == null ? [] : [info.unitId])),
+            ),
+          ]),
         );
         const referencedUnits = await getUnitsByIds(
           referencedUnitIds,

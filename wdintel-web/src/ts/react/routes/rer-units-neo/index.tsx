@@ -13,7 +13,8 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material';
-import { useState } from 'react';
+import type { MRT_PaginationState } from 'material-react-table';
+import { useCallback, useEffect, useState } from 'react';
 
 import { PageErrorState } from '../../components/PageErrorState';
 import { PowerAlert } from '../../components/PowerAlert';
@@ -28,6 +29,7 @@ import { KmzTaskStatus } from './components/KmzTaskStatus';
 import { KmzUploadDialog } from './components/KmzUploadDialog';
 import { UnitFormDialog } from './components/UnitFormDialog';
 import { UnitsTable } from './components/UnitsTable';
+import { UnitsPaginationControl } from './components/UnitsPaginationControl';
 import { useRerUnitsPage } from './use-rer-units-page';
 import { type UnitSearchMode } from './search-mode';
 
@@ -223,6 +225,28 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
   const [kmzDialogOpen, setKmzDialogOpen] = useState(false);
   const [orbitLinkOpen, setOrbitLinkOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<UnitSearchMode>('strict');
+  const [pagination, setPagination] = useState<MRT_PaginationState>({
+    pageIndex: 0,
+    pageSize: 20,
+  });
+  const [filteredCount, setFilteredCount] = useState(0);
+
+  const handleFilteredCountChange = useCallback((count: number) => {
+    setFilteredCount(count);
+    setPagination((current) => {
+      const lastPageIndex = Math.max(0, Math.ceil(count / current.pageSize) - 1);
+      return current.pageIndex > lastPageIndex ? { ...current, pageIndex: lastPageIndex } : current;
+    });
+  }, []);
+
+  useEffect(() => {
+    setPagination((current) => (current.pageIndex === 0 ? current : { ...current, pageIndex: 0 }));
+  }, [page.statusFilter, tableState.columnFilters, tableState.globalFilter]);
+
+  const changeStatusFilter = (status: 'all' | 'active' | 'inactive') => {
+    setPagination((current) => ({ ...current, pageIndex: 0 }));
+    page.setStatusFilter(status);
+  };
 
   return (
     <Box
@@ -265,23 +289,43 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
               <UnitStatusFilters
                 status={page.statusFilter}
                 counts={page.statusCounts}
-                onChange={page.setStatusFilter}
+                onChange={changeStatusFilter}
               />
             </Stack>
           }
           hideGlobalTextFilter={page.loading || page.loadError !== null}
           internalActionsDisabled={page.loading || page.loadError !== null}
           actions={
-            <PageActions
-              canEdit={page.canEdit}
-              createDisabled={
-                page.loading || page.loadError !== null || page.submitting || !page.settingsReady
-              }
-              kmzDisabled={page.loading || page.loadError !== null || page.submitting}
-              uploadingKmz={page.uploadingKmz}
-              onCreate={page.openCreateDialog}
-              onOpenKmz={() => setKmzDialogOpen(true)}
-            />
+            <Stack direction="row" spacing={1} alignItems="center" useFlexGap>
+              <UnitsPaginationControl
+                pageIndex={pagination.pageIndex}
+                pageSize={pagination.pageSize}
+                totalCount={filteredCount}
+                loading={page.loading || page.loadError !== null}
+                onPrevPage={() =>
+                  setPagination((current) => ({
+                    ...current,
+                    pageIndex: Math.max(0, current.pageIndex - 1),
+                  }))
+                }
+                onNextPage={() =>
+                  setPagination((current) => ({
+                    ...current,
+                    pageIndex: current.pageIndex + 1,
+                  }))
+                }
+              />
+              <PageActions
+                canEdit={page.canEdit}
+                createDisabled={
+                  page.loading || page.loadError !== null || page.submitting || !page.settingsReady
+                }
+                kmzDisabled={page.loading || page.loadError !== null || page.submitting}
+                uploadingKmz={page.uploadingKmz}
+                onCreate={page.openCreateDialog}
+                onOpenKmz={() => setKmzDialogOpen(true)}
+              />
+            </Stack>
           }
         />
 
@@ -310,6 +354,9 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
               onMerge={page.openMergeDialog}
               searchMode={searchMode}
               onSearchModeChange={setSearchMode}
+              pagination={pagination}
+              onPaginationChange={setPagination}
+              onFilteredCountChange={handleFilteredCountChange}
             />
           )}
         </Box>

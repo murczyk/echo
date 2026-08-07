@@ -391,13 +391,21 @@ update req msg model =
             ( { model | masterUnits = Failure err }, E.none )
 
         MasterUnitsLoadedByApi (Ok rsp) ->
-            ( { model
-                | masterUnits =
+            let
+                activeUnits =
                     rsp.units
-                        |> List.map (\x -> ( x.id, x ))
+                        |> List.map (\unit -> ( unit.id, unit ))
                         |> Dict.fromList
-                        |> Success
-              }
+
+                referencedInactiveUnits =
+                    model.masterUnits
+                        |> Utils.RemoteData.withDefault Dict.empty
+                        |> Dict.filter (\_ unit -> not unit.active)
+
+                masterUnits =
+                    Dict.union activeUnits referencedInactiveUnits
+            in
+            ( { model | masterUnits = Success masterUnits }
             , model.networks
                 |> Utils.RemoteData.withDefault Dict.empty
                 |> Dict.values

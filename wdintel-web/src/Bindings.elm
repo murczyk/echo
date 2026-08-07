@@ -6259,6 +6259,20 @@ listUnitsRspEncoder struct =
         ]
 
 
+type alias UnitStatusCountsRsp =
+    { active : Int
+    , inactive : Int
+    }
+
+
+unitStatusCountsRspEncoder : UnitStatusCountsRsp -> Json.Encode.Value
+unitStatusCountsRspEncoder struct =
+    Json.Encode.object
+        [ ( "active", (Json.Encode.int) struct.active )
+        , ( "inactive", (Json.Encode.int) struct.inactive )
+        ]
+
+
 type alias ListUnitsByIdReq =
     { ids : Maybe (List (Int))
     }
@@ -15374,6 +15388,13 @@ listUnitsRspDecoder =
     Json.Decode.succeed ListUnitsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_load_more" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (unitDecoder))))
+
+
+unitStatusCountsRspDecoder : Json.Decode.Decoder UnitStatusCountsRsp
+unitStatusCountsRspDecoder =
+    Json.Decode.succeed UnitStatusCountsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inactive" (Json.Decode.int)))
 
 
 listUnitsByIdReqDecoder : Json.Decode.Decoder ListUnitsByIdReq

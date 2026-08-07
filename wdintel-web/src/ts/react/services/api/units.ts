@@ -20,6 +20,7 @@ import type {
   UnitAttachment,
   UnitAttachmentUnitIdsRsp,
   UnitDetailsRsp,
+  UnitStatusCountsRsp,
   UpdateUnitAttachmentReq,
 } from '../../../../Bindings';
 import { emitUnauthorizedEvent } from '../../auth-redirect';
@@ -80,6 +81,14 @@ export async function getAllUnitsList(options?: GetUnitsListOptions): Promise<Un
     }
     afterUnitId = nextAfterUnitId;
   }
+}
+
+export async function getUnitStatusCounts(options?: RequestOptions): Promise<UnitStatusCountsRsp> {
+  const raw =
+    options == null
+      ? await postJson<unknown>('/api/sigint/units/status-counts', null)
+      : await postJson<unknown>('/api/sigint/units/status-counts', null, options);
+  return transformSnakeToCamel<UnitStatusCountsRsp>(raw);
 }
 
 /** Fetch units by IDs (legacy batch; prefer getUnitsList for duty page). */

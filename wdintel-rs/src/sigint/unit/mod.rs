@@ -80,6 +80,35 @@ pub async fn list_units(
     Ok(Json(response))
 }
 
+#[post("/api/sigint/units/status-counts")]
+pub async fn unit_status_counts(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<UnitStatusCountsRsp>, AppError> {
+    let login_id = login_id_from_identity(&user)?;
+    has_any_role(&env.dbx, &login_id, vec!["Rer", "Api"])
+        .await
+        .c(h!())?;
+    Ok(Json(read_unit_status_counts(&env.dbx).await?))
+}
+
+async fn read_unit_status_counts(
+    dbx: &DatabaseConnection,
+) -> Result<UnitStatusCountsRsp, AppError> {
+    let (active, inactive) = tokio::try_join!(
+        available_units_query(false).count(dbx),
+        available_units_query(true)
+            .filter(sigint_unit::Column::Active.eq(false))
+            .count(dbx),
+    )
+    .c(h!())?;
+
+    Ok(UnitStatusCountsRsp {
+        active: i64::try_from(active).c(h!())?,
+        inactive: i64::try_from(inactive).c(h!())?,
+    })
+}
+
 pub(crate) async fn read_units(
     dbx: &DatabaseConnection,
     req: &ListUnitsReq,
@@ -1856,6 +1885,14 @@ mod tests {
                 .map(|unit| unit.id)
                 .collect::<Vec<_>>(),
             vec![inactive_unit.id]
+        );
+
+        assert_eq!(
+            read_unit_status_counts(&env.dbx).await.unwrap(),
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 1,
+            }
         );
     }
 

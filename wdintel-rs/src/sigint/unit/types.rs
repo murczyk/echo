@@ -110,6 +110,14 @@ pub struct ListUnitsRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct UnitStatusCountsRsp {
+    pub active: i64,
+    pub inactive: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct ListUnitsByIdReq {
     pub ids: Option<Vec<i64>>,
 }

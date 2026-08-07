@@ -10,6 +10,7 @@ import {
   getAllUnitsList,
   getUnitDetails,
   getUnitIdsWithVisibleAttachments,
+  getUnitStatusCounts,
   getUnitsList,
   importOrbitUnit,
   mergeUnitsById,
@@ -115,6 +116,14 @@ describe('units API', () => {
       { after_unit_id: null, include_inactive: true },
       { after_unit_id: 7, include_inactive: true },
     ]);
+  });
+
+  it('loads exact active and inactive unit counts', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ active: 10, inactive: 120_000 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getUnitStatusCounts()).resolves.toEqual({ active: 10, inactive: 120_000 });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/sigint/units/status-counts');
   });
 
   it('loads unit IDs with attachments visible to the current user', async () => {

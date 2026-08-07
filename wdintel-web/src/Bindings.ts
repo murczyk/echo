@@ -2415,6 +2415,11 @@ export type ListUnitsRsp = {
   units: Array<Unit>;
 };
 
+export type UnitStatusCountsRsp = {
+  active: number;
+  inactive: number;
+};
+
 export type ListUnitsByIdReq = {
   ids: Array<number> | null;
 };

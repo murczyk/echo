@@ -155,6 +155,8 @@ for configuration and provisioning.
 
 See [Echo GPU audio transcription](ECHO_GPU_TRANSCRIPTION.md) for its
 configuration, network requirements, queue, cache, retry, and REST API flow.
+Completed queue rows remain in PostgreSQL as the durable transcript store;
+only rows orphaned from their source message or attachment are removed.
 
 ## AI engine integration
 
