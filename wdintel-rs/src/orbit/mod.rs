@@ -50,7 +50,9 @@ impl EchoEchelon {
 
 pub(crate) fn echo_echelon(key: &str) -> Option<EchoEchelon> {
     match key {
-        "platoon" | "company" => Some(EchoEchelon::Company),
+        "teamOrCrew" | "section" | "squad" | "platoon" | "company" => {
+            Some(EchoEchelon::Company)
+        }
         "battalion" => Some(EchoEchelon::Battalion),
         "regiment" | "brigade" => Some(EchoEchelon::Regiment),
         "division" => Some(EchoEchelon::Division),
@@ -710,6 +712,9 @@ mod tests {
 
     #[test]
     fn maps_all_orbit_echelons_to_sigint_hierarchy() {
+        assert_eq!(echo_echelon("teamOrCrew"), Some(EchoEchelon::Company));
+        assert_eq!(echo_echelon("section"), Some(EchoEchelon::Company));
+        assert_eq!(echo_echelon("squad"), Some(EchoEchelon::Company));
         assert_eq!(echo_echelon("platoon"), Some(EchoEchelon::Company));
         assert_eq!(echo_echelon("company"), Some(EchoEchelon::Company));
         assert_eq!(echo_echelon("battalion"), Some(EchoEchelon::Battalion));

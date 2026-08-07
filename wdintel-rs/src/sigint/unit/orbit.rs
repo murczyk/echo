@@ -829,25 +829,26 @@ pub(super) async fn import_unlinked_orbit_units(
     let orbit_unit_ids_to_activate =
         orbit_unit_and_ancestor_ids(&orbit_units, active_linked_orbit_unit_ids);
     let mut imported = 0;
+    let mut skipped = 0;
+    let mut first_skipped = None;
     for orbit_unit in &orbit_units {
         if linked_orbit_unit_ids.contains(&orbit_unit.unit_id) {
             continue;
         }
-        let unit_req = match create_unit_req_from_orbit(
-            &transaction,
-            orbit_unit,
-            false,
-        )
-        .await
-        {
-            Ok(unit_req) => unit_req,
-            Err(err @ (AppError::BL { .. } | AppError::NotFound)) => {
-                let orbit_unit_id = orbit_unit.unit_id;
-                warn!("Skipping unsupported ORBIT unit {orbit_unit_id}: {err}");
-                continue;
-            }
-            Err(err) => return Err(err),
-        };
+        let unit_req =
+            match create_unit_req_from_orbit(&transaction, orbit_unit, false)
+                .await
+            {
+                Ok(unit_req) => unit_req,
+                Err(err @ (AppError::BL { .. } | AppError::NotFound)) => {
+                    skipped += 1;
+                    first_skipped.get_or_insert_with(|| {
+                        (orbit_unit.unit_id, err.to_string())
+                    });
+                    continue;
+                }
+                Err(err) => return Err(err),
+            };
         let unit =
             super::insert_unit_with_changelog(&transaction, login, &unit_req)
                 .await
@@ -862,6 +863,11 @@ pub(super) async fn import_unlinked_orbit_units(
         .await
         .c(h!())?;
         imported += 1;
+    }
+    if let Some((orbit_unit_id, err)) = first_skipped {
+        warn!(
+            "Skipped {skipped} unsupported ORBIT units; first was {orbit_unit_id}: {err}"
+        );
     }
     activate_sigint_units_linked_to_orbit_units(
         &transaction,
@@ -1127,6 +1133,7 @@ fn preferred_orbit_unit_name(unit: &orbit_unit::Model) -> Option<String> {
         unit.unit_name_short.as_deref(),
         unit.unit_name.as_deref(),
         unit.unit_name_original.as_deref(),
+        unit.unit_number.as_deref(),
     ]
     .into_iter()
     .flatten()

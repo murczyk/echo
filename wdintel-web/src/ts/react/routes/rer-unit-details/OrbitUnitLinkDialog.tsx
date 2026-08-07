@@ -181,45 +181,20 @@ type OrbitUnitDialogProps =
       onCompleted: (response: CreateUnitWithAutoNetworkRsp) => void;
     };
 
-const SIGINT_UNIT_SEGMENTS: Array<{ key: keyof Unit; label: string }> = [
-  { key: 'company', label: 'Рота, взвод' },
-  { key: 'battalion', label: 'Батальйон' },
-  { key: 'regiment', label: 'Полк/Бригада' },
-  { key: 'division', label: 'Дивізія' },
-  { key: 'army', label: 'Корпус/Армія' },
-  { key: 'militaryDistrict', label: 'Група армій/Фронт/Види та роди ЗС' },
-  { key: 'armyRegion', label: 'Регіон/ТВД/Збройні Сили' },
-];
-
-function SigintUnitSummary({ unit }: { unit: Unit }) {
-  return (
-    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}>
-      <Typography variant="overline" color="text.secondary">
-        Підрозділ SIGINT
-      </Typography>
-      <Typography variant="h6" sx={{ mb: 2, overflowWrap: 'anywhere' }}>
-        {renderTextValue(unit.name)}
-      </Typography>
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
-          gap: 1.5,
-        }}
-      >
-        {SIGINT_UNIT_SEGMENTS.map(({ key, label }) => (
-          <Box key={key} sx={{ minWidth: 0 }}>
-            <Typography variant="caption" color="text.secondary">
-              {label}
-            </Typography>
-            <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-              {renderTextValue(unit[key])}
-            </Typography>
-          </Box>
-        ))}
-      </Box>
-    </Box>
-  );
+function sigintUnitDescription(unit: Unit): string {
+  const hierarchy = [
+    unit.company,
+    unit.battalion,
+    unit.regiment,
+    unit.division,
+    unit.army,
+    unit.militaryDistrict,
+    unit.armyRegion,
+  ]
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join(' ');
+  return [unit.name.trim(), hierarchy ? `(${hierarchy})` : ''].filter(Boolean).join(' ');
 }
 
 function OrbitUnitDialogBody(props: OrbitUnitDialogProps) {
@@ -412,7 +387,9 @@ function OrbitUnitDialogBody(props: OrbitUnitDialogProps) {
         <Stack direction="row" spacing={1.5} alignItems="center">
           <Box component="img" src="/img/delta-icon.webp" alt="" sx={{ width: 28, height: 28 }} />
           <Typography component="span" variant="h6">
-            {importing ? 'Пошук' : "Прив'язати Orbit підрозділ"}
+            {importing
+              ? 'Пошук'
+              : `Прив'язати Orbit підрозділ ${sigintUnitDescription(props.unit)}`}
           </Typography>
         </Stack>
         <IconButton
@@ -426,8 +403,6 @@ function OrbitUnitDialogBody(props: OrbitUnitDialogProps) {
       </DialogTitle>
 
       <DialogContent sx={{ display: 'flex', minHeight: 0, flexDirection: 'column', gap: 2 }}>
-        {props.mode === 'link' ? <SigintUnitSummary unit={props.unit} /> : null}
-
         {error ? <Alert severity="error">{error}</Alert> : null}
 
         {advancedSearch ? (

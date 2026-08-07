@@ -92,14 +92,13 @@ afterEach(() => {
 });
 
 describe('OrbitUnitLinkDialog', () => {
-  it('shows the SIGINT unit full name and hierarchy segments', async () => {
+  it('shows the SIGINT unit description in the title', async () => {
     const root = await renderDialog([candidate]);
 
-    expect(document.body.textContent).toContain(sigintUnit.name);
-    expect(document.body.textContent).toContain('Рота, взвод');
-    expect(document.body.textContent).toContain(sigintUnit.company);
-    expect(document.body.textContent).toContain('Батальйон');
-    expect(document.body.textContent).toContain(sigintUnit.battalion);
+    expect(document.body.textContent).toContain(
+      "Прив'язати Orbit підрозділ 1 рота 2 батальйон 3 бригада (1 рота 2 батальйон 3 бригада)",
+    );
+    expect(document.body.textContent).not.toContain('Підрозділ SIGINT');
 
     act(() => root.unmount());
   });

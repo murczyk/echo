@@ -2267,6 +2267,58 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn oneoff_imports_lower_orbit_echelon_using_unit_number() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let login_id = test_login_id(&env).await;
+        let echelon_id = uuid::Uuid::new_v4();
+        orbit_unit_echelon::ActiveModel {
+            id: Set(echelon_id),
+            key: Set("teamOrCrew".to_string()),
+            name: Set(format!("Розрахунок-{}", uuid::Uuid::new_v4())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let orbit_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            unit_number: Set(Some("5101".to_string())),
+            unit_echelon_id: Set(Some(echelon_id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let imported = orbit::import_unlinked_orbit_units(&env.dbx, &login_id)
+            .await
+            .unwrap();
+
+        assert_eq!(imported, 1);
+        let link = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId.eq(orbit_unit_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let unit = sigint_unit::Entity::find_by_id(link.sigint_unit_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(unit.company, "5101");
+        assert!(!unit.active);
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn oneoff_skips_unsupported_orbit_units_and_imports_later_units() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
