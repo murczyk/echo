@@ -6231,6 +6231,7 @@ type alias ListUnitsReq =
     { sortBy : Maybe (ListUnitsSortBy)
     , afterUnitId : Maybe (Int)
     , beforeUnitId : Maybe (Int)
+    , includeInactive : Bool
     }
 
 
@@ -6240,6 +6241,7 @@ listUnitsReqEncoder struct =
         [ ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (listUnitsSortByEncoder)) struct.sortBy )
         , ( "after_unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.afterUnitId )
         , ( "before_unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.beforeUnitId )
+        , ( "include_inactive", (Json.Encode.bool) struct.includeInactive )
         ]
 
 
@@ -15364,6 +15366,7 @@ listUnitsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (listUnitsSortByDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "after_unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "before_unit_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_inactive" (Json.Decode.bool)))
 
 
 listUnitsRspDecoder : Json.Decode.Decoder ListUnitsRsp

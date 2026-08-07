@@ -67,14 +67,17 @@ const sigintUnit: Unit = {
   orbitUnitIds: [],
 };
 
-async function renderDialog(candidates: OrbitUnitLinkCandidate[]): Promise<Root> {
+async function renderDialog(
+  candidates: OrbitUnitLinkCandidate[],
+  unit: Unit = sigintUnit,
+): Promise<Root> {
   vi.mocked(getOrbitUnitLinkCandidates).mockResolvedValueOnce(candidates);
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
     root.render(
-      <OrbitUnitLinkDialog unitId={7} unit={sigintUnit} onClose={vi.fn()} onLinked={vi.fn()} />,
+      <OrbitUnitLinkDialog unitId={7} unit={unit} onClose={vi.fn()} onLinked={vi.fn()} />,
     );
   });
   return root;
@@ -92,13 +95,31 @@ afterEach(() => {
 });
 
 describe('OrbitUnitLinkDialog', () => {
-  it('shows the SIGINT unit description in the title', async () => {
-    const root = await renderDialog([candidate]);
+  it('omits a hierarchy that repeats the unit value from the name', async () => {
+    const root = await renderDialog([candidate], {
+      ...sigintUnit,
+      company: '',
+      battalion: '',
+      regiment: '1196 МСП',
+      division: '45 дшд',
+      army: '34 ЗВА',
+      militaryDistrict: 'ОУВ(с)',
+      name: '1196 МСП 49 ЗА',
+    });
+
+    expect(document.body.textContent).toContain("Прив'язати Orbit підрозділ 1196 МСП 49 ЗА");
+    expect(document.body.textContent).not.toContain('(1196 МСП 45 дшд 34 ЗВА ОУВ(с))');
+    expect(document.body.textContent).not.toContain('Підрозділ SIGINT');
+
+    act(() => root.unmount());
+  });
+
+  it('keeps hierarchy context for a distinct unit name', async () => {
+    const root = await renderDialog([candidate], { ...sigintUnit, name: 'Окрема назва' });
 
     expect(document.body.textContent).toContain(
-      "Прив'язати Orbit підрозділ 1 рота 2 батальйон 3 бригада (1 рота 2 батальйон 3 бригада)",
+      "Прив'язати Orbit підрозділ Окрема назва (1 рота 2 батальйон 3 бригада)",
     );
-    expect(document.body.textContent).not.toContain('Підрозділ SIGINT');
 
     act(() => root.unmount());
   });

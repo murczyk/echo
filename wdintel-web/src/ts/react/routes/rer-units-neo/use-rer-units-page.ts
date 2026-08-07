@@ -52,7 +52,7 @@ function replaceUnit(units: Unit[], updated: Unit): Unit[] {
 export function useRerUnitsPage(authUserRoles: string[]) {
   const canEdit = useMemo(() => hasRole(authUserRoles, 'UnitsEditor'), [authUserRoles]);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [statusFilter, setStatusFilter] = useState<UnitStatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<UnitStatusFilter>('active');
   const [attachmentUnitIds, setAttachmentUnitIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -78,7 +78,7 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     setLoading(true);
     setLoadError(null);
     const [unitsResult, attachmentIdsResult] = await Promise.allSettled([
-      getUnitsList(),
+      getUnitsList({ includeInactive: true }),
       getUnitIdsWithVisibleAttachments(),
     ]);
     if (unitsResult.status === 'fulfilled') {
@@ -299,7 +299,7 @@ export function useRerUnitsPage(authUserRoles: string[]) {
 
   async function refreshUnitsAfterMutation(successText: string) {
     try {
-      setUnits(sortUnits(await getUnitsList()));
+      setUnits(sortUnits(await getUnitsList({ includeInactive: true })));
       setStatus({ severity: 'success', text: successText });
     } catch (error) {
       setStatus({

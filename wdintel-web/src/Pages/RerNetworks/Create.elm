@@ -315,6 +315,7 @@ init _ _ () =
             { sortBy = Nothing
             , afterUnitId = Nothing
             , beforeUnitId = Nothing
+            , includeInactive = False
             }
         , E.loadPostsFromShared { sortBy = Nothing }
         , E.sendCmd (Api.aor_list AorListReturnedByApi { sortBy = Nothing })

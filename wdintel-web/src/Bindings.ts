@@ -2407,6 +2407,7 @@ export type ListUnitsReq = {
   sortBy: ListUnitsSortBy | null;
   afterUnitId: number | null;
   beforeUnitId: number | null;
+  includeInactive: boolean;
 };
 
 export type ListUnitsRsp = {

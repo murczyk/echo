@@ -159,6 +159,7 @@ where
 pub struct OrbitMatchCandidate {
     pub unit_id: Uuid,
     pub unit_name: Option<String>,
+    pub unit_number: Option<String>,
     pub generative_unit_name_full: Option<String>,
     pub operational_unit_name_full: Option<String>,
 }
@@ -168,6 +169,7 @@ impl From<&types::SourceUnit> for OrbitMatchCandidate {
         Self {
             unit_id: unit.unit_id,
             unit_name: unit.unit_name.clone(),
+            unit_number: unit.unit_number.clone(),
             generative_unit_name_full: unit.generative_unit_name_full.clone(),
             operational_unit_name_full: unit.operational_unit_name_full.clone(),
         }

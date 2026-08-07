@@ -1198,8 +1198,9 @@ fn manual_orbit_link_candidates_query(
                 )
                 .add(
                     Expr::col(orbit_unit::Column::OperationalUnitNameFull)
-                        .ilike(pattern),
-                ),
+                        .ilike(pattern.clone()),
+                )
+                .add(Expr::col(orbit_unit::Column::UnitNumber).ilike(pattern)),
         );
     }
     orbit_unit::Entity::find()
@@ -1223,13 +1224,14 @@ fn orbit_full_word_match_score(words: &[String]) -> SimpleExpr {
 
 fn orbit_full_word_match(word: &str) -> SimpleExpr {
     let full_word_match = Expr::cust_with_exprs(
-        "concat(' ', regexp_replace(lower(concat_ws(' ', $1, $2, $3)), '[[:punct:][:space:]]+', ' ', 'g'), ' ') ilike $4",
+        "concat(' ', regexp_replace(lower(concat_ws(' ', $1, $2, $3, $4)), '[[:punct:][:space:]]+', ' ', 'g'), ' ') ilike $5",
         [
             Expr::col(orbit_unit::Column::UnitName).into_simple_expr(),
             Expr::col(orbit_unit::Column::GenerativeUnitNameFull)
                 .into_simple_expr(),
             Expr::col(orbit_unit::Column::OperationalUnitNameFull)
                 .into_simple_expr(),
+            Expr::col(orbit_unit::Column::UnitNumber).into_simple_expr(),
             Expr::val(format!("% {word} %")).into_simple_expr(),
         ],
     );
@@ -1299,9 +1301,10 @@ where
 fn render_match_candidate(
     unit: crate::orbit::OrbitMatchCandidate,
 ) -> OrbitUnitLinkCandidate {
+    let full_name = orbit_candidate_full_name(unit.unit_name, unit.unit_number);
     OrbitUnitLinkCandidate {
         unit_id: unit.unit_id.to_string(),
-        full_name: unit.unit_name.unwrap_or_default(),
+        full_name,
         generative_unit_name_full: unit
             .generative_unit_name_full
             .unwrap_or_default(),
@@ -1314,9 +1317,10 @@ fn render_match_candidate(
 fn render_orbit_unit_candidate(
     unit: orbit_unit::Model,
 ) -> OrbitUnitLinkCandidate {
+    let full_name = orbit_candidate_full_name(unit.unit_name, unit.unit_number);
     OrbitUnitLinkCandidate {
         unit_id: unit.unit_id.to_string(),
-        full_name: unit.unit_name.unwrap_or_default(),
+        full_name,
         generative_unit_name_full: unit
             .generative_unit_name_full
             .unwrap_or_default(),
@@ -1324,6 +1328,17 @@ fn render_orbit_unit_candidate(
             .operational_unit_name_full
             .unwrap_or_default(),
     }
+}
+
+fn orbit_candidate_full_name(
+    unit_name: Option<String>,
+    unit_number: Option<String>,
+) -> String {
+    [unit_name, unit_number]
+        .into_iter()
+        .flatten()
+        .find(|value| !value.trim().is_empty())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -1404,6 +1419,49 @@ mod tests {
         assert_eq!(candidates.len(), 2);
         assert_eq!(candidates[0].unit_id, full_word_match_id.to_string());
         assert_eq!(candidates[1].unit_id, substring_match_id.to_string());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn manual_search_finds_and_names_number_only_units() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let unit_id = Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(unit_id),
+            unit_number: Set(Some("5101".to_string())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let candidates = manual_orbit_link_candidates(&env.dbx, "5101")
+            .await
+            .unwrap();
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].unit_id, unit_id.to_string());
+        assert_eq!(candidates[0].full_name, "5101");
+    }
+
+    #[test]
+    fn automatic_candidate_uses_number_when_name_is_blank() {
+        let unit_id = Uuid::new_v4();
+        let candidate =
+            render_match_candidate(crate::orbit::OrbitMatchCandidate {
+                unit_id,
+                unit_name: Some(" ".to_string()),
+                unit_number: Some("5101".to_string()),
+                generative_unit_name_full: None,
+                operational_unit_name_full: None,
+            });
+
+        assert_eq!(candidate.unit_id, unit_id.to_string());
+        assert_eq!(candidate.full_name, "5101");
     }
 
     #[tokio::test]

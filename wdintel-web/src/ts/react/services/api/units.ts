@@ -27,17 +27,24 @@ import { HttpRequestError, postBytes, postJson, postVoid } from './client';
 import type { RequestOptions } from './client';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 
-/** Fetch all units (for network display text). Single request, backend limit is 100k. */
-export async function getUnitsList(options?: RequestOptions): Promise<Unit[]> {
+type GetUnitsListOptions = RequestOptions & {
+  includeInactive?: boolean;
+};
+
+/** Fetch active units by default. Single request, backend limit is 100k. */
+export async function getUnitsList(options?: GetUnitsListOptions): Promise<Unit[]> {
+  const { includeInactive = false, ...requestOptions } = options ?? {};
   const req: ListUnitsReq = {
     sortBy: null,
     afterUnitId: null,
     beforeUnitId: null,
+    includeInactive,
   };
-  const raw =
-    options == null
-      ? await postJson<unknown>('/api/sigint/units', transformCamelToSnake(req))
-      : await postJson<unknown>('/api/sigint/units', transformCamelToSnake(req), options);
+  const raw = await postJson<unknown>(
+    '/api/sigint/units',
+    transformCamelToSnake(req),
+    requestOptions,
+  );
   const data = transformSnakeToCamel<ListUnitsRsp>(raw);
   return data?.units ?? [];
 }

@@ -58,6 +58,7 @@ loadSharedLookupData path =
             { sortBy = Nothing
             , afterUnitId = Nothing
             , beforeUnitId = Nothing
+            , includeInactive = False
             }
         , E.getNetworksList NetworksLoadedByApi
             { sortBy = Nothing
@@ -598,6 +599,7 @@ update req msg model =
                         { sortBy = Nothing
                         , afterUnitId = Nothing
                         , beforeUnitId = Nothing
+                        , includeInactive = False
                         }
                     )
 

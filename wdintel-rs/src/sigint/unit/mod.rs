@@ -85,8 +85,7 @@ pub(crate) async fn read_units(
     req: &ListUnitsReq,
 ) -> Result<ListUnitsRsp, AppError> {
     const LIMIT: u64 = 100000;
-    let mut units = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Deleted.eq(false));
+    let mut units = available_units_query(req.include_inactive);
     let sort_by = req
         .sort_by
         .clone()
@@ -182,6 +181,18 @@ pub(crate) async fn read_units(
     })
 }
 
+fn available_units_query(
+    include_inactive: bool,
+) -> Select<sigint_unit::Entity> {
+    let units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false));
+    if include_inactive {
+        units
+    } else {
+        units.filter(sigint_unit::Column::Active.eq(true))
+    }
+}
+
 #[post("/api/sigint/units-by-id")]
 pub async fn list_units_by_id(
     user: actix_identity::Identity,
@@ -193,8 +204,7 @@ pub async fn list_units_by_id(
         .await
         .c(h!())?;
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
-    let mut units = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Deleted.eq(false));
+    let mut units = available_units_query(false);
     if let Some(ids) = &req.ids {
         units = units.filter(sigint_unit::Column::Id.eq_any(ids.clone()));
     }
@@ -1504,8 +1514,7 @@ pub async fn units_search(
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
 
     let search_phrase = req.search.trim();
-    let mut q = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Deleted.eq(false));
+    let mut q = available_units_query(false);
 
     if !search_phrase.is_empty() {
         q = q.filter(Expr::cust_with_values(
@@ -1766,6 +1775,69 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_list_excludes_inactive_units_unless_requested() {
+        let env = cleanup().await.unwrap();
+        let active_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Active unit".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inactive_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Inactive unit".to_string()),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let active_units = read_units(
+            &env.dbx,
+            &ListUnitsReq {
+                sort_by: None,
+                after_unit_id: None,
+                before_unit_id: None,
+                include_inactive: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(active_units
+            .units
+            .iter()
+            .any(|unit| unit.id == active_unit.id));
+        assert!(active_units
+            .units
+            .iter()
+            .all(|unit| unit.id != inactive_unit.id));
+
+        let all_units = read_units(
+            &env.dbx,
+            &ListUnitsReq {
+                sort_by: None,
+                after_unit_id: None,
+                before_unit_id: None,
+                include_inactive: true,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(all_units.units.iter().any(|unit| unit.id == active_unit.id));
+        assert!(all_units
+            .units
+            .iter()
+            .any(|unit| unit.id == inactive_unit.id));
     }
 
     async fn assert_full_active_orbit_hierarchy(

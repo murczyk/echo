@@ -182,7 +182,7 @@ type OrbitUnitDialogProps =
     };
 
 function sigintUnitDescription(unit: Unit): string {
-  const hierarchy = [
+  const hierarchySegments = [
     unit.company,
     unit.battalion,
     unit.regiment,
@@ -192,9 +192,13 @@ function sigintUnitDescription(unit: Unit): string {
     unit.armyRegion,
   ]
     .map((segment) => segment.trim())
-    .filter(Boolean)
-    .join(' ');
-  return [unit.name.trim(), hierarchy ? `(${hierarchy})` : ''].filter(Boolean).join(' ');
+    .filter(Boolean);
+  const hierarchy = hierarchySegments.join(' ');
+  const name = unit.name.trim();
+  const normalizedName = ` ${name.toLocaleLowerCase('uk-UA').replace(/\s+/g, ' ')} `;
+  const unitValue = hierarchySegments[0]?.toLocaleLowerCase('uk-UA').replace(/\s+/g, ' ');
+  const repeatsUnitValue = unitValue ? normalizedName.includes(` ${unitValue} `) : false;
+  return [name, hierarchy && !repeatsUnitValue ? `(${hierarchy})` : ''].filter(Boolean).join(' ');
 }
 
 function OrbitUnitDialogBody(props: OrbitUnitDialogProps) {

@@ -28,30 +28,28 @@ describe('units API', () => {
   });
 
   it('normalizes unit response fields to camel case', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        jsonResponse({
-          show_load_more: false,
-          units: [
-            {
-              id: 7,
-              company: '',
-              battalion: '2 батальйон',
-              regiment: '',
-              division: '',
-              army: '',
-              comment: '',
-              name: '2 батальйон',
-              active: true,
-              created_at: 1234,
-              created_by_login_id: 'login-id',
-              has_orbit: true,
-            },
-          ],
-        }),
-      ),
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        show_load_more: false,
+        units: [
+          {
+            id: 7,
+            company: '',
+            battalion: '2 батальйон',
+            regiment: '',
+            division: '',
+            army: '',
+            comment: '',
+            name: '2 батальйон',
+            active: true,
+            created_at: 1234,
+            created_by_login_id: 'login-id',
+            has_orbit: true,
+          },
+        ],
+      }),
     );
+    vi.stubGlobal('fetch', fetchMock);
 
     await expect(getUnitsList()).resolves.toMatchObject([
       {
@@ -61,6 +59,23 @@ describe('units API', () => {
         hasOrbit: true,
       },
     ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      sort_by: null,
+      after_unit_id: null,
+      before_unit_id: null,
+      include_inactive: false,
+    });
+  });
+
+  it('can request inactive units explicitly', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ units: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getUnitsList({ includeInactive: true });
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      include_inactive: true,
+    });
   });
 
   it('loads unit IDs with attachments visible to the current user', async () => {

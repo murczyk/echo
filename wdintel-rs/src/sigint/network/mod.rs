@@ -2668,6 +2668,8 @@ pub async fn network_unit_stats(
         .select_only()
         .column_as(sigint_network::Column::Id.count(), "count")
         .column_as(sigint_unit::Column::Id, "unit_id")
+        .filter(sigint_unit::Column::Active.eq(true))
+        .filter(sigint_unit::Column::Deleted.eq(false))
         // .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         // .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .order_by_asc(sigint_unit::Column::Army)

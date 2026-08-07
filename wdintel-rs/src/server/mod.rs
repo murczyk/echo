@@ -1453,6 +1453,7 @@ mod tests {
                 sort_by: None,
                 after_unit_id: None,
                 before_unit_id: None,
+                include_inactive: false,
             })
             .to_request();
         let res = test::call_service(&app, req).await;
