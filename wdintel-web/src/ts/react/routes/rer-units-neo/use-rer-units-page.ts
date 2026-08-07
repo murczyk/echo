@@ -6,8 +6,8 @@ import {
   createUnit,
   createUnitWithAutoNetwork,
   deleteUnit,
+  getAllUnitsList,
   getUnitDetails,
-  getUnitsList,
   getUnitIdsWithVisibleAttachments,
   mergeDuplicateUnit,
   updateUnit,
@@ -78,7 +78,7 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     setLoading(true);
     setLoadError(null);
     const [unitsResult, attachmentIdsResult] = await Promise.allSettled([
-      getUnitsList({ includeInactive: true }),
+      getAllUnitsList({ includeInactive: true }),
       getUnitIdsWithVisibleAttachments(),
     ]);
     if (unitsResult.status === 'fulfilled') {
@@ -299,7 +299,7 @@ export function useRerUnitsPage(authUserRoles: string[]) {
 
   async function refreshUnitsAfterMutation(successText: string) {
     try {
-      setUnits(sortUnits(await getUnitsList({ includeInactive: true })));
+      setUnits(sortUnits(await getAllUnitsList({ includeInactive: true })));
       setStatus({ severity: 'success', text: successText });
     } catch (error) {
       setStatus({

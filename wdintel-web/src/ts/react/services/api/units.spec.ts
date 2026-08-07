@@ -7,6 +7,7 @@ import type { Unit } from '../../../../Bindings';
 import {
   createDeviceNetwork,
   deleteUnitAttachment,
+  getAllUnitsList,
   getUnitDetails,
   getUnitIdsWithVisibleAttachments,
   getUnitsList,
@@ -85,6 +86,35 @@ describe('units API', () => {
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       include_inactive: true,
     });
+  });
+
+  it('loads every unit page for complete inactive rows and counts', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          show_load_more: true,
+          units: [{ id: 7, name: 'Active', active: true }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          show_load_more: false,
+          units: [{ id: 11, name: 'Inactive', active: false }],
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getAllUnitsList({ includeInactive: true })).resolves.toMatchObject([
+      { id: 7, active: true },
+      { id: 11, active: false },
+    ]);
+    expect(
+      fetchMock.mock.calls.map(([, options]) => JSON.parse(String(options?.body))),
+    ).toMatchObject([
+      { after_unit_id: null, include_inactive: true },
+      { after_unit_id: 7, include_inactive: true },
+    ]);
   });
 
   it('loads unit IDs with attachments visible to the current user', async () => {

@@ -31,6 +31,10 @@ type GetUnitsListOptions = RequestOptions & {
   includeInactive?: boolean;
 };
 
+type GetUnitsPageOptions = GetUnitsListOptions & {
+  afterUnitId?: number | null;
+};
+
 export function mergeUnitsById(...unitLists: readonly Unit[][]): Unit[] {
   const unitsById = new Map<number, Unit>();
   for (const units of unitLists) {
@@ -39,12 +43,11 @@ export function mergeUnitsById(...unitLists: readonly Unit[][]): Unit[] {
   return Array.from(unitsById.values());
 }
 
-/** Fetch active units by default. Single request, backend limit is 100k. */
-export async function getUnitsList(options?: GetUnitsListOptions): Promise<Unit[]> {
-  const { includeInactive = false, ...requestOptions } = options ?? {};
+async function getUnitsPage(options?: GetUnitsPageOptions): Promise<ListUnitsRsp> {
+  const { afterUnitId = null, includeInactive = false, ...requestOptions } = options ?? {};
   const req: ListUnitsReq = {
     sortBy: null,
-    afterUnitId: null,
+    afterUnitId,
     beforeUnitId: null,
     includeInactive,
   };
@@ -53,8 +56,30 @@ export async function getUnitsList(options?: GetUnitsListOptions): Promise<Unit[
     transformCamelToSnake(req),
     requestOptions,
   );
-  const data = transformSnakeToCamel<ListUnitsRsp>(raw);
-  return data?.units ?? [];
+  return transformSnakeToCamel<ListUnitsRsp>(raw);
+}
+
+/** Fetch active units by default. Single request, backend limit is 100k. */
+export async function getUnitsList(options?: GetUnitsListOptions): Promise<Unit[]> {
+  return (await getUnitsPage(options)).units ?? [];
+}
+
+/** Fetch the complete unit catalog across every backend cursor page. */
+export async function getAllUnitsList(options?: GetUnitsListOptions): Promise<Unit[]> {
+  const unitsById = new Map<number, Unit>();
+  let afterUnitId: number | null = null;
+
+  while (true) {
+    const page = await getUnitsPage({ ...options, afterUnitId });
+    for (const unit of page.units ?? []) unitsById.set(unit.id, unit);
+    if (!page.showLoadMore) return Array.from(unitsById.values());
+
+    const nextAfterUnitId = page.units?.at(-1)?.id;
+    if (nextAfterUnitId === undefined || nextAfterUnitId === afterUnitId) {
+      throw new Error('Unit pagination did not advance');
+    }
+    afterUnitId = nextAfterUnitId;
+  }
 }
 
 /** Fetch units by IDs (legacy batch; prefer getUnitsList for duty page). */

@@ -45,6 +45,7 @@ vi.mock('../../services/api/networks', () => ({
 
 vi.mock('../../services/api/units', () => ({
   getUnitsList: vi.fn(() => Promise.resolve([])),
+  getUnitsByIds: vi.fn(() => Promise.resolve([])),
 }));
 
 function inboxRsp(
