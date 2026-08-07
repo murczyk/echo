@@ -1597,7 +1597,7 @@ pub async fn callsigns_graph(
             ),
             "callsigns",
         )
-        .column_as(Expr::cust("count(distinct signal_message.id)"), "count")
+        .column_as(Expr::cust("1"), "count")
         .filter(
             datasource_group::Column::GroupMasterKey.eq_any(
                 crate::messenger::group::get_identity_sigint_groups(
@@ -1614,7 +1614,7 @@ pub async fn callsigns_graph(
         .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
         .filter(sigint_inbox_item_callsign::Column::Deleted.eq(false))
         .filter(Expr::cust("sigint_inbox_item_callsign.source = 'primary'"))
-        .group_by(Expr::cust("1"));
+        .group_by(signal_message::Column::Id);
 
     // println!(
     //     "> rows_res: {}",
