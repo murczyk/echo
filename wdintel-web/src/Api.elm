@@ -751,6 +751,18 @@ sigint_unit_details toMsg req =
         }
 
 
+sigint_unit_orbit_children :
+    (Result ApiError UnitOrbitChildrenRsp -> msg)
+    -> UnitDetailsReq
+    -> Cmd msg
+sigint_unit_orbit_children toMsg req =
+    Http.post
+        { url = "/api/sigint/unit/orbit-children"
+        , body = Http.jsonBody (unitDetailsReqEncoder req)
+        , expect = leExpectJson toMsg unitOrbitChildrenRspDecoder
+        }
+
+
 sigint_unit_orbit_unlink :
     (Result ApiError () -> msg)
     -> LinkOrbitUnitReq

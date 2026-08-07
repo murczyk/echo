@@ -2499,6 +2499,17 @@ export type OrbitParentUnit = {
   name: string;
 };
 
+export type OrbitChildUnit = {
+  orbitUnitId: string;
+  sigintUnitId: number;
+  name: string;
+};
+
+export type UnitOrbitChildrenRsp = {
+  generativeUnits: Array<OrbitChildUnit>;
+  operationalUnits: Array<OrbitChildUnit>;
+};
+
 export type OrbitUnitDetails = {
   unitId: string;
   unitName: string | null;

@@ -1,8 +1,9 @@
 use super::types::{
     CreateUnitReq, CreateUnitWithAutoNetworkReq, CreateUnitWithAutoNetworkRsp,
-    ImportOrbitUnitReq, LinkOrbitUnitReq, OrbitDictionaryValue,
+    ImportOrbitUnitReq, LinkOrbitUnitReq, OrbitChildUnit, OrbitDictionaryValue,
     OrbitParentUnit, OrbitUnitDetails, OrbitUnitLinkCandidate,
     OrbitUnitLinkCandidatesReq, OrbitUnitLinkCandidatesRsp, OrbitUnitSearchReq,
+    UnitDetailsReq, UnitOrbitChildrenRsp,
 };
 use crate::entities::*;
 use crate::error::AppError;
@@ -102,6 +103,110 @@ pub async fn unit_orbit_details(
         details.push(render_orbit_unit_details(dbx, unit).await?);
     }
     Ok(details)
+}
+
+#[derive(FromQueryResult)]
+struct OrbitChildUnitRow {
+    orbit_unit_id: Uuid,
+    sigint_unit_id: i64,
+    name: String,
+    is_generative: bool,
+    is_operational: bool,
+}
+
+#[post("/api/sigint/unit/orbit-children")]
+pub async fn unit_orbit_children(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<UnitDetailsReq>,
+) -> Result<Json<UnitOrbitChildrenRsp>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    if !can_view_orbit_data(&env.dbx, &login).await? {
+        return Err(AppError::Forbidden(
+            "ORBIT data access denied".to_string(),
+        ));
+    }
+    let unit = super::find_unit(&env.dbx, req.unit_id).await?;
+    if unit.deleted {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(load_unit_orbit_children(&env.dbx, unit.id).await?))
+}
+
+async fn load_unit_orbit_children(
+    dbx: &DatabaseConnection,
+    sigint_unit_id: i64,
+) -> Result<UnitOrbitChildrenRsp, AppError> {
+    let sql = r#"
+        select
+            child.unit_id as orbit_unit_id,
+            child_link.sigint_unit_id,
+            coalesce(
+                nullif(btrim(child.unit_name), ''),
+                nullif(btrim(child.unit_name_short), ''),
+                nullif(btrim(child.unit_number), ''),
+                child.unit_id::text
+            ) as name,
+            (child.generative_parent_unit_id = parent.unit_id) is true
+                as is_generative,
+            (child.operational_parent_unit_id = parent.unit_id) is true
+                as is_operational
+        from orbit_unit parent
+        inner join orbit_unit_sigint_unit parent_link
+            on parent_link.orbit_unit_id = parent.unit_id
+            and parent_link.is_suppressed = false
+        inner join orbit_unit child
+            on child.generative_parent_unit_id = parent.unit_id
+            or child.operational_parent_unit_id = parent.unit_id
+        inner join orbit_unit_sigint_unit child_link
+            on child_link.orbit_unit_id = child.unit_id
+            and child_link.is_suppressed = false
+        inner join sigint_unit child_sigint
+            on child_sigint.id = child_link.sigint_unit_id
+            and child_sigint.deleted = false
+        where parent_link.sigint_unit_id = $1
+            and parent.deleted = false
+            and child.deleted = false
+        order by name, child_link.sigint_unit_id
+    "#;
+    let rows =
+        OrbitChildUnitRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            [sigint_unit_id.into()],
+        ))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(render_unit_orbit_children(rows))
+}
+
+fn render_unit_orbit_children(
+    rows: Vec<OrbitChildUnitRow>,
+) -> UnitOrbitChildrenRsp {
+    let mut generative_units = Vec::new();
+    let mut operational_units = Vec::new();
+    let mut generative_ids = HashSet::new();
+    let mut operational_ids = HashSet::new();
+    for row in rows {
+        let id = (row.orbit_unit_id, row.sigint_unit_id);
+        let unit = OrbitChildUnit {
+            orbit_unit_id: row.orbit_unit_id.to_string(),
+            sigint_unit_id: row.sigint_unit_id,
+            name: row.name,
+        };
+        if row.is_generative && generative_ids.insert(id) {
+            generative_units.push(unit.clone());
+        }
+        if row.is_operational && operational_ids.insert(id) {
+            operational_units.push(unit);
+        }
+    }
+    UnitOrbitChildrenRsp {
+        generative_units,
+        operational_units,
+    }
 }
 
 async fn render_orbit_unit_details(
@@ -453,10 +558,16 @@ where
 {
     for ancestor in orbit_ancestors(dbx, root).await? {
         if orbit_unit_has_active_sigint_link(dbx, ancestor.unit_id).await? {
+            activate_sigint_units_linked_to_orbit_units(
+                dbx,
+                login,
+                &HashSet::from([ancestor.unit_id]),
+            )
+            .await?;
             continue;
         }
         let unit_req =
-            match create_unit_req_from_orbit(dbx, &ancestor, false).await {
+            match create_unit_req_from_orbit(dbx, &ancestor, true).await {
                 Ok(unit_req) => unit_req,
                 Err(err @ AppError::BL { .. }) => {
                     let orbit_unit_id = ancestor.unit_id;
@@ -473,6 +584,9 @@ where
                 .await
                 .c(h!())?,
         };
+        if !unit.active {
+            super::set_unit_activity(dbx, login, &unit, true).await?;
+        }
         link_orbit_ancestor(dbx, ancestor.unit_id, unit.id).await?;
     }
     Ok(())
@@ -1367,6 +1481,174 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orbit_children_returns_both_direct_linked_child_lists() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let parent_sigint = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let generative_sigint = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let operational_sigint = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let parent_id = Uuid::new_v4();
+        let generative_child_id = Uuid::new_v4();
+        let operational_child_id = Uuid::new_v4();
+        let unlinked_child_id = Uuid::new_v4();
+        orbit_unit::Entity::insert_many([
+            orbit_unit::ActiveModel {
+                unit_id: Set(parent_id),
+                unit_name: Set(Some("Parent".to_string())),
+                ..Default::default()
+            },
+            orbit_unit::ActiveModel {
+                unit_id: Set(generative_child_id),
+                unit_name: Set(Some("Generative child".to_string())),
+                generative_parent_unit_id: Set(Some(parent_id)),
+                ..Default::default()
+            },
+            orbit_unit::ActiveModel {
+                unit_id: Set(operational_child_id),
+                unit_name: Set(Some("Operational child".to_string())),
+                operational_parent_unit_id: Set(Some(parent_id)),
+                ..Default::default()
+            },
+            orbit_unit::ActiveModel {
+                unit_id: Set(unlinked_child_id),
+                unit_name: Set(Some("Unlinked child".to_string())),
+                generative_parent_unit_id: Set(Some(parent_id)),
+                ..Default::default()
+            },
+        ])
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::Entity::insert_many([
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(parent_id),
+                sigint_unit_id: Set(parent_sigint.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(generative_child_id),
+                sigint_unit_id: Set(generative_sigint.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(operational_child_id),
+                sigint_unit_id: Set(operational_sigint.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
+        ])
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+
+        let children = load_unit_orbit_children(&env.dbx, parent_sigint.id)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            children.generative_units,
+            vec![OrbitChildUnit {
+                orbit_unit_id: generative_child_id.to_string(),
+                sigint_unit_id: generative_sigint.id,
+                name: "Generative child".to_string(),
+            }]
+        );
+        assert_eq!(
+            children.operational_units,
+            vec![OrbitChildUnit {
+                orbit_unit_id: operational_child_id.to_string(),
+                sigint_unit_id: operational_sigint.id,
+                name: "Operational child".to_string(),
+            }]
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn materializing_parents_activates_an_inactive_linked_unit() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let login =
+            create_login_with_roles(&env.dbx, "orbit-parent-activation", &[])
+                .await;
+        let sigint_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let parent_id = Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(parent_id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let root = orbit_unit::ActiveModel {
+            unit_id: Set(Uuid::new_v4()),
+            operational_parent_unit_id: Set(Some(parent_id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(parent_id),
+            sigint_unit_id: Set(sigint_unit.id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        import_missing_orbit_ancestors(&env.dbx, &login.id, &root)
+            .await
+            .unwrap();
+
+        let sigint_unit = sigint_unit::Entity::find_by_id(sigint_unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(sigint_unit.active);
     }
 
     #[tokio::test]

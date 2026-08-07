@@ -8,11 +8,13 @@ import { UnitFormDialog } from './routes/rer-units-neo/components/UnitFormDialog
 function UnitEditDialog({
   unit,
   submitting,
+  editSection,
   onClose,
   onSubmit,
 }: {
   unit: Unit;
   submitting: boolean;
+  editSection: 'unit' | 'orbit';
   onClose: () => void;
   onSubmit: (unit: CreateUnitReq) => void;
 }) {
@@ -33,6 +35,7 @@ function UnitEditDialog({
       onSubmit={(value) => onSubmit(value.unit)}
       onLinkOrbitUnit={() => undefined}
       onUnlinkOrbitUnit={() => undefined}
+      editSection={editSection}
     />
   );
 }
@@ -43,7 +46,7 @@ class UnitEditDialogElement extends HTMLElement {
   private parsedUnit: Unit | null = null;
 
   static get observedAttributes() {
-    return ['data-unit', 'data-submitting'];
+    return ['data-unit', 'data-submitting', 'data-section'];
   }
 
   private dispatchDialogEvent(name: string) {
@@ -82,9 +85,10 @@ class UnitEditDialogElement extends HTMLElement {
     this.root.render(
       <NeoMuiThemeProvider>
         <UnitEditDialog
-          key={unit.id}
+          key={`${unit.id}-${this.getAttribute('data-section')}`}
           unit={unit}
           submitting={this.getAttribute('data-submitting') === 'true'}
+          editSection={this.getAttribute('data-section') === 'orbit' ? 'orbit' : 'unit'}
           onClose={() => this.dispatchDialogEvent('unit-edit-close')}
           onSubmit={this.dispatchSubmit}
         />

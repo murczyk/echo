@@ -274,6 +274,23 @@ pub struct OrbitParentUnit {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct OrbitChildUnit {
+    pub orbit_unit_id: String,
+    pub sigint_unit_id: i64,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitOrbitChildrenRsp {
+    pub generative_units: Vec<OrbitChildUnit>,
+    pub operational_units: Vec<OrbitChildUnit>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct OrbitUnitDetails {
     pub unit_id: String,
     pub unit_name: Option<String>,
