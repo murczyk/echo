@@ -1103,7 +1103,6 @@ fn unit_identity(unit: &sigint_unit::Model) -> Option<UnitIdentity> {
 fn parse_callsigns(callsigns: &[String]) -> Vec<String> {
     callsigns
         .iter()
-        .cloned()
         .map(|callsign| callsign.trim().to_uppercase())
         .filter(|callsign| !callsign.is_empty())
         .collect::<BTreeSet<_>>()

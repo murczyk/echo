@@ -5398,14 +5398,22 @@ async fn summary_table_chunked_collection_matches_single_window() {
             sigint_inbox_item::Column::NominatimresId,
             Expr::value(nominatimres.id),
         )
-        .col_expr(
-            sigint_inbox_item::Column::Callsigns,
-            Expr::value(serde_json::json!(["Geo"])),
-        )
         .filter(sigint_inbox_item::Column::Id.eq(geocoded_message.id))
         .exec(db)
         .await
         .unwrap();
+    let actor_id = crate::users::system_login_id(db).await.unwrap();
+    crate::inbox::callsigns::sync(
+        db,
+        geocoded_message.id,
+        crate::inbox::callsigns::InboxItemCallsigns {
+            primary: vec!["Geo".to_string()],
+            alg2: Vec::new(),
+        },
+        actor_id,
+    )
+    .await
+    .unwrap();
     let mut req = analysis_stats_req0(&fixture);
     req.since_date_inclusive_ms =
         test_dt(2026, 3, 1, 7, 30).and_utc().timestamp_millis();

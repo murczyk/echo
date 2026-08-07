@@ -1116,7 +1116,7 @@ mod tests {
             crate::inbox::callsigns::InboxItemCallsigns {
                 primary: callsigns
                     .iter()
-                    .map(|callsign| callsign.to_string())
+                    .map(|callsign| (*callsign).to_string())
                     .collect(),
                 alg2: Vec::new(),
             },
