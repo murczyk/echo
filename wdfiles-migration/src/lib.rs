@@ -6,6 +6,7 @@ mod m20260721_124518_drop_legacy_device_file;
 mod m20260728_111013_add_file_entry_journal_index;
 mod m20260728_182132_add_file_entry_content_path;
 mod m20260803_164204_file_entry_kind_and_windows_paths;
+mod m20260806_160451_add_file_entry_analyzed;
 
 pub struct Migrator;
 
@@ -23,6 +24,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260803_164204_file_entry_kind_and_windows_paths::Migration,
             ),
+            Box::new(m20260806_160451_add_file_entry_analyzed::Migration),
         ]
     }
 }

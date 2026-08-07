@@ -632,6 +632,21 @@ fn spawn_background_workers(
             },
         );
     }
+    if env.file_registry_db.is_some() {
+        let analytics_env = env.clone();
+        let analytics_cancellation_token = cancel_token.clone();
+        spawn_named_worker(
+            "device_file_analytics_worker",
+            bg_set,
+            async move {
+                crate::devices::analytics::worker::run_nofail(
+                    analytics_env,
+                    analytics_cancellation_token,
+                )
+                .await;
+            },
+        );
+    }
     spawn_palitra_conversion_worker(bg_set, env);
 }
 
@@ -902,6 +917,19 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::files::search)
             .service(crate::devices::files::journal)
             .service(crate::devices::files::sync)
+            .service(crate::devices::analytics::list_tags)
+            .service(crate::devices::analytics::create_tag)
+            .service(crate::devices::analytics::update_tag)
+            .service(crate::devices::analytics::archive_tag)
+            .service(crate::devices::analytics::restore_tag)
+            .service(crate::devices::analytics::save_tag_rule)
+            .service(crate::devices::analytics::list_tag_test_files)
+            .service(crate::devices::analytics::test_tag_rule)
+            .service(crate::devices::analytics::reanalyze_all)
+            .service(crate::devices::analytics::reanalyze_device)
+            .service(crate::devices::analytics::device_tags)
+            .service(crate::devices::analytics::device_summary)
+            .service(crate::devices::analytics::device_files)
             .service(crate::organism::goi::integrations::list_admin_goi_integrations)
             .service(crate::organism::goi::integrations::get_admin_goi_integration)
             .service(crate::organism::goi::integrations::upsert_admin_goi_integration)

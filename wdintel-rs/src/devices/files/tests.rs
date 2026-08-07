@@ -25,9 +25,11 @@ use crate::h;
 use crate::types::{AppError, Mode, ShortContext, Uuid};
 use chrono::{Duration, NaiveDate, NaiveDateTime};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, DatabaseTransaction, EntityTrait, IntoActiveModel,
-    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    ActiveModelTrait,
+    ActiveValue::{NotSet, Set},
+    ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
+    EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
+    TransactionTrait,
 };
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
@@ -182,6 +184,7 @@ fn base_file_entry(
         created_at: Set(timestamp),
         updated_at: Set(timestamp),
         content_path: Set(None),
+        analyzed: NotSet,
     }
 }
 
@@ -1881,6 +1884,9 @@ async fn assert_stage_eight_actor_reads(
             include_breadcrumbs: false,
             limit: None,
             cursor: None,
+            tag_ids: Vec::new(),
+            tag_match: None,
+            untagged: false,
         },
     )
     .await
@@ -1900,6 +1906,9 @@ async fn assert_stage_eight_actor_reads(
             include_breadcrumbs: false,
             limit: Some(1),
             cursor: None,
+            tag_ids: Vec::new(),
+            tag_match: None,
+            untagged: false,
         },
     )
     .await
@@ -1919,6 +1928,9 @@ async fn assert_stage_eight_actor_reads(
             filters: raw_search_filters(Some("same"), &[], &[], None, None),
             limit: None,
             cursor: None,
+            tag_ids: Vec::new(),
+            tag_match: None,
+            untagged: false,
         },
     )
     .await
@@ -1943,6 +1955,9 @@ async fn assert_stage_eight_actor_reads(
             filters: raw_search_filters(Some("archive"), &[], &[], None, None),
             limit: None,
             cursor: None,
+            tag_ids: Vec::new(),
+            tag_match: None,
+            untagged: false,
         },
     )
     .await
@@ -1969,6 +1984,9 @@ async fn assert_stage_eight_browse_composition(
             include_breadcrumbs: true,
             limit: None,
             cursor: None,
+            tag_ids: Vec::new(),
+            tag_match: None,
+            untagged: false,
         },
     )
     .await
@@ -2006,6 +2024,9 @@ async fn assert_stage_eight_browse_composition(
             include_breadcrumbs: false,
             limit: None,
             cursor: None,
+            tag_ids: Vec::new(),
+            tag_match: None,
+            untagged: false,
         },
     )
     .await
@@ -2038,6 +2059,9 @@ async fn assert_stage_eight_browse_composition(
             include_breadcrumbs: false,
             limit: Some(2),
             cursor: None,
+            tag_ids: Vec::new(),
+            tag_match: None,
+            untagged: false,
         },
     )
     .await
@@ -2062,6 +2086,9 @@ async fn assert_stage_eight_browse_composition(
             include_breadcrumbs: false,
             limit: Some(2),
             cursor: Some(first_cursor),
+            tag_ids: Vec::new(),
+            tag_match: None,
+            untagged: false,
         },
     )
     .await
@@ -2086,6 +2113,9 @@ async fn assert_stage_eight_browse_composition(
             include_breadcrumbs: false,
             limit: Some(2),
             cursor: Some(second_cursor),
+            tag_ids: Vec::new(),
+            tag_match: None,
+            untagged: false,
         },
     )
     .await
@@ -2125,6 +2155,9 @@ async fn assert_stage_eight_search_composition(
             filters: raw_search_filters(None, &[], &[], None, None),
             limit: Some(100),
             cursor: None,
+            tag_ids: Vec::new(),
+            tag_match: None,
+            untagged: false,
         },
     )
     .await
@@ -2159,6 +2192,9 @@ async fn assert_stage_eight_search_composition(
             ),
             limit: None,
             cursor: None,
+            tag_ids: Vec::new(),
+            tag_match: None,
+            untagged: false,
         },
     )
     .await
@@ -2184,6 +2220,9 @@ async fn assert_stage_eight_search_composition(
             ),
             limit: None,
             cursor: None,
+            tag_ids: Vec::new(),
+            tag_match: None,
+            untagged: false,
         },
     )
     .await
@@ -2209,6 +2248,9 @@ async fn assert_stage_eight_search_composition(
             ),
             limit: Some(2),
             cursor: None,
+            tag_ids: Vec::new(),
+            tag_match: None,
+            untagged: false,
         },
     )
     .await
@@ -2239,6 +2281,9 @@ async fn assert_stage_eight_search_composition(
             ),
             limit: Some(2),
             cursor: Some(duplicate_cursor.clone()),
+            tag_ids: Vec::new(),
+            tag_match: None,
+            untagged: false,
         },
     )
     .await
@@ -2273,6 +2318,9 @@ async fn assert_stage_eight_validation_contract(
                 include_breadcrumbs: false,
                 limit: None,
                 cursor: Some("not-a-uuid".to_string()),
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2291,6 +2339,9 @@ async fn assert_stage_eight_validation_contract(
                 include_breadcrumbs: false,
                 limit: None,
                 cursor: Some("a".repeat(DEVICE_FILE_CURSOR_MAX_BYTES + 1)),
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2309,6 +2360,9 @@ async fn assert_stage_eight_validation_contract(
                 include_breadcrumbs: false,
                 limit: Some(0),
                 cursor: None,
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2333,6 +2387,9 @@ async fn assert_stage_eight_validation_contract(
                 ),
                 limit: Some(2),
                 cursor: Some(duplicate_cursor.to_string()),
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2357,6 +2414,9 @@ async fn assert_stage_eight_validation_contract(
                 ),
                 limit: Some(2),
                 cursor: Some(duplicate_cursor.to_string()),
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2381,6 +2441,9 @@ async fn assert_stage_eight_validation_contract(
                 ),
                 limit: None,
                 cursor: None,
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2407,6 +2470,9 @@ async fn assert_stage_eight_live_scope_errors(
                 include_breadcrumbs: false,
                 limit: None,
                 cursor: None,
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2423,6 +2489,9 @@ async fn assert_stage_eight_live_scope_errors(
                 include_breadcrumbs: false,
                 limit: None,
                 cursor: None,
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2441,6 +2510,9 @@ async fn assert_stage_eight_live_scope_errors(
                 filters: raw_search_filters(None, &[], &[], None, None),
                 limit: None,
                 cursor: None,
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2472,6 +2544,9 @@ async fn assert_stage_eight_outage_short_circuits(
                 include_breadcrumbs: false,
                 limit: None,
                 cursor: None,
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2488,6 +2563,9 @@ async fn assert_stage_eight_outage_short_circuits(
                 filters: raw_search_filters(None, &[], &[], None, None),
                 limit: None,
                 cursor: None,
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2510,6 +2588,9 @@ async fn assert_stage_eight_outage_short_circuits(
                 include_breadcrumbs: false,
                 limit: None,
                 cursor: None,
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2526,6 +2607,9 @@ async fn assert_stage_eight_outage_short_circuits(
                 filters: raw_search_filters(None, &[], &[], None, None),
                 limit: None,
                 cursor: None,
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2548,6 +2632,9 @@ async fn assert_stage_eight_outage_short_circuits(
                 include_breadcrumbs: false,
                 limit: None,
                 cursor: None,
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2564,6 +2651,9 @@ async fn assert_stage_eight_outage_short_circuits(
                 filters: raw_search_filters(None, &[], &[], None, None),
                 limit: None,
                 cursor: None,
+                tag_ids: Vec::new(),
+                tag_match: None,
+                untagged: false,
             },
         )
         .await
@@ -2715,6 +2805,125 @@ fn stage_nine_structure_timestamps(
         .filter(|entry| entry.kind == DomainFileEntryKind::Directory)
         .map(|entry| (entry.id, entry.updated_at))
         .collect()
+}
+
+async fn set_file_analyzed(
+    db: &DatabaseConnection,
+    file_id: Uuid,
+    analyzed: bool,
+) {
+    let mut file = file_entry::Entity::find_by_id(file_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+    file.analyzed = Set(analyzed);
+    file.update(db).await.unwrap();
+}
+
+async fn file_is_analyzed(db: &DatabaseConnection, file_id: Uuid) -> bool {
+    file_entry::Entity::find_by_id(file_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap()
+        .analyzed
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn metadata_mutation_requeues_only_classification_input_changes() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let device_id = Uuid::now_v7();
+    let repository = env.file_registry_db().unwrap();
+    let file_db = repository.connection();
+    let timestamp = stage_eight_timestamp();
+    let created = query::mutate_file(
+        repository,
+        &stage_nine_mutation(
+            device_id,
+            None,
+            r"C:\reports\report.pdf",
+            Some("application/octet-stream"),
+            Some("pdf"),
+            Some(timestamp - Duration::hours(2)),
+            Some(timestamp - Duration::hours(1)),
+        ),
+    )
+    .await
+    .unwrap();
+    let file_id = created.file.file_id;
+
+    set_file_analyzed(file_db, file_id, true).await;
+    query::mutate_file(
+        repository,
+        &stage_nine_mutation(
+            device_id,
+            Some(file_id),
+            r"C:\reports\report.pdf",
+            Some("application/pdf"),
+            Some("pdf"),
+            Some(timestamp - Duration::hours(4)),
+            Some(timestamp),
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(
+        file_is_analyzed(file_db, file_id).await,
+        "MIME and source timestamps must not requeue metadata analysis",
+    );
+
+    query::mutate_file(
+        repository,
+        &stage_nine_mutation(
+            device_id,
+            Some(file_id),
+            r"C:\reports\report.pdf",
+            Some("application/pdf"),
+            Some("docx"),
+            None,
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(!file_is_analyzed(file_db, file_id).await);
+
+    set_file_analyzed(file_db, file_id, true).await;
+    query::mutate_file(
+        repository,
+        &stage_nine_mutation(
+            device_id,
+            Some(file_id),
+            r"C:\archive\report.pdf",
+            Some("application/pdf"),
+            Some("docx"),
+            None,
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(!file_is_analyzed(file_db, file_id).await);
+
+    set_file_analyzed(file_db, file_id, true).await;
+    query::mutate_file(
+        repository,
+        &stage_nine_mutation(
+            device_id,
+            Some(file_id),
+            r"C:\archive\renamed.pdf",
+            Some("application/pdf"),
+            Some("docx"),
+            None,
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(!file_is_analyzed(file_db, file_id).await);
 }
 
 #[tokio::test]
@@ -6121,6 +6330,7 @@ mod query_ancestors_tests {
             created_at: timestamp(),
             updated_at: timestamp(),
             content_path: None,
+            analyzed: false,
         }
     }
 
@@ -6145,6 +6355,7 @@ mod query_ancestors_tests {
             created_at: timestamp(),
             updated_at: timestamp(),
             content_path: None,
+            analyzed: false,
         }
     }
 
@@ -6183,6 +6394,7 @@ mod query_ancestors_tests {
             created_at: timestamp(),
             updated_at: timestamp(),
             content_path: None,
+            analyzed: false,
         }
     }
 
@@ -6285,6 +6497,7 @@ mod query_model_tests {
             created_at: timestamp,
             updated_at: timestamp,
             content_path: None,
+            analyzed: false,
         }
     }
 
@@ -6537,6 +6750,7 @@ mod mapping_tests {
             entries: Vec::new(),
             entry_path_components: vec![Vec::new()],
             next_cursor: None,
+            tags_by_file: Default::default(),
         })
         .unwrap_err();
         assert!(matches!(error, AppError::AnyhowError { .. }));
@@ -6563,6 +6777,7 @@ mod mapping_tests {
                 "018f0000-0000-7000-8000-000000000003".to_string(),
             ),
             total_count: 27,
+            tags_by_file: Default::default(),
         };
 
         assert_eq!(
@@ -6573,7 +6788,8 @@ mod mapping_tests {
                     "name": "report.log",
                     "absolute_path": "C:\\var\\log\\report.log",
                     "has_content": true,
-                    "synchronized_at": "2026-07-28T08:15:30Z"
+                    "synchronized_at": "2026-07-28T08:15:30Z",
+                    "tags": []
                 }],
                 "total_count": 27,
                 "next_cursor": "018f0000-0000-7000-8000-000000000003"
@@ -6606,8 +6822,11 @@ mod mapping_tests {
         })
         .collect();
 
-        let value = serde_json::to_value(map_sync(SyncFilesResult { results }))
-            .unwrap();
+        let value = serde_json::to_value(map_sync(SyncFilesResult {
+            results,
+            tags_by_file: Default::default(),
+        }))
+        .unwrap();
         let results = value["results"].as_array().unwrap();
         assert_eq!(
             results

@@ -16,6 +16,7 @@ import type { DeviceFileTreeEntry } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
 import { PowerIconButton } from '../../../components/PowerIconButton';
+import { DeviceAnalyticsTagBadges } from './DeviceAnalyticsTagBadges';
 import { formatDeviceDateTime } from '../../devices/helpers';
 import type { DeviceFileLoadError } from '../types';
 
@@ -90,6 +91,7 @@ function FileEntryRow({
               {entry.name}
             </Typography>
           )}
+          {!directory ? <DeviceAnalyticsTagBadges tags={entry.tags} /> : null}
           <Typography
             component="code"
             variant="caption"

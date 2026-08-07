@@ -14,9 +14,11 @@ use crate::h;
 use crate::types::ShortContext;
 use chrono::NaiveDateTime;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, DatabaseTransaction, DbBackend, EntityTrait,
-    IntoActiveModel, QueryFilter, QuerySelect, Select, Statement,
+    ActiveModelTrait,
+    ActiveValue::{NotSet, Set},
+    ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
+    DbBackend, EntityTrait, IntoActiveModel, QueryFilter, QuerySelect, Select,
+    Statement,
 };
 use uuid::Uuid;
 
@@ -224,6 +226,7 @@ async fn insert_file(
         created_at: Set(now),
         updated_at: Set(now),
         content_path: Set(None),
+        analyzed: NotSet,
     }
     .insert(transaction)
     .await
@@ -244,6 +247,10 @@ async fn update_file_row(
     let file_name = mutation.source_path.file_name().to_string();
     let hierarchy_path =
         child_hierarchy_path(&parent.hierarchy_path, mutation.file_id);
+    let classification_inputs_changed = entry.name != file_name
+        || entry.absolute_path.as_deref()
+            != Some(mutation.source_path.absolute_path.as_str())
+        || entry.extension != mutation.metadata.extension;
     let mut file = entry.into_active_model();
     file.parent_id = Set(Some(parent.entry_id));
     file.name = Set(file_name.clone());
@@ -255,6 +262,9 @@ async fn update_file_row(
         Set(mutation.metadata.file_metadata_created_at);
     file.file_metadata_modified_at =
         Set(mutation.metadata.file_metadata_modified_at);
+    if classification_inputs_changed {
+        file.analyzed = Set(false);
+    }
     file.updated_at = Set(now);
     let file = file.update(transaction).await.map_err(|error| {
         map_transaction_body_error(anyhow::Error::new(error).context(h!()))

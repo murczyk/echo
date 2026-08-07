@@ -639,6 +639,8 @@ DELETE FROM device_name;
 DELETE FROM api_integration;
 UPDATE area_of_responsibility SET updated_by_login_id = NULL;
 DELETE FROM sigint_key_share_policy;
+DELETE FROM device_file_tag;
+DELETE FROM analytics_tag;
 DELETE FROM device;
 DELETE FROM login WHERE login <> 'system';
 DELETE FROM delta_login;

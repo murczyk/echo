@@ -26,6 +26,10 @@ pub enum AppError {
     ServiceUnavailable { msg: String, retry_after_secs: u64 },
     #[error("Form errors")]
     Form(BTreeMap<String, String>),
+    #[error("Bad request")]
+    BadRequestJson { body: serde_json::Value },
+    #[error("Conflict")]
+    ConflictJson { body: serde_json::Value },
     #[error("IO Error")]
     IO {
         #[from]
@@ -108,6 +112,12 @@ impl From<anyhow::Error> for AppError {
                     }
                     AppError::Form(errors) => {
                         return AppError::Form(errors.clone());
+                    }
+                    AppError::BadRequestJson { body } => {
+                        return AppError::BadRequestJson { body: body.clone() };
+                    }
+                    AppError::ConflictJson { body } => {
+                        return AppError::ConflictJson { body: body.clone() };
                     }
                     AppError::IO { .. }
                     | AppError::JoinErr { .. }
@@ -196,6 +206,20 @@ impl actix_web::error::ResponseError for AppError {
                     serde_json::to_string(&Vec::from_iter(es.iter())).unwrap(),
                 )
             }
+            AppError::BadRequestJson { body } => {
+                warn!(target: "form_error_details", "Bad request: {body}");
+                actix_web::HttpResponseBuilder::new(
+                    actix_web::http::StatusCode::BAD_REQUEST,
+                )
+                .json(body)
+            }
+            AppError::ConflictJson { body } => {
+                warn!(target: "business_error", "Conflict: {body}");
+                actix_web::HttpResponseBuilder::new(
+                    actix_web::http::StatusCode::CONFLICT,
+                )
+                .json(body)
+            }
             AppError::BL { msg } => {
                 warn!(target: "business_error", "Business logic error: {msg}");
                 actix_web::HttpResponseBuilder::new(
@@ -218,6 +242,8 @@ impl actix_web::error::ResponseError for AppError {
                     }
                     AppError::BL { .. }
                     | AppError::Form(_)
+                    | AppError::BadRequestJson { .. }
+                    | AppError::ConflictJson { .. }
                     | AppError::NotFound
                     | AppError::Unauthenticated
                     | AppError::Forbidden(_)

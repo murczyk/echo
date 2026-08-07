@@ -23,6 +23,7 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
 import { PowerChip } from '../../../components/PowerChip';
 import { PowerIconButton } from '../../../components/PowerIconButton';
+import { DeviceAnalyticsTagBadges } from './DeviceAnalyticsTagBadges';
 import { DeviceFileContentMarker } from './DeviceFileContentMarker';
 import type { DeviceFilesState } from '../use-device-files';
 import type { DeviceFileTreeBranch } from '../use-device-file-tree';
@@ -99,9 +100,15 @@ function DeviceFileRow({ entry, depth }: { entry: DeviceFileTreeEntry; depth: nu
       <Box sx={{ width: 36, flexShrink: 0 }} />
       <InsertDriveFileOutlinedIcon fontSize="small" color="action" sx={{ mr: 1 }} />
       <ListItemText
-        primary={entry.name}
+        primary={
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+            <Typography variant="body2" noWrap title={entry.name} sx={{ minWidth: 0 }}>
+              {entry.name}
+            </Typography>
+            <DeviceAnalyticsTagBadges tags={entry.tags} />
+          </Stack>
+        }
         secondary={metadata}
-        primaryTypographyProps={{ noWrap: true, title: entry.name, variant: 'body2' }}
         secondaryTypographyProps={{ noWrap: true, title: metadata ?? undefined }}
         sx={{ minWidth: 0, my: 0 }}
       />

@@ -5,7 +5,7 @@ use tokio::process::Command;
 
 pub async fn restart_whatsapp_units(mode: Mode) -> Result<(), AppError> {
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
-    let active_status = AccountStatus::Active.into_value();
+    let active_status = AccountStatus::Active.into_value().value.into_owned();
     let whatsapp_units: Vec<_> = super::bl::list_echo_accounts(None, &dbx)
         .await
         .c(h!())?

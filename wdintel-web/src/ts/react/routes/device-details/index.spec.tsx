@@ -14,6 +14,7 @@ const pageMock = vi.hoisted(() => ({
   useDeviceDetailsPage: vi.fn(),
   useDeviceFiles: vi.fn(),
   useDeviceFileJournal: vi.fn(),
+  useDeviceAnalyticsTags: vi.fn(),
 }));
 
 let container: HTMLDivElement | null = null;
@@ -31,6 +32,10 @@ vi.mock('../device-files/use-device-file-journal', () => ({
   useDeviceFileJournal: pageMock.useDeviceFileJournal,
 }));
 
+vi.mock('../device-files/use-device-analytics-tags', () => ({
+  useDeviceAnalyticsTags: pageMock.useDeviceAnalyticsTags,
+}));
+
 vi.mock('../device-files', () => ({
   DeviceFilesPanel: ({ canSync }: { canSync: boolean }) => (
     <div data-testid="device-files-panel" data-can-sync={String(canSync)}>
@@ -45,6 +50,14 @@ vi.mock('../device-files/components/DeviceFileTree', () => ({
 
 vi.mock('../device-files/components/DeviceFileJournal', () => ({
   DeviceFileJournal: () => <div data-testid="device-file-journal">Журнал синхронізації</div>,
+}));
+
+vi.mock('./components/DeviceAnalyticsPanel', () => ({
+  DeviceAnalyticsPanel: ({ isAdmin }: { isAdmin: boolean }) => (
+    <div data-testid="device-analytics-panel" data-is-admin={String(isAdmin)}>
+      Аналітика файлів
+    </div>
+  ),
 }));
 
 const activeDevice: DeviceDetails = {
@@ -108,6 +121,12 @@ beforeEach(() => {
     reload: vi.fn(),
     loadMore: vi.fn(),
   });
+  pageMock.useDeviceAnalyticsTags.mockReturnValue({
+    tags: [],
+    loading: false,
+    error: null,
+    reload: vi.fn(),
+  });
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -121,9 +140,9 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderPage() {
+function renderPage(authUserRoles: string[] = ['DeviceSource']) {
   act(() => {
-    root?.render(<DeviceDetailsPage deviceId={DEVICE_ID} authUserRoles={['DeviceSource']} />);
+    root?.render(<DeviceDetailsPage deviceId={DEVICE_ID} authUserRoles={authUserRoles} />);
   });
 }
 
@@ -159,8 +178,21 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanelText.indexOf('Основне')).toBeLessThan(leftPanelText.indexOf('Кастомні поля'));
     expect(leftPanelText.indexOf('Кастомні поля')).toBeLessThan(leftPanelText.indexOf('Додатково'));
     const tabs = Array.from(container?.querySelectorAll('[role="tab"]') ?? []);
-    expect(tabs).toHaveLength(3);
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Аналітичні відомості', 'Файли', 'Журнал']);
+    expect(tabs).toHaveLength(4);
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      'Аналітичні відомості',
+      'Аналітика файлів',
+      'Файли',
+      'Журнал',
+    ]);
+    expect(container?.querySelector('[data-testid="device-analytics-panel"]')).toBeNull();
+    const fileAnalyticsTab = tabs.find((tab) => tab.textContent === 'Аналітика файлів');
+    act(() => fileAnalyticsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(
+      container
+        ?.querySelector('[data-testid="device-analytics-panel"]')
+        ?.getAttribute('data-is-admin'),
+    ).toBe('false');
     expect(container?.querySelector('[data-testid="device-files-panel"]')).toBeNull();
     expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).toBeNull();
     expect(container?.querySelector('button[aria-label="Згорнути ліву панель"]')).not.toBeNull();
@@ -174,6 +206,7 @@ describe('DeviceDetailsPage layout', () => {
     expect(pageMock.useDeviceFileJournal).toHaveBeenLastCalledWith({
       deviceId: DEVICE_ID,
       enabled: true,
+      tagFilter: { tagIds: [], tagMatch: 'any', untagged: false },
     });
 
     const filesTab = tabs.find((tab) => tab.textContent === 'Файли');
@@ -193,6 +226,20 @@ describe('DeviceDetailsPage layout', () => {
     expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).toBeNull();
     expect(container?.querySelector('[data-testid="device-files-panel"]')).not.toBeNull();
     expect(container?.querySelector('button[aria-label="Розгорнути ліву панель"]')).not.toBeNull();
+  });
+
+  it('exposes the device reanalysis action only to Admin', () => {
+    renderPage(['Admin']);
+    const fileAnalyticsTab = Array.from(container?.querySelectorAll('[role="tab"]') ?? []).find(
+      (tab) => tab.textContent === 'Аналітика файлів',
+    );
+    act(() => fileAnalyticsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(
+      container
+        ?.querySelector('[data-testid="device-analytics-panel"]')
+        ?.getAttribute('data-is-admin'),
+    ).toBe('true');
   });
 
   it('keeps the device name non-clickable when the external URL is unsafe', () => {

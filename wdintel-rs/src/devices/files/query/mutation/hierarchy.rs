@@ -9,8 +9,10 @@ use crate::h;
 use chrono::NaiveDateTime;
 use sea_orm::sea_query::{Expr, OnConflict, SimpleExpr};
 use sea_orm::{
-    ActiveEnum, ActiveValue::Set, ColumnTrait, DatabaseTransaction,
-    EntityTrait, ExprTrait, QueryFilter, QueryOrder, QuerySelect,
+    ActiveEnum,
+    ActiveValue::{NotSet, Set},
+    ColumnTrait, DatabaseTransaction, EntityTrait, ExprTrait, QueryFilter,
+    QueryOrder, QuerySelect,
 };
 use uuid::Uuid;
 
@@ -41,6 +43,7 @@ pub(super) async fn ensure_target_root(
         created_at: Set(now),
         updated_at: Set(now),
         content_path: Set(None),
+        analyzed: NotSet,
     })
     .on_conflict(
         OnConflict::columns([
@@ -161,6 +164,7 @@ pub(super) async fn ensure_directory_chain(
             created_at: Set(now),
             updated_at: Set(now),
             content_path: Set(None),
+            analyzed: NotSet,
         })
         .on_conflict(
             OnConflict::columns([

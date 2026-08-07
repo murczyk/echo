@@ -2,22 +2,35 @@ import { Box, Paper, Tab, Tabs } from '@mui/material';
 
 import { DeviceFilesPanel } from '../../device-files';
 import { DeviceFileJournal } from '../../device-files/components/DeviceFileJournal';
+import type { DeviceAnalyticsTagFilter } from '../../device-files/types';
+import type { DeviceAnalyticsTagsState } from '../../device-files/use-device-analytics-tags';
 import type { DeviceFileJournalState } from '../../device-files/use-device-file-journal';
 import type { DeviceFilesState } from '../../device-files/use-device-files';
+import { DeviceAnalyticsPanel } from './DeviceAnalyticsPanel';
 
-export type DeviceDetailsTab = 'analytical' | 'files' | 'journal';
+export type DeviceDetailsTab = 'analytical' | 'file-analytics' | 'files' | 'journal';
 
 export function DeviceDetailsTabPanel({
   activeTab,
   files,
   journal,
   canSyncFiles,
+  deviceId,
+  isAdmin,
+  tagsState,
+  tagFilter,
+  onTagFilterChange,
   onTabChange,
 }: {
   activeTab: DeviceDetailsTab;
   files: DeviceFilesState;
   journal: DeviceFileJournalState;
   canSyncFiles: boolean;
+  deviceId: string;
+  isAdmin: boolean;
+  tagsState: DeviceAnalyticsTagsState;
+  tagFilter: DeviceAnalyticsTagFilter;
+  onTagFilterChange: (filter: DeviceAnalyticsTagFilter) => void;
   onTabChange: (tab: DeviceDetailsTab) => void;
 }) {
   return (
@@ -51,6 +64,12 @@ export function DeviceDetailsTabPanel({
             label="Аналітичні відомості"
           />
           <Tab
+            id="device-details-file-analytics-tab"
+            aria-controls="device-details-file-analytics-panel"
+            value="file-analytics"
+            label="Аналітика файлів"
+          />
+          <Tab
             id="device-details-files-tab"
             aria-controls="device-details-files-panel"
             value="files"
@@ -74,6 +93,23 @@ export function DeviceDetailsTabPanel({
             sx={{ height: '100%', minHeight: 0 }}
           />
         ) : null}
+        {activeTab === 'file-analytics' ? (
+          <Box
+            id="device-details-file-analytics-panel"
+            role="tabpanel"
+            aria-labelledby="device-details-file-analytics-tab"
+            sx={{ height: '100%', minHeight: 0 }}
+          >
+            <DeviceAnalyticsPanel
+              deviceId={deviceId}
+              enabled
+              isAdmin={isAdmin}
+              tagsState={tagsState}
+              tagFilter={tagFilter}
+              onTagFilterChange={onTagFilterChange}
+            />
+          </Box>
+        ) : null}
         {activeTab === 'files' ? (
           <Box
             id="device-details-files-panel"
@@ -81,7 +117,13 @@ export function DeviceDetailsTabPanel({
             aria-labelledby="device-details-files-tab"
             sx={{ height: '100%', minHeight: 0, minWidth: 0 }}
           >
-            <DeviceFilesPanel files={files} canSync={canSyncFiles} />
+            <DeviceFilesPanel
+              files={files}
+              canSync={canSyncFiles}
+              tagsState={tagsState}
+              tagFilter={tagFilter}
+              onTagFilterChange={onTagFilterChange}
+            />
           </Box>
         ) : null}
         {activeTab === 'journal' ? (
@@ -91,7 +133,12 @@ export function DeviceDetailsTabPanel({
             aria-labelledby="device-details-journal-tab"
             sx={{ height: '100%', minHeight: 0, minWidth: 0 }}
           >
-            <DeviceFileJournal journal={journal} />
+            <DeviceFileJournal
+              journal={journal}
+              tagsState={tagsState}
+              tagFilter={tagFilter}
+              onTagFilterChange={onTagFilterChange}
+            />
           </Box>
         ) : null}
       </Box>

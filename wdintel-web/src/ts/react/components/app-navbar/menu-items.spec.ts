@@ -174,7 +174,12 @@ describe('menu-items', () => {
       'Ключі',
       'Населені пункти смуг',
       'Теги',
+      'Теги пристроїв',
     ]);
     expect(menuIsActive('tags-neo', databaseGroup!)).toBe(true);
+    expect(menuIsActive('device-analytics', databaseGroup!)).toBe(true);
+    expect(
+      adminSubs.some((item) => item.type === 'item' && item.activeName === 'device-analytics'),
+    ).toBe(false);
   });
 });

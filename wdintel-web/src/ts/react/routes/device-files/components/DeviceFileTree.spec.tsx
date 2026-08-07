@@ -38,6 +38,7 @@ function buildFileEntry(entryId: string, name: string, hasContent: boolean): Dev
     fileMetadataCreatedAt: null,
     fileMetadataModifiedAt: null,
     createdAt: NOW,
+    tags: [],
     updatedAt: NOW,
   };
 }

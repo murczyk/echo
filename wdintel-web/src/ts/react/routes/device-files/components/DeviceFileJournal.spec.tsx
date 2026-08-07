@@ -84,6 +84,7 @@ const entry: DeviceFileJournalEntry = {
   name: 'report.log',
   absolutePath: '/var/log/report.log',
   hasContent: true,
+  tags: [{ id: '018f0000-0000-7000-8000-000000000101', name: 'Звіти' }],
   synchronizedAt: '2026-07-28T08:15:30Z',
 };
 
@@ -121,7 +122,14 @@ afterEach(() => {
 
 function renderJournal(journal: DeviceFileJournalState) {
   act(() => {
-    root?.render(<DeviceFileJournal journal={journal} />);
+    root?.render(
+      <DeviceFileJournal
+        journal={journal}
+        tagsState={{ tags: entry.tags, loading: false, error: null, reload: vi.fn() }}
+        tagFilter={{ tagIds: [], tagMatch: 'any', untagged: false }}
+        onTagFilterChange={vi.fn()}
+      />,
+    );
   });
 }
 
@@ -135,6 +143,7 @@ describe('DeviceFileJournal', () => {
     expect(headers).toEqual([
       'Назва файлу',
       'Шлях до файлу',
+      'Теги',
       'Контент',
       'Дата й час синхронізації',
     ]);

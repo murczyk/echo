@@ -57,6 +57,7 @@ flowchart LR
         api -->|transactions and queries| postgres
         api -.->|device file metadata| file_registry
         bg -->|queues and message state| postgres
+        bg -.->|pending device file metadata| file_registry
         api --> redis
         bg --> redis
         api -.->|tokenization and inference| nlp
@@ -152,6 +153,11 @@ unavailable. When configured, operators must
 provision the database before restart, and startup applies its schema migrations
 automatically. See [File registry database](../deploy/README.md#file-registry-database)
 for configuration and provisioning.
+
+The `device_file_analytics_worker` runs in `wdintel-rs-bgworker`, reads pending
+file metadata from `wd_files`, and writes derived tag assignments to `wd`.
+It classifies only normalized file names, paths, and extensions; it does not
+read or transfer file content.
 
 See [Echo GPU audio transcription](ECHO_GPU_TRANSCRIPTION.md) for its
 configuration, network requirements, queue, cache, retry, and REST API flow.

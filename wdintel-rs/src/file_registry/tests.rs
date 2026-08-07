@@ -4,7 +4,7 @@ use super::*;
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
-    DbBackend, DbErr, EntityTrait, IntoActiveModel, Set, Statement,
+    DbBackend, DbErr, EntityTrait, IntoActiveModel, NotSet, Set, Statement,
     TransactionTrait,
 };
 use std::{collections::BTreeMap, error::Error as StdError, future::Future};
@@ -847,6 +847,7 @@ fn base_file_entry(
         created_at: Set(created_at),
         updated_at: Set(created_at),
         content_path: Set(None),
+        analyzed: NotSet,
     }
 }
 

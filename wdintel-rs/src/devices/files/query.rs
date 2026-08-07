@@ -202,6 +202,15 @@ pub(in crate::devices) async fn list_file_journal_with_total(
     Ok((page, total_count))
 }
 
+pub(in crate::devices) async fn list_file_journal(
+    file_registry_db: &FileRegistryDb,
+    device_id: Uuid,
+    page: KeysetPageRequest<FileJournalSortKey>,
+) -> Result<KeysetPage<FileJournalEntry, FileJournalSortKey>, FilesystemError> {
+    journal::list_file_journal(file_registry_db.connection(), device_id, page)
+        .await
+}
+
 pub(in crate::devices) async fn resolve_file_journal_cursor(
     file_registry_db: &FileRegistryDb,
     device_id: Uuid,

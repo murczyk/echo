@@ -167,6 +167,13 @@
     },
     "echo:m20260806_141904_report_history_duplicate_lookup": {
       "changes": []
+    },
+    "echo:m20260806_160450_device_analytics_tags": {
+      "changes": [
+        { "table": "public.analytics_tag", "strategy": "excluded" },
+        { "table": "public.analytics_tag_test_file", "strategy": "excluded" },
+        { "table": "public.device_file_tag", "strategy": "replicated_snapshot" }
+      ]
     }
   },
   "dependencies": {

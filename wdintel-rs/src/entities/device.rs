@@ -32,11 +32,13 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::device_aor::Entity")]
     DeviceAor,
+    #[sea_orm(has_many = "super::device_file_tag::Entity")]
+    DeviceFileTag,
     #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::CreatedBy",
         to = "super::login::Column::Login",
-        on_update = "Cascade",
+        on_update = "NoAction",
         on_delete = "NoAction"
     )]
     Login,
@@ -61,6 +63,12 @@ pub enum Relation {
 impl Related<super::device_aor::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::DeviceAor.def()
+    }
+}
+
+impl Related<super::device_file_tag::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceFileTag.def()
     }
 }
 

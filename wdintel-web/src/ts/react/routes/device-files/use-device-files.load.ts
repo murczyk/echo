@@ -13,6 +13,7 @@ import {
   validateFileSearchDraft,
 } from './helpers';
 import type {
+  DeviceAnalyticsTagFilter,
   DeviceFileLoadError,
   DeviceFileSearchDraft,
   DeviceFileSearchScope,
@@ -21,7 +22,15 @@ import type {
 
 type LoadOptions = { append?: boolean; preserve?: boolean };
 
-export function useDeviceFilesLoad({ deviceId, enabled }: { deviceId: string; enabled: boolean }) {
+export function useDeviceFilesLoad({
+  deviceId,
+  enabled,
+  tagFilter,
+}: {
+  deviceId: string;
+  enabled: boolean;
+  tagFilter: DeviceAnalyticsTagFilter;
+}) {
   const [roots, setRoots] = useState<DeviceFileRoot[]>([]);
   const [rootsLoading, setRootsLoading] = useState(enabled);
   const [rootsRefreshing, setRootsRefreshing] = useState(false);
@@ -47,10 +56,14 @@ export function useDeviceFilesLoad({ deviceId, enabled }: { deviceId: string; en
   const searchNextCursorRef = useRef<string | null>(null);
   const searchFingerprintRef = useRef<string | null>(null);
   const appliedSearchDraftRef = useRef<DeviceFileSearchDraft | null>(null);
+  const tagFilterKey = JSON.stringify(tagFilter);
+  const tagFilterRef = useRef(tagFilter);
+  const tagFilterKeyRef = useRef(tagFilterKey);
   const rootsSeqRef = useRef(0);
   const searchSeqRef = useRef(0);
   const rootsAbortRef = useRef<AbortController | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
+  tagFilterRef.current = tagFilter;
 
   const replaceSearchScope = useCallback((scope: DeviceFileSearchScope | null) => {
     searchScopeRef.current = scope;
@@ -153,9 +166,10 @@ export function useDeviceFilesLoad({ deviceId, enabled }: { deviceId: string; en
     async (draft: DeviceFileSearchDraft, options?: LoadOptions) => {
       const scope = searchScopeRef.current;
       if (!enabled || scope === null) return;
+      const currentTagFilter = tagFilterRef.current;
       const append = options?.append ?? false;
       const preserve = options?.preserve ?? false;
-      const fingerprint = buildSearchFingerprint(deviceId, scope.entryId, draft);
+      const fingerprint = buildSearchFingerprint(deviceId, scope.entryId, draft, currentTagFilter);
       if (append && searchFingerprintRef.current !== fingerprint) return;
 
       const cursor = append ? searchNextCursorRef.current : null;
@@ -183,6 +197,7 @@ export function useDeviceFilesLoad({ deviceId, enabled }: { deviceId: string; en
             scopeEntryId: scope.entryId,
             draft,
             cursor,
+            tagFilter: currentTagFilter,
           }),
           { signal: controller.signal },
         );
@@ -223,7 +238,7 @@ export function useDeviceFilesLoad({ deviceId, enabled }: { deviceId: string; en
         if (searchAbortRef.current === controller) searchAbortRef.current = null;
       }
     },
-    [deviceId, enabled, fallbackToRoots],
+    [deviceId, enabled, fallbackToRoots, tagFilterKey],
   );
 
   const selectSearchScope = useCallback(
@@ -278,6 +293,14 @@ export function useDeviceFilesLoad({ deviceId, enabled }: { deviceId: string; en
       await loadSearch(appliedDraft, { preserve: true });
     }
   }, [loadRoots, loadSearch]);
+  useEffect(() => {
+    if (tagFilterKeyRef.current === tagFilterKey) return;
+    tagFilterKeyRef.current = tagFilterKey;
+    const appliedDraft = appliedSearchDraftRef.current;
+    if (enabled && appliedDraft !== null && searchScopeRef.current !== null) {
+      void loadSearch(appliedDraft);
+    }
+  }, [enabled, loadSearch, tagFilterKey]);
 
   useEffect(() => {
     rootsAbortRef.current?.abort();

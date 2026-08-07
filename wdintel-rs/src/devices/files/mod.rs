@@ -116,6 +116,9 @@ pub(crate) async fn browse(
             include_breadcrumbs: body.include_breadcrumbs.unwrap_or(true),
             limit: body.limit,
             cursor: body.cursor,
+            tag_ids: body.tag_ids.unwrap_or_default(),
+            tag_match: body.tag_match,
+            untagged: body.untagged.unwrap_or(false),
         },
     )
     .await
@@ -160,6 +163,9 @@ pub(crate) async fn search(
             },
             limit: body.limit,
             cursor: body.cursor,
+            tag_ids: body.tag_ids.unwrap_or_default(),
+            tag_match: body.tag_match,
+            untagged: body.untagged.unwrap_or(false),
         },
     )
     .await
@@ -184,6 +190,9 @@ pub(crate) async fn journal(
             device_id: parse_uuid(&body.device_id),
             limit: body.limit,
             cursor: body.cursor,
+            tag_ids: body.tag_ids.unwrap_or_default(),
+            tag_match: body.tag_match,
+            untagged: body.untagged.unwrap_or(false),
         },
     )
     .await
