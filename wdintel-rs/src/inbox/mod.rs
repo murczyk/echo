@@ -259,7 +259,6 @@ where
         coords: Set(coords.clone().map(|x| x.text)),
         lat: Set(coords.clone().map(|x| x.lat)),
         lng: Set(coords.clone().map(|x| x.lng)),
-        callsigns: Set(Some(serde_json::to_value(callsigns).c(h!())?)),
         checked: Set(Some(checked)),
         reviewed: Set(Some(reviewed)),
         unit: Set(unit.clone()),
@@ -272,12 +271,6 @@ where
         location_v2: Set(location_v2),
         body_noheader: Set(Some(serde_json::to_value(&body_noheader).c(h!())?)),
         tags: NotSet,
-        callsigns_alg1: Set(Some(
-            serde_json::to_value(&callsigns_alg1).c(h!())?,
-        )),
-        callsigns_alg2: Set(Some(
-            serde_json::to_value(&callsigns_alg2).c(h!())?,
-        )),
         datetime: NotSet,
         datetime_neo: Set(datetime_neo),
         signal_tokens: Set(Some(serde_json::to_value(signal_tokens).c(h!())?)),
@@ -419,7 +412,7 @@ where
     Ok(ConstructInboxItemResult::changed(message.id))
 }
 
-fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 24] {
+fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 21] {
     [
         sigint_inbox_item::Column::Date,
         sigint_inbox_item::Column::Time,
@@ -428,7 +421,6 @@ fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 24] {
         sigint_inbox_item::Column::Coords,
         sigint_inbox_item::Column::Lat,
         sigint_inbox_item::Column::Lng,
-        sigint_inbox_item::Column::Callsigns,
         sigint_inbox_item::Column::Checked,
         sigint_inbox_item::Column::Reviewed,
         sigint_inbox_item::Column::Unit,
@@ -438,8 +430,6 @@ fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 24] {
         sigint_inbox_item::Column::Location,
         sigint_inbox_item::Column::LocationV2,
         sigint_inbox_item::Column::BodyNoheader,
-        sigint_inbox_item::Column::CallsignsAlg1,
-        sigint_inbox_item::Column::CallsignsAlg2,
         sigint_inbox_item::Column::SignalTokens,
         sigint_inbox_item::Column::PostId,
         sigint_inbox_item::Column::DeviceNameId,

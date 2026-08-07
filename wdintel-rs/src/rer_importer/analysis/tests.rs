@@ -1158,9 +1158,20 @@ async fn set_message_callsigns(
         .await
         .context(h!())?
         .context(h!())?;
-    let mut inbox_item = inbox_item.into_active_model();
-    inbox_item.callsigns = Set(Some(callsigns));
-    inbox_item.update(db).await.context(h!())?;
+    let callsigns =
+        serde_json::from_value::<Vec<String>>(callsigns).context(h!())?;
+    let actor_id = crate::users::system_login_id(db).await.context(h!())?;
+    crate::inbox::callsigns::sync(
+        db,
+        inbox_item.id,
+        crate::inbox::callsigns::InboxItemCallsigns {
+            primary: callsigns,
+            alg2: Vec::new(),
+        },
+        actor_id,
+    )
+    .await
+    .context(h!())?;
     Ok(())
 }
 

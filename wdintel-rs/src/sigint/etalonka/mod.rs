@@ -2435,12 +2435,27 @@ mod tests {
             sigint_inbox_item::ActiveModel {
                 id: Set(message.id),
                 freq: Set(Some(freq.to_string())),
-                callsigns: Set(Some(json!(callsigns))),
                 date: Set(None),
                 time: Set(None),
                 parsed_unit_v2: Set(false),
                 ..Default::default()
             },
+        )
+        .await
+        .unwrap();
+
+        let actor_id = find_test_login(dbx).await.unwrap().id;
+        crate::inbox::callsigns::sync(
+            dbx,
+            inbox_item.id,
+            crate::inbox::callsigns::InboxItemCallsigns {
+                primary: callsigns
+                    .iter()
+                    .map(|callsign| callsign.to_string())
+                    .collect(),
+                alg2: Vec::new(),
+            },
+            actor_id,
         )
         .await
         .unwrap();

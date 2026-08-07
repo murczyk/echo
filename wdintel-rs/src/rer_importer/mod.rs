@@ -719,7 +719,6 @@ async fn load_rer_importer_callsigns(
         .columns([
             sigint_inbox_item::Column::Id,
             sigint_inbox_item::Column::Freq,
-            sigint_inbox_item::Column::Callsigns,
         ])
         .inner_join(signal_message::Entity)
         .join(
@@ -749,34 +748,8 @@ async fn load_rer_importer_callsigns(
             WHERE siic.source = 'primary'::sigint_inbox_item_callsign_source
               AND NOT siic.deleted
         )
-        , legacy_callsigns AS (
-            SELECT DISTINCT
-                item.id AS inbox_item_id,
-                legacy.callsign
-            FROM filtered_items
-            INNER JOIN sigint_inbox_item AS item ON item.id = filtered_items.id
-            CROSS JOIN LATERAL jsonb_array_elements_text(
-                CASE
-                    WHEN jsonb_typeof(item.callsigns) = 'array'
-                        THEN item.callsigns
-                    ELSE '[]'::jsonb
-                END
-            ) AS legacy(callsign)
-            WHERE item.id > coalesce((
-                SELECT nullif(dk.v #>> '{{}}', '')::bigint
-                FROM delta_kv AS dk
-                WHERE dk.k = '{watermark_key}'
-            ), 0)
-              AND NOT EXISTS (
-                SELECT 1
-                FROM sigint_inbox_item_callsign AS siic
-                WHERE siic.sigint_inbox_item_id = item.id
-            )
-        )
         , all_callsigns AS (
             SELECT inbox_item_id, callsign FROM normalized_callsigns
-            UNION ALL
-            SELECT inbox_item_id, callsign FROM legacy_callsigns
         )
         SELECT
             all_callsigns.callsign,
@@ -792,8 +765,6 @@ async fn load_rer_importer_callsigns(
         ORDER BY all_callsigns.callsign
         "#,
         filtered_items.sql,
-        watermark_key =
-            crate::inbox::callsigns::CALLSIGN_BACKFILL_WATERMARK_KEY,
     );
     let rows = dbx
         .query_all_raw(Statement::from_sql_and_values(
@@ -1438,9 +1409,14 @@ pub async fn oneoff_reprocess_unit_names(
             .filter(signal_group::Column::MasterKey.eq(master_key));
     }
     // let count = q.clone().count(&dbx).await
-    let mut inbox_items = q.stream(&dbx).await.c(h!())?;
+    let inbox_items = q.all(&dbx).await.c(h!())?;
+    let inbox_item_ids =
+        inbox_items.iter().map(|item| item.id).collect::<Vec<_>>();
+    let callsigns_by_item_id =
+        crate::inbox::callsigns::load_by_item_ids(&dbx, &inbox_item_ids)
+            .await?;
     // let pb = ProgressBar::new(count);
-    while let Some(item) = inbox_items.try_next().await.c(h!())? {
+    for item in inbox_items {
         // pb.inc(1);
         let id = item.id;
         let inbox_message = signal_message::Entity::find_by_id(id)
@@ -1453,10 +1429,11 @@ pub async fn oneoff_reprocess_unit_names(
 
         let unit_old = item.unit.clone();
         if let Some(body) = inbox_message.body {
-            let callsigns: Vec<String> = match item.callsigns.as_ref() {
-                Some(v) => serde_json::from_value(v.clone()).c(h!())?,
-                None => vec![],
-            };
+            let callsigns = callsigns_by_item_id
+                .get(&item.id)
+                .cloned()
+                .unwrap_or_default()
+                .effective();
             let callsigns = callsigns
                 .into_iter()
                 .map(|x| x.to_uppercase())

@@ -356,8 +356,8 @@ mod m20260804_094408_sigint_unit_deduplicate_candidate;
 mod m20260804_095344_ai_agent_dispatcher;
 mod m20260805_064150_ai_agent_mattermost_chat;
 mod m20260805_135334_sigint_unit_orbit_note;
-mod m20260806_120000_drop_legacy_inbox_callsigns;
 mod m20260806_091349_add_sigint_inbox_item_datetime_neo;
+mod m20260806_120000_drop_legacy_inbox_callsigns;
 mod m20260806_134330_sigint_unit_extended_echelons;
 mod m20260806_141904_report_history_duplicate_lookup;
 

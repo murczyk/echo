@@ -3682,12 +3682,11 @@ mod tests {
         .await
         .context(h!())?;
 
-        mk_sigint_inbox_item(
+        let inbox_item = mk_sigint_inbox_item(
             &env.dbx,
             sigint_inbox_item::ActiveModel {
                 id: Set(message.id),
                 freq: Set(Some("123.45".to_string())),
-                callsigns: Set(Some(json!(["Alpha"]))),
                 tags: Set(Some(json!([tag.id]))),
                 date: Set(Some(now.date().to_string())),
                 time: Set(Some(now.time().format("%H:%M:%S").to_string())),
@@ -3698,6 +3697,20 @@ mod tests {
         )
         .await
         .context(h!())?;
+
+        if let Some(actor) = tag_logins.first() {
+            crate::inbox::callsigns::sync(
+                &env.dbx,
+                inbox_item.id,
+                crate::inbox::callsigns::InboxItemCallsigns {
+                    primary: vec!["Alpha".to_string()],
+                    alg2: Vec::new(),
+                },
+                actor.id,
+            )
+            .await
+            .context(h!())?;
+        }
 
         for login_model in tag_logins {
             sigint_inbox_item_tag::ActiveModel {

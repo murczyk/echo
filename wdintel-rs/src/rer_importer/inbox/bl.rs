@@ -1087,16 +1087,6 @@ pub async fn submit_upsert_inbox_item(
             time: Set(message.time.clone()),
             freq: Set(freq),
             coords: Set(coords_s.map(|x| x.text)),
-            callsigns: Set(Some(
-                serde_json::to_value(
-                    message
-                        .callsigns
-                        .iter()
-                        .map(|x| x.to_lowercase().trim().to_string())
-                        .collect::<Vec<String>>(),
-                )
-                .context(h!())?,
-            )),
             checked: Set(Some(message.checked)),
             reviewed: Set(Some(true)),
             unit: Set(message.unit.clone()),
@@ -1113,8 +1103,6 @@ pub async fn submit_upsert_inbox_item(
             location: Set(location),
             location_v2: Set(location_v2),
             tags: NotSet,
-            callsigns_alg1: NotSet,
-            callsigns_alg2: NotSet,
             signal_tokens: NotSet,
             datetime: NotSet,
             datetime_neo: Set(datetime_neo),
@@ -1135,7 +1123,6 @@ pub async fn submit_upsert_inbox_item(
                     sigint_inbox_item::Column::DatetimeNeo,
                     sigint_inbox_item::Column::Freq,
                     sigint_inbox_item::Column::Coords,
-                    sigint_inbox_item::Column::Callsigns,
                     sigint_inbox_item::Column::Checked,
                     sigint_inbox_item::Column::Reviewed,
                     sigint_inbox_item::Column::Unit,
@@ -1179,7 +1166,16 @@ pub async fn submit_upsert_inbox_item(
         .await
         .c(h!())?
         .c(h!())?;
-    let callsigns = crate::inbox::callsigns::from_legacy(&new_item)?;
+    let callsigns = crate::inbox::callsigns::InboxItemCallsigns {
+        primary: crate::utils::uniq_via_btreeset(
+            &message
+                .callsigns
+                .iter()
+                .map(|callsign| callsign.to_lowercase().trim().to_string())
+                .collect::<Vec<_>>(),
+        ),
+        alg2: Vec::new(),
+    };
     crate::inbox::callsigns::sync(txn, inbox_id, callsigns, *login)
         .await
         .c(h!())?;
@@ -1246,14 +1242,6 @@ async fn clear_body_derived_fields(
     inbox_id: i64,
 ) -> Result<(), AppError> {
     sigint_inbox_item::Entity::update_many()
-        .col_expr(
-            sigint_inbox_item::Column::CallsignsAlg1,
-            Expr::value(Option::<serde_json::Value>::None),
-        )
-        .col_expr(
-            sigint_inbox_item::Column::CallsignsAlg2,
-            Expr::value(Option::<serde_json::Value>::None),
-        )
         .col_expr(
             sigint_inbox_item::Column::SignalTokens,
             Expr::value(Option::<serde_json::Value>::None),
