@@ -1584,6 +1584,10 @@ pub async fn callsigns_graph(
         )
         .join(
             JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SigintInboxItemCallsign.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
             signal_message::Relation::DatasourceGroup.def(),
         )
         .select_only()
