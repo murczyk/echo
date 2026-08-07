@@ -1,3 +1,4 @@
+use crate::rer_importer::report_chunking::ReportPeriodEnd;
 use crate::sigint::network::types::{ListNetworksReq, ListNetworksSortBy};
 use crate::sigint::signal::types::Signal;
 use chrono::NaiveDateTime;
@@ -104,6 +105,7 @@ pub struct NetworkFreqFilter {
     pub active_freqs_only: bool,
     pub since_date_inclusive_ms: Option<i64>,
     pub till_date_inclusive_ms: Option<i64>,
+    pub till_date_end: ReportPeriodEnd,
 }
 
 #[derive(Debug, FromQueryResult, Default)]

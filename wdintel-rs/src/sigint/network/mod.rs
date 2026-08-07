@@ -1876,6 +1876,8 @@ pub async fn list_network_points(
         active_freqs_only: false,
         since_date_inclusive_ms: Some(req.since_date_inclusive_ms),
         till_date_inclusive_ms: req.till_date_noninclusive_ms,
+        till_date_end:
+            crate::rer_importer::report_chunking::ReportPeriodEnd::NonInclusive,
     };
 
     let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
