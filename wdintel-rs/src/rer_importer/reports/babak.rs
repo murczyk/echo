@@ -2148,6 +2148,28 @@ mod tests {
         )
         .await
         .unwrap();
+        crate::inbox::callsigns::sync(
+            &env.dbx,
+            inbox_item.id,
+            crate::inbox::callsigns::InboxItemCallsigns {
+                primary: vec!["Alpha".to_string()],
+                alg2: Vec::new(),
+            },
+            login.id,
+        )
+        .await
+        .unwrap();
+        crate::inbox::callsigns::sync(
+            &env.dbx,
+            second_inbox_item.id,
+            crate::inbox::callsigns::InboxItemCallsigns {
+                primary: vec!["Beta".to_string()],
+                alg2: Vec::new(),
+            },
+            login.id,
+        )
+        .await
+        .unwrap();
         seed_babak_unit_report_data(
             &env.dbx,
             login.id,
