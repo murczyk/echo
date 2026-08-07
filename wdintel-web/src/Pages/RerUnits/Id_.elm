@@ -242,12 +242,7 @@ updateDetails result model =
 
                     else
                         model.activeTab
-                , childUnits =
-                    if List.isEmpty details.orbitUnits then
-                        Nothing
-
-                    else
-                        model.childUnits
+                , childUnits = Nothing
               }
             , E.none
             )
