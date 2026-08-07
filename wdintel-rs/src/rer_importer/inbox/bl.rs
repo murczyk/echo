@@ -1166,6 +1166,15 @@ pub async fn submit_upsert_inbox_item(
         .await
         .c(h!())?
         .c(h!())?;
+    let existing_alg2 = if invalidate_body_derived_fields {
+        Vec::new()
+    } else {
+        crate::inbox::callsigns::load_by_item_ids(txn, &[inbox_id])
+            .await?
+            .remove(&inbox_id)
+            .unwrap_or_default()
+            .alg2
+    };
     let callsigns = crate::inbox::callsigns::InboxItemCallsigns {
         primary: crate::utils::uniq_via_btreeset(
             &message
@@ -1174,7 +1183,7 @@ pub async fn submit_upsert_inbox_item(
                 .map(|callsign| callsign.to_lowercase().trim().to_string())
                 .collect::<Vec<_>>(),
         ),
-        alg2: Vec::new(),
+        alg2: existing_alg2,
     };
     crate::inbox::callsigns::sync(txn, inbox_id, callsigns, *login)
         .await
