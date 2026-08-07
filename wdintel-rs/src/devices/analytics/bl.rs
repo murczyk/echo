@@ -92,7 +92,7 @@ pub(super) async fn save_rule(
 ) -> Result<AdminAnalyticsTag, AppError> {
     let rule_expression = validate_rule_expression(tag_id, rule_expression)?;
     let transaction = main_db.begin().await.c(h!())?;
-    let tag = query::lock_tag(&transaction, tag_id)
+    let tag = query::lock_tag_for_rule_set_mutation(&transaction, tag_id)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
@@ -114,7 +114,7 @@ pub(super) async fn archive_tag(
     tag_id: Uuid,
 ) -> Result<AdminAnalyticsTag, AppError> {
     let transaction = main_db.begin().await.c(h!())?;
-    let tag = query::lock_tag(&transaction, tag_id)
+    let tag = query::lock_tag_for_rule_set_mutation(&transaction, tag_id)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
@@ -128,7 +128,7 @@ pub(super) async fn restore_tag(
     tag_id: Uuid,
 ) -> Result<AdminAnalyticsTag, AppError> {
     let transaction = main_db.begin().await.c(h!())?;
-    let tag = query::lock_tag(&transaction, tag_id)
+    let tag = query::lock_tag_for_rule_set_mutation(&transaction, tag_id)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
@@ -179,9 +179,9 @@ pub(super) async fn test_rule(
                     let result = rules::analyze(
                         &compiled,
                         &FileAnalysisInput {
-                            name: file.name.clone(),
-                            absolute_path: file.absolute_path.clone(),
-                            extension: file.extension.clone(),
+                            name: &file.name,
+                            absolute_path: &file.absolute_path,
+                            extension: file.extension.as_deref(),
                         },
                     );
                     RuleTestFileResult {

@@ -390,6 +390,40 @@ fn spawn_goi_sync_worker_pool(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
     }
 }
 
+fn spawn_device_file_analytics_worker_pool(
+    bg_set: &mut JoinSet<()>,
+    env: Arc<Env>,
+    cancellation_token: CancellationToken,
+) {
+    let file_registry_config = env
+        .config
+        .file_registry
+        .as_ref()
+        .expect("connected file registry has configuration");
+    let worker_count = file_registry_config.device_file_analytics_worker_count;
+    let batch_size = file_registry_config.device_file_analytics_batch_size;
+    let rule_cache =
+        Arc::new(crate::devices::analytics::worker::RuleCache::default());
+    for worker_index in 0..worker_count {
+        let env = env.clone();
+        let cancellation_token = cancellation_token.clone();
+        let rule_cache = rule_cache.clone();
+        spawn_named_worker(
+            format!("device_file_analytics_worker_{worker_index}"),
+            bg_set,
+            async move {
+                crate::devices::analytics::worker::run_nofail(
+                    env,
+                    cancellation_token,
+                    rule_cache,
+                    batch_size,
+                )
+                .await;
+            },
+        );
+    }
+}
+
 fn spawn_palitra_conversion_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
     spawn_named_worker("palitra_conversion_worker", bg_set, async move {
         crate::palitra::conversion_worker::palitra_conversion_worker_nofail(
@@ -633,18 +667,10 @@ fn spawn_background_workers(
         );
     }
     if env.file_registry_db.is_some() {
-        let analytics_env = env.clone();
-        let analytics_cancellation_token = cancel_token.clone();
-        spawn_named_worker(
-            "device_file_analytics_worker",
+        spawn_device_file_analytics_worker_pool(
             bg_set,
-            async move {
-                crate::devices::analytics::worker::run_nofail(
-                    analytics_env,
-                    analytics_cancellation_token,
-                )
-                .await;
-            },
+            env.clone(),
+            cancel_token.clone(),
         );
     }
     spawn_palitra_conversion_worker(bg_set, env);

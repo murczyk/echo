@@ -2,7 +2,8 @@ use super::types::{
     ActiveTagRule, DeviceAnalyticsFileLink, DeviceAnalyticsSummary,
 };
 use crate::entities::{
-    analytics_tag, analytics_tag_test_file, device_file_tag,
+    analytics_tag, analytics_tag_rule_set_state, analytics_tag_test_file,
+    device_file_tag,
 };
 use crate::file_registry::entities::{
     file_entry, sea_orm_active_enums::FileEntryKind,
@@ -15,16 +16,24 @@ use sea_orm::{
     FromQueryResult, IntoActiveModel, JoinType, QueryFilter, QueryOrder,
     QuerySelect, QueryTrait, RelationTrait, Select, Set,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use uuid::Uuid;
 
 const LINK_INSERT_CHUNK_SIZE: usize = 1_000;
+const LINK_DELETE_CHUNK_SIZE: usize = 1_000;
 
 pub(super) struct FileTagAssignment {
     pub file_entry_id: Uuid,
     pub device_id: Uuid,
     pub file_entry_created_at: DateTime<FixedOffset>,
     pub tag_id: Uuid,
+}
+
+#[derive(Debug, Default, Eq, PartialEq)]
+pub(super) struct FileTagDelta {
+    pub inserted: usize,
+    pub deleted: usize,
+    pub unchanged: usize,
 }
 
 pub(super) async fn list_tags<C>(
@@ -101,6 +110,53 @@ pub(super) async fn lock_tag(
         .lock_exclusive()
         .one(transaction)
         .await
+}
+
+pub(super) async fn lock_rule_set_revision(
+    transaction: &DatabaseTransaction,
+) -> Result<i64, DbErr> {
+    analytics_tag_rule_set_state::Entity::find_by_id(true)
+        .lock_shared()
+        .one(transaction)
+        .await?
+        .map(|state| state.revision)
+        .ok_or_else(|| {
+            DbErr::RecordNotFound(
+                "analytics_tag_rule_set_state singleton is missing".to_string(),
+            )
+        })
+}
+
+pub(super) async fn bump_rule_set_revision(
+    transaction: &DatabaseTransaction,
+) -> Result<i64, DbErr> {
+    let state = analytics_tag_rule_set_state::Entity::find_by_id(true)
+        .lock_exclusive()
+        .one(transaction)
+        .await?
+        .ok_or_else(|| {
+            DbErr::RecordNotFound(
+                "analytics_tag_rule_set_state singleton is missing".to_string(),
+            )
+        })?;
+    let revision = state.revision.checked_add(1).ok_or_else(|| {
+        DbErr::Custom("analytics tag rule revision overflow".to_string())
+    })?;
+    let mut state = state.into_active_model();
+    state.revision = Set(revision);
+    state.update(transaction).await?;
+    Ok(revision)
+}
+
+pub(super) async fn lock_tag_for_rule_set_mutation(
+    transaction: &DatabaseTransaction,
+    tag_id: Uuid,
+) -> Result<Option<analytics_tag::Model>, DbErr> {
+    // Writers take the revision lock before the tag lock. Workers hold the
+    // revision lock while applying cached rules, so this order prevents stale
+    // assignments without introducing a lock-order cycle.
+    bump_rule_set_revision(transaction).await?;
+    lock_tag(transaction, tag_id).await
 }
 
 pub(super) async fn create_tag(
@@ -222,23 +278,74 @@ pub(super) async fn lock_pending_files(
     pending_files_query(limit).all(transaction).await
 }
 
-pub(super) async fn replace_file_tags(
+pub(super) async fn reconcile_file_tags(
     transaction: &DatabaseTransaction,
     file_entry_ids: &[Uuid],
     assignments: &[FileTagAssignment],
-) -> Result<(), DbErr> {
-    if !file_entry_ids.is_empty() {
-        device_file_tag::Entity::delete_many()
-            .filter(
-                device_file_tag::Column::FileEntryId
-                    .is_in(file_entry_ids.iter().copied()),
-            )
-            .exec(transaction)
-            .await?;
+) -> Result<FileTagDelta, DbErr> {
+    if file_entry_ids.is_empty() {
+        if assignments.is_empty() {
+            return Ok(FileTagDelta::default());
+        }
+        return Err(DbErr::Custom(
+            "file tag assignments require file entry ids".to_string(),
+        ));
     }
 
-    for chunk in assignments.chunks(LINK_INSERT_CHUNK_SIZE) {
-        let now = Utc::now().fixed_offset();
+    let existing_links = device_file_tag::Entity::find()
+        .filter(
+            device_file_tag::Column::FileEntryId
+                .is_in(file_entry_ids.iter().copied()),
+        )
+        .all(transaction)
+        .await?;
+    let mut desired_by_key = HashMap::with_capacity(assignments.len());
+    for assignment in assignments {
+        let key = (assignment.file_entry_id, assignment.tag_id);
+        if desired_by_key.insert(key, assignment).is_some() {
+            return Err(DbErr::Custom(format!(
+                "duplicate file tag assignment for {} and {}",
+                assignment.file_entry_id, assignment.tag_id
+            )));
+        }
+    }
+
+    let mut delete_ids = Vec::new();
+    let mut insert_assignments = Vec::new();
+    let mut unchanged = 0;
+    for link in existing_links {
+        let key = (link.file_entry_id, link.tag_id);
+        match desired_by_key.remove(&key) {
+            Some(assignment)
+                if link.device_id == assignment.device_id
+                    && link.file_entry_created_at
+                        == assignment.file_entry_created_at =>
+            {
+                unchanged += 1;
+            }
+            Some(assignment) => {
+                delete_ids.push(link.id);
+                insert_assignments.push(assignment);
+            }
+            None => delete_ids.push(link.id),
+        }
+    }
+    insert_assignments.extend(desired_by_key.into_values());
+    insert_assignments.sort_unstable_by_key(|assignment| {
+        (assignment.file_entry_id, assignment.tag_id)
+    });
+
+    let mut deleted = 0;
+    for chunk in delete_ids.chunks(LINK_DELETE_CHUNK_SIZE) {
+        deleted += device_file_tag::Entity::delete_many()
+            .filter(device_file_tag::Column::Id.is_in(chunk.iter().copied()))
+            .exec(transaction)
+            .await?
+            .rows_affected as usize;
+    }
+
+    let now = Utc::now().fixed_offset();
+    for chunk in insert_assignments.chunks(LINK_INSERT_CHUNK_SIZE) {
         let links =
             chunk.iter().map(|assignment| device_file_tag::ActiveModel {
                 id: Set(Uuid::now_v7()),
@@ -253,7 +360,12 @@ pub(super) async fn replace_file_tags(
             .exec(transaction)
             .await?;
     }
-    Ok(())
+
+    Ok(FileTagDelta {
+        inserted: insert_assignments.len(),
+        deleted,
+        unchanged,
+    })
 }
 
 pub(super) async fn mark_files_analyzed(

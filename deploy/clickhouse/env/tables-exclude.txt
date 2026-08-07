@@ -29,6 +29,7 @@ public.sigint_unit_label
 # Devices analytics rule configuration.
 public.analytics_tag
 public.analytics_tag_test_file
+public.analytics_tag_rule_set_state
 
 # ORBIT unit catalog remains PostgreSQL-only.
 public.orbit_grouping_of_forces

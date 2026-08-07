@@ -2,9 +2,9 @@ use super::types::{
     AnalysisResult, FileAnalysisInput, RuleExpression, RuleField, RuleMatcher,
     RuleValidationError, TagRuleDefinition,
 };
-use regex::{Regex, RegexBuilder};
-use std::collections::BTreeSet;
-use unicode_normalization::UnicodeNormalization;
+use regex::{RegexSet, RegexSetBuilder};
+use std::{borrow::Cow, cell::OnceCell, collections::BTreeSet};
+use unicode_normalization::{is_nfc, UnicodeNormalization};
 use uuid::Uuid;
 
 const MAX_RULE_DEPTH: usize = 16;
@@ -35,49 +35,87 @@ struct CompiledMatch {
 }
 
 enum CompiledMatcher {
-    Shared(Vec<Regex>),
+    Equals(CompiledEquals),
+    PatternSet(CompiledPatternSets),
     ContainsToken {
-        regular: Vec<Regex>,
-        path: Vec<Regex>,
+        regular: CompiledPatternSets,
+        path: CompiledPatternSets,
     },
 }
 
-struct NormalizedFileMetadata {
-    file_name: String,
-    directory_path: String,
-    full_path: String,
-    extension: String,
+struct CompiledEquals {
+    patterns: CompiledPatternSets,
+    ascii_values: Option<Box<[Box<str>]>>,
 }
 
-impl NormalizedFileMetadata {
-    fn from_input(input: &FileAnalysisInput) -> Self {
-        let name = normalize_nfc(&input.name);
-        let full_path = normalize_path(&input.absolute_path);
-        let file_name = remove_last_suffix(&name).to_string();
-        let directory_path = parent_path(&full_path).to_string();
-        let extension = input
-            .extension
-            .as_deref()
-            .map(normalize_nfc)
-            .map(|value| value.trim_start_matches('.').to_string())
-            .unwrap_or_else(|| {
-                last_suffix(&name).unwrap_or_default().to_string()
-            });
+impl CompiledEquals {
+    fn is_match(&self, value: &str) -> bool {
+        if let Some(values) = self.ascii_values.as_ref() {
+            if value.is_ascii() {
+                return values.iter().any(|expected| {
+                    expected.as_ref().eq_ignore_ascii_case(value)
+                });
+            }
+        }
+        self.patterns.is_match(value)
+    }
+}
 
+struct CompiledPatternSets {
+    sets: Vec<RegexSet>,
+}
+
+impl CompiledPatternSets {
+    fn is_match(&self, value: &str) -> bool {
+        self.sets.iter().any(|set| set.is_match(value))
+    }
+}
+
+struct NormalizedFileMetadata<'a> {
+    input: FileAnalysisInput<'a>,
+    normalized_name: OnceCell<Cow<'a, str>>,
+    normalized_path: OnceCell<Cow<'a, str>>,
+    normalized_extension: OnceCell<Cow<'a, str>>,
+}
+
+impl<'a> NormalizedFileMetadata<'a> {
+    fn from_input(input: &FileAnalysisInput<'a>) -> Self {
         Self {
-            file_name,
-            directory_path,
-            full_path,
-            extension,
+            input: *input,
+            normalized_name: OnceCell::new(),
+            normalized_path: OnceCell::new(),
+            normalized_extension: OnceCell::new(),
         }
     }
 
     fn field(&self, field: RuleField) -> &str {
         match field {
-            RuleField::FileName => &self.file_name,
-            RuleField::DirectoryPath => &self.directory_path,
-            RuleField::FullPath => &self.full_path,
-            RuleField::Extension => &self.extension,
+            RuleField::FileName => remove_last_suffix(self.normalized_name()),
+            RuleField::DirectoryPath => parent_path(self.full_path()),
+            RuleField::FullPath => self.full_path(),
+            RuleField::Extension => self.extension(),
+        }
+    }
+
+    fn normalized_name(&self) -> &str {
+        self.normalized_name
+            .get_or_init(|| normalize_nfc(self.input.name))
+            .as_ref()
+    }
+
+    fn full_path(&self) -> &str {
+        self.normalized_path
+            .get_or_init(|| normalize_path(self.input.absolute_path))
+            .as_ref()
+    }
+
+    fn extension(&self) -> &str {
+        match self.input.extension {
+            Some(extension) => self
+                .normalized_extension
+                .get_or_init(|| normalize_nfc(extension))
+                .trim_start_matches('.'),
+            None => last_suffix(self.normalized_name()).unwrap_or_default(),
         }
     }
 }
@@ -117,24 +155,24 @@ pub(in crate::devices) fn compile_tag_rules(
 
 pub(in crate::devices) fn analyze(
     rules: &CompiledTagRules,
-    input: &FileAnalysisInput,
+    input: &FileAnalysisInput<'_>,
 ) -> AnalysisResult {
     let metadata = NormalizedFileMetadata::from_input(input);
-    let mut matched_tags = rules
-        .rules
-        .iter()
-        .filter(|rule| evaluate(&rule.expression, &metadata))
-        .map(|rule| rule.tag_id)
-        .collect::<Vec<_>>();
-    matched_tags.sort_unstable();
-    matched_tags.dedup();
+    let mut matched_tags = Vec::new();
+    for rule in &rules.rules {
+        if evaluate(&rule.expression, &metadata)
+            && matched_tags.last() != Some(&rule.tag_id)
+        {
+            matched_tags.push(rule.tag_id);
+        }
+    }
     AnalysisResult { matched_tags }
 }
 
 #[cfg(test)]
 pub(in crate::devices) fn test_rule_expression(
     expression: RuleExpression,
-    input: &FileAnalysisInput,
+    input: &FileAnalysisInput<'_>,
 ) -> Result<bool, RuleValidationError> {
     let tag_id = Uuid::nil();
     let rules = compile_tag_rules(vec![TagRuleDefinition {
@@ -237,12 +275,23 @@ fn compile_match(
             )?,
         },
         RuleMatcher::Regex => {
-            CompiledMatcher::Shared(compile_raw_regexes(&values, path)?)
+            CompiledMatcher::PatternSet(compile_raw_patterns(&values, path)?)
         }
-        RuleMatcher::Equals => CompiledMatcher::Shared(
-            compile_literal_patterns(&values, LiteralPattern::Equals, path)?,
-        ),
-        RuleMatcher::Contains => CompiledMatcher::Shared(
+        RuleMatcher::Equals => {
+            let ascii_values =
+                values.iter().all(|value| value.is_ascii()).then(|| {
+                    values.iter().cloned().map(String::into_boxed_str).collect()
+                });
+            CompiledMatcher::Equals(CompiledEquals {
+                patterns: compile_literal_patterns(
+                    &values,
+                    LiteralPattern::Equals,
+                    path,
+                )?,
+                ascii_values,
+            })
+        }
+        RuleMatcher::Contains => CompiledMatcher::PatternSet(
             compile_literal_patterns(&values, LiteralPattern::Contains, path)?,
         ),
     };
@@ -272,7 +321,7 @@ fn normalize_values(
     let mut normalized = Vec::with_capacity(values.len());
     let mut seen = BTreeSet::new();
     for (index, value) in values.into_iter().enumerate() {
-        let value = normalize_nfc(&value);
+        let value = normalize_owned_nfc(value);
         let value_path = format!("{path}.values[{index}]");
         if value.trim().is_empty() {
             return Err(validation_error(
@@ -309,44 +358,37 @@ fn normalize_values(
     Ok(normalized)
 }
 
-fn compile_raw_regexes(
+fn compile_raw_patterns(
     values: &[String],
     path: &str,
-) -> Result<Vec<Regex>, RuleValidationError> {
-    values
-        .iter()
-        .enumerate()
-        .map(|(index, value)| {
-            let value_path = format!("{path}.values[{index}]");
-            if changes_inline_case_mode(value) {
-                return Err(validation_error(
-                    &value_path,
-                    "inline_case_mode",
-                    "Регулярний вираз не може змінювати режим регістру",
-                ));
-            }
-            build_case_insensitive_regex(value).map_err(|_| {
-                validation_error(
-                    &value_path,
-                    "invalid_regex",
-                    "Некоректний регулярний вираз",
-                )
-            })
-        })
-        .collect()
+) -> Result<CompiledPatternSets, RuleValidationError> {
+    for (index, value) in values.iter().enumerate() {
+        if changes_inline_case_mode(value) {
+            return Err(validation_error(
+                &format!("{path}.values[{index}]"),
+                "inline_case_mode",
+                "Регулярний вираз не може змінювати режим регістру",
+            ));
+        }
+    }
+    compile_pattern_sets(
+        values,
+        path,
+        "invalid_regex",
+        "Некоректний регулярний вираз",
+    )
 }
 
 fn compile_literal_patterns(
     values: &[String],
     pattern: LiteralPattern,
     path: &str,
-) -> Result<Vec<Regex>, RuleValidationError> {
-    values
+) -> Result<CompiledPatternSets, RuleValidationError> {
+    let patterns = values
         .iter()
-        .enumerate()
-        .map(|(index, value)| {
+        .map(|value| {
             let escaped = regex::escape(value);
-            let pattern = match pattern {
+            match pattern {
                 LiteralPattern::Equals => format!("^(?:{escaped})$"),
                 LiteralPattern::Contains => escaped,
                 LiteralPattern::ContainsToken { path: false } => {
@@ -355,23 +397,75 @@ fn compile_literal_patterns(
                 LiteralPattern::ContainsToken { path: true } => {
                     format!(r"(?:^|[\s_/-])(?:{escaped})(?:$|[\s_/-])")
                 }
-            };
-            build_case_insensitive_regex(&pattern).map_err(|_| {
-                validation_error(
-                    &format!("{path}.values[{index}]"),
-                    "invalid_literal",
-                    "Значення не вдалося скомпілювати",
-                )
-            })
+            }
         })
-        .collect()
+        .collect::<Vec<_>>();
+    compile_pattern_sets(
+        &patterns,
+        path,
+        "invalid_literal",
+        "Значення не вдалося скомпілювати",
+    )
 }
 
-fn build_case_insensitive_regex(pattern: &str) -> Result<Regex, regex::Error> {
-    RegexBuilder::new(pattern)
-        .case_insensitive(true)
-        .unicode(true)
-        .build()
+fn compile_pattern_sets(
+    patterns: &[String],
+    path: &str,
+    error_code: &str,
+    error_message: &str,
+) -> Result<CompiledPatternSets, RuleValidationError> {
+    let mut sets = Vec::new();
+    compile_pattern_set_chunk(
+        patterns,
+        0,
+        path,
+        error_code,
+        error_message,
+        &mut sets,
+    )?;
+    Ok(CompiledPatternSets { sets })
+}
+
+fn compile_pattern_set_chunk(
+    patterns: &[String],
+    value_offset: usize,
+    path: &str,
+    error_code: &str,
+    error_message: &str,
+    sets: &mut Vec<RegexSet>,
+) -> Result<(), RuleValidationError> {
+    let mut builder = RegexSetBuilder::new(patterns);
+    let result = builder.case_insensitive(true).unicode(true).build();
+    match result {
+        Ok(set) => {
+            sets.push(set);
+            Ok(())
+        }
+        Err(_) if patterns.len() > 1 => {
+            let midpoint = patterns.len() / 2;
+            compile_pattern_set_chunk(
+                &patterns[..midpoint],
+                value_offset,
+                path,
+                error_code,
+                error_message,
+                sets,
+            )?;
+            compile_pattern_set_chunk(
+                &patterns[midpoint..],
+                value_offset + midpoint,
+                path,
+                error_code,
+                error_message,
+                sets,
+            )
+        }
+        Err(_) => Err(validation_error(
+            &format!("{path}.values[{value_offset}]"),
+            error_code,
+            error_message,
+        )),
+    }
 }
 
 fn changes_inline_case_mode(pattern: &str) -> bool {
@@ -409,7 +503,7 @@ fn changes_inline_case_mode(pattern: &str) -> bool {
 
 fn evaluate(
     expression: &CompiledExpression,
-    metadata: &NormalizedFileMetadata,
+    metadata: &NormalizedFileMetadata<'_>,
 ) -> bool {
     match expression {
         CompiledExpression::All(children) => {
@@ -422,31 +516,47 @@ fn evaluate(
         CompiledExpression::Match(condition) => {
             let value = metadata.field(condition.field);
             match &condition.matcher {
-                CompiledMatcher::Shared(regexes) => {
-                    regexes.iter().any(|regex| regex.is_match(value))
+                CompiledMatcher::Equals(matcher) => matcher.is_match(value),
+                CompiledMatcher::PatternSet(patterns) => {
+                    patterns.is_match(value)
                 }
                 CompiledMatcher::ContainsToken { regular, path } => {
-                    let regexes = if condition.field.is_path() {
+                    let patterns = if condition.field.is_path() {
                         path
                     } else {
                         regular
                     };
-                    regexes.iter().any(|regex| regex.is_match(value))
+                    patterns.is_match(value)
                 }
             }
         }
     }
 }
 
-fn normalize_nfc(value: &str) -> String {
-    value.nfc().collect()
+fn normalize_owned_nfc(value: String) -> String {
+    if is_nfc(&value) {
+        value
+    } else {
+        value.nfc().collect()
+    }
 }
 
-fn normalize_path(value: &str) -> String {
-    let value = normalize_nfc(value);
+fn normalize_nfc(value: &str) -> Cow<'_, str> {
+    if is_nfc(value) {
+        Cow::Borrowed(value)
+    } else {
+        Cow::Owned(value.nfc().collect())
+    }
+}
+
+fn normalize_path(value: &str) -> Cow<'_, str> {
+    if is_nfc(value) && path_separators_are_normalized(value) {
+        return Cow::Borrowed(value);
+    }
+
     let mut normalized = String::with_capacity(value.len());
     let mut previous_separator = false;
-    for character in value.chars() {
+    for character in value.nfc() {
         let is_separator = matches!(character, '/' | '\\');
         if is_separator {
             if !previous_separator {
@@ -457,7 +567,20 @@ fn normalize_path(value: &str) -> String {
         }
         previous_separator = is_separator;
     }
-    normalized
+    Cow::Owned(normalized)
+}
+
+fn path_separators_are_normalized(value: &str) -> bool {
+    let mut previous_separator = false;
+    for character in value.chars() {
+        match character {
+            '\\' => return false,
+            '/' if previous_separator => return false,
+            '/' => previous_separator = true,
+            _ => previous_separator = false,
+        }
+    }
+    true
 }
 
 fn remove_last_suffix(name: &str) -> &str {

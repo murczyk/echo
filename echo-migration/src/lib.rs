@@ -361,6 +361,7 @@ mod m20260806_120000_drop_legacy_inbox_callsigns;
 mod m20260806_134330_sigint_unit_extended_echelons;
 mod m20260806_141904_report_history_duplicate_lookup;
 mod m20260806_160450_device_analytics_tags;
+mod m20260807_125456_analytics_tag_rule_revision;
 mod m20260810_062938_echo_automation_coordinates_screenshot;
 mod m20260810_140653_inbox_unit_resolution;
 mod m20260811_064758_sigint_inbox_item_units;
@@ -835,6 +836,9 @@ impl MigratorTrait for Migrator {
                 m20260811_073954_failed_inbox_unit_bad_text_index::Migration,
             ),
             Box::new(m20260806_160450_device_analytics_tags::Migration),
+            Box::new(
+                m20260807_125456_analytics_tag_rule_revision::Migration,
+            ),
         ]
     }
 }

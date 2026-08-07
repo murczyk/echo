@@ -20,19 +20,21 @@ use sea_orm::{
     ActiveModelTrait,
     ActiveValue::{NotSet, Set},
     ColumnTrait, DbBackend, EntityTrait, QueryFilter, QueryTrait,
+    TransactionTrait,
 };
 use serde_json::json;
+use std::sync::Arc;
 use uuid::Uuid;
 
-fn file(
-    name: &str,
-    absolute_path: &str,
-    extension: Option<&str>,
-) -> FileAnalysisInput {
+fn file<'a>(
+    name: &'a str,
+    absolute_path: &'a str,
+    extension: Option<&'a str>,
+) -> FileAnalysisInput<'a> {
     FileAnalysisInput {
-        name: name.to_string(),
-        absolute_path: absolute_path.to_string(),
-        extension: extension.map(str::to_string),
+        name,
+        absolute_path,
+        extension,
     }
 }
 
@@ -149,6 +151,66 @@ fn regex_is_unicode_and_case_insensitive_and_rejects_case_overrides() {
     .expect("inline case override must be rejected");
     assert_eq!(error.code, "inline_case_mode");
     assert_eq!(error.path, "rule_expression.values[0]");
+}
+
+#[test]
+fn grouped_matchers_preserve_unicode_and_boundary_semantics() {
+    assert!(test_rule_expression(
+        condition(
+            RuleField::FileName,
+            RuleMatcher::Contains,
+            &["відсутнє", "ЇЖАК"],
+        ),
+        &file("і\u{308}жак.txt", "/archive/і\u{308}жак.txt", Some("txt"),),
+    )
+    .unwrap());
+
+    assert!(test_rule_expression(
+        condition(
+            RuleField::DirectoryPath,
+            RuleMatcher::ContainsToken,
+            &["неіснуюче", "Особовий Склад"],
+        ),
+        &file(
+            "report.txt",
+            r"C:\\Штаб\\Особовий Склад\\report.txt",
+            Some("txt"),
+        ),
+    )
+    .unwrap());
+
+    assert!(test_rule_expression(
+        condition(
+            RuleField::FullPath,
+            RuleMatcher::Regex,
+            &[r"^ніколи$", r"/НАВЧАННЯ/.*\.PDF$"],
+        ),
+        &file("План.pdf", "/Штаб/навчання/План.pdf", Some("pdf")),
+    )
+    .unwrap());
+
+    assert!(test_rule_expression(
+        condition(RuleField::Extension, RuleMatcher::Equals, &["pdf", "s"],),
+        &file("archive.ſ", "/archive/archive.ſ", Some("ſ")),
+    )
+    .unwrap());
+}
+
+#[test]
+fn grouped_regex_reports_the_invalid_value_index() {
+    let error = compile_tag_rules(vec![TagRuleDefinition {
+        tag_id: Uuid::nil(),
+        rule_expression: condition(
+            RuleField::FileName,
+            RuleMatcher::Regex,
+            &["valid", "["],
+        ),
+    }])
+    .err()
+    .expect("invalid grouped regex must be rejected");
+
+    assert_eq!(error.code, "invalid_regex");
+    assert_eq!(error.path, "rule_expression.values[1]");
 }
 
 #[test]
@@ -442,6 +504,103 @@ async fn file_links(env: &Env, file_id: Uuid) -> Vec<device_file_tag::Model> {
 
 #[tokio::test]
 #[serial_test::serial]
+async fn shared_rule_cache_reuses_and_refreshes_compiled_rules() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let tag = bl::create_tag(&env.dbx, "Кеш правил".to_string())
+        .await
+        .unwrap();
+    let tag_id = Uuid::parse_str(&tag.id).unwrap();
+    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
+    let cache = worker::RuleCache::default();
+
+    let first_transaction = env.dbx.begin().await.unwrap();
+    let first_rules = cache.load_rules(&first_transaction).await.unwrap();
+    first_transaction.commit().await.unwrap();
+    assert_eq!(
+        analyze(
+            &first_rules,
+            &file("report.pdf", r"C:\report.pdf", Some("pdf"))
+        )
+        .matched_tags,
+        [tag_id]
+    );
+
+    let second_transaction = env.dbx.begin().await.unwrap();
+    let second_rules = cache.load_rules(&second_transaction).await.unwrap();
+    second_transaction.commit().await.unwrap();
+    assert!(
+        Arc::ptr_eq(&first_rules, &second_rules),
+        "an unchanged DB revision must reuse the compiled rules"
+    );
+
+    save_extension_rule(env.as_ref(), tag_id, "txt").await;
+    let third_transaction = env.dbx.begin().await.unwrap();
+    let third_rules = cache.load_rules(&third_transaction).await.unwrap();
+    third_transaction.commit().await.unwrap();
+    assert!(
+        !Arc::ptr_eq(&second_rules, &third_rules),
+        "a committed rule mutation must invalidate every worker cache"
+    );
+    assert!(analyze(
+        &third_rules,
+        &file("report.pdf", r"C:\report.pdf", Some("pdf"))
+    )
+    .matched_tags
+    .is_empty());
+    assert_eq!(
+        analyze(
+            &third_rules,
+            &file("notes.txt", r"C:\notes.txt", Some("txt"))
+        )
+        .matched_tags,
+        [tag_id]
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn reanalysis_preserves_an_unchanged_tag_link() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let device_id = insert_analytics_test_device(env.as_ref()).await;
+    let file_id = insert_pending_files(
+        env.as_ref(),
+        device_id,
+        &[("report.pdf", r"C:\report.pdf", "pdf")],
+    )
+    .await[0];
+    let tag = bl::create_tag(&env.dbx, "Незмінний PDF".to_string())
+        .await
+        .unwrap();
+    let tag_id = Uuid::parse_str(&tag.id).unwrap();
+    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
+    let cache = worker::RuleCache::default();
+
+    assert!(worker::run_tick_with(env.as_ref(), &cache, 1)
+        .await
+        .unwrap());
+    let before = file_links(env.as_ref(), file_id).await.remove(0);
+    assert_eq!(
+        query::schedule_reanalysis(
+            env.file_registry_db().unwrap().connection(),
+            Some(device_id),
+        )
+        .await
+        .unwrap(),
+        1,
+    );
+
+    assert!(worker::run_tick_with(env.as_ref(), &cache, 1)
+        .await
+        .unwrap());
+    let after = file_links(env.as_ref(), file_id).await.remove(0);
+    assert_eq!(
+        after, before,
+        "set-delta reconciliation must not rewrite an unchanged membership"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
 async fn worker_requires_explicit_reanalysis_after_rule_changes_and_restore() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let device_id = insert_analytics_test_device(env.as_ref()).await;
@@ -591,13 +750,16 @@ async fn concurrent_workers_skip_locked_rows_without_duplicate_links() {
     let tag_id = Uuid::parse_str(&tag.id).unwrap();
     save_extension_rule(env.as_ref(), tag_id, "pdf").await;
 
+    let cache = worker::RuleCache::default();
     let (first, second) = tokio::join!(
-        worker::run_tick(env.as_ref()),
-        worker::run_tick(env.as_ref()),
+        worker::run_tick_with(env.as_ref(), &cache, 1),
+        worker::run_tick_with(env.as_ref(), &cache, 1),
     );
     let processed = [first.unwrap(), second.unwrap()];
-    assert!(processed.into_iter().any(|did_work| did_work));
-    assert!(!worker::run_tick(env.as_ref()).await.unwrap());
+    assert_eq!(processed, [true, true]);
+    assert!(!worker::run_tick_with(env.as_ref(), &cache, 1)
+        .await
+        .unwrap());
 
     let analyzed = file_entry::Entity::find()
         .filter(file_entry::Column::Id.is_in(file_ids.iter().copied()))

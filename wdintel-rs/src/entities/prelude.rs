@@ -20,6 +20,7 @@ pub use super::ai_chat_message::Entity as AiChatMessage;
 pub use super::ai_engine::Entity as AiEngine;
 pub use super::alert::Entity as Alert;
 pub use super::analytics_tag::Entity as AnalyticsTag;
+pub use super::analytics_tag_rule_set_state::Entity as AnalyticsTagRuleSetState;
 pub use super::analytics_tag_test_file::Entity as AnalyticsTagTestFile;
 pub use super::aor_location_config::Entity as AorLocationConfig;
 pub use super::api_integration::Entity as ApiIntegration;

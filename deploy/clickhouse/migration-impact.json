@@ -174,6 +174,11 @@
         { "table": "public.analytics_tag_test_file", "strategy": "excluded" },
         { "table": "public.device_file_tag", "strategy": "replicated_snapshot" }
       ]
+    },
+    "echo:m20260807_125456_analytics_tag_rule_revision": {
+      "changes": [
+        { "table": "public.analytics_tag_rule_set_state", "strategy": "excluded" }
+      ]
     }
   },
   "dependencies": {

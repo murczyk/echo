@@ -22,6 +22,7 @@ pub mod ai_chat_message;
 pub mod ai_engine;
 pub mod alert;
 pub mod analytics_tag;
+pub mod analytics_tag_rule_set_state;
 pub mod analytics_tag_test_file;
 pub mod aor_location_config;
 pub mod api_integration;

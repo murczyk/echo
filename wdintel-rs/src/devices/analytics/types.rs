@@ -101,11 +101,11 @@ pub(in crate::devices) struct TagRuleDefinition {
     pub rule_expression: RuleExpression,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::devices) struct FileAnalysisInput {
-    pub name: String,
-    pub absolute_path: String,
-    pub extension: Option<String>,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::devices) struct FileAnalysisInput<'a> {
+    pub name: &'a str,
+    pub absolute_path: &'a str,
+    pub extension: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
