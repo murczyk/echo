@@ -965,6 +965,13 @@ mod tests {
     async fn persists_hierarchy_touches_reactivation_and_soft_delete() {
         crate::tests::test::init().await;
         let db = crate::new_pg_pool_from_mode(Mode::Test).await.unwrap();
+        let preexisting_unit_ids = orbit_unit::Entity::find()
+            .all(&db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|unit| unit.unit_id)
+            .collect::<HashSet<_>>();
         let dictionaries = DictionaryMaps::load(&db).await.unwrap();
         let echelon_id = dictionaries
             .resolve(
@@ -1036,10 +1043,13 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(child_row.updated_at, touched_at);
-        let stale =
-            load_stale(&db, touched_at + Duration::seconds(5), &HashSet::new())
-                .await
-                .unwrap();
+        let stale = load_stale(
+            &db,
+            touched_at + Duration::seconds(5),
+            &preexisting_unit_ids,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             stale
                 .into_iter()
@@ -1047,10 +1057,12 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![parent.unit_id]
         );
+        let mut snapshot_unit_ids = preexisting_unit_ids;
+        snapshot_unit_ids.insert(parent.unit_id);
         let stale = load_stale(
             &db,
             touched_at + Duration::seconds(5),
-            &HashSet::from([parent.unit_id]),
+            &snapshot_unit_ids,
         )
         .await
         .unwrap();
