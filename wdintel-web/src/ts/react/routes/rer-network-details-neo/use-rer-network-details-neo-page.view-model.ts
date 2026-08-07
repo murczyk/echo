@@ -21,6 +21,7 @@ type ViewModelArgs = {
   transferTypeLabel: string;
   aorOptions: Array<{ id: number; label: string }>;
   unitOptions: Array<{ id: number; label: string }>;
+  editUnitOptions: Array<{ id: number; label: string }>;
   postOptions: Array<{ id: number; label: string }>;
   confirmationDescriptions: NonNullable<NetworkDetailsNeoPageState['network']>['descriptions'];
   signDescriptions: NonNullable<NetworkDetailsNeoPageState['network']>['descriptions'];
@@ -76,6 +77,7 @@ export function buildRerNetworkDetailsNeoPageViewModel({
   transferTypeLabel,
   aorOptions,
   unitOptions,
+  editUnitOptions,
   postOptions,
   confirmationDescriptions,
   signDescriptions,
@@ -120,6 +122,7 @@ export function buildRerNetworkDetailsNeoPageViewModel({
     transferTypeLabel,
     aorOptions,
     unitOptions,
+    editUnitOptions,
     postOptions,
     confirmationDescriptions,
     signDescriptions,

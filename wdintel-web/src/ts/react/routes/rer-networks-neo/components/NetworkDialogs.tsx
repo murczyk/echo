@@ -201,7 +201,7 @@ export function NetworkDialogs({ page }: Props) {
           page.encryptions.length === 0
         }
         aorOptions={page.aorOptions.map((aor) => ({ id: aor.id, label: aor.name }))}
-        unitOptions={page.unitOptions}
+        unitOptions={page.editUnitOptions}
         postOptions={page.postOptions}
         encryptionOptions={page.encryptions.map((enc) => ({ id: enc.id, label: enc.name }))}
         onClose={page.closeEditDialog}

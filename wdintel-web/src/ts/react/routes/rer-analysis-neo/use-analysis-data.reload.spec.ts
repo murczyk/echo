@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => ({
   getTagsForDisplay: vi.fn(),
   getTagsMapForDisplay: vi.fn(),
   getUnitsList: vi.fn(),
+  getUnitsByIds: vi.fn(),
 }));
 
 vi.mock('../../services/api/analysis', () => ({
@@ -71,6 +72,12 @@ vi.mock('../../services/api/analysis', () => ({
 
 vi.mock('../../services/api/units', () => ({
   getUnitsList: mocks.getUnitsList,
+  getUnitsByIds: mocks.getUnitsByIds,
+  mergeUnitsById: (...unitLists: Unit[][]) => {
+    const unitsById = new Map<number, Unit>();
+    unitLists.flat().forEach((unit) => unitsById.set(unit.id, unit));
+    return Array.from(unitsById.values());
+  },
 }));
 
 type Deferred<T> = {
@@ -111,6 +118,7 @@ beforeEach(() => {
   mocks.fetchAnalysisCallsignInfos.mockResolvedValue([]);
   mocks.fetchAnalysisUnits.mockResolvedValue({ units: [] });
   mocks.fetchAnalysisLocations.mockResolvedValue({ locations: [] });
+  mocks.getUnitsByIds.mockResolvedValue([]);
   mocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
 });
 

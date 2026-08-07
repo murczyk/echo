@@ -5,6 +5,7 @@ import {
   UNIT_FILTER_UNSET_ID,
   buildSelectableUnitOptions,
   buildUnitFilterOptions,
+  buildUnitLookupOptions,
   getUnitFilterValue,
   unitNamesFromUnits,
   unitsFromNames,
@@ -42,6 +43,15 @@ describe('buildSelectableUnitOptions', () => {
       { id: 1, name: '4 мсб' },
     ]);
   });
+
+  it('excludes inactive units from selection options', () => {
+    expect(
+      buildSelectableUnitOptions([
+        makeUnit(1, 'Active'),
+        { ...makeUnit(2, 'Inactive'), active: false },
+      ]).map((unit) => unit.id),
+    ).toEqual([1]);
+  });
 });
 
 describe('buildUnitFilterOptions', () => {
@@ -55,6 +65,21 @@ describe('buildUnitFilterOptions', () => {
     expect(options.map((unit) => unit.id)).toEqual([UNIT_FILTER_UNSET_ID, 2]);
     expect(getUnitFilterValue(options[0]!)).toBe('Не визначено');
     expect(getUnitFilterValue(options[1]!)).toBe('3 мсб');
+  });
+});
+
+describe('buildUnitLookupOptions', () => {
+  it('adds only explicitly referenced inactive units to active options', () => {
+    const options = buildUnitLookupOptions(
+      [makeUnit(1, 'Active'), { ...makeUnit(2, 'Inactive'), active: false }],
+      [2, 99],
+    );
+
+    expect(options).toEqual([
+      { id: 1, label: 'Active' },
+      { id: 2, label: 'Inactive' },
+      { id: 99, label: '#99' },
+    ]);
   });
 });
 

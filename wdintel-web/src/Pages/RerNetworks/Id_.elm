@@ -777,7 +777,10 @@ update shared msg model =
                         items =
                             case shared.masterUnits of
                                 Success units ->
-                                    List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name }) (Dict.values units)
+                                    units
+                                        |> Dict.values
+                                        |> List.filter (\unit -> unit.active || List.member unit.id updatedNetworkUnits)
+                                        |> List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
 
                                 _ ->
                                     []

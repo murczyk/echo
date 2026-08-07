@@ -31,7 +31,7 @@ import {
   isSameSidebarUnitFilter,
 } from './use-rer-networks-neo-page.shared';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
-import { buildSelectableUnitOptions, getUnitDisplayLabel } from '../../utils/unit-search';
+import { buildUnitLookupOptions } from '../../utils/unit-search';
 import type { NetworkUpsertForm } from '../rer-network-details-neo/use-rer-network-details-neo-page.types';
 import {
   createDefaultNetworkEtalonkaReportState,
@@ -143,13 +143,10 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
     () => mergeNetworkUnitStatsWithUnits(unitStats, unitsById),
     [unitStats, unitsById],
   );
-  const unitOptions = useMemo(
-    () =>
-      buildSelectableUnitOptions(units).map((unit) => ({
-        id: unit.id,
-        label: getUnitDisplayLabel(unit),
-      })),
-    [units],
+  const unitOptions = useMemo(() => buildUnitLookupOptions(units), [units]);
+  const editUnitOptions = useMemo(
+    () => buildUnitLookupOptions(units, editDialog?.unitIds ?? []),
+    [editDialog?.unitIds, units],
   );
   const postOptions = useMemo(
     () =>
@@ -459,6 +456,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
     setFilters,
     posts,
     unitOptions,
+    editUnitOptions,
     postOptions,
     unitStatsView,
     selectedSidebarUnitFilter,

@@ -31,6 +31,14 @@ type GetUnitsListOptions = RequestOptions & {
   includeInactive?: boolean;
 };
 
+export function mergeUnitsById(...unitLists: readonly Unit[][]): Unit[] {
+  const unitsById = new Map<number, Unit>();
+  for (const units of unitLists) {
+    for (const unit of units) unitsById.set(unit.id, unit);
+  }
+  return Array.from(unitsById.values());
+}
+
 /** Fetch active units by default. Single request, backend limit is 100k. */
 export async function getUnitsList(options?: GetUnitsListOptions): Promise<Unit[]> {
   const { includeInactive = false, ...requestOptions } = options ?? {};

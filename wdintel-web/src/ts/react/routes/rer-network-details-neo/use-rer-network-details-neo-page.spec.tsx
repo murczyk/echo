@@ -95,9 +95,9 @@ vi.mock('./use-rer-network-details-neo-page.load', () => ({
         ...current,
         network,
         units: [
-          { id: 1, name: '11 АК' } as Unit,
-          { id: 2, name: ' 11 АК ' } as Unit,
-          { id: 3, name: '' } as Unit,
+          { id: 1, name: '11 АК', active: true } as Unit,
+          { id: 2, name: ' 11 АК ', active: true } as Unit,
+          { id: 3, name: '', active: true } as Unit,
         ],
         aors: [
           { id: 2, name: 'Бета' } as never,

@@ -2,6 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Unit } from '../../../../Bindings';
 
 import {
   createDeviceNetwork,
@@ -10,6 +11,7 @@ import {
   getUnitIdsWithVisibleAttachments,
   getUnitsList,
   importOrbitUnit,
+  mergeUnitsById,
   searchOrbitUnits,
   updateUnitAttachment,
   uploadUnitAttachment,
@@ -25,6 +27,13 @@ function jsonResponse(value: unknown): Response {
 describe('units API', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('merges explicitly resolved units without duplicating active units', () => {
+    const active = { id: 1, name: 'Active' } as Unit;
+    const inactive = { id: 2, name: 'Inactive', active: false } as Unit;
+
+    expect(mergeUnitsById([active], [active, inactive])).toEqual([active, inactive]);
   });
 
   it('normalizes unit response fields to camel case', async () => {

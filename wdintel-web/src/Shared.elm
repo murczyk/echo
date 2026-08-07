@@ -85,6 +85,23 @@ loadSharedLookupData path =
         ]
 
 
+loadReferencedUnitIds : List Int -> Effect Msg
+loadReferencedUnitIds unitIds =
+    if List.isEmpty unitIds then
+        E.none
+
+    else
+        E.getUnitsById ReferencedUnitsLoadedByApi
+            { ids = Just (unitIds |> Set.fromList |> Set.toList) }
+
+
+loadReferencedUnits : List B.Network -> Effect Msg
+loadReferencedUnits networks =
+    networks
+        |> List.concatMap (.unitIds >> Maybe.withDefault [])
+        |> loadReferencedUnitIds
+
+
 type alias Model =
     Shared.Model.Model
 
@@ -381,8 +398,33 @@ update req msg model =
                         |> Dict.fromList
                         |> Success
               }
-            , E.none
+            , model.networks
+                |> Utils.RemoteData.withDefault Dict.empty
+                |> Dict.values
+                |> loadReferencedUnits
             )
+
+        LoadReferencedUnits unitIds ->
+            ( model, loadReferencedUnitIds unitIds )
+
+        ReferencedUnitsLoadedByApi (Err err) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження пов’язаних підрозділів" err
+            )
+
+        ReferencedUnitsLoadedByApi (Ok rsp) ->
+            let
+                referencedUnits =
+                    rsp.units
+                        |> List.map (\unit -> ( unit.id, unit ))
+                        |> Dict.fromList
+
+                masterUnits =
+                    model.masterUnits
+                        |> Utils.RemoteData.withDefault Dict.empty
+                        |> Dict.union referencedUnits
+            in
+            ( { model | masterUnits = Success masterUnits }, E.none )
 
         NetworksLoadedByApi (Err err) ->
             ( { model | networks = Failure err }, E.none )
@@ -395,7 +437,7 @@ update req msg model =
                         |> Dict.fromList
                         |> Success
               }
-            , E.none
+            , loadReferencedUnits rsp.list
             )
 
         CallsignsInfoReturnedByApi (Err _) ->

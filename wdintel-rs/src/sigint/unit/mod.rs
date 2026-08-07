@@ -193,6 +193,14 @@ fn available_units_query(
     }
 }
 
+fn units_by_id_query(ids: Option<&[i64]>) -> Select<sigint_unit::Entity> {
+    let mut units = available_units_query(true);
+    if let Some(ids) = ids {
+        units = units.filter(sigint_unit::Column::Id.eq_any(ids.to_vec()));
+    }
+    units
+}
+
 #[post("/api/sigint/units-by-id")]
 pub async fn list_units_by_id(
     user: actix_identity::Identity,
@@ -204,11 +212,10 @@ pub async fn list_units_by_id(
         .await
         .c(h!())?;
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
-    let mut units = available_units_query(false);
-    if let Some(ids) = &req.ids {
-        units = units.filter(sigint_unit::Column::Id.eq_any(ids.clone()));
-    }
-    let units = units.all(&env.dbx).await.c(h!())?;
+    let units = units_by_id_query(req.ids.as_deref())
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
 
     let mut res = vec![];
     for unit in units {
@@ -1838,6 +1845,18 @@ mod tests {
             .units
             .iter()
             .any(|unit| unit.id == inactive_unit.id));
+
+        let units_by_id = units_by_id_query(Some(&[inactive_unit.id]))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(
+            units_by_id
+                .into_iter()
+                .map(|unit| unit.id)
+                .collect::<Vec<_>>(),
+            vec![inactive_unit.id]
+        );
     }
 
     async fn assert_full_active_orbit_hierarchy(
