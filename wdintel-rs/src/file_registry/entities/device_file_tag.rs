@@ -31,13 +31,13 @@ pub enum Relation {
     )]
     AnalyticsTag,
     #[sea_orm(
-        belongs_to = "super::device::Entity",
-        from = "Column::DeviceId",
-        to = "super::device::Column::Id",
+        belongs_to = "super::file_entry::Entity",
+        from = "(Column::DeviceId, Column::FileEntryId)",
+        to = "(super::file_entry::Column::DeviceId, super::file_entry::Column::Id)",
         on_update = "NoAction",
         on_delete = "Cascade"
     )]
-    Device,
+    FileEntry,
 }
 
 impl Related<super::analytics_tag::Entity> for Entity {
@@ -46,9 +46,9 @@ impl Related<super::analytics_tag::Entity> for Entity {
     }
 }
 
-impl Related<super::device::Entity> for Entity {
+impl Related<super::file_entry::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Device.def()
+        Relation::FileEntry.def()
     }
 }
 

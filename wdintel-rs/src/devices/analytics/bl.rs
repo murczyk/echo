@@ -1,4 +1,5 @@
-use super::query::{self, FileTagAssignment};
+use super::query;
+use super::queue;
 use super::rules;
 use super::types::{
     AdminAnalyticsTag, AnalyticsTag, DeviceAnalyticsFile,
@@ -9,9 +10,9 @@ use super::types::{
 use crate::devices::devices::query::{
     self as device_query, DeviceReadScope, FileRegistryDeviceAccess,
 };
-use crate::entities::{analytics_tag, login};
+use crate::entities::login;
 use crate::error::AppError;
-use crate::file_registry::FileRegistryDb;
+use crate::file_registry::{entities::analytics_tag, FileRegistryDb};
 use crate::h;
 use crate::types::ShortContext;
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -32,21 +33,21 @@ const ORPHAN_WARNING_INTERVAL_SECS: u64 = 60;
 static LAST_ORPHAN_WARNING_AT: AtomicU64 = AtomicU64::new(0);
 
 pub(super) async fn list_admin_tags(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
 ) -> Result<Vec<AdminAnalyticsTag>, AppError> {
-    let mut tags = query::list_tags(main_db).await.c(h!())?;
+    let mut tags = query::list_tags(file_db).await.c(h!())?;
     sort_tags(&mut tags);
     tags.into_iter().map(map_admin_tag).collect()
 }
 
 pub(super) async fn list_tag_test_files(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     tag_id: Uuid,
 ) -> Result<Vec<RuleTestFile>, AppError> {
-    if query::find_tag(main_db, tag_id).await.c(h!())?.is_none() {
+    if query::find_tag(file_db, tag_id).await.c(h!())?.is_none() {
         return Err(AppError::NotFound);
     }
-    Ok(query::list_tag_test_files(main_db, tag_id)
+    Ok(query::list_tag_test_files(file_db, tag_id)
         .await
         .c(h!())?
         .into_iter()
@@ -59,39 +60,39 @@ pub(super) async fn list_tag_test_files(
 }
 
 pub(super) async fn create_tag(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     name: String,
 ) -> Result<AdminAnalyticsTag, AppError> {
     let name = normalize_tag_name(name)?;
-    let tag = query::create_tag(main_db, Uuid::now_v7(), name)
+    let tag = query::create_tag(file_db, Uuid::now_v7(), name)
         .await
         .map_err(map_tag_write_error)?;
     map_admin_tag(tag)
 }
 
 pub(super) async fn update_tag(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     tag_id: Uuid,
     name: String,
 ) -> Result<AdminAnalyticsTag, AppError> {
     let name = normalize_tag_name(name)?;
-    let tag = query::find_tag(main_db, tag_id)
+    let tag = query::find_tag(file_db, tag_id)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
-    let tag = query::update_tag_name(main_db, tag, name)
+    let tag = query::update_tag_name(file_db, tag, name)
         .await
         .map_err(map_tag_write_error)?;
     map_admin_tag(tag)
 }
 
 pub(super) async fn save_rule(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     tag_id: Uuid,
     rule_expression: Option<serde_json::Value>,
 ) -> Result<AdminAnalyticsTag, AppError> {
     let rule_expression = validate_rule_expression(tag_id, rule_expression)?;
-    let transaction = main_db.begin().await.c(h!())?;
+    let transaction = file_db.begin().await.c(h!())?;
     let tag = query::lock_tag_for_rule_set_mutation(&transaction, tag_id)
         .await
         .c(h!())?
@@ -110,10 +111,10 @@ pub(super) async fn save_rule(
 }
 
 pub(super) async fn archive_tag(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     tag_id: Uuid,
 ) -> Result<AdminAnalyticsTag, AppError> {
-    let transaction = main_db.begin().await.c(h!())?;
+    let transaction = file_db.begin().await.c(h!())?;
     let tag = query::lock_tag_for_rule_set_mutation(&transaction, tag_id)
         .await
         .c(h!())?
@@ -124,10 +125,10 @@ pub(super) async fn archive_tag(
 }
 
 pub(super) async fn restore_tag(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     tag_id: Uuid,
 ) -> Result<AdminAnalyticsTag, AppError> {
-    let transaction = main_db.begin().await.c(h!())?;
+    let transaction = file_db.begin().await.c(h!())?;
     let tag = query::lock_tag_for_rule_set_mutation(&transaction, tag_id)
         .await
         .c(h!())?
@@ -138,7 +139,7 @@ pub(super) async fn restore_tag(
 }
 
 pub(super) async fn test_rule(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     tag_id: Uuid,
     rule_expression: Option<serde_json::Value>,
     files: Vec<RuleTestFile>,
@@ -151,7 +152,7 @@ pub(super) async fn test_rule(
         )));
     }
 
-    let transaction = main_db.begin().await.c(h!())?;
+    let transaction = file_db.begin().await.c(h!())?;
     query::lock_tag(&transaction, tag_id)
         .await
         .c(h!())?
@@ -202,11 +203,16 @@ pub(super) async fn test_rule(
 pub(super) async fn schedule_all_reanalysis(
     file_registry_db: &FileRegistryDb,
 ) -> Result<u64, AppError> {
-    Ok(
-        query::schedule_reanalysis(file_registry_db.connection(), None)
-            .await
-            .c(h!())?,
+    let rule_revision = query::rule_set_revision(file_registry_db.connection())
+        .await
+        .c(h!())?;
+    Ok(queue::schedule_reanalysis(
+        file_registry_db.connection(),
+        None,
+        rule_revision,
     )
+    .await
+    .c(h!())?)
 }
 
 pub(super) async fn schedule_device_reanalysis(
@@ -223,19 +229,23 @@ pub(super) async fn schedule_device_reanalysis(
     )
     .await
     .c(h!())?;
-    Ok(query::schedule_reanalysis(
+    let rule_revision = query::rule_set_revision(file_registry_db.connection())
+        .await
+        .c(h!())?;
+    Ok(queue::schedule_reanalysis(
         file_registry_db.connection(),
         Some(device_id),
+        rule_revision,
     )
     .await
     .c(h!())?)
 }
 
 pub(in crate::devices) async fn hydrate_active_tags(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     file_entry_ids: &[Uuid],
 ) -> Result<BTreeMap<Uuid, Vec<AnalyticsTag>>, AppError> {
-    Ok(query::load_active_tags_for_files(main_db, file_entry_ids)
+    Ok(query::load_active_tags_for_files(file_db, file_entry_ids)
         .await
         .c(h!())?
         .into_iter()
@@ -249,7 +259,7 @@ pub(in crate::devices) async fn hydrate_active_tags(
 }
 
 pub(in crate::devices) async fn normalize_tag_filter(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     raw_tag_ids: Vec<String>,
     tag_match: Option<TagMatch>,
     untagged: bool,
@@ -286,7 +296,7 @@ pub(in crate::devices) async fn normalize_tag_filter(
         }
         tag_ids.push(tag_id);
     }
-    let active_tag_ids = query::find_active_tag_ids(main_db, &tag_ids)
+    let active_tag_ids = query::find_active_tag_ids(file_db, &tag_ids)
         .await
         .c(h!())?;
     if let Some((index, _)) = tag_ids
@@ -309,10 +319,10 @@ pub(in crate::devices) async fn normalize_tag_filter(
 }
 
 pub(in crate::devices) async fn load_active_tag_memberships(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     file_entry_ids: &[Uuid],
 ) -> Result<BTreeMap<Uuid, BTreeSet<Uuid>>, AppError> {
-    Ok(query::load_active_tag_memberships(main_db, file_entry_ids)
+    Ok(query::load_active_tag_memberships(file_db, file_entry_ids)
         .await
         .c(h!())?)
 }
@@ -340,6 +350,7 @@ pub(in crate::devices) fn matches_tag_filter(
 
 pub(super) async fn list_public_tags(
     main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
     login: &login::Model,
     device_id: Uuid,
 ) -> Result<Vec<AnalyticsTag>, AppError> {
@@ -351,13 +362,16 @@ pub(super) async fn list_public_tags(
     )
     .await
     .c(h!())?;
-    let mut tags = query::list_active_tags(main_db).await.c(h!())?;
+    let mut tags = query::list_active_tags(file_registry_db.connection())
+        .await
+        .c(h!())?;
     sort_tags(&mut tags);
     Ok(tags.into_iter().map(map_public_tag).collect())
 }
 
 pub(super) async fn device_summary(
     main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
     login: &login::Model,
     device_id: Uuid,
 ) -> Result<Vec<DeviceAnalyticsSummaryItem>, AppError> {
@@ -369,7 +383,10 @@ pub(super) async fn device_summary(
     )
     .await
     .c(h!())?;
-    let mut items = query::device_summary(main_db, device_id).await.c(h!())?;
+    let mut items =
+        query::device_summary(file_registry_db.connection(), device_id)
+            .await
+            .c(h!())?;
     items.sort_by(|left, right| {
         left.tag_name
             .cmp(&right.tag_name)
@@ -407,7 +424,7 @@ pub(super) async fn device_files(
     )
     .await
     .c(h!())?;
-    query::find_active_tag(main_db, tag_id)
+    query::find_active_tag(file_registry_db.connection(), tag_id)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
@@ -417,7 +434,10 @@ pub(super) async fn device_files(
             let cursor_id = parse_canonical_uuid(&cursor, "cursor")?;
             Some(
                 query::resolve_file_link_cursor(
-                    main_db, device_id, tag_id, cursor_id,
+                    file_registry_db.connection(),
+                    device_id,
+                    tag_id,
+                    cursor_id,
                 )
                 .await
                 .c(h!())?
@@ -440,7 +460,7 @@ pub(super) async fn device_files(
         let remaining = limit - files.len() as u64;
         let chunk_limit = ANALYTICS_FILE_LINK_CHUNK_SIZE.max(remaining + 1);
         let links = query::list_file_links(
-            main_db,
+            file_registry_db.connection(),
             device_id,
             tag_id,
             after.as_ref(),
@@ -689,21 +709,4 @@ fn warn_about_orphan_links(orphan_count: u64, device_id: Uuid, tag_id: Uuid) {
             "Skipped {orphan_count} orphan device_file_tag links for device {device_id} and tag {tag_id}"
         );
     }
-}
-
-pub(super) fn assignments_for_file(
-    file: &crate::file_registry::entities::file_entry::Model,
-    matched_tags: Vec<Uuid>,
-) -> Vec<FileTagAssignment> {
-    let file_entry_created_at =
-        query::file_created_at_with_timezone(file.created_at);
-    matched_tags
-        .into_iter()
-        .map(|tag_id| FileTagAssignment {
-            file_entry_id: file.id,
-            device_id: file.device_id,
-            file_entry_created_at,
-            tag_id,
-        })
-        .collect()
 }

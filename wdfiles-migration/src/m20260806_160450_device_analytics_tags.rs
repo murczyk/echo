@@ -47,13 +47,17 @@ impl MigrationTrait for Migration {
                 create table device_file_tag (
                     id uuid primary key,
                     file_entry_id uuid not null,
-                    device_id uuid not null references device(id) on delete cascade,
+                    device_id uuid not null,
                     file_entry_created_at timestamptz not null,
                     tag_id uuid not null references analytics_tag(id) on delete cascade,
                     created_at timestamptz not null default now(),
                     updated_at timestamptz not null default now(),
                     constraint device_file_tag_file_entry_id_tag_id_unique
-                        unique (file_entry_id, tag_id)
+                        unique (file_entry_id, tag_id),
+                    constraint device_file_tag_file_entry_fk
+                        foreign key (device_id, file_entry_id)
+                        references file_entry(device_id, id)
+                        on delete cascade
                 );
 
                 create index device_file_tag_device_tag_created_file_idx

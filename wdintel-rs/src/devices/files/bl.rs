@@ -104,10 +104,14 @@ pub(in crate::devices) async fn journal(
     )
     .await
     .c(h!())?;
-    let tag_filter =
-        normalize_tag_filter(main_db, tag_ids, tag_match, untagged)
-            .await
-            .c(h!())?;
+    let tag_filter = normalize_tag_filter(
+        file_registry_db.connection(),
+        tag_ids,
+        tag_match,
+        untagged,
+    )
+    .await
+    .c(h!())?;
     let after = match cursor {
         Some(cursor) => {
             let boundary_file_id =
@@ -131,20 +135,15 @@ pub(in crate::devices) async fn journal(
     let (entries, next_cursor, total_count) =
         if let Some(tag_filter) = &tag_filter {
             let (entries, next_cursor) = filtered_journal_page(
-                main_db,
                 file_registry_db,
                 device_id,
                 requested_page,
                 tag_filter,
             )
             .await?;
-            let total_count = count_filtered_journal(
-                main_db,
-                file_registry_db,
-                device_id,
-                tag_filter,
-            )
-            .await?;
+            let total_count =
+                count_filtered_journal(file_registry_db, device_id, tag_filter)
+                    .await?;
             (entries, next_cursor, total_count)
         } else {
             let (page, total_count) = query::list_file_journal_with_total(
@@ -165,9 +164,10 @@ pub(in crate::devices) async fn journal(
         .iter()
         .map(|entry| entry.file_id)
         .collect::<Vec<_>>();
-    let tags_by_file = hydrate_active_tags(main_db, &file_entry_ids)
-        .await
-        .c(h!())?;
+    let tags_by_file =
+        hydrate_active_tags(file_registry_db.connection(), &file_entry_ids)
+            .await
+            .c(h!())?;
 
     Ok(JournalFilesResult {
         total_count,
@@ -201,10 +201,14 @@ pub(in crate::devices) async fn browse(
     )
     .await
     .c(h!())?;
-    let tag_filter =
-        normalize_tag_filter(main_db, tag_ids, tag_match, untagged)
-            .await
-            .c(h!())?;
+    let tag_filter = normalize_tag_filter(
+        file_registry_db.connection(),
+        tag_ids,
+        tag_match,
+        untagged,
+    )
+    .await
+    .c(h!())?;
     let scope = query::find_directory_scope(
         file_registry_db,
         device_id,
@@ -236,7 +240,6 @@ pub(in crate::devices) async fn browse(
         .c(h!())?;
     let (entries, next_cursor) = if let Some(tag_filter) = &tag_filter {
         filtered_browse_page(
-            main_db,
             file_registry_db,
             &scope,
             requested_page,
@@ -269,9 +272,10 @@ pub(in crate::devices) async fn browse(
         Vec::new()
     };
     let file_entry_ids = entries.iter().map(tree_entry_id).collect::<Vec<_>>();
-    let tags_by_file = hydrate_active_tags(main_db, &file_entry_ids)
-        .await
-        .c(h!())?;
+    let tags_by_file =
+        hydrate_active_tags(file_registry_db.connection(), &file_entry_ids)
+            .await
+            .c(h!())?;
 
     Ok(BrowseFilesResult {
         breadcrumbs,
@@ -306,10 +310,14 @@ pub(in crate::devices) async fn search(
     )
     .await
     .c(h!())?;
-    let tag_filter =
-        normalize_tag_filter(main_db, tag_ids, tag_match, untagged)
-            .await
-            .c(h!())?;
+    let tag_filter = normalize_tag_filter(
+        file_registry_db.connection(),
+        tag_ids,
+        tag_match,
+        untagged,
+    )
+    .await
+    .c(h!())?;
     let filters = FileSearchFilters::try_from(filters)
         .map_err(map_read_error)
         .c(h!())?;
@@ -347,7 +355,6 @@ pub(in crate::devices) async fn search(
         .c(h!())?;
     let (entries, next_cursor) = if let Some(tag_filter) = &tag_filter {
         filtered_search_page(
-            main_db,
             file_registry_db,
             &scope,
             &filters,
@@ -373,9 +380,10 @@ pub(in crate::devices) async fn search(
     };
     let file_entry_ids =
         entries.iter().map(search_entry_id).collect::<Vec<_>>();
-    let tags_by_file = hydrate_active_tags(main_db, &file_entry_ids)
-        .await
-        .c(h!())?;
+    let tags_by_file =
+        hydrate_active_tags(file_registry_db.connection(), &file_entry_ids)
+            .await
+            .c(h!())?;
 
     Ok(SearchFilesResult {
         entries,
@@ -418,13 +426,13 @@ pub(in crate::devices) async fn sync(
             super::types::SyncFileItemOutcome::Rejected { .. } => None,
         })
         .collect::<Vec<_>>();
-    result.tags_by_file = hydrate_active_tags(main_db, &file_entry_ids)
-        .await
-        .c(h!())?;
+    result.tags_by_file =
+        hydrate_active_tags(file_registry_db.connection(), &file_entry_ids)
+            .await
+            .c(h!())?;
     Ok(result)
 }
 async fn filtered_browse_page(
-    main_db: &DatabaseConnection,
     file_registry_db: &FileRegistryDb,
     scope: &super::types::DirectoryScope,
     requested_page: KeysetPageRequest<EntrySortKey>,
@@ -451,9 +459,12 @@ async fn filtered_browse_page(
         let has_later_page = page.next.is_some();
         let entry_ids =
             page.entries.iter().map(tree_entry_id).collect::<Vec<_>>();
-        let memberships = load_active_tag_memberships(main_db, &entry_ids)
-            .await
-            .c(h!())?;
+        let memberships = load_active_tag_memberships(
+            file_registry_db.connection(),
+            &entry_ids,
+        )
+        .await
+        .c(h!())?;
         for (index, entry) in page.entries.into_iter().enumerate() {
             let entry_id = tree_entry_id(&entry);
             if matches_tag_filter(memberships.get(&entry_id), tag_filter) {
@@ -476,7 +487,6 @@ async fn filtered_browse_page(
 }
 
 async fn filtered_search_page(
-    main_db: &DatabaseConnection,
     file_registry_db: &FileRegistryDb,
     scope: &super::types::DirectoryScope,
     filters: &FileSearchFilters,
@@ -505,9 +515,12 @@ async fn filtered_search_page(
         let has_later_page = page.next.is_some();
         let entry_ids =
             page.entries.iter().map(search_entry_id).collect::<Vec<_>>();
-        let memberships = load_active_tag_memberships(main_db, &entry_ids)
-            .await
-            .c(h!())?;
+        let memberships = load_active_tag_memberships(
+            file_registry_db.connection(),
+            &entry_ids,
+        )
+        .await
+        .c(h!())?;
         for (index, entry) in page.entries.into_iter().enumerate() {
             let entry_id = search_entry_id(&entry);
             if matches_tag_filter(memberships.get(&entry_id), tag_filter) {
@@ -530,7 +543,6 @@ async fn filtered_search_page(
 }
 
 async fn filtered_journal_page(
-    main_db: &DatabaseConnection,
     file_registry_db: &FileRegistryDb,
     device_id: Uuid,
     requested_page: KeysetPageRequest<FileJournalSortKey>,
@@ -560,9 +572,12 @@ async fn filtered_journal_page(
             .iter()
             .map(|entry| entry.file_id)
             .collect::<Vec<_>>();
-        let memberships = load_active_tag_memberships(main_db, &entry_ids)
-            .await
-            .c(h!())?;
+        let memberships = load_active_tag_memberships(
+            file_registry_db.connection(),
+            &entry_ids,
+        )
+        .await
+        .c(h!())?;
         for (index, entry) in page.entries.into_iter().enumerate() {
             let entry_id = entry.file_id;
             if matches_tag_filter(memberships.get(&entry_id), tag_filter) {
@@ -585,7 +600,6 @@ async fn filtered_journal_page(
 }
 
 async fn count_filtered_journal(
-    main_db: &DatabaseConnection,
     file_registry_db: &FileRegistryDb,
     device_id: Uuid,
     tag_filter: &TagFilter,
@@ -610,9 +624,12 @@ async fn count_filtered_journal(
             .iter()
             .map(|entry| entry.file_id)
             .collect::<Vec<_>>();
-        let memberships = load_active_tag_memberships(main_db, &entry_ids)
-            .await
-            .c(h!())?;
+        let memberships = load_active_tag_memberships(
+            file_registry_db.connection(),
+            &entry_ids,
+        )
+        .await
+        .c(h!())?;
         total_count += page
             .entries
             .iter()

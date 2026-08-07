@@ -2,11 +2,11 @@ use self::schema::device_active_model;
 use crate::config::{IDENTITY_DURATION_HOURS, ROLE_ADMIN};
 use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
 use crate::entities::{
-    analytics_tag, area_of_responsibility, device_file_tag, login, organism,
-    sigint_unit, system_settings,
+    area_of_responsibility, login, organism, sigint_unit, system_settings,
 };
 use crate::file_registry::entities::{
-    file_entry, sea_orm_active_enums::FileEntryKind,
+    analytics_tag, device_file_tag, file_analysis_state, file_entry,
+    sea_orm_active_enums::FileEntryKind,
 };
 use crate::functest::tests::{
     cleanup_locked, mk_aor, mk_login, mk_organism, mk_sigint_unit,
@@ -21,8 +21,10 @@ use actix_web::{
     http::StatusCode, test, web, App, HttpMessage, HttpRequest, HttpResponse,
 };
 use chrono::{NaiveDateTime, Utc};
+use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
+    IntoActiveModel, QueryFilter,
 };
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -80,7 +82,6 @@ fn analytics_root_entry(
         created_at: Set(timestamp),
         updated_at: Set(timestamp),
         content_path: Set(None),
-        analyzed: Set(true),
     }
 }
 
@@ -111,7 +112,6 @@ fn analytics_file_entry(
         created_at: Set(timestamp),
         updated_at: Set(timestamp),
         content_path: Set(None),
-        analyzed: Set(true),
     }
 }
 
@@ -755,7 +755,7 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
             created_at: Set(now.fixed_offset()),
             updated_at: Set(now.fixed_offset()),
         }
-        .insert(&env.dbx)
+        .insert(file_db)
         .await
         .unwrap();
     }
@@ -768,7 +768,7 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
         created_at: Set(now.fixed_offset()),
         updated_at: Set(now.fixed_offset()),
     }
-    .insert(&env.dbx)
+    .insert(file_db)
     .await
     .unwrap();
 
@@ -966,6 +966,20 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
     .exec(file_db)
     .await
     .unwrap();
+    file_analysis_state::Entity::update_many()
+        .col_expr(
+            file_analysis_state::Column::AnalyzedSourceRevision,
+            Expr::col(file_analysis_state::Column::SourceRevision),
+        )
+        .col_expr(
+            file_analysis_state::Column::AnalyzedGeneration,
+            Expr::col(file_analysis_state::Column::RequiredGeneration),
+        )
+        .col_expr(file_analysis_state::Column::Pending, Expr::value(false))
+        .filter(file_analysis_state::Column::DeviceId.eq(device.id))
+        .exec(file_db)
+        .await
+        .unwrap();
     let sparse_tagged_file_id = *sparse_file_ids.last().unwrap();
     device_file_tag::ActiveModel {
         id: Set(Uuid::now_v7()),
@@ -976,7 +990,7 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
         created_at: Set(now.fixed_offset()),
         updated_at: Set(now.fixed_offset()),
     }
-    .insert(&env.dbx)
+    .insert(file_db)
     .await
     .unwrap();
 
@@ -1040,9 +1054,10 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
         admin_cookie,
         "/api/admin/device-analytics/tags/rule/test",
         json!({
+            "id": active_tag_id,
             "rule_expression": {
                 "op": "match",
-                "fields": ["extension"],
+                "field": "extension",
                 "matcher": "equals",
                 "values": ["pdf"]
             },
@@ -1095,7 +1110,7 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
             "id": created_tag_id,
             "rule_expression": {
                 "op": "match",
-                "fields": ["extension"],
+                "field": "extension",
                 "matcher": "equals",
                 "values": ["txt"]
             }

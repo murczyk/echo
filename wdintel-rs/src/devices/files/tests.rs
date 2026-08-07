@@ -18,18 +18,17 @@ use crate::config::{
 use crate::devices::access;
 use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
 use crate::entities::{device, login, organism};
-use crate::file_registry::entities::file_entry;
+use crate::file_registry::entities::{file_analysis_state, file_entry};
 use crate::file_registry::{connect_runtime, run_migrations, FileRegistryDb};
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
 use crate::h;
 use crate::types::{AppError, Mode, ShortContext, Uuid};
 use chrono::{Duration, NaiveDate, NaiveDateTime};
+use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait,
-    ActiveValue::{NotSet, Set},
-    ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
-    EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
-    TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
+    DatabaseConnection, DatabaseTransaction, EntityTrait, IntoActiveModel,
+    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
@@ -184,7 +183,6 @@ fn base_file_entry(
         created_at: Set(timestamp),
         updated_at: Set(timestamp),
         content_path: Set(None),
-        analyzed: NotSet,
     }
 }
 
@@ -193,9 +191,11 @@ fn uuid_label(id: Uuid) -> String {
 }
 
 async fn truncate_file_entries(db: &DatabaseConnection) {
-    db.execute_unprepared("truncate table public.file_entry")
-        .await
-        .unwrap();
+    db.execute_unprepared(
+        "truncate table public.file_analysis_state, public.device_file_tag, public.file_entry",
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -2807,28 +2807,36 @@ fn stage_nine_structure_timestamps(
         .collect()
 }
 
-async fn set_file_analyzed(
-    db: &DatabaseConnection,
-    file_id: Uuid,
-    analyzed: bool,
-) {
-    let mut file = file_entry::Entity::find_by_id(file_id)
-        .one(db)
+async fn complete_file_analysis(db: &DatabaseConnection, file_id: Uuid) {
+    let updated = file_analysis_state::Entity::update_many()
+        .col_expr(
+            file_analysis_state::Column::AnalyzedSourceRevision,
+            Expr::col(file_analysis_state::Column::SourceRevision),
+        )
+        .col_expr(
+            file_analysis_state::Column::AnalyzedGeneration,
+            Expr::col(file_analysis_state::Column::RequiredGeneration),
+        )
+        .col_expr(file_analysis_state::Column::Pending, Expr::value(false))
+        .filter(file_analysis_state::Column::FileEntryId.eq(file_id))
+        .exec(db)
         .await
-        .unwrap()
-        .unwrap()
-        .into_active_model();
-    file.analyzed = Set(analyzed);
-    file.update(db).await.unwrap();
+        .unwrap();
+    assert_eq!(updated.rows_affected, 1);
 }
 
-async fn file_is_analyzed(db: &DatabaseConnection, file_id: Uuid) -> bool {
-    file_entry::Entity::find_by_id(file_id)
+async fn file_analysis_is_complete(
+    db: &DatabaseConnection,
+    file_id: Uuid,
+) -> bool {
+    let state = file_analysis_state::Entity::find_by_id(file_id)
         .one(db)
         .await
         .unwrap()
-        .unwrap()
-        .analyzed
+        .unwrap();
+    !state.pending
+        && state.analyzed_source_revision == state.source_revision
+        && state.analyzed_generation == state.required_generation
 }
 
 #[tokio::test]
@@ -2855,7 +2863,7 @@ async fn metadata_mutation_requeues_only_classification_input_changes() {
     .unwrap();
     let file_id = created.file.file_id;
 
-    set_file_analyzed(file_db, file_id, true).await;
+    complete_file_analysis(file_db, file_id).await;
     query::mutate_file(
         repository,
         &stage_nine_mutation(
@@ -2871,7 +2879,7 @@ async fn metadata_mutation_requeues_only_classification_input_changes() {
     .await
     .unwrap();
     assert!(
-        file_is_analyzed(file_db, file_id).await,
+        file_analysis_is_complete(file_db, file_id).await,
         "MIME and source timestamps must not requeue metadata analysis",
     );
 
@@ -2889,9 +2897,9 @@ async fn metadata_mutation_requeues_only_classification_input_changes() {
     )
     .await
     .unwrap();
-    assert!(!file_is_analyzed(file_db, file_id).await);
+    assert!(!file_analysis_is_complete(file_db, file_id).await);
 
-    set_file_analyzed(file_db, file_id, true).await;
+    complete_file_analysis(file_db, file_id).await;
     query::mutate_file(
         repository,
         &stage_nine_mutation(
@@ -2906,9 +2914,9 @@ async fn metadata_mutation_requeues_only_classification_input_changes() {
     )
     .await
     .unwrap();
-    assert!(!file_is_analyzed(file_db, file_id).await);
+    assert!(!file_analysis_is_complete(file_db, file_id).await);
 
-    set_file_analyzed(file_db, file_id, true).await;
+    complete_file_analysis(file_db, file_id).await;
     query::mutate_file(
         repository,
         &stage_nine_mutation(
@@ -2923,7 +2931,7 @@ async fn metadata_mutation_requeues_only_classification_input_changes() {
     )
     .await
     .unwrap();
-    assert!(!file_is_analyzed(file_db, file_id).await);
+    assert!(!file_analysis_is_complete(file_db, file_id).await);
 }
 
 #[tokio::test]
@@ -6330,7 +6338,6 @@ mod query_ancestors_tests {
             created_at: timestamp(),
             updated_at: timestamp(),
             content_path: None,
-            analyzed: false,
         }
     }
 
@@ -6355,7 +6362,6 @@ mod query_ancestors_tests {
             created_at: timestamp(),
             updated_at: timestamp(),
             content_path: None,
-            analyzed: false,
         }
     }
 
@@ -6394,7 +6400,6 @@ mod query_ancestors_tests {
             created_at: timestamp(),
             updated_at: timestamp(),
             content_path: None,
-            analyzed: false,
         }
     }
 
@@ -6497,7 +6502,6 @@ mod query_model_tests {
             created_at: timestamp,
             updated_at: timestamp,
             content_path: None,
-            analyzed: false,
         }
     }
 
@@ -6703,6 +6707,7 @@ mod mapping_tests {
                     "parent_entry_id": null,
                     "kind": "directory",
                     "name": "C:\\",
+                    "tags": [],
                     "created_at": "2026-07-23T09:10:11.123Z",
                     "updated_at": "2026-07-23T09:10:11.123Z"
                 }]

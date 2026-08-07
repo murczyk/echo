@@ -4,7 +4,7 @@ use super::*;
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
-    DbBackend, DbErr, EntityTrait, IntoActiveModel, NotSet, Set, Statement,
+    DbBackend, DbErr, EntityTrait, IntoActiveModel, Set, Statement,
     TransactionTrait,
 };
 use std::{collections::BTreeMap, error::Error as StdError, future::Future};
@@ -84,6 +84,7 @@ async fn file_registry_schema_and_entity_round_trip() {
     assert_public_extensions(connection).await;
     assert_legacy_file_table_is_absent(connection).await;
     assert_file_entry_schema(connection).await;
+    assert_file_analysis_schema(connection).await;
     assert_file_entry_entity_round_trip(connection).await;
 }
 
@@ -108,6 +109,9 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260728_111013_add_file_entry_journal_index".to_string(),
             "m20260728_182132_add_file_entry_content_path".to_string(),
             "m20260803_164204_file_entry_kind_and_windows_paths".to_string(),
+            "m20260806_160450_device_analytics_tags".to_string(),
+            "m20260807_125456_analytics_tag_rule_revision".to_string(),
+            "m20260807_162040_file_analysis_state".to_string(),
         ]
     );
 }
@@ -209,6 +213,95 @@ async fn assert_file_entry_schema(connection: &DatabaseConnection) {
     assert_file_entry_constraints(connection).await;
     assert_file_entry_triggers(connection).await;
     assert_file_entry_indexes(connection).await;
+}
+
+async fn assert_file_analysis_schema(connection: &DatabaseConnection) {
+    let table_names = connection
+        .query_all_raw(Statement::from_string(
+            DbBackend::Postgres,
+            r#"
+select table_name
+from information_schema.tables
+where table_schema = 'public'
+  and table_name in (
+      'analytics_tag',
+      'analytics_tag_rule_set_state',
+      'analytics_tag_test_file',
+      'device_file_tag',
+      'file_analysis_control',
+      'file_analysis_reanalysis_job',
+      'file_analysis_state'
+  )
+order by table_name
+"#
+            .to_string(),
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| row.try_get("", "table_name").unwrap())
+        .collect::<Vec<String>>();
+    assert_eq!(
+        table_names,
+        vec![
+            "analytics_tag".to_string(),
+            "analytics_tag_rule_set_state".to_string(),
+            "analytics_tag_test_file".to_string(),
+            "device_file_tag".to_string(),
+            "file_analysis_control".to_string(),
+            "file_analysis_reanalysis_job".to_string(),
+            "file_analysis_state".to_string(),
+        ]
+    );
+
+    let link_foreign_keys = connection
+        .query_all_raw(Statement::from_string(
+            DbBackend::Postgres,
+            r#"
+select conname, pg_get_constraintdef(oid) as definition
+from pg_constraint
+where conrelid = 'public.device_file_tag'::regclass
+  and contype = 'f'
+order by conname
+"#
+            .to_string(),
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get("", "conname").unwrap(),
+                row.try_get("", "definition").unwrap(),
+            )
+        })
+        .collect::<Vec<(String, String)>>();
+    assert_eq!(
+        link_foreign_keys,
+        vec![
+            (
+                "device_file_tag_file_entry_fk".to_string(),
+                "FOREIGN KEY (device_id, file_entry_id) REFERENCES file_entry(device_id, id) ON DELETE CASCADE".to_string(),
+            ),
+            (
+                "device_file_tag_tag_id_fkey".to_string(),
+                "FOREIGN KEY (tag_id) REFERENCES analytics_tag(id) ON DELETE CASCADE".to_string(),
+            ),
+        ]
+    );
+
+    let rule_revision: i64 = connection
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "select revision from public.analytics_tag_rule_set_state where id"
+                .to_string(),
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "revision")
+        .unwrap();
+    assert_eq!(rule_revision, 0);
 }
 
 async fn assert_exact_columns(
@@ -348,6 +441,18 @@ order by tgname
     assert_eq!(
         triggers,
         vec![
+            (
+                "file_analysis_enqueue_insert_trg".to_string(),
+                false,
+                false,
+                "CREATE TRIGGER file_analysis_enqueue_insert_trg AFTER INSERT ON public.file_entry FOR EACH ROW EXECUTE FUNCTION file_analysis_enqueue_file_entry()".to_string(),
+            ),
+            (
+                "file_analysis_enqueue_update_trg".to_string(),
+                false,
+                false,
+                "CREATE TRIGGER file_analysis_enqueue_update_trg AFTER UPDATE OF name, absolute_path, extension ON public.file_entry FOR EACH ROW EXECUTE FUNCTION file_analysis_enqueue_file_entry()".to_string(),
+            ),
             (
                 "file_entry_hierarchy_trg".to_string(),
                 true,
@@ -847,7 +952,6 @@ fn base_file_entry(
         created_at: Set(created_at),
         updated_at: Set(created_at),
         content_path: Set(None),
-        analyzed: NotSet,
     }
 }
 

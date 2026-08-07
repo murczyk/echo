@@ -1,20 +1,16 @@
 use super::types::{
     ActiveTagRule, DeviceAnalyticsFileLink, DeviceAnalyticsSummary,
 };
-use crate::entities::{
-    analytics_tag, analytics_tag_rule_set_state, analytics_tag_test_file,
-    device_file_tag,
-};
 use crate::file_registry::entities::{
-    file_entry, sea_orm_active_enums::FileEntryKind,
+    analytics_tag, analytics_tag_rule_set_state, analytics_tag_test_file,
+    device_file_tag, file_entry, sea_orm_active_enums::FileEntryKind,
 };
 use chrono::{DateTime, FixedOffset, Utc};
-use sea_orm::sea_query::{Expr, LockBehavior, LockType};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
     DatabaseConnection, DatabaseTransaction, DbErr, EntityTrait,
     FromQueryResult, IntoActiveModel, JoinType, QueryFilter, QueryOrder,
-    QuerySelect, QueryTrait, RelationTrait, Select, Set,
+    QuerySelect, QueryTrait, RelationTrait, Set,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use uuid::Uuid;
@@ -37,26 +33,26 @@ pub(super) struct FileTagDelta {
 }
 
 pub(super) async fn list_tags<C>(
-    main_db: &C,
+    file_db: &C,
 ) -> Result<Vec<analytics_tag::Model>, DbErr>
 where
     C: ConnectionTrait,
 {
-    analytics_tag::Entity::find().all(main_db).await
+    analytics_tag::Entity::find().all(file_db).await
 }
 
 pub(super) async fn find_tag<C>(
-    main_db: &C,
+    file_db: &C,
     tag_id: Uuid,
 ) -> Result<Option<analytics_tag::Model>, DbErr>
 where
     C: ConnectionTrait,
 {
-    analytics_tag::Entity::find_by_id(tag_id).one(main_db).await
+    analytics_tag::Entity::find_by_id(tag_id).one(file_db).await
 }
 
 pub(super) async fn list_tag_test_files<C>(
-    main_db: &C,
+    file_db: &C,
     tag_id: Uuid,
 ) -> Result<Vec<analytics_tag_test_file::Model>, DbErr>
 where
@@ -65,7 +61,7 @@ where
     analytics_tag_test_file::Entity::find()
         .filter(analytics_tag_test_file::Column::TagId.eq(tag_id))
         .order_by_asc(analytics_tag_test_file::Column::Position)
-        .all(main_db)
+        .all(file_db)
         .await
 }
 
@@ -126,6 +122,20 @@ pub(super) async fn lock_rule_set_revision(
             )
         })
 }
+pub(super) async fn rule_set_revision<C>(file_db: &C) -> Result<i64, DbErr>
+where
+    C: ConnectionTrait,
+{
+    analytics_tag_rule_set_state::Entity::find_by_id(true)
+        .one(file_db)
+        .await?
+        .map(|state| state.revision)
+        .ok_or_else(|| {
+            DbErr::RecordNotFound(
+                "analytics_tag_rule_set_state singleton is missing".to_string(),
+            )
+        })
+}
 
 pub(super) async fn bump_rule_set_revision(
     transaction: &DatabaseTransaction,
@@ -160,7 +170,7 @@ pub(super) async fn lock_tag_for_rule_set_mutation(
 }
 
 pub(super) async fn create_tag(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     tag_id: Uuid,
     name: String,
 ) -> Result<analytics_tag::Model, DbErr> {
@@ -173,19 +183,19 @@ pub(super) async fn create_tag(
         created_at: Set(now),
         updated_at: Set(now),
     }
-    .insert(main_db)
+    .insert(file_db)
     .await
 }
 
 pub(super) async fn update_tag_name(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     tag: analytics_tag::Model,
     name: String,
 ) -> Result<analytics_tag::Model, DbErr> {
     let mut tag = tag.into_active_model();
     tag.name = Set(name);
     tag.updated_at = Set(Utc::now().fixed_offset());
-    tag.update(main_db).await
+    tag.update(file_db).await
 }
 
 pub(super) async fn save_tag_rule(
@@ -225,14 +235,14 @@ pub(super) async fn restore_tag(
 }
 
 pub(in crate::devices) async fn list_active_tags<C>(
-    main_db: &C,
+    file_db: &C,
 ) -> Result<Vec<analytics_tag::Model>, DbErr>
 where
     C: ConnectionTrait,
 {
     analytics_tag::Entity::find()
         .filter(analytics_tag::Column::ArchivedAt.is_null())
-        .all(main_db)
+        .all(file_db)
         .await
 }
 
@@ -256,26 +266,6 @@ pub(super) async fn load_active_tag_rules(
                 })
                 .collect()
         })
-}
-
-pub(super) fn pending_files_query(limit: u64) -> Select<file_entry::Entity> {
-    file_entry::Entity::find()
-        // Generic plans can use the pending-file partial index only when its
-        // predicate is visible as SQL literals rather than bound values.
-        .filter(Expr::cust(
-            r#""file_entry"."kind" = 'file' AND "file_entry"."analyzed" = FALSE"#,
-        ))
-        .order_by_asc(file_entry::Column::CreatedAt)
-        .order_by_asc(file_entry::Column::Id)
-        .limit(limit)
-        .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
-}
-
-pub(super) async fn lock_pending_files(
-    transaction: &DatabaseTransaction,
-    limit: u64,
-) -> Result<Vec<file_entry::Model>, DbErr> {
-    pending_files_query(limit).all(transaction).await
 }
 
 pub(super) async fn reconcile_file_tags(
@@ -368,40 +358,8 @@ pub(super) async fn reconcile_file_tags(
     })
 }
 
-pub(super) async fn mark_files_analyzed(
-    transaction: &DatabaseTransaction,
-    file_entry_ids: &[Uuid],
-) -> Result<u64, DbErr> {
-    if file_entry_ids.is_empty() {
-        return Ok(0);
-    }
-    file_entry::Entity::update_many()
-        .col_expr(file_entry::Column::Analyzed, Expr::value(true))
-        .filter(file_entry::Column::Id.is_in(file_entry_ids.iter().copied()))
-        .filter(file_entry::Column::Analyzed.eq(false))
-        .exec(transaction)
-        .await
-        .map(|result| result.rows_affected)
-}
-
-pub(super) async fn schedule_reanalysis(
-    file_db: &DatabaseConnection,
-    device_id: Option<Uuid>,
-) -> Result<u64, DbErr> {
-    file_entry::Entity::update_many()
-        .col_expr(file_entry::Column::Analyzed, Expr::value(false))
-        .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
-        .filter(file_entry::Column::Analyzed.eq(true))
-        .apply_if(device_id, |query, device_id| {
-            query.filter(file_entry::Column::DeviceId.eq(device_id))
-        })
-        .exec(file_db)
-        .await
-        .map(|result| result.rows_affected)
-}
-
 pub(in crate::devices) async fn load_active_tags_for_files<C>(
-    main_db: &C,
+    file_db: &C,
     file_entry_ids: &[Uuid],
 ) -> Result<BTreeMap<Uuid, Vec<analytics_tag::Model>>, DbErr>
 where
@@ -417,7 +375,7 @@ where
                 .is_in(file_entry_ids.iter().copied()),
         )
         .filter(analytics_tag::Column::ArchivedAt.is_null())
-        .all(main_db)
+        .all(file_db)
         .await?;
     let mut tags_by_file = BTreeMap::<Uuid, Vec<analytics_tag::Model>>::new();
     for (link, tag) in rows {
@@ -440,13 +398,13 @@ where
 }
 
 pub(in crate::devices) async fn load_active_tag_memberships<C>(
-    main_db: &C,
+    file_db: &C,
     file_entry_ids: &[Uuid],
 ) -> Result<BTreeMap<Uuid, BTreeSet<Uuid>>, DbErr>
 where
     C: ConnectionTrait,
 {
-    Ok(load_active_tags_for_files(main_db, file_entry_ids)
+    Ok(load_active_tags_for_files(file_db, file_entry_ids)
         .await?
         .into_iter()
         .map(|(file_id, tags)| {
@@ -456,7 +414,7 @@ where
 }
 
 pub(in crate::devices) async fn find_active_tag_ids<C>(
-    main_db: &C,
+    file_db: &C,
     tag_ids: &[Uuid],
 ) -> Result<BTreeSet<Uuid>, DbErr>
 where
@@ -471,7 +429,7 @@ where
         .filter(analytics_tag::Column::Id.is_in(tag_ids.iter().copied()))
         .filter(analytics_tag::Column::ArchivedAt.is_null())
         .into_tuple::<Uuid>()
-        .all(main_db)
+        .all(file_db)
         .await
         .map(|ids| ids.into_iter().collect())
 }
@@ -485,7 +443,7 @@ struct SummaryRow {
 }
 
 pub(super) async fn device_summary(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     device_id: Uuid,
 ) -> Result<Vec<DeviceAnalyticsSummary>, DbErr> {
     analytics_tag::Entity::find()
@@ -506,7 +464,7 @@ pub(super) async fn device_summary(
         .group_by(analytics_tag::Column::Id)
         .group_by(analytics_tag::Column::Name)
         .into_model::<SummaryRow>()
-        .all(main_db)
+        .all(file_db)
         .await
         .map(|rows| {
             rows.into_iter()
@@ -522,7 +480,7 @@ pub(super) async fn device_summary(
 }
 
 pub(super) async fn find_active_tag<C>(
-    main_db: &C,
+    file_db: &C,
     tag_id: Uuid,
 ) -> Result<Option<analytics_tag::Model>, DbErr>
 where
@@ -530,12 +488,12 @@ where
 {
     analytics_tag::Entity::find_by_id(tag_id)
         .filter(analytics_tag::Column::ArchivedAt.is_null())
-        .one(main_db)
+        .one(file_db)
         .await
 }
 
 pub(super) async fn resolve_file_link_cursor(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     device_id: Uuid,
     tag_id: Uuid,
     file_entry_id: Uuid,
@@ -544,7 +502,7 @@ pub(super) async fn resolve_file_link_cursor(
         .filter(device_file_tag::Column::DeviceId.eq(device_id))
         .filter(device_file_tag::Column::TagId.eq(tag_id))
         .filter(device_file_tag::Column::FileEntryId.eq(file_entry_id))
-        .one(main_db)
+        .one(file_db)
         .await
         .map(|link| {
             link.map(|link| DeviceAnalyticsFileLink {
@@ -555,7 +513,7 @@ pub(super) async fn resolve_file_link_cursor(
 }
 
 pub(super) async fn list_file_links(
-    main_db: &DatabaseConnection,
+    file_db: &DatabaseConnection,
     device_id: Uuid,
     tag_id: Uuid,
     after: Option<&DeviceAnalyticsFileLink>,
@@ -587,7 +545,7 @@ pub(super) async fn list_file_links(
         .order_by_desc(device_file_tag::Column::FileEntryCreatedAt)
         .order_by_desc(device_file_tag::Column::FileEntryId)
         .limit(limit)
-        .all(main_db)
+        .all(file_db)
         .await
         .map(|links| {
             links

@@ -1,5 +1,6 @@
 mod bl;
 pub(in crate::devices) mod query;
+mod queue;
 mod rules;
 #[cfg(test)]
 mod tests;
@@ -36,7 +37,9 @@ pub(crate) async fn list_tags(
 ) -> Result<Json<ListAnalyticsTagsRsp>, AppError> {
     crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
     Ok(Json(ListAnalyticsTagsRsp {
-        tags: bl::list_admin_tags(&env.dbx).await.c(h!())?,
+        tags: bl::list_admin_tags(env.file_registry_db()?.connection())
+            .await
+            .c(h!())?,
     }))
 }
 
@@ -47,7 +50,11 @@ pub(crate) async fn create_tag(
     Json(body): Json<CreateAnalyticsTagReq>,
 ) -> Result<Json<AdminAnalyticsTag>, AppError> {
     crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
-    Ok(Json(bl::create_tag(&env.dbx, body.name).await.c(h!())?))
+    Ok(Json(
+        bl::create_tag(env.file_registry_db()?.connection(), body.name)
+            .await
+            .c(h!())?,
+    ))
 }
 
 #[post("/api/admin/device-analytics/tags/update")]
@@ -59,7 +66,9 @@ pub(crate) async fn update_tag(
     crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
     let tag_id = bl::parse_canonical_uuid(&body.id, "id")?;
     Ok(Json(
-        bl::update_tag(&env.dbx, tag_id, body.name).await.c(h!())?,
+        bl::update_tag(env.file_registry_db()?.connection(), tag_id, body.name)
+            .await
+            .c(h!())?,
     ))
 }
 
@@ -71,7 +80,11 @@ pub(crate) async fn archive_tag(
 ) -> Result<Json<AdminAnalyticsTag>, AppError> {
     crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
     let tag_id = bl::parse_canonical_uuid(&body.id, "id")?;
-    Ok(Json(bl::archive_tag(&env.dbx, tag_id).await.c(h!())?))
+    Ok(Json(
+        bl::archive_tag(env.file_registry_db()?.connection(), tag_id)
+            .await
+            .c(h!())?,
+    ))
 }
 
 #[post("/api/admin/device-analytics/tags/restore")]
@@ -82,7 +95,11 @@ pub(crate) async fn restore_tag(
 ) -> Result<Json<AdminAnalyticsTag>, AppError> {
     crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
     let tag_id = bl::parse_canonical_uuid(&body.id, "id")?;
-    Ok(Json(bl::restore_tag(&env.dbx, tag_id).await.c(h!())?))
+    Ok(Json(
+        bl::restore_tag(env.file_registry_db()?.connection(), tag_id)
+            .await
+            .c(h!())?,
+    ))
 }
 
 #[post("/api/admin/device-analytics/tags/rule/save")]
@@ -95,9 +112,13 @@ pub(crate) async fn save_tag_rule(
     let body = parse_save_rule_request(body)?;
     let tag_id = bl::parse_canonical_uuid(&body.id, "id")?;
     Ok(Json(
-        bl::save_rule(&env.dbx, tag_id, nullable_json(body.rule_expression))
-            .await
-            .c(h!())?,
+        bl::save_rule(
+            env.file_registry_db()?.connection(),
+            tag_id,
+            nullable_json(body.rule_expression),
+        )
+        .await
+        .c(h!())?,
     ))
 }
 
@@ -110,7 +131,12 @@ pub(crate) async fn list_tag_test_files(
     crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
     let tag_id = bl::parse_canonical_uuid(&body.id, "id")?;
     Ok(Json(ListAnalyticsTagTestFilesRsp {
-        files: bl::list_tag_test_files(&env.dbx, tag_id).await.c(h!())?,
+        files: bl::list_tag_test_files(
+            env.file_registry_db()?.connection(),
+            tag_id,
+        )
+        .await
+        .c(h!())?,
     }))
 }
 
@@ -125,7 +151,7 @@ pub(crate) async fn test_tag_rule(
     let tag_id = bl::parse_canonical_uuid(&body.id, "id")?;
     Ok(Json(
         bl::test_rule(
-            &env.dbx,
+            env.file_registry_db()?.connection(),
             tag_id,
             nullable_json(body.rule_expression),
             body.files,
@@ -184,9 +210,14 @@ pub(crate) async fn device_tags(
         .c(h!())?;
     let device_id = bl::parse_canonical_uuid(&body.device_id, "device_id")?;
     Ok(Json(DeviceAnalyticsTagsRsp {
-        tags: bl::list_public_tags(&env.dbx, &login, device_id)
-            .await
-            .c(h!())?,
+        tags: bl::list_public_tags(
+            &env.dbx,
+            env.file_registry_db()?,
+            &login,
+            device_id,
+        )
+        .await
+        .c(h!())?,
     }))
 }
 
@@ -201,9 +232,14 @@ pub(crate) async fn device_summary(
         .c(h!())?;
     let device_id = bl::parse_canonical_uuid(&body.device_id, "device_id")?;
     Ok(Json(DeviceAnalyticsSummaryRsp {
-        items: bl::device_summary(&env.dbx, &login, device_id)
-            .await
-            .c(h!())?,
+        items: bl::device_summary(
+            &env.dbx,
+            env.file_registry_db()?,
+            &login,
+            device_id,
+        )
+        .await
+        .c(h!())?,
     }))
 }
 

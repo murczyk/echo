@@ -67,7 +67,26 @@ pub mod tests {
         if let Some(file_registry_db) = &env.file_registry_db {
             file_registry_db
                 .connection()
-                .execute_unprepared("truncate table public.file_entry")
+                .execute_unprepared(
+                    r#"
+                    truncate table
+                        public.file_analysis_reanalysis_job,
+                        public.file_analysis_state,
+                        public.device_file_tag,
+                        public.analytics_tag_test_file,
+                        public.analytics_tag,
+                        public.file_entry;
+                    update public.file_analysis_control
+                    set backfill_cursor = null,
+                        backfill_complete = false,
+                        next_generation = 1,
+                        updated_at = clock_timestamp()
+                    where id;
+                    update public.analytics_tag_rule_set_state
+                    set revision = 0
+                    where id;
+                    "#,
+                )
                 .await
                 .context(h!())?;
         }

@@ -40,11 +40,14 @@ pub struct Model {
     pub updated_at: DateTime,
     #[sea_orm(column_type = "Text", nullable)]
     pub content_path: Option<String>,
-    pub analyzed: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::device_file_tag::Entity")]
+    DeviceFileTag,
+    #[sea_orm(has_one = "super::file_analysis_state::Entity")]
+    FileAnalysisState,
     #[sea_orm(
         belongs_to = "Entity",
         from = "(Column::DeviceId, Column::ParentId)",
@@ -53,6 +56,18 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     SelfRef,
+}
+
+impl Related<super::device_file_tag::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceFileTag.def()
+    }
+}
+
+impl Related<super::file_analysis_state::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileAnalysisState.def()
+    }
 }
 
 impl ActiveModelBehavior for ActiveModel {}
