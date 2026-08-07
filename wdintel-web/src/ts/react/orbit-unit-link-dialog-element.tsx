@@ -1,5 +1,7 @@
 import { createRoot, type Root } from 'react-dom/client';
 
+import type { Unit } from '../../Bindings';
+import { transformSnakeToCamel } from '../snake-to-camel';
 import { NeoMuiThemeProvider } from './mui-theme';
 import { OrbitUnitLinkDialog } from './routes/rer-unit-details/OrbitUnitLinkDialog';
 
@@ -10,9 +12,23 @@ function parseUnitId(element: Element): number | null {
 
 class OrbitUnitLinkDialogElement extends HTMLElement {
   private root: Root | null = null;
+  private parsedUnitData: string | null | undefined;
+  private parsedUnit: Unit | null = null;
 
   static get observedAttributes() {
-    return ['data-unit-id'];
+    return ['data-unit-id', 'data-unit'];
+  }
+
+  private parseUnit() {
+    const unitData = this.getAttribute('data-unit');
+    if (unitData === this.parsedUnitData) return this.parsedUnit;
+    this.parsedUnitData = unitData;
+    try {
+      this.parsedUnit = transformSnakeToCamel<Unit>(JSON.parse(unitData ?? 'null'));
+    } catch {
+      this.parsedUnit = null;
+    }
+    return this.parsedUnit;
   }
 
   private dispatchClose = () => {
@@ -36,7 +52,8 @@ class OrbitUnitLinkDialogElement extends HTMLElement {
   private renderRoot() {
     if (!this.root) return;
     const unitId = parseUnitId(this);
-    if (unitId === null) {
+    const unit = this.parseUnit();
+    if (unitId === null || unit === null) {
       this.root.render(null);
       return;
     }
@@ -45,6 +62,7 @@ class OrbitUnitLinkDialogElement extends HTMLElement {
         <OrbitUnitLinkDialog
           key={unitId}
           unitId={unitId}
+          unit={unit}
           onClose={this.dispatchClose}
           onLinked={this.dispatchLinked}
         />
@@ -61,7 +79,7 @@ class OrbitUnitLinkDialogElement extends HTMLElement {
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
-    if (name === 'data-unit-id' && oldValue !== newValue) {
+    if (oldValue !== newValue) {
       this.renderRoot();
     }
   }

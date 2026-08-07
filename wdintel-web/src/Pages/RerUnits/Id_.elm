@@ -591,7 +591,7 @@ detailsView user shared model details =
         [ detailsHeader user model details
         , deviceNetworkDialog model details
         , unitEditDialog model details.unit
-        , orbitLinkDialog model
+        , orbitLinkDialog model details.unit
         , tabsView model.activeTab (not (List.isEmpty details.orbitUnits))
         , case model.activeTab of
             Overview ->
@@ -605,12 +605,13 @@ detailsView user shared model details =
         ]
 
 
-orbitLinkDialog : Model -> Html Msg
-orbitLinkDialog model =
+orbitLinkDialog : Model -> B.Unit -> Html Msg
+orbitLinkDialog model unit =
     case ( model.orbitLinkDialogOpen, model.unitId ) of
         ( True, Just unitId ) ->
             node "orbit-unit-link-dialog"
                 [ attribute "data-unit-id" (String.fromInt unitId)
+                , attribute "data-unit" (Encode.encode 0 (B.unitEncoder unit))
                 , on "orbit-unit-link-close" (Decode.succeed CloseOrbitLinkDialog)
                 , on "orbit-unit-linked" (Decode.succeed OrbitUnitLinked)
                 ]
@@ -908,13 +909,33 @@ emptyOrbitDataCard canManageOrbitData state canLinkOrbitUnit orbitNote =
         [ div [ class "d-flex align-items-center justify-content-between gap-3 mb-4" ]
             [ h2 [ class "h4 mb-0" ] [ text "Дані із Orbit" ]
             , if canManageOrbitData then
-                orbitDataActions state True canLinkOrbitUnit Nothing
+                orbitDataActions state True Nothing
 
               else
                 text ""
             ]
         , orbitNoteView orbitNote
         , p [] [ text "Відсутні дані із системи Orbit." ]
+        , if canLinkOrbitUnit then
+            p [ class "mb-0" ]
+                [ button
+                    [ class "btn btn-outline-primary d-inline-flex align-items-center gap-2"
+                    , type_ "button"
+                    , onClick OpenOrbitLinkDialog
+                    ]
+                    [ img
+                        [ src "/img/delta-icon.webp"
+                        , alt ""
+                        , style "height" "22px"
+                        , style "width" "22px"
+                        ]
+                        []
+                    , text "Прив'язати Orbit підрозділ"
+                    ]
+                ]
+
+          else
+            text ""
         ]
 
 
@@ -1028,7 +1049,7 @@ orbitDataCard canManageOrbitData shared state showOrbitNote orbitNote orbitUnit 
         [ div [ class "d-flex align-items-center justify-content-between gap-3 mb-4" ]
             [ h2 [ class "h4 mb-0" ] [ text "Дані із Orbit" ]
             , if canManageOrbitData then
-                orbitDataActions state showOrbitNote False (Just orbitUnit)
+                orbitDataActions state showOrbitNote (Just orbitUnit)
 
               else
                 text ""
@@ -1042,8 +1063,8 @@ orbitDataCard canManageOrbitData shared state showOrbitNote orbitNote orbitUnit 
         ]
 
 
-orbitDataActions : Model -> Bool -> Bool -> Maybe B.OrbitUnitDetails -> Html Msg
-orbitDataActions state canEditNote canLinkOrbitUnit orbitUnit =
+orbitDataActions : Model -> Bool -> Maybe B.OrbitUnitDetails -> Html Msg
+orbitDataActions state canEditNote orbitUnit =
     let
         isUnlinking =
             case orbitUnit of
@@ -1092,20 +1113,6 @@ orbitDataActions state canEditNote canLinkOrbitUnit orbitUnit =
                         ]
                         [ i [ class "bi bi-pencil" ] []
                         , text "Редагувати примітку Orbit"
-                        ]
-                    ]
-
-              else
-                text ""
-            , if canLinkOrbitUnit then
-                li []
-                    [ button
-                        [ class "dropdown-item d-flex align-items-center gap-2"
-                        , type_ "button"
-                        , onClick OpenOrbitLinkDialog
-                        ]
-                        [ i [ class "bi bi-link-45deg" ] []
-                        , text "Прив'язати Orbit підрозділ"
                         ]
                     ]
 

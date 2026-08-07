@@ -23,7 +23,11 @@ import {
 } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { CreateUnitWithAutoNetworkRsp, OrbitUnitLinkCandidate } from '../../../../Bindings';
+import type {
+  CreateUnitWithAutoNetworkRsp,
+  OrbitUnitLinkCandidate,
+  Unit,
+} from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
 import {
   CUSTOM_STYLES,
@@ -167,6 +171,7 @@ type OrbitUnitDialogProps =
   | {
       mode: 'link';
       unitId: number;
+      unit: Unit;
       onClose: () => void;
       onCompleted: () => void;
     }
@@ -175,6 +180,47 @@ type OrbitUnitDialogProps =
       onClose: () => void;
       onCompleted: (response: CreateUnitWithAutoNetworkRsp) => void;
     };
+
+const SIGINT_UNIT_SEGMENTS: Array<{ key: keyof Unit; label: string }> = [
+  { key: 'company', label: 'Рота, взвод' },
+  { key: 'battalion', label: 'Батальйон' },
+  { key: 'regiment', label: 'Полк/Бригада' },
+  { key: 'division', label: 'Дивізія' },
+  { key: 'army', label: 'Корпус/Армія' },
+  { key: 'militaryDistrict', label: 'Група армій/Фронт/Види та роди ЗС' },
+  { key: 'armyRegion', label: 'Регіон/ТВД/Збройні Сили' },
+];
+
+function SigintUnitSummary({ unit }: { unit: Unit }) {
+  return (
+    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}>
+      <Typography variant="overline" color="text.secondary">
+        Підрозділ SIGINT
+      </Typography>
+      <Typography variant="h6" sx={{ mb: 2, overflowWrap: 'anywhere' }}>
+        {renderTextValue(unit.name)}
+      </Typography>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+          gap: 1.5,
+        }}
+      >
+        {SIGINT_UNIT_SEGMENTS.map(({ key, label }) => (
+          <Box key={key} sx={{ minWidth: 0 }}>
+            <Typography variant="caption" color="text.secondary">
+              {label}
+            </Typography>
+            <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+              {renderTextValue(unit[key])}
+            </Typography>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
+}
 
 function OrbitUnitDialogBody(props: OrbitUnitDialogProps) {
   const { onClose } = props;
@@ -380,6 +426,8 @@ function OrbitUnitDialogBody(props: OrbitUnitDialogProps) {
       </DialogTitle>
 
       <DialogContent sx={{ display: 'flex', minHeight: 0, flexDirection: 'column', gap: 2 }}>
+        {props.mode === 'link' ? <SigintUnitSummary unit={props.unit} /> : null}
+
         {error ? <Alert severity="error">{error}</Alert> : null}
 
         {advancedSearch ? (
@@ -455,10 +503,12 @@ function OrbitUnitDialog({
 
 export function OrbitUnitLinkDialog({
   unitId,
+  unit,
   onClose,
   onLinked,
 }: {
   unitId: number;
+  unit: Unit;
   onClose: () => void;
   onLinked: () => void;
 }) {
@@ -467,6 +517,7 @@ export function OrbitUnitLinkDialog({
       mode="link"
       tableId="orbit-unit-link-candidates"
       unitId={unitId}
+      unit={unit}
       onClose={onClose}
       onCompleted={onLinked}
     />

@@ -373,6 +373,7 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
       {orbitLinkOpen && page.editUnit !== null ? (
         <OrbitUnitLinkDialog
           unitId={page.editUnit.id}
+          unit={page.editUnit}
           onClose={() => setOrbitLinkOpen(false)}
           onLinked={() => {
             setOrbitLinkOpen(false);

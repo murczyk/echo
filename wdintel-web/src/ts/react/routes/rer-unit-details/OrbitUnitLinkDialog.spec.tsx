@@ -5,7 +5,7 @@ import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { OrbitUnitLinkCandidate } from '../../../../Bindings';
+import type { OrbitUnitLinkCandidate, Unit } from '../../../../Bindings';
 import { getOrbitUnitLinkCandidates, searchOrbitUnits } from '../../services/api/units';
 import { OrbitUnitImportDialog, OrbitUnitLinkDialog } from './OrbitUnitLinkDialog';
 
@@ -47,13 +47,35 @@ const candidate: OrbitUnitLinkCandidate = {
   operationalUnitNameFull: 'Підпорядкування',
 };
 
+const sigintUnit: Unit = {
+  id: 7,
+  company: '1 рота',
+  battalion: '2 батальйон',
+  regiment: '3 бригада',
+  division: '',
+  army: '',
+  militaryDistrict: '',
+  armyRegion: '',
+  comment: '',
+  orbitNote: null,
+  name: '1 рота 2 батальйон 3 бригада',
+  active: true,
+  isDeduplicateCandidate: null,
+  createdAt: 0,
+  createdByLoginId: '',
+  hasOrbit: false,
+  orbitUnitIds: [],
+};
+
 async function renderDialog(candidates: OrbitUnitLinkCandidate[]): Promise<Root> {
   vi.mocked(getOrbitUnitLinkCandidates).mockResolvedValueOnce(candidates);
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<OrbitUnitLinkDialog unitId={7} onClose={vi.fn()} onLinked={vi.fn()} />);
+    root.render(
+      <OrbitUnitLinkDialog unitId={7} unit={sigintUnit} onClose={vi.fn()} onLinked={vi.fn()} />,
+    );
   });
   return root;
 }
@@ -70,6 +92,18 @@ afterEach(() => {
 });
 
 describe('OrbitUnitLinkDialog', () => {
+  it('shows the SIGINT unit full name and hierarchy segments', async () => {
+    const root = await renderDialog([candidate]);
+
+    expect(document.body.textContent).toContain(sigintUnit.name);
+    expect(document.body.textContent).toContain('Рота, взвод');
+    expect(document.body.textContent).toContain(sigintUnit.company);
+    expect(document.body.textContent).toContain('Батальйон');
+    expect(document.body.textContent).toContain(sigintUnit.battalion);
+
+    act(() => root.unmount());
+  });
+
   it('offers advanced search after showing automatic candidates', async () => {
     const root = await renderDialog([candidate]);
 
