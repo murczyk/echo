@@ -4,7 +4,7 @@
       "changes": [
         {
           "table": "public.sigint_inbox_item",
-          "strategy": "replicated_snapshot"
+          "strategy": "mirror_resync"
         }
       ]
     },
