@@ -65,7 +65,7 @@ Default hook buffers differ (`320` / `160`); Duty Neo overrides via `FeedColumnC
 
 ### Scroll jump prevention (anchor restore)
 
-When items change while **not** following the tail (or during settle), restore uses a snapshot taken before the load:
+When items change while **not** at the physical bottom and **not** following, restore uses a snapshot taken before the load:
 
 1. **Visible anchors** — prefer currently visible message ids; apply `scrollTop += (currentOffset - expectedOffset)`.
 2. **Common mounted id** — any id still present from the snapshot’s offset map.
@@ -73,7 +73,13 @@ When items change while **not** following the tail (or during settle), restore u
 
 Programmatic restore sets `isRestoringAnchorRef` so the synthetic scroll does not look like a user leave-bottom.
 
-While **following**, item/list growth triggers `scrollToBottom('auto')` instead of anchor restore. Initial mount uses a short bottom-settle RAF loop so late layout does not leave a gap above the end.
+While **following** (watch + physical bottom), item/list growth triggers `scrollToBottom('auto')`.
+
+While **physically at bottom with watch off** (pending catch-up), also `scrollToBottom` (“stick-bottom”) so the user stays near the live edge and newer pages keep loading — do **not** preserve-anchor in a way that throws them thousands of px up.
+
+After any items change, re-run scroll zone evaluation so near-bottom can arm another newer load. Poll also pages (up to 20) while `nearBottom` remains true.
+
+Initial mount uses a short bottom-settle RAF loop so late layout does not leave a gap above the end.
 
 ### Arrow down
 
@@ -82,6 +88,8 @@ While **following**, item/list growth triggers `scrollToBottom('auto')` instead 
 3. Inbox count as fetch gate only.
 4. Load newer with follow when quantity > 0.
 5. **`catchUpFeedUnreadToTail`** — clear badge/trimmed, mark loaded read, pin read cursor / exhausted to loaded tail (also on quantity 0).
+
+While any newer `get-inbox` is in flight (including background catch-up with `showLoading: false`), the down-arrow FAB shows a spinner. If a beyond-tail unread badge is visible, it **stays** during the fetch so the count means “pending on server / still loading,” not “already on screen.”
 
 ---
 
@@ -134,7 +142,7 @@ flowchart TD
   tailCount -->|"scrolled up: seed preview"| beyondTail
   inboxCount -.->|"never write badge when nearBottom"| badge
   residual -.->|"ignored when nearBottom"| badge
-  beyondTail -.->|"preview ignored when nearBottom"| badge
+  beyondTail -.->|"still shown when nearBottom via preview"| badge
 ```
 
 ### Badge formula
@@ -149,13 +157,13 @@ base = loadedUnread + trimmedUnread
 badge = base + (matchingPreview ? preview.count : residualBeyondTail)
 
 # nearBottom
-badge = base
-# matching preview is not passed; includeBeyondTailResidual = false
+badge = base + (matchingPreview ? preview.count : 0)
+# includeBeyondTailResidual = false; matching preview still counts
 ```
 
 where `residualBeyondTail = max(0, unreadCount - loadedUnread - trimmedUnread)`.
 
-Near-bottom must **not** show residual poll stock or a stale scrolled-up preview. Those were the phantom 1–2 badges while the lowest message was on screen.
+Near-bottom must **not** show residual poll stock (lagging inbox-since-cursor). It **must** still show a matching tail preview / tailCount-since-loadedTail — that is real mail beyond the window.
 
 ### Modes and transitions
 
@@ -174,10 +182,11 @@ Near-bottom must **not** show residual poll stock or a stale scrolled-up preview
 
 #### C. Near bottom / catch-up bounce
 
-- Poll **never** writes `unreadCount` from inbox quantity.
-- Badge = loaded + trimmed only (no residual, no preview).
-- Empty newer fetch: recompute `unreadCount` from the **committed** feed in the `setMessageFeeds` updater (must not overwrite a concurrent at-bottom mark-read with a stale snapshot). Mark exhausted; advance cursor toward `loadedTail`.
-- `preservePendingTail` / follow-block must **not** treat residual poll stock as pending. Pending = local loaded/trimmed unread, or tailAvailability in `available|checking|loading`.
+- Poll **never** writes residual `unreadCount` from inbox quantity into the badge path.
+- Badge = loaded + trimmed + **matching preview** (no residual).
+- While near-bottom, poll keeps preview fresh (cursor-aligned quantity or tailCount) and **pages newer** until exhausted or the user leaves near-bottom.
+- Empty newer fetch: recompute `unreadCount` from the **committed** feed in the `setMessageFeeds` updater. Mark exhausted; advance cursor toward `loadedTail`.
+- `preservePendingTail` / follow-block must **not** treat residual poll stock as pending. Pending = local loaded/trimmed unread, matching preview, or tailAvailability in `available|checking|loading`.
 
 #### D. Arrow down (explicit catch-up → watch)
 
@@ -191,7 +200,8 @@ See Part 1 “Arrow down”. Badge hard-reset is part of `catchUpFeedUnreadToTai
 | Seed residual / preview when **not** near bottom | Yes |
 | Delta for `notifyDutyNewMessages` while scrolled up | Yes |
 | Directly assign / `Math.max` into badge while near bottom | **No** |
-| Appear in near-bottom badge via residual or stale preview | **No** |
+| Appear in near-bottom badge via residual stock | **No** |
+| Appear in near-bottom badge via matching tail preview | **Yes** |
 | Block watch-mode entry solely via residual stock | **No** |
 
 `tailCount(since: loadedTail)` stays the authority for “is there mail beyond the window?” when near-bottom + exhausted.
