@@ -626,19 +626,24 @@ describe('FeedColumn', () => {
     expect(container.querySelector('[data-duty-feed-scroll-button]')).not.toBeNull();
   });
 
-  it('shows a spinner only for explicit newer loading', async () => {
-    const background = buildProps();
-    background.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
-    background.column.view.loadingNewer = false;
-    await act(async () => root.render(<FeedColumn column={background.column} />));
+  it('shows a spinner while newer mail is loading and keeps the unread badge', async () => {
+    const idle = buildProps();
+    idle.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    idle.column.view.loadingNewer = false;
+    idle.column.view.bottomUnreadCount = 0;
+    await act(async () => root.render(<FeedColumn column={idle.column} />));
     expect(container.querySelector('[data-duty-feed-scroll-button]')).not.toBeNull();
     expect(container.querySelector('[role="progressbar"]')).toBeNull();
 
-    const explicit = buildProps();
-    explicit.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
-    explicit.column.view.loadingNewer = true;
-    await act(async () => root.render(<FeedColumn column={explicit.column} />));
+    const loading = buildProps();
+    loading.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    loading.column.view.loadingNewer = true;
+    loading.column.view.bottomUnreadCount = 12;
+    loading.column.view.isWatchMode = false;
+    loading.column.view.physicallyAtBottom = false;
+    await act(async () => root.render(<FeedColumn column={loading.column} />));
     expect(container.querySelector('[role="progressbar"]')).not.toBeNull();
+    expect(container.querySelector('[data-duty-scroll-unread-badge]')?.textContent).toContain('12');
   });
 
   it('passes the copy menu etalon action into duty message cards', async () => {

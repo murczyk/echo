@@ -652,7 +652,7 @@ describe('rer-duty utils', () => {
     expect(feedIndicatorUnreadCount(feed, { tailId: 1, count: 0 })).toBe(0);
   });
 
-  it('retains the authoritative server total for a large near-bottom unread count', () => {
+  it('uses residual unreadCount above local loaded+trimmed as beyond-tail pending', () => {
     const feed = indicatorFeed({
       items: Array.from({ length: 20 }, (_, index) => [index + 1, {} as InboxMessage]),
       readIds: new Set<number>(),
@@ -660,6 +660,9 @@ describe('rer-duty utils', () => {
       windowedUnreadItems: new Map<number, number>(),
     });
     expect(feedIndicatorUnreadCount(feed)).toBe(70000);
+    expect(feedIndicatorUnreadCount(feed, undefined, { includeBeyondTailResidual: false })).toBe(
+      20,
+    );
   });
 
   it('adds matching confirmed preview unread messages to loaded unread messages', () => {

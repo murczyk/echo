@@ -33,6 +33,7 @@ const hoisted = vi.hoisted(() => ({
   savedFilterUpsert: vi.fn(),
   copyTextToClipboard: vi.fn(),
   requestValidatedInboxCount: vi.fn(),
+  catchUpFeedUnreadToTail: vi.fn(),
   loadFeedNewerMessages: vi.fn(() => Promise.resolve()),
   loadFeedInitialMessages: vi.fn(() => Promise.resolve()),
   showArrowResult: vi.fn(),
@@ -188,6 +189,7 @@ function TestHarness(props: {
     setWatchModeByFeedId: hoisted.setWatchModeByFeedId,
     setLoadingNewerFeedIds: hoisted.setLoadingNewerFeedIds,
     requestValidatedInboxCount: hoisted.requestValidatedInboxCount,
+    catchUpFeedUnreadToTail: hoisted.catchUpFeedUnreadToTail,
     authUserName: props.authUserName ?? null,
     currentUserOrganismId: props.currentUserOrganismId ?? null,
     profiles: {
@@ -317,6 +319,7 @@ describe('useRerDutyMessageActions', () => {
       'mf-0',
       expect.objectContaining({ scrollToEndAfterLoad: true }),
     );
+    expect(hoisted.catchUpFeedUnreadToTail).toHaveBeenCalledWith('mf-0');
   });
 
   it('replaces an edited message in every loaded feed without changing feed state', async () => {
@@ -432,6 +435,7 @@ describe('useRerDutyMessageActions', () => {
     expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
     expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth');
     expect(hoisted.showArrowResult).toHaveBeenCalledWith('mf-0', 'Немає нових повідомлень');
+    expect(hoisted.catchUpFeedUnreadToTail).toHaveBeenCalledWith('mf-0');
     expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
   });
 
@@ -649,6 +653,41 @@ describe('useRerDutyMessageActions', () => {
     expect(apiRef.current!.messageFeeds).toBe(stateBefore);
     expect(apiRef.current!.messageFeeds[0]).toBe(feedBefore);
     expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(5);
+  });
+
+  it('clears scrolled-past windowed unread when reporting atBottom', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[
+            buildFeed({
+              items: Array.from({ length: 40 }, (_, index) => [
+                index + 21,
+                minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+              ]),
+              readIds: new Set<number>(Array.from({ length: 40 }, (_, index) => index + 21)),
+              windowedUnreadItems: new Map(
+                Array.from({ length: 20 }, (_, index) => [index + 1, (index + 1) * 100]),
+              ),
+              unreadCount: 23,
+            }),
+          ]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      apiRef.current!.handleVisibleMessageIds('mf-0')(60, { atBottom: true });
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.windowedUnreadItems.size).toBe(0);
+    expect(feed.unreadCount).toBe(3);
   });
 
   it('decrements unreadCount only when deleting an unread message', async () => {

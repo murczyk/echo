@@ -41,6 +41,7 @@ export type MessageActionsDeps = {
     hasItems: boolean;
     requestSignature: string;
   } | null>;
+  catchUpFeedUnreadToTail: (feedId: string) => void;
   authUserName: string | null;
   currentUserOrganismId: number | null;
   profiles: Record<string, SignalProfileEntry | null>;

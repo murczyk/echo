@@ -627,41 +627,42 @@ export const FeedColumnContent = memo(
                   disabled={loadingNewer}
                 >
                   {loadingNewer ? (
-                    <CircularProgress size={20} sx={{ color: 'primary.main' }} />
+                    <CircularProgress
+                      size={20}
+                      sx={{ color: 'primary.main' }}
+                      aria-label="Завантаження нових повідомлень"
+                    />
                   ) : (
                     <ArrowDownwardIcon sx={{ fontSize: 20 }} />
                   )}
                 </Fab>
-                {!loadingNewer &&
-                  bottomUnreadCount > 0 &&
-                  !isWatchMode &&
-                  isNullOrUndefined(arrowResultMessage) && (
-                    <PowerChip
-                      size="small"
-                      data-duty-scroll-unread-badge
-                      label={bottomUnreadCount}
-                      selected
-                      interactive={false}
-                      unselectedOpacity={1}
-                      labelPaddingX={bottomUnreadCount < 10 ? 0 : undefined}
-                      sx={{
-                        position: 'absolute',
-                        top: -6,
-                        right: -6,
-                        fontWeight: 600,
-                        zIndex: 2,
-                        pointerEvents: 'none',
-                        ...(bottomUnreadCount < 10 && {
-                          width: 20,
-                          minWidth: 20,
-                          height: 20,
-                          minHeight: 20,
-                          boxSizing: 'border-box',
-                          borderRadius: '50%',
-                        }),
-                      }}
-                    />
-                  )}
+                {bottomUnreadCount > 0 && !isWatchMode && isNullOrUndefined(arrowResultMessage) && (
+                  <PowerChip
+                    size="small"
+                    data-duty-scroll-unread-badge
+                    label={bottomUnreadCount}
+                    selected
+                    interactive={false}
+                    unselectedOpacity={1}
+                    labelPaddingX={bottomUnreadCount < 10 ? 0 : undefined}
+                    sx={{
+                      position: 'absolute',
+                      top: -6,
+                      right: -6,
+                      fontWeight: 600,
+                      zIndex: 2,
+                      pointerEvents: 'none',
+                      ...(bottomUnreadCount < 10 && {
+                        width: 20,
+                        minWidth: 20,
+                        height: 20,
+                        minHeight: 20,
+                        boxSizing: 'border-box',
+                        borderRadius: '50%',
+                      }),
+                    }}
+                  />
+                )}
               </Box>
             </Box>
           )}

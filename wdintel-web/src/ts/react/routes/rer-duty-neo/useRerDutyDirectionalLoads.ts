@@ -90,6 +90,12 @@ type Params = {
   setTailAvailability: (feedId: string, availability: TailAvailability) => void;
   getTailAvailability: (feedId: string) => TailAvailability;
   invalidateTailPreview: (feedId: string) => void;
+  noteNewerAppendForTailPreview: (
+    feedId: string,
+    previousTailId: number,
+    newTailId: number | null,
+    addedCount: number,
+  ) => void;
 };
 
 function createOperation(
@@ -294,8 +300,9 @@ export function useRerDutyDirectionalLoads(params: Params) {
         }
         if (options?.showLoading === true && !existing.newerOptions.showLoading) {
           existing.newerOptions.showLoading = true;
-          currentParams.setLoadingNewerFeedIds((previous) => new Set(previous).add(feedId));
         }
+        // Always surface in-flight newer get-inbox on the FAB (badge may already show pending).
+        currentParams.setLoadingNewerFeedIds((previous) => new Set(previous).add(feedId));
         return existing.promise;
       }
       const feed = currentParams.messageFeedsRef.current.find(
@@ -337,9 +344,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
           startOperationRef.current(feedId);
           return;
         }
-        if (operation.newerOptions.showLoading) {
-          runParams.setLoadingNewerFeedIds((previous) => new Set(previous).add(feedId));
-        }
+        runParams.setLoadingNewerFeedIds((previous) => new Set(previous).add(feedId));
         operation.tailAvailabilityBefore = runParams.getTailAvailability(feedId);
         if (operation.newerOptions.confirmedTailAvailable) {
           runParams.setTailAvailability(feedId, 'loading');
@@ -377,7 +382,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
             }
           }
           if (!accepted || !latestFeed) return;
-          runParams.invalidateTailPreview(feedId);
+          const previousTailId = requestedTailId;
           const latestWindowed = appendWindowedMessageItems(latestFeed.items, response.inboxItems);
           const addedCount = latestWindowed.addedItems.length;
           const newestItem = latestWindowed.items.at(-1) ?? null;
@@ -401,9 +406,47 @@ export function useRerDutyDirectionalLoads(params: Params) {
           if (addedCount > 0) {
             delete runParams.newestExhaustedCursorByFeedIdRef.current[feedId];
             runParams.setTailAvailability(feedId, 'unknown');
+            runParams.noteNewerAppendForTailPreview(
+              feedId,
+              previousTailId,
+              newestItem?.[0] ?? null,
+              addedCount,
+            );
           } else {
             runParams.newestExhaustedCursorByFeedIdRef.current[feedId] = requestedTailId;
             runParams.setTailAvailability(feedId, 'exhausted');
+            runParams.invalidateTailPreview(feedId);
+            // Messages API is authoritative: nothing newer than the loaded tail.
+            // Recompute local unread from the latest committed feed state so a concurrent
+            // at-bottom mark-read cannot be overwritten with a stale residual stock.
+            operation.commitExpected = true;
+            let localUnread = 0;
+            runParams.setMessageFeeds((previous) =>
+              previous.map((feed) => {
+                if (feed.id !== feedId) return feed;
+                let nextLocal = 0;
+                for (const [id] of feed.items) {
+                  if (!feed.readIds.has(id)) nextLocal += 1;
+                }
+                nextLocal += feed.windowedUnreadItems?.size ?? 0;
+                localUnread = nextLocal;
+                return nextLocal === feed.unreadCount ? feed : { ...feed, unreadCount: nextLocal };
+              }),
+            );
+            const tailItem = latestFeed.items.at(-1);
+            if (tailItem != null) {
+              runParams.advanceFeedReadCursor(
+                feedId,
+                { id: tailItem[0], timestamp: tailItem[1].timestamp },
+                localUnread,
+                runParams.getFeedCountSignature(latestFeed),
+              );
+            }
+            recordDutyScrollDebugEvent(
+              feedId,
+              'newer:exhausted',
+              `localUnread=${localUnread}; tail=${requestedTailId}`,
+            );
           }
           if (followTail && runParams.isFollowTailValid(feedId, capturedFollowGeneration)) {
             runParams.pendingScrollToEndRef.current[feedId] = capturedFollowGeneration;
@@ -430,17 +473,42 @@ export function useRerDutyDirectionalLoads(params: Params) {
                   if (followTail) return { ...feed };
                   return feed;
                 }
+                // Start-trim drops rows from the previous window (above the retained
+                // viewport when loading newer). Mark those as read. Rows that arrived in
+                // this batch and were immediately trimmed (oversized page) stay unread.
+                const previousIds = new Set(feed.items.map(([id]) => id));
+                const trimmedPreviousUnreadIds = windowed.removedItems
+                  .filter(([id]) => previousIds.has(id) && !feed.readIds.has(id))
+                  .map(([id]) => id);
+                const readIds =
+                  markAllRead || trimmedPreviousUnreadIds.length > 0
+                    ? new Set<number>([
+                        ...feed.readIds,
+                        ...(markAllRead ? windowed.items.map(([id]) => id) : []),
+                        ...trimmedPreviousUnreadIds,
+                      ])
+                    : feed.readIds;
                 const unreadAddedCount = windowed.addedItems.filter(
-                  ([id]) => !feed.readIds.has(id),
+                  ([id]) => !readIds.has(id),
                 ).length;
-                const windowedUnreadItems = reconcileWindowedUnreadIds(feed, windowed, false);
+                const windowedUnreadItems = reconcileWindowedUnreadIds(
+                  { ...feed, readIds },
+                  windowed,
+                  false,
+                );
                 return {
                   ...feed,
                   items: windowed.items,
                   readIds: markAllRead
-                    ? new Set<number>([...feed.readIds, ...windowed.items.map(([id]) => id)])
-                    : feed.readIds,
-                  unreadCount: markAllRead ? 0 : Math.max(feed.unreadCount, unreadAddedCount),
+                    ? new Set<number>([...readIds, ...windowed.items.map(([id]) => id)])
+                    : readIds,
+                  unreadCount: markAllRead
+                    ? 0
+                    : Math.max(
+                        0,
+                        Math.max(feed.unreadCount, unreadAddedCount) -
+                          trimmedPreviousUnreadIds.length,
+                      ),
                   windowedUnreadItems: markAllRead
                     ? new Map<number, number>()
                     : windowedUnreadItems,
@@ -457,10 +525,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
             runParams.setTailAvailability(feedId, 'available');
           }
         } finally {
-          if (
-            operation.newerOptions.showLoading &&
-            lanesRef.current[feedId]?.active === operation
-          ) {
+          if (lanesRef.current[feedId]?.active === operation) {
             runParams.setLoadingNewerFeedIds((previous) => {
               if (!previous.has(feedId)) return previous;
               const next = new Set(previous);

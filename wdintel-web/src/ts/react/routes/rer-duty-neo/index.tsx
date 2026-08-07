@@ -144,7 +144,14 @@ export function RerDutyNeoPage({
       isWatchMode: !dutyDisableAutoScroll && (watchModeByFeedId[feed.id] ?? true),
       loadingNewer: loadingNewerFeedIds.has(feed.id),
       arrowResultMessage: arrowResultByFeedId[feed.id] ?? null,
-      bottomUnreadCount: feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id]),
+      bottomUnreadCount: (() => {
+        const nearBottom = nearBottomByFeedIdRef.current[feed.id] === true;
+        return feedIndicatorUnreadCount(
+          feed,
+          nearBottom ? undefined : confirmedTailPreviewByFeedId[feed.id],
+          { includeBeyondTailResidual: !nearBottom },
+        );
+      })(),
       physicallyAtBottom:
         feed.items.length === 0 ? true : (physicallyAtBottomByFeedIdRef.current[feed.id] ?? false),
       tailAvailability: tailAvailabilityByFeedId[feed.id] ?? 'unknown',
@@ -287,7 +294,10 @@ export function RerDutyNeoPage({
       onReachedBottom: ({ hasSeenNotAtBottom }) => {
         const tailAvailability = tailAvailabilityByFeedId[feed.id] ?? 'unknown';
         const hasPendingTail =
-          feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id]) > 0 ||
+          feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id], {
+            // Residual poll stock must not block watch-mode catch-up at the bottom.
+            includeBeyondTailResidual: false,
+          }) > 0 ||
           tailAvailability === 'available' ||
           tailAvailability === 'checking' ||
           tailAvailability === 'loading';
@@ -295,6 +305,11 @@ export function RerDutyNeoPage({
         if (preservePendingTail) {
           cancelFollowTail(feed.id);
           setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false }));
+          // Still fetch newer messages without auto-following so the badge can clear.
+          void loadFeedNewerMessages(feed.id, {
+            skipIfNewestExhausted: true,
+            showLoading: false,
+          });
         } else {
           ensureFollowTail(feed.id);
           if (!dutyDisableAutoScroll) {
@@ -465,10 +480,13 @@ export function RerDutyNeoPage({
     () =>
       messageFeeds.reduce(
         (total, feed) =>
-          total + feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id]),
+          total +
+          feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id], {
+            includeBeyondTailResidual: nearBottomByFeedIdRef.current[feed.id] !== true,
+          }),
         0,
       ),
-    [messageFeeds, confirmedTailPreviewByFeedId],
+    [messageFeeds, confirmedTailPreviewByFeedId, nearBottomByFeedIdRef],
   );
   const anyFeedInitialLoading = messageFeeds.some(
     (feed) => feed.loading && feed.items.length === 0,
