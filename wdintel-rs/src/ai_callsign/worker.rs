@@ -239,14 +239,14 @@ async fn complete_job(
     let callsigns_changed = callsigns != current;
     let changed = callsigns_changed || !suggested.is_empty();
     if changed {
-        let mut inbox_item = inbox_item.into_active_model();
         if callsigns_changed {
+            let mut inbox_item = inbox_item.into_active_model();
             inbox_item.callsign_tokens = Set(Some(
                 serde_json::to_value(Vec::<serde_json::Value>::new())
                     .c(h!())?,
             ));
+            inbox_item.update(&transaction).await.c(h!())?;
         }
-        inbox_item.update(&transaction).await.c(h!())?;
         let system_login_id =
             crate::users::system_login_id(&transaction).await.c(h!())?;
         crate::inbox::callsigns::sync(
