@@ -23,8 +23,11 @@ import { renderLinkifiedText } from './message-card-linkify';
 import { MessageCardBotTagPrompt } from './MessageCardBotTagPrompt';
 import { MessageCardComments } from './MessageCardComments';
 import { MessageCardCallsignsSection } from './MessageCardCallsignsSection';
-import { MessageCardCoordinatePreview } from './MessageCardCoordinatePreview';
-import { hasCoordinatePreviewCandidate } from './message-coordinate-preview';
+import { MessageCardCoordinateAttachment } from './MessageCardCoordinateAttachment';
+import {
+  hasCoordinatePreviewCandidate,
+  type CoordinatePreviewPoint,
+} from './message-coordinate-preview';
 import {
   isAudioMediaAttachment,
   canDownloadAllMessageAttachments,
@@ -36,16 +39,17 @@ import {
   MessageMediaDownloadLink,
   MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS,
 } from './MessageCardMedia';
-import { MessageImagePreviewDialog } from './MessageCardImagePreviewDialog';
-import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
 import { collectMessageImages } from './message-card-image-utils';
 import { MessageCardImageList } from './MessageCardImageList';
 import { MessageCardTags } from './MessageCardTags';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import { MessageMediaDocumentLink } from './MessageMediaDocumentLink';
-import { MessageCardDocumentPreviewDialog } from './MessageCardDocumentPreviewDialog';
 import { collectMessageDocuments } from './message-card-document-utils';
 import { blurActiveElement } from '../../../utils/focus';
+import {
+  MessageCardAttachmentPreviewProvider,
+  type MessageCardPreviewAttachment,
+} from './attachment-preview/MessageCardAttachmentPreviewProvider';
 
 export type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 
@@ -160,13 +164,14 @@ export function MessageCardMessageBody({
   useEffect(() => {
     setIsMessageTextExpanded(false);
   }, [messageText]);
-  const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
-  const [videoPreviewIndex, setVideoPreviewIndex] = useState<number | null>(null);
+  const [attachmentPreviewIndex, setAttachmentPreviewIndex] = useState<number | null>(null);
+  const [coordinatePreviewPoints, setCoordinatePreviewPoints] = useState<CoordinatePreviewPoint[]>(
+    [],
+  );
 
   const imageHrefSet = useMemo(() => new Set(images.map((image) => image.href)), [images]);
   const documents = collectMessageDocuments(msg);
   const previewableDocuments = documents.filter((document) => document.kind !== 'unsupported');
-  const [documentPreviewIndex, setDocumentPreviewIndex] = useState<number | null>(null);
   const documentHrefSet = new Set(documents.map((document) => document.href));
   const attachmentMedia = (msg.media ?? []).filter((attachment) => {
     const href = String(attachment.href ?? '');
@@ -199,6 +204,24 @@ export function MessageCardMessageBody({
       };
     });
   }, [videoAttachments]);
+  const previewAttachments = useMemo<MessageCardPreviewAttachment[]>(
+    () => [
+      ...images.map((image) => ({ type: 'image' as const, value: image })),
+      ...videoPreviewSources.map((video) => ({ type: 'video' as const, value: video })),
+      ...previewableDocuments.map((document) => ({
+        type: 'document' as const,
+        value: document,
+      })),
+      ...coordinatePreviewPoints.map((point) => ({
+        type: 'coordinate' as const,
+        value: point,
+        points: coordinatePreviewPoints,
+      })),
+    ],
+    [coordinatePreviewPoints, images, previewableDocuments, videoPreviewSources],
+  );
+  const coordinatePreviewStartIndex =
+    images.length + videoPreviewSources.length + previewableDocuments.length;
 
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
   const hasTags = tagsLayout !== 'hidden' && Object.keys(tagsMap).length > 0;
@@ -225,31 +248,19 @@ export function MessageCardMessageBody({
           videos={videoAttachments}
           onOpen={(index) => {
             blurActiveElement();
-            setImagePreviewIndex(index);
+            setAttachmentPreviewIndex(index);
           }}
-          onOpenVideo={(index) => setVideoPreviewIndex(index)}
+          onOpenVideo={(index) => {
+            blurActiveElement();
+            setAttachmentPreviewIndex(images.length + index);
+          }}
         />
       ) : null}
-      {imagePreviewIndex != null && images.length > 0 ? (
-        <MessageImagePreviewDialog
-          imageHrefs={images}
-          initialIndex={imagePreviewIndex ?? 0}
-          currentIndex={imagePreviewIndex ?? 0}
-          open={true}
-          onClose={() => setImagePreviewIndex(null)}
-          onIndexChange={(index) => setImagePreviewIndex(index)}
-          isDownloadStarting={isDownloadStarting}
-          onDownloadStart={onDownloadStart}
-        />
-      ) : null}
-      {documentPreviewIndex != null && previewableDocuments.length > 0 ? (
-        <MessageCardDocumentPreviewDialog
-          documents={previewableDocuments}
-          initialIndex={documentPreviewIndex ?? 0}
-          currentIndex={documentPreviewIndex ?? 0}
-          open={true}
-          onClose={() => setDocumentPreviewIndex(null)}
-          onIndexChange={(index) => setDocumentPreviewIndex(index)}
+      {attachmentPreviewIndex != null && previewAttachments.length > 0 ? (
+        <MessageCardAttachmentPreviewProvider
+          attachments={previewAttachments}
+          initialIndex={attachmentPreviewIndex}
+          onClose={() => setAttachmentPreviewIndex(null)}
           isDownloadStarting={isDownloadStarting}
           onDownloadStart={onDownloadStart}
         />
@@ -276,7 +287,9 @@ export function MessageCardMessageBody({
                   previewIndex >= 0
                     ? () => {
                         blurActiveElement();
-                        setDocumentPreviewIndex(previewIndex);
+                        setAttachmentPreviewIndex(
+                          images.length + videoAttachments.length + previewIndex,
+                        );
                       }
                     : undefined
                 }
@@ -303,17 +316,6 @@ export function MessageCardMessageBody({
             onDownloadStart={onDownloadStart}
           />
         </div>
-      ) : null}
-      {videoPreviewIndex !== null ? (
-        <MessageCardVideoPreviewDialog
-          open={true}
-          onClose={() => setVideoPreviewIndex(null)}
-          videos={videoPreviewSources}
-          currentIndex={videoPreviewIndex ?? 0}
-          onIndexChange={(idx) => setVideoPreviewIndex(idx)}
-          isDownloadStarting={isDownloadStarting}
-          onDownloadStart={onDownloadStart}
-        />
       ) : null}
       {hasTextPrimary || hasMessageTextOverflow ? (
         <div
@@ -369,7 +371,15 @@ export function MessageCardMessageBody({
         </div>
       ) : null}
       {hasCoordinatePreviewCandidate(msg, tagsMap) ? (
-        <MessageCardCoordinatePreview msg={msg} tagsMap={tagsMap} />
+        <MessageCardCoordinateAttachment
+          msg={msg}
+          tagsMap={tagsMap}
+          onPointsChange={setCoordinatePreviewPoints}
+          onOpen={(index) => {
+            blurActiveElement();
+            setAttachmentPreviewIndex(coordinatePreviewStartIndex + index);
+          }}
+        />
       ) : null}
       {isPresent(msg.extendedForm) && msg.extendedForm.trim() !== '' ? (
         <div className="flex flex-row items-center gap-[6px] min-w-0">
