@@ -158,7 +158,7 @@ configuration, network requirements, queue, cache, retry, and REST API flow.
 Completed queue rows remain in PostgreSQL as the durable transcript store;
 only rows orphaned from their source message or attachment are removed.
 
-## AI engine integration
+## AI architecture
 
 Admins configure OpenAI-compatible engines in `/admin/system-settings-neo`.
 `/admin/ai-callsigns` provides prompt testing and an optional sequential
@@ -169,6 +169,48 @@ deployment, verification, and rollback commands. Echo uses the router as its
 normal OpenAI-compatible endpoint; direct Spark access is retained only as a
 fallback.
 
+### vLLM inference architecture
+
+```mermaid
+flowchart LR
+    subgraph echo_lxc["Echo application LXC"]
+        api["Echo API"]
+        ai_workers["AI workers"]
+        ai_client["OpenAI-compatible client"]
+
+        api --> ai_client
+        ai_workers --> ai_client
+    end
+
+    subgraph router_lxc["echo-vllm-router LXC · Debian 13"]
+        router["vLLM Router · :8000<br/>cache_aware"]
+        router_metrics["Router metrics<br/>127.0.0.1:29000"]
+        collector["SigNoz OTel collector"]
+
+        router -.-> router_metrics --> collector
+    end
+
+    subgraph spark["echo-gpu-spark · AI inference"]
+        hf_cache[("Hugging Face cache<br/>Gemma 4 26B A4B")]
+        vllm["vLLM OpenAI API<br/>Docker · :8000"]
+        gpu["NVIDIA GB10"]
+
+        hf_cache -->|model weights| vllm
+        vllm -->|inference| gpu
+    end
+
+    signoz["SigNoz<br/>central metrics"]
+
+    ai_client -->|OpenAI-compatible HTTP<br/>Tailscale| router
+    router -->|OpenAI-compatible HTTP<br/>Tailscale| vllm
+    ai_client -.->|fallback only| vllm
+    vllm -.->|Prometheus metrics<br/>Tailscale| collector
+    collector -->|OTLP gRPC<br/>Tailscale| signoz
+
+    classDef optional stroke-dasharray:6 4
+    class ai_workers,router,router_metrics,collector,hf_cache,vllm,gpu,signoz optional
+```
+
 ### Per-user AI agent harness
 
 The optional agent harness runs outside the Echo LXC on
@@ -177,6 +219,67 @@ events, lifecycle state, and security reviews in PostgreSQL. Redis stores only
 single-use bootstrap credentials and other transient request state. Each
 effective `Rer` user receives a disabled, passwordless linked `ApiAgent`
 identity and an isolated Incus container cloned from a fixed template.
+
+```mermaid
+flowchart LR
+    analyst["Analyst browser"] -->|HTTPS| api
+
+    subgraph echo_lxc["Echo application LXC"]
+        api["Echo API"]
+        agent_worker["AI agent worker"]
+        postgres[("PostgreSQL<br/>identity · conversation · audit · lifecycle")]
+        redis[("Redis<br/>single-use bootstrap credentials")]
+
+        api --> postgres
+        agent_worker --> postgres
+        api --> redis
+        agent_worker --> redis
+    end
+
+    subgraph harness_vm["echo-ai-agent-vm · shared Incus host"]
+        sshd["Dedicated sshd · :22031<br/>key-only forced command"]
+        dispatcher["Namespaced dispatcher<br/>JSON/JSONL allowlist"]
+        template["Fixed stopped template"]
+
+        subgraph agents["Isolated per-user Incus LXC containers · max 6 running"]
+            agent_a["User A<br/>Pi runner"]
+            agent_b["User B<br/>Pi runner"]
+            agent_n["…"]
+        end
+
+        echo_proxy["Instance-bound Echo TLS proxy<br/>:443 → loopback :18443"]
+        vllm_proxy["Instance-bound vLLM proxy<br/>loopback :18000"]
+
+        sshd --> dispatcher
+        dispatcher <-->|clone · lifecycle · exec| agent_a
+        dispatcher <-->|clone · lifecycle · exec| agent_b
+        dispatcher <-->|clone · lifecycle · exec| agent_n
+        template -.->|clone| agent_a
+        template -.->|clone| agent_b
+        template -.->|clone| agent_n
+        agent_a --> echo_proxy
+        agent_b --> echo_proxy
+        agent_n --> echo_proxy
+        agent_a -.-> vllm_proxy
+        agent_b -.-> vllm_proxy
+        agent_n -.-> vllm_proxy
+    end
+
+    router["vLLM Router<br/>internal engine"]
+    openai["External OpenAI API"]
+    internet["Public IPv4 internet"]
+
+    agent_worker <-->|per-deployment SSH identity<br/>namespaced JSONL| sshd
+    echo_proxy -->|hostname-validated HTTPS| api
+    vllm_proxy -.->|direct_http transport| router
+    api -.->|echo_gateway transport<br/>token injected by Echo| openai
+    agent_a -.-> internet
+    agent_b -.-> internet
+    agent_n -.-> internet
+
+    classDef optional stroke-dasharray:6 4
+    class agent_worker,redis,router,openai,internet optional
+```
 
 Multiple Echo deployments share the VM. Each reaches the host through its own
 SSH key, Unix identity, namespace mapping, and isolated runtime home; the
