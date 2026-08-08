@@ -284,6 +284,7 @@ export function ImageAttachmentPreviewRenderer({
         drag.stageWidth,
         drag.stageHeight,
         zoomRef.current,
+        ZOOM_MAX,
       );
       panRef.current = nextPan;
       setPan(nextPan);
@@ -358,6 +359,7 @@ export function ImageAttachmentPreviewRenderer({
             stage.clientWidth,
             stage.clientHeight,
             clampedZoom,
+            ZOOM_MAX,
           );
     panRef.current = nextPan;
     setPan(nextPan);

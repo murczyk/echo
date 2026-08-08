@@ -124,10 +124,27 @@ export function clampPan(
   stageWidth: number,
   stageHeight: number,
   zoom: number,
+  maxZoom = 300,
 ): Point {
   const scale = zoom / 100;
-  const maxX = Math.max(0, (fittedImageWidth * scale - stageWidth) / 2);
-  const maxY = Math.max(0, (fittedImageHeight * scale - stageHeight) / 2);
+  const maxScale = maxZoom / 100;
+
+  const currentScaledWidth = fittedImageWidth * scale;
+  const maxScaledWidth = fittedImageWidth * maxScale;
+
+  const maxX =
+    maxScaledWidth >= stageWidth
+      ? Math.max((currentScaledWidth - stageWidth) / 2, (maxScaledWidth - stageWidth) / 2)
+      : (stageWidth - currentScaledWidth) / 2;
+
+  const currentScaledHeight = fittedImageHeight * scale;
+  const maxScaledHeight = fittedImageHeight * maxScale;
+
+  const maxY =
+    maxScaledHeight >= stageHeight
+      ? Math.max((currentScaledHeight - stageHeight) / 2, (maxScaledHeight - stageHeight) / 2)
+      : (stageHeight - currentScaledHeight) / 2;
+
   return {
     x: clamp(point.x, -maxX, maxX),
     y: clamp(point.y, -maxY, maxY),
