@@ -2473,6 +2473,16 @@ export type ListUnitsByIdRsp = {
   units: Array<Unit>;
 };
 
+export type UnitDuplicate = {
+  sigintUnit: Unit;
+  orbitUnitId: string;
+  orbitUnitFullName: string;
+};
+
+export type ListUnitDuplicatesRsp = {
+  units: Array<UnitDuplicate>;
+};
+
 export type CreateUnitReq = {
   company: string;
   battalion: string;

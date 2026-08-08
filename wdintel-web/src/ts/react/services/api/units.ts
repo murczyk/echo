@@ -9,6 +9,7 @@ import type {
   DeleteUnitDuplicateReq,
   ImportOrbitUnitReq,
   LinkOrbitUnitReq,
+  ListUnitDuplicatesRsp,
   ListUnitsByIdRsp,
   ListUnitsReq,
   ListUnitsRsp,
@@ -18,6 +19,7 @@ import type {
   OrbitUnitSearchReq,
   Unit,
   UnitAttachment,
+  UnitDuplicate,
   UnitAttachmentUnitIdsRsp,
   UnitDetailsRsp,
   UnitStatusCountsRsp,
@@ -124,6 +126,11 @@ export async function getUnitsByIds(ids: number[], options?: RequestOptions): Pr
       : await postJson<unknown>('/api/sigint/units-by-id', { ids }, options);
   const data = transformSnakeToCamel<ListUnitsByIdRsp>(raw);
   return data?.units ?? [];
+}
+
+export async function getUnitDuplicates(options?: RequestOptions): Promise<UnitDuplicate[]> {
+  const raw = await postJson<unknown>('/api/admin/unit-duplicates', null, options);
+  return transformSnakeToCamel<ListUnitDuplicatesRsp>(raw).units;
 }
 
 export async function createUnit(unit: CreateUnitReq): Promise<Unit> {

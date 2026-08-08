@@ -185,6 +185,22 @@ pub struct ListUnitsByIdRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct UnitDuplicate {
+    pub sigint_unit: Unit,
+    pub orbit_unit_id: String,
+    pub orbit_unit_full_name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListUnitDuplicatesRsp {
+    pub units: Vec<UnitDuplicate>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct CreateUnitReq {
     pub company: String,
     pub battalion: String,
