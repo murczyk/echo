@@ -127,15 +127,25 @@ byte-for-byte with MD5 `e28582ad0a1e6e07be76c95dd2f33cbf`, while the
 callsign worker remains disabled for later manual activation. No callsign
 test, parse-result, worker, or backfill jobs were created.
 
+## Skhid follow-up — 2026-08-08
+
+From `echo-skhid`, both `CLIENT_HOST=echo-skhid just verify-client` and
+`CLIENT_HOST=echo-skhid just smoke` passed; Gemma returned `OK.`. Echo uses the
+same sole enabled tokenless engine for its disabled AI-agent profile and
+selected callsign engine. The 4,102-character Kharkiv2 prompt was copied
+byte-for-byte with MD5 `e28582ad0a1e6e07be76c95dd2f33cbf`, while the
+callsign worker remains disabled for later manual activation. No callsign
+test, parse-result, worker, or backfill jobs were created.
+
 ## Callsign prompt journal
 
 Append each deployed prompt revision here with its deployment date, source
 Echo instance, and MD5 so prompt changes remain reproducible.
 
-### 2026-08-08 — Kharkiv2, Siversk, ZP2, and Pivnich
+### 2026-08-08 — Kharkiv2, Siversk, ZP2, Pivnich, and Skhid
 
 Source: `echo-kharkiv2`; deployed byte-for-byte to `echo-siversk` and
-`echo-zp2`, then to `echo-pivnich`. MD5:
+`echo-zp2`, then to `echo-pivnich` and `echo-skhid`. MD5:
 `e28582ad0a1e6e07be76c95dd2f33cbf`.
 
 ```text

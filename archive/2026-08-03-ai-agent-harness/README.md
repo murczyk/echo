@@ -293,3 +293,29 @@ returned `pong`, router client and Gemma inference checks passed, and final
 shared-host verification reported seven dispatcher identities with
 `running=0/6`. No backfill, test job, production job, linked user, container,
 conversation, request, or review was created.
+
+## Skhid follow-up — 2026-08-08
+
+`echo-skhid` was upgraded to `wdintel-rs`
+`0.1.1~rc.202608081052-1` and added to the shared agent host as the isolated
+`echo-skhid` namespace with forced dispatcher identity
+`echo-ai-agent-skhid`. Its client key fingerprint is
+`SHA256:E7x45Wnho0ZvbFthA0yDv1vmZxGQettBNdLOTJVNRUg`; the private key remains
+root-only on Skhid. Pinned dispatcher preflight and list calls passed, and the
+enabled HTTPS proxy maps `echo-skhid.serengeti-porbeagle.ts.net` to
+`100.74.47.7:443`.
+
+The enabled tokenless Gemma router engine is the sole allowed, default, and
+reviewer engine. Security review and the existing Mattermost webhook are
+configured, while the AI-agent feature and Mattermost chat remain disabled.
+The fixed disabled/passwordless `ai-agent` login has exactly `ApiAgent`,
+`Rer`, and `Cyber` roles. The callsign worker selects the same Gemma engine but
+remains disabled for later manual activation; its 4,102-character prompt has
+MD5 `e28582ad0a1e6e07be76c95dd2f33cbf`.
+
+All callsign queues, Mattermost-notification rows, chats, and harness runtime
+tables remained empty. Services were active with zero restarts, `/api/ping`
+returned `pong`, router client and Gemma inference checks passed, and final
+shared-host verification reported eight dispatcher identities with
+`running=0/6`. No backfill, test job, production job, linked user, container,
+conversation, request, or review was created.
