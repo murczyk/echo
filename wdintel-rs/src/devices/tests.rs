@@ -863,6 +863,8 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
     );
     assert_eq!(response.status(), StatusCode::OK);
     let summary: Value = test::read_body_json(response).await;
+    assert_eq!(summary["total_file_count"], 2);
+    assert_eq!(summary["analyzed_file_count"], 0);
     assert_eq!(summary["items"].as_array().unwrap().len(), 1);
     assert_eq!(summary["items"][0]["tag"]["id"], active_tag_id.to_string());
     assert_eq!(summary["items"][0]["file_count"], 1);

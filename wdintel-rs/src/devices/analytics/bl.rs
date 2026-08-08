@@ -3,9 +3,10 @@ use super::queue;
 use super::rules;
 use super::types::{
     AdminAnalyticsTag, AnalyticsTag, DeviceAnalyticsFile,
-    DeviceAnalyticsFilesRsp, DeviceAnalyticsSummaryItem, FileAnalysisInput,
-    RuleExpression, RuleTestFile, RuleTestFileResult, RuleValidationError,
-    TagFilter, TagMatch, TagRuleDefinition, TestAnalyticsTagRuleRsp,
+    DeviceAnalyticsFilesRsp, DeviceAnalyticsSummaryItem,
+    DeviceAnalyticsSummaryRsp, FileAnalysisInput, RuleExpression, RuleTestFile,
+    RuleTestFileResult, RuleValidationError, TagFilter, TagMatch,
+    TagRuleDefinition, TestAnalyticsTagRuleRsp,
 };
 use crate::devices::devices::query::{
     self as device_query, DeviceReadScope, FileRegistryDeviceAccess,
@@ -376,7 +377,7 @@ pub(super) async fn device_summary(
     file_registry_db: &FileRegistryDb,
     login: &login::Model,
     device_id: Uuid,
-) -> Result<Vec<DeviceAnalyticsSummaryItem>, AppError> {
+) -> Result<DeviceAnalyticsSummaryRsp, AppError> {
     device_query::authorize_file_registry_access(
         main_db,
         login,
@@ -385,28 +386,33 @@ pub(super) async fn device_summary(
     )
     .await
     .c(h!())?;
-    let mut items =
+    let mut summary =
         query::device_summary(file_registry_db.connection(), device_id)
             .await
             .c(h!())?;
-    items.sort_by(|left, right| {
+    summary.items.sort_by(|left, right| {
         left.tag_name
             .cmp(&right.tag_name)
             .then_with(|| left.tag_id.cmp(&right.tag_id))
     });
-    Ok(items
-        .into_iter()
-        .map(|item| DeviceAnalyticsSummaryItem {
-            tag: AnalyticsTag {
-                id: item.tag_id.to_string(),
-                name: item.tag_name,
-            },
-            file_count: item.file_count,
-            latest_file_entry_created_at: format_datetime(
-                item.latest_file_entry_created_at,
-            ),
-        })
-        .collect())
+    Ok(DeviceAnalyticsSummaryRsp {
+        total_file_count: summary.total_file_count,
+        analyzed_file_count: summary.analyzed_file_count,
+        items: summary
+            .items
+            .into_iter()
+            .map(|item| DeviceAnalyticsSummaryItem {
+                tag: AnalyticsTag {
+                    id: item.tag_id.to_string(),
+                    name: item.tag_name,
+                },
+                file_count: item.file_count,
+                latest_file_entry_created_at: format_datetime(
+                    item.latest_file_entry_created_at,
+                ),
+            })
+            .collect(),
+    })
 }
 
 pub(super) async fn device_files(

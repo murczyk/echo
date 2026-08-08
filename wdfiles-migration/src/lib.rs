@@ -9,6 +9,7 @@ mod m20260803_164204_file_entry_kind_and_windows_paths;
 mod m20260806_160450_device_analytics_tags;
 mod m20260807_125456_analytics_tag_rule_revision;
 mod m20260807_162040_file_analysis_state;
+mod m20260808_113748_file_analysis_device_queue;
 
 pub struct Migrator;
 
@@ -29,6 +30,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260806_160450_device_analytics_tags::Migration),
             Box::new(m20260807_125456_analytics_tag_rule_revision::Migration),
             Box::new(m20260807_162040_file_analysis_state::Migration),
+            Box::new(m20260808_113748_file_analysis_device_queue::Migration),
         ]
     }
 }

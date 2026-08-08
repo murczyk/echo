@@ -192,7 +192,7 @@ fn uuid_label(id: Uuid) -> String {
 
 async fn truncate_file_entries(db: &DatabaseConnection) {
     db.execute_unprepared(
-        "truncate table public.file_analysis_state, public.device_file_tag, public.file_entry",
+        "truncate table public.file_analysis_device_state, public.file_analysis_state, public.device_file_tag, public.file_entry",
     )
     .await
     .unwrap();

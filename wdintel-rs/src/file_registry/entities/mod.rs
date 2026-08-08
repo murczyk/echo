@@ -7,6 +7,7 @@ pub mod analytics_tag_rule_set_state;
 pub mod analytics_tag_test_file;
 pub mod device_file_tag;
 pub mod file_analysis_control;
+pub mod file_analysis_device_state;
 pub mod file_analysis_reanalysis_job;
 pub mod file_analysis_state;
 pub mod file_entry;

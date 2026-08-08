@@ -10,8 +10,8 @@ use super::{bl, query, queue, worker};
 use crate::entities::{device, login, organism};
 use crate::file_registry::entities::{
     analytics_tag, device_file_tag, file_analysis_control,
-    file_analysis_reanalysis_job, file_analysis_state, file_entry,
-    sea_orm_active_enums::FileEntryKind,
+    file_analysis_device_state, file_analysis_reanalysis_job,
+    file_analysis_state, file_entry, sea_orm_active_enums::FileEntryKind,
 };
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
 use crate::types::Env;
@@ -508,6 +508,15 @@ async fn analysis_state(
         .unwrap()
 }
 
+async fn claim_analysis_device(env: &Env) -> queue::ClaimedAnalysisDevice {
+    queue::claim_pending_analysis_device(
+        env.file_registry_db().unwrap().connection(),
+    )
+    .await
+    .unwrap()
+    .expect("pending analysis device")
+}
+
 async fn schedule_device_reanalysis(env: &Env, device_id: Uuid) -> u64 {
     let rule_revision =
         query::rule_set_revision(env.file_registry_db().unwrap().connection())
@@ -538,6 +547,15 @@ async fn missing_analysis_state_is_backfilled_as_pending() {
         .exec(file_db)
         .await
         .unwrap();
+    let control = file_analysis_control::Entity::find_by_id(true)
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut control = control.into_active_model();
+    control.backfill_cursor = Set(None);
+    control.backfill_complete = Set(false);
+    control.update(file_db).await.unwrap();
 
     assert!(queue::backfill_missing_analysis_state(file_db, 1)
         .await
@@ -815,10 +833,11 @@ async fn concurrent_workers_skip_locked_rows_without_duplicate_links() {
         worker::run_tick_with(env.as_ref(), &cache, 1),
     );
     let processed = [first.unwrap(), second.unwrap()];
-    assert_eq!(processed, [true, true]);
-    let _ = worker::run_tick_with(env.as_ref(), &cache, 1)
-        .await
-        .unwrap();
+    assert_eq!(
+        processed.into_iter().filter(|processed| *processed).count(),
+        1,
+        "one device must be owned by only one concurrent worker",
+    );
     assert!(!worker::run_tick_with(env.as_ref(), &cache, 1)
         .await
         .unwrap());
@@ -852,6 +871,164 @@ async fn concurrent_workers_skip_locked_rows_without_duplicate_links() {
             .collect::<std::collections::BTreeSet<_>>()
             .len(),
         2,
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn worker_finishes_one_device_before_claiming_the_next() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let first_device_id = insert_analytics_test_device(env.as_ref()).await;
+    let first_file_ids = insert_pending_files(
+        env.as_ref(),
+        first_device_id,
+        &[
+            ("first-a.txt", r"C:\first-a.txt", "txt"),
+            ("first-b.txt", r"C:\first-b.txt", "txt"),
+        ],
+    )
+    .await;
+    let second_device_id = insert_analytics_test_device(env.as_ref()).await;
+    let second_file_ids = insert_pending_files(
+        env.as_ref(),
+        second_device_id,
+        &[
+            ("second-a.txt", r"C:\second-a.txt", "txt"),
+            ("second-b.txt", r"C:\second-b.txt", "txt"),
+        ],
+    )
+    .await;
+    let file_db = env.file_registry_db().unwrap().connection();
+    let cache = worker::RuleCache::default();
+
+    assert!(worker::run_tick_with(env.as_ref(), &cache, 1)
+        .await
+        .unwrap());
+    let first_states = file_analysis_state::Entity::find()
+        .filter(
+            file_analysis_state::Column::FileEntryId
+                .is_in(first_file_ids.iter().copied()),
+        )
+        .all(file_db)
+        .await
+        .unwrap();
+    let second_states = file_analysis_state::Entity::find()
+        .filter(
+            file_analysis_state::Column::FileEntryId
+                .is_in(second_file_ids.iter().copied()),
+        )
+        .all(file_db)
+        .await
+        .unwrap();
+    let completed_devices = [
+        first_states.iter().all(|state| !state.pending),
+        second_states.iter().all(|state| !state.pending),
+    ];
+    assert_eq!(
+        completed_devices
+            .into_iter()
+            .filter(|completed| *completed)
+            .count(),
+        1,
+        "a batch size of one must still finish exactly one whole device",
+    );
+    assert!(
+        first_states.iter().all(|state| !state.pending)
+            || first_states.iter().all(|state| state.pending)
+    );
+    assert!(
+        second_states.iter().all(|state| !state.pending)
+            || second_states.iter().all(|state| state.pending)
+    );
+
+    assert!(worker::run_tick_with(env.as_ref(), &cache, 1)
+        .await
+        .unwrap());
+    assert_eq!(
+        file_analysis_state::Entity::find()
+            .filter(
+                file_analysis_state::Column::FileEntryId.is_in(
+                    first_file_ids.iter().chain(&second_file_ids).copied(),
+                ),
+            )
+            .filter(file_analysis_state::Column::Pending.eq(false))
+            .count(file_db)
+            .await
+            .unwrap(),
+        4,
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn device_progress_requeues_and_counts_updated_files() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let device_id = insert_analytics_test_device(env.as_ref()).await;
+    let file_ids = insert_pending_files(
+        env.as_ref(),
+        device_id,
+        &[
+            ("first.txt", r"C:\first.txt", "txt"),
+            ("second.txt", r"C:\second.txt", "txt"),
+        ],
+    )
+    .await;
+    let file_db = env.file_registry_db().unwrap().connection();
+    let before = query::device_summary(file_db, device_id).await.unwrap();
+    assert_eq!(
+        (before.total_file_count, before.analyzed_file_count),
+        (2, 0),
+    );
+
+    let cache = worker::RuleCache::default();
+    assert!(worker::run_tick_with(env.as_ref(), &cache, 1)
+        .await
+        .unwrap());
+    let completed = query::device_summary(file_db, device_id).await.unwrap();
+    assert_eq!(
+        (completed.total_file_count, completed.analyzed_file_count,),
+        (2, 2),
+    );
+    let device_state =
+        file_analysis_device_state::Entity::find_by_id(device_id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap();
+    assert!(!device_state.pending);
+
+    let file = file_entry::Entity::find_by_id(file_ids[0])
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut file = file.into_active_model();
+    file.name = Set("first-updated.pdf".to_string());
+    file.absolute_path = Set(Some(r"C:\first-updated.pdf".to_string()));
+    file.extension = Set(Some("pdf".to_string()));
+    file.updated_at = Set(Utc::now().naive_utc());
+    file.update(file_db).await.unwrap();
+
+    let updated = query::device_summary(file_db, device_id).await.unwrap();
+    assert_eq!(
+        (updated.total_file_count, updated.analyzed_file_count),
+        (2, 1),
+    );
+    let requeued = file_analysis_device_state::Entity::find_by_id(device_id)
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(requeued.pending);
+    assert!(requeued.lease_token.is_none());
+
+    assert!(worker::run_tick_with(env.as_ref(), &cache, 1)
+        .await
+        .unwrap());
+    let reanalyzed = query::device_summary(file_db, device_id).await.unwrap();
+    assert_eq!(
+        (reanalyzed.total_file_count, reanalyzed.analyzed_file_count,),
+        (2, 2),
     );
 }
 
@@ -913,7 +1090,8 @@ async fn metadata_change_during_a_lease_discards_the_stale_result() {
         .await
         .unwrap();
     let file_db = env.file_registry_db().unwrap().connection();
-    let batch = queue::claim_pending_analysis_files(file_db, 1)
+    let device_claim = claim_analysis_device(env.as_ref()).await;
+    let batch = queue::claim_pending_analysis_files(file_db, &device_claim, 1)
         .await
         .unwrap();
     assert_eq!(batch.files.len(), 1);
@@ -940,9 +1118,18 @@ async fn metadata_change_during_a_lease_discards_the_stale_result() {
     assert!(invalidated.pending);
     assert_eq!(invalidated.lease_token, Some(lease_token));
 
-    worker::process_claimed_batch(env.as_ref(), &rule_snapshot, batch)
-        .await
-        .unwrap();
+    assert_eq!(
+        worker::process_claimed_batch(env.as_ref(), &rule_snapshot, batch)
+            .await
+            .unwrap(),
+        worker::BatchOutcome::Processed,
+    );
+    assert_eq!(
+        queue::release_analysis_device_claim(file_db, &device_claim)
+            .await
+            .unwrap(),
+        1,
+    );
     let released = analysis_state(env.as_ref(), file_id).await;
     assert!(released.pending);
     assert_eq!(released.analyzed_source_revision, 0);
@@ -986,7 +1173,8 @@ async fn rule_change_during_a_lease_discards_the_stale_result() {
         .await
         .unwrap();
     let file_db = env.file_registry_db().unwrap().connection();
-    let batch = queue::claim_pending_analysis_files(file_db, 1)
+    let device_claim = claim_analysis_device(env.as_ref()).await;
+    let batch = queue::claim_pending_analysis_files(file_db, &device_claim, 1)
         .await
         .unwrap();
     assert_eq!(batch.files.len(), 1);
@@ -998,9 +1186,18 @@ async fn rule_change_during_a_lease_discards_the_stale_result() {
             .unwrap()
             > stale_snapshot.revision
     );
-    worker::process_claimed_batch(env.as_ref(), &stale_snapshot, batch)
-        .await
-        .unwrap();
+    assert_eq!(
+        worker::process_claimed_batch(env.as_ref(), &stale_snapshot, batch)
+            .await
+            .unwrap(),
+        worker::BatchOutcome::RuleSnapshotStale,
+    );
+    assert_eq!(
+        queue::release_analysis_device_claim(file_db, &device_claim)
+            .await
+            .unwrap(),
+        1,
+    );
 
     let released = analysis_state(env.as_ref(), file_id).await;
     assert!(released.pending);
@@ -1075,8 +1272,15 @@ async fn reanalysis_job_expands_in_bounded_batches_and_excludes_new_files() {
     )
     .await[0];
     assert!(new_file_id > upper_file_entry_id);
+    let device_claim = claim_analysis_device(env.as_ref()).await;
 
-    assert!(queue::expand_next_reanalysis_job(file_db, 2).await.unwrap());
+    assert!(queue::expand_next_device_reanalysis_job(
+        file_db,
+        &device_claim,
+        2,
+    )
+    .await
+    .unwrap());
     let partially_expanded =
         file_analysis_reanalysis_job::Entity::find_by_id(job.id)
             .one(file_db)
@@ -1101,7 +1305,13 @@ async fn reanalysis_job_expands_in_bounded_batches_and_excludes_new_files() {
         2
     );
 
-    assert!(queue::expand_next_reanalysis_job(file_db, 2).await.unwrap());
+    assert!(queue::expand_next_device_reanalysis_job(
+        file_db,
+        &device_claim,
+        2,
+    )
+    .await
+    .unwrap());
     let expanded = file_analysis_reanalysis_job::Entity::find_by_id(job.id)
         .one(file_db)
         .await
@@ -1138,10 +1348,12 @@ async fn failed_and_expired_leases_remain_durably_retryable() {
     )
     .await[0];
     let file_db = env.file_registry_db().unwrap().connection();
+    let device_claim = claim_analysis_device(env.as_ref()).await;
 
-    let first_claim = queue::claim_pending_analysis_files(file_db, 1)
-        .await
-        .unwrap();
+    let first_claim =
+        queue::claim_pending_analysis_files(file_db, &device_claim, 1)
+            .await
+            .unwrap();
     assert_eq!(first_claim.files.len(), 1);
     assert_eq!(
         queue::release_claim_with_error(
@@ -1159,19 +1371,22 @@ async fn failed_and_expired_leases_remain_durably_retryable() {
     assert_eq!(failed.attempt_count, 1);
     assert_eq!(failed.last_error.as_deref(), Some("deliberate failure"));
     assert!(failed.available_at > Utc::now().fixed_offset());
-    assert!(queue::claim_pending_analysis_files(file_db, 1)
-        .await
-        .unwrap()
-        .files
-        .is_empty());
+    assert!(
+        queue::claim_pending_analysis_files(file_db, &device_claim, 1,)
+            .await
+            .unwrap()
+            .files
+            .is_empty()
+    );
 
     let mut failed = failed.into_active_model();
     failed.available_at =
         Set((Utc::now() - ChronoDuration::seconds(1)).fixed_offset());
     failed.update(file_db).await.unwrap();
-    let second_claim = queue::claim_pending_analysis_files(file_db, 1)
-        .await
-        .unwrap();
+    let second_claim =
+        queue::claim_pending_analysis_files(file_db, &device_claim, 1)
+            .await
+            .unwrap();
     assert_eq!(second_claim.files.len(), 1);
 
     let leased = analysis_state(env.as_ref(), file_id).await;
@@ -1195,4 +1410,30 @@ async fn failed_and_expired_leases_remain_durably_retryable() {
         recovered.last_error.as_deref(),
         Some("analysis lease expired before acknowledgement")
     );
+
+    let device_state =
+        file_analysis_device_state::Entity::find_by_id(device_id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap();
+    let mut device_state = device_state.into_active_model();
+    device_state.lease_expires_at = Set(Some(
+        (Utc::now() - ChronoDuration::seconds(1)).fixed_offset(),
+    ));
+    device_state.update(file_db).await.unwrap();
+    assert_eq!(
+        queue::recover_expired_analysis_device_leases(file_db, 10)
+            .await
+            .unwrap(),
+        1,
+    );
+    let recovered_device =
+        file_analysis_device_state::Entity::find_by_id(device_id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap();
+    assert!(recovered_device.pending);
+    assert!(recovered_device.lease_token.is_none());
 }

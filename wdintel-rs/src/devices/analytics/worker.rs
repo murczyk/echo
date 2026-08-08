@@ -20,6 +20,12 @@ pub(super) struct RuleSnapshot {
     pub rules: Arc<rules::CompiledTagRules>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum BatchOutcome {
+    Processed,
+    RuleSnapshotStale,
+}
+
 #[derive(Default)]
 pub(crate) struct RuleCache {
     cached: RwLock<Option<RuleSnapshot>>,
@@ -165,30 +171,43 @@ pub(super) async fn run_tick_with(
         queue::backfill_missing_analysis_state(file_db, batch_size)
             .await
             .context("backfill missing file analysis state")?;
-    let expanded = queue::expand_next_reanalysis_job(file_db, batch_size)
-        .await
-        .context("expand file reanalysis job")?;
-    let recovered = queue::recover_expired_analysis_leases(file_db, batch_size)
-        .await
-        .context("recover expired file analysis leases")?;
+    let expanded =
+        queue::expand_next_legacy_reanalysis_job(file_db, batch_size)
+            .await
+            .context("expand legacy file reanalysis job")?;
+    let recovered_files =
+        queue::recover_expired_analysis_leases(file_db, batch_size)
+            .await
+            .context("recover expired file analysis leases")?;
+    let recovered_devices =
+        queue::recover_expired_analysis_device_leases(file_db, batch_size)
+            .await
+            .context("recover expired device analysis leases")?;
     let rule_snapshot = rule_cache.load_rules(file_db).await?;
-    let batch = queue::claim_pending_analysis_files(file_db, batch_size)
+    let Some(device) = queue::claim_pending_analysis_device(file_db)
         .await
-        .context("claim pending file analytics rows")?;
-    if batch.files.is_empty() {
-        return Ok(backfilled || expanded || recovered > 0);
-    }
+        .context("claim pending device analytics row")?
+    else {
+        return Ok(backfilled
+            || expanded
+            || recovered_files > 0
+            || recovered_devices > 0);
+    };
 
-    let lease_token = batch.lease_token;
-    if let Err(error) = process_claimed_batch(env, &rule_snapshot, batch).await
+    if let Err(error) =
+        process_claimed_device(env, &rule_snapshot, &device, batch_size).await
     {
         let error_text = format!("{error:#}");
         if let Err(release_error) =
-            queue::release_claim_with_error(file_db, lease_token, &error_text)
-                .await
+            queue::release_analysis_device_claim_with_error(
+                file_db,
+                &device,
+                &error_text,
+            )
+            .await
         {
             return Err(error.context(format!(
-                "additionally failed to release file analysis lease: {release_error}"
+                "additionally failed to release device analysis lease: {release_error}"
             )));
         }
         return Err(error);
@@ -196,11 +215,64 @@ pub(super) async fn run_tick_with(
     Ok(true)
 }
 
+async fn process_claimed_device(
+    env: &Env,
+    rule_snapshot: &RuleSnapshot,
+    device: &queue::ClaimedAnalysisDevice,
+    batch_size: u64,
+) -> anyhow::Result<()> {
+    let file_db = env
+        .file_registry_db()
+        .context("file registry database is unavailable")?
+        .connection();
+    loop {
+        if queue::expand_next_device_reanalysis_job(file_db, device, batch_size)
+            .await
+            .context("expand device file reanalysis job")?
+        {
+            continue;
+        }
+
+        let batch =
+            queue::claim_pending_analysis_files(file_db, device, batch_size)
+                .await
+                .context("claim pending files for device analysis")?;
+        if batch.files.is_empty() {
+            let pending =
+                queue::complete_analysis_device_claim(file_db, device)
+                    .await
+                    .context("complete device analysis claim")?
+                    .context("device analysis claim was lost")?;
+            log::debug!(
+                "device file analytics completed device={} pending={pending}",
+                device.device_id,
+            );
+            return Ok(());
+        }
+
+        if process_claimed_batch(env, rule_snapshot, batch).await?
+            == BatchOutcome::RuleSnapshotStale
+        {
+            let released =
+                queue::release_analysis_device_claim(file_db, device)
+                    .await
+                    .context(
+                        "release device analysis after rule revision change",
+                    )?;
+            ensure!(
+                released == 1,
+                "released {released} device analysis claims after rule revision change"
+            );
+            return Ok(());
+        }
+    }
+}
+
 pub(super) async fn process_claimed_batch(
     env: &Env,
     rule_snapshot: &RuleSnapshot,
     batch: queue::ClaimedAnalysisBatch,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<BatchOutcome> {
     let mut matched_tags_by_file = batch
         .files
         .iter()
@@ -236,10 +308,13 @@ pub(super) async fn process_claimed_batch(
     )
     .await;
     match result {
-        Ok(()) => transaction
-            .commit()
-            .await
-            .context("commit file analysis finalization"),
+        Ok(outcome) => {
+            transaction
+                .commit()
+                .await
+                .context("commit file analysis finalization")?;
+            Ok(outcome)
+        }
         Err(error) => {
             if let Err(rollback_error) = transaction.rollback().await {
                 return Err(error.context(format!(
@@ -256,7 +331,7 @@ async fn finalize_claimed_batch(
     batch: &queue::ClaimedAnalysisBatch,
     matched_tags_by_file: &mut HashMap<Uuid, Vec<Uuid>>,
     file_transaction: &DatabaseTransaction,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<BatchOutcome> {
     let file_entry_ids = batch
         .files
         .iter()
@@ -288,7 +363,7 @@ async fn finalize_claimed_batch(
         queue::release_claim(file_transaction, batch.lease_token)
             .await
             .context("release stale file analysis claim")?;
-        return Ok(());
+        return Ok(BatchOutcome::Processed);
     }
 
     let mut valid_files = batch
@@ -325,7 +400,7 @@ async fn finalize_claimed_batch(
         queue::release_claim(file_transaction, batch.lease_token)
             .await
             .context("release claim after analytics rule revision change")?;
-        return Ok(());
+        return Ok(BatchOutcome::RuleSnapshotStale);
     }
     let delta = query::reconcile_file_tags(
         file_transaction,
@@ -359,5 +434,5 @@ async fn finalize_claimed_batch(
         delta.deleted,
         delta.unchanged,
     );
-    Ok(())
+    Ok(BatchOutcome::Processed)
 }

@@ -234,8 +234,8 @@ pub(crate) async fn device_summary(
         .await
         .c(h!())?;
     let device_id = bl::parse_canonical_uuid(&body.device_id, "device_id")?;
-    Ok(Json(DeviceAnalyticsSummaryRsp {
-        items: bl::device_summary(
+    Ok(Json(
+        bl::device_summary(
             &env.dbx,
             env.file_registry_db()?,
             &login,
@@ -243,7 +243,7 @@ pub(crate) async fn device_summary(
         )
         .await
         .c(h!())?,
-    }))
+    ))
 }
 
 #[post("/api/device/analytics/files")]

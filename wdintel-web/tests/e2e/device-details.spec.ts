@@ -232,6 +232,8 @@ async function installMocks(page: Page): Promise<ApiTracker> {
     if (pathname === '/api/device/analytics/summary') {
       tracker.analyticsSummaryRequestCount += 1;
       await fulfillJson(route, {
+        total_file_count: 2,
+        analyzed_file_count: 1,
         items: [
           {
             tag: { id: ANALYTICS_TAG_ID, name: 'Документи' },
@@ -372,6 +374,11 @@ test('@smoke device details uses tabs, a synchronization journal, a collapsible 
   await expect(page.getByRole('tab', { name: 'Аналітика файлів' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Аналітика файлів' })).toBeVisible();
   await expect(page.getByText('Документи', { exact: true })).toBeVisible();
+  const analyticsProgress = page.getByTestId('device-analytics-progress');
+  await expect(analyticsProgress).toContainText('Усього файлів');
+  await expect(analyticsProgress).toContainText('2');
+  await expect(analyticsProgress).toContainText('Проаналізовано файлів');
+  await expect(analyticsProgress).toContainText('1');
   await expect.poll(() => tracker.analyticsTagsRequestCount).toBe(1);
   await expect.poll(() => tracker.analyticsSummaryRequestCount).toBe(1);
   expect(tracker.journalRequestCount).toBe(0);

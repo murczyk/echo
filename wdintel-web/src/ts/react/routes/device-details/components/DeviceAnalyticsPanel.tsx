@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AnalyticsTag,
   DeviceAnalyticsFile,
-  DeviceAnalyticsSummaryItem,
+  DeviceAnalyticsSummaryRsp,
 } from '../../../../../Bindings';
 import { redirectToLogin } from '../../../auth-redirect';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -263,7 +263,7 @@ export function DeviceAnalyticsPanel({
   tagFilter: DeviceAnalyticsTagFilter;
   onTagFilterChange: (filter: DeviceAnalyticsTagFilter) => void;
 }) {
-  const [summaryItems, setSummaryItems] = useState<DeviceAnalyticsSummaryItem[]>([]);
+  const [summary, setSummary] = useState<DeviceAnalyticsSummaryRsp | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<DeviceFileLoadError | null>(null);
   const [reanalyzing, setReanalyzing] = useState(false);
@@ -282,7 +282,7 @@ export function DeviceAnalyticsPanel({
     try {
       const rsp = await getDeviceAnalyticsSummary({ deviceId }, { signal: controller.signal });
       if (requestSeqRef.current !== seq || controller.signal.aborted) return;
-      setSummaryItems(rsp.items);
+      setSummary(rsp);
     } catch (loadError) {
       if (requestSeqRef.current !== seq || controller.signal.aborted || isAbortError(loadError)) {
         return;
@@ -301,7 +301,7 @@ export function DeviceAnalyticsPanel({
   useEffect(() => {
     requestSeqRef.current += 1;
     abortRef.current?.abort();
-    setSummaryItems([]);
+    setSummary(null);
     setError(null);
     setLoading(enabled);
     setReanalysisMessage(null);
@@ -310,7 +310,7 @@ export function DeviceAnalyticsPanel({
   }, [deviceId, enabled, loadSummary]);
 
   const summaries = useMemo(() => {
-    const summaryByTagId = new Map(summaryItems.map((item) => [item.tag.id, item]));
+    const summaryByTagId = new Map((summary?.items ?? []).map((item) => [item.tag.id, item]));
     return tagsState.tags.map<AnalyticsWidgetSummary>((tag) => {
       const item = summaryByTagId.get(tag.id);
       return {
@@ -319,7 +319,7 @@ export function DeviceAnalyticsPanel({
         latestFileEntryCreatedAt: item?.latestFileEntryCreatedAt ?? null,
       };
     });
-  }, [summaryItems, tagsState.tags]);
+  }, [summary, tagsState.tags]);
 
   const scheduleReanalysis = async () => {
     if (!window.confirm('Запустити повторний аналіз усіх файлів цього пристрою?')) return;
@@ -380,6 +380,31 @@ export function DeviceAnalyticsPanel({
           <PowerAlert severity="info" autoHideDuration={null}>
             {reanalysisMessage}
           </PowerAlert>
+        ) : null}
+
+        {summary !== null ? (
+          <Stack
+            data-testid="device-analytics-progress"
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={1}
+          >
+            <Paper variant="outlined" sx={{ flex: 1, px: 2, py: 1.5 }}>
+              <Typography variant="caption" color="text.secondary">
+                Усього файлів
+              </Typography>
+              <Typography variant="h6">
+                {fileCountFormatter.format(summary.totalFileCount)}
+              </Typography>
+            </Paper>
+            <Paper variant="outlined" sx={{ flex: 1, px: 2, py: 1.5 }}>
+              <Typography variant="caption" color="text.secondary">
+                Проаналізовано файлів
+              </Typography>
+              <Typography variant="h6">
+                {fileCountFormatter.format(summary.analyzedFileCount)}
+              </Typography>
+            </Paper>
+          </Stack>
         ) : null}
 
         <DeviceAnalyticsTagFilterControls

@@ -112,6 +112,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260806_160450_device_analytics_tags".to_string(),
             "m20260807_125456_analytics_tag_rule_revision".to_string(),
             "m20260807_162040_file_analysis_state".to_string(),
+            "m20260808_113748_file_analysis_device_queue".to_string(),
         ]
     );
 }
@@ -229,6 +230,7 @@ where table_schema = 'public'
       'analytics_tag_test_file',
       'device_file_tag',
       'file_analysis_control',
+      'file_analysis_device_state',
       'file_analysis_reanalysis_job',
       'file_analysis_state'
   )
@@ -249,6 +251,7 @@ order by table_name
             "analytics_tag_test_file".to_string(),
             "device_file_tag".to_string(),
             "file_analysis_control".to_string(),
+            "file_analysis_device_state".to_string(),
             "file_analysis_reanalysis_job".to_string(),
             "file_analysis_state".to_string(),
         ]

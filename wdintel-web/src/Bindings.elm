@@ -5175,14 +5175,18 @@ deviceAnalyticsSummaryItemEncoder struct =
 
 
 type alias DeviceAnalyticsSummaryRsp =
-    { items : List (DeviceAnalyticsSummaryItem)
+    { totalFileCount : Int
+    , analyzedFileCount : Int
+    , items : List (DeviceAnalyticsSummaryItem)
     }
 
 
 deviceAnalyticsSummaryRspEncoder : DeviceAnalyticsSummaryRsp -> Json.Encode.Value
 deviceAnalyticsSummaryRspEncoder struct =
     Json.Encode.object
-        [ ( "items", (Json.Encode.list (deviceAnalyticsSummaryItemEncoder)) struct.items )
+        [ ( "total_file_count", (Json.Encode.int) struct.totalFileCount )
+        , ( "analyzed_file_count", (Json.Encode.int) struct.analyzedFileCount )
+        , ( "items", (Json.Encode.list (deviceAnalyticsSummaryItemEncoder)) struct.items )
         ]
 
 
@@ -15248,6 +15252,8 @@ deviceAnalyticsSummaryItemDecoder =
 deviceAnalyticsSummaryRspDecoder : Json.Decode.Decoder DeviceAnalyticsSummaryRsp
 deviceAnalyticsSummaryRspDecoder =
     Json.Decode.succeed DeviceAnalyticsSummaryRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total_file_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analyzed_file_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (deviceAnalyticsSummaryItemDecoder))))
 
 

@@ -88,6 +88,8 @@ function buttonContaining(text: string): HTMLButtonElement {
 describe('DeviceAnalyticsPanel', () => {
   it('renders every active tag and lazily paginates a generic tag widget', async () => {
     mocks.getDeviceAnalyticsSummary.mockResolvedValue({
+      totalFileCount: 18,
+      analyzedFileCount: 12,
       items: [
         {
           tag: { id: 'tag-1', name: 'Звіти' },
@@ -124,6 +126,8 @@ describe('DeviceAnalyticsPanel', () => {
     renderPanel(onTagFilterChange);
     await flush();
 
+    expect(container.textContent).toContain('Усього файлів18');
+    expect(container.textContent).toContain('Проаналізовано файлів12');
     expect(container.textContent).toContain('Звіти');
     expect(container.textContent).toContain('Архіви');
     expect(container.textContent).toContain('5 файлів');
@@ -154,7 +158,11 @@ describe('DeviceAnalyticsPanel', () => {
   });
 
   it('keeps a failed widget retryable and exposes device reanalysis only to Admin', async () => {
-    mocks.getDeviceAnalyticsSummary.mockResolvedValue({ items: [] });
+    mocks.getDeviceAnalyticsSummary.mockResolvedValue({
+      totalFileCount: 0,
+      analyzedFileCount: 0,
+      items: [],
+    });
     mocks.listDeviceAnalyticsFiles
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce({ files: [], nextCursor: null });

@@ -71,6 +71,7 @@ pub mod tests {
                     r#"
                     truncate table
                         public.file_analysis_reanalysis_job,
+                        public.file_analysis_device_state,
                         public.file_analysis_state,
                         public.device_file_tag,
                         public.analytics_tag_test_file,
@@ -78,7 +79,7 @@ pub mod tests {
                         public.file_entry;
                     update public.file_analysis_control
                     set backfill_cursor = null,
-                        backfill_complete = false,
+                        backfill_complete = true,
                         next_generation = 1,
                         updated_at = clock_timestamp()
                     where id;

@@ -1,16 +1,20 @@
 use super::types::{
-    ActiveTagRule, DeviceAnalyticsFileLink, DeviceAnalyticsSummary,
+    ActiveTagRule, DeviceAnalyticsFileLink, DeviceAnalyticsProgress,
+    DeviceAnalyticsSummary,
 };
 use crate::file_registry::entities::{
     analytics_tag, analytics_tag_rule_set_state, analytics_tag_test_file,
-    device_file_tag, file_entry, sea_orm_active_enums::FileEntryKind,
+    device_file_tag, file_analysis_state, file_entry,
+    sea_orm_active_enums::FileEntryKind,
 };
 use chrono::{DateTime, FixedOffset, Utc};
+use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
-    DatabaseConnection, DatabaseTransaction, DbErr, EntityTrait,
-    FromQueryResult, IntoActiveModel, JoinType, QueryFilter, QueryOrder,
-    QuerySelect, QueryTrait, RelationTrait, Set,
+    AccessMode, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
+    DatabaseConnection, DatabaseTransaction, DbErr, EntityTrait, ExprTrait,
+    FromQueryResult, IntoActiveModel, IsolationLevel, JoinType, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, QueryTrait, RelationTrait, Set,
+    TransactionTrait,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use uuid::Uuid;
@@ -452,7 +456,51 @@ struct SummaryRow {
 pub(super) async fn device_summary(
     file_db: &DatabaseConnection,
     device_id: Uuid,
-) -> Result<Vec<DeviceAnalyticsSummary>, DbErr> {
+) -> Result<DeviceAnalyticsProgress, DbErr> {
+    let transaction = file_db
+        .begin_with_config(
+            Some(IsolationLevel::RepeatableRead),
+            Some(AccessMode::ReadOnly),
+        )
+        .await?;
+    let rule_revision = rule_set_revision(&transaction).await?;
+    let total_file_count = file_entry::Entity::find()
+        .filter(file_entry::Column::DeviceId.eq(device_id))
+        .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
+        .count(&transaction)
+        .await?;
+    let analyzed_file_count = file_analysis_state::Entity::find()
+        .filter(file_analysis_state::Column::DeviceId.eq(device_id))
+        .filter(file_analysis_state::Column::Pending.eq(false))
+        .filter(
+            file_analysis_state::Column::AnalyzedRuleRevision.eq(rule_revision),
+        )
+        .filter(
+            Expr::col(file_analysis_state::Column::AnalyzedSourceRevision)
+                .equals(file_analysis_state::Column::SourceRevision),
+        )
+        .filter(
+            Expr::col(file_analysis_state::Column::AnalyzedGeneration)
+                .equals(file_analysis_state::Column::RequiredGeneration),
+        )
+        .count(&transaction)
+        .await?;
+    let items = device_summary_items(&transaction, device_id).await?;
+    transaction.commit().await?;
+    Ok(DeviceAnalyticsProgress {
+        total_file_count,
+        analyzed_file_count,
+        items,
+    })
+}
+
+async fn device_summary_items<C>(
+    file_db: &C,
+    device_id: Uuid,
+) -> Result<Vec<DeviceAnalyticsSummary>, DbErr>
+where
+    C: ConnectionTrait,
+{
     analytics_tag::Entity::find()
         .select_only()
         .column_as(analytics_tag::Column::Id, "tag_id")
@@ -478,7 +526,7 @@ pub(super) async fn device_summary(
                 .map(|row| DeviceAnalyticsSummary {
                     tag_id: row.tag_id,
                     tag_name: row.tag_name,
-                    file_count: row.file_count.max(0) as u64,
+                    file_count: row.file_count.try_into().unwrap_or_default(),
                     latest_file_entry_created_at: row
                         .latest_file_entry_created_at,
                 })

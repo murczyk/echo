@@ -1985,6 +1985,8 @@ export type DeviceAnalyticsSummaryItem = {
 };
 
 export type DeviceAnalyticsSummaryRsp = {
+  totalFileCount: number;
+  analyzedFileCount: number;
   items: Array<DeviceAnalyticsSummaryItem>;
 };
 

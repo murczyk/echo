@@ -5,6 +5,7 @@ pub use super::analytics_tag_rule_set_state::Entity as AnalyticsTagRuleSetState;
 pub use super::analytics_tag_test_file::Entity as AnalyticsTagTestFile;
 pub use super::device_file_tag::Entity as DeviceFileTag;
 pub use super::file_analysis_control::Entity as FileAnalysisControl;
+pub use super::file_analysis_device_state::Entity as FileAnalysisDeviceState;
 pub use super::file_analysis_reanalysis_job::Entity as FileAnalysisReanalysisJob;
 pub use super::file_analysis_state::Entity as FileAnalysisState;
 pub use super::file_entry::Entity as FileEntry;
