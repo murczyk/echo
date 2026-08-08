@@ -900,6 +900,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::unit::units_search)
             .service(crate::sigint::unit::attachment::unit_details)
             .service(crate::sigint::unit::orbit::unit_orbit_children)
+            .service(crate::sigint::unit::orbit::list_unit_duplicates)
             .service(crate::sigint::unit::orbit::orbit_link_candidates)
             .service(crate::sigint::unit::orbit::search_orbit_units)
             .service(crate::sigint::unit::orbit::import_orbit_unit)

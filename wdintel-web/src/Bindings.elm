@@ -6410,6 +6410,34 @@ listUnitsByIdRspEncoder struct =
         ]
 
 
+type alias UnitDuplicate =
+    { sigintUnit : Unit
+    , orbitUnitId : String
+    , orbitUnitFullName : String
+    }
+
+
+unitDuplicateEncoder : UnitDuplicate -> Json.Encode.Value
+unitDuplicateEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit", (unitEncoder) struct.sigintUnit )
+        , ( "orbit_unit_id", (Json.Encode.string) struct.orbitUnitId )
+        , ( "orbit_unit_full_name", (Json.Encode.string) struct.orbitUnitFullName )
+        ]
+
+
+type alias ListUnitDuplicatesRsp =
+    { units : List (UnitDuplicate)
+    }
+
+
+listUnitDuplicatesRspEncoder : ListUnitDuplicatesRsp -> Json.Encode.Value
+listUnitDuplicatesRspEncoder struct =
+    Json.Encode.object
+        [ ( "units", (Json.Encode.list (unitDuplicateEncoder)) struct.units )
+        ]
+
+
 type alias CreateUnitReq =
     { company : String
     , battalion : String
@@ -15747,6 +15775,20 @@ listUnitsByIdRspDecoder : Json.Decode.Decoder ListUnitsByIdRsp
 listUnitsByIdRspDecoder =
     Json.Decode.succeed ListUnitsByIdRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (unitDecoder))))
+
+
+unitDuplicateDecoder : Json.Decode.Decoder UnitDuplicate
+unitDuplicateDecoder =
+    Json.Decode.succeed UnitDuplicate
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit" (unitDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_full_name" (Json.Decode.string)))
+
+
+listUnitDuplicatesRspDecoder : Json.Decode.Decoder ListUnitDuplicatesRsp
+listUnitDuplicatesRspDecoder =
+    Json.Decode.succeed ListUnitDuplicatesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (unitDuplicateDecoder))))
 
 
 createUnitReqDecoder : Json.Decode.Decoder CreateUnitReq

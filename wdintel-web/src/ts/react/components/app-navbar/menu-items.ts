@@ -247,6 +247,12 @@ export const adminDatabaseSubs: Menu[] = [
   },
   {
     type: 'item',
+    link: { type: 'internal', path: '/admin/unit-duplicates' },
+    activeName: 'unit-duplicates',
+    label: 'Дублікати Підрозділів',
+  },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/admin/goi-integrations-neo' },
     activeName: 'goi-integrations-neo',
     label: 'ГОІ',
