@@ -101,8 +101,9 @@ CLIENT_HOST=<echo-ssh-alias> just smoke
 Only after both checks pass, configure one enabled tokenless Echo AI engine
 with Base URL `http://100.105.172.96:8000/v1` and model
 `google/gemma-4-26B-A4B-it`. The engine can then be selected for the AI-agent
-default/reviewer roles and the callsign worker. `echo-cbr` and
-`echo-kharkiv2` are verified clients as of 2026-08-08.
+default/reviewer roles and the callsign worker. `echo-cbr`, `echo-kharkiv2`,
+`echo-siversk`, `echo-zp2`, and `echo-pivnich` are verified clients as of
+2026-08-08.
 
 The checks cover both enabled/active units, the pinned installed version and
 collector checksum, exact listeners, `/health`, `/v1/models`, router metrics,

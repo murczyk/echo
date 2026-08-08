@@ -215,10 +215,81 @@ The sole allowed/default/reviewer engine is the enabled tokenless Gemma router
 engine. The AI-agent feature remains disabled. Its security-review pipeline
 and CBR Mattermost webhook are configured for later activation, while
 Mattermost chat monitoring is disabled. The fixed passwordless template login
-has exactly `ApiAgent`, `Rer`, and `Cyber` roles. The CBR-tuned callsign prompt
-is enabled with MD5
-`a939a0436cd0340feef3651ba3d7d376`, and its worker uses the same Gemma engine.
+has exactly `ApiAgent`, `Rer`, and `Cyber` roles. The
+[CBR-tuned callsign prompt](../2026-08-03-vllm-router/README.md#callsign-prompt-journal)
+is enabled with current MD5 `e28582ad0a1e6e07be76c95dd2f33cbf`, and its
+worker uses the same Gemma engine.
 Final host verification reported five dispatcher identities and
 `running=0/6`; Echo had zero linked users, containers, conversations,
 requests, or reviews. No end-user harness workflow was created for this
 infrastructure-only onboarding.
+
+## Siversk follow-up — 2026-08-08
+
+Current onboarding instructions and cross-tailnet gates are maintained in
+[`echo-ai-agent/DEPLOYMENT.md`](../../echo-ai-agent/DEPLOYMENT.md).
+
+`echo-siversk` was upgraded to `wdintel-rs`
+`0.1.1~rc.202608081052-1`. Its verified tokenless Gemma engine and the exact
+Kharkiv2 callsign prompt are enabled for callsign parsing; live jobs completed
+and the queue drained. The AI-agent feature and Mattermost chat remain
+disabled.
+
+Harness profile import remains pending because the AI-agent VM cannot reach
+`echo-siversk.banjo-hops.ts.net` at `100.113.120.92:443`: Tailscale ping works
+through DERP, but TCP 443 times out. Do not provision or import the Siversk
+dispatcher profile until the reverse cross-tailnet grant is added and the
+HTTPS `/api/ping` probe succeeds from `echo-ai-agent-vm`.
+
+## ZP2 follow-up — 2026-08-08
+
+`echo-zp2` was upgraded to `wdintel-rs`
+`0.1.1~rc.202608081052-1` and added to the shared agent host as the isolated
+`echo-zp2` namespace with forced dispatcher identity `echo-ai-agent-zp2`. Its
+client key fingerprint is
+`SHA256:qCcF6fBZjwXid51vIba3oCO0Rkqr46liVX1pG78rOpM`; the private key remains
+root-only on ZP2. Pinned dispatcher preflight and list calls passed, and the
+enabled HTTPS proxy maps `echo-zp2.alpines-banded.ts.net` to
+`100.114.210.11:443`.
+
+The enabled tokenless Gemma router engine is the sole allowed, default, and
+reviewer engine. Security review and the existing Mattermost webhook are
+configured, while the AI-agent feature and Mattermost chat remain disabled.
+The fixed disabled/passwordless `ai-agent` login has exactly `ApiAgent`,
+`Rer`, and `Cyber` roles. The callsign worker was initially deployed disabled
+with the same Gemma engine and later enabled manually. Its 4,102-character
+prompt has MD5 `e28582ad0a1e6e07be76c95dd2f33cbf`, and its current queue is
+empty.
+
+All callsign queues and harness runtime tables remained empty during
+onboarding. Services were active with zero restarts, `/api/ping` returned
+`pong`, router client and Gemma inference checks passed, and final shared-host
+verification reported six dispatcher identities with `running=0/6`. No
+backfill, test job, production job, linked user, container, conversation,
+request, or review was created.
+
+## Pivnich follow-up — 2026-08-08
+
+`echo-pivnich` was verified on `wdintel-rs`
+`0.1.1~rc.202608081052-1` and added to the shared agent host as the isolated
+`echo-pivnich` namespace with forced dispatcher identity
+`echo-ai-agent-pivnich`. Its client key fingerprint is
+`SHA256:f10GKdmINEr9hxa0wU3CfK1K4LMuQcDTGT460XmxHEg`; the private key remains
+root-only on Pivnich. Pinned dispatcher preflight and list calls passed, and
+the enabled HTTPS proxy maps `echo-pivnich.hyakutake-chromatic.ts.net` to
+`100.72.89.60:443`.
+
+The enabled tokenless Gemma router engine is the sole allowed, default, and
+reviewer engine. Security review and the existing Mattermost webhook are
+configured, while the AI-agent feature and Mattermost chat remain disabled.
+The fixed disabled/passwordless `ai-agent` login has exactly `ApiAgent`,
+`Rer`, and `Cyber` roles. The callsign worker selects the same Gemma engine but
+remains disabled for later manual activation; its 4,102-character prompt has
+MD5 `e28582ad0a1e6e07be76c95dd2f33cbf`.
+
+All callsign queues, Mattermost-notification rows, chats, and harness runtime
+tables remained empty. Services were active with zero restarts, `/api/ping`
+returned `pong`, router client and Gemma inference checks passed, and final
+shared-host verification reported seven dispatcher identities with
+`running=0/6`. No backfill, test job, production job, linked user, container,
+conversation, request, or review was created.
