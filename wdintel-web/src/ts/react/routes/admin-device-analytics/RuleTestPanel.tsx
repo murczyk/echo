@@ -18,9 +18,7 @@ const MAX_TEST_FILES = 100;
 
 type TestFileDraft = {
   key: number;
-  name: string;
   absolutePath: string;
-  extension: string;
 };
 
 function errorMessage(error: unknown): string {
@@ -30,14 +28,12 @@ function errorMessage(error: unknown): string {
 function toDraft(file: RuleTestFile, key: number): TestFileDraft {
   return {
     key,
-    name: file.name,
     absolutePath: file.absolutePath,
-    extension: file.extension ?? '',
   };
 }
 
 function emptyTestFile(key: number): TestFileDraft {
-  return { key, name: '', absolutePath: '', extension: '' };
+  return { key, absolutePath: '' };
 }
 
 export function RuleTestPanel({
@@ -110,9 +106,7 @@ export function RuleTestPanel({
         id: tagId,
         ruleExpression: expression,
         files: files.map((file) => ({
-          name: file.name,
           absolutePath: file.absolutePath,
-          extension: file.extension.trim() === '' ? null : file.extension,
         })),
       });
       setResults(response.results);
@@ -204,44 +198,16 @@ export function RuleTestPanel({
                         </PowerIconButton>
                       </Stack>
                     </Stack>
-                    <Box
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: {
-                          xs: 'minmax(0, 1fr)',
-                          md: 'minmax(180px, 1fr) minmax(260px, 1.5fr) minmax(140px, 0.5fr)',
-                        },
-                        gap: 1,
-                        alignItems: 'start',
-                      }}
-                    >
-                      <TextField
-                        label="Назва файла"
-                        value={file.name}
-                        onChange={(event) => updateFile(file.key, { name: event.target.value })}
-                        fullWidth
-                        size="small"
-                      />
-                      <TextField
-                        label="Абсолютний шлях"
-                        value={file.absolutePath}
-                        onChange={(event) =>
-                          updateFile(file.key, { absolutePath: event.target.value })
-                        }
-                        fullWidth
-                        size="small"
-                      />
-                      <TextField
-                        label="Розширення"
-                        value={file.extension}
-                        onChange={(event) =>
-                          updateFile(file.key, { extension: event.target.value })
-                        }
-                        helperText="Можна залишити порожнім"
-                        fullWidth
-                        size="small"
-                      />
-                    </Box>
+                    <TextField
+                      label="Повний шлях до файла"
+                      value={file.absolutePath}
+                      onChange={(event) =>
+                        updateFile(file.key, { absolutePath: event.target.value })
+                      }
+                      helperText="Наприклад, C:\\Reports\\Звіт.pdf"
+                      fullWidth
+                      size="small"
+                    />
                   </Stack>
                 </Paper>
               );

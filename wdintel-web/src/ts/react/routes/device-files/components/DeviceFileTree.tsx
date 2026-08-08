@@ -83,8 +83,6 @@ function toDirectoryNode(entry: DeviceFileTreeEntry, parent: DirectoryNode): Dir
 }
 
 function DeviceFileRow({ entry, depth }: { entry: DeviceFileTreeEntry; depth: number }) {
-  const metadata = entry.mimeType ?? (entry.extension ? `.${entry.extension}` : null);
-
   return (
     <Box
       component="li"
@@ -108,8 +106,6 @@ function DeviceFileRow({ entry, depth }: { entry: DeviceFileTreeEntry; depth: nu
             <DeviceAnalyticsTagBadges tags={entry.tags} />
           </Stack>
         }
-        secondary={metadata}
-        secondaryTypographyProps={{ noWrap: true, title: metadata ?? undefined }}
         sx={{ minWidth: 0, my: 0 }}
       />
       <Box sx={{ ml: 1, display: 'inline-flex' }}>

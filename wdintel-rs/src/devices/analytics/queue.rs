@@ -5,10 +5,10 @@ use crate::file_registry::entities::{
 use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
 use sea_orm::sea_query::{Expr, LockBehavior, LockType, OnConflict};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend,
-    DatabaseConnection, DatabaseTransaction, DbErr, EntityTrait,
-    FromQueryResult, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
-    Set, Statement, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, DatabaseTransaction, DbErr, EntityTrait, ExprTrait,
+    FromQueryResult, IntoActiveModel, JoinType, QueryFilter, QueryOrder,
+    QuerySelect, QueryTrait, RelationTrait, Set, Statement, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -462,14 +462,19 @@ pub(super) async fn release_claim_with_error(
     error: &str,
 ) -> Result<u64, DbErr> {
     let error = truncate_last_error(error);
-    file_db
-        .execute_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            r#"
-            update file_analysis_state
-            set lease_token = null,
-                lease_expires_at = null,
-                available_at = clock_timestamp() + (
+    file_analysis_state::Entity::update_many()
+        .col_expr(
+            file_analysis_state::Column::LeaseToken,
+            Expr::value(Option::<Uuid>::None),
+        )
+        .col_expr(
+            file_analysis_state::Column::LeaseExpiresAt,
+            Expr::value(Option::<DateTime<FixedOffset>>::None),
+        )
+        .col_expr(
+            file_analysis_state::Column::AvailableAt,
+            Expr::cust(
+                "clock_timestamp() + (
                     least(
                         300,
                         power(
@@ -477,15 +482,94 @@ pub(super) async fn release_claim_with_error(
                             least(greatest(attempt_count - 1, 0), 8)
                         )::integer
                     )::double precision * interval '1 second'
-                ),
-                last_error = $2,
-                updated_at = clock_timestamp()
-            where lease_token = $1
-            "#,
-            [lease_token.into(), error.into()],
-        ))
+                )",
+            ),
+        )
+        .col_expr(file_analysis_state::Column::LastError, Expr::value(error))
+        .col_expr(
+            file_analysis_state::Column::UpdatedAt,
+            Expr::cust("clock_timestamp()"),
+        )
+        .filter(file_analysis_state::Column::LeaseToken.eq(lease_token))
+        .exec(file_db)
         .await
-        .map(|result| result.rows_affected())
+        .map(|result| result.rows_affected)
+}
+
+async fn load_reanalysis_scope(
+    transaction: &DatabaseTransaction,
+    device_id: Option<Uuid>,
+    target_rule_revision: i64,
+) -> Result<ReanalysisScope, DbErr> {
+    let mut upper_file_entry = file_entry::Entity::find()
+        .select_only()
+        .column(file_entry::Column::Id)
+        .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
+        .order_by_desc(file_entry::Column::Id)
+        .limit(1);
+    if let Some(device_id) = device_id {
+        upper_file_entry =
+            upper_file_entry.filter(file_entry::Column::DeviceId.eq(device_id));
+    }
+
+    let active_job = file_analysis_reanalysis_job::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(file_analysis_reanalysis_job::Column::ExpandedAt.is_null())
+        .filter(
+            file_analysis_reanalysis_job::Column::TargetRuleRevision
+                .eq(target_rule_revision),
+        )
+        .filter(
+            Expr::col((
+                file_analysis_reanalysis_job::Entity,
+                file_analysis_reanalysis_job::Column::UpperFileEntryId,
+            ))
+            .gte(Expr::col((file_entry::Entity, file_entry::Column::Id))),
+        )
+        .filter(
+            Condition::any()
+                .add(file_analysis_reanalysis_job::Column::DeviceId.is_null())
+                .add(
+                    Expr::col((
+                        file_analysis_reanalysis_job::Entity,
+                        file_analysis_reanalysis_job::Column::DeviceId,
+                    ))
+                    .equals((file_entry::Entity, file_entry::Column::DeviceId)),
+                ),
+        )
+        .into_query();
+
+    let mut scope = file_entry::Entity::find()
+        .select_only()
+        .expr_as(
+            Expr::from(upper_file_entry.into_query()),
+            "upper_file_entry_id",
+        )
+        .expr_as(
+            Expr::col((file_entry::Entity, file_entry::Column::Id)).count(),
+            "scheduled_file_count",
+        )
+        .join(
+            JoinType::InnerJoin,
+            file_entry::Relation::FileAnalysisState.def(),
+        )
+        .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
+        .filter(file_analysis_state::Column::Pending.eq(false))
+        .filter(Expr::exists(active_job).not());
+    if let Some(device_id) = device_id {
+        scope = scope.filter(file_entry::Column::DeviceId.eq(device_id));
+    }
+
+    scope
+        .into_model::<ReanalysisScope>()
+        .one(transaction)
+        .await?
+        .ok_or_else(|| {
+            DbErr::Custom(
+                "file analysis scope aggregate is missing".to_string(),
+            )
+        })
 }
 
 pub(super) async fn schedule_reanalysis(
@@ -528,80 +612,9 @@ pub(super) async fn schedule_reanalysis(
         return Ok(0);
     }
 
-    let scope_statement = match device_id {
-        Some(device_id) => Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            r#"
-            select
-                (
-                    select id
-                    from file_entry
-                    where kind = 'file'
-                      and device_id = $1
-                    order by id desc
-                    limit 1
-                ) as upper_file_entry_id,
-                count(*)::bigint as scheduled_file_count
-            from file_entry as entry
-            join file_analysis_state as state
-              on state.file_entry_id = entry.id
-            where entry.kind = 'file'
-              and entry.device_id = $1
-              and not state.pending
-              and not exists (
-                  select 1
-                  from file_analysis_reanalysis_job as active_job
-                  where active_job.expanded_at is null
-                    and active_job.target_rule_revision = $2
-                    and active_job.upper_file_entry_id >= entry.id
-                    and (
-                        active_job.device_id is null
-                        or active_job.device_id = entry.device_id
-                    )
-              )
-            "#,
-            [device_id.into(), target_rule_revision.into()],
-        ),
-        None => Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            r#"
-            select
-                (
-                    select id
-                    from file_entry
-                    where kind = 'file'
-                    order by id desc
-                    limit 1
-                ) as upper_file_entry_id,
-                count(*)::bigint as scheduled_file_count
-            from file_entry as entry
-            join file_analysis_state as state
-              on state.file_entry_id = entry.id
-            where entry.kind = 'file'
-              and not state.pending
-              and not exists (
-                  select 1
-                  from file_analysis_reanalysis_job as active_job
-                  where active_job.expanded_at is null
-                    and active_job.target_rule_revision = $1
-                    and active_job.upper_file_entry_id >= entry.id
-                    and (
-                        active_job.device_id is null
-                        or active_job.device_id = entry.device_id
-                    )
-              )
-            "#,
-            [target_rule_revision.into()],
-        ),
-    };
-    let scope = ReanalysisScope::find_by_statement(scope_statement)
-        .one(&transaction)
-        .await?
-        .ok_or_else(|| {
-            DbErr::Custom(
-                "file analysis scope aggregate is missing".to_string(),
-            )
-        })?;
+    let scope =
+        load_reanalysis_scope(&transaction, device_id, target_rule_revision)
+            .await?;
     if scope.scheduled_file_count == 0 {
         transaction.commit().await?;
         return Ok(0);

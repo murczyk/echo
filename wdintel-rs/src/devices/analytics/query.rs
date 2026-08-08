@@ -18,6 +18,13 @@ use uuid::Uuid;
 const LINK_INSERT_CHUNK_SIZE: usize = 1_000;
 const LINK_DELETE_CHUNK_SIZE: usize = 1_000;
 
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct PreparedRuleTestFile {
+    pub name: String,
+    pub absolute_path: String,
+    pub extension: Option<String>,
+}
+
 pub(super) struct FileTagAssignment {
     pub file_entry_id: Uuid,
     pub device_id: Uuid,
@@ -68,7 +75,7 @@ where
 pub(super) async fn replace_tag_test_files(
     transaction: &DatabaseTransaction,
     tag_id: Uuid,
-    files: &[super::types::RuleTestFile],
+    files: &[PreparedRuleTestFile],
 ) -> Result<(), DbErr> {
     analytics_tag_test_file::Entity::delete_many()
         .filter(analytics_tag_test_file::Column::TagId.eq(tag_id))

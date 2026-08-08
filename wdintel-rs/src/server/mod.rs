@@ -395,16 +395,9 @@ fn spawn_device_file_analytics_worker_pool(
     env: Arc<Env>,
     cancellation_token: CancellationToken,
 ) {
-    let file_registry_config = env
-        .config
-        .file_registry
-        .as_ref()
-        .expect("connected file registry has configuration");
-    let worker_count = file_registry_config.device_file_analytics_worker_count;
-    let batch_size = file_registry_config.device_file_analytics_batch_size;
     let rule_cache =
         Arc::new(crate::devices::analytics::worker::RuleCache::default());
-    for worker_index in 0..worker_count {
+    for worker_index in 0..crate::devices::analytics::WORKER_COUNT {
         let env = env.clone();
         let cancellation_token = cancellation_token.clone();
         let rule_cache = rule_cache.clone();
@@ -416,7 +409,7 @@ fn spawn_device_file_analytics_worker_pool(
                     env,
                     cancellation_token,
                     rule_cache,
-                    batch_size,
+                    crate::devices::analytics::BATCH_SIZE,
                 )
                 .await;
             },

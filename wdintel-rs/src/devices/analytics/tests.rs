@@ -714,14 +714,10 @@ async fn rule_test_files_are_persisted_in_order_and_replaced() {
     let tag_id = Uuid::parse_str(&tag.id).unwrap();
     let first_files = vec![
         RuleTestFile {
-            name: "report.pdf".to_string(),
             absolute_path: r"C:\reports\report.pdf".to_string(),
-            extension: Some("pdf".to_string()),
         },
         RuleTestFile {
-            name: "notes.txt".to_string(),
             absolute_path: r"C:\reports\notes.txt".to_string(),
-            extension: None,
         },
     ];
 
@@ -748,6 +744,16 @@ async fn rule_test_files_are_persisted_in_order_and_replaced() {
             .collect::<Vec<_>>(),
         vec![true, false]
     );
+    let stored = query::list_tag_test_files(
+        env.file_registry_db().unwrap().connection(),
+        tag_id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(stored[0].name, "report.pdf");
+    assert_eq!(stored[0].extension.as_deref(), Some("pdf"));
+    assert_eq!(stored[1].name, "notes.txt");
+    assert_eq!(stored[1].extension.as_deref(), Some("txt"));
     assert_eq!(
         bl::list_tag_test_files(
             env.file_registry_db().unwrap().connection(),
@@ -759,9 +765,7 @@ async fn rule_test_files_are_persisted_in_order_and_replaced() {
     );
 
     let replacement = vec![RuleTestFile {
-        name: "replacement.docx".to_string(),
-        absolute_path: "/archive/replacement.docx".to_string(),
-        extension: Some("docx".to_string()),
+        absolute_path: r"C:\archive\replacement.docx".to_string(),
     }];
     bl::test_rule(
         env.file_registry_db().unwrap().connection(),

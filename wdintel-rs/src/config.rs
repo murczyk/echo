@@ -17,10 +17,6 @@ pub const PG_POOL_BGWORKER_MAX_CONNECTIONS: u32 = 20;
 pub const PG_WDFILE_POOL_MAX_CONNECTIONS: u32 = 10;
 pub const PG_WDFILE_MIGRATION_POOL_MAX_CONNECTIONS: u32 = 1;
 pub const MIGRATION_ADVISORY_LOCK_NAME: &str = "echo:migrations";
-pub const DEVICE_FILE_ANALYTICS_WORKER_COUNT_DEFAULT: usize = 4;
-pub const DEVICE_FILE_ANALYTICS_WORKER_COUNT_MAX: usize = 4;
-pub const DEVICE_FILE_ANALYTICS_BATCH_SIZE_DEFAULT: u64 = 1_000;
-pub const DEVICE_FILE_ANALYTICS_BATCH_SIZE_MAX: u64 = 10_000;
 pub const FILE_REGISTRY_UNAVAILABLE_RETRY_AFTER_SECS: u64 = 60;
 pub const PGBACKREST_CONF_PATH: &str = "/etc/pgbackrest/pgbackrest.conf";
 pub const PGBACKREST_CONF_INCLUDE_DIR: &str = "/etc/pgbackrest/conf.d";
@@ -890,56 +886,6 @@ pub struct FileRegistryConfig {
     pub pg_user: Option<String>,
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
-    #[serde(
-        default = "default_device_file_analytics_worker_count",
-        deserialize_with = "deserialize_device_file_analytics_worker_count"
-    )]
-    pub device_file_analytics_worker_count: usize,
-    #[serde(
-        default = "default_device_file_analytics_batch_size",
-        deserialize_with = "deserialize_device_file_analytics_batch_size"
-    )]
-    pub device_file_analytics_batch_size: u64,
-}
-
-const fn default_device_file_analytics_worker_count() -> usize {
-    DEVICE_FILE_ANALYTICS_WORKER_COUNT_DEFAULT
-}
-
-fn deserialize_device_file_analytics_worker_count<'de, D>(
-    deserializer: D,
-) -> std::result::Result<usize, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = usize::deserialize(deserializer)?;
-    if !(1..=DEVICE_FILE_ANALYTICS_WORKER_COUNT_MAX).contains(&value) {
-        return Err(serde::de::Error::custom(format!(
-            "device_file_analytics_worker_count must be between 1 and {}",
-            DEVICE_FILE_ANALYTICS_WORKER_COUNT_MAX
-        )));
-    }
-    Ok(value)
-}
-
-const fn default_device_file_analytics_batch_size() -> u64 {
-    DEVICE_FILE_ANALYTICS_BATCH_SIZE_DEFAULT
-}
-
-fn deserialize_device_file_analytics_batch_size<'de, D>(
-    deserializer: D,
-) -> std::result::Result<u64, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = u64::deserialize(deserializer)?;
-    if !(1..=DEVICE_FILE_ANALYTICS_BATCH_SIZE_MAX).contains(&value) {
-        return Err(serde::de::Error::custom(format!(
-            "device_file_analytics_batch_size must be between 1 and {}",
-            DEVICE_FILE_ANALYTICS_BATCH_SIZE_MAX
-        )));
-    }
-    Ok(value)
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -1408,43 +1354,6 @@ mod config_tests {
     #[derive(Debug, Deserialize)]
     struct TestPostgresRuntimeSection {
         postgres_runtime: Option<PostgresRuntimeConfig>,
-    }
-
-    #[test]
-    fn file_registry_analytics_workers_use_bounded_configuration() {
-        let defaults: FileRegistryConfig = toml::from_str("").unwrap();
-        assert_eq!(
-            defaults.device_file_analytics_worker_count,
-            DEVICE_FILE_ANALYTICS_WORKER_COUNT_DEFAULT
-        );
-        assert_eq!(
-            defaults.device_file_analytics_batch_size,
-            DEVICE_FILE_ANALYTICS_BATCH_SIZE_DEFAULT
-        );
-
-        let configured: FileRegistryConfig = toml::from_str(
-            r#"
-device_file_analytics_worker_count = 2
-device_file_analytics_batch_size = 5000
-"#,
-        )
-        .unwrap();
-        assert_eq!(configured.device_file_analytics_worker_count, 2);
-        assert_eq!(configured.device_file_analytics_batch_size, 5_000);
-
-        for invalid in [
-            "device_file_analytics_worker_count = 0",
-            "device_file_analytics_worker_count = 5",
-            "device_file_analytics_batch_size = 0",
-            "device_file_analytics_batch_size = 10001",
-        ] {
-            let error =
-                toml::from_str::<FileRegistryConfig>(invalid).unwrap_err();
-            assert!(
-                error.to_string().contains("must be between 1 and"),
-                "{error}"
-            );
-        }
     }
 
     #[test]

@@ -178,21 +178,17 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanelText.indexOf('Основне')).toBeLessThan(leftPanelText.indexOf('Кастомні поля'));
     expect(leftPanelText.indexOf('Кастомні поля')).toBeLessThan(leftPanelText.indexOf('Додатково'));
     const tabs = Array.from(container?.querySelectorAll('[role="tab"]') ?? []);
-    expect(tabs).toHaveLength(4);
-    expect(tabs.map((tab) => tab.textContent)).toEqual([
-      'Аналітичні відомості',
-      'Аналітика файлів',
-      'Файли',
-      'Журнал',
-    ]);
-    expect(container?.querySelector('[data-testid="device-analytics-panel"]')).toBeNull();
-    const fileAnalyticsTab = tabs.find((tab) => tab.textContent === 'Аналітика файлів');
-    act(() => fileAnalyticsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(tabs).toHaveLength(3);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Аналітичні відомості', 'Файли', 'Журнал']);
     expect(
       container
         ?.querySelector('[data-testid="device-analytics-panel"]')
         ?.getAttribute('data-is-admin'),
     ).toBe('false');
+    expect(pageMock.useDeviceAnalyticsTags).toHaveBeenLastCalledWith({
+      deviceId: DEVICE_ID,
+      enabled: true,
+    });
     expect(container?.querySelector('[data-testid="device-files-panel"]')).toBeNull();
     expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).toBeNull();
     expect(container?.querySelector('button[aria-label="Згорнути ліву панель"]')).not.toBeNull();
@@ -230,10 +226,6 @@ describe('DeviceDetailsPage layout', () => {
 
   it('exposes the device reanalysis action only to Admin', () => {
     renderPage(['Admin']);
-    const fileAnalyticsTab = Array.from(container?.querySelectorAll('[role="tab"]') ?? []).find(
-      (tab) => tab.textContent === 'Аналітика файлів',
-    );
-    act(() => fileAnalyticsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
 
     expect(
       container

@@ -45,9 +45,7 @@ beforeEach(async () => {
   mocks.listFiles.mockResolvedValue({
     files: [
       {
-        name: 'Звіт.pdf',
         absolutePath: 'C:\\Reports\\Звіт.pdf',
-        extension: 'pdf',
       },
     ],
   });
@@ -72,13 +70,9 @@ describe('RuleTestPanel', () => {
       { signal: expect.any(AbortSignal) },
     );
     const inputs = Array.from(container.querySelectorAll<HTMLInputElement>('input'));
-    expect(inputs.map((input) => input.value)).toEqual([
-      'Звіт.pdf',
-      'C:\\Reports\\Звіт.pdf',
-      'pdf',
-    ]);
+    expect(inputs.map((input) => input.value)).toEqual(['C:\\Reports\\Звіт.pdf']);
 
-    act(() => setInputValue(inputs[2], '  '));
+    act(() => setInputValue(inputs[0], 'C:\\Reports\\Новий звіт.docx'));
 
     const testButton = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent?.trim() === 'Зберегти й перевірити',
@@ -92,9 +86,7 @@ describe('RuleTestPanel', () => {
       ruleExpression: expression,
       files: [
         {
-          name: 'Звіт.pdf',
-          absolutePath: 'C:\\Reports\\Звіт.pdf',
-          extension: null,
+          absolutePath: 'C:\\Reports\\Новий звіт.docx',
         },
       ],
     });

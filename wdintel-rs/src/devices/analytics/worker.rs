@@ -148,13 +148,7 @@ pub(crate) async fn run_nofail(
 
 #[cfg(test)]
 pub(in crate::devices) async fn run_tick(env: &Env) -> anyhow::Result<bool> {
-    let batch_size = env
-        .config
-        .file_registry
-        .as_ref()
-        .context("file registry configuration is unavailable")?
-        .device_file_analytics_batch_size;
-    run_tick_with(env, &RuleCache::default(), batch_size).await
+    run_tick_with(env, &RuleCache::default(), super::BATCH_SIZE).await
 }
 
 pub(super) async fn run_tick_with(

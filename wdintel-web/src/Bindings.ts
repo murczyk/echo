@@ -1940,9 +1940,7 @@ export type SaveAnalyticsTagRuleReq = {
 };
 
 export type RuleTestFile = {
-  name: string;
   absolutePath: string;
-  extension: string | null;
 };
 
 export type ListAnalyticsTagTestFilesRsp = {

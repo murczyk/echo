@@ -246,9 +246,7 @@ pub struct SaveAnalyticsTagRuleReq {
 )]
 #[serde(deny_unknown_fields)]
 pub struct RuleTestFile {
-    pub name: String,
     pub absolute_path: String,
-    pub extension: Option<String>,
 }
 
 #[derive(

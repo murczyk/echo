@@ -10,6 +10,9 @@ use super::types::{
 use crate::devices::devices::query::{
     self as device_query, DeviceReadScope, FileRegistryDeviceAccess,
 };
+use crate::devices::files::{
+    normalize_file_metadata, parse_source_path, FilesystemError,
+};
 use crate::entities::login;
 use crate::error::AppError;
 use crate::file_registry::{entities::analytics_tag, FileRegistryDb};
@@ -52,9 +55,7 @@ pub(super) async fn list_tag_test_files(
         .c(h!())?
         .into_iter()
         .map(|file| RuleTestFile {
-            name: file.name,
             absolute_path: file.absolute_path,
-            extension: file.extension,
         })
         .collect())
 }
@@ -158,6 +159,7 @@ pub(super) async fn test_rule(
         .c(h!())?
         .ok_or(AppError::NotFound)?;
     let rule_expression = validate_rule_expression(tag_id, rule_expression)?;
+    let files = prepare_rule_test_files(files)?;
     let results = match rule_expression {
         None => files
             .iter()
@@ -661,6 +663,56 @@ fn is_postgres_unique_violation(error: &DbErr) -> bool {
         source = current.source();
     }
     false
+}
+
+fn prepare_rule_test_files(
+    files: Vec<RuleTestFile>,
+) -> Result<Vec<query::PreparedRuleTestFile>, AppError> {
+    files
+        .into_iter()
+        .enumerate()
+        .map(|(index, file)| prepare_rule_test_file(index, file))
+        .collect()
+}
+
+fn prepare_rule_test_file(
+    index: usize,
+    file: RuleTestFile,
+) -> Result<query::PreparedRuleTestFile, AppError> {
+    let field_prefix = format!("files[{index}]");
+    let source_path = parse_source_path(
+        file.absolute_path,
+        &format!("{field_prefix}.absolute_path"),
+    )
+    .map_err(map_rule_test_file_error)?;
+    let name = source_path.file_name().to_string();
+    let metadata =
+        normalize_file_metadata(&name, None, None, None, None, &field_prefix)
+            .map_err(map_rule_test_file_error)?;
+    Ok(query::PreparedRuleTestFile {
+        name,
+        absolute_path: source_path.absolute_path,
+        extension: metadata.extension,
+    })
+}
+
+fn map_rule_test_file_error(error: FilesystemError) -> AppError {
+    match error {
+        FilesystemError::Validation(errors) => {
+            let error = errors
+                .into_iter()
+                .next()
+                .expect("filesystem validation has a field error");
+            validation_app_error(validation_error(
+                &error.path,
+                "invalid_file_path",
+                &error.message,
+            ))
+        }
+        error => AppError::AnyhowError {
+            source: anyhow::Error::new(error),
+        },
+    }
 }
 
 fn validation_app_error(error: RuleValidationError) -> AppError {

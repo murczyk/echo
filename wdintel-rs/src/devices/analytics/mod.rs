@@ -7,6 +7,9 @@ mod tests;
 pub mod types;
 pub(crate) mod worker;
 
+pub(crate) const WORKER_COUNT: usize = 4;
+pub(crate) const BATCH_SIZE: u64 = 1_000;
+
 use self::types::{
     AdminAnalyticsTag, AnalyticsTagIdReq, CreateAnalyticsTagReq,
     DeviceAnalyticsFilesReq, DeviceAnalyticsFilesRsp, DeviceAnalyticsReq,

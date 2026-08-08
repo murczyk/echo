@@ -12,9 +12,11 @@ mod validation;
 
 pub(in crate::devices::files) use error::{
     classify_transaction_error, map_database_error, map_transaction_body_error,
-    FilesystemError, FilesystemFieldError, TransactionErrorClass,
+    TransactionErrorClass,
 };
+pub(in crate::devices) use error::{FilesystemError, FilesystemFieldError};
 pub(in crate::devices) use metadata::normalize_file_metadata;
+pub(in crate::devices) use path::parse as parse_source_path;
 pub(in crate::devices) use types::{
     Breadcrumb, BrowseFilesCommand, BrowseFilesResult, DirectoryEntry,
     DirectoryScope, DomainFileEntryKind, EntryQueryScope, EntrySortKey,

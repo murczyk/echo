@@ -5045,18 +5045,14 @@ saveAnalyticsTagRuleReqEncoder struct =
 
 
 type alias RuleTestFile =
-    { name : String
-    , absolutePath : String
-    , extension : Maybe (String)
+    { absolutePath : String
     }
 
 
 ruleTestFileEncoder : RuleTestFile -> Json.Encode.Value
 ruleTestFileEncoder struct =
     Json.Encode.object
-        [ ( "name", (Json.Encode.string) struct.name )
-        , ( "absolute_path", (Json.Encode.string) struct.absolutePath )
-        , ( "extension", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.extension )
+        [ ( "absolute_path", (Json.Encode.string) struct.absolutePath )
         ]
 
 
@@ -15187,9 +15183,7 @@ saveAnalyticsTagRuleReqDecoder =
 ruleTestFileDecoder : Json.Decode.Decoder RuleTestFile
 ruleTestFileDecoder =
     Json.Decode.succeed RuleTestFile
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extension" (Json.Decode.nullable (Json.Decode.string))))
 
 
 listAnalyticsTagTestFilesRspDecoder : Json.Decode.Decoder ListAnalyticsTagTestFilesRsp

@@ -49,6 +49,7 @@ fn configure_routes(cfg: &mut ServiceConfig) {
         .service(super::analytics::archive_tag)
         .service(super::analytics::restore_tag)
         .service(super::analytics::save_tag_rule)
+        .service(super::analytics::list_tag_test_files)
         .service(super::analytics::test_tag_rule)
         .service(super::analytics::reanalyze_all)
         .service(super::analytics::reanalyze_device)
@@ -1062,15 +1063,25 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
                 "values": ["pdf"]
             },
             "files": [{
-                "name": "draft.pdf",
-                "absolute_path": "C:\\draft.pdf",
-                "extension": "pdf"
+                "absolute_path": "C:\\draft.pdf"
             }]
         })
     );
     assert_eq!(response.status(), StatusCode::OK);
     let tested: Value = test::read_body_json(response).await;
     assert_eq!(tested["results"], json!([{"index": 0, "matched": true}]));
+
+    let response = post_as!(
+        admin_cookie,
+        "/api/admin/device-analytics/tags/rule/test-files/list",
+        json!({"id": active_tag_id})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let test_files: Value = test::read_body_json(response).await;
+    assert_eq!(
+        test_files["files"],
+        json!([{"absolute_path": "C:\\draft.pdf"}])
+    );
 
     let response = post_as!(
         admin_cookie,

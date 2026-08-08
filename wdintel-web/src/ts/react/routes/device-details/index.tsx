@@ -98,10 +98,7 @@ export function DeviceDetailsPage({
   const canSyncFiles = page.permissions.canSyncFiles && device !== null && !device.archived;
   const tagsState = useDeviceAnalyticsTags({
     deviceId,
-    enabled:
-      (activeTab === 'file-analytics' || activeTab === 'files' || activeTab === 'journal') &&
-      page.permissions.canRead &&
-      device !== null,
+    enabled: page.permissions.canRead && device !== null,
   });
   const files = useDeviceFiles({
     deviceId,

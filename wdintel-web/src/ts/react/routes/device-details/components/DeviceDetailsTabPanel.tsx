@@ -8,7 +8,7 @@ import type { DeviceFileJournalState } from '../../device-files/use-device-file-
 import type { DeviceFilesState } from '../../device-files/use-device-files';
 import { DeviceAnalyticsPanel } from './DeviceAnalyticsPanel';
 
-export type DeviceDetailsTab = 'analytical' | 'file-analytics' | 'files' | 'journal';
+export type DeviceDetailsTab = 'analytical' | 'files' | 'journal';
 
 export function DeviceDetailsTabPanel({
   activeTab,
@@ -64,12 +64,6 @@ export function DeviceDetailsTabPanel({
             label="Аналітичні відомості"
           />
           <Tab
-            id="device-details-file-analytics-tab"
-            aria-controls="device-details-file-analytics-panel"
-            value="file-analytics"
-            label="Аналітика файлів"
-          />
-          <Tab
             id="device-details-files-tab"
             aria-controls="device-details-files-panel"
             value="files"
@@ -90,14 +84,6 @@ export function DeviceDetailsTabPanel({
             id="device-details-analytical-panel"
             role="tabpanel"
             aria-labelledby="device-details-analytical-tab"
-            sx={{ height: '100%', minHeight: 0 }}
-          />
-        ) : null}
-        {activeTab === 'file-analytics' ? (
-          <Box
-            id="device-details-file-analytics-panel"
-            role="tabpanel"
-            aria-labelledby="device-details-file-analytics-tab"
             sx={{ height: '100%', minHeight: 0 }}
           >
             <DeviceAnalyticsPanel

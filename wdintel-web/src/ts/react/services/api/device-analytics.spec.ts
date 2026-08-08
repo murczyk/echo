@@ -115,9 +115,7 @@ describe('device analytics API service', () => {
       jsonResponse({
         files: [
           {
-            name: 'report.pdf',
             absolute_path: 'C:\\reports\\report.pdf',
-            extension: 'pdf',
           },
         ],
       }),
@@ -131,9 +129,7 @@ describe('device analytics API service', () => {
     expect(requestBody()).toEqual({ id: TAG_ID });
     expect(rsp.files).toEqual([
       {
-        name: 'report.pdf',
         absolutePath: 'C:\\reports\\report.pdf',
-        extension: 'pdf',
       },
     ]);
   });
@@ -144,13 +140,13 @@ describe('device analytics API service', () => {
     const rsp = await testAnalyticsTagRule({
       id: TAG_ID,
       ruleExpression: expression,
-      files: [{ name: 'report.pdf', absolutePath: 'C:\\reports\\report.pdf', extension: 'pdf' }],
+      files: [{ absolutePath: 'C:\\reports\\report.pdf' }],
     });
 
     expect(requestBody()).toEqual({
       id: TAG_ID,
       rule_expression: wireExpression,
-      files: [{ name: 'report.pdf', absolute_path: 'C:\\reports\\report.pdf', extension: 'pdf' }],
+      files: [{ absolute_path: 'C:\\reports\\report.pdf' }],
     });
     expect(rsp.results).toEqual([{ index: 0, matched: true }]);
   });
