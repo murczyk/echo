@@ -17,7 +17,7 @@ use actix_web::web::Json;
 use sea_orm::*;
 use sea_query::types::IntoColumnRef;
 use sea_query::{Expr, OnConflict, SimpleExpr};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 pub mod attachment;
 pub mod orbit;
@@ -519,6 +519,7 @@ pub async fn create_unit(
     has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
 
     let mut req = req.into_inner();
+    let duplicate_unit_ids = req.duplicate_unit_ids.clone();
     let can_view_orbit =
         clear_create_unit_orbit_note_if_hidden(&env.dbx, &login, &mut req)
             .await?;
@@ -539,11 +540,13 @@ pub async fn create_unit(
             .await
             .c(h!())?;
     }
-    let unit = sigint_unit::Entity::find_by_id(unit.id)
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
+    let unit = merge_requested_duplicate_units(
+        login,
+        &env.dbx,
+        unit.id,
+        duplicate_unit_ids,
+    )
+    .await?;
 
     fanout_unit_changed(&env).await?;
 
@@ -650,6 +653,7 @@ pub async fn create_unit_with_auto_network_for_login(
         .c(h!())?;
     clear_create_unit_orbit_note_if_hidden(&env.dbx, login, &mut req.unit)
         .await?;
+    let duplicate_unit_ids = req.unit.duplicate_unit_ids.clone();
 
     let txn = env.dbx.begin().await.context(h!())?;
     let unit = insert_unit_with_changelog(&txn, login, &req.unit)
@@ -693,7 +697,36 @@ pub async fn create_unit_with_auto_network_for_login(
             .c(h!())?;
     }
 
+    let unit = merge_requested_duplicate_units(
+        *login,
+        &env.dbx,
+        unit.id,
+        duplicate_unit_ids,
+    )
+    .await?;
+
     render_created_unit_with_optional_network(login, env, unit, network).await
+}
+
+async fn merge_requested_duplicate_units(
+    login: uuid::Uuid,
+    dbx: &DatabaseConnection,
+    unit_id: i64,
+    duplicate_unit_ids: Vec<i64>,
+) -> Result<sigint_unit::Model, AppError> {
+    let duplicate_unit_ids =
+        duplicate_unit_ids.into_iter().collect::<BTreeSet<_>>();
+    if duplicate_unit_ids.contains(&unit_id) {
+        return Err(AppError::BL {
+            msg: "new unit cannot be merged into itself".to_string(),
+        });
+    }
+    for duplicate_unit_id in duplicate_unit_ids {
+        merge_units(login, dbx, duplicate_unit_id, unit_id)
+            .await
+            .c(h!())?;
+    }
+    find_unit(dbx, unit_id).await
 }
 
 async fn clear_create_unit_orbit_note_if_hidden(
@@ -1869,6 +1902,7 @@ mod tests {
             is_deduplicate_candidate: None,
             comment: "main section".to_string(),
             orbit_note: None,
+            duplicate_unit_ids: Vec::new(),
         }
     }
 
@@ -2389,6 +2423,47 @@ mod tests {
         assert_eq!(rsp.network_id, None);
         assert_eq!(unit_count(&env.dbx).await, 1);
         assert_eq!(network_count(&env.dbx).await, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_merges_requested_duplicates_after_insert() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut req = auto_req(true, vec![], vec![]);
+        req.unit.duplicate_unit_ids = vec![duplicate.id, duplicate.id];
+
+        let rsp = create_unit_with_auto_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap();
+
+        assert_ne!(rsp.unit.id, duplicate.id);
+        assert!(
+            sigint_unit::Entity::find_by_id(duplicate.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
+        assert!(
+            !sigint_unit::Entity::find_by_id(rsp.unit.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
     }
 
     #[tokio::test]

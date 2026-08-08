@@ -215,6 +215,8 @@ pub struct CreateUnitReq {
     pub is_deduplicate_candidate: Option<bool>,
     pub comment: String,
     pub orbit_note: Option<String>,
+    #[serde(default)]
+    pub duplicate_unit_ids: Vec<i64>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -301,6 +301,19 @@ pub async fn link_new_sigint_unit_with_lock(
     Ok(())
 }
 
+pub(crate) async fn matching_orbit_unit_ids_for_sigint_unit(
+    db: &sea_orm::DatabaseConnection,
+    sigint_unit: &sigint_unit::Model,
+) -> anyhow::Result<BTreeSet<Uuid>> {
+    if persistence::load_latest_sync(db).await.c(h!())?.is_none() {
+        return Ok(BTreeSet::new());
+    }
+    let units = persistence::load_latest_synced_source_units(db)
+        .await
+        .c("failed to load the latest synchronized ORBIT units")?;
+    Ok(matching::matching_orbit_unit_ids(&units, sigint_unit))
+}
+
 async fn active_orbit_unit_exists<C>(
     db: &C,
     orbit_unit_id: Uuid,
