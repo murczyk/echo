@@ -9,8 +9,10 @@ import type {
   VideoPlayerState,
 } from '../message-card-video-utils';
 import { downloadOriginalVideo, formatVideoTime } from '../message-card-video-utils';
-import { formatSizeBytes } from '../message-card-image-utils';
-import { MessageCardAttachmentPreviewActions } from '../attachment-preview/MessageCardAttachmentPreviewActions';
+import { clamp, formatSizeBytes } from '../message-card-image-utils';
+import { getNextWheelZoom, isInteractivePreviewTarget } from '../message-card-image-preview-utils';
+import { AttachmentPreviewZoomBadge } from '../attachment-preview/AttachmentPreviewZoomBadge';
+import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
 import { AttachmentPreviewPlaybackControls } from '../attachment-preview/MessageCardAttachmentPreviewControls';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
@@ -90,6 +92,8 @@ async function discardResponseBody(response: Response) {
 function VideoPreview({
   src,
   error,
+  zoom = 100,
+  pan = { x: 0, y: 0 },
   onPlay,
   onPause,
   onEnded,
@@ -102,6 +106,8 @@ function VideoPreview({
 }: {
   src: string | null;
   error?: VideoPreviewError;
+  zoom?: number;
+  pan?: { x: number; y: number };
   onPlay: () => void;
   onPause: () => void;
   onEnded: () => void;
@@ -164,6 +170,10 @@ function VideoPreview({
             maxHeight: '100%',
             display: error ? 'none' : 'block',
             cursor: 'pointer',
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom / 100})`,
+            transformOrigin: 'center center',
+            transition: zoom === 100 ? 'transform 120ms ease-out' : 'none',
+            willChange: 'transform',
           }}
         />
       ) : null}
@@ -568,81 +578,271 @@ export function VideoAttachmentPreviewRenderer({
     changeFullscreen(false);
     onClose();
   }, [changeFullscreen, onClose]);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const hideControlsTimerRef = useRef<number | null>(null);
+
+  const resetHideControlsTimer = useCallback(() => {
+    setControlsVisible(true);
+
+    if (hideControlsTimerRef.current !== null) {
+      window.clearTimeout(hideControlsTimerRef.current);
+      hideControlsTimerRef.current = null;
+    }
+
+    if (playerState.isPlaying) {
+      hideControlsTimerRef.current = window.setTimeout(() => {
+        setControlsVisible(false);
+        hideControlsTimerRef.current = null;
+      }, 2000);
+    }
+  }, [playerState.isPlaying]);
+
+  useEffect(() => {
+    resetHideControlsTimer();
+    return () => {
+      if (hideControlsTimerRef.current !== null) {
+        window.clearTimeout(hideControlsTimerRef.current);
+        hideControlsTimerRef.current = null;
+      }
+    };
+  }, [playerState.isPlaying, resetHideControlsTimer]);
+
+  const [zoom, setZoom] = useState(100);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (stageEl === null) return;
+
+    let touchStartDist = 0;
+    let touchStartZoom = 100;
+
+    const handleStageWheelNative = (event: WheelEvent) => {
+      if (isInteractivePreviewTarget(event.target)) return;
+
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        setZoom((currentZoom) => {
+          const nextZoom = getNextWheelZoom(
+            currentZoom,
+            event.deltaY,
+            event.deltaMode,
+            stageEl.clientHeight,
+          );
+          if (nextZoom === 100) {
+            setPan({ x: 0, y: 0 });
+          }
+          return nextZoom;
+        });
+      }
+    };
+
+    const handleTouchStart = (event: TouchEvent) => {
+      if (event.touches.length === 2) {
+        const t1 = event.touches[0];
+        const t2 = event.touches[1];
+        if (!t1 || !t2) return;
+        touchStartDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        setZoom((currentZoom) => {
+          touchStartZoom = currentZoom;
+          return currentZoom;
+        });
+      }
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      if (event.touches.length === 2 && touchStartDist > 0) {
+        event.preventDefault();
+        const t1 = event.touches[0];
+        const t2 = event.touches[1];
+        if (!t1 || !t2) return;
+        const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        const scale = dist / touchStartDist;
+        const clamped = clamp(touchStartZoom * scale, 100, 400);
+        if (clamped === 100) {
+          setPan({ x: 0, y: 0 });
+        }
+        setZoom(clamped);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      touchStartDist = 0;
+    };
+
+    let gestureStartZoom = 100;
+
+    const handleGestureStart = (event: Event) => {
+      event.preventDefault();
+      setZoom((currentZoom) => {
+        gestureStartZoom = currentZoom;
+        return currentZoom;
+      });
+    };
+
+    const handleGestureChange = (event: Event) => {
+      event.preventDefault();
+      const gestureEvent = event as unknown as { scale: number };
+      if (typeof gestureEvent.scale === 'number') {
+        const clamped = clamp(gestureStartZoom * gestureEvent.scale, 100, 400);
+        if (clamped === 100) {
+          setPan({ x: 0, y: 0 });
+        }
+        setZoom(clamped);
+      }
+    };
+
+    const handleGestureEnd = (event: Event) => {
+      event.preventDefault();
+    };
+
+    stageEl.addEventListener('wheel', handleStageWheelNative, { passive: false });
+    stageEl.addEventListener('gesturestart', handleGestureStart, { passive: false });
+    stageEl.addEventListener('gesturechange', handleGestureChange, { passive: false });
+    stageEl.addEventListener('gestureend', handleGestureEnd, { passive: false });
+    stageEl.addEventListener('touchstart', handleTouchStart, { passive: true });
+    stageEl.addEventListener('touchmove', handleTouchMove, { passive: false });
+    stageEl.addEventListener('touchend', handleTouchEnd, { passive: true });
+    stageEl.addEventListener('touchcancel', handleTouchEnd, { passive: true });
+
+    return () => {
+      stageEl.removeEventListener('wheel', handleStageWheelNative);
+      stageEl.removeEventListener('gesturestart', handleGestureStart);
+      stageEl.removeEventListener('gesturechange', handleGestureChange);
+      stageEl.removeEventListener('gestureend', handleGestureEnd);
+      stageEl.removeEventListener('touchstart', handleTouchStart);
+      stageEl.removeEventListener('touchmove', handleTouchMove);
+      stageEl.removeEventListener('touchend', handleTouchEnd);
+      stageEl.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, [stageEl]);
+
+  const handleStageDoubleClick = () => {
+    setZoom((currentZoom) => {
+      if (currentZoom > 100) {
+        setPan({ x: 0, y: 0 });
+        return 100;
+      }
+      return 150;
+    });
+  };
 
   const stage = (
-    <MessageCardAttachmentPreviewStage kind="video" isFullscreen={dialogIsFullscreen}>
-      <VideoPreview
-        videoRef={videoRef}
-        src={src}
-        error={playerState.error}
-        onPlay={() => setPlayerState((state) => ({ ...state, isPlaying: true }))}
-        onPause={() => setPlayerState((state) => ({ ...state, isPlaying: false }))}
-        onEnded={() => setPlayerState((state) => ({ ...state, isPlaying: false }))}
-        onLoadedMetadata={(event) => {
-          const element = event.currentTarget;
-          setPlayerState((state) => ({
-            ...state,
-            duration: Number.isFinite(element.duration) ? element.duration : 0,
-          }));
+    <MessageCardAttachmentPreviewStage
+      ref={setStageEl}
+      kind="video"
+      isFullscreen={dialogIsFullscreen}
+      onPointerDown={resetHideControlsTimer}
+      onDoubleClick={handleStageDoubleClick}
+    >
+      <Box
+        onMouseMove={resetHideControlsTimer}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '100%',
+          height: '100%',
+          position: 'relative',
         }}
-        onTimeUpdate={(event) => {
-          const element = event.currentTarget;
-          setPlayerState((state) => ({ ...state, currentTime: element.currentTime }));
-        }}
-        onVolumeChange={(event) => {
-          const element = event.currentTarget;
-          setPlayerState((state) => ({
-            ...state,
-            volume: element.volume,
-            muted: element.muted,
-          }));
-        }}
-        onRateChange={(event) => {
-          const element = event.currentTarget;
-          setPlayerState((state) => ({
-            ...state,
-            playbackRate: element.playbackRate as 0.5 | 1 | 1.5 | 2,
-          }));
-        }}
-        onError={(event) => {
-          setPlayerState((state) => ({
-            ...state,
-            error: {
-              code: 'VIDEO_LOAD_ERROR',
-              message: 'Не вдалося завантажити або відтворити це відео.',
-              cause: event,
-            },
-          }));
+      >
+        <VideoPreview
+          videoRef={videoRef}
+          src={src}
+          error={playerState.error}
+          zoom={zoom}
+          pan={pan}
+          onPlay={() => setPlayerState((state) => ({ ...state, isPlaying: true }))}
+          onPause={() => setPlayerState((state) => ({ ...state, isPlaying: false }))}
+          onEnded={() => setPlayerState((state) => ({ ...state, isPlaying: false }))}
+          onLoadedMetadata={(event) => {
+            const element = event.currentTarget;
+            setPlayerState((state) => ({
+              ...state,
+              duration: Number.isFinite(element.duration) ? element.duration : 0,
+            }));
+          }}
+          onTimeUpdate={(event) => {
+            const element = event.currentTarget;
+            setPlayerState((state) => ({ ...state, currentTime: element.currentTime }));
+          }}
+          onVolumeChange={(event) => {
+            const element = event.currentTarget;
+            setPlayerState((state) => ({
+              ...state,
+              volume: element.volume,
+              muted: element.muted,
+            }));
+          }}
+          onRateChange={(event) => {
+            const element = event.currentTarget;
+            setPlayerState((state) => ({
+              ...state,
+              playbackRate: element.playbackRate as 0.5 | 1 | 1.5 | 2,
+            }));
+          }}
+          onError={(event) => {
+            setPlayerState((state) => ({
+              ...state,
+              error: {
+                code: 'VIDEO_LOAD_ERROR',
+                message: 'Не вдалося завантажити або відтворити це відео.',
+                cause: event,
+              },
+            }));
+          }}
+        />
+      </Box>
+      <AttachmentPreviewZoomBadge
+        zoom={zoom}
+        onResetZoom={() => {
+          setZoom(100);
+          setPan({ x: 0, y: 0 });
         }}
       />
     </MessageCardAttachmentPreviewStage>
   );
   const controls = (
-    <AttachmentPreviewPlaybackControls
-      playerState={{ ...playerState, isFullscreen: dialogIsFullscreen }}
-      canFullscreen={canFullscreen}
-      videoRef={videoRef}
-      onPlayPause={handlePlayPause}
-      onStop={handleStop}
-      onVolumeChange={handleVolumeChange}
-      onMuteToggle={handleMuteToggle}
-      onRateChange={handleRateChange}
-      onSeek={handleSeek}
-      onToggleFullscreen={handleToggleFullscreen}
-    />
+    <Box
+      onMouseMove={resetHideControlsTimer}
+      sx={{
+        opacity: controlsVisible || !playerState.isPlaying ? 1 : 0,
+        transition: 'opacity 300ms ease-out',
+        pointerEvents: controlsVisible || !playerState.isPlaying ? 'auto' : 'none',
+        width: '100%',
+      }}
+    >
+      <AttachmentPreviewPlaybackControls
+        playerState={{ ...playerState, isFullscreen: dialogIsFullscreen }}
+        canFullscreen={canFullscreen}
+        videoRef={videoRef}
+        onPlayPause={handlePlayPause}
+        onStop={handleStop}
+        onVolumeChange={handleVolumeChange}
+        onMuteToggle={handleMuteToggle}
+        onRateChange={handleRateChange}
+        onSeek={handleSeek}
+        onToggleFullscreen={handleToggleFullscreen}
+      />
+    </Box>
   );
-  const actions = !dialogIsFullscreen ? (
-    <MessageCardAttachmentPreviewActions
+
+  const header = (
+    <MessageCardAttachmentPreviewHeader
+      fileName={video.name}
       openHref={openHref}
       download={{ onDownload: () => downloadOriginalVideo(video) }}
       navigation={navigation}
       onClose={handleClose}
       onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
+      isFullscreen={dialogIsFullscreen}
+      canFullscreen={canFullscreen}
+      onToggleFullscreen={handleToggleFullscreen}
       downloadKey={`media:${String(video.id ?? '')}`}
       isDownloadStarting={isDownloadStarting}
       onDownloadStart={onDownloadStart}
     />
-  ) : null;
+  );
   const infoPopover = (
     <MessageCardAttachmentPreviewInfoPopover
       open={infoOpen}
@@ -671,7 +871,7 @@ export function VideoAttachmentPreviewRenderer({
       config={previewConfig}
       stage={stage}
       controls={controls}
-      actions={actions}
+      header={header}
       infoPopover={infoPopover}
       onToggleFullscreen={handleToggleFullscreen}
     />

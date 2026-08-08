@@ -1,6 +1,11 @@
 import { Box } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { forwardRef, type PointerEventHandler, type ReactNode } from 'react';
+import {
+  forwardRef,
+  type MouseEventHandler,
+  type PointerEventHandler,
+  type ReactNode,
+} from 'react';
 
 import { getAttachmentPreviewStageSx } from './message-card-attachment-preview';
 
@@ -14,9 +19,19 @@ export const MessageCardAttachmentPreviewStage = forwardRef<
     onPointerDown?: PointerEventHandler<HTMLDivElement>;
     onPointerUp?: PointerEventHandler<HTMLDivElement>;
     onPointerLeave?: PointerEventHandler<HTMLDivElement>;
+    onDoubleClick?: MouseEventHandler<HTMLDivElement>;
   }
 >(function MessageCardAttachmentPreviewStage(
-  { kind, isFullscreen, children, cursor = 'default', onPointerDown, onPointerUp, onPointerLeave },
+  {
+    kind,
+    isFullscreen,
+    children,
+    cursor = 'default',
+    onPointerDown,
+    onPointerUp,
+    onPointerLeave,
+    onDoubleClick,
+  },
   ref,
 ) {
   const theme = useTheme();
@@ -31,6 +46,7 @@ export const MessageCardAttachmentPreviewStage = forwardRef<
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerLeave}
+      onDoubleClick={onDoubleClick}
       sx={{
         flex: '1 1 auto',
         position: 'relative',

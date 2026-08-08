@@ -11,7 +11,7 @@ import { renderWgsFloat } from '../../../importer-beta/coordinates';
 import { getTileLayers } from '../../../../../web-components/analysis-map/tile-layers';
 import { getCoordinateMgrsText } from '../../../../../maps/coordinate-format';
 import { CoordinateMapPreviewControls } from '../CoordinateMapPreviewControls';
-import { MessageCardAttachmentPreviewActions } from '../attachment-preview/MessageCardAttachmentPreviewActions';
+import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import type { CoordinatePreviewPoint } from '../message-coordinate-preview';
 import { getAttachmentPreviewStageSx } from '../attachment-preview/message-card-attachment-preview';
@@ -29,7 +29,7 @@ const MAP_HOST_MIN_SIZE_PX = 48;
 const COORDINATE_ROW_HEIGHT = 24;
 const COORDINATE_ROW_GAP = 6;
 const COORDINATE_LABEL_WIDTH = 56;
-const COORDINATE_COPY_SIZE = 24;
+const COORDINATE_COPY_SIZE = 20;
 const COORDINATE_COPY_GAP = 4;
 
 export function CoordinateAttachmentPreviewRenderer({
@@ -53,6 +53,17 @@ export function CoordinateAttachmentPreviewRenderer({
   const dialogIsFullscreen = canFullscreen && isFullscreen;
   const activeIndex = Math.max(0, points.indexOf(activePoint));
 
+  const header = (
+    <MessageCardAttachmentPreviewHeader
+      fileName="Координати"
+      navigation={navigation}
+      onClose={onClose}
+      isFullscreen={dialogIsFullscreen}
+      canFullscreen={canFullscreen}
+      onToggleFullscreen={() => onFullscreenChange(!dialogIsFullscreen)}
+    />
+  );
+
   return (
     <MessageCardAttachmentPreviewLayout
       isFullscreen={dialogIsFullscreen}
@@ -65,16 +76,12 @@ export function CoordinateAttachmentPreviewRenderer({
           isFullscreen={dialogIsFullscreen}
         />
       }
+      header={header}
       controls={
         <CoordinateMapPreviewControls
           baseLayerId={baseLayerId}
           onBaseLayerChange={setBaseLayerId}
         />
-      }
-      actions={
-        dialogIsFullscreen ? null : (
-          <MessageCardAttachmentPreviewActions navigation={navigation} onClose={onClose} />
-        )
       }
       onToggleFullscreen={() => onFullscreenChange(!dialogIsFullscreen)}
     />
@@ -402,10 +409,11 @@ function CoordinateMapPreview({
     };
   }, []);
 
-  const panelBackground = 'rgba(31, 36, 42, 0.96)';
-  const panelBorder = 'rgba(255, 255, 255, 0.12)';
+  const isDark = theme.palette.mode === 'dark';
+  const panelBackground = isDark ? 'rgba(31, 36, 42, 0.96)' : 'rgba(255, 255, 255, 0.95)';
+  const panelBorder = isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)';
   const coordinateLabelSx = {
-    color: 'rgba(255, 255, 255, 0.76)',
+    color: isDark ? 'rgba(255, 255, 255, 0.76)' : 'text.secondary',
     fontSize: 12,
     fontWeight: 700,
     lineHeight: 1,
@@ -417,7 +425,7 @@ function CoordinateMapPreview({
     minWidth: 0,
   } as const;
   const coordinateValueSx = {
-    color: 'rgba(255, 255, 255, 0.96)',
+    color: isDark ? 'rgba(255, 255, 255, 0.96)' : 'text.primary',
     fontSize: 14,
     fontWeight: 500,
     lineHeight: 1,
@@ -437,11 +445,11 @@ function CoordinateMapPreview({
         : 'Копіювати MGRS';
   const copyButtonIcon =
     copyStatus === 'copied' ? (
-      <CheckIcon fontSize="small" />
+      <CheckIcon sx={{ fontSize: 13 }} />
     ) : copyStatus === 'error' ? (
-      <ErrorOutlineIcon fontSize="small" />
+      <ErrorOutlineIcon sx={{ fontSize: 13 }} />
     ) : (
-      <ContentCopyIcon fontSize="small" />
+      <ContentCopyIcon sx={{ fontSize: 13 }} />
     );
 
   return (
@@ -695,18 +703,19 @@ function CoordinateMapPreview({
                   borderRadius: 1,
                   color:
                     copyStatus === 'copied'
-                      ? 'success.light'
+                      ? 'success.main'
                       : copyStatus === 'error'
-                        ? 'error.light'
-                        : 'rgba(255, 255, 255, 0.92)',
+                        ? 'error.main'
+                        : 'text.secondary',
                   bgcolor: 'transparent',
                   border: 1,
                   borderColor: 'transparent',
                   '&:hover': {
-                    bgcolor: 'rgba(255, 255, 255, 0.08)',
+                    bgcolor: 'action.hover',
+                    color: 'text.primary',
                   },
                   '&.Mui-disabled': {
-                    color: 'rgba(255, 255, 255, 0.48)',
+                    color: 'action.disabled',
                   },
                   '&.Mui-focusVisible': {
                     outline: 'none',

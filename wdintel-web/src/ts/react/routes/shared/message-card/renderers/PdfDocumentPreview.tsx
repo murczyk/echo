@@ -36,12 +36,15 @@ export function PdfDocumentPreview({
 }) {
   const theme = useTheme();
   const [pageCount, setPageCount] = useState<number | null>(null);
+  const [pageAspectRatio, setPageAspectRatio] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const scale = useMemo(() => zoom / 100, [zoom]);
 
   useEffect(() => {
     setPageCount(null);
+    setPageAspectRatio(null);
     setError(null);
     setPdfBlobUrl(null);
 
@@ -103,6 +106,7 @@ export function PdfDocumentPreview({
 
   return (
     <Box
+      ref={scrollContainerRef}
       sx={{
         width: '100%',
         height: '100%',
@@ -140,7 +144,18 @@ export function PdfDocumentPreview({
         <Document
           file={pdfBlobUrl}
           loading={null}
-          onLoadSuccess={({ numPages }) => setPageCount(numPages)}
+          onLoadSuccess={(pdf) => {
+            setPageCount(pdf.numPages);
+            pdf
+              .getPage(1)
+              .then((page) => {
+                const viewport = page.getViewport({ scale: 1 });
+                if (viewport.width > 0 && viewport.height > 0) {
+                  setPageAspectRatio(viewport.height / viewport.width);
+                }
+              })
+              .catch(() => {});
+          }}
           onLoadError={(loadError) =>
             setError(loadError instanceof Error ? loadError.message : 'Не вдалося відкрити PDF')
           }
@@ -160,6 +175,8 @@ export function PdfDocumentPreview({
                 key={`pdf-page-${pageIndex + 1}`}
                 pageNumber={pageIndex + 1}
                 scale={scale}
+                pageAspectRatio={pageAspectRatio}
+                scrollContainerRef={scrollContainerRef}
               />
             ))}
             {isPreviewLimited ? (
@@ -177,11 +194,22 @@ export function PdfDocumentPreview({
   );
 }
 
-function LazyPdfPage({ pageNumber, scale }: { pageNumber: number; scale: number }) {
+function LazyPdfPage({
+  pageNumber,
+  scale,
+  pageAspectRatio,
+  scrollContainerRef,
+}: {
+  pageNumber: number;
+  scale: number;
+  pageAspectRatio: number | null;
+  scrollContainerRef: React.RefObject<HTMLDivElement>;
+}) {
   const pageShellRef = useRef<HTMLDivElement | null>(null);
-  const [isVisible, setIsVisible] = useState(false);
+  const [isVisible, setIsVisible] = useState(pageNumber <= 3);
 
   useEffect(() => {
+    if (isVisible) return;
     const pageShell = pageShellRef.current;
     if (pageShell == null) return;
 
@@ -198,15 +226,18 @@ function LazyPdfPage({ pageNumber, scale }: { pageNumber: number; scale: number 
         }
       },
       {
-        root: null,
-        rootMargin: '40% 0px',
+        root: scrollContainerRef.current,
+        rootMargin: '600px 0px',
         threshold: 0.01,
       },
     );
 
     observer.observe(pageShell);
     return () => observer.disconnect();
-  }, []);
+  }, [isVisible, scrollContainerRef]);
+
+  const estimatedWidth = PDF_PAGE_MAX_WIDTH_PX * scale;
+  const estimatedHeight = Math.round(estimatedWidth * (pageAspectRatio ?? 1.414));
 
   return (
     <Box
@@ -215,8 +246,8 @@ function LazyPdfPage({ pageNumber, scale }: { pageNumber: number; scale: number 
       data-pdf-page-number={pageNumber}
       sx={{
         width: 'fit-content',
-        maxWidth: `${PDF_PAGE_MAX_WIDTH_PX * Math.max(1, scale)}px`,
-        minHeight: 240,
+        maxWidth: `${estimatedWidth}px`,
+        minHeight: `${estimatedHeight}px`,
         display: 'flex',
         justifyContent: 'center',
         mx: 'auto',
@@ -253,7 +284,15 @@ function LazyPdfPage({ pageNumber, scale }: { pageNumber: number; scale: number 
           scale={scale}
           renderTextLayer
           renderAnnotationLayer
-          loading={<Box sx={{ minHeight: 240 }} />}
+          loading={
+            <Box
+              sx={{
+                width: estimatedWidth,
+                height: estimatedHeight,
+                minHeight: estimatedHeight,
+              }}
+            />
+          }
         />
       ) : null}
     </Box>

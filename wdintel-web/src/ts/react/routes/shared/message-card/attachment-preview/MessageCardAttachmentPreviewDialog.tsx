@@ -7,6 +7,7 @@ import { getMessageCardAttachmentPreviewConfig } from './message-card-preview-co
 import {
   blurActiveAttachmentPreviewElement,
   getAttachmentPreviewDialogPaperSx,
+  getAttachmentPreviewStageBg,
 } from './message-card-attachment-preview';
 import type {
   MessageCardPreviewItem,
@@ -77,25 +78,16 @@ export function MessageCardAttachmentPreviewDialog({
   };
   const previewConfig = getMessageCardAttachmentPreviewConfig(previewKind);
   const dialogIsFullscreen = isFullscreen && previewConfig.supportsFullscreen;
-  const isMediaLayout = previewConfig.layout === 'media';
-  const paperSx: Record<string, unknown> = isMediaLayout
-    ? {
-        display: 'flex',
-        flexDirection: 'column',
-        width: dialogIsFullscreen ? '100vw' : { xs: '100vw', sm: '92vw' },
-        height: dialogIsFullscreen ? '100svh' : { xs: '100svh', sm: '92svh' },
-        maxWidth: dialogIsFullscreen ? '100vw' : { xs: '100vw', sm: 'min(92vw, 1280px)' },
-        maxHeight: dialogIsFullscreen ? '100svh' : { xs: '100svh', sm: '92svh' },
-        borderRadius: dialogIsFullscreen ? 0 : { xs: 0, sm: 2 },
-        m: 0,
-      }
-    : {
-        width: dialogIsFullscreen ? '100vw' : '92vw',
-        height: dialogIsFullscreen ? '100vh' : '92svh',
-        maxWidth: dialogIsFullscreen ? '100vw' : '92vw',
-        maxHeight: dialogIsFullscreen ? '100vh' : '92svh',
-        margin: 0,
-      };
+  const paperSx: Record<string, unknown> = {
+    display: 'flex',
+    flexDirection: 'column',
+    width: dialogIsFullscreen ? '100vw' : { xs: '100vw', sm: '92vw' },
+    height: dialogIsFullscreen ? '100svh' : { xs: '100svh', sm: '92svh' },
+    maxWidth: dialogIsFullscreen ? '100vw' : { xs: '100vw', sm: '92vw' },
+    maxHeight: dialogIsFullscreen ? '100svh' : { xs: '100svh', sm: '92svh' },
+    borderRadius: dialogIsFullscreen ? 0 : { xs: 0, sm: 2 },
+    m: 0,
+  };
   const rendererProps = {
     navigation,
     isFullscreen: dialogIsFullscreen,
@@ -121,9 +113,15 @@ export function MessageCardAttachmentPreviewDialog({
       disableRestoreFocus={previewConfig.disableRestoreFocus}
       PaperProps={{
         'aria-label': 'Перегляд вкладення',
-        sx: { ...getAttachmentPreviewDialogPaperSx(dialogIsFullscreen), ...paperSx },
+        sx: {
+          ...getAttachmentPreviewDialogPaperSx(dialogIsFullscreen),
+          backgroundColor: (theme) => getAttachmentPreviewStageBg(theme),
+          ...paperSx,
+        },
       }}
-      BackdropProps={{ sx: { backgroundColor: 'rgba(0, 0, 0, 0.8)' } }}
+      BackdropProps={{
+        sx: { backgroundColor: 'rgba(0, 0, 0, 0.8)' },
+      }}
     >
       {item.type === 'image' ? (
         <ImageAttachmentPreviewRenderer image={item.value} {...rendererProps} />

@@ -1,7 +1,8 @@
 import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import { Box, IconButton, Tooltip, Typography } from '@mui/material';
+import { Box, CircularProgress, IconButton, Tooltip, Typography } from '@mui/material';
+import { MessageCardDisabledControlCursorWrapper } from '../MessageCardDisabledControlCursorWrapper';
 
 import {
   clamp,
@@ -21,10 +22,11 @@ import {
   ZOOM_STEP,
   type DragState,
 } from '../message-card-image-preview-utils';
-import { MessageCardAttachmentPreviewActions } from '../attachment-preview/MessageCardAttachmentPreviewActions';
+import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
 import { AttachmentPreviewZoomControls } from '../attachment-preview/MessageCardAttachmentPreviewControls';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
+import { AttachmentPreviewZoomBadge } from '../attachment-preview/AttachmentPreviewZoomBadge';
 import { canCopyImageToClipboard, copyImageToClipboard } from '../copy-image-to-clipboard';
 import { blurActiveAttachmentPreviewElement } from '../attachment-preview/message-card-attachment-preview';
 import { getMessageCardAttachmentPreviewConfig } from '../attachment-preview/message-card-preview-config';
@@ -117,17 +119,25 @@ function ImageCopyAction({
 
   return (
     <Tooltip title={title} enterDelay={300}>
-      <span>
+      <MessageCardDisabledControlCursorWrapper disabled={!enabled || status === 'copying'}>
         <IconButton
           aria-label="Скопіювати зображення"
           size="small"
           onClick={onCopy}
           disabled={!enabled || status === 'copying'}
-          sx={{ color: 'text.secondary' }}
+          sx={{
+            color: 'text.secondary',
+            '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
+            '&.Mui-disabled': { color: 'action.disabled' },
+          }}
         >
-          <ContentCopyIcon />
+          {status === 'copying' ? (
+            <CircularProgress size={16} color="inherit" />
+          ) : (
+            <ContentCopyIcon fontSize="small" />
+          )}
         </IconButton>
-      </span>
+      </MessageCardDisabledControlCursorWrapper>
     </Tooltip>
   );
 }
@@ -375,6 +385,9 @@ export function ImageAttachmentPreviewRenderer({
   useEffect(() => {
     if (stageEl === null) return;
 
+    let touchStartDist = 0;
+    let touchStartZoom = ZOOM_MIN;
+
     const handleStageWheelNative = (event: WheelEvent) => {
       if (isInteractivePreviewTarget(event.target)) return;
       event.preventDefault();
@@ -388,11 +401,84 @@ export function ImageAttachmentPreviewRenderer({
       );
     };
 
-    stageEl.addEventListener('wheel', handleStageWheelNative, {
-      passive: false,
-    });
+    const handleTouchStart = (event: TouchEvent) => {
+      if (event.touches.length === 2) {
+        const t1 = event.touches[0];
+        const t2 = event.touches[1];
+        if (!t1 || !t2) return;
+        touchStartDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        touchStartZoom = zoomRef.current;
+      }
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      if (event.touches.length === 2 && touchStartDist > 0) {
+        event.preventDefault();
+        const t1 = event.touches[0];
+        const t2 = event.touches[1];
+        if (!t1 || !t2) return;
+        const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        const rect = stageEl.getBoundingClientRect();
+        const centerPoint = {
+          x: (t1.clientX + t2.clientX) / 2 - (rect.left + rect.width / 2),
+          y: (t1.clientY + t2.clientY) / 2 - (rect.top + rect.height / 2),
+        };
+        const nextZoom = touchStartZoom * (dist / touchStartDist);
+        setPreviewZoom(nextZoom, centerPoint);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      touchStartDist = 0;
+    };
+
+    let gestureStartZoom = ZOOM_MIN;
+
+    const handleGestureStart = (event: Event) => {
+      event.preventDefault();
+      gestureStartZoom = zoomRef.current;
+    };
+
+    const handleGestureChange = (event: Event) => {
+      event.preventDefault();
+      const gestureEvent = event as unknown as {
+        scale: number;
+        clientX?: number;
+        clientY?: number;
+      };
+      if (typeof gestureEvent.scale === 'number') {
+        const rect = stageEl.getBoundingClientRect();
+        const centerPoint = {
+          x: (gestureEvent.clientX ?? rect.left + rect.width / 2) - (rect.left + rect.width / 2),
+          y: (gestureEvent.clientY ?? rect.top + rect.height / 2) - (rect.top + rect.height / 2),
+        };
+        const nextZoom = gestureStartZoom * gestureEvent.scale;
+        setPreviewZoom(nextZoom, centerPoint);
+      }
+    };
+
+    const handleGestureEnd = (event: Event) => {
+      event.preventDefault();
+    };
+
+    stageEl.addEventListener('wheel', handleStageWheelNative, { passive: false });
+    stageEl.addEventListener('gesturestart', handleGestureStart, { passive: false });
+    stageEl.addEventListener('gesturechange', handleGestureChange, { passive: false });
+    stageEl.addEventListener('gestureend', handleGestureEnd, { passive: false });
+    stageEl.addEventListener('touchstart', handleTouchStart, { passive: true });
+    stageEl.addEventListener('touchmove', handleTouchMove, { passive: false });
+    stageEl.addEventListener('touchend', handleTouchEnd, { passive: true });
+    stageEl.addEventListener('touchcancel', handleTouchEnd, { passive: true });
+
     return () => {
       stageEl.removeEventListener('wheel', handleStageWheelNative);
+      stageEl.removeEventListener('gesturestart', handleGestureStart);
+      stageEl.removeEventListener('gesturechange', handleGestureChange);
+      stageEl.removeEventListener('gestureend', handleGestureEnd);
+      stageEl.removeEventListener('touchstart', handleTouchStart);
+      stageEl.removeEventListener('touchmove', handleTouchMove);
+      stageEl.removeEventListener('touchend', handleTouchEnd);
+      stageEl.removeEventListener('touchcancel', handleTouchEnd);
     };
   }, [imageSize, stageEl]);
 
@@ -429,6 +515,24 @@ export function ImageAttachmentPreviewRenderer({
   const handleToggleFullscreen = () => {
     if (!canFullscreen) return;
     changeFullscreen(!dialogIsFullscreen);
+  };
+
+  const handleDoubleClick = (event: SyntheticEvent<HTMLDivElement>) => {
+    const mouseEvent = event as unknown as MouseEvent;
+    if (isInteractivePreviewTarget(mouseEvent.target)) return;
+    const stage = stageRef.current;
+    if (!stage) return;
+    const rect = stage.getBoundingClientRect();
+    const cursorPoint = {
+      x: mouseEvent.clientX - (rect.left + rect.width / 2),
+      y: mouseEvent.clientY - (rect.top + rect.height / 2),
+    };
+
+    if (zoomRef.current > ZOOM_MIN) {
+      setPreviewZoom(ZOOM_MIN, cursorPoint);
+    } else {
+      setPreviewZoom(200, cursorPoint);
+    }
   };
 
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -473,6 +577,7 @@ export function ImageAttachmentPreviewRenderer({
       onPointerDown={startPan}
       onPointerUp={stopPan}
       onPointerLeave={stopPan}
+      onDoubleClick={handleDoubleClick}
     >
       <ImagePreview
         image={currentImage}
@@ -486,24 +591,12 @@ export function ImageAttachmentPreviewRenderer({
         onLoad={handleImageLoad}
         onError={handleImageError}
       />
+      <AttachmentPreviewZoomBadge zoom={zoom} onResetZoom={() => setPreviewZoom(ZOOM_MIN)} />
     </MessageCardAttachmentPreviewStage>
   );
-  const controls = (
-    <AttachmentPreviewZoomControls
-      zoom={zoom}
-      min={ZOOM_MIN}
-      max={ZOOM_MAX}
-      buttonStep={ZOOM_STEP}
-      sliderStep={1}
-      marks={ZOOM_MARKS.map((mark) => mark.value)}
-      isFullscreen={dialogIsFullscreen}
-      canFullscreen={canFullscreen}
-      onZoomChange={setPreviewZoom}
-      onToggleFullscreen={handleToggleFullscreen}
-    />
-  );
-  const actions = !dialogIsFullscreen ? (
-    <MessageCardAttachmentPreviewActions
+  const header = (
+    <MessageCardAttachmentPreviewHeader
+      fileName={previewFileName}
       openHref={currentHref}
       download={{ href: currentHref, fileName: downloadFileName }}
       navigation={navigation}
@@ -520,12 +613,15 @@ export function ImageAttachmentPreviewRenderer({
       }
       status={<ImageCopyStatus status={copyStatus} />}
       onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
+      isFullscreen={dialogIsFullscreen}
+      canFullscreen={canFullscreen}
+      onToggleFullscreen={handleToggleFullscreen}
       onClose={closeDialog}
       downloadKey={`media:${String(currentImage?.id ?? '')}`}
       isDownloadStarting={isDownloadStarting}
       onDownloadStart={onDownloadStart}
     />
-  ) : null;
+  );
   const infoPopover = (
     <MessageCardAttachmentPreviewInfoPopover
       open={infoOpen}
@@ -550,8 +646,7 @@ export function ImageAttachmentPreviewRenderer({
       isFullscreen={dialogIsFullscreen}
       config={previewConfig}
       stage={stage}
-      controls={controls}
-      actions={actions}
+      header={header}
       infoPopover={infoPopover}
       onToggleFullscreen={handleToggleFullscreen}
     />
