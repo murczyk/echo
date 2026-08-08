@@ -640,7 +640,7 @@ export function UnitFormDialog({
               allowSkip
               locations={locations}
               unitMask={unitMask}
-              disabled={submitting}
+              disabled={submitting || checkingDuplicates}
               onSkipNetworkCreationChange={setSkipNetworkCreation}
               onLocationsChange={setLocations}
               onUnitMaskChange={setUnitMask}
@@ -650,7 +650,7 @@ export function UnitFormDialog({
               <UnitDetailsFields
                 form={form}
                 editing={editing}
-                disabled={submitting}
+                disabled={submitting || checkingDuplicates}
                 editSection={editSection}
                 onChange={setForm}
               />
