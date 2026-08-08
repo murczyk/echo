@@ -6,8 +6,10 @@ import type { Unit } from '../../../../Bindings';
 
 import {
   createDeviceNetwork,
+  DEFAULT_LIST_UNITS_REQ,
   deleteUnitAttachment,
   getAllUnitsList,
+  getUnitsPage,
   getUnitDetails,
   getUnitIdsWithVisibleAttachments,
   getUnitStatusCounts,
@@ -70,11 +72,42 @@ describe('units API', () => {
         hasOrbit: true,
       },
     ]);
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       sort_by: null,
       after_unit_id: null,
       before_unit_id: null,
       include_inactive: false,
+      limit: null,
+      offset: null,
+    });
+  });
+
+  it('requests a bounded server-side page with filters', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ show_load_more: true, total_count: 120_000, units: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      getUnitsPage({
+        ...DEFAULT_LIST_UNITS_REQ,
+        sortBy: 'UnitNameAsc',
+        includeInactive: true,
+        filterActive: false,
+        filterText: '55 омсбр',
+        searchMode: 'Strict',
+        limit: 20,
+        offset: 40,
+      }),
+    ).resolves.toEqual({ showLoadMore: true, totalCount: 120_000, units: [] });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      sort_by: 'UnitNameAsc',
+      include_inactive: true,
+      filter_active: false,
+      filter_text: '55 омсбр',
+      search_mode: 'Strict',
+      limit: 20,
+      offset: 40,
     });
   });
 
@@ -127,9 +160,11 @@ describe('units API', () => {
   });
 
   it('loads unit IDs with attachments visible to the current user', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ unit_ids: [7, 11] })));
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ unit_ids: [7, 11] }));
+    vi.stubGlobal('fetch', fetchMock);
 
-    await expect(getUnitIdsWithVisibleAttachments()).resolves.toEqual([7, 11]);
+    await expect(getUnitIdsWithVisibleAttachments([7, 11])).resolves.toEqual([7, 11]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual([7, 11]);
   });
 
   it('creates a device network for an existing unit', async () => {

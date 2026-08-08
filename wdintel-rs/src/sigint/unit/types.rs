@@ -86,10 +86,46 @@ pub enum ListUnitsSortBy {
     CreatedAtDesc,
     CreatedAtAsc,
     NaturalMilitarySortAsc,
+    UnitNameAsc,
+    UnitNameDesc,
+    UnitCompanyAsc,
+    UnitCompanyDesc,
+    UnitBattalionAsc,
+    UnitBattalionDesc,
+    UnitRegimentAsc,
+    UnitRegimentDesc,
+    UnitDivisionAsc,
+    UnitDivisionDesc,
+    UnitArmyAsc,
+    UnitArmyDesc,
+    UnitMilitaryDistrictAsc,
+    UnitMilitaryDistrictDesc,
+    UnitArmyRegionAsc,
+    UnitArmyRegionDesc,
+    UnitCommentAsc,
+    UnitCommentDesc,
+    UnitOrbitNoteAsc,
+    UnitOrbitNoteDesc,
 }
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub enum ListUnitsSearchMode {
+    Strict,
+    Relaxed,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Default,
 )]
 pub struct ListUnitsReq {
     pub sort_by: Option<ListUnitsSortBy>,
@@ -97,6 +133,21 @@ pub struct ListUnitsReq {
     pub before_unit_id: Option<i64>,
     #[serde(default)]
     pub include_inactive: bool,
+    pub filter_active: Option<bool>,
+    pub filter_text: Option<String>,
+    pub filter_name: Option<String>,
+    pub filter_company: Option<String>,
+    pub filter_battalion: Option<String>,
+    pub filter_regiment: Option<String>,
+    pub filter_division: Option<String>,
+    pub filter_army: Option<String>,
+    pub filter_military_district: Option<String>,
+    pub filter_army_region: Option<String>,
+    pub filter_comment: Option<String>,
+    pub filter_orbit_note: Option<String>,
+    pub search_mode: Option<ListUnitsSearchMode>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
 #[derive(
@@ -104,6 +155,7 @@ pub struct ListUnitsReq {
 )]
 pub struct ListUnitsRsp {
     pub show_load_more: bool,
+    pub total_count: i64,
     pub units: Vec<Unit>,
 }
 
@@ -297,17 +349,19 @@ pub struct OrbitParentUnit {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct OrbitChildUnit {
-    pub orbit_unit_id: String,
     pub sigint_unit_id: i64,
     pub name: String,
+    pub active: bool,
+    pub orbit_unit_ids: Vec<String>,
+    pub is_generative: bool,
+    pub is_operational: bool,
 }
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct UnitOrbitChildrenRsp {
-    pub generative_units: Vec<OrbitChildUnit>,
-    pub operational_units: Vec<OrbitChildUnit>,
+    pub units: Vec<OrbitChildUnit>,
 }
 
 #[derive(

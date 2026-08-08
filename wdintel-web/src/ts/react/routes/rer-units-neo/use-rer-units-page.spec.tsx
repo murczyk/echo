@@ -5,10 +5,10 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { Unit } from '../../../../Bindings';
+import type { ListUnitsReq, Unit } from '../../../../Bindings';
 
 const api = vi.hoisted(() => ({
-  getAllUnitsList: vi.fn(),
+  getUnitsPage: vi.fn(),
   getUnitStatusCounts: vi.fn(),
   getUnitIdsWithVisibleAttachments: vi.fn(),
 }));
@@ -17,7 +17,7 @@ vi.mock('../../services/api/units', () => ({
   createUnit: vi.fn(),
   createUnitWithAutoNetwork: vi.fn(),
   deleteUnit: vi.fn(),
-  getAllUnitsList: api.getAllUnitsList,
+  getUnitsPage: api.getUnitsPage,
   getUnitDetails: vi.fn(),
   getUnitIdsWithVisibleAttachments: api.getUnitIdsWithVisibleAttachments,
   getUnitStatusCounts: api.getUnitStatusCounts,
@@ -45,8 +45,8 @@ const inactiveUnit = { id: 2, name: 'Inactive', active: false } as Unit;
 let root: Root | null = null;
 let latestPage: Page | null = null;
 
-function Harness() {
-  latestPage = useRerUnitsPage([]);
+function Harness({ req }: { req: ListUnitsReq }) {
+  latestPage = useRerUnitsPage([], req);
   return null;
 }
 
@@ -67,9 +67,15 @@ afterEach(() => {
 });
 
 describe('useRerUnitsPage loading', () => {
-  it('loads active units first and inactive units on demand', async () => {
-    api.getAllUnitsList.mockImplementation(({ includeInactive } = {}) =>
-      Promise.resolve(includeInactive ? [activeUnit, inactiveUnit] : [activeUnit]),
+  it('loads and replaces bounded backend pages', async () => {
+    const activeReq = { limit: 20, offset: 0, filterActive: true } as ListUnitsReq;
+    const inactiveReq = { limit: 20, offset: 20, filterActive: false } as ListUnitsReq;
+    api.getUnitsPage.mockImplementation((req: ListUnitsReq) =>
+      Promise.resolve(
+        req.filterActive
+          ? { units: [activeUnit], totalCount: 1, showLoadMore: false }
+          : { units: [inactiveUnit], totalCount: 50_000, showLoadMore: true },
+      ),
     );
     api.getUnitStatusCounts.mockResolvedValue({ active: 1, inactive: 1 });
     api.getUnitIdsWithVisibleAttachments.mockResolvedValue([]);
@@ -77,20 +83,37 @@ describe('useRerUnitsPage loading', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-    await act(async () => root?.render(createElement(Harness)));
+    await act(async () => root?.render(createElement(Harness, { req: activeReq })));
     await flushEffects();
 
-    expect(api.getAllUnitsList).toHaveBeenNthCalledWith(1);
-    expect(latestPage?.units.map((unit) => unit.id)).toEqual([1]);
-    expect(latestPage?.statusCounts).toEqual({ active: 1, inactive: 1 });
-
-    act(() => latestPage?.setStatusFilter('inactive'));
-    await flushEffects();
-
-    expect(api.getAllUnitsList).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ includeInactive: true, signal: expect.any(AbortSignal) }),
+    expect(api.getUnitsPage).toHaveBeenNthCalledWith(
+      1,
+      activeReq,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(latestPage?.visibleUnits.map((unit) => unit.id)).toEqual([2]);
+    expect(latestPage?.units.map((unit) => unit.id)).toEqual([1]);
+    expect(latestPage?.totalCount).toBe(1);
+    expect(latestPage?.statusCounts).toEqual({ active: 1, inactive: 1 });
+    expect(api.getUnitIdsWithVisibleAttachments).toHaveBeenNthCalledWith(
+      1,
+      [1],
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+
+    await act(async () => root?.render(createElement(Harness, { req: inactiveReq })));
+    await flushEffects();
+
+    expect(api.getUnitsPage).toHaveBeenNthCalledWith(
+      2,
+      inactiveReq,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(latestPage?.units.map((unit) => unit.id)).toEqual([2]);
+    expect(latestPage?.totalCount).toBe(50_000);
+    expect(api.getUnitIdsWithVisibleAttachments).toHaveBeenNthCalledWith(
+      2,
+      [2],
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 });

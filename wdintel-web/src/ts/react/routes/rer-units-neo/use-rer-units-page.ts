@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { AlertColor } from '@mui/material';
-import type { CreateUnitWithAutoNetworkRsp, OrbitUnitDetails, Unit } from '../../../../Bindings';
+import type {
+  CreateUnitWithAutoNetworkRsp,
+  ListUnitsReq,
+  OrbitUnitDetails,
+  Unit,
+} from '../../../../Bindings';
 import {
   createUnit,
   createUnitWithAutoNetwork,
   deleteUnit,
-  getAllUnitsList,
+  getUnitsPage,
   getUnitDetails,
   getUnitIdsWithVisibleAttachments,
   getUnitStatusCounts,
@@ -15,11 +20,12 @@ import {
   unlinkOrbitUnit,
   uploadUnitsKmz,
 } from '../../services/api/units';
+import type { RequestOptions } from '../../services/api/client';
 import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { hasRole } from '../../utils/roles';
 import type { UnitFormSubmit } from './components/UnitFormDialog';
-import { filterUnitsByStatus, formatUnitError, type UnitStatusFilter } from './helpers';
+import { formatUnitError } from './helpers';
 
 type Status = {
   severity: AlertColor;
@@ -45,15 +51,13 @@ function replaceUnit(units: Unit[], updated: Unit): Unit[] {
   return sortUnits(units.map((unit) => (unit.id === updated.id ? updated : unit)));
 }
 
-export function useRerUnitsPage(authUserRoles: string[]) {
+export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) {
   const canEdit = useMemo(() => hasRole(authUserRoles, 'UnitsEditor'), [authUserRoles]);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [statusFilter, setStatusFilter] = useState<UnitStatusFilter>('active');
+  const [totalCount, setTotalCount] = useState(0);
   const [statusCounts, setStatusCounts] = useState({ active: 0, inactive: 0 });
-  const [allUnitsLoaded, setAllUnitsLoaded] = useState(false);
   const [attachmentUnitIds, setAttachmentUnitIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [loadingAllUnits, setLoadingAllUnits] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [settingsReady, setSettingsReady] = useState(!canEdit);
   const [devicesSectionEnabled, setDevicesSectionEnabled] = useState(false);
@@ -73,78 +77,56 @@ export function useRerUnitsPage(authUserRoles: string[]) {
   const [uploadingKmz, setUploadingKmz] = useState(false);
   const [kmzTask, setKmzTask] = useState<KmzTask | null>(null);
 
-  const loadUnits = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    setAllUnitsLoaded(false);
-    void getUnitStatusCounts()
+  const loadUnits = useCallback(
+    async (options?: RequestOptions) => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const response = await getUnitsPage(listReq, options);
+        if (options?.signal?.aborted) return;
+        setUnits(response.units);
+        setTotalCount(response.totalCount);
+        try {
+          const unitIds = response.units.map((unit) => unit.id);
+          const attachmentIds = await getUnitIdsWithVisibleAttachments(unitIds, options);
+          if (!options?.signal?.aborted) setAttachmentUnitIds(new Set(attachmentIds));
+        } catch (error) {
+          if (options?.signal?.aborted) return;
+          setAttachmentUnitIds(new Set());
+          setStatus({
+            severity: 'error',
+            text: `Не вдалося завантажити ознаки наявності файлів: ${formatUnitError(error)}`,
+          });
+        }
+      } catch (error) {
+        if (options?.signal?.aborted) return;
+        setLoadError(formatUnitError(error));
+      } finally {
+        if (!options?.signal?.aborted) setLoading(false);
+      }
+    },
+    [listReq],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadUnits({ signal: controller.signal });
+    return () => controller.abort();
+  }, [loadUnits]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void getUnitStatusCounts({ signal: controller.signal })
       .then(setStatusCounts)
       .catch((error) => {
+        if (controller.signal.aborted) return;
         setStatus({
           severity: 'error',
           text: `Не вдалося завантажити лічильники підрозділів: ${formatUnitError(error)}`,
         });
       });
-    const [unitsResult, attachmentIdsResult] = await Promise.allSettled([
-      getAllUnitsList(),
-      getUnitIdsWithVisibleAttachments(),
-    ]);
-    if (unitsResult.status === 'fulfilled') {
-      setUnits(sortUnits(unitsResult.value));
-    } else {
-      setLoadError(formatUnitError(unitsResult.reason));
-    }
-    if (attachmentIdsResult.status === 'fulfilled') {
-      setAttachmentUnitIds(new Set(attachmentIdsResult.value));
-    } else {
-      setAttachmentUnitIds(new Set());
-      setStatus({
-        severity: 'error',
-        text: `Не вдалося завантажити ознаки наявності файлів: ${formatUnitError(
-          attachmentIdsResult.reason,
-        )}`,
-      });
-    }
-    setLoading(false);
+    return () => controller.abort();
   }, []);
-
-  useEffect(() => {
-    void loadUnits();
-  }, [loadUnits]);
-
-  const needsAllUnits = statusFilter !== 'active';
-  useEffect(() => {
-    if (loading || allUnitsLoaded || !needsAllUnits) {
-      if (!needsAllUnits) setLoadingAllUnits(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    let active = true;
-    setLoadingAllUnits(true);
-    void getAllUnitsList({ includeInactive: true, signal: controller.signal })
-      .then((allUnits) => {
-        if (!active) return;
-        setUnits(sortUnits(allUnits));
-        setAllUnitsLoaded(true);
-      })
-      .catch((error) => {
-        if (!active || controller.signal.aborted) return;
-        setStatus({
-          severity: 'error',
-          text: `Не вдалося завантажити неактивні підрозділи: ${formatUnitError(error)}`,
-        });
-        setStatusFilter('active');
-      })
-      .finally(() => {
-        if (active) setLoadingAllUnits(false);
-      });
-
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [allUnitsLoaded, loading, needsAllUnits]);
 
   useEffect(() => {
     if (editUnit === null) {
@@ -341,12 +323,14 @@ export function useRerUnitsPage(authUserRoles: string[]) {
 
   async function refreshUnitsAfterMutation(successText: string) {
     try {
-      const [freshUnits, counts] = await Promise.all([
-        getAllUnitsList({ includeInactive: allUnitsLoaded }),
-        getUnitStatusCounts(),
-      ]);
-      setUnits(sortUnits(freshUnits));
+      const [response, counts] = await Promise.all([getUnitsPage(listReq), getUnitStatusCounts()]);
+      const attachmentIds = await getUnitIdsWithVisibleAttachments(
+        response.units.map((unit) => unit.id),
+      );
+      setUnits(response.units);
+      setTotalCount(response.totalCount);
       setStatusCounts(counts);
+      setAttachmentUnitIds(new Set(attachmentIds));
       setStatus({ severity: 'success', text: successText });
     } catch (error) {
       setStatus({
@@ -479,12 +463,10 @@ export function useRerUnitsPage(authUserRoles: string[]) {
 
   return {
     units,
-    visibleUnits: filterUnitsByStatus(units, statusFilter),
+    totalCount,
     statusCounts,
-    statusFilter,
-    setStatusFilter,
     attachmentUnitIds,
-    loading: loading || loadingAllUnits,
+    loading,
     loadError,
     loadUnits,
     canEdit,
