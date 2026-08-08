@@ -654,6 +654,13 @@ pub async fn create_unit_with_auto_network_for_login(
     clear_create_unit_orbit_note_if_hidden(&env.dbx, login, &mut req.unit)
         .await?;
     let duplicate_unit_ids = req.unit.duplicate_unit_ids.clone();
+    if !req.skip_network_creation {
+        ensure_duplicate_units_have_no_active_network(
+            &env.dbx,
+            &duplicate_unit_ids,
+        )
+        .await?;
+    }
 
     let txn = env.dbx.begin().await.context(h!())?;
     let unit = insert_unit_with_changelog(&txn, login, &req.unit)
@@ -727,6 +734,23 @@ async fn merge_requested_duplicate_units(
             .c(h!())?;
     }
     find_unit(dbx, unit_id).await
+}
+
+async fn ensure_duplicate_units_have_no_active_network(
+    dbx: &DatabaseConnection,
+    duplicate_unit_ids: &[i64],
+) -> Result<(), AppError> {
+    for duplicate_unit_id in
+        duplicate_unit_ids.iter().copied().collect::<BTreeSet<_>>()
+    {
+        if unit_has_active_network(dbx, duplicate_unit_id).await? {
+            return Err(AppError::BL {
+                msg: "selected duplicate unit already has a network"
+                    .to_string(),
+            });
+        }
+    }
+    Ok(())
 }
 
 async fn clear_create_unit_orbit_note_if_hidden(
@@ -2464,6 +2488,48 @@ mod tests {
                 .unwrap()
                 .deleted
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_with_auto_network_rejects_networked_duplicate() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        create_device_network_for_login(
+            &login_id,
+            &env,
+            CreateDeviceNetworkReq {
+                unit_id: duplicate.id,
+                locations: vec!["Роботине".to_string()],
+                unit_mask: Vec::new(),
+            },
+        )
+        .await
+        .unwrap();
+        let mut req = auto_req(false, vec!["Роботине"], vec!["2 шр"]);
+        req.unit.duplicate_unit_ids = vec![duplicate.id];
+
+        let err = create_unit_with_auto_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            AppError::BL { msg }
+                if msg == "selected duplicate unit already has a network"
+        ));
+        assert_eq!(unit_count(&env.dbx).await, 1);
+        assert_eq!(network_count(&env.dbx).await, 1);
     }
 
     #[tokio::test]
