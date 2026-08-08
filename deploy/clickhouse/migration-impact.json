@@ -1,5 +1,13 @@
 {
   "migrations": {
+    "echo:m20260806_120000_drop_legacy_inbox_callsigns": {
+      "changes": [
+        {
+          "table": "public.sigint_inbox_item",
+          "strategy": "mirror_resync"
+        }
+      ]
+    },
     "echo:m20260806_091349_add_sigint_inbox_item_datetime_neo": {
       "changes": [
         {

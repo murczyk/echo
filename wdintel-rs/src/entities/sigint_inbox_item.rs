@@ -18,8 +18,6 @@ pub struct Model {
     pub freq: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub coords: Option<String>,
-    #[sea_orm(column_type = "JsonBinary", nullable)]
-    pub callsigns: Option<Json>,
     pub checked: Option<bool>,
     pub reviewed: Option<bool>,
     #[sea_orm(column_type = "Text", nullable)]
@@ -37,10 +35,6 @@ pub struct Model {
     pub location: Option<String>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub tags: Option<Json>,
-    #[sea_orm(column_type = "JsonBinary", nullable)]
-    pub callsigns_alg2: Option<Json>,
-    #[sea_orm(column_type = "JsonBinary", nullable)]
-    pub callsigns_alg1: Option<Json>,
     pub datetime: Option<DateTime>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub signal_tokens: Option<Json>,

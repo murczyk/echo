@@ -76,34 +76,37 @@ pub async fn oneoff_gen_dataset_callsigns(mode: Mode) -> Result<(), AppError> {
         .filter(signal_message::Column::Deleted.eq(false))
         .order_by_asc(signal_message::Column::Id);
     let msgs_count: u64 = q.clone().count(&dbx).await.c(h!())?;
-    let mut msgs = q.stream(&dbx).await.c(h!())?;
+    let mut msgs = q.stream(&dbx).await.c(h!())?.try_chunks(500);
 
     let pb = ProgressBar::new(msgs_count);
-    while let Some(item) = msgs.try_next().await.c(h!())? {
-        pb.inc(1);
-        let (message, m_inbox): (
-            signal_message::Model,
-            Option<sigint_inbox_item::Model>,
-        ) = item;
-        let Some(inbox) = m_inbox else { continue };
-        let Some(body) = message.body.clone() else {
-            continue;
-        };
-        let callsigns: Vec<String> = match inbox.callsigns.clone() {
-            None => vec![],
-            Some(v) => serde_json::from_value(v).c(h!())?,
-        };
-        let callsigns_s = callsigns.join(", ");
-        writeln!(
-            outfile,
-            "{body}\ncallsigns: {callsigns_s}\n================"
-        )?;
+    while let Some(batch) = msgs.try_next().await.c(h!())? {
+        let inbox_ids = batch
+            .iter()
+            .filter_map(|(_, inbox)| inbox.as_ref().map(|inbox| inbox.id))
+            .collect::<Vec<_>>();
+        let callsigns_by_item_id =
+            crate::inbox::callsigns::load_by_item_ids(&dbx, &inbox_ids).await?;
+        for (message, m_inbox) in batch {
+            pb.inc(1);
+            let Some(inbox) = m_inbox else { continue };
+            let Some(body) = message.body else { continue };
+            let callsigns = callsigns_by_item_id
+                .get(&inbox.id)
+                .cloned()
+                .unwrap_or_default()
+                .effective();
+            let callsigns_s = callsigns.join(", ");
+            writeln!(
+                outfile,
+                "{body}\ncallsigns: {callsigns_s}\n================"
+            )?;
 
-        writeln!(
-            outfile_f2,
-            "{}",
-            format_f2(&dbx, &body, &callsigns,).await.c(h!())?
-        )?;
+            writeln!(
+                outfile_f2,
+                "{}",
+                format_f2(&dbx, &body, &callsigns).await.c(h!())?
+            )?;
+        }
     }
     pb.finish_with_message("done");
 

@@ -1551,11 +1551,6 @@ where
         .await
         .context(h!())?;
 
-    let expr_jsonb_callsigns = Expr::cust_with_expr(
-        "jsonb_array_elements_text($1)",
-        sigint_inbox_item::Column::Callsigns.into_simple_expr(),
-    );
-
     let expr_callsigns = Expr::value(callsigns.to_owned());
     let activity_datetime: SimpleExpr = Func::coalesce([
         sigint_inbox_item::Column::Datetime.into_simple_expr(),
@@ -1569,7 +1564,7 @@ where
         .column(sigint_inbox_item::Column::Id)
         .column(sigint_inbox_item::Column::Freq)
         .expr_as(activity_datetime, "activity_datetime")
-        .expr_as(expr_jsonb_callsigns, "callsign")
+        .column_as(sigint_inbox_item_callsign::Column::Callsign, "callsign")
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item_network::Relation::SigintInboxItem.def(),
@@ -1577,6 +1572,10 @@ where
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SigintInboxItemCallsign.def(),
         )
         .join(
             JoinType::InnerJoin,
@@ -1593,12 +1592,11 @@ where
             signal_message::Column::DatasourceGroupId
                 .eq_any(datasource_group_ids),
         )
-        .filter(sigint_inbox_item::Column::Callsigns.is_not_null())
-        // TODO: this might confuse postgres to scan many rows using GIN index on JSONB callsigns
-        .filter(Expr::cust_with_expr(
-            "sigint_inbox_item.callsigns ?| $1",
-            expr_callsigns.clone(),
-        ))
+        .filter(sigint_inbox_item_callsign::Column::Deleted.eq(false))
+        .filter(
+            sigint_inbox_item_callsign::Column::Callsign
+                .is_in(callsigns.to_owned()),
+        )
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
         .filter(
             Condition::any()

@@ -609,7 +609,6 @@ where
         time: Set(Some(time)),
         freq: Set(source.inbox_item.freq.clone()),
         coords: Set(source.inbox_item.coords.clone()),
-        callsigns: Set(source.inbox_item.callsigns.clone()),
         checked: Set(source.inbox_item.checked),
         reviewed: Set(source.inbox_item.reviewed),
         unit: Set(source.inbox_item.unit.clone()),
@@ -620,8 +619,6 @@ where
         nominatimres_id: Set(source.inbox_item.nominatimres_id),
         location: Set(source.inbox_item.location.clone()),
         tags: Set(source.inbox_item.tags.clone()),
-        callsigns_alg2: Set(source.inbox_item.callsigns_alg2.clone()),
-        callsigns_alg1: Set(source.inbox_item.callsigns_alg1.clone()),
         datetime: NotSet,
         datetime_neo: Set(datetime_neo),
         signal_tokens: Set(source.inbox_item.signal_tokens.clone()),
@@ -636,7 +633,11 @@ where
     .insert(dbx)
     .await
     .c(h!())?;
-    let callsigns = crate::inbox::callsigns::from_legacy(&source.inbox_item)?;
+    let callsigns =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &[source.inbox_item.id])
+            .await?
+            .remove(&source.inbox_item.id)
+            .unwrap_or_default();
     let system_login_id = crate::users::system_login_id(dbx).await.c(h!())?;
     crate::inbox::callsigns::sync(dbx, inserted.id, callsigns, system_login_id)
         .await

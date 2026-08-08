@@ -1353,6 +1353,13 @@ pub async fn oneoff_reprocess_callsign_tokens(
             .all(&txn)
             .await
             .c(h!())?;
+        let inbox_item_ids = inbox_items
+            .iter()
+            .map(|(inbox_item, _)| inbox_item.id)
+            .collect::<Vec<_>>();
+        let callsigns_by_item_id =
+            crate::inbox::callsigns::load_by_item_ids(&txn, &inbox_item_ids)
+                .await?;
 
         println!("> {}: processing {} items", start_dt, inbox_items.len());
 
@@ -1363,10 +1370,11 @@ pub async fn oneoff_reprocess_callsign_tokens(
             let Some(message) = m_message else {
                 continue;
             };
-            let callsigns: Vec<String> = match inbox_item.callsigns.clone() {
-                None => vec![],
-                Some(jv) => serde_json::from_value(jv).c(h!())?,
-            };
+            let callsigns = callsigns_by_item_id
+                .get(&inbox_item.id)
+                .cloned()
+                .unwrap_or_default()
+                .effective();
             let Some(body) = message.body.clone() else {
                 continue;
             };
@@ -1421,6 +1429,13 @@ pub async fn oneoff_reprocess_callsigns(
             .all(&txn)
             .await
             .c(h!())?;
+        let inbox_item_ids = inbox_items
+            .iter()
+            .map(|(inbox_item, _)| inbox_item.id)
+            .collect::<Vec<_>>();
+        let callsigns_by_item_id =
+            crate::inbox::callsigns::load_by_item_ids(&txn, &inbox_item_ids)
+                .await?;
 
         let pb = m.add(ProgressBar::new(inbox_items.len() as u64));
         pb.set_style(crate::utils::get_pb_style()?);
@@ -1453,17 +1468,13 @@ pub async fn oneoff_reprocess_callsigns(
             let callsign_tokens =
                 highlight_callsigns(&rq, &body, &callsigns).await.c(h!())?;
             let inbox_item_id = inbox_item.id;
-            let alg2: Vec<String> = inbox_item
-                .callsigns_alg2
-                .clone()
-                .map(serde_json::from_value)
-                .transpose()
-                .c(h!())?
-                .unwrap_or_default();
+            let alg2 = callsigns_by_item_id
+                .get(&inbox_item.id)
+                .cloned()
+                .unwrap_or_default()
+                .alg2;
             let mut inbox_item: sigint_inbox_item::ActiveModel =
                 inbox_item.clone().into();
-            inbox_item.callsigns =
-                Set(Some(serde_json::to_value(&callsigns).c(h!())?));
             inbox_item.callsign_tokens =
                 Set(Some(serde_json::to_value(callsign_tokens).c(h!())?));
             inbox_item.update(&txn).await.c(h!())?;
@@ -1573,11 +1584,20 @@ pub async fn callsigns_graph(
         )
         .join(
             JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SigintInboxItemCallsign.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
             signal_message::Relation::DatasourceGroup.def(),
         )
         .select_only()
-        .column_as(Expr::cust("distinct callsigns"), "callsigns")
-        .column_as(Expr::col(signal_message::Entity).count(), "count")
+        .column_as(
+            Expr::cust(
+                "jsonb_agg(distinct sigint_inbox_item_callsign.callsign)",
+            ),
+            "callsigns",
+        )
+        .column_as(Expr::cust("1"), "count")
         .filter(
             datasource_group::Column::GroupMasterKey.eq_any(
                 crate::messenger::group::get_identity_sigint_groups(
@@ -1592,7 +1612,9 @@ pub async fn callsigns_graph(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .filter(sigint_inbox_item::Column::Freq.eq_any(freqs))
         .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(Expr::cust("1"));
+        .filter(sigint_inbox_item_callsign::Column::Deleted.eq(false))
+        .filter(Expr::cust("sigint_inbox_item_callsign.source = 'primary'"))
+        .group_by(signal_message::Column::Id);
 
     // println!(
     //     "> rows_res: {}",
@@ -1661,7 +1683,6 @@ pub async fn callsigns_graph(
         .select_only()
         .column_as(sigint_inbox_item::Column::Id, "inbox_item_id")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
-        .column_as(sigint_inbox_item::Column::Callsigns, "legacy_callsigns")
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
             datasource_group::Column::GroupMasterKey
@@ -1670,6 +1691,10 @@ pub async fn callsigns_graph(
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SigintInboxItemCallsign.def(),
         )
         .join(
             JoinType::LeftJoin,
@@ -1842,13 +1867,7 @@ async fn load_callsign_graph_items(
     let mut callsign_graph_q = Query::select();
     callsign_graph_q
         .column((filtered_items_alias.clone(), Alias::new("freq")))
-        .expr_as(
-            Expr::cust(
-                "coalesce(primary_callsigns.callsigns, \
-                 callsign_graph_items.legacy_callsigns)",
-            ),
-            callsigns_alias,
-        )
+        .expr_as(Expr::cust("primary_callsigns.callsigns"), callsigns_alias)
         .from(filtered_items_alias.clone())
         .join(
             JoinType::LeftJoin,

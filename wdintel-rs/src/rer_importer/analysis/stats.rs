@@ -1101,15 +1101,26 @@ fn callsign_relation_messages_query(
             JoinType::InnerJoin,
             signal_message::Relation::SignalMessageGroup.def(),
         )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SigintInboxItemCallsign.def(),
+        )
         .select_only()
         .column_as(signal_message::Column::Id, "message_id")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
-        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+        .column_as(
+            Expr::cust(
+                "jsonb_agg(sigint_inbox_item_callsign.callsign order by sigint_inbox_item_callsign.ordering, sigint_inbox_item_callsign.id)",
+            ),
+            "callsigns",
+        )
+        .group_by(signal_message::Column::Id)
+        .group_by(sigint_inbox_item::Column::Freq)
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .filter(sigint_inbox_item::Column::Callsigns.is_not_null())
-        .distinct();
+        .filter(Expr::cust(crate::inbox::callsigns::sql_exists_condition("sigint_inbox_item")))
+        .filter(sigint_inbox_item_callsign::Column::Deleted.eq(false));
     let query = if let Some(required_callsigns) = required_callsigns {
         let required_callsigns = required_callsigns
             .iter()
@@ -1123,7 +1134,7 @@ fn callsign_relation_messages_query(
                 Condition::any(),
                 |condition, callsign| {
                     condition.add(Expr::cust_with_values(
-                        "sigint_inbox_item.callsigns::jsonb ? $1",
+                        "exists (select 1 from sigint_inbox_item_callsign siic where siic.sigint_inbox_item_id = sigint_inbox_item.id and not siic.deleted and siic.callsign = $1)",
                         vec![callsign],
                     ))
                 },
@@ -6635,9 +6646,21 @@ mod tests {
                 &env.dbx,
                 sigint_inbox_item::ActiveModel {
                     freq: Set(Some(freq.to_string())),
-                    callsigns: Set(Some(callsigns)),
                     ..Default::default()
                 },
+            )
+            .await
+            .unwrap();
+            let actor_id =
+                crate::users::system_login_id(&env.dbx).await.unwrap();
+            crate::inbox::callsigns::sync(
+                &env.dbx,
+                inbox_item.id,
+                crate::inbox::callsigns::InboxItemCallsigns {
+                    primary: serde_json::from_value(callsigns).unwrap(),
+                    alg2: Vec::new(),
+                },
+                actor_id,
             )
             .await
             .unwrap();
@@ -6647,7 +6670,12 @@ mod tests {
             .select_only()
             .column_as(sigint_inbox_item::Column::Id, "message_id")
             .column_as(sigint_inbox_item::Column::Freq, "freq")
-            .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+            .column_as(
+                Expr::cust(
+                    "(select jsonb_agg(siic.callsign order by siic.ordering, siic.id) from sigint_inbox_item_callsign siic where siic.sigint_inbox_item_id = sigint_inbox_item.id and not siic.deleted)",
+                ),
+                "callsigns",
+            )
             .filter(sigint_inbox_item::Column::Id.is_in(message_ids));
         let statement = callsign_frequency_matches_statement(
             filtered_messages,
