@@ -212,10 +212,11 @@ dispatcher and through the HTTPS Echo proxy
 `echo-kharkiv2.comet-vernier.ts.net` to `100.72.214.105:443`.
 
 The sole allowed/default/reviewer engine is the enabled tokenless Gemma router
-engine. The AI-agent feature and security review are enabled with the CBR
-Mattermost webhook; Mattermost chat monitoring is disabled. The fixed
-passwordless template login has exactly `ApiAgent`, `Rer`, and `Cyber` roles.
-The CBR-tuned callsign prompt is installed with MD5
+engine. The AI-agent feature remains disabled. Its security-review pipeline
+and CBR Mattermost webhook are configured for later activation, while
+Mattermost chat monitoring is disabled. The fixed passwordless template login
+has exactly `ApiAgent`, `Rer`, and `Cyber` roles. The CBR-tuned callsign prompt
+is enabled with MD5
 `a939a0436cd0340feef3651ba3d7d376`, and its worker uses the same Gemma engine.
 Final host verification reported five dispatcher identities and
 `running=0/6`; Echo had zero linked users, containers, conversations,
