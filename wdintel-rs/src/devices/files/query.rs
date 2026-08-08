@@ -27,9 +27,10 @@ use super::{
 use crate::file_registry::FileRegistryDb;
 use crate::h;
 use crate::types::ShortContext;
+use sea_orm::sea_query::{Alias, Expr, Func, Query};
 use sea_orm::{
-    AccessMode, ConnectionTrait, DatabaseTransaction, DbBackend,
-    IsolationLevel, Statement, TransactionTrait,
+    AccessMode, ConnectionTrait, DatabaseTransaction, ExprTrait,
+    IsolationLevel, TransactionTrait,
 };
 use std::collections::BTreeSet;
 use uuid::Uuid;
@@ -37,11 +38,15 @@ use uuid::Uuid;
 pub(in crate::devices) async fn capture_transaction_id(
     transaction: &DatabaseTransaction,
 ) -> Result<String, FilesystemError> {
+    let query = Query::select()
+        .expr_as(
+            Expr::expr(Func::cust(Alias::new("pg_current_xact_id")))
+                .cast_as(Alias::new("text")),
+            Alias::new("transaction_id"),
+        )
+        .to_owned();
     let row = transaction
-        .query_one_raw(Statement::from_string(
-            DbBackend::Postgres,
-            "select pg_current_xact_id()::text as transaction_id".to_string(),
-        ))
+        .query_one(&query)
         .await
         .map_err(|error| {
             map_transaction_body_error(anyhow::Error::new(error).context(h!()))

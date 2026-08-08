@@ -1,19 +1,104 @@
 use super::super::ltree;
 use super::model;
+use crate::devices::analytics::types::{TagFilter, TagMatch};
 use crate::devices::files::{
     map_database_error, DirectoryScope, DomainFileEntryKind, EntryQueryScope,
     EntrySortKey, FileSearchFilters, FilesystemError, KeysetPage, TreeEntry,
 };
-use crate::file_registry::entities::file_entry;
+use crate::file_registry::entities::{
+    analytics_tag, device_file_tag, file_entry,
+};
 use crate::h;
 use sea_orm::sea_query::{
-    extension::postgres::PgExpr, Alias, Expr, Func, LikeExpr, SimpleExpr,
+    extension::postgres::PgExpr, Alias, Expr, Func, IntoIden, JoinType,
+    LikeExpr, Query, SelectStatement, SimpleExpr,
 };
 use sea_orm::{
     ActiveEnum, ColumnTrait, Condition, ConnectionTrait, EntityTrait,
     ExprTrait, QueryFilter, QueryOrder, QuerySelect, Select,
 };
 use uuid::Uuid;
+
+pub(super) fn file_tag_filter<T>(
+    file_table: T,
+    tag_filter: &TagFilter,
+) -> SimpleExpr
+where
+    T: IntoIden + Clone + 'static,
+{
+    if tag_filter.untagged {
+        return Expr::exists(active_file_tag_query(file_table, None)).not();
+    }
+
+    match tag_filter.tag_match {
+        TagMatch::TagAny => Expr::exists(active_file_tag_query(
+            file_table,
+            Some(&tag_filter.tag_ids),
+        )),
+        TagMatch::TagAll => tag_filter
+            .tag_ids
+            .iter()
+            .fold(Condition::all(), |condition, tag_id| {
+                condition.add(Expr::exists(active_file_tag_query(
+                    file_table.clone(),
+                    Some(std::slice::from_ref(tag_id)),
+                )))
+            })
+            .into(),
+    }
+}
+
+fn active_file_tag_query<T>(
+    file_table: T,
+    tag_ids: Option<&[Uuid]>,
+) -> SelectStatement
+where
+    T: IntoIden + 'static,
+{
+    let mut query = Query::select()
+        .expr(Expr::value(1))
+        .from(device_file_tag::Entity)
+        .join(
+            JoinType::InnerJoin,
+            analytics_tag::Entity,
+            Condition::all()
+                .add(
+                    Expr::col((
+                        analytics_tag::Entity,
+                        analytics_tag::Column::Id,
+                    ))
+                    .equals((
+                        device_file_tag::Entity,
+                        device_file_tag::Column::TagId,
+                    )),
+                )
+                .add(
+                    Expr::col((
+                        analytics_tag::Entity,
+                        analytics_tag::Column::ArchivedAt,
+                    ))
+                    .is_null(),
+                ),
+        )
+        .and_where(
+            Expr::col((
+                device_file_tag::Entity,
+                device_file_tag::Column::FileEntryId,
+            ))
+            .eq(Expr::col((file_table, file_entry::Column::Id))),
+        )
+        .to_owned();
+    if let Some(tag_ids) = tag_ids {
+        query.and_where(
+            Expr::col((
+                device_file_tag::Entity,
+                device_file_tag::Column::TagId,
+            ))
+            .is_in(tag_ids.iter().copied()),
+        );
+    }
+    query
+}
 
 pub(in crate::devices::files) async fn find_directory_scope(
     db: &impl ConnectionTrait,

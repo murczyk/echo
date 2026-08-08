@@ -1,10 +1,15 @@
 use crate::devices::files::{
     map_database_error, DomainFileEntryKind, FilesystemError, SubtreeFileCount,
 };
+use crate::file_registry::entities::file_entry;
 use crate::h;
-use sea_orm::{
-    ActiveEnum, ConnectionTrait, DbBackend, FromQueryResult, Statement,
+use sea_orm::sea_query::{
+    extension::postgres::PgExpr, Alias, Expr, Func, JoinType, Query,
 };
+use sea_orm::{
+    ActiveEnum, Condition, ConnectionTrait, ExprTrait, FromQueryResult,
+};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Debug, FromQueryResult)]
@@ -19,86 +24,86 @@ pub(in crate::devices::files) async fn count_file_subtrees(
     parent_entry_id: Option<Uuid>,
     directory_entry_ids: &[Uuid],
 ) -> Result<Vec<SubtreeFileCount>, FilesystemError> {
-    let rows =
-        SubtreeFileCountRow::find_by_statement(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            r#"
-            with requested as (
-                select entry_id, ordinality
-                from unnest($3::uuid[]) with ordinality
-                    as requested(entry_id, ordinality)
-            ),
-            requested_directories as (
-                select
-                    requested.entry_id,
-                    requested.ordinality,
-                    directory.hierarchy_path
-                from requested
-                join file_entry directory
-                    on directory.id = requested.entry_id
-                    and directory.device_id = $1
-                    and directory.kind = $2::public.file_entry_kind
-                    and directory.parent_id is not distinct from $4::uuid
-            ),
-            scope as (
-                select
-                    parent.hierarchy_path as parent_hierarchy_path,
-                    nlevel(parent.hierarchy_path) + 1 as child_depth
-                from file_entry parent
-                where $4::uuid is not null
-                    and parent.id = $4
-                    and parent.device_id = $1
-                    and parent.kind = $2::public.file_entry_kind
+    if directory_entry_ids.is_empty() {
+        return Ok(Vec::new());
+    }
 
-                union all
-
-                select null::public.ltree, 1
-                where $4::uuid is null
-            ),
-            file_counts as (
-                select
-                    subpath(file.hierarchy_path, 0, scope.child_depth)::text
-                        as hierarchy_path,
-                    count(*)::bigint as file_count
-                from scope
-                join file_entry file
-                    on file.device_id = $1
-                    and file.kind = $5::public.file_entry_kind
-                    and (
-                        scope.parent_hierarchy_path is null
-                        or file.hierarchy_path <@ scope.parent_hierarchy_path
-                    )
-                group by
-                    subpath(file.hierarchy_path, 0, scope.child_depth)::text
+    let directory = Alias::new("directory");
+    let file = Alias::new("file");
+    let file_join =
+        Condition::all()
+            .add(Expr::col((file.clone(), file_entry::Column::DeviceId)).eq(
+                Expr::col((directory.clone(), file_entry::Column::DeviceId)),
+            ))
+            .add(
+                Expr::col((file.clone(), file_entry::Column::Kind))
+                    .eq(DomainFileEntryKind::File.to_value()),
             )
-            select
-                requested_directories.entry_id,
-                coalesce(file_counts.file_count, 0)::bigint as file_count
-            from requested_directories
-            left join file_counts
-                on file_counts.hierarchy_path =
-                    requested_directories.hierarchy_path::text
-            order by requested_directories.ordinality
-            "#,
-            vec![
-                device_id.into(),
-                DomainFileEntryKind::Directory.to_value().into(),
-                directory_entry_ids.to_vec().into(),
-                parent_entry_id.into(),
-                DomainFileEntryKind::File.to_value().into(),
-            ],
-        ))
-        .all(db)
-        .await
-        .map_err(|error| {
-            map_database_error(anyhow::Error::new(error).context(h!()))
-        })?;
+            .add(
+                Expr::col((file.clone(), file_entry::Column::HierarchyPath))
+                    .contained(Expr::col((
+                        directory.clone(),
+                        file_entry::Column::HierarchyPath,
+                    ))),
+            );
+    let parent_filter = match parent_entry_id {
+        Some(parent_entry_id) => {
+            Expr::col((directory.clone(), file_entry::Column::ParentId))
+                .eq(parent_entry_id)
+        }
+        None => Expr::col((directory.clone(), file_entry::Column::ParentId))
+            .is_null(),
+    };
+    let query = Query::select()
+        .expr_as(
+            Expr::col((directory.clone(), file_entry::Column::Id)),
+            Alias::new("entry_id"),
+        )
+        .expr_as(
+            Func::count(Expr::col((file.clone(), file_entry::Column::Id))),
+            Alias::new("file_count"),
+        )
+        .from_as(file_entry::Entity, directory.clone())
+        .join_as(JoinType::LeftJoin, file_entry::Entity, file, file_join)
+        .and_where(
+            Expr::col((directory.clone(), file_entry::Column::DeviceId))
+                .eq(device_id),
+        )
+        .and_where(
+            Expr::col((directory.clone(), file_entry::Column::Kind))
+                .eq(DomainFileEntryKind::Directory.to_value()),
+        )
+        .and_where(
+            Expr::col((directory.clone(), file_entry::Column::Id))
+                .is_in(directory_entry_ids.iter().copied()),
+        )
+        .and_where(parent_filter)
+        .group_by_col((directory, file_entry::Column::Id))
+        .to_owned();
+    let rows = SubtreeFileCountRow::find_by_statement(
+        db.get_database_backend().build(&query),
+    )
+    .all(db)
+    .await
+    .map_err(|error| {
+        map_database_error(anyhow::Error::new(error).context(h!()))
+    })?;
+    let file_counts = rows
+        .into_iter()
+        .map(|row| (row.entry_id, row.file_count))
+        .collect::<HashMap<_, _>>();
 
-    rows.into_iter()
-        .map(|row| {
+    directory_entry_ids
+        .iter()
+        .filter_map(|entry_id| {
+            file_counts
+                .get(entry_id)
+                .map(|file_count| (*entry_id, *file_count))
+        })
+        .map(|(entry_id, file_count)| {
             Ok(SubtreeFileCount {
-                entry_id: row.entry_id,
-                file_count: checked_file_count(row.file_count)?,
+                entry_id,
+                file_count: checked_file_count(file_count)?,
             })
         })
         .collect()

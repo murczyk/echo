@@ -1,15 +1,17 @@
 use super::{core, model};
-use crate::devices::analytics::types::{TagFilter, TagMatch};
+use crate::devices::analytics::types::TagFilter;
 use crate::devices::files::{
     map_database_error, DirectoryScope, EntryQueryScope, EntrySortKey,
     FilesystemError, KeysetPage, KeysetPageRequest, TreeEntry,
 };
-use crate::file_registry::entities::file_entry;
+use crate::file_registry::entities::{
+    file_entry, sea_orm_active_enums::FileEntryKind,
+};
 use crate::h;
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{extension::postgres::PgExpr, Alias, Expr, Query};
 use sea_orm::{
-    ActiveEnum, Condition, ConnectionTrait, DatabaseBackend, EntityTrait,
-    ExprTrait, FromQueryResult, QueryFilter, QuerySelect, Select, Statement,
+    ActiveEnum, Condition, ConnectionTrait, EntityTrait, ExprTrait,
+    FromQueryResult, QueryFilter, QuerySelect, Select,
 };
 use std::collections::BTreeSet;
 use uuid::Uuid;
@@ -52,82 +54,77 @@ pub(in crate::devices::files) async fn find_matching_tree_entry_ids(
         return Ok(BTreeSet::new());
     }
 
-    let tag_predicate = if tag_filter.untagged {
-        r#"
-        not exists (
-            select 1
-            from device_file_tag as link
-            join analytics_tag as tag
-              on tag.id = link.tag_id
-             and tag.archived_at is null
-            where link.file_entry_id = matching_file.id
+    let candidate = Alias::new("candidate");
+    let matching_file = Alias::new("matching_file");
+    let matching_file_query = Query::select()
+        .expr(Expr::value(1))
+        .from_as(file_entry::Entity, matching_file.clone())
+        .and_where(
+            Expr::col((matching_file.clone(), file_entry::Column::DeviceId))
+                .eq(Expr::col((
+                    candidate.clone(),
+                    file_entry::Column::DeviceId,
+                ))),
         )
-        "#
-    } else {
-        match tag_filter.tag_match {
-            TagMatch::TagAny => {
-                r#"
-                exists (
-                    select 1
-                    from device_file_tag as link
-                    join analytics_tag as tag
-                      on tag.id = link.tag_id
-                     and tag.archived_at is null
-                    where link.file_entry_id = matching_file.id
-                      and link.tag_id = any($3::uuid[])
+        .and_where(
+            Expr::col((matching_file.clone(), file_entry::Column::Kind))
+                .eq(FileEntryKind::File.to_value()),
+        )
+        .and_where(
+            Condition::any()
+                .add(
+                    Expr::col((matching_file.clone(), file_entry::Column::Id))
+                        .eq(Expr::col((
+                            candidate.clone(),
+                            file_entry::Column::Id,
+                        ))),
                 )
-                "#
-            }
-            TagMatch::TagAll => {
-                r#"
-                not exists (
-                    select 1
-                    from unnest($3::uuid[]) as requested(tag_id)
-                    where not exists (
-                        select 1
-                        from device_file_tag as link
-                        join analytics_tag as tag
-                          on tag.id = link.tag_id
-                         and tag.archived_at is null
-                        where link.file_entry_id = matching_file.id
-                          and link.tag_id = requested.tag_id
-                    )
+                .add(
+                    Condition::all()
+                        .add(
+                            Expr::col((
+                                candidate.clone(),
+                                file_entry::Column::Kind,
+                            ))
+                            .eq(FileEntryKind::Directory.to_value()),
+                        )
+                        .add(
+                            Expr::col((
+                                matching_file.clone(),
+                                file_entry::Column::HierarchyPath,
+                            ))
+                            .contained(Expr::col(
+                                (
+                                    candidate.clone(),
+                                    file_entry::Column::HierarchyPath,
+                                ),
+                            )),
+                        ),
                 )
-                "#
-            }
-        }
-    };
-    let sql = format!(
-        r#"
-        select candidate.id as entry_id
-        from file_entry as candidate
-        where candidate.device_id = $1
-          and candidate.id = any($2::uuid[])
-          and exists (
-              select 1
-              from file_entry as matching_file
-              where matching_file.device_id = candidate.device_id
-                and matching_file.kind = 'file'
-                and (
-                    matching_file.id = candidate.id
-                    or (
-                        candidate.kind = 'directory'
-                        and matching_file.hierarchy_path <@ candidate.hierarchy_path
-                    )
-                )
-                and ({tag_predicate})
-          )
-        "#,
-    );
-    let mut values = vec![device_id.into(), entry_ids.to_vec().into()];
-    if !tag_filter.untagged {
-        values.push(tag_filter.tag_ids.clone().into());
-    }
-    MatchingTreeEntryId::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        sql,
-        values,
-    ))
+                .into(),
+        )
+        .and_where(core::file_tag_filter(matching_file, tag_filter))
+        .to_owned();
+    let query = Query::select()
+        .expr_as(
+            Expr::col((candidate.clone(), file_entry::Column::Id)),
+            Alias::new("entry_id"),
+        )
+        .from_as(file_entry::Entity, candidate.clone())
+        .and_where(
+            Expr::col((candidate.clone(), file_entry::Column::DeviceId))
+                .eq(device_id),
+        )
+        .and_where(
+            Expr::col((candidate, file_entry::Column::Id))
+                .is_in(entry_ids.iter().copied()),
+        )
+        .and_where(Expr::exists(matching_file_query))
+        .to_owned();
+
+    MatchingTreeEntryId::find_by_statement(
+        db.get_database_backend().build(&query),
+    )
     .all(db)
     .await
     .map(|rows| rows.into_iter().map(|row| row.entry_id).collect())

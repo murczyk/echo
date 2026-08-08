@@ -6,8 +6,8 @@ use super::types::{
     FileAnalysisInput, RuleExpression, RuleField, RuleMatcher, RuleTestFile,
     TagRuleDefinition,
 };
+use super::DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS;
 use super::{bl, query, queue, worker};
-use crate::config::DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS;
 use crate::entities::{device, login, organism};
 use crate::file_registry::entities::{
     analytics_tag, device_file_tag, file_analysis_control,

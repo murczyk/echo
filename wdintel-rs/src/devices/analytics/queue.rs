@@ -1,16 +1,19 @@
-use crate::config::DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS;
+use super::DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS;
 use crate::file_registry::entities::{
     file_analysis_control, file_analysis_device_state,
     file_analysis_reanalysis_job, file_analysis_state, file_entry,
     sea_orm_active_enums::FileEntryKind,
 };
 use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Utc};
-use sea_orm::sea_query::{Expr, LockBehavior, LockType, OnConflict};
+use sea_orm::sea_query::{
+    Alias, Expr, Func, JoinType, LockBehavior, LockType, OnConflict,
+    SimpleExpr, WindowStatement,
+};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend,
-    DatabaseConnection, DatabaseTransaction, DbErr, EntityTrait,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
+    DatabaseConnection, DatabaseTransaction, DbErr, EntityTrait, ExprTrait,
     FromQueryResult, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
-    Set, Statement, TransactionTrait,
+    QueryTrait, RelationTrait, Set, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -48,13 +51,8 @@ pub(super) struct ClaimedAnalysisBatch {
 }
 
 #[derive(Debug, FromQueryResult)]
-struct ClaimedAnalysisDeviceRow {
-    device_id: Uuid,
-}
-
-#[derive(Debug, FromQueryResult)]
-struct DeviceClaimCompletion {
-    pending: bool,
+struct RemainingAnalysisState {
+    next_available_at: Option<DateTime<FixedOffset>>,
 }
 
 #[derive(Debug, FromQueryResult)]
@@ -345,41 +343,67 @@ pub(super) async fn recover_expired_analysis_leases(
     file_db: &DatabaseConnection,
     limit: u64,
 ) -> Result<u64, DbErr> {
-    let limit = i64::try_from(limit).map_err(|_| {
-        DbErr::Custom("analysis batch size is too large".to_string())
-    })?;
-    file_db
-        .execute_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            r#"
-            with expired as materialized (
-                select file_entry_id
-                from file_analysis_state
-                where pending
-                  and lease_token is not null
-                  and lease_expires_at <= clock_timestamp()
-                order by lease_expires_at, file_entry_id
-                limit $1
-                for update skip locked
+    let transaction = file_db.begin().await?;
+    let now = Utc::now().fixed_offset();
+    let expired = file_analysis_state::Entity::find()
+        .filter(file_analysis_state::Column::Pending.eq(true))
+        .filter(file_analysis_state::Column::LeaseToken.is_not_null())
+        .filter(file_analysis_state::Column::LeaseExpiresAt.lte(now))
+        .order_by_asc(file_analysis_state::Column::LeaseExpiresAt)
+        .order_by_asc(file_analysis_state::Column::FileEntryId)
+        .limit(limit)
+        .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
+        .all(&transaction)
+        .await?;
+    if expired.is_empty() {
+        transaction.commit().await?;
+        return Ok(0);
+    }
+
+    let file_entry_ids = expired
+        .iter()
+        .map(|state| state.file_entry_id)
+        .collect::<Vec<_>>();
+    let retry_at = now + Duration::seconds(1);
+    let result = file_analysis_state::Entity::update_many()
+        .col_expr(
+            file_analysis_state::Column::Pending,
+            Expr::col(file_analysis_state::Column::AttemptCount)
+                .lt(DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS),
+        )
+        .col_expr(
+            file_analysis_state::Column::RetryExhausted,
+            Expr::col(file_analysis_state::Column::AttemptCount)
+                .gte(DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS),
+        )
+        .col_expr(
+            file_analysis_state::Column::LeaseToken,
+            Expr::value(Option::<Uuid>::None),
+        )
+        .col_expr(
+            file_analysis_state::Column::LeaseExpiresAt,
+            Expr::value(Option::<DateTime<FixedOffset>>::None),
+        )
+        .col_expr(
+            file_analysis_state::Column::AvailableAt,
+            Expr::case(
+                Expr::col(file_analysis_state::Column::AttemptCount)
+                    .gte(DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS),
+                now,
             )
-            update file_analysis_state as state
-            set pending = state.attempt_count < $2,
-                retry_exhausted = state.attempt_count >= $2,
-                lease_token = null,
-                lease_expires_at = null,
-                available_at = case
-                    when state.attempt_count >= $2 then clock_timestamp()
-                    else clock_timestamp() + interval '1 second'
-                end,
-                last_error = 'analysis lease expired before acknowledgement',
-                updated_at = clock_timestamp()
-            from expired
-            where state.file_entry_id = expired.file_entry_id
-            "#,
-            [limit.into(), DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS.into()],
-        ))
-        .await
-        .map(|result| result.rows_affected())
+            .finally(retry_at)
+            .into(),
+        )
+        .col_expr(
+            file_analysis_state::Column::LastError,
+            Expr::value("analysis lease expired before acknowledgement"),
+        )
+        .col_expr(file_analysis_state::Column::UpdatedAt, Expr::value(now))
+        .filter(file_analysis_state::Column::FileEntryId.is_in(file_entry_ids))
+        .exec(&transaction)
+        .await?;
+    transaction.commit().await?;
+    Ok(result.rows_affected)
 }
 
 pub(super) async fn recover_expired_analysis_device_leases(
@@ -440,17 +464,13 @@ pub(super) async fn recover_expired_analysis_device_leases(
         file_analysis_state::Entity::update_many()
             .col_expr(
                 file_analysis_state::Column::Pending,
-                Expr::cust_with_values(
-                    "attempt_count < $1",
-                    [DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS],
-                ),
+                Expr::col(file_analysis_state::Column::AttemptCount)
+                    .lt(DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS),
             )
             .col_expr(
                 file_analysis_state::Column::RetryExhausted,
-                Expr::cust_with_values(
-                    "attempt_count >= $1",
-                    [DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS],
-                ),
+                Expr::col(file_analysis_state::Column::AttemptCount)
+                    .gte(DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS),
             )
             .col_expr(
                 file_analysis_state::Column::LeaseToken,
@@ -483,49 +503,49 @@ pub(super) async fn recover_expired_analysis_device_leases(
 pub(super) async fn claim_pending_analysis_device(
     file_db: &DatabaseConnection,
 ) -> Result<Option<ClaimedAnalysisDevice>, DbErr> {
-    let lease_token = Uuid::now_v7();
-    let device = ClaimedAnalysisDeviceRow::find_by_statement(
-        Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            r#"
-            with candidate as materialized (
-                select device_id
-                from file_analysis_device_state
-                where pending
-                  and lease_token is null
-                  and available_at <= clock_timestamp()
-                  and exists (
-                      select 1
-                      from file_analysis_control
-                      where id and backfill_complete
-                  )
-                  and not exists (
-                      select 1
-                      from file_analysis_reanalysis_job
-                      where device_id is null and expanded_at is null
-                  )
-                order by available_at, device_id
-                limit 1
-                for update skip locked
-            )
-            update file_analysis_device_state as state
-            set lease_token = $1,
-                lease_expires_at = clock_timestamp()
-                    + ($2::double precision * interval '1 second'),
-                updated_at = clock_timestamp()
-            from candidate
-            where state.device_id = candidate.device_id
-            returning state.device_id
-            "#,
-            [lease_token.into(), ANALYSIS_LEASE_SECONDS.into()],
-        ),
-    )
-    .one(file_db)
-    .await?;
-    Ok(device.map(|device| ClaimedAnalysisDevice {
-        device_id: device.device_id,
-        lease_token,
-    }))
+    let transaction = file_db.begin().await?;
+    let now = Utc::now().fixed_offset();
+    let completed_backfill = file_analysis_control::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(file_analysis_control::Column::Id.eq(true))
+        .filter(file_analysis_control::Column::BackfillComplete.eq(true))
+        .into_query();
+    let active_legacy_reanalysis = file_analysis_reanalysis_job::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(file_analysis_reanalysis_job::Column::DeviceId.is_null())
+        .filter(file_analysis_reanalysis_job::Column::ExpandedAt.is_null())
+        .into_query();
+    let device = file_analysis_device_state::Entity::find()
+        .filter(file_analysis_device_state::Column::Pending.eq(true))
+        .filter(file_analysis_device_state::Column::LeaseToken.is_null())
+        .filter(file_analysis_device_state::Column::AvailableAt.lte(now))
+        .filter(Expr::exists(completed_backfill))
+        .filter(Expr::exists(active_legacy_reanalysis).not())
+        .order_by_asc(file_analysis_device_state::Column::AvailableAt)
+        .order_by_asc(file_analysis_device_state::Column::DeviceId)
+        .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
+        .one(&transaction)
+        .await?;
+    let claimed = if let Some(device) = device {
+        let device_id = device.device_id;
+        let lease_token = Uuid::now_v7();
+        let mut device = device.into_active_model();
+        device.lease_token = Set(Some(lease_token));
+        device.lease_expires_at =
+            Set(Some(now + Duration::seconds(ANALYSIS_LEASE_SECONDS)));
+        device.updated_at = Set(now);
+        device.update(&transaction).await?;
+        Some(ClaimedAnalysisDevice {
+            device_id,
+            lease_token,
+        })
+    } else {
+        None
+    };
+    transaction.commit().await?;
+    Ok(claimed)
 }
 
 pub(super) async fn claim_pending_analysis_files(
@@ -533,71 +553,110 @@ pub(super) async fn claim_pending_analysis_files(
     device: &ClaimedAnalysisDevice,
     limit: u64,
 ) -> Result<ClaimedAnalysisBatch, DbErr> {
-    let limit = i64::try_from(limit).map_err(|_| {
-        DbErr::Custom("analysis batch size is too large".to_string())
-    })?;
     let transaction = file_db.begin().await?;
-    let files =
-        ClaimedAnalysisFile::find_by_statement(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            r#"
-            with renewed_device as materialized (
-                update file_analysis_device_state
-                set lease_expires_at = clock_timestamp()
-                        + ($3::double precision * interval '1 second'),
-                    updated_at = clock_timestamp()
-                where device_id = $1
-                  and pending
-                  and lease_token = $2
-                  and lease_expires_at > clock_timestamp()
-                returning device_id
-            ), candidates as materialized (
-                select file_entry_id
-                from file_analysis_state
-                where device_id = $1
-                  and pending
-                  and lease_token is null
-                  and available_at <= clock_timestamp()
-                  and exists (select 1 from renewed_device)
-                order by available_at, file_entry_id
-                limit $4
-                for update skip locked
-            ), claimed as (
-                update file_analysis_state as state
-                set lease_token = $2,
-                    lease_expires_at = clock_timestamp()
-                        + ($3::double precision * interval '1 second'),
-                    attempt_count = state.attempt_count + 1,
-                    last_attempt_at = clock_timestamp(),
-                    updated_at = clock_timestamp()
-                from candidates
-                where state.file_entry_id = candidates.file_entry_id
-                returning
-                    state.file_entry_id,
-                    state.source_revision,
-                    state.required_generation
-            )
-            select
-                claimed.file_entry_id,
-                entry.device_id,
-                entry.name,
-                entry.absolute_path,
-                entry.extension,
-                entry.created_at as file_entry_created_at,
-                claimed.source_revision,
-                claimed.required_generation
-            from claimed
-            join file_entry as entry
-              on entry.id = claimed.file_entry_id
-            order by claimed.file_entry_id
-            "#,
-            [
-                device.device_id.into(),
-                device.lease_token.into(),
-                ANALYSIS_LEASE_SECONDS.into(),
-                limit.into(),
-            ],
-        ))
+    let now = Utc::now().fixed_offset();
+    let lease_expires_at = now + Duration::seconds(ANALYSIS_LEASE_SECONDS);
+    let renewal = file_analysis_device_state::Entity::update_many()
+        .col_expr(
+            file_analysis_device_state::Column::LeaseExpiresAt,
+            Expr::value(lease_expires_at),
+        )
+        .col_expr(
+            file_analysis_device_state::Column::UpdatedAt,
+            Expr::value(now),
+        )
+        .filter(
+            file_analysis_device_state::Column::DeviceId.eq(device.device_id),
+        )
+        .filter(file_analysis_device_state::Column::Pending.eq(true))
+        .filter(
+            file_analysis_device_state::Column::LeaseToken
+                .eq(device.lease_token),
+        )
+        .filter(file_analysis_device_state::Column::LeaseExpiresAt.gt(now))
+        .exec(&transaction)
+        .await?;
+    if renewal.rows_affected == 0 {
+        transaction.commit().await?;
+        return Ok(ClaimedAnalysisBatch {
+            lease_token: device.lease_token,
+            files: Vec::new(),
+        });
+    }
+
+    let candidates = file_analysis_state::Entity::find()
+        .filter(file_analysis_state::Column::DeviceId.eq(device.device_id))
+        .filter(file_analysis_state::Column::Pending.eq(true))
+        .filter(file_analysis_state::Column::LeaseToken.is_null())
+        .filter(file_analysis_state::Column::AvailableAt.lte(now))
+        .order_by_asc(file_analysis_state::Column::AvailableAt)
+        .order_by_asc(file_analysis_state::Column::FileEntryId)
+        .limit(limit)
+        .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
+        .all(&transaction)
+        .await?;
+    let file_entry_ids = candidates
+        .iter()
+        .map(|state| state.file_entry_id)
+        .collect::<Vec<_>>();
+    if file_entry_ids.is_empty() {
+        transaction.commit().await?;
+        return Ok(ClaimedAnalysisBatch {
+            lease_token: device.lease_token,
+            files: Vec::new(),
+        });
+    }
+
+    file_analysis_state::Entity::update_many()
+        .col_expr(
+            file_analysis_state::Column::LeaseToken,
+            Expr::value(Some(device.lease_token)),
+        )
+        .col_expr(
+            file_analysis_state::Column::LeaseExpiresAt,
+            Expr::value(Some(lease_expires_at)),
+        )
+        .col_expr(
+            file_analysis_state::Column::AttemptCount,
+            Expr::col(file_analysis_state::Column::AttemptCount).add(1),
+        )
+        .col_expr(
+            file_analysis_state::Column::LastAttemptAt,
+            Expr::value(Some(now)),
+        )
+        .col_expr(file_analysis_state::Column::UpdatedAt, Expr::value(now))
+        .filter(
+            file_analysis_state::Column::FileEntryId
+                .is_in(file_entry_ids.iter().copied()),
+        )
+        .exec(&transaction)
+        .await?;
+    let files = file_entry::Entity::find()
+        .select_only()
+        .tbl_col_as(
+            (file_entry::Entity, file_entry::Column::Id),
+            "file_entry_id",
+        )
+        .column(file_entry::Column::DeviceId)
+        .column(file_entry::Column::Name)
+        .column(file_entry::Column::AbsolutePath)
+        .column(file_entry::Column::Extension)
+        .tbl_col_as(
+            (file_entry::Entity, file_entry::Column::CreatedAt),
+            "file_entry_created_at",
+        )
+        .column(file_analysis_state::Column::SourceRevision)
+        .column(file_analysis_state::Column::RequiredGeneration)
+        .join(
+            JoinType::InnerJoin,
+            file_entry::Relation::FileAnalysisState.def(),
+        )
+        .filter(file_entry::Column::DeviceId.eq(device.device_id))
+        .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
+        .filter(file_entry::Column::Id.is_in(file_entry_ids))
+        .filter(file_analysis_state::Column::LeaseToken.eq(device.lease_token))
+        .order_by_asc(file_entry::Column::Id)
+        .into_model::<ClaimedAnalysisFile>()
         .all(&transaction)
         .await?;
     transaction.commit().await?;
@@ -720,21 +779,18 @@ pub(super) async fn release_claim_with_error<C>(
 where
     C: ConnectionTrait,
 {
+    let now = Utc::now().fixed_offset();
     let error = truncate_last_error(error);
     file_analysis_state::Entity::update_many()
         .col_expr(
             file_analysis_state::Column::Pending,
-            Expr::cust_with_values(
-                "attempt_count < $1",
-                [DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS],
-            ),
+            Expr::col(file_analysis_state::Column::AttemptCount)
+                .lt(DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS),
         )
         .col_expr(
             file_analysis_state::Column::RetryExhausted,
-            Expr::cust_with_values(
-                "attempt_count >= $1",
-                [DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS],
-            ),
+            Expr::col(file_analysis_state::Column::AttemptCount)
+                .gte(DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS),
         )
         .col_expr(
             file_analysis_state::Column::LeaseToken,
@@ -746,27 +802,10 @@ where
         )
         .col_expr(
             file_analysis_state::Column::AvailableAt,
-            Expr::cust_with_values(
-                "case
-                    when attempt_count >= $1 then clock_timestamp()
-                    else clock_timestamp() + (
-                        least(
-                            300,
-                            power(
-                                2,
-                                least(greatest(attempt_count - 1, 0), 8)
-                            )::integer
-                        )::double precision * interval '1 second'
-                    )
-                end",
-                [DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS],
-            ),
+            retry_available_at_expr(now),
         )
         .col_expr(file_analysis_state::Column::LastError, Expr::value(error))
-        .col_expr(
-            file_analysis_state::Column::UpdatedAt,
-            Expr::cust("clock_timestamp()"),
-        )
+        .col_expr(file_analysis_state::Column::UpdatedAt, Expr::value(now))
         .filter(file_analysis_state::Column::LeaseToken.eq(lease_token))
         .exec(file_db)
         .await
@@ -777,6 +816,7 @@ pub(super) async fn release_analysis_device_claim(
     file_db: &DatabaseConnection,
     claim: &ClaimedAnalysisDevice,
 ) -> Result<u64, DbErr> {
+    let now = Utc::now().fixed_offset();
     file_analysis_device_state::Entity::update_many()
         .col_expr(
             file_analysis_device_state::Column::LeaseToken,
@@ -788,11 +828,11 @@ pub(super) async fn release_analysis_device_claim(
         )
         .col_expr(
             file_analysis_device_state::Column::AvailableAt,
-            Expr::cust("clock_timestamp()"),
+            Expr::value(now),
         )
         .col_expr(
             file_analysis_device_state::Column::UpdatedAt,
-            Expr::cust("clock_timestamp()"),
+            Expr::value(now),
         )
         .filter(
             file_analysis_device_state::Column::DeviceId.eq(claim.device_id),
@@ -813,6 +853,7 @@ pub(super) async fn release_analysis_device_claim_with_error(
 ) -> Result<(), DbErr> {
     let transaction = file_db.begin().await?;
     release_claim_with_error(&transaction, claim.lease_token, error).await?;
+    let now = Utc::now().fixed_offset();
     file_analysis_device_state::Entity::update_many()
         .col_expr(
             file_analysis_device_state::Column::LeaseToken,
@@ -824,11 +865,11 @@ pub(super) async fn release_analysis_device_claim_with_error(
         )
         .col_expr(
             file_analysis_device_state::Column::AvailableAt,
-            Expr::cust("clock_timestamp() + interval '1 second'"),
+            Expr::value(now + Duration::seconds(1)),
         )
         .col_expr(
             file_analysis_device_state::Column::UpdatedAt,
-            Expr::cust("clock_timestamp()"),
+            Expr::value(now),
         )
         .filter(
             file_analysis_device_state::Column::DeviceId.eq(claim.device_id),
@@ -846,48 +887,66 @@ pub(super) async fn complete_analysis_device_claim(
     file_db: &DatabaseConnection,
     claim: &ClaimedAnalysisDevice,
 ) -> Result<Option<bool>, DbErr> {
-    DeviceClaimCompletion::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        r#"
-        with remaining as materialized (
-            select min(
-                case
-                    when lease_token is null then available_at
-                    else greatest(available_at, lease_expires_at)
-                end
-            ) as next_available_at
-            from file_analysis_state
-            where device_id = $1 and pending
-        ), active_job as materialized (
-            select exists (
-                select 1
-                from file_analysis_reanalysis_job
-                where device_id = $1 and expanded_at is null
-            ) as present
+    let transaction = file_db.begin().await?;
+    let Some(device) =
+        file_analysis_device_state::Entity::find_by_id(claim.device_id)
+            .filter(
+                file_analysis_device_state::Column::LeaseToken
+                    .eq(claim.lease_token),
+            )
+            .lock_exclusive()
+            .one(&transaction)
+            .await?
+    else {
+        transaction.commit().await?;
+        return Ok(None);
+    };
+
+    let next_available_at = Expr::case(
+        file_analysis_state::Column::LeaseToken.is_null(),
+        Expr::col(file_analysis_state::Column::AvailableAt),
+    )
+    .finally(Func::greatest([
+        Expr::col(file_analysis_state::Column::AvailableAt),
+        Expr::col(file_analysis_state::Column::LeaseExpiresAt),
+    ]));
+    let remaining = file_analysis_state::Entity::find()
+        .select_only()
+        .expr_as(Func::min(next_available_at), "next_available_at")
+        .filter(file_analysis_state::Column::DeviceId.eq(claim.device_id))
+        .filter(file_analysis_state::Column::Pending.eq(true))
+        .into_model::<RemainingAnalysisState>()
+        .one(&transaction)
+        .await?
+        .ok_or_else(|| {
+            DbErr::Custom(
+                "file analysis availability aggregate returned no row"
+                    .to_string(),
+            )
+        })?;
+    let active_job = file_analysis_reanalysis_job::Entity::find()
+        .filter(
+            file_analysis_reanalysis_job::Column::DeviceId.eq(claim.device_id),
         )
-        update file_analysis_device_state as state
-        set pending = (
-                remaining.next_available_at is not null or active_job.present
-            ),
-            lease_token = null,
-            lease_expires_at = null,
-            available_at = case
-                when active_job.present then clock_timestamp()
-                else coalesce(
-                    remaining.next_available_at,
-                    clock_timestamp()
-                )
-            end,
-            updated_at = clock_timestamp()
-        from remaining, active_job
-        where state.device_id = $1 and state.lease_token = $2
-        returning state.pending
-        "#,
-        [claim.device_id.into(), claim.lease_token.into()],
-    ))
-    .one(file_db)
-    .await
-    .map(|completion| completion.map(|completion| completion.pending))
+        .filter(file_analysis_reanalysis_job::Column::ExpandedAt.is_null())
+        .one(&transaction)
+        .await?
+        .is_some();
+    let now = Utc::now().fixed_offset();
+    let pending = remaining.next_available_at.is_some() || active_job;
+    let mut device = device.into_active_model();
+    device.pending = Set(pending);
+    device.lease_token = Set(None);
+    device.lease_expires_at = Set(None);
+    device.available_at = Set(if active_job {
+        now
+    } else {
+        remaining.next_available_at.unwrap_or(now)
+    });
+    device.updated_at = Set(now);
+    device.update(&transaction).await?;
+    transaction.commit().await?;
+    Ok(Some(pending))
 }
 
 async fn load_reanalysis_scopes(
@@ -895,69 +954,58 @@ async fn load_reanalysis_scopes(
     device_id: Option<Uuid>,
     target_rule_revision: i64,
 ) -> Result<Vec<ReanalysisDeviceScope>, DbErr> {
-    let (sql, values) = if let Some(device_id) = device_id {
-        (
-            r#"
-            select distinct on (entry.device_id)
-                entry.device_id,
-                entry.id as upper_file_entry_id,
-                count(*) over (partition by entry.device_id)
-                    as scheduled_file_count
-            from file_entry as entry
-            join file_analysis_state as state
-              on state.file_entry_id = entry.id
-            where entry.kind = 'file'
-              and not state.pending
-              and entry.device_id = $2
-              and not exists (
-                  select 1
-                  from file_analysis_reanalysis_job as job
-                  where job.expanded_at is null
-                    and job.target_rule_revision = $1
-                    and (
-                        job.device_id is null
-                        or job.device_id = entry.device_id
-                    )
-              )
-            order by entry.device_id, entry.id desc
-            "#,
-            vec![target_rule_revision.into(), device_id.into()],
+    let active_job = file_analysis_reanalysis_job::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(file_analysis_reanalysis_job::Column::ExpandedAt.is_null())
+        .filter(
+            file_analysis_reanalysis_job::Column::TargetRuleRevision
+                .eq(target_rule_revision),
         )
-    } else {
-        (
-            r#"
-            select distinct on (entry.device_id)
-                entry.device_id,
-                entry.id as upper_file_entry_id,
-                count(*) over (partition by entry.device_id)
-                    as scheduled_file_count
-            from file_entry as entry
-            join file_analysis_state as state
-              on state.file_entry_id = entry.id
-            where entry.kind = 'file'
-              and not state.pending
-              and not exists (
-                  select 1
-                  from file_analysis_reanalysis_job as job
-                  where job.expanded_at is null
-                    and job.target_rule_revision = $1
-                    and (
-                        job.device_id is null
-                        or job.device_id = entry.device_id
-                    )
-              )
-            order by entry.device_id, entry.id desc
-            "#,
-            vec![target_rule_revision.into()],
+        .filter(
+            Condition::any()
+                .add(file_analysis_reanalysis_job::Column::DeviceId.is_null())
+                .add(
+                    Expr::col((
+                        file_analysis_reanalysis_job::Entity,
+                        file_analysis_reanalysis_job::Column::DeviceId,
+                    ))
+                    .eq(Expr::col((
+                        file_entry::Entity,
+                        file_entry::Column::DeviceId,
+                    ))),
+                ),
         )
-    };
-    ReanalysisDeviceScope::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        sql,
-        values,
-    ))
-    .all(transaction)
-    .await
+        .into_query();
+    let mut query = file_entry::Entity::find()
+        .select_only()
+        .column(file_entry::Column::DeviceId)
+        .column_as(file_entry::Column::Id, "upper_file_entry_id")
+        .distinct_on([(file_entry::Entity, file_entry::Column::DeviceId)])
+        .join(
+            JoinType::InnerJoin,
+            file_entry::Relation::FileAnalysisState.def(),
+        )
+        .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
+        .filter(file_analysis_state::Column::Pending.eq(false))
+        .filter(Expr::exists(active_job).not())
+        .order_by_asc(file_entry::Column::DeviceId)
+        .order_by_desc(file_entry::Column::Id);
+    if let Some(device_id) = device_id {
+        query = query.filter(file_entry::Column::DeviceId.eq(device_id));
+    }
+    QueryTrait::query(&mut query).expr_window_as(
+        Func::count(Expr::col((file_entry::Entity, file_entry::Column::Id))),
+        WindowStatement::partition_by((
+            file_entry::Entity,
+            file_entry::Column::DeviceId,
+        )),
+        Alias::new("scheduled_file_count"),
+    );
+    query
+        .into_model::<ReanalysisDeviceScope>()
+        .all(transaction)
+        .await
 }
 
 pub(super) async fn schedule_reanalysis(
@@ -1040,6 +1088,25 @@ pub(super) async fn schedule_reanalysis(
         })?;
     transaction.commit().await?;
     Ok(scheduled_file_count)
+}
+
+fn retry_available_at_expr(now: DateTime<FixedOffset>) -> SimpleExpr {
+    let mut available_at = Expr::case(
+        Expr::col(file_analysis_state::Column::AttemptCount)
+            .gte(DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS),
+        now,
+    );
+    for attempt_count in 1..DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS {
+        let exponent = u32::try_from(std::cmp::min(attempt_count - 1, 8))
+            .expect("non-negative retry exponent");
+        let delay = Duration::seconds(std::cmp::min(2_i64.pow(exponent), 300));
+        available_at = available_at.case(
+            Expr::col(file_analysis_state::Column::AttemptCount)
+                .eq(attempt_count),
+            now + delay,
+        );
+    }
+    available_at.finally(now + Duration::seconds(1)).into()
 }
 
 fn truncate_last_error(error: &str) -> String {

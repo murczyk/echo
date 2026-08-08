@@ -18,7 +18,10 @@ use crate::config::{
 use crate::devices::access;
 use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
 use crate::entities::{device, login, organism};
-use crate::file_registry::entities::{file_analysis_state, file_entry};
+use crate::file_registry::entities::{
+    device_file_tag, file_analysis_device_state, file_analysis_state,
+    file_entry,
+};
 use crate::file_registry::{connect_runtime, run_migrations, FileRegistryDb};
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
 use crate::h;
@@ -190,12 +193,20 @@ fn uuid_label(id: Uuid) -> String {
     format!("n{}", id.to_string().replace('-', ""))
 }
 
-async fn truncate_file_entries(db: &DatabaseConnection) {
-    db.execute_unprepared(
-        "truncate table public.file_analysis_device_state, public.file_analysis_state, public.device_file_tag, public.file_entry",
-    )
-    .await
-    .unwrap();
+async fn clear_file_entries(db: &DatabaseConnection) {
+    device_file_tag::Entity::delete_many()
+        .exec(db)
+        .await
+        .unwrap();
+    file_analysis_state::Entity::delete_many()
+        .exec(db)
+        .await
+        .unwrap();
+    file_entry::Entity::delete_many().exec(db).await.unwrap();
+    file_analysis_device_state::Entity::delete_many()
+        .exec(db)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -207,7 +218,7 @@ async fn stage_two_runtime_scopes_filters_ltree_and_cursor_contracts() {
     let file_registry_db =
         connect_runtime(&config, Mode::Test).await.unwrap().unwrap();
     let db = file_registry_db.connection();
-    truncate_file_entries(db).await;
+    clear_file_entries(db).await;
 
     let timestamp = NaiveDate::from_ymd_opt(2026, 7, 21)
         .unwrap()
@@ -225,7 +236,7 @@ async fn stage_two_runtime_scopes_filters_ltree_and_cursor_contracts() {
         .await;
     assert_file_move_round_trip(db, &tree, timestamp).await;
 
-    truncate_file_entries(db).await;
+    clear_file_entries(db).await;
 }
 
 #[tokio::test]
@@ -237,7 +248,7 @@ async fn stage_four_scoped_search_filters_paths_and_cursor() {
     let file_registry_db =
         connect_runtime(&config, Mode::Test).await.unwrap().unwrap();
     let db = file_registry_db.connection();
-    truncate_file_entries(db).await;
+    clear_file_entries(db).await;
 
     let timestamp = NaiveDate::from_ymd_opt(2026, 7, 21)
         .unwrap()
@@ -260,7 +271,7 @@ async fn stage_four_scoped_search_filters_paths_and_cursor() {
         .await;
     assert_stage_four_query_counts(db, &reports_scope).await;
 
-    truncate_file_entries(db).await;
+    clear_file_entries(db).await;
 }
 
 #[tokio::test]
@@ -272,7 +283,7 @@ async fn stage_three_root_listing_browse_and_breadcrumbs() {
     let file_registry_db =
         connect_runtime(&config, Mode::Test).await.unwrap().unwrap();
     let db = file_registry_db.connection();
-    truncate_file_entries(db).await;
+    clear_file_entries(db).await;
 
     let timestamp = NaiveDate::from_ymd_opt(2026, 7, 21)
         .unwrap()
@@ -301,7 +312,7 @@ async fn stage_three_root_listing_browse_and_breadcrumbs() {
     assert_stage_three_invalid_directory_scopes(repository, &forest).await;
     assert_stage_three_breadcrumbs(repository, &same_scope, &forest).await;
 
-    truncate_file_entries(db).await;
+    clear_file_entries(db).await;
 }
 
 #[tokio::test]

@@ -1,12 +1,12 @@
 use super::{core, model};
-use crate::devices::analytics::types::{TagFilter, TagMatch};
+use crate::devices::analytics::types::TagFilter;
 use crate::devices::files::{
     map_database_error, FileJournalEntry, FileJournalSortKey, FilesystemError,
     KeysetPage, KeysetPageRequest,
 };
 use crate::file_registry::entities::file_entry;
 use crate::h;
-use sea_orm::sea_query::{Expr, SimpleExpr};
+use sea_orm::sea_query::Expr;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select,
@@ -85,65 +85,16 @@ fn file_journal_scope_query(
     device_id: Uuid,
     tag_filter: Option<&TagFilter>,
 ) -> Select<file_entry::Entity> {
+    // A literal invariant lets PostgreSQL generic plans prove the predicate of
+    // `file_entry_journal_idx`; binding the enum can force a full scan.
     let mut query = file_entry::Entity::find()
         .filter(file_entry::Column::DeviceId.eq(device_id))
         .filter(Expr::cust("file_entry.kind = 'file'"));
     if let Some(tag_filter) = tag_filter {
-        query = query.filter(file_journal_tag_filter(tag_filter));
+        query =
+            query.filter(core::file_tag_filter(file_entry::Entity, tag_filter));
     }
     query
-}
-
-fn file_journal_tag_filter(tag_filter: &TagFilter) -> SimpleExpr {
-    if tag_filter.untagged {
-        return Expr::cust(
-            r#"
-            not exists (
-                select 1
-                from device_file_tag as link
-                join analytics_tag as tag
-                  on tag.id = link.tag_id
-                 and tag.archived_at is null
-                where link.file_entry_id = file_entry.id
-            )
-            "#,
-        );
-    }
-
-    match tag_filter.tag_match {
-        TagMatch::TagAny => Expr::cust_with_values(
-            r#"
-            exists (
-                select 1
-                from device_file_tag as link
-                join analytics_tag as tag
-                  on tag.id = link.tag_id
-                 and tag.archived_at is null
-                where link.file_entry_id = file_entry.id
-                  and link.tag_id = any($1::uuid[])
-            )
-            "#,
-            [tag_filter.tag_ids.clone()],
-        ),
-        TagMatch::TagAll => Expr::cust_with_values(
-            r#"
-            not exists (
-                select 1
-                from unnest($1::uuid[]) as requested(tag_id)
-                where not exists (
-                    select 1
-                    from device_file_tag as link
-                    join analytics_tag as tag
-                      on tag.id = link.tag_id
-                     and tag.archived_at is null
-                    where link.file_entry_id = file_entry.id
-                      and link.tag_id = requested.tag_id
-                )
-            )
-            "#,
-            [tag_filter.tag_ids.clone()],
-        ),
-    }
 }
 
 fn file_journal_strict_after_condition(

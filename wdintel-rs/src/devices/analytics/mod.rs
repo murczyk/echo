@@ -9,6 +9,7 @@ pub(crate) mod worker;
 
 pub(crate) const WORKER_COUNT: usize = 4;
 pub(crate) const BATCH_SIZE: u64 = 1_000;
+const DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS: i32 = 10;
 
 use self::types::{
     AdminAnalyticsTag, AnalyticsTagIdReq, CreateAnalyticsTagReq,
