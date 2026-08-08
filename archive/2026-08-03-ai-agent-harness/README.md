@@ -196,3 +196,28 @@ cleanup.
 
 Production rollout requires separate authorization after that evidence is
 recorded.
+
+## Kharkiv2 follow-up — 2026-08-08
+
+Current onboarding instructions, including cross-tailnet prerequisites and
+the Echo build-host distinction, are maintained in
+[`echo-ai-agent/DEPLOYMENT.md`](../../echo-ai-agent/DEPLOYMENT.md).
+
+`echo-kharkiv2` was added to the shared agent host as the isolated
+`echo-kharkiv2` namespace with forced dispatcher identity
+`echo-ai-agent-kharkiv2`. Its client key fingerprint is
+`SHA256:ToqqD0rlJB5UaKkcZd7kGGUUTvLk0oJDBUFmrOKLVoE`; the private key remains
+root-only on the Echo host. Live profile validation passed through the pinned
+dispatcher and through the HTTPS Echo proxy
+`echo-kharkiv2.comet-vernier.ts.net` to `100.72.214.105:443`.
+
+The sole allowed/default/reviewer engine is the enabled tokenless Gemma router
+engine. The AI-agent feature and security review are enabled with the CBR
+Mattermost webhook; Mattermost chat monitoring is disabled. The fixed
+passwordless template login has exactly `ApiAgent`, `Rer`, and `Cyber` roles.
+The CBR-tuned callsign prompt is installed with MD5
+`a939a0436cd0340feef3651ba3d7d376`, and its worker uses the same Gemma engine.
+Final host verification reported five dispatcher identities and
+`running=0/6`; Echo had zero linked users, containers, conversations,
+requests, or reviews. No end-user harness workflow was created for this
+infrastructure-only onboarding.

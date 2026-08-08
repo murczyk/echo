@@ -85,6 +85,16 @@ staging and production Echo AI engine settings were therefore left unchanged;
 production rollout must wait for restored SSH access or a recorded manual
 staging UI verification.
 
+## Kharkiv2 follow-up — 2026-08-08
+
+Reusable client-onboarding commands are maintained in
+[`echo-vllm-router/README.md`](../../echo-vllm-router/README.md). After the
+router node was shared/granted into the Kharkiv2 tailnet,
+`CLIENT_HOST=echo-kharkiv2 just verify-client` passed health and model checks,
+and `CLIENT_HOST=echo-kharkiv2 just smoke` returned `OK.` from
+`google/gemma-4-26B-A4B-it`. Echo now uses the router through an enabled
+tokenless engine at `http://100.105.172.96:8000/v1`.
+
 ## Rollback
 
 Echo traffic rollback edits the existing AI engine, preserving its ID and

@@ -24,6 +24,23 @@ Omit `setup` on existing installations. `--dangerously-acknowledge` takes no
 value and is required on each mutating command. Stop if `build-template`
 reports an older protected template; it must be audited before replacement.
 
+## Cross-tailnet connectivity
+
+Before adding an Echo deployment from another tailnet, share/grant the
+required nodes in both directions and verify the paths from their actual
+callers:
+
+- Echo must reach the AI-agent dispatcher on TCP 22031 and the vLLM router on
+  TCP 8000;
+- the AI-agent VM must reach the Echo proxy upstream on TCP 443;
+- Echo must reach the configured Mattermost webhook host on TCP 443 when
+  security review is enabled.
+
+Do not rely on connectivity from the operator workstation. Test from the Echo
+and AI-agent hosts themselves before importing or enabling the profile. Keep
+Mattermost chat monitoring disabled unless its separate inbound integration is
+intentionally configured.
+
 ## 2. Create a dispatcher key
 
 On the Echo server being added (example: `echo-staging`):
@@ -93,6 +110,11 @@ deployment, run on the stopped Echo instance before restarting services:
 /opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh --yes
 sudo /usr/bin/wdintel-rs --mode=live migrate
 ```
+
+Regular Echo packages target the Ubuntu 22.04 runtime and are built on
+`echo-build-main` or through the compatible local build path above. Do not use
+`echo-build-deb13-main` for `wdintel-rs`; that builder is reserved for Debian
+13 workloads such as ClickHouse and PeerDB.
 
 For the staging rollout of `HARNESS_RELEASE=2026.08.05.2`, deploy the
 dispatcher and template first, recreate only the AI-agent container in the
