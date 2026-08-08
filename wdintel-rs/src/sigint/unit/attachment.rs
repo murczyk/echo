@@ -98,10 +98,17 @@ pub async fn unit_details(
 pub async fn unit_attachment_unit_ids(
     user: actix_identity::Identity,
     env: Data<Env>,
+    req: Json<Vec<i64>>,
 ) -> Result<Json<UnitAttachmentUnitIdsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
-    let unit_ids = list_visible_attachment_unit_ids(&env.dbx, &login).await?;
+    let requested_unit_ids = req.into_inner();
+    let unit_ids = list_visible_attachment_unit_ids(
+        &env.dbx,
+        &login,
+        Some(&requested_unit_ids),
+    )
+    .await?;
     Ok(Json(UnitAttachmentUnitIdsRsp { unit_ids }))
 }
 
@@ -274,13 +281,23 @@ async fn list_visible_attachments(
 async fn list_visible_attachment_unit_ids(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
+    unit_ids: Option<&[i64]>,
 ) -> Result<Vec<i64>, AppError> {
+    if unit_ids.is_some_and(|unit_ids| unit_ids.is_empty()) {
+        return Ok(vec![]);
+    }
     let mut attachments = sigint_unit_attachment::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_unit_attachment::Relation::SigintUnit.def(),
         )
         .filter(sigint_unit::Column::Deleted.eq(false));
+    if let Some(unit_ids) = unit_ids {
+        attachments = attachments.filter(
+            sigint_unit_attachment::Column::UnitId
+                .is_in(unit_ids.iter().copied()),
+        );
+    }
     if !is_admin(dbx, login).await? {
         let aor_ids =
             crate::sigint::aor::bl::login_aor_ids_with_descendants(dbx, login)
@@ -1166,6 +1183,7 @@ mod tests {
         assert!(!list_visible_attachment_unit_ids(
             &fixture.env.dbx,
             &fixture.unrelated_login_id,
+            None,
         )
         .await
         .unwrap()
@@ -1240,6 +1258,7 @@ mod tests {
         assert!(list_visible_attachment_unit_ids(
             &fixture.env.dbx,
             &fixture.child_login_id,
+            None,
         )
         .await
         .unwrap()
@@ -1331,10 +1350,19 @@ mod tests {
         assert!(list_visible_attachment_unit_ids(
             &fixture.env.dbx,
             &fixture.admin_login_id,
+            None,
         )
         .await
         .unwrap()
         .contains(&fixture.unit.id));
+        assert!(list_visible_attachment_unit_ids(
+            &fixture.env.dbx,
+            &fixture.admin_login_id,
+            Some(&[-1]),
+        )
+        .await
+        .unwrap()
+        .is_empty());
 
         let mut unrelated_aor = fixture.unrelated_aor.into_active_model();
         unrelated_aor.deleted = Set(true);

@@ -14,7 +14,7 @@ import {
   useTheme,
 } from '@mui/material';
 import type { MRT_PaginationState } from 'material-react-table';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { PageErrorState } from '../../components/PageErrorState';
 import { PowerAlert } from '../../components/PowerAlert';
@@ -30,6 +30,7 @@ import { KmzUploadDialog } from './components/KmzUploadDialog';
 import { UnitFormDialog } from './components/UnitFormDialog';
 import { UnitsTable } from './components/UnitsTable';
 import { UnitsPaginationControl } from './components/UnitsPaginationControl';
+import { buildUnitsListReq, type UnitStatusFilter } from './helpers';
 import { useRerUnitsPage } from './use-rer-units-page';
 import { type UnitSearchMode } from './search-mode';
 
@@ -217,35 +218,72 @@ function UnitStatusFilters({
   );
 }
 
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [delayMs, value]);
+
+  return debouncedValue;
+}
+
 function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
-  const page = useRerUnitsPage(authUserRoles);
   const tableState = useTableStateContext();
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('lg'));
   const [kmzDialogOpen, setKmzDialogOpen] = useState(false);
   const [orbitLinkOpen, setOrbitLinkOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<UnitSearchMode>('strict');
+  const [statusFilter, setStatusFilter] = useState<UnitStatusFilter>('active');
   const [pagination, setPagination] = useState<MRT_PaginationState>({
     pageIndex: 0,
     pageSize: 20,
   });
-  const [filteredCount, setFilteredCount] = useState(0);
-
-  const handleFilteredCountChange = useCallback((count: number) => {
-    setFilteredCount(count);
-    setPagination((current) => {
-      const lastPageIndex = Math.max(0, Math.ceil(count / current.pageSize) - 1);
-      return current.pageIndex > lastPageIndex ? { ...current, pageIndex: lastPageIndex } : current;
-    });
-  }, []);
+  const debouncedGlobalFilter = useDebouncedValue(tableState.globalFilter, 300);
+  const debouncedColumnFilters = useDebouncedValue(tableState.columnFilters, 300);
+  const listReq = useMemo(
+    () =>
+      buildUnitsListReq({
+        statusFilter,
+        globalFilter: debouncedGlobalFilter,
+        columnFilters: debouncedColumnFilters,
+        sorting: tableState.sorting,
+        searchMode,
+        pagination,
+      }),
+    [
+      debouncedColumnFilters,
+      debouncedGlobalFilter,
+      pagination,
+      searchMode,
+      statusFilter,
+      tableState.sorting,
+    ],
+  );
+  const page = useRerUnitsPage(authUserRoles, listReq);
 
   useEffect(() => {
     setPagination((current) => (current.pageIndex === 0 ? current : { ...current, pageIndex: 0 }));
-  }, [page.statusFilter, tableState.columnFilters, tableState.globalFilter]);
+  }, [
+    searchMode,
+    statusFilter,
+    tableState.columnFilters,
+    tableState.globalFilter,
+    tableState.sorting,
+  ]);
 
-  const changeStatusFilter = (status: 'all' | 'active' | 'inactive') => {
+  useEffect(() => {
+    setPagination((current) => {
+      const lastPageIndex = Math.max(0, Math.ceil(page.totalCount / current.pageSize) - 1);
+      return current.pageIndex > lastPageIndex ? { ...current, pageIndex: lastPageIndex } : current;
+    });
+  }, [page.totalCount]);
+
+  const changeStatusFilter = (status: UnitStatusFilter) => {
     setPagination((current) => ({ ...current, pageIndex: 0 }));
-    page.setStatusFilter(status);
+    setStatusFilter(status);
   };
 
   return (
@@ -287,7 +325,7 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
                 />
               </Stack>
               <UnitStatusFilters
-                status={page.statusFilter}
+                status={statusFilter}
                 counts={page.statusCounts}
                 onChange={changeStatusFilter}
               />
@@ -300,7 +338,7 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
               <UnitsPaginationControl
                 pageIndex={pagination.pageIndex}
                 pageSize={pagination.pageSize}
-                totalCount={filteredCount}
+                totalCount={page.totalCount}
                 loading={page.loading || page.loadError !== null}
                 onPrevPage={() =>
                   setPagination((current) => ({
@@ -344,7 +382,8 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
             />
           ) : (
             <UnitsTable
-              units={page.visibleUnits}
+              units={page.units}
+              totalCount={page.totalCount}
               attachmentUnitIds={page.attachmentUnitIds}
               loading={page.loading}
               canEdit={page.canEdit}
@@ -356,7 +395,6 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
               onSearchModeChange={setSearchMode}
               pagination={pagination}
               onPaginationChange={setPagination}
-              onFilteredCountChange={handleFilteredCountChange}
             />
           )}
         </Box>
@@ -365,7 +403,6 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
       <UnitFormDialog
         open={page.createOpen}
         unit={null}
-        units={page.units}
         devicesSectionEnabled={page.devicesSectionEnabled}
         submitting={page.submitting}
         error={page.dialogError}
@@ -382,7 +419,6 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
       <UnitFormDialog
         open={page.editUnit !== null}
         unit={page.editUnit}
-        units={page.units}
         devicesSectionEnabled={false}
         submitting={page.submitting}
         error={page.dialogError}
@@ -405,7 +441,6 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
       />
       <MergeUnitDialog
         original={page.mergeTarget}
-        units={page.units}
         submitting={page.submitting}
         error={page.dialogError}
         onClose={page.closeDialogs}

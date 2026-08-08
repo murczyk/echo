@@ -1455,6 +1455,21 @@ mod tests {
                 after_unit_id: None,
                 before_unit_id: None,
                 include_inactive: false,
+                filter_active: None,
+                filter_text: None,
+                filter_name: None,
+                filter_company: None,
+                filter_battalion: None,
+                filter_regiment: None,
+                filter_division: None,
+                filter_army: None,
+                filter_military_district: None,
+                filter_army_region: None,
+                filter_comment: None,
+                filter_orbit_note: None,
+                search_mode: None,
+                limit: None,
+                offset: None,
             })
             .to_request();
         let res = test::call_service(&app, req).await;

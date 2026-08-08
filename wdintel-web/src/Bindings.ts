@@ -2381,6 +2381,31 @@ export type ListUnitsSortBy =
   | 'CreatedAtDesc'
   | 'CreatedAtAsc'
   | 'NaturalMilitarySortAsc'
+  | 'UnitNameAsc'
+  | 'UnitNameDesc'
+  | 'UnitCompanyAsc'
+  | 'UnitCompanyDesc'
+  | 'UnitBattalionAsc'
+  | 'UnitBattalionDesc'
+  | 'UnitRegimentAsc'
+  | 'UnitRegimentDesc'
+  | 'UnitDivisionAsc'
+  | 'UnitDivisionDesc'
+  | 'UnitArmyAsc'
+  | 'UnitArmyDesc'
+  | 'UnitMilitaryDistrictAsc'
+  | 'UnitMilitaryDistrictDesc'
+  | 'UnitArmyRegionAsc'
+  | 'UnitArmyRegionDesc'
+  | 'UnitCommentAsc'
+  | 'UnitCommentDesc'
+  | 'UnitOrbitNoteAsc'
+  | 'UnitOrbitNoteDesc'
+;
+
+export type ListUnitsSearchMode =
+  | 'Strict'
+  | 'Relaxed'
 ;
 
 export type Unit = {
@@ -2408,10 +2433,26 @@ export type ListUnitsReq = {
   afterUnitId: number | null;
   beforeUnitId: number | null;
   includeInactive: boolean;
+  filterActive: boolean | null;
+  filterText: string | null;
+  filterName: string | null;
+  filterCompany: string | null;
+  filterBattalion: string | null;
+  filterRegiment: string | null;
+  filterDivision: string | null;
+  filterArmy: string | null;
+  filterMilitaryDistrict: string | null;
+  filterArmyRegion: string | null;
+  filterComment: string | null;
+  filterOrbitNote: string | null;
+  searchMode: ListUnitsSearchMode | null;
+  limit: number | null;
+  offset: number | null;
 };
 
 export type ListUnitsRsp = {
   showLoadMore: boolean;
+  totalCount: number;
   units: Array<Unit>;
 };
 
@@ -2506,14 +2547,16 @@ export type OrbitParentUnit = {
 };
 
 export type OrbitChildUnit = {
-  orbitUnitId: string;
   sigintUnitId: number;
   name: string;
+  active: boolean;
+  orbitUnitIds: Array<string>;
+  isGenerative: boolean;
+  isOperational: boolean;
 };
 
 export type UnitOrbitChildrenRsp = {
-  generativeUnits: Array<OrbitChildUnit>;
-  operationalUnits: Array<OrbitChildUnit>;
+  units: Array<OrbitChildUnit>;
 };
 
 export type OrbitUnitDetails = {

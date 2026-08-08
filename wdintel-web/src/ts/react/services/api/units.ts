@@ -36,6 +36,28 @@ type GetUnitsPageOptions = GetUnitsListOptions & {
   afterUnitId?: number | null;
 };
 
+export const DEFAULT_LIST_UNITS_REQ: ListUnitsReq = {
+  sortBy: null,
+  afterUnitId: null,
+  beforeUnitId: null,
+  includeInactive: false,
+  filterActive: null,
+  filterText: null,
+  filterName: null,
+  filterCompany: null,
+  filterBattalion: null,
+  filterRegiment: null,
+  filterDivision: null,
+  filterArmy: null,
+  filterMilitaryDistrict: null,
+  filterArmyRegion: null,
+  filterComment: null,
+  filterOrbitNote: null,
+  searchMode: null,
+  limit: null,
+  offset: null,
+};
+
 export function mergeUnitsById(...unitLists: readonly Unit[][]): Unit[] {
   const unitsById = new Map<number, Unit>();
   for (const units of unitLists) {
@@ -44,25 +66,27 @@ export function mergeUnitsById(...unitLists: readonly Unit[][]): Unit[] {
   return Array.from(unitsById.values());
 }
 
-async function getUnitsPage(options?: GetUnitsPageOptions): Promise<ListUnitsRsp> {
+export async function getUnitsPage(
+  req: ListUnitsReq,
+  options?: RequestOptions,
+): Promise<ListUnitsRsp> {
+  const raw = await postJson<unknown>('/api/sigint/units', transformCamelToSnake(req), options);
+  return transformSnakeToCamel<ListUnitsRsp>(raw);
+}
+
+async function getUnitsCursorPage(options?: GetUnitsPageOptions): Promise<ListUnitsRsp> {
   const { afterUnitId = null, includeInactive = false, ...requestOptions } = options ?? {};
   const req: ListUnitsReq = {
-    sortBy: null,
+    ...DEFAULT_LIST_UNITS_REQ,
     afterUnitId,
-    beforeUnitId: null,
     includeInactive,
   };
-  const raw = await postJson<unknown>(
-    '/api/sigint/units',
-    transformCamelToSnake(req),
-    requestOptions,
-  );
-  return transformSnakeToCamel<ListUnitsRsp>(raw);
+  return getUnitsPage(req, requestOptions);
 }
 
 /** Fetch active units by default. Single request, backend limit is 100k. */
 export async function getUnitsList(options?: GetUnitsListOptions): Promise<Unit[]> {
-  return (await getUnitsPage(options)).units ?? [];
+  return (await getUnitsCursorPage(options)).units ?? [];
 }
 
 /** Fetch the complete unit catalog across every backend cursor page. */
@@ -71,7 +95,7 @@ export async function getAllUnitsList(options?: GetUnitsListOptions): Promise<Un
   let afterUnitId: number | null = null;
 
   while (true) {
-    const page = await getUnitsPage({ ...options, afterUnitId });
+    const page = await getUnitsCursorPage({ ...options, afterUnitId });
     for (const unit of page.units ?? []) unitsById.set(unit.id, unit);
     if (!page.showLoadMore) return Array.from(unitsById.values());
 
@@ -145,8 +169,11 @@ export async function mergeDuplicateUnit(req: DeleteUnitDuplicateReq): Promise<U
   return transformSnakeToCamel<Unit>(raw);
 }
 
-export async function getUnitIdsWithVisibleAttachments(): Promise<number[]> {
-  const raw = await postJson<unknown>('/api/sigint/unit/attachment-unit-ids');
+export async function getUnitIdsWithVisibleAttachments(
+  unitIds: number[],
+  options?: RequestOptions,
+): Promise<number[]> {
+  const raw = await postJson<unknown>('/api/sigint/unit/attachment-unit-ids', unitIds, options);
   return transformSnakeToCamel<UnitAttachmentUnitIdsRsp>(raw).unitIds;
 }
 

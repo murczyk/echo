@@ -59,6 +59,21 @@ loadSharedLookupData path =
             , afterUnitId = Nothing
             , beforeUnitId = Nothing
             , includeInactive = False
+            , filterActive = Nothing
+            , filterText = Nothing
+            , filterName = Nothing
+            , filterCompany = Nothing
+            , filterBattalion = Nothing
+            , filterRegiment = Nothing
+            , filterDivision = Nothing
+            , filterArmy = Nothing
+            , filterMilitaryDistrict = Nothing
+            , filterArmyRegion = Nothing
+            , filterComment = Nothing
+            , filterOrbitNote = Nothing
+            , searchMode = Nothing
+            , limit = Nothing
+            , offset = Nothing
             }
         , E.getNetworksList NetworksLoadedByApi
             { sortBy = Nothing
@@ -650,6 +665,21 @@ update req msg model =
                         , afterUnitId = Nothing
                         , beforeUnitId = Nothing
                         , includeInactive = False
+                        , filterActive = Nothing
+                        , filterText = Nothing
+                        , filterName = Nothing
+                        , filterCompany = Nothing
+                        , filterBattalion = Nothing
+                        , filterRegiment = Nothing
+                        , filterDivision = Nothing
+                        , filterArmy = Nothing
+                        , filterMilitaryDistrict = Nothing
+                        , filterArmyRegion = Nothing
+                        , filterComment = Nothing
+                        , filterOrbitNote = Nothing
+                        , searchMode = Nothing
+                        , limit = Nothing
+                        , offset = Nothing
                         }
                     )
 

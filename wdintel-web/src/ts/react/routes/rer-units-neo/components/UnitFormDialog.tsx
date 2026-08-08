@@ -27,11 +27,12 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CreateUnitReq, OrbitUnitDetails, Unit } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
+import { DEFAULT_LIST_UNITS_REQ, getUnitsPage } from '../../../services/api/units';
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
 import {
   defaultUnitMasks,
   EMPTY_UNIT_FORM,
-  findPotentialDuplicates,
+  formatUnitError,
   isUnitFormValid,
   trimUnitForm,
   unitName,
@@ -55,7 +56,6 @@ export type UnitFormSubmit = {
 type Props = {
   open: boolean;
   unit: Unit | null;
-  units: Unit[];
   devicesSectionEnabled: boolean;
   submitting: boolean;
   error: string | null;
@@ -96,9 +96,81 @@ const HIERARCHY_FIELDS: Array<{
   },
 ];
 
-function DuplicateHint({ units, form }: { units: Unit[]; form: UnitForm }) {
-  const duplicates = useMemo(() => findPotentialDuplicates(units, form), [form, units]);
+function DuplicateHint({ form, unitId }: { form: UnitForm; unitId?: number }) {
+  const [duplicates, setDuplicates] = useState<Unit[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const hierarchyFilters = useMemo(
+    () => ({
+      filterCompany: form.company.trim() || null,
+      filterBattalion: form.battalion.trim() || null,
+      filterRegiment: form.regiment.trim() || null,
+      filterDivision: form.division.trim() || null,
+      filterArmy: form.army.trim() || null,
+      filterMilitaryDistrict: form.militaryDistrict.trim() || null,
+      filterArmyRegion: form.armyRegion.trim() || null,
+    }),
+    [
+      form.army,
+      form.armyRegion,
+      form.battalion,
+      form.company,
+      form.division,
+      form.militaryDistrict,
+      form.regiment,
+    ],
+  );
+
+  useEffect(() => {
+    if (Object.values(hierarchyFilters).every((value) => value === null)) {
+      setDuplicates([]);
+      setTotalCount(0);
+      setError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      setLoading(true);
+      setError(null);
+      void getUnitsPage(
+        {
+          ...DEFAULT_LIST_UNITS_REQ,
+          ...hierarchyFilters,
+          sortBy: 'UnitNameAsc',
+          includeInactive: true,
+          searchMode: 'Strict',
+          limit: 6,
+          offset: 0,
+        },
+        { signal: controller.signal },
+      )
+        .then((response) => {
+          if (controller.signal.aborted) return;
+          const selfIncluded = response.units.some((unit) => unit.id === unitId);
+          setDuplicates(response.units.filter((unit) => unit.id !== unitId));
+          setTotalCount(Math.max(0, response.totalCount - Number(selfIncluded)));
+        })
+        .catch((requestError) => {
+          if (!controller.signal.aborted) setError(formatUnitError(requestError));
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [hierarchyFilters, unitId]);
+
   const visible = duplicates.slice(0, 5);
+  if (loading && visible.length === 0) return <CircularProgress size={20} />;
+  if (error !== null) {
+    return <PowerAlert severity="error">Не вдалося перевірити дублікати: {error}</PowerAlert>;
+  }
   if (visible.length === 0) return null;
 
   return (
@@ -147,9 +219,9 @@ function DuplicateHint({ units, form }: { units: Unit[]; form: UnitForm }) {
             </TableBody>
           </Table>
         </TableContainer>
-        {duplicates.length > visible.length ? (
+        {totalCount > visible.length ? (
           <Typography variant="caption">
-            Показано перші {visible.length} з {duplicates.length} збігів. Уточніть поля, щоб звузити
+            Показано перші {visible.length} з {totalCount} збігів. Уточніть поля, щоб звузити
             список.
           </Typography>
         ) : null}
@@ -360,7 +432,6 @@ function OrbitUnitLinks({
 export function UnitFormDialog({
   open,
   unit,
-  units,
   devicesSectionEnabled,
   submitting,
   error,
@@ -468,7 +539,7 @@ export function UnitFormDialog({
                   onUnlink={onUnlinkOrbitUnit}
                 />
               ) : (
-                <DuplicateHint units={units} form={form} />
+                <DuplicateHint form={form} unitId={unit?.id} />
               )}
             </>
           )}

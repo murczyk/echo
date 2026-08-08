@@ -40,20 +40,31 @@ pub async fn can_view_orbit_data(
 
 pub async fn unit_ids_with_orbit(
     dbx: &DatabaseConnection,
+    sigint_unit_ids: &[i64],
 ) -> Result<HashMap<i64, Vec<String>>, AppError> {
+    if sigint_unit_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
     let mut unit_ids = HashMap::<i64, Vec<String>>::new();
-    for link in orbit_unit_sigint_unit::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
-        )
-        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
-        .filter(orbit_unit::Column::Deleted.eq(false))
-        .order_by_asc(orbit_unit_sigint_unit::Column::SigintUnitId)
-        .order_by_asc(orbit_unit_sigint_unit::Column::OrbitUnitId)
-        .all(dbx)
-        .await
-        .c(h!())?
+    let sql = r#"
+        select link.*
+        from orbit_unit_sigint_unit link
+        inner join orbit_unit unit on unit.unit_id = link.orbit_unit_id
+        where link.is_suppressed = false
+            and link.sigint_unit_id = any($1::bigint[])
+            and unit.deleted = false
+        order by link.sigint_unit_id, link.orbit_unit_id
+    "#;
+    for link in orbit_unit_sigint_unit::Model::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            [sigint_unit_ids.to_vec().into()],
+        ),
+    )
+    .all(dbx)
+    .await
+    .c(h!())?
     {
         unit_ids
             .entry(link.sigint_unit_id)
@@ -110,6 +121,7 @@ struct OrbitChildUnitRow {
     orbit_unit_id: Uuid,
     sigint_unit_id: i64,
     name: String,
+    active: bool,
     is_generative: bool,
     is_operational: bool,
 }
@@ -142,12 +154,8 @@ async fn load_unit_orbit_children(
         select
             child.unit_id as orbit_unit_id,
             child_link.sigint_unit_id,
-            coalesce(
-                nullif(btrim(child.unit_name), ''),
-                nullif(btrim(child.unit_name_short), ''),
-                nullif(btrim(child.unit_number), ''),
-                child.unit_id::text
-            ) as name,
+            child_sigint.name,
+            child_sigint.active,
             (child.generative_parent_unit_id = parent.unit_id) is true
                 as is_generative,
             (child.operational_parent_unit_id = parent.unit_id) is true
@@ -168,7 +176,7 @@ async fn load_unit_orbit_children(
         where parent_link.sigint_unit_id = $1
             and parent.deleted = false
             and child.deleted = false
-        order by name, child_link.sigint_unit_id
+        order by child_sigint.name, child_link.sigint_unit_id, child.unit_id
     "#;
     let rows =
         OrbitChildUnitRow::find_by_statement(Statement::from_sql_and_values(
@@ -185,28 +193,34 @@ async fn load_unit_orbit_children(
 fn render_unit_orbit_children(
     rows: Vec<OrbitChildUnitRow>,
 ) -> UnitOrbitChildrenRsp {
-    let mut generative_units = Vec::new();
-    let mut operational_units = Vec::new();
-    let mut generative_ids = HashSet::new();
-    let mut operational_ids = HashSet::new();
+    let mut units = Vec::<OrbitChildUnit>::new();
+    let mut unit_indexes = HashMap::<i64, usize>::new();
     for row in rows {
-        let id = (row.orbit_unit_id, row.sigint_unit_id);
-        let unit = OrbitChildUnit {
-            orbit_unit_id: row.orbit_unit_id.to_string(),
-            sigint_unit_id: row.sigint_unit_id,
-            name: row.name,
-        };
-        if row.is_generative && generative_ids.insert(id) {
-            generative_units.push(unit.clone());
-        }
-        if row.is_operational && operational_ids.insert(id) {
-            operational_units.push(unit);
+        if let Some(index) = unit_indexes.get(&row.sigint_unit_id).copied() {
+            let unit = &mut units[index];
+            let orbit_unit_id = row.orbit_unit_id.to_string();
+            if !unit
+                .orbit_unit_ids
+                .iter()
+                .any(|unit_id| unit_id == &orbit_unit_id)
+            {
+                unit.orbit_unit_ids.push(orbit_unit_id);
+            }
+            unit.is_generative |= row.is_generative;
+            unit.is_operational |= row.is_operational;
+        } else {
+            unit_indexes.insert(row.sigint_unit_id, units.len());
+            units.push(OrbitChildUnit {
+                sigint_unit_id: row.sigint_unit_id,
+                name: row.name,
+                active: row.active,
+                orbit_unit_ids: vec![row.orbit_unit_id.to_string()],
+                is_generative: row.is_generative,
+                is_operational: row.is_operational,
+            });
         }
     }
-    UnitOrbitChildrenRsp {
-        generative_units,
-        operational_units,
-    }
+    UnitOrbitChildrenRsp { units }
 }
 
 async fn render_orbit_unit_details(
@@ -1550,7 +1564,51 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn orbit_children_returns_both_direct_linked_child_lists() {
+    async fn unit_ids_with_orbit_accepts_more_than_postgres_bind_limit() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let sigint_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let orbit_unit_id = Uuid::new_v4();
+        orbit_unit::Entity::insert(orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            ..Default::default()
+        })
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::Entity::insert(
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(orbit_unit_id),
+                sigint_unit_id: Set(sigint_unit.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
+        )
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        let mut unit_ids = vec![-1_i64; 69_999];
+        unit_ids.push(sigint_unit.id);
+
+        assert_eq!(
+            unit_ids_with_orbit(&env.dbx, &unit_ids).await.unwrap(),
+            HashMap::from([(sigint_unit.id, vec![orbit_unit_id.to_string()])])
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orbit_children_returns_linked_units_with_relationships() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
@@ -1567,6 +1625,7 @@ mod tests {
         let generative_sigint = mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
+                name: Set("SIGINT generative".to_string()),
                 ..Default::default()
             },
         )
@@ -1575,6 +1634,8 @@ mod tests {
         let operational_sigint = mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
+                name: Set("SIGINT operational".to_string()),
+                active: Set(false),
                 ..Default::default()
             },
         )
@@ -1594,6 +1655,7 @@ mod tests {
                 unit_id: Set(generative_child_id),
                 unit_name: Set(Some("Generative child".to_string())),
                 generative_parent_unit_id: Set(Some(parent_id)),
+                operational_parent_unit_id: Set(Some(parent_id)),
                 ..Default::default()
             },
             orbit_unit::ActiveModel {
@@ -1641,20 +1703,25 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            children.generative_units,
-            vec![OrbitChildUnit {
-                orbit_unit_id: generative_child_id.to_string(),
-                sigint_unit_id: generative_sigint.id,
-                name: "Generative child".to_string(),
-            }]
-        );
-        assert_eq!(
-            children.operational_units,
-            vec![OrbitChildUnit {
-                orbit_unit_id: operational_child_id.to_string(),
-                sigint_unit_id: operational_sigint.id,
-                name: "Operational child".to_string(),
-            }]
+            children.units,
+            vec![
+                OrbitChildUnit {
+                    sigint_unit_id: generative_sigint.id,
+                    name: "SIGINT generative".to_string(),
+                    active: true,
+                    orbit_unit_ids: vec![generative_child_id.to_string()],
+                    is_generative: true,
+                    is_operational: true,
+                },
+                OrbitChildUnit {
+                    sigint_unit_id: operational_sigint.id,
+                    name: "SIGINT operational".to_string(),
+                    active: false,
+                    orbit_unit_ids: vec![operational_child_id.to_string()],
+                    is_generative: false,
+                    is_operational: true,
+                },
+            ]
         );
     }
 

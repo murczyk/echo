@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Unit } from '../../../../Bindings';
 import {
   defaultUnitMasks,
+  buildUnitsListReq,
   EMPTY_UNIT_FORM,
   filterUnitsByStatus,
   findPotentialDuplicates,
@@ -37,6 +38,28 @@ function unit(overrides: Partial<Unit>): Unit {
 }
 
 describe('rer units helpers', () => {
+  it('builds a server-side inactive page request from table state', () => {
+    expect(
+      buildUnitsListReq({
+        statusFilter: 'inactive',
+        globalFilter: ' 55 омсбр ',
+        columnFilters: [{ id: 'army', value: ' 3 АК ' }],
+        sorting: [{ id: 'createdAt', desc: true }],
+        searchMode: 'strict',
+        pagination: { pageIndex: 2, pageSize: 20 },
+      }),
+    ).toMatchObject({
+      sortBy: 'CreatedAtDesc',
+      includeInactive: true,
+      filterActive: false,
+      filterText: '55 омсбр',
+      filterArmy: '3 АК',
+      searchMode: 'Strict',
+      limit: 20,
+      offset: 40,
+    });
+  });
+
   it('requires at least one hierarchy value', () => {
     expect(isUnitFormValid(EMPTY_UNIT_FORM)).toBe(false);
     expect(isUnitFormValid({ ...EMPTY_UNIT_FORM, battalion: ' 2 батальйон ' })).toBe(true);
