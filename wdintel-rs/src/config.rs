@@ -57,7 +57,7 @@ pub const AI_CALLSIGN_WORKER_RETRY_BASE_SECS: i64 = 5;
 pub const AI_CALLSIGN_WORKER_RETRY_MAX_SECS: i64 = 300;
 pub const AI_CALLSIGN_WORKER_MAX_ATTEMPTS: i32 = 8;
 pub const AI_CALLSIGN_WORKER_MAX_ERROR_CHARS: usize = 2_000;
-pub const AI_CALLSIGN_DEFAULT_PROMPT: &str = r#"Знайди всі позивні у повідомленні користувача.
+pub const AI_CALLSIGN_DEFAULT_PROMPT: &str = r#"Знайди всі позивні у повідомленні користувача. Називний відмінок, російська мова (або оригінал повідомлення).
 Поверни лише JSON-об'єкт у форматі {"callsigns":["ПОЗИВНИЙ"]}.
 Не додавай пояснень. Якщо позивних немає, поверни {"callsigns":[]}."#;
 pub const AI_CHAT_ROLE_SYSTEM: &str = "system";
