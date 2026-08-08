@@ -198,17 +198,18 @@ _verify-goi-node-version-pin:
     PYVERIFY
 
 [arg('server', long='server')]
-_ensure-goi-node-version server app_dir service:
+_ensure-goi-node-version server app_dir service fix:
     #!/usr/bin/env bash
     set -euo pipefail
 
     SERVER="{{ server }}"
     APP_DIR="{{ app_dir }}"
     SERVICE="{{ service }}"
+    FIX="{{ fix }}"
     PINNED_NODE_VERSION="{{ goi_node_version }}"
 
     echo "Smoke-testing pinned Node ${PINNED_NODE_VERSION} on ${SERVER}..."
-    ssh "$SERVER" SERVER="$SERVER" APP_DIR="$APP_DIR" SERVICE="$SERVICE" PINNED_NODE_VERSION="$PINNED_NODE_VERSION" bash -se <<'REMOTE'
+    ssh "$SERVER" SERVER="$SERVER" APP_DIR="$APP_DIR" SERVICE="$SERVICE" FIX="$FIX" PINNED_NODE_VERSION="$PINNED_NODE_VERSION" bash -se <<'REMOTE'
     set -euo pipefail
 
     service_exists() {
@@ -227,12 +228,16 @@ _ensure-goi-node-version server app_dir service:
     current_node="${current%% *}"
     current_npm="${current#* }"
 
-    if [[ "${current_node}" == "v${PINNED_NODE_VERSION}" && -n "${current_npm}" && "${current_npm}" != "${current_node}" ]]; then
+    if [[ "${current_node}" == "v${PINNED_NODE_VERSION}" && -n "${current_npm}" && "${current_npm}" != "${current_node}" && "${FIX}" != "true" ]]; then
       echo "${SERVER} already uses Node ${current_node} with npm ${current_npm}."
       exit 0
     fi
 
-    echo "${SERVER} has Node ${current_node:-missing}; pinned Node v${PINNED_NODE_VERSION} is required."
+    if [[ "${FIX}" == "true" ]]; then
+      echo "--fix requested; forcing a clean npm dependency rebuild on ${SERVER}."
+    else
+      echo "${SERVER} has Node ${current_node:-missing}; pinned Node v${PINNED_NODE_VERSION} is required."
+    fi
     echo "Pausing ${SERVICE}, upgrading Node, rebuilding npm dependencies, and starting ${SERVICE} again."
 
     if service_exists; then
@@ -745,8 +750,9 @@ _backup-app-data server app_dir:
     REMOTE
 
 [arg('builder', long='builder')]
+[arg('fix', long='fix', value='true')]
 [arg('server', long='server')]
-deploy server builder=goi_builder:
+deploy server builder=goi_builder fix="false":
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -754,6 +760,10 @@ deploy server builder=goi_builder:
     BUILDER="{{ builder }}"
     APP_DIR="{{ goi_app_dir }}"
     SRC_DIR="{{ goi_dir }}/goi/goi-{{ goi_version }}/"
+
+    if [[ "{{ fix }}" != "true" ]]; then
+      echo "WARNING: A clean npm dependency rebuild is not forced. Use --fix to pause goi.service, remove node_modules, reinstall dependencies, and start the service again." >&2
+    fi
 
     echo "Deploy uses 'just goi-sync-from-cloud' to fetch GOI {{ goi_version }} into ${SRC_DIR} before syncing to ${SERVER}."
     echo "If Backblaze does not have GOI {{ goi_version }} yet, unpack it under ${SRC_DIR}, update goi_version in justfile, and run 'just release' first."
@@ -768,7 +778,7 @@ deploy server builder=goi_builder:
     sudo chown echo:echo "${APP_DIR}" "${APP_DIR}/data"
     REMOTE
 
-    just --justfile "{{ goi_dir }}/justfile" _ensure-goi-node-version --server "$SERVER" "$APP_DIR" goi.service
+    just --justfile "{{ goi_dir }}/justfile" _ensure-goi-node-version --server "$SERVER" "$APP_DIR" goi.service "{{ fix }}"
     just --justfile "{{ goi_dir }}/justfile" _backup-app-data --server "$SERVER" "$APP_DIR"
 
     echo "Cleaning stale prebuilt externals in ${APP_DIR}..."
@@ -882,7 +892,7 @@ deploy-first server builder=goi_builder:
       sudo chown -R echo:echo '${APP_DIR}'
     "
 
-    just --justfile "{{ goi_dir }}/justfile" _ensure-goi-node-version --server "$SERVER" "$APP_DIR" goi.service
+    just --justfile "{{ goi_dir }}/justfile" _ensure-goi-node-version --server "$SERVER" "$APP_DIR" goi.service false
     just --justfile "{{ goi_dir }}/justfile" _backup-app-data --server "$SERVER" "$APP_DIR"
 
     echo "Cleaning stale prebuilt externals in ${APP_DIR}..."
