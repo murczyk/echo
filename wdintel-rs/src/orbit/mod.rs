@@ -260,6 +260,18 @@ pub async fn link_new_sigint_unit_with_lock(
     sigint_unit_id: i64,
 ) -> anyhow::Result<()> {
     let transaction = acquire_import_lock(db).await?;
+    link_new_sigint_unit_in_transaction(&transaction, sigint_unit_id).await?;
+    transaction.commit().await.c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn link_new_sigint_unit_in_transaction<C>(
+    db: &C,
+    sigint_unit_id: i64,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     if persistence::load_latest_sync(db).await.c(h!())?.is_none() {
         return Ok(());
     }
@@ -269,7 +281,7 @@ pub async fn link_new_sigint_unit_with_lock(
     let sigint_units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(sigint_unit::Column::Active.eq(true))
-        .all(&transaction)
+        .all(db)
         .await
         .c("failed to load active SIGINT units for ORBIT matching")?;
     let sigint_unit_ids_by_orbit_unit =
@@ -283,21 +295,20 @@ pub async fn link_new_sigint_unit_with_lock(
         })
         .collect::<BTreeSet<_>>();
     persistence::replace_automatic_sigint_unit_links_in_transaction(
-        &transaction,
+        db,
         sigint_unit_id,
         &orbit_unit_ids,
     )
     .await
     .c("failed to link the new SIGINT unit to ORBIT")?;
-    let login = crate::users::system_login_id(&transaction).await.c(h!())?;
+    let login = crate::users::system_login_id(db).await.c(h!())?;
     crate::sigint::unit::orbit::materialize_automatic_link_parent_chains(
-        &transaction,
+        db,
         &login,
         &orbit_unit_ids,
     )
     .await
     .c("failed to materialize parent chains for the new ORBIT link")?;
-    transaction.commit().await.c(h!())?;
     Ok(())
 }
 

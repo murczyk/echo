@@ -768,8 +768,11 @@ pub(super) async fn import_orbit_unit_for_login(
     .await?;
     transaction.commit().await.c(h!())?;
 
-    super::render_created_unit_with_optional_network(login, env, unit, network)
-        .await
+    let network_id = network.as_ref().map(|network| network.id);
+    super::render_created_unit_with_optional_network(
+        login, env, unit, network_id, network,
+    )
+    .await
 }
 
 async fn import_missing_orbit_ancestors<C>(
