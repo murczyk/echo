@@ -65,6 +65,18 @@ mod tests {
         assert_eq!(unit.military_district, "");
         assert_eq!(unit.army_region, "");
     }
+
+    #[test]
+    fn list_units_request_defaults_to_active_units() {
+        let req: ListUnitsReq = serde_json::from_value(serde_json::json!({
+            "sort_by": null,
+            "after_unit_id": null,
+            "before_unit_id": null
+        }))
+        .unwrap();
+
+        assert!(!req.include_inactive);
+    }
 }
 
 #[derive(
@@ -83,6 +95,8 @@ pub struct ListUnitsReq {
     pub sort_by: Option<ListUnitsSortBy>,
     pub after_unit_id: Option<i64>,
     pub before_unit_id: Option<i64>,
+    #[serde(default)]
+    pub include_inactive: bool,
 }
 
 #[derive(
@@ -91,6 +105,14 @@ pub struct ListUnitsReq {
 pub struct ListUnitsRsp {
     pub show_load_more: bool,
     pub units: Vec<Unit>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitStatusCountsRsp {
+    pub active: i64,
+    pub inactive: i64,
 }
 
 #[derive(

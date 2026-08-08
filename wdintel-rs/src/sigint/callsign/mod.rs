@@ -1175,6 +1175,7 @@ async fn list_callsign_unit_stats(
     }
     let rows = sigint_callsign::Entity::find()
         .filter(sigint_callsign::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Active.eq(true))
         .filter(sigint_unit::Column::Deleted.eq(false))
         .join_as(
             JoinType::InnerJoin,
@@ -1472,11 +1473,13 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn test_callsign_unit_stats_excludes_deleted_units() {
+    async fn test_callsign_unit_stats_excludes_inactive_and_deleted_units() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let active_unit =
             insert_test_unit(&env.dbx, &login.id, "ActiveUnit").await;
+        let inactive_unit =
+            insert_test_unit(&env.dbx, &login.id, "InactiveUnit").await;
         let deleted_unit =
             insert_test_unit(&env.dbx, &login.id, "DeletedUnit").await;
         let now = Utc::now().naive_utc();
@@ -1484,6 +1487,15 @@ mod tests {
         sigint_unit::ActiveModel {
             id: Set(active_unit.id),
             deleted: Set(false),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+
+        sigint_unit::ActiveModel {
+            id: Set(inactive_unit.id),
+            active: Set(false),
             ..Default::default()
         }
         .update(&env.dbx)
@@ -1518,6 +1530,8 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
+        insert_test_callsign(&env.dbx, inactive_unit.id, "charlie", now, "")
+            .await;
         insert_test_callsign(&env.dbx, deleted_unit.id, "bravo", now, "").await;
 
         let stats = list_callsign_unit_stats(&env.dbx).await.unwrap();

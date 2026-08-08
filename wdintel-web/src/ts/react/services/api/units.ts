@@ -20,6 +20,7 @@ import type {
   UnitAttachment,
   UnitAttachmentUnitIdsRsp,
   UnitDetailsRsp,
+  UnitStatusCountsRsp,
   UpdateUnitAttachmentReq,
 } from '../../../../Bindings';
 import { emitUnauthorizedEvent } from '../../auth-redirect';
@@ -27,19 +28,67 @@ import { HttpRequestError, postBytes, postJson, postVoid } from './client';
 import type { RequestOptions } from './client';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 
-/** Fetch all units (for network display text). Single request, backend limit is 100k. */
-export async function getUnitsList(options?: RequestOptions): Promise<Unit[]> {
+type GetUnitsListOptions = RequestOptions & {
+  includeInactive?: boolean;
+};
+
+type GetUnitsPageOptions = GetUnitsListOptions & {
+  afterUnitId?: number | null;
+};
+
+export function mergeUnitsById(...unitLists: readonly Unit[][]): Unit[] {
+  const unitsById = new Map<number, Unit>();
+  for (const units of unitLists) {
+    for (const unit of units) unitsById.set(unit.id, unit);
+  }
+  return Array.from(unitsById.values());
+}
+
+async function getUnitsPage(options?: GetUnitsPageOptions): Promise<ListUnitsRsp> {
+  const { afterUnitId = null, includeInactive = false, ...requestOptions } = options ?? {};
   const req: ListUnitsReq = {
     sortBy: null,
-    afterUnitId: null,
+    afterUnitId,
     beforeUnitId: null,
+    includeInactive,
   };
+  const raw = await postJson<unknown>(
+    '/api/sigint/units',
+    transformCamelToSnake(req),
+    requestOptions,
+  );
+  return transformSnakeToCamel<ListUnitsRsp>(raw);
+}
+
+/** Fetch active units by default. Single request, backend limit is 100k. */
+export async function getUnitsList(options?: GetUnitsListOptions): Promise<Unit[]> {
+  return (await getUnitsPage(options)).units ?? [];
+}
+
+/** Fetch the complete unit catalog across every backend cursor page. */
+export async function getAllUnitsList(options?: GetUnitsListOptions): Promise<Unit[]> {
+  const unitsById = new Map<number, Unit>();
+  let afterUnitId: number | null = null;
+
+  while (true) {
+    const page = await getUnitsPage({ ...options, afterUnitId });
+    for (const unit of page.units ?? []) unitsById.set(unit.id, unit);
+    if (!page.showLoadMore) return Array.from(unitsById.values());
+
+    const nextAfterUnitId = page.units?.at(-1)?.id;
+    if (nextAfterUnitId === undefined || nextAfterUnitId === afterUnitId) {
+      throw new Error('Unit pagination did not advance');
+    }
+    afterUnitId = nextAfterUnitId;
+  }
+}
+
+export async function getUnitStatusCounts(options?: RequestOptions): Promise<UnitStatusCountsRsp> {
   const raw =
     options == null
-      ? await postJson<unknown>('/api/sigint/units', transformCamelToSnake(req))
-      : await postJson<unknown>('/api/sigint/units', transformCamelToSnake(req), options);
-  const data = transformSnakeToCamel<ListUnitsRsp>(raw);
-  return data?.units ?? [];
+      ? await postJson<unknown>('/api/sigint/units/status-counts', null)
+      : await postJson<unknown>('/api/sigint/units/status-counts', null, options);
+  return transformSnakeToCamel<UnitStatusCountsRsp>(raw);
 }
 
 /** Fetch units by IDs (legacy batch; prefer getUnitsList for duty page). */

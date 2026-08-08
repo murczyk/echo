@@ -1903,7 +1903,7 @@ unitsBlock shared model =
             , div [ class "overflow-y-auto grow-1" ]
                 (case shared.masterUnits of
                     Success units ->
-                        [ Core.UnitHierarchy.view config (Dict.values units) (RD.withDefault [] model.unitStats) ]
+                        [ Core.UnitHierarchy.view config (List.filter .active (Dict.values units)) (RD.withDefault [] model.unitStats) ]
 
                     _ ->
                         [ Shared.Components.Spinner.loadingSpinner ]

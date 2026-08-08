@@ -914,7 +914,6 @@ emptyOrbitDataCard canManageOrbitData state canLinkOrbitUnit orbitNote =
               else
                 text ""
             ]
-        , orbitNoteView orbitNote
         , p [] [ text "Відсутні дані із системи Orbit." ]
         , if canLinkOrbitUnit then
             p [ class "mb-0" ]
@@ -936,6 +935,7 @@ emptyOrbitDataCard canManageOrbitData state canLinkOrbitUnit orbitNote =
 
           else
             text ""
+        , orbitNoteView orbitNote
         ]
 
 
@@ -1031,7 +1031,7 @@ unitOverviewActions state canCreateDeviceNetwork =
 
 orbitNoteView : Maybe String -> Html Msg
 orbitNoteView orbitNote =
-    div [ class "mb-4" ]
+    div [ class "mt-4" ]
         [ div [ class "text-secondary text-sm mb-1" ] [ text "Примітка Orbit" ]
         , div
             [ class "border rounded p-3"
@@ -1054,12 +1054,12 @@ orbitDataCard canManageOrbitData shared state showOrbitNote orbitNote orbitUnit 
               else
                 text ""
             ]
+        , orbitUnitDetails shared orbitUnit
         , if showOrbitNote then
             orbitNoteView orbitNote
 
           else
             text ""
-        , orbitUnitDetails shared orbitUnit
         ]
 
 

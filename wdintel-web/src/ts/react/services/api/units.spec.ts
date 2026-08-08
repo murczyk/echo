@@ -2,14 +2,18 @@
  * @vitest-environment happy-dom
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Unit } from '../../../../Bindings';
 
 import {
   createDeviceNetwork,
   deleteUnitAttachment,
+  getAllUnitsList,
   getUnitDetails,
   getUnitIdsWithVisibleAttachments,
+  getUnitStatusCounts,
   getUnitsList,
   importOrbitUnit,
+  mergeUnitsById,
   searchOrbitUnits,
   updateUnitAttachment,
   uploadUnitAttachment,
@@ -27,31 +31,36 @@ describe('units API', () => {
     vi.restoreAllMocks();
   });
 
+  it('merges explicitly resolved units without duplicating active units', () => {
+    const active = { id: 1, name: 'Active' } as Unit;
+    const inactive = { id: 2, name: 'Inactive', active: false } as Unit;
+
+    expect(mergeUnitsById([active], [active, inactive])).toEqual([active, inactive]);
+  });
+
   it('normalizes unit response fields to camel case', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        jsonResponse({
-          show_load_more: false,
-          units: [
-            {
-              id: 7,
-              company: '',
-              battalion: '2 батальйон',
-              regiment: '',
-              division: '',
-              army: '',
-              comment: '',
-              name: '2 батальйон',
-              active: true,
-              created_at: 1234,
-              created_by_login_id: 'login-id',
-              has_orbit: true,
-            },
-          ],
-        }),
-      ),
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        show_load_more: false,
+        units: [
+          {
+            id: 7,
+            company: '',
+            battalion: '2 батальйон',
+            regiment: '',
+            division: '',
+            army: '',
+            comment: '',
+            name: '2 батальйон',
+            active: true,
+            created_at: 1234,
+            created_by_login_id: 'login-id',
+            has_orbit: true,
+          },
+        ],
+      }),
     );
+    vi.stubGlobal('fetch', fetchMock);
 
     await expect(getUnitsList()).resolves.toMatchObject([
       {
@@ -61,6 +70,60 @@ describe('units API', () => {
         hasOrbit: true,
       },
     ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      sort_by: null,
+      after_unit_id: null,
+      before_unit_id: null,
+      include_inactive: false,
+    });
+  });
+
+  it('can request inactive units explicitly', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ units: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getUnitsList({ includeInactive: true });
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      include_inactive: true,
+    });
+  });
+
+  it('loads every unit page for complete inactive rows and counts', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          show_load_more: true,
+          units: [{ id: 7, name: 'Active', active: true }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          show_load_more: false,
+          units: [{ id: 11, name: 'Inactive', active: false }],
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getAllUnitsList({ includeInactive: true })).resolves.toMatchObject([
+      { id: 7, active: true },
+      { id: 11, active: false },
+    ]);
+    expect(
+      fetchMock.mock.calls.map(([, options]) => JSON.parse(String(options?.body))),
+    ).toMatchObject([
+      { after_unit_id: null, include_inactive: true },
+      { after_unit_id: 7, include_inactive: true },
+    ]);
+  });
+
+  it('loads exact active and inactive unit counts', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ active: 10, inactive: 120_000 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getUnitStatusCounts()).resolves.toEqual({ active: 10, inactive: 120_000 });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/sigint/units/status-counts');
   });
 
   it('loads unit IDs with attachments visible to the current user', async () => {

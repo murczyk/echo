@@ -6,9 +6,10 @@ import {
   createUnit,
   createUnitWithAutoNetwork,
   deleteUnit,
+  getAllUnitsList,
   getUnitDetails,
-  getUnitsList,
   getUnitIdsWithVisibleAttachments,
+  getUnitStatusCounts,
   mergeDuplicateUnit,
   updateUnit,
   unlinkOrbitUnit,
@@ -18,12 +19,7 @@ import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../se
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { hasRole } from '../../utils/roles';
 import type { UnitFormSubmit } from './components/UnitFormDialog';
-import {
-  filterUnitsByStatus,
-  formatUnitError,
-  type UnitStatusFilter,
-  unitStatusCounts,
-} from './helpers';
+import { filterUnitsByStatus, formatUnitError, type UnitStatusFilter } from './helpers';
 
 type Status = {
   severity: AlertColor;
@@ -52,9 +48,12 @@ function replaceUnit(units: Unit[], updated: Unit): Unit[] {
 export function useRerUnitsPage(authUserRoles: string[]) {
   const canEdit = useMemo(() => hasRole(authUserRoles, 'UnitsEditor'), [authUserRoles]);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [statusFilter, setStatusFilter] = useState<UnitStatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<UnitStatusFilter>('active');
+  const [statusCounts, setStatusCounts] = useState({ active: 0, inactive: 0 });
+  const [allUnitsLoaded, setAllUnitsLoaded] = useState(false);
   const [attachmentUnitIds, setAttachmentUnitIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [loadingAllUnits, setLoadingAllUnits] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [settingsReady, setSettingsReady] = useState(!canEdit);
   const [devicesSectionEnabled, setDevicesSectionEnabled] = useState(false);
@@ -77,8 +76,17 @@ export function useRerUnitsPage(authUserRoles: string[]) {
   const loadUnits = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
+    setAllUnitsLoaded(false);
+    void getUnitStatusCounts()
+      .then(setStatusCounts)
+      .catch((error) => {
+        setStatus({
+          severity: 'error',
+          text: `Не вдалося завантажити лічильники підрозділів: ${formatUnitError(error)}`,
+        });
+      });
     const [unitsResult, attachmentIdsResult] = await Promise.allSettled([
-      getUnitsList(),
+      getAllUnitsList(),
       getUnitIdsWithVisibleAttachments(),
     ]);
     if (unitsResult.status === 'fulfilled') {
@@ -103,6 +111,40 @@ export function useRerUnitsPage(authUserRoles: string[]) {
   useEffect(() => {
     void loadUnits();
   }, [loadUnits]);
+
+  const needsAllUnits = statusFilter !== 'active';
+  useEffect(() => {
+    if (loading || allUnitsLoaded || !needsAllUnits) {
+      if (!needsAllUnits) setLoadingAllUnits(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    setLoadingAllUnits(true);
+    void getAllUnitsList({ includeInactive: true, signal: controller.signal })
+      .then((allUnits) => {
+        if (!active) return;
+        setUnits(sortUnits(allUnits));
+        setAllUnitsLoaded(true);
+      })
+      .catch((error) => {
+        if (!active || controller.signal.aborted) return;
+        setStatus({
+          severity: 'error',
+          text: `Не вдалося завантажити неактивні підрозділи: ${formatUnitError(error)}`,
+        });
+        setStatusFilter('active');
+      })
+      .finally(() => {
+        if (active) setLoadingAllUnits(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [allUnitsLoaded, loading, needsAllUnits]);
 
   useEffect(() => {
     if (editUnit === null) {
@@ -299,7 +341,12 @@ export function useRerUnitsPage(authUserRoles: string[]) {
 
   async function refreshUnitsAfterMutation(successText: string) {
     try {
-      setUnits(sortUnits(await getUnitsList()));
+      const [freshUnits, counts] = await Promise.all([
+        getAllUnitsList({ includeInactive: allUnitsLoaded }),
+        getUnitStatusCounts(),
+      ]);
+      setUnits(sortUnits(freshUnits));
+      setStatusCounts(counts);
       setStatus({ severity: 'success', text: successText });
     } catch (error) {
       setStatus({
@@ -433,11 +480,11 @@ export function useRerUnitsPage(authUserRoles: string[]) {
   return {
     units,
     visibleUnits: filterUnitsByStatus(units, statusFilter),
-    statusCounts: unitStatusCounts(units),
+    statusCounts,
     statusFilter,
     setStatusFilter,
     attachmentUnitIds,
-    loading,
+    loading: loading || loadingAllUnits,
     loadError,
     loadUnits,
     canEdit,

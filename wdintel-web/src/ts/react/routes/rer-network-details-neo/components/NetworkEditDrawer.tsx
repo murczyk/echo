@@ -218,12 +218,7 @@ function NetworkEditDrawerComponent({
       return;
     }
 
-    // Drop dead/missing unit ids before saving.
-    const filteredUnitIds = form.unitIds.filter((id) => unitOptions.some((o) => o.id === id));
-    const filteredForm =
-      filteredUnitIds.length !== form.unitIds.length ? { ...form, unitIds: filteredUnitIds } : form;
-
-    onSave(filteredForm);
+    onSave(form);
   };
 
   return (

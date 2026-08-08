@@ -2407,11 +2407,17 @@ export type ListUnitsReq = {
   sortBy: ListUnitsSortBy | null;
   afterUnitId: number | null;
   beforeUnitId: number | null;
+  includeInactive: boolean;
 };
 
 export type ListUnitsRsp = {
   showLoadMore: boolean;
   units: Array<Unit>;
+};
+
+export type UnitStatusCountsRsp = {
+  active: number;
+  inactive: number;
 };
 
 export type ListUnitsByIdReq = {

@@ -50,7 +50,9 @@ impl EchoEchelon {
 
 pub(crate) fn echo_echelon(key: &str) -> Option<EchoEchelon> {
     match key {
-        "platoon" | "company" => Some(EchoEchelon::Company),
+        "teamOrCrew" | "section" | "squad" | "platoon" | "company" => {
+            Some(EchoEchelon::Company)
+        }
         "battalion" => Some(EchoEchelon::Battalion),
         "regiment" | "brigade" => Some(EchoEchelon::Regiment),
         "division" => Some(EchoEchelon::Division),
@@ -157,6 +159,7 @@ where
 pub struct OrbitMatchCandidate {
     pub unit_id: Uuid,
     pub unit_name: Option<String>,
+    pub unit_number: Option<String>,
     pub generative_unit_name_full: Option<String>,
     pub operational_unit_name_full: Option<String>,
 }
@@ -166,6 +169,7 @@ impl From<&types::SourceUnit> for OrbitMatchCandidate {
         Self {
             unit_id: unit.unit_id,
             unit_name: unit.unit_name.clone(),
+            unit_number: unit.unit_number.clone(),
             generative_unit_name_full: unit.generative_unit_name_full.clone(),
             operational_unit_name_full: unit.operational_unit_name_full.clone(),
         }
@@ -710,6 +714,9 @@ mod tests {
 
     #[test]
     fn maps_all_orbit_echelons_to_sigint_hierarchy() {
+        assert_eq!(echo_echelon("teamOrCrew"), Some(EchoEchelon::Company));
+        assert_eq!(echo_echelon("section"), Some(EchoEchelon::Company));
+        assert_eq!(echo_echelon("squad"), Some(EchoEchelon::Company));
         assert_eq!(echo_echelon("platoon"), Some(EchoEchelon::Company));
         assert_eq!(echo_echelon("company"), Some(EchoEchelon::Company));
         assert_eq!(echo_echelon("battalion"), Some(EchoEchelon::Battalion));

@@ -25,7 +25,7 @@ import {
 import { sortNetworkAorsForDisplay } from '../rer-networks-neo/helpers';
 import { useRerNetworkDetailsNeoPageLoad } from './use-rer-network-details-neo-page.load';
 import { parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '../../utils/misc';
-import { buildSelectableUnitOptions } from '../../utils/unit-search';
+import { buildSelectableUnitOptions, buildUnitLookupOptions } from '../../utils/unit-search';
 import { hasRole } from '../../utils/roles';
 import {
   getPublicNetworkDetailsTab,
@@ -105,6 +105,10 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
   );
   const selectableUnits = useMemo(() => buildSelectableUnitOptions(state.units), [state.units]);
   const unitOptions = useMemo(() => buildOptions(selectableUnits), [selectableUnits]);
+  const editUnitOptions = useMemo(
+    () => buildUnitLookupOptions(state.units, state.editForm?.unitIds ?? []),
+    [state.editForm?.unitIds, state.units],
+  );
   const postOptions = useMemo(
     () => buildOptions(state.posts.filter((post) => post.name.trim() !== '')),
     [state.posts],
@@ -533,6 +537,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     transferTypeLabel,
     aorOptions,
     unitOptions,
+    editUnitOptions,
     postOptions,
     confirmationDescriptions,
     signDescriptions,

@@ -32,9 +32,9 @@ vi.mock('./use-rer-callsigns-neo-page.load', () => ({
       loadMockState.loaded = true;
       setUser({ roles: ['Rer', 'CallsignsEditor'] } as User);
       setUnits([
-        { id: 1, name: '11 АК' } as Unit,
-        { id: 2, name: ' 11 АК ' } as Unit,
-        { id: 3, name: '' } as Unit,
+        { id: 1, name: '11 АК', active: true } as Unit,
+        { id: 2, name: ' 11 АК ', active: true } as Unit,
+        { id: 3, name: '', active: true } as Unit,
       ]);
       setSources([{ id: 1, name: 'РО' } as Source]);
       setCallsigns([
@@ -102,7 +102,7 @@ describe('useRerCallsignsNeoPage duplicate hints', () => {
   it('exposes selectable units without blank-name entries', () => {
     const page = renderHookHarness();
 
-    expect(page.selectableUnits).toEqual([{ id: 1, name: '11 АК' }]);
+    expect(page.selectableUnits).toEqual([{ id: 1, name: '11 АК', active: true }]);
   });
 
   it('calculates duplicate hints immediately after quick paste', () => {

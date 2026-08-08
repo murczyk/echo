@@ -80,13 +80,41 @@ pub async fn list_units(
     Ok(Json(response))
 }
 
+#[post("/api/sigint/units/status-counts")]
+pub async fn unit_status_counts(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<UnitStatusCountsRsp>, AppError> {
+    let login_id = login_id_from_identity(&user)?;
+    has_any_role(&env.dbx, &login_id, vec!["Rer", "Api"])
+        .await
+        .c(h!())?;
+    Ok(Json(read_unit_status_counts(&env.dbx).await?))
+}
+
+async fn read_unit_status_counts(
+    dbx: &DatabaseConnection,
+) -> Result<UnitStatusCountsRsp, AppError> {
+    let (active, inactive) = tokio::try_join!(
+        available_units_query(false).count(dbx),
+        available_units_query(true)
+            .filter(sigint_unit::Column::Active.eq(false))
+            .count(dbx),
+    )
+    .c(h!())?;
+
+    Ok(UnitStatusCountsRsp {
+        active: i64::try_from(active).c(h!())?,
+        inactive: i64::try_from(inactive).c(h!())?,
+    })
+}
+
 pub(crate) async fn read_units(
     dbx: &DatabaseConnection,
     req: &ListUnitsReq,
 ) -> Result<ListUnitsRsp, AppError> {
     const LIMIT: u64 = 100000;
-    let mut units = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Deleted.eq(false));
+    let mut units = available_units_query(req.include_inactive);
     let sort_by = req
         .sort_by
         .clone()
@@ -182,6 +210,26 @@ pub(crate) async fn read_units(
     })
 }
 
+fn available_units_query(
+    include_inactive: bool,
+) -> Select<sigint_unit::Entity> {
+    let units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false));
+    if include_inactive {
+        units
+    } else {
+        units.filter(sigint_unit::Column::Active.eq(true))
+    }
+}
+
+fn units_by_id_query(ids: Option<&[i64]>) -> Select<sigint_unit::Entity> {
+    let mut units = available_units_query(true);
+    if let Some(ids) = ids {
+        units = units.filter(sigint_unit::Column::Id.eq_any(ids.to_vec()));
+    }
+    units
+}
+
 #[post("/api/sigint/units-by-id")]
 pub async fn list_units_by_id(
     user: actix_identity::Identity,
@@ -193,12 +241,10 @@ pub async fn list_units_by_id(
         .await
         .c(h!())?;
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
-    let mut units = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Deleted.eq(false));
-    if let Some(ids) = &req.ids {
-        units = units.filter(sigint_unit::Column::Id.eq_any(ids.clone()));
-    }
-    let units = units.all(&env.dbx).await.c(h!())?;
+    let units = units_by_id_query(req.ids.as_deref())
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
 
     let mut res = vec![];
     for unit in units {
@@ -1504,8 +1550,7 @@ pub async fn units_search(
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
 
     let search_phrase = req.search.trim();
-    let mut q = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Deleted.eq(false));
+    let mut q = available_units_query(false);
 
     if !search_phrase.is_empty() {
         q = q.filter(Expr::cust_with_values(
@@ -1766,6 +1811,89 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_list_excludes_inactive_units_unless_requested() {
+        let env = cleanup().await.unwrap();
+        let active_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Active unit".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inactive_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Inactive unit".to_string()),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let active_units = read_units(
+            &env.dbx,
+            &ListUnitsReq {
+                sort_by: None,
+                after_unit_id: None,
+                before_unit_id: None,
+                include_inactive: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(active_units
+            .units
+            .iter()
+            .any(|unit| unit.id == active_unit.id));
+        assert!(active_units
+            .units
+            .iter()
+            .all(|unit| unit.id != inactive_unit.id));
+
+        let all_units = read_units(
+            &env.dbx,
+            &ListUnitsReq {
+                sort_by: None,
+                after_unit_id: None,
+                before_unit_id: None,
+                include_inactive: true,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(all_units.units.iter().any(|unit| unit.id == active_unit.id));
+        assert!(all_units
+            .units
+            .iter()
+            .any(|unit| unit.id == inactive_unit.id));
+
+        let units_by_id = units_by_id_query(Some(&[inactive_unit.id]))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(
+            units_by_id
+                .into_iter()
+                .map(|unit| unit.id)
+                .collect::<Vec<_>>(),
+            vec![inactive_unit.id]
+        );
+
+        assert_eq!(
+            read_unit_status_counts(&env.dbx).await.unwrap(),
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 1,
+            }
+        );
     }
 
     async fn assert_full_active_orbit_hierarchy(
@@ -2263,6 +2391,58 @@ mod tests {
             .exec(&env.dbx)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn oneoff_imports_lower_orbit_echelon_using_unit_number() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let login_id = test_login_id(&env).await;
+        let echelon_id = uuid::Uuid::new_v4();
+        orbit_unit_echelon::ActiveModel {
+            id: Set(echelon_id),
+            key: Set("teamOrCrew".to_string()),
+            name: Set(format!("Розрахунок-{}", uuid::Uuid::new_v4())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let orbit_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            unit_number: Set(Some("5101".to_string())),
+            unit_echelon_id: Set(Some(echelon_id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let imported = orbit::import_unlinked_orbit_units(&env.dbx, &login_id)
+            .await
+            .unwrap();
+
+        assert_eq!(imported, 1);
+        let link = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId.eq(orbit_unit_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let unit = sigint_unit::Entity::find_by_id(link.sigint_unit_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(unit.company, "5101");
+        assert!(!unit.active);
     }
 
     #[tokio::test]

@@ -30,7 +30,7 @@ import {
   getTagsForDisplay,
 } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
-import { getUnitsList } from '../../services/api/units';
+import { getUnitsByIds, getUnitsList, mergeUnitsById } from '../../services/api/units';
 import { isNullOrUndefined, isPresent, sortFrequenciesNumerically } from '../../utils/misc';
 import {
   ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
@@ -1004,8 +1004,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
           loadAnalysisNetworksWithCache(networksAnalysisReq, networkStatsCache, params.signal),
         ]);
         if (isStaleReload() || params.signal?.aborted) return;
-        const unitsMap = Object.fromEntries(units.map((unit) => [unit.id, unit]));
-        params.setUnitsMap(unitsMap);
         const selectedNetworkIds = params.queryState.networksSelected
           .map((value) => Number(value))
           .filter(Number.isFinite);
@@ -1026,6 +1024,23 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
               )
             : [];
         if (isStaleReload() || params.signal?.aborted) return;
+        const referencedUnitIds = Array.from(
+          new Set([
+            ...networksByAnalysisIds.flatMap((network) => network.unitIds ?? []),
+            ...criticalData.inboxRsp.callsigns.flatMap((callsign) =>
+              callsign.res.flatMap((info) => (info.unitId == null ? [] : [info.unitId])),
+            ),
+          ]),
+        );
+        const referencedUnits = await getUnitsByIds(
+          referencedUnitIds,
+          params.signal ? { signal: params.signal } : undefined,
+        );
+        if (isStaleReload() || params.signal?.aborted) return;
+        const unitsMap = Object.fromEntries(
+          mergeUnitsById(units, referencedUnits).map((unit) => [unit.id, unit]),
+        );
+        params.setUnitsMap(unitsMap);
         params.setNetworks((current) => {
           return mergeNetworks(current, networksByAnalysisIds);
         });

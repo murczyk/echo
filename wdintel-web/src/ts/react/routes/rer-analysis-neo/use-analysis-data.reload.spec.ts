@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => ({
   getTagsForDisplay: vi.fn(),
   getTagsMapForDisplay: vi.fn(),
   getUnitsList: vi.fn(),
+  getUnitsByIds: vi.fn(),
 }));
 
 vi.mock('../../services/api/analysis', () => ({
@@ -71,6 +72,12 @@ vi.mock('../../services/api/analysis', () => ({
 
 vi.mock('../../services/api/units', () => ({
   getUnitsList: mocks.getUnitsList,
+  getUnitsByIds: mocks.getUnitsByIds,
+  mergeUnitsById: (...unitLists: Unit[][]) => {
+    const unitsById = new Map<number, Unit>();
+    unitLists.flat().forEach((unit) => unitsById.set(unit.id, unit));
+    return Array.from(unitsById.values());
+  },
 }));
 
 type Deferred<T> = {
@@ -111,6 +118,7 @@ beforeEach(() => {
   mocks.fetchAnalysisCallsignInfos.mockResolvedValue([]);
   mocks.fetchAnalysisUnits.mockResolvedValue({ units: [] });
   mocks.fetchAnalysisLocations.mockResolvedValue({ locations: [] });
+  mocks.getUnitsByIds.mockResolvedValue([]);
   mocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
 });
 
@@ -771,7 +779,7 @@ describe('reloadAnalysisData', () => {
   });
 
   it('hydrates selected network labels through reloadAnalysisData', async () => {
-    const networksDeferred = deferred<Array<{ id: number; name: string }>>();
+    const networksDeferred = deferred<Array<{ id: number; name: string; unitIds: number[] }>>();
     let currentOptions = {
       ...structuredClone(emptyOptions),
       networks: [{ value: '2852', label: 'управління 23 с6 35 омсбр 41 А', count: 293 }],
@@ -784,7 +792,7 @@ describe('reloadAnalysisData', () => {
     mocks.fetchNetworksByIds.mockImplementationOnce(() => networksDeferred.promise);
     mocks.fetchInboxMessages.mockResolvedValue({
       inboxItems: [],
-      callsigns: [],
+      callsigns: [{ callsign: 'alpha', res: [{ unitId: 8 }] }],
       pageLimit: 20,
     });
     mocks.fetchAnalysisFreqs.mockResolvedValue({
@@ -855,9 +863,10 @@ describe('reloadAnalysisData', () => {
     await flushPromises();
     expect(mocks.fetchNetworksByIds).toHaveBeenCalledWith([2852], undefined);
 
-    networksDeferred.resolve([{ id: 2852, name: 'управління' }]);
+    networksDeferred.resolve([{ id: 2852, name: 'управління', unitIds: [7] }]);
     await flushPromises();
 
+    expect(mocks.getUnitsByIds).toHaveBeenCalledWith([7, 8], undefined);
     expect(currentOptions.networks).toEqual([
       { value: '2852', label: 'управління 23 с6 35 омсбр 41 А', count: 293, values: ['2852'] },
     ]);

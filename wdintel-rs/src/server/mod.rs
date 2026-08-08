@@ -889,6 +889,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::zone::my_admin_group_edit_reference)
             .service(crate::sigint::zone::my_admin_group_update)
             .service(crate::sigint::unit::list_units)
+            .service(crate::sigint::unit::unit_status_counts)
             .service(crate::sigint::unit::list_units_by_id)
             .service(crate::sigint::unit::create_unit)
             .service(crate::sigint::unit::create_unit_with_auto_network)
@@ -1453,6 +1454,7 @@ mod tests {
                 sort_by: None,
                 after_unit_id: None,
                 before_unit_id: None,
+                include_inactive: false,
             })
             .to_request();
         let res = test::call_service(&app, req).await;

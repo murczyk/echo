@@ -28,6 +28,7 @@ import Shared.Components.Table as Table
 import Shared.Components.Table.Column as TableColumn
 import Shared.Components.Table.Config as TableConfig
 import Shared.Model exposing (isDarkMode)
+import Shared.Msg as SharedMsg
 import Time
 import Utils.Api.ErrorHandling
 import Utils.RemoteData exposing (RemoteData(..))
@@ -197,7 +198,10 @@ update shared msg model =
 
         GotSignals (Ok rsp) ->
             ( { model | signals = rsp.signals, loading = False }
-            , E.none
+            , rsp.signals
+                |> List.filterMap .unit
+                |> SharedMsg.LoadReferencedUnits
+                |> E.sendSharedMsg
             )
 
         EditUnitSelMsg selMsg ->
@@ -577,7 +581,10 @@ populateUnitMenu : Shared.Model -> List (Select.MenuItem Int)
 populateUnitMenu shared =
     case shared.masterUnits of
         Success units ->
-            List.map (\u -> Select.basicMenuItem { item = u.id, label = u.name }) (Dict.values units)
+            units
+                |> Dict.values
+                |> List.filter .active
+                |> List.map (\u -> Select.basicMenuItem { item = u.id, label = u.name })
 
         _ ->
             []

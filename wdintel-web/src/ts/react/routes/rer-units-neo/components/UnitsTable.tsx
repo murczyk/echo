@@ -10,6 +10,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import {
   Box,
+  Button,
   Chip,
   ListItemText,
   Menu,
@@ -25,10 +26,11 @@ import {
 } from '@mui/material';
 import {
   type MRT_ColumnDef,
+  type MRT_PaginationState,
   MaterialReactTable,
   useMaterialReactTable,
 } from 'material-react-table';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 
 import type { Unit } from '../../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
@@ -534,6 +536,9 @@ export function UnitsTable({
   onMerge,
   searchMode,
   onSearchModeChange,
+  pagination,
+  onPaginationChange,
+  onFilteredCountChange,
 }: {
   units: Unit[];
   attachmentUnitIds: Set<number>;
@@ -545,6 +550,9 @@ export function UnitsTable({
   onMerge: (unit: Unit) => void;
   searchMode: UnitSearchMode;
   onSearchModeChange: (searchMode: UnitSearchMode) => void;
+  pagination: MRT_PaginationState;
+  onPaginationChange: Dispatch<SetStateAction<MRT_PaginationState>>;
+  onFilteredCountChange: (count: number) => void;
 }) {
   const tableStateContext = useTableStateContext();
   const theme = useTheme();
@@ -562,6 +570,8 @@ export function UnitsTable({
     enableFacetedValues: true,
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
     enableColumnResizing: tableStateContext.enableColumnResizing,
+    enablePagination: true,
+    enableBottomToolbar: true,
     enableRowActions: canEdit,
     positionActionsColumn: canEdit ? 'first' : undefined,
     columnFilterDisplayMode: 'popover',
@@ -571,6 +581,7 @@ export function UnitsTable({
     onColumnSizingChange: tableStateContext.onColumnSizingChange,
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
+    onPaginationChange,
     filterFns: {
       [GLOBAL_SEARCH_FILTER_FN_STRICT]: (row, _columnId, filterValue) =>
         isGlobalSearchMatch(row.original, filterValue),
@@ -624,6 +635,14 @@ export function UnitsTable({
         </MrtRowActions>
       </Box>
     ),
+    renderBottomToolbar: ({ table }) =>
+      table.getCanNextPage() ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+          <Button variant="outlined" onClick={() => table.nextPage()} disabled={loading}>
+            Завантажити ще
+          </Button>
+        </Box>
+      ) : null,
     muiTablePaperProps: ({ table }) =>
       getDefaultMrtPaperProps({ table, loading, layout: 'workspace' }),
     muiTableContainerProps: getDefaultMrtContainerProps({
@@ -647,8 +666,15 @@ export function UnitsTable({
       columnOrder: tableStateContext.columnOrder,
       columnSizing: tableStateContext.columnSizing,
       columnVisibility: tableStateContext.columnVisibility,
+      pagination,
     },
   });
+
+  const filteredRowCount = table.getFilteredRowModel().rows.length;
+
+  useEffect(() => {
+    onFilteredCountChange(filteredRowCount);
+  }, [filteredRowCount, onFilteredCountChange]);
 
   useEffect(() => {
     const columnSearchFilterFn = getColumnFilterFn(searchMode);

@@ -29,6 +29,7 @@ const apiMock = vi.hoisted(() => ({
   launchNetworkEtalonkaBatchReportTask: vi.fn(),
   launchNetworksEtalonkaReportTask: vi.fn(),
   getUnitsList: vi.fn(),
+  getUnitsByIds: vi.fn(),
   updateNetwork: vi.fn(),
   updateNetworkPosts: vi.fn(),
   updateNetworkUnits: vi.fn(),
@@ -86,6 +87,12 @@ vi.mock('../../services/api/aor', () => ({
 
 vi.mock('../../services/api/units', () => ({
   getUnitsList: apiMock.getUnitsList,
+  getUnitsByIds: apiMock.getUnitsByIds,
+  mergeUnitsById: (...unitLists: Unit[][]) => {
+    const unitsById = new Map<number, Unit>();
+    unitLists.flat().forEach((unit) => unitsById.set(unit.id, unit));
+    return Array.from(unitsById.values());
+  },
 }));
 
 vi.mock('../../services/api/posts', () => ({
@@ -250,12 +257,14 @@ describe('useRerNetworksNeoPage', () => {
     apiMock.listNetworks.mockReset();
     apiMock.listPosts.mockReset();
     apiMock.getUnitsList.mockReset();
+    apiMock.getUnitsByIds.mockReset();
     apiMock.updateNetwork.mockReset();
     apiMock.updateNetworkPosts.mockReset();
     apiMock.updateNetworkUnits.mockReset();
 
     apiMock.listAors.mockResolvedValue([buildAor(1, 'AOR 1')]);
     apiMock.getUnitsList.mockResolvedValue([buildUnit(1, 'Unit 1')]);
+    apiMock.getUnitsByIds.mockResolvedValue([]);
     apiMock.getNetworkUnitStats.mockResolvedValue([]);
     apiMock.listPosts.mockResolvedValue([]);
     apiMock.getNetworksGroupsActivity.mockResolvedValue({});
