@@ -9,7 +9,6 @@ import type { ListUnitsReq, Unit } from '../../../../Bindings';
 
 const api = vi.hoisted(() => ({
   getUnitsPage: vi.fn(),
-  getUnitStatusCounts: vi.fn(),
   getUnitIdsWithVisibleAttachments: vi.fn(),
 }));
 
@@ -20,7 +19,6 @@ vi.mock('../../services/api/units', () => ({
   getUnitsPage: api.getUnitsPage,
   getUnitDetails: vi.fn(),
   getUnitIdsWithVisibleAttachments: api.getUnitIdsWithVisibleAttachments,
-  getUnitStatusCounts: api.getUnitStatusCounts,
   mergeDuplicateUnit: vi.fn(),
   unlinkOrbitUnit: vi.fn(),
   updateUnit: vi.fn(),
@@ -69,15 +67,29 @@ afterEach(() => {
 describe('useRerUnitsPage loading', () => {
   it('loads and replaces bounded backend pages', async () => {
     const activeReq = { limit: 20, offset: 0, filterActive: true } as ListUnitsReq;
-    const inactiveReq = { limit: 20, offset: 20, filterActive: false } as ListUnitsReq;
+    const inactiveReq = {
+      limit: 20,
+      offset: 20,
+      filterActive: false,
+      filterText: 'Inactive',
+    } as ListUnitsReq;
     api.getUnitsPage.mockImplementation((req: ListUnitsReq) =>
       Promise.resolve(
         req.filterActive
-          ? { units: [activeUnit], totalCount: 1, showLoadMore: false }
-          : { units: [inactiveUnit], totalCount: 50_000, showLoadMore: true },
+          ? {
+              units: [activeUnit],
+              totalCount: 1,
+              statusCounts: { active: 1, inactive: 50_000 },
+              showLoadMore: false,
+            }
+          : {
+              units: [inactiveUnit],
+              totalCount: 1,
+              statusCounts: { active: 0, inactive: 1 },
+              showLoadMore: false,
+            },
       ),
     );
-    api.getUnitStatusCounts.mockResolvedValue({ active: 1, inactive: 1 });
     api.getUnitIdsWithVisibleAttachments.mockResolvedValue([]);
 
     const container = document.createElement('div');
@@ -93,7 +105,7 @@ describe('useRerUnitsPage loading', () => {
     );
     expect(latestPage?.units.map((unit) => unit.id)).toEqual([1]);
     expect(latestPage?.totalCount).toBe(1);
-    expect(latestPage?.statusCounts).toEqual({ active: 1, inactive: 1 });
+    expect(latestPage?.statusCounts).toEqual({ active: 1, inactive: 50_000 });
     expect(api.getUnitIdsWithVisibleAttachments).toHaveBeenNthCalledWith(
       1,
       [1],
@@ -109,7 +121,8 @@ describe('useRerUnitsPage loading', () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(latestPage?.units.map((unit) => unit.id)).toEqual([2]);
-    expect(latestPage?.totalCount).toBe(50_000);
+    expect(latestPage?.totalCount).toBe(1);
+    expect(latestPage?.statusCounts).toEqual({ active: 0, inactive: 1 });
     expect(api.getUnitIdsWithVisibleAttachments).toHaveBeenNthCalledWith(
       2,
       [2],

@@ -2456,6 +2456,7 @@ export type ListUnitsReq = {
 export type ListUnitsRsp = {
   showLoadMore: boolean;
   totalCount: number;
+  statusCounts: UnitStatusCountsRsp;
   units: Array<Unit>;
 };
 

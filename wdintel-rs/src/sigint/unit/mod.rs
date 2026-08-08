@@ -106,13 +106,20 @@ pub async fn unit_status_counts(
 async fn read_unit_status_counts(
     dbx: &DatabaseConnection,
 ) -> Result<UnitStatusCountsRsp, AppError> {
+    count_unit_statuses(dbx, available_units_query(true)).await
+}
+
+async fn count_unit_statuses(
+    dbx: &DatabaseConnection,
+    units: Select<sigint_unit::Entity>,
+) -> Result<UnitStatusCountsRsp, AppError> {
     #[derive(FromQueryResult)]
     struct Row {
         active: i64,
         inactive: i64,
     }
 
-    let counts = available_units_query(true)
+    let counts = units
         .select_only()
         .column_as(
             Expr::cust("COUNT(*) FILTER (WHERE sigint_unit.active = true)"),
@@ -146,14 +153,16 @@ async fn read_units_with_orbit_visibility(
     req: &ListUnitsReq,
     can_view_orbit: bool,
 ) -> Result<ListUnitsRsp, AppError> {
-    let include_inactive =
-        req.include_inactive || req.filter_active == Some(false);
-    let mut units = available_units_query(include_inactive);
+    let mut units = available_units_query(true);
+    units = apply_unit_list_filters(units, req, can_view_orbit);
+    let status_counts = count_unit_statuses(dbx, units.clone()).await?;
     if let Some(active) = req.filter_active {
         units = units.filter(sigint_unit::Column::Active.eq(active));
+    } else if !req.include_inactive {
+        units = units.filter(sigint_unit::Column::Active.eq(true));
     }
-    units = apply_unit_list_filters(units, req, can_view_orbit);
-    let total_count = units.clone().count(dbx).await.c(h!())?;
+    let total_count = selected_unit_count(req, &status_counts);
+    let total_count_u64 = u64::try_from(total_count).c(h!())?;
     let sort_by = unit_list_sort(req.sort_by.as_ref(), can_view_orbit);
     if let Some((column, order)) = simple_unit_list_sort(&sort_by) {
         units = units
@@ -273,13 +282,28 @@ async fn read_units_with_orbit_visibility(
         if req.after_unit_id.is_some() || req.before_unit_id.is_some() {
             res.len() as u64 == limit
         } else {
-            offset.saturating_add(res.len() as u64) < total_count
+            offset.saturating_add(res.len() as u64) < total_count_u64
         };
     Ok(ListUnitsRsp {
         show_load_more,
-        total_count: i64::try_from(total_count).c(h!())?,
+        total_count,
+        status_counts,
         units: res,
     })
+}
+
+fn selected_unit_count(
+    req: &ListUnitsReq,
+    status_counts: &UnitStatusCountsRsp,
+) -> i64 {
+    match req.filter_active {
+        Some(true) => status_counts.active,
+        Some(false) => status_counts.inactive,
+        None if req.include_inactive => {
+            status_counts.active.saturating_add(status_counts.inactive)
+        }
+        None => status_counts.active,
+    }
 }
 
 fn unit_list_sort(
@@ -2047,7 +2071,7 @@ mod tests {
         let active_unit = crate::functest::tests::mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
-                name: Set("Active unit".to_string()),
+                name: Set("Alpha unit".to_string()),
                 active: Set(true),
                 orbit_note: Set(Some("Protected orbit phrase".to_string())),
                 ..Default::default()
@@ -2058,7 +2082,7 @@ mod tests {
         let inactive_unit = crate::functest::tests::mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
-                name: Set("Inactive unit".to_string()),
+                name: Set("Beta unit".to_string()),
                 active: Set(false),
                 ..Default::default()
             },
@@ -2101,6 +2125,13 @@ mod tests {
             .iter()
             .all(|unit| unit.id != inactive_unit.id));
         assert_eq!(active_units.total_count, 1);
+        assert_eq!(
+            active_units.status_counts,
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 1,
+            }
+        );
 
         let all_units = read_units(
             &env.dbx,
@@ -2134,6 +2165,13 @@ mod tests {
             .iter()
             .any(|unit| unit.id == inactive_unit.id));
         assert_eq!(all_units.total_count, 2);
+        assert_eq!(
+            all_units.status_counts,
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 1,
+            }
+        );
 
         let inactive_page = read_units(
             &env.dbx,
@@ -2152,11 +2190,18 @@ mod tests {
         assert_eq!(inactive_page.units.len(), 1);
         assert_eq!(inactive_page.units[0].id, inactive_unit.id);
         assert!(!inactive_page.show_load_more);
+        assert_eq!(
+            inactive_page.status_counts,
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 1,
+            }
+        );
 
         let filtered_page = read_units(
             &env.dbx,
             &ListUnitsReq {
-                filter_text: Some("Active".to_string()),
+                filter_text: Some("Alpha".to_string()),
                 search_mode: Some(ListUnitsSearchMode::Relaxed),
                 limit: Some(20),
                 ..Default::default()
@@ -2166,6 +2211,13 @@ mod tests {
         .unwrap();
         assert_eq!(filtered_page.total_count, 1);
         assert_eq!(filtered_page.units[0].id, active_unit.id);
+        assert_eq!(
+            filtered_page.status_counts,
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 0,
+            }
+        );
 
         let ignored_orbit_filter = read_units_with_orbit_visibility(
             &env.dbx,
@@ -2180,6 +2232,13 @@ mod tests {
         .unwrap();
         assert_eq!(ignored_orbit_filter.total_count, 1);
         assert_eq!(ignored_orbit_filter.units[0].id, active_unit.id);
+        assert_eq!(
+            ignored_orbit_filter.status_counts,
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 1,
+            }
+        );
 
         let restricted_global_filter = read_units_with_orbit_visibility(
             &env.dbx,
@@ -2193,6 +2252,13 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(restricted_global_filter.total_count, 0);
+        assert_eq!(
+            restricted_global_filter.status_counts,
+            UnitStatusCountsRsp {
+                active: 0,
+                inactive: 0,
+            }
+        );
 
         let allowed_global_filter = read_units_with_orbit_visibility(
             &env.dbx,
@@ -2206,6 +2272,13 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(allowed_global_filter.total_count, 1);
+        assert_eq!(
+            allowed_global_filter.status_counts,
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 0,
+            }
+        );
         assert_eq!(
             unit_list_sort(Some(&ListUnitsSortBy::UnitOrbitNoteAsc), false),
             ListUnitsSortBy::NaturalMilitarySortAsc

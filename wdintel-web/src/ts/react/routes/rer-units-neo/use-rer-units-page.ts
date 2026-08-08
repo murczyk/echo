@@ -14,7 +14,6 @@ import {
   getUnitsPage,
   getUnitDetails,
   getUnitIdsWithVisibleAttachments,
-  getUnitStatusCounts,
   mergeDuplicateUnit,
   updateUnit,
   unlinkOrbitUnit,
@@ -86,6 +85,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
         if (options?.signal?.aborted) return;
         setUnits(response.units);
         setTotalCount(response.totalCount);
+        setStatusCounts(response.statusCounts);
         try {
           const unitIds = response.units.map((unit) => unit.id);
           const attachmentIds = await getUnitIdsWithVisibleAttachments(unitIds, options);
@@ -113,20 +113,6 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     void loadUnits({ signal: controller.signal });
     return () => controller.abort();
   }, [loadUnits]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void getUnitStatusCounts({ signal: controller.signal })
-      .then(setStatusCounts)
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setStatus({
-          severity: 'error',
-          text: `Не вдалося завантажити лічильники підрозділів: ${formatUnitError(error)}`,
-        });
-      });
-    return () => controller.abort();
-  }, []);
 
   useEffect(() => {
     if (editUnit === null) {
@@ -323,13 +309,13 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
 
   async function refreshUnitsAfterMutation(successText: string) {
     try {
-      const [response, counts] = await Promise.all([getUnitsPage(listReq), getUnitStatusCounts()]);
+      const response = await getUnitsPage(listReq);
       const attachmentIds = await getUnitIdsWithVisibleAttachments(
         response.units.map((unit) => unit.id),
       );
       setUnits(response.units);
       setTotalCount(response.totalCount);
-      setStatusCounts(counts);
+      setStatusCounts(response.statusCounts);
       setAttachmentUnitIds(new Set(attachmentIds));
       setStatus({ severity: 'success', text: successText });
     } catch (error) {

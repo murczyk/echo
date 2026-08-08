@@ -6357,6 +6357,7 @@ listUnitsReqEncoder struct =
 type alias ListUnitsRsp =
     { showLoadMore : Bool
     , totalCount : Int
+    , statusCounts : UnitStatusCountsRsp
     , units : List (Unit)
     }
 
@@ -6366,6 +6367,7 @@ listUnitsRspEncoder struct =
     Json.Encode.object
         [ ( "show_load_more", (Json.Encode.bool) struct.showLoadMore )
         , ( "total_count", (Json.Encode.int) struct.totalCount )
+        , ( "status_counts", (unitStatusCountsRspEncoder) struct.statusCounts )
         , ( "units", (Json.Encode.list (unitEncoder)) struct.units )
         ]
 
@@ -15724,6 +15726,7 @@ listUnitsRspDecoder =
     Json.Decode.succeed ListUnitsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_load_more" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status_counts" (unitStatusCountsRspDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (unitDecoder))))
 
 

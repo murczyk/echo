@@ -83,9 +83,14 @@ describe('units API', () => {
   });
 
   it('requests a bounded server-side page with filters', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(jsonResponse({ show_load_more: true, total_count: 120_000, units: [] }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        show_load_more: true,
+        total_count: 120_000,
+        status_counts: { active: 0, inactive: 120_000 },
+        units: [],
+      }),
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(
@@ -99,7 +104,12 @@ describe('units API', () => {
         limit: 20,
         offset: 40,
       }),
-    ).resolves.toEqual({ showLoadMore: true, totalCount: 120_000, units: [] });
+    ).resolves.toEqual({
+      showLoadMore: true,
+      totalCount: 120_000,
+      statusCounts: { active: 0, inactive: 120_000 },
+      units: [],
+    });
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       sort_by: 'UnitNameAsc',
       include_inactive: true,

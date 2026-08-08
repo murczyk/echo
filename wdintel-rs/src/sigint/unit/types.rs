@@ -156,6 +156,7 @@ pub struct ListUnitsReq {
 pub struct ListUnitsRsp {
     pub show_load_more: bool,
     pub total_count: i64,
+    pub status_counts: UnitStatusCountsRsp,
     pub units: Vec<Unit>,
 }
 
