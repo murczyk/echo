@@ -312,10 +312,13 @@ where
     Ok(())
 }
 
-pub(crate) async fn matching_orbit_unit_ids_for_sigint_unit(
-    db: &sea_orm::DatabaseConnection,
+pub(crate) async fn matching_orbit_unit_ids_for_sigint_unit<C>(
+    db: &C,
     sigint_unit: &sigint_unit::Model,
-) -> anyhow::Result<BTreeSet<Uuid>> {
+) -> anyhow::Result<BTreeSet<Uuid>>
+where
+    C: ConnectionTrait,
+{
     if persistence::load_latest_sync(db).await.c(h!())?.is_none() {
         return Ok(BTreeSet::new());
     }

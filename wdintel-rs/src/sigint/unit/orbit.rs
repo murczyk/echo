@@ -521,6 +521,43 @@ async fn create_unit_duplicate_candidates_for_req(
     dbx: &DatabaseConnection,
     req: &CreateUnitReq,
 ) -> Result<Vec<super::types::Unit>, AppError> {
+    let units =
+        create_unit_duplicate_candidate_models_for_req(dbx, req).await?;
+    let unit_ids = units.iter().map(|unit| unit.id).collect::<Vec<_>>();
+    let orbit_unit_ids = unit_ids_with_orbit(dbx, &unit_ids).await?;
+    units
+        .into_iter()
+        .map(|unit| {
+            let mut unit = super::render_unit(&unit)?;
+            unit.orbit_unit_ids =
+                orbit_unit_ids.get(&unit.id).cloned().unwrap_or_default();
+            unit.has_orbit = !unit.orbit_unit_ids.is_empty();
+            Ok(unit)
+        })
+        .collect()
+}
+
+pub(super) async fn create_unit_duplicate_candidate_ids_for_req<C>(
+    dbx: &C,
+    req: &CreateUnitReq,
+) -> Result<BTreeSet<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(create_unit_duplicate_candidate_models_for_req(dbx, req)
+        .await?
+        .into_iter()
+        .map(|unit| unit.id)
+        .collect())
+}
+
+async fn create_unit_duplicate_candidate_models_for_req<C>(
+    dbx: &C,
+    req: &CreateUnitReq,
+) -> Result<Vec<sigint_unit::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
     if !req.active {
         return Ok(Vec::new());
     }
@@ -556,18 +593,7 @@ async fn create_unit_duplicate_candidates_for_req(
         .all(dbx)
         .await
         .c(h!())?;
-    let unit_ids = units.iter().map(|unit| unit.id).collect::<Vec<_>>();
-    let orbit_unit_ids = unit_ids_with_orbit(dbx, &unit_ids).await?;
-    units
-        .into_iter()
-        .map(|unit| {
-            let mut unit = super::render_unit(&unit)?;
-            unit.orbit_unit_ids =
-                orbit_unit_ids.get(&unit.id).cloned().unwrap_or_default();
-            unit.has_orbit = !unit.orbit_unit_ids.is_empty();
-            Ok(unit)
-        })
-        .collect()
+    Ok(units)
 }
 
 fn sigint_unit_for_orbit_matching(req: &CreateUnitReq) -> sigint_unit::Model {
