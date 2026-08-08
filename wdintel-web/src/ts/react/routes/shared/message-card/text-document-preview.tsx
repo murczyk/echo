@@ -255,6 +255,8 @@ function MarkdownRenderer({ text }: { text: string }) {
   );
 }
 
+import { fetchCachedDocumentResponse } from './document-preview-utils';
+
 export function TextDocumentPreview({
   href,
   kindLabel,
@@ -279,25 +281,26 @@ export function TextDocumentPreview({
           throw new Error('TEXT_FILE_TOO_LARGE');
         }
 
-        const response = await fetch(href, { signal: abortController.signal });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
+        const { buffer, contentLength, contentType } = await fetchCachedDocumentResponse(
+          href,
+          abortController.signal,
+        );
 
-        const contentLength = response.headers.get('content-length');
-        if (
-          contentLength != null &&
-          Number.isFinite(Number(contentLength)) &&
-          Number(contentLength) > MAX_TEXT_PREVIEW_BYTES
-        ) {
+        if (contentLength != null && contentLength > MAX_TEXT_PREVIEW_BYTES) {
           throw new Error('TEXT_FILE_TOO_LARGE');
         }
 
-        const nextText = await readBoundedTextResponse(
-          response,
-          MAX_TEXT_PREVIEW_BYTES,
-          abortController.signal,
-        );
+        if (buffer.byteLength > MAX_TEXT_PREVIEW_BYTES) {
+          throw new Error('TEXT_FILE_TOO_LARGE');
+        }
+
+        const bytes = new Uint8Array(buffer);
+        const { decoder, bomLength, skipBinaryHeuristic } = resolveTextEncoding(bytes, contentType);
+        if (!skipBinaryHeuristic && isProbablyBinary(bytes.subarray(bomLength))) {
+          throw new Error('TEXT_FILE_BINARY');
+        }
+        const decoded = decoder.decode(bytes.subarray(bomLength));
+        const nextText = decoded.startsWith(UTF8_BOM) ? decoded.slice(1) : decoded;
         if (disposed) return;
         setText(nextText);
         setStatus('ready');

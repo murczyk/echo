@@ -255,6 +255,34 @@ function VideoPreview({
   );
 }
 
+const VIDEO_BLOB_CACHE_LIMIT = 50;
+const videoBlobUrlCache = new Map<string, string>();
+
+function getCachedVideoSrc(key: string): string | undefined {
+  return videoBlobUrlCache.get(key);
+}
+
+function setCachedVideoSrc(key: string, src: string) {
+  if (videoBlobUrlCache.has(key)) {
+    return;
+  }
+  if (videoBlobUrlCache.size >= VIDEO_BLOB_CACHE_LIMIT) {
+    const oldestKey = videoBlobUrlCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      const oldSrc = videoBlobUrlCache.get(oldestKey);
+      if (oldSrc && oldSrc.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(oldSrc);
+        } catch {
+          // ignore
+        }
+      }
+      videoBlobUrlCache.delete(oldestKey);
+    }
+  }
+  videoBlobUrlCache.set(key, src);
+}
+
 export function VideoAttachmentPreviewRenderer({
   onClose,
   video,
@@ -295,8 +323,17 @@ export function VideoAttachmentPreviewRenderer({
   );
 
   useEffect(() => {
-    // Drop the previous item's URL so autoplay can't resume it while the next
-    // source is still resolving.
+    const cacheKey =
+      typeof video.source === 'string'
+        ? video.source
+        : video.id || `${video.name}-${video.sizeBytes ?? 0}`;
+
+    const cachedSrc = getCachedVideoSrc(cacheKey);
+    if (cachedSrc) {
+      setSrc(cachedSrc);
+      return;
+    }
+
     setSrc(null);
 
     if (typeof video.source === 'string') {
@@ -357,6 +394,7 @@ export function VideoAttachmentPreviewRenderer({
             void requestSmallVideo();
             return;
           }
+          setCachedVideoSrc(cacheKey, source);
           setSrc(source);
         };
         const requestSmallVideo = async () => {
@@ -387,6 +425,7 @@ export function VideoAttachmentPreviewRenderer({
             const videoBlob = await response.blob();
             if (stopped) return;
             blobUrl = URL.createObjectURL(videoBlob);
+            setCachedVideoSrc(cacheKey, blobUrl);
             setSrc(blobUrl);
           } catch (error) {
             if (!requestController.signal.aborted) scheduleRetry(null, requestSmallVideo);
@@ -402,28 +441,28 @@ export function VideoAttachmentPreviewRenderer({
           stopped = true;
           requestController.abort();
           if (retryTimer !== null) window.clearTimeout(retryTimer);
-          if (blobUrl !== '') URL.revokeObjectURL(blobUrl);
         };
       }
       if (video.source.startsWith('/') || video.source.startsWith('data:')) {
+        setCachedVideoSrc(cacheKey, video.source);
         setSrc(video.source);
         return;
       }
       if (video.source.startsWith('blob:')) {
+        setCachedVideoSrc(cacheKey, video.source);
         setSrc(video.source);
         return;
       }
     }
 
     let isMounted = true;
-    let blobUrl = '';
 
     const source =
       typeof video.source === 'string' ? video.source : URL.createObjectURL(video.source);
 
     if (typeof video.source !== 'string') {
-      blobUrl = source;
-      setSrc(blobUrl);
+      setCachedVideoSrc(cacheKey, source);
+      setSrc(source);
     } else {
       fetch(source)
         .then((res) => {
@@ -433,8 +472,9 @@ export function VideoAttachmentPreviewRenderer({
         })
         .then((blob) => {
           if (!isMounted) return;
-          blobUrl = URL.createObjectURL(blob);
-          setSrc(blobUrl);
+          const createdUrl = URL.createObjectURL(blob);
+          setCachedVideoSrc(cacheKey, createdUrl);
+          setSrc(createdUrl);
         })
         .catch((err) => {
           if (!isMounted) return;
@@ -451,11 +491,8 @@ export function VideoAttachmentPreviewRenderer({
 
     return () => {
       isMounted = false;
-      if (blobUrl) {
-        URL.revokeObjectURL(blobUrl);
-      }
     };
-  }, [video.source, video.sizeBytes]);
+  }, [video.source, video.sizeBytes, video.id, video.name]);
 
   useEffect(() => {
     const v = videoRef.current;

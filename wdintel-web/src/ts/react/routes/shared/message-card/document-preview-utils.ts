@@ -25,3 +25,61 @@ export function shouldIgnoreArrowNavigation(target: EventTarget | null): boolean
     target.closest('input, textarea, select, [contenteditable="true"], [role="slider"]'),
   );
 }
+
+export type CachedDocumentResponse = {
+  buffer: ArrayBuffer;
+  contentType: string | null;
+  contentLength: number | null;
+};
+
+const DOCUMENT_CACHE_LIMIT = 50;
+const documentResponseCache = new Map<string, CachedDocumentResponse>();
+
+export async function fetchCachedDocumentResponse(
+  href: string,
+  signal?: AbortSignal,
+): Promise<CachedDocumentResponse> {
+  const cached = documentResponseCache.get(href);
+  if (cached) {
+    return {
+      buffer: cached.buffer.slice(0),
+      contentType: cached.contentType,
+      contentLength: cached.contentLength,
+    };
+  }
+
+  const response = await fetch(href, { signal });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const contentType = response.headers.get('content-type');
+  const rawContentLength = response.headers.get('content-length');
+  const contentLength =
+    rawContentLength != null && Number.isFinite(Number(rawContentLength))
+      ? Number(rawContentLength)
+      : null;
+
+  const buffer = await response.arrayBuffer();
+
+  const entry: CachedDocumentResponse = {
+    buffer,
+    contentType,
+    contentLength,
+  };
+
+  if (documentResponseCache.size >= DOCUMENT_CACHE_LIMIT) {
+    const oldestKey = documentResponseCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      documentResponseCache.delete(oldestKey);
+    }
+  }
+
+  documentResponseCache.set(href, entry);
+
+  return {
+    buffer: buffer.slice(0),
+    contentType,
+    contentLength,
+  };
+}

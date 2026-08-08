@@ -15,6 +15,8 @@ const PDF_DOCUMENT_OPTIONS = { useWorkerFetch: true };
 const MAX_PDF_FILE_MB = 10;
 const MAX_PDF_FILE_BYTES = MAX_PDF_FILE_MB * 1024 * 1024;
 
+import { fetchCachedDocumentResponse } from '../document-preview-utils';
+
 function formatPdfPreviewErrorMessage(error: string | null): string {
   if (error === 'PDF_FILE_TOO_LARGE') {
     return `Файл PDF завеликий для попереднього перегляду. Максимум: ${MAX_PDF_FILE_MB} МБ.`;
@@ -53,28 +55,22 @@ export function PdfDocumentPreview({
           throw new Error('PDF_FILE_TOO_LARGE');
         }
 
-        const response = await fetch(href, { signal: abortController.signal });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
+        const { buffer, contentType, contentLength } = await fetchCachedDocumentResponse(
+          href,
+          abortController.signal,
+        );
 
-        const contentLength = response.headers.get('content-length');
-        if (
-          contentLength != null &&
-          Number.isFinite(Number(contentLength)) &&
-          Number(contentLength) > MAX_PDF_FILE_BYTES
-        ) {
+        if (contentLength != null && contentLength > MAX_PDF_FILE_BYTES) {
           throw new Error('PDF_FILE_TOO_LARGE');
         }
 
-        const buffer = await response.arrayBuffer();
         if (buffer.byteLength > MAX_PDF_FILE_BYTES) {
           throw new Error('PDF_FILE_TOO_LARGE');
         }
 
         objectUrl = URL.createObjectURL(
           new Blob([buffer], {
-            type: response.headers.get('content-type') ?? 'application/pdf',
+            type: contentType ?? 'application/pdf',
           }),
         );
         if (disposed) {
