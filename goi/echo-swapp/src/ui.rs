@@ -104,7 +104,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
           </label>
           <label class="grid gap-1 text-sm">
             <span class="text-zinc-400">Телефон</span>
-            <input id="phoneInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="+380000000000" required />
+            <input id="phoneInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" type="tel" inputmode="tel" autocomplete="tel" placeholder="+380501234567" aria-describedby="phoneHint phoneError" required />
+            <span id="phoneHint" class="text-xs text-zinc-500">Формат: +380XXXXXXXXX або 0XXXXXXXXX; пробіли можна використовувати.</span>
+            <span id="phoneError" class="hidden text-xs text-red-400" role="alert"></span>
           </label>
           <button class="mt-2 h-10 rounded-md bg-sky-500 px-4 text-sm font-medium text-zinc-950 hover:bg-sky-400" type="submit">Створити</button>
           <p id="formMsg" class="min-h-5 text-sm text-zinc-400"></p>
@@ -230,6 +232,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
               <button id="polygonAddCoordinatesBtn" class="h-10 rounded-md border border-zinc-700 px-3 text-sm text-zinc-300 hover:bg-zinc-900" type="button">Додати</button>
             </div>
             <p class="text-xs text-zinc-500">Виберіть точку на карті або введіть широту й довготу. Додані точки можна перетягувати. Для району потрібно щонайменше 3 точки.</p>
+            <p id="polygonGeometryWarning" class="hidden rounded-md border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300" role="alert"></p>
             <details class="rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2">
               <summary class="cursor-pointer text-xs text-zinc-400">Вставити список координат</summary>
               <label class="mt-2 grid gap-1 text-xs text-zinc-500">
@@ -377,6 +380,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
             <button id="editPolygonAddCoordinatesBtn" class="h-10 rounded-md border border-zinc-700 px-3 text-sm text-zinc-300 hover:bg-zinc-900" type="button">Додати</button>
           </div>
           <p class="text-xs text-zinc-500">Виберіть точку на карті або введіть широту й довготу. Додані точки можна перетягувати.</p>
+          <p id="editPolygonGeometryWarning" class="hidden rounded-md border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300" role="alert"></p>
           <details class="rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2">
             <summary class="cursor-pointer text-xs text-zinc-400">Редагувати список координат</summary>
             <label class="mt-2 grid gap-1 text-xs text-zinc-500">
@@ -406,6 +410,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
     const automationEditFormMsg = document.getElementById('automationEditFormMsg');
     const polygonEditDialog = document.getElementById('polygonEditDialog');
     const polygonEditFormMsg = document.getElementById('polygonEditFormMsg');
+    const phoneInput = document.getElementById('phoneInput');
+    const phoneError = document.getElementById('phoneError');
     const qrDialog = document.getElementById('qrDialog');
     const qrBox = document.getElementById('qrBox');
     const qrTitle = document.getElementById('qrTitle');
@@ -453,6 +459,40 @@ const INDEX_HTML: &str = r#"<!doctype html>
       });
       if (!rsp.ok) throw new Error(await rsp.text());
       return rsp.headers.get('content-type')?.includes('application/json') ? rsp.json() : null;
+    }
+
+    function normalizedPhone(value) {
+      const phone = value.replace(/\s/g, '');
+      if (/^0\d{9}$/.test(phone)) return `+38${phone}`;
+      if (/^\+380\d{9}$/.test(phone)) return phone;
+      return null;
+    }
+
+    function phoneValidationError(value) {
+      if (value.trim() === '') return 'Вкажіть номер телефону.';
+      if (/[^+\d\s]/.test(value)) {
+        return 'Використовуйте лише цифри, пробіли та початковий знак «+».';
+      }
+      return 'Введіть український номер як +380XXXXXXXXX або 0XXXXXXXXX.';
+    }
+
+    function validatePhoneInput({ report = false } = {}) {
+      const phone = normalizedPhone(phoneInput.value);
+      const error = phone ? '' : phoneValidationError(phoneInput.value);
+      phoneInput.setCustomValidity(error);
+      phoneInput.setAttribute('aria-invalid', error === '' ? 'false' : 'true');
+      phoneError.textContent = error;
+      phoneError.classList.toggle('hidden', error === '');
+      if (phone) phoneInput.value = phone;
+      if (report && error) phoneInput.reportValidity();
+      return phone;
+    }
+
+    function clearPhoneValidation() {
+      phoneInput.setCustomValidity('');
+      phoneInput.setAttribute('aria-invalid', 'false');
+      phoneError.textContent = '';
+      phoneError.classList.add('hidden');
     }
 
     async function load() {
@@ -627,11 +667,74 @@ const INDEX_HTML: &str = r#"<!doctype html>
       return points.map(point => point.coordinate ?? formatCoordinate(point));
     }
 
-    function coordinateLines(inputId) {
-      return document.getElementById(inputId).value
+    function splitCoordinateLines(value) {
+      return value
         .split('\n')
-        .map(value => value.trim())
+        .map(line => line.trim())
         .filter(Boolean);
+    }
+
+    function coordinateLines(inputId) {
+      return splitCoordinateLines(document.getElementById(inputId).value);
+    }
+
+    function polygonSidesAreAdjacent(firstSide, secondSide, pointCount) {
+      return (firstSide + 1) % pointCount === secondSide
+        || (secondSide + 1) % pointCount === firstSide;
+    }
+
+    function crossProduct(start, end, point) {
+      return (end.lng - start.lng) * (point.lat - start.lat)
+        - (end.lat - start.lat) * (point.lng - start.lng);
+    }
+
+    function pointIsOnSegment(point, start, end) {
+      return point.lng >= Math.min(start.lng, end.lng)
+        && point.lng <= Math.max(start.lng, end.lng)
+        && point.lat >= Math.min(start.lat, end.lat)
+        && point.lat <= Math.max(start.lat, end.lat);
+    }
+
+    function segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd) {
+      const firstStartSide = crossProduct(firstStart, firstEnd, secondStart);
+      const firstEndSide = crossProduct(firstStart, firstEnd, secondEnd);
+      const secondStartSide = crossProduct(secondStart, secondEnd, firstStart);
+      const secondEndSide = crossProduct(secondStart, secondEnd, firstEnd);
+      if (firstStartSide === 0 && pointIsOnSegment(secondStart, firstStart, firstEnd)) return true;
+      if (firstEndSide === 0 && pointIsOnSegment(secondEnd, firstStart, firstEnd)) return true;
+      if (secondStartSide === 0 && pointIsOnSegment(firstStart, secondStart, secondEnd)) return true;
+      if (secondEndSide === 0 && pointIsOnSegment(firstEnd, secondStart, secondEnd)) return true;
+      return Math.sign(firstStartSide) !== Math.sign(firstEndSide)
+        && Math.sign(secondStartSide) !== Math.sign(secondEndSide);
+    }
+
+    function polygonHasCrossingSides(points) {
+      for (let firstSide = 0; firstSide < points.length; firstSide += 1) {
+        for (let secondSide = firstSide + 1; secondSide < points.length; secondSide += 1) {
+          if (polygonSidesAreAdjacent(firstSide, secondSide, points.length)) continue;
+          if (segmentsIntersect(
+            points[firstSide],
+            points[(firstSide + 1) % points.length],
+            points[secondSide],
+            points[(secondSide + 1) % points.length],
+          )) return true;
+        }
+      }
+      return false;
+    }
+
+    function polygonGeometryError(points) {
+      return polygonHasCrossingSides(points)
+        ? 'Сторони району перетинаються. Змініть порядок або розташування точок.'
+        : null;
+    }
+
+    function pointPickerGeometryError(picker, coordinates = null) {
+      const inputCoordinates = coordinates ?? splitCoordinateLines(picker.elements.coordinatesInput.value);
+      const mapCoordinates = coordinateValues(picker.points);
+      const coordinatesMatch = inputCoordinates.length === mapCoordinates.length
+        && inputCoordinates.every((coordinate, index) => coordinate === mapCoordinates[index]);
+      return coordinatesMatch ? polygonGeometryError(picker.points) : null;
     }
 
     function normalizePoint(point, coordinate = null) {
@@ -681,9 +784,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
       layerGroup.clearLayers();
       const latLngs = points.map(point => [point.lat, point.lng]);
       if (points.length >= 3) {
+        const hasCrossingSides = polygonHasCrossingSides(points);
         L.polygon(latLngs, {
-          color: '#38bdf8',
-          fillColor: '#0ea5e9',
+          color: hasCrossingSides ? '#f87171' : '#38bdf8',
+          fillColor: hasCrossingSides ? '#dc2626' : '#0ea5e9',
           fillOpacity: 0.24,
           weight: 3,
         }).addTo(layerGroup);
@@ -723,7 +827,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     }
 
     function renderPointPicker(picker) {
-      const { addButton, mapContainer, pointCount, pointList } = picker.elements;
+      const { addButton, geometryWarning, mapContainer, pointCount, pointList } = picker.elements;
       pointCount.textContent = pointCountLabel(picker.points.length);
       pointList.innerHTML = picker.points.length === 0
         ? '<p class="px-1 py-2 text-xs text-zinc-500">Точок ще немає.</p>'
@@ -737,6 +841,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
       addButton.className = picker.selecting
         ? 'h-10 flex-1 rounded-md border border-amber-500 bg-amber-950/40 px-3 text-sm text-amber-300'
         : 'h-10 flex-1 rounded-md border border-sky-600 px-3 text-sm text-sky-300 hover:bg-sky-950/50';
+      const geometryError = pointPickerGeometryError(picker);
+      geometryWarning.textContent = geometryError ?? '';
+      geometryWarning.classList.toggle('hidden', geometryError === null);
       mapContainer.style.cursor = picker.selecting ? 'crosshair' : '';
       if (picker.layerGroup) {
         drawArea(picker.layerGroup, picker.points, (index, latLng) => {
@@ -795,6 +902,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         addButton,
         addCoordinatesButton,
         clearButton,
+        coordinatesInput,
         latitudeInput,
         longitudeInput,
         pointList,
@@ -806,6 +914,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       });
       addCoordinatesButton.addEventListener('click', () => addManualPoint(picker));
       clearButton.addEventListener('click', () => picker.setPoints([], { fit: false }));
+      coordinatesInput.addEventListener('input', () => picker.render());
       pointList.addEventListener('click', event => {
         const button = event.target.closest('button[data-point-index]');
         if (!button) return;
@@ -831,6 +940,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       latitudeInputId,
       longitudeInputId,
       coordinatesInputId,
+      geometryWarningId,
       listId,
       countId,
     }) {
@@ -847,6 +957,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
           latitudeInput: document.getElementById(latitudeInputId),
           longitudeInput: document.getElementById(longitudeInputId),
           coordinatesInput: document.getElementById(coordinatesInputId),
+          geometryWarning: document.getElementById(geometryWarningId),
           pointList: document.getElementById(listId),
           pointCount: document.getElementById(countId),
         },
@@ -937,6 +1048,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       latitudeInputId: 'polygonLatitudeInput',
       longitudeInputId: 'polygonLongitudeInput',
       coordinatesInputId: 'polygonCoordinatesInput',
+      geometryWarningId: 'polygonGeometryWarning',
       listId: 'polygonPointList',
       countId: 'polygonPointCount',
     });
@@ -948,6 +1060,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       latitudeInputId: 'editPolygonLatitudeInput',
       longitudeInputId: 'editPolygonLongitudeInput',
       coordinatesInputId: 'editPolygonCoordinatesInput',
+      geometryWarningId: 'editPolygonGeometryWarning',
       listId: 'editPolygonPointList',
       countId: 'editPolygonPointCount',
     });
@@ -1288,6 +1401,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
     document.getElementById('createForm').addEventListener('submit', async (event) => {
       event.preventDefault();
+      const phone = validatePhoneInput({ report: true });
+      if (!phone) return;
       formMsg.textContent = 'Створення...';
       try {
         await request(appUrl('/ui-api/messengers'), {
@@ -1295,11 +1410,12 @@ const INDEX_HTML: &str = r#"<!doctype html>
           body: JSON.stringify({
             name: document.getElementById('nameInput').value,
             kind: document.getElementById('kindInput').value,
-            phone: document.getElementById('phoneInput').value.trim(),
+            phone,
           }),
         });
         formMsg.textContent = 'Створено.';
         event.target.reset();
+        clearPhoneValidation();
         await load();
       } catch (err) {
         formMsg.textContent = err.message;
@@ -1312,6 +1428,11 @@ const INDEX_HTML: &str = r#"<!doctype html>
       const coordinates = coordinateLines('polygonCoordinatesInput');
       if (coordinates.length < 3) {
         polygonFormMsg.textContent = 'Додайте щонайменше 3 точки.';
+        return;
+      }
+      const geometryError = pointPickerGeometryError(polygonPointPicker, coordinates);
+      if (geometryError) {
+        polygonFormMsg.textContent = geometryError;
         return;
       }
       polygonFormMsg.textContent = 'Створення...';
@@ -1524,6 +1645,11 @@ const INDEX_HTML: &str = r#"<!doctype html>
         polygonEditFormMsg.textContent = 'Додайте щонайменше 3 точки.';
         return;
       }
+      const geometryError = pointPickerGeometryError(editPolygonPointPicker, coordinates);
+      if (geometryError) {
+        polygonEditFormMsg.textContent = geometryError;
+        return;
+      }
       polygonEditFormMsg.textContent = 'Збереження...';
       try {
         await request(appUrl(`/ui-api/polygons/${editPolygonId}`), {
@@ -1627,6 +1753,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
     bindTokenInput('frequencyTokenInput', frequencyTokens, 'frequencyTokens', 'frequency');
     bindTokenInput('editKeywordTokenInput', editKeywordTokens, 'editKeywordTokens', 'edit-keyword');
     bindTokenInput('editFrequencyTokenInput', editFrequencyTokens, 'editFrequencyTokens', 'edit-frequency');
+    phoneInput.addEventListener('input', clearPhoneValidation);
+    phoneInput.addEventListener('blur', () => {
+      if (phoneInput.value.trim() !== '') validatePhoneInput();
+    });
     updatePolygonAvailability();
     updateEditPolygonAvailability();
     load();

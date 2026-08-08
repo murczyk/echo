@@ -118,7 +118,7 @@ pub async fn create(
     let display_name = req.name.clone();
     let name = available_public_name(db, &display_name).await.c(h!())?;
     validate_name(&name).c(h!())?;
-    validate_phone(&req.phone).c(h!())?;
+    let phone = normalize_phone(&req.phone).c(h!())?;
     let client_name = owned_client_name(&name);
     ensure_client_available(db, &client_name).await.c(h!())?;
 
@@ -150,7 +150,7 @@ pub async fn create(
         .await
         .c(h!())?;
     echo_im::set_account_phone(
-        req.phone,
+        phone,
         &client_name,
         req.kind.message_source(),
         true,
@@ -931,12 +931,21 @@ fn transliterate_cyrillic(ch: char) -> Option<&'static str> {
     }
 }
 
-fn validate_phone(phone: &str) -> Result<()> {
-    let re = Regex::new(r"^\+38\d{10}$").c(h!())?;
-    if !re.is_match(phone) {
-        bail!("phone must start with +38 and contain 12 digits");
+fn normalize_phone(phone: &str) -> Result<String> {
+    let phone = phone
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>();
+    let phone = if Regex::new(r"^0\d{9}$").c(h!())?.is_match(&phone) {
+        format!("+38{phone}")
+    } else {
+        phone
+    };
+    let re = Regex::new(r"^\+380\d{9}$").c(h!())?;
+    if !re.is_match(&phone) {
+        bail!("phone must use +380XXXXXXXXX or 0XXXXXXXXX format");
     }
-    Ok(())
+    Ok(phone)
 }
 
 fn unit_name(config: &Config, kind: MessengerKind) -> &str {
@@ -1049,5 +1058,26 @@ mod tests {
         assert_eq!(normalize_public_name("echo-swapp-Тест"), "test");
         assert_eq!(normalize_public_name("!!!"), "integration");
         assert_eq!(normalize_public_name("Я"), "ya-im");
+    }
+
+    #[test]
+    fn normalizes_ukrainian_phone_numbers() {
+        assert_eq!(
+            normalize_phone(" +380 50 123 45 67 ").unwrap(),
+            "+380501234567"
+        );
+        assert_eq!(normalize_phone("050 123 45 67").unwrap(), "+380501234567");
+    }
+
+    #[test]
+    fn rejects_invalid_phone_numbers() {
+        for phone in [
+            "380501234567",
+            "+381501234567",
+            "050123456",
+            "050-123-45-67",
+        ] {
+            assert!(normalize_phone(phone).is_err(), "{phone}");
+        }
     }
 }
