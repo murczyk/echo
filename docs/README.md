@@ -212,20 +212,18 @@ is [2026-08-03 AI agent harness](../archive/2026-08-03-ai-agent-harness/README.m
 ## Inbox callsign storage
 
 Parsed inbox callsigns are stored as ordered, source-specific rows in
-`sigint_inbox_item_callsign`. Active `primary` and `alg2` rows are the
-authoritative representation; the legacy JSONB columns remain dual-written as
-a compatibility fallback until a later cleanup rollout. Callsign replacement,
+`sigint_inbox_item_callsign`. Active `primary` and `alg2` rows are the sole
+authoritative representation. Callsign replacement,
 soft deletion, reactivation, ordering, and login attribution are committed in
 the same PostgreSQL transaction as the inbox-item change.
 
-Historical rows are populated online with
-`oneoff-backfill-inbox-item-callsigns`. The command processes short,
-restartable keyset batches so the API and background workers can continue
-using the database during backfill.
+Before applying the cleanup migration that removes the legacy JSONB columns,
+verify that the historical backfill has completed and that normalized row
+counts match the source data.
 
-On ClickHouse-enabled instances, the derived callsign relation reads the
-normalized rows and uses the replicated watermark to fall back to legacy JSON
-for unbackfilled tail records without normalized rows.
+On ClickHouse-enabled instances, run derived-schema reconciliation after
+PeerDB has mirrored `sigint_inbox_item_callsign`; the callsign relation reads
+only normalized rows.
 
 ## Echo LXC systemd graph
 

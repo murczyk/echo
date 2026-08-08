@@ -368,6 +368,8 @@ async fn load_report(
     )
     .await
     .c(h!())?;
+    let callsigns_by_item_id =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &item_ids).await?;
     let blacklist = crate::sigint::comments::load_blacklist(dbx).await?;
     let mut report = RerReport::default();
     for item_id in item_ids {
@@ -406,12 +408,11 @@ async fn load_report(
         else {
             continue;
         };
-        let callsigns =
-            crate::inbox::callsigns::load_by_item_ids(dbx, &[item_id])
-                .await?
-                .remove(&item_id)
-                .unwrap_or_default()
-                .effective();
+        let callsigns = callsigns_by_item_id
+            .get(&item_id)
+            .cloned()
+            .unwrap_or_default()
+            .effective();
         insert_report_message(
             &mut report,
             target,
