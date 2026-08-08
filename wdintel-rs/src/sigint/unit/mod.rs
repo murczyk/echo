@@ -654,19 +654,7 @@ pub async fn create_unit_with_auto_network_for_login(
     clear_create_unit_orbit_note_if_hidden(&env.dbx, login, &mut req.unit)
         .await?;
     let duplicate_unit_ids = req.unit.duplicate_unit_ids.clone();
-    if !req.skip_network_creation {
-        ensure_duplicate_units_have_no_active_network(
-            &env.dbx,
-            &duplicate_unit_ids,
-        )
-        .await?;
-    }
-
-    let txn = env.dbx.begin().await.context(h!())?;
-    let unit = insert_unit_with_changelog(&txn, login, &req.unit)
-        .await
-        .c(h!())?;
-    let network = if req.skip_network_creation {
+    let network_locations = if req.skip_network_creation {
         None
     } else {
         let locations = normalize_network_locations(req.locations.clone());
@@ -675,19 +663,13 @@ pub async fn create_unit_with_auto_network_for_login(
                 msg: "network locations are required".to_string(),
             });
         }
-        Some(
-            insert_auto_cyber_network(
-                &txn,
-                login,
-                &req,
-                unit.id,
-                locations,
-                req.unit_mask.clone(),
-            )
-            .await
-            .c(h!())?,
-        )
+        Some(locations)
     };
+
+    let txn = env.dbx.begin().await.context(h!())?;
+    let unit = insert_unit_with_changelog(&txn, login, &req.unit)
+        .await
+        .c(h!())?;
     if unit.active {
         reconcile_parent_unit_activity(
             &txn,
@@ -711,6 +693,20 @@ pub async fn create_unit_with_auto_network_for_login(
         duplicate_unit_ids,
     )
     .await?;
+
+    let network = if let Some(locations) = network_locations {
+        insert_auto_cyber_network_if_absent(
+            &env.dbx,
+            login,
+            &req,
+            unit.id,
+            locations,
+            req.unit_mask.clone(),
+        )
+        .await?
+    } else {
+        None
+    };
 
     render_created_unit_with_optional_network(login, env, unit, network).await
 }
@@ -736,21 +732,43 @@ async fn merge_requested_duplicate_units(
     find_unit(dbx, unit_id).await
 }
 
-async fn ensure_duplicate_units_have_no_active_network(
+async fn insert_auto_cyber_network_if_absent<R>(
     dbx: &DatabaseConnection,
-    duplicate_unit_ids: &[i64],
-) -> Result<(), AppError> {
-    for duplicate_unit_id in
-        duplicate_unit_ids.iter().copied().collect::<BTreeSet<_>>()
-    {
-        if unit_has_active_network(dbx, duplicate_unit_id).await? {
-            return Err(AppError::BL {
-                msg: "selected duplicate unit already has a network"
-                    .to_string(),
-            });
-        }
-    }
-    Ok(())
+    login: &uuid::Uuid,
+    req: &R,
+    unit_id: i64,
+    locations: Vec<String>,
+    unit_mask: Vec<String>,
+) -> Result<Option<sigint_network::Model>, AppError>
+where
+    R: serde::Serialize + ?Sized,
+{
+    let transaction = dbx.begin().await.context(h!())?;
+    let unit = sigint_unit::Entity::find_by_id(unit_id)
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .lock_exclusive()
+        .one(&transaction)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    let network = if unit_has_active_network(&transaction, unit.id).await? {
+        None
+    } else {
+        Some(
+            insert_auto_cyber_network(
+                &transaction,
+                login,
+                req,
+                unit.id,
+                locations,
+                unit_mask,
+            )
+            .await
+            .c(h!())?,
+        )
+    };
+    transaction.commit().await.context(h!())?;
+    Ok(network)
 }
 
 async fn clear_create_unit_orbit_note_if_hidden(
@@ -2492,7 +2510,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn create_unit_with_auto_network_rejects_networked_duplicate() {
+    async fn create_unit_with_auto_network_skips_network_after_merge() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
         let login_id = test_login_id(&env).await;
@@ -2505,7 +2523,7 @@ mod tests {
         )
         .await
         .unwrap();
-        create_device_network_for_login(
+        let existing_network = create_device_network_for_login(
             &login_id,
             &env,
             CreateDeviceNetworkReq {
@@ -2519,17 +2537,25 @@ mod tests {
         let mut req = auto_req(false, vec!["Роботине"], vec!["2 шр"]);
         req.unit.duplicate_unit_ids = vec![duplicate.id];
 
-        let err = create_unit_with_auto_network_for_login(&login_id, &env, req)
+        let rsp = create_unit_with_auto_network_for_login(&login_id, &env, req)
             .await
-            .unwrap_err();
+            .unwrap();
 
-        assert!(matches!(
-            err,
-            AppError::BL { msg }
-                if msg == "selected duplicate unit already has a network"
-        ));
-        assert_eq!(unit_count(&env.dbx).await, 1);
+        assert_eq!(rsp.network_id, None);
         assert_eq!(network_count(&env.dbx).await, 1);
+        assert!(unit_has_active_network(&env.dbx, rsp.unit.id)
+            .await
+            .unwrap());
+        let relation = sigint_network_unit::Entity::find()
+            .filter(
+                sigint_network_unit::Column::NetworkId
+                    .eq(existing_network.network_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(relation.unit_id, rsp.unit.id);
     }
 
     #[tokio::test]
