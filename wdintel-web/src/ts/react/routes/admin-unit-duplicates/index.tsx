@@ -10,6 +10,7 @@ import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { getUnitDuplicates, mergeDuplicateUnit } from '../../services/api/units';
 import { handleNavigateWithinSpaClick } from '../../utils/browser';
+import { hasRole } from '../../utils/roles';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
 import { MergeUnitDialog } from '../rer-units-neo/components/UnitActionDialogs';
 import { formatUnitError } from '../rer-units-neo/helpers';
@@ -52,7 +53,7 @@ export function AdminUnitDuplicatesPage({ authUserRoles }: { authUserRoles: stri
   const [mergeTarget, setMergeTarget] = useState<Unit | null>(null);
   const [mergeError, setMergeError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const canMerge = authUserRoles.includes('Rer') && authUserRoles.includes('UnitsEditor');
+  const canMerge = hasRole(authUserRoles, 'Rer') && hasRole(authUserRoles, 'UnitsEditor');
 
   const loadUnits = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);

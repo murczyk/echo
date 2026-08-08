@@ -101,6 +101,8 @@ pub async fn list_unit_duplicates(
     env: Data<Env>,
 ) -> Result<Json<ListUnitDuplicatesRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    ensure_orbit_access(&env.dbx, &login).await?;
     Ok(Json(ListUnitDuplicatesRsp {
         units: load_unit_duplicates(&env.dbx).await?,
     }))
