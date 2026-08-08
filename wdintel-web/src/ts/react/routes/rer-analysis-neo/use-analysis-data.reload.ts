@@ -31,6 +31,10 @@ import {
 } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
 import { getUnitsByIds, getUnitsList, mergeUnitsById } from '../../services/api/units';
+import {
+  normalizeCallsignFilterValues,
+  normalizeCallsignLookupValue,
+} from '../../utils/callsign-normalization';
 import { isNullOrUndefined, isPresent, sortFrequenciesNumerically } from '../../utils/misc';
 import {
   ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
@@ -468,18 +472,23 @@ export async function loadFilterSectionData(
       if (isStale() || isAborted()) return;
       const groupedByLabel = new Map<string, AnalysisFilterOption>();
       callsignsRsp.callsigns.forEach((item) => {
-        const label = item.callsign.toUpperCase();
+        const value = normalizeCallsignLookupValue(item.callsign);
+        if (value === '') return;
+        const label = value.toLocaleUpperCase('uk-UA');
         const existing = groupedByLabel.get(label);
         if (isPresent(existing)) {
           existing.count += item.count;
-          existing.values = [...(existing.values ?? [existing.value]), item.callsign];
+          existing.values = normalizeCallsignFilterValues([
+            ...(existing.values ?? [existing.value]),
+            value,
+          ]);
           return;
         }
         groupedByLabel.set(label, {
-          value: label,
+          value,
           label,
           count: item.count,
-          values: [item.callsign],
+          values: [value],
         });
       });
       context.setOptions((current) => ({

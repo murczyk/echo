@@ -278,6 +278,39 @@ describe('filterSectionsForInitialLoad', () => {
   });
 });
 
+describe('loadFilterSectionData', () => {
+  it('builds uppercase callsign labels with lowercase filter values', async () => {
+    mocks.fetchAnalysisCallsigns.mockResolvedValue({
+      callsigns: [
+        { callsign: 'НУГУШ', count: 2 },
+        { callsign: 'нугуш', count: 3 },
+      ],
+    });
+    let currentOptions = structuredClone(emptyOptions);
+
+    await loadFilterSectionData('callsigns', {
+      analysisReq: buildAnalysisReq(buildQueryState())!,
+      loadVersion: 0,
+      loadVersionRef: { current: 0 },
+      queryState: buildQueryState(),
+      setAorEntries: vi.fn(),
+      setGroupInfos: vi.fn(),
+      setNetworks: vi.fn(),
+      setOptions: (update) => {
+        currentOptions = typeof update === 'function' ? update(currentOptions) : update;
+      },
+      setProfiles: vi.fn(),
+      setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
+      unitsMap: {},
+    });
+
+    expect(currentOptions.callsigns).toEqual([
+      { value: 'нугуш', label: 'НУГУШ', count: 5, values: ['нугуш'] },
+    ]);
+  });
+});
+
 describe('reloadAnalysisData', () => {
   it('clears messages loading immediately after inbox resolves, without waiting for freqs', async () => {
     const inboxDeferred = deferred<ReloadInboxRsp>();

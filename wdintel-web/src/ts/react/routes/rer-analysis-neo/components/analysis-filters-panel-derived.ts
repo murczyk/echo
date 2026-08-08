@@ -5,6 +5,7 @@ import {
   normalizeUnknownUnitFilterValue,
 } from '../../shared/analysis-unit-filter';
 import { isPresent } from '../../../utils/misc';
+import { normalizeCallsignFilterValues } from '../../../utils/callsign-normalization';
 import type { AnalysisFiltersPanelPage } from './analysis-filters-panel-shared';
 
 type Params = Pick<
@@ -103,15 +104,19 @@ export function buildAnalysisFiltersPanelDerivedData({
   const groupOptions = buildMergedGroupOptions(options.groups, groupInfos);
 
   const callsignsOptions = options.callsigns.reduce<AnalysisFilterOption[]>((acc, option) => {
-    const label = (option.label ?? option.value).toUpperCase();
-    const values = Array.from(new Set(option.values ?? [option.value]));
+    const label = (option.label ?? option.value).toLocaleUpperCase('uk-UA');
+    const values = normalizeCallsignFilterValues(option.values ?? [option.value]);
+    if (values.length === 0) return acc;
     const existingOption = acc.find((item) => item.label === label);
     if (isPresent(existingOption)) {
-      existingOption.values = Array.from(new Set([...(existingOption.values ?? []), ...values]));
+      existingOption.values = normalizeCallsignFilterValues([
+        ...(existingOption.values ?? []),
+        ...values,
+      ]);
       existingOption.count += option.count;
       return acc;
     }
-    acc.push({ value: label, label, count: option.count, values });
+    acc.push({ value: values[0], label, count: option.count, values });
     return acc;
   }, []);
 
