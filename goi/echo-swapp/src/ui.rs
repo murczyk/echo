@@ -2,6 +2,9 @@ use actix_web::{get, HttpResponse, Responder};
 
 const ECHO_LOGO_SVG: &str =
     include_str!("../../../wdintel-web/static/img/echo-logo-white.svg");
+const LEAFLET_CSS: &str =
+    include_str!("../../swapp/public/leaflet/leaflet.css");
+const LEAFLET_JS: &str = include_str!("../../swapp/public/leaflet/leaflet.js");
 
 #[get("/")]
 pub async fn index() -> impl Responder {
@@ -17,13 +20,50 @@ pub async fn echo_logo() -> impl Responder {
         .body(ECHO_LOGO_SVG)
 }
 
+#[get("/leaflet/leaflet.css")]
+pub async fn leaflet_css() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type("text/css; charset=utf-8")
+        .body(LEAFLET_CSS)
+}
+
+#[get("/leaflet/leaflet.js")]
+pub async fn leaflet_js() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type("text/javascript; charset=utf-8")
+        .body(LEAFLET_JS)
+}
+
 const INDEX_HTML: &str = r#"<!doctype html>
 <html lang="uk">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MESSENGERS</title>
+  <link rel="stylesheet" href="leaflet/leaflet.css" />
+  <style>
+    .leaflet-bar a,
+    .leaflet-control-layers {
+      border-color: #3f3f46;
+      background: #18181b;
+      color: #e4e4e7;
+    }
+    .leaflet-bar a:hover,
+    .leaflet-bar a:focus {
+      border-color: #52525b;
+      background: #27272a;
+      color: #fafafa;
+    }
+    .leaflet-control-attribution {
+      background: #18181be6 !important;
+      color: #a1a1aa;
+    }
+    .leaflet-control-attribution a {
+      color: #7dd3fc;
+    }
+  </style>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="leaflet/leaflet.js"></script>
 </head>
 <body class="min-h-screen bg-zinc-950 text-zinc-100">
   <main class="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -160,20 +200,47 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
     </section>
 
-    <section id="polygonsTab" class="hidden grid gap-4 lg:grid-cols-[360px_1fr]">
+    <section id="polygonsTab" class="hidden grid gap-4">
       <form id="polygonForm" class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
         <h2 class="text-base font-medium">Новий район інтересу</h2>
-        <div class="mt-4 grid gap-3">
-          <label class="grid gap-1 text-sm">
-            <span class="text-zinc-400">Назва</span>
-            <input id="polygonNameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="Північний фланг" required />
-          </label>
-          <label class="grid gap-1 text-sm">
-            <span class="text-zinc-400">Координати</span>
-            <textarea id="polygonCoordinatesInput" class="min-h-36 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-sky-500" placeholder="37U DR 05997 22279&#10;37U DR 06020 22340&#10;37U DR 06090 22270" required></textarea>
-          </label>
-          <button class="mt-2 h-10 rounded-md bg-sky-500 px-4 text-sm font-medium text-zinc-950 hover:bg-sky-400" type="submit">Створити</button>
-          <p id="polygonFormMsg" class="min-h-5 text-sm text-zinc-400"></p>
+        <div class="mt-4 grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <div class="grid content-start gap-3">
+            <label class="grid gap-1 text-sm">
+              <span class="text-zinc-400">Назва</span>
+              <input id="polygonNameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="Північний фланг" required />
+            </label>
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm text-zinc-400">Точки району</span>
+              <span id="polygonPointCount" class="text-xs text-zinc-500">0 точок</span>
+            </div>
+            <div id="polygonPointList" class="grid max-h-48 gap-1 overflow-y-auto rounded-md border border-zinc-800 bg-zinc-950 p-2"></div>
+            <div class="flex gap-2">
+              <button id="polygonAddPointBtn" class="h-10 flex-1 rounded-md border border-sky-600 px-3 text-sm text-sky-300 hover:bg-sky-950/50" type="button">Додати точку</button>
+              <button id="polygonClearPointsBtn" class="h-10 rounded-md border border-zinc-700 px-3 text-sm text-zinc-300 hover:bg-zinc-900" type="button">Очистити</button>
+            </div>
+            <div class="grid grid-cols-[1fr_1fr_auto] gap-2">
+              <label>
+                <span class="sr-only">Широта</span>
+                <input id="polygonLatitudeInput" class="h-10 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-100 outline-none focus:border-sky-500" type="number" min="-90" max="90" step="any" inputmode="decimal" placeholder="Широта" />
+              </label>
+              <label>
+                <span class="sr-only">Довгота</span>
+                <input id="polygonLongitudeInput" class="h-10 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-100 outline-none focus:border-sky-500" type="number" step="any" inputmode="decimal" placeholder="Довгота" />
+              </label>
+              <button id="polygonAddCoordinatesBtn" class="h-10 rounded-md border border-zinc-700 px-3 text-sm text-zinc-300 hover:bg-zinc-900" type="button">Додати</button>
+            </div>
+            <p class="text-xs text-zinc-500">Виберіть точку на карті або введіть широту й довготу. Додані точки можна перетягувати. Для району потрібно щонайменше 3 точки.</p>
+            <details class="rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2">
+              <summary class="cursor-pointer text-xs text-zinc-400">Вставити список координат</summary>
+              <label class="mt-2 grid gap-1 text-xs text-zinc-500">
+                <span>Одна точка в рядку; підтримуються MGRS та десяткові координати. Зміни на карті замінять цей список.</span>
+                <textarea id="polygonCoordinatesInput" class="min-h-28 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-2 text-sm text-zinc-100 outline-none focus:border-sky-500" placeholder="37U DR 05997 22279&#10;37U DR 06020 22340&#10;37U DR 06090 22270"></textarea>
+              </label>
+            </details>
+            <button class="mt-2 h-10 rounded-md bg-sky-500 px-4 text-sm font-medium text-zinc-950 hover:bg-sky-400" type="submit">Створити</button>
+            <p id="polygonFormMsg" class="min-h-5 text-sm text-zinc-400"></p>
+          </div>
+          <div id="polygonMap" class="h-[420px] min-h-72 overflow-hidden rounded-md border border-zinc-700 bg-zinc-950" aria-label="Карта нового району інтересу"></div>
         </div>
       </form>
 
@@ -277,22 +344,49 @@ const INDEX_HTML: &str = r#"<!doctype html>
   </dialog>
 
 
-  <dialog id="polygonEditDialog" class="w-[min(92vw,520px)] rounded-lg border border-zinc-800 bg-zinc-950 p-0 text-zinc-100 backdrop:bg-black/70">
+  <dialog id="polygonEditDialog" class="w-[min(94vw,960px)] rounded-lg border border-zinc-800 bg-zinc-950 p-0 text-zinc-100 backdrop:bg-black/70">
     <form id="polygonEditForm">
       <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
         <h2 class="text-base font-medium">Редагувати район інтересу</h2>
         <button id="closePolygonEdit" class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900" type="button" aria-label="Закрити" title="Закрити">×</button>
       </div>
-      <div class="grid max-h-[75vh] gap-3 overflow-y-auto p-4">
-        <label class="grid gap-1 text-sm">
-          <span class="text-zinc-400">Назва</span>
-          <input id="editPolygonNameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required />
-        </label>
-        <label class="grid gap-1 text-sm">
-          <span class="text-zinc-400">Координати</span>
-          <textarea id="editPolygonCoordinatesInput" class="min-h-36 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-sky-500" required></textarea>
-        </label>
-        <p id="polygonEditFormMsg" class="min-h-5 text-sm text-zinc-400"></p>
+      <div class="grid max-h-[75vh] gap-4 overflow-y-auto p-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <div class="grid content-start gap-3">
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Назва</span>
+            <input id="editPolygonNameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required />
+          </label>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-sm text-zinc-400">Точки району</span>
+            <span id="editPolygonPointCount" class="text-xs text-zinc-500">0 точок</span>
+          </div>
+          <div id="editPolygonPointList" class="grid max-h-48 gap-1 overflow-y-auto rounded-md border border-zinc-800 bg-zinc-950 p-2"></div>
+          <div class="flex gap-2">
+            <button id="editPolygonAddPointBtn" class="h-10 flex-1 rounded-md border border-sky-600 px-3 text-sm text-sky-300 hover:bg-sky-950/50" type="button">Додати точку</button>
+            <button id="editPolygonClearPointsBtn" class="h-10 rounded-md border border-zinc-700 px-3 text-sm text-zinc-300 hover:bg-zinc-900" type="button">Очистити</button>
+          </div>
+          <div class="grid grid-cols-[1fr_1fr_auto] gap-2">
+            <label>
+              <span class="sr-only">Широта</span>
+              <input id="editPolygonLatitudeInput" class="h-10 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-100 outline-none focus:border-sky-500" type="number" min="-90" max="90" step="any" inputmode="decimal" placeholder="Широта" />
+            </label>
+            <label>
+              <span class="sr-only">Довгота</span>
+              <input id="editPolygonLongitudeInput" class="h-10 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 text-sm text-zinc-100 outline-none focus:border-sky-500" type="number" step="any" inputmode="decimal" placeholder="Довгота" />
+            </label>
+            <button id="editPolygonAddCoordinatesBtn" class="h-10 rounded-md border border-zinc-700 px-3 text-sm text-zinc-300 hover:bg-zinc-900" type="button">Додати</button>
+          </div>
+          <p class="text-xs text-zinc-500">Виберіть точку на карті або введіть широту й довготу. Додані точки можна перетягувати.</p>
+          <details class="rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2">
+            <summary class="cursor-pointer text-xs text-zinc-400">Редагувати список координат</summary>
+            <label class="mt-2 grid gap-1 text-xs text-zinc-500">
+              <span>Одна точка в рядку; підтримуються MGRS та десяткові координати. Зміни на карті замінять цей список.</span>
+              <textarea id="editPolygonCoordinatesInput" class="min-h-28 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-2 text-sm text-zinc-100 outline-none focus:border-sky-500"></textarea>
+            </label>
+          </details>
+          <p id="polygonEditFormMsg" class="min-h-5 text-sm text-zinc-400"></p>
+        </div>
+        <div id="editPolygonMap" class="h-[460px] min-h-72 overflow-hidden rounded-md border border-zinc-700 bg-zinc-950" aria-label="Карта редагування району інтересу"></div>
       </div>
       <div class="flex justify-end gap-2 border-t border-zinc-800 px-4 py-3">
         <button class="h-10 rounded-md border border-zinc-700 px-4 text-sm text-zinc-200 hover:bg-zinc-900" type="button" data-polygon-edit-cancel>Скасувати</button>
@@ -327,6 +421,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
     let automationAccounts = [];
     let automationGroups = [];
     let polygons = [];
+    let polygonPreviewMaps = [];
+    let polygonPreviewObserver = null;
     let editPolygonId = null;
     const keywordTokens = [];
     const frequencyTokens = [];
@@ -394,6 +490,16 @@ const INDEX_HTML: &str = r#"<!doctype html>
       document.getElementById('polygonsTabBtn').className = tab === 'polygons'
         ? 'border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100'
         : 'border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100';
+      if (tab === 'polygons') {
+        polygonPointPicker.ensureMap();
+        requestAnimationFrame(() => {
+          polygonPointPicker.map.invalidateSize();
+          polygonPreviewMaps.forEach(preview => {
+            preview.map.invalidateSize();
+            fitMapToPoints(preview.map, preview.points);
+          });
+        });
+      }
     }
 
     async function loadAutomationGroups() {
@@ -408,6 +514,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
 
     async function loadPolygons() {
+      destroyPolygonPreviewMaps();
       polygonList.innerHTML = '<div class="p-4 text-sm text-zinc-400">Завантаження...</div>';
       try {
         const data = await request(appUrl('/ui-api/polygons'));
@@ -500,12 +607,350 @@ const INDEX_HTML: &str = r#"<!doctype html>
       return polygons.some(polygon => polygon.id === value) ? value : null;
     }
 
-    function coordinateLines(textareaId) {
-      return document.getElementById(textareaId).value
+    const defaultMapCenter = [47.42135, 35.62197];
+    const defaultMapZoom = 8;
+
+    function pointCountLabel(count) {
+      const lastTwo = count % 100;
+      const last = count % 10;
+      if (lastTwo >= 11 && lastTwo <= 14) return `${count} точок`;
+      if (last === 1) return `${count} точка`;
+      if (last >= 2 && last <= 4) return `${count} точки`;
+      return `${count} точок`;
+    }
+
+    function formatCoordinate(point) {
+      return `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`;
+    }
+
+    function coordinateValues(points) {
+      return points.map(point => point.coordinate ?? formatCoordinate(point));
+    }
+
+    function coordinateLines(inputId) {
+      return document.getElementById(inputId).value
         .split('\n')
         .map(value => value.trim())
         .filter(Boolean);
     }
+
+    function normalizePoint(point, coordinate = null) {
+      const latLng = L.latLng(Number(point.lat), Number(point.lng)).wrap();
+      return { lat: latLng.lat, lng: latLng.lng, coordinate };
+    }
+
+    function createMapTileLayers() {
+      return {
+        openStreetMap: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 17,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        }),
+        satellite: L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}&hl=uk', {
+          maxZoom: 17,
+          subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+          attribution: '&copy; <a href="https://www.google.com/maps">Google</a>',
+        }),
+      };
+    }
+
+    function addMapTileLayers(map, showControl) {
+      const tileLayers = createMapTileLayers();
+      tileLayers.satellite.addTo(map);
+      if (showControl) {
+        L.control.layers(
+          {
+            'Супутник': tileLayers.satellite,
+            'OpenStreetMap': tileLayers.openStreetMap,
+          },
+          null,
+          { collapsed: false },
+        ).addTo(map);
+      }
+    }
+
+    function pointMarkerIcon(index) {
+      return L.divIcon({
+        className: '',
+        html: `<span style="display:grid;width:28px;height:28px;place-items:center;border:2px solid #f8fafc;border-radius:9999px;background:#f59e0b;color:#18181b;font-size:12px;font-weight:700;box-shadow:0 1px 4px #0008">${index + 1}</span>`,
+        iconAnchor: [14, 14],
+        iconSize: [28, 28],
+      });
+    }
+
+    function drawArea(layerGroup, points, onPointMoved = null) {
+      layerGroup.clearLayers();
+      const latLngs = points.map(point => [point.lat, point.lng]);
+      if (points.length >= 3) {
+        L.polygon(latLngs, {
+          color: '#38bdf8',
+          fillColor: '#0ea5e9',
+          fillOpacity: 0.24,
+          weight: 3,
+        }).addTo(layerGroup);
+      } else if (points.length === 2) {
+        L.polyline(latLngs, { color: '#38bdf8', weight: 3 }).addTo(layerGroup);
+      }
+      points.forEach((point, index) => {
+        if (onPointMoved) {
+          L.marker([point.lat, point.lng], {
+            draggable: true,
+            icon: pointMarkerIcon(index),
+            title: `Точка ${index + 1}. Перетягніть, щоб змінити`,
+          }).on('dragend', event => onPointMoved(index, event.target.getLatLng())).addTo(layerGroup);
+        } else {
+          L.circleMarker([point.lat, point.lng], {
+            color: '#f8fafc',
+            fillColor: '#f59e0b',
+            fillOpacity: 1,
+            radius: 6,
+            weight: 2,
+          }).addTo(layerGroup);
+        }
+      });
+    }
+
+    function fitMapToPoints(map, points) {
+      if (points.length === 0) {
+        map.setView(defaultMapCenter, defaultMapZoom);
+      } else if (points.length === 1) {
+        map.setView([points[0].lat, points[0].lng], 14);
+      } else {
+        map.fitBounds(points.map(point => [point.lat, point.lng]), {
+          maxZoom: 15,
+          padding: [28, 28],
+        });
+      }
+    }
+
+    function renderPointPicker(picker) {
+      const { addButton, mapContainer, pointCount, pointList } = picker.elements;
+      pointCount.textContent = pointCountLabel(picker.points.length);
+      pointList.innerHTML = picker.points.length === 0
+        ? '<p class="px-1 py-2 text-xs text-zinc-500">Точок ще немає.</p>'
+        : picker.points.map((point, index) => `
+            <div class="flex items-center justify-between gap-2 rounded px-2 py-1 text-xs hover:bg-zinc-900">
+              <span class="truncate text-zinc-300"><span class="mr-2 text-zinc-500">${index + 1}</span>${formatCoordinate(point)}</span>
+              <button data-point-index="${index}" class="shrink-0 text-zinc-500 hover:text-red-400" type="button" aria-label="Видалити точку ${index + 1}">×</button>
+            </div>
+          `).join('');
+      addButton.textContent = picker.selecting ? 'Виберіть точку на карті…' : 'Додати точку';
+      addButton.className = picker.selecting
+        ? 'h-10 flex-1 rounded-md border border-amber-500 bg-amber-950/40 px-3 text-sm text-amber-300'
+        : 'h-10 flex-1 rounded-md border border-sky-600 px-3 text-sm text-sky-300 hover:bg-sky-950/50';
+      mapContainer.style.cursor = picker.selecting ? 'crosshair' : '';
+      if (picker.layerGroup) {
+        drawArea(picker.layerGroup, picker.points, (index, latLng) => {
+          picker.points[index] = normalizePoint(latLng);
+          picker.syncCoordinates();
+          picker.render();
+        });
+      }
+    }
+
+    function initializePointPickerMap(picker) {
+      if (picker.map) return;
+      picker.map = L.map(picker.elements.mapContainer, { zoomControl: true })
+        .setView(defaultMapCenter, defaultMapZoom);
+      addMapTileLayers(picker.map, true);
+      picker.layerGroup = L.layerGroup().addTo(picker.map);
+      picker.map.on('click', event => {
+        if (!picker.selecting) return;
+        picker.points.push(normalizePoint(event.latlng));
+        picker.selecting = false;
+        picker.syncCoordinates();
+        picker.render();
+      });
+      picker.render();
+    }
+
+    function addManualPoint(picker) {
+      const { latitudeInput, longitudeInput } = picker.elements;
+      const lat = Number(latitudeInput.value);
+      const lng = Number(longitudeInput.value);
+      const latitudeValid = latitudeInput.value !== '' && Number.isFinite(lat) && lat >= -90 && lat <= 90;
+      const longitudeValid = longitudeInput.value !== '' && Number.isFinite(lng);
+      latitudeInput.setCustomValidity(latitudeValid ? '' : 'Введіть широту від -90 до 90.');
+      longitudeInput.setCustomValidity(longitudeValid ? '' : 'Введіть числову довготу.');
+      if (!latitudeValid) {
+        latitudeInput.reportValidity();
+        return;
+      }
+      if (!longitudeValid) {
+        longitudeInput.reportValidity();
+        return;
+      }
+      picker.ensureMap();
+      const point = normalizePoint({ lat, lng });
+      picker.points.push(point);
+      picker.selecting = false;
+      latitudeInput.value = '';
+      longitudeInput.value = '';
+      picker.syncCoordinates();
+      picker.render();
+      picker.map.setView([point.lat, point.lng], Math.max(picker.map.getZoom(), 14));
+    }
+
+    function bindPointPickerEvents(picker) {
+      const {
+        addButton,
+        addCoordinatesButton,
+        clearButton,
+        latitudeInput,
+        longitudeInput,
+        pointList,
+      } = picker.elements;
+      addButton.addEventListener('click', () => {
+        picker.ensureMap();
+        picker.selecting = !picker.selecting;
+        picker.render();
+      });
+      addCoordinatesButton.addEventListener('click', () => addManualPoint(picker));
+      clearButton.addEventListener('click', () => picker.setPoints([], { fit: false }));
+      pointList.addEventListener('click', event => {
+        const button = event.target.closest('button[data-point-index]');
+        if (!button) return;
+        picker.points.splice(Number(button.dataset.pointIndex), 1);
+        picker.syncCoordinates();
+        picker.render();
+      });
+      [latitudeInput, longitudeInput].forEach(input => {
+        input.addEventListener('input', () => input.setCustomValidity(''));
+        input.addEventListener('keydown', event => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          addManualPoint(picker);
+        });
+      });
+    }
+
+    function createPointPicker({
+      mapId,
+      addButtonId,
+      addCoordinatesButtonId,
+      clearButtonId,
+      latitudeInputId,
+      longitudeInputId,
+      coordinatesInputId,
+      listId,
+      countId,
+    }) {
+      const picker = {
+        map: null,
+        layerGroup: null,
+        points: [],
+        selecting: false,
+        elements: {
+          mapContainer: document.getElementById(mapId),
+          addButton: document.getElementById(addButtonId),
+          addCoordinatesButton: document.getElementById(addCoordinatesButtonId),
+          clearButton: document.getElementById(clearButtonId),
+          latitudeInput: document.getElementById(latitudeInputId),
+          longitudeInput: document.getElementById(longitudeInputId),
+          coordinatesInput: document.getElementById(coordinatesInputId),
+          pointList: document.getElementById(listId),
+          pointCount: document.getElementById(countId),
+        },
+      };
+      picker.render = () => renderPointPicker(picker);
+      picker.ensureMap = () => initializePointPickerMap(picker);
+      picker.syncCoordinates = () => {
+        picker.elements.coordinatesInput.value = coordinateValues(picker.points).join('\n');
+      };
+      picker.setPoints = (points, { coordinates = [], fit = true } = {}) => {
+        picker.elements.latitudeInput.value = '';
+        picker.elements.longitudeInput.value = '';
+        picker.elements.latitudeInput.setCustomValidity('');
+        picker.elements.longitudeInput.setCustomValidity('');
+        picker.points = points.map((point, index) => normalizePoint(point, coordinates[index] ?? null));
+        picker.selecting = false;
+        picker.syncCoordinates();
+        picker.render();
+        if (fit && picker.map) {
+          requestAnimationFrame(() => {
+            picker.map.invalidateSize();
+            fitMapToPoints(picker.map, picker.points);
+          });
+        }
+      };
+      picker.cancelSelection = () => {
+        picker.selecting = false;
+        picker.render();
+      };
+      bindPointPickerEvents(picker);
+      picker.render();
+      return picker;
+    }
+
+    function destroyPolygonPreviewMaps() {
+      polygonPreviewObserver?.disconnect();
+      polygonPreviewObserver = null;
+      polygonPreviewMaps.forEach(preview => preview.map.remove());
+      polygonPreviewMaps = [];
+    }
+
+    function queuePolygonPreview(item) {
+      const container = document.getElementById(`polygon-preview-${item.id}`);
+      if (!('IntersectionObserver' in window)) {
+        renderPolygonPreview(item);
+        return;
+      }
+      if (!polygonPreviewObserver) {
+        const observer = new IntersectionObserver(entries => {
+          entries.filter(entry => entry.isIntersecting).forEach(entry => {
+            observer.unobserve(entry.target);
+            const polygon = polygons.find(value => value.id === Number(entry.target.dataset.polygonPreview));
+            if (polygon) renderPolygonPreview(polygon);
+          });
+        }, { rootMargin: '240px 0px' });
+        polygonPreviewObserver = observer;
+      }
+      polygonPreviewObserver.observe(container);
+    }
+
+    function renderPolygonPreview(item) {
+      const container = document.getElementById(`polygon-preview-${item.id}`);
+      if (!container || container.dataset.mapReady === 'true') return;
+      container.dataset.mapReady = 'true';
+      const map = L.map(container, {
+        boxZoom: false,
+        doubleClickZoom: false,
+        dragging: false,
+        keyboard: false,
+        scrollWheelZoom: false,
+        tap: false,
+        touchZoom: false,
+        zoomControl: false,
+      }).setView(defaultMapCenter, defaultMapZoom);
+      addMapTileLayers(map, false);
+      const layerGroup = L.layerGroup().addTo(map);
+      drawArea(layerGroup, item.points);
+      fitMapToPoints(map, item.points);
+      map.on('click', () => openPolygonEdit(item.id));
+      polygonPreviewMaps.push({ map, points: item.points });
+    }
+
+    const polygonPointPicker = createPointPicker({
+      mapId: 'polygonMap',
+      addButtonId: 'polygonAddPointBtn',
+      addCoordinatesButtonId: 'polygonAddCoordinatesBtn',
+      clearButtonId: 'polygonClearPointsBtn',
+      latitudeInputId: 'polygonLatitudeInput',
+      longitudeInputId: 'polygonLongitudeInput',
+      coordinatesInputId: 'polygonCoordinatesInput',
+      listId: 'polygonPointList',
+      countId: 'polygonPointCount',
+    });
+    const editPolygonPointPicker = createPointPicker({
+      mapId: 'editPolygonMap',
+      addButtonId: 'editPolygonAddPointBtn',
+      addCoordinatesButtonId: 'editPolygonAddCoordinatesBtn',
+      clearButtonId: 'editPolygonClearPointsBtn',
+      latitudeInputId: 'editPolygonLatitudeInput',
+      longitudeInputId: 'editPolygonLongitudeInput',
+      coordinatesInputId: 'editPolygonCoordinatesInput',
+      listId: 'editPolygonPointList',
+      countId: 'editPolygonPointCount',
+    });
 
     function renderToken(containerId, tokens, removePrefix) {
       const container = document.getElementById(containerId);
@@ -697,18 +1142,19 @@ const INDEX_HTML: &str = r#"<!doctype html>
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <h3 class="truncate text-base font-medium">${item.name}</h3>
-              <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">${item.coordinates.length} точок</span>
+              <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">${pointCountLabel(item.points.length)}</span>
               ${item.automationCount > 0 ? `<span class="text-sm text-zinc-400">${item.automationCount} автоматизацій</span>` : ''}
             </div>
-            <p class="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-zinc-500">${item.coordinates.join(' · ')}</p>
           </div>
           <div class="flex shrink-0 gap-2">
             <button data-polygon-edit="${item.id}" class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900" type="button" aria-label="Редагувати район інтересу" title="Редагувати район інтересу">${pencilIcon()}</button>
             <button data-polygon-delete="${item.id}" class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-red-600 text-white hover:bg-red-500" type="button" aria-label="Видалити район інтересу" title="Видалити район інтересу">${deleteIcon()}</button>
           </div>
         </div>
+        <div id="polygon-preview-${item.id}" data-polygon-preview="${item.id}" class="h-48 cursor-pointer overflow-hidden rounded-md border border-zinc-800 bg-zinc-900" title="Відкрити й редагувати"></div>
       `;
       polygonList.appendChild(row);
+      queuePolygonPreview(item);
     }
 
     function renderAutomationRow(item) {
@@ -835,8 +1281,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
       editPolygonId = item.id;
       polygonEditFormMsg.textContent = '';
       document.getElementById('editPolygonNameInput').value = item.name || '';
-      document.getElementById('editPolygonCoordinatesInput').value = item.coordinates.join('\n');
       polygonEditDialog.showModal();
+      editPolygonPointPicker.ensureMap();
+      editPolygonPointPicker.setPoints(item.points, { coordinates: item.coordinates });
     }
 
     document.getElementById('createForm').addEventListener('submit', async (event) => {
@@ -862,17 +1309,23 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
     document.getElementById('polygonForm').addEventListener('submit', async (event) => {
       event.preventDefault();
+      const coordinates = coordinateLines('polygonCoordinatesInput');
+      if (coordinates.length < 3) {
+        polygonFormMsg.textContent = 'Додайте щонайменше 3 точки.';
+        return;
+      }
       polygonFormMsg.textContent = 'Створення...';
       try {
         await request(appUrl('/ui-api/polygons'), {
           method: 'POST',
           body: JSON.stringify({
             name: document.getElementById('polygonNameInput').value.trim(),
-            coordinates: coordinateLines('polygonCoordinatesInput'),
+            coordinates,
           }),
         });
         polygonFormMsg.textContent = 'Створено.';
         event.target.reset();
+        polygonPointPicker.setPoints([], { fit: false });
         await loadPolygons();
       } catch (err) {
         polygonFormMsg.textContent = err.message;
@@ -1066,13 +1519,18 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
     document.getElementById('polygonEditForm').addEventListener('submit', async (event) => {
       event.preventDefault();
+      const coordinates = coordinateLines('editPolygonCoordinatesInput');
+      if (coordinates.length < 3) {
+        polygonEditFormMsg.textContent = 'Додайте щонайменше 3 точки.';
+        return;
+      }
       polygonEditFormMsg.textContent = 'Збереження...';
       try {
         await request(appUrl(`/ui-api/polygons/${editPolygonId}`), {
           method: 'PUT',
           body: JSON.stringify({
             name: document.getElementById('editPolygonNameInput').value.trim(),
-            coordinates: coordinateLines('editPolygonCoordinatesInput'),
+            coordinates,
           }),
         });
         polygonEditFormMsg.textContent = 'Збережено.';
@@ -1106,6 +1564,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     document.querySelector('[data-edit-cancel]').addEventListener('click', () => automationEditDialog.close());
     document.getElementById('closePolygonEdit').addEventListener('click', () => polygonEditDialog.close());
     document.querySelector('[data-polygon-edit-cancel]').addEventListener('click', () => polygonEditDialog.close());
+    polygonEditDialog.addEventListener('close', () => editPolygonPointPicker.cancelSelection());
 
     async function openQr(name) {
       currentQrName = name;

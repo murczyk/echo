@@ -47,9 +47,16 @@ pub struct PolygonView {
     pub id: i64,
     pub name: String,
     pub coordinates: Vec<String>,
+    pub points: Vec<PolygonPointView>,
     pub automation_count: i64,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PolygonPointView {
+    pub lat: f64,
+    pub lng: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -355,7 +362,11 @@ pub async fn list_polygons(
     .all(db)
     .await
     .c(h!())?;
-    Ok(rows.into_iter().map(polygon_view).collect())
+    let mut polygons = Vec::with_capacity(rows.len());
+    for row in rows {
+        polygons.push(polygon_view(row).await.c(h!())?);
+    }
+    Ok(polygons)
 }
 
 pub async fn create_polygon(
@@ -2027,15 +2038,26 @@ fn automation_view(row: AutomationListRow) -> AutomationView {
     }
 }
 
-fn polygon_view(row: PolygonListRow) -> PolygonView {
-    PolygonView {
+async fn polygon_view(row: PolygonListRow) -> Result<PolygonView> {
+    let coordinates = json_vec(Some(&row.coordinates));
+    let points = parse_polygon(&coordinates)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|point| PolygonPointView {
+            lat: point.lat,
+            lng: point.lng,
+        })
+        .collect();
+    Ok(PolygonView {
         id: row.id,
         name: row.name,
-        coordinates: json_vec(Some(&row.coordinates)),
+        coordinates,
+        points,
         automation_count: row.automation_count,
         created_at: row.created_at.and_utc().timestamp_millis(),
         updated_at: row.updated_at.and_utc().timestamp_millis(),
-    }
+    })
 }
 
 async fn load_polygon_view(
@@ -2062,11 +2084,12 @@ async fn load_polygon_view(
     .all(db)
     .await
     .c(h!())?;
-    rows.into_iter()
+    let row = rows
+        .into_iter()
         .next()
-        .map(polygon_view)
         .with_context(|| format!("polygon not found: {id}"))
-        .c(h!())
+        .c(h!())?;
+    polygon_view(row).await.c(h!())
 }
 
 async fn normalize_polygon_req(
@@ -2743,6 +2766,32 @@ mod tests {
             ]),
             vec!["alpha".to_string(), "bravo".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn polygon_view_projects_coordinate_tokens_to_points() -> Result<()> {
+        let now = Utc::now().naive_utc();
+        let coordinates = vec![
+            "47.421350, 35.621970".to_string(),
+            "47.422000, 35.623000".to_string(),
+            "47.420000, 35.624000".to_string(),
+        ];
+        let polygon = polygon_view(PolygonListRow {
+            id: 1,
+            name: "test".to_string(),
+            coordinates: serde_json::json!(coordinates.clone()),
+            automation_count: 0,
+            created_at: now,
+            updated_at: now,
+        })
+        .await
+        .c(h!())?;
+
+        assert_eq!(polygon.coordinates, coordinates);
+        assert_eq!(polygon.points.len(), 3);
+        assert!((polygon.points[0].lat - 47.42135).abs() < f64::EPSILON);
+        assert!((polygon.points[0].lng - 35.62197).abs() < f64::EPSILON);
+        Ok(())
     }
 
     #[tokio::test]
