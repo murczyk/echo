@@ -116,6 +116,7 @@ describe('device analytics API service', () => {
         files: [
           {
             absolute_path: 'C:\\reports\\report.pdf',
+            expected_match: true,
           },
         ],
       }),
@@ -130,24 +131,27 @@ describe('device analytics API service', () => {
     expect(rsp.files).toEqual([
       {
         absolutePath: 'C:\\reports\\report.pdf',
+        expectedMatch: true,
       },
     ]);
   });
 
   it('tests the local expression and stores its reusable files', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ results: [{ index: 0, matched: true }] }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ results: [{ index: 0, matched: true, passed: true }] }),
+    );
 
     const rsp = await testAnalyticsTagRule({
       id: TAG_ID,
       ruleExpression: expression,
-      files: [{ absolutePath: 'C:\\reports\\report.pdf' }],
+      files: [{ absolutePath: 'C:\\reports\\report.pdf', expectedMatch: true }],
     });
 
     expect(requestBody()).toEqual({
       id: TAG_ID,
       rule_expression: wireExpression,
-      files: [{ absolute_path: 'C:\\reports\\report.pdf' }],
+      files: [{ absolute_path: 'C:\\reports\\report.pdf', expected_match: true }],
     });
-    expect(rsp.results).toEqual([{ index: 0, matched: true }]);
+    expect(rsp.results).toEqual([{ index: 0, matched: true, passed: true }]);
   });
 });

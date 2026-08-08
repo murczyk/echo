@@ -1,13 +1,9 @@
 use crate::devices::files::{
     map_database_error, DomainFileEntryKind, FilesystemError, SubtreeFileCount,
 };
-use crate::file_registry::entities::{
-    file_entry, sea_orm_active_enums::FileEntryKind,
-};
 use crate::h;
 use sea_orm::{
-    ActiveEnum, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait,
-    FromQueryResult, PaginatorTrait, QueryFilter, Statement,
+    ActiveEnum, ConnectionTrait, DbBackend, FromQueryResult, Statement,
 };
 use uuid::Uuid;
 
@@ -106,20 +102,6 @@ pub(in crate::devices::files) async fn count_file_subtrees(
             })
         })
         .collect()
-}
-
-pub(in crate::devices::files) async fn count_device_files(
-    db: &impl ConnectionTrait,
-    device_id: Uuid,
-) -> Result<u64, FilesystemError> {
-    file_entry::Entity::find()
-        .filter(file_entry::Column::DeviceId.eq(device_id))
-        .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
-        .count(db)
-        .await
-        .map_err(|error| {
-            map_database_error(anyhow::Error::new(error).context(h!()))
-        })
 }
 
 fn checked_file_count(file_count: i64) -> Result<u64, FilesystemError> {

@@ -247,6 +247,7 @@ pub struct SaveAnalyticsTagRuleReq {
 #[serde(deny_unknown_fields)]
 pub struct RuleTestFile {
     pub absolute_path: String,
+    pub expected_match: bool,
 }
 
 #[derive(
@@ -298,6 +299,7 @@ pub struct ListAnalyticsTagTestFilesRsp {
 pub struct RuleTestFileResult {
     pub index: usize,
     pub matched: bool,
+    pub passed: bool,
 }
 
 #[derive(

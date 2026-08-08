@@ -4,10 +4,10 @@ use super::query;
 use super::sync_pipeline::sync_files;
 use super::types::{
     BrowseFilesCommand, BrowseFilesResult, EntryQueryScope, EntrySortKey,
-    FileJournalEntry, FileJournalSortKey, FileSearchFilters,
-    JournalFilesCommand, JournalFilesResult, KeysetPageRequest, RootEntry,
-    SearchEntry, SearchFilesCommand, SearchFilesResult, SubtreeFileCount,
-    SubtreeFileCountsCommand, SyncFilesCommand, SyncFilesResult, TreeEntry,
+    FileSearchFilters, JournalFilesCommand, JournalFilesResult,
+    KeysetPageRequest, RootEntry, SearchEntry, SearchFilesCommand,
+    SearchFilesResult, SubtreeFileCount, SubtreeFileCountsCommand,
+    SyncFilesCommand, SyncFilesResult, TreeEntry,
 };
 use super::validation::{
     duplicate_file_ids, validate_subtree_count_directories,
@@ -132,34 +132,18 @@ pub(in crate::devices) async fn journal(
     let requested_page = KeysetPageRequest::try_new(limit, after)
         .map_err(map_read_error)
         .c(h!())?;
-    let (entries, next_cursor, total_count) =
-        if let Some(tag_filter) = &tag_filter {
-            let (entries, next_cursor) = filtered_journal_page(
-                file_registry_db,
-                device_id,
-                requested_page,
-                tag_filter,
-            )
-            .await?;
-            let total_count =
-                count_filtered_journal(file_registry_db, device_id, tag_filter)
-                    .await?;
-            (entries, next_cursor, total_count)
-        } else {
-            let (page, total_count) = query::list_file_journal_with_total(
-                file_registry_db,
-                device_id,
-                requested_page,
-            )
-            .await
-            .map_err(map_read_error)
-            .c(h!())?;
-            (
-                page.entries,
-                page.next.map(|sort_key| cursor::encode(sort_key.file_id())),
-                total_count,
-            )
-        };
+    let (page, total_count) = query::list_file_journal_with_total(
+        file_registry_db,
+        device_id,
+        requested_page,
+        tag_filter.as_ref(),
+    )
+    .await
+    .map_err(map_read_error)
+    .c(h!())?;
+    let next_cursor =
+        page.next.map(|sort_key| cursor::encode(sort_key.file_id()));
+    let entries = page.entries;
     let file_entry_ids = entries
         .iter()
         .map(|entry| entry.file_id)
@@ -459,15 +443,18 @@ async fn filtered_browse_page(
         let has_later_page = page.next.is_some();
         let entry_ids =
             page.entries.iter().map(tree_entry_id).collect::<Vec<_>>();
-        let memberships = load_active_tag_memberships(
-            file_registry_db.connection(),
+        let matching_entry_ids = query::find_matching_tree_entry_ids(
+            file_registry_db,
+            scope.device_id(),
             &entry_ids,
+            tag_filter,
         )
         .await
+        .map_err(map_read_error)
         .c(h!())?;
         for (index, entry) in page.entries.into_iter().enumerate() {
             let entry_id = tree_entry_id(&entry);
-            if matches_tag_filter(memberships.get(&entry_id), tag_filter) {
+            if matching_entry_ids.contains(&entry_id) {
                 entries.push(entry);
                 if entries.len() == target_len {
                     let has_later_candidate =
@@ -537,108 +524,6 @@ async fn filtered_search_page(
         }
         let Some(next) = page.next else {
             return Ok((entries, None));
-        };
-        after = Some(next);
-    }
-}
-
-async fn filtered_journal_page(
-    file_registry_db: &FileRegistryDb,
-    device_id: Uuid,
-    requested_page: KeysetPageRequest<FileJournalSortKey>,
-    tag_filter: &TagFilter,
-) -> Result<(Vec<FileJournalEntry>, Option<String>), AppError> {
-    let target_len = usize::try_from(requested_page.limit())
-        .expect("validated file page limit must fit usize");
-    let mut after = requested_page.after().cloned();
-    let mut entries = Vec::with_capacity(target_len);
-    loop {
-        let page = query::list_file_journal(
-            file_registry_db,
-            device_id,
-            KeysetPageRequest::try_new(
-                Some(crate::config::DEVICE_FILE_PAGE_MAX_LIMIT),
-                after,
-            )
-            .expect("configured file page limit must be valid"),
-        )
-        .await
-        .map_err(map_read_error)
-        .c(h!())?;
-        let page_len = page.entries.len();
-        let has_later_page = page.next.is_some();
-        let entry_ids = page
-            .entries
-            .iter()
-            .map(|entry| entry.file_id)
-            .collect::<Vec<_>>();
-        let memberships = load_active_tag_memberships(
-            file_registry_db.connection(),
-            &entry_ids,
-        )
-        .await
-        .c(h!())?;
-        for (index, entry) in page.entries.into_iter().enumerate() {
-            let entry_id = entry.file_id;
-            if matches_tag_filter(memberships.get(&entry_id), tag_filter) {
-                entries.push(entry);
-                if entries.len() == target_len {
-                    let has_later_candidate =
-                        index + 1 < page_len || has_later_page;
-                    return Ok((
-                        entries,
-                        has_later_candidate.then(|| cursor::encode(entry_id)),
-                    ));
-                }
-            }
-        }
-        let Some(next) = page.next else {
-            return Ok((entries, None));
-        };
-        after = Some(next);
-    }
-}
-
-async fn count_filtered_journal(
-    file_registry_db: &FileRegistryDb,
-    device_id: Uuid,
-    tag_filter: &TagFilter,
-) -> Result<u64, AppError> {
-    let mut after = None;
-    let mut total_count = 0_u64;
-    loop {
-        let page = query::list_file_journal(
-            file_registry_db,
-            device_id,
-            KeysetPageRequest::try_new(
-                Some(crate::config::DEVICE_FILE_PAGE_MAX_LIMIT),
-                after,
-            )
-            .expect("configured file page limit must be valid"),
-        )
-        .await
-        .map_err(map_read_error)
-        .c(h!())?;
-        let entry_ids = page
-            .entries
-            .iter()
-            .map(|entry| entry.file_id)
-            .collect::<Vec<_>>();
-        let memberships = load_active_tag_memberships(
-            file_registry_db.connection(),
-            &entry_ids,
-        )
-        .await
-        .c(h!())?;
-        total_count += page
-            .entries
-            .iter()
-            .filter(|entry| {
-                matches_tag_filter(memberships.get(&entry.file_id), tag_filter)
-            })
-            .count() as u64;
-        let Some(next) = page.next else {
-            return Ok(total_count);
         };
         after = Some(next);
     }

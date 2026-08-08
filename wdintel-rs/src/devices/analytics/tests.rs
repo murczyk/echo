@@ -7,6 +7,7 @@ use super::types::{
     TagRuleDefinition,
 };
 use super::{bl, query, queue, worker};
+use crate::config::DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS;
 use crate::entities::{device, login, organism};
 use crate::file_registry::entities::{
     analytics_tag, device_file_tag, file_analysis_control,
@@ -733,9 +734,11 @@ async fn rule_test_files_are_persisted_in_order_and_replaced() {
     let first_files = vec![
         RuleTestFile {
             absolute_path: r"C:\reports\report.pdf".to_string(),
+            expected_match: true,
         },
         RuleTestFile {
             absolute_path: r"C:\reports\notes.txt".to_string(),
+            expected_match: false,
         },
     ];
 
@@ -758,9 +761,9 @@ async fn rule_test_files_are_persisted_in_order_and_replaced() {
         response
             .results
             .iter()
-            .map(|result| result.matched)
+            .map(|result| (result.matched, result.passed))
             .collect::<Vec<_>>(),
-        vec![true, false]
+        vec![(true, true), (false, true)]
     );
     let stored = query::list_tag_test_files(
         env.file_registry_db().unwrap().connection(),
@@ -770,8 +773,10 @@ async fn rule_test_files_are_persisted_in_order_and_replaced() {
     .unwrap();
     assert_eq!(stored[0].name, "report.pdf");
     assert_eq!(stored[0].extension.as_deref(), Some("pdf"));
+    assert!(stored[0].expected_match);
     assert_eq!(stored[1].name, "notes.txt");
     assert_eq!(stored[1].extension.as_deref(), Some("txt"));
+    assert!(!stored[1].expected_match);
     assert_eq!(
         bl::list_tag_test_files(
             env.file_registry_db().unwrap().connection(),
@@ -784,6 +789,7 @@ async fn rule_test_files_are_persisted_in_order_and_replaced() {
 
     let replacement = vec![RuleTestFile {
         absolute_path: r"C:\archive\replacement.docx".to_string(),
+        expected_match: false,
     }];
     bl::test_rule(
         env.file_registry_db().unwrap().connection(),
@@ -1436,4 +1442,81 @@ async fn failed_and_expired_leases_remain_durably_retryable() {
             .unwrap();
     assert!(recovered_device.pending);
     assert!(recovered_device.lease_token.is_none());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn analysis_stops_after_ten_failures_until_file_metadata_changes() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let device_id = insert_analytics_test_device(env.as_ref()).await;
+    let file_id = insert_pending_files(
+        env.as_ref(),
+        device_id,
+        &[("exhausted.pdf", r"C:\exhausted.pdf", "pdf")],
+    )
+    .await[0];
+    let file_db = env.file_registry_db().unwrap().connection();
+    let device_claim = claim_analysis_device(env.as_ref()).await;
+
+    for attempt in 1..=DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS {
+        let claim =
+            queue::claim_pending_analysis_files(file_db, &device_claim, 1)
+                .await
+                .unwrap();
+        assert_eq!(claim.files.len(), 1);
+        assert_eq!(
+            queue::release_claim_with_error(
+                file_db,
+                claim.lease_token,
+                "persistent analysis failure",
+            )
+            .await
+            .unwrap(),
+            1,
+        );
+
+        let state = analysis_state(env.as_ref(), file_id).await;
+        assert_eq!(state.attempt_count, attempt);
+        assert_eq!(
+            state.retry_exhausted,
+            attempt == DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS,
+        );
+        assert_eq!(state.pending, attempt < DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS,);
+        if state.pending {
+            let mut state = state.into_active_model();
+            state.available_at =
+                Set((Utc::now() - ChronoDuration::seconds(1)).fixed_offset());
+            state.update(file_db).await.unwrap();
+        }
+    }
+
+    assert!(
+        queue::claim_pending_analysis_files(file_db, &device_claim, 1)
+            .await
+            .unwrap()
+            .files
+            .is_empty()
+    );
+    assert_eq!(
+        queue::complete_analysis_device_claim(file_db, &device_claim)
+            .await
+            .unwrap(),
+        Some(false),
+    );
+
+    let file = file_entry::Entity::find_by_id(file_id)
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut file = file.into_active_model();
+    file.name = Set("renamed.pdf".to_string());
+    file.absolute_path = Set(Some(r"C:\renamed.pdf".to_string()));
+    file.update(file_db).await.unwrap();
+
+    let requeued = analysis_state(env.as_ref(), file_id).await;
+    assert!(requeued.pending);
+    assert!(!requeued.retry_exhausted);
+    assert_eq!(requeued.attempt_count, 0);
+    assert!(requeued.last_error.is_none());
 }

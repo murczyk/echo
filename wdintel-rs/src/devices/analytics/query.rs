@@ -27,6 +27,7 @@ pub(super) struct PreparedRuleTestFile {
     pub name: String,
     pub absolute_path: String,
     pub extension: Option<String>,
+    pub expected_match: bool,
 }
 
 pub(super) struct FileTagAssignment {
@@ -99,6 +100,7 @@ pub(super) async fn replace_tag_test_files(
             name: Set(file.name.clone()),
             absolute_path: Set(file.absolute_path.clone()),
             extension: Set(file.extension.clone()),
+            expected_match: Set(file.expected_match),
             created_at: Set(now),
             updated_at: Set(now),
         }

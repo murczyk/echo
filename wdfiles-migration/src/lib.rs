@@ -10,6 +10,8 @@ mod m20260806_160450_device_analytics_tags;
 mod m20260807_125456_analytics_tag_rule_revision;
 mod m20260807_162040_file_analysis_state;
 mod m20260808_113748_file_analysis_device_queue;
+mod m20260808_134904_file_analysis_retry_limit;
+mod m20260808_134905_analytics_tag_test_expectation;
 
 pub struct Migrator;
 
@@ -31,6 +33,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20260807_125456_analytics_tag_rule_revision::Migration),
             Box::new(m20260807_162040_file_analysis_state::Migration),
             Box::new(m20260808_113748_file_analysis_device_queue::Migration),
+            Box::new(m20260808_134904_file_analysis_retry_limit::Migration),
+            Box::new(
+                m20260808_134905_analytics_tag_test_expectation::Migration,
+            ),
         ]
     }
 }

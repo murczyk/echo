@@ -5046,6 +5046,7 @@ saveAnalyticsTagRuleReqEncoder struct =
 
 type alias RuleTestFile =
     { absolutePath : String
+    , expectedMatch : Bool
     }
 
 
@@ -5053,6 +5054,7 @@ ruleTestFileEncoder : RuleTestFile -> Json.Encode.Value
 ruleTestFileEncoder struct =
     Json.Encode.object
         [ ( "absolute_path", (Json.Encode.string) struct.absolutePath )
+        , ( "expected_match", (Json.Encode.bool) struct.expectedMatch )
         ]
 
 
@@ -5087,6 +5089,7 @@ testAnalyticsTagRuleReqEncoder struct =
 type alias RuleTestFileResult =
     { index : Int
     , matched : Bool
+    , passed : Bool
     }
 
 
@@ -5095,6 +5098,7 @@ ruleTestFileResultEncoder struct =
     Json.Encode.object
         [ ( "index", (Json.Encode.int) struct.index )
         , ( "matched", (Json.Encode.bool) struct.matched )
+        , ( "passed", (Json.Encode.bool) struct.passed )
         ]
 
 
@@ -15188,6 +15192,7 @@ ruleTestFileDecoder : Json.Decode.Decoder RuleTestFile
 ruleTestFileDecoder =
     Json.Decode.succeed RuleTestFile
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expected_match" (Json.Decode.bool)))
 
 
 listAnalyticsTagTestFilesRspDecoder : Json.Decode.Decoder ListAnalyticsTagTestFilesRsp
@@ -15209,6 +15214,7 @@ ruleTestFileResultDecoder =
     Json.Decode.succeed RuleTestFileResult
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "index" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "matched" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "passed" (Json.Decode.bool)))
 
 
 testAnalyticsTagRuleRspDecoder : Json.Decode.Decoder TestAnalyticsTagRuleRsp

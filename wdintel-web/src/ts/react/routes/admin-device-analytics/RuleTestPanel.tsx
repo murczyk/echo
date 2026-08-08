@@ -4,7 +4,7 @@ import ScienceOutlinedIcon from '@mui/icons-material/ScienceOutlined';
 import { Box, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 
-import type { RuleExpression, RuleTestFile, RuleTestFileResult } from '../../../../Bindings';
+import type { RuleExpression, RuleTestFileResult } from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { PowerChip } from '../../components/PowerChip';
@@ -19,21 +19,117 @@ const MAX_TEST_FILES = 100;
 type TestFileDraft = {
   key: number;
   absolutePath: string;
+  expectedMatch: boolean;
 };
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+type IndexedTestFile = {
+  file: TestFileDraft;
+  resultIndex: number;
+};
 
-function toDraft(file: RuleTestFile, key: number): TestFileDraft {
-  return {
-    key,
-    absolutePath: file.absolutePath,
-  };
-}
-
-function emptyTestFile(key: number): TestFileDraft {
-  return { key, absolutePath: '' };
+function TestFileGroup({
+  title,
+  description,
+  emptyText,
+  addLabel,
+  expectedMatch,
+  files,
+  results,
+  testing,
+  canAdd,
+  onAdd,
+  onUpdate,
+  onDelete,
+}: {
+  title: string;
+  description: string;
+  emptyText: string;
+  addLabel: string;
+  expectedMatch: boolean;
+  files: IndexedTestFile[];
+  results: RuleTestFileResult[] | null;
+  testing: boolean;
+  canAdd: boolean;
+  onAdd: () => void;
+  onUpdate: (key: number, absolutePath: string) => void;
+  onDelete: (key: number) => void;
+}) {
+  const titleId = expectedMatch
+    ? 'positive-rule-test-files-title'
+    : 'negative-rule-test-files-title';
+  return (
+    <Paper component="section" variant="outlined" aria-labelledby={titleId} sx={{ p: 1.5 }}>
+      <Stack spacing={1.25}>
+        <Box>
+          <Typography id={titleId} variant="subtitle1" fontWeight={600}>
+            {title}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {description}
+          </Typography>
+        </Box>
+        {files.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            {emptyText}
+          </Typography>
+        ) : null}
+        {files.map(({ file, resultIndex }, caseIndex) => {
+          const result = results?.find((candidate) => candidate.index === resultIndex);
+          const resultLabel = result?.passed
+            ? 'Кейс пройдено'
+            : expectedMatch
+              ? 'Тег не призначено'
+              : 'Тег призначено помилково';
+          return (
+            <Paper key={file.key} variant="outlined" sx={{ p: 1.25 }}>
+              <Stack spacing={1}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography variant="subtitle2">Файл {caseIndex + 1}</Typography>
+                  <Stack direction="row" spacing={0.5} alignItems="center">
+                    {result ? (
+                      <PowerChip
+                        label={resultLabel}
+                        color={result.passed ? 'success' : 'error'}
+                        selected={result.passed}
+                        interactive={false}
+                      />
+                    ) : null}
+                    <PowerIconButton
+                      size="small"
+                      color="error"
+                      title="Видалити"
+                      aria-label={`Видалити ${expectedMatch ? 'позитивний' : 'негативний'} кейс ${caseIndex + 1}`}
+                      onClick={() => onDelete(file.key)}
+                    >
+                      <DeleteOutlineIcon fontSize="small" />
+                    </PowerIconButton>
+                  </Stack>
+                </Stack>
+                <TextField
+                  label="Повний шлях до файла"
+                  value={file.absolutePath}
+                  onChange={(event) => onUpdate(file.key, event.target.value)}
+                  helperText="Наприклад, C:\\Reports\\Звіт.pdf"
+                  fullWidth
+                  size="small"
+                />
+              </Stack>
+            </Paper>
+          );
+        })}
+        <Box>
+          <PowerButton
+            variant="outlined"
+            startIcon={<AddIcon />}
+            disabled={testing || !canAdd}
+            onClick={onAdd}
+          >
+            {addLabel}
+          </PowerButton>
+        </Box>
+      </Stack>
+    </Paper>
+  );
 }
 
 export function RuleTestPanel({
@@ -70,12 +166,18 @@ export function RuleTestPanel({
     void listAnalyticsTagTestFiles({ id: tagId }, { signal: controller.signal })
       .then((response) => {
         if (controller.signal.aborted) return;
-        const loadedFiles = response.files.map((file, index) => toDraft(file, index + 1));
+        const loadedFiles = response.files.map((file, index) => ({
+          key: index + 1,
+          absolutePath: file.absolutePath,
+          expectedMatch: file.expectedMatch,
+        }));
         nextKeyRef.current = loadedFiles.length + 1;
         setFiles(loadedFiles);
       })
       .catch((error) => {
-        if (!controller.signal.aborted) setLoadError(errorMessage(error));
+        if (!controller.signal.aborted) {
+          setLoadError(error instanceof Error ? error.message : String(error));
+        }
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoadingFiles(false);
@@ -107,16 +209,20 @@ export function RuleTestPanel({
         ruleExpression: expression,
         files: files.map((file) => ({
           absolutePath: file.absolutePath,
+          expectedMatch: file.expectedMatch,
         })),
       });
       setResults(response.results);
       setSaved(true);
     } catch (error) {
-      setTestError(errorMessage(error));
+      setTestError(error instanceof Error ? error.message : String(error));
     } finally {
       setTesting(false);
     }
   };
+
+  const indexedFiles = files.map((file, resultIndex) => ({ file, resultIndex }));
+  const failedCaseCount = results?.filter((result) => !result.passed).length ?? 0;
 
   return (
     <Paper
@@ -163,55 +269,51 @@ export function RuleTestPanel({
           </PowerAlert>
         ) : (
           <>
-            {files.length === 0 ? (
-              <Typography color="text.secondary">Тестових файлів ще немає.</Typography>
-            ) : null}
-            {files.map((file, index) => {
-              const result = results?.find((candidate) => candidate.index === index);
-              return (
-                <Paper key={file.key} variant="outlined" sx={{ p: 1.25 }}>
-                  <Stack spacing={1}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center">
-                      <Typography variant="subtitle2">Файл {index + 1}</Typography>
-                      <Stack direction="row" spacing={0.5} alignItems="center">
-                        {result ? (
-                          <PowerChip
-                            label={result.matched ? 'Відповідає' : 'Не відповідає'}
-                            color={result.matched ? 'success' : 'default'}
-                            selected={result.matched}
-                            interactive={false}
-                          />
-                        ) : null}
-                        <PowerIconButton
-                          size="small"
-                          color="error"
-                          title="Видалити"
-                          aria-label={`Видалити тестовий файл ${index + 1}`}
-                          onClick={() => {
-                            setFiles((current) =>
-                              current.filter((candidate) => candidate.key !== file.key),
-                            );
-                            clearTestResult();
-                          }}
-                        >
-                          <DeleteOutlineIcon fontSize="small" />
-                        </PowerIconButton>
-                      </Stack>
-                    </Stack>
-                    <TextField
-                      label="Повний шлях до файла"
-                      value={file.absolutePath}
-                      onChange={(event) =>
-                        updateFile(file.key, { absolutePath: event.target.value })
-                      }
-                      helperText="Наприклад, C:\\Reports\\Звіт.pdf"
-                      fullWidth
-                      size="small"
-                    />
-                  </Stack>
-                </Paper>
-              );
-            })}
+            <TestFileGroup
+              title="Позитивні кейси"
+              description="Файли, яким правило має призначити цей тег."
+              emptyText="Позитивних кейсів ще немає."
+              addLabel="Додати позитивний кейс"
+              expectedMatch
+              files={indexedFiles.filter(({ file }) => file.expectedMatch)}
+              results={results}
+              testing={testing}
+              canAdd={files.length < MAX_TEST_FILES}
+              onAdd={() => {
+                const key = nextKeyRef.current++;
+                setFiles((current) => [...current, { key, absolutePath: '', expectedMatch: true }]);
+                clearTestResult();
+              }}
+              onUpdate={(key, absolutePath) => updateFile(key, { absolutePath })}
+              onDelete={(key) => {
+                setFiles((current) => current.filter((file) => file.key !== key));
+                clearTestResult();
+              }}
+            />
+            <TestFileGroup
+              title="Негативні кейси"
+              description="Файли, яким правило не повинно призначати цей тег."
+              emptyText="Негативних кейсів ще немає."
+              addLabel="Додати негативний кейс"
+              expectedMatch={false}
+              files={indexedFiles.filter(({ file }) => !file.expectedMatch)}
+              results={results}
+              testing={testing}
+              canAdd={files.length < MAX_TEST_FILES}
+              onAdd={() => {
+                const key = nextKeyRef.current++;
+                setFiles((current) => [
+                  ...current,
+                  { key, absolutePath: '', expectedMatch: false },
+                ]);
+                clearTestResult();
+              }}
+              onUpdate={(key, absolutePath) => updateFile(key, { absolutePath })}
+              onDelete={(key) => {
+                setFiles((current) => current.filter((file) => file.key !== key));
+                clearTestResult();
+              }}
+            />
 
             {testError ? (
               <PowerAlert severity="error" autoHideDuration={null} dismissible={false}>
@@ -219,35 +321,28 @@ export function RuleTestPanel({
               </PowerAlert>
             ) : null}
             {saved ? (
-              <PowerAlert severity="success" autoHideDuration={null} dismissible={false}>
-                Тестові файли збережено.
+              <PowerAlert
+                severity={failedCaseCount === 0 ? 'success' : 'warning'}
+                autoHideDuration={null}
+                dismissible={false}
+              >
+                {failedCaseCount === 0
+                  ? 'Тестові файли збережено. Усі кейси пройдено.'
+                  : `Тестові файли збережено. Не пройдено кейсів: ${failedCaseCount}.`}
               </PowerAlert>
             ) : null}
 
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-              <PowerButton
-                variant="outlined"
-                startIcon={<AddIcon />}
-                disabled={testing || files.length >= MAX_TEST_FILES}
-                onClick={() => {
-                  const key = nextKeyRef.current++;
-                  setFiles((current) => [...current, emptyTestFile(key)]);
-                  clearTestResult();
-                }}
-              >
-                Додати тестовий файл
-              </PowerButton>
-              <PowerButton
-                variant="contained"
-                startIcon={
-                  testing ? <CircularProgress size={18} color="inherit" /> : <ScienceOutlinedIcon />
-                }
-                disabled={testing}
-                onClick={() => void runTest()}
-              >
-                {testing ? 'Зберігаємо й перевіряємо…' : 'Зберегти й перевірити'}
-              </PowerButton>
-            </Stack>
+            <PowerButton
+              variant="contained"
+              startIcon={
+                testing ? <CircularProgress size={18} color="inherit" /> : <ScienceOutlinedIcon />
+              }
+              disabled={testing}
+              onClick={() => void runTest()}
+              sx={{ alignSelf: { sm: 'flex-start' } }}
+            >
+              {testing ? 'Зберігаємо й перевіряємо…' : 'Зберегти й перевірити'}
+            </PowerButton>
           </>
         )}
       </Stack>

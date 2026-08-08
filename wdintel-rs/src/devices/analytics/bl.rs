@@ -57,6 +57,7 @@ pub(super) async fn list_tag_test_files(
         .into_iter()
         .map(|file| RuleTestFile {
             absolute_path: file.absolute_path,
+            expected_match: file.expected_match,
         })
         .collect())
 }
@@ -165,9 +166,10 @@ pub(super) async fn test_rule(
         None => files
             .iter()
             .enumerate()
-            .map(|(index, _)| RuleTestFileResult {
+            .map(|(index, file)| RuleTestFileResult {
                 index,
                 matched: false,
+                passed: !file.expected_match,
             })
             .collect(),
         Some(rule_expression) => {
@@ -188,9 +190,11 @@ pub(super) async fn test_rule(
                             extension: file.extension.as_deref(),
                         },
                     );
+                    let matched = result.matched_tags == [tag_id];
                     RuleTestFileResult {
                         index,
-                        matched: result.matched_tags == [tag_id],
+                        matched,
+                        passed: matched == file.expected_match,
                     }
                 })
                 .collect()
@@ -699,6 +703,7 @@ fn prepare_rule_test_file(
         name,
         absolute_path: source_path.absolute_path,
         extension: metadata.extension,
+        expected_match: file.expected_match,
     })
 }
 

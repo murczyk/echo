@@ -31,6 +31,7 @@ use sea_orm::{
     AccessMode, ConnectionTrait, DatabaseTransaction, DbBackend,
     IsolationLevel, Statement, TransactionTrait,
 };
+use std::collections::BTreeSet;
 use uuid::Uuid;
 
 pub(in crate::devices) async fn capture_transaction_id(
@@ -189,26 +190,20 @@ pub(in crate::devices) async fn list_file_journal_with_total(
     file_registry_db: &FileRegistryDb,
     device_id: Uuid,
     page: KeysetPageRequest<FileJournalSortKey>,
+    tag_filter: Option<&crate::devices::analytics::types::TagFilter>,
 ) -> Result<
     (KeysetPage<FileJournalEntry, FileJournalSortKey>, u64),
     FilesystemError,
 > {
     let transaction = begin_read_snapshot(file_registry_db).await?;
     let total_count =
-        counts::count_device_files(&transaction, device_id).await?;
+        journal::count_file_journal(&transaction, device_id, tag_filter)
+            .await?;
     let page =
-        journal::list_file_journal(&transaction, device_id, page).await?;
+        journal::list_file_journal(&transaction, device_id, page, tag_filter)
+            .await?;
     commit_read_snapshot(transaction).await?;
     Ok((page, total_count))
-}
-
-pub(in crate::devices) async fn list_file_journal(
-    file_registry_db: &FileRegistryDb,
-    device_id: Uuid,
-    page: KeysetPageRequest<FileJournalSortKey>,
-) -> Result<KeysetPage<FileJournalEntry, FileJournalSortKey>, FilesystemError> {
-    journal::list_file_journal(file_registry_db.connection(), device_id, page)
-        .await
 }
 
 pub(in crate::devices) async fn resolve_file_journal_cursor(
@@ -230,6 +225,21 @@ pub(in crate::devices) async fn list_children(
     page: KeysetPageRequest<EntrySortKey>,
 ) -> Result<KeysetPage<TreeEntry, EntrySortKey>, FilesystemError> {
     browse::list_children(file_registry_db.connection(), scope, page).await
+}
+
+pub(in crate::devices) async fn find_matching_tree_entry_ids(
+    file_registry_db: &FileRegistryDb,
+    device_id: Uuid,
+    entry_ids: &[Uuid],
+    tag_filter: &crate::devices::analytics::types::TagFilter,
+) -> Result<BTreeSet<Uuid>, FilesystemError> {
+    browse::find_matching_tree_entry_ids(
+        file_registry_db.connection(),
+        device_id,
+        entry_ids,
+        tag_filter,
+    )
+    .await
 }
 
 pub(in crate::devices) async fn load_path_components(

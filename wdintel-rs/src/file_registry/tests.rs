@@ -113,6 +113,8 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260807_125456_analytics_tag_rule_revision".to_string(),
             "m20260807_162040_file_analysis_state".to_string(),
             "m20260808_113748_file_analysis_device_queue".to_string(),
+            "m20260808_134904_file_analysis_retry_limit".to_string(),
+            "m20260808_134905_analytics_tag_test_expectation".to_string(),
         ]
     );
 }

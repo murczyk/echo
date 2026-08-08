@@ -1941,6 +1941,7 @@ export type SaveAnalyticsTagRuleReq = {
 
 export type RuleTestFile = {
   absolutePath: string;
+  expectedMatch: boolean;
 };
 
 export type ListAnalyticsTagTestFilesRsp = {
@@ -1956,6 +1957,7 @@ export type TestAnalyticsTagRuleReq = {
 export type RuleTestFileResult = {
   index: number;
   matched: boolean;
+  passed: boolean;
 };
 
 export type TestAnalyticsTagRuleRsp = {

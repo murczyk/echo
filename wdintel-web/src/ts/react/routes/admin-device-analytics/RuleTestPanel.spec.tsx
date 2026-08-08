@@ -46,10 +46,20 @@ beforeEach(async () => {
     files: [
       {
         absolutePath: 'C:\\Reports\\Звіт.pdf',
+        expectedMatch: true,
+      },
+      {
+        absolutePath: 'C:\\Reports\\Чернетка.tmp',
+        expectedMatch: false,
       },
     ],
   });
-  mocks.testRule.mockResolvedValue({ results: [{ index: 0, matched: true }] });
+  mocks.testRule.mockResolvedValue({
+    results: [
+      { index: 0, matched: true, passed: true },
+      { index: 1, matched: false, passed: true },
+    ],
+  });
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -64,13 +74,18 @@ afterEach(() => {
 });
 
 describe('RuleTestPanel', () => {
-  it('loads stored files and replaces them when testing the local expression', async () => {
+  it('loads positive and negative files and tests the local expression', async () => {
     expect(mocks.listFiles).toHaveBeenCalledWith(
       { id: TAG_ID },
       { signal: expect.any(AbortSignal) },
     );
+    expect(container.textContent).toContain('Позитивні кейси');
+    expect(container.textContent).toContain('Негативні кейси');
     const inputs = Array.from(container.querySelectorAll<HTMLInputElement>('input'));
-    expect(inputs.map((input) => input.value)).toEqual(['C:\\Reports\\Звіт.pdf']);
+    expect(inputs.map((input) => input.value)).toEqual([
+      'C:\\Reports\\Звіт.pdf',
+      'C:\\Reports\\Чернетка.tmp',
+    ]);
 
     act(() => setInputValue(inputs[0], 'C:\\Reports\\Новий звіт.docx'));
 
@@ -87,11 +102,34 @@ describe('RuleTestPanel', () => {
       files: [
         {
           absolutePath: 'C:\\Reports\\Новий звіт.docx',
+          expectedMatch: true,
+        },
+        {
+          absolutePath: 'C:\\Reports\\Чернетка.tmp',
+          expectedMatch: false,
         },
       ],
     });
-    expect(container.textContent).toContain('Відповідає');
-    expect(container.textContent).toContain('Тестові файли збережено.');
+    expect(container.textContent).toContain('Кейс пройдено');
+    expect(container.textContent).toContain('Тестові файли збережено. Усі кейси пройдено.');
+  });
+
+  it('identifies a false positive in the negative cases', async () => {
+    mocks.testRule.mockResolvedValueOnce({
+      results: [
+        { index: 0, matched: true, passed: true },
+        { index: 1, matched: true, passed: false },
+      ],
+    });
+
+    const testButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Зберегти й перевірити',
+    );
+    await act(async () => testButton?.click());
+    await flush();
+
+    expect(container.textContent).toContain('Тег призначено помилково');
+    expect(container.textContent).toContain('Не пройдено кейсів: 1.');
   });
 
   it('requires a persisted tag before editing reusable test files', async () => {

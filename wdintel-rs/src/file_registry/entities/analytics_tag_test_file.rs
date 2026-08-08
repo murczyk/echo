@@ -22,6 +22,7 @@ pub struct Model {
     pub extension: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
+    pub expected_match: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

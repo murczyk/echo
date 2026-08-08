@@ -1037,6 +1037,101 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
     );
     assert_eq!(second_filtered_page["next_cursor"], Value::Null);
 
+    let nested_directory_id = Uuid::now_v7();
+    let nested_file_id = Uuid::now_v7();
+    let root_hierarchy_path =
+        format!("n{}", root_id.to_string().replace('-', ""));
+    let directory_hierarchy_path = format!(
+        "{root_hierarchy_path}.n{}",
+        nested_directory_id.to_string().replace('-', ""),
+    );
+    file_entry::ActiveModel {
+        id: Set(nested_directory_id),
+        device_id: Set(device.id),
+        parent_id: Set(Some(root_id)),
+        kind: Set(FileEntryKind::Directory),
+        name: Set("Nested".to_string()),
+        absolute_path: Set(None),
+        hierarchy_path: Set(directory_hierarchy_path.clone()),
+        mime_type: Set(None),
+        extension: Set(None),
+        file_metadata_created_at: Set(None),
+        file_metadata_modified_at: Set(None),
+        created_at: Set(now.naive_utc()),
+        updated_at: Set(now.naive_utc()),
+        content_path: Set(None),
+    }
+    .insert(file_db)
+    .await
+    .unwrap();
+    file_entry::ActiveModel {
+        id: Set(nested_file_id),
+        device_id: Set(device.id),
+        parent_id: Set(Some(nested_directory_id)),
+        kind: Set(FileEntryKind::File),
+        name: Set("nested.pdf".to_string()),
+        absolute_path: Set(Some(r"C:\Nested\nested.pdf".to_string())),
+        hierarchy_path: Set(format!(
+            "{directory_hierarchy_path}.n{}",
+            nested_file_id.to_string().replace('-', ""),
+        )),
+        mime_type: Set(None),
+        extension: Set(Some("pdf".to_string())),
+        file_metadata_created_at: Set(None),
+        file_metadata_modified_at: Set(None),
+        created_at: Set(now.naive_utc()),
+        updated_at: Set(now.naive_utc()),
+        content_path: Set(None),
+    }
+    .insert(file_db)
+    .await
+    .unwrap();
+    device_file_tag::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        file_entry_id: Set(nested_file_id),
+        device_id: Set(device.id),
+        file_entry_created_at: Set(now.fixed_offset()),
+        tag_id: Set(active_tag_id),
+        created_at: Set(now.fixed_offset()),
+        updated_at: Set(now.fixed_offset()),
+    }
+    .insert(file_db)
+    .await
+    .unwrap();
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/files/browse",
+        json!({
+            "device_id": device.id,
+            "parent_entry_id": root_id,
+            "tag_ids": [active_tag_id]
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let filtered_root: Value = test::read_body_json(response).await;
+    assert!(filtered_root["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["entry_id"] == nested_directory_id.to_string()));
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/files/browse",
+        json!({
+            "device_id": device.id,
+            "parent_entry_id": nested_directory_id,
+            "tag_ids": [active_tag_id]
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let filtered_directory: Value = test::read_body_json(response).await;
+    assert_eq!(
+        filtered_directory["entries"][0]["entry_id"],
+        nested_file_id.to_string(),
+    );
+
     let response = post_as!(
         reader_cookie,
         "/api/admin/device-analytics/tags/create",
@@ -1065,13 +1160,17 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
                 "values": ["pdf"]
             },
             "files": [{
-                "absolute_path": "C:\\draft.pdf"
+                "absolute_path": "C:\\draft.pdf",
+                "expected_match": true
             }]
         })
     );
     assert_eq!(response.status(), StatusCode::OK);
     let tested: Value = test::read_body_json(response).await;
-    assert_eq!(tested["results"], json!([{"index": 0, "matched": true}]));
+    assert_eq!(
+        tested["results"],
+        json!([{"index": 0, "matched": true, "passed": true}]),
+    );
 
     let response = post_as!(
         admin_cookie,
@@ -1082,7 +1181,7 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
     let test_files: Value = test::read_body_json(response).await;
     assert_eq!(
         test_files["files"],
-        json!([{"absolute_path": "C:\\draft.pdf"}])
+        json!([{"absolute_path": "C:\\draft.pdf", "expected_match": true}])
     );
 
     let response = post_as!(

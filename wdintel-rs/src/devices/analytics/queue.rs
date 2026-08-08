@@ -1,3 +1,4 @@
+use crate::config::DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS;
 use crate::file_registry::entities::{
     file_analysis_control, file_analysis_device_state,
     file_analysis_reanalysis_job, file_analysis_state, file_entry,
@@ -117,6 +118,7 @@ pub(super) async fn backfill_missing_analysis_state(
                 analyzed_generation: Set(0),
                 analyzed_rule_revision: Set(0),
                 pending: Set(true),
+                retry_exhausted: Set(false),
                 lease_token: Set(None),
                 lease_expires_at: Set(None),
                 available_at: Set(now),
@@ -263,6 +265,7 @@ async fn expand_reanalysis_job(
                 analyzed_generation: Set(0),
                 analyzed_rule_revision: Set(0),
                 pending: Set(true),
+                retry_exhausted: Set(false),
                 lease_token: Set(None),
                 lease_expires_at: Set(None),
                 available_at: Set(now),
@@ -289,6 +292,10 @@ async fn expand_reanalysis_job(
                 Expr::value(job.generation),
             )
             .col_expr(file_analysis_state::Column::Pending, Expr::value(true))
+            .col_expr(
+                file_analysis_state::Column::RetryExhausted,
+                Expr::value(false),
+            )
             .col_expr(
                 file_analysis_state::Column::AvailableAt,
                 Expr::value(now),
@@ -356,15 +363,20 @@ pub(super) async fn recover_expired_analysis_leases(
                 for update skip locked
             )
             update file_analysis_state as state
-            set lease_token = null,
+            set pending = state.attempt_count < $2,
+                retry_exhausted = state.attempt_count >= $2,
+                lease_token = null,
                 lease_expires_at = null,
-                available_at = clock_timestamp() + interval '1 second',
+                available_at = case
+                    when state.attempt_count >= $2 then clock_timestamp()
+                    else clock_timestamp() + interval '1 second'
+                end,
                 last_error = 'analysis lease expired before acknowledgement',
                 updated_at = clock_timestamp()
             from expired
             where state.file_entry_id = expired.file_entry_id
             "#,
-            [limit.into()],
+            [limit.into(), DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS.into()],
         ))
         .await
         .map(|result| result.rows_affected())
@@ -426,6 +438,20 @@ pub(super) async fn recover_expired_analysis_device_leases(
         .await?;
     if !lease_tokens.is_empty() {
         file_analysis_state::Entity::update_many()
+            .col_expr(
+                file_analysis_state::Column::Pending,
+                Expr::cust_with_values(
+                    "attempt_count < $1",
+                    [DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS],
+                ),
+            )
+            .col_expr(
+                file_analysis_state::Column::RetryExhausted,
+                Expr::cust_with_values(
+                    "attempt_count >= $1",
+                    [DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS],
+                ),
+            )
             .col_expr(
                 file_analysis_state::Column::LeaseToken,
                 Expr::value(Option::<Uuid>::None),
@@ -627,6 +653,10 @@ pub(super) async fn acknowledge_claim(
         )
         .col_expr(file_analysis_state::Column::Pending, Expr::value(false))
         .col_expr(
+            file_analysis_state::Column::RetryExhausted,
+            Expr::value(false),
+        )
+        .col_expr(
             file_analysis_state::Column::LeaseToken,
             Expr::value(Option::<Uuid>::None),
         )
@@ -668,6 +698,10 @@ pub(super) async fn release_claim(
         .col_expr(file_analysis_state::Column::AvailableAt, Expr::value(now))
         .col_expr(file_analysis_state::Column::AttemptCount, Expr::value(0))
         .col_expr(
+            file_analysis_state::Column::RetryExhausted,
+            Expr::value(false),
+        )
+        .col_expr(
             file_analysis_state::Column::LastError,
             Expr::value(Option::<String>::None),
         )
@@ -689,6 +723,20 @@ where
     let error = truncate_last_error(error);
     file_analysis_state::Entity::update_many()
         .col_expr(
+            file_analysis_state::Column::Pending,
+            Expr::cust_with_values(
+                "attempt_count < $1",
+                [DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS],
+            ),
+        )
+        .col_expr(
+            file_analysis_state::Column::RetryExhausted,
+            Expr::cust_with_values(
+                "attempt_count >= $1",
+                [DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS],
+            ),
+        )
+        .col_expr(
             file_analysis_state::Column::LeaseToken,
             Expr::value(Option::<Uuid>::None),
         )
@@ -698,16 +746,20 @@ where
         )
         .col_expr(
             file_analysis_state::Column::AvailableAt,
-            Expr::cust(
-                "clock_timestamp() + (
-                    least(
-                        300,
-                        power(
-                            2,
-                            least(greatest(attempt_count - 1, 0), 8)
-                        )::integer
-                    )::double precision * interval '1 second'
-                )",
+            Expr::cust_with_values(
+                "case
+                    when attempt_count >= $1 then clock_timestamp()
+                    else clock_timestamp() + (
+                        least(
+                            300,
+                            power(
+                                2,
+                                least(greatest(attempt_count - 1, 0), 8)
+                            )::integer
+                        )::double precision * interval '1 second'
+                    )
+                end",
+                [DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS],
             ),
         )
         .col_expr(file_analysis_state::Column::LastError, Expr::value(error))
