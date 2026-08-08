@@ -67,7 +67,9 @@ pub async fn list_units(
         .c(h!())?;
     let can_view_orbit =
         orbit::can_view_orbit_data(&env.dbx, &login_id).await?;
-    let mut response = read_units(&env.dbx, &req).await?;
+    let mut response =
+        read_units_with_orbit_visibility(&env.dbx, &req, can_view_orbit)
+            .await?;
     if can_view_orbit {
         let unit_ids = response
             .units
@@ -136,18 +138,23 @@ pub(crate) async fn read_units(
     dbx: &DatabaseConnection,
     req: &ListUnitsReq,
 ) -> Result<ListUnitsRsp, AppError> {
+    read_units_with_orbit_visibility(dbx, req, true).await
+}
+
+async fn read_units_with_orbit_visibility(
+    dbx: &DatabaseConnection,
+    req: &ListUnitsReq,
+    can_view_orbit: bool,
+) -> Result<ListUnitsRsp, AppError> {
     let include_inactive =
         req.include_inactive || req.filter_active == Some(false);
     let mut units = available_units_query(include_inactive);
     if let Some(active) = req.filter_active {
         units = units.filter(sigint_unit::Column::Active.eq(active));
     }
-    units = apply_unit_list_filters(units, req);
+    units = apply_unit_list_filters(units, req, can_view_orbit);
     let total_count = units.clone().count(dbx).await.c(h!())?;
-    let sort_by = req
-        .sort_by
-        .clone()
-        .unwrap_or(ListUnitsSortBy::NaturalMilitarySortAsc);
+    let sort_by = unit_list_sort(req.sort_by.as_ref(), can_view_orbit);
     if let Some((column, order)) = simple_unit_list_sort(&sort_by) {
         units = units
             .order_by(column, order.clone())
@@ -275,6 +282,20 @@ pub(crate) async fn read_units(
     })
 }
 
+fn unit_list_sort(
+    sort_by: Option<&ListUnitsSortBy>,
+    can_view_orbit: bool,
+) -> ListUnitsSortBy {
+    match sort_by {
+        Some(
+            ListUnitsSortBy::UnitOrbitNoteAsc
+            | ListUnitsSortBy::UnitOrbitNoteDesc,
+        ) if !can_view_orbit => ListUnitsSortBy::NaturalMilitarySortAsc,
+        Some(sort_by) => sort_by.clone(),
+        None => ListUnitsSortBy::NaturalMilitarySortAsc,
+    }
+}
+
 fn simple_unit_list_sort(
     sort_by: &ListUnitsSortBy,
 ) -> Option<(sigint_unit::Column, Order)> {
@@ -312,21 +333,26 @@ fn simple_unit_list_sort(
 fn apply_unit_list_filters(
     mut units: Select<sigint_unit::Entity>,
     req: &ListUnitsReq,
+    can_view_orbit: bool,
 ) -> Select<sigint_unit::Entity> {
     let mode = req
         .search_mode
         .as_ref()
         .unwrap_or(&ListUnitsSearchMode::Strict);
+    let global_filter_columns = if can_view_orbit {
+        "concat_ws(' ', \"sigint_unit\".\"name\", \"sigint_unit\".\"company\", \"sigint_unit\".\"battalion\", \"sigint_unit\".\"regiment\", \"sigint_unit\".\"division\", \"sigint_unit\".\"army\", \"sigint_unit\".\"military_district\", \"sigint_unit\".\"army_region\", \"sigint_unit\".\"comment\", \"sigint_unit\".\"orbit_note\")"
+    } else {
+        "concat_ws(' ', \"sigint_unit\".\"name\", \"sigint_unit\".\"company\", \"sigint_unit\".\"battalion\", \"sigint_unit\".\"regiment\", \"sigint_unit\".\"division\", \"sigint_unit\".\"army\", \"sigint_unit\".\"military_district\", \"sigint_unit\".\"army_region\", \"sigint_unit\".\"comment\")"
+    };
+    let orbit_note_filter = if can_view_orbit {
+        req.filter_orbit_note.as_deref()
+    } else {
+        None
+    };
     let filters = [
-        (
-            "concat_ws(' ', \"sigint_unit\".\"name\", \"sigint_unit\".\"company\", \"sigint_unit\".\"battalion\", \"sigint_unit\".\"regiment\", \"sigint_unit\".\"division\", \"sigint_unit\".\"army\", \"sigint_unit\".\"military_district\", \"sigint_unit\".\"army_region\", \"sigint_unit\".\"comment\", \"sigint_unit\".\"orbit_note\")",
-            req.filter_text.as_deref(),
-        ),
+        (global_filter_columns, req.filter_text.as_deref()),
         ("\"sigint_unit\".\"name\"", req.filter_name.as_deref()),
-        (
-            "\"sigint_unit\".\"company\"",
-            req.filter_company.as_deref(),
-        ),
+        ("\"sigint_unit\".\"company\"", req.filter_company.as_deref()),
         (
             "\"sigint_unit\".\"battalion\"",
             req.filter_battalion.as_deref(),
@@ -348,13 +374,10 @@ fn apply_unit_list_filters(
             "\"sigint_unit\".\"army_region\"",
             req.filter_army_region.as_deref(),
         ),
-        (
-            "\"sigint_unit\".\"comment\"",
-            req.filter_comment.as_deref(),
-        ),
+        ("\"sigint_unit\".\"comment\"", req.filter_comment.as_deref()),
         (
             "coalesce(\"sigint_unit\".\"orbit_note\", '')",
-            req.filter_orbit_note.as_deref(),
+            orbit_note_filter,
         ),
     ];
 
@@ -2026,6 +2049,7 @@ mod tests {
             sigint_unit::ActiveModel {
                 name: Set("Active unit".to_string()),
                 active: Set(true),
+                orbit_note: Set(Some("Protected orbit phrase".to_string())),
                 ..Default::default()
             },
         )
@@ -2142,6 +2166,50 @@ mod tests {
         .unwrap();
         assert_eq!(filtered_page.total_count, 1);
         assert_eq!(filtered_page.units[0].id, active_unit.id);
+
+        let ignored_orbit_filter = read_units_with_orbit_visibility(
+            &env.dbx,
+            &ListUnitsReq {
+                filter_orbit_note: Some("not present".to_string()),
+                limit: Some(20),
+                ..Default::default()
+            },
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(ignored_orbit_filter.total_count, 1);
+        assert_eq!(ignored_orbit_filter.units[0].id, active_unit.id);
+
+        let restricted_global_filter = read_units_with_orbit_visibility(
+            &env.dbx,
+            &ListUnitsReq {
+                filter_text: Some("Protected orbit phrase".to_string()),
+                limit: Some(20),
+                ..Default::default()
+            },
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(restricted_global_filter.total_count, 0);
+
+        let allowed_global_filter = read_units_with_orbit_visibility(
+            &env.dbx,
+            &ListUnitsReq {
+                filter_text: Some("Protected orbit phrase".to_string()),
+                limit: Some(20),
+                ..Default::default()
+            },
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(allowed_global_filter.total_count, 1);
+        assert_eq!(
+            unit_list_sort(Some(&ListUnitsSortBy::UnitOrbitNoteAsc), false),
+            ListUnitsSortBy::NaturalMilitarySortAsc
+        );
 
         let units_by_id = units_by_id_query(Some(&[inactive_unit.id]))
             .all(&env.dbx)

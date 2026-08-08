@@ -46,22 +46,25 @@ pub async fn unit_ids_with_orbit(
         return Ok(HashMap::new());
     }
     let mut unit_ids = HashMap::<i64, Vec<String>>::new();
-    for link in orbit_unit_sigint_unit::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
-        )
-        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
-        .filter(
-            orbit_unit_sigint_unit::Column::SigintUnitId
-                .is_in(sigint_unit_ids.iter().copied()),
-        )
-        .filter(orbit_unit::Column::Deleted.eq(false))
-        .order_by_asc(orbit_unit_sigint_unit::Column::SigintUnitId)
-        .order_by_asc(orbit_unit_sigint_unit::Column::OrbitUnitId)
-        .all(dbx)
-        .await
-        .c(h!())?
+    let sql = r#"
+        select link.*
+        from orbit_unit_sigint_unit link
+        inner join orbit_unit unit on unit.unit_id = link.orbit_unit_id
+        where link.is_suppressed = false
+            and link.sigint_unit_id = any($1::bigint[])
+            and unit.deleted = false
+        order by link.sigint_unit_id, link.orbit_unit_id
+    "#;
+    for link in orbit_unit_sigint_unit::Model::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            [sigint_unit_ids.to_vec().into()],
+        ),
+    )
+    .all(dbx)
+    .await
+    .c(h!())?
     {
         unit_ids
             .entry(link.sigint_unit_id)
@@ -1556,6 +1559,50 @@ mod tests {
                     name: "Outer parent".to_string(),
                 },
             ]
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_ids_with_orbit_accepts_more_than_postgres_bind_limit() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let sigint_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let orbit_unit_id = Uuid::new_v4();
+        orbit_unit::Entity::insert(orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            ..Default::default()
+        })
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::Entity::insert(
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(orbit_unit_id),
+                sigint_unit_id: Set(sigint_unit.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
+        )
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        let mut unit_ids = vec![-1_i64; 69_999];
+        unit_ids.push(sigint_unit.id);
+
+        assert_eq!(
+            unit_ids_with_orbit(&env.dbx, &unit_ids).await.unwrap(),
+            HashMap::from([(sigint_unit.id, vec![orbit_unit_id.to_string()])])
         );
     }
 
