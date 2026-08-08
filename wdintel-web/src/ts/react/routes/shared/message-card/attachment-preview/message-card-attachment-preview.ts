@@ -1,4 +1,18 @@
-import type { SxProps, Theme } from '@mui/material/styles';
+import { createTheme, type SxProps, type Theme } from '@mui/material/styles';
+
+const darkPaletteBackgroundDefault = createTheme({ palette: { mode: 'dark' } }).palette.background
+  .default;
+
+export function getAttachmentPreviewStageBg(theme: Theme, isMediaLayout: boolean): string {
+  if (isMediaLayout) {
+    return theme.palette.mode === 'dark'
+      ? theme.palette.background.default
+      : darkPaletteBackgroundDefault;
+  }
+  return theme.palette.mode === 'light'
+    ? theme.palette.grey[100]
+    : theme.palette.background.default;
+}
 
 export function blurActiveAttachmentPreviewElement(): void {
   const activeElement = document.activeElement;

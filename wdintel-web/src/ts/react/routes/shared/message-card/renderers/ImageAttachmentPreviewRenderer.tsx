@@ -551,6 +551,7 @@ export function ImageAttachmentPreviewRenderer({
       controls={controls}
       actions={actions}
       infoPopover={infoPopover}
+      onToggleFullscreen={handleToggleFullscreen}
     />
   );
 }

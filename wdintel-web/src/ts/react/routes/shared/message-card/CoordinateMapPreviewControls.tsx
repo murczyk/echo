@@ -1,36 +1,32 @@
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined';
-import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
-import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
-import { Box, IconButton, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material';
+import { Box, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material';
 
 type BaseLayerId = 'googleHybrid' | 'openStreetMap';
 
 export function CoordinateMapPreviewControls({
   baseLayerId,
-  canFullscreen,
-  isFullscreen,
   onBaseLayerChange,
-  onToggleFullscreen,
 }: {
   baseLayerId: BaseLayerId;
-  canFullscreen: boolean;
-  isFullscreen: boolean;
   onBaseLayerChange: (baseLayerId: BaseLayerId) => void;
-  onToggleFullscreen: () => void;
 }) {
   return (
     <Box
       sx={{
         display: 'flex',
+        alignItems: 'center',
         justifyContent: 'center',
-        width: '100%',
-        px: 3,
-        py: 1.5,
-        backgroundColor: 'background.paper',
+        backgroundColor: 'rgba(18, 18, 18, 0.75)',
+        backdropFilter: 'blur(12px)',
+        borderRadius: 3,
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)',
+        px: 2,
+        py: 1,
+        color: '#fff',
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <ToggleButtonGroup
           exclusive
           size="small"
@@ -46,7 +42,7 @@ export function CoordinateMapPreviewControls({
             justifyContent: 'center',
             flexWrap: 'wrap',
             gap: 0.5,
-            backgroundColor: 'background.paper',
+            backgroundColor: 'transparent',
             '& .MuiToggleButtonGroup-grouped': {
               border: 0,
               borderRadius: 1.5,
@@ -54,17 +50,17 @@ export function CoordinateMapPreviewControls({
               width: 30,
               height: 30,
               padding: 0,
-              color: 'text.secondary',
+              color: 'rgba(255, 255, 255, 0.85)',
               backgroundColor: 'transparent',
               '&:hover': {
-                backgroundColor: 'action.hover',
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
               },
               '&.Mui-selected': {
-                color: 'primary.main',
-                backgroundColor: 'action.selected',
+                color: '#fff',
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
               },
               '&.Mui-selected:hover': {
-                backgroundColor: 'action.selected',
+                backgroundColor: 'rgba(255, 255, 255, 0.25)',
               },
             },
           }}
@@ -80,34 +76,6 @@ export function CoordinateMapPreviewControls({
             </ToggleButton>
           </Tooltip>
         </ToggleButtonGroup>
-        {canFullscreen ? (
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              ml: 0.5,
-              pl: 0.5,
-              borderLeft: 1,
-              borderColor: 'divider',
-            }}
-          >
-            <Tooltip
-              title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-              enterDelay={300}
-            >
-              <IconButton
-                aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-                size="small"
-                onClick={onToggleFullscreen}
-                sx={{
-                  color: 'text.secondary',
-                }}
-              >
-                {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
-              </IconButton>
-            </Tooltip>
-          </Box>
-        ) : null}
       </Box>
     </Box>
   );

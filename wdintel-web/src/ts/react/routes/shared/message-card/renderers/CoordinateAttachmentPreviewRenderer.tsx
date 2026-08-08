@@ -68,10 +68,7 @@ export function CoordinateAttachmentPreviewRenderer({
       controls={
         <CoordinateMapPreviewControls
           baseLayerId={baseLayerId}
-          canFullscreen={canFullscreen}
-          isFullscreen={dialogIsFullscreen}
           onBaseLayerChange={setBaseLayerId}
-          onToggleFullscreen={() => onFullscreenChange(!dialogIsFullscreen)}
         />
       }
       actions={
@@ -79,6 +76,7 @@ export function CoordinateAttachmentPreviewRenderer({
           <MessageCardAttachmentPreviewActions navigation={navigation} onClose={onClose} />
         )
       }
+      onToggleFullscreen={() => onFullscreenChange(!dialogIsFullscreen)}
     />
   );
 }
@@ -257,7 +255,7 @@ function CoordinateMapPreview({
         return false;
       }
       const map = L.map(currentHost, {
-        zoomControl: true,
+        zoomControl: false,
         attributionControl: false,
         dragging: true,
         scrollWheelZoom: true,
@@ -269,6 +267,7 @@ function CoordinateMapPreview({
         minZoom: 2,
         maxZoom: 17,
       });
+      L.control?.zoom?.({ position: 'bottomright' })?.addTo?.(map);
 
       const latLngs = visiblePoints.map(({ lat, lng }): [number, number] => [lat, lng]);
       if (latLngs.length === 1) {
@@ -535,23 +534,23 @@ function CoordinateMapPreview({
       <Box
         sx={{
           position: 'absolute',
-          right: 12,
-          top: 12,
+          left: 16,
+          top: 16,
           zIndex: 1200,
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'flex-end',
+          alignItems: 'flex-start',
           gap: 1,
           pointerEvents: 'none',
         }}
         style={{
           position: 'absolute',
-          right: '12px',
-          top: '12px',
+          left: '16px',
+          top: '16px',
           zIndex: 1200,
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'flex-end',
+          alignItems: 'flex-start',
           gap: '8px',
           pointerEvents: 'none',
         }}

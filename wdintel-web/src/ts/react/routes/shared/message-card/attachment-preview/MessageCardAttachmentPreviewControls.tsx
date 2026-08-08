@@ -32,10 +32,10 @@ export function AttachmentPreviewZoomControls({
   buttonStep: number;
   sliderStep?: number;
   marks: number[];
-  isFullscreen: boolean;
-  canFullscreen: boolean;
+  isFullscreen?: boolean;
+  canFullscreen?: boolean;
   onZoomChange: (zoom: number) => void;
-  onToggleFullscreen: () => void;
+  onToggleFullscreen?: () => void;
 }) {
   return (
     <Box
@@ -46,9 +46,13 @@ export function AttachmentPreviewZoomControls({
         gap: 1.5,
         flex: 1,
         minWidth: 0,
-        backgroundColor: 'background.paper',
-        py: 1.5,
-        px: 3,
+        backgroundColor: 'rgba(18, 18, 18, 0.75)',
+        backdropFilter: 'blur(12px)',
+        borderRadius: 3,
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)',
+        py: 1,
+        px: 2.5,
+        color: '#fff',
       }}
     >
       <Tooltip title="Зменшити" enterDelay={300}>
@@ -58,7 +62,11 @@ export function AttachmentPreviewZoomControls({
             size="small"
             onClick={() => onZoomChange(zoom - buttonStep)}
             disabled={zoom <= min}
-            sx={{ color: 'text.secondary' }}
+            sx={{
+              color: 'rgba(255, 255, 255, 0.85)',
+              '&.Mui-disabled': { color: 'rgba(255, 255, 255, 0.3)' },
+              '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.1)' },
+            }}
           >
             <ZoomOutIcon />
           </IconButton>
@@ -74,18 +82,19 @@ export function AttachmentPreviewZoomControls({
         aria-label="Масштаб"
         onChange={(_, value) => onZoomChange(Array.isArray(value) ? (value[0] ?? min) : value)}
         sx={{
-          width: { xs: 180, sm: 260 },
-          color: 'primary.main',
+          width: { xs: 140, sm: 220 },
+          color: 'primary.light',
           padding: 0,
           height: 4,
           '& .MuiSlider-track': { border: 'none' },
           '& .MuiSlider-thumb': {
             width: 12,
             height: 12,
+            backgroundColor: '#fff',
             '&.Mui-active': { width: 16, height: 16 },
           },
-          '& .MuiSlider-rail': { opacity: 0.28 },
-          '& .MuiSlider-mark': { width: 2, height: 4 },
+          '& .MuiSlider-rail': { opacity: 0.3, backgroundColor: '#fff' },
+          '& .MuiSlider-mark': { width: 2, height: 4, backgroundColor: 'rgba(255, 255, 255, 0.5)' },
         }}
       />
       <Tooltip title="Збільшити" enterDelay={300}>
@@ -95,7 +104,11 @@ export function AttachmentPreviewZoomControls({
             size="small"
             onClick={() => onZoomChange(zoom + buttonStep)}
             disabled={zoom >= max}
-            sx={{ color: 'text.secondary' }}
+            sx={{
+              color: 'rgba(255, 255, 255, 0.85)',
+              '&.Mui-disabled': { color: 'rgba(255, 255, 255, 0.3)' },
+              '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.1)' },
+            }}
           >
             <ZoomInIcon />
           </IconButton>
@@ -105,7 +118,7 @@ export function AttachmentPreviewZoomControls({
         variant="caption"
         className="font-mono"
         sx={{
-          color: 'text.secondary',
+          color: 'rgba(255, 255, 255, 0.85)',
           minWidth: 44,
           textAlign: 'center',
           fontVariantNumeric: 'tabular-nums',
@@ -113,21 +126,6 @@ export function AttachmentPreviewZoomControls({
       >
         {Math.round(zoom)}%
       </Typography>
-      {canFullscreen ? (
-        <Tooltip
-          title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-          enterDelay={300}
-        >
-          <IconButton
-            aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-            size="small"
-            onClick={onToggleFullscreen}
-            sx={{ color: 'text.secondary' }}
-          >
-            {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
-          </IconButton>
-        </Tooltip>
-      ) : null}
     </Box>
   );
 }
@@ -167,10 +165,13 @@ export function AttachmentPreviewPlaybackControls({
         gap: { xs: 0.5, sm: 1 },
         flex: 1,
         minWidth: 0,
-        backgroundColor: 'background.paper',
-        py: { xs: 1, sm: 1.5 },
-        px: { xs: 1, sm: 3 },
-        borderRadius: { xs: 0, sm: 2 },
+        backgroundColor: 'rgba(18, 18, 18, 0.75)',
+        backdropFilter: 'blur(12px)',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)',
+        color: '#fff',
+        py: { xs: 1, sm: 1.25 },
+        px: { xs: 1, sm: 2.5 },
+        borderRadius: { xs: 0, sm: 3 },
       }}
     >
       <PlayPauseButton isPlaying={isPlaying} onPlayPause={onPlayPause} />
@@ -198,7 +199,7 @@ export function AttachmentPreviewPlaybackControls({
       <Typography
         variant="body2"
         sx={{
-          color: 'text.secondary',
+          color: 'rgba(255, 255, 255, 0.85)',
           whiteSpace: 'nowrap',
           fontFamily: 'monospace',
           mr: { xs: 'auto', sm: 1 },
@@ -216,21 +217,6 @@ export function AttachmentPreviewPlaybackControls({
       <Box sx={{ mr: { xs: 0, sm: 1 }, ml: { xs: 1, sm: 1 } }}>
         <SpeedSelect playbackRate={playbackRate} onRateChange={onRateChange} />
       </Box>
-      {canFullscreen ? (
-        <Tooltip
-          title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-          enterDelay={300}
-        >
-          <IconButton
-            aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-            size="small"
-            onClick={onToggleFullscreen}
-            sx={{ color: 'inherit' }}
-          >
-            {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
-          </IconButton>
-        </Tooltip>
-      ) : null}
     </Box>
   );
 }

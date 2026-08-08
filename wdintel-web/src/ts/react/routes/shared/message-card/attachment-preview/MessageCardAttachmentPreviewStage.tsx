@@ -40,7 +40,7 @@ export const MessageCardAttachmentPreviewStage = forwardRef<
         justifyContent: isDocument ? 'flex-start' : 'center',
         minHeight: 0,
         overflow: 'hidden',
-        borderRadius: isFullscreen ? 0 : 1.5,
+        borderRadius: 0,
         ...getAttachmentPreviewStageSx(theme, isFullscreen),
         color: isDocument ? theme.palette.text.primary : undefined,
         cursor,

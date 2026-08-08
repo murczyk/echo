@@ -636,6 +636,7 @@ export function VideoAttachmentPreviewRenderer({
       controls={controls}
       actions={actions}
       infoPopover={infoPopover}
+      onToggleFullscreen={handleToggleFullscreen}
     />
   );
 }

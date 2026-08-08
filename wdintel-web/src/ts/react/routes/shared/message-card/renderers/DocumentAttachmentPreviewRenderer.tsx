@@ -194,6 +194,7 @@ export function DocumentAttachmentPreviewRenderer({
       controls={controls}
       actions={actions}
       infoPopover={infoPopover}
+      onToggleFullscreen={() => changeFullscreen(!dialogIsFullscreen)}
     />
   );
 }
