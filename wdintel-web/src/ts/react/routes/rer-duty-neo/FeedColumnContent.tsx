@@ -377,6 +377,7 @@ export const FeedColumnContent = memo(
       physicallyAtBottom = true,
       tailAvailability = 'unknown',
       isWatchMode = false,
+      unreadPrefetchNeeded = true,
       workspaceFabAvoidance = 'none',
     } = view;
     const {
@@ -451,6 +452,7 @@ export const FeedColumnContent = memo(
       bottomLoadBufferPx: LOAD_NEWER_BUFFER_PX,
       atBottomThresholdPx: DUTY_FEED_AT_BOTTOM_THRESHOLD_PX,
       resetKey: feed.referenceTimeMs ?? feed.id,
+      unreadPrefetchNeeded,
     });
 
     const stableOnCancelBotTagAction = useStableCallback(onCancelBotTagAction);

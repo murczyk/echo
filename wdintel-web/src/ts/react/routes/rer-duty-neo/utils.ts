@@ -683,6 +683,8 @@ export function compareMessageTuple(
 
 export const DUTY_FEED_MESSAGE_PAGE_SIZE = 20;
 export const DUTY_FEED_MESSAGE_WINDOW_LIMIT = 40;
+/** Keep at least this many loaded-unread messages (after last-seen) when near the live tail. */
+export const DUTY_FEED_UNREAD_PREFETCH_MIN = 10;
 
 export type WindowedMessageItemsResult = {
   items: MessageItem[];
@@ -850,6 +852,11 @@ export function feedLoadedUnreadCount(feed: MessageFeedState): number {
     if (!feed.readIds.has(id)) count += 1;
   }
   return count;
+}
+
+/** True when the window still needs newer pages to refill the unread runway after last-seen. */
+export function feedNeedsUnreadPrefetch(feed: MessageFeedState): boolean {
+  return feedLoadedUnreadCount(feed) < DUTY_FEED_UNREAD_PREFETCH_MIN;
 }
 
 /**

@@ -32,7 +32,7 @@ Primary code:
 | ------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
 | **Physical bottom** | `distance ≤ 0.5px`                                     | Pixel-flush with the live end; required for auto-follow scroll after newer load          |
 | **At bottom**       | `distance ≤ 25px` (`DUTY_FEED_AT_BOTTOM_THRESHOLD_PX`) | Tight “settled at end” for read marking / at-bottom callbacks                            |
-| **Near bottom**     | `distance ≤ 640px` (`LOAD_NEWER_BUFFER_PX`)            | Prefetch newer; badge treats this as “at the live tail” for residual/preview suppression |
+| **Near bottom**     | `distance ≤ 640px` (`LOAD_NEWER_BUFFER_PX`) **or** (unread prefetch still needed **and** viewport has reached the last **`DUTY_FEED_UNREAD_PREFETCH_MIN` (10)** mounted rows in a window longer than that) | Prefetch newer; badge treats this as “at the live tail” for residual/preview suppression |
 | **Near top**        | `scrollTop ≤ 160px` (`LOAD_OLDER_BUFFER_PX`)           | Prefetch older                                                                           |
 
 Default hook buffers differ (`320` / `160`); Duty Neo overrides via `FeedColumnContent`.
@@ -184,7 +184,8 @@ Near-bottom must **not** show residual poll stock (lagging inbox-since-cursor). 
 
 - Poll **never** writes residual `unreadCount` from inbox quantity into the badge path.
 - Badge = loaded + trimmed + **matching preview** (no residual).
-- While near-bottom, poll keeps preview fresh (cursor-aligned quantity or tailCount) and **pages newer** until exhausted or the user leaves near-bottom.
+- While near-bottom, poll keeps preview fresh (cursor-aligned quantity or tailCount) and **pages newer** until the loaded-unread runway after last-seen reaches **`DUTY_FEED_UNREAD_PREFETCH_MIN` (10)**, the tail is exhausted, or the user leaves near-bottom.
+- Scroll near-bottom arming uses the same runway gate (`unreadPrefetchNeeded`); watch/follow with mark-all-read keeps runway at 0 so live tail still drains until exhausted.
 - Empty newer fetch: recompute `unreadCount` from the **committed** feed in the `setMessageFeeds` updater. Mark exhausted; advance cursor toward `loadedTail`.
 - `preservePendingTail` / follow-block must **not** treat residual poll stock as pending. Pending = local loaded/trimmed unread, matching preview, or tailAvailability in `available|checking|loading`.
 
@@ -226,6 +227,7 @@ See Part 1 “Arrow down”. Badge hard-reset is part of `catchUpFeedUnreadToTai
 9. **Residual alone must not `follow:blocked`** when loaded+trimmed are 0 and tail is not known-available.
 10. **Near-bottom newer append without follow** → viewport does not jump; anchor restore keeps the message under the user’s eyes.
 11. **Watch + physical bottom + newer append** → `scrollToBottom`; mark-all-read; badge 0.
+12. **Near-bottom unread prefetch** → while near-bottom without follow, keep loading newer until ≥10 loaded-unread after last-seen (or until the server has no more); do not stop after only 1–2 if more remain.
 
 ### Implementation map (shipped)
 

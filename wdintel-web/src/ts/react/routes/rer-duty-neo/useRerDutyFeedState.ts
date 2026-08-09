@@ -5,7 +5,14 @@ import { isNullOrUndefined } from '../../utils/misc';
 import type { SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
 import { fetchInboxCount, fetchInboxMessages } from '../../services/api/inbox';
 import type { FeedColumnHandle } from './FeedColumn';
-import { buildInboxReq, emptyFilter, findAllAdjacentFreqs, parseStateFromUrl } from './utils';
+import {
+  buildInboxReq,
+  emptyFilter,
+  DUTY_FEED_UNREAD_PREFETCH_MIN,
+  feedLoadedUnreadCount,
+  findAllAdjacentFreqs,
+  parseStateFromUrl,
+} from './utils';
 import type { MessageCursor, MessageFeedState } from './utils';
 import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
 import { notifyDutyNewMessages } from './notifications';
@@ -855,15 +862,20 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           }
           if (nearBottomByFeedIdRef.current[feedId] !== true) return;
           const maxCatchUpPages = 20;
+          let unreadRunway = feedLoadedUnreadCount(currentFeed);
           for (let page = 0; page < maxCatchUpPages; page++) {
             if (nearBottomByFeedIdRef.current[feedId] !== true) break;
             if (tailAvailabilityByFeedIdRef.current[feedId] === 'exhausted') break;
+            const pageFeed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
+            if (pageFeed) {
+              // Prefer committed state when present; never let a stale ref shrink the runway.
+              unreadRunway = Math.max(unreadRunway, feedLoadedUnreadCount(pageFeed));
+            }
+            // Prefer a loaded unread runway after last-seen over draining the whole backlog.
+            if (unreadRunway >= DUTY_FEED_UNREAD_PREFETCH_MIN) break;
             const preview = confirmedTailPreviewByFeedIdRef.current[feedId];
             if (preview != null && preview.count <= 0) break;
-            const pageTailId =
-              messageFeedsRef.current
-                .find((candidate) => candidate.id === feedId)
-                ?.items.at(-1)?.[0] ?? null;
+            const pageTailId = pageFeed?.items.at(-1)?.[0] ?? null;
             if (pageTailId == null) break;
             if (newestExhaustedCursorByFeedIdRef.current[feedId] === pageTailId) break;
             const capturedFollowGeneration = followGenerationByFeedIdRef.current[feedId] ?? -1;
@@ -871,13 +883,16 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               !deps.disableAutoScroll &&
               physicallyAtBottomByFeedIdRef.current[feedId] === true &&
               isFollowTailValid(feedId, capturedFollowGeneration);
-            await loadFeedNewerMessages(feedId, {
+            const newerResult = await loadFeedNewerMessages(feedId, {
               scrollToEndAfterLoad: shouldFollow,
               skipIfNewestExhausted: true,
               showLoading: false,
               followGeneration: capturedFollowGeneration,
               confirmedTailAvailable: page === 0 ? confirmedTailAvailable : true,
             });
+            if (!newerResult.ok || newerResult.addedCount === 0) break;
+            // Ref may still be awaiting React commit; approximate runway for this poll tick.
+            unreadRunway = shouldFollow ? 0 : unreadRunway + newerResult.addedCount;
           }
         }
       }),

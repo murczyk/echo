@@ -22,6 +22,8 @@ import {
   feedIndicatorUnreadCount,
   feedUnreadDisplayCount,
   feedLoadedUnreadCount,
+  feedNeedsUnreadPrefetch,
+  DUTY_FEED_UNREAD_PREFETCH_MIN,
   feedsUnreadDisplayTotal,
   getPointEtalonsFromMessage,
   getShortStateIdFromUrl,
@@ -613,12 +615,38 @@ describe('rer-duty utils', () => {
       hasReachedStart: false,
       referenceTimeMs: null,
       readIds: new Set([1, 2]),
+      windowedUnreadItems: new Map<number, number>(),
       unreadCount: 70000,
       adjacentFreqsRange: 0,
       highlightSignalsEnabled: false,
       onlyMyUnitTagsEnabled: false,
     } satisfies MessageFeedState;
     expect(feedLoadedUnreadCount(feed)).toBe(1);
+    expect(feedNeedsUnreadPrefetch(feed)).toBe(true);
+  });
+
+  it('does not need unread prefetch once the last-seen runway is full', () => {
+    const items = Array.from({ length: DUTY_FEED_UNREAD_PREFETCH_MIN }, (_, index) => [
+      index + 1,
+      {} as InboxMessage,
+    ]);
+    const feed = {
+      id: 'mf-1',
+      filter: emptyFilter(),
+      items,
+      loading: false,
+      loadingOlder: false,
+      hasReachedStart: false,
+      referenceTimeMs: null,
+      readIds: new Set<number>(),
+      windowedUnreadItems: new Map<number, number>(),
+      unreadCount: DUTY_FEED_UNREAD_PREFETCH_MIN,
+      adjacentFreqsRange: 0,
+      highlightSignalsEnabled: false,
+      onlyMyUnitTagsEnabled: false,
+    } satisfies MessageFeedState;
+    expect(feedLoadedUnreadCount(feed)).toBe(DUTY_FEED_UNREAD_PREFETCH_MIN);
+    expect(feedNeedsUnreadPrefetch(feed)).toBe(false);
   });
 
   it('does not expose raw server unread count when all loaded messages are read', () => {

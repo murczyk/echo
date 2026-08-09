@@ -24,6 +24,10 @@ function TestScroller(props: {
   onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
   enabled?: boolean;
   isWatchMode?: boolean;
+  unreadPrefetchNeeded?: boolean;
+  unreadPrefetchMin?: number;
+  itemHeightPx?: number;
+  bottomLoadBufferPx?: number;
 }) {
   const scroll = useWindowedFeedScroll({
     itemIds: props.ids,
@@ -40,11 +44,14 @@ function TestScroller(props: {
     onVisibleMessageIds: props.onVisibleMessageIds,
     enabled: props.enabled ?? true,
     isWatchMode: props.isWatchMode ?? true,
+    unreadPrefetchNeeded: props.unreadPrefetchNeeded,
+    unreadPrefetchMin: props.unreadPrefetchMin,
     topLoadBufferPx: 80,
-    bottomLoadBufferPx: 80,
+    bottomLoadBufferPx: props.bottomLoadBufferPx ?? 80,
     atBottomThresholdPx: 10,
   });
   latestScrollHandle = scroll;
+  const itemHeightPx = props.itemHeightPx ?? 50;
 
   return (
     <div
@@ -59,7 +66,7 @@ function TestScroller(props: {
           const itemRef = scroll.setItemRef(id);
           renderedItemRefs.set(id, itemRef);
           return (
-            <div key={id} ref={itemRef} data-testid={`item-${id}`} style={{ height: 50 }}>
+            <div key={id} ref={itemRef} data-testid={`item-${id}`} style={{ height: itemHeightPx }}>
               item {id}
             </div>
           );
@@ -814,6 +821,72 @@ describe('useWindowedFeedScroll', () => {
     });
 
     expect(onLoadNewer).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call onLoadNewer near bottom when unread prefetch runway is already full', async () => {
+    const onLoadNewer = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller ids={[1, 2, 3, 4]} onLoadNewer={onLoadNewer} unreadPrefetchNeeded={false} />,
+      );
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 130, clientHeight: 100, scrollHeight: 300 });
+
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+
+    expect(onLoadNewer).not.toHaveBeenCalled();
+  });
+
+  it('calls onLoadNewer in the trailing prefetch zone even when pixel distance exceeds the buffer', async () => {
+    const onLoadNewer = vi.fn();
+    const onNearBottomChange = vi.fn();
+    const ids = Array.from({ length: 20 }, (_, index) => index + 1);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    // Tall rows: last few messages alone exceed the 80px bottom buffer.
+    const itemHeight = 400;
+    const metrics = {
+      scrollTop: 18 * itemHeight,
+      clientHeight: 100,
+      scrollHeight: 20 * itemHeight,
+    };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = {
+      items: new Map(ids.map((id, index) => [id, { top: index * itemHeight, height: itemHeight }])),
+    };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={ids}
+          onLoadNewer={onLoadNewer}
+          onNearBottomChange={onNearBottomChange}
+          unreadPrefetchNeeded
+          unreadPrefetchMin={10}
+          bottomLoadBufferPx={80}
+        />,
+      );
+    });
+
+    onLoadNewer.mockClear();
+    onNearBottomChange.mockClear();
+
+    // bottomDistance = 8000 - 100 - 7200 = 700 > 80, but viewport intersects last-10 zone.
+    expect(metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop).toBe(700);
+
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+
+    expect(onLoadNewer).toHaveBeenCalled();
   });
 
   it('does not repeatedly call onLoadNewer while already loading newer items', async () => {

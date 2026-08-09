@@ -10,6 +10,7 @@ import {
 import {
   DEFAULT_DUTY_TAGS_LAYOUT,
   feedIndicatorUnreadCount,
+  feedNeedsUnreadPrefetch,
   excludeMessageEntityFromFilters,
   type MessageEntityFilterKind,
   type MessageFeedState,
@@ -151,6 +152,7 @@ export function RerDutyNeoPage({
       physicallyAtBottom:
         feed.items.length === 0 ? true : (physicallyAtBottomByFeedIdRef.current[feed.id] ?? false),
       tailAvailability: tailAvailabilityByFeedId[feed.id] ?? 'unknown',
+      unreadPrefetchNeeded: feedNeedsUnreadPrefetch(feed),
     },
     filterPanel: {
       feedId: feed.id,

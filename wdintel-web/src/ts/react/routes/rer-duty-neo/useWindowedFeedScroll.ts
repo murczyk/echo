@@ -6,6 +6,7 @@ import {
   recordDutyScrollDebugMetrics,
   useDutyScrollDebugEnabled,
 } from './duty-scroll-debug';
+import { DUTY_FEED_UNREAD_PREFETCH_MIN } from './utils';
 
 export type WindowedFeedScrollItem = { id: number };
 
@@ -57,6 +58,13 @@ export type UseWindowedFeedScrollOptions = {
   isWatchMode?: boolean;
   enabled?: boolean;
   debugFeedId?: string;
+  /**
+   * When false, near-bottom will not arm another newer load (unread runway after
+   * last-seen is already full enough). Defaults to true.
+   */
+  unreadPrefetchNeeded?: boolean;
+  /** How many trailing window items define the unread-prefetch scroll zone. */
+  unreadPrefetchMin?: number;
 };
 
 export type WindowedFeedScrollHandle = {
@@ -75,6 +83,26 @@ const INITIAL_BOTTOM_SETTLE_TIMEOUT_MS = 2000;
 
 function distanceToBottom(el: HTMLElement): number {
   return Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
+}
+
+/**
+ * True when the viewport has reached the trailing unread-prefetch window (last N
+ * mounted messages). Used so tall messages still trigger catch-up when the fixed
+ * pixel bottom buffer is smaller than those rows.
+ * Only applies when the window is longer than N — otherwise the zone would start
+ * at the first row and mark every short feed as near-bottom.
+ */
+function isInTrailingPrefetchZone(
+  scroller: HTMLElement,
+  itemIds: readonly number[],
+  itemRefs: ReadonlyMap<number, HTMLDivElement>,
+  prefetchMin: number,
+): boolean {
+  if (itemIds.length <= prefetchMin || prefetchMin <= 0) return false;
+  const startIndex = itemIds.length - prefetchMin;
+  const startNode = itemRefs.get(itemIds[startIndex]);
+  if (!startNode) return false;
+  return startNode.getBoundingClientRect().top < scroller.getBoundingClientRect().bottom;
 }
 
 export function useWindowedFeedScroll({
@@ -98,6 +126,8 @@ export function useWindowedFeedScroll({
   isWatchMode = true,
   enabled = true,
   debugFeedId,
+  unreadPrefetchNeeded = true,
+  unreadPrefetchMin = DUTY_FEED_UNREAD_PREFETCH_MIN,
 }: UseWindowedFeedScrollOptions): WindowedFeedScrollHandle {
   const debugEnabled = useDutyScrollDebugEnabled();
   const callbacksRef = useRef({
@@ -290,6 +320,14 @@ export function useWindowedFeedScroll({
       const anchors = collectVisibleAnchors();
       const anchor = anchorSnapshotRef.current?.anchors[0] ?? null;
       const computedStyle = window.getComputedStyle(scroller);
+      const inTrailingPrefetchZone =
+        unreadPrefetchNeeded &&
+        isInTrailingPrefetchZone(
+          scroller,
+          itemIdsRef.current,
+          itemRefsRef.current,
+          unreadPrefetchMin,
+        );
       recordDutyScrollDebugMetrics(debugFeedId, {
         capturedAtMs: Date.now(),
         scrollTop: scroller.scrollTop,
@@ -304,7 +342,7 @@ export function useWindowedFeedScroll({
         atTop: scroller.scrollTop <= 0,
         atBottom: bottomDistance <= atBottomThresholdPx,
         physicallyAtBottom: bottomDistance <= 1,
-        nearBottom: bottomDistance <= bottomLoadBufferPx,
+        nearBottom: bottomDistance <= bottomLoadBufferPx || inTrailingPrefetchZone,
         liveBottomFollow: liveBottomFollowRef.current,
         bottomSettleActive: bottomSettleActiveRef.current,
         loadOlderTriggered: loadOlderTriggeredRef.current,
@@ -323,7 +361,15 @@ export function useWindowedFeedScroll({
         scrollBehavior: computedStyle.scrollBehavior,
       });
     },
-    [atBottomThresholdPx, bottomLoadBufferPx, collectVisibleAnchors, debugFeedId, topLoadBufferPx],
+    [
+      atBottomThresholdPx,
+      bottomLoadBufferPx,
+      collectVisibleAnchors,
+      debugFeedId,
+      topLoadBufferPx,
+      unreadPrefetchMin,
+      unreadPrefetchNeeded,
+    ],
   );
 
   useLayoutEffect(() => {
@@ -443,7 +489,15 @@ export function useWindowedFeedScroll({
       const bottomDistance = distanceToBottom(scroller);
       const atBottom = bottomDistance <= atBottomThresholdPx;
       const physicallyAtBottom = bottomDistance <= 1;
-      const nearBottom = bottomDistance <= bottomLoadBufferPx;
+      const inTrailingPrefetchZone =
+        unreadPrefetchNeeded &&
+        isInTrailingPrefetchZone(
+          scroller,
+          itemIdsRef.current,
+          itemRefsRef.current,
+          unreadPrefetchMin,
+        );
+      const nearBottom = bottomDistance <= bottomLoadBufferPx || inTrailingPrefetchZone;
       const atTop = scroller.scrollTop <= 0;
       const wasAtBottom = atBottomRef.current;
       const currentScrollTop = scroller.scrollTop;
@@ -488,7 +542,7 @@ export function useWindowedFeedScroll({
         recordDutyScrollDebugEvent(
           debugFeedId,
           'state:near-bottom',
-          `${previousNearBottom ?? '—'}→${nearBottom}; distance=${bottomDistance.toFixed(1)}; buffer=${bottomLoadBufferPx}`,
+          `${previousNearBottom ?? '—'}→${nearBottom}; distance=${bottomDistance.toFixed(1)}; buffer=${bottomLoadBufferPx}; trailingPrefetch=${inTrailingPrefetchZone}`,
         );
       }
 
@@ -544,17 +598,18 @@ export function useWindowedFeedScroll({
       }
 
       if (opts.allowLoadNewer !== false) {
-        const shouldLoadNewer = nearBottom && !loadingNewer && typeof onLoadNewer === 'function';
+        const shouldLoadNewer =
+          nearBottom && unreadPrefetchNeeded && !loadingNewer && typeof onLoadNewer === 'function';
         if (shouldLoadNewer && !loadNewerTriggeredRef.current) {
           loadNewerTriggeredRef.current = true;
           captureAnchorSnapshot();
           recordDutyScrollDebugEvent(
             debugFeedId,
             'load-newer:trigger',
-            `distance=${bottomDistance.toFixed(1)}; buffer=${bottomLoadBufferPx}; physical=${physicallyAtBottom}`,
+            `distance=${bottomDistance.toFixed(1)}; buffer=${bottomLoadBufferPx}; physical=${physicallyAtBottom}; prefetch=${unreadPrefetchNeeded}; trailingPrefetch=${inTrailingPrefetchZone}`,
           );
           onLoadNewer();
-        } else if (!nearBottom) {
+        } else if (!nearBottom || !unreadPrefetchNeeded) {
           loadNewerTriggeredRef.current = false;
         }
       }
@@ -572,8 +627,23 @@ export function useWindowedFeedScroll({
       publishDebugMetrics,
       stopBottomSettle,
       topLoadBufferPx,
+      unreadPrefetchMin,
+      unreadPrefetchNeeded,
     ],
   );
+
+  const unreadPrefetchNeededRef = useRef(unreadPrefetchNeeded);
+  useEffect(() => {
+    const wasNeeded = unreadPrefetchNeededRef.current;
+    unreadPrefetchNeededRef.current = unreadPrefetchNeeded;
+    if (!unreadPrefetchNeeded || !enabledRef.current) return;
+    loadNewerTriggeredRef.current = false;
+    // Only re-evaluate when prefetch becomes needed again — not on the initial mount
+    // (initial bottom pin intentionally suppresses load-newer).
+    if (!wasNeeded) {
+      updateScrollState({ allowLoadOlder: false, allowTopReached: false });
+    }
+  }, [unreadPrefetchNeeded, updateScrollState]);
 
   const scrollToBottom = useCallback(
     (behavior: ScrollBehavior = 'auto', debugReason = 'imperative') => {

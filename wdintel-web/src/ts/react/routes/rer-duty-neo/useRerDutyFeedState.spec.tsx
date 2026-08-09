@@ -1423,6 +1423,53 @@ describe('useRerDutyFeedState — loading', () => {
     expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id).sort()).toEqual([1, 3]);
   });
 
+  it('near-bottom catch-up pages until at least 10 loaded unread after last-seen', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          readIds: new Set(feed.items.map(([id]) => id)),
+          windowedUnreadItems: new Map<number, number>(),
+          unreadCount: 0,
+        })),
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    hoisted.fetchInboxMessages.mockImplementation(
+      (req: { sinceIdNoninclusive?: number | null }) => {
+        const since = req.sinceIdNoninclusive;
+        if (since == null) {
+          return Promise.resolve(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]));
+        }
+        return Promise.resolve(rangeRsp(since + 1, since + 5));
+      },
+    );
+    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 25, firstElementTs: null });
+
+    await act(async () => {
+      apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+      apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = false;
+      apiRef.current!.cancelFollowTail('mf-0');
+    });
+
+    await startPoll();
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feedLoadedUnreadCount(feed)).toBeGreaterThanOrEqual(10);
+    expect(feedLoadedUnreadCount(feed)).toBeLessThan(25);
+    const newerLoads = hoisted.fetchInboxMessages.mock.calls.filter(
+      ([request]) => request?.sinceIdNoninclusive != null,
+    );
+    expect(newerLoads.length).toBe(2);
+  });
+
   it('preserves a larger server unreadCount when appending a partially loaded newer batch', async () => {
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
