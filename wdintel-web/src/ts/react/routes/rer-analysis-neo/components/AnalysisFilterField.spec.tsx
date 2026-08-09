@@ -60,10 +60,13 @@ describe('AnalysisFilterField', () => {
       onInputChange: (
         _event: unknown,
         nextInputValue: string,
-        reason: 'input' | 'reset' | 'clear',
+        reason: 'input' | 'reset' | 'clear' | 'selectOption' | 'removeOption',
       ) => void;
       onClose?: () => void;
       onOpen?: () => void;
+      filterOptions?: (
+        options: Array<{ value: string; label: string; count: number; values: string[] }>,
+      ) => Array<{ value: string; label: string; count: number; values: string[] }>;
       renderOption: (
         props: { key: string; [key: string]: unknown },
         option: { key: string; value: string; label: string; count: number; values: string[] },
@@ -332,6 +335,61 @@ describe('AnalysisFilterField', () => {
       props.onChange(null, [], 'clear');
     });
     expect(onChange).toHaveBeenCalledWith([]);
+    expect(latestAutocompleteProps().inputValue).toBe('');
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it('keeps the unit menu and search text across multiple selections until close', () => {
+    const onChange = vi.fn();
+    const { root } = renderFilterField({
+      label: 'Підрозділи',
+      options: [
+        { value: 'u1', label: '2 мсб 136 омсбр 58 А', count: 1 },
+        { value: 'u2', label: '3 мсб 136 омсбр 58 А', count: 2 },
+        { value: 'u3', label: '136 омсбр 58 А', count: 3 },
+        { value: 'other', label: 'Other unit', count: 4 },
+      ],
+      value: [],
+      deferredCommit: true,
+      preserveInputOnSelect: true,
+      onChange,
+    });
+
+    act(() => {
+      latestAutocompleteProps().onOpen?.();
+    });
+    act(() => {
+      latestAutocompleteProps().onInputChange(null, '136 омсбр', 'input');
+    });
+    act(() => {
+      const props = latestAutocompleteProps();
+      props.onChange(null, [props.options[0]], 'selectOption');
+      props.onInputChange(null, '', 'selectOption');
+    });
+    expect(latestAutocompleteProps().open).toBe(true);
+    expect(latestAutocompleteProps().inputValue).toBe('136 омсбр');
+    expect(
+      latestAutocompleteProps()
+        .filterOptions?.(latestAutocompleteProps().options)
+        .map((option) => option.value),
+    ).toEqual(['u1', 'u2', 'u3']);
+
+    act(() => {
+      const props = latestAutocompleteProps();
+      props.onChange(null, props.options.slice(0, 3), 'selectOption');
+      props.onInputChange(null, '', 'selectOption');
+    });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(latestAutocompleteProps().open).toBe(true);
+    expect(latestAutocompleteProps().inputValue).toBe('136 омсбр');
+
+    act(() => {
+      latestAutocompleteProps().onClose?.();
+    });
+    expect(onChange).toHaveBeenCalledWith(['u1', 'u2', 'u3']);
     expect(latestAutocompleteProps().inputValue).toBe('');
 
     act(() => {

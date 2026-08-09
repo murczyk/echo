@@ -303,6 +303,7 @@ function buildProps(
       savedFilters: [],
       tagsMap: {},
       tagsOrder: [],
+      unitsMap: {},
       applySavedFilter: vi.fn(),
       deleteLoadedSavedFilter: vi.fn(),
       renameExistingSavedFilter: vi.fn(),

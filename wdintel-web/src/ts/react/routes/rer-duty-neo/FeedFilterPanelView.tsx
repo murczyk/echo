@@ -36,6 +36,7 @@ export type FeedFilterSelectionConfig<T> = {
   placeholder?: string;
   autocompleteClassName?: string;
   rankedSearch?: boolean;
+  keepOpenAndPreserveInputOnSelect?: boolean;
 };
 
 type FeedFilterSavedFiltersConfig = {
@@ -193,6 +194,7 @@ export function FeedFilterPanelView({
             getOptionKey={units.getOptionKey}
             isOptionEqualToValue={units.isOptionEqualToValue}
             rankedSearch={units.rankedSearch}
+            keepOpenAndPreserveInputOnSelect={units.keepOpenAndPreserveInputOnSelect}
             placeholder={units.placeholder}
             autocompleteClassName={units.autocompleteClassName}
           />

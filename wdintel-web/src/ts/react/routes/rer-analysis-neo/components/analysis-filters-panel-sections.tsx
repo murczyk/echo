@@ -344,6 +344,8 @@ export function AnalysisFiltersPanelSections({
             value={queryState.unitsSelected}
             normalizeUnknownAliases
             deferredCommit
+            preserveInputOnSelect
+            preserveSelectedOptionValuesOnChange
             onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
           />
           {queryState.unitsSelected.length > 0 ? (
