@@ -16,6 +16,7 @@ pub const PG_POOL_DEFAULT_MAX_CONNECTIONS: u32 = 30;
 pub const PG_POOL_BGWORKER_MAX_CONNECTIONS: u32 = 20;
 pub const PG_WDFILE_POOL_MAX_CONNECTIONS: u32 = 10;
 pub const PG_WDFILE_MIGRATION_POOL_MAX_CONNECTIONS: u32 = 1;
+pub const MIGRATION_ADVISORY_LOCK_NAME: &str = "echo:migrations";
 pub const FILE_REGISTRY_UNAVAILABLE_RETRY_AFTER_SECS: u64 = 60;
 pub const PGBACKREST_CONF_PATH: &str = "/etc/pgbackrest/pgbackrest.conf";
 pub const PGBACKREST_CONF_INCLUDE_DIR: &str = "/etc/pgbackrest/conf.d";
