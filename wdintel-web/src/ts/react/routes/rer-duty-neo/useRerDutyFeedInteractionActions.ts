@@ -21,7 +21,7 @@ type Params = {
       showLoading?: boolean;
       followGeneration?: number;
     },
-  ) => Promise<void>;
+  ) => Promise<{ ok: boolean; addedCount: number }>;
   requestValidatedInboxCount: (feedId: string) => Promise<{
     feedId: string;
     quantity: number;
@@ -84,12 +84,16 @@ export function useRerDutyFeedInteractionActions(params: Params) {
             next.add(feedId);
             return next;
           });
-          await loadFeedNewerMessages(feedId, {
+          const newerResult = await loadFeedNewerMessages(feedId, {
             nolimit: true,
             scrollToEndAfterLoad: true,
             showLoading: true,
             followGeneration,
           });
+          if (!newerResult.ok) {
+            showArrowResult(feedId, failureArrowMessage);
+            return;
+          }
           catchUpFeedUnreadToTail(feedId);
           showArrowResult(feedId, 'Завантажено нові повідомлення');
         } else if (!feed.loading) {

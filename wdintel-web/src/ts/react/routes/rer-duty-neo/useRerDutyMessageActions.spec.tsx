@@ -34,7 +34,7 @@ const hoisted = vi.hoisted(() => ({
   copyTextToClipboard: vi.fn(),
   requestValidatedInboxCount: vi.fn(),
   catchUpFeedUnreadToTail: vi.fn(),
-  loadFeedNewerMessages: vi.fn(() => Promise.resolve()),
+  loadFeedNewerMessages: vi.fn(() => Promise.resolve({ ok: true, addedCount: 0 })),
   loadFeedInitialMessages: vi.fn(() => Promise.resolve()),
   showArrowResult: vi.fn(),
   setWatchModeByFeedId: vi.fn(),
@@ -259,7 +259,7 @@ describe('useRerDutyMessageActions', () => {
       cursorId: 10,
       hasItems: true,
     });
-    hoisted.loadFeedNewerMessages.mockResolvedValue(undefined);
+    hoisted.loadFeedNewerMessages.mockResolvedValue({ ok: true, addedCount: 0 });
     hoisted.loadFeedInitialMessages.mockResolvedValue(undefined);
     hoisted.showArrowResult.mockReset();
     hoisted.beginFollowTail.mockReset();
@@ -320,6 +320,46 @@ describe('useRerDutyMessageActions', () => {
       expect.objectContaining({ scrollToEndAfterLoad: true }),
     );
     expect(hoisted.catchUpFeedUnreadToTail).toHaveBeenCalledWith('mf-0');
+  });
+
+  it('does not clear unread state when arrow newer load fails', async () => {
+    hoisted.requestValidatedInboxCount.mockResolvedValueOnce({
+      feedId: 'mf-0',
+      quantity: 3,
+      cursorId: 10,
+      hasItems: true,
+    });
+    hoisted.loadFeedNewerMessages.mockResolvedValueOnce({ ok: false, addedCount: 0 });
+    const columnRefsRef: MutableRefObject<
+      Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+    > = {
+      current: {
+        'mf-0': { scrollToEnd: vi.fn() },
+      },
+    };
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          columnRefsRef={columnRefsRef}
+          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleArrowClick('mf-0');
+    });
+
+    expect(hoisted.catchUpFeedUnreadToTail).not.toHaveBeenCalled();
+    expect(hoisted.showArrowResult).toHaveBeenCalledWith(
+      'mf-0',
+      'Не вдалося перевірити нові повідомлення',
+    );
   });
 
   it('replaces an edited message in every loaded feed without changing feed state', async () => {

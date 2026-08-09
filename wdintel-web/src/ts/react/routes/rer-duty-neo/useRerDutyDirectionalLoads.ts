@@ -23,11 +23,18 @@ type NewerLoadOptions = {
   confirmedTailAvailable?: boolean;
 };
 
+export type NewerLoadResult = {
+  ok: boolean;
+  addedCount: number;
+};
+
 type DirectionalOperation = {
   direction: 'older' | 'newer';
   promise: Promise<void>;
   resolve: () => void;
   newerOptions: Required<NewerLoadOptions>;
+  newerResult: NewerLoadResult;
+  newerResultPromise?: Promise<NewerLoadResult>;
   commitExpected: boolean;
   phase: 'running' | 'awaitingCommit';
   run: () => Promise<void>;
@@ -125,6 +132,8 @@ function createOperation(
       confirmedTailAvailable: options?.confirmedTailAvailable ?? false,
     },
     commitExpected: false,
+    // Default false until a successful run path sets otherwise (invalidate must not look like success).
+    newerResult: { ok: false, addedCount: 0 },
     phase: 'running',
     run: async () => {},
     tailAvailabilityBefore: 'unknown',
@@ -303,19 +312,24 @@ export function useRerDutyDirectionalLoads(params: Params) {
         }
         // Always surface in-flight newer get-inbox on the FAB (badge may already show pending).
         currentParams.setLoadingNewerFeedIds((previous) => new Set(previous).add(feedId));
-        return existing.promise;
+        return (
+          existing.newerResultPromise ??
+          (existing.newerResultPromise = existing.promise.then(() => existing.newerResult))
+        );
       }
       const feed = currentParams.messageFeedsRef.current.find(
         (candidate) => candidate.id === feedId,
       );
-      if (!feed || feed.items.length === 0) return Promise.resolve();
+      if (!feed || feed.items.length === 0) return Promise.resolve({ ok: true, addedCount: 0 });
       const operation = createOperation('newer', options);
+      operation.newerResultPromise = operation.promise.then(() => operation.newerResult);
       operation.run = async () => {
         const runParams = paramsRef.current;
         const currentFeed = runParams.messageFeedsRef.current.find(
           (candidate) => candidate.id === feedId,
         );
         if (!currentFeed || currentFeed.items.length === 0) {
+          operation.newerResult = { ok: true, addedCount: 0 };
           lane.active = null;
           operation.resolve();
           startOperationRef.current(feedId);
@@ -339,6 +353,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
           operation.newerOptions.skipIfNewestExhausted &&
           runParams.newestExhaustedCursorByFeedIdRef.current[feedId] === requestedTailId
         ) {
+          operation.newerResult = { ok: true, addedCount: 0 };
           lane.active = null;
           operation.resolve();
           startOperationRef.current(feedId);
@@ -381,10 +396,14 @@ export function useRerDutyDirectionalLoads(params: Params) {
               runParams.setGroupInfos((previous) => ({ ...previous, ...groups }));
             }
           }
-          if (!accepted || !latestFeed) return;
+          if (!accepted || !latestFeed) {
+            operation.newerResult = { ok: false, addedCount: 0 };
+            return;
+          }
           const previousTailId = requestedTailId;
           const latestWindowed = appendWindowedMessageItems(latestFeed.items, response.inboxItems);
           const addedCount = latestWindowed.addedItems.length;
+          operation.newerResult = { ok: true, addedCount };
           const newestItem = latestWindowed.items.at(-1) ?? null;
           const followTail = operation.newerOptions.scrollToEndAfterLoad && followStillValid;
           const markAllRead =
@@ -519,6 +538,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
           }
         } catch (error) {
           finishDebugActivity(`error; ${error instanceof Error ? error.message : String(error)}`);
+          operation.newerResult = { ok: false, addedCount: 0 };
           // Keep polling and the previously loaded messages after a transient failure.
           if (!isStillCurrent()) return;
           if (operation.newerOptions.confirmedTailAvailable) {
@@ -547,7 +567,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
         lane.active = operation;
         void operation.run();
       }
-      return operation.promise;
+      return operation.newerResultPromise!;
     },
     [getLane],
   );

@@ -676,6 +676,17 @@ describe('rer-duty utils', () => {
     expect(feedIndicatorUnreadCount(feed, { tailId: 2, count: 2 })).toBe(3);
   });
 
+  it('keeps matching preview when residual is disabled (near-bottom)', () => {
+    const feed = indicatorFeed({
+      items: [[1, {} as InboxMessage]],
+      readIds: new Set([1]),
+      unreadCount: 5,
+    });
+    expect(
+      feedIndicatorUnreadCount(feed, { tailId: 1, count: 3 }, { includeBeyondTailResidual: false }),
+    ).toBe(3);
+  });
+
   it('does not double count windowed IDs covered by a matching preview', () => {
     const feed = indicatorFeed({
       items: [[20, { timestamp: 200 } as InboxMessage]],

@@ -21,19 +21,19 @@ Primary code:
 - Each column keeps at most **`DUTY_FEED_MESSAGE_WINDOW_LIMIT` (40)** messages in DOM/state.
 - **Load older** prepends, then end-trims if over limit.
 - **Load newer** appends, then start-trims if over limit.
-- Start-trim of *previously loaded* unread rows marks those ids read; rows that arrived in the same oversized batch and were trimmed immediately stay in `windowedUnreadItems`.
+- Start-trim of _previously loaded_ unread rows marks those ids read; rows that arrived in the same oversized batch and were trimmed immediately stay in `windowedUnreadItems`.
 - Scroller uses CSS class `rer-duty-feed-scroll` with **`overflow-anchor: none`** so the browser does not fight programmatic / restore logic.
 
 ### Distance zones
 
 `distanceToBottom = scrollHeight - clientHeight - scrollTop`.
 
-| Zone | Threshold (Duty Neo) | Meaning |
-| --- | --- | --- |
-| **Physical bottom** | `distance ≤ 0.5px` | Pixel-flush with the live end; required for auto-follow scroll after newer load |
-| **At bottom** | `distance ≤ 25px` (`DUTY_FEED_AT_BOTTOM_THRESHOLD_PX`) | Tight “settled at end” for read marking / at-bottom callbacks |
-| **Near bottom** | `distance ≤ 640px` (`LOAD_NEWER_BUFFER_PX`) | Prefetch newer; badge treats this as “at the live tail” for residual/preview suppression |
-| **Near top** | `scrollTop ≤ 160px` (`LOAD_OLDER_BUFFER_PX`) | Prefetch older |
+| Zone                | Threshold (Duty Neo)                                   | Meaning                                                                                  |
+| ------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| **Physical bottom** | `distance ≤ 0.5px`                                     | Pixel-flush with the live end; required for auto-follow scroll after newer load          |
+| **At bottom**       | `distance ≤ 25px` (`DUTY_FEED_AT_BOTTOM_THRESHOLD_PX`) | Tight “settled at end” for read marking / at-bottom callbacks                            |
+| **Near bottom**     | `distance ≤ 640px` (`LOAD_NEWER_BUFFER_PX`)            | Prefetch newer; badge treats this as “at the live tail” for residual/preview suppression |
+| **Near top**        | `scrollTop ≤ 160px` (`LOAD_OLDER_BUFFER_PX`)           | Prefetch older                                                                           |
 
 Default hook buffers differ (`320` / `160`); Duty Neo overrides via `FeedColumnContent`.
 
@@ -107,15 +107,15 @@ The bottom arrow badge means: **messages in this feed the user has not yet caugh
 
 ### Definitions
 
-| Term | Meaning |
-| --- | --- |
-| **Last seen** | Highest message (by feed order) the user has marked read via viewport / at-bottom catch-up / watch-mode mark-all-read |
-| **Loaded unread** | Items currently in the window with `id ∉ readIds` |
-| **Trimmed unread** | `windowedUnreadItems` — unread that left the window upward when newer pages were appended |
-| **Beyond-tail pending** | Confirmed count of matching messages newer than `loadedTail` (matching tail preview when scrolled up) |
-| **Residual stock** | `feed.unreadCount` above loaded+trimmed — poll-seeded cache used **only when scrolled up** |
-| **Watch mode** | Column following the live tail (arrow click or settled at bottom without pending catch-up) |
-| **Badge** | Number on the down-arrow FAB |
+| Term                    | Meaning                                                                                                               |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **Last seen**           | Highest message (by feed order) the user has marked read via viewport / at-bottom catch-up / watch-mode mark-all-read |
+| **Loaded unread**       | Items currently in the window with `id ∉ readIds`                                                                     |
+| **Trimmed unread**      | `windowedUnreadItems` — unread that left the window upward when newer pages were appended                             |
+| **Beyond-tail pending** | Confirmed count of matching messages newer than `loadedTail` (matching tail preview when scrolled up)                 |
+| **Residual stock**      | `feed.unreadCount` above loaded+trimmed — poll-seeded cache used **only when scrolled up**                            |
+| **Watch mode**          | Column following the live tail (arrow click or settled at bottom without pending catch-up)                            |
+| **Badge**               | Number on the down-arrow FAB                                                                                          |
 
 ### Source-of-truth split
 
@@ -194,15 +194,15 @@ See Part 1 “Arrow down”. Badge hard-reset is part of `catchUpFeedUnreadToTai
 
 ### What inbox / tail count is for
 
-| Use | Allowed? |
-| --- | --- |
-| Gate arrow / poll “should we load newer?” | Yes |
-| Seed residual / preview when **not** near bottom | Yes |
-| Delta for `notifyDutyNewMessages` while scrolled up | Yes |
-| Directly assign / `Math.max` into badge while near bottom | **No** |
-| Appear in near-bottom badge via residual stock | **No** |
-| Appear in near-bottom badge via matching tail preview | **Yes** |
-| Block watch-mode entry solely via residual stock | **No** |
+| Use                                                       | Allowed? |
+| --------------------------------------------------------- | -------- |
+| Gate arrow / poll “should we load newer?”                 | Yes      |
+| Seed residual / preview when **not** near bottom          | Yes      |
+| Delta for `notifyDutyNewMessages` while scrolled up       | Yes      |
+| Directly assign / `Math.max` into badge while near bottom | **No**   |
+| Appear in near-bottom badge via residual stock            | **No**   |
+| Appear in near-bottom badge via matching tail preview     | **Yes**  |
+| Block watch-mode entry solely via residual stock          | **No**   |
 
 `tailCount(since: loadedTail)` stays the authority for “is there mail beyond the window?” when near-bottom + exhausted.
 
@@ -232,10 +232,10 @@ See Part 1 “Arrow down”. Badge hard-reset is part of `catchUpFeedUnreadToTai
 - [`useWindowedFeedScroll.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useWindowedFeedScroll.ts) — zones, load arming, anchor restore, follow scroll
 - [`FeedColumnContent.tsx`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/FeedColumnContent.tsx) — Duty buffers (640 / 160 / 25)
 - [`utils.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/utils.ts) — window limit; `feedIndicatorUnreadCount(..., { includeBeyondTailResidual })`
-- [`index.tsx`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/index.tsx) — near-bottom drops residual + preview; `hasPendingTail` ignores residual; reach-bottom follow policy
+- [`index.tsx`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/index.tsx) — near-bottom drops residual only (matching preview kept); `hasPendingTail` ignores residual; reach-bottom follow policy
 - [`useRerDutyFeedState.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyFeedState.ts) — no near-bottom poll inflate; cursor force to loadedTail; `catchUpFeedUnreadToTail`
-- [`useRerDutyDirectionalLoads.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyDirectionalLoads.ts) — empty newer reconciles from committed feed state; trim read rules
-- [`useRerDutyFeedInteractionActions.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyFeedInteractionActions.ts) — arrow catch-up
+- [`useRerDutyDirectionalLoads.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyDirectionalLoads.ts) — empty newer reconciles from committed feed state; trim read rules; `NewerLoadResult` for callers
+- [`useRerDutyFeedInteractionActions.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyFeedInteractionActions.ts) — arrow catch-up only after successful newer load
 
 ### Out of scope
 

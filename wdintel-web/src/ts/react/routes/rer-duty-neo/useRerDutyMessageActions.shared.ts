@@ -27,7 +27,7 @@ export type MessageActionsDeps = {
       showLoading?: boolean;
       followGeneration?: number;
     },
-  ) => Promise<void>;
+  ) => Promise<{ ok: boolean; addedCount: number }>;
   showArrowResult: (feedId: string, message: string) => void;
   columnRefsRef: MutableRefObject<
     Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>

@@ -144,14 +144,10 @@ export function RerDutyNeoPage({
       isWatchMode: !dutyDisableAutoScroll && (watchModeByFeedId[feed.id] ?? true),
       loadingNewer: loadingNewerFeedIds.has(feed.id),
       arrowResultMessage: arrowResultByFeedId[feed.id] ?? null,
-      bottomUnreadCount: (() => {
-        const nearBottom = nearBottomByFeedIdRef.current[feed.id] === true;
-        return feedIndicatorUnreadCount(
-          feed,
-          nearBottom ? undefined : confirmedTailPreviewByFeedId[feed.id],
-          { includeBeyondTailResidual: !nearBottom },
-        );
-      })(),
+      bottomUnreadCount: feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id], {
+        // Near-bottom: keep matching tail preview (real beyond-tail pending); only drop residual stock.
+        includeBeyondTailResidual: nearBottomByFeedIdRef.current[feed.id] !== true,
+      }),
       physicallyAtBottom:
         feed.items.length === 0 ? true : (physicallyAtBottomByFeedIdRef.current[feed.id] ?? false),
       tailAvailability: tailAvailabilityByFeedId[feed.id] ?? 'unknown',
