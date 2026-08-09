@@ -4,11 +4,21 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 elm_land_default_port=1234
 
+# macOS ships bash 3.2 (no `mapfile`); read PIDs with a portable loop.
+listen_pids_on_port() {
+    local port="$1"
+    lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true
+}
+
 stop_default_port_listener() {
     local -a pids=()
+    local pid
 
-    mapfile -t pids < <(lsof -tiTCP:"${elm_land_default_port}" -sTCP:LISTEN 2>/dev/null || true)
-    if (( ${#pids[@]} == 0 )); then
+    while IFS= read -r pid; do
+        [[ -n "${pid}" ]] || continue
+        pids+=("${pid}")
+    done < <(listen_pids_on_port "${elm_land_default_port}")
+    if ((${#pids[@]} == 0)); then
         return
     fi
 
@@ -17,8 +27,11 @@ stop_default_port_listener() {
 
     for _ in $(seq 1 50); do
         pids=()
-        mapfile -t pids < <(lsof -tiTCP:"${elm_land_default_port}" -sTCP:LISTEN 2>/dev/null || true)
-        if (( ${#pids[@]} == 0 )); then
+        while IFS= read -r pid; do
+            [[ -n "${pid}" ]] || continue
+            pids+=("${pid}")
+        done < <(listen_pids_on_port "${elm_land_default_port}")
+        if ((${#pids[@]} == 0)); then
             return
         fi
         sleep 0.1
