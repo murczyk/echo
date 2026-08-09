@@ -24,7 +24,7 @@ import type {
   UpdateNetworkCallsignReq,
 } from '../../../../Bindings';
 
-import { getUnitsList } from './units';
+import { getUnitsByIds, getUnitsList, mergeUnitsById } from './units';
 import { HttpRequestError, postJson } from './client';
 import { emitUnauthorizedEvent } from '../../auth-redirect';
 import { isNullOrUndefined } from '../../utils/misc';
@@ -472,6 +472,9 @@ export async function fetchCallsignsBootstrapData(
     getCallsignUnitStats(),
     listCallsigns(initialReq),
   ]);
+  const referencedUnits = await getUnitsByIds(
+    Array.from(new Set(callsigns.callsigns.map((callsign) => callsign.unitId))),
+  );
 
-  return { user, units, sources, unitStats, callsigns };
+  return { user, units: mergeUnitsById(units, referencedUnits), sources, unitStats, callsigns };
 }

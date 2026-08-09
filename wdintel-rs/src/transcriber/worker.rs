@@ -404,6 +404,7 @@ fn worker_policy() -> WorkerPolicy {
     }
 }
 
+#[allow(dead_code)]
 async fn cleanup_finished(env: &Env) -> Result<u64> {
     let cutoff = chrono::Utc::now().naive_utc()
         - chrono::Duration::days(ECHO_AUDIO_TRANSCRIPTION_RETENTION_DAYS);
@@ -499,14 +500,16 @@ async fn run(
     log::info!("audio transcription worker started worker_id={worker_id}");
 
     loop {
-        let finished = cleanup_finished(env.as_ref()).await.context(h!())?;
+        // Finished queue rows contain the only durable copy of completed
+        // transcriptions. Deleting them permanently erases the transcribed
+        // data, so age-based cleanup must remain disabled.
         let (orphans, orphan_scan_complete) =
             cleanup_orphans(env.as_ref(), &mut orphan_cursor)
                 .await
                 .context(h!())?;
-        if finished > 0 || orphans > 0 {
+        if orphans > 0 {
             log::info!(
-                "audio transcription cleanup worker_id={worker_id} finished={finished} orphans={orphans}"
+                "audio transcription cleanup worker_id={worker_id} orphans={orphans}"
             );
         }
 

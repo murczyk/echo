@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildLoginOptions,
   formatLoginIds,
+  preserveAiManagedLoginIds,
   selectedLoginIds,
   selectLoginOptions,
 } from './login-options';
@@ -28,5 +29,22 @@ describe('login options', () => {
     expect(selectLoginOptions(['missing-id'], options)).toEqual([
       { id: 'missing-id', login: 'missing-id' },
     ]);
+  });
+
+  it('keeps AI-managed login IDs after keyboard removal or clear actions', () => {
+    expect(
+      preserveAiManagedLoginIds(
+        ['human-id', 'ai-id', 'other-id'],
+        ['other-id'],
+        [
+          { loginId: 'human-id', isAiManaged: false },
+          { loginId: 'ai-id', isAiManaged: true },
+        ],
+      ),
+    ).toEqual(['ai-id', 'other-id']);
+
+    expect(
+      preserveAiManagedLoginIds(['ai-id'], [], [{ loginId: 'ai-id', isAiManaged: true }]),
+    ).toEqual(['ai-id']);
   });
 });

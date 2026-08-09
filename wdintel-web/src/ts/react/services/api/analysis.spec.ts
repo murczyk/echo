@@ -7,6 +7,7 @@ import type { AnalysisStatsReq, InboxMessage, InboxMessagesReq } from '../../../
 import { postJson, postVoid } from './client';
 import {
   fetchAnalysisCallsignFrequencyMatches,
+  fetchAnalysisCallsignInfos,
   fetchMessagesByIds,
   inboxMessageTagsModelError,
   inboxMessageTagsRm,
@@ -30,7 +31,7 @@ describe('analysis API', () => {
         sinceDateInclusiveMs: 1,
         tillDateNoninclusiveMs: 2,
         selectedGroups: [],
-        selectedCallsigns: [],
+        selectedCallsigns: ['НУГУШ'],
       } as AnalysisStatsReq,
       callsigns: ['ALPHA', 'BRAVO'],
       minMatches: 2,
@@ -39,15 +40,27 @@ describe('analysis API', () => {
     expect(postJsonMock).toHaveBeenCalledWith(
       '/api/rer/analysis/callsign-frequency-matches',
       expect.objectContaining({
-        callsigns: ['ALPHA', 'BRAVO'],
+        callsigns: ['alpha', 'bravo'],
         min_matches: 2,
         req: expect.objectContaining({
           since_date_inclusive_ms: 1,
           till_date_noninclusive_ms: 2,
           selected_groups: null,
-          selected_callsigns: null,
+          selected_callsigns: ['нугуш'],
         }),
       }),
+      undefined,
+    );
+  });
+
+  it('normalizes callsign info lookups', async () => {
+    postJsonMock.mockResolvedValueOnce([]);
+
+    await fetchAnalysisCallsignInfos([' НУГУШ ', 'нугуш']);
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/rer/callsign-info-batch',
+      { callsigns: ['нугуш'] },
       undefined,
     );
   });

@@ -22,7 +22,7 @@ pub const PGBACKREST_CONF_INCLUDE_DIR: &str = "/etc/pgbackrest/conf.d";
 pub const PGBACKREST_STANZA_CONF_PREFIX: &str = "pgbackrest-";
 pub const PGBACKREST_STANZA_CONF_SUFFIX: &str = ".conf";
 pub const PG_SLOW_STATEMENT_THRESHOLD_MS: u64 = 5_000;
-pub const POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT: u64 = 20_000;
+pub const POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT: u64 = 30_000;
 pub const POSTGRES_RUNTIME_REPORT_WORKER_STATEMENT_TIMEOUT_MS_DEFAULT: u64 =
     60_000;
 pub const POSTGRES_RUNTIME_LOCK_TIMEOUT_MS_DEFAULT: u64 = 3_000;
@@ -31,7 +31,6 @@ pub const POSTGRES_RUNTIME_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_MS_DEFAULT: u64 =
 pub const POSTGRES_RUNTIME_TIMEOUT_MS_MAX: u64 = i32::MAX as u64;
 pub const ONEOFF_KILL_OLD_QUERIES_DEFAULT_MINUTES: u64 = 3;
 pub const ONEOFF_KILL_OLD_QUERIES_QUERY_PREVIEW_CHARS: usize = 500;
-pub const INBOX_ITEM_CALLSIGN_BACKFILL_BATCH_SIZE: u64 = 500;
 pub const INBOX_ITEM_CALLSIGN_SYNC_INSERT_BATCH_SIZE: usize = 1_000;
 pub const INBOX_ITEM_CALLSIGN_LOAD_BATCH_SIZE: usize = 20_000;
 pub const SIGINT_INBOX_DATETIME_NEO_BACKFILL_BATCH_SIZE: u64 = 1_000;
@@ -57,7 +56,7 @@ pub const AI_CALLSIGN_WORKER_RETRY_BASE_SECS: i64 = 5;
 pub const AI_CALLSIGN_WORKER_RETRY_MAX_SECS: i64 = 300;
 pub const AI_CALLSIGN_WORKER_MAX_ATTEMPTS: i32 = 8;
 pub const AI_CALLSIGN_WORKER_MAX_ERROR_CHARS: usize = 2_000;
-pub const AI_CALLSIGN_DEFAULT_PROMPT: &str = r#"Знайди всі позивні у повідомленні користувача.
+pub const AI_CALLSIGN_DEFAULT_PROMPT: &str = r#"Знайди всі позивні у повідомленні користувача. Називний відмінок, російська мова (або оригінал повідомлення).
 Поверни лише JSON-об'єкт у форматі {"callsigns":["ПОЗИВНИЙ"]}.
 Не додавай пояснень. Якщо позивних немає, поверни {"callsigns":[]}."#;
 pub const AI_CHAT_ROLE_SYSTEM: &str = "system";
@@ -297,6 +296,8 @@ pub const SIGINT_NETWORK_RELATION_MESSAGES_LIMIT_MAX: i64 = 50;
 pub const SIGINT_NETWORK_FIND_LIVE_RETURN_LIMIT: usize = 10;
 pub const SIGINT_NETWORK_FIND_LIVE_QUERY_LIMIT: u64 = 250;
 pub const SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME: &str = "💻";
+pub const SIGINT_UNIT_LIST_DEFAULT_LIMIT: u64 = 100_000;
+pub const SIGINT_UNIT_LIST_MAX_LIMIT: u64 = 100_000;
 /// Ukraine boundaries WGS84
 pub const LAT_MIN: f64 = 40.0;
 pub const LAT_MAX: f64 = 60.0;

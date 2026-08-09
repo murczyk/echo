@@ -22,6 +22,10 @@ import type {
 } from '../../../../../Bindings';
 import { CompactText, CompactTitle } from '../../../components/CompactTypography';
 import { SearchableMultiOptionAutocomplete } from '../../../components/SearchableMultiOptionAutocomplete';
+import {
+  normalizeCallsignFilterValues,
+  normalizeCallsignLookupValue,
+} from '../../../utils/callsign-normalization';
 import type { AnalysisFilterOption } from '../types';
 
 const DEFAULT_MIN_MATCHES = 2;
@@ -146,14 +150,15 @@ export function AnalysisCallsignFrequencySearch({
     const uniqueOptions = new Map<string, string>();
     const optionValues = new Map<string, string[]>();
     for (const option of callsignOptions) {
-      const value = option.value.trim();
+      const value = normalizeCallsignLookupValue(option.value);
       if (value.length > 0 && !uniqueOptions.has(value)) {
         uniqueOptions.set(value, option.label.trim() || value);
-        optionValues.set(value, option.values ?? [value]);
+        optionValues.set(value, normalizeCallsignFilterValues(option.values ?? [value]));
       }
     }
     for (const callsign of selectedCallsigns) {
-      if (!uniqueOptions.has(callsign)) uniqueOptions.set(callsign, callsign);
+      const value = normalizeCallsignLookupValue(callsign);
+      if (!uniqueOptions.has(value)) uniqueOptions.set(value, callsign);
     }
     return Array.from(uniqueOptions, ([value, label], id) => ({
       id,
@@ -166,8 +171,10 @@ export function AnalysisCallsignFrequencySearch({
     .map((callsign) => options.find((option) => option.value === callsign)?.id)
     .filter((id): id is number => id !== undefined);
   const canSearch = selectedCallsigns.length >= minMatches;
-  const selectedCallsignValues = selectedCallsigns.flatMap(
-    (callsign) => options.find((option) => option.value === callsign)?.values ?? [callsign],
+  const selectedCallsignValues = normalizeCallsignFilterValues(
+    selectedCallsigns.flatMap(
+      (callsign) => options.find((option) => option.value === callsign)?.values ?? [callsign],
+    ),
   );
 
   const search = async () => {

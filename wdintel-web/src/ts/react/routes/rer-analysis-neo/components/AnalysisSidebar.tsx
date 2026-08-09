@@ -28,6 +28,7 @@ import {
   toggleExclusiveAnalysisSelection,
 } from '../../shared/analysis-filter-selection';
 import { analysisCompactTabsSx } from '../analysis-tab-styles';
+import { normalizeCallsignLookupValue } from '../../../utils/callsign-normalization';
 
 type Props = Pick<
   AnalysisPageState,
@@ -178,13 +179,17 @@ export function AnalysisSidebar({
     updateQueryState({ groupsSelected: [] });
   };
   const selectCallsign = (callsign: string) => {
+    const value = normalizeCallsignLookupValue(callsign);
+    if (value === '') return;
     updateQueryState({
-      callsignsSelected: toggleExclusiveAnalysisSelection(queryState.callsignsSelected, callsign),
+      callsignsSelected: toggleExclusiveAnalysisSelection(queryState.callsignsSelected, value),
     });
   };
   const addCallsign = (callsign: string) => {
+    const value = normalizeCallsignLookupValue(callsign);
+    if (value === '') return;
     updateQueryState({
-      callsignsSelected: addAnalysisSelection(queryState.callsignsSelected, callsign),
+      callsignsSelected: addAnalysisSelection(queryState.callsignsSelected, value),
     });
   };
   const clearCallsign = () => {

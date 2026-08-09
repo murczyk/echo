@@ -5,7 +5,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage } from '../../../../Bindings';
+import type { InboxMessage, Unit } from '../../../../Bindings';
 import { minimalInboxMessage } from '../rer-duty-neo/inbox-message-mocks';
 import { emptyQueryState } from './helpers';
 import { useAnalysisData } from './use-analysis-data.core';
@@ -46,7 +46,15 @@ const api = vi.hoisted(() => ({
 }));
 
 vi.mock('../../services/api/analysis', () => api);
-vi.mock('../../services/api/units', () => ({ getUnitsList: vi.fn().mockResolvedValue([]) }));
+vi.mock('../../services/api/units', () => ({
+  getUnitsList: vi.fn().mockResolvedValue([]),
+  getUnitsByIds: vi.fn().mockResolvedValue([]),
+  mergeUnitsById: (...unitLists: Unit[][]) => {
+    const unitsById = new Map<number, Unit>();
+    unitLists.flat().forEach((unit) => unitsById.set(unit.id, unit));
+    return Array.from(unitsById.values());
+  },
+}));
 vi.mock('../../services/api/palitra', () => ({
   listMapPalitrasV2: vi.fn().mockResolvedValue([]),
 }));

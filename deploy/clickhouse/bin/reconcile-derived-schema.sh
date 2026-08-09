@@ -308,61 +308,14 @@ callsign_table_exists=$(clickhouse_admin_http "
 if [[ "$callsign_table_exists" == 1 ]]; then
   clickhouse_admin_http "
     CREATE OR REPLACE VIEW \`$derived_database\`.\`$message_callsign_view\` AS
-    WITH
-      (
-        SELECT ifNull(any(JSONExtractInt(v)), 0)
-        FROM \`$CLICKHOUSE_CURRENT_DB\`.\`delta_kv\`
-        WHERE k = 'sigint_inbox_item_callsign_backfill_through_id'
-      ) AS backfill_watermark,
-      normalized_item_ids AS (
-        SELECT DISTINCT sigint_inbox_item_id
-        FROM \`$CLICKHOUSE_CURRENT_DB\`.\`sigint_inbox_item_callsign\`
-        WHERE sigint_inbox_item_id > backfill_watermark
-      )
     SELECT DISTINCT
       sigint_inbox_item_id,
       callsign
     FROM \`$CLICKHOUSE_CURRENT_DB\`.\`sigint_inbox_item_callsign\`
     WHERE NOT deleted
-    UNION DISTINCT
-    SELECT DISTINCT
-      inbox_item.id AS sigint_inbox_item_id,
-      arrayJoin(
-        arrayConcat(
-          JSONExtract(
-            ifNull(inbox_item.callsigns, '[]'),
-            'Array(Nullable(String))'
-          ),
-          JSONExtract(
-            ifNull(inbox_item.callsigns_alg2, '[]'),
-            'Array(Nullable(String))'
-          )
-        )
-      ) AS callsign
-    FROM \`$CLICKHOUSE_CURRENT_DB\`.\`sigint_inbox_item\` AS inbox_item
-    LEFT ANTI JOIN normalized_item_ids
-      ON normalized_item_ids.sigint_inbox_item_id = inbox_item.id
-    WHERE inbox_item.id > backfill_watermark
-      AND (
-        inbox_item.callsigns IS NOT NULL
-        OR inbox_item.callsigns_alg2 IS NOT NULL
-      )
   "
 else
-  log "Using legacy callsign view until the normalized table is mirrored"
-  clickhouse_admin_http "
-    CREATE OR REPLACE VIEW \`$derived_database\`.\`$message_callsign_view\` AS
-    SELECT
-      id AS sigint_inbox_item_id,
-      arrayJoin(
-        JSONExtract(
-          assumeNotNull(callsigns),
-          'Array(Nullable(String))'
-        )
-      ) AS callsign
-    FROM \`$CLICKHOUSE_CURRENT_DB\`.\`sigint_inbox_item\`
-    WHERE callsigns IS NOT NULL
-  "
+  log "Normalized callsign table is not mirrored yet; retaining the existing callsign view"
 fi
 clickhouse_admin_http "
   CREATE VIEW IF NOT EXISTS \`$derived_database\`.\`$message_aor_link_view\` AS
@@ -421,6 +374,65 @@ BEGIN
   ) THEN
     DROP FOREIGN TABLE echo_clickhouse_derived.message_callsign;
   END IF;
+END
+$$;
+DO $$
+DECLARE
+  relation_name text;
+  relation_kind "char";
+  relation_server oid;
+  expected_server oid;
+BEGIN
+  SELECT oid
+  INTO expected_server
+  FROM pg_foreign_server
+  WHERE srvname = 'echo_clickhouse';
+
+  IF expected_server IS NULL THEN
+    RAISE EXCEPTION 'foreign server echo_clickhouse is missing';
+  END IF;
+
+  FOR relation_name IN
+    SELECT unnest(ARRAY[
+      'message_callsign',
+      'message_aor_link',
+      'message_network_link'
+    ])
+  LOOP
+    relation_kind := NULL;
+    relation_server := NULL;
+    SELECT relation.relkind, foreign_table.ftserver
+    INTO relation_kind, relation_server
+    FROM pg_class relation
+    JOIN pg_namespace namespace
+      ON namespace.oid = relation.relnamespace
+    LEFT JOIN pg_foreign_table foreign_table
+      ON foreign_table.ftrelid = relation.oid
+    WHERE namespace.nspname = 'echo_clickhouse_derived_foreign'
+      AND relation.relname = relation_name;
+
+    IF relation_kind IS NULL THEN
+      CONTINUE;
+    END IF;
+    IF relation_kind <> 'f' THEN
+      RAISE EXCEPTION
+        'unexpected relation kind for echo_clickhouse_derived_foreign.%: %',
+        relation_name,
+        relation_kind;
+    END IF;
+    IF relation_server IS DISTINCT FROM expected_server THEN
+      EXECUTE format(
+        'DROP VIEW IF EXISTS %I.%I',
+        'echo_clickhouse_derived',
+        relation_name
+      );
+      EXECUTE format(
+        'DROP FOREIGN TABLE %I.%I',
+        'echo_clickhouse_derived_foreign',
+        relation_name
+      );
+    END IF;
+  END LOOP;
 END
 $$;
 CREATE FOREIGN TABLE IF NOT EXISTS

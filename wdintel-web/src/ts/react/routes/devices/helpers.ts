@@ -215,6 +215,15 @@ export function resolveUnitOptions(units: Unit[]): DeviceLookupOption[] {
   }));
 }
 
+export function mergeCurrentDeviceUnitOption(
+  options: DeviceLookupOption[],
+  unit: UnitSummary | null,
+): DeviceLookupOption[] {
+  if (unit === null || options.some((option) => option.id === unit.id)) return options;
+
+  return [...options, { id: unit.id, label: unit.name.trim() || `Підрозділ #${unit.id}` }];
+}
+
 export function mergeDeviceUnitStatsWithUnits(
   unitStats: DeviceUnitStat[],
   unitsById: Map<number, Unit>,

@@ -591,7 +591,7 @@ detailsView user shared model details =
         [ detailsHeader user model details
         , deviceNetworkDialog model details
         , unitEditDialog model details.unit
-        , orbitLinkDialog model
+        , orbitLinkDialog model details.unit
         , tabsView model.activeTab (not (List.isEmpty details.orbitUnits))
         , case model.activeTab of
             Overview ->
@@ -605,12 +605,13 @@ detailsView user shared model details =
         ]
 
 
-orbitLinkDialog : Model -> Html Msg
-orbitLinkDialog model =
+orbitLinkDialog : Model -> B.Unit -> Html Msg
+orbitLinkDialog model unit =
     case ( model.orbitLinkDialogOpen, model.unitId ) of
         ( True, Just unitId ) ->
             node "orbit-unit-link-dialog"
                 [ attribute "data-unit-id" (String.fromInt unitId)
+                , attribute "data-unit" (Encode.encode 0 (B.unitEncoder unit))
                 , on "orbit-unit-link-close" (Decode.succeed CloseOrbitLinkDialog)
                 , on "orbit-unit-linked" (Decode.succeed OrbitUnitLinked)
                 ]
@@ -812,14 +813,7 @@ childUnitsTab state =
         ]
         [ case state.childUnits of
             Just childUnits ->
-                div [ class "row g-4" ]
-                    [ childUnitColumn
-                        "Структурне підпорядкування"
-                        childUnits.generativeUnits
-                    , childUnitColumn
-                        "Оперативне підпорядкування"
-                        childUnits.operationalUnits
-                    ]
+                childUnitsTable childUnits.units
 
             Nothing ->
                 if state.childUnitsLoading then
@@ -831,29 +825,111 @@ childUnitsTab state =
         ]
 
 
-childUnitColumn : String -> List B.OrbitChildUnit -> Html Msg
-childUnitColumn titleText units =
-    div [ class "col-md-6" ]
-        [ h2 [ class "h4 mb-3" ] [ text titleText ]
-        , if List.isEmpty units then
-            p [ class "text-secondary mb-0" ]
-                [ text "Немає прив’язаних підрозділів." ]
+childUnitsTable : List B.OrbitChildUnit -> Html Msg
+childUnitsTable units =
+    if List.isEmpty units then
+        p [ class "text-secondary mb-0" ]
+            [ text "Немає прив’язаних підрозділів." ]
+
+    else
+        div [ class "table-responsive" ]
+            [ table [ class "table table-bordered align-middle mb-0" ]
+                [ thead []
+                    [ tr []
+                        [ th [ scope "col" ] [ text "Назва" ]
+                        , th [ scope "col", class "text-center" ]
+                            [ text "Структурне підпорядкування" ]
+                        , th [ scope "col", class "text-center" ]
+                            [ text "Оперативне підпорядкування" ]
+                        ]
+                    ]
+                , tbody [] (List.map childUnitRow units)
+                ]
+            ]
+
+
+childUnitRow : B.OrbitChildUnit -> Html Msg
+childUnitRow unit =
+    tr []
+        [ td []
+            [ div [ class "d-flex align-items-center gap-2" ]
+                ([ childUnitStatus unit.active
+                 , a
+                    [ href ("/rer-units/" ++ String.fromInt unit.sigintUnitId) ]
+                    [ text unit.name ]
+                 ]
+                    ++ List.map (childUnitOrbitLink unit.name) unit.orbitUnitIds
+                )
+            ]
+        , childUnitRelationshipCell unit.isGenerative
+        , childUnitRelationshipCell unit.isOperational
+        ]
+
+
+childUnitStatus : Bool -> Html Msg
+childUnitStatus active =
+    span
+        [ class "d-inline-block rounded-circle flex-shrink-0"
+        , class
+            (if active then
+                "bg-success"
+
+             else
+                "bg-secondary"
+            )
+        , style "width" "10px"
+        , style "height" "10px"
+        , title
+            (if active then
+                "Активний"
+
+             else
+                "Неактивний"
+            )
+        ]
+        []
+
+
+childUnitRelationshipCell : Bool -> Html Msg
+childUnitRelationshipCell isLinked =
+    td [ class "text-center" ]
+        [ if isLinked then
+            span []
+                [ i
+                    [ class "bi bi-check-circle-fill text-success fs-5"
+                    , attribute "aria-hidden" "true"
+                    ]
+                    []
+                , span [ class "visually-hidden" ] [ text "Так" ]
+                ]
 
           else
-            div [ class "list-group" ]
-                (List.map childUnitLink units)
+            text ""
         ]
 
 
-childUnitLink : B.OrbitChildUnit -> Html Msg
-childUnitLink unit =
+childUnitOrbitLink : String -> String -> Html Msg
+childUnitOrbitLink unitName orbitUnitId =
     a
-        [ class "list-group-item list-group-item-action"
-        , href ("/rer-units/" ++ String.fromInt unit.sigintUnitId)
+        [ class "d-inline-flex flex-shrink-0"
+        , href
+            ("https://delta.mil.gov.ua/orbit/units/"
+                ++ orbitUnitId
+                ++ "/organizational-structure"
+            )
         , target "_blank"
         , rel "noopener noreferrer"
+        , title "Відкрити підрозділ в Orbit"
+        , attribute "aria-label" ("Відкрити " ++ unitName ++ " в Orbit")
         ]
-        [ text unit.name ]
+        [ img
+            [ src "/img/delta-icon.webp"
+            , alt ""
+            , style "height" "22px"
+            , style "width" "22px"
+            ]
+            []
+        ]
 
 
 overviewTab : Auth.User -> Shared.Model -> Model -> B.UnitDetailsRsp -> Html Msg
@@ -908,13 +984,33 @@ emptyOrbitDataCard canManageOrbitData state canLinkOrbitUnit orbitNote =
         [ div [ class "d-flex align-items-center justify-content-between gap-3 mb-4" ]
             [ h2 [ class "h4 mb-0" ] [ text "Дані із Orbit" ]
             , if canManageOrbitData then
-                orbitDataActions state True canLinkOrbitUnit Nothing
+                orbitDataActions state True Nothing
 
               else
                 text ""
             ]
-        , orbitNoteView orbitNote
         , p [] [ text "Відсутні дані із системи Orbit." ]
+        , if canLinkOrbitUnit then
+            p [ class "mb-0" ]
+                [ button
+                    [ class "btn btn-outline-primary d-inline-flex align-items-center gap-2"
+                    , type_ "button"
+                    , onClick OpenOrbitLinkDialog
+                    ]
+                    [ img
+                        [ src "/img/delta-icon.webp"
+                        , alt ""
+                        , style "height" "22px"
+                        , style "width" "22px"
+                        ]
+                        []
+                    , text "Прив'язати Orbit підрозділ"
+                    ]
+                ]
+
+          else
+            text ""
+        , orbitNoteView orbitNote
         ]
 
 
@@ -1010,7 +1106,7 @@ unitOverviewActions state canCreateDeviceNetwork =
 
 orbitNoteView : Maybe String -> Html Msg
 orbitNoteView orbitNote =
-    div [ class "mb-4" ]
+    div [ class "mt-4" ]
         [ div [ class "text-secondary text-sm mb-1" ] [ text "Примітка Orbit" ]
         , div
             [ class "border rounded p-3"
@@ -1028,22 +1124,22 @@ orbitDataCard canManageOrbitData shared state showOrbitNote orbitNote orbitUnit 
         [ div [ class "d-flex align-items-center justify-content-between gap-3 mb-4" ]
             [ h2 [ class "h4 mb-0" ] [ text "Дані із Orbit" ]
             , if canManageOrbitData then
-                orbitDataActions state showOrbitNote False (Just orbitUnit)
+                orbitDataActions state showOrbitNote (Just orbitUnit)
 
               else
                 text ""
             ]
+        , orbitUnitDetails shared orbitUnit
         , if showOrbitNote then
             orbitNoteView orbitNote
 
           else
             text ""
-        , orbitUnitDetails shared orbitUnit
         ]
 
 
-orbitDataActions : Model -> Bool -> Bool -> Maybe B.OrbitUnitDetails -> Html Msg
-orbitDataActions state canEditNote canLinkOrbitUnit orbitUnit =
+orbitDataActions : Model -> Bool -> Maybe B.OrbitUnitDetails -> Html Msg
+orbitDataActions state canEditNote orbitUnit =
     let
         isUnlinking =
             case orbitUnit of
@@ -1092,20 +1188,6 @@ orbitDataActions state canEditNote canLinkOrbitUnit orbitUnit =
                         ]
                         [ i [ class "bi bi-pencil" ] []
                         , text "Редагувати примітку Orbit"
-                        ]
-                    ]
-
-              else
-                text ""
-            , if canLinkOrbitUnit then
-                li []
-                    [ button
-                        [ class "dropdown-item d-flex align-items-center gap-2"
-                        , type_ "button"
-                        , onClick OpenOrbitLinkDialog
-                        ]
-                        [ i [ class "bi bi-link-45deg" ] []
-                        , text "Прив'язати Orbit підрозділ"
                         ]
                     ]
 

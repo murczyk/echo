@@ -12,6 +12,7 @@ import {
   isNullOrUndefined,
 } from '../../utils/misc';
 import { normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
+import { normalizeCallsignFilterValues } from '../../utils/callsign-normalization';
 import type { AnalysisQueryState } from './types';
 
 export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
@@ -235,6 +236,7 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
 
   return {
     ...next,
+    callsignsSelected: normalizeCallsignFilterValues(next.callsignsSelected),
     unitsSelected: normalizeUnknownUnitSelections(next.unitsSelected),
   };
 }

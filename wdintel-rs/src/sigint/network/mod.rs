@@ -1876,6 +1876,8 @@ pub async fn list_network_points(
         active_freqs_only: false,
         since_date_inclusive_ms: Some(req.since_date_inclusive_ms),
         till_date_inclusive_ms: req.till_date_noninclusive_ms,
+        till_date_end:
+            crate::rer_importer::report_chunking::ReportPeriodEnd::NonInclusive,
     };
 
     let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
@@ -2666,6 +2668,8 @@ pub async fn network_unit_stats(
         .select_only()
         .column_as(sigint_network::Column::Id.count(), "count")
         .column_as(sigint_unit::Column::Id, "unit_id")
+        .filter(sigint_unit::Column::Active.eq(true))
+        .filter(sigint_unit::Column::Deleted.eq(false))
         // .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         // .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .order_by_asc(sigint_unit::Column::Army)

@@ -55,6 +55,7 @@ import { postJson, postVoid } from './client';
 import type { RequestOptions } from './client';
 import type { BgtaskStatusAndLogsRsp } from './bgtask';
 import { downloadReportHistory, fetchReportHistoryTaskStatus } from './report-history';
+import { normalizeCallsignFilterValues } from '../../utils/callsign-normalization';
 import {
   bookmarkAdd,
   bookmarkRemove,
@@ -146,7 +147,7 @@ function analysisStatsReqBody(req: AnalysisStatsReq) {
     selectedSenders: emptyArrToNull(req.selectedSenders),
     selectedFreqs: emptyArrToNull(req.selectedFreqs),
     selectedPosts: emptyArrToNull(req.selectedPosts),
-    selectedCallsigns: emptyArrToNull(req.selectedCallsigns),
+    selectedCallsigns: emptyArrToNull(normalizeCallsignFilterValues(req.selectedCallsigns)),
     selectedUnits: emptyArrToNull(req.selectedUnits),
     selectedLocations: emptyArrToNull(req.selectedLocations),
     selectedAors: emptyArrToNull(req.selectedAors),
@@ -350,7 +351,7 @@ export async function fetchAnalysisCallsignFrequencyMatches(
 ): Promise<AnalysisCallsignFrequencyMatchesRsp> {
   const body = {
     req: analysisStatsReqBody(req.req),
-    callsigns: req.callsigns,
+    callsigns: normalizeCallsignFilterValues(req.callsigns),
     min_matches: req.minMatches,
   };
   const raw = await postJson<unknown>(
@@ -416,7 +417,7 @@ export async function fetchAnalysisCallsignInfos(
 ): Promise<CallsignInfoRes[]> {
   const raw = await postJson<unknown>(
     '/api/rer/callsign-info-batch',
-    transformCamelToSnake({ callsigns }),
+    transformCamelToSnake({ callsigns: normalizeCallsignFilterValues(callsigns) }),
     options,
   );
   return transformSnakeToCamel<CallsignInfoBatchRaw>(raw) ?? [];

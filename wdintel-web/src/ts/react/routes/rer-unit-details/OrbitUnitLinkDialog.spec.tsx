@@ -5,7 +5,7 @@ import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { OrbitUnitLinkCandidate } from '../../../../Bindings';
+import type { OrbitUnitLinkCandidate, Unit } from '../../../../Bindings';
 import { getOrbitUnitLinkCandidates, searchOrbitUnits } from '../../services/api/units';
 import { OrbitUnitImportDialog, OrbitUnitLinkDialog } from './OrbitUnitLinkDialog';
 
@@ -47,13 +47,38 @@ const candidate: OrbitUnitLinkCandidate = {
   operationalUnitNameFull: 'Підпорядкування',
 };
 
-async function renderDialog(candidates: OrbitUnitLinkCandidate[]): Promise<Root> {
+const sigintUnit: Unit = {
+  id: 7,
+  company: '1 рота',
+  battalion: '2 батальйон',
+  regiment: '3 бригада',
+  division: '',
+  army: '',
+  militaryDistrict: '',
+  armyRegion: '',
+  comment: '',
+  orbitNote: null,
+  name: '1 рота 2 батальйон 3 бригада',
+  active: true,
+  isDeduplicateCandidate: null,
+  createdAt: 0,
+  createdByLoginId: '',
+  hasOrbit: false,
+  orbitUnitIds: [],
+};
+
+async function renderDialog(
+  candidates: OrbitUnitLinkCandidate[],
+  unit: Unit = sigintUnit,
+): Promise<Root> {
   vi.mocked(getOrbitUnitLinkCandidates).mockResolvedValueOnce(candidates);
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<OrbitUnitLinkDialog unitId={7} onClose={vi.fn()} onLinked={vi.fn()} />);
+    root.render(
+      <OrbitUnitLinkDialog unitId={7} unit={unit} onClose={vi.fn()} onLinked={vi.fn()} />,
+    );
   });
   return root;
 }
@@ -70,6 +95,35 @@ afterEach(() => {
 });
 
 describe('OrbitUnitLinkDialog', () => {
+  it('omits a hierarchy that repeats the unit value from the name', async () => {
+    const root = await renderDialog([candidate], {
+      ...sigintUnit,
+      company: '',
+      battalion: '',
+      regiment: '1196 МСП',
+      division: '45 дшд',
+      army: '34 ЗВА',
+      militaryDistrict: 'ОУВ(с)',
+      name: '1196 МСП 49 ЗА',
+    });
+
+    expect(document.body.textContent).toContain("Прив'язати Orbit підрозділ 1196 МСП 49 ЗА");
+    expect(document.body.textContent).not.toContain('(1196 МСП 45 дшд 34 ЗВА ОУВ(с))');
+    expect(document.body.textContent).not.toContain('Підрозділ SIGINT');
+
+    act(() => root.unmount());
+  });
+
+  it('keeps hierarchy context for a distinct unit name', async () => {
+    const root = await renderDialog([candidate], { ...sigintUnit, name: 'Окрема назва' });
+
+    expect(document.body.textContent).toContain(
+      "Прив'язати Orbit підрозділ Окрема назва (1 рота 2 батальйон 3 бригада)",
+    );
+
+    act(() => root.unmount());
+  });
+
   it('offers advanced search after showing automatic candidates', async () => {
     const root = await renderDialog([candidate]);
 

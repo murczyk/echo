@@ -22,7 +22,6 @@ function UnitEditDialog({
     <UnitFormDialog
       open
       unit={unit}
-      units={[]}
       devicesSectionEnabled={false}
       submitting={submitting}
       error={null}

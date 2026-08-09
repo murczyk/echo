@@ -399,10 +399,10 @@ async fn replace_profile(
     replace_dispatcher(&txn, &profile.dispatcher).await?;
     replace_echo_proxies(&txn, &profile.echo_proxies).await?;
     let engine_ids = replace_engines(&txn, &profile.engines).await?;
-    replace_settings(&txn, &profile.settings, &engine_ids).await?;
     let template_login_id =
         Uuid::parse_str(AI_AGENT_TEMPLATE_LOGIN_ID).c(h!())?;
     lifecycle::reconcile_template_login_id(&txn, template_login_id).await?;
+    replace_settings(&txn, &profile.settings, &engine_ids).await?;
     txn.commit().await.c(h!())?;
     Ok(())
 }
@@ -791,6 +791,8 @@ fn engine_record(engine: &ProfileEngine) -> ai_engine::Model {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::AI_AGENT_TEMPLATE_LOGIN_NAME;
+    use serial_test::serial;
 
     fn profile(public_host: &str) -> LocalAiAgentProfile {
         let engine_id = Uuid::now_v7();
@@ -901,5 +903,47 @@ mod tests {
         profile.settings.mattermost_webhook_url = None;
 
         assert!(validate_profile(&profile, "ziggy.example.com").is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn profile_import_creates_missing_template_login() {
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        clear_copied_control_plane(&env.dbx).await.unwrap();
+        let template_login_id =
+            Uuid::parse_str(AI_AGENT_TEMPLATE_LOGIN_ID).unwrap();
+        login::Entity::delete_by_id(template_login_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let mut profile = profile("ziggy.example.com");
+        profile.engines[0].name = format!("profile-test-{}", Uuid::now_v7());
+
+        replace_profile(&env.dbx, &profile).await.unwrap();
+
+        let template = login::Entity::find_by_id(template_login_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let settings =
+            ai_agent_settings::Entity::find_by_id(AI_AGENT_SETTINGS_ID)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(template.login, AI_AGENT_TEMPLATE_LOGIN_NAME);
+        assert_eq!(settings.template_login_id, Some(template_login_id));
+
+        clear_copied_control_plane(&env.dbx).await.unwrap();
+        ai_engine::Entity::delete_by_id(profile.engines[0].id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        login::Entity::delete_by_id(template_login_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
     }
 }

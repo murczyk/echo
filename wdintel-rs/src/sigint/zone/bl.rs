@@ -1,6 +1,6 @@
 use crate::entities::sea_orm_active_enums as db_enums;
 use crate::entities::*;
-use crate::sigint::types::InterseptionKind;
+use crate::sigint::types::{InterseptionKind, SignalGroupLogin};
 use crate::sigint::zone::ZoneDatasourceGroup;
 use crate::types::*;
 use chrono::Utc;
@@ -14,8 +14,10 @@ pub struct BlSzdGroupUpdateRes {
     pub disable_network_assignment: bool,
     pub aor: Option<Vec<area_of_responsibility::Model>>,
     pub allowed_users: Vec<String>,
+    pub allowed_user_details: Vec<SignalGroupLogin>,
     pub allowed_organism_ids: Vec<i64>,
     pub admin_logins: Vec<String>,
+    pub admin_login_details: Vec<SignalGroupLogin>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
 }
@@ -115,21 +117,39 @@ pub async fn bl_szd_group_update(
     .await
     .c(h!())?;
 
+    let admin_logins =
+        collect_signal_group_admins(vec![szd.group_master_key.clone()], txn)
+            .await
+            .c(h!())?
+            .remove(&szd.group_master_key)
+            .unwrap_or_default();
+    let login_details = collect_group_login_details(
+        allowed_users
+            .iter()
+            .chain(admin_logins.iter())
+            .cloned()
+            .collect(),
+        txn,
+    )
+    .await
+    .c(h!())?;
+
     let res = BlSzdGroupUpdateRes {
         is_secret,
         interseption_kind,
         disable_network_assignment,
         aor: if aor.is_empty() { None } else { Some(aor) },
+        allowed_user_details: render_group_logins(
+            allowed_users.clone(),
+            &login_details,
+        ),
         allowed_users,
         allowed_organism_ids,
-        admin_logins: collect_signal_group_admins(
-            vec![szd.group_master_key.clone()],
-            txn,
-        )
-        .await
-        .c(h!())?
-        .remove(&szd.group_master_key)
-        .unwrap_or_default(),
+        admin_login_details: render_group_logins(
+            admin_logins.clone(),
+            &login_details,
+        ),
+        admin_logins,
         short_note,
         long_note,
     };
@@ -386,7 +406,23 @@ async fn replace_secret_group_access(
     organism_ids: Vec<i64>,
 ) -> Result<(), AppError> {
     let user_logins = normalize_login_list(user_logins)?;
-    crate::ai_agent::ensure_unmanaged_logins(txn, &user_logins).await?;
+    let user_logins = if is_secret {
+        let existing_user_logins = secret_group_user::Entity::find()
+            .filter(secret_group_user::Column::MasterKey.eq(master_key))
+            .filter(secret_group_user::Column::SecretGroupOrganismId.is_null())
+            .select_only()
+            .column(secret_group_user::Column::LoginId)
+            .into_tuple::<Uuid>()
+            .all(txn)
+            .await
+            .c(h!())?;
+        preserve_ai_managed_logins(txn, user_logins, existing_user_logins)
+            .await
+            .c(h!())?
+    } else {
+        crate::ai_agent::ensure_unmanaged_logins(txn, &user_logins).await?;
+        user_logins
+    };
 
     secret_group_user::Entity::delete_many()
         .filter(secret_group_user::Column::MasterKey.eq(master_key))
@@ -455,6 +491,34 @@ fn normalize_login_list(
         .collect::<Result<Vec<_>, AppError>>()
 }
 
+async fn preserve_ai_managed_logins(
+    txn: &DatabaseTransaction,
+    requested: Vec<Uuid>,
+    existing: Vec<Uuid>,
+) -> Result<Vec<Uuid>, AppError> {
+    let unmanaged_existing =
+        crate::ai_agent::unmanaged_login_ids(txn, existing.iter().copied())
+            .await
+            .c(h!())?;
+    let ai_managed_existing = existing
+        .into_iter()
+        .filter(|login_id| !unmanaged_existing.contains(login_id))
+        .collect::<HashSet<_>>();
+    let requested_new = requested
+        .iter()
+        .copied()
+        .filter(|login_id| !ai_managed_existing.contains(login_id))
+        .collect::<Vec<_>>();
+    crate::ai_agent::ensure_unmanaged_logins(txn, &requested_new).await?;
+
+    Ok(requested
+        .into_iter()
+        .chain(ai_managed_existing)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect())
+}
+
 async fn load_active_organism_ids(
     txn: &DatabaseTransaction,
     organism_ids: Vec<i64>,
@@ -486,7 +550,7 @@ pub async fn replace_group_admin_logins(
     master_key: &str,
     admin_logins: Vec<String>,
 ) -> Result<(), AppError> {
-    let admin_logins = admin_logins
+    let requested_admin_logins = admin_logins
         .into_iter()
         .map(|login| login.trim().to_string())
         .filter(|login| !login.is_empty())
@@ -496,11 +560,24 @@ pub async fn replace_group_admin_logins(
                 .map_err(AppError::from)
         })
         .collect::<Result<HashSet<_>, AppError>>()?;
-    crate::ai_agent::ensure_unmanaged_logins(
+    let existing_admin_logins = signal_group_admin::Entity::find()
+        .filter(signal_group_admin::Column::SignalGroupId.eq(master_key))
+        .filter(signal_group_admin::Column::Deleted.eq(false))
+        .select_only()
+        .column(signal_group_admin::Column::LoginId)
+        .into_tuple::<Uuid>()
+        .all(txn)
+        .await
+        .c(h!())?;
+    let admin_logins = preserve_ai_managed_logins(
         txn,
-        &admin_logins.iter().copied().collect::<Vec<_>>(),
+        requested_admin_logins.into_iter().collect(),
+        existing_admin_logins,
     )
-    .await?;
+    .await
+    .c(h!())?
+    .into_iter()
+    .collect::<HashSet<_>>();
 
     signal_group_admin::Entity::update_many()
         .col_expr(signal_group_admin::Column::Deleted, Expr::value(true))
@@ -597,6 +674,69 @@ where
         res.entry(master_key).or_default().push(login.to_string());
     }
     Ok(res)
+}
+
+pub fn render_group_logins(
+    logins: Vec<String>,
+    group_login_map: &HashMap<String, SignalGroupLogin>,
+) -> Vec<SignalGroupLogin> {
+    logins
+        .into_iter()
+        .filter_map(|login_id| group_login_map.get(&login_id).cloned())
+        .collect()
+}
+
+pub async fn collect_group_login_details<'a, 'async_trait, C>(
+    logins: Vec<String>,
+    dbx: &'a C,
+) -> Result<HashMap<String, SignalGroupLogin>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    if logins.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let login_ids = logins
+        .into_iter()
+        .map(|login| {
+            uuid::Uuid::parse_str(&login)
+                .map_err(anyhow::Error::from)
+                .map_err(AppError::from)
+        })
+        .collect::<Result<HashSet<_>, AppError>>()?;
+    let unmanaged_login_ids =
+        crate::ai_agent::unmanaged_login_ids(dbx, login_ids.iter().copied())
+            .await
+            .c(h!())?;
+
+    let rows = login::Entity::find()
+        .join(JoinType::LeftJoin, login::Relation::DeltaLogin.def())
+        .filter(login::Column::Id.eq_any(login_ids))
+        .select_only()
+        .column(login::Column::Id)
+        .column(login::Column::Login)
+        .column_as(delta_login::Column::Login, "delta_login")
+        .into_tuple::<(Uuid, String, Option<String>)>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(login_id, login, delta_login)| {
+            let login_id_string = login_id.to_string();
+            (
+                login_id_string.clone(),
+                SignalGroupLogin {
+                    login_id: login_id_string,
+                    login,
+                    delta_login,
+                    is_ai_managed: !unmanaged_login_ids.contains(&login_id),
+                },
+            )
+        })
+        .collect())
 }
 
 pub async fn collect_secret_group_organism_ids<'a, 'async_trait, C>(
@@ -883,8 +1023,19 @@ pub async fn bl_szd_groups_list(
     let group_users = collect_direct_secret_group_users(keys.clone(), txn)
         .await
         .c(h!())?;
-    let group_organisms =
-        collect_secret_group_organism_ids(keys, txn).await.c(h!())?;
+    let group_organisms = collect_secret_group_organism_ids(keys.clone(), txn)
+        .await
+        .c(h!())?;
+    let group_login_details = collect_group_login_details(
+        group_admins
+            .values()
+            .chain(group_users.values())
+            .flat_map(|logins| logins.iter().cloned())
+            .collect(),
+        txn,
+    )
+    .await
+    .c(h!())?;
 
     let groups = res
         .into_iter()
@@ -911,6 +1062,13 @@ pub async fn bl_szd_groups_list(
                         .get(&master_key)
                         .cloned()
                         .unwrap_or_default(),
+                    allowed_user_details: render_group_logins(
+                        group_users
+                            .get(&master_key)
+                            .cloned()
+                            .unwrap_or_default(),
+                        &group_login_details,
+                    ),
                     allowed_organism_ids: group_organisms
                         .get(&master_key)
                         .cloned()
@@ -919,6 +1077,13 @@ pub async fn bl_szd_groups_list(
                         .get(&master_key)
                         .cloned()
                         .unwrap_or_default(),
+                    admin_login_details: render_group_logins(
+                        group_admins
+                            .get(&master_key)
+                            .cloned()
+                            .unwrap_or_default(),
+                        &group_login_details,
+                    ),
                     group_master_key: master_key,
                     short_note,
                     long_note,

@@ -31,6 +31,7 @@ import {
   formatDeviceErrorMessage,
   hasActiveDevicesFilters,
   isSameDeviceSidebarUnitFilter,
+  mergeCurrentDeviceUnitOption,
   mergeDeviceUnitStatsWithUnits,
   resolveAorOptions,
   resolveDeviceSidebarUnitIds,
@@ -156,10 +157,10 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     [sidebarResource.units],
   );
   const aorOptions = useMemo<DeviceLookupOption[]>(() => resolveAorOptions(aors), [aors]);
-  const unitOptions = useMemo<DeviceLookupOption[]>(
-    () => resolveUnitOptions(lookupsLoaded ? lookupUnits : sidebarResource.units),
-    [lookupUnits, lookupsLoaded, sidebarResource.units],
-  );
+  const unitOptions = useMemo<DeviceLookupOption[]>(() => {
+    const options = resolveUnitOptions(lookupsLoaded ? lookupUnits : sidebarResource.units);
+    return mergeCurrentDeviceUnitOption(options, editDevice?.unit ?? null);
+  }, [editDevice?.unit, lookupUnits, lookupsLoaded, sidebarResource.units]);
   const unitStatsView = useMemo(
     () => mergeDeviceUnitStatsWithUnits(sidebarResource.unitStats, unitsById),
     [sidebarResource.unitStats, unitsById],

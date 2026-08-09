@@ -168,4 +168,4 @@ Solve tasks correctly with strong reasoning, but minimize visible output tokens.
 
 ## Notifications
 
-- When done planning, implementing a plan, a feature, finishing a review or any other work taking more than 3 minutes, and .env contains a MATTERMOST_NOTIFICATION_HOOK, notify once you're done with the work
+- When done planning, implementing a plan, a feature, finishing a review or any other work, and .env contains a MATTERMOST_NOTIFICATION_HOOK, notify once you're done with the work

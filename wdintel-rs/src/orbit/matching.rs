@@ -384,6 +384,7 @@ fn descriptor_names(unit: &SourceUnit) -> HashSet<String> {
         .iter()
         .chain(&unit.unit_name)
         .chain(&unit.unit_name_original)
+        .chain(&unit.unit_number)
         .chain(unit.unit_alternate_names.iter().flatten())
         .map(|name| normalize_name(name))
         .collect()
@@ -824,6 +825,20 @@ mod tests {
             &unit,
             &echo_unit("", "", "", "", "58 ОА")
         ));
+    }
+
+    #[test]
+    fn unit_number_participates_in_candidate_matching() {
+        let mut unit = source_unit("unknown", vec![("company", "unknown", 0)]);
+        unit.unit_name = None;
+        unit.unit_name_short = None;
+        unit.unit_number = Some("5101".to_string());
+        let sigint_unit = echo_unit("5101", "", "", "", "");
+
+        assert_eq!(
+            closest_orbit_matches(std::slice::from_ref(&unit), &sigint_unit),
+            vec![&unit]
+        );
     }
 
     #[test]

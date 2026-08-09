@@ -10,6 +10,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import {
   Box,
+  Button,
   Chip,
   ListItemText,
   Menu,
@@ -25,10 +26,11 @@ import {
 } from '@mui/material';
 import {
   type MRT_ColumnDef,
+  type MRT_PaginationState,
   MaterialReactTable,
   useMaterialReactTable,
 } from 'material-react-table';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 
 import type { Unit } from '../../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
@@ -45,33 +47,10 @@ import {
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
-import { isUnitSearchMatch, isUnitSearchMatchForUnit, type UnitSearchMode } from '../search-mode';
+import type { UnitSearchMode } from '../search-mode';
 
 const defaultMrtOptions = getDefaultMRTOptions<Unit>();
 const ROW_ACTIONS_COLUMN_SIZE = 76;
-const GLOBAL_SEARCH_FILTER_FN_STRICT = 'unitSearchStrictGlobal';
-const COLUMN_SEARCH_FILTER_FN_STRICT = 'unitSearchStrictColumn';
-const SEARCHABLE_TEXT_COLUMN_IDS = [
-  'name',
-  'company',
-  'battalion',
-  'regiment',
-  'division',
-  'army',
-  'militaryDistrict',
-  'armyRegion',
-  'comment',
-  'hasOrbit',
-] as const;
-const isColumnSearchMatch = (rowValue: unknown, filterValue: unknown) => {
-  if (typeof filterValue !== 'string' || filterValue.trim() === '') return true;
-  return isUnitSearchMatch(String(rowValue ?? ''), filterValue);
-};
-
-const isGlobalSearchMatch = (rowValue: Unit, filterValue: unknown) => {
-  if (typeof filterValue !== 'string' || filterValue.trim() === '') return true;
-  return isUnitSearchMatchForUnit(rowValue, filterValue);
-};
 
 function SearchModeSettingsButton({
   compact,
@@ -153,10 +132,6 @@ const TEXT_FILTER_HELPERS: Record<UnitSearchMode, string> = {
   strict: 'Режим: строгий',
   relaxed: 'Режим: нечіткий',
 };
-
-function getColumnFilterFn(searchMode: UnitSearchMode): string {
-  return searchMode === 'strict' ? COLUMN_SEARCH_FILTER_FN_STRICT : 'fuzzy';
-}
 
 function buildTextColumnFilter({
   searchMode,
@@ -302,7 +277,6 @@ function useUnitColumns(
       {
         header: 'Назва',
         accessorKey: 'name',
-        filterFn: getColumnFilterFn(searchMode),
         Filter: buildTextColumnFilter({
           searchMode,
           onSearchModeChange,
@@ -392,7 +366,6 @@ function useUnitColumns(
       {
         header: 'Рота/Взвод',
         accessorKey: 'company',
-        filterFn: getColumnFilterFn(searchMode),
         Filter: buildTextColumnFilter({
           searchMode,
           onSearchModeChange,
@@ -404,7 +377,6 @@ function useUnitColumns(
       {
         header: 'Батальйон',
         accessorKey: 'battalion',
-        filterFn: getColumnFilterFn(searchMode),
         Filter: buildTextColumnFilter({
           searchMode,
           onSearchModeChange,
@@ -416,7 +388,6 @@ function useUnitColumns(
       {
         header: 'Полк/Бригада',
         accessorKey: 'regiment',
-        filterFn: getColumnFilterFn(searchMode),
         Filter: buildTextColumnFilter({
           searchMode,
           onSearchModeChange,
@@ -428,7 +399,6 @@ function useUnitColumns(
       {
         header: 'Дивізія',
         accessorKey: 'division',
-        filterFn: getColumnFilterFn(searchMode),
         Filter: buildTextColumnFilter({
           searchMode,
           onSearchModeChange,
@@ -440,7 +410,6 @@ function useUnitColumns(
       {
         header: 'Корпус/Армія',
         accessorKey: 'army',
-        filterFn: getColumnFilterFn(searchMode),
         Filter: buildTextColumnFilter({
           searchMode,
           onSearchModeChange,
@@ -452,7 +421,6 @@ function useUnitColumns(
       {
         header: 'Група армій/Фронт/Види та роди ЗС',
         accessorKey: 'militaryDistrict',
-        filterFn: getColumnFilterFn(searchMode),
         Filter: buildTextColumnFilter({
           searchMode,
           onSearchModeChange,
@@ -464,7 +432,6 @@ function useUnitColumns(
       {
         header: 'Регіон/ТВД/Збройні Сили',
         accessorKey: 'armyRegion',
-        filterFn: getColumnFilterFn(searchMode),
         Filter: buildTextColumnFilter({
           searchMode,
           onSearchModeChange,
@@ -479,13 +446,13 @@ function useUnitColumns(
         accessorFn: (unit) => formatDateTime(unit.createdAt),
         sortingFn: (left, right) => left.original.createdAt - right.original.createdAt,
         sortDescFirst: true,
+        enableColumnFilter: false,
         size: 160,
         Cell: ({ row }) => formatDateTime(row.original.createdAt),
       },
       {
         header: 'Коментар',
         accessorKey: 'comment',
-        filterFn: getColumnFilterFn(searchMode),
         Filter: buildTextColumnFilter({
           searchMode,
           onSearchModeChange,
@@ -508,7 +475,6 @@ function useUnitColumns(
         ),
         id: 'hasOrbit',
         accessorFn: (unit) => unit.orbitNote ?? '',
-        filterFn: getColumnFilterFn(searchMode),
         Filter: buildTextColumnFilter({
           searchMode,
           onSearchModeChange,
@@ -525,6 +491,7 @@ function useUnitColumns(
 
 export function UnitsTable({
   units,
+  totalCount,
   attachmentUnitIds,
   loading,
   canEdit,
@@ -534,8 +501,11 @@ export function UnitsTable({
   onMerge,
   searchMode,
   onSearchModeChange,
+  pagination,
+  onPaginationChange,
 }: {
   units: Unit[];
+  totalCount: number;
   attachmentUnitIds: Set<number>;
   loading: boolean;
   canEdit: boolean;
@@ -545,6 +515,8 @@ export function UnitsTable({
   onMerge: (unit: Unit) => void;
   searchMode: UnitSearchMode;
   onSearchModeChange: (searchMode: UnitSearchMode) => void;
+  pagination: MRT_PaginationState;
+  onPaginationChange: Dispatch<SetStateAction<MRT_PaginationState>>;
 }) {
   const tableStateContext = useTableStateContext();
   const theme = useTheme();
@@ -554,14 +526,21 @@ export function UnitsTable({
     ...defaultMrtOptions,
     columns,
     data: units,
+    rowCount: totalCount,
     enableSorting: true,
     enableColumnActions: true,
     enableGlobalFilter: true,
     enableColumnFilters: true,
     enableColumnFilterModes: true,
-    enableFacetedValues: true,
+    enableFacetedValues: false,
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
     enableColumnResizing: tableStateContext.enableColumnResizing,
+    enablePagination: true,
+    enableBottomToolbar: true,
+    enableMultiSort: false,
+    manualFiltering: true,
+    manualSorting: true,
+    manualPagination: true,
     enableRowActions: canEdit,
     positionActionsColumn: canEdit ? 'first' : undefined,
     columnFilterDisplayMode: 'popover',
@@ -571,13 +550,7 @@ export function UnitsTable({
     onColumnSizingChange: tableStateContext.onColumnSizingChange,
     onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
-    filterFns: {
-      [GLOBAL_SEARCH_FILTER_FN_STRICT]: (row, _columnId, filterValue) =>
-        isGlobalSearchMatch(row.original, filterValue),
-      [COLUMN_SEARCH_FILTER_FN_STRICT]: (row, columnId, filterValue) =>
-        isColumnSearchMatch(row.getValue(columnId), filterValue),
-    },
-    globalFilterFn: searchMode === 'strict' ? GLOBAL_SEARCH_FILTER_FN_STRICT : 'fuzzy',
+    onPaginationChange,
     muiFilterTextFieldProps: ({ column }) => ({
       ...getSharedFilterTextFieldProps(column.columnDef.filterVariant),
       helperText: getFilterModeHelperText(column.columnDef.filterVariant),
@@ -624,6 +597,14 @@ export function UnitsTable({
         </MrtRowActions>
       </Box>
     ),
+    renderBottomToolbar: ({ table }) =>
+      table.getCanNextPage() ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+          <Button variant="outlined" onClick={() => table.nextPage()} disabled={loading}>
+            Завантажити ще
+          </Button>
+        </Box>
+      ) : null,
     muiTablePaperProps: ({ table }) =>
       getDefaultMrtPaperProps({ table, loading, layout: 'workspace' }),
     muiTableContainerProps: getDefaultMrtContainerProps({
@@ -647,23 +628,9 @@ export function UnitsTable({
       columnOrder: tableStateContext.columnOrder,
       columnSizing: tableStateContext.columnSizing,
       columnVisibility: tableStateContext.columnVisibility,
+      pagination,
     },
   });
-
-  useEffect(() => {
-    const columnSearchFilterFn = getColumnFilterFn(searchMode);
-    table._getFilteredRowModel = undefined;
-    table.setGlobalFilterFn(searchMode === 'strict' ? GLOBAL_SEARCH_FILTER_FN_STRICT : 'fuzzy');
-    table.setColumnFilterFns((previousColumnFilterFns) => {
-      const nextColumnFilterFns = { ...previousColumnFilterFns };
-
-      SEARCHABLE_TEXT_COLUMN_IDS.forEach((columnId) => {
-        nextColumnFilterFns[columnId] = columnSearchFilterFn;
-      });
-
-      return nextColumnFilterFns;
-    });
-  }, [searchMode, table]);
 
   useEffect(() => {
     tableStateContext.onTableInitialized(table);

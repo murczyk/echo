@@ -7,6 +7,7 @@ use crate::error::AppError;
 use crate::rer_importer::analysis::{
     filter_selected_networks, filter_selected_networks_stmt,
 };
+use crate::rer_importer::report_chunking::ReportPeriodEnd;
 use crate::sigint::callsign::bl_network_callsign::{
     get_callsigns_activity_info, get_unassigned_callsigns_activity_info,
 };
@@ -271,7 +272,9 @@ fn build_network_freqs_query(
     let join_condition =
         build_network_freq_join_condition(filter, true).c(h!())?;
     let callsigns_expr: SimpleExpr = if include_callsigns {
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Callsigns))
+        Expr::cust(
+            "(select coalesce(jsonb_agg(siic.callsign order by siic.ordering, siic.id), '[]'::jsonb) from sigint_inbox_item_callsign siic where siic.sigint_inbox_item_id = sigint_inbox_item.id and not siic.deleted)",
+        )
     } else {
         Expr::cust("NULL")
     };
@@ -1238,7 +1241,7 @@ pub async fn load_callsigns(
     Ok(res)
 }
 
-fn sort_callsigns(callsigns: &mut [CallsignRes]) {
+pub(super) fn sort_callsigns(callsigns: &mut [CallsignRes]) {
     callsigns.sort_by(|a, b| match (&a.known_callsigns, &b.known_callsigns) {
         (Some(_), None) => Ordering::Less,
         (None, Some(_)) => Ordering::Greater,
@@ -1269,7 +1272,8 @@ fn apply_activity_info(
 /// AND sigint_inbox_item_network.sigint_network_id = network_freqs.network_id
 /// AND sigint_inbox_item.freq = network_freqs.freq
 /// AND COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) >= GREATEST(since_date_inclusive, network_freqs.active_from)
-/// AND COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) {<,<=} LEAST(till_date, COALESCE(network_freqs.active_to, now()))
+/// AND COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) {<,<=} COALESCE(network_freqs.active_to, now())
+/// AND COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) {<,<=} till_date
 pub fn build_network_freq_join_condition(
     filter: Option<&NetworkFreqFilter>,
     till_inclusive: bool,
@@ -1290,54 +1294,60 @@ pub fn build_network_freq_join_condition(
         Expr::col((Alias::new("network_freqs"), Alias::new("active_from")))
     };
 
-    let upper_bound = if let Some(till_ms) = till_ms {
-        let till_dt = DateTime::from_timestamp_millis(till_ms)
-            .context(h!())?
-            .naive_utc();
-
-        Expr::cust_with_values(
-            "LEAST($1, COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))",
-            [till_dt],
-        )
-    } else {
-        Expr::cust("COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')")
-    };
-
-    let join_condition = Expr::col((
-        SigintInboxItem::Table,
-        SigintInboxItem::Id,
-    ))
-    .equals((
-        SigintInboxItemNetwork::Table,
-        SigintInboxItemNetwork::SigintInboxItemId,
-    ))
-    .and(
-        Expr::col((
-            SigintInboxItemNetwork::Table,
-            SigintInboxItemNetwork::SigintNetworkId,
-        ))
-        .equals((Alias::new("network_freqs"), Alias::new("network_id"))),
-    )
-    .and(
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
-            .equals((Alias::new("network_freqs"), Alias::new("freq"))),
-    )
-    .and(
+    let till_bound = till_ms
+        .map(|till_ms| {
+            DateTime::from_timestamp_millis(till_ms)
+                .context(h!())
+                .map(|till_dt| Expr::value(till_dt.naive_utc()))
+        })
+        .transpose()?;
+    let active_to_bound = Expr::cust(
+        "COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')",
+    );
+    let period_till_inclusive = till_inclusive
+        && filter.is_none_or(|filter| {
+            filter.till_date_end == ReportPeriodEnd::Inclusive
+        });
+    let activity_datetime = || {
         Expr::cust(
             "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at)",
         )
-        .gte(lower_bound),
-    )
-    .and({
-        let datetime_expr = Expr::cust(
-            "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at)",
-        );
-        if till_inclusive {
-            datetime_expr.lte(upper_bound)
+    };
+    let mut join_condition =
+        Expr::col((SigintInboxItem::Table, SigintInboxItem::Id))
+            .equals((
+                SigintInboxItemNetwork::Table,
+                SigintInboxItemNetwork::SigintInboxItemId,
+            ))
+            .and(
+                Expr::col((
+                    SigintInboxItemNetwork::Table,
+                    SigintInboxItemNetwork::SigintNetworkId,
+                ))
+                .equals((
+                    Alias::new("network_freqs"),
+                    Alias::new("network_id"),
+                )),
+            )
+            .and(
+                Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq))
+                    .equals((Alias::new("network_freqs"), Alias::new("freq"))),
+            )
+            .and(activity_datetime().gte(lower_bound))
+            .and({
+                if till_inclusive {
+                    activity_datetime().lte(active_to_bound)
+                } else {
+                    activity_datetime().lt(active_to_bound)
+                }
+            });
+    if let Some(till_bound) = till_bound {
+        join_condition = join_condition.and(if period_till_inclusive {
+            activity_datetime().lte(till_bound)
         } else {
-            datetime_expr.lt(upper_bound)
-        }
-    });
+            activity_datetime().lt(till_bound)
+        });
+    }
 
     Ok(join_condition)
 }
@@ -1349,10 +1359,11 @@ pub fn build_datetime_filter(
     let mut expr_active_from =
         sigint_network_freq::Column::ActiveFrom.into_simple_expr();
 
-    let mut expr_active_to = Func::coalesce([
+    let expr_active_to = Func::coalesce([
         sigint_network_freq::Column::ActiveTo.into_simple_expr(),
         Expr::cust("CURRENT_TIMESTAMP AT TIME ZONE 'UTC'"),
     ]);
+    let mut expr_till = None;
 
     if let Some(network_freq_filter) = filter {
         if network_freq_filter.active_freqs_only {
@@ -1375,8 +1386,7 @@ pub fn build_datetime_filter(
             let till_dt = DateTime::from_timestamp_millis(till_ms)
                 .context(h!())?
                 .naive_utc();
-            expr_active_to =
-                Func::least([Expr::value(till_dt), expr_active_to.into()]);
+            expr_till = Some(Expr::value(till_dt));
         }
     }
 
@@ -1386,8 +1396,21 @@ pub fn build_datetime_filter(
         signal_message::Column::CreatedAt.into_simple_expr(),
     ]);
 
-    let cond_is_network_freq_active =
-        expr_datetime.between(expr_active_from, expr_active_to);
+    let mut cond_is_network_freq_active = expr_datetime
+        .clone()
+        .gte(expr_active_from)
+        .and(expr_datetime.clone().lte(expr_active_to));
+    if let Some(expr_till) = expr_till {
+        let cond_till = if filter.is_none_or(|filter| {
+            filter.till_date_end == ReportPeriodEnd::Inclusive
+        }) {
+            expr_datetime.lte(expr_till)
+        } else {
+            expr_datetime.lt(expr_till)
+        };
+        cond_is_network_freq_active =
+            cond_is_network_freq_active.and(cond_till);
+    }
 
     if let Some(active_filter) = expr_active_only {
         Ok(cond_is_network_freq_active.and(active_filter))
@@ -1812,19 +1835,22 @@ pub async fn load_pelengs_map(
     dbx: &DatabaseConnection,
     groups: &Vec<String>,
     network_id: i64,
-    filter: NetworkFreqFilter,
+    filters: &[NetworkFreqFilter],
 ) -> Result<Option<Vec<u8>>, AppError> {
-    let map_points =
-        bl_get_network_points(dbx, groups, network_id, Some(&filter))
-            .await
-            .c(h!())?
-            .into_iter()
-            .map(|p| PelengsQueryRes {
-                freq: p.freq,
-                lat: format!("{:02.6}", p.lat),
-                lng: format!("{:02.6}", p.lng),
-            })
-            .collect::<Vec<PelengsQueryRes>>();
+    let mut map_points = Vec::new();
+    for filter in filters {
+        map_points.extend(
+            bl_get_network_points(dbx, groups, network_id, Some(filter))
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|p| PelengsQueryRes {
+                    freq: p.freq,
+                    lat: format!("{:02.6}", p.lat),
+                    lng: format!("{:02.6}", p.lng),
+                }),
+        );
+    }
     let map_points = uniq_via_btreeset(&map_points);
 
     if map_points.is_empty() {
@@ -2399,6 +2425,7 @@ mod tests {
             active_freqs_only: false,
             since_date_inclusive_ms: Some(1_740_000_000_000),
             till_date_inclusive_ms: Some(1_740_000_600_000),
+            till_date_end: ReportPeriodEnd::Inclusive,
         };
 
         let exclusive_sql = Query::select()
@@ -2413,10 +2440,26 @@ mod tests {
                     .expect("join condition"),
             )
             .to_string(PostgresQueryBuilder);
+        let noninclusive_period_sql = Query::select()
+            .expr(
+                build_network_freq_join_condition(
+                    Some(&NetworkFreqFilter {
+                        till_date_end: ReportPeriodEnd::NonInclusive,
+                        ..filter
+                    }),
+                    true,
+                )
+                .expect("join condition"),
+            )
+            .to_string(PostgresQueryBuilder);
 
         assert!(exclusive_sql.contains(" < "), "{exclusive_sql}");
         assert!(!exclusive_sql.contains(" <= "), "{exclusive_sql}");
         assert!(inclusive_sql.contains(" <= "), "{inclusive_sql}");
+        assert!(
+            noninclusive_period_sql.contains(" < "),
+            "{noninclusive_period_sql}"
+        );
     }
 
     #[test]

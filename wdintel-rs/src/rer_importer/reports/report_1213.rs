@@ -1043,7 +1043,6 @@ mod tests {
     use sea_orm::{
         ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
     };
-    use serde_json::json;
     use serial_test::serial;
     use tempfile::NamedTempFile;
 
@@ -1090,7 +1089,7 @@ mod tests {
         .await
         .context(h!())?;
 
-        mk_sigint_inbox_item(
+        let inbox_item = mk_sigint_inbox_item(
             dbx,
             sigint_inbox_item::ActiveModel {
                 id: Set(signal_message.id),
@@ -1098,7 +1097,6 @@ mod tests {
                 coords: Set(
                     coords.map(|(lat, lng)| format!("{lat:.6},{lng:.6}"))
                 ),
-                callsigns: Set(Some(json!(callsigns))),
                 date: Set(Some(seen_at.date().to_string())),
                 time: Set(Some(seen_at.time().format("%H:%M:%S").to_string())),
                 unit: Set(unit.map(ToString::to_string)),
@@ -1108,6 +1106,21 @@ mod tests {
                 parsed_unit_v2: Set(false),
                 ..Default::default()
             },
+        )
+        .await
+        .context(h!())?;
+        let actor_id = crate::users::system_login_id(dbx).await?;
+        crate::inbox::callsigns::sync(
+            dbx,
+            inbox_item.id,
+            crate::inbox::callsigns::InboxItemCallsigns {
+                primary: callsigns
+                    .iter()
+                    .map(|callsign| (*callsign).to_string())
+                    .collect(),
+                alg2: Vec::new(),
+            },
+            actor_id,
         )
         .await
         .context(h!())?;

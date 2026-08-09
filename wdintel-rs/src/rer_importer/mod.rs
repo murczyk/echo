@@ -719,7 +719,6 @@ async fn load_rer_importer_callsigns(
         .columns([
             sigint_inbox_item::Column::Id,
             sigint_inbox_item::Column::Freq,
-            sigint_inbox_item::Column::Callsigns,
         ])
         .inner_join(signal_message::Entity)
         .join(
@@ -749,34 +748,8 @@ async fn load_rer_importer_callsigns(
             WHERE siic.source = 'primary'::sigint_inbox_item_callsign_source
               AND NOT siic.deleted
         )
-        , legacy_callsigns AS (
-            SELECT DISTINCT
-                item.id AS inbox_item_id,
-                legacy.callsign
-            FROM filtered_items
-            INNER JOIN sigint_inbox_item AS item ON item.id = filtered_items.id
-            CROSS JOIN LATERAL jsonb_array_elements_text(
-                CASE
-                    WHEN jsonb_typeof(item.callsigns) = 'array'
-                        THEN item.callsigns
-                    ELSE '[]'::jsonb
-                END
-            ) AS legacy(callsign)
-            WHERE item.id > coalesce((
-                SELECT nullif(dk.v #>> '{{}}', '')::bigint
-                FROM delta_kv AS dk
-                WHERE dk.k = '{watermark_key}'
-            ), 0)
-              AND NOT EXISTS (
-                SELECT 1
-                FROM sigint_inbox_item_callsign AS siic
-                WHERE siic.sigint_inbox_item_id = item.id
-            )
-        )
         , all_callsigns AS (
             SELECT inbox_item_id, callsign FROM normalized_callsigns
-            UNION ALL
-            SELECT inbox_item_id, callsign FROM legacy_callsigns
         )
         SELECT
             all_callsigns.callsign,
@@ -792,8 +765,6 @@ async fn load_rer_importer_callsigns(
         ORDER BY all_callsigns.callsign
         "#,
         filtered_items.sql,
-        watermark_key =
-            crate::inbox::callsigns::CALLSIGN_BACKFILL_WATERMARK_KEY,
     );
     let rows = dbx
         .query_all_raw(Statement::from_sql_and_values(
@@ -1438,72 +1409,81 @@ pub async fn oneoff_reprocess_unit_names(
             .filter(signal_group::Column::MasterKey.eq(master_key));
     }
     // let count = q.clone().count(&dbx).await
-    let mut inbox_items = q.stream(&dbx).await.c(h!())?;
+    let mut inbox_items = q.stream(&dbx).await.c(h!())?.try_chunks(500);
     // let pb = ProgressBar::new(count);
-    while let Some(item) = inbox_items.try_next().await.c(h!())? {
-        // pb.inc(1);
-        let id = item.id;
-        let inbox_message = signal_message::Entity::find_by_id(id)
-            .filter(signal_message::Column::Deleted.eq(false))
-            .one(&dbx)
-            .await
-            .c(h!())?
-            .ok_or("error 17263")?;
-        let m_aor_id = resolve_message_aor_id(&dbx, id).await.c(h!())?;
+    while let Some(inbox_items) = inbox_items.try_next().await.c(h!())? {
+        let inbox_item_ids =
+            inbox_items.iter().map(|item| item.id).collect::<Vec<_>>();
+        let callsigns_by_item_id =
+            crate::inbox::callsigns::load_by_item_ids(&dbx, &inbox_item_ids)
+                .await?;
+        for item in inbox_items {
+            // pb.inc(1);
+            let id = item.id;
+            let inbox_message = signal_message::Entity::find_by_id(id)
+                .filter(signal_message::Column::Deleted.eq(false))
+                .one(&dbx)
+                .await
+                .c(h!())?
+                .ok_or("error 17263")?;
+            let m_aor_id = resolve_message_aor_id(&dbx, id).await.c(h!())?;
 
-        let unit_old = item.unit.clone();
-        if let Some(body) = inbox_message.body {
-            let callsigns: Vec<String> = match item.callsigns.as_ref() {
-                Some(v) => serde_json::from_value(v.clone()).c(h!())?,
-                None => vec![],
-            };
-            let callsigns = callsigns
-                .into_iter()
-                .map(|x| x.to_uppercase())
-                .collect_vec();
-            let result = crate::unit::parser::extract_unit_with_aor(
-                settlements.clone(),
-                &body,
-                callsigns,
-                m_aor_id,
-            )?;
-            let unit_new = result.unit.clone();
-            if unit_new.is_none() && unit_old.is_some() {
-                continue;
+            let unit_old = item.unit.clone();
+            if let Some(body) = inbox_message.body {
+                let callsigns = callsigns_by_item_id
+                    .get(&item.id)
+                    .cloned()
+                    .unwrap_or_default()
+                    .effective();
+                let callsigns = callsigns
+                    .into_iter()
+                    .map(|x| x.to_uppercase())
+                    .collect_vec();
+                let result = crate::unit::parser::extract_unit_with_aor(
+                    settlements.clone(),
+                    &body,
+                    callsigns,
+                    m_aor_id,
+                )?;
+                let unit_new = result.unit.clone();
+                if unit_new.is_none() && unit_old.is_some() {
+                    continue;
+                }
+                println!("{unit_old:?} -> {unit_new:?}");
+                let mut item: sigint_inbox_item::ActiveModel = item.into();
+                let location_v2 =
+                    match (result.locality.clone(), result.locality_v2.clone())
+                    {
+                        (_, Some(locations)) => {
+                            Some(utils::format_settlements_list(locations))
+                        }
+                        (Some(location), None) => {
+                            let locations =
+                                crate::location::parse_location_with_aor(
+                                    settlements.clone(),
+                                    location,
+                                    m_aor_id,
+                                )
+                                .c(h!())?;
+                            Some(utils::format_settlements_list(locations))
+                        }
+                        _ => None,
+                    };
+                item.unit = Set(unit_new);
+                item.unit_v2 = Set(None);
+                item.location = Set(result.locality);
+                item.location_v2 = Set(location_v2);
+                item.parsed_unit_v2 = Set(false);
+                item.update(&dbx).await.c(h!())?;
+                crate::stats::enqueue_group_stats_recalculation_for_message(
+                    &dbx,
+                    id,
+                    format!("reprocessed unit for inbox message {id}"),
+                )
+                .await
+                .c(h!())?;
+                reset_inbox_pelengs(id, &dbx).await.c(h!())?;
             }
-            println!("{unit_old:?} -> {unit_new:?}");
-            let mut item: sigint_inbox_item::ActiveModel = item.into();
-            let location_v2 =
-                match (result.locality.clone(), result.locality_v2.clone()) {
-                    (_, Some(locations)) => {
-                        Some(utils::format_settlements_list(locations))
-                    }
-                    (Some(location), None) => {
-                        let locations =
-                            crate::location::parse_location_with_aor(
-                                settlements.clone(),
-                                location,
-                                m_aor_id,
-                            )
-                            .c(h!())?;
-                        Some(utils::format_settlements_list(locations))
-                    }
-                    _ => None,
-                };
-            item.unit = Set(unit_new);
-            item.unit_v2 = Set(None);
-            item.location = Set(result.locality);
-            item.location_v2 = Set(location_v2);
-            item.parsed_unit_v2 = Set(false);
-            item.update(&dbx).await.c(h!())?;
-            crate::stats::enqueue_group_stats_recalculation_for_message(
-                &dbx,
-                id,
-                format!("reprocessed unit for inbox message {id}"),
-            )
-            .await
-            .c(h!())?;
-            reset_inbox_pelengs(id, &dbx).await.c(h!())?;
         }
     }
     Ok(())

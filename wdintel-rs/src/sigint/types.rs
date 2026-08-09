@@ -69,8 +69,10 @@ pub struct ZoneDatasourceGroup {
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
     pub allowed_users: Vec<String>,
+    pub allowed_user_details: Vec<SignalGroupLogin>,
     pub allowed_organism_ids: Vec<i64>,
     pub admin_logins: Vec<String>,
+    pub admin_login_details: Vec<SignalGroupLogin>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
@@ -137,6 +139,8 @@ pub struct SignalGroupLogin {
     pub login_id: String,
     pub login: String,
     pub delta_login: Option<String>,
+    #[serde(default)]
+    pub is_ai_managed: bool,
 }
 
 #[derive(

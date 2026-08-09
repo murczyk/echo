@@ -1,15 +1,18 @@
 use super::types::{
     CreateUnitReq, CreateUnitWithAutoNetworkReq, CreateUnitWithAutoNetworkRsp,
-    ImportOrbitUnitReq, LinkOrbitUnitReq, OrbitChildUnit, OrbitDictionaryValue,
-    OrbitParentUnit, OrbitUnitDetails, OrbitUnitLinkCandidate,
-    OrbitUnitLinkCandidatesReq, OrbitUnitLinkCandidatesRsp, OrbitUnitSearchReq,
-    UnitDetailsReq, UnitOrbitChildrenRsp,
+    ImportOrbitUnitReq, LinkOrbitUnitReq, ListUnitDuplicatesRsp,
+    OrbitChildUnit, OrbitDictionaryValue, OrbitParentUnit, OrbitUnitDetails,
+    OrbitUnitLinkCandidate, OrbitUnitLinkCandidatesReq,
+    OrbitUnitLinkCandidatesRsp, OrbitUnitSearchReq, UnitDetailsReq,
+    UnitDuplicate, UnitOrbitChildrenRsp,
 };
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
 use crate::types::{warn, Env, Mode, ShortContext};
-use crate::users::{ensure_rer_role, has_role, login_id_from_identity};
+use crate::users::{
+    ensure_admin, ensure_rer_role, has_role, login_id_from_identity,
+};
 use actix_web::post;
 use actix_web::web::{Data, Json};
 use sea_orm::sea_query::extension::postgres::PgExpr;
@@ -40,20 +43,31 @@ pub async fn can_view_orbit_data(
 
 pub async fn unit_ids_with_orbit(
     dbx: &DatabaseConnection,
+    sigint_unit_ids: &[i64],
 ) -> Result<HashMap<i64, Vec<String>>, AppError> {
+    if sigint_unit_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
     let mut unit_ids = HashMap::<i64, Vec<String>>::new();
-    for link in orbit_unit_sigint_unit::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
-        )
-        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
-        .filter(orbit_unit::Column::Deleted.eq(false))
-        .order_by_asc(orbit_unit_sigint_unit::Column::SigintUnitId)
-        .order_by_asc(orbit_unit_sigint_unit::Column::OrbitUnitId)
-        .all(dbx)
-        .await
-        .c(h!())?
+    let sql = r#"
+        select link.*
+        from orbit_unit_sigint_unit link
+        inner join orbit_unit unit on unit.unit_id = link.orbit_unit_id
+        where link.is_suppressed = false
+            and link.sigint_unit_id = any($1::bigint[])
+            and unit.deleted = false
+        order by link.sigint_unit_id, link.orbit_unit_id
+    "#;
+    for link in orbit_unit_sigint_unit::Model::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            [sigint_unit_ids.to_vec().into()],
+        ),
+    )
+    .all(dbx)
+    .await
+    .c(h!())?
     {
         unit_ids
             .entry(link.sigint_unit_id)
@@ -79,6 +93,119 @@ pub async fn unit_has_orbit(
         .await
         .c(h!())?
         .is_some())
+}
+
+#[post("/api/admin/unit-duplicates")]
+pub async fn list_unit_duplicates(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+) -> Result<Json<ListUnitDuplicatesRsp>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    ensure_orbit_access(&env.dbx, &login).await?;
+    Ok(Json(ListUnitDuplicatesRsp {
+        units: load_unit_duplicates(&env.dbx).await?,
+    }))
+}
+
+async fn load_unit_duplicates(
+    dbx: &DatabaseConnection,
+) -> Result<Vec<UnitDuplicate>, AppError> {
+    let orbit_unit_ids = duplicate_orbit_unit_ids(dbx).await?;
+    if orbit_unit_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let orbit_units = orbit_unit::Entity::find()
+        .filter(orbit_unit::Column::UnitId.is_in(orbit_unit_ids.clone()))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|unit| (unit.unit_id, unit))
+        .collect::<HashMap<_, _>>();
+    let links = orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+        )
+        .filter(
+            orbit_unit_sigint_unit::Column::OrbitUnitId.is_in(orbit_unit_ids),
+        )
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let sigint_units = sigint_unit::Entity::find()
+        .filter(
+            sigint_unit::Column::Id
+                .is_in(links.iter().map(|link| link.sigint_unit_id)),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|unit| (unit.id, unit))
+        .collect::<HashMap<_, _>>();
+    render_unit_duplicates(links, orbit_units, sigint_units)
+}
+
+async fn duplicate_orbit_unit_ids(
+    dbx: &DatabaseConnection,
+) -> Result<Vec<Uuid>, AppError> {
+    Ok(orbit_unit_sigint_unit::Entity::find()
+        .select_only()
+        .column(orbit_unit_sigint_unit::Column::OrbitUnitId)
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+        )
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .group_by(orbit_unit_sigint_unit::Column::OrbitUnitId)
+        .having(
+            Expr::col(orbit_unit_sigint_unit::Column::SigintUnitId)
+                .count_distinct()
+                .gte(2),
+        )
+        .into_tuple::<Uuid>()
+        .all(dbx)
+        .await
+        .c(h!())?)
+}
+
+fn render_unit_duplicates(
+    links: Vec<orbit_unit_sigint_unit::Model>,
+    orbit_units: HashMap<Uuid, orbit_unit::Model>,
+    sigint_units: HashMap<i64, sigint_unit::Model>,
+) -> Result<Vec<UnitDuplicate>, AppError> {
+    let mut units = links
+        .into_iter()
+        .map(|link| {
+            let orbit_unit = orbit_units.get(&link.orbit_unit_id).c(h!())?;
+            let sigint_unit = sigint_units.get(&link.sigint_unit_id).c(h!())?;
+            Ok(UnitDuplicate {
+                sigint_unit: super::render_unit(sigint_unit)?,
+                orbit_unit_id: orbit_unit.unit_id.to_string(),
+                orbit_unit_full_name: orbit_candidate_full_name(
+                    orbit_unit.unit_name.clone(),
+                    orbit_unit.unit_number.clone(),
+                ),
+            })
+        })
+        .collect::<Result<Vec<_>, AppError>>()?;
+    units.sort_by(|left, right| {
+        left.orbit_unit_full_name
+            .cmp(&right.orbit_unit_full_name)
+            .then_with(|| left.sigint_unit.name.cmp(&right.sigint_unit.name))
+            .then_with(|| left.sigint_unit.id.cmp(&right.sigint_unit.id))
+    });
+    Ok(units)
 }
 
 pub async fn unit_orbit_details(
@@ -110,6 +237,7 @@ struct OrbitChildUnitRow {
     orbit_unit_id: Uuid,
     sigint_unit_id: i64,
     name: String,
+    active: bool,
     is_generative: bool,
     is_operational: bool,
 }
@@ -142,12 +270,8 @@ async fn load_unit_orbit_children(
         select
             child.unit_id as orbit_unit_id,
             child_link.sigint_unit_id,
-            coalesce(
-                nullif(btrim(child.unit_name), ''),
-                nullif(btrim(child.unit_name_short), ''),
-                nullif(btrim(child.unit_number), ''),
-                child.unit_id::text
-            ) as name,
+            child_sigint.name,
+            child_sigint.active,
             (child.generative_parent_unit_id = parent.unit_id) is true
                 as is_generative,
             (child.operational_parent_unit_id = parent.unit_id) is true
@@ -168,7 +292,7 @@ async fn load_unit_orbit_children(
         where parent_link.sigint_unit_id = $1
             and parent.deleted = false
             and child.deleted = false
-        order by name, child_link.sigint_unit_id
+        order by child_sigint.name, child_link.sigint_unit_id, child.unit_id
     "#;
     let rows =
         OrbitChildUnitRow::find_by_statement(Statement::from_sql_and_values(
@@ -185,28 +309,34 @@ async fn load_unit_orbit_children(
 fn render_unit_orbit_children(
     rows: Vec<OrbitChildUnitRow>,
 ) -> UnitOrbitChildrenRsp {
-    let mut generative_units = Vec::new();
-    let mut operational_units = Vec::new();
-    let mut generative_ids = HashSet::new();
-    let mut operational_ids = HashSet::new();
+    let mut units = Vec::<OrbitChildUnit>::new();
+    let mut unit_indexes = HashMap::<i64, usize>::new();
     for row in rows {
-        let id = (row.orbit_unit_id, row.sigint_unit_id);
-        let unit = OrbitChildUnit {
-            orbit_unit_id: row.orbit_unit_id.to_string(),
-            sigint_unit_id: row.sigint_unit_id,
-            name: row.name,
-        };
-        if row.is_generative && generative_ids.insert(id) {
-            generative_units.push(unit.clone());
-        }
-        if row.is_operational && operational_ids.insert(id) {
-            operational_units.push(unit);
+        if let Some(index) = unit_indexes.get(&row.sigint_unit_id).copied() {
+            let unit = &mut units[index];
+            let orbit_unit_id = row.orbit_unit_id.to_string();
+            if !unit
+                .orbit_unit_ids
+                .iter()
+                .any(|unit_id| unit_id == &orbit_unit_id)
+            {
+                unit.orbit_unit_ids.push(orbit_unit_id);
+            }
+            unit.is_generative |= row.is_generative;
+            unit.is_operational |= row.is_operational;
+        } else {
+            unit_indexes.insert(row.sigint_unit_id, units.len());
+            units.push(OrbitChildUnit {
+                sigint_unit_id: row.sigint_unit_id,
+                name: row.name,
+                active: row.active,
+                orbit_unit_ids: vec![row.orbit_unit_id.to_string()],
+                is_generative: row.is_generative,
+                is_operational: row.is_operational,
+            });
         }
     }
-    UnitOrbitChildrenRsp {
-        generative_units,
-        operational_units,
-    }
+    UnitOrbitChildrenRsp { units }
 }
 
 async fn render_orbit_unit_details(
@@ -829,25 +959,26 @@ pub(super) async fn import_unlinked_orbit_units(
     let orbit_unit_ids_to_activate =
         orbit_unit_and_ancestor_ids(&orbit_units, active_linked_orbit_unit_ids);
     let mut imported = 0;
+    let mut skipped = 0;
+    let mut first_skipped = None;
     for orbit_unit in &orbit_units {
         if linked_orbit_unit_ids.contains(&orbit_unit.unit_id) {
             continue;
         }
-        let unit_req = match create_unit_req_from_orbit(
-            &transaction,
-            orbit_unit,
-            false,
-        )
-        .await
-        {
-            Ok(unit_req) => unit_req,
-            Err(err @ (AppError::BL { .. } | AppError::NotFound)) => {
-                let orbit_unit_id = orbit_unit.unit_id;
-                warn!("Skipping unsupported ORBIT unit {orbit_unit_id}: {err}");
-                continue;
-            }
-            Err(err) => return Err(err),
-        };
+        let unit_req =
+            match create_unit_req_from_orbit(&transaction, orbit_unit, false)
+                .await
+            {
+                Ok(unit_req) => unit_req,
+                Err(err @ (AppError::BL { .. } | AppError::NotFound)) => {
+                    skipped += 1;
+                    first_skipped.get_or_insert_with(|| {
+                        (orbit_unit.unit_id, err.to_string())
+                    });
+                    continue;
+                }
+                Err(err) => return Err(err),
+            };
         let unit =
             super::insert_unit_with_changelog(&transaction, login, &unit_req)
                 .await
@@ -862,6 +993,11 @@ pub(super) async fn import_unlinked_orbit_units(
         .await
         .c(h!())?;
         imported += 1;
+    }
+    if let Some((orbit_unit_id, err)) = first_skipped {
+        warn!(
+            "Skipped {skipped} unsupported ORBIT units; first was {orbit_unit_id}: {err}"
+        );
     }
     activate_sigint_units_linked_to_orbit_units(
         &transaction,
@@ -1127,6 +1263,7 @@ fn preferred_orbit_unit_name(unit: &orbit_unit::Model) -> Option<String> {
         unit.unit_name_short.as_deref(),
         unit.unit_name.as_deref(),
         unit.unit_name_original.as_deref(),
+        unit.unit_number.as_deref(),
     ]
     .into_iter()
     .flatten()
@@ -1191,8 +1328,9 @@ fn manual_orbit_link_candidates_query(
                 )
                 .add(
                     Expr::col(orbit_unit::Column::OperationalUnitNameFull)
-                        .ilike(pattern),
-                ),
+                        .ilike(pattern.clone()),
+                )
+                .add(Expr::col(orbit_unit::Column::UnitNumber).ilike(pattern)),
         );
     }
     orbit_unit::Entity::find()
@@ -1216,13 +1354,14 @@ fn orbit_full_word_match_score(words: &[String]) -> SimpleExpr {
 
 fn orbit_full_word_match(word: &str) -> SimpleExpr {
     let full_word_match = Expr::cust_with_exprs(
-        "concat(' ', regexp_replace(lower(concat_ws(' ', $1, $2, $3)), '[[:punct:][:space:]]+', ' ', 'g'), ' ') ilike $4",
+        "concat(' ', regexp_replace(lower(concat_ws(' ', $1, $2, $3, $4)), '[[:punct:][:space:]]+', ' ', 'g'), ' ') ilike $5",
         [
             Expr::col(orbit_unit::Column::UnitName).into_simple_expr(),
             Expr::col(orbit_unit::Column::GenerativeUnitNameFull)
                 .into_simple_expr(),
             Expr::col(orbit_unit::Column::OperationalUnitNameFull)
                 .into_simple_expr(),
+            Expr::col(orbit_unit::Column::UnitNumber).into_simple_expr(),
             Expr::val(format!("% {word} %")).into_simple_expr(),
         ],
     );
@@ -1292,9 +1431,10 @@ where
 fn render_match_candidate(
     unit: crate::orbit::OrbitMatchCandidate,
 ) -> OrbitUnitLinkCandidate {
+    let full_name = orbit_candidate_full_name(unit.unit_name, unit.unit_number);
     OrbitUnitLinkCandidate {
         unit_id: unit.unit_id.to_string(),
-        full_name: unit.unit_name.unwrap_or_default(),
+        full_name,
         generative_unit_name_full: unit
             .generative_unit_name_full
             .unwrap_or_default(),
@@ -1307,9 +1447,10 @@ fn render_match_candidate(
 fn render_orbit_unit_candidate(
     unit: orbit_unit::Model,
 ) -> OrbitUnitLinkCandidate {
+    let full_name = orbit_candidate_full_name(unit.unit_name, unit.unit_number);
     OrbitUnitLinkCandidate {
         unit_id: unit.unit_id.to_string(),
-        full_name: unit.unit_name.unwrap_or_default(),
+        full_name,
         generative_unit_name_full: unit
             .generative_unit_name_full
             .unwrap_or_default(),
@@ -1317,6 +1458,17 @@ fn render_orbit_unit_candidate(
             .operational_unit_name_full
             .unwrap_or_default(),
     }
+}
+
+fn orbit_candidate_full_name(
+    unit_name: Option<String>,
+    unit_number: Option<String>,
+) -> String {
+    [unit_name, unit_number]
+        .into_iter()
+        .flatten()
+        .find(|value| !value.trim().is_empty())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -1397,6 +1549,145 @@ mod tests {
         assert_eq!(candidates.len(), 2);
         assert_eq!(candidates[0].unit_id, full_word_match_id.to_string());
         assert_eq!(candidates[1].unit_id, substring_match_id.to_string());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn manual_search_finds_and_names_number_only_units() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let unit_id = Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(unit_id),
+            unit_number: Set(Some("5101".to_string())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let candidates = manual_orbit_link_candidates(&env.dbx, "5101")
+            .await
+            .unwrap();
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].unit_id, unit_id.to_string());
+        assert_eq!(candidates[0].full_name, "5101");
+    }
+
+    #[test]
+    fn automatic_candidate_uses_number_when_name_is_blank() {
+        let unit_id = Uuid::new_v4();
+        let candidate =
+            render_match_candidate(crate::orbit::OrbitMatchCandidate {
+                unit_id,
+                unit_name: Some(" ".to_string()),
+                unit_number: Some("5101".to_string()),
+                generative_unit_name_full: None,
+                operational_unit_name_full: None,
+            });
+
+        assert_eq!(candidate.unit_id, unit_id.to_string());
+        assert_eq!(candidate.full_name, "5101");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_duplicates_list_contains_only_shared_active_orbit_links() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let duplicate_orbit_unit_id = Uuid::new_v4();
+        let single_orbit_unit_id = Uuid::new_v4();
+        orbit_unit::Entity::insert_many([
+            orbit_unit::ActiveModel {
+                unit_id: Set(duplicate_orbit_unit_id),
+                unit_name: Set(Some("Shared Orbit unit".to_string())),
+                ..Default::default()
+            },
+            orbit_unit::ActiveModel {
+                unit_id: Set(single_orbit_unit_id),
+                unit_name: Set(Some("Single Orbit unit".to_string())),
+                ..Default::default()
+            },
+        ])
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        let first = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("First SIGINT unit".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Second SIGINT unit".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let single = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Single SIGINT unit".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::Entity::insert_many([
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(duplicate_orbit_unit_id),
+                sigint_unit_id: Set(first.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(duplicate_orbit_unit_id),
+                sigint_unit_id: Set(second.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(duplicate_orbit_unit_id),
+                sigint_unit_id: Set(single.id),
+                is_manual: Set(true),
+                is_suppressed: Set(true),
+            },
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(single_orbit_unit_id),
+                sigint_unit_id: Set(single.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
+        ])
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+
+        let units = load_unit_duplicates(&env.dbx).await.unwrap();
+
+        assert_eq!(units.len(), 2);
+        assert_eq!(units[0].sigint_unit.id, first.id);
+        assert_eq!(units[1].sigint_unit.id, second.id);
+        assert!(units
+            .iter()
+            .all(|unit| unit.orbit_unit_id
+                == duplicate_orbit_unit_id.to_string()));
+        assert!(units
+            .iter()
+            .all(|unit| unit.orbit_unit_full_name == "Shared Orbit unit"));
     }
 
     #[tokio::test]
@@ -1485,7 +1776,51 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn orbit_children_returns_both_direct_linked_child_lists() {
+    async fn unit_ids_with_orbit_accepts_more_than_postgres_bind_limit() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let sigint_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let orbit_unit_id = Uuid::new_v4();
+        orbit_unit::Entity::insert(orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            ..Default::default()
+        })
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::Entity::insert(
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(orbit_unit_id),
+                sigint_unit_id: Set(sigint_unit.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
+        )
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        let mut unit_ids = vec![-1_i64; 69_999];
+        unit_ids.push(sigint_unit.id);
+
+        assert_eq!(
+            unit_ids_with_orbit(&env.dbx, &unit_ids).await.unwrap(),
+            HashMap::from([(sigint_unit.id, vec![orbit_unit_id.to_string()])])
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orbit_children_returns_linked_units_with_relationships() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
@@ -1502,6 +1837,7 @@ mod tests {
         let generative_sigint = mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
+                name: Set("SIGINT generative".to_string()),
                 ..Default::default()
             },
         )
@@ -1510,6 +1846,8 @@ mod tests {
         let operational_sigint = mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
+                name: Set("SIGINT operational".to_string()),
+                active: Set(false),
                 ..Default::default()
             },
         )
@@ -1529,6 +1867,7 @@ mod tests {
                 unit_id: Set(generative_child_id),
                 unit_name: Set(Some("Generative child".to_string())),
                 generative_parent_unit_id: Set(Some(parent_id)),
+                operational_parent_unit_id: Set(Some(parent_id)),
                 ..Default::default()
             },
             orbit_unit::ActiveModel {
@@ -1576,20 +1915,25 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            children.generative_units,
-            vec![OrbitChildUnit {
-                orbit_unit_id: generative_child_id.to_string(),
-                sigint_unit_id: generative_sigint.id,
-                name: "Generative child".to_string(),
-            }]
-        );
-        assert_eq!(
-            children.operational_units,
-            vec![OrbitChildUnit {
-                orbit_unit_id: operational_child_id.to_string(),
-                sigint_unit_id: operational_sigint.id,
-                name: "Operational child".to_string(),
-            }]
+            children.units,
+            vec![
+                OrbitChildUnit {
+                    sigint_unit_id: generative_sigint.id,
+                    name: "SIGINT generative".to_string(),
+                    active: true,
+                    orbit_unit_ids: vec![generative_child_id.to_string()],
+                    is_generative: true,
+                    is_operational: true,
+                },
+                OrbitChildUnit {
+                    sigint_unit_id: operational_sigint.id,
+                    name: "SIGINT operational".to_string(),
+                    active: false,
+                    orbit_unit_ids: vec![operational_child_id.to_string()],
+                    is_generative: false,
+                    is_operational: true,
+                },
+            ]
         );
     }
 

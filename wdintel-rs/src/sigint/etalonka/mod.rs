@@ -10,6 +10,9 @@ use docx_rs::*;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 use crate::config::{Config, ETALONKA_GEO_SCREENSHOT_CONCURRENCY};
+use crate::rer_importer::report_chunking::{
+    report_period_chunks, ReportPeriodEnd,
+};
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
 use crate::sigint::etalonka::util::*;
@@ -245,7 +248,7 @@ pub struct EtalonkaEntry {
 struct PelengsMapJob {
     key: EtalonkaEntryKey,
     network_id: i64,
-    filter: NetworkFreqFilter,
+    filters: Vec<NetworkFreqFilter>,
 }
 
 async fn load_pelengs_maps(
@@ -261,10 +264,14 @@ async fn load_pelengs_maps(
             let dbx = dbx.clone();
             let groups = groups.clone();
             async move {
-                let pelengs_map =
-                    load_pelengs_map(&dbx, &groups, job.network_id, job.filter)
-                        .await
-                        .context(h!())?;
+                let pelengs_map = load_pelengs_map(
+                    &dbx,
+                    &groups,
+                    job.network_id,
+                    &job.filters,
+                )
+                .await
+                .context(h!())?;
                 Ok::<_, AppError>((job.key, pelengs_map))
             }
         })
@@ -293,6 +300,64 @@ pub async fn collect_etalonka_data(
     .await
 }
 
+struct EtalonkaCollectionOptions {
+    is_extended_report: bool,
+    include_pelengs_map: bool,
+    include_sigint_signs: bool,
+    include_confirmation: bool,
+    include_headings_and_freqs: bool,
+    filters: Vec<NetworkFreqFilter>,
+}
+
+fn etalonka_collection_options(
+    report_type: &EtalonkaReportType,
+    chunking_hours: i64,
+    now_ms: i64,
+) -> Result<EtalonkaCollectionOptions, AppError> {
+    match report_type {
+        EtalonkaReportType::AccordingToTheForm(settings) => {
+            Ok(EtalonkaCollectionOptions {
+                is_extended_report: false,
+                include_pelengs_map: false,
+                include_sigint_signs: settings.include_sigint_signs,
+                include_confirmation: settings.include_confirmation,
+                include_headings_and_freqs: settings.include_headings_and_freqs,
+                filters: vec![NetworkFreqFilter {
+                    active_freqs_only: settings.active_freqs_only,
+                    since_date_inclusive_ms: None,
+                    till_date_inclusive_ms: None,
+                    till_date_end: ReportPeriodEnd::Inclusive,
+                }],
+            })
+        }
+        EtalonkaReportType::ExtendedReport(settings) => {
+            let till_ms = settings.till_date_inclusive_ms.unwrap_or(now_ms);
+            let filters = report_period_chunks(
+                settings.since_date_inclusive_ms,
+                till_ms,
+                chunking_hours,
+                ReportPeriodEnd::Inclusive,
+            )?
+            .into_iter()
+            .map(|chunk| NetworkFreqFilter {
+                active_freqs_only: settings.active_freqs_only,
+                since_date_inclusive_ms: Some(chunk.since_ms),
+                till_date_inclusive_ms: Some(chunk.till_ms),
+                till_date_end: chunk.end,
+            })
+            .collect();
+            Ok(EtalonkaCollectionOptions {
+                is_extended_report: true,
+                include_pelengs_map: settings.include_pelengs_map,
+                include_sigint_signs: settings.include_sigint_signs,
+                include_confirmation: settings.include_confirmation,
+                include_headings_and_freqs: settings.include_headings_and_freqs,
+                filters,
+            })
+        }
+    }
+}
+
 pub(crate) async fn collect_etalonka_data_with_progress(
     dbx: &DatabaseConnection,
     user_id: &uuid::Uuid,
@@ -302,46 +367,24 @@ pub(crate) async fn collect_etalonka_data_with_progress(
     trace_id: Uuid,
     progress: Option<&EtalonkaProgress>,
 ) -> Result<EtalonkaData, AppError> {
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(dbx)
+            .await
+            .c(h!())?;
+    let options = etalonka_collection_options(
+        report_type,
+        report_settings.chunking_hours,
+        chrono::Utc::now().timestamp_millis(),
+    )?;
     let mut data = EtalonkaData {
         groups,
         networks_data,
         entries: HashMap::new(),
         sources: HashMap::new(),
     };
-    let (
-        is_extended_report,
-        include_pelengs_map,
-        active_freqs_only,
-        since_date_inclusive_ms,
-        till_date_inclusive_ms,
-        include_sigint_signs,
-        include_confirmation,
-        include_headings_and_freqs,
-    ) = match report_type {
-        EtalonkaReportType::AccordingToTheForm(s) => (
-            false,
-            false,
-            s.active_freqs_only,
-            None,
-            None,
-            s.include_sigint_signs,
-            s.include_confirmation,
-            s.include_headings_and_freqs,
-        ),
-        EtalonkaReportType::ExtendedReport(s) => (
-            true,
-            s.include_pelengs_map,
-            s.active_freqs_only,
-            Some(s.since_date_inclusive_ms),
-            s.till_date_inclusive_ms,
-            s.include_sigint_signs,
-            s.include_confirmation,
-            s.include_headings_and_freqs,
-        ),
-    };
 
     let mut all_known_callsigns = BTreeMap::new();
-    if is_extended_report {
+    if options.is_extended_report {
         info!(
             "[trace_id={trace_id}] collecting general data for extended report"
         );
@@ -362,8 +405,8 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             unit_networks.iter().map(|network| network.id)
         })
         .collect::<Vec<_>>();
-    let network_descriptions_by_id = if include_sigint_signs
-        || include_confirmation
+    let network_descriptions_by_id = if options.include_sigint_signs
+        || options.include_confirmation
     {
         crate::sigint::network::bl::get_networks_descriptions(dbx, &network_ids)
             .await
@@ -398,139 +441,30 @@ pub(crate) async fn collect_etalonka_data_with_progress(
                 unit_name: unit_name.to_string(),
                 network_id,
             };
-            let mut entry = EtalonkaEntry::default();
-
-            let filter = NetworkFreqFilter {
-                since_date_inclusive_ms,
-                till_date_inclusive_ms,
-                active_freqs_only,
-            };
-
-            let list_network_callsigns_req = ListNetworkCallsignsReq {
-                network_id: network.id,
-                sort_by: None,
-            };
-            // list of callsigns manually assigned to the Network
-            let net_callsigns = if is_extended_report {
-                bl_get_network_callsigns_list_for_period(
-                    &list_network_callsigns_req,
-                    user_id,
-                    dbx,
-                    &filter,
-                )
-                .await
-                .context(h!())?
-            } else {
-                bl_get_network_callsigns_list(
-                    &list_network_callsigns_req,
-                    user_id,
-                    dbx,
-                )
-                .await
-                .context(h!())?
-            };
-
-            if !net_callsigns.is_empty() {
-                let unique_count = net_callsigns
-                    .iter()
-                    .map(|item| &item.callsign)
-                    .collect::<HashSet<_>>()
-                    .len();
-                entry.net_callsigns = net_callsigns;
-                entry.correspondents_number =
-                    format!("щонайменше {unique_count} ВЗ.");
-            };
-
-            let callsigns_detailed = if is_extended_report {
-                load_callsigns(
-                    dbx,
-                    &data.groups,
-                    network.id,
-                    Some(&all_known_callsigns),
-                    true,
-                    None,
-                    Some(&filter),
-                    true,
-                )
-                .await
-                .context(h!())?
-            } else {
-                vec![]
-            };
-            entry.callsigns_detailed = callsigns_detailed;
-
-            let freqs = load_freqs(
+            let entry = collect_etalonka_entry(
                 dbx,
                 &data.groups,
-                network.id,
-                Some(&filter),
                 user_id,
-                true,
+                network,
+                &all_known_callsigns,
+                &network_descriptions_by_id,
+                &options,
+                trace_id,
             )
             .await
             .context(h!())?;
-
-            let modulations = freqs
-                .iter()
-                .filter_map(|f| f.modulation.clone())
-                .collect::<Vec<String>>();
-            let unique_modulation = uniq_via_btreeset(&modulations).join(", ");
-            entry.unique_modulation = unique_modulation;
-            entry.freqs = freqs;
-            if (include_sigint_signs || include_confirmation)
-                && include_headings_and_freqs
-            {
-                // Lightweight id→freq lookup for the "Частота" column.
-                // Uses a direct table scan instead of load_freqs to avoid
-                // re-aggregating all inbox messages just to get freq strings.
-                let rows = crate::entities::sigint_network_freq::Entity::find()
-                    .filter(
-                        crate::entities::sigint_network_freq::Column::NetworkId
-                            .eq(network_id),
-                    )
-                    .filter(
-                        crate::entities::sigint_network_freq::Column::Deleted
-                            .eq(false),
-                    )
-                    .select_only()
-                    .column(crate::entities::sigint_network_freq::Column::Id)
-                    .column(crate::entities::sigint_network_freq::Column::Freq)
-                    .into_tuple::<(i64, String)>()
-                    .all(dbx)
-                    .await
-                    .context(h!())?;
-                entry.freq_id_to_str = rows.into_iter().collect();
-            }
-            if include_sigint_signs || include_confirmation {
-                let network_descriptions = network_descriptions_by_id
-                    .get(&network_id)
-                    .cloned()
-                    .unwrap_or_default();
-                entry.network_descriptions = network_descriptions;
-
-                // then add network unit signals for each unit in network
-                let network_unit_signals: Vec<NetworkSignalsRes> =
-                    if include_sigint_signs {
-                        load_signals_per_network(dbx, network_id)
-                            .await
-                            .context(h!())?
-                    } else {
-                        vec![]
-                    };
-                entry.network_unit_signals = network_unit_signals;
-            }
-            if include_pelengs_map {
+            if options.include_pelengs_map {
                 pelengs_map_jobs.push(PelengsMapJob {
                     key: key.clone(),
                     network_id,
-                    filter,
+                    filters: options.filters.clone(),
                 });
             } else if let Some(progress) = progress {
                 progress.inc_network();
             }
             data.entries.insert(key, entry);
         }
-        if include_pelengs_map {
+        if options.include_pelengs_map {
             if show_logs && !pelengs_map_jobs.is_empty() {
                 info!(
                     "[trace_id={trace_id}] rendering {} pelengs maps for unit '{unit_name}' with concurrency {}",
@@ -558,6 +492,242 @@ pub(crate) async fn collect_etalonka_data_with_progress(
         progress.finish();
     }
     Ok(data)
+}
+
+async fn collect_etalonka_entry(
+    dbx: &DatabaseConnection,
+    groups: &Vec<String>,
+    user_id: &uuid::Uuid,
+    network: &NetworkEtalonkaResult,
+    all_known_callsigns: &BTreeMap<String, Vec<KnownCallsignRes>>,
+    network_descriptions_by_id: &HashMap<i64, Vec<NetworkDescription>>,
+    options: &EtalonkaCollectionOptions,
+    trace_id: Uuid,
+) -> Result<EtalonkaEntry, AppError> {
+    let mut entry = EtalonkaEntry::default();
+    let list_network_callsigns_req = ListNetworkCallsignsReq {
+        network_id: network.id,
+        sort_by: None,
+    };
+    for (index, filter) in options.filters.iter().enumerate() {
+        if options.filters.len() > 1 {
+            info!(
+                "[trace_id={trace_id}] etalonka network id={} chunk {}/{}: {:?}..{:?} ({:?})",
+                network.id,
+                index + 1,
+                options.filters.len(),
+                filter.since_date_inclusive_ms,
+                filter.till_date_inclusive_ms,
+                filter.till_date_end,
+            );
+        }
+        let net_callsigns = if options.is_extended_report {
+            bl_get_network_callsigns_list_for_period(
+                &list_network_callsigns_req,
+                user_id,
+                dbx,
+                filter,
+            )
+            .await
+            .context(h!())?
+        } else {
+            bl_get_network_callsigns_list(
+                &list_network_callsigns_req,
+                user_id,
+                dbx,
+            )
+            .await
+            .context(h!())?
+        };
+        merge_network_callsign_chunk(&mut entry.net_callsigns, net_callsigns);
+
+        if options.is_extended_report {
+            let callsigns = load_callsigns(
+                dbx,
+                groups,
+                network.id,
+                Some(all_known_callsigns),
+                true,
+                None,
+                Some(filter),
+                true,
+            )
+            .await
+            .context(h!())?;
+            merge_callsign_chunk(&mut entry.callsigns_detailed, callsigns);
+        }
+
+        let freqs =
+            load_freqs(dbx, groups, network.id, Some(filter), user_id, true)
+                .await
+                .context(h!())?;
+        merge_freq_chunk(&mut entry.freqs, freqs);
+    }
+    finalize_etalonka_entry(&mut entry);
+    load_etalonka_entry_metadata(
+        dbx,
+        network.id,
+        network_descriptions_by_id,
+        options,
+        &mut entry,
+    )
+    .await?;
+    Ok(entry)
+}
+
+fn finalize_etalonka_entry(entry: &mut EtalonkaEntry) {
+    entry.net_callsigns.sort_by(|left, right| {
+        left.callsign
+            .cmp(&right.callsign)
+            .then_with(|| left.id.cmp(&right.id))
+            .then_with(|| left.created_at.cmp(&right.created_at))
+    });
+    query::sort_callsigns(&mut entry.callsigns_detailed);
+    entry.freqs.sort_by(|left, right| {
+        left.freq
+            .cmp(&right.freq)
+            .then_with(|| left.network_freq_id.cmp(&right.network_freq_id))
+    });
+    if !entry.net_callsigns.is_empty() {
+        let unique_count = entry
+            .net_callsigns
+            .iter()
+            .map(|item| &item.callsign)
+            .collect::<HashSet<_>>()
+            .len();
+        entry.correspondents_number = format!("щонайменше {unique_count} ВЗ.");
+    }
+    let modulations = entry
+        .freqs
+        .iter()
+        .filter_map(|freq| freq.modulation.clone())
+        .collect::<Vec<_>>();
+    entry.unique_modulation = uniq_via_btreeset(&modulations).join(", ");
+}
+
+async fn load_etalonka_entry_metadata(
+    dbx: &DatabaseConnection,
+    network_id: i64,
+    network_descriptions_by_id: &HashMap<i64, Vec<NetworkDescription>>,
+    options: &EtalonkaCollectionOptions,
+    entry: &mut EtalonkaEntry,
+) -> Result<(), AppError> {
+    if (options.include_sigint_signs || options.include_confirmation)
+        && options.include_headings_and_freqs
+    {
+        let rows = crate::entities::sigint_network_freq::Entity::find()
+            .filter(
+                crate::entities::sigint_network_freq::Column::NetworkId
+                    .eq(network_id),
+            )
+            .filter(
+                crate::entities::sigint_network_freq::Column::Deleted.eq(false),
+            )
+            .select_only()
+            .column(crate::entities::sigint_network_freq::Column::Id)
+            .column(crate::entities::sigint_network_freq::Column::Freq)
+            .into_tuple::<(i64, String)>()
+            .all(dbx)
+            .await
+            .context(h!())?;
+        entry.freq_id_to_str = rows.into_iter().collect();
+    }
+    if options.include_sigint_signs || options.include_confirmation {
+        entry.network_descriptions = network_descriptions_by_id
+            .get(&network_id)
+            .cloned()
+            .unwrap_or_default();
+        if options.include_sigint_signs {
+            entry.network_unit_signals =
+                load_signals_per_network(dbx, network_id)
+                    .await
+                    .context(h!())?;
+        }
+    }
+    Ok(())
+}
+
+fn merge_network_callsign_chunk(
+    target: &mut Vec<NetworkCallsign>,
+    chunk: Vec<NetworkCallsign>,
+) {
+    for callsign in chunk {
+        if let Some(existing) = target.iter_mut().find(|existing| {
+            existing.id == callsign.id
+                && existing.created_at == callsign.created_at
+        }) {
+            existing.message_count += callsign.message_count;
+            existing.last_datetime =
+                latest_datetime(existing.last_datetime, callsign.last_datetime);
+            merge_optional_strings(&mut existing.freqs, callsign.freqs);
+        } else {
+            target.push(callsign);
+        }
+    }
+}
+
+fn merge_callsign_chunk(
+    target: &mut Vec<CallsignRes>,
+    chunk: Vec<CallsignRes>,
+) {
+    for callsign in chunk {
+        if let Some(existing) = target.iter_mut().find(|existing| {
+            existing.callsign == callsign.callsign
+                && existing.known_callsigns == callsign.known_callsigns
+        }) {
+            existing.message_count += callsign.message_count;
+            existing.last_datetime =
+                latest_datetime(existing.last_datetime, callsign.last_datetime);
+            merge_optional_strings(&mut existing.freqs, callsign.freqs);
+            merge_optional_strings(
+                &mut existing.network_names,
+                callsign.network_names,
+            );
+            existing.is_old |= callsign.is_old;
+        } else {
+            target.push(callsign);
+        }
+    }
+}
+
+fn merge_freq_chunk(
+    target: &mut Vec<NetworkFreqsRes>,
+    chunk: Vec<NetworkFreqsRes>,
+) {
+    for freq in chunk {
+        if let Some(existing) = target
+            .iter_mut()
+            .find(|existing| existing.network_freq_id == freq.network_freq_id)
+        {
+            existing.message_count += freq.message_count;
+            existing.last_datetime =
+                latest_datetime(existing.last_datetime, freq.last_datetime);
+            existing.last_datetime_in_aor = latest_datetime(
+                existing.last_datetime_in_aor,
+                freq.last_datetime_in_aor,
+            );
+            merge_optional_strings(&mut existing.callsigns, freq.callsigns);
+        } else {
+            target.push(freq);
+        }
+    }
+}
+
+fn latest_datetime(left: Option<i64>, right: Option<i64>) -> Option<i64> {
+    left.into_iter().chain(right).max()
+}
+
+fn merge_optional_strings(
+    target: &mut Option<Vec<String>>,
+    incoming: Option<Vec<String>>,
+) {
+    let Some(incoming) = incoming else {
+        return;
+    };
+    let target = target.get_or_insert_default();
+    target.extend(incoming);
+    target.sort();
+    target.dedup();
 }
 
 ///  Etalonka report according to the MO form
@@ -2127,6 +2297,7 @@ mod tests {
     use crate::functest::tests::*;
     use crate::sigint::network::types::ListNetworksReq;
     use chrono::Utc;
+    use sea_orm::prelude::Expr;
     use sea_orm::ActiveValue::Set;
     use sea_orm::*;
     use serde_json::json;
@@ -2163,6 +2334,77 @@ mod tests {
         }
     }
 
+    fn extended_report_type(since_ms: i64, till_ms: i64) -> EtalonkaReportType {
+        EtalonkaReportType::ExtendedReport(EtalonkaExtendedSettings {
+            since_date_inclusive_ms: since_ms,
+            till_date_inclusive_ms: Some(till_ms),
+            active_freqs_only: true,
+            include_freq_active_from: false,
+            include_freq_created_at: true,
+            include_callsign_full_names: false,
+            include_unit_callsigns: false,
+            include_sigint_signs: false,
+            include_confirmation: false,
+            include_pelengs_map: false,
+            include_headings_and_freqs: false,
+        })
+    }
+
+    #[test]
+    fn extended_report_period_uses_nonoverlapping_daily_chunks() {
+        let hour_ms = chrono::Duration::hours(1).num_milliseconds();
+        let options = etalonka_collection_options(
+            &extended_report_type(0, 49 * hour_ms),
+            24,
+            50 * hour_ms,
+        )
+        .unwrap();
+
+        assert_eq!(options.filters.len(), 3);
+        assert_eq!(options.filters[0].since_date_inclusive_ms, Some(0));
+        assert_eq!(
+            options.filters[0].till_date_inclusive_ms,
+            Some(24 * hour_ms)
+        );
+        assert_eq!(
+            options.filters[0].till_date_end,
+            ReportPeriodEnd::NonInclusive
+        );
+        assert_eq!(
+            options.filters[1].since_date_inclusive_ms,
+            Some(24 * hour_ms)
+        );
+        assert_eq!(
+            options.filters[2].till_date_end,
+            ReportPeriodEnd::Inclusive
+        );
+    }
+
+    async fn set_etalonka_report_chunking_hours(
+        dbx: &DatabaseConnection,
+        hours: i32,
+    ) {
+        let result = system_settings::Entity::update_many()
+            .col_expr(
+                system_settings::Column::ReportChunkingHours,
+                Expr::value(hours),
+            )
+            .filter(system_settings::Column::Deleted.eq(false))
+            .exec(dbx)
+            .await
+            .unwrap();
+        if result.rows_affected == 0 {
+            system_settings::ActiveModel {
+                report_chunking_hours: Set(hours),
+                limit_big_reports: Set(false),
+                ..Default::default()
+            }
+            .insert(dbx)
+            .await
+            .unwrap();
+        }
+    }
+
     async fn insert_network_activity(
         dbx: &DatabaseConnection,
         datasource_group_id: i64,
@@ -2193,12 +2435,27 @@ mod tests {
             sigint_inbox_item::ActiveModel {
                 id: Set(message.id),
                 freq: Set(Some(freq.to_string())),
-                callsigns: Set(Some(json!(callsigns))),
                 date: Set(None),
                 time: Set(None),
                 parsed_unit_v2: Set(false),
                 ..Default::default()
             },
+        )
+        .await
+        .unwrap();
+
+        let actor_id = find_test_login(dbx).await.unwrap().id;
+        crate::inbox::callsigns::sync(
+            dbx,
+            inbox_item.id,
+            crate::inbox::callsigns::InboxItemCallsigns {
+                primary: callsigns
+                    .iter()
+                    .map(|callsign| String::from(*callsign))
+                    .collect(),
+                alg2: Vec::new(),
+            },
+            actor_id,
         )
         .await
         .unwrap();
@@ -2229,9 +2486,14 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn test_bl_etalonka_report_networks_data_includes_callsigns() {
+    async fn test_bl_etalonka_report_networks_data_merges_chunks() {
         let env = cleanup().await.unwrap();
-        let now = Utc::now().naive_utc();
+        set_etalonka_report_chunking_hours(&env.dbx, 6).await;
+        let now = chrono::DateTime::from_timestamp_millis(
+            Utc::now().timestamp_millis(),
+        )
+        .unwrap()
+        .naive_utc();
 
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource_group =
@@ -2645,6 +2907,17 @@ mod tests {
             &signal_group.master_key,
             network.id,
             &freq,
+            historical_activity_at + chrono::Duration::hours(6),
+            "uid-boundary",
+            &["Alpha", "Beta", "Boundary"],
+        )
+        .await;
+        insert_network_activity(
+            &env.dbx,
+            datasource_group.id,
+            &signal_group.master_key,
+            network.id,
+            &freq,
             now,
             "uid-current",
             &[
@@ -2689,21 +2962,7 @@ mod tests {
                 offset: None,
                 sort_by: None,
             },
-            etalonka_type: EtalonkaReportType::ExtendedReport(
-                EtalonkaExtendedSettings {
-                    since_date_inclusive_ms: historical_ts - 1_000,
-                    till_date_inclusive_ms: Some(ts + 1_000),
-                    active_freqs_only: true,
-                    include_freq_active_from: false,
-                    include_freq_created_at: true,
-                    include_callsign_full_names: false,
-                    include_unit_callsigns: false,
-                    include_sigint_signs: false,
-                    include_confirmation: false,
-                    include_pelengs_map: false,
-                    include_headings_and_freqs: false,
-                },
-            ),
+            etalonka_type: extended_report_type(historical_ts, ts),
         };
 
         let data = bl_etalonka_report_networks_data(
@@ -2728,7 +2987,7 @@ mod tests {
             .iter()
             .find(|c| c.callsign == "Alpha")
             .expect("expected callsign Alpha");
-        assert_eq!(callsign.message_count, 1);
+        assert_eq!(callsign.message_count, 2);
         assert!(callsign.known_callsigns.is_some());
         assert_eq!(callsign.known_callsigns.as_ref().unwrap().len(), 1);
         assert_eq!(
@@ -2751,7 +3010,7 @@ mod tests {
             .iter()
             .find(|callsign| callsign.callsign == "Beta")
             .expect("expected active linked callsign Beta");
-        assert_eq!(linked_callsign.message_count, 1);
+        assert_eq!(linked_callsign.message_count, 2);
         assert_eq!(linked_callsign.last_datetime, Some(ts));
         let historical_callsign = entry
             .net_callsigns
@@ -2865,10 +3124,13 @@ mod tests {
             .callsigns_detailed
             .iter()
             .any(|callsign| callsign.callsign == "Historical"));
+        assert!(entry.callsigns_detailed.iter().any(|callsign| {
+            callsign.callsign == "Boundary" && callsign.message_count == 1
+        }));
 
         assert_eq!(entry.freqs.len(), 1);
         assert_eq!(entry.freqs[0].freq, freq);
-        assert_eq!(entry.freqs[0].message_count, 2);
+        assert_eq!(entry.freqs[0].message_count, 3);
     }
 
     #[test]

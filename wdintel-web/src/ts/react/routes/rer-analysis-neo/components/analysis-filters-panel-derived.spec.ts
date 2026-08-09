@@ -108,6 +108,40 @@ describe('buildAnalysisFiltersPanelDerivedData', () => {
     expect(derived.unitsOptions).toEqual([{ value: '', label: '<Не вказано>', count: 7 }]);
   });
 
+  it('keeps uppercase callsign labels backed by lowercase filter values', () => {
+    const derived = buildAnalysisFiltersPanelDerivedData({
+      aorEntries: [],
+      counts: null,
+      groupInfos: {},
+      options: {
+        tags: [],
+        aors: [],
+        groups: [],
+        senders: [],
+        freqs: [],
+        newFreqs: [],
+        callsigns: [
+          { value: 'НУГУШ', label: 'НУГУШ', count: 2 },
+          { value: 'нугуш', label: 'нугуш', count: 3 },
+        ],
+        units: [],
+        locations: [],
+        posts: [],
+        networks: [],
+        metadataCcs: [],
+        metadataSenders: [],
+        metadataReceivers: [],
+        metadataHashes: [],
+      },
+      queryState: emptyQueryState(),
+      tagsMap: {},
+    });
+
+    expect(derived.callsignsOptions).toEqual([
+      { value: 'нугуш', label: 'НУГУШ', count: 5, values: ['нугуш'] },
+    ]);
+  });
+
   it('merges duplicate group labels into one option with combined values and count', () => {
     const groupInfo = (masterKey: string, name: string): SignalGroupEntry => ({
       masterKey,

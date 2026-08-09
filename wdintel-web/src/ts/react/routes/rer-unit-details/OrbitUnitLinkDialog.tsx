@@ -23,7 +23,11 @@ import {
 } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { CreateUnitWithAutoNetworkRsp, OrbitUnitLinkCandidate } from '../../../../Bindings';
+import type {
+  CreateUnitWithAutoNetworkRsp,
+  OrbitUnitLinkCandidate,
+  Unit,
+} from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
 import {
   CUSTOM_STYLES,
@@ -167,6 +171,7 @@ type OrbitUnitDialogProps =
   | {
       mode: 'link';
       unitId: number;
+      unit: Unit;
       onClose: () => void;
       onCompleted: () => void;
     }
@@ -175,6 +180,26 @@ type OrbitUnitDialogProps =
       onClose: () => void;
       onCompleted: (response: CreateUnitWithAutoNetworkRsp) => void;
     };
+
+function sigintUnitDescription(unit: Unit): string {
+  const hierarchySegments = [
+    unit.company,
+    unit.battalion,
+    unit.regiment,
+    unit.division,
+    unit.army,
+    unit.militaryDistrict,
+    unit.armyRegion,
+  ]
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  const hierarchy = hierarchySegments.join(' ');
+  const name = unit.name.trim();
+  const normalizedName = ` ${name.toLocaleLowerCase('uk-UA').replace(/\s+/g, ' ')} `;
+  const unitValue = hierarchySegments[0]?.toLocaleLowerCase('uk-UA').replace(/\s+/g, ' ');
+  const repeatsUnitValue = unitValue ? normalizedName.includes(` ${unitValue} `) : false;
+  return [name, hierarchy && !repeatsUnitValue ? `(${hierarchy})` : ''].filter(Boolean).join(' ');
+}
 
 function OrbitUnitDialogBody(props: OrbitUnitDialogProps) {
   const { onClose } = props;
@@ -366,7 +391,9 @@ function OrbitUnitDialogBody(props: OrbitUnitDialogProps) {
         <Stack direction="row" spacing={1.5} alignItems="center">
           <Box component="img" src="/img/delta-icon.webp" alt="" sx={{ width: 28, height: 28 }} />
           <Typography component="span" variant="h6">
-            {importing ? 'Пошук' : "Прив'язати Orbit підрозділ"}
+            {importing
+              ? 'Пошук'
+              : `Прив'язати Orbit підрозділ ${sigintUnitDescription(props.unit)}`}
           </Typography>
         </Stack>
         <IconButton
@@ -455,10 +482,12 @@ function OrbitUnitDialog({
 
 export function OrbitUnitLinkDialog({
   unitId,
+  unit,
   onClose,
   onLinked,
 }: {
   unitId: number;
+  unit: Unit;
   onClose: () => void;
   onLinked: () => void;
 }) {
@@ -467,6 +496,7 @@ export function OrbitUnitLinkDialog({
       mode="link"
       tableId="orbit-unit-link-candidates"
       unitId={unitId}
+      unit={unit}
       onClose={onClose}
       onCompleted={onLinked}
     />

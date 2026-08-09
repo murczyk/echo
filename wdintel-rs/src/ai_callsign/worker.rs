@@ -226,36 +226,27 @@ async fn complete_job(
         transaction.commit().await.c(h!())?;
         return Ok(false);
     };
-    let current: Vec<String> = inbox_item
-        .callsigns
-        .clone()
-        .map(serde_json::from_value)
-        .transpose()
-        .c(h!())?
-        .unwrap_or_default();
-    let suggested: Vec<String> = inbox_item
-        .callsigns_alg2
-        .clone()
-        .map(serde_json::from_value)
-        .transpose()
-        .c(h!())?
-        .unwrap_or_default();
+    let current_callsigns = crate::inbox::callsigns::load_by_item_ids(
+        &transaction,
+        &[sigint_inbox_item_id],
+    )
+    .await?
+    .remove(&sigint_inbox_item_id)
+    .unwrap_or_default();
+    let current = current_callsigns.primary;
+    let suggested = current_callsigns.alg2;
     let callsigns = normalize_callsigns(callsigns);
     let callsigns_changed = callsigns != current;
     let changed = callsigns_changed || !suggested.is_empty();
     if changed {
-        let mut inbox_item = inbox_item.into_active_model();
         if callsigns_changed {
-            inbox_item.callsigns =
-                Set(Some(serde_json::to_value(&callsigns).c(h!())?));
+            let mut inbox_item = inbox_item.into_active_model();
             inbox_item.callsign_tokens = Set(Some(
                 serde_json::to_value(Vec::<serde_json::Value>::new())
                     .c(h!())?,
             ));
+            inbox_item.update(&transaction).await.c(h!())?;
         }
-        inbox_item.callsigns_alg2 =
-            Set(Some(serde_json::to_value(Vec::<String>::new()).c(h!())?));
-        inbox_item.update(&transaction).await.c(h!())?;
         let system_login_id =
             crate::users::system_login_id(&transaction).await.c(h!())?;
         crate::inbox::callsigns::sync(

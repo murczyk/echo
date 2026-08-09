@@ -6,7 +6,7 @@ import { isUnauthorizedError } from '../../services/api/client';
 import { listAors } from '../../services/api/aor';
 import { listPosts } from '../../services/api/posts';
 import { getEncryptions } from '../../services/api/encryptions';
-import { getUnitsList } from '../../services/api/units';
+import { getUnitsByIds, getUnitsList, mergeUnitsById } from '../../services/api/units';
 import {
   getNetworkUnitStats,
   getNetworksGroupsActivity,
@@ -130,6 +130,13 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
 
       if (args.requestSeqRef.current !== seq) return;
 
+      const referencedUnitIds = Array.from(
+        new Set(networksList.flatMap((network) => network.unitIds ?? [])),
+      );
+      const referencedUnitsPromise = getUnitsByIds(referencedUnitIds, {
+        signal: controller.signal,
+      });
+
       args.setStatusCounts(statusCounts);
       args.setNoMoreToLoad(networksList.length < NETWORK_LIST_PAGE_SIZE);
       args.setNetworks((current) => (append ? [...current, ...networksList] : networksList));
@@ -137,10 +144,13 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
       if (lookupsPromise !== null) {
         (async () => {
           try {
-            const [unitsList, aorList, unitStatsList, postsList, encryptionList] =
-              await lookupsPromise;
+            const [lookups, referencedUnits] = await Promise.all([
+              lookupsPromise,
+              referencedUnitsPromise,
+            ]);
+            const [unitsList, aorList, unitStatsList, postsList, encryptionList] = lookups;
             if (args.requestSeqRef.current !== seq) return;
-            args.setUnits(unitsList);
+            args.setUnits(mergeUnitsById(unitsList, referencedUnits));
             args.setAors(aorList);
             args.setUnitStats(unitStatsList);
             args.setPosts(postsList);
@@ -152,6 +162,17 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
               redirectToLogin();
               return;
             }
+          }
+        })();
+      } else {
+        (async () => {
+          try {
+            const referencedUnits = await referencedUnitsPromise;
+            if (args.requestSeqRef.current !== seq) return;
+            args.setUnits((current) => mergeUnitsById(current, referencedUnits));
+          } catch (error) {
+            if (controller.signal.aborted || isAbortError(error)) return;
+            if (isUnauthorizedError(error)) redirectToLogin();
           }
         })();
       }

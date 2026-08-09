@@ -2340,9 +2340,6 @@ pub mod tests {
         if out.freq == NotSet {
             out.freq = Set(None);
         }
-        if out.callsigns == NotSet {
-            out.callsigns = Set(None);
-        }
         if out.checked == NotSet {
             out.checked = Set(None);
         }
