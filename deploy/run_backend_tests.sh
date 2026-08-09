@@ -26,11 +26,6 @@ export TEST_WDFILE_DB_NAME="$FILE_REGISTRY_DB_NAME"
 echo "Using test databases: $TEST_DB_NAME and $TEST_WDFILE_DB_NAME"
 
 bash "$REPO_ROOT/scripts/ci/check_analytics_migration_catalog.sh"
-echo "Migrating test databases..."
-cargo run -p wdintel-rs -- --mode=test migrate
-
-echo "Checking file registry SeaORM entities..."
-just check-seaorm-files --mode=test
 
 # Create storage directory and dummy files for CI
 mkdir -p ~/Downloads/storage

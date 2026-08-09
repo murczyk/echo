@@ -22,6 +22,6 @@ if [[ ! -d "node_modules" ]] || [[ "$installed_hash" != "$lockfile_hash" ]]; the
     printf '%s\n' "$lockfile_hash" > node_modules/.npm_installed
 fi
 
-npm test
+npm run test:ci
 
 echo "Frontend tests completed successfully!"

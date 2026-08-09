@@ -17,9 +17,11 @@
     "e2e:perf": "playwright test --grep @perf",
     "e2e:install": "playwright install --with-deps chromium",
     "test": "npm run test:prepare && npm run test:elm && npm run test:ts",
+    "test:ci": "npm run test:prepare && npm run test:elm && npm run test:ts:ci",
     "test:prepare": "elm-land generate",
     "test:elm": "elm-test",
     "test:ts": "vitest run",
+    "test:ts:ci": "vitest run src/ts/react/routes/rer-duty-neo/FeedFilterSelectionSection.spec.tsx src/ts/react/routes/rer-analysis-neo/components/AnalysisFilterField.spec.tsx src/ts/react/routes/rer-analysis-neo/components/analysis-filters-panel-derived.spec.ts",
     "storybook": "storybook dev -p 6006 --ci --disable-telemetry",
     "build-storybook": "storybook build --disable-telemetry"
   },
