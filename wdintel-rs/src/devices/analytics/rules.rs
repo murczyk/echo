@@ -392,10 +392,10 @@ fn compile_literal_patterns(
                 LiteralPattern::Equals => format!("^(?:{escaped})$"),
                 LiteralPattern::Contains => escaped,
                 LiteralPattern::ContainsToken { path: false } => {
-                    format!(r"(?:^|[\s_-])(?:{escaped})(?:$|[\s_-])")
+                    format!(r"(?:^|[\s_.-])(?:{escaped})(?:$|[\s_.-])")
                 }
                 LiteralPattern::ContainsToken { path: true } => {
-                    format!(r"(?:^|[\s_/-])(?:{escaped})(?:$|[\s_/-])")
+                    format!(r"(?:^|[\s_/.-])(?:{escaped})(?:$|[\s_/.-])")
                 }
             }
         })

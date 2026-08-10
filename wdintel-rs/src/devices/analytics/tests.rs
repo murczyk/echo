@@ -113,6 +113,34 @@ fn path_normalization_and_token_boundaries_are_separator_aware() {
 }
 
 #[test]
+fn full_path_token_recognizes_filename_before_extension() {
+    let token = condition(
+        RuleField::FullPath,
+        RuleMatcher::ContainsToken,
+        &["оружие"],
+    );
+
+    assert!(test_rule_expression(
+        token.clone(),
+        &file(
+            "7 МСР оружие.docx",
+            r"C:\Users\user\Desktop\Программы\БпС 2МСБ\копеейск\7 МСР оружие.docx",
+            Some("docx"),
+        ),
+    )
+    .unwrap());
+    assert!(!test_rule_expression(
+        token,
+        &file(
+            "сверхоружие.docx",
+            r"C:\Users\user\Desktop\Программы\сверхоружие.docx",
+            Some("docx"),
+        ),
+    )
+    .unwrap());
+}
+
+#[test]
 fn regex_is_unicode_and_case_insensitive_and_rejects_case_overrides() {
     let expression = condition(
         RuleField::FullPath,
