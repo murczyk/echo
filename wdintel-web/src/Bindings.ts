@@ -374,6 +374,11 @@ export type AreaOfResponsibilityStatsRsp = {
   aorNames: Array<AreaOfResponsibilityEntry>;
 };
 
+export type GeoCoordinates = {
+  lat: number;
+  lon: number;
+};
+
 export type InboxMessage = {
   messageUid: string | null;
   text: string;
@@ -4619,6 +4624,20 @@ export type SigintKeySharePolicy = {
   grantTo: number;
   author: string;
   createdAt: number;
+};
+
+export type CoordinateWithLocality = {
+  coords: GeoCoordinates;
+  locality: LocalityDetails | null;
+};
+
+export type LocalityDetails = {
+  settlementName: string;
+  direction: string;
+  region: string | null;
+  country: string | null;
+  distanceM: number;
+  isRf: boolean;
 };
 
 export type DutyTagsLayout =

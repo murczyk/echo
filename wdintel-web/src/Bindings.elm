@@ -1031,6 +1031,20 @@ areaOfResponsibilityStatsRspEncoder struct =
         ]
 
 
+type alias GeoCoordinates =
+    { lat : Float
+    , lon : Float
+    }
+
+
+geoCoordinatesEncoder : GeoCoordinates -> Json.Encode.Value
+geoCoordinatesEncoder struct =
+    Json.Encode.object
+        [ ( "lat", (Json.Encode.float) struct.lat )
+        , ( "lon", (Json.Encode.float) struct.lon )
+        ]
+
+
 type alias InboxMessage =
     { messageUid : Maybe (String)
     , text : String
@@ -11948,6 +11962,42 @@ sigintKeySharePolicyEncoder struct =
         ]
 
 
+type alias CoordinateWithLocality =
+    { coords : GeoCoordinates
+    , locality : Maybe (LocalityDetails)
+    }
+
+
+coordinateWithLocalityEncoder : CoordinateWithLocality -> Json.Encode.Value
+coordinateWithLocalityEncoder struct =
+    Json.Encode.object
+        [ ( "coords", (geoCoordinatesEncoder) struct.coords )
+        , ( "locality", (Maybe.withDefault Json.Encode.null << Maybe.map (localityDetailsEncoder)) struct.locality )
+        ]
+
+
+type alias LocalityDetails =
+    { settlementName : String
+    , direction : String
+    , region : Maybe (String)
+    , country : Maybe (String)
+    , distanceM : Float
+    , isRf : Bool
+    }
+
+
+localityDetailsEncoder : LocalityDetails -> Json.Encode.Value
+localityDetailsEncoder struct =
+    Json.Encode.object
+        [ ( "settlement_name", (Json.Encode.string) struct.settlementName )
+        , ( "direction", (Json.Encode.string) struct.direction )
+        , ( "region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.region )
+        , ( "country", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.country )
+        , ( "distance_m", (Json.Encode.float) struct.distanceM )
+        , ( "is_rf", (Json.Encode.bool) struct.isRf )
+        ]
+
+
 nameDecoder : Json.Decode.Decoder Name
 nameDecoder =
     Json.Decode.succeed Name
@@ -12422,6 +12472,13 @@ areaOfResponsibilityStatsRspDecoder =
     Json.Decode.succeed AreaOfResponsibilityStatsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors" (Json.Decode.list (analysisStatsAorDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_names" (Json.Decode.list (areaOfResponsibilityEntryDecoder))))
+
+
+geoCoordinatesDecoder : Json.Decode.Decoder GeoCoordinates
+geoCoordinatesDecoder =
+    Json.Decode.succeed GeoCoordinates
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lon" (Json.Decode.float)))
 
 
 inboxMessageDecoder : Json.Decode.Decoder InboxMessage
@@ -18741,6 +18798,24 @@ sigintKeySharePolicyDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_to" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+
+
+coordinateWithLocalityDecoder : Json.Decode.Decoder CoordinateWithLocality
+coordinateWithLocalityDecoder =
+    Json.Decode.succeed CoordinateWithLocality
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (geoCoordinatesDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locality" (Json.Decode.nullable (localityDetailsDecoder))))
+
+
+localityDetailsDecoder : Json.Decode.Decoder LocalityDetails
+localityDetailsDecoder =
+    Json.Decode.succeed LocalityDetails
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "direction" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "region" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "country" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "distance_m" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rf" (Json.Decode.bool)))
 
 
 deltaLoginUrlDecoder : Json.Decode.Decoder DeltaLoginUrl
