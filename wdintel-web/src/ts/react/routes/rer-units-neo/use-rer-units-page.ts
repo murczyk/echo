@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AlertColor } from '@mui/material';
 import type {
@@ -75,6 +75,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [uploadingKmz, setUploadingKmz] = useState(false);
   const [kmzTask, setKmzTask] = useState<KmzTask | null>(null);
+  const mutationRefreshController = useRef<AbortController | null>(null);
 
   const loadUnits = useCallback(
     async (options?: RequestOptions) => {
@@ -111,7 +112,10 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   useEffect(() => {
     const controller = new AbortController();
     void loadUnits({ signal: controller.signal });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      mutationRefreshController.current?.abort();
+    };
   }, [loadUnits]);
 
   useEffect(() => {
@@ -308,21 +312,33 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   }
 
   async function refreshUnitsAfterMutation(successText: string) {
+    mutationRefreshController.current?.abort();
+    const controller = new AbortController();
+    mutationRefreshController.current = controller;
+    const options = { signal: controller.signal };
     try {
-      const response = await getUnitsPage(listReq);
+      const response = await getUnitsPage(listReq, options);
+      if (controller.signal.aborted) return;
       const attachmentIds = await getUnitIdsWithVisibleAttachments(
         response.units.map((unit) => unit.id),
+        options,
       );
+      if (controller.signal.aborted) return;
       setUnits(response.units);
       setTotalCount(response.totalCount);
       setStatusCounts(response.statusCounts);
       setAttachmentUnitIds(new Set(attachmentIds));
       setStatus({ severity: 'success', text: successText });
     } catch (error) {
+      if (controller.signal.aborted) return;
       setStatus({
         severity: 'warning',
         text: `${successText} Не вдалося оновити список: ${formatUnitError(error)}`,
       });
+    } finally {
+      if (mutationRefreshController.current === controller) {
+        mutationRefreshController.current = null;
+      }
     }
   }
 
@@ -330,28 +346,29 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     setSubmitting(true);
     setDialogError(null);
     try {
+      let successText: string;
       if (editUnit !== null) {
         const updated = await updateUnit({ ...editUnit, ...value.unit });
         setUnits((current) => replaceUnit(current, updated));
-        await refreshUnitsAfterMutation(`Підрозділ «${updated.name}» оновлено.`);
+        successText = `Підрозділ «${updated.name}» оновлено.`;
       } else if (value.autoNetwork !== undefined) {
         const created = await createUnitWithAutoNetwork({
           unit: value.unit,
           ...value.autoNetwork,
         });
         setUnits((current) => sortUnits([...current, created.unit]));
-        await refreshUnitsAfterMutation(
+        successText =
           created.networkId === null
             ? `Підрозділ «${created.unit.name}» створено без мережі.`
-            : `Підрозділ «${created.unit.name}» і радіомережу створено.`,
-        );
+            : `Підрозділ «${created.unit.name}» і радіомережу створено.`;
       } else {
         const created = await createUnit(value.unit);
         setUnits((current) => sortUnits([...current, created]));
-        await refreshUnitsAfterMutation(`Підрозділ «${created.name}» створено.`);
+        successText = `Підрозділ «${created.name}» створено.`;
       }
       setCreateOpen(false);
       setEditUnit(null);
+      void refreshUnitsAfterMutation(successText);
     } catch (error) {
       setDialogError(formatUnitError(error));
     } finally {
