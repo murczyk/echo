@@ -13,7 +13,8 @@ CI compares migration DDL with
 `deploy/clickhouse/migration-impact.json`. Every changed Echo migration and
 every updated `echo-im` or `echo-gpu` migration revision must declare its
 analytics impact. The supported strategies are `excluded`,
-`replicated_snapshot`, `cdc_backfill`, and `mirror_resync`.
+`replicated_snapshot`, `cdc_backfill`, `empty_table_resnapshot`, and
+`mirror_resync`.
 
 Treat every schema migration as a coupled change to
 `deploy/clickhouse/migration-impact.json`: review the matching entry in the
@@ -40,9 +41,11 @@ is green.
 
 Treat replicated tables as potentially empty. The `cdc_backfill` strategy is
 allowed only for a table whose schema guarantees a row on every deployment;
-currently that is limited to the `system_settings` singleton. Use
-`mirror_resync` for other additive column migrations because zero-row DML
-cannot propagate the new schema to ClickHouse.
+currently that is limited to the `system_settings` singleton. Additive-column
+migrations on tables expected to remain empty may use
+`empty_table_resnapshot`; deployment verifies emptiness and resnapshots only
+that table. Use `mirror_resync` for destructive, incompatible, or non-empty
+schema changes.
 
 Apply this review to schema migrations shipped by application dependencies
 such as `echo-im`, not only migrations in `echo-migration`.

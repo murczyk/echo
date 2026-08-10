@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-# shellcheck source=./lib.sh
+# shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib.sh"
 
 protected_file_exists "$SOURCE_CONFIG_FILE" || exit 0
@@ -24,6 +24,9 @@ analytics_ssh_target=${ANALYTICS_SSH_TARGET:-echo@${ANALYTICS_ADDRESS%/*}}
 log "Waiting for source table reconciliation"
 sudo systemctl start echo-peerdb-table-reconcile.service \
   || die "source table reconciliation failed"
+
+log "Running manifest-authorized targeted empty-table repairs"
+"$SCRIPT_DIR/source-resnapshot-table.sh" --manifest
 
 deadline=$((SECONDS + health_timeout))
 while ((SECONDS < deadline)); do

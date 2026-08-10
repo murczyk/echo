@@ -9,6 +9,7 @@ cd "$REPO_ROOT"
 
 python3 -m unittest scripts/ci/test_check_analytics_migrations.py
 python3 scripts/ci/check_analytics_migrations.py
+bash deploy/clickhouse/tests/test-resnapshot-table.sh
 
 bash "$SCRIPT_DIR/ensure_postgres_running.sh"
 

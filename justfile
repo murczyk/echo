@@ -2383,6 +2383,31 @@ analytics-reconcile-tables:
 analytics-reconcile-derived-schema:
     bash deploy/clickhouse/bin/source-reconcile-derived-schema.sh
 
+[arg('server', long='server')]
+[arg('table', long='table')]
+analytics-resnapshot-table server table:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SERVER="{{ server }}"
+    TABLE="{{ table }}"
+    [[ -n "$SERVER" ]] || { echo "--server is required" >&2; exit 1; }
+    [[ "$SERVER" =~ ^[A-Za-z0-9._-]+$ ]] \
+        || { echo "invalid server: $SERVER" >&2; exit 1; }
+    [[ "$TABLE" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
+        || { echo "invalid table: $TABLE" >&2; exit 1; }
+
+    tar -C "{{ justfile_directory() }}" -cf - \
+        deploy/clickhouse/bin/lib.sh \
+        deploy/clickhouse/bin/source-resnapshot-table.sh \
+        deploy/clickhouse/bin/resnapshot-table.sh \
+        deploy/clickhouse/migration-impact.json \
+      | ssh "$SERVER" "set -euo pipefail
+          source_table=$TABLE
+          temporary_dir=\$(mktemp -d /tmp/echo-peerdb-resnapshot.XXXXXX)
+          trap 'rm -rf -- \"\$temporary_dir\"' EXIT
+          tar -xf - -C \"\$temporary_dir\" --strip-components=2
+          \"\$temporary_dir/bin/source-resnapshot-table.sh\" --table \"\$source_table\""
+
 setup-analytics-reconcile-tables:
     deploy/clickhouse/bin/source-sync-exclusions.sh --yes
 

@@ -106,6 +106,67 @@ update system_settings set enabled = false;
                 )
         self.assertEqual(errors, [])
 
+    def test_empty_table_resnapshot_accepts_add_column(self) -> None:
+        contents = "alter table sample add column enabled boolean default false;"
+        errors = MODULE.validate_change(
+            "echo:m1",
+            contents,
+            MODULE.detect_ddl(contents),
+            {
+                "changes": [
+                    {
+                        "table": "public.sample",
+                        "strategy": "empty_table_resnapshot",
+                    }
+                ]
+            },
+            set(),
+        )
+        self.assertEqual(errors, [])
+
+    def test_empty_table_resnapshot_rejects_non_additive_change(self) -> None:
+        contents = "alter table sample alter column enabled type text;"
+        errors = MODULE.validate_change(
+            "echo:m1",
+            contents,
+            MODULE.detect_ddl(contents),
+            {
+                "changes": [
+                    {
+                        "table": "public.sample",
+                        "strategy": "empty_table_resnapshot",
+                    }
+                ]
+            },
+            set(),
+        )
+        self.assertTrue(any("without ADD COLUMN" in error for error in errors))
+
+    def test_empty_table_resnapshot_requires_add_on_declared_table(self) -> None:
+        contents = """
+alter table sample alter column enabled type text;
+alter table another add column enabled boolean;
+"""
+        errors = MODULE.validate_change(
+            "echo:m1",
+            contents,
+            MODULE.detect_ddl(contents),
+            {
+                "changes": [
+                    {
+                        "table": "public.sample",
+                        "strategy": "empty_table_resnapshot",
+                    },
+                    {
+                        "table": "public.another",
+                        "strategy": "mirror_resync",
+                    },
+                ]
+            },
+            set(),
+        )
+        self.assertTrue(any("without ADD COLUMN" in error for error in errors))
+
     def test_catalog_comparison_returns_changed_tables(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             before = Path(directory) / "before.tsv"

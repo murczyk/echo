@@ -23,8 +23,13 @@ DDL_RE = re.compile(
     r"(?P<table>(?:[a-z_][a-z0-9_]*\.)?[a-z_][a-z0-9_]*)",
     re.IGNORECASE,
 )
-ADD_COLUMN_RE = re.compile(r"\balter\s+table\b.*?\badd\s+column\b", re.IGNORECASE | re.DOTALL)
-STRATEGIES = {"excluded", "replicated_snapshot", "cdc_backfill", "mirror_resync"}
+STRATEGIES = {
+    "excluded",
+    "replicated_snapshot",
+    "cdc_backfill",
+    "empty_table_resnapshot",
+    "mirror_resync",
+}
 CDC_BACKFILL_GUARANTEED_NONEMPTY_TABLES = {"public.system_settings"}
 DEPENDENCIES = {
     "echo-im": "echo-im",
@@ -99,6 +104,20 @@ def detect_ddl(contents: str) -> list[DdlChange]:
     return changes
 
 
+def has_add_column(contents: str, table: str) -> bool:
+    schema, relation = table.split(".", 1)
+    if schema == "public":
+        qualified_table = rf"(?:public\s*\.\s*)?{re.escape(relation)}"
+    else:
+        qualified_table = rf"{re.escape(schema)}\s*\.\s*{re.escape(relation)}"
+    return re.search(
+        rf"\balter\s+table\s+(?:if\s+exists\s+)?{qualified_table}\b"
+        rf"[^;]*\badd\s+column\b",
+        contents,
+        re.IGNORECASE | re.DOTALL,
+    ) is not None
+
+
 def load_manifest() -> dict[str, Any]:
     manifest = json.loads(MANIFEST_PATH.read_text())
     if set(manifest) != {"migrations", "dependencies"}:
@@ -145,7 +164,7 @@ def validate_change(
         if strategy == "replicated_snapshot" and "create" not in operations:
             errors.append(f"{key}: {table} uses replicated_snapshot without CREATE TABLE")
         if strategy == "cdc_backfill":
-            if "alter" not in operations or not ADD_COLUMN_RE.search(contents):
+            if "alter" not in operations or not has_add_column(contents, table):
                 errors.append(f"{key}: {table} uses cdc_backfill without ADD COLUMN")
             if table not in CDC_BACKFILL_GUARANTEED_NONEMPTY_TABLES:
                 errors.append(
@@ -163,6 +182,11 @@ def validate_change(
             if not dml.search(contents) and not backfill_dml:
                 errors.append(
                     f"{key}: {table} uses cdc_backfill without reviewed backfill DML"
+                )
+        if strategy == "empty_table_resnapshot":
+            if "alter" not in operations or not has_add_column(contents, table):
+                errors.append(
+                    f"{key}: {table} uses empty_table_resnapshot without ADD COLUMN"
                 )
 
     detected_tables = {change.table for change in detected}
@@ -277,6 +301,11 @@ def validate_dependency_changes(
                     f"{key}: {table} uses cdc_backfill but may be empty; "
                     "use mirror_resync because zero-row DML cannot propagate "
                     "the schema to ClickHouse"
+                )
+            if strategy == "empty_table_resnapshot":
+                errors.append(
+                    f"{key}: {table} uses empty_table_resnapshot in a dependency "
+                    "declaration where additive DDL cannot be verified"
                 )
     return errors, changed_keys
 

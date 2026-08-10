@@ -679,12 +679,34 @@ Migration pull requests are checked against
 `migration-impact.json`. New tables declare `excluded` or
 `replicated_snapshot`; additive replicated columns declare `cdc_backfill` with
 reviewed post-DDL DML only for the guaranteed-nonempty `system_settings`
-singleton. Other additive column migrations use `mirror_resync` because the
-source table may be empty and zero-row DML cannot propagate its schema. Drops,
-renames, and type changes also use `mirror_resync` until a narrower path has
-been validated. Dependency revision changes for `echo-im` and `echo-gpu` must
+singleton. Additive columns on a table expected to remain empty may declare
+`empty_table_resnapshot`. After migrations, deployment validates that the table
+is still empty and has only source-side additive column drift, then uses
+PeerDB's paused-mirror table editing to remove and re-add only that preserved
+mapping. Drops, renames, type changes, and non-empty incompatible changes use
+`mirror_resync`. Dependency revision changes for `echo-im` and `echo-gpu` must
 declare whether they contain schema changes. Deployment never starts a full
 mirror resync implicitly.
+
+The targeted helper is idempotent and keeps retry state under
+`/var/lib/echo-analytics/table-resnapshot`. It rejects raw-only drift and
+unsupported mapping transforms before mutation. Recoverable failures attempt
+to leave the mirror paused; rerun the same command promptly so retained WAL
+does not continue to grow:
+
+```bash
+just analytics-resnapshot-table \
+  --server echo-skhid \
+  --table public.echo_automation
+```
+
+The command streams the current helper through the source host, takes the same
+lock as table-selection reconciliation, preserves custom destination mapping
+names, snapshots only the empty table, refreshes current-state and gateway
+views, and requires the end-to-end analytics health check to pass. The source
+package installs the helper and manifest under `/opt/echo-peerdb` so the normal
+post-migration deployment verification can apply authorized repairs
+automatically.
 
 ```json
 {
