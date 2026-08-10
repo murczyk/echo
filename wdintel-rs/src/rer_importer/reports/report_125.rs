@@ -874,6 +874,8 @@ mod tests {
             locality_direction: None,
             distance_m: None,
             country_code: None,
+            region: None,
+            country_name: None,
             pelengation_object: None,
             deleted: false,
             created_at: test_dt(16, 12, 14, 31),
