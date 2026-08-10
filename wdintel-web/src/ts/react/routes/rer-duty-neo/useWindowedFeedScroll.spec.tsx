@@ -24,6 +24,10 @@ function TestScroller(props: {
   onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
   enabled?: boolean;
   isWatchMode?: boolean;
+  unreadPrefetchNeeded?: boolean;
+  unreadPrefetchMin?: number;
+  itemHeightPx?: number;
+  bottomLoadBufferPx?: number;
 }) {
   const scroll = useWindowedFeedScroll({
     itemIds: props.ids,
@@ -40,11 +44,14 @@ function TestScroller(props: {
     onVisibleMessageIds: props.onVisibleMessageIds,
     enabled: props.enabled ?? true,
     isWatchMode: props.isWatchMode ?? true,
+    unreadPrefetchNeeded: props.unreadPrefetchNeeded,
+    unreadPrefetchMin: props.unreadPrefetchMin,
     topLoadBufferPx: 80,
-    bottomLoadBufferPx: 80,
+    bottomLoadBufferPx: props.bottomLoadBufferPx ?? 80,
     atBottomThresholdPx: 10,
   });
   latestScrollHandle = scroll;
+  const itemHeightPx = props.itemHeightPx ?? 50;
 
   return (
     <div
@@ -59,7 +66,7 @@ function TestScroller(props: {
           const itemRef = scroll.setItemRef(id);
           renderedItemRefs.set(id, itemRef);
           return (
-            <div key={id} ref={itemRef} data-testid={`item-${id}`} style={{ height: 50 }}>
+            <div key={id} ref={itemRef} data-testid={`item-${id}`} style={{ height: itemHeightPx }}>
               item {id}
             </div>
           );
@@ -816,6 +823,72 @@ describe('useWindowedFeedScroll', () => {
     expect(onLoadNewer).toHaveBeenCalledTimes(1);
   });
 
+  it('does not call onLoadNewer near bottom when unread prefetch runway is already full', async () => {
+    const onLoadNewer = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller ids={[1, 2, 3, 4]} onLoadNewer={onLoadNewer} unreadPrefetchNeeded={false} />,
+      );
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 130, clientHeight: 100, scrollHeight: 300 });
+
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+
+    expect(onLoadNewer).not.toHaveBeenCalled();
+  });
+
+  it('calls onLoadNewer in the trailing prefetch zone even when pixel distance exceeds the buffer', async () => {
+    const onLoadNewer = vi.fn();
+    const onNearBottomChange = vi.fn();
+    const ids = Array.from({ length: 20 }, (_, index) => index + 1);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    // Tall rows: last few messages alone exceed the 80px bottom buffer.
+    const itemHeight = 400;
+    const metrics = {
+      scrollTop: 18 * itemHeight,
+      clientHeight: 100,
+      scrollHeight: 20 * itemHeight,
+    };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = {
+      items: new Map(ids.map((id, index) => [id, { top: index * itemHeight, height: itemHeight }])),
+    };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={ids}
+          onLoadNewer={onLoadNewer}
+          onNearBottomChange={onNearBottomChange}
+          unreadPrefetchNeeded
+          unreadPrefetchMin={10}
+          bottomLoadBufferPx={80}
+        />,
+      );
+    });
+
+    onLoadNewer.mockClear();
+    onNearBottomChange.mockClear();
+
+    // bottomDistance = 8000 - 100 - 7200 = 700 > 80, but viewport intersects last-10 zone.
+    expect(metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop).toBe(700);
+
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+
+    expect(onLoadNewer).toHaveBeenCalled();
+  });
+
   it('does not repeatedly call onLoadNewer while already loading newer items', async () => {
     const onLoadNewer = vi.fn();
     await act(async () => {
@@ -1128,6 +1201,120 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(100);
     expect(onAtBottomChange).toHaveBeenCalledWith(false);
     expect(onPhysicalBottomChange).toHaveBeenCalledWith(false);
+  });
+
+  it('keeps near-bottom non-watch position when a newer window start-trims', async () => {
+    const onLeftBottom = vi.fn();
+    const initialIds = Array.from({ length: 40 }, (_, index) => index + 1);
+    const nextIds = Array.from({ length: 40 }, (_, index) => index + 21);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} onLeftBottom={onLeftBottom} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 2000 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(
+        <TestScroller ids={initialIds} isWatchMode={false} onLeftBottom={onLeftBottom} />,
+      );
+    });
+    // Leave bottom into the near-bottom load buffer (distance 50 with buffer 80).
+    scroller.scrollTop = 1850;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    onLeftBottom.mockClear();
+
+    metrics.scrollHeight = 2000;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} isWatchMode={false} onLeftBottom={onLeftBottom} />);
+    });
+
+    // Trimmed 20×50px from the start; viewing around former id 38 should stay put.
+    expect(scroller.scrollTop).toBe(850);
+    expect(
+      (container.querySelector('[data-testid="item-38"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(0);
+    expect(onLeftBottom).not.toHaveBeenCalled();
+  });
+
+  it('restores via first common id when a newer window removes every previously visible id', async () => {
+    const initialIds = Array.from({ length: 40 }, (_, index) => index + 1);
+    // Slide far enough that prior viewport ids 5-6 are gone; first common is 21.
+    const nextIds = Array.from({ length: 40 }, (_, index) => index + 21);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 2000 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={initialIds} isWatchMode={false} />);
+    });
+    // Viewport shows ids 5-6 only; those are removed by the slide.
+    scroller.scrollTop = 200;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+
+    metrics.scrollHeight = 2000;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} isWatchMode={false} />);
+    });
+
+    expect(scroller.scrollTop).toBe(0);
+    expect(
+      (container.querySelector('[data-testid="item-21"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(0);
+  });
+
+  it('preserves position when start-trim also clears the reached-start banner', async () => {
+    const initialIds = Array.from({ length: 40 }, (_, index) => index + 1);
+    const nextIds = Array.from({ length: 40 }, (_, index) => index + 21);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} hasReachedStart />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 2040 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds, 40) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={initialIds} isWatchMode={false} hasReachedStart />);
+    });
+    scroller.scrollTop = 1890;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+
+    metrics.scrollHeight = 2000;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} isWatchMode={false} hasReachedStart={false} />);
+    });
+
+    expect(scroller.scrollTop).toBe(850);
+    expect(
+      (container.querySelector('[data-testid="item-38"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(0);
   });
 
   it('reuses callbacks for active ids and recreates callbacks after an id leaves the window', async () => {

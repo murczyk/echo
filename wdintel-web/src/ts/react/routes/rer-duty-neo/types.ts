@@ -33,6 +33,8 @@ export type FeedColumnModel = {
     physicallyAtBottom?: boolean;
     tailAvailability?: TailAvailability;
     unreadCount?: number;
+    /** When true, near-bottom should keep loading newer until the unread runway is filled. */
+    unreadPrefetchNeeded?: boolean;
     workspaceFabAvoidance?: DutyWorkspaceFabAvoidance;
   };
   filterPanel: FeedFilterPanelModel;
