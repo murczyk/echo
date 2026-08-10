@@ -777,6 +777,7 @@ where
             .await
             .c(h!())?;
     }
+    active_network_for_unit(dbx, unit_id).await?;
     find_unit(dbx, unit_id).await
 }
 
@@ -788,6 +789,7 @@ async fn clear_create_unit_orbit_note_if_hidden(
     let can_view_orbit = orbit::can_view_orbit_data(dbx, login).await?;
     if !can_view_orbit {
         req.orbit_note = None;
+        req.duplicate_unit_ids.clear();
     }
     Ok(can_view_orbit)
 }
@@ -968,7 +970,7 @@ async fn active_network_for_unit<C>(
 where
     C: ConnectionTrait,
 {
-    Ok(sigint_network::Entity::find()
+    let mut networks = sigint_network::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_network::Relation::SigintNetworkUnit.def(),
@@ -976,9 +978,16 @@ where
         .filter(sigint_network_unit::Column::UnitId.eq(unit_id))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network::Column::ActiveTo.is_null())
-        .one(dbx)
+        .limit(2)
+        .all(dbx)
         .await
-        .c(h!())?)
+        .c(h!())?;
+    if networks.len() > 1 {
+        return Err(AppError::BL {
+            msg: "unit has multiple active networks".to_string(),
+        });
+    }
+    Ok(networks.pop())
 }
 
 async fn fanout_created_network(
@@ -2792,9 +2801,102 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn create_unit_ignores_orbit_note_when_orbit_data_is_hidden() {
+    async fn create_unit_rejects_multiple_inherited_active_networks() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let first_duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let orbit_unit_id =
+            link_current_duplicate_candidate(&env.dbx, first_duplicate.id)
+                .await;
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit_id),
+            sigint_unit_id: Set(second_duplicate.id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        for unit_id in [first_duplicate.id, second_duplicate.id] {
+            create_device_network_for_login(
+                &login_id,
+                &env,
+                CreateDeviceNetworkReq {
+                    unit_id,
+                    locations: vec!["Роботине".to_string()],
+                    unit_mask: Vec::new(),
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let mut req = auto_req(false, vec!["Роботине"], vec!["2 шр"]);
+        req.unit.duplicate_unit_ids =
+            vec![first_duplicate.id, second_duplicate.id];
+        let candidate_ids = orbit::create_unit_duplicate_candidate_ids_for_req(
+            &env.dbx, &req.unit,
+        )
+        .await
+        .unwrap();
+        assert!(candidate_ids.contains(&first_duplicate.id));
+        assert!(candidate_ids.contains(&second_duplicate.id));
+
+        let err = create_unit_with_auto_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            AppError::BL { msg } if msg == "unit has multiple active networks"
+        ));
+        assert_eq!(unit_count(&env.dbx).await, 2);
+        assert_eq!(network_count(&env.dbx).await, 2);
+        let network_unit_ids = sigint_network_unit::Entity::find()
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|network_unit| network_unit.unit_id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            network_unit_ids,
+            BTreeSet::from([first_duplicate.id, second_duplicate.id])
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_ignores_orbit_fields_when_orbit_data_is_hidden() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_current_duplicate_candidate(&env.dbx, duplicate.id).await;
         let settings = system_settings::Entity::find()
             .filter(system_settings::Column::Deleted.eq(false))
             .one(&env.dbx)
@@ -2806,8 +2908,8 @@ mod tests {
         settings.update(&env.dbx).await.unwrap();
         let login_id = test_login_id(&env).await;
         let mut req = auto_req(true, vec![], vec![]);
-        req.unit.active = false;
         req.unit.orbit_note = Some("Hidden note".to_string());
+        req.unit.duplicate_unit_ids = vec![duplicate.id];
 
         let rsp = create_unit_with_auto_network_for_login(&login_id, &env, req)
             .await
@@ -2819,6 +2921,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(unit.orbit_note, None);
+        assert!(
+            !sigint_unit::Entity::find_by_id(duplicate.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
     }
 
     #[tokio::test]
