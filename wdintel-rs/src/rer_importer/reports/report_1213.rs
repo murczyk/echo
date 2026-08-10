@@ -4,6 +4,10 @@ use crate::entities::{
     signal_message,
 };
 use crate::error::AppError;
+use crate::rer_importer::report_chunking::{
+    build_filtered_inbox_report_chunk_query, inbox_report_chunk_req,
+    inbox_report_period_chunks, ReportPeriodEnd,
+};
 use crate::rer_importer::reports::inbox_light::{
     blank_inbox_message, load_message_group_info,
 };
@@ -285,14 +289,42 @@ async fn collect_report_1213_data(
     inbox_req.nolimit = Some(true);
     inbox_req.report_tags_only_this_unit = Some(false);
 
-    let messages =
-        load_report_1213_messages(dbx, login, env, &inbox_req).await?;
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks =
+        inbox_report_period_chunks(&inbox_req, report_settings.chunking_hours)
+            .context(h!())?;
+    let mut messages_by_id = BTreeMap::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "Report 1.2.13 chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let chunk_req = inbox_report_chunk_req(&inbox_req, chunk);
+        for (id, message) in
+            load_report_1213_messages(dbx, login, env, &chunk_req, chunk.end)
+                .await
+                .context(h!())?
+        {
+            messages_by_id.entry(id).or_insert(message);
+        }
+    }
     let own_datasource_ids = if req.report_tags_only_this_unit == Some(true) {
-        Some(load_report_1213_datasource_ids(dbx, logins).await?)
+        Some(
+            load_report_1213_datasource_ids(dbx, logins)
+                .await
+                .context(h!())?,
+        )
     } else {
         None
     };
-    let messages = messages
+    let messages = messages_by_id
         .into_iter()
         .filter(|(_, message)| {
             report_1213_message_matches_datasource_scope(
@@ -347,9 +379,10 @@ async fn load_report_1213_messages(
     login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let rows = crate::rer_importer::inbox::query::build_filtered_inbox_query(
-        dbx, login, env, req,
+    let rows = build_filtered_inbox_report_chunk_query(
+        dbx, login, env, req, period_end,
     )
     .await
     .c(h!())?
@@ -468,19 +501,22 @@ async fn load_report_1213_message_datetimes(
     }
 
     let mut datetimes = BTreeMap::new();
-    for item in sigint_inbox_item::Entity::find()
-        .filter(sigint_inbox_item::Column::Id.eq_any(message_ids.to_vec()))
-        .all(dbx)
-        .await
-        .c(h!())?
-    {
-        let Some(datetime_utc) = item.datetime else {
-            continue;
-        };
-        let datetime =
-            dt_zoned_from_millis(datetime_utc.and_utc().timestamp_millis())?
-                .naive_local();
-        datetimes.insert(item.id, datetime);
+    for message_ids in message_ids.chunks(20_000) {
+        for item in sigint_inbox_item::Entity::find()
+            .filter(sigint_inbox_item::Column::Id.eq_any(message_ids.to_vec()))
+            .all(dbx)
+            .await
+            .c(h!())?
+        {
+            let Some(datetime_utc) = item.datetime else {
+                continue;
+            };
+            let datetime =
+                dt_zoned_from_millis(datetime_utc.and_utc().timestamp_millis())
+                    .context(h!())?
+                    .naive_local();
+            datetimes.insert(item.id, datetime);
+        }
     }
 
     Ok(datetimes)
@@ -541,20 +577,22 @@ async fn load_report_1213_pelengs(
     }
 
     let mut pelengs_map = BTreeMap::<i64, Vec<sigint_peleng::Model>>::new();
-    for peleng in sigint_peleng::Entity::find()
-        .filter(sigint_peleng::Column::Deleted.eq(false))
-        .filter(
-            sigint_peleng::Column::SourceInboxItemId
-                .eq_any(message_ids.to_vec()),
-        )
-        .all(dbx)
-        .await
-        .c(h!())?
-    {
-        pelengs_map
-            .entry(peleng.source_inbox_item_id)
-            .or_default()
-            .push(peleng);
+    for message_ids in message_ids.chunks(20_000) {
+        for peleng in sigint_peleng::Entity::find()
+            .filter(sigint_peleng::Column::Deleted.eq(false))
+            .filter(
+                sigint_peleng::Column::SourceInboxItemId
+                    .eq_any(message_ids.to_vec()),
+            )
+            .all(dbx)
+            .await
+            .c(h!())?
+        {
+            pelengs_map
+                .entry(peleng.source_inbox_item_id)
+                .or_default()
+                .push(peleng);
+        }
     }
 
     Ok(pelengs_map)

@@ -2,6 +2,10 @@ use super::types::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::highlight::CNCallsign;
+use crate::rer_importer::report_chunking::{
+    build_filtered_inbox_report_chunk_query, inbox_report_chunk_req,
+    inbox_report_period_chunks, ReportPeriodChunk, ReportPeriodEnd,
+};
 use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
 use crate::rer_importer::types::InboxMessagesReq;
@@ -165,8 +169,19 @@ pub async fn report_docx_kind_reo(
         req.report_tags_only_this_unit.unwrap_or(false);
     let mut current_req = req.req.clone();
     current_req.report_tags_only_this_unit = Some(false);
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks = inbox_report_period_chunks(
+        &current_req,
+        report_settings.chunking_hours,
+    )
+    .context(h!())?;
     let analytics_req = &current_req;
     let postgres_req = &current_req;
+    let analytics_chunks = &chunks;
+    let postgres_chunks = &chunks;
     let messages = crate::rer_importer::analysis::with_analytics_read_fallback(
         env,
         "REO report interception scan",
@@ -174,10 +189,24 @@ pub async fn report_docx_kind_reo(
             &current_req,
         ),
         |db| async move {
-            load_reo_inbox_messages(&db, &login, env, analytics_req).await
+            load_reo_inbox_messages_chunks(
+                &db,
+                &login,
+                env,
+                analytics_req,
+                analytics_chunks,
+            )
+            .await
         },
         |db| async move {
-            load_reo_inbox_messages(&db, &login, env, postgres_req).await
+            load_reo_inbox_messages_chunks(
+                &db,
+                &login,
+                env,
+                postgres_req,
+                postgres_chunks,
+            )
+            .await
         },
     )
     .await
@@ -256,14 +285,44 @@ pub async fn report_docx_kind_reo(
     result
 }
 
+async fn load_reo_inbox_messages_chunks(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    chunks: &[ReportPeriodChunk],
+) -> Result<Vec<(i64, ReoInboxMessage)>, AppError> {
+    let mut messages = BTreeMap::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "REO report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let chunk_req = inbox_report_chunk_req(req, chunk);
+        for (id, message) in
+            load_reo_inbox_messages(dbx, login, env, &chunk_req, chunk.end)
+                .await
+                .context(h!())?
+        {
+            messages.entry(id).or_insert(message);
+        }
+    }
+    Ok(messages.into_iter().collect())
+}
+
 async fn load_reo_inbox_messages(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<(i64, ReoInboxMessage)>, AppError> {
-    let rows = crate::rer_importer::inbox::query::build_filtered_inbox_query(
-        dbx, login, env, req,
+    let rows = build_filtered_inbox_report_chunk_query(
+        dbx, login, env, req, period_end,
     )
     .await
     .context(h!())?
