@@ -55,6 +55,9 @@ export const DEFAULT_LIST_UNITS_REQ: ListUnitsReq = {
   filterArmyRegion: null,
   filterComment: null,
   filterOrbitNote: null,
+  filterIsDeduplicateCandidate: null,
+  filterHasOrbit: null,
+  filterHasOrbitNote: null,
   searchMode: null,
   limit: null,
   offset: null,
@@ -66,6 +69,18 @@ export function mergeUnitsById(...unitLists: readonly Unit[][]): Unit[] {
     for (const unit of units) unitsById.set(unit.id, unit);
   }
   return Array.from(unitsById.values());
+}
+
+export async function searchUnitsStrictThenRelaxed(
+  req: ListUnitsReq,
+  options?: RequestOptions,
+): Promise<Unit[]> {
+  const requests = [getUnitsPage({ ...req, searchMode: 'Strict' }, options)];
+  if (req.filterText?.trim()) {
+    requests.push(getUnitsPage({ ...req, searchMode: 'Relaxed' }, options));
+  }
+  const pages = await Promise.all(requests);
+  return mergeUnitsById(...pages.map((page) => page.units));
 }
 
 export async function getUnitsPage(

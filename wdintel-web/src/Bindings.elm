@@ -6197,6 +6197,8 @@ type ListUnitsSortBy
     | UnitCommentDesc
     | UnitOrbitNoteAsc
     | UnitOrbitNoteDesc
+    | UnitOrbitLinkedAsc
+    | UnitOrbitLinkedDesc
 
 
 listUnitsSortByEncoder : ListUnitsSortBy -> Json.Encode.Value
@@ -6248,6 +6250,10 @@ listUnitsSortByEncoder enum =
             Json.Encode.string "UnitOrbitNoteAsc"
         UnitOrbitNoteDesc ->
             Json.Encode.string "UnitOrbitNoteDesc"
+        UnitOrbitLinkedAsc ->
+            Json.Encode.string "UnitOrbitLinkedAsc"
+        UnitOrbitLinkedDesc ->
+            Json.Encode.string "UnitOrbitLinkedDesc"
 
 type ListUnitsSearchMode
     = Strict
@@ -6323,6 +6329,9 @@ type alias ListUnitsReq =
     , filterArmyRegion : Maybe (String)
     , filterComment : Maybe (String)
     , filterOrbitNote : Maybe (String)
+    , filterIsDeduplicateCandidate : Maybe (Bool)
+    , filterHasOrbit : Maybe (Bool)
+    , filterHasOrbitNote : Maybe (Bool)
     , searchMode : Maybe (ListUnitsSearchMode)
     , limit : Maybe (Int)
     , offset : Maybe (Int)
@@ -6348,6 +6357,9 @@ listUnitsReqEncoder struct =
         , ( "filter_army_region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterArmyRegion )
         , ( "filter_comment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterComment )
         , ( "filter_orbit_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterOrbitNote )
+        , ( "filter_is_deduplicate_candidate", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.filterIsDeduplicateCandidate )
+        , ( "filter_has_orbit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.filterHasOrbit )
+        , ( "filter_has_orbit_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.filterHasOrbitNote )
         , ( "search_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (listUnitsSearchModeEncoder)) struct.searchMode )
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
         , ( "offset", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.offset )
@@ -15680,6 +15692,24 @@ listUnitsSortByDecoder =
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitOrbitLinkedAsc" ->
+                            Json.Decode.succeed UnitOrbitLinkedAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitOrbitLinkedDesc" ->
+                            Json.Decode.succeed UnitOrbitLinkedDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
         ]
 
 listUnitsSearchModeDecoder : Json.Decode.Decoder ListUnitsSearchMode
@@ -15746,6 +15776,9 @@ listUnitsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_army_region" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_comment" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_orbit_note" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_is_deduplicate_candidate" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_has_orbit" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_has_orbit_note" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search_mode" (Json.Decode.nullable (listUnitsSearchModeDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "offset" (Json.Decode.nullable (Json.Decode.int))))

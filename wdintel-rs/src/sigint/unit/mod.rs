@@ -261,6 +261,18 @@ async fn read_units_with_orbit_visibility(
                 units = units.order_by_asc(sigint_unit::Column::Company);
                 units = units.order_by_asc(sigint_unit::Column::Id);
             }
+            ListUnitsSortBy::UnitOrbitLinkedAsc => {
+                units = units
+                    .order_by_asc(Expr::cust(unit_has_orbit_sql()))
+                    .order_by_asc(sigint_unit::Column::Name)
+                    .order_by_asc(sigint_unit::Column::Id);
+            }
+            ListUnitsSortBy::UnitOrbitLinkedDesc => {
+                units = units
+                    .order_by_desc(Expr::cust(unit_has_orbit_sql()))
+                    .order_by_asc(sigint_unit::Column::Name)
+                    .order_by_asc(sigint_unit::Column::Id);
+            }
             _ => unreachable!("simple unit list sorts are handled above"),
         }
     }
@@ -313,7 +325,9 @@ fn unit_list_sort(
     match sort_by {
         Some(
             ListUnitsSortBy::UnitOrbitNoteAsc
-            | ListUnitsSortBy::UnitOrbitNoteDesc,
+            | ListUnitsSortBy::UnitOrbitNoteDesc
+            | ListUnitsSortBy::UnitOrbitLinkedAsc
+            | ListUnitsSortBy::UnitOrbitLinkedDesc,
         ) if !can_view_orbit => ListUnitsSortBy::NaturalMilitarySortAsc,
         Some(sort_by) => sort_by.clone(),
         None => ListUnitsSortBy::NaturalMilitarySortAsc,
@@ -350,8 +364,60 @@ fn simple_unit_list_sort(
         UnitCommentDesc => (sigint_unit::Column::Comment, Order::Desc),
         UnitOrbitNoteAsc => (sigint_unit::Column::OrbitNote, Order::Asc),
         UnitOrbitNoteDesc => (sigint_unit::Column::OrbitNote, Order::Desc),
-        CreatedAtDesc | CreatedAtAsc | NaturalMilitarySortAsc => return None,
+        CreatedAtDesc
+        | CreatedAtAsc
+        | NaturalMilitarySortAsc
+        | UnitOrbitLinkedAsc
+        | UnitOrbitLinkedDesc => return None,
     })
+}
+
+fn unit_has_orbit_sql() -> &'static str {
+    r#"EXISTS (
+        SELECT 1
+        FROM orbit_unit_sigint_unit link
+        INNER JOIN orbit_unit ON orbit_unit.unit_id = link.orbit_unit_id
+        WHERE link.sigint_unit_id = "sigint_unit"."id"
+            AND link.is_suppressed = false
+            AND orbit_unit.deleted = false
+    )"#
+}
+
+fn apply_unit_presence_filters(
+    mut units: Select<sigint_unit::Entity>,
+    req: &ListUnitsReq,
+    can_view_orbit: bool,
+) -> Select<sigint_unit::Entity> {
+    if !can_view_orbit {
+        return units;
+    }
+
+    if let Some(is_candidate) = req.filter_is_deduplicate_candidate {
+        units = if is_candidate {
+            units.filter(sigint_unit::Column::IsDeduplicateCandidate.eq(true))
+        } else {
+            units.filter(
+                Condition::any()
+                    .add(sigint_unit::Column::IsDeduplicateCandidate.eq(false))
+                    .add(sigint_unit::Column::IsDeduplicateCandidate.is_null()),
+            )
+        };
+    }
+    if let Some(has_orbit) = req.filter_has_orbit {
+        let condition = Expr::cust(unit_has_orbit_sql());
+        units = units.filter(if has_orbit {
+            condition
+        } else {
+            condition.not()
+        });
+    }
+    if let Some(has_note) = req.filter_has_orbit_note {
+        let operator = if has_note { "<>" } else { "=" };
+        units = units.filter(Expr::cust(format!(
+            "btrim(coalesce(\"sigint_unit\".\"orbit_note\", '')) {operator} ''"
+        )));
+    }
+    units
 }
 
 fn apply_unit_list_filters(
@@ -410,7 +476,7 @@ fn apply_unit_list_filters(
             units = units.filter(condition);
         }
     }
-    units
+    apply_unit_presence_filters(units, req, can_view_orbit)
 }
 
 fn unit_text_filter(
@@ -2261,6 +2327,27 @@ mod tests {
         .unwrap()
     }
 
+    async fn listed_unit_ids(
+        dbx: &DatabaseConnection,
+        req: ListUnitsReq,
+    ) -> Vec<i64> {
+        read_units(dbx, &req)
+            .await
+            .unwrap()
+            .units
+            .into_iter()
+            .map(|unit| unit.id)
+            .collect()
+    }
+
+    async fn assert_listed_unit_ids(
+        dbx: &DatabaseConnection,
+        req: ListUnitsReq,
+        expected: &[i64],
+    ) {
+        assert_eq!(listed_unit_ids(dbx, req).await, expected);
+    }
+
     #[tokio::test]
     #[serial]
     async fn unit_list_excludes_inactive_units_unless_requested() {
@@ -2306,6 +2393,9 @@ mod tests {
                 filter_army_region: None,
                 filter_comment: None,
                 filter_orbit_note: None,
+                filter_is_deduplicate_candidate: None,
+                filter_has_orbit: None,
+                filter_has_orbit_note: None,
                 search_mode: None,
                 limit: None,
                 offset: None,
@@ -2349,6 +2439,9 @@ mod tests {
                 filter_army_region: None,
                 filter_comment: None,
                 filter_orbit_note: None,
+                filter_is_deduplicate_candidate: None,
+                filter_has_orbit: None,
+                filter_has_orbit_note: None,
                 search_mode: None,
                 limit: None,
                 offset: None,
@@ -2420,6 +2513,9 @@ mod tests {
             &env.dbx,
             &ListUnitsReq {
                 filter_orbit_note: Some("not present".to_string()),
+                filter_is_deduplicate_candidate: Some(true),
+                filter_has_orbit: Some(true),
+                filter_has_orbit_note: Some(false),
                 limit: Some(20),
                 ..Default::default()
             },
@@ -2480,6 +2576,10 @@ mod tests {
             unit_list_sort(Some(&ListUnitsSortBy::UnitOrbitNoteAsc), false),
             ListUnitsSortBy::NaturalMilitarySortAsc
         );
+        assert_eq!(
+            unit_list_sort(Some(&ListUnitsSortBy::UnitOrbitLinkedDesc), false),
+            ListUnitsSortBy::NaturalMilitarySortAsc
+        );
 
         let units_by_id = units_by_id_query(Some(&[inactive_unit.id]))
             .all(&env.dbx)
@@ -2500,6 +2600,124 @@ mod tests {
                 inactive: 1,
             }
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_list_filters_and_sorts_duplicate_and_orbit_states() {
+        let env = cleanup().await.unwrap();
+        let linked_candidate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("A linked candidate".to_string()),
+                active: Set(true),
+                is_deduplicate_candidate: Set(Some(true)),
+                orbit_note: Set(Some("Orbit comment".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let regular = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("B regular".to_string()),
+                active: Set(true),
+                is_deduplicate_candidate: Set(Some(false)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let unreviewed = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("C unreviewed".to_string()),
+                active: Set(true),
+                is_deduplicate_candidate: Set(None),
+                orbit_note: Set(Some("Second comment".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_current_duplicate_candidate(&env.dbx, linked_candidate.id).await;
+
+        assert_listed_unit_ids(
+            &env.dbx,
+            ListUnitsReq {
+                filter_is_deduplicate_candidate: Some(true),
+                ..Default::default()
+            },
+            &[linked_candidate.id],
+        )
+        .await;
+        assert_listed_unit_ids(
+            &env.dbx,
+            ListUnitsReq {
+                filter_is_deduplicate_candidate: Some(false),
+                sort_by: Some(ListUnitsSortBy::UnitNameAsc),
+                ..Default::default()
+            },
+            &[regular.id, unreviewed.id],
+        )
+        .await;
+        assert_listed_unit_ids(
+            &env.dbx,
+            ListUnitsReq {
+                filter_has_orbit: Some(true),
+                ..Default::default()
+            },
+            &[linked_candidate.id],
+        )
+        .await;
+        assert_listed_unit_ids(
+            &env.dbx,
+            ListUnitsReq {
+                filter_has_orbit: Some(false),
+                sort_by: Some(ListUnitsSortBy::UnitNameAsc),
+                ..Default::default()
+            },
+            &[regular.id, unreviewed.id],
+        )
+        .await;
+        assert_listed_unit_ids(
+            &env.dbx,
+            ListUnitsReq {
+                filter_has_orbit_note: Some(true),
+                sort_by: Some(ListUnitsSortBy::UnitNameAsc),
+                ..Default::default()
+            },
+            &[linked_candidate.id, unreviewed.id],
+        )
+        .await;
+        assert_listed_unit_ids(
+            &env.dbx,
+            ListUnitsReq {
+                filter_has_orbit_note: Some(false),
+                ..Default::default()
+            },
+            &[regular.id],
+        )
+        .await;
+        assert_listed_unit_ids(
+            &env.dbx,
+            ListUnitsReq {
+                sort_by: Some(ListUnitsSortBy::UnitOrbitLinkedDesc),
+                ..Default::default()
+            },
+            &[linked_candidate.id, regular.id, unreviewed.id],
+        )
+        .await;
+        assert_listed_unit_ids(
+            &env.dbx,
+            ListUnitsReq {
+                sort_by: Some(ListUnitsSortBy::UnitOrbitLinkedAsc),
+                ..Default::default()
+            },
+            &[regular.id, unreviewed.id, linked_candidate.id],
+        )
+        .await;
     }
 
     async fn assert_full_active_orbit_hierarchy(

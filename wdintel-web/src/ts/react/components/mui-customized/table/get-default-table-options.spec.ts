@@ -123,10 +123,12 @@ describe('withExplicitSelectAllOption', () => {
 });
 
 describe('buildExplicitSingleSelectColumnFilter', () => {
-  it('uses the fallback value when the column filter is empty', () => {
+  it('uses the configured label and selected value getter', () => {
     const Filter = buildExplicitSingleSelectColumnFilter({
       options: withExplicitSelectAllOption([{ text: 'так', value: 'так' }]),
       fallbackValue: 'Усі',
+      label: 'Статус',
+      getValue: () => 'так',
       onChange: () => {},
     });
 
@@ -136,7 +138,8 @@ describe('buildExplicitSingleSelectColumnFilter', () => {
       table: {} as any,
     });
 
-    expect(element.props.value).toBe('Усі');
+    expect(element.props.label).toBe('Статус');
+    expect(element.props.value).toBe('так');
   });
 
   it('forwards the selected value to the provided callback', () => {

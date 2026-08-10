@@ -17,6 +17,7 @@ import {
   getUnitsList,
   importOrbitUnit,
   mergeUnitsById,
+  searchUnitsStrictThenRelaxed,
   searchOrbitUnits,
   updateUnitAttachment,
   uploadUnitAttachment,
@@ -39,6 +40,30 @@ describe('units API', () => {
     const inactive = { id: 2, name: 'Inactive', active: false } as Unit;
 
     expect(mergeUnitsById([active], [active, inactive])).toEqual([active, inactive]);
+  });
+
+  it('returns strict unit matches before deduplicated relaxed matches', async () => {
+    const strict = { id: 1, name: 'Strict' } as Unit;
+    const relaxed = { id: 2, name: 'Relaxed' } as Unit;
+    const fetchMock = vi.fn().mockImplementation((_: string, init: RequestInit) => {
+      const request = JSON.parse(String(init.body));
+      return Promise.resolve(
+        jsonResponse({
+          units: request.search_mode === 'Strict' ? [strict] : [strict, relaxed],
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      searchUnitsStrictThenRelaxed({
+        ...DEFAULT_LIST_UNITS_REQ,
+        filterText: 'unit',
+      }),
+    ).resolves.toEqual([strict, relaxed]);
+    expect(
+      fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init.body)).search_mode),
+    ).toEqual(['Strict', 'Relaxed']);
   });
 
   it('normalizes unit response fields to camel case', async () => {
