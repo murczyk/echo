@@ -145,7 +145,7 @@ export function MessageCardAttachmentPreviewHeader({
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-              maxWidth: { xs: 120, sm: 260, md: 400 },
+              maxWidth: { xs: 180, sm: 260, md: 400 },
             }}
             title={fileName}
           >
@@ -164,6 +164,7 @@ export function MessageCardAttachmentPreviewHeader({
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 1,
+          display: { xs: 'none', sm: 'flex' },
         }}
       >
         {hasCarousel ? (
@@ -258,7 +259,10 @@ export function MessageCardAttachmentPreviewHeader({
               aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
               size="small"
               onClick={onToggleFullscreen}
-              sx={iconButtonSx}
+              sx={{
+                ...iconButtonSx,
+                display: { xs: 'none', sm: 'inline-flex' },
+              }}
             >
               {isFullscreen ? (
                 <FullscreenExitIcon fontSize="small" />

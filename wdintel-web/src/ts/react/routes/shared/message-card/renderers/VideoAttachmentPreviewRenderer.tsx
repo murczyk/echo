@@ -873,6 +873,8 @@ export function VideoAttachmentPreviewRenderer({
       controls={controls}
       header={header}
       infoPopover={infoPopover}
+      navigation={navigation}
+      swipeEnabled={zoom <= 100}
       onToggleFullscreen={handleToggleFullscreen}
     />
   );

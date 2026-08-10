@@ -303,6 +303,8 @@ export function DocumentAttachmentPreviewRenderer({
       stage={stage}
       header={header}
       infoPopover={infoPopover}
+      navigation={navigation}
+      swipeEnabled={dialogZoom <= 100}
       onToggleFullscreen={() => changeFullscreen(!dialogIsFullscreen)}
     />
   );

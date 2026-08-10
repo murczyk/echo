@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, CircularProgress, Stack, Typography, useTheme } from '@mui/material';
+import { Box, CircularProgress, Stack, Typography, useMediaQuery, useTheme } from '@mui/material';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -35,12 +35,31 @@ export function PdfDocumentPreview({
   sizeBytes?: number | null;
 }) {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [pageAspectRatio, setPageAspectRatio] = useState<number | null>(null);
+  const [containerWidth, setContainerWidth] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const scale = useMemo(() => zoom / 100, [zoom]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const updateWidth = () => {
+      setContainerWidth(container.clientWidth);
+    };
+
+    updateWidth();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(updateWidth);
+      observer.observe(container);
+      return () => observer.disconnect();
+    }
+  }, []);
 
   useEffect(() => {
     setPageCount(null);
@@ -103,6 +122,12 @@ export function PdfDocumentPreview({
 
   const renderedPageCount = Math.min(pageCount ?? 0, PDF_PAGE_RENDER_LIMIT);
   const isPreviewLimited = pageCount != null && pageCount > PDF_PAGE_RENDER_LIMIT;
+  const availableWidth =
+    containerWidth != null && containerWidth > 0
+      ? Math.max(280, containerWidth - (isMobile ? 16 : 32))
+      : PDF_PAGE_MAX_WIDTH_PX;
+  const pageWidth = Math.round(Math.min(PDF_PAGE_MAX_WIDTH_PX, availableWidth) * scale);
+  const isOverflowing = containerWidth != null && pageWidth > containerWidth;
 
   return (
     <Box
@@ -165,16 +190,19 @@ export function PdfDocumentPreview({
           <Stack
             spacing={{ xs: 2.5, md: 4 }}
             sx={{
-              px: { xs: 2, sm: 2.5, md: 3 },
+              px: { xs: 1, sm: 2.5, md: 3 },
               py: { xs: 2.5, md: 3 },
-              alignItems: 'center',
+              alignItems: isOverflowing ? 'flex-start' : 'center',
+              minWidth: '100%',
+              width: 'max-content',
+              mx: 'auto',
             }}
           >
             {Array.from({ length: renderedPageCount }, (_, pageIndex) => (
               <LazyPdfPage
                 key={`pdf-page-${pageIndex + 1}`}
                 pageNumber={pageIndex + 1}
-                scale={scale}
+                pageWidth={pageWidth}
                 pageAspectRatio={pageAspectRatio}
                 scrollContainerRef={scrollContainerRef}
               />
@@ -196,12 +224,12 @@ export function PdfDocumentPreview({
 
 function LazyPdfPage({
   pageNumber,
-  scale,
+  pageWidth,
   pageAspectRatio,
   scrollContainerRef,
 }: {
   pageNumber: number;
-  scale: number;
+  pageWidth: number;
   pageAspectRatio: number | null;
   scrollContainerRef: React.RefObject<HTMLDivElement>;
 }) {
@@ -236,8 +264,7 @@ function LazyPdfPage({
     return () => observer.disconnect();
   }, [isVisible, scrollContainerRef]);
 
-  const estimatedWidth = PDF_PAGE_MAX_WIDTH_PX * scale;
-  const estimatedHeight = Math.round(estimatedWidth * (pageAspectRatio ?? 1.414));
+  const estimatedHeight = Math.round(pageWidth * (pageAspectRatio ?? 1.414));
 
   return (
     <Box
@@ -246,7 +273,7 @@ function LazyPdfPage({
       data-pdf-page-number={pageNumber}
       sx={{
         width: 'fit-content',
-        maxWidth: `${estimatedWidth}px`,
+        maxWidth: '100%',
         minHeight: `${estimatedHeight}px`,
         display: 'flex',
         justifyContent: 'center',
@@ -259,6 +286,7 @@ function LazyPdfPage({
           borderColor: 'divider',
           boxShadow: 4,
           overflow: 'hidden',
+          maxWidth: '100%',
         },
         '& .react-pdf__Page__textContent': {
           inset: '0 !important',
@@ -275,19 +303,21 @@ function LazyPdfPage({
         },
         '& .react-pdf__Page__canvas': {
           display: 'block',
+          maxWidth: '100%',
+          height: 'auto !important',
         },
       }}
     >
       {isVisible ? (
         <Page
           pageNumber={pageNumber}
-          scale={scale}
+          width={pageWidth}
           renderTextLayer
           renderAnnotationLayer
           loading={
             <Box
               sx={{
-                width: estimatedWidth,
+                width: pageWidth,
                 height: estimatedHeight,
                 minHeight: estimatedHeight,
               }}

@@ -109,11 +109,13 @@ export function SpeedSelect({
       variant="outlined"
       sx={{
         color,
+        minWidth: { xs: 44, sm: 54 },
+        '& .MuiSelect-select': { py: 0.25, px: { xs: 0.75, sm: 1 } },
         '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255, 255, 255, 0.2)' },
         '&:hover .MuiOutlinedInput-notchedOutline': {
           borderColor: 'rgba(255, 255, 255, 0.4)',
         },
-        '& .MuiSvgIcon-root': { color },
+        '& .MuiSvgIcon-root': { color, right: { xs: 2, sm: 7 } },
         '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
           borderColor: 'primary.light',
         },

@@ -1,8 +1,11 @@
 import { Box, DialogContent } from '@mui/material';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { getAttachmentPreviewStageBg } from './message-card-attachment-preview';
 import type { MessageCardAttachmentPreviewConfig } from './message-card-preview-config';
+import type { MessageCardPreviewNavigation } from './message-card-preview.types';
+import { AttachmentPreviewMobileCarouselNav } from './MessageCardAttachmentPreviewControls';
+import { useAttachmentPreviewSwipe } from './useAttachmentPreviewSwipe';
 
 export function MessageCardAttachmentPreviewLayout({
   config,
@@ -10,6 +13,8 @@ export function MessageCardAttachmentPreviewLayout({
   header,
   controls,
   infoPopover,
+  navigation,
+  swipeEnabled = true,
 }: {
   isFullscreen: boolean;
   config: MessageCardAttachmentPreviewConfig;
@@ -19,8 +24,19 @@ export function MessageCardAttachmentPreviewLayout({
   infoPopover?: ReactNode;
   actions?: ReactNode;
   onToggleFullscreen?: () => void;
+  navigation?: MessageCardPreviewNavigation;
+  swipeEnabled?: boolean;
 }) {
   const isMediaLayout = config.layout === 'media';
+  const [stageContainerEl, setStageContainerEl] = useState<HTMLDivElement | null>(null);
+
+  useAttachmentPreviewSwipe({
+    stageEl: stageContainerEl,
+    navigation,
+    enabled: swipeEnabled,
+  });
+
+  const hasMobileFooter = (navigation != null && navigation.count > 1) || controls != null;
 
   return (
     <>
@@ -38,6 +54,7 @@ export function MessageCardAttachmentPreviewLayout({
       >
         {header ?? null}
         <Box
+          ref={setStageContainerEl}
           sx={{
             flex: 1,
             minHeight: 0,
@@ -50,6 +67,7 @@ export function MessageCardAttachmentPreviewLayout({
           }}
         >
           {stage}
+          {/* Controls Overlay (part of content stage area, above the divider) */}
           {controls ? (
             <Box
               sx={{
@@ -69,6 +87,30 @@ export function MessageCardAttachmentPreviewLayout({
             </Box>
           ) : null}
         </Box>
+
+        {/* Mobile Bottom Bar (Under the divider line, containing ONLY carousel controls) */}
+        {navigation && navigation.count > 1 ? (
+          <Box
+            sx={{
+              display: { xs: 'flex', sm: 'none' },
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(18, 18, 18, 0.95)',
+              backdropFilter: 'blur(12px)',
+              borderTop: 1,
+              borderColor: 'divider',
+              color: '#fff',
+              zIndex: 1300,
+              flexShrink: 0,
+              width: '100%',
+              py: 0.75,
+              px: 1.5,
+            }}
+          >
+            <AttachmentPreviewMobileCarouselNav navigation={navigation} />
+          </Box>
+        ) : null}
       </DialogContent>
       {infoPopover ?? null}
     </>

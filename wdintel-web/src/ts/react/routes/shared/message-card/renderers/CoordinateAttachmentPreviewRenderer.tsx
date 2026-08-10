@@ -83,6 +83,7 @@ export function CoordinateAttachmentPreviewRenderer({
           onBaseLayerChange={setBaseLayerId}
         />
       }
+      navigation={navigation}
       onToggleFullscreen={() => onFullscreenChange(!dialogIsFullscreen)}
     />
   );

@@ -648,6 +648,8 @@ export function ImageAttachmentPreviewRenderer({
       stage={stage}
       header={header}
       infoPopover={infoPopover}
+      navigation={navigation}
+      swipeEnabled={zoom <= ZOOM_MIN}
       onToggleFullscreen={handleToggleFullscreen}
     />
   );
