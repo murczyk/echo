@@ -670,6 +670,44 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(markerInstance.setStyle).toHaveBeenCalled();
   });
 
+  it('does not navigate the carousel when swiping across the map surface', async () => {
+    const onIndexChange = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <TestCoordinatePreviewDialog
+          open
+          points={[
+            { lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' },
+            { lat: 50.5, lng: 30.6, label: '50.50000, 30.60000', source: 'direct' },
+          ]}
+          currentIndex={0}
+          onClose={vi.fn()}
+          onIndexChange={onIndexChange}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    const mapSurface = document.body.querySelector('[data-coordinate-marker-count]');
+    expect(mapSurface).not.toBeNull();
+
+    mapSurface?.dispatchEvent(
+      new TouchEvent('touchstart', {
+        bubbles: true,
+        touches: [{ clientX: 200, clientY: 100 } as Touch],
+      }),
+    );
+    mapSurface?.dispatchEvent(
+      new TouchEvent('touchend', {
+        bubbles: true,
+        changedTouches: [{ clientX: 50, clientY: 100 } as Touch],
+      }),
+    );
+
+    expect(onIndexChange).not.toHaveBeenCalled();
+  });
+
   it('ignores arrow navigation from editable and slider targets', async () => {
     const onClose = vi.fn();
     const onIndexChange = vi.fn();

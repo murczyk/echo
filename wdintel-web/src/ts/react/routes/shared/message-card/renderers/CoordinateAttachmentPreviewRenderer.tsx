@@ -84,6 +84,7 @@ export function CoordinateAttachmentPreviewRenderer({
         />
       }
       navigation={navigation}
+      swipeEnabled={false}
       onToggleFullscreen={() => onFullscreenChange(!dialogIsFullscreen)}
     />
   );
