@@ -1690,6 +1690,7 @@ mod tests {
             .collect::<BTreeSet<_>>();
         let expected_omitted_keys = BTreeSet::from([
             "callsign_tokens".to_string(),
+            "coords_with_locality".to_string(),
             "device_name".to_string(),
             "keyword_tokens".to_string(),
             "message_comments".to_string(),
