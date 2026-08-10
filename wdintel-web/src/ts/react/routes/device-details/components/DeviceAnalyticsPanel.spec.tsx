@@ -42,10 +42,6 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
-  Object.defineProperty(window, 'confirm', {
-    configurable: true,
-    value: vi.fn(() => true),
-  });
 });
 
 afterEach(() => {
@@ -79,6 +75,14 @@ function renderPanel(
 
 function buttonContaining(text: string): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll('button')).find((item) =>
+    item.textContent?.includes(text),
+  );
+  if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${text}`);
+  return button;
+}
+
+function bodyButtonContaining(text: string): HTMLButtonElement {
+  const button = Array.from(document.body.querySelectorAll('button')).find((item) =>
     item.textContent?.includes(text),
   );
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${text}`);
@@ -181,7 +185,14 @@ describe('DeviceAnalyticsPanel', () => {
 
     act(() => buttonContaining('Запустити повторний аналіз пристрою').click());
     await flush();
+    expect(mocks.reanalyzeDevice).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('Запустити повторний аналіз пристрою?');
+
+    act(() => bodyButtonContaining('Запустити аналіз').click());
+    await flush();
     expect(mocks.reanalyzeDevice).toHaveBeenCalledWith({ deviceId: 'device-1' });
-    expect(container.textContent).toContain('Заплановано повторний аналіз 42 файлів.');
+    expect(container.textContent).toContain(
+      'Повторний аналіз запущено у фоновому режимі для 42 файлів.',
+    );
   });
 });

@@ -6,6 +6,11 @@ import {
   AccordionSummary,
   Box,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Divider,
   Paper,
   Stack,
@@ -268,6 +273,7 @@ export function DeviceAnalyticsPanel({
   const [error, setError] = useState<DeviceFileLoadError | null>(null);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [reanalysisMessage, setReanalysisMessage] = useState<string | null>(null);
+  const [reanalysisDialogOpen, setReanalysisDialogOpen] = useState(false);
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -305,6 +311,7 @@ export function DeviceAnalyticsPanel({
     setError(null);
     setLoading(enabled);
     setReanalysisMessage(null);
+    setReanalysisDialogOpen(false);
     if (enabled) void loadSummary();
     return () => abortRef.current?.abort();
   }, [deviceId, enabled, loadSummary]);
@@ -322,13 +329,15 @@ export function DeviceAnalyticsPanel({
   }, [summary, tagsState.tags]);
 
   const scheduleReanalysis = async () => {
-    if (!window.confirm('Запустити повторний аналіз усіх файлів цього пристрою?')) return;
+    setReanalysisDialogOpen(false);
     setReanalyzing(true);
     setReanalysisMessage(null);
     try {
       const rsp = await reanalyzeDevice({ deviceId });
       setReanalysisMessage(
-        `Заплановано повторний аналіз ${fileCountFormatter.format(rsp.scheduledFileCount)} файлів.`,
+        rsp.scheduledFileCount > 0
+          ? `Повторний аналіз запущено у фоновому режимі для ${fileCountFormatter.format(rsp.scheduledFileCount)} файлів.`
+          : 'Немає завершених файлів, які можна поставити на повторний аналіз.',
       );
     } catch (scheduleError) {
       setReanalysisMessage(
@@ -345,6 +354,21 @@ export function DeviceAnalyticsPanel({
       aria-labelledby="device-analytics-title"
       sx={{ p: 2, height: '100%', minHeight: 0, overflow: 'auto' }}
     >
+      <Dialog open={reanalysisDialogOpen} onClose={() => setReanalysisDialogOpen(false)}>
+        <DialogTitle>Запустити повторний аналіз пристрою?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Усі вже проаналізовані файли пристрою буде поставлено в чергу. Обробка виконується у
+            фоновому режимі.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <PowerButton onClick={() => setReanalysisDialogOpen(false)}>Скасувати</PowerButton>
+          <PowerButton variant="contained" onClick={() => void scheduleReanalysis()}>
+            Запустити аналіз
+          </PowerButton>
+        </DialogActions>
+      </Dialog>
       <Stack spacing={2}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between">
           <Box>
@@ -368,7 +392,7 @@ export function DeviceAnalyticsPanel({
                 size="small"
                 variant="outlined"
                 disabled={reanalyzing}
-                onClick={() => void scheduleReanalysis()}
+                onClick={() => setReanalysisDialogOpen(true)}
               >
                 {reanalyzing ? 'Запуск…' : 'Запустити повторний аналіз пристрою'}
               </PowerButton>

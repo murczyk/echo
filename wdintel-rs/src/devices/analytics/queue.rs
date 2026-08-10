@@ -6,11 +6,11 @@ use crate::file_registry::entities::{
 };
 use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Utc};
 use sea_orm::sea_query::{
-    Alias, Expr, Func, JoinType, LockBehavior, LockType, OnConflict,
-    SimpleExpr, WindowStatement,
+    Alias, Expr, Func, JoinType, LockBehavior, LockType, OnConflict, Order,
+    Query, SimpleExpr,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
+    ActiveEnum, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
     DatabaseConnection, DatabaseTransaction, DbErr, EntityTrait, ExprTrait,
     FromQueryResult, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
     QueryTrait, RelationTrait, Set, TransactionTrait,
@@ -954,6 +954,11 @@ async fn load_reanalysis_scopes(
     device_id: Option<Uuid>,
     target_rule_revision: i64,
 ) -> Result<Vec<ReanalysisDeviceScope>, DbErr> {
+    let device_id_alias = Alias::new("device_id");
+    let scheduled_file_count_alias = Alias::new("scheduled_file_count");
+    let scope_alias = Alias::new("scope");
+    let upper_file_alias = Alias::new("upper_file");
+
     let active_job = file_analysis_reanalysis_job::Entity::find()
         .select_only()
         .expr(Expr::value(1))
@@ -971,41 +976,92 @@ async fn load_reanalysis_scopes(
                         file_analysis_reanalysis_job::Column::DeviceId,
                     ))
                     .eq(Expr::col((
-                        file_entry::Entity,
-                        file_entry::Column::DeviceId,
+                        file_analysis_state::Entity,
+                        file_analysis_state::Column::DeviceId,
                     ))),
                 ),
         )
         .into_query();
-    let mut query = file_entry::Entity::find()
-        .select_only()
-        .column(file_entry::Column::DeviceId)
-        .column_as(file_entry::Column::Id, "upper_file_entry_id")
-        .distinct_on([(file_entry::Entity, file_entry::Column::DeviceId)])
-        .join(
-            JoinType::InnerJoin,
-            file_entry::Relation::FileAnalysisState.def(),
+
+    let mut scope_query = Query::select();
+    scope_query
+        .expr_as(
+            Expr::col((
+                file_analysis_state::Entity,
+                file_analysis_state::Column::DeviceId,
+            )),
+            device_id_alias.clone(),
         )
-        .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
-        .filter(file_analysis_state::Column::Pending.eq(false))
-        .filter(Expr::exists(active_job).not())
-        .order_by_asc(file_entry::Column::DeviceId)
-        .order_by_desc(file_entry::Column::Id);
+        .expr_as(
+            Func::count(Expr::col((
+                file_analysis_state::Entity,
+                file_analysis_state::Column::DeviceId,
+            ))),
+            scheduled_file_count_alias.clone(),
+        )
+        .from(file_analysis_state::Entity)
+        // Keep this as a boolean expression instead of binding `false` so a
+        // generic prepared plan can use `file_analysis_state_device_analyzed_idx`.
+        .and_where(
+            Expr::col((
+                file_analysis_state::Entity,
+                file_analysis_state::Column::Pending,
+            ))
+            .not(),
+        )
+        .and_where(Expr::exists(active_job).not())
+        .group_by_col((
+            file_analysis_state::Entity,
+            file_analysis_state::Column::DeviceId,
+        ));
     if let Some(device_id) = device_id {
-        query = query.filter(file_entry::Column::DeviceId.eq(device_id));
+        scope_query.and_where(
+            Expr::col((
+                file_analysis_state::Entity,
+                file_analysis_state::Column::DeviceId,
+            ))
+            .eq(device_id),
+        );
     }
-    QueryTrait::query(&mut query).expr_window_as(
-        Func::count(Expr::col((file_entry::Entity, file_entry::Column::Id))),
-        WindowStatement::partition_by((
-            file_entry::Entity,
-            file_entry::Column::DeviceId,
-        )),
-        Alias::new("scheduled_file_count"),
-    );
-    query
-        .into_model::<ReanalysisDeviceScope>()
-        .all(transaction)
-        .await
+
+    // Count eligible states from the covering partial index, then capture the
+    // current file boundary separately. Expansion keeps later files outside
+    // the job and upgrades only states that are no longer pending.
+    let upper_file_query = Query::select()
+        .column((file_entry::Entity, file_entry::Column::Id))
+        .from(file_entry::Entity)
+        .and_where(
+            Expr::col((file_entry::Entity, file_entry::Column::DeviceId))
+                .eq(Expr::col((scope_alias.clone(), device_id_alias.clone()))),
+        )
+        .and_where(
+            Expr::col((file_entry::Entity, file_entry::Column::Kind))
+                .eq(FileEntryKind::File.to_value()),
+        )
+        .order_by((file_entry::Entity, file_entry::Column::Id), Order::Desc)
+        .limit(1)
+        .to_owned();
+    let query = Query::select()
+        .column((scope_alias.clone(), device_id_alias))
+        .expr_as(
+            Expr::col((upper_file_alias.clone(), file_entry::Column::Id)),
+            Alias::new("upper_file_entry_id"),
+        )
+        .column((scope_alias.clone(), scheduled_file_count_alias))
+        .from_subquery(scope_query.to_owned(), scope_alias)
+        .join_lateral(
+            JoinType::InnerJoin,
+            upper_file_query,
+            upper_file_alias,
+            Expr::value(true),
+        )
+        .to_owned();
+
+    ReanalysisDeviceScope::find_by_statement(
+        transaction.get_database_backend().build(&query),
+    )
+    .all(transaction)
+    .await
 }
 
 pub(super) async fn schedule_reanalysis(
