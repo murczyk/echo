@@ -285,7 +285,7 @@ export const adminDatabaseSubs: Menu[] = [
     type: 'item',
     link: { type: 'internal', path: '/admin/device-analytics' },
     activeName: 'device-analytics',
-    label: 'Теги пристроїв',
+    label: 'Аналіз пристроїв',
   },
 ];
 

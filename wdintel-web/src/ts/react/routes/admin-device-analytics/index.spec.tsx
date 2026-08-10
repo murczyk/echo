@@ -90,6 +90,13 @@ async function flush() {
   });
 }
 
+async function openDeviceTagsTab() {
+  const tab = buttonWithText('Теги пристроїв');
+  if (!tab) throw new Error('Device tags tab was not rendered');
+  await act(async () => tab.click());
+  await flush();
+}
+
 beforeEach(async () => {
   Object.defineProperty(window, 'confirm', {
     configurable: true,
@@ -116,7 +123,36 @@ afterEach(() => {
 });
 
 describe('AdminDeviceAnalyticsPage', () => {
+  it('shows empty general settings first and opens device tags in the second tab', async () => {
+    expect(container.textContent).toContain('Аналіз пристроїв');
+
+    const generalTab = buttonWithText('Основні налаштування');
+    const tagsTab = buttonWithText('Теги пристроїв');
+    const generalPanel = container.querySelector<HTMLElement>(
+      '#device-analysis-settings-panel-general',
+    );
+    const tagsPanel = container.querySelector<HTMLElement>('#device-analysis-settings-panel-tags');
+
+    expect(generalTab?.getAttribute('aria-selected')).toBe('true');
+    expect(tagsTab?.getAttribute('aria-selected')).toBe('false');
+    expect(generalPanel?.hidden).toBe(false);
+    expect(generalPanel?.textContent).toBe('');
+    expect(tagsPanel?.hidden).toBe(true);
+    expect(mocks.listTags).not.toHaveBeenCalled();
+
+    await openDeviceTagsTab();
+
+    expect(generalTab?.getAttribute('aria-selected')).toBe('false');
+    expect(tagsTab?.getAttribute('aria-selected')).toBe('true');
+    expect(generalPanel?.hidden).toBe(true);
+    expect(tagsPanel?.hidden).toBe(false);
+    expect(container.textContent).toContain('Каталог порожній');
+    expect(mocks.listTags).toHaveBeenCalledTimes(1);
+  });
+
   it('creates the first tag and saves only the current local rule expression', async () => {
+    await openDeviceTagsTab();
+
     expect(container.textContent).toContain('Каталог порожній');
     expect(container.textContent).toContain('Теги пристроїв');
 
@@ -147,6 +183,8 @@ describe('AdminDeviceAnalyticsPage', () => {
   });
 
   it('archives and restores an existing tag from the edit dialog', async () => {
+    await openDeviceTagsTab();
+
     await act(async () => buttonWithText('Створити тег')?.click());
     const nameInput = document.querySelector<HTMLInputElement>('input');
     act(() => setInputValue(nameInput!, 'Звіти'));
@@ -175,6 +213,8 @@ describe('AdminDeviceAnalyticsPage', () => {
   });
 
   it('requires confirmation before scheduling global reanalysis', async () => {
+    await openDeviceTagsTab();
+
     await act(async () => buttonWithText('Повторно проаналізувати всі файли')?.click());
     await flush();
 

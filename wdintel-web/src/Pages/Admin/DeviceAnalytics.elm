@@ -61,7 +61,7 @@ subscriptions _ =
 
 view : Model -> View Msg
 view _ =
-    { title = "Адмін: теги пристроїв"
+    { title = "Адмін: аналіз пристроїв"
     , body =
         [ div [ class "box-border px-6 pt-6 pb-6 w-full flex flex-col" ]
             [ node "admin-device-analytics" [ class "react-fill-host block w-full" ] [] ]

@@ -174,7 +174,7 @@ describe('menu-items', () => {
       'Ключі',
       'Населені пункти смуг',
       'Теги',
-      'Теги пристроїв',
+      'Аналіз пристроїв',
     ]);
     expect(menuIsActive('tags-neo', databaseGroup!)).toBe(true);
     expect(menuIsActive('device-analytics', databaseGroup!)).toBe(true);
