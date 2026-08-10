@@ -1,4 +1,7 @@
-use crate::config::AUTOMATION_SEND_LOG_RETENTION_DAYS;
+use crate::config::{
+    AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX,
+    AUTOMATION_SEND_LOG_RETENTION_DAYS,
+};
 use crate::error::ShortContext;
 use crate::h;
 use crate::map_screenshot::{self, MapCoordinate};
@@ -189,6 +192,7 @@ struct AutomationWorkerRow {
     coordinate_presence_mode: String,
     polygon_filter_mode: String,
     polygon_coordinates: Option<Json>,
+    last_error: Option<String>,
     checkpoint_at: NaiveDateTime,
     last_processed_inbox_message_id: i32,
 }
@@ -935,6 +939,7 @@ pub async fn worker_tick(db: &DatabaseConnection) -> Result<()> {
                 coordinate_presence_mode,
                 polygon_filter_mode,
                 polygon.coordinates as polygon_coordinates,
+                automation.last_error,
                 checkpoint_at,
                 last_processed_inbox_message_id
             from echo_automation automation
@@ -1121,7 +1126,11 @@ async fn process_automation(
     db: &DatabaseConnection,
     automation: AutomationWorkerRow,
 ) -> Result<()> {
-    set_status(db, automation.id, "running", None)
+    let mut last_warning = automation.last_error.clone().filter(|warning| {
+        automation.coordinates_screenshot
+            && warning.contains(AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX)
+    });
+    set_status(db, automation.id, "running", last_warning.as_deref())
         .await
         .c(h!())?;
     if let Some(warning) =
@@ -1137,13 +1146,10 @@ async fn process_automation(
     if messages.is_empty() {
         advance_empty_checkpoint(db, &automation).await.c(h!())?;
     }
-    let mut last_warning = None;
     for message in messages {
-        if let Some(warning) =
-            process_message(db, &automation, &message).await.c(h!())?
-        {
-            last_warning = Some(warning);
-        }
+        process_message(db, &automation, &message, &mut last_warning)
+            .await
+            .c(h!())?;
         update_checkpoint(db, automation.id, message.id, message.message_at)
             .await
             .c(h!())?;
@@ -1206,9 +1212,10 @@ async fn process_message(
     db: &DatabaseConnection,
     automation: &AutomationWorkerRow,
     message: &InboxMessageRow,
-) -> Result<Option<String>> {
+    last_warning: &mut Option<String>,
+) -> Result<()> {
     if already_sent(db, automation.id, message).await.c(h!())? {
-        return Ok(None);
+        return Ok(());
     }
     let coords = extract_points(&message.body).await;
     let polygon = if automation.polygon_filter_mode == "none" {
@@ -1251,13 +1258,17 @@ async fn process_message(
             )
             .await
             .c(h!())?;
-            Ok(None)
+            Ok(())
         }
-        MatchDecision::Send => {
-            send_matching_message(db, automation, message, &coords)
-                .await
-                .c(h!())
-        }
+        MatchDecision::Send => send_matching_message(
+            db,
+            automation,
+            message,
+            &coords,
+            last_warning,
+        )
+        .await
+        .c(h!()),
     }
 }
 
@@ -1266,7 +1277,8 @@ async fn send_matching_message(
     automation: &AutomationWorkerRow,
     message: &InboxMessageRow,
     coordinates: &[Point],
-) -> Result<Option<String>> {
+    last_warning: &mut Option<String>,
+) -> Result<()> {
     let target = load_send_target(
         db,
         automation.target_account_id,
@@ -1283,7 +1295,9 @@ async fn send_matching_message(
             warning: None,
         }
     };
-    if automation.coordinates_screenshot && !coordinates.is_empty() {
+    let coordinate_screenshot_attempted =
+        automation.coordinates_screenshot && !coordinates.is_empty();
+    if coordinate_screenshot_attempted {
         add_coordinate_screenshot(&mut attachments, coordinates).await;
     }
     let client_name = public_client_name(&target.client_name);
@@ -1309,7 +1323,7 @@ async fn send_matching_message(
         )
         .await
         .c(h!())?;
-        return Ok(None);
+        return Ok(());
     };
     messenger::enqueue(
         &txn,
@@ -1337,7 +1351,10 @@ async fn send_matching_message(
     messenger::tick_after_send(db, &client_name, kind)
         .await
         .c(h!())?;
-    Ok(attachments.warning)
+    if coordinate_screenshot_attempted || last_warning.is_none() {
+        *last_warning = attachments.warning;
+    }
+    Ok(())
 }
 
 async fn add_coordinate_screenshot(
@@ -1355,7 +1372,7 @@ async fn add_coordinate_screenshot(
         Ok(screenshot) => attachments.content_base64.push(screenshot),
         Err(err) => {
             let warning =
-                format!("coordinate screenshot is unavailable: {err:#}");
+                format!("{AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX} {err:#}");
             log::warn!("{warning}");
             append_warning(&mut attachments.warning, warning);
         }
@@ -3637,6 +3654,7 @@ mod tests {
                     .as_str()
                     .to_string(),
                 polygon_coordinates: None,
+                last_error: None,
                 checkpoint_at: now - ChronoDuration::seconds(1),
                 last_processed_inbox_message_id: 0,
             };
@@ -3695,6 +3713,7 @@ mod tests {
                     .as_str()
                     .to_string(),
                 polygon_coordinates: None,
+                last_error: None,
                 checkpoint_at: chrono::DateTime::UNIX_EPOCH.naive_utc(),
                 last_processed_inbox_message_id: 0,
             };

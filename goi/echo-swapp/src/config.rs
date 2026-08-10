@@ -19,6 +19,8 @@ pub const AUTOMATION_MAP_SCREENSHOT_BASE_TILE_URL: &str =
 pub const AUTOMATION_MAP_SCREENSHOT_LABEL_TILE_URL: &str =
     "https://mt0.google.com/vt/lyrs=h&hl=uk&x={x}&y={y}&z={z}";
 pub const AUTOMATION_MAP_SCREENSHOT_MARKER_COLOR: [u8; 4] = [252, 239, 18, 255];
+pub const AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX: &str =
+    "coordinate screenshot is unavailable:";
 const DEFAULT_PG_HOST: &str = "localhost";
 const DEFAULT_PG_PORT: u16 = 5432;
 const DEFAULT_PG_USER: &str = "wd";
