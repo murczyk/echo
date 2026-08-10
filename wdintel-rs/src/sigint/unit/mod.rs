@@ -17,7 +17,7 @@ use actix_web::web::Json;
 use sea_orm::*;
 use sea_query::types::IntoColumnRef;
 use sea_query::{Expr, OnConflict, SimpleExpr};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 pub mod attachment;
 pub mod orbit;
@@ -518,32 +518,8 @@ pub async fn create_unit(
     let login = login_id_from_identity(&user)?;
     has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
 
-    let mut req = req.into_inner();
-    let can_view_orbit =
-        clear_create_unit_orbit_note_if_hidden(&env.dbx, &login, &mut req)
-            .await?;
-    let transaction = env.dbx.begin().await.context(h!())?;
-    let unit = insert_unit_with_changelog(&transaction, &login, &req).await?;
-    if unit.active {
-        reconcile_parent_unit_activity(
-            &transaction,
-            &login,
-            std::slice::from_ref(&unit),
-        )
-        .await?;
-    }
-    transaction.commit().await.context(h!())?;
-
-    if unit.active {
-        crate::orbit::link_new_sigint_unit_with_lock(&env.dbx, unit.id)
-            .await
-            .c(h!())?;
-    }
-    let unit = sigint_unit::Entity::find_by_id(unit.id)
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
+    let (unit, can_view_orbit) =
+        create_unit_for_login(&login, &env, req.into_inner()).await?;
 
     fanout_unit_changed(&env).await?;
 
@@ -554,6 +530,20 @@ pub async fn create_unit(
         redact_unit_orbit_data(&mut unit);
     }
     Ok(Json(unit))
+}
+
+async fn create_unit_for_login(
+    login: &uuid::Uuid,
+    env: &Env,
+    mut req: CreateUnitReq,
+) -> Result<(sigint_unit::Model, bool), AppError> {
+    let can_view_orbit =
+        clear_create_unit_orbit_note_if_hidden(&env.dbx, login, &mut req)
+            .await?;
+    let transaction = begin_unit_creation_transaction(&env.dbx, &req).await?;
+    let unit = insert_merge_link_unit(&transaction, login, &req).await?;
+    transaction.commit().await.context(h!())?;
+    Ok((unit, can_view_orbit))
 }
 
 #[post("/api/sigint/unit/create-with-auto-network")]
@@ -650,12 +640,7 @@ pub async fn create_unit_with_auto_network_for_login(
         .c(h!())?;
     clear_create_unit_orbit_note_if_hidden(&env.dbx, login, &mut req.unit)
         .await?;
-
-    let txn = env.dbx.begin().await.context(h!())?;
-    let unit = insert_unit_with_changelog(&txn, login, &req.unit)
-        .await
-        .c(h!())?;
-    let network = if req.skip_network_creation {
+    let network_locations = if req.skip_network_creation {
         None
     } else {
         let locations = normalize_network_locations(req.locations.clone());
@@ -664,36 +649,136 @@ pub async fn create_unit_with_auto_network_for_login(
                 msg: "network locations are required".to_string(),
             });
         }
-        Some(
-            insert_auto_cyber_network(
-                &txn,
-                login,
-                &req,
-                unit.id,
-                locations,
-                req.unit_mask.clone(),
-            )
-            .await
-            .c(h!())?,
-        )
+        Some(locations)
     };
+
+    let transaction =
+        begin_unit_creation_transaction(&env.dbx, &req.unit).await?;
+    let unit = insert_merge_link_unit(&transaction, login, &req.unit).await?;
+    let (network_id, created_network) = match network_locations {
+        None => (None, None),
+        Some(locations) => {
+            if let Some(network) =
+                active_network_for_unit(&transaction, unit.id).await?
+            {
+                (Some(network.id), None)
+            } else {
+                let network = insert_auto_cyber_network(
+                    &transaction,
+                    login,
+                    &req,
+                    unit.id,
+                    locations,
+                    req.unit_mask.clone(),
+                )
+                .await
+                .c(h!())?;
+                (Some(network.id), Some(network))
+            }
+        }
+    };
+    transaction.commit().await.context(h!())?;
+
+    render_created_unit_with_optional_network(
+        login,
+        env,
+        unit,
+        network_id,
+        created_network,
+    )
+    .await
+}
+
+async fn begin_unit_creation_transaction(
+    dbx: &DatabaseConnection,
+    req: &CreateUnitReq,
+) -> Result<DatabaseTransaction, AppError> {
+    if req.active {
+        Ok(crate::orbit::acquire_import_lock(dbx).await.c(h!())?)
+    } else {
+        Ok(dbx.begin().await.context(h!())?)
+    }
+}
+
+async fn insert_merge_link_unit(
+    transaction: &DatabaseTransaction,
+    login: &uuid::Uuid,
+    req: &CreateUnitReq,
+) -> Result<sigint_unit::Model, AppError> {
+    let duplicate_unit_ids =
+        validated_duplicate_unit_ids(transaction, req).await?;
+    let unit = insert_unit_with_changelog(transaction, login, req)
+        .await
+        .c(h!())?;
     if unit.active {
         reconcile_parent_unit_activity(
-            &txn,
+            transaction,
             login,
             std::slice::from_ref(&unit),
         )
         .await?;
     }
-    txn.commit().await.context(h!())?;
-
+    let unit = merge_requested_duplicate_units(
+        *login,
+        transaction,
+        unit.id,
+        duplicate_unit_ids,
+    )
+    .await?;
     if unit.active {
-        crate::orbit::link_new_sigint_unit_with_lock(&env.dbx, unit.id)
+        crate::orbit::link_new_sigint_unit_in_transaction(transaction, unit.id)
             .await
             .c(h!())?;
     }
+    Ok(unit)
+}
 
-    render_created_unit_with_optional_network(login, env, unit, network).await
+async fn validated_duplicate_unit_ids<C>(
+    dbx: &C,
+    req: &CreateUnitReq,
+) -> Result<BTreeSet<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let duplicate_unit_ids = req
+        .duplicate_unit_ids
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    if duplicate_unit_ids.is_empty() {
+        return Ok(duplicate_unit_ids);
+    }
+    let candidate_ids =
+        orbit::create_unit_duplicate_candidate_ids_for_req(dbx, req).await?;
+    if !duplicate_unit_ids.is_subset(&candidate_ids) {
+        return Err(AppError::BL {
+            msg: "Selected duplicate units are no longer available".to_string(),
+        });
+    }
+    Ok(duplicate_unit_ids)
+}
+
+async fn merge_requested_duplicate_units<C>(
+    login: uuid::Uuid,
+    dbx: &C,
+    unit_id: i64,
+    duplicate_unit_ids: BTreeSet<i64>,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    if duplicate_unit_ids.contains(&unit_id) {
+        return Err(AppError::BL {
+            msg: "new unit cannot be merged into itself".to_string(),
+        });
+    }
+    for duplicate_unit_id in duplicate_unit_ids {
+        merge_units_in_transaction(login, dbx, duplicate_unit_id, unit_id)
+            .await
+            .c(h!())?;
+    }
+    active_network_for_unit(dbx, unit_id).await?;
+    find_unit(dbx, unit_id).await
 }
 
 async fn clear_create_unit_orbit_note_if_hidden(
@@ -704,6 +789,7 @@ async fn clear_create_unit_orbit_note_if_hidden(
     let can_view_orbit = orbit::can_view_orbit_data(dbx, login).await?;
     if !can_view_orbit {
         req.orbit_note = None;
+        req.duplicate_unit_ids.clear();
     }
     Ok(can_view_orbit)
 }
@@ -712,11 +798,12 @@ async fn render_created_unit_with_optional_network(
     login: &uuid::Uuid,
     env: &Env,
     unit: sigint_unit::Model,
-    network: Option<sigint_network::Model>,
+    network_id: Option<i64>,
+    created_network: Option<sigint_network::Model>,
 ) -> Result<CreateUnitWithAutoNetworkRsp, AppError> {
     fanout_unit_changed_data(env).await?;
 
-    if let Some(network) = network.clone() {
+    if let Some(network) = created_network {
         fanout_created_network(env, network).await?;
     }
 
@@ -731,10 +818,7 @@ async fn render_created_unit_with_optional_network(
     } else {
         redact_unit_orbit_data(&mut unit);
     }
-    Ok(CreateUnitWithAutoNetworkRsp {
-        unit,
-        network_id: network.map(|network| network.id),
-    })
+    Ok(CreateUnitWithAutoNetworkRsp { unit, network_id })
 }
 
 async fn insert_unit_with_changelog<'a, 'async_trait, C>(
@@ -876,7 +960,17 @@ pub(super) async fn unit_has_active_network<C>(
 where
     C: ConnectionTrait,
 {
-    Ok(sigint_network::Entity::find()
+    Ok(active_network_for_unit(dbx, unit_id).await?.is_some())
+}
+
+async fn active_network_for_unit<C>(
+    dbx: &C,
+    unit_id: i64,
+) -> Result<Option<sigint_network::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut networks = sigint_network::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_network::Relation::SigintNetworkUnit.def(),
@@ -884,10 +978,16 @@ where
         .filter(sigint_network_unit::Column::UnitId.eq(unit_id))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network::Column::ActiveTo.is_null())
-        .one(dbx)
+        .limit(2)
+        .all(dbx)
         .await
-        .c(h!())?
-        .is_some())
+        .c(h!())?;
+    if networks.len() > 1 {
+        return Err(AppError::BL {
+            msg: "unit has multiple active networks".to_string(),
+        });
+    }
+    Ok(networks.pop())
 }
 
 async fn fanout_created_network(
@@ -1315,9 +1415,36 @@ pub async fn merge_units(
     unit_to_delete_id: i64,
     original_id: i64,
 ) -> Result<sigint_unit::Model, AppError> {
+    let transaction = dbx.begin().await.context(h!())?;
+    let unit = merge_units_in_transaction(
+        login,
+        &transaction,
+        unit_to_delete_id,
+        original_id,
+    )
+    .await?;
+    transaction.commit().await.context(h!())?;
+    Ok(unit)
+}
+
+async fn merge_units_in_transaction<C>(
+    login: uuid::Uuid,
+    dbx: &C,
+    unit_to_delete_id: i64,
+    original_id: i64,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    if unit_to_delete_id == original_id {
+        return Err(AppError::BL {
+            msg: "unit cannot be merged into itself".to_string(),
+        });
+    }
     let unit_to_delete =
-        find_unit(dbx, unit_to_delete_id).await.context(h!())?;
-    let unit_original = find_unit(dbx, original_id).await.context(h!())?;
+        find_available_unit_for_update(dbx, unit_to_delete_id).await?;
+    let unit_original =
+        find_available_unit_for_update(dbx, original_id).await?;
     let previous_unit_original = unit_original.clone();
     let unit_original =
         update_original_unit(unit_original, &unit_to_delete, dbx)
@@ -1376,10 +1503,29 @@ pub async fn merge_units(
     find_unit(dbx, unit_original.id).await
 }
 
-pub async fn find_unit(
-    dbx: &DbConn,
+async fn find_available_unit_for_update<C>(
+    dbx: &C,
     unit_id: i64,
-) -> Result<sigint_unit::Model, AppError> {
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    sigint_unit::Entity::find_by_id(unit_id)
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .lock_exclusive()
+        .one(dbx)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)
+}
+
+pub async fn find_unit<C>(
+    dbx: &C,
+    unit_id: i64,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
     let unit = sigint_unit::Entity::find_by_id(unit_id)
         .one(dbx)
         .await
@@ -1417,12 +1563,15 @@ pub(crate) fn redact_unit_orbit_data(unit: &mut Unit) {
     unit.is_deduplicate_candidate = None;
 }
 
-async fn swap_units(
+async fn swap_units<C>(
     old_unit_id: i64,
     new_unit_id: i64,
     login: uuid::Uuid,
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<()> {
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     let callsigns = sigint_callsign::Entity::find()
         .filter(sigint_callsign::Column::UnitId.eq(old_unit_id))
         .all(dbx)
@@ -1558,11 +1707,14 @@ async fn swap_units(
     Ok(())
 }
 
-async fn swap_unit_devices(
+async fn swap_unit_devices<C>(
     old_unit_id: i64,
     new_unit_id: i64,
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<()> {
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     device::Entity::update_many()
         .col_expr(device::Column::UnitId, Expr::value(Some(new_unit_id)))
         .col_expr(
@@ -1576,18 +1728,20 @@ async fn swap_unit_devices(
     Ok(())
 }
 
-async fn move_orbit_unit_links(
+async fn move_orbit_unit_links<C>(
     old_unit_id: i64,
     new_unit_id: i64,
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<()> {
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     if old_unit_id == new_unit_id {
         return Ok(());
     }
-    let transaction = dbx.begin().await.context(h!())?;
     let links = orbit_unit_sigint_unit::Entity::find()
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(old_unit_id))
-        .all(&transaction)
+        .all(dbx)
         .await
         .context(h!())?;
     if !links.is_empty() {
@@ -1595,7 +1749,7 @@ async fn move_orbit_unit_links(
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId.eq(new_unit_id),
             )
-            .all(&transaction)
+            .all(dbx)
             .await
             .context(h!())?
             .into_iter()
@@ -1627,24 +1781,26 @@ async fn move_orbit_unit_links(
                 ])
                 .to_owned(),
             )
-            .exec_without_returning(&transaction)
+            .exec_without_returning(dbx)
             .await
             .context(h!())?;
     }
     orbit_unit_sigint_unit::Entity::delete_many()
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(old_unit_id))
-        .exec(&transaction)
+        .exec(dbx)
         .await
         .context(h!())?;
-    transaction.commit().await.context(h!())?;
     Ok(())
 }
 
-async fn update_original_unit(
+async fn update_original_unit<C>(
     unit_original: sigint_unit::Model,
     unit_to_merge: &sigint_unit::Model,
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<sigint_unit::Model> {
+    dbx: &C,
+) -> anyhow::Result<sigint_unit::Model>
+where
+    C: ConnectionTrait,
+{
     let mut unit = unit_original.clone().into_active_model();
     unit.name = Set(unit_name_from_hierarchy([
         merged_unit_value(&unit_original.company, &unit_to_merge.company),
@@ -1869,6 +2025,7 @@ mod tests {
             is_deduplicate_candidate: None,
             comment: "main section".to_string(),
             orbit_note: None,
+            duplicate_unit_ids: Vec::new(),
         }
     }
 
@@ -1936,6 +2093,46 @@ mod tests {
 
     async fn unit_count(dbx: &DatabaseConnection) -> u64 {
         sigint_unit::Entity::find().count(dbx).await.unwrap()
+    }
+
+    async fn link_current_duplicate_candidate(
+        dbx: &DatabaseConnection,
+        sigint_unit_id: i64,
+    ) -> uuid::Uuid {
+        let synced_at = Utc::now().naive_utc();
+        let orbit_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            unit_name_short: Set(Some("2 шр".to_string())),
+            operational_unit_name_full: Set(Some(
+                "2 шр / 3 ошб / 44 осбр".to_string(),
+            )),
+            created_at: Set(synced_at),
+            updated_at: Set(synced_at),
+            is_snapshot_root: Set(true),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        orbit_sync::ActiveModel {
+            synced_at: Set(synced_at),
+            archive_md5: Set(uuid::Uuid::new_v4().simple().to_string()),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit_id),
+            sigint_unit_id: Set(sigint_unit_id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        orbit_unit_id
     }
 
     struct OrbitHierarchyFixture {
@@ -2393,9 +2590,313 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn create_unit_ignores_orbit_note_when_orbit_data_is_hidden() {
+    async fn create_unit_merges_requested_duplicates_after_insert() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_current_duplicate_candidate(&env.dbx, duplicate.id).await;
+        let mut req = auto_req(true, vec![], vec![]);
+        req.unit.duplicate_unit_ids = vec![duplicate.id, duplicate.id];
+
+        let rsp = create_unit_with_auto_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap();
+
+        assert_ne!(rsp.unit.id, duplicate.id);
+        assert!(
+            sigint_unit::Entity::find_by_id(duplicate.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
+        assert!(
+            !sigint_unit::Entity::find_by_id(rsp.unit.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_creation_rejects_suppressed_duplicate_candidate() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let orbit_unit_id =
+            link_current_duplicate_candidate(&env.dbx, duplicate.id).await;
+        let mut req = auto_req(true, vec![], vec![]);
+        req.unit.duplicate_unit_ids = vec![duplicate.id];
+        assert!(orbit::create_unit_duplicate_candidate_ids_for_req(
+            &env.dbx, &req.unit,
+        )
+        .await
+        .unwrap()
+        .contains(&duplicate.id));
+        let link = orbit_unit_sigint_unit::Entity::find_by_id((
+            orbit_unit_id,
+            duplicate.id,
+        ))
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        let mut link = link.into_active_model();
+        link.is_suppressed = Set(true);
+        link.update(&env.dbx).await.unwrap();
+        let unit_count_before = unit_count(&env.dbx).await;
+
+        let err = create_unit_with_auto_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::BL { .. }));
+        assert_eq!(unit_count(&env.dbx).await, unit_count_before);
+        assert!(
+            !sigint_unit::Entity::find_by_id(duplicate.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_creation_rolls_back_for_stale_duplicates() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let auto_duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_current_duplicate_candidate(&env.dbx, auto_duplicate.id).await;
+        delete_unit_for_login(&env.dbx, &login_id, auto_duplicate.id)
+            .await
+            .unwrap();
+        let mut req = auto_req(false, vec!["Роботине"], vec!["2 шр"]);
+        req.unit.duplicate_unit_ids = vec![auto_duplicate.id];
+        let unit_count_before = unit_count(&env.dbx).await;
+
+        let err = create_unit_with_auto_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::BL { .. }));
+        assert_eq!(unit_count(&env.dbx).await, unit_count_before);
+        assert_eq!(network_count(&env.dbx).await, 0);
+
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_current_duplicate_candidate(&env.dbx, duplicate.id).await;
+        delete_unit_for_login(&env.dbx, &login_id, duplicate.id)
+            .await
+            .unwrap();
+        let mut req = unit_req();
+        req.duplicate_unit_ids = vec![duplicate.id];
+        let unit_count_before = unit_count(&env.dbx).await;
+
+        let err = create_unit_for_login(&login_id, &env, req)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::BL { .. }));
+        assert_eq!(unit_count(&env.dbx).await, unit_count_before);
+        assert_eq!(
+            sigint_unit::Entity::find()
+                .filter(sigint_unit::Column::Deleted.eq(false))
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_with_auto_network_skips_network_after_merge() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_current_duplicate_candidate(&env.dbx, duplicate.id).await;
+        let existing_network = create_device_network_for_login(
+            &login_id,
+            &env,
+            CreateDeviceNetworkReq {
+                unit_id: duplicate.id,
+                locations: vec!["Роботине".to_string()],
+                unit_mask: Vec::new(),
+            },
+        )
+        .await
+        .unwrap();
+        let mut req = auto_req(false, vec!["Роботине"], vec!["2 шр"]);
+        req.unit.duplicate_unit_ids = vec![duplicate.id];
+
+        let rsp = create_unit_with_auto_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap();
+
+        assert_eq!(rsp.network_id, Some(existing_network.network_id));
+        assert_eq!(network_count(&env.dbx).await, 1);
+        assert!(unit_has_active_network(&env.dbx, rsp.unit.id)
+            .await
+            .unwrap());
+        let relation = sigint_network_unit::Entity::find()
+            .filter(
+                sigint_network_unit::Column::NetworkId
+                    .eq(existing_network.network_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(relation.unit_id, rsp.unit.id);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_rejects_multiple_inherited_active_networks() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let first_duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let orbit_unit_id =
+            link_current_duplicate_candidate(&env.dbx, first_duplicate.id)
+                .await;
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit_id),
+            sigint_unit_id: Set(second_duplicate.id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        for unit_id in [first_duplicate.id, second_duplicate.id] {
+            create_device_network_for_login(
+                &login_id,
+                &env,
+                CreateDeviceNetworkReq {
+                    unit_id,
+                    locations: vec!["Роботине".to_string()],
+                    unit_mask: Vec::new(),
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let mut req = auto_req(false, vec!["Роботине"], vec!["2 шр"]);
+        req.unit.duplicate_unit_ids =
+            vec![first_duplicate.id, second_duplicate.id];
+        let candidate_ids = orbit::create_unit_duplicate_candidate_ids_for_req(
+            &env.dbx, &req.unit,
+        )
+        .await
+        .unwrap();
+        assert!(candidate_ids.contains(&first_duplicate.id));
+        assert!(candidate_ids.contains(&second_duplicate.id));
+
+        let err = create_unit_with_auto_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            AppError::BL { msg } if msg == "unit has multiple active networks"
+        ));
+        assert_eq!(unit_count(&env.dbx).await, 2);
+        assert_eq!(network_count(&env.dbx).await, 2);
+        let network_unit_ids = sigint_network_unit::Entity::find()
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|network_unit| network_unit.unit_id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            network_unit_ids,
+            BTreeSet::from([first_duplicate.id, second_duplicate.id])
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_ignores_orbit_fields_when_orbit_data_is_hidden() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_current_duplicate_candidate(&env.dbx, duplicate.id).await;
         let settings = system_settings::Entity::find()
             .filter(system_settings::Column::Deleted.eq(false))
             .one(&env.dbx)
@@ -2407,8 +2908,8 @@ mod tests {
         settings.update(&env.dbx).await.unwrap();
         let login_id = test_login_id(&env).await;
         let mut req = auto_req(true, vec![], vec![]);
-        req.unit.active = false;
         req.unit.orbit_note = Some("Hidden note".to_string());
+        req.unit.duplicate_unit_ids = vec![duplicate.id];
 
         let rsp = create_unit_with_auto_network_for_login(&login_id, &env, req)
             .await
@@ -2420,6 +2921,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(unit.orbit_note, None);
+        assert!(
+            !sigint_unit::Entity::find_by_id(duplicate.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
     }
 
     #[tokio::test]

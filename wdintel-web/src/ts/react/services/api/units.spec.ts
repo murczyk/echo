@@ -8,6 +8,7 @@ import {
   createDeviceNetwork,
   DEFAULT_LIST_UNITS_REQ,
   deleteUnitAttachment,
+  getCreateUnitDuplicateCandidates,
   getAllUnitsList,
   getUnitsPage,
   getUnitDetails,
@@ -194,6 +195,37 @@ describe('units API', () => {
       unit_id: 7,
       locations: ['Роботине'],
       unit_mask: ['2 шр'],
+    });
+  });
+
+  it('loads ORBIT-linked duplicate candidates before unit creation', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        units: [{ id: 7, name: '2 батальйон', active: true, orbit_unit_ids: ['orbit-id'] }],
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      getCreateUnitDuplicateCandidates({
+        company: '',
+        battalion: '2 батальйон',
+        regiment: '',
+        division: '',
+        army: '',
+        militaryDistrict: '',
+        armyRegion: '',
+        active: true,
+        isDeduplicateCandidate: null,
+        comment: '',
+        orbitNote: null,
+        duplicateUnitIds: [],
+      }),
+    ).resolves.toMatchObject([{ id: 7, orbitUnitIds: ['orbit-id'] }]);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/sigint/unit/create-duplicate-candidates');
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      battalion: '2 батальйон',
+      duplicate_unit_ids: [],
     });
   });
 

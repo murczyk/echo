@@ -1,8 +1,8 @@
 use super::types::{
     CreateUnitReq, CreateUnitWithAutoNetworkReq, CreateUnitWithAutoNetworkRsp,
     ImportOrbitUnitReq, LinkOrbitUnitReq, ListUnitDuplicatesRsp,
-    OrbitChildUnit, OrbitDictionaryValue, OrbitParentUnit, OrbitUnitDetails,
-    OrbitUnitLinkCandidate, OrbitUnitLinkCandidatesReq,
+    ListUnitsByIdRsp, OrbitChildUnit, OrbitDictionaryValue, OrbitParentUnit,
+    OrbitUnitDetails, OrbitUnitLinkCandidate, OrbitUnitLinkCandidatesReq,
     OrbitUnitLinkCandidatesRsp, OrbitUnitSearchReq, UnitDetailsReq,
     UnitDuplicate, UnitOrbitChildrenRsp,
 };
@@ -500,6 +500,126 @@ pub async fn orbit_link_candidates(
     Ok(Json(OrbitUnitLinkCandidatesRsp { units }))
 }
 
+#[post("/api/sigint/unit/create-duplicate-candidates")]
+pub async fn create_unit_duplicate_candidates(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<CreateUnitReq>,
+) -> Result<Json<ListUnitsByIdRsp>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
+    if !can_view_orbit_data(&env.dbx, &login).await? {
+        return Ok(Json(ListUnitsByIdRsp { units: Vec::new() }));
+    }
+    let units =
+        create_unit_duplicate_candidates_for_req(&env.dbx, &req).await?;
+    Ok(Json(ListUnitsByIdRsp { units }))
+}
+
+async fn create_unit_duplicate_candidates_for_req(
+    dbx: &DatabaseConnection,
+    req: &CreateUnitReq,
+) -> Result<Vec<super::types::Unit>, AppError> {
+    let units =
+        create_unit_duplicate_candidate_models_for_req(dbx, req).await?;
+    let unit_ids = units.iter().map(|unit| unit.id).collect::<Vec<_>>();
+    let orbit_unit_ids = unit_ids_with_orbit(dbx, &unit_ids).await?;
+    units
+        .into_iter()
+        .map(|unit| {
+            let mut unit = super::render_unit(&unit)?;
+            unit.orbit_unit_ids =
+                orbit_unit_ids.get(&unit.id).cloned().unwrap_or_default();
+            unit.has_orbit = !unit.orbit_unit_ids.is_empty();
+            Ok(unit)
+        })
+        .collect()
+}
+
+pub(super) async fn create_unit_duplicate_candidate_ids_for_req<C>(
+    dbx: &C,
+    req: &CreateUnitReq,
+) -> Result<BTreeSet<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(create_unit_duplicate_candidate_models_for_req(dbx, req)
+        .await?
+        .into_iter()
+        .map(|unit| unit.id)
+        .collect())
+}
+
+async fn create_unit_duplicate_candidate_models_for_req<C>(
+    dbx: &C,
+    req: &CreateUnitReq,
+) -> Result<Vec<sigint_unit::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if !req.active {
+        return Ok(Vec::new());
+    }
+    let sigint_unit = sigint_unit_for_orbit_matching(req);
+    let orbit_unit_ids = crate::orbit::matching_orbit_unit_ids_for_sigint_unit(
+        dbx,
+        &sigint_unit,
+    )
+    .await
+    .c(h!())?;
+    if orbit_unit_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let units = sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_unit::Relation::OrbitUnitSigintUnit.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .filter(
+            orbit_unit_sigint_unit::Column::OrbitUnitId
+                .is_in(orbit_unit_ids.iter().copied()),
+        )
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .order_by_asc(sigint_unit::Column::Name)
+        .order_by_asc(sigint_unit::Column::Id)
+        .distinct()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(units)
+}
+
+fn sigint_unit_for_orbit_matching(req: &CreateUnitReq) -> sigint_unit::Model {
+    sigint_unit::Model {
+        id: i64::MAX,
+        company: req.company.clone(),
+        battalion: req.battalion.clone(),
+        regiment: req.regiment.clone(),
+        division: req.division.clone(),
+        army: req.army.clone(),
+        military_district: req.military_district.clone(),
+        army_region: req.army_region.clone(),
+        active: req.active,
+        deleted: false,
+        created_at: chrono::Utc::now().naive_utc(),
+        created_by_login_id: Uuid::nil(),
+        name: super::unit_name_req(req),
+        comment: req.comment.clone(),
+        search_tsv: None,
+        sigint_origin_id: None,
+        original_id: None,
+        is_deduplicate_candidate: req.is_deduplicate_candidate,
+        orbit_note: req.orbit_note.clone(),
+    }
+}
+
 #[post("/api/sigint/unit/orbit-search")]
 pub async fn search_orbit_units(
     user: actix_identity::Identity,
@@ -674,8 +794,11 @@ pub(super) async fn import_orbit_unit_for_login(
     .await?;
     transaction.commit().await.c(h!())?;
 
-    super::render_created_unit_with_optional_network(login, env, unit, network)
-        .await
+    let network_id = network.as_ref().map(|network| network.id);
+    super::render_created_unit_with_optional_network(
+        login, env, unit, network_id, network,
+    )
+    .await
 }
 
 async fn import_missing_orbit_ancestors<C>(
@@ -1183,6 +1306,7 @@ where
         is_deduplicate_candidate: None,
         comment: String::new(),
         orbit_note: None,
+        duplicate_unit_ids: Vec::new(),
     })
 }
 

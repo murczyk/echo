@@ -22,6 +22,8 @@ import {
   feedIndicatorUnreadCount,
   feedUnreadDisplayCount,
   feedLoadedUnreadCount,
+  feedNeedsUnreadPrefetch,
+  DUTY_FEED_UNREAD_PREFETCH_MIN,
   feedsUnreadDisplayTotal,
   getPointEtalonsFromMessage,
   getShortStateIdFromUrl,
@@ -613,12 +615,38 @@ describe('rer-duty utils', () => {
       hasReachedStart: false,
       referenceTimeMs: null,
       readIds: new Set([1, 2]),
+      windowedUnreadItems: new Map<number, number>(),
       unreadCount: 70000,
       adjacentFreqsRange: 0,
       highlightSignalsEnabled: false,
       onlyMyUnitTagsEnabled: false,
     } satisfies MessageFeedState;
     expect(feedLoadedUnreadCount(feed)).toBe(1);
+    expect(feedNeedsUnreadPrefetch(feed)).toBe(true);
+  });
+
+  it('does not need unread prefetch once the last-seen runway is full', () => {
+    const items = Array.from({ length: DUTY_FEED_UNREAD_PREFETCH_MIN }, (_, index) => [
+      index + 1,
+      {} as InboxMessage,
+    ]);
+    const feed = {
+      id: 'mf-1',
+      filter: emptyFilter(),
+      items,
+      loading: false,
+      loadingOlder: false,
+      hasReachedStart: false,
+      referenceTimeMs: null,
+      readIds: new Set<number>(),
+      windowedUnreadItems: new Map<number, number>(),
+      unreadCount: DUTY_FEED_UNREAD_PREFETCH_MIN,
+      adjacentFreqsRange: 0,
+      highlightSignalsEnabled: false,
+      onlyMyUnitTagsEnabled: false,
+    } satisfies MessageFeedState;
+    expect(feedLoadedUnreadCount(feed)).toBe(DUTY_FEED_UNREAD_PREFETCH_MIN);
+    expect(feedNeedsUnreadPrefetch(feed)).toBe(false);
   });
 
   it('does not expose raw server unread count when all loaded messages are read', () => {
@@ -652,7 +680,7 @@ describe('rer-duty utils', () => {
     expect(feedIndicatorUnreadCount(feed, { tailId: 1, count: 0 })).toBe(0);
   });
 
-  it('retains the authoritative server total for a large near-bottom unread count', () => {
+  it('uses residual unreadCount above local loaded+trimmed as beyond-tail pending', () => {
     const feed = indicatorFeed({
       items: Array.from({ length: 20 }, (_, index) => [index + 1, {} as InboxMessage]),
       readIds: new Set<number>(),
@@ -660,6 +688,9 @@ describe('rer-duty utils', () => {
       windowedUnreadItems: new Map<number, number>(),
     });
     expect(feedIndicatorUnreadCount(feed)).toBe(70000);
+    expect(feedIndicatorUnreadCount(feed, undefined, { includeBeyondTailResidual: false })).toBe(
+      20,
+    );
   });
 
   it('adds matching confirmed preview unread messages to loaded unread messages', () => {
@@ -671,6 +702,17 @@ describe('rer-duty utils', () => {
       readIds: new Set([1]),
     });
     expect(feedIndicatorUnreadCount(feed, { tailId: 2, count: 2 })).toBe(3);
+  });
+
+  it('keeps matching preview when residual is disabled (near-bottom)', () => {
+    const feed = indicatorFeed({
+      items: [[1, {} as InboxMessage]],
+      readIds: new Set([1]),
+      unreadCount: 5,
+    });
+    expect(
+      feedIndicatorUnreadCount(feed, { tailId: 1, count: 3 }, { includeBeyondTailResidual: false }),
+    ).toBe(3);
   });
 
   it('does not double count windowed IDs covered by a matching preview', () => {

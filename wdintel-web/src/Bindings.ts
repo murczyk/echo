@@ -2495,6 +2495,7 @@ export type CreateUnitReq = {
   isDeduplicateCandidate: boolean | null;
   comment: string;
   orbitNote: string | null;
+  duplicateUnitIds: Array<number>;
 };
 
 export type CreateUnitWithAutoNetworkReq = {
