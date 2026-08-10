@@ -6177,6 +6177,7 @@ type ListUnitsSortBy
     = CreatedAtDesc
     | CreatedAtAsc
     | NaturalMilitarySortAsc
+    | UnitNameLengthAsc
     | UnitNameAsc
     | UnitNameDesc
     | UnitCompanyAsc
@@ -6210,6 +6211,8 @@ listUnitsSortByEncoder enum =
             Json.Encode.string "CreatedAtAsc"
         NaturalMilitarySortAsc ->
             Json.Encode.string "NaturalMilitarySortAsc"
+        UnitNameLengthAsc ->
+            Json.Encode.string "UnitNameLengthAsc"
         UnitNameAsc ->
             Json.Encode.string "UnitNameAsc"
         UnitNameDesc ->
@@ -15509,6 +15512,15 @@ listUnitsSortByDecoder =
                     case x of
                         "NaturalMilitarySortAsc" ->
                             Json.Decode.succeed NaturalMilitarySortAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitNameLengthAsc" ->
+                            Json.Decode.succeed UnitNameLengthAsc
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )

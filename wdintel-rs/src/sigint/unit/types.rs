@@ -86,6 +86,7 @@ pub enum ListUnitsSortBy {
     CreatedAtDesc,
     CreatedAtAsc,
     NaturalMilitarySortAsc,
+    UnitNameLengthAsc,
     UnitNameAsc,
     UnitNameDesc,
     UnitCompanyAsc,

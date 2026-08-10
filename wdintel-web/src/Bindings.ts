@@ -2384,6 +2384,7 @@ export type ListUnitsSortBy =
   | 'CreatedAtDesc'
   | 'CreatedAtAsc'
   | 'NaturalMilitarySortAsc'
+  | 'UnitNameLengthAsc'
   | 'UnitNameAsc'
   | 'UnitNameDesc'
   | 'UnitCompanyAsc'

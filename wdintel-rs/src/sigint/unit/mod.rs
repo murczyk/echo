@@ -261,6 +261,14 @@ async fn read_units_with_orbit_visibility(
                 units = units.order_by_asc(sigint_unit::Column::Company);
                 units = units.order_by_asc(sigint_unit::Column::Id);
             }
+            ListUnitsSortBy::UnitNameLengthAsc => {
+                units = units
+                    .order_by_asc(Expr::cust(
+                        "char_length(\"sigint_unit\".\"name\")",
+                    ))
+                    .order_by_asc(sigint_unit::Column::Name)
+                    .order_by_asc(sigint_unit::Column::Id);
+            }
             ListUnitsSortBy::UnitOrbitLinkedAsc => {
                 units = units
                     .order_by_asc(Expr::cust(unit_has_orbit_sql()))
@@ -367,6 +375,7 @@ fn simple_unit_list_sort(
         CreatedAtDesc
         | CreatedAtAsc
         | NaturalMilitarySortAsc
+        | UnitNameLengthAsc
         | UnitOrbitLinkedAsc
         | UnitOrbitLinkedDesc => return None,
     })
@@ -2600,6 +2609,65 @@ mod tests {
                 inactive: 1,
             }
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_list_sorts_matching_sigint_names_by_length() {
+        let env = cleanup().await.unwrap();
+        let exact = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("20 army".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let child = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("brigade 20 army".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let grandchild = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("battalion brigade 20 army".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("unrelated".to_string()),
+                active: Set(true),
+                orbit_note: Set(Some("20 army".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_listed_unit_ids(
+            &env.dbx,
+            ListUnitsReq {
+                sort_by: Some(ListUnitsSortBy::UnitNameLengthAsc),
+                filter_name: Some("20 army".to_string()),
+                limit: Some(3),
+                ..Default::default()
+            },
+            &[exact.id, child.id, grandchild.id],
+        )
+        .await;
     }
 
     #[tokio::test]

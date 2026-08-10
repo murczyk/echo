@@ -76,7 +76,7 @@ export async function searchUnitsStrictThenRelaxed(
   options?: RequestOptions,
 ): Promise<Unit[]> {
   const requests = [getUnitsPage({ ...req, searchMode: 'Strict' }, options)];
-  if (req.filterText?.trim()) {
+  if (req.filterText?.trim() || req.filterName?.trim()) {
     requests.push(getUnitsPage({ ...req, searchMode: 'Relaxed' }, options));
   }
   const pages = await Promise.all(requests);

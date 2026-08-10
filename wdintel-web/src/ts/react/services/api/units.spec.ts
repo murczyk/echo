@@ -66,6 +66,34 @@ describe('units API', () => {
     ).toEqual(['Strict', 'Relaxed']);
   });
 
+  it('searches SIGINT unit names in both strict and relaxed modes', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse({ units: [] })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await searchUnitsStrictThenRelaxed({
+      ...DEFAULT_LIST_UNITS_REQ,
+      sortBy: 'UnitNameLengthAsc',
+      filterName: '20 army',
+    });
+
+    expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init.body)))).toMatchObject([
+      {
+        sort_by: 'UnitNameLengthAsc',
+        filter_text: null,
+        filter_name: '20 army',
+        search_mode: 'Strict',
+      },
+      {
+        sort_by: 'UnitNameLengthAsc',
+        filter_text: null,
+        filter_name: '20 army',
+        search_mode: 'Relaxed',
+      },
+    ]);
+  });
+
   it('normalizes unit response fields to camel case', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({

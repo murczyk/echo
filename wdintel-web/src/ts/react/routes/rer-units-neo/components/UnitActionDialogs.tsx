@@ -85,9 +85,9 @@ export function MergeUnitDialog({
         void searchUnitsStrictThenRelaxed(
           {
             ...DEFAULT_LIST_UNITS_REQ,
-            sortBy: 'UnitNameAsc',
+            sortBy: 'UnitNameLengthAsc',
             includeInactive: true,
-            filterText: inputValue.trim() || null,
+            filterName: inputValue.trim() || null,
             limit: 50,
             offset: 0,
           },
