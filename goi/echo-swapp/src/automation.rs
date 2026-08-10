@@ -1,6 +1,7 @@
 use crate::config::AUTOMATION_SEND_LOG_RETENTION_DAYS;
 use crate::error::ShortContext;
 use crate::h;
+use crate::map_screenshot::{self, MapCoordinate};
 use crate::messenger::{self, MessengerKind};
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose, Engine};
@@ -29,6 +30,8 @@ pub struct SaveAutomationReq {
     pub frequency_tokens: Vec<String>,
     pub stale_message_cutoff_minutes: i32,
     pub resend_attachments: bool,
+    #[serde(default)]
+    pub coordinates_screenshot: bool,
     pub coordinate_presence_mode: Option<String>,
     pub polygon_filter_mode: Option<String>,
     pub polygon_id: Option<i64>,
@@ -96,6 +99,7 @@ pub struct AutomationView {
     pub frequency_tokens: Vec<String>,
     pub stale_message_cutoff_minutes: i32,
     pub resend_attachments: bool,
+    pub coordinates_screenshot: bool,
     pub coordinate_presence_mode: String,
     pub polygon_filter_mode: String,
     pub polygon_id: Option<i64>,
@@ -153,6 +157,7 @@ struct AutomationListRow {
     frequency_tokens: Json,
     stale_message_cutoff_minutes: i32,
     resend_attachments: bool,
+    coordinates_screenshot: bool,
     coordinate_presence_mode: String,
     polygon_filter_mode: String,
     polygon_id: Option<i64>,
@@ -180,6 +185,7 @@ struct AutomationWorkerRow {
     frequency_tokens: Json,
     stale_message_cutoff_minutes: i32,
     resend_attachments: bool,
+    coordinates_screenshot: bool,
     coordinate_presence_mode: String,
     polygon_filter_mode: String,
     polygon_coordinates: Option<Json>,
@@ -318,6 +324,7 @@ struct NormalizedAutomation {
     frequency_tokens: Vec<String>,
     stale_message_cutoff_minutes: i32,
     resend_attachments: bool,
+    coordinates_screenshot: bool,
     coordinate_presence_mode: CoordinatePresenceMode,
     polygon_filter_mode: PolygonFilterMode,
     polygon_id: Option<i64>,
@@ -537,6 +544,7 @@ async fn ensure_automation_columns(db: &DatabaseConnection) -> Result<()> {
         alter table echo_automation
             add column if not exists stale_message_cutoff_minutes integer,
             add column if not exists resend_attachments boolean,
+            add column if not exists coordinates_screenshot boolean,
             add column if not exists coordinate_presence_mode text,
             add column if not exists polygon_filter_mode text,
             add column if not exists polygon_id bigint,
@@ -550,6 +558,7 @@ async fn ensure_automation_columns(db: &DatabaseConnection) -> Result<()> {
         update echo_automation
         set stale_message_cutoff_minutes = coalesce(stale_message_cutoff_minutes, 60),
             resend_attachments = coalesce(resend_attachments, false),
+            coordinates_screenshot = coalesce(coordinates_screenshot, false),
             coordinate_presence_mode = coalesce(coordinate_presence_mode, 'any'),
             polygon_filter_mode = coalesce(polygon_filter_mode, 'none'),
             is_paused = coalesce(is_paused, false),
@@ -564,6 +573,8 @@ async fn ensure_automation_columns(db: &DatabaseConnection) -> Result<()> {
             alter column stale_message_cutoff_minutes set not null,
             alter column resend_attachments set default false,
             alter column resend_attachments set not null,
+            alter column coordinates_screenshot set default false,
+            alter column coordinates_screenshot set not null,
             alter column coordinate_presence_mode set default 'any',
             alter column coordinate_presence_mode set not null,
             alter column polygon_filter_mode set default 'none',
@@ -784,12 +795,13 @@ pub async fn create(
                 frequency_tokens,
                 stale_message_cutoff_minutes,
                 resend_attachments,
+                coordinates_screenshot,
                 coordinate_presence_mode,
                 polygon_filter_mode,
                 polygon_id,
                 updated_at
             )
-            values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12, now() at time zone 'utc')
+            values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12, $13, now() at time zone 'utc')
             returning id
             "#,
             vec![
@@ -806,6 +818,7 @@ pub async fn create(
                     .into(),
                 automation.stale_message_cutoff_minutes.into(),
                 automation.resend_attachments.into(),
+                automation.coordinates_screenshot.into(),
                 automation.coordinate_presence_mode.as_str().into(),
                 automation.polygon_filter_mode.as_str().into(),
                 automation.polygon_id.into(),
@@ -840,9 +853,10 @@ pub async fn update(
             frequency_tokens = $8::jsonb,
             stale_message_cutoff_minutes = $9,
             resend_attachments = $10,
-            coordinate_presence_mode = $11,
-            polygon_filter_mode = $12,
-            polygon_id = $13,
+            coordinates_screenshot = $11,
+            coordinate_presence_mode = $12,
+            polygon_filter_mode = $13,
+            polygon_id = $14,
             updated_at = now() at time zone 'utc'
         where id = $1
         "#,
@@ -861,6 +875,7 @@ pub async fn update(
                 .into(),
             automation.stale_message_cutoff_minutes.into(),
             automation.resend_attachments.into(),
+            automation.coordinates_screenshot.into(),
             automation.coordinate_presence_mode.as_str().into(),
             automation.polygon_filter_mode.as_str().into(),
             automation.polygon_id.into(),
@@ -916,6 +931,7 @@ pub async fn worker_tick(db: &DatabaseConnection) -> Result<()> {
                 frequency_tokens,
                 stale_message_cutoff_minutes,
                 resend_attachments,
+                coordinates_screenshot,
                 coordinate_presence_mode,
                 polygon_filter_mode,
                 polygon.coordinates as polygon_coordinates,
@@ -1002,6 +1018,11 @@ async fn normalize_req(req: SaveAutomationReq) -> Result<NormalizedAutomation> {
     {
         bail!("polygon filter is not allowed when messages with coordinates are ignored");
     }
+    if coordinate_presence_mode == CoordinatePresenceMode::SkipWithCoordinates
+        && req.coordinates_screenshot
+    {
+        bail!("coordinate screenshot is not allowed when messages with coordinates are ignored");
+    }
     let polygon_id = if polygon_filter_mode == PolygonFilterMode::None {
         None
     } else {
@@ -1017,6 +1038,7 @@ async fn normalize_req(req: SaveAutomationReq) -> Result<NormalizedAutomation> {
         frequency_tokens,
         stale_message_cutoff_minutes: req.stale_message_cutoff_minutes,
         resend_attachments: req.resend_attachments,
+        coordinates_screenshot: req.coordinates_screenshot,
         coordinate_presence_mode,
         polygon_filter_mode,
         polygon_id,
@@ -1221,7 +1243,9 @@ async fn process_message(
             Ok(())
         }
         MatchDecision::Send => {
-            send_matching_message(db, automation, message).await.c(h!())
+            send_matching_message(db, automation, message, &coords)
+                .await
+                .c(h!())
         }
     }
 }
@@ -1230,6 +1254,7 @@ async fn send_matching_message(
     db: &DatabaseConnection,
     automation: &AutomationWorkerRow,
     message: &InboxMessageRow,
+    coordinates: &[Point],
 ) -> Result<()> {
     let target = load_send_target(
         db,
@@ -1239,7 +1264,7 @@ async fn send_matching_message(
     .await
     .c(h!())?;
     let kind = messenger_kind_from_db(&target.kind).c(h!())?;
-    let attachments = if automation.resend_attachments {
+    let mut attachments = if automation.resend_attachments {
         load_attachment_base64(db, message).await.c(h!())?
     } else {
         LoadedAttachments {
@@ -1247,6 +1272,9 @@ async fn send_matching_message(
             warning: None,
         }
     };
+    if automation.coordinates_screenshot && !coordinates.is_empty() {
+        add_coordinate_screenshot(&mut attachments, coordinates).await;
+    }
     let client_name = public_client_name(&target.client_name);
     let txn = db.begin().await.c(h!())?;
     let Some(send_log_id) = plan_send(
@@ -1304,6 +1332,38 @@ async fn send_matching_message(
             .c(h!())?;
     }
     Ok(())
+}
+
+async fn add_coordinate_screenshot(
+    attachments: &mut LoadedAttachments,
+    coordinates: &[Point],
+) {
+    let coordinates = coordinates
+        .iter()
+        .map(|point| MapCoordinate {
+            lat: point.lat,
+            lng: point.lng,
+        })
+        .collect::<Vec<_>>();
+    match map_screenshot::create(&coordinates).await {
+        Ok(screenshot) => attachments.content_base64.push(screenshot),
+        Err(err) => {
+            let warning =
+                format!("coordinate screenshot is unavailable: {err:#}");
+            log::warn!("{warning}");
+            append_warning(&mut attachments.warning, warning);
+        }
+    }
+}
+
+fn append_warning(warning: &mut Option<String>, value: String) {
+    match warning {
+        Some(warning) => {
+            warning.push_str("; ");
+            warning.push_str(&value);
+        }
+        None => *warning = Some(value),
+    }
 }
 
 async fn plan_send(
@@ -2108,6 +2168,7 @@ fn automation_view(row: AutomationListRow) -> AutomationView {
         frequency_tokens: json_vec(Some(&row.frequency_tokens)),
         stale_message_cutoff_minutes: row.stale_message_cutoff_minutes,
         resend_attachments: row.resend_attachments,
+        coordinates_screenshot: row.coordinates_screenshot,
         coordinate_presence_mode: row.coordinate_presence_mode,
         polygon_filter_mode: row.polygon_filter_mode,
         polygon_id: row.polygon_id,
@@ -2225,6 +2286,7 @@ fn list_sql_head() -> &'static str {
         a.frequency_tokens,
         a.stale_message_cutoff_minutes,
         a.resend_attachments,
+        a.coordinates_screenshot,
         a.coordinate_presence_mode,
         a.polygon_filter_mode,
         a.polygon_id,
@@ -2350,6 +2412,7 @@ mod tests {
             frequency_tokens: vec![],
             stale_message_cutoff_minutes: 60,
             resend_attachments: false,
+            coordinates_screenshot: false,
             coordinate_presence_mode: None,
             polygon_filter_mode: polygon_filter_mode.map(str::to_string),
             polygon_id,
@@ -2985,6 +3048,32 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn preserves_coordinate_screenshot_setting() -> Result<()> {
+        let mut req = save_automation_req(None, None);
+        req.coordinates_screenshot = true;
+
+        let automation = normalize_req(req).await.c(h!())?;
+
+        assert!(automation.coordinates_screenshot);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rejects_coordinate_screenshot_when_coordinates_are_ignored() {
+        let mut req = save_automation_req(None, None);
+        req.coordinates_screenshot = true;
+        req.coordinate_presence_mode =
+            Some("skip_with_coordinates".to_string());
+
+        let err = normalize_req(req).await.unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "coordinate screenshot is not allowed when messages with coordinates are ignored"
+        );
+    }
+
     #[test]
     fn empty_keyword_and_frequency_filters_match_message() {
         let automation = AutomationFilter {
@@ -3534,6 +3623,7 @@ mod tests {
                 frequency_tokens: serde_json::json!([]),
                 stale_message_cutoff_minutes: 0,
                 resend_attachments: false,
+                coordinates_screenshot: false,
                 coordinate_presence_mode: CoordinatePresenceMode::Any
                     .as_str()
                     .to_string(),
@@ -3591,6 +3681,7 @@ mod tests {
                 frequency_tokens: serde_json::json!([]),
                 stale_message_cutoff_minutes: 60,
                 resend_attachments: false,
+                coordinates_screenshot: false,
                 coordinate_presence_mode: CoordinatePresenceMode::Any
                     .as_str()
                     .to_string(),

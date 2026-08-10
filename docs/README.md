@@ -494,6 +494,9 @@ flowchart LR
         goi_worker -->|write signed frequencies| goi_files
     end
 
+    map_tiles["Esri World Imagery + Google labels<br/>coordinate screenshot tiles"]
+    echo_swapp -->|coordinate screenshots| map_tiles
+
     sync <-->|Basic-auth HTTP<br/>associations · knowledge · signed frequencies| goi_worker
     sync <-->|SSH · knowledge workbook + palette files| goi_files
     sync -.->|SSH · remote sync lock| goi_pg
@@ -514,7 +517,9 @@ the GOI pool disabled.
 `echo-swapp.service` always starts `messenger_worker`, `cleanup_worker` (Echo IM
 and automation cleanup), and `cleanup_tmp_worker_nofail` on the GOI LXC; none
 is configuration-gated. The service uses the Echo PostgreSQL database as its
-system of record.
+system of record. Automations can render extracted coordinates over Esri World
+Imagery with Google labels and attach the PNG to the forwarded text in the same
+outbound message.
 Cross-automation send reservations, outbound queue rows, and delivery records
 commit atomically. `echo_automation_send_log` retains route-level
 deduplication state for 30 days; the cleanup worker hard-deletes older rows.
