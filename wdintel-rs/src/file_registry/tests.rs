@@ -1,6 +1,7 @@
 use super::entities::file_entry;
 use super::entities::sea_orm_active_enums::FileEntryKind;
 use super::*;
+use crate::devices::analytics::types::RuleExpression;
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
@@ -85,6 +86,7 @@ async fn file_registry_schema_and_entity_round_trip() {
     assert_legacy_file_table_is_absent(connection).await;
     assert_file_entry_schema(connection).await;
     assert_file_analysis_schema(connection).await;
+    assert_default_analytics_tags(connection).await;
     assert_file_entry_entity_round_trip(connection).await;
 }
 
@@ -115,8 +117,58 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260808_113748_file_analysis_device_queue".to_string(),
             "m20260808_134904_file_analysis_retry_limit".to_string(),
             "m20260808_134905_analytics_tag_test_expectation".to_string(),
+            "m20260810_120000_seed_default_analytics_tags".to_string(),
         ]
     );
+}
+
+async fn assert_default_analytics_tags(connection: &DatabaseConnection) {
+    let tags = connection
+        .query_all_raw(Statement::from_string(
+            DbBackend::Postgres,
+            r#"
+select id::text as id, name, rule_expression
+from analytics_tag
+where archived_at is null
+"#
+            .to_string(),
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            let name = row.try_get("", "name").unwrap();
+            let id = row.try_get("", "id").unwrap();
+            let rule_expression = row.try_get("", "rule_expression").unwrap();
+            (name, (id, rule_expression))
+        })
+        .collect::<BTreeMap<String, (String, serde_json::Value)>>();
+    let expected = [
+        ("Втрати", "019fdb64-4e45-76e2-b1e8-29945f919883"),
+        ("Доповіді", "019fdb5c-70d1-72b3-b533-554037355265"),
+        ("Озброєння", "019fdb63-23c0-7841-9896-cc3623deb46b"),
+        ("Штатки", "019fdb5b-1673-7d23-82ab-b4b05cb119ce"),
+        ("Бойові документи", "019fdb5e-e895-70c0-9cd9-fbc02c4d5372"),
+        ("Військовий файл", "019fdb68-9ef1-7d51-82a8-a365ddd38e39"),
+        ("Карти командира", "019fdaed-f5e0-7a50-ac3f-d31c101b9bf2"),
+        ("Плани противника", "019fdb5d-2858-7c31-ad0c-794e9bb3b379"),
+        ("Профільні програми", "019feace-8369-7732-aace-2907fdc7540c"),
+        ("Робота з радіо", "019fdb62-317c-74c3-ad84-ed794053fce3"),
+        ("Маршрути, палітри", "019fdb59-4305-74b0-8c19-50f2bcaacc54"),
+        ("Паролі, доступи", "019fdb65-bbc0-7141-aff9-87332813a834"),
+    ];
+
+    for (name, expected_id) in expected {
+        let (actual_id, rule_expression) =
+            tags.get(name).unwrap_or_else(|| {
+                panic!("default analytics tag {name:?} is missing")
+            });
+        assert_eq!(actual_id, expected_id, "unexpected id for tag {name:?}");
+        serde_json::from_value::<RuleExpression>(rule_expression.clone())
+            .unwrap_or_else(|error| {
+                panic!("default analytics tag {name:?} has an invalid rule: {error}")
+            });
+    }
 }
 
 async fn assert_public_extensions(connection: &DatabaseConnection) {
@@ -306,7 +358,7 @@ order by conname
         .unwrap()
         .try_get("", "revision")
         .unwrap();
-    assert_eq!(rule_revision, 0);
+    assert_eq!(rule_revision, 1);
 }
 
 async fn assert_exact_columns(

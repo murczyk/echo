@@ -114,11 +114,8 @@ fn path_normalization_and_token_boundaries_are_separator_aware() {
 
 #[test]
 fn full_path_token_recognizes_filename_before_extension() {
-    let token = condition(
-        RuleField::FullPath,
-        RuleMatcher::ContainsToken,
-        &["оружие"],
-    );
+    let token =
+        condition(RuleField::FullPath, RuleMatcher::ContainsToken, &["оружие"]);
 
     assert!(test_rule_expression(
         token.clone(),
