@@ -181,4 +181,75 @@ describe('useRerUnitsPage mutations', () => {
     expect(latestPage?.units.map((unit) => unit.id)).toEqual([515]);
     expect(api.getUnitsPage).toHaveBeenCalledTimes(2);
   });
+
+  it('does not replace a newer page with a stale post-create refresh', async () => {
+    const initialReq = { limit: 20, offset: 0, filterActive: true } as ListUnitsReq;
+    const nextReq = { limit: 20, offset: 20, filterActive: false } as ListUnitsReq;
+    const createdUnit = { id: 515, name: '6 зва', active: true } as Unit;
+    let resolveStaleRefresh: ((response: unknown) => void) | undefined;
+    api.getUnitsPage
+      .mockResolvedValueOnce({
+        units: [],
+        totalCount: 0,
+        statusCounts: { active: 0, inactive: 0 },
+        showLoadMore: false,
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveStaleRefresh = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({
+        units: [inactiveUnit],
+        totalCount: 1,
+        statusCounts: { active: 0, inactive: 1 },
+        showLoadMore: false,
+      });
+    api.getUnitIdsWithVisibleAttachments.mockResolvedValue([]);
+    api.createUnit.mockResolvedValue(createdUnit);
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => root?.render(createElement(Harness, { req: initialReq })));
+    await flushEffects();
+
+    await act(async () => {
+      await latestPage?.submitUnit({
+        unit: {
+          company: '',
+          battalion: '',
+          regiment: '',
+          division: '',
+          army: '6 зва',
+          militaryDistrict: '',
+          armyRegion: '',
+          active: true,
+          isDeduplicateCandidate: null,
+          comment: '',
+          orbitNote: null,
+          duplicateUnitIds: [],
+        },
+        autoNetwork: undefined,
+      });
+    });
+
+    await act(async () => root?.render(createElement(Harness, { req: nextReq })));
+    await flushEffects();
+
+    await act(async () => {
+      resolveStaleRefresh?.({
+        units: [activeUnit],
+        totalCount: 50_000,
+        statusCounts: { active: 50_000, inactive: 0 },
+        showLoadMore: true,
+      });
+    });
+    await flushEffects();
+
+    expect(latestPage?.units.map((unit) => unit.id)).toEqual([2]);
+    expect(latestPage?.totalCount).toBe(1);
+    expect(latestPage?.statusCounts).toEqual({ active: 0, inactive: 1 });
+  });
 });

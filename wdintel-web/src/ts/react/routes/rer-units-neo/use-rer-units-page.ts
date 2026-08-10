@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AlertColor } from '@mui/material';
 import type {
@@ -75,6 +75,7 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [uploadingKmz, setUploadingKmz] = useState(false);
   const [kmzTask, setKmzTask] = useState<KmzTask | null>(null);
+  const mutationRefreshController = useRef<AbortController | null>(null);
 
   const loadUnits = useCallback(
     async (options?: RequestOptions) => {
@@ -111,7 +112,10 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   useEffect(() => {
     const controller = new AbortController();
     void loadUnits({ signal: controller.signal });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      mutationRefreshController.current?.abort();
+    };
   }, [loadUnits]);
 
   useEffect(() => {
@@ -308,21 +312,33 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
   }
 
   async function refreshUnitsAfterMutation(successText: string) {
+    mutationRefreshController.current?.abort();
+    const controller = new AbortController();
+    mutationRefreshController.current = controller;
+    const options = { signal: controller.signal };
     try {
-      const response = await getUnitsPage(listReq);
+      const response = await getUnitsPage(listReq, options);
+      if (controller.signal.aborted) return;
       const attachmentIds = await getUnitIdsWithVisibleAttachments(
         response.units.map((unit) => unit.id),
+        options,
       );
+      if (controller.signal.aborted) return;
       setUnits(response.units);
       setTotalCount(response.totalCount);
       setStatusCounts(response.statusCounts);
       setAttachmentUnitIds(new Set(attachmentIds));
       setStatus({ severity: 'success', text: successText });
     } catch (error) {
+      if (controller.signal.aborted) return;
       setStatus({
         severity: 'warning',
         text: `${successText} Не вдалося оновити список: ${formatUnitError(error)}`,
       });
+    } finally {
+      if (mutationRefreshController.current === controller) {
+        mutationRefreshController.current = null;
+      }
     }
   }
 
