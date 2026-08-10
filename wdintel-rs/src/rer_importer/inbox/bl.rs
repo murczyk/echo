@@ -84,7 +84,7 @@ async fn load_coords_with_locality(
         };
         pelengs_by_message
             .entry(peleng.source_inbox_item_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push((peleng, coords));
     }
     let mut stored_localities = HashMap::new();
