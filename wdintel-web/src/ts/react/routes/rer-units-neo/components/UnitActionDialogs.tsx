@@ -15,7 +15,7 @@ import type { Unit } from '../../../../../Bindings';
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
-import { DEFAULT_LIST_UNITS_REQ, getUnitsPage } from '../../../services/api/units';
+import { DEFAULT_LIST_UNITS_REQ, searchUnitsStrictThenRelaxed } from '../../../services/api/units';
 import { formatUnitError } from '../helpers';
 
 export function DeleteUnitDialog({
@@ -82,21 +82,20 @@ export function MergeUnitDialog({
       () => {
         setLoadingOptions(true);
         setOptionsError(null);
-        void getUnitsPage(
+        void searchUnitsStrictThenRelaxed(
           {
             ...DEFAULT_LIST_UNITS_REQ,
             sortBy: 'UnitNameAsc',
             includeInactive: true,
             filterText: inputValue.trim() || null,
-            searchMode: 'Strict',
             limit: 50,
             offset: 0,
           },
           { signal: controller.signal },
         )
-          .then((response) => {
+          .then((units) => {
             if (!controller.signal.aborted) {
-              setOptions(response.units.filter((unit) => unit.id !== original.id));
+              setOptions(units.filter((unit) => unit.id !== original.id));
             }
           })
           .catch((requestError) => {
@@ -131,6 +130,7 @@ export function MergeUnitDialog({
           </PowerAlert>
           <Autocomplete
             options={options}
+            filterOptions={(items) => items}
             value={duplicate}
             onChange={(_, value) => setDuplicate(value)}
             inputValue={inputValue}

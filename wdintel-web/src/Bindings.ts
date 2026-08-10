@@ -2404,6 +2404,8 @@ export type ListUnitsSortBy =
   | 'UnitCommentDesc'
   | 'UnitOrbitNoteAsc'
   | 'UnitOrbitNoteDesc'
+  | 'UnitOrbitLinkedAsc'
+  | 'UnitOrbitLinkedDesc'
 ;
 
 export type ListUnitsSearchMode =
@@ -2448,6 +2450,9 @@ export type ListUnitsReq = {
   filterArmyRegion: string | null;
   filterComment: string | null;
   filterOrbitNote: string | null;
+  filterIsDeduplicateCandidate: boolean | null;
+  filterHasOrbit: boolean | null;
+  filterHasOrbitNote: boolean | null;
   searchMode: ListUnitsSearchMode | null;
   limit: number | null;
   offset: number | null;

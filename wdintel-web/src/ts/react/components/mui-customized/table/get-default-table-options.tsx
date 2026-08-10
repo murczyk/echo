@@ -148,12 +148,16 @@ export function resolveExplicitSelectFilterValue(
 export function buildExplicitSingleSelectColumnFilter<TData extends MRT_RowData>({
   options,
   fallbackValue,
+  label,
   helperText,
+  getValue,
   onChange,
 }: {
   options: readonly ExplicitSelectFilterOption[];
   fallbackValue: string;
+  label?: string;
   helperText?: string | null;
+  getValue?: (column: MRT_Column<TData>) => unknown;
   onChange: (column: MRT_Column<TData>, nextValue: string) => void;
 }): NonNullable<MRT_ColumnDef<TData>['Filter']> {
   const allowedValues = options.map((option) => option.value);
@@ -164,9 +168,10 @@ export function buildExplicitSingleSelectColumnFilter<TData extends MRT_RowData>
       fullWidth
       margin="none"
       variant="standard"
+      label={label}
       helperText={helperText ?? undefined}
       value={resolveExplicitSelectFilterValue(
-        column.getFilterValue(),
+        getValue?.(column) ?? column.getFilterValue(),
         allowedValues,
         fallbackValue,
       )}

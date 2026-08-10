@@ -106,6 +106,8 @@ pub enum ListUnitsSortBy {
     UnitCommentDesc,
     UnitOrbitNoteAsc,
     UnitOrbitNoteDesc,
+    UnitOrbitLinkedAsc,
+    UnitOrbitLinkedDesc,
 }
 
 #[derive(
@@ -145,6 +147,9 @@ pub struct ListUnitsReq {
     pub filter_army_region: Option<String>,
     pub filter_comment: Option<String>,
     pub filter_orbit_note: Option<String>,
+    pub filter_is_deduplicate_candidate: Option<bool>,
+    pub filter_has_orbit: Option<bool>,
+    pub filter_has_orbit_note: Option<bool>,
     pub search_mode: Option<ListUnitsSearchMode>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
