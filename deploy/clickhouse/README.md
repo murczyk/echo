@@ -678,17 +678,20 @@ sets differ; use `source-sync-exclusions-if-needed.sh --yes` first.
 Migration pull requests are checked against
 `migration-impact.json`. New tables declare `excluded` or
 `replicated_snapshot`; additive replicated columns declare `cdc_backfill` with
-reviewed post-DDL DML or `mirror_resync`. Drops, renames, and type changes use
-`mirror_resync` until a narrower path has been validated. Dependency revision
-changes for `echo-im` and `echo-gpu` must also declare whether they contain
-schema changes. Deployment never starts a full mirror resync implicitly.
+reviewed post-DDL DML only for the guaranteed-nonempty `system_settings`
+singleton. Other additive column migrations use `mirror_resync` because the
+source table may be empty and zero-row DML cannot propagate its schema. Drops,
+renames, and type changes also use `mirror_resync` until a narrower path has
+been validated. Dependency revision changes for `echo-im` and `echo-gpu` must
+declare whether they contain schema changes. Deployment never starts a full
+mirror resync implicitly.
 
 ```json
 {
   "migrations": {
     "echo:m20260801_120000_example": {
       "changes": [
-        { "table": "public.example", "strategy": "cdc_backfill" }
+        { "table": "public.example", "strategy": "mirror_resync" }
       ]
     }
   },

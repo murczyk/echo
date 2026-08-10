@@ -47,7 +47,7 @@ class AnalyticsMigrationCheckTests(unittest.TestCase):
             any("without reviewed backfill DML" in error for error in errors)
         )
 
-    def test_cdc_backfill_accepts_update(self) -> None:
+    def test_cdc_backfill_rejects_potentially_empty_table(self) -> None:
         contents = """
 alter table sample add column enabled boolean default false;
 update sample set enabled = false;
@@ -59,6 +59,27 @@ update sample set enabled = false;
             {"changes": [{"table": "public.sample", "strategy": "cdc_backfill"}]},
             set(),
         )
+        self.assertTrue(any("may be empty" in error for error in errors))
+
+    def test_cdc_backfill_accepts_guaranteed_nonempty_table(self) -> None:
+        contents = """
+alter table system_settings add column enabled boolean default false;
+update system_settings set enabled = false;
+"""
+        errors = MODULE.validate_change(
+            "echo:m1",
+            contents,
+            MODULE.detect_ddl(contents),
+            {
+                "changes": [
+                    {
+                        "table": "public.system_settings",
+                        "strategy": "cdc_backfill",
+                    }
+                ]
+            },
+            set(),
+        )
         self.assertEqual(errors, [])
 
     def test_cdc_backfill_accepts_rust_backfill(self) -> None:
@@ -66,16 +87,16 @@ update sample set enabled = false;
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             backfill = root / "backfill.rs"
-            backfill.write_text("sample::Entity::update_many();")
+            backfill.write_text("system_settings::Entity::update_many();")
             with mock.patch.object(MODULE, "REPO_ROOT", root):
                 errors = MODULE.validate_change(
                     "echo:m1",
-                    contents,
-                    MODULE.detect_ddl(contents),
+                    contents.replace("sample", "system_settings"),
+                    MODULE.detect_ddl(contents.replace("sample", "system_settings")),
                     {
                         "changes": [
                             {
-                                "table": "public.sample",
+                                "table": "public.system_settings",
                                 "strategy": "cdc_backfill",
                                 "backfill": "backfill.rs",
                             }

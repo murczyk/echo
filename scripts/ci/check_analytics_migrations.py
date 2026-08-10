@@ -25,6 +25,7 @@ DDL_RE = re.compile(
 )
 ADD_COLUMN_RE = re.compile(r"\balter\s+table\b.*?\badd\s+column\b", re.IGNORECASE | re.DOTALL)
 STRATEGIES = {"excluded", "replicated_snapshot", "cdc_backfill", "mirror_resync"}
+CDC_BACKFILL_GUARANTEED_NONEMPTY_TABLES = {"public.system_settings"}
 DEPENDENCIES = {
     "echo-im": "echo-im",
     "echo-gpu": "echo-gpu-client",
@@ -146,6 +147,12 @@ def validate_change(
         if strategy == "cdc_backfill":
             if "alter" not in operations or not ADD_COLUMN_RE.search(contents):
                 errors.append(f"{key}: {table} uses cdc_backfill without ADD COLUMN")
+            if table not in CDC_BACKFILL_GUARANTEED_NONEMPTY_TABLES:
+                errors.append(
+                    f"{key}: {table} uses cdc_backfill but may be empty; "
+                    "use mirror_resync because zero-row DML cannot propagate "
+                    "the schema to ClickHouse"
+                )
             relation = re.escape(table.split(".", 1)[1])
             dml = re.compile(
                 rf"\b(?:update|insert\s+into|delete\s+from)\s+(?:public\.)?{relation}\b",
@@ -261,6 +268,15 @@ def validate_dependency_changes(
             if strategy == "excluded" and table not in exclusions:
                 errors.append(
                     f"{key}: {table} uses excluded but is not in canonical exclusions"
+                )
+            if (
+                strategy == "cdc_backfill"
+                and table not in CDC_BACKFILL_GUARANTEED_NONEMPTY_TABLES
+            ):
+                errors.append(
+                    f"{key}: {table} uses cdc_backfill but may be empty; "
+                    "use mirror_resync because zero-row DML cannot propagate "
+                    "the schema to ClickHouse"
                 )
     return errors, changed_keys
 

@@ -38,6 +38,12 @@ the deployment complete until the column is present in the raw ClickHouse
 table, current-state view, PostgreSQL gateway, and the analytics health check
 is green.
 
+Treat replicated tables as potentially empty. The `cdc_backfill` strategy is
+allowed only for a table whose schema guarantees a row on every deployment;
+currently that is limited to the `system_settings` singleton. Use
+`mirror_resync` for other additive column migrations because zero-row DML
+cannot propagate the new schema to ClickHouse.
+
 Apply this review to schema migrations shipped by application dependencies
 such as `echo-im`, not only migrations in `echo-migration`.
 
