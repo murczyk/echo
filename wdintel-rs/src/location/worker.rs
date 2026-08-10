@@ -223,7 +223,8 @@ async fn update_peleng_locality_batch(
         sql,
         values,
     ))
-    .await?;
+    .await
+    .c(h!())?;
     Ok(())
 }
 
