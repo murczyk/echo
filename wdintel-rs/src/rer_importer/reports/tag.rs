@@ -34,6 +34,7 @@ pub async fn report_docx_kind_tag(
         &login,
         env,
         &current_req,
+        &period,
         tag_report_sort_by,
     )
     .await
@@ -108,6 +109,7 @@ async fn load_tag_report_data(
     login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
+    period: &TagReportPeriod,
     tag_report_sort_by: TagReportSortBy,
 ) -> Result<TagReportData, AppError> {
     let report_settings =
@@ -129,7 +131,6 @@ async fn load_tag_report_data(
             chunk.end
         );
         let chunk_req = inbox_report_chunk_req(req, chunk);
-        let chunk_period = tag_report_period(&chunk_req).context(h!())?;
         let txn = read_db
             .begin_with_config(
                 Some(IsolationLevel::RepeatableRead),
@@ -138,12 +139,7 @@ async fn load_tag_report_data(
             .await
             .context(h!())?;
         let snapshot = load_tag_report_snapshot_txn(
-            &txn,
-            login,
-            env,
-            &chunk_req,
-            &chunk_period,
-            chunk.end,
+            &txn, login, env, &chunk_req, period, chunk.end,
         )
         .await
         .context(h!())?;
@@ -670,6 +666,11 @@ fn message_full_text_nocomments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::*;
+    use crate::rer_importer::types::{InboxMessagesReq, InboxMessagesSortBy};
+    use sea_orm::prelude::Expr;
+    use sea_orm::ActiveValue::Set;
+    use serial_test::serial;
 
     fn dt(hour: u32, minute: u32) -> chrono::NaiveDateTime {
         chrono::NaiveDate::from_ymd_opt(2026, 6, 30)
@@ -729,5 +730,116 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![3, 2, 1]
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn tag_report_keeps_importance_across_timestamp_chunks() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        set_report_chunking_hours(&env.dbx, 1).await;
+        let timestamp = dt(10, 30);
+
+        let signal_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("important-across-chunks".to_string())),
+                created_at: Set(timestamp),
+                timestamp: Set(Some(timestamp)),
+                message_uid: Set(Some("important-across-chunks".to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(signal_message.id),
+                group_master_key: Set(Some(
+                    datasource_group.group_master_key.clone(),
+                )),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                sender: Set(Some("sender-1".to_string())),
+                message_uid: Set(Some("important-across-chunks".to_string())),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(signal_message.id),
+                date: Set(Some(timestamp.date().to_string())),
+                time: Set(Some(
+                    timestamp.time().format("%H:%M:%S").to_string(),
+                )),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_important(
+            &env.dbx,
+            sigint_important::ActiveModel {
+                login_id: Set(Some(login.id)),
+                signal_message_id: Set(signal_message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(
+                dt(7, 0).and_utc().timestamp_millis(),
+            ),
+            till_date_inclusive_ms: Some(
+                dt(12, 0).and_utc().timestamp_millis(),
+            ),
+            nolimit: Some(true),
+            sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+            ..Default::default()
+        };
+        let period = tag_report_period(&req).unwrap();
+        let data = load_tag_report_data(
+            &env.dbx,
+            &login.id,
+            &env,
+            &req,
+            &period,
+            TagReportSortBy::ByTime,
+        )
+        .await
+        .unwrap();
+
+        assert!(data.important_ids.contains(&signal_message.id));
+    }
+
+    async fn set_report_chunking_hours(db: &DatabaseConnection, hours: i32) {
+        let result = system_settings::Entity::update_many()
+            .col_expr(
+                system_settings::Column::ReportChunkingHours,
+                Expr::value(hours),
+            )
+            .filter(system_settings::Column::Deleted.eq(false))
+            .exec(db)
+            .await
+            .unwrap();
+        if result.rows_affected == 0 {
+            system_settings::ActiveModel {
+                report_chunking_hours: Set(hours),
+                limit_big_reports: Set(false),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
     }
 }

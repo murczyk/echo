@@ -796,6 +796,16 @@ mod tests {
             &login.id,
             &env,
             &InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    (dt - chrono::Duration::days(1))
+                        .and_utc()
+                        .timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    (dt + chrono::Duration::days(1))
+                        .and_utc()
+                        .timestamp_millis(),
+                ),
                 nolimit: Some(true),
                 ..Default::default()
             },
