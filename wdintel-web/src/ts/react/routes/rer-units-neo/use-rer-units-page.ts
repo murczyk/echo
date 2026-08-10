@@ -330,28 +330,29 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     setSubmitting(true);
     setDialogError(null);
     try {
+      let successText: string;
       if (editUnit !== null) {
         const updated = await updateUnit({ ...editUnit, ...value.unit });
         setUnits((current) => replaceUnit(current, updated));
-        await refreshUnitsAfterMutation(`Підрозділ «${updated.name}» оновлено.`);
+        successText = `Підрозділ «${updated.name}» оновлено.`;
       } else if (value.autoNetwork !== undefined) {
         const created = await createUnitWithAutoNetwork({
           unit: value.unit,
           ...value.autoNetwork,
         });
         setUnits((current) => sortUnits([...current, created.unit]));
-        await refreshUnitsAfterMutation(
+        successText =
           created.networkId === null
             ? `Підрозділ «${created.unit.name}» створено без мережі.`
-            : `Підрозділ «${created.unit.name}» і радіомережу створено.`,
-        );
+            : `Підрозділ «${created.unit.name}» і радіомережу створено.`;
       } else {
         const created = await createUnit(value.unit);
         setUnits((current) => sortUnits([...current, created]));
-        await refreshUnitsAfterMutation(`Підрозділ «${created.name}» створено.`);
+        successText = `Підрозділ «${created.name}» створено.`;
       }
       setCreateOpen(false);
       setEditUnit(null);
+      void refreshUnitsAfterMutation(successText);
     } catch (error) {
       setDialogError(formatUnitError(error));
     } finally {

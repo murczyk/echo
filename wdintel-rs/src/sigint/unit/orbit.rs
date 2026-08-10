@@ -9,7 +9,7 @@ use super::types::{
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-use crate::types::{warn, Env, Mode, ShortContext};
+use crate::types::{debug, warn, Env, Mode, ShortContext};
 use crate::users::{
     ensure_admin, ensure_rer_role, has_role, login_id_from_identity,
 };
@@ -819,18 +819,17 @@ where
             .await?;
             continue;
         }
-        let unit_req =
-            match create_unit_req_from_orbit(dbx, &ancestor, true).await {
-                Ok(unit_req) => unit_req,
-                Err(err @ AppError::BL { .. }) => {
-                    let orbit_unit_id = ancestor.unit_id;
-                    warn!(
-                    "Skipping unsupported ORBIT ancestor {orbit_unit_id}: {err}"
-                );
-                    continue;
-                }
-                Err(err) => return Err(err),
-            };
+        let unit_req = match create_unit_req_from_orbit(dbx, &ancestor, true)
+            .await
+        {
+            Ok(unit_req) => unit_req,
+            Err(err @ AppError::BL { .. }) => {
+                let orbit_unit_id = ancestor.unit_id;
+                debug!("Skipping unsupported ORBIT ancestor {orbit_unit_id}: {err}");
+                continue;
+            }
+            Err(err) => return Err(err),
+        };
         let unit = match find_existing_sigint_unit(dbx, &unit_req).await? {
             Some(unit) => unit,
             None => super::insert_unit_with_changelog(dbx, login, &unit_req)
