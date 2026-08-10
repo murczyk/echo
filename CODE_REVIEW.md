@@ -1,5 +1,12 @@
 # Code review
 
+## Rust error context
+
+Require every propagated fallible Rust call to attach the source location with
+`.context(h!())?` or `.c(h!())?`. Do not accept a bare `?` when propagating a
+`Result`; use `.c(h!())?` when converting concrete library or infrastructure
+errors and `.context(h!())?` when propagating an existing application error.
+
 ## Replicated PostgreSQL migrations
 
 CI compares migration DDL with

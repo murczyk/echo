@@ -1,5 +1,9 @@
 use crate::entities::*;
 use crate::error::AppError;
+use crate::rer_importer::report_chunking::{
+    build_filtered_inbox_report_chunk_query, inbox_report_chunk_req,
+    inbox_report_period_chunks, ReportPeriodEnd,
+};
 use crate::rer_importer::reports::types::TagReportSortBy;
 use crate::types::*;
 use crate::utils::*;
@@ -30,7 +34,6 @@ pub async fn report_docx_kind_tag(
         &login,
         env,
         &current_req,
-        &period,
         tag_report_sort_by,
     )
     .await
@@ -105,21 +108,58 @@ async fn load_tag_report_data(
     login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
-    period: &TagReportPeriod,
     tag_report_sort_by: TagReportSortBy,
 ) -> Result<TagReportData, AppError> {
-    let txn = read_db
-        .begin_with_config(
-            Some(IsolationLevel::RepeatableRead),
-            Some(AccessMode::ReadOnly),
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks =
+        inbox_report_period_chunks(req, report_settings.chunking_hours)?;
+    let mut important_ids = BTreeSet::new();
+    let mut messages_by_id = BTreeMap::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "Tag report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let chunk_req = inbox_report_chunk_req(req, chunk);
+        let chunk_period = tag_report_period(&chunk_req)?;
+        let txn = read_db
+            .begin_with_config(
+                Some(IsolationLevel::RepeatableRead),
+                Some(AccessMode::ReadOnly),
+            )
+            .await
+            .context(h!())?;
+        let snapshot = load_tag_report_snapshot_txn(
+            &txn,
+            login,
+            env,
+            &chunk_req,
+            &chunk_period,
+            chunk.end,
         )
         .await
         .context(h!())?;
-    let snapshot = load_tag_report_snapshot_txn(&txn, login, env, req, period)
-        .await
-        .context(h!())?;
-    txn.commit().await.context(h!())?;
-    Ok(collect_tag_report_data(req, tag_report_sort_by, snapshot))
+        txn.commit().await.context(h!())?;
+        let chunk_data =
+            collect_tag_report_data(&chunk_req, tag_report_sort_by, snapshot);
+        important_ids.extend(chunk_data.important_ids);
+        for message in chunk_data.messages {
+            messages_by_id.entry(message.message_id).or_insert(message);
+        }
+    }
+    let mut messages = messages_by_id.into_values().collect::<Vec<_>>();
+    sort_tag_report_messages(&mut messages, tag_report_sort_by);
+    Ok(TagReportData {
+        important_ids,
+        messages,
+    })
 }
 
 async fn load_tag_report_snapshot_txn(
@@ -128,11 +168,13 @@ async fn load_tag_report_snapshot_txn(
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
     period: &TagReportPeriod,
+    period_end: ReportPeriodEnd,
 ) -> Result<TagReportSnapshot, AppError> {
     let login_ids = crate::users::get_organism_login_ids_by_id(txn, login)
         .await
         .c(h!())?;
-    let candidates = load_tag_report_candidates(txn, login, env, req).await?;
+    let candidates =
+        load_tag_report_candidates(txn, login, env, req, period_end).await?;
     let message_ids: Vec<i64> =
         candidates.iter().map(|message| message.id).collect();
     let important_ids = load_tag_report_important_ids(
@@ -193,22 +235,46 @@ async fn load_tag_report_candidates(
     login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<TagReportMessageCandidate>, AppError> {
-    let messages =
-        crate::rer_importer::inbox::query::build_filtered_inbox_query(
-            txn, login, env, req,
-        )
-        .await
-        .context(h!())?
-        .select_only()
-        .column_as(signal_message::Column::Id, "id")
-        .column_as(sigint_inbox_item::Column::Freq, "freq")
-        .column_as(sigint_inbox_item::Column::Datetime, "datetime")
-        .into_model::<TagReportMessageCandidate>()
-        .all(txn)
-        .await
-        .context(h!())?;
+    let messages = build_filtered_inbox_report_chunk_query(
+        txn, login, env, req, period_end,
+    )
+    .await
+    .context(h!())?
+    .select_only()
+    .column_as(signal_message::Column::Id, "id")
+    .column_as(sigint_inbox_item::Column::Freq, "freq")
+    .column_as(sigint_inbox_item::Column::Datetime, "datetime")
+    .into_model::<TagReportMessageCandidate>()
+    .all(txn)
+    .await
+    .context(h!())?;
     Ok(messages)
+}
+
+fn sort_tag_report_messages(
+    messages: &mut [TagReportMessage],
+    tag_report_sort_by: TagReportSortBy,
+) {
+    messages.sort_by(|left, right| match tag_report_sort_by {
+        TagReportSortBy::ByTime => tag_report_message_time_order(left, right),
+        TagReportSortBy::ByFreqThenTime => left
+            .inbox
+            .freq
+            .as_deref()
+            .unwrap_or("")
+            .cmp(right.inbox.freq.as_deref().unwrap_or(""))
+            .then_with(|| tag_report_message_time_order(left, right)),
+    });
+}
+
+fn tag_report_message_time_order(
+    left: &TagReportMessage,
+    right: &TagReportMessage,
+) -> std::cmp::Ordering {
+    (left.inbox.datetime, left.message_id)
+        .cmp(&(right.inbox.datetime, right.message_id))
 }
 
 fn sort_tag_report_candidates(

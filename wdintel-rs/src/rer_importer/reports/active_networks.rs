@@ -6,9 +6,11 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
+use crate::rer_importer::report_chunking::{
+    report_period_chunks, ReportPeriodEnd,
+};
 use crate::rer_importer::reports::types::*;
-use crate::types::info;
-use crate::types::Env;
+use crate::types::{info, Env, ShortContext};
 use crate::utils::{dt_from_millis, dt_zoned_from_millis};
 use anyhow::Context;
 use chrono::NaiveDateTime;
@@ -30,6 +32,11 @@ pub async fn report_docx_kind_active_networks(
     let start_total = Instant::now();
     info!("report_docx_kind_active_networks_report started");
 
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunking_hours = report_settings.chunking_hours;
     let analytics_req = req;
     let postgres_req = req;
     let aor_data: Vec<AreaOfResponsibilityNetworkComments> =
@@ -38,10 +45,12 @@ pub async fn report_docx_kind_active_networks(
             "active networks report",
             true,
             |db| async move {
-                get_aor_network_comments(&db, analytics_req).await
+                get_aor_network_comments(&db, analytics_req, chunking_hours)
+                    .await
             },
             |db| async move {
-                get_aor_network_comments(&db, postgres_req).await
+                get_aor_network_comments(&db, postgres_req, chunking_hours)
+                    .await
             },
         )
         .await?;
@@ -87,28 +96,65 @@ pub async fn report_docx_kind_active_networks(
 pub async fn get_aor_network_comments(
     db: &DatabaseConnection,
     req: &ReportPreviewReq,
+    chunking_hours: i64,
 ) -> Result<Vec<AreaOfResponsibilityNetworkComments>, AppError> {
     let aor_ids = get_request_aor_ids(req);
 
     let mut result: Vec<AreaOfResponsibilityNetworkComments> = Vec::new();
 
-    let since_dt = format_to_native_date(req.req.since_date_inclusive_ms)?;
-    let till_dt = format_to_native_date(req.req.till_date_inclusive_ms)?;
+    let since_dt =
+        format_to_native_date(req.req.since_date_inclusive_ms).context(h!())?;
+    let till_dt =
+        format_to_native_date(req.req.till_date_inclusive_ms).context(h!())?;
+    let chunks = report_period_chunks(
+        since_dt.and_utc().timestamp_millis(),
+        till_dt.and_utc().timestamp_millis(),
+        chunking_hours,
+        ReportPeriodEnd::Inclusive,
+    )
+    .context(h!())?;
 
-    let aors = get_areas_of_responsibility(db, aor_ids).await?;
+    let aors = get_areas_of_responsibility(db, aor_ids)
+        .await
+        .context(h!())?;
 
     for area_of_responsibility in aors {
         let mut network_unit_comments: Vec<NetworkUnitComments> = Vec::new();
 
         let mut networks =
-            get_aor_networks(db, area_of_responsibility.id).await?;
+            get_aor_networks(db, area_of_responsibility.id)
+                .await
+                .context(h!())?;
         networks.sort_by_key(|a| a.active_from);
 
         for network in networks {
-            let units = get_network_units(db, network.id).await?;
-            let comments =
-                get_signal_message_comments(db, network.id, since_dt, till_dt)
-                    .await?;
+            let units = get_network_units(db, network.id)
+                .await
+                .context(h!())?;
+            let mut comments = Vec::new();
+            for (index, chunk) in chunks.iter().copied().enumerate() {
+                info!(
+                    "Active networks report chunk {}/{} for network {}: {}..{} ({:?})",
+                    index + 1,
+                    chunks.len(),
+                    network.id,
+                    chunk.since_ms,
+                    chunk.till_ms,
+                    chunk.end
+                );
+                comments.extend(
+                    get_signal_message_comments(
+                        db,
+                        network.id,
+                        dt_from_millis(chunk.since_ms).context(h!())?,
+                        dt_from_millis(chunk.till_ms).context(h!())?,
+                        chunk.end,
+                    )
+                    .await
+                    .context(h!())?,
+                );
+            }
+            comments.sort_by_key(|comment| comment.created_at);
 
             network_unit_comments.push(NetworkUnitComments {
                 network,
@@ -335,6 +381,7 @@ async fn get_signal_message_comments(
     network_id: i64,
     since_dt: NaiveDateTime,
     till_dt: NaiveDateTime,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<SigintComment>, AppError> {
     let comments = sigint_comment::Entity::find()
         .join(
@@ -375,13 +422,18 @@ async fn get_signal_message_comments(
             ))
             .gte(since_dt),
         )
-        .filter(
-            Expr::col((
+        .filter(match period_end {
+            ReportPeriodEnd::Inclusive => Expr::col((
                 sigint_inbox_item::Entity,
                 sigint_inbox_item::Column::Datetime,
             ))
             .lte(till_dt),
-        )
+            ReportPeriodEnd::NonInclusive => Expr::col((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Datetime,
+            ))
+            .lt(till_dt),
+        })
         .order_by_asc(Expr::col((
             sigint_comment::Entity,
             sigint_comment::Column::CreatedAt,

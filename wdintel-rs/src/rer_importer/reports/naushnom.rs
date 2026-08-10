@@ -1,6 +1,9 @@
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
+use crate::rer_importer::report_chunking::{
+    inbox_report_chunk_req, inbox_report_period_chunks, ReportPeriodEnd,
+};
 use crate::sigint::network::display_network_type;
 use crate::types::*;
 use crate::utils::*;
@@ -230,6 +233,54 @@ pub async fn get_inbox_messages_report_network(
     >,
     AppError,
 > {
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks = inbox_report_period_chunks(req, report_settings.chunking_hours)
+        .context(h!())?;
+    let mut networks = HashMap::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "Naushnom report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let chunk_req = inbox_report_chunk_req(req, chunk);
+        let chunk_networks = get_inbox_messages_report_network_chunk(
+            user_login, env, &chunk_req, chunk.end,
+        )
+        .await
+        .context(h!())?;
+        merge_network_report_chunks(&mut networks, chunk_networks);
+    }
+    for (_, _, unit_messages) in networks.values_mut() {
+        for messages in unit_messages.values_mut() {
+            messages.sort_by_key(|message| std::cmp::Reverse(message.datetime));
+        }
+    }
+    Ok(networks)
+}
+
+async fn get_inbox_messages_report_network_chunk(
+    user_login: &uuid::Uuid,
+    env: &Env,
+    req: &crate::rer_importer::types::InboxMessagesReq,
+    period_end: ReportPeriodEnd,
+) -> Result<
+    HashMap<
+        i64,
+        (
+            Option<String>,
+            String,
+            HashMap<String, Vec<NetworkMessagesReport>>,
+        ),
+    >,
+    AppError,
+> {
     let read_db = env.replica();
     let login = *user_login;
     let include_peleng_locations =
@@ -322,7 +373,8 @@ pub async fn get_inbox_messages_report_network(
         &req.selected_groups,
         &req.selected_senders,
         &sigint_groups,
-    )?;
+    )
+    .context(h!())?;
     let q = filter_denied_senders(q, &req.denied_senders)?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_selected_posts(q, &req.selected_posts)?;
@@ -359,20 +411,35 @@ pub async fn get_inbox_messages_report_network(
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
         q = q.filter(
             sigint_inbox_item::Column::Datetime
-                .gte(dt_from_millis(since_date_inclusive_ms)?),
+                .gte(
+                    dt_from_millis(since_date_inclusive_ms).context(h!())?,
+                ),
         );
     }
     if let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms {
-        q = q.filter(
-            sigint_inbox_item::Column::Datetime
-                .lte(dt_from_millis(till_date_inclusive_ms)?),
-        );
+        q = match period_end {
+            ReportPeriodEnd::Inclusive => q.filter(
+                sigint_inbox_item::Column::Datetime
+                    .lte(
+                        dt_from_millis(till_date_inclusive_ms)
+                            .context(h!())?,
+                    ),
+            ),
+            ReportPeriodEnd::NonInclusive => q.filter(
+                sigint_inbox_item::Column::Datetime
+                    .lt(
+                        dt_from_millis(till_date_inclusive_ms)
+                            .context(h!())?,
+                    ),
+            ),
+        };
     }
     let q = filter_selected_locations(
         q,
         &req.selected_locations,
         include_peleng_locations,
-    )?;
+    )
+    .context(h!())?;
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
     let q = q.order_by_desc(sigint_inbox_item::Column::Datetime);
 
@@ -413,4 +480,32 @@ pub async fn get_inbox_messages_report_network(
     }
 
     Ok(res_map)
+}
+
+fn merge_network_report_chunks(
+    networks: &mut HashMap<
+        i64,
+        (
+            Option<String>,
+            String,
+            HashMap<String, Vec<NetworkMessagesReport>>,
+        ),
+    >,
+    chunk_networks: HashMap<
+        i64,
+        (
+            Option<String>,
+            String,
+            HashMap<String, Vec<NetworkMessagesReport>>,
+        ),
+    >,
+) {
+    for (network_id, (location, kind, unit_messages)) in chunk_networks {
+        let network = networks.entry(network_id).or_insert_with(|| {
+            (location.clone(), kind.clone(), HashMap::new())
+        });
+        for (unit, messages) in unit_messages {
+            network.2.entry(unit).or_default().extend(messages);
+        }
+    }
 }

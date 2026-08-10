@@ -1,6 +1,10 @@
 use super::super::types::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::rer_importer::report_chunking::{
+    build_filtered_inbox_report_chunk_query, inbox_report_chunk_req,
+    inbox_report_period_chunks, ReportPeriodChunk, ReportPeriodEnd,
+};
 use crate::rer_importer::reports::inbox_light::{
     blank_inbox_message, load_message_group_info, parse_optional_json_vec,
 };
@@ -123,8 +127,20 @@ pub async fn report_docx_kind_digest(
     let mut request = req.req.clone();
     request.report_tags_only_this_unit = Some(false);
     request.or_with_extended_form = Some(true); // with comments only
+    request.till_date_inclusive_ms = Some(report_till.timestamp_millis());
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks = inbox_report_period_chunks(
+        &request,
+        report_settings.chunking_hours,
+    )
+    .context(h!())?;
     let analytics_req = &request;
     let postgres_req = &request;
+    let analytics_chunks = &chunks;
+    let postgres_chunks = &chunks;
     let messages = crate::rer_importer::analysis::with_analytics_read_fallback(
         env,
         "digest report interception scan",
@@ -132,10 +148,24 @@ pub async fn report_docx_kind_digest(
             &request,
         ),
         |db| async move {
-            load_digest_messages(&db, &login, env, analytics_req).await
+            load_digest_messages_chunks(
+                &db,
+                &login,
+                env,
+                analytics_req,
+                analytics_chunks,
+            )
+            .await
         },
         |db| async move {
-            load_digest_messages(&db, &login, env, postgres_req).await
+            load_digest_messages_chunks(
+                &db,
+                &login,
+                env,
+                postgres_req,
+                postgres_chunks,
+            )
+            .await
         },
     )
     .await
@@ -293,11 +323,45 @@ pub async fn report_docx_kind_digest(
         .add_paragraph(Paragraph::new())
         .add_table(table_amrp);
     info!("report_docx_kind_digest done, saving to file...");
-    let file = std::fs::File::create(outpath)?;
+    let file = std::fs::File::create(outpath).context(h!())?;
     docx.build().pack(file).context(h!())?;
 
     info!("report_docx_kind_digest completed");
     Ok(())
+}
+
+async fn load_digest_messages_chunks(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    chunks: &[ReportPeriodChunk],
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let mut messages = BTreeMap::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "Digest report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let chunk_req = inbox_report_chunk_req(req, chunk);
+        for (id, message) in load_digest_messages(
+            dbx,
+            login,
+            env,
+            &chunk_req,
+            chunk.end,
+        )
+        .await
+        .context(h!())?
+        {
+            messages.entry(id).or_insert(message);
+        }
+    }
+    Ok(messages.into_iter().collect())
 }
 
 async fn load_digest_messages(
@@ -305,9 +369,10 @@ async fn load_digest_messages(
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let rows = crate::rer_importer::inbox::query::build_filtered_inbox_query(
-        dbx, login, env, req,
+    let rows = build_filtered_inbox_report_chunk_query(
+        dbx, login, env, req, period_end,
     )
     .await
     .context(h!())?

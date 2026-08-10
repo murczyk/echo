@@ -2,7 +2,9 @@ use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
-use crate::rer_importer::report_chunking::ReportPeriodEnd;
+use crate::rer_importer::report_chunking::{
+    inbox_report_chunk_req, inbox_report_period_chunks, ReportPeriodEnd,
+};
 use crate::rer_importer::types::{
     AnalysisStatsReq, InboxMessagesReq, NewCallsignsRes,
 };
@@ -58,6 +60,7 @@ pub async fn collect_babak_report_data(
         env,
         &inbox_req,
         !without_comments,
+        report_settings.chunking_hours,
     )
     .await
     .c(h!())?;
@@ -985,6 +988,7 @@ async fn get_inbox_messages_report_unit(
     env: &Env,
     req: &InboxMessagesReq,
     include_comments: bool,
+    chunking_hours: i64,
 ) -> Result<Vec<StatsPerUnitReport>, AppError> {
     let analytics_supported =
         crate::rer_importer::analysis::analytics_inbox_request_supported(req);
@@ -994,15 +998,46 @@ async fn get_inbox_messages_report_unit(
         analytics_supported,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
-    .await?;
-    let scope =
-        resolve_babak_candidate_scope(env, req, analytics_supported).await?;
-    if scope.is_some_and(AnalyticsMessageIdScope::is_empty) {
-        return Ok(Vec::new());
+    .await
+    .context(h!())?;
+    let chunks =
+        inbox_report_period_chunks(req, chunking_hours).context(h!())?;
+    let mut candidate_ids = BTreeSet::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "Babak report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let chunk_req = inbox_report_chunk_req(req, chunk);
+        let scope = resolve_babak_candidate_scope(
+            env,
+            &chunk_req,
+            analytics_supported,
+            chunk.end,
+        )
+        .await
+        .context(h!())?;
+        if scope.as_ref().is_some_and(|scope| (*scope).is_empty()) {
+            continue;
+        }
+        candidate_ids.extend(
+            load_babak_candidate_ids(
+                login,
+                env,
+                &chunk_req,
+                &access,
+                scope.as_ref(),
+                chunk.end,
+            )
+            .await
+            .context(h!())?,
+        );
     }
-    let candidate_ids =
-        load_babak_candidate_ids(login, env, req, &access, scope.as_ref())
-            .await?;
+    let candidate_ids = candidate_ids.into_iter().collect::<Vec<_>>();
     let mut stats = BTreeMap::<String, BabakStatsAccumulator>::new();
     let mut unknown = Vec::new();
 
@@ -1015,7 +1050,8 @@ async fn get_inbox_messages_report_unit(
             req.without_model_tags.unwrap_or(false),
             include_comments,
         )
-        .await?;
+        .await
+        .context(h!())?;
         for row in rows {
             let units = normalized_babak_units(&row);
             if units.is_empty() {
@@ -1038,7 +1074,8 @@ async fn get_inbox_messages_report_unit(
         unknown,
         env.config.cluster_radius.unwrap_or(2.0) / 100.0,
     )
-    .await?;
+    .await
+    .context(h!())?;
 
     let mut units = stats
         .into_iter()
@@ -1062,6 +1099,7 @@ async fn load_babak_candidate_ids(
     req: &InboxMessagesReq,
     access: &BabakCandidateAccess,
     scope: Option<&AnalyticsMessageIdScope>,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<i64>, AppError> {
     let analytics_timeout = core::time::Duration::from_millis(
         env.config
@@ -1081,13 +1119,14 @@ async fn load_babak_candidate_ids(
                 req,
                 access,
                 scope,
+                period_end,
                 Some(analytics_timeout),
             )
             .await
         },
         |db| async move {
             load_all_babak_candidate_ids(
-                &db, login, req, access, None, None,
+                &db, login, req, access, None, period_end, None,
             )
             .await
         },
@@ -1101,13 +1140,15 @@ async fn load_all_babak_candidate_ids(
     req: &InboxMessagesReq,
     access: &BabakCandidateAccess,
     scope: Option<&AnalyticsMessageIdScope>,
+    period_end: ReportPeriodEnd,
     page_timeout: Option<core::time::Duration>,
 ) -> Result<Vec<i64>, AppError> {
     let mut result = Vec::new();
     let mut cursor = None;
     loop {
-        let load_page =
-            load_babak_candidate_page(dbx, login, req, access, scope, cursor);
+        let load_page = load_babak_candidate_page(
+            dbx, login, req, access, scope, cursor, period_end,
+        );
         let page = match page_timeout {
             Some(timeout) => {
                 tokio::time::timeout(timeout, load_page).await.c(h!())??
@@ -1170,6 +1211,7 @@ async fn resolve_babak_candidate_scope(
     env: &Env,
     req: &InboxMessagesReq,
     analytics_supported: bool,
+    period_end: ReportPeriodEnd,
 ) -> Result<Option<AnalyticsMessageIdScope>, AppError> {
     if env.analytics.is_none() || !analytics_supported {
         return Ok(None);
@@ -1179,8 +1221,12 @@ async fn resolve_babak_candidate_scope(
     else {
         return Ok(None);
     };
-    let dt_since = dt_from_millis(since)?;
-    let dt_till = dt_from_millis(till.saturating_add(1))?;
+    let dt_since = dt_from_millis(since).context(h!())?;
+    let scope_till = match period_end {
+        ReportPeriodEnd::Inclusive => till.saturating_add(1),
+        ReportPeriodEnd::NonInclusive => till,
+    };
+    let dt_till = dt_from_millis(scope_till).context(h!())?;
     let freshness_max_age_ms = env
         .config
         .analytics
@@ -1194,7 +1240,8 @@ async fn resolve_babak_candidate_scope(
             &env.dbx,
             freshness_max_age_ms,
         )
-        .await?,
+        .await
+        .context(h!())?,
     ))
 }
 
@@ -1205,6 +1252,7 @@ async fn load_babak_candidate_page(
     access: &BabakCandidateAccess,
     scope: Option<&AnalyticsMessageIdScope>,
     cursor: Option<(chrono::NaiveDateTime, i64)>,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<BabakCandidateRow>, AppError> {
     let mut query = signal_message::Entity::find()
         .join(
@@ -1321,19 +1369,28 @@ async fn load_babak_candidate_page(
     }
     if let Some(since) = req.since_date_inclusive_ms {
         query = query.filter(
-            sigint_inbox_item::Column::Datetime.gte(dt_from_millis(since)?),
+            sigint_inbox_item::Column::Datetime
+                .gte(dt_from_millis(since).context(h!())?),
         );
     }
     if let Some(till) = req.till_date_inclusive_ms {
-        query = query.filter(
-            sigint_inbox_item::Column::Datetime.lte(dt_from_millis(till)?),
-        );
+        query = match period_end {
+            ReportPeriodEnd::Inclusive => query.filter(
+                sigint_inbox_item::Column::Datetime
+                    .lte(dt_from_millis(till).context(h!())?),
+            ),
+            ReportPeriodEnd::NonInclusive => query.filter(
+                sigint_inbox_item::Column::Datetime
+                    .lt(dt_from_millis(till).context(h!())?),
+            ),
+        };
     }
     query = filter_selected_locations(
         query,
         &req.selected_locations,
         req.include_peleng_locations.unwrap_or(false),
-    )?;
+    )
+    .context(h!())?;
     if let Some(scope) = scope {
         query = query
             .filter(scope.condition((

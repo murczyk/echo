@@ -3,6 +3,10 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::location::peleng::inbox_item_has_active_peleng_exists;
+use crate::rer_importer::report_chunking::{
+    build_filtered_inbox_report_chunk_query, inbox_report_chunk_req,
+    inbox_report_period_chunks, ReportPeriodEnd,
+};
 use crate::rer_importer::reports::inbox_light::load_message_group_info;
 use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::types::*;
@@ -137,16 +141,38 @@ async fn collect_report_125_data(
     inbox_req.nolimit = Some(true);
     inbox_req.report_tags_only_this_unit = Some(false);
 
-    let messages = load_report_125_messages(dbx, login, env, &inbox_req)
-        .await
-        .context(h!())?;
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks =
+        inbox_report_period_chunks(&inbox_req, report_settings.chunking_hours)?;
+    let mut messages_by_id = BTreeMap::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "Report 1.2.5 chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let chunk_req = inbox_report_chunk_req(&inbox_req, chunk);
+        for message in
+            load_report_125_messages(dbx, login, env, &chunk_req, chunk.end)
+                .await
+                .context(h!())?
+        {
+            messages_by_id.entry(message.id).or_insert(message);
+        }
+    }
     let own_datasource_ids = if req.report_tags_only_this_unit == Some(true) {
         Some(load_report_125_datasource_ids(dbx, logins).await?)
     } else {
         None
     };
-    let messages = messages
-        .into_iter()
+    let messages = messages_by_id
+        .into_values()
         .filter(|message| {
             report_125_message_matches_datasource_scope(
                 message,
@@ -164,9 +190,10 @@ async fn load_report_125_messages(
     login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<Report125Message>, AppError> {
-    let rows = crate::rer_importer::inbox::query::build_filtered_inbox_query(
-        dbx, login, env, req,
+    let rows = build_filtered_inbox_report_chunk_query(
+        dbx, login, env, req, period_end,
     )
     .await
     .c(h!())?
@@ -234,22 +261,24 @@ async fn load_report_125_pelengs(
     }
 
     let mut pelengs_map = BTreeMap::<i64, Vec<sigint_peleng::Model>>::new();
-    for peleng in sigint_peleng::Entity::find()
-        .filter(sigint_peleng::Column::Deleted.eq(false))
-        .filter(
-            sigint_peleng::Column::SourceInboxItemId
-                .eq_any(message_ids.to_vec()),
-        )
-        .order_by_asc(sigint_peleng::Column::SourceInboxItemId)
-        .order_by_asc(sigint_peleng::Column::Id)
-        .all(dbx)
-        .await
-        .c(h!())?
-    {
-        pelengs_map
-            .entry(peleng.source_inbox_item_id)
-            .or_default()
-            .push(peleng);
+    for message_ids in message_ids.chunks(20_000) {
+        for peleng in sigint_peleng::Entity::find()
+            .filter(sigint_peleng::Column::Deleted.eq(false))
+            .filter(
+                sigint_peleng::Column::SourceInboxItemId
+                    .eq_any(message_ids.to_vec()),
+            )
+            .order_by_asc(sigint_peleng::Column::SourceInboxItemId)
+            .order_by_asc(sigint_peleng::Column::Id)
+            .all(dbx)
+            .await
+            .c(h!())?
+        {
+            pelengs_map
+                .entry(peleng.source_inbox_item_id)
+                .or_default()
+                .push(peleng);
+        }
     }
 
     Ok(pelengs_map)
