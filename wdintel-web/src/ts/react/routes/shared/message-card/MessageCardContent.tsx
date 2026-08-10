@@ -212,11 +212,9 @@ export function MessageCardMessageBody({
         type: 'document' as const,
         value: document,
       })),
-      ...coordinatePreviewPoints.map((point) => ({
-        type: 'coordinate' as const,
-        value: point,
-        points: coordinatePreviewPoints,
-      })),
+      ...(coordinatePreviewPoints.length > 0
+        ? [{ type: 'coordinate' as const, points: coordinatePreviewPoints }]
+        : []),
     ],
     [coordinatePreviewPoints, images, previewableDocuments, videoPreviewSources],
   );
@@ -375,9 +373,9 @@ export function MessageCardMessageBody({
           msg={msg}
           tagsMap={tagsMap}
           onPointsChange={setCoordinatePreviewPoints}
-          onOpen={(index) => {
+          onOpen={() => {
             blurActiveElement();
-            setAttachmentPreviewIndex(coordinatePreviewStartIndex + index);
+            setAttachmentPreviewIndex(coordinatePreviewStartIndex);
           }}
         />
       ) : null}

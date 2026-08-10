@@ -27,11 +27,11 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewProvider', () => (
     initialIndex,
   }: {
     attachments: Array<{
-      value: { lat: number; lng: number; label: string };
+      points: Array<{ lat: number; lng: number; label: string }>;
     }>;
     initialIndex: number;
   }) => {
-    const point = attachments[initialIndex]?.value;
+    const point = attachments[initialIndex]?.points[0];
     return point != null ? (
       <div
         role="dialog"
@@ -39,6 +39,7 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewProvider', () => (
         data-lng={point.lng}
         data-label={point.label}
         data-index={String(initialIndex)}
+        data-attachment-count={String(attachments.length)}
       >
         coordinate-dialog
       </div>
@@ -222,6 +223,9 @@ describe('MessageCardCoordinateAttachment', () => {
     });
 
     expect(container.querySelector('[role="dialog"]')?.getAttribute('data-index')).toBe('0');
+    expect(container.querySelector('[role="dialog"]')?.getAttribute('data-attachment-count')).toBe(
+      '1',
+    );
   });
 
   it('renders an inline retry error when the resolver rejects for a palette list failure', async () => {

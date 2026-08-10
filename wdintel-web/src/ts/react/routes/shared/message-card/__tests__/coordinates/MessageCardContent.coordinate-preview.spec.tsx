@@ -25,7 +25,10 @@ vi.mock('../../MessageCardCoordinateAttachment', () => ({
         type="button"
         data-coordinate-ready
         onClick={() =>
-          onPointsChange?.([{ source: 'direct', lat: 50.45, lng: 30.52, label: 'point' }])
+          onPointsChange?.([
+            { source: 'direct', lat: 50.45, lng: 30.52, label: 'point' },
+            { source: 'direct', lat: 50.46, lng: 30.53, label: 'point 2' },
+          ])
         }
       />
       <button type="button" data-coordinate-open onClick={() => onOpen?.(0)} />

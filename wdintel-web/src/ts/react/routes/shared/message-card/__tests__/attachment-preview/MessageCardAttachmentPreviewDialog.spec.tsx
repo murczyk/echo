@@ -36,7 +36,6 @@ const items: MessageCardPreviewItem[] = [
   { type: 'document', value: { href: '/document.pdf', kind: 'pdf' } },
   {
     type: 'coordinate',
-    value: { source: 'direct', lat: 50.45, lng: 30.52, label: 'point' },
     points: [{ source: 'direct', lat: 50.45, lng: 30.52, label: 'point' }],
   },
 ];

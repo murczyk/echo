@@ -1,15 +1,28 @@
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
-import { Box, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material';
+import {
+  Box,
+  IconButton,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+  Typography,
+} from '@mui/material';
+
+import type { MessageCardPreviewNavigation } from './attachment-preview/message-card-preview.types';
 
 type BaseLayerId = 'googleHybrid' | 'openStreetMap';
 
 export function CoordinateMapPreviewControls({
   baseLayerId,
   onBaseLayerChange,
+  pointNavigation,
 }: {
   baseLayerId: BaseLayerId;
   onBaseLayerChange: (baseLayerId: BaseLayerId) => void;
+  pointNavigation: MessageCardPreviewNavigation;
 }) {
   return (
     <Box
@@ -39,6 +52,37 @@ export function CoordinateMapPreviewControls({
           borderColor: 'divider',
         }}
       >
+        {pointNavigation.count > 1 ? (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, mr: 0.5 }}>
+            <Tooltip title="Попередня координата" enterDelay={300}>
+              <IconButton
+                type="button"
+                size="small"
+                aria-label="Попередня координата"
+                onClick={pointNavigation.onPrevious}
+              >
+                <ChevronLeftIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Typography
+              variant="caption"
+              data-coordinate-point-counter="true"
+              sx={{ minWidth: 32, textAlign: 'center', color: 'text.primary' }}
+            >
+              {pointNavigation.index + 1} / {pointNavigation.count}
+            </Typography>
+            <Tooltip title="Наступна координата" enterDelay={300}>
+              <IconButton
+                type="button"
+                size="small"
+                aria-label="Наступна координата"
+                onClick={pointNavigation.onNext}
+              >
+                <ChevronRightIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        ) : null}
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <ToggleButtonGroup
             exclusive

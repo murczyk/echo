@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import type { ReactNode } from 'react';
-import { act, Children, cloneElement, forwardRef, isValidElement, useState } from 'react';
+import { act, Children, cloneElement, forwardRef, isValidElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -318,13 +318,11 @@ import type { CoordinatePreviewPoint } from '../../message-coordinate-preview';
 function TestCoordinatePreviewDialog({
   open,
   points,
-  currentIndex,
   onClose,
   onIndexChange,
 }: {
   open: boolean;
   points: CoordinatePreviewPoint[];
-  currentIndex: number;
   onClose: () => void;
   onIndexChange: (index: number) => void;
 }) {
@@ -332,8 +330,8 @@ function TestCoordinatePreviewDialog({
 
   return (
     <MessageCardAttachmentPreviewProvider
-      attachments={points.map((point) => ({ type: 'coordinate', value: point, points }))}
-      initialIndex={currentIndex}
+      attachments={[{ type: 'coordinate', points }]}
+      initialIndex={0}
       onClose={onClose}
       onIndexChange={onIndexChange}
     />
@@ -404,7 +402,6 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
         <TestCoordinatePreviewDialog
           open
           points={points}
-          currentIndex={0}
           onClose={onClose}
           onIndexChange={vi.fn()}
         />,
@@ -564,19 +561,16 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     ).toBe('true');
 
     await act(async () => {
-      root.render(
-        <TestCoordinatePreviewDialog
-          open
-          points={points}
-          currentIndex={1}
-          onClose={onClose}
-          onIndexChange={vi.fn()}
-        />,
-      );
+      document.body
+        .querySelector('button[aria-label="Наступна координата"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
     expect(leaflet.map().setView).toHaveBeenCalledWith([50.5, 30.6], 13);
+    expect(document.body.querySelector('[data-coordinate-point-counter]')?.textContent).toContain(
+      '2 / 2',
+    );
     expect(leaflet.circleMarker().setStyle).toHaveBeenCalled();
 
     await act(async () => {
@@ -607,7 +601,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     );
   });
 
-  it('wraps keyboard carousel navigation and updates the map point without reinitializing Leaflet', async () => {
+  it('wraps internal point navigation without inflating the attachment carousel', async () => {
     const onClose = vi.fn();
     const onIndexChange = vi.fn();
     const points = [
@@ -615,24 +609,15 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
       { lat: 50.5, lng: 30.6, label: '50.50000, 30.60000', source: 'direct' as const },
     ];
 
-    function Harness() {
-      const [currentIndex, setCurrentIndex] = useState(0);
-      return (
+    await act(async () => {
+      root.render(
         <TestCoordinatePreviewDialog
           open
           points={points}
-          currentIndex={currentIndex}
           onClose={onClose}
-          onIndexChange={(nextIndex) => {
-            onIndexChange(nextIndex);
-            setCurrentIndex(nextIndex);
-          }}
-        />
+          onIndexChange={onIndexChange}
+        />,
       );
-    }
-
-    await act(async () => {
-      root.render(<Harness />);
       await Promise.resolve();
     });
 
@@ -654,21 +639,25 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     };
 
     await act(async () => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      document.body
+        .querySelector('button[aria-label="Попередня координата"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    expect(onIndexChange).toHaveBeenCalledWith(1);
+    expect(onIndexChange).not.toHaveBeenCalled();
     expect(leaflet.map).toHaveBeenCalledTimes(1);
     expect(mapInstance.setView).toHaveBeenLastCalledWith([50.5, 30.6], 13);
     expect(markerInstance.setStyle).toHaveBeenCalled();
 
     await act(async () => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      document.body
+        .querySelector('button[aria-label="Наступна координата"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    expect(onIndexChange).toHaveBeenLastCalledWith(0);
+    expect(onIndexChange).not.toHaveBeenCalled();
     expect(leaflet.map).toHaveBeenCalledTimes(1);
     expect(mapInstance.setView).toHaveBeenLastCalledWith([50.45044, 30.52355], 13);
     expect(markerInstance.setStyle).toHaveBeenCalled();
@@ -685,7 +674,6 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
             { lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' },
             { lat: 50.5, lng: 30.6, label: '50.50000, 30.60000', source: 'direct' },
           ]}
-          currentIndex={0}
           onClose={vi.fn()}
           onIndexChange={onIndexChange}
         />,
@@ -724,7 +712,6 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
             { lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' },
             { lat: 50.5, lng: 30.6, label: '50.50000, 30.60000', source: 'direct' },
           ]}
-          currentIndex={0}
           onClose={onClose}
           onIndexChange={onIndexChange}
         />,
@@ -774,7 +761,6 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
         <TestCoordinatePreviewDialog
           open
           points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
-          currentIndex={0}
           onClose={onClose}
           onIndexChange={onIndexChange}
         />,
@@ -805,7 +791,6 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
         <TestCoordinatePreviewDialog
           open
           points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
-          currentIndex={0}
           onClose={onClose}
           onIndexChange={vi.fn()}
         />,
@@ -846,7 +831,6 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
         <TestCoordinatePreviewDialog
           open
           points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
-          currentIndex={0}
           onClose={onClose}
           onIndexChange={vi.fn()}
         />,
@@ -887,7 +871,6 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
         <TestCoordinatePreviewDialog
           open={false}
           points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
-          currentIndex={0}
           onClose={onClose}
           onIndexChange={vi.fn()}
         />,
@@ -902,7 +885,6 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
         <TestCoordinatePreviewDialog
           open
           points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
-          currentIndex={0}
           onClose={onClose}
           onIndexChange={vi.fn()}
         />,
@@ -934,7 +916,6 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
               source: 'direct',
             },
           ]}
-          currentIndex={0}
           onClose={onClose}
           onIndexChange={vi.fn()}
         />,
@@ -972,7 +953,6 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
         <TestCoordinatePreviewDialog
           open
           points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
-          currentIndex={0}
           onClose={vi.fn()}
           onIndexChange={vi.fn()}
         />,
@@ -1028,7 +1008,6 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
         <TestCoordinatePreviewDialog
           open
           points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
-          currentIndex={0}
           onClose={vi.fn()}
           onIndexChange={vi.fn()}
         />,

@@ -99,14 +99,9 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
   }, [isNearViewport, msg, preview, previewTagsMap]);
 
   const points = preview?.points ?? EMPTY_POINTS;
-  const previewAttachments: MessageCardPreviewAttachment[] = points.map((point) => ({
-    type: 'coordinate',
-    value: point,
-    points,
-  }));
+  const previewAttachments: MessageCardPreviewAttachment[] =
+    points.length > 0 ? [{ type: 'coordinate', points }] : [];
   const lookupError = preview?.lookupError ?? null;
-  const currentIndex =
-    dialogIndex == null ? 0 : Math.min(Math.max(dialogIndex, 0), Math.max(points.length - 1, 0));
   const isDialogOpen = dialogIndex != null && points.length > 0;
 
   useEffect(() => {
@@ -173,7 +168,7 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
       {onOpen == null && isDialogOpen ? (
         <MessageCardAttachmentPreviewProvider
           attachments={previewAttachments}
-          initialIndex={currentIndex}
+          initialIndex={0}
           onClose={() => setDialogIndex(null)}
         />
       ) : null}

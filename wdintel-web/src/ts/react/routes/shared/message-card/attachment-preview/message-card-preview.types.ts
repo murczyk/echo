@@ -14,8 +14,4 @@ export type MessageCardPreviewItem =
   | { type: 'image'; value: MessageCardImage }
   | { type: 'video'; value: VideoPreviewSource }
   | { type: 'document'; value: MessageCardDocument }
-  | {
-      type: 'coordinate';
-      value: CoordinatePreviewPoint;
-      points: CoordinatePreviewPoint[];
-    };
+  | { type: 'coordinate'; points: CoordinatePreviewPoint[] };

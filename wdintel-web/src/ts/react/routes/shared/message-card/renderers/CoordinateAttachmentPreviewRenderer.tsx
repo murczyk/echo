@@ -34,14 +34,12 @@ const COORDINATE_COPY_GAP = 4;
 
 export function CoordinateAttachmentPreviewRenderer({
   points,
-  activePoint,
   navigation,
   isFullscreen,
   onFullscreenChange,
   onClose,
 }: {
   points: CoordinatePreviewPoint[];
-  activePoint: CoordinatePreviewPoint;
   navigation: MessageCardPreviewNavigation;
   isFullscreen: boolean;
   onFullscreenChange: (isFullscreen: boolean) => void;
@@ -51,7 +49,20 @@ export function CoordinateAttachmentPreviewRenderer({
   const previewConfig = getMessageCardAttachmentPreviewConfig('coordinate-map');
   const canFullscreen = previewConfig.supportsFullscreen;
   const dialogIsFullscreen = canFullscreen && isFullscreen;
-  const activeIndex = Math.max(0, points.indexOf(activePoint));
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    setActiveIndex((index) => (points.length === 0 ? 0 : Math.min(index, points.length - 1)));
+  }, [points.length]);
+
+  const changeActiveIndex = useCallback(
+    (index: number) => {
+      setActiveIndex(
+        points.length === 0 ? 0 : ((index % points.length) + points.length) % points.length,
+      );
+    },
+    [points.length],
+  );
 
   const header = (
     <MessageCardAttachmentPreviewHeader
@@ -81,6 +92,12 @@ export function CoordinateAttachmentPreviewRenderer({
         <CoordinateMapPreviewControls
           baseLayerId={baseLayerId}
           onBaseLayerChange={setBaseLayerId}
+          pointNavigation={{
+            index: activeIndex,
+            count: points.length,
+            onPrevious: () => changeActiveIndex(activeIndex - 1),
+            onNext: () => changeActiveIndex(activeIndex + 1),
+          }}
         />
       }
       navigation={navigation}

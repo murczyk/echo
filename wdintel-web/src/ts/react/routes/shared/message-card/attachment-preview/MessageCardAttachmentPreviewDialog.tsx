@@ -132,7 +132,6 @@ export function MessageCardAttachmentPreviewDialog({
       ) : (
         <CoordinateAttachmentPreviewRenderer
           points={item.points}
-          activePoint={item.value}
           navigation={navigation}
           isFullscreen={dialogIsFullscreen}
           onFullscreenChange={setIsFullscreen}
