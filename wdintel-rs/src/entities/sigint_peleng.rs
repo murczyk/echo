@@ -27,6 +27,10 @@ pub struct Model {
     pub updated_at: Option<DateTime>,
     #[sea_orm(column_type = "Text", nullable)]
     pub pelengation_object: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub region: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub country_name: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
