@@ -629,6 +629,7 @@ where
         post_id: Set(source.inbox_item.post_id),
         device_name_id: Set(source.inbox_item.device_name_id),
         network: Set(source.inbox_item.network.clone()),
+        sigint_unit_id: Set(source.inbox_item.sigint_unit_id),
     }
     .insert(dbx)
     .await

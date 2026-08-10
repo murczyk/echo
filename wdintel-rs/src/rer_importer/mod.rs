@@ -1474,7 +1474,15 @@ pub async fn oneoff_reprocess_unit_names(
                 item.location = Set(result.locality);
                 item.location_v2 = Set(location_v2);
                 item.parsed_unit_v2 = Set(false);
-                item.update(&dbx).await.c(h!())?;
+                let item = item.update(&dbx).await.c(h!())?;
+                crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
+                    &dbx,
+                    item.id,
+                    item.unit_v2.as_deref(),
+                    item.unit.as_deref(),
+                )
+                .await
+                .c(h!())?;
                 crate::stats::enqueue_group_stats_recalculation_for_message(
                     &dbx,
                     id,

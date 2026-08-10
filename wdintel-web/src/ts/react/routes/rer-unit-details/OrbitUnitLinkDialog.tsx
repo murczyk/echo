@@ -179,6 +179,16 @@ type OrbitUnitDialogProps =
       mode: 'import';
       onClose: () => void;
       onCompleted: (response: CreateUnitWithAutoNetworkRsp) => void;
+    }
+  | {
+      mode: 'select';
+      title: string;
+      searchUnits: (
+        req: { search: string },
+        options?: { signal?: AbortSignal },
+      ) => Promise<OrbitUnitLinkCandidate[]>;
+      onClose: () => void;
+      onCompleted: (unit: OrbitUnitLinkCandidate) => void;
     };
 
 function sigintUnitDescription(unit: Unit): string {
@@ -205,8 +215,9 @@ function OrbitUnitDialogBody(props: OrbitUnitDialogProps) {
   const { onClose } = props;
   const importing = props.mode === 'import';
   const unitId = props.mode === 'link' ? props.unitId : null;
+  const selectionSearchUnits = props.mode === 'select' ? props.searchUnits : null;
   const tableStateContext = useTableStateContext();
-  const [advancedSearch, setAdvancedSearch] = useState(importing);
+  const [advancedSearch, setAdvancedSearch] = useState(props.mode !== 'link');
   const [search, setSearch] = useState('');
   const [units, setUnits] = useState<OrbitUnitLinkCandidate[]>([]);
   const [loading, setLoading] = useState(!importing);
@@ -267,12 +278,14 @@ function OrbitUnitDialogBody(props: OrbitUnitDialogProps) {
       setError(null);
       try {
         const nextUnits =
-          unitId === null
-            ? await searchOrbitUnits({ search: trimmedSearch }, { signal: controller.signal })
-            : await getOrbitUnitLinkCandidates(
-                { unitId, search: trimmedSearch },
-                { signal: controller.signal },
-              );
+          selectionSearchUnits !== null
+            ? await selectionSearchUnits({ search: trimmedSearch }, { signal: controller.signal })
+            : unitId === null
+              ? await searchOrbitUnits({ search: trimmedSearch }, { signal: controller.signal })
+              : await getOrbitUnitLinkCandidates(
+                  { unitId, search: trimmedSearch },
+                  { signal: controller.signal },
+                );
         if (!controller.signal.aborted) setUnits(nextUnits);
       } catch (error) {
         if (!isAbortError(error)) setError(formatError(error));
@@ -285,14 +298,16 @@ function OrbitUnitDialogBody(props: OrbitUnitDialogProps) {
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [advancedSearch, search, unitId]);
+  }, [advancedSearch, search, selectionSearchUnits, unitId]);
 
   const handleAction = useCallback(
     async (unit: OrbitUnitLinkCandidate) => {
       setProcessingUnitId(unit.unitId);
       setError(null);
       try {
-        if (props.mode === 'import') {
+        if (props.mode === 'select') {
+          props.onCompleted(unit);
+        } else if (props.mode === 'import') {
           const response = await importOrbitUnit({ orbitUnitId: unit.unitId });
           props.onCompleted(response);
         } else {
@@ -393,7 +408,9 @@ function OrbitUnitDialogBody(props: OrbitUnitDialogProps) {
           <Typography component="span" variant="h6">
             {importing
               ? 'Пошук'
-              : `Прив'язати Orbit підрозділ ${sigintUnitDescription(props.unit)}`}
+              : props.mode === 'select'
+                ? props.title
+                : `Прив'язати Orbit підрозділ ${sigintUnitDescription(props.unit)}`}
           </Typography>
         </Stack>
         <IconButton
@@ -516,6 +533,32 @@ export function OrbitUnitImportDialog({
       tableId="orbit-unit-import-candidates"
       onClose={onClose}
       onCompleted={onImported}
+    />
+  );
+}
+
+export function OrbitUnitPickerDialog({
+  title,
+  searchUnits,
+  onClose,
+  onSelected,
+}: {
+  title: string;
+  searchUnits: (
+    req: { search: string },
+    options?: { signal?: AbortSignal },
+  ) => Promise<OrbitUnitLinkCandidate[]>;
+  onClose: () => void;
+  onSelected: (unit: OrbitUnitLinkCandidate) => void;
+}) {
+  return (
+    <OrbitUnitDialog
+      mode="select"
+      tableId="unresolved-unit-orbit-candidates"
+      title={title}
+      searchUnits={searchUnits}
+      onClose={onClose}
+      onCompleted={onSelected}
     />
   );
 }

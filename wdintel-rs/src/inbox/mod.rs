@@ -11,6 +11,8 @@ use sea_orm::*;
 
 pub mod callsigns;
 pub mod datetime;
+pub mod unit_resolution;
+pub mod unresolved_units;
 
 pub struct ConstructInboxItemResult {
     pub spawned_message_ids: Vec<i64>,
@@ -279,6 +281,7 @@ where
         unit_v2: Set(unit_v2),
         parsed_unit_v2: Set(true),
         network: Set(None),
+        sigint_unit_id: NotSet,
     };
     let result = sigint_inbox_item::Entity::insert(result)
         .on_conflict(
@@ -289,6 +292,14 @@ where
         .exec_with_returning(txn)
         .await
         .c(h!())?;
+    unit_resolution::resolve_and_sync_inbox_item(
+        txn,
+        result.id,
+        result.unit_v2.as_deref(),
+        result.unit.as_deref(),
+    )
+    .await
+    .c(h!())?;
     let system_login_id = crate::users::system_login_id(txn).await.c(h!())?;
     callsigns::sync(
         txn,
@@ -412,7 +423,7 @@ where
     Ok(ConstructInboxItemResult::changed(message.id))
 }
 
-fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 21] {
+fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 22] {
     [
         sigint_inbox_item::Column::Date,
         sigint_inbox_item::Column::Time,
@@ -435,6 +446,7 @@ fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 21] {
         sigint_inbox_item::Column::DeviceNameId,
         sigint_inbox_item::Column::UnitV2,
         sigint_inbox_item::Column::ParsedUnitV2,
+        sigint_inbox_item::Column::SigintUnitId,
     ]
 }
 

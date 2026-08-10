@@ -8,6 +8,17 @@
         }
       ]
     },
+    "echo:m20260810_140653_inbox_unit_resolution": {
+      "changes": [
+        {
+          "table": "public.sigint_inbox_item",
+          "strategy": "cdc_backfill",
+          "backfill": "wdintel-rs/src/inbox/unit_resolution.rs"
+        },
+         { "table": "public.failed_inbox_unit", "strategy": "excluded" },
+         { "table": "public.sigint_unit_label", "strategy": "excluded" }
+      ]
+    },
     "echo:m20260806_120000_drop_legacy_inbox_callsigns": {
       "changes": [
         {

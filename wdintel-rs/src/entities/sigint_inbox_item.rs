@@ -50,6 +50,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub network: Option<String>,
     pub datetime_neo: Option<DateTime>,
+    pub sigint_unit_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -64,6 +65,8 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     DeviceName,
+    #[sea_orm(has_one = "super::failed_inbox_unit::Entity")]
+    FailedInboxUnit,
     #[sea_orm(
         belongs_to = "super::nominatimres::Entity",
         from = "Column::NominatimresId",
@@ -72,10 +75,10 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Nominatimres,
-    #[sea_orm(has_many = "super::sigint_inbox_item_metadata::Entity")]
-    SigintInboxItemMetadata,
     #[sea_orm(has_many = "super::sigint_inbox_item_callsign::Entity")]
     SigintInboxItemCallsign,
+    #[sea_orm(has_many = "super::sigint_inbox_item_metadata::Entity")]
+    SigintInboxItemMetadata,
     #[sea_orm(has_many = "super::sigint_inbox_item_network::Entity")]
     SigintInboxItemNetwork,
     #[sea_orm(has_many = "super::sigint_inbox_item_point_token::Entity")]
@@ -99,6 +102,14 @@ pub enum Relation {
     #[sea_orm(has_one = "super::sigint_search::Entity")]
     SigintSearch,
     #[sea_orm(
+        belongs_to = "super::sigint_unit::Entity",
+        from = "Column::SigintUnitId",
+        to = "super::sigint_unit::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SigintUnit,
+    #[sea_orm(
         belongs_to = "super::signal_message::Entity",
         from = "Column::Id",
         to = "super::signal_message::Column::Id",
@@ -120,21 +131,27 @@ impl Related<super::device_name::Entity> for Entity {
     }
 }
 
+impl Related<super::failed_inbox_unit::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FailedInboxUnit.def()
+    }
+}
+
 impl Related<super::nominatimres::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Nominatimres.def()
     }
 }
 
-impl Related<super::sigint_inbox_item_metadata::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SigintInboxItemMetadata.def()
-    }
-}
-
 impl Related<super::sigint_inbox_item_callsign::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItemCallsign.def()
+    }
+}
+
+impl Related<super::sigint_inbox_item_metadata::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemMetadata.def()
     }
 }
 
@@ -183,6 +200,12 @@ impl Related<super::sigint_post::Entity> for Entity {
 impl Related<super::sigint_search::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintSearch.def()
+    }
+}
+
+impl Related<super::sigint_unit::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintUnit.def()
     }
 }
 

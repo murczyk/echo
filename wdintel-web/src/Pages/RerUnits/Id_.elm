@@ -70,6 +70,9 @@ type alias Model =
     , deviceNetworkDialogOpen : Bool
     , unitEditDialogOpen : Maybe UnitEditSection
     , unitUpdating : Bool
+    , unitLabelInput : String
+    , unitLabelSaving : Bool
+    , unitLabelDeleting : Maybe Int
     }
 
 
@@ -107,6 +110,9 @@ init _ route _ =
       , deviceNetworkDialogOpen = False
       , unitEditDialogOpen = Nothing
       , unitUpdating = False
+      , unitLabelInput = ""
+      , unitLabelSaving = False
+      , unitLabelDeleting = Nothing
       }
     , E.batch initialEffects
     )
@@ -151,6 +157,11 @@ type Msg
     | UnitEditUpdated (Result ApiError B.Unit)
     | SetUnitActive Bool
     | UnitActiveUpdated (Result ApiError B.Unit)
+    | SetUnitLabelInput String
+    | SubmitUnitLabel
+    | UnitLabelCreated (Result ApiError B.UnitLabel)
+    | DeleteUnitLabel Int
+    | UnitLabelDeleted Int (Result ApiError ())
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -218,6 +229,21 @@ update msg model =
 
         UnitActiveUpdated result ->
             unitActiveUpdated result model
+
+        SetUnitLabelInput value ->
+            ( { model | unitLabelInput = value }, E.none )
+
+        SubmitUnitLabel ->
+            submitUnitLabel model
+
+        UnitLabelCreated result ->
+            unitLabelCreated result model
+
+        DeleteUnitLabel labelId ->
+            deleteUnitLabel labelId model
+
+        UnitLabelDeleted labelId result ->
+            unitLabelDeleted labelId result model
 
 
 updateDetails : Result ApiError B.UnitDetailsRsp -> Model -> ( Model, Effect Msg )
@@ -524,6 +550,84 @@ unitActiveUpdated result model =
                       }
                     , E.none
                     )
+
+
+submitUnitLabel : Model -> ( Model, Effect Msg )
+submitUnitLabel model =
+    case model.unitId of
+        Just unitId ->
+            if String.length (String.trim model.unitLabelInput) < 2 || model.unitLabelSaving then
+                ( model, E.none )
+
+            else
+                ( { model | unitLabelSaving = True }
+                , E.sendCmd <|
+                    Api.sigint_unit_label_create UnitLabelCreated
+                        { unitId = unitId
+                        , label = model.unitLabelInput
+                        }
+                )
+
+        Nothing ->
+            ( model, E.none )
+
+
+unitLabelCreated : Result ApiError B.UnitLabel -> Model -> ( Model, Effect Msg )
+unitLabelCreated result model =
+    case result of
+        Err err ->
+            ( { model | unitLabelSaving = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання тегу підрозділу" err
+            )
+
+        Ok _ ->
+            case model.unitId of
+                Just unitId ->
+                    ( { model
+                        | unitLabelSaving = False
+                        , unitLabelInput = ""
+                        , detailsLoading = True
+                      }
+                    , loadDetails unitId
+                    )
+
+                Nothing ->
+                    ( { model | unitLabelSaving = False }, E.none )
+
+
+deleteUnitLabel : Int -> Model -> ( Model, Effect Msg )
+deleteUnitLabel labelId model =
+    if model.unitLabelDeleting /= Nothing then
+        ( model, E.none )
+
+    else
+        ( { model | unitLabelDeleting = Just labelId }
+        , E.sendCmd <|
+            Api.sigint_unit_label_delete (UnitLabelDeleted labelId)
+                { labelId = labelId }
+        )
+
+
+unitLabelDeleted : Int -> Result ApiError () -> Model -> ( Model, Effect Msg )
+unitLabelDeleted _ result model =
+    case result of
+        Err err ->
+            ( { model | unitLabelDeleting = Nothing }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення тегу підрозділу" err
+            )
+
+        Ok () ->
+            case model.unitId of
+                Just unitId ->
+                    ( { model
+                        | unitLabelDeleting = Nothing
+                        , detailsLoading = True
+                      }
+                    , loadDetails unitId
+                    )
+
+                Nothing ->
+                    ( { model | unitLabelDeleting = Nothing }, E.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -974,6 +1078,7 @@ overviewTab user shared model details =
             shared
             model
             details
+            :: unitLabelsCard model details
             :: orbitCards
         )
 
@@ -1101,6 +1206,96 @@ unitOverviewActions state canCreateDeviceNetwork =
               else
                 text ""
             ]
+        ]
+
+
+unitLabelsCard : Model -> B.UnitDetailsRsp -> Html Msg
+unitLabelsCard model details =
+    let
+        tooltip =
+            "Якщо в перехопленні зустрічається такий тег - ми прив'язуємо перехоплення до даного підрозділу"
+
+        inputTooShort =
+            String.length (String.trim model.unitLabelInput) < 2
+    in
+    div [ class "border rounded p-4 bg-card" ]
+        [ div [ class "d-flex align-items-center gap-2 mb-3" ]
+            [ h2 [ class "h4 mb-0" ] [ text "Тег підрозділу" ]
+            , i
+                [ class "bi bi-info-circle text-secondary"
+                , title tooltip
+                , attribute "aria-label" tooltip
+                ]
+                []
+            ]
+        , if List.isEmpty details.labels then
+            p [ class "text-secondary" ] [ text "Тегів немає." ]
+
+          else
+            div [ class "d-flex flex-wrap gap-2 mb-3" ]
+                (List.map (unitLabelBadge model details.canEditUnitLabels) details.labels)
+        , if details.canEditUnitLabels then
+            div []
+                [ div [ class "input-group", style "max-width" "560px" ]
+                    [ input
+                        [ class "form-control"
+                        , type_ "text"
+                        , value model.unitLabelInput
+                        , placeholder "Введіть тег підрозділу"
+                        , disabled model.unitLabelSaving
+                        , on "input" (Decode.map SetUnitLabelInput (Decode.at [ "target", "value" ] Decode.string))
+                        ]
+                        []
+                    , button
+                        [ class "btn btn-primary"
+                        , type_ "button"
+                        , disabled (inputTooShort || model.unitLabelSaving)
+                        , onClick SubmitUnitLabel
+                        ]
+                        [ text
+                            (if model.unitLabelSaving then
+                                "Додавання…"
+
+                             else
+                                "Додати"
+                            )
+                        ]
+                    ]
+                , if not (String.isEmpty model.unitLabelInput) && inputTooShort then
+                    div [ class "text-danger text-sm mt-1" ]
+                        [ text "Тег має містити щонайменше 2 символи." ]
+
+                  else
+                    text ""
+                ]
+
+          else
+            text ""
+        ]
+
+
+unitLabelBadge : Model -> Bool -> B.UnitLabel -> Html Msg
+unitLabelBadge model canEdit label =
+    span [ class "badge text-bg-light border d-inline-flex align-items-center gap-2 fs-6" ]
+        [ text label.label
+        , if canEdit then
+            button
+                [ class "btn btn-sm p-0 text-danger border-0"
+                , type_ "button"
+                , title "Видалити тег"
+                , attribute "aria-label" ("Видалити тег " ++ label.label)
+                , disabled (model.unitLabelDeleting /= Nothing)
+                , onClick (DeleteUnitLabel label.id)
+                ]
+                [ if model.unitLabelDeleting == Just label.id then
+                    span [ class "spinner-border spinner-border-sm" ] []
+
+                  else
+                    i [ class "bi bi-x-lg" ] []
+                ]
+
+          else
+            text ""
         ]
 
 

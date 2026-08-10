@@ -751,6 +751,30 @@ sigint_unit_details toMsg req =
         }
 
 
+sigint_unit_label_create :
+    (Result ApiError UnitLabel -> msg)
+    -> CreateUnitLabelReq
+    -> Cmd msg
+sigint_unit_label_create toMsg req =
+    Http.post
+        { url = "/api/sigint/unit/label/create"
+        , body = Http.jsonBody (createUnitLabelReqEncoder req)
+        , expect = leExpectJson toMsg unitLabelDecoder
+        }
+
+
+sigint_unit_label_delete :
+    (Result ApiError () -> msg)
+    -> DeleteUnitLabelReq
+    -> Cmd msg
+sigint_unit_label_delete toMsg req =
+    Http.post
+        { url = "/api/sigint/unit/label/delete"
+        , body = Http.jsonBody (deleteUnitLabelReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
+
 sigint_unit_orbit_children :
     (Result ApiError UnitOrbitChildrenRsp -> msg)
     -> UnitDetailsReq

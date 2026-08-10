@@ -398,7 +398,7 @@ flowchart TB
     api -.-> api_vault_worker["secret_worker<br/>when Vault is configured"]
     bg -.-> bg_vault_worker["secret_worker<br/>when Vault is configured"]
 
-    bg --> core_workers["Core workers<br/>healthcheck_worker<br/>worker_calculate_group_stats<br/>iggy_integration_worker<br/>aor_assignments_worker<br/>operator_inbox_worker<br/>rer_duty_historical_interceptions_worker<br/>unit_tag_queue_worker"]
+    bg --> core_workers["Core workers<br/>healthcheck_worker<br/>worker_calculate_group_stats<br/>iggy_integration_worker<br/>aor_assignments_worker<br/>operator_inbox_worker<br/>rer_duty_historical_interceptions_worker<br/>unit_tag_queue_worker<br/>failed_inbox_unit_worker"]
     bg --> messenger_workers["Messenger workers<br/>messenger_receive_worker<br/>process_queue_nofail<br/>echo_im_cleanup"]
     bg --> network_workers["Network workers<br/>recent_inbox_network_worker<br/>old_inbox_network_worker<br/>inbox_network_daily_consistency_worker"]
     bg --> palitra_workers["Palitra worker<br/>palitra_highlight_worker"]
@@ -416,6 +416,14 @@ flowchart TB
 ```
 
 `worker_calculate_group_stats` also owns historical group-stat recalculation.
+
+`failed_inbox_unit_worker` owns verification of unresolved-unit rows marked
+pending by label changes or admin resolution. Every 10 seconds it claims a
+bounded batch with `FOR UPDATE SKIP LOCKED`, reruns the canonical inbox-unit
+resolver against each item's current `unit_v2` or raw `unit`, and either
+persists the link and hard-deletes the failure or reactivates the failure for
+admin review. Errors are logged and retried without stopping the worker;
+deleted rows older than 30 days are removed before each verification batch.
 
 Report generation is isolated in `wdintel-rs-report-worker.service`. At most
 four reports run concurrently across the per-kind queues. The unit has a fixed

@@ -330,6 +330,21 @@ pub fn parse_library_unit(text: &String) -> Vec<String> {
     crate::utils::uniq_via_btreeset(&result)
 }
 
+pub(crate) fn parse_library_unit_segments(text: &str) -> Vec<String> {
+    let text = preprocess_unit_text(&text.to_string());
+    let mut units_info = capture_library_unit(&text);
+    units_info.sort_by_key(|unit| unit.idx);
+    crate::utils::uniq_via_btreeset(
+        &units_info
+            .into_iter()
+            .map(|unit| match unit.number {
+                Some(number) => format!("{} {}", number, unit.name),
+                None => unit.name,
+            })
+            .collect_vec(),
+    )
+}
+
 fn capture_library_unit(text: &str) -> Vec<UnitInfo> {
     lazy_static! {
         static ref UNIT_RE: Regex = RegexBuilder::new(

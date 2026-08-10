@@ -1114,6 +1114,7 @@ pub async fn submit_upsert_inbox_item(
             unit_v2: Set(message.unit.clone()),
             parsed_unit_v2: Set(true),
             network: Set(None),
+            sigint_unit_id: NotSet,
         })
         .on_conflict(
             sea_query::OnConflict::column(sigint_inbox_item::Column::Id)
@@ -1128,6 +1129,7 @@ pub async fn submit_upsert_inbox_item(
                     sigint_inbox_item::Column::Unit,
                     sigint_inbox_item::Column::UnitV2,
                     sigint_inbox_item::Column::ParsedUnitV2,
+                    sigint_inbox_item::Column::SigintUnitId,
                     sigint_inbox_item::Column::CallsignTokens,
                     sigint_inbox_item::Column::KeywordTokens,
                     sigint_inbox_item::Column::Lat,
@@ -1143,6 +1145,14 @@ pub async fn submit_upsert_inbox_item(
         .await
         .c(h!())?;
     let inbox_id = insert_res.last_insert_id;
+    crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
+        txn,
+        inbox_id,
+        message.unit.as_deref(),
+        message.unit.as_deref(),
+    )
+    .await
+    .c(h!())?;
     crate::rer_importer::inbox::metadata::refresh_metadata(inbox_id, txn)
         .await
         .c(h!())?;
