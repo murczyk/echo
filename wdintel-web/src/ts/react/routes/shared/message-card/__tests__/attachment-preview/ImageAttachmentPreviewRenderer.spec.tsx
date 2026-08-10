@@ -31,6 +31,9 @@ let latestActionProps: {
   copyStatus: 'idle' | 'copying' | 'copied' | 'error';
   canCopyImage: boolean;
   onCopyImage: () => void;
+  isFullscreen: boolean;
+  canFullscreen: boolean;
+  onToggleFullscreen: () => void;
 } | null = null;
 let latestControlsProps: {
   zoom: number;
@@ -46,6 +49,7 @@ let latestStageProps: {
   onImageLoad: (image: HTMLImageElement) => void;
   onStartPan: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onStopPan: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onDoubleClick: (event: ReactMouseEvent<HTMLDivElement>) => void;
 } | null = null;
 const loadedImage = document.createElement('img');
 
@@ -97,14 +101,17 @@ vi.mock('../../attachment-preview/message-card-preview-config', () => ({
   getMessageCardAttachmentPreviewConfig: () => previewConfig,
 }));
 
-vi.mock('../../attachment-preview/MessageCardAttachmentPreviewActions', () => ({
-  MessageCardAttachmentPreviewActions: ({
+vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
+  MessageCardAttachmentPreviewHeader: ({
     openHref,
     download,
     navigation,
     additionalActions,
     status,
     onInfoClick,
+    isFullscreen,
+    canFullscreen,
+    onToggleFullscreen,
     onClose,
   }: {
     openHref: string;
@@ -117,12 +124,18 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewActions', () => ({
     }>;
     status?: ReactNode;
     onInfoClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+    isFullscreen: boolean;
+    canFullscreen: boolean;
+    onToggleFullscreen: () => void;
     onClose: () => void;
   }) => {
     latestActionProps = {
       copyStatus: additionalActions.props.status,
       canCopyImage: additionalActions.props.enabled,
       onCopyImage: additionalActions.props.onCopy,
+      isFullscreen,
+      canFullscreen,
+      onToggleFullscreen,
     };
     const hasCarousel = navigation.count > 1;
     return (
@@ -136,6 +149,12 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewActions', () => ({
         <a aria-label="Відкрити в новій вкладці" href={openHref} />
         <a aria-label="Завантажити" download={download.fileName} href={download.href} />
         {status}
+        {canFullscreen ? (
+          <button
+            aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
+            onClick={onToggleFullscreen}
+          />
+        ) : null}
         {hasCarousel ? <button aria-label="Попереднє" onClick={navigation.onPrevious} /> : null}
         <span
           data-attachment-preview-counter
@@ -180,6 +199,23 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewControls', () => (
       </div>
     );
   },
+  AttachmentPreviewMobileCarouselNav: ({
+    navigation,
+  }: {
+    navigation: { index: number; count: number; onPrevious: () => void; onNext: () => void };
+  }) => (
+    <div data-mobile-carousel>
+      <button aria-label="Попереднє" onClick={navigation.onPrevious} />
+      <span>{`${navigation.index + 1} / ${navigation.count}`}</span>
+      <button aria-label="Наступне" onClick={navigation.onNext} />
+    </div>
+  ),
+}));
+
+vi.mock('../../attachment-preview/AttachmentPreviewZoomBadge', () => ({
+  AttachmentPreviewZoomBadge: ({ zoom }: { zoom: number }) => (
+    <div data-zoom-badge>{`${Math.round(zoom)}%`}</div>
+  ),
 }));
 
 vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage', () => ({
@@ -190,9 +226,10 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage', () => ({
       onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
       onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
       onPointerLeave: (event: ReactPointerEvent<HTMLDivElement>) => void;
+      onDoubleClick: (event: ReactMouseEvent<HTMLDivElement>) => void;
     }
-  >(({ children, onPointerDown, onPointerUp, onPointerLeave }, ref) => {
-    const image = children as ReactElement<{
+  >(({ children, onPointerDown, onPointerUp, onPointerLeave, onDoubleClick }, ref) => {
+    const image = (Array.isArray(children) ? children[0] : children) as ReactElement<{
       href: string;
       zoom: number;
       pan: { x: number; y: number };
@@ -205,6 +242,7 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage', () => ({
       onImageLoad: image.props.onLoad,
       onStartPan: onPointerDown,
       onStopPan: onPointerUp,
+      onDoubleClick,
     };
     return (
       <div
@@ -216,6 +254,7 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage', () => ({
         onPointerDown={onPointerDown}
         onPointerUp={onPointerUp}
         onPointerLeave={onPointerLeave}
+        onDoubleClick={onDoubleClick}
       >
         {children}
       </div>
@@ -302,7 +341,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     expect(dialog?.paperSx).toMatchObject({
       width: { xs: '100vw', sm: '92vw' },
       height: { xs: '100svh', sm: '92svh' },
-      maxWidth: { xs: '100vw', sm: 'min(92vw, 1280px)' },
+      maxWidth: { xs: '100vw', sm: '92vw' },
       maxHeight: { xs: '100svh', sm: '92svh' },
     });
     root.unmount();
@@ -326,7 +365,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     });
 
     await act(async () => {
-      latestControlsProps?.onToggleFullscreen();
+      latestActionProps?.onToggleFullscreen();
     });
 
     const fullscreenDialog = dialogProps.at(-1);
@@ -350,9 +389,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
 
     expect(onClose).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(fullscreenToggle);
-    expect(document.body.querySelector('[data-controls]')?.getAttribute('data-fullscreen')).toBe(
-      'false',
-    );
+    expect(latestActionProps?.isFullscreen).toBe(false);
     root.unmount();
   });
 
@@ -380,17 +417,17 @@ describe('ImageAttachmentPreviewRenderer', () => {
       );
     });
 
-    expect(latestControlsProps?.canFullscreen).toBe(false);
+    expect(latestActionProps?.canFullscreen).toBe(false);
     expect(document.body.querySelector('[aria-label="Повноекранний режим"]')).toBeNull();
     expect(dialogProps.at(-1)?.fullScreen).toBe(false);
     expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(false);
     expect(document.body.querySelector('[data-actions]')).not.toBeNull();
 
     await act(async () => {
-      latestControlsProps?.onToggleFullscreen();
+      latestActionProps?.onToggleFullscreen();
     });
 
-    expect(latestControlsProps?.isFullscreen).toBe(false);
+    expect(latestActionProps?.isFullscreen).toBe(false);
     expect(dialogProps.at(-1)?.fullScreen).toBe(false);
 
     await act(async () => {
@@ -417,10 +454,6 @@ describe('ImageAttachmentPreviewRenderer', () => {
           onIndexChange={vi.fn()}
         />,
       );
-    });
-
-    await act(async () => {
-      latestControlsProps?.onSetPreviewZoom(180);
     });
 
     const closeButton = document.body.querySelector('[aria-label="Закрити"]') as HTMLButtonElement;
@@ -455,7 +488,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
-  it('keeps wheel zoom attached to the stage and not the controls', async () => {
+  it('keeps wheel zoom attached to the stage', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -477,14 +510,6 @@ describe('ImageAttachmentPreviewRenderer', () => {
     });
 
     const stage = document.body.querySelector('[data-stage]') as HTMLDivElement;
-    const controls = document.body.querySelector('[data-controls]') as HTMLDivElement;
-
-    expect(stage.getAttribute('data-zoom')).toBe('100');
-
-    await act(async () => {
-      controls.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true }));
-    });
-
     expect(stage.getAttribute('data-zoom')).toBe('100');
 
     await act(async () => {
@@ -525,7 +550,9 @@ describe('ImageAttachmentPreviewRenderer', () => {
       ({ left: 100, top: 100, width: 800, height: 400 }) as DOMRect;
 
     await act(async () => {
-      latestControlsProps?.onSetPreviewZoom(200);
+      stage.dispatchEvent(
+        new MouseEvent('dblclick', { bubbles: true, clientX: 500, clientY: 300 }),
+      );
     });
 
     await act(async () => {
@@ -587,7 +614,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     });
 
     expect(latestStageProps?.zoom).toBeCloseTo(200, 8);
-    expect(latestStageProps?.pan.y).toBeCloseTo(-233 - 1 / 3, 6);
+    expect(latestStageProps?.pan.y).toBeCloseTo(-300, 6);
 
     await act(async () => {
       wheelToZoom(-Math.log(2) / 0.0015);
@@ -663,7 +690,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
-  it('keeps the carousel counter and fullscreen action hiding intact', async () => {
+  it('keeps the carousel counter and header visible in fullscreen', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -689,10 +716,10 @@ describe('ImageAttachmentPreviewRenderer', () => {
     expect(document.body.querySelector('[data-actions]')).not.toBeNull();
 
     await act(async () => {
-      latestControlsProps?.onToggleFullscreen();
+      latestActionProps?.onToggleFullscreen();
     });
 
-    expect(document.body.querySelector('[data-actions]')).toBeNull();
+    expect(document.body.querySelector('[data-actions]')).not.toBeNull();
     root.unmount();
   });
 });

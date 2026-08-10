@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,30 +14,10 @@ function TestSwipeComponent({
   navigation: { count: number; index: number; onPrevious: () => void; onNext: () => void };
   enabled?: boolean;
 }) {
-  return (
-    <div
-      data-testid="swipe-stage"
-      ref={(el) => {
-        if (el) {
-          // Bind hook manually via wrapper ref
-        }
-      }}
-    >
-      <HookBinder elRef={(el) => el} navigation={navigation} enabled={enabled} />
-    </div>
-  );
-}
+  const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
+  useAttachmentPreviewSwipe({ stageEl, navigation, enabled });
 
-function HookBinder({
-  navigation,
-  enabled,
-}: {
-  navigation: { count: number; index: number; onPrevious: () => void; onNext: () => void };
-  enabled: boolean;
-}) {
-  const container = document.querySelector('[data-testid="swipe-stage"]') as HTMLElement | null;
-  useAttachmentPreviewSwipe({ stageEl: container, navigation, enabled });
-  return null;
+  return <div data-testid="swipe-stage" ref={setStageEl} />;
 }
 
 describe('useAttachmentPreviewSwipe', () => {

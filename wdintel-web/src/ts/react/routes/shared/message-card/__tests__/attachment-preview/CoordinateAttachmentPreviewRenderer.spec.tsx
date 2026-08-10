@@ -51,11 +51,17 @@ const leafletMock = vi.hoisted(() => {
     setStyle: vi.fn(() => marker),
     remove: vi.fn(),
   };
+  const zoomControl = {
+    addTo: vi.fn(() => zoomControl),
+  };
 
   return {
     map: vi.fn(() => map),
     latLngBounds: vi.fn((latLngs) => latLngs),
     circleMarker: vi.fn(() => marker),
+    control: {
+      zoom: vi.fn(() => zoomControl),
+    },
   };
 });
 
@@ -414,13 +420,11 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(document.body.textContent).toContain('Завантаження мапи…');
     expect(leafletMock.map).not.toHaveBeenCalled();
     const dialog = document.body.querySelector('[role="dialog"]') as HTMLElement | null;
-    const actionBar = dialog?.lastElementChild as HTMLElement | null;
-    expect(actionBar?.children.length).toBe(3);
-    const closeSlotButton = actionBar?.children[2]?.querySelector(
+    const closeButton = dialog?.querySelector(
       'button[aria-label="Закрити"]',
     ) as HTMLButtonElement | null;
-    expect(closeSlotButton).not.toBeNull();
-    expect(closeSlotButton?.getAttribute('data-variant')).toBe('');
+    expect(closeButton).not.toBeNull();
+    expect(closeButton?.getAttribute('data-variant')).toBeNull();
 
     await act(async () => {
       hostRect = { width: 800, height: 600 };
@@ -489,14 +493,14 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(mgrsContent?.style.alignItems).toBe('center');
     expect(mgrsContent?.style.height).toBe('24px');
     expect(mgrsContent?.style.width).toBe('100%');
-    expect(mgrsContent?.style.gridTemplateColumns).toBe('minmax(0, 1fr) 24px');
+    expect(mgrsContent?.style.gridTemplateColumns).toBe('minmax(0, 1fr) 20px');
     expect(mgrsContent?.querySelector('[data-mgrs-text]')).not.toBeNull();
     const copyButton = mgrsContent?.querySelector(
       'button[aria-label="Копіювати MGRS"]',
     ) as HTMLButtonElement | null;
     expect(copyButton).not.toBeNull();
-    expect(copyButton?.style.width).toBe('24px');
-    expect(copyButton?.style.height).toBe('24px');
+    expect(copyButton?.style.width).toBe('20px');
+    expect(copyButton?.style.height).toBe('20px');
     expect(wgsValue?.style.flex).toBe('1 1 auto');
     expect(wgsValue?.style.minWidth).toBe('0');
     expect(mgrsValue?.style.width).toBe('auto');
@@ -860,7 +864,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
       'button[aria-label="Закрити"]',
     ) as HTMLButtonElement | null;
     expect(closeButton).not.toBeNull();
-    expect(closeButton?.getAttribute('data-variant')).toBe('');
+    expect(closeButton?.getAttribute('data-variant')).toBeNull();
     closeButton?.focus();
 
     await act(async () => {
@@ -954,8 +958,8 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(document.body.querySelector('[data-mgrs-text]')?.textContent).not.toBe(
       'MGRS недоступні',
     );
-    expect(panel?.getAttribute('style')).toContain('right: 12px');
-    expect(panel?.getAttribute('style')).toContain('top: 12px');
+    expect(panel?.getAttribute('style')).toContain('left: 16px');
+    expect(panel?.getAttribute('style')).toContain('top: 16px');
     expect(panel?.getAttribute('style')).toContain('z-index: 1200');
   });
 

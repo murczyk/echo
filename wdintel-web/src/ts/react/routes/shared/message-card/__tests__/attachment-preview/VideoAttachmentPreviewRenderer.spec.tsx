@@ -45,6 +45,7 @@ let latestActionProps: {
   resolvedIndex: number;
   videoCount: number;
   openHref?: string | null;
+  isFullscreen: boolean;
   onGoToPrevious: () => void;
   onGoToNext: () => void;
   onInfoClick?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
@@ -181,18 +182,41 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewControls', () => (
       </div>
     );
   },
+  AttachmentPreviewMobileCarouselNav: ({
+    navigation,
+  }: {
+    navigation: { index: number; count: number; onPrevious: () => void; onNext: () => void };
+  }) => (
+    <div data-mobile-carousel>
+      <button aria-label="Попереднє" onClick={navigation.onPrevious} />
+      <span>{`${navigation.index + 1} / ${navigation.count}`}</span>
+      <button aria-label="Наступне" onClick={navigation.onNext} />
+    </div>
+  ),
 }));
 
-vi.mock('../../attachment-preview/MessageCardAttachmentPreviewActions', () => ({
-  MessageCardAttachmentPreviewActions: ({
+vi.mock('../../attachment-preview/AttachmentPreviewZoomBadge', () => ({
+  AttachmentPreviewZoomBadge: ({ zoom }: { zoom: number }) => (
+    <div data-zoom-badge>{`${Math.round(zoom)}%`}</div>
+  ),
+}));
+
+vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
+  MessageCardAttachmentPreviewHeader: ({
     openHref,
     navigation,
     onInfoClick,
+    isFullscreen,
+    canFullscreen,
+    onToggleFullscreen,
     onClose,
   }: {
     openHref?: string | null;
     navigation: { index: number; count: number; onPrevious: () => void; onNext: () => void };
     onInfoClick?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+    isFullscreen: boolean;
+    canFullscreen: boolean;
+    onToggleFullscreen: () => void;
     onClose: () => void;
   }) => {
     const hasCarousel = navigation.count > 1;
@@ -201,6 +225,7 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewActions', () => ({
       hasCarousel,
       resolvedIndex: navigation.index,
       videoCount: navigation.count,
+      isFullscreen,
       onGoToPrevious: navigation.onPrevious,
       onGoToNext: navigation.onNext,
       onInfoClick,
@@ -213,7 +238,13 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewActions', () => ({
         {typeof openHref === 'string' && openHref.trim() !== '' ? (
           <a aria-label="Відкрити в новій вкладці" href={openHref} />
         ) : null}
-        <button aria-label="Завантажити" />
+        <button aria-label="Скачати" />
+        {canFullscreen ? (
+          <button
+            aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
+            onClick={onToggleFullscreen}
+          />
+        ) : null}
         {hasCarousel ? <button aria-label="Попереднє" onClick={navigation.onPrevious} /> : null}
         {hasCarousel ? (
           <span
@@ -325,7 +356,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(dialogProps.at(-1)?.paperSx).toMatchObject({
       width: { xs: '100vw', sm: '92vw' },
       height: { xs: '100svh', sm: '92svh' },
-      maxWidth: { xs: '100vw', sm: 'min(92vw, 1280px)' },
+      maxWidth: { xs: '100vw', sm: '92vw' },
       maxHeight: { xs: '100svh', sm: '92svh' },
     });
 
@@ -389,8 +420,8 @@ describe('VideoAttachmentPreviewRenderer', () => {
       'blob:https://example.test/video',
     );
 
-    remote.root.unmount();
-    expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:https://example.test/video');
+    act(() => remote.root.unmount());
+    expect(revokeObjectUrlSpy).not.toHaveBeenCalled();
   });
 
   it('retries a busy large local video preflight before assigning its source', async () => {
@@ -415,9 +446,9 @@ describe('VideoAttachmentPreviewRenderer', () => {
     const { root } = renderDialog({
       videos: [
         {
-          id: 'large-local',
+          id: 'large-local-busy',
           name: 'large.mp4',
-          source: '/api/messenger/media/large-local',
+          source: '/api/messenger/media/large-local-busy',
           sizeBytes: 10 * 1024 * 1024 + 1,
         },
       ],
@@ -430,7 +461,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
 
     expect(fetchSpy).toHaveBeenNthCalledWith(
       1,
-      '/api/messenger/media/large-local',
+      '/api/messenger/media/large-local-busy',
       expect.objectContaining({
         headers: {
           Range: 'bytes=0-0',
@@ -448,7 +479,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(secondBodyCancel).toHaveBeenCalledTimes(1);
     expect(document.body.querySelector('video')?.getAttribute('src')).toBe(
-      '/api/messenger/media/large-local',
+      '/api/messenger/media/large-local-busy',
     );
 
     root.unmount();
@@ -466,9 +497,9 @@ describe('VideoAttachmentPreviewRenderer', () => {
     const largeVideo = renderDialog({
       videos: [
         {
-          id: 'large-local',
+          id: 'large-local-401',
           name: 'large.mp4',
-          source: '/api/messenger/media/large-local',
+          source: '/api/messenger/media/large-local-401',
           sizeBytes: 10 * 1024 * 1024 + 1,
         },
       ],
@@ -491,9 +522,9 @@ describe('VideoAttachmentPreviewRenderer', () => {
     const smallVideo = renderDialog({
       videos: [
         {
-          id: 'small-local',
+          id: 'small-local-401',
           name: 'small.mp4',
-          source: '/api/messenger/media/small-local',
+          source: '/api/messenger/media/small-local-401',
           sizeBytes: 1024,
         },
       ],
@@ -533,9 +564,9 @@ describe('VideoAttachmentPreviewRenderer', () => {
     const { root } = renderDialog({
       videos: [
         {
-          id: 'large-local',
+          id: 'large-local-retry',
           name: 'large.mp4',
-          source: '/api/messenger/media/large-local',
+          source: '/api/messenger/media/large-local-retry',
           sizeBytes: 10 * 1024 * 1024 + 1,
         },
       ],
@@ -565,7 +596,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(3);
     expect(successBodyCancel).toHaveBeenCalledTimes(1);
     expect(document.body.querySelector('video')?.getAttribute('src')).toBe(
-      '/api/messenger/media/large-local',
+      '/api/messenger/media/large-local-retry',
     );
 
     root.unmount();
@@ -624,15 +655,21 @@ describe('VideoAttachmentPreviewRenderer', () => {
       'blob:small-local-video',
     );
 
-    root.unmount();
-    expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:small-local-video');
+    act(() => root.unmount());
+    expect(revokeObjectUrlSpy).not.toHaveBeenCalled();
   });
 
   it('shows the existing video-load error when fetch fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({ ok: false } as never);
 
     renderDialog({
-      videos: [{ id: 'remote', name: 'remote.mp4', source: 'https://example.test/remote.mp4' }],
+      videos: [
+        {
+          id: 'remote-failure',
+          name: 'remote.mp4',
+          source: 'https://example.test/remote-failure.mp4',
+        },
+      ],
     });
 
     await act(async () => {
@@ -751,7 +788,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
 
     expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(true);
     expect(latestControlsProps?.playerState.isFullscreen).toBe(true);
-    expect(document.body.querySelector('[data-actions]')).toBeNull();
+    expect(document.body.querySelector('[data-actions]')).not.toBeNull();
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -819,7 +856,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
 
     expect(document.body.textContent).toContain('2 / 2');
     expect(document.body.querySelector('[aria-label="Інформація"]')).not.toBeNull();
-    expect(document.body.querySelector('[aria-label="Завантажити"]')).not.toBeNull();
+    expect(document.body.querySelector('[aria-label="Скачати"]')).not.toBeNull();
     expect(document.body.querySelector('[aria-label="Попереднє"]')).not.toBeNull();
     expect(document.body.querySelector('[aria-label="Наступне"]')).not.toBeNull();
 
@@ -832,7 +869,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(onIndexChange).toHaveBeenNthCalledWith(2, 0);
   });
 
-  it('keeps the info popover wired and action bar hidden in fullscreen', async () => {
+  it('keeps the info popover, header, and controls wired in fullscreen', async () => {
     renderDialog({
       videos: [{ id: 'video-1', name: 'video.mp4', source: '/video.mp4' }],
     });
@@ -850,7 +887,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
       latestControlsProps?.onToggleFullscreen();
     });
 
-    expect(document.body.querySelector('[data-actions]')).toBeNull();
+    expect(document.body.querySelector('[data-actions]')).not.toBeNull();
     expect(document.body.querySelector('[data-controls]')).not.toBeNull();
   });
 });

@@ -64,14 +64,24 @@ vi.mock('react-pdf', () => {
     onLoadSuccess?: (event: { numPages: number }) => void;
   }) {
     return (
-      <div data-document onClick={() => onLoadSuccess?.({ numPages: 10 })}>
+      <div
+        data-document
+        onClick={() =>
+          onLoadSuccess?.({
+            numPages: 10,
+            getPage: vi.fn(async () => ({
+              getViewport: () => ({ width: 800, height: 1200 }),
+            })),
+          } as never)
+        }
+      >
         {children}
       </div>
     );
   }
 
-  function Page({ pageNumber, scale }: { pageNumber: number; scale?: number }) {
-    return <div data-page data-page-number={pageNumber} data-scale={scale} />;
+  function Page({ pageNumber, width }: { pageNumber: number; width?: number }) {
+    return <div data-page data-page-number={pageNumber} data-width={width} />;
   }
 
   return { pdfjs, Document, Page };
@@ -119,21 +129,20 @@ describe('PdfDocumentPreview', () => {
     });
 
     expect(container.querySelectorAll('[data-pdf-page-shell]')).toHaveLength(10);
-    expect(container.querySelectorAll('[data-page]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-page]')).toHaveLength(3);
+    expect(container.querySelector('[data-page]')?.getAttribute('data-width')).toBe('1380');
 
     await act(async () => {
       intersectionObserverInstances[0]?.triggerFirstObserved();
     });
 
-    const initialPages = container.querySelectorAll('[data-page]');
-    expect(initialPages).toHaveLength(1);
-    expect((initialPages[0] as HTMLElement)?.getAttribute('data-scale')).toBe('1.5');
+    expect(container.querySelectorAll('[data-page]')).toHaveLength(4);
 
     await act(async () => {
       intersectionObserverInstances[1]?.triggerFirstObserved();
     });
 
-    expect(container.querySelectorAll('[data-page]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-page]')).toHaveLength(5);
 
     root.unmount();
   });

@@ -20,6 +20,9 @@ vi.mock('@mui/material', () => {
 
   return {
     Box: passthrough('div'),
+    ButtonBase: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
+      <button {...props}>{children}</button>
+    ),
     Button: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
       <button {...props}>{children}</button>
     ),
@@ -215,7 +218,7 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
-  it('keeps arrow keys on the zoom slider from changing the preview index', async () => {
+  it('keeps arrow keys on editable controls from changing the preview index', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -250,11 +253,11 @@ describe('DocumentAttachmentPreviewRenderer', () => {
       );
     });
 
-    const slider = document.body.querySelector('input[type="range"]');
-    expect(slider).not.toBeNull();
+    const input = document.createElement('input');
+    document.body.querySelector('[role="dialog"]')?.appendChild(input);
 
     await act(async () => {
-      slider?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     });
 
     expect(onIndexChange).not.toHaveBeenCalled();
@@ -313,8 +316,8 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     expect(
       document.body.querySelector('button[aria-label="Відкрити в новій вкладці"]'),
     ).not.toBeNull();
-    expect(document.body.querySelector('button[aria-label="Завантажити"]')).not.toBeNull();
-    expect(document.body.querySelectorAll('button')).toHaveLength(6);
+    expect(document.body.querySelector('button[aria-label="Скачати"]')).not.toBeNull();
+    expect(document.body.querySelectorAll('button')).toHaveLength(8);
     root.unmount();
   });
 
@@ -441,7 +444,7 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     expect(
       document.body.querySelector('button[aria-label="Відкрити в новій вкладці"]'),
     ).not.toBeNull();
-    expect(document.body.querySelector('button[aria-label="Завантажити"]')).not.toBeNull();
+    expect(document.body.querySelector('button[aria-label="Скачати"]')).not.toBeNull();
     expect(document.body.querySelector('button[aria-label="Закрити"]')).not.toBeNull();
     root.unmount();
   });

@@ -3502,20 +3502,8 @@ describe('MessageCard', () => {
     ).toBeCloseTo(100 * Math.exp(120 * 0.0015), 6);
     expect(dialog?.querySelector('[data-attachment-preview-nav="prev"]')).not.toBeNull();
     expect(dialog?.querySelector('[data-attachment-preview-nav="next"]')).not.toBeNull();
-
-    const zoomSlider = dialog?.querySelector('input[type="range"]') as HTMLInputElement | null;
-    if (zoomSlider == null) throw new Error('zoom slider not found');
-
-    await act(async () => {
-      zoomSlider.value = '400';
-      zoomSlider.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-
-    expect(
-      dialog
-        ?.querySelector('img[data-image-preview-image]')
-        ?.getAttribute('data-image-preview-zoom'),
-    ).toBe('400');
+    expect(dialog?.querySelector('input[type="range"]')).toBeNull();
+    expect(dialog?.textContent).toContain('120%');
 
     const nextButton = dialog?.querySelector('button[aria-label="Наступне"]');
     expect(nextButton).not.toBeNull();
@@ -3525,6 +3513,11 @@ describe('MessageCard', () => {
     expect(dialog?.querySelector('img[data-image-preview-image]')?.getAttribute('src')).toBe(
       'https://example.test/files/preview-2.png',
     );
+    expect(
+      dialog
+        ?.querySelector('img[data-image-preview-image]')
+        ?.getAttribute('data-image-preview-zoom'),
+    ).toBe('100');
 
     const downloadLink = dialog?.querySelector('a[download]');
     expect(downloadLink?.getAttribute('href')).toBe('https://example.test/files/preview-2.png');
@@ -3700,29 +3693,22 @@ describe('MessageCard', () => {
     expect(dialog?.querySelector('button[aria-label="Повноекранний режим"]')).not.toBeNull();
     expect(dialog?.querySelector('button[aria-label="Закрити"]')).not.toBeNull();
 
-    const zoomSlider = dialog?.querySelector('input[type="range"]') as HTMLInputElement | null;
-    if (zoomSlider == null) throw new Error('zoom slider not found');
-    expect(
-      JSON.parse(zoomSlider.getAttribute('data-marks') ?? '[]').map(
-        (mark: { value: number }) => mark.value,
-      ),
-    ).toContain(300);
-
-    expect(dialog?.querySelector('button[aria-label="Зменшити"]')).not.toBeNull();
-    expect(dialog?.querySelector('button[aria-label="Збільшити"]')).not.toBeNull();
+    expect(dialog?.querySelector('input[type="range"]')).toBeNull();
+    expect(dialog?.querySelector('button[aria-label="Зменшити"]')).toBeNull();
+    expect(dialog?.querySelector('button[aria-label="Збільшити"]')).toBeNull();
     expect(dialog?.querySelector('button[aria-label="Скинути масштаб"]')).toBeNull();
-
-    await act(async () => {
-      zoomSlider.value = '200';
-      zoomSlider.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-
-    expect(image.getAttribute('data-image-preview-zoom')).toBe('200');
-    expect(dialog?.querySelector('[data-attachment-preview-nav="prev"]')).toBeNull();
-    expect(dialog?.querySelector('[data-attachment-preview-nav="next"]')).toBeNull();
 
     const stage = dialog?.querySelector('[data-image-preview-stage]') as HTMLElement | null;
     if (stage == null) throw new Error('preview stage not found');
+
+    await act(async () => {
+      stage.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    });
+
+    expect(image.getAttribute('data-image-preview-zoom')).toBe('200');
+    expect(dialog?.textContent).toContain('200%');
+    expect(dialog?.querySelector('[data-attachment-preview-nav="prev"]')).toBeNull();
+    expect(dialog?.querySelector('[data-attachment-preview-nav="next"]')).toBeNull();
 
     Object.defineProperty(stage, 'clientWidth', { configurable: true, value: 400 });
     Object.defineProperty(stage, 'clientHeight', { configurable: true, value: 300 });
@@ -3768,7 +3754,8 @@ describe('MessageCard', () => {
     expect(dialog?.querySelector('button[aria-label="Повноекранний режим"]')).not.toBeNull();
     expect(dialog?.querySelector('button[aria-label="Вийти з повноекранного режиму"]')).toBeNull();
 
-    const closeButton = getButton(dialog as HTMLElement, 'Закрити');
+    const closeButton = dialog?.querySelector('button[aria-label="Закрити"]');
+    if (!(closeButton instanceof HTMLButtonElement)) throw new Error('close button not found');
     await click(closeButton);
 
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
@@ -3795,7 +3782,11 @@ describe('MessageCard', () => {
         ?.getAttribute('data-image-preview-pan-y'),
     ).toBe('0');
 
-    await click(getButton(reopenedDialog as HTMLElement, 'Закрити'));
+    const reopenedCloseButton = reopenedDialog?.querySelector('button[aria-label="Закрити"]');
+    if (!(reopenedCloseButton instanceof HTMLButtonElement)) {
+      throw new Error('reopened close button not found');
+    }
+    await click(reopenedCloseButton);
   });
 
   it('keeps fullscreen active when navigating to the next image', async () => {
@@ -3869,19 +3860,15 @@ describe('MessageCard', () => {
       image.dispatchEvent(new Event('load', { bubbles: true }));
     });
 
-    const zoomSlider = dialog?.querySelector('input[type="range"]') as HTMLInputElement | null;
-    if (zoomSlider == null) throw new Error('zoom slider not found');
-
-    await act(async () => {
-      zoomSlider.value = '200';
-      zoomSlider.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-
     const stage = dialog?.querySelector('[data-image-preview-stage]') as HTMLElement | null;
     if (stage == null) throw new Error('preview stage not found');
 
     Object.defineProperty(stage, 'clientWidth', { configurable: true, value: 400 });
     Object.defineProperty(stage, 'clientHeight', { configurable: true, value: 300 });
+
+    await act(async () => {
+      stage.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    });
 
     await act(async () => {
       stage.dispatchEvent(
