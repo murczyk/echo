@@ -548,7 +548,6 @@ async fn ensure_automation_columns(db: &DatabaseConnection) -> Result<()> {
         alter table echo_automation
             add column if not exists stale_message_cutoff_minutes integer,
             add column if not exists resend_attachments boolean,
-            add column if not exists coordinates_screenshot boolean,
             add column if not exists coordinate_presence_mode text,
             add column if not exists polygon_filter_mode text,
             add column if not exists polygon_id bigint,
@@ -1279,6 +1278,20 @@ async fn send_matching_message(
     coordinates: &[Point],
     last_warning: &mut Option<String>,
 ) -> Result<()> {
+    if send_is_planned(
+        db,
+        automation.source_group_id,
+        automation.target_group_id,
+        message,
+    )
+    .await
+    .c(h!())?
+    {
+        record_planned_send_skip(db, automation.id, message)
+            .await
+            .c(h!())?;
+        return Ok(());
+    }
     let target = load_send_target(
         db,
         automation.target_account_id,
@@ -1313,16 +1326,9 @@ async fn send_matching_message(
     .c(h!())?
     else {
         txn.rollback().await.c(h!())?;
-        record_delivery(
-            db,
-            automation.id,
-            message,
-            "skipped",
-            Some("message is already planned for this target group"),
-            false,
-        )
-        .await
-        .c(h!())?;
+        record_planned_send_skip(db, automation.id, message)
+            .await
+            .c(h!())?;
         return Ok(());
     };
     messenger::enqueue(
@@ -1387,6 +1393,58 @@ fn append_warning(warning: &mut Option<String>, value: String) {
         }
         None => *warning = Some(value),
     }
+}
+
+async fn send_is_planned(
+    db: &impl ConnectionTrait,
+    source_group_id: i32,
+    target_group_id: i32,
+    message: &InboxMessageRow,
+) -> Result<bool> {
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select exists (
+                select 1
+                from echo_automation_send_log
+                where source_group_id = $1
+                    and target_group_id = $2
+                    and (
+                        source_inbox_message_id = $3
+                        or ($4 is not null and source_internal_id = $4)
+                    )
+            ) as planned
+            "#,
+            vec![
+                source_group_id.into(),
+                target_group_id.into(),
+                message.id.into(),
+                message.internal_id.clone().into(),
+            ],
+        ))
+        .await
+        .c(h!())?
+        .context("planned-send query did not return a row")
+        .c(h!())?;
+    row.try_get("", "planned").c(h!())
+}
+
+async fn record_planned_send_skip(
+    db: &impl ConnectionTrait,
+    automation_id: i64,
+    message: &InboxMessageRow,
+) -> Result<()> {
+    record_delivery(
+        db,
+        automation_id,
+        message,
+        "skipped",
+        Some("message is already planned for this target group"),
+        false,
+    )
+    .await
+    .c(h!())
 }
 
 async fn plan_send(
@@ -3292,10 +3350,26 @@ mod tests {
                 insert_message(&db, &fixture, "shared", Utc::now().naive_utc())
                     .await
                     .c(h!())?;
+            assert!(!send_is_planned(
+                &db,
+                fixture.source_group_id,
+                fixture.target_group_id,
+                &message,
+            )
+            .await
+            .c(h!())?);
             let (send_log_id, automation_id) =
                 claim_send_once(&db, &fixture, second_automation_id, &message)
                     .await
                     .c(h!())?;
+            assert!(send_is_planned(
+                &db,
+                fixture.source_group_id,
+                fixture.target_group_id,
+                &message,
+            )
+            .await
+            .c(h!())?);
             let send_log =
                 load_test_send_log(&db, send_log_id).await.c(h!())?;
             assert_eq!(send_log.automation_id, automation_id);
