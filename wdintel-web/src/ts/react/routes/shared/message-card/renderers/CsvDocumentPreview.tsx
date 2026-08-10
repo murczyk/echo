@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Box, CircularProgress, Typography } from '@mui/material';
 
 import { XlsxGrid } from '../xlsx/XlsxGrid';
+import { fetchCachedDocumentResponse } from '../document-preview-utils';
 import { runWorkerTask } from '../workers/worker-client';
 import {
   formatCsvPreviewErrorMessage,
@@ -35,15 +36,20 @@ export function CsvDocumentPreview({
       try {
         if (sizeBytes != null && sizeBytes > MAX_CSV_FILE_BYTES)
           throw new Error('CSV_FILE_TOO_LARGE');
-        const response = await fetch(href, { signal: controller.signal });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const contentLength = Number(response.headers.get('content-length'));
-        if (Number.isFinite(contentLength) && contentLength > MAX_CSV_FILE_BYTES) {
+        const {
+          buffer,
+          contentType: responseContentType,
+          contentLength,
+        } = await fetchCachedDocumentResponse(
+          href,
+          MAX_CSV_FILE_BYTES,
+          'CSV_FILE_TOO_LARGE',
+          controller.signal,
+        );
+        if (contentLength != null && contentLength > MAX_CSV_FILE_BYTES) {
           throw new Error('CSV_FILE_TOO_LARGE');
         }
-        const buffer = await response.arrayBuffer();
         if (buffer.byteLength > MAX_CSV_FILE_BYTES) throw new Error('CSV_FILE_TOO_LARGE');
-        const responseContentType = response.headers.get('content-type');
         const effectiveContentType =
           responseContentType?.match(/charset\s*=/i) != null
             ? responseContentType

@@ -3,6 +3,7 @@ import { Box, CircularProgress, Typography, useTheme } from '@mui/material';
 
 import { buildDocxHtmlDocument } from '../docx/build-docx-html-document';
 import { sanitizeDocxHtml } from '../docx/sanitize-docx-html';
+import { fetchCachedDocumentResponse } from '../document-preview-utils';
 import { runWorkerTask } from '../workers/worker-client';
 
 type DocxPreviewResult = {
@@ -47,21 +48,17 @@ export function DocxDocumentPreview({
           throw new Error('DOCX_FILE_TOO_LARGE');
         }
 
-        const response = await fetch(href, { signal: abortController.signal });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
+        const { buffer, contentLength } = await fetchCachedDocumentResponse(
+          href,
+          MAX_DOCX_FILE_BYTES,
+          'DOCX_FILE_TOO_LARGE',
+          abortController.signal,
+        );
 
-        const contentLength = response.headers.get('content-length');
-        if (
-          contentLength != null &&
-          Number.isFinite(Number(contentLength)) &&
-          Number(contentLength) > MAX_DOCX_FILE_BYTES
-        ) {
+        if (contentLength != null && contentLength > MAX_DOCX_FILE_BYTES) {
           throw new Error('DOCX_FILE_TOO_LARGE');
         }
 
-        const buffer = await response.arrayBuffer();
         if (buffer.byteLength > MAX_DOCX_FILE_BYTES) {
           throw new Error('DOCX_FILE_TOO_LARGE');
         }

@@ -41,7 +41,7 @@ export function isInteractivePreviewTarget(target: EventTarget | null): boolean 
   if (!(target instanceof Element)) return false;
   return Boolean(
     target.closest(
-      '[data-image-preview-nav], button, a, input, textarea, select, [role="slider"], [contenteditable="true"]',
+      '[data-attachment-preview-nav], button, a, input, textarea, select, [role="slider"], [contenteditable="true"]',
     ),
   );
 }

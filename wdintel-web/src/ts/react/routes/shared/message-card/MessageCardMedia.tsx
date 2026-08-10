@@ -7,7 +7,6 @@ import { Box, Button, CircularProgress, Tooltip } from '@mui/material';
 
 import type { MessageMediaInfo } from '../../../../../Bindings';
 import { getMuiPaletteMode, useMuiPaletteMode } from '../../../mui-theme';
-import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
 import { MessageCardDisabledControlCursorWrapper } from './MessageCardDisabledControlCursorWrapper';
 import {
   MessageCardAudioTranscription,
