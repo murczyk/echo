@@ -79,6 +79,8 @@ export function PdfDocumentPreview({
 
         const { buffer, contentType, contentLength } = await fetchCachedDocumentResponse(
           href,
+          MAX_PDF_FILE_BYTES,
+          'PDF_FILE_TOO_LARGE',
           abortController.signal,
         );
 

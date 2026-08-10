@@ -127,6 +127,12 @@ describe('XlsxDocumentPreview', () => {
         'content-length': '1',
         'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       }),
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(largeBuffer));
+          controller.close();
+        },
+      }),
       arrayBuffer: arrayBufferSpy,
     } as Response);
 
@@ -135,10 +141,12 @@ describe('XlsxDocumentPreview', () => {
     const root = createRoot(container);
 
     await act(async () => {
-      root.render(<XlsxDocumentPreview href="https://example.test/files/report.xlsx" zoom={100} />);
+      root.render(
+        <XlsxDocumentPreview href="https://example.test/files/report-actual.xlsx" zoom={100} />,
+      );
     });
 
-    expect(arrayBufferSpy).toHaveBeenCalled();
+    expect(arrayBufferSpy).not.toHaveBeenCalled();
     expect(workerSpy).not.toHaveBeenCalled();
     expect(container.textContent).toContain('Файл XLSX завеликий');
 

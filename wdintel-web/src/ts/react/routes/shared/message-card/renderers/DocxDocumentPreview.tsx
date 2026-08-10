@@ -50,6 +50,8 @@ export function DocxDocumentPreview({
 
         const { buffer, contentLength } = await fetchCachedDocumentResponse(
           href,
+          MAX_DOCX_FILE_BYTES,
+          'DOCX_FILE_TOO_LARGE',
           abortController.signal,
         );
 

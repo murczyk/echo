@@ -43,6 +43,8 @@ export function XlsxDocumentPreview({
 
         const { buffer, contentLength, contentType } = await fetchCachedDocumentResponse(
           href,
+          MAX_XLSX_FILE_BYTES,
+          'XLSX_FILE_TOO_LARGE',
           abortController.signal,
         );
 

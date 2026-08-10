@@ -206,7 +206,7 @@ describe('text-document-preview', () => {
     );
 
     await act(async () => {
-      secondRoot.render(<TxtDocumentPreview href="https://example.test/files/notes.txt" />);
+      secondRoot.render(<TxtDocumentPreview href="https://example.test/files/notes-be.txt" />);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -270,7 +270,7 @@ describe('text-document-preview', () => {
     const root = createRoot(container);
 
     await act(async () => {
-      root.render(<TxtDocumentPreview href="https://example.test/files/plain" />);
+      root.render(<TxtDocumentPreview href="https://example.test/files/plain-case" />);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -293,7 +293,7 @@ describe('text-document-preview', () => {
     const root = createRoot(container);
 
     await act(async () => {
-      root.render(<TxtDocumentPreview href="https://example.test/files/plain" />);
+      root.render(<TxtDocumentPreview href="https://example.test/files/plain-unsupported" />);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -314,7 +314,7 @@ describe('text-document-preview', () => {
     const root = createRoot(container);
 
     await act(async () => {
-      root.render(<TxtDocumentPreview href="https://example.test/files/plain" />);
+      root.render(<TxtDocumentPreview href="https://example.test/files/plain-bom" />);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -335,7 +335,7 @@ describe('text-document-preview', () => {
     const root = createRoot(container);
 
     await act(async () => {
-      root.render(<TxtDocumentPreview href="https://example.test/files/plain" />);
+      root.render(<TxtDocumentPreview href="https://example.test/files/plain-binary" />);
       await Promise.resolve();
       await Promise.resolve();
     });

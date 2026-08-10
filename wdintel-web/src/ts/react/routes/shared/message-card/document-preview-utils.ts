@@ -37,10 +37,18 @@ const documentResponseCache = new Map<string, CachedDocumentResponse>();
 
 export async function fetchCachedDocumentResponse(
   href: string,
+  maxBytes: number,
+  tooLargeError: string,
   signal?: AbortSignal,
 ): Promise<CachedDocumentResponse> {
   const cached = documentResponseCache.get(href);
   if (cached) {
+    if (
+      cached.buffer.byteLength > maxBytes ||
+      (cached.contentLength != null && cached.contentLength > maxBytes)
+    ) {
+      throw new Error(tooLargeError);
+    }
     return {
       buffer: cached.buffer.slice(0),
       contentType: cached.contentType,
@@ -55,12 +63,24 @@ export async function fetchCachedDocumentResponse(
 
   const contentType = response.headers.get('content-type');
   const rawContentLength = response.headers.get('content-length');
+  const parsedContentLength = rawContentLength == null ? null : Number(rawContentLength);
   const contentLength =
-    rawContentLength != null && Number.isFinite(Number(rawContentLength))
-      ? Number(rawContentLength)
+    parsedContentLength != null &&
+    Number.isSafeInteger(parsedContentLength) &&
+    parsedContentLength >= 0
+      ? parsedContentLength
       : null;
 
-  const buffer = await response.arrayBuffer();
+  if (contentLength != null && contentLength > maxBytes) {
+    try {
+      await response.body?.cancel();
+    } catch {
+      // Best-effort stop of the underlying stream.
+    }
+    throw new Error(tooLargeError);
+  }
+
+  const buffer = await readBoundedResponseBody(response, maxBytes, tooLargeError, signal);
 
   const entry: CachedDocumentResponse = {
     buffer,
@@ -82,4 +102,52 @@ export async function fetchCachedDocumentResponse(
     contentType,
     contentLength,
   };
+}
+
+async function readBoundedResponseBody(
+  response: Response,
+  maxBytes: number,
+  tooLargeError: string,
+  signal?: AbortSignal,
+): Promise<ArrayBuffer> {
+  if (response.body == null) {
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength > maxBytes) throw new Error(tooLargeError);
+    return buffer;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value == null) continue;
+
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        try {
+          await reader.cancel();
+        } catch {
+          // Best-effort stop of the underlying stream.
+        }
+        throw new Error(tooLargeError);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const buffer = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buffer.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return buffer.buffer;
 }

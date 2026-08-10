@@ -40,7 +40,12 @@ export function CsvDocumentPreview({
           buffer,
           contentType: responseContentType,
           contentLength,
-        } = await fetchCachedDocumentResponse(href, controller.signal);
+        } = await fetchCachedDocumentResponse(
+          href,
+          MAX_CSV_FILE_BYTES,
+          'CSV_FILE_TOO_LARGE',
+          controller.signal,
+        );
         if (contentLength != null && contentLength > MAX_CSV_FILE_BYTES) {
           throw new Error('CSV_FILE_TOO_LARGE');
         }

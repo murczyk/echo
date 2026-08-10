@@ -283,6 +283,8 @@ export function TextDocumentPreview({
 
         const { buffer, contentLength, contentType } = await fetchCachedDocumentResponse(
           href,
+          MAX_TEXT_PREVIEW_BYTES,
+          'TEXT_FILE_TOO_LARGE',
           abortController.signal,
         );
 
