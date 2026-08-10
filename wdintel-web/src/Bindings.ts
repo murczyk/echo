@@ -384,6 +384,7 @@ export type InboxMessage = {
   time: string | null;
   freq: string | null;
   coords: string | null;
+  coordsWithLocality: Array<CoordinateWithLocality>;
   callsigns: Array<string>;
   callsignsAlg2: Array<string>;
   checked: boolean;

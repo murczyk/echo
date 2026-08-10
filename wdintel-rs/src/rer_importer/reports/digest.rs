@@ -1408,6 +1408,7 @@ mod tests {
                 time: None,
                 freq: None,
                 coords: None,
+                coords_with_locality: vec![],
                 callsigns: vec![],
                 callsigns_alg2: vec![],
                 checked: false,

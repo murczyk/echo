@@ -41,6 +41,8 @@ where
         p.settlement = Set(None);
         p.distance_m = Set(None);
         p.locality_direction = Set(None);
+        p.region = Set(None);
+        p.country_name = Set(None);
         p.update(txn).await.c(h!())?;
     }
     Ok(())
@@ -103,6 +105,8 @@ where
             locality_direction: NotSet,
             distance_m: NotSet,
             country_code: NotSet,
+            region: NotSet,
+            country_name: NotSet,
             pelengation_object: Set(pelengation_object.clone()),
             deleted: NotSet,
             created_at: Set(ts),

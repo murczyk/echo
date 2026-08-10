@@ -1193,6 +1193,7 @@ fn generic_submit_item_to_inbox_message(
         time: Some(time),
         freq: item.freq.clone(),
         coords: format_geo_coordinates(&item.coords),
+        coords_with_locality: vec![],
         callsigns: submit_item_callsigns(item),
         callsigns_alg2: vec![],
         checked: true,

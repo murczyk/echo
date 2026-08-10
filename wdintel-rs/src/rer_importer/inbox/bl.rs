@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::error::AppError;
 use crate::location::utils;
 use crate::location::utils::to_location_list;
+use crate::location::{CoordinateWithLocality, LocalityDetails};
 use crate::messenger::group::types::SignalGroupEntry;
 use crate::messenger::group::{collect_groups, CollectGroupsOpts};
 use crate::palitra::bl::collect_accessible_palitra_ids;
@@ -59,6 +60,99 @@ pub struct InboxMessageDesc {
     pub tags: Option<Vec<i64>>,
     pub inbox_tags: Option<serde_json::Value>,
     pub metadata: Option<serde_json::Value>,
+}
+
+async fn load_coords_with_locality(
+    message_ids: &[i64],
+    env: &Env,
+) -> Result<HashMap<i64, Vec<CoordinateWithLocality>>, AppError> {
+    let pelengs = sigint_peleng::Entity::find()
+        .filter(sigint_peleng::Column::SourceInboxItemId.eq_any(message_ids))
+        .filter(sigint_peleng::Column::Deleted.eq(false))
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let mut coords_by_id = BTreeMap::new();
+    let mut pelengs_by_message: HashMap<
+        i64,
+        Vec<(sigint_peleng::Model, GeoCoordinates)>,
+    > = HashMap::new();
+    for peleng in pelengs {
+        let coords = GeoCoordinates {
+            lat: peleng.lat,
+            lon: peleng.lng,
+        };
+        pelengs_by_message
+            .entry(peleng.source_inbox_item_id)
+            .or_insert_with(Vec::new)
+            .push((peleng, coords));
+    }
+    let mut stored_localities = HashMap::new();
+    for pelengs in pelengs_by_message.values() {
+        for (peleng, coords) in pelengs {
+            if let Some(locality) = stored_locality(peleng) {
+                stored_localities.insert(peleng.id, locality);
+            } else if peleng.settlement.as_deref() != Some("") {
+                coords_by_id.insert(
+                    peleng.id,
+                    milgeo_rs::coord_util::LatLng {
+                        lat: coords.lat,
+                        lng: coords.lon,
+                    },
+                );
+            }
+        }
+    }
+    let mapped_coords =
+        milgeo_rs::coord_util::map_coords(coords_by_id, env.mil_geo.clone(), 3)
+            .await
+            .c(h!())?;
+    Ok(pelengs_by_message
+        .into_iter()
+        .map(|(message_id, coords)| {
+            let coords = coords
+                .into_iter()
+                .map(|(peleng, coords)| CoordinateWithLocality {
+                    coords,
+                    locality: stored_localities
+                        .get(&peleng.id)
+                        .cloned()
+                        .or_else(|| {
+                            mapped_coords
+                                .get(&peleng.id)
+                                .and_then(|localities| localities.first())
+                                .map(locality_details)
+                        }),
+                })
+                .collect();
+            (message_id, coords)
+        })
+        .collect())
+}
+
+fn stored_locality(peleng: &sigint_peleng::Model) -> Option<LocalityDetails> {
+    Some(LocalityDetails {
+        settlement_name: peleng.settlement.clone()?,
+        direction: peleng.locality_direction.clone()?,
+        region: Some(peleng.region.clone()?.to_string()),
+        country: Some(peleng.country_name.clone()?.to_string()),
+        distance_m: peleng.distance_m?,
+        is_rf: peleng.country_code.as_deref() == Some("ru"),
+    })
+    .filter(|locality| !locality.settlement_name.is_empty())
+}
+
+fn locality_details(
+    locality: &milgeo_rs::coord_util::Locality,
+) -> LocalityDetails {
+    LocalityDetails {
+        settlement_name: locality.settlement_name.clone(),
+        direction: locality.direction.clone(),
+        region: locality.region.clone(),
+        country: locality.country.clone(),
+        distance_m: locality.distance_m,
+        is_rf: locality.is_rf,
+    }
 }
 
 async fn load_completed_audio_transcriptions(
@@ -126,6 +220,8 @@ pub async fn aggregate_to_inbox_messages(
     let dbx_raw = env.dbx.get_postgres_connection_pool();
 
     let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
+    let mut coords_with_locality =
+        load_coords_with_locality(&message_ids, env).await.c(h!())?;
     let message_comments =
         crate::rer_importer::analysis::batch_message_comments_bl(
             &env.dbx,
@@ -431,6 +527,9 @@ pub async fn aggregate_to_inbox_messages(
                 time: message.time.clone(),
                 freq: freq.clone(),
                 coords,
+                coords_with_locality: coords_with_locality
+                    .remove(&message.id)
+                    .unwrap_or_default(),
                 callsigns,
                 checked: message.checked.unwrap_or(false),
                 important: important_ids.contains(&message.id),

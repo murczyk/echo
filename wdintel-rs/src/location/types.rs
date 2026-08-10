@@ -71,13 +71,17 @@ pub struct MapCoordinatesReq {
     pub coords: Vec<GeoCoordinates>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct CoordinateWithLocality {
     pub coords: GeoCoordinates,
     pub locality: Option<LocalityDetails>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct LocalityDetails {
     pub settlement_name: String,
     pub direction: String,

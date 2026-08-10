@@ -1041,6 +1041,7 @@ type alias InboxMessage =
     , time : Maybe (String)
     , freq : Maybe (String)
     , coords : Maybe (String)
+    , coordsWithLocality : List (CoordinateWithLocality)
     , callsigns : List (String)
     , callsignsAlg2 : List (String)
     , checked : Bool
@@ -1083,6 +1084,7 @@ inboxMessageEncoder struct =
         , ( "time", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.time )
         , ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.freq )
         , ( "coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.coords )
+        , ( "coords_with_locality", (Json.Encode.list (coordinateWithLocalityEncoder)) struct.coordsWithLocality )
         , ( "callsigns", (Json.Encode.list (Json.Encode.string)) struct.callsigns )
         , ( "callsigns_alg2", (Json.Encode.list (Json.Encode.string)) struct.callsignsAlg2 )
         , ( "checked", (Json.Encode.bool) struct.checked )
@@ -12434,6 +12436,7 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "time" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords_with_locality" (Json.Decode.list (coordinateWithLocalityDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns_alg2" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "checked" (Json.Decode.bool)))

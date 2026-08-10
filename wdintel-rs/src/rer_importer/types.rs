@@ -21,6 +21,7 @@ pub struct InboxMessage {
     pub time: Option<String>,
     pub freq: Option<String>,
     pub coords: Option<String>,
+    pub coords_with_locality: Vec<crate::location::CoordinateWithLocality>,
     pub callsigns: Vec<String>,
     pub callsigns_alg2: Vec<String>,
     pub checked: bool,
@@ -144,6 +145,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             time: payload.time,
             freq: payload.freq,
             coords: payload.coords,
+            coords_with_locality: vec![],
             callsigns: payload.callsigns,
             callsigns_alg2: payload.callsigns_alg2,
             checked: payload.checked,
@@ -569,7 +571,9 @@ impl Default for InboxSubmitItem {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 #[serde(deny_unknown_fields)]
 pub struct GeoCoordinates {
     pub lat: f64,
