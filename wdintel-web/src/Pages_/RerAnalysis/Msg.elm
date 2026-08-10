@@ -133,6 +133,7 @@ type Msg
     | ReportTagsOnlyThisUnitForReportToggle
     | Report1213LinkedNetworksOnlyToggle
     | ReportWithoutCommentsToggle
+    | ReportBabakNewCallsignMinMentionsInput String
     | ReportDigestOmitExoIdToggle
     | ReportDigestForm1217Toggle
     | ReportTagsWithoutBotTagsToggle

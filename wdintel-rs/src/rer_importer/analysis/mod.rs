@@ -5412,6 +5412,7 @@ pub async fn bi_new_callsigns_chunked(
     req: &AnalysisStatsReq,
     chunking_hours: i64,
     final_end: ReportPeriodEnd,
+    min_mentions: i64,
 ) -> Result<NewCallsignsRes, AppError> {
     ensure_rer_role_by_id(&env.dbx, user_id).await.c(h!())?;
     let group_master_keys = get_identity_sigint_groups(&env.dbx, user_id)
@@ -5423,7 +5424,7 @@ pub async fn bi_new_callsigns_chunked(
         chunking_hours,
         final_end,
     )?;
-    let mut callsigns_in_period = BTreeSet::new();
+    let mut callsign_message_counts = BTreeMap::new();
     for (index, chunk) in report_chunks.iter().enumerate() {
         log::info!(
             "Babak new-callsigns report chunk {}/{}: {}..{}",
@@ -5432,8 +5433,8 @@ pub async fn bi_new_callsigns_chunked(
             chunk.since_ms,
             chunk.till_ms
         );
-        callsigns_in_period.extend(
-            load_new_callsigns_in_range_with_db(
+        for (callsign, message_count) in
+            load_new_callsign_counts_in_range_with_db(
                 user_id,
                 req,
                 chunk.since_ms,
@@ -5442,13 +5443,19 @@ pub async fn bi_new_callsigns_chunked(
                 &group_master_keys,
                 true,
                 &env.dbx,
-                crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
-                None,
-                None,
             )
-            .await?,
-        );
+            .await?
+        {
+            *callsign_message_counts.entry(callsign).or_insert(0) +=
+                message_count;
+        }
     }
+    let callsigns_in_period = callsign_message_counts
+        .into_iter()
+        .filter_map(|(callsign, message_count)| {
+            (message_count >= min_mentions).then_some(callsign)
+        })
+        .collect();
 
     let lookback_since = req
         .since_date_inclusive_ms
@@ -5578,6 +5585,12 @@ struct NewCallsignValueRow {
 }
 
 #[derive(FromQueryResult)]
+struct NewCallsignCountRow {
+    callsign: String,
+    message_count: i64,
+}
+
+#[derive(FromQueryResult)]
 struct NewCallsignLastSeenRow {
     callsign: String,
     last_seen: Option<NaiveDateTime>,
@@ -5646,6 +5659,40 @@ async fn load_new_callsigns_in_range_with_db(
         }
     };
     Ok(rows.into_iter().map(|row| row.callsign).collect())
+}
+
+async fn load_new_callsign_counts_in_range_with_db(
+    user_id: &uuid::Uuid,
+    req: &AnalysisStatsReq,
+    since_ms: i64,
+    till_ms: i64,
+    period_end: ReportPeriodEnd,
+    group_master_keys: &[String],
+    include_aor_filter: bool,
+    db: &DatabaseConnection,
+) -> Result<BTreeMap<String, i64>, AppError> {
+    let query = build_new_callsign_filtered_items_query(
+        user_id,
+        req,
+        since_ms,
+        till_ms,
+        period_end,
+        group_master_keys,
+        include_aor_filter,
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
+        None,
+        None,
+    )?;
+    let rows = NewCallsignCountRow::find_by_statement(
+        new_callsign_counts_statement(query),
+    )
+    .all(db)
+    .await
+    .c(h!())?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.callsign, row.message_count))
+        .collect())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5933,6 +5980,22 @@ fn effective_callsign_values_statement(
         r#"
 SELECT DISTINCT all_callsigns.callsign
 FROM all_callsigns
+ORDER BY all_callsigns.callsign
+"#,
+    )
+}
+
+fn new_callsign_counts_statement(
+    query: Select<signal_message::Entity>,
+) -> Statement {
+    new_callsign_statement(
+        query,
+        r#"
+SELECT
+    all_callsigns.callsign,
+    COUNT(*) AS message_count
+FROM all_callsigns
+GROUP BY all_callsigns.callsign
 ORDER BY all_callsigns.callsign
 "#,
     )

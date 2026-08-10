@@ -43,6 +43,15 @@ pub async fn collect_babak_report_data(
     let date_from_dt = dt_from_millis(since_date_inclusive_ms)?;
     let date_to_dt = dt_from_millis(till_date_inclusive_ms)?;
     let without_comments = req.without_comments.unwrap_or(false);
+    let new_callsign_min_mentions = req
+        .babak_new_callsign_min_mentions
+        .unwrap_or(RER_BABAK_NEW_CALLSIGN_MIN_MENTIONS_DEFAULT);
+    if new_callsign_min_mentions < 1 {
+        return Err(AppError::BL {
+            msg: "Мінімальна кількість згадок позивного має бути не менше 1"
+                .to_string(),
+        });
+    }
 
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = if without_comments {
@@ -108,6 +117,7 @@ pub async fn collect_babak_report_data(
         &new_callsing_req,
         report_settings.chunking_hours,
         ReportPeriodEnd::Inclusive,
+        new_callsign_min_mentions,
     )
     .await
     .context(h!())?;
@@ -2220,7 +2230,7 @@ mod tests {
             &env.dbx,
             second_inbox_item.id,
             crate::inbox::callsigns::InboxItemCallsigns {
-                primary: vec!["Beta".to_string()],
+                primary: vec!["Alpha".to_string(), "Beta".to_string()],
                 alg2: Vec::new(),
             },
             login.id,
@@ -2272,6 +2282,7 @@ mod tests {
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
             without_comments: Some(false),
+            babak_new_callsign_min_mentions: Some(2),
             interception_keep_full_message: None,
             interception_keep_old_colors: None,
             digest_omit_exo_id: None,
@@ -2307,10 +2318,10 @@ mod tests {
             "expected Alpha to be reported as new callsign"
         );
         assert!(
-            res.new_callsigns
+            !res.new_callsigns
                 .not_seen_7days
                 .contains(&"Beta".to_string()),
-            "expected the callsign at the inclusive end to be reported"
+            "expected a callsign mentioned once to be excluded"
         );
     }
 
