@@ -11,7 +11,7 @@ use crate::rer_importer::report_chunking::{
 use crate::sigint::sender::preferred_sender_sql_snippet;
 use crate::types::*;
 use crate::utils::dt_from_millis;
-use anyhow::bail;
+use anyhow::{bail, Context};
 use chrono::prelude::*;
 use echo_migration::IntoCondition;
 use itertools::Itertools;
@@ -45,7 +45,8 @@ pub async fn get_inbox_messages_report(
             .await
             .c(h!())?;
     let mut chunks =
-        inbox_report_period_chunks(req, report_settings.chunking_hours)?;
+        inbox_report_period_chunks(req, report_settings.chunking_hours)
+            .context(h!())?;
     if req.load_latest == Some(true)
         || req.newest_first == Some(true)
         || req.before_id_noninclusive.is_some()
@@ -67,7 +68,8 @@ pub async fn get_inbox_messages_report(
         for message in get_inbox_messages_report_chunk(
             user_login, env, &chunk_req, chunk.end,
         )
-        .await?
+        .await
+        .context(h!())?
         {
             let key = (
                 message.0,
@@ -210,10 +212,13 @@ async fn get_inbox_messages_report_chunk(
     .await
     .c(h!())?;
     if period_end == ReportPeriodEnd::NonInclusive {
-        let till = req.till_date_inclusive_ms.ok_or_else(|| AppError::BL {
-            msg: "Until date must be specified".to_string(),
-        })?;
-        let till = dt_from_millis(till)?;
+        let till = req
+            .till_date_inclusive_ms
+            .ok_or_else(|| AppError::BL {
+                msg: "Until date must be specified".to_string(),
+            })
+            .context(h!())?;
+        let till = dt_from_millis(till).context(h!())?;
         q = match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
             InboxMessagesSortBy::IMSDatetime => {
                 q.filter(sigint_inbox_item::Column::Datetime.lt(till))

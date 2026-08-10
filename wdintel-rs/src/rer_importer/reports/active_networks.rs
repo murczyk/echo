@@ -121,16 +121,14 @@ pub async fn get_aor_network_comments(
     for area_of_responsibility in aors {
         let mut network_unit_comments: Vec<NetworkUnitComments> = Vec::new();
 
-        let mut networks =
-            get_aor_networks(db, area_of_responsibility.id)
-                .await
-                .context(h!())?;
+        let mut networks = get_aor_networks(db, area_of_responsibility.id)
+            .await
+            .context(h!())?;
         networks.sort_by_key(|a| a.active_from);
 
         for network in networks {
-            let units = get_network_units(db, network.id)
-                .await
-                .context(h!())?;
+            let units =
+                get_network_units(db, network.id).await.context(h!())?;
             let mut comments = Vec::new();
             for (index, chunk) in chunks.iter().copied().enumerate() {
                 info!(

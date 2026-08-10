@@ -132,11 +132,9 @@ pub async fn report_docx_kind_digest(
         crate::system_settings::get_report_generation_settings(&env.dbx)
             .await
             .c(h!())?;
-    let chunks = inbox_report_period_chunks(
-        &request,
-        report_settings.chunking_hours,
-    )
-    .context(h!())?;
+    let chunks =
+        inbox_report_period_chunks(&request, report_settings.chunking_hours)
+            .context(h!())?;
     let analytics_req = &request;
     let postgres_req = &request;
     let analytics_chunks = &chunks;
@@ -348,15 +346,10 @@ async fn load_digest_messages_chunks(
             chunk.end
         );
         let chunk_req = inbox_report_chunk_req(req, chunk);
-        for (id, message) in load_digest_messages(
-            dbx,
-            login,
-            env,
-            &chunk_req,
-            chunk.end,
-        )
-        .await
-        .context(h!())?
+        for (id, message) in
+            load_digest_messages(dbx, login, env, &chunk_req, chunk.end)
+                .await
+                .context(h!())?
         {
             messages.entry(id).or_insert(message);
         }

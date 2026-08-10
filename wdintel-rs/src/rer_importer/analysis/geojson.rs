@@ -68,12 +68,10 @@ pub(crate) async fn rer_analysis_geojson_bytes(
     env: &Env,
     req: AnalysisStatsReq,
 ) -> Result<Vec<u8>, AppError> {
-    let dt_since =
-        dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
-    let dt_since_minus_24h = dt_from_millis(
-        req.since_date_inclusive_ms - 24 * 60 * 60 * 1000,
-    )
-    .context(h!())?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_since_minus_24h =
+        dt_from_millis(req.since_date_inclusive_ms - 24 * 60 * 60 * 1000)
+            .context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let include_peleng_locations =
@@ -173,15 +171,11 @@ pub(crate) async fn rer_analysis_geojson_bytes(
                 )
                 .filter(
                     sigint_inbox_item::Column::Datetime
-                        .gte(
-                            dt_from_millis(chunk.since_ms).context(h!())?,
-                        ),
+                        .gte(dt_from_millis(chunk.since_ms).context(h!())?),
                 )
                 .filter(
                     sigint_inbox_item::Column::Datetime
-                        .lt(
-                            dt_from_millis(chunk.till_ms).context(h!())?,
-                        ),
+                        .lt(dt_from_millis(chunk.till_ms).context(h!())?),
                 )
                 .filter(signal_message::Column::Deleted.eq(false))
                 .into_model::<CallsignInboxItem>()
@@ -347,10 +341,10 @@ async fn load_geojson_report_items(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .filter(sigint_inbox_item::Column::Lat.is_not_null())
         .filter(sigint_inbox_item::Column::Lng.is_not_null());
-    let items = filter_selected_freqs(items, &req.selected_freqs)
-        .context(h!())?;
-    let items = filter_selected_posts(items, &req.selected_posts)
-        .context(h!())?;
+    let items =
+        filter_selected_freqs(items, &req.selected_freqs).context(h!())?;
+    let items =
+        filter_selected_posts(items, &req.selected_posts).context(h!())?;
     let items = filter_selected_groups_and_senders_with_access(
         items,
         &req.selected_groups,

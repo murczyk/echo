@@ -1436,7 +1436,8 @@ pub async fn report_xlsx_kind_pelengs(
         crate::rer_importer::report_chunking::inbox_report_period_chunks(
             &inbox_req,
             report_settings.chunking_hours,
-        )?;
+        )
+        .context(h!())?;
     let mut messages_by_id = BTreeMap::new();
     for chunk in chunks {
         let chunk_req =

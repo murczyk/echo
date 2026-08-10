@@ -115,7 +115,8 @@ async fn load_tag_report_data(
             .await
             .c(h!())?;
     let chunks =
-        inbox_report_period_chunks(req, report_settings.chunking_hours)?;
+        inbox_report_period_chunks(req, report_settings.chunking_hours)
+            .context(h!())?;
     let mut important_ids = BTreeSet::new();
     let mut messages_by_id = BTreeMap::new();
     for (index, chunk) in chunks.iter().copied().enumerate() {
@@ -128,7 +129,7 @@ async fn load_tag_report_data(
             chunk.end
         );
         let chunk_req = inbox_report_chunk_req(req, chunk);
-        let chunk_period = tag_report_period(&chunk_req)?;
+        let chunk_period = tag_report_period(&chunk_req).context(h!())?;
         let txn = read_db
             .begin_with_config(
                 Some(IsolationLevel::RepeatableRead),
@@ -174,7 +175,9 @@ async fn load_tag_report_snapshot_txn(
         .await
         .c(h!())?;
     let candidates =
-        load_tag_report_candidates(txn, login, env, req, period_end).await?;
+        load_tag_report_candidates(txn, login, env, req, period_end)
+            .await
+            .context(h!())?;
     let message_ids: Vec<i64> =
         candidates.iter().map(|message| message.id).collect();
     let important_ids = load_tag_report_important_ids(
@@ -184,18 +187,28 @@ async fn load_tag_report_snapshot_txn(
         &message_ids,
         period,
     )
-    .await?;
-    let signal_messages =
-        load_tag_report_signal_messages(txn, &message_ids).await?;
-    let inbox_items = load_tag_report_inbox_items(txn, &message_ids).await?;
+    .await
+    .context(h!())?;
+    let signal_messages = load_tag_report_signal_messages(txn, &message_ids)
+        .await
+        .context(h!())?;
+    let inbox_items = load_tag_report_inbox_items(txn, &message_ids)
+        .await
+        .context(h!())?;
     let datasources =
-        load_tag_report_datasources(txn, signal_messages.values()).await?;
+        load_tag_report_datasources(txn, signal_messages.values())
+            .await
+            .context(h!())?;
     let own_comments =
-        load_tag_report_comments(txn, &message_ids, Some(&login_ids)).await?;
+        load_tag_report_comments(txn, &message_ids, Some(&login_ids))
+            .await
+            .context(h!())?;
     let report_comments = if req.report_tags_only_this_unit.is_some() {
         own_comments.clone()
     } else {
-        load_tag_report_comments(txn, &message_ids, None).await?
+        load_tag_report_comments(txn, &message_ids, None)
+            .await
+            .context(h!())?
     };
     Ok(TagReportSnapshot {
         important_ids,

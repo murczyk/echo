@@ -12,6 +12,7 @@ use crate::rer_importer::report_chunking::{
 use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::types::{Env, ShortContext};
 use crate::utils::{dt_from_millis, dt_zoned_from_millis};
+use anyhow::Context;
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Utc};
 use docx_rs::{
     AlignmentType, BreakType, Docx, LineSpacing, PageMargin, Paragraph, Run,
@@ -566,7 +567,8 @@ async fn load_candidate_item_ids(
             .await
             .c(h!())?;
     let chunks =
-        inbox_report_period_chunks(&req.req, report_settings.chunking_hours)?;
+        inbox_report_period_chunks(&req.req, report_settings.chunking_hours)
+            .context(h!())?;
     let mut item_ids = BTreeSet::new();
     for (index, chunk) in chunks.iter().copied().enumerate() {
         info!(
@@ -589,7 +591,8 @@ async fn load_candidate_item_ids(
                 require_network_link,
                 require_non_empty_comments,
             )
-            .await?,
+            .await
+            .context(h!())?,
         );
     }
     Ok(item_ids.into_iter().collect())
@@ -639,17 +642,21 @@ fn apply_candidate_item_filters(
 ) -> Result<Select<signal_message::Entity>, AppError> {
     let candidate_timestamp = candidate_report_timestamp_expr();
     if let Some(since_ms) = since_ms {
-        query = query
-            .filter(candidate_timestamp.clone().gte(dt_from_millis(since_ms)?));
+        query = query.filter(
+            candidate_timestamp
+                .clone()
+                .gte(dt_from_millis(since_ms).context(h!())?),
+        );
     }
     if let Some(till_ms) = till_ms {
-        query =
-            match period_end {
-                ReportPeriodEnd::Inclusive => query
-                    .filter(candidate_timestamp.lte(dt_from_millis(till_ms)?)),
-                ReportPeriodEnd::NonInclusive => query
-                    .filter(candidate_timestamp.lt(dt_from_millis(till_ms)?)),
-            };
+        query = match period_end {
+            ReportPeriodEnd::Inclusive => query.filter(
+                candidate_timestamp.lte(dt_from_millis(till_ms).context(h!())?),
+            ),
+            ReportPeriodEnd::NonInclusive => query.filter(
+                candidate_timestamp.lt(dt_from_millis(till_ms).context(h!())?),
+            ),
+        };
     }
     if require_network_link {
         query = query.filter(item_network_link_exists());

@@ -146,7 +146,8 @@ async fn collect_report_125_data(
             .await
             .c(h!())?;
     let chunks =
-        inbox_report_period_chunks(&inbox_req, report_settings.chunking_hours)?;
+        inbox_report_period_chunks(&inbox_req, report_settings.chunking_hours)
+            .context(h!())?;
     let mut messages_by_id = BTreeMap::new();
     for (index, chunk) in chunks.iter().copied().enumerate() {
         info!(
@@ -167,7 +168,11 @@ async fn collect_report_125_data(
         }
     }
     let own_datasource_ids = if req.report_tags_only_this_unit == Some(true) {
-        Some(load_report_125_datasource_ids(dbx, logins).await?)
+        Some(
+            load_report_125_datasource_ids(dbx, logins)
+                .await
+                .context(h!())?,
+        )
     } else {
         None
     };

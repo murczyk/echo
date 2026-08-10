@@ -193,10 +193,10 @@ async fn load_kmz_report_items(
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .filter(sigint_inbox_item::Column::Lat.is_not_null())
         .filter(sigint_inbox_item::Column::Lng.is_not_null());
-    let items = filter_selected_freqs(items, &req.selected_freqs)
-        .context(h!())?;
-    let items = filter_selected_posts(items, &req.selected_posts)
-        .context(h!())?;
+    let items =
+        filter_selected_freqs(items, &req.selected_freqs).context(h!())?;
+    let items =
+        filter_selected_posts(items, &req.selected_posts).context(h!())?;
     let items = filter_selected_groups_and_senders_with_access(
         items,
         &req.selected_groups,

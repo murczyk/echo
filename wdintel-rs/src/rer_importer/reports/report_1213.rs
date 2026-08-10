@@ -294,7 +294,8 @@ async fn collect_report_1213_data(
             .await
             .c(h!())?;
     let chunks =
-        inbox_report_period_chunks(&inbox_req, report_settings.chunking_hours)?;
+        inbox_report_period_chunks(&inbox_req, report_settings.chunking_hours)
+            .context(h!())?;
     let mut messages_by_id = BTreeMap::new();
     for (index, chunk) in chunks.iter().copied().enumerate() {
         info!(
@@ -308,13 +309,18 @@ async fn collect_report_1213_data(
         let chunk_req = inbox_report_chunk_req(&inbox_req, chunk);
         for (id, message) in
             load_report_1213_messages(dbx, login, env, &chunk_req, chunk.end)
-                .await?
+                .await
+                .context(h!())?
         {
             messages_by_id.entry(id).or_insert(message);
         }
     }
     let own_datasource_ids = if req.report_tags_only_this_unit == Some(true) {
-        Some(load_report_1213_datasource_ids(dbx, logins).await?)
+        Some(
+            load_report_1213_datasource_ids(dbx, logins)
+                .await
+                .context(h!())?,
+        )
     } else {
         None
     };
@@ -505,10 +511,10 @@ async fn load_report_1213_message_datetimes(
             let Some(datetime_utc) = item.datetime else {
                 continue;
             };
-            let datetime = dt_zoned_from_millis(
-                datetime_utc.and_utc().timestamp_millis(),
-            )?
-            .naive_local();
+            let datetime =
+                dt_zoned_from_millis(datetime_utc.and_utc().timestamp_millis())
+                    .context(h!())?
+                    .naive_local();
             datetimes.insert(item.id, datetime);
         }
     }

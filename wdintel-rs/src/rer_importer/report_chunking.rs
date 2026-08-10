@@ -1,4 +1,5 @@
 use crate::error::AppError;
+use crate::h;
 use crate::rer_importer::types::{InboxMessagesReq, InboxMessagesSortBy};
 use crate::types::Env;
 use crate::utils::dt_from_millis;
@@ -95,13 +96,13 @@ pub fn inbox_report_period_chunks(
             msg: "Until date must be specified".to_string(),
         })
         .context(h!())?;
-    report_period_chunks(
+    Ok(report_period_chunks(
         since_ms,
         till_ms,
         chunking_hours,
         ReportPeriodEnd::Inclusive,
     )
-    .context(h!())
+    .context(h!())?)
 }
 
 pub fn inbox_report_chunk_req(

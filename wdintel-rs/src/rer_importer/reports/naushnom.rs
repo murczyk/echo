@@ -237,8 +237,9 @@ pub async fn get_inbox_messages_report_network(
         crate::system_settings::get_report_generation_settings(&env.dbx)
             .await
             .c(h!())?;
-    let chunks = inbox_report_period_chunks(req, report_settings.chunking_hours)
-        .context(h!())?;
+    let chunks =
+        inbox_report_period_chunks(req, report_settings.chunking_hours)
+            .context(h!())?;
     let mut networks = HashMap::new();
     for (index, chunk) in chunks.iter().copied().enumerate() {
         info!(
@@ -411,26 +412,18 @@ async fn get_inbox_messages_report_network_chunk(
     if let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms {
         q = q.filter(
             sigint_inbox_item::Column::Datetime
-                .gte(
-                    dt_from_millis(since_date_inclusive_ms).context(h!())?,
-                ),
+                .gte(dt_from_millis(since_date_inclusive_ms).context(h!())?),
         );
     }
     if let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms {
         q = match period_end {
-            ReportPeriodEnd::Inclusive => q.filter(
-                sigint_inbox_item::Column::Datetime
-                    .lte(
-                        dt_from_millis(till_date_inclusive_ms)
-                            .context(h!())?,
-                    ),
-            ),
+            ReportPeriodEnd::Inclusive => q
+                .filter(sigint_inbox_item::Column::Datetime.lte(
+                    dt_from_millis(till_date_inclusive_ms).context(h!())?,
+                )),
             ReportPeriodEnd::NonInclusive => q.filter(
                 sigint_inbox_item::Column::Datetime
-                    .lt(
-                        dt_from_millis(till_date_inclusive_ms)
-                            .context(h!())?,
-                    ),
+                    .lt(dt_from_millis(till_date_inclusive_ms).context(h!())?),
             ),
         };
     }

@@ -71,7 +71,8 @@ pub async fn report_xlsx_kind_senders(
             .await
             .c(h!())?;
     let chunks =
-        inbox_report_period_chunks(&req, report_settings.chunking_hours)?;
+        inbox_report_period_chunks(&req, report_settings.chunking_hours)
+            .context(h!())?;
     let analytics_req = &req;
     let postgres_req = &req;
     let analytics_chunks = &chunks;
@@ -170,7 +171,9 @@ async fn load_message_stats_chunks(
         );
         let chunk_req = inbox_report_chunk_req(req, chunk);
         messages.extend(
-            load_message_stats(dbx, login, env, &chunk_req, chunk.end).await?,
+            load_message_stats(dbx, login, env, &chunk_req, chunk.end)
+                .await
+                .context(h!())?,
         );
     }
     Ok(messages)
