@@ -32,8 +32,35 @@ export type CachedDocumentResponse = {
   contentLength: number | null;
 };
 
-const DOCUMENT_CACHE_LIMIT = 50;
+export const DOCUMENT_CACHE_LIMIT = 50;
+export const DOCUMENT_CACHE_MAX_BYTES = 32 * 1024 * 1024;
 const documentResponseCache = new Map<string, CachedDocumentResponse>();
+let documentResponseCacheBytes = 0;
+
+function deleteCachedDocumentResponse(href: string): boolean {
+  const entry = documentResponseCache.get(href);
+  if (entry == null) return false;
+  documentResponseCache.delete(href);
+  documentResponseCacheBytes -= entry.buffer.byteLength;
+  return true;
+}
+
+function cacheDocumentResponse(href: string, entry: CachedDocumentResponse): void {
+  deleteCachedDocumentResponse(href);
+
+  if (entry.buffer.byteLength > DOCUMENT_CACHE_MAX_BYTES) return;
+
+  while (
+    documentResponseCache.size >= DOCUMENT_CACHE_LIMIT ||
+    documentResponseCacheBytes + entry.buffer.byteLength > DOCUMENT_CACHE_MAX_BYTES
+  ) {
+    const oldestKey = documentResponseCache.keys().next().value;
+    if (oldestKey === undefined || !deleteCachedDocumentResponse(oldestKey)) break;
+  }
+
+  documentResponseCache.set(href, entry);
+  documentResponseCacheBytes += entry.buffer.byteLength;
+}
 
 export async function fetchCachedDocumentResponse(
   href: string,
@@ -49,6 +76,8 @@ export async function fetchCachedDocumentResponse(
     ) {
       throw new Error(tooLargeError);
     }
+    documentResponseCache.delete(href);
+    documentResponseCache.set(href, cached);
     return {
       buffer: cached.buffer.slice(0),
       contentType: cached.contentType,
@@ -88,14 +117,7 @@ export async function fetchCachedDocumentResponse(
     contentLength,
   };
 
-  if (documentResponseCache.size >= DOCUMENT_CACHE_LIMIT) {
-    const oldestKey = documentResponseCache.keys().next().value;
-    if (oldestKey !== undefined) {
-      documentResponseCache.delete(oldestKey);
-    }
-  }
-
-  documentResponseCache.set(href, entry);
+  cacheDocumentResponse(href, entry);
 
   return {
     buffer: buffer.slice(0),
