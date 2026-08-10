@@ -48,6 +48,8 @@
 
 ## Migrations
 
+- Before writing a migration, review comparable existing migrations and follow
+  their established SQL structure and code conventions
 - When you want to change the database schema -- create new file in
   `echo-migration/src` and use the style of one of existing files
 - make pure sql migrations, see
