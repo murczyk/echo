@@ -41,6 +41,25 @@ iggy_default_rev := "k-bx/2026-06-18-poll-option"
 default:
     @just --list
 
+# Send a Mattermost notification using the webhook configured in .env
+notify text:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [[ -f .env ]]; then
+        set -a
+        source .env
+        set +a
+    fi
+
+    : "${MATTERMOST_NOTIFICATION_HOOK:?MATTERMOST_NOTIFICATION_HOOK is not set in .env}"
+    jq -nc --arg text "$1" '{text: $text}' \
+        | curl --fail-with-body --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data-binary @- \
+            "$MATTERMOST_NOTIFICATION_HOOK"
+    echo
+
 prepare-workspace:
     #!/usr/bin/env bash
     set -euo pipefail
