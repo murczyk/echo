@@ -33,7 +33,8 @@ const hoisted = vi.hoisted(() => ({
   savedFilterUpsert: vi.fn(),
   copyTextToClipboard: vi.fn(),
   requestValidatedInboxCount: vi.fn(),
-  loadFeedNewerMessages: vi.fn(() => Promise.resolve()),
+  catchUpFeedUnreadToTail: vi.fn(),
+  loadFeedNewerMessages: vi.fn(() => Promise.resolve({ ok: true, addedCount: 0 })),
   loadFeedInitialMessages: vi.fn(() => Promise.resolve()),
   showArrowResult: vi.fn(),
   setWatchModeByFeedId: vi.fn(),
@@ -188,6 +189,7 @@ function TestHarness(props: {
     setWatchModeByFeedId: hoisted.setWatchModeByFeedId,
     setLoadingNewerFeedIds: hoisted.setLoadingNewerFeedIds,
     requestValidatedInboxCount: hoisted.requestValidatedInboxCount,
+    catchUpFeedUnreadToTail: hoisted.catchUpFeedUnreadToTail,
     authUserName: props.authUserName ?? null,
     currentUserOrganismId: props.currentUserOrganismId ?? null,
     profiles: {
@@ -257,7 +259,7 @@ describe('useRerDutyMessageActions', () => {
       cursorId: 10,
       hasItems: true,
     });
-    hoisted.loadFeedNewerMessages.mockResolvedValue(undefined);
+    hoisted.loadFeedNewerMessages.mockResolvedValue({ ok: true, addedCount: 0 });
     hoisted.loadFeedInitialMessages.mockResolvedValue(undefined);
     hoisted.showArrowResult.mockReset();
     hoisted.beginFollowTail.mockReset();
@@ -316,6 +318,47 @@ describe('useRerDutyMessageActions', () => {
     expect(hoisted.loadFeedNewerMessages).toHaveBeenCalledWith(
       'mf-0',
       expect.objectContaining({ scrollToEndAfterLoad: true }),
+    );
+    expect(hoisted.catchUpFeedUnreadToTail).toHaveBeenCalledWith('mf-0');
+  });
+
+  it('does not clear unread state when arrow newer load fails', async () => {
+    hoisted.requestValidatedInboxCount.mockResolvedValueOnce({
+      feedId: 'mf-0',
+      quantity: 3,
+      cursorId: 10,
+      hasItems: true,
+    });
+    hoisted.loadFeedNewerMessages.mockResolvedValueOnce({ ok: false, addedCount: 0 });
+    const columnRefsRef: MutableRefObject<
+      Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+    > = {
+      current: {
+        'mf-0': { scrollToEnd: vi.fn() },
+      },
+    };
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          columnRefsRef={columnRefsRef}
+          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleArrowClick('mf-0');
+    });
+
+    expect(hoisted.catchUpFeedUnreadToTail).not.toHaveBeenCalled();
+    expect(hoisted.showArrowResult).toHaveBeenCalledWith(
+      'mf-0',
+      'Не вдалося перевірити нові повідомлення',
     );
   });
 
@@ -432,6 +475,7 @@ describe('useRerDutyMessageActions', () => {
     expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
     expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth');
     expect(hoisted.showArrowResult).toHaveBeenCalledWith('mf-0', 'Немає нових повідомлень');
+    expect(hoisted.catchUpFeedUnreadToTail).toHaveBeenCalledWith('mf-0');
     expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
   });
 
@@ -649,6 +693,41 @@ describe('useRerDutyMessageActions', () => {
     expect(apiRef.current!.messageFeeds).toBe(stateBefore);
     expect(apiRef.current!.messageFeeds[0]).toBe(feedBefore);
     expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(5);
+  });
+
+  it('clears scrolled-past windowed unread when reporting atBottom', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[
+            buildFeed({
+              items: Array.from({ length: 40 }, (_, index) => [
+                index + 21,
+                minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+              ]),
+              readIds: new Set<number>(Array.from({ length: 40 }, (_, index) => index + 21)),
+              windowedUnreadItems: new Map(
+                Array.from({ length: 20 }, (_, index) => [index + 1, (index + 1) * 100]),
+              ),
+              unreadCount: 23,
+            }),
+          ]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      apiRef.current!.handleVisibleMessageIds('mf-0')(60, { atBottom: true });
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.windowedUnreadItems.size).toBe(0);
+    expect(feed.unreadCount).toBe(3);
   });
 
   it('decrements unreadCount only when deleting an unread message', async () => {

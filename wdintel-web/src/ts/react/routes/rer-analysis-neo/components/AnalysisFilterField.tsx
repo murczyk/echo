@@ -2,6 +2,7 @@ import { Box, Chip, TextField, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 import { ELLIPSIS } from '../../../utils/misc';
 import { PowerAutocomplete } from '../../../components/PowerAutocomplete';
+import { normalizeSearchValue } from '../../../utils/search-filter';
 
 export type AnalysisFilterOption =
   | string
@@ -31,6 +32,7 @@ type Props = {
   deferredCommit?: boolean;
   preserveSelectionOrder?: boolean;
   preserveSelectedOptionValuesOnChange?: boolean;
+  preserveInputOnSelect?: boolean;
   bulkPaste?: boolean;
   bulkPasteSeparators?: string[];
   bulkPasteMenuLabel?: string;
@@ -153,6 +155,15 @@ function buildCommittedValues(
   return committedValues;
 }
 
+function filterOptionsByInput(
+  options: AutocompleteOption[],
+  inputValue: string,
+): AutocompleteOption[] {
+  const normalizedInput = normalizeSearchValue(inputValue);
+  if (normalizedInput === '') return options;
+  return options.filter((option) => normalizeSearchValue(option.label).includes(normalizedInput));
+}
+
 export function AnalysisFilterField({
   label,
   options,
@@ -164,6 +175,7 @@ export function AnalysisFilterField({
   deferredCommit = false,
   preserveSelectionOrder = false,
   preserveSelectedOptionValuesOnChange = false,
+  preserveInputOnSelect = false,
   bulkPaste = false,
   bulkPasteSeparators,
   bulkPasteMenuLabel,
@@ -243,6 +255,11 @@ export function AnalysisFilterField({
       getOptionLabel={(option) => option.label}
       getOptionKey={(option) => option.key}
       isOptionEqualToValue={(option, selected) => option.value === selected.value}
+      filterOptions={
+        preserveInputOnSelect
+          ? (availableOptions) => filterOptionsByInput(availableOptions, inputValue)
+          : undefined
+      }
       bulkPaste={bulkPaste}
       bulkPasteSeparators={bulkPasteSeparators}
       bulkPasteMenuLabel={bulkPasteMenuLabel}
@@ -261,6 +278,9 @@ export function AnalysisFilterField({
       }}
       onClose={() => {
         setOpen(false);
+        if (preserveInputOnSelect) {
+          clearInputValue();
+        }
         if (deferredCommit) {
           if (
             draftValueRef.current.length !== lastCommittedValueRef.current.length ||
@@ -273,7 +293,10 @@ export function AnalysisFilterField({
         }
       }}
       onInputChange={(_event, nextInputValue, reason) => {
-        if (reason === 'reset') {
+        if (
+          reason === 'reset' ||
+          (preserveInputOnSelect && (reason === 'selectOption' || reason === 'removeOption'))
+        ) {
           return;
         }
         setInputValue(nextInputValue);
@@ -308,7 +331,7 @@ export function AnalysisFilterField({
         } else {
           commitValue(nextValues);
         }
-        if (reason !== 'blur') {
+        if (reason === 'clear' || (!preserveInputOnSelect && reason !== 'blur')) {
           clearInputValue();
         }
       }}

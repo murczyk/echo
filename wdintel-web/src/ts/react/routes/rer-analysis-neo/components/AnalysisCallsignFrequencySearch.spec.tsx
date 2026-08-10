@@ -75,7 +75,7 @@ describe('AnalysisCallsignFrequencySearch', () => {
         ?.click();
     });
 
-    expect(onSearch).toHaveBeenCalledWith(['ALPHA', 'BRAVO'], 2);
+    expect(onSearch).toHaveBeenCalledWith(['alpha', 'bravo'], 2);
     expect(container.textContent).toContain('123.45');
     expect(container.textContent).toContain('Повідомлень: 7');
 

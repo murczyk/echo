@@ -272,7 +272,9 @@ fn build_network_freqs_query(
     let join_condition =
         build_network_freq_join_condition(filter, true).c(h!())?;
     let callsigns_expr: SimpleExpr = if include_callsigns {
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Callsigns))
+        Expr::cust(
+            "(select coalesce(jsonb_agg(siic.callsign order by siic.ordering, siic.id), '[]'::jsonb) from sigint_inbox_item_callsign siic where siic.sigint_inbox_item_id = sigint_inbox_item.id and not siic.deleted)",
+        )
     } else {
         Expr::cust("NULL")
     };

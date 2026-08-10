@@ -303,6 +303,7 @@ function buildProps(
       savedFilters: [],
       tagsMap: {},
       tagsOrder: [],
+      unitsMap: {},
       applySavedFilter: vi.fn(),
       deleteLoadedSavedFilter: vi.fn(),
       renameExistingSavedFilter: vi.fn(),
@@ -991,12 +992,12 @@ describe('AnalysisFiltersPanel', () => {
       .find((callProps) => callProps.label === 'Позивні');
 
     expect(callsignsField?.options).toEqual([
-      { value: 'ALPHA', label: 'ALPHA', count: 2, values: ['alpha', 'Alpha', 'ALPHA'] },
+      { value: 'alpha', label: 'ALPHA', count: 2, values: ['alpha'] },
     ]);
     expect(callsignsField?.value).toEqual(['Bravo']);
 
     callsignsField?.onChange(['alpha', 'ALPHA']);
-    expect(updateQueryState).toHaveBeenCalledWith({ callsignsSelected: ['alpha', 'ALPHA'] });
+    expect(updateQueryState).toHaveBeenCalledWith({ callsignsSelected: ['alpha'] });
   });
 
   it('wires checkbox and switch changes into the analysis callbacks', async () => {

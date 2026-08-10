@@ -10,7 +10,10 @@ use crate::error::AppError;
 use crate::event_stream::fanout_mult;
 use crate::event_stream::types::{EventMsg, EventType};
 use crate::rer_importer::analysis::{
-    analytics_inbox_request_supported, with_analytics_read_fallback,
+    analytics_inbox_candidates_supported,
+    analytics_inbox_initial_unit_candidates_supported,
+    analytics_inbox_request_supported, map_postgres_runtime_timeout,
+    with_analytics_read_fallback,
 };
 use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
@@ -534,9 +537,12 @@ async fn inbox_messages(
     } else {
         None
     };
-    let inbox_items = get_inbox_messages(&login, &logins, &env, &req)
-        .await
-        .context(h!())?;
+    let inbox_items = get_inbox_messages_with_analytics_candidates(
+        &login, &logins, &env, &req,
+    )
+    .await
+    .map_err(|error| map_postgres_runtime_timeout(error, "inbox messages"))
+    .context(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
     let callsigns: Vec<CallsignInfoRes> =
         load_inbox_callsigns(&inbox_items, &env).await.c(h!())?;
@@ -575,6 +581,159 @@ async fn inbox_messages(
         freq_pelengs_summary,
         page_limit,
     }))
+}
+
+async fn rer_duty_neo_adaptive_lower_bound(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Option<NaiveDateTime> {
+    if !rer_duty_neo_adaptive_cutoff_is_eligible(req) {
+        return None;
+    }
+    let now = Utc::now().naive_utc();
+    if inbox_request_has_unit_filters(req) {
+        return Some(log_rer_duty_neo_fallback_cutoff(now, "unit_filter"));
+    }
+    let accessible_groups =
+        match crate::messenger::group::get_identity_sigint_groups(
+            &env.dbx, login,
+        )
+        .await
+        {
+            Ok(groups) => groups,
+            Err(_error) => {
+                warn!(
+                    target: "rer_duty_neo_adaptive_cutoff",
+                    "rer_duty_neo_adaptive_cutoff_access_failed page_id=rer-duty-neo access_failed=true"
+                );
+                return Some(log_rer_duty_neo_fallback_cutoff(
+                    now,
+                    "access_failure",
+                ));
+            }
+        };
+    let effective_groups =
+        effective_inbox_groups(&req.selected_groups, &accessible_groups);
+    let (stats_since, stats_till) = match rer_duty_neo_stats_window(now) {
+        Ok(window) => window,
+        Err(_error) => {
+            warn!(
+                target: "rer_duty_neo_adaptive_cutoff",
+                "rer_duty_neo_adaptive_cutoff_stats_window_failed page_id=rer-duty-neo stats_window_failed=true"
+            );
+            return Some(log_rer_duty_neo_fallback_cutoff(
+                now,
+                "stats_window_failure",
+            ));
+        }
+    };
+    let traffic = crate::stats::read_total_stats_aggregated_for_env(
+        env,
+        effective_groups.clone(),
+        stats_since,
+        stats_till,
+    )
+    .await;
+    rer_duty_neo_adaptive_cutoff_from_stats(
+        traffic,
+        now,
+        effective_groups.len(),
+    )
+}
+
+fn rer_duty_neo_stats_window(
+    now: NaiveDateTime,
+) -> anyhow::Result<(NaiveDateTime, NaiveDateTime)> {
+    let till = crate::stats::round_to_5min(now)?;
+    Ok((
+        till - Duration::hours(
+            RER_DUTY_NEO_ADAPTIVE_CUTOFF_TRAFFIC_LOOKBACK_HOURS,
+        ),
+        till,
+    ))
+}
+
+fn rer_duty_neo_adaptive_cutoff_is_eligible(req: &InboxMessagesReq) -> bool {
+    req.page_id.as_deref() == Some("rer-duty-neo")
+        && inbox_request_is_unbounded(req)
+        && req.load_latest == Some(true)
+}
+
+fn inbox_request_has_unit_filters(req: &InboxMessagesReq) -> bool {
+    req.selected_units
+        .as_ref()
+        .is_some_and(|units| !units.is_empty())
+        || req
+            .denied_units
+            .as_ref()
+            .is_some_and(|units| !units.is_empty())
+}
+
+fn effective_inbox_groups(
+    selected_groups: &Option<Vec<String>>,
+    accessible_groups: &[String],
+) -> Vec<String> {
+    let selected_groups = selected_groups
+        .as_ref()
+        .filter(|groups| !groups.is_empty())
+        .map(|groups| groups.iter().collect::<BTreeSet<_>>());
+    let effective_groups = selected_groups.map(|selected_groups| {
+        accessible_groups
+            .iter()
+            .filter(|group| selected_groups.contains(group))
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+    effective_groups
+        .filter(|groups| !groups.is_empty())
+        .unwrap_or_else(|| accessible_groups.to_vec())
+}
+
+fn rer_duty_neo_adaptive_cutoff_from_stats(
+    traffic: anyhow::Result<i64>,
+    now: NaiveDateTime,
+    effective_group_count: usize,
+) -> Option<NaiveDateTime> {
+    let traffic = match traffic {
+        Ok(traffic) => traffic,
+        Err(_error) => {
+            warn!(
+                target: "rer_duty_neo_adaptive_cutoff",
+                "rer_duty_neo_adaptive_cutoff_stats_failed page_id=rer-duty-neo stats_failed=true"
+            );
+            return Some(log_rer_duty_neo_fallback_cutoff(
+                now,
+                "stats_failure",
+            ));
+        }
+    };
+    if traffic <= RER_DUTY_NEO_ADAPTIVE_CUTOFF_TRAFFIC_THRESHOLD {
+        return None;
+    }
+    let cutoff = now - Duration::days(RER_DUTY_NEO_ADAPTIVE_CUTOFF_DAYS);
+    warn!(
+        target: "rer_duty_neo_adaptive_cutoff",
+        "rer_duty_neo_adaptive_cutoff_applied page_id=rer-duty-neo three_day_count={} cutoff_timestamp={} effective_group_count={}",
+        traffic,
+        cutoff,
+        effective_group_count
+    );
+    Some(cutoff)
+}
+
+fn log_rer_duty_neo_fallback_cutoff(
+    now: NaiveDateTime,
+    reason: &str,
+) -> NaiveDateTime {
+    let cutoff = now - Duration::days(RER_DUTY_NEO_ADAPTIVE_CUTOFF_DAYS);
+    warn!(
+        target: "rer_duty_neo_adaptive_cutoff",
+        "rer_duty_neo_adaptive_cutoff_applied page_id=rer-duty-neo reason={} cutoff_timestamp={}",
+        reason,
+        cutoff,
+    );
+    cutoff
 }
 
 fn validate_agent_inbox_request(
@@ -697,6 +856,21 @@ async fn query_inbox_digest(
         query_res.try_get("", "count")?,
         query_res.try_get("", "first_element_ts")?,
     ))
+}
+
+async fn query_inbox_candidate_ids(
+    db: DatabaseConnection,
+    query: String,
+) -> Result<Vec<i64>, AppError> {
+    let rows = db
+        .query_all_raw(Statement::from_string(DatabaseBackend::Postgres, query))
+        .await
+        .context(h!())?;
+    let mut ids = Vec::with_capacity(rows.len());
+    for row in rows {
+        ids.push(row.try_get("", "id")?);
+    }
+    Ok(ids)
 }
 
 async fn query_inbox_digest_singleflight<F, Fut>(
@@ -2208,7 +2382,334 @@ pub async fn get_inbox_messages(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    get_inbox_messages_with_conn(&env.dbx, login, logins, env, req).await
+    get_inbox_messages_with_internal_lower_bound(login, logins, env, req, None)
+        .await
+}
+
+async fn get_inbox_messages_with_analytics_candidates(
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    if analytics_inbox_initial_unit_candidates_supported(req) {
+        if let Some(messages) =
+            try_load_initial_unit_inbox_hybrid(login, logins, env, req).await?
+        {
+            return Ok(messages);
+        }
+    } else {
+        if let Some(candidate_ids) =
+            load_analytics_inbox_candidate_ids(login, env, req).await?
+        {
+            if let Some(messages) = hydrate_analytics_inbox_candidates(
+                login,
+                logins,
+                env,
+                req,
+                &candidate_ids,
+            )
+            .await?
+            {
+                return Ok(messages);
+            }
+        }
+    }
+    let internal_lower_bound =
+        rer_duty_neo_adaptive_lower_bound(login, env, req).await;
+    get_inbox_messages_with_internal_lower_bound(
+        login,
+        logins,
+        env,
+        req,
+        internal_lower_bound,
+    )
+    .await
+}
+
+async fn try_load_initial_unit_inbox_hybrid(
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Option<Vec<(i64, InboxMessage)>>, AppError> {
+    let started = Instant::now();
+    let Some(analytics_ids) =
+        load_analytics_inbox_candidate_ids(login, env, req).await?
+    else {
+        warn!(
+            target: "rer_duty_neo_inbox_route",
+            "rer_duty_neo_inbox_route route=postgres_cutoff analytics_candidates_available=false elapsed_ms={}",
+            started.elapsed().as_millis(),
+        );
+        return Ok(None);
+    };
+    let tail_started = Instant::now();
+    let fresh_tail_ids = match load_postgres_fresh_tail_candidate_ids(
+        login, env, req,
+    )
+    .await
+    {
+        Ok(ids) => ids,
+        Err(_error) => {
+            warn!(
+                target: "rer_duty_neo_inbox_route",
+                "rer_duty_neo_inbox_route route=postgres_cutoff postgres_tail_failed=true analytics_candidate_count={} elapsed_ms={}",
+                analytics_ids.len(),
+                started.elapsed().as_millis(),
+            );
+            return Ok(None);
+        }
+    };
+    let postgres_tail_ms = tail_started.elapsed().as_millis();
+    let analytics_candidate_count = analytics_ids.len();
+    let postgres_tail_candidate_count = fresh_tail_ids.len();
+    let candidate_ids =
+        merge_inbox_candidate_ids(analytics_ids, fresh_tail_ids);
+    let Some(messages) = hydrate_initial_unit_inbox_candidates(
+        login,
+        logins,
+        env,
+        req,
+        &candidate_ids,
+    )
+    .await?
+    else {
+        warn!(
+            target: "rer_duty_neo_inbox_route",
+            "rer_duty_neo_inbox_route route=postgres_cutoff candidate_revalidation_complete=false merged_candidate_count={} elapsed_ms={}",
+            candidate_ids.len(),
+            started.elapsed().as_millis(),
+        );
+        return Ok(None);
+    };
+    info!(
+        target: "rer_duty_neo_inbox_route",
+        "rer_duty_neo_inbox_route route=analytics_hybrid analytics_candidate_count={} postgres_tail_candidate_count={} merged_candidate_count={} result_count={} postgres_tail_ms={} elapsed_ms={}",
+        analytics_candidate_count,
+        postgres_tail_candidate_count,
+        candidate_ids.len(),
+        messages.len(),
+        postgres_tail_ms,
+        started.elapsed().as_millis(),
+    );
+    Ok(Some(messages))
+}
+
+async fn load_postgres_fresh_tail_candidate_ids(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Vec<i64>, AppError> {
+    let freshness_max_age_ms = analytics_freshness_max_age_ms(env);
+    let created_at_lower_bound = analytics_fresh_tail_lower_bound(
+        Utc::now().naive_utc(),
+        freshness_max_age_ms,
+    );
+    let query = build_postgres_fresh_tail_inbox_candidates_query(
+        &env.dbx,
+        login,
+        env,
+        req,
+        created_at_lower_bound,
+    )
+    .await?;
+    query_inbox_candidate_ids(env.dbx.clone(), query).await
+}
+
+fn analytics_fresh_tail_lower_bound(
+    now: NaiveDateTime,
+    freshness_max_age_ms: u64,
+) -> NaiveDateTime {
+    let minimum_ms = u64::try_from(
+        Duration::minutes(RER_DUTY_NEO_ANALYTICS_FRESH_TAIL_MINUTES)
+            .num_milliseconds(),
+    )
+    .unwrap_or_default();
+    let overlap_ms = std::cmp::min(
+        std::cmp::max(freshness_max_age_ms.saturating_mul(2), minimum_ms),
+        i64::MAX as u64,
+    ) as i64;
+    now.checked_sub_signed(Duration::milliseconds(overlap_ms))
+        .unwrap_or(NaiveDateTime::MIN)
+}
+
+fn merge_inbox_candidate_ids(
+    analytics_ids: Vec<i64>,
+    fresh_tail_ids: Vec<i64>,
+) -> Vec<i64> {
+    let mut seen = BTreeSet::new();
+    analytics_ids
+        .into_iter()
+        .chain(fresh_tail_ids)
+        .filter(|id| seen.insert(*id))
+        .collect()
+}
+
+async fn load_analytics_inbox_candidate_ids(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Option<Vec<i64>>, AppError> {
+    let freshness_max_age_ms = analytics_freshness_max_age_ms(env);
+    let analytics_env = env.clone();
+    let analytics_req = req.clone();
+    let login_value = *login;
+    with_analytics_read_fallback(
+        env,
+        "inbox message candidates",
+        analytics_inbox_candidates_supported(req),
+        |db| async move {
+            let query = build_analytics_inbox_candidates_query(
+                &login_value,
+                &analytics_env,
+                &analytics_req,
+                &db,
+                freshness_max_age_ms,
+            )
+            .await?;
+            match query {
+                Some(query) => {
+                    query_inbox_candidate_ids(db, query).await.map(Some)
+                }
+                None => Ok(None),
+            }
+        },
+        |_db| async { Ok(None) },
+    )
+    .await
+}
+
+fn analytics_freshness_max_age_ms(env: &Env) -> u64 {
+    env.config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT)
+}
+
+async fn hydrate_analytics_inbox_candidates(
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    candidate_ids: &[i64],
+) -> Result<Option<Vec<(i64, InboxMessage)>>, AppError> {
+    let query = build_inbox_query_for_candidate_ids(
+        &env.dbx,
+        login,
+        env,
+        req,
+        candidate_ids,
+        true,
+    )
+    .await
+    .context(h!())?;
+    let mut messages = fetch_inbox_messages_with_query(
+        &env.dbx, login, logins, env, req, &query,
+    )
+    .await
+    .context(h!())?;
+    if restore_analytics_candidate_order(&mut messages, candidate_ids) {
+        return Ok(Some(messages));
+    }
+    warn!(
+        target: "analytics_inbox_revalidation",
+        "analytics_inbox_candidate_revalidation_failed candidate_count={} hydrated_count={}; retrying via PostgreSQL",
+        candidate_ids.len(),
+        messages.len()
+    );
+    Ok(None)
+}
+
+async fn hydrate_initial_unit_inbox_candidates(
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    candidate_ids: &[i64],
+) -> Result<Option<Vec<(i64, InboxMessage)>>, AppError> {
+    if candidate_ids.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    let query = build_inbox_query_for_candidate_ids(
+        &env.dbx,
+        login,
+        env,
+        req,
+        candidate_ids,
+        false,
+    )
+    .await
+    .context(h!())?;
+    let mut messages = fetch_inbox_messages_with_query(
+        &env.dbx, login, logins, env, req, &query,
+    )
+    .await
+    .context(h!())?;
+    if !analytics_candidate_revalidation_is_complete(&messages, candidate_ids) {
+        return Ok(None);
+    }
+    retain_latest_inbox_page(&mut messages);
+    Ok(Some(messages))
+}
+
+fn retain_latest_inbox_page<T>(rows: &mut Vec<T>) {
+    if rows.len() > INBOX_MESSAGES_PAGE_LIMIT {
+        rows.drain(..rows.len() - INBOX_MESSAGES_PAGE_LIMIT);
+    }
+}
+
+fn analytics_candidate_revalidation_is_complete<T>(
+    rows: &[(i64, T)],
+    candidate_ids: &[i64],
+) -> bool {
+    rows.len() == candidate_ids.len()
+        && rows.iter().map(|(id, _)| id).collect::<BTreeSet<_>>().len()
+            == candidate_ids.len()
+        && candidate_ids
+            .iter()
+            .all(|id| rows.iter().any(|(row_id, _)| row_id == id))
+}
+
+fn restore_analytics_candidate_order<T>(
+    rows: &mut Vec<(i64, T)>,
+    candidate_ids: &[i64],
+) -> bool {
+    if rows.len() != candidate_ids.len() {
+        return false;
+    }
+    let positions = candidate_ids
+        .iter()
+        .enumerate()
+        .map(|(position, id)| (*id, position))
+        .collect::<HashMap<_, _>>();
+    if positions.len() != candidate_ids.len()
+        || rows.iter().any(|(id, _)| !positions.contains_key(id))
+    {
+        return false;
+    }
+    rows.sort_by_key(|(id, _)| positions[id]);
+    true
+}
+
+async fn get_inbox_messages_with_internal_lower_bound(
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    internal_lower_bound: Option<NaiveDateTime>,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let q = build_inbox_query_with_internal_lower_bound(
+        &env.dbx,
+        login,
+        env,
+        req,
+        internal_lower_bound,
+    )
+    .await
+    .c(h!())?;
+    fetch_inbox_messages_with_query(&env.dbx, login, logins, env, req, &q).await
 }
 
 pub async fn get_inbox_messages_created_between(
@@ -2390,6 +2891,179 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use uuid::Uuid;
+
+    fn rer_duty_neo_latest_req() -> InboxMessagesReq {
+        InboxMessagesReq {
+            page_id: Some("rer-duty-neo".to_string()),
+            load_latest: Some(true),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn adaptive_cutoff_requires_traffic_above_threshold() {
+        let now = NaiveDate::from_ymd_opt(2026, 8, 9)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+
+        assert_eq!(
+            rer_duty_neo_adaptive_cutoff_from_stats(
+                Ok(RER_DUTY_NEO_ADAPTIVE_CUTOFF_TRAFFIC_THRESHOLD),
+                now,
+                2,
+            ),
+            None
+        );
+        assert_eq!(
+            rer_duty_neo_adaptive_cutoff_from_stats(
+                Ok(RER_DUTY_NEO_ADAPTIVE_CUTOFF_TRAFFIC_THRESHOLD + 1),
+                now,
+                2,
+            ),
+            Some(now - Duration::days(RER_DUTY_NEO_ADAPTIVE_CUTOFF_DAYS))
+        );
+        assert_eq!(
+            rer_duty_neo_adaptive_cutoff_from_stats(
+                Err(anyhow::anyhow!("redis unavailable")),
+                now,
+                2,
+            ),
+            Some(now - Duration::days(RER_DUTY_NEO_ADAPTIVE_CUTOFF_DAYS))
+        );
+    }
+
+    #[test]
+    fn adaptive_cutoff_uses_complete_five_minute_stats_buckets() {
+        let now = NaiveDate::from_ymd_opt(2026, 8, 9)
+            .unwrap()
+            .and_hms_milli_opt(12, 7, 41, 123)
+            .unwrap();
+        let till = NaiveDate::from_ymd_opt(2026, 8, 9)
+            .unwrap()
+            .and_hms_opt(12, 5, 0)
+            .unwrap();
+
+        assert_eq!(
+            rer_duty_neo_stats_window(now).unwrap(),
+            (
+                till - Duration::hours(
+                    RER_DUTY_NEO_ADAPTIVE_CUTOFF_TRAFFIC_LOOKBACK_HOURS,
+                ),
+                till,
+            )
+        );
+    }
+
+    #[test]
+    fn adaptive_cutoff_uses_effective_accessible_groups() {
+        let accessible = vec!["group-a".to_string(), "group-b".to_string()];
+
+        assert_eq!(
+            effective_inbox_groups(
+                &Some(vec!["group-b".to_string(), "hidden".to_string()]),
+                &accessible,
+            ),
+            vec!["group-b".to_string()]
+        );
+        assert_eq!(
+            effective_inbox_groups(
+                &Some(vec!["hidden".to_string()]),
+                &accessible
+            ),
+            accessible
+        );
+        assert_eq!(
+            effective_inbox_groups(&Some(vec![]), &accessible),
+            accessible
+        );
+    }
+
+    #[test]
+    fn adaptive_cutoff_only_applies_to_initial_rer_duty_neo_load() {
+        let req = rer_duty_neo_latest_req();
+        assert!(rer_duty_neo_adaptive_cutoff_is_eligible(&req));
+
+        assert!(!rer_duty_neo_adaptive_cutoff_is_eligible(
+            &InboxMessagesReq {
+                page_id: Some("rer-analysis".to_string()),
+                ..req.clone()
+            }
+        ));
+        assert!(!rer_duty_neo_adaptive_cutoff_is_eligible(
+            &InboxMessagesReq {
+                since_date_inclusive_ms: Some(1),
+                ..req.clone()
+            }
+        ));
+        assert!(!rer_duty_neo_adaptive_cutoff_is_eligible(
+            &InboxMessagesReq {
+                since_id_noninclusive: Some(1),
+                ..req
+            }
+        ));
+    }
+
+    #[test]
+    fn initial_unit_filter_fallback_is_detected_without_statistics() {
+        let mut req = rer_duty_neo_latest_req();
+        assert!(!inbox_request_has_unit_filters(&req));
+
+        req.selected_units = Some(vec!["unit".to_string()]);
+        assert!(inbox_request_has_unit_filters(&req));
+
+        req.selected_units = Some(Vec::new());
+        req.denied_units = Some(vec!["unit".to_string()]);
+        assert!(inbox_request_has_unit_filters(&req));
+    }
+
+    #[test]
+    fn analytics_fresh_tail_is_at_least_five_minutes_and_twice_freshness() {
+        let now = NaiveDate::from_ymd_opt(2026, 8, 9)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+
+        assert_eq!(
+            analytics_fresh_tail_lower_bound(now, 90_000),
+            now - Duration::minutes(5)
+        );
+        assert_eq!(
+            analytics_fresh_tail_lower_bound(now, 240_000),
+            now - Duration::minutes(8)
+        );
+    }
+
+    #[test]
+    fn hybrid_candidates_are_deduplicated_revalidated_and_page_limited() {
+        let ids = merge_inbox_candidate_ids(vec![5, 4, 3], vec![6, 5, 4]);
+        assert_eq!(ids, vec![5, 4, 3, 6]);
+        assert!(analytics_candidate_revalidation_is_complete(
+            &[(3, "three"), (4, "four"), (5, "five"), (6, "six")],
+            &ids,
+        ));
+        assert!(!analytics_candidate_revalidation_is_complete(
+            &[(3, "three"), (4, "four"), (5, "five")],
+            &ids,
+        ));
+
+        let mut rows = (1..=INBOX_MESSAGES_PAGE_LIMIT + 3).collect::<Vec<_>>();
+        retain_latest_inbox_page(&mut rows);
+        assert_eq!(
+            rows,
+            (4..=INBOX_MESSAGES_PAGE_LIMIT + 3).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn analytics_candidate_revalidation_restores_order_and_detects_loss() {
+        let mut rows = vec![(2, "two"), (3, "three"), (1, "one")];
+        assert!(restore_analytics_candidate_order(&mut rows, &[3, 1, 2]));
+        assert_eq!(rows, vec![(3, "three"), (1, "one"), (2, "two")]);
+
+        let mut missing = vec![(3, "three"), (1, "one")];
+        assert!(!restore_analytics_candidate_order(&mut missing, &[3, 1, 2]));
+    }
 
     #[tokio::test]
     async fn inbox_count_singleflight_coalesces_and_caches_successes() {
@@ -3682,12 +4356,11 @@ mod tests {
         .await
         .context(h!())?;
 
-        mk_sigint_inbox_item(
+        let inbox_item = mk_sigint_inbox_item(
             &env.dbx,
             sigint_inbox_item::ActiveModel {
                 id: Set(message.id),
                 freq: Set(Some("123.45".to_string())),
-                callsigns: Set(Some(json!(["Alpha"]))),
                 tags: Set(Some(json!([tag.id]))),
                 date: Set(Some(now.date().to_string())),
                 time: Set(Some(now.time().format("%H:%M:%S").to_string())),
@@ -3698,6 +4371,20 @@ mod tests {
         )
         .await
         .context(h!())?;
+
+        if let Some(actor) = tag_logins.first() {
+            crate::inbox::callsigns::sync(
+                &env.dbx,
+                inbox_item.id,
+                crate::inbox::callsigns::InboxItemCallsigns {
+                    primary: vec!["Alpha".to_string()],
+                    alg2: Vec::new(),
+                },
+                actor.id,
+            )
+            .await
+            .context(h!())?;
+        }
 
         for login_model in tag_logins {
             sigint_inbox_item_tag::ActiveModel {

@@ -58,6 +58,22 @@ loadSharedLookupData path =
             { sortBy = Nothing
             , afterUnitId = Nothing
             , beforeUnitId = Nothing
+            , includeInactive = False
+            , filterActive = Nothing
+            , filterText = Nothing
+            , filterName = Nothing
+            , filterCompany = Nothing
+            , filterBattalion = Nothing
+            , filterRegiment = Nothing
+            , filterDivision = Nothing
+            , filterArmy = Nothing
+            , filterMilitaryDistrict = Nothing
+            , filterArmyRegion = Nothing
+            , filterComment = Nothing
+            , filterOrbitNote = Nothing
+            , searchMode = Nothing
+            , limit = Nothing
+            , offset = Nothing
             }
         , E.getNetworksList NetworksLoadedByApi
             { sortBy = Nothing
@@ -82,6 +98,23 @@ loadSharedLookupData path =
             , offset = Nothing
             }
         ]
+
+
+loadReferencedUnitIds : List Int -> Effect Msg
+loadReferencedUnitIds unitIds =
+    if List.isEmpty unitIds then
+        E.none
+
+    else
+        E.getUnitsById ReferencedUnitsLoadedByApi
+            { ids = Just (unitIds |> Set.fromList |> Set.toList) }
+
+
+loadReferencedUnits : List B.Network -> Effect Msg
+loadReferencedUnits networks =
+    networks
+        |> List.concatMap (.unitIds >> Maybe.withDefault [])
+        |> loadReferencedUnitIds
 
 
 type alias Model =
@@ -373,15 +406,48 @@ update req msg model =
             ( { model | masterUnits = Failure err }, E.none )
 
         MasterUnitsLoadedByApi (Ok rsp) ->
-            ( { model
-                | masterUnits =
+            let
+                activeUnits =
                     rsp.units
-                        |> List.map (\x -> ( x.id, x ))
+                        |> List.map (\unit -> ( unit.id, unit ))
                         |> Dict.fromList
-                        |> Success
-              }
-            , E.none
+
+                referencedInactiveUnits =
+                    model.masterUnits
+                        |> Utils.RemoteData.withDefault Dict.empty
+                        |> Dict.filter (\_ unit -> not unit.active)
+
+                masterUnits =
+                    Dict.union activeUnits referencedInactiveUnits
+            in
+            ( { model | masterUnits = Success masterUnits }
+            , model.networks
+                |> Utils.RemoteData.withDefault Dict.empty
+                |> Dict.values
+                |> loadReferencedUnits
             )
+
+        LoadReferencedUnits unitIds ->
+            ( model, loadReferencedUnitIds unitIds )
+
+        ReferencedUnitsLoadedByApi (Err err) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження пов’язаних підрозділів" err
+            )
+
+        ReferencedUnitsLoadedByApi (Ok rsp) ->
+            let
+                referencedUnits =
+                    rsp.units
+                        |> List.map (\unit -> ( unit.id, unit ))
+                        |> Dict.fromList
+
+                masterUnits =
+                    model.masterUnits
+                        |> Utils.RemoteData.withDefault Dict.empty
+                        |> Dict.union referencedUnits
+            in
+            ( { model | masterUnits = Success masterUnits }, E.none )
 
         NetworksLoadedByApi (Err err) ->
             ( { model | networks = Failure err }, E.none )
@@ -394,7 +460,7 @@ update req msg model =
                         |> Dict.fromList
                         |> Success
               }
-            , E.none
+            , loadReferencedUnits rsp.list
             )
 
         CallsignsInfoReturnedByApi (Err _) ->
@@ -598,6 +664,22 @@ update req msg model =
                         { sortBy = Nothing
                         , afterUnitId = Nothing
                         , beforeUnitId = Nothing
+                        , includeInactive = False
+                        , filterActive = Nothing
+                        , filterText = Nothing
+                        , filterName = Nothing
+                        , filterCompany = Nothing
+                        , filterBattalion = Nothing
+                        , filterRegiment = Nothing
+                        , filterDivision = Nothing
+                        , filterArmy = Nothing
+                        , filterMilitaryDistrict = Nothing
+                        , filterArmyRegion = Nothing
+                        , filterComment = Nothing
+                        , filterOrbitNote = Nothing
+                        , searchMode = Nothing
+                        , limit = Nothing
+                        , offset = Nothing
                         }
                     )
 

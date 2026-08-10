@@ -50,7 +50,9 @@ impl EchoEchelon {
 
 pub(crate) fn echo_echelon(key: &str) -> Option<EchoEchelon> {
     match key {
-        "platoon" | "company" => Some(EchoEchelon::Company),
+        "teamOrCrew" | "section" | "squad" | "platoon" | "company" => {
+            Some(EchoEchelon::Company)
+        }
         "battalion" => Some(EchoEchelon::Battalion),
         "regiment" | "brigade" => Some(EchoEchelon::Regiment),
         "division" => Some(EchoEchelon::Division),
@@ -157,6 +159,7 @@ where
 pub struct OrbitMatchCandidate {
     pub unit_id: Uuid,
     pub unit_name: Option<String>,
+    pub unit_number: Option<String>,
     pub generative_unit_name_full: Option<String>,
     pub operational_unit_name_full: Option<String>,
 }
@@ -166,6 +169,7 @@ impl From<&types::SourceUnit> for OrbitMatchCandidate {
         Self {
             unit_id: unit.unit_id,
             unit_name: unit.unit_name.clone(),
+            unit_number: unit.unit_number.clone(),
             generative_unit_name_full: unit.generative_unit_name_full.clone(),
             operational_unit_name_full: unit.operational_unit_name_full.clone(),
         }
@@ -256,6 +260,18 @@ pub async fn link_new_sigint_unit_with_lock(
     sigint_unit_id: i64,
 ) -> anyhow::Result<()> {
     let transaction = acquire_import_lock(db).await?;
+    link_new_sigint_unit_in_transaction(&transaction, sigint_unit_id).await?;
+    transaction.commit().await.c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn link_new_sigint_unit_in_transaction<C>(
+    db: &C,
+    sigint_unit_id: i64,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     if persistence::load_latest_sync(db).await.c(h!())?.is_none() {
         return Ok(());
     }
@@ -265,7 +281,7 @@ pub async fn link_new_sigint_unit_with_lock(
     let sigint_units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(sigint_unit::Column::Active.eq(true))
-        .all(&transaction)
+        .all(db)
         .await
         .c("failed to load active SIGINT units for ORBIT matching")?;
     let sigint_unit_ids_by_orbit_unit =
@@ -279,22 +295,37 @@ pub async fn link_new_sigint_unit_with_lock(
         })
         .collect::<BTreeSet<_>>();
     persistence::replace_automatic_sigint_unit_links_in_transaction(
-        &transaction,
+        db,
         sigint_unit_id,
         &orbit_unit_ids,
     )
     .await
     .c("failed to link the new SIGINT unit to ORBIT")?;
-    let login = crate::users::system_login_id(&transaction).await.c(h!())?;
+    let login = crate::users::system_login_id(db).await.c(h!())?;
     crate::sigint::unit::orbit::materialize_automatic_link_parent_chains(
-        &transaction,
+        db,
         &login,
         &orbit_unit_ids,
     )
     .await
     .c("failed to materialize parent chains for the new ORBIT link")?;
-    transaction.commit().await.c(h!())?;
     Ok(())
+}
+
+pub(crate) async fn matching_orbit_unit_ids_for_sigint_unit<C>(
+    db: &C,
+    sigint_unit: &sigint_unit::Model,
+) -> anyhow::Result<BTreeSet<Uuid>>
+where
+    C: ConnectionTrait,
+{
+    if persistence::load_latest_sync(db).await.c(h!())?.is_none() {
+        return Ok(BTreeSet::new());
+    }
+    let units = persistence::load_latest_synced_source_units(db)
+        .await
+        .c("failed to load the latest synchronized ORBIT units")?;
+    Ok(matching::matching_orbit_unit_ids(&units, sigint_unit))
 }
 
 async fn active_orbit_unit_exists<C>(
@@ -710,6 +741,9 @@ mod tests {
 
     #[test]
     fn maps_all_orbit_echelons_to_sigint_hierarchy() {
+        assert_eq!(echo_echelon("teamOrCrew"), Some(EchoEchelon::Company));
+        assert_eq!(echo_echelon("section"), Some(EchoEchelon::Company));
+        assert_eq!(echo_echelon("squad"), Some(EchoEchelon::Company));
         assert_eq!(echo_echelon("platoon"), Some(EchoEchelon::Company));
         assert_eq!(echo_echelon("company"), Some(EchoEchelon::Company));
         assert_eq!(echo_echelon("battalion"), Some(EchoEchelon::Battalion));

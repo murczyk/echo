@@ -9,10 +9,25 @@ import {
   formatAorsLabel,
   hasActiveDevicesFilters,
   mergeDeviceUnitStatsWithUnits,
+  mergeCurrentDeviceUnitOption,
   resolveDevicesColumnFilters,
   sanitizeDevicesColumnFilters,
   resolveDeviceSidebarUnitIds,
 } from './helpers';
+
+describe('device unit options', () => {
+  it('keeps the current inactive unit available while editing', () => {
+    expect(
+      mergeCurrentDeviceUnitOption([{ id: 1, label: 'Active' }], {
+        id: 2,
+        name: 'Inactive',
+      }),
+    ).toEqual([
+      { id: 1, label: 'Active' },
+      { id: 2, label: 'Inactive' },
+    ]);
+  });
+});
 
 function buildUnit(overrides: Partial<Unit>): Unit {
   return {

@@ -1738,14 +1738,11 @@ mod tests {
             )
             .await
             .unwrap();
-            mk_sigint_inbox_item(
+            let inbox_item = mk_sigint_inbox_item(
                 &env.dbx,
                 sigint_inbox_item::ActiveModel {
                     id: Set(message.id),
                     freq: Set(Some(format!("12{index}.45"))),
-                    callsigns: Set(Some(serde_json::json!([format!(
-                        "Mouse{index}"
-                    )]))),
                     date: Set(Some(inbox_datetime.date().to_string())),
                     time: Set(Some(
                         inbox_datetime.time().format("%H:%M:%S").to_string(),
@@ -1756,6 +1753,17 @@ mod tests {
                     parsed_unit_v2: Set(false),
                     ..Default::default()
                 },
+            )
+            .await
+            .unwrap();
+            crate::inbox::callsigns::sync(
+                &env.dbx,
+                inbox_item.id,
+                crate::inbox::callsigns::InboxItemCallsigns {
+                    primary: vec![format!("Mouse{index}")],
+                    alg2: Vec::new(),
+                },
+                login.id,
             )
             .await
             .unwrap();

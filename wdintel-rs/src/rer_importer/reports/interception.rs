@@ -532,10 +532,6 @@ async fn build_inbox_messages_report_sql(
         )
         .column_as(sigint_inbox_item::Column::Id, "inbox_item_id")
         .column_as(
-            sigint_inbox_item::Column::Callsigns,
-            "legacy_callsigns",
-        )
-        .column_as(
             Expr::col((
                 signal_message::Entity,
                 signal_message::Column::Id,
@@ -765,10 +761,7 @@ async fn build_inbox_messages_report_sql(
     let mut dedup_q = Query::select()
         .column((inbox_cte_alias.clone(), Asterisk))
         .expr_as(
-            Expr::cust(
-                "coalesce(primary_callsigns_cte.callsigns, \
-                 inbox_items_cte.legacy_callsigns)",
-            ),
+            Expr::cust("primary_callsigns_cte.callsigns"),
             callsigns_alias,
         )
         .from(inbox_cte_alias.clone())

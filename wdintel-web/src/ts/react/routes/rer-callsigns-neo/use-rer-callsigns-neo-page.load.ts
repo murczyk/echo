@@ -7,6 +7,7 @@ import {
   listSources,
   fetchCallsignsBootstrapData,
 } from '../../services/api/callsigns';
+import { getUnitsByIds, mergeUnitsById } from '../../services/api/units';
 import {
   buildListCallsignsReq,
   formatErrorMessage,
@@ -113,7 +114,14 @@ export function useRerCallsignsNeoPageLoad({
             controller.signal,
           );
           if (listRequestSeqRef.current !== seq) return;
-          setCallsigns(normalizeCallsigns(rsp.callsigns));
+          const callsigns = normalizeCallsigns(rsp.callsigns);
+          const referencedUnits = await getUnitsByIds(
+            Array.from(new Set(callsigns.map((callsign) => callsign.unitId))),
+            { signal: controller.signal },
+          );
+          if (listRequestSeqRef.current !== seq) return;
+          setUnits((current) => mergeUnitsById(current, referencedUnits));
+          setCallsigns(callsigns);
           setShowLoadMore(rsp.showLoadMore);
         } catch (error) {
           if (isAbortError(error)) return;
@@ -145,10 +153,16 @@ export function useRerCallsignsNeoPageLoad({
           }),
         );
         if (listRequestSeqRef.current !== seq) return;
+        const callsigns = normalizeCallsigns(rsp.callsigns);
+        const referencedUnits = await getUnitsByIds(
+          Array.from(new Set(callsigns.map((callsign) => callsign.unitId))),
+        );
+        if (listRequestSeqRef.current !== seq) return;
+        setUnits((current) => mergeUnitsById(current, referencedUnits));
         setCallsigns((prev) => {
           const byId = new Map<number, Callsign>();
           for (const item of prev) byId.set(item.id, item);
-          for (const item of normalizeCallsigns(rsp.callsigns)) byId.set(item.id, item);
+          for (const item of callsigns) byId.set(item.id, item);
           return Array.from(byId.values());
         });
         setShowLoadMore(rsp.showLoadMore);
@@ -175,6 +189,7 @@ export function useRerCallsignsNeoPageLoad({
       setRefreshing,
       setShowLoadMore,
       setStatus,
+      setUnits,
       sort,
     ],
   );

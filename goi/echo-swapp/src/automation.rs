@@ -47,9 +47,16 @@ pub struct PolygonView {
     pub id: i64,
     pub name: String,
     pub coordinates: Vec<String>,
+    pub points: Vec<PolygonPointView>,
     pub automation_count: i64,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PolygonPointView {
+    pub lat: f64,
+    pub lng: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -355,7 +362,11 @@ pub async fn list_polygons(
     .all(db)
     .await
     .c(h!())?;
-    Ok(rows.into_iter().map(polygon_view).collect())
+    let mut polygons = Vec::with_capacity(rows.len());
+    for row in rows {
+        polygons.push(polygon_view(row).await.c(h!())?);
+    }
+    Ok(polygons)
 }
 
 pub async fn create_polygon(
@@ -1858,6 +1869,87 @@ async fn parse_polygon(tokens: &[String]) -> Result<Vec<Point>> {
     Ok(points)
 }
 
+fn polygon_has_crossing_sides(polygon: &[Point]) -> bool {
+    for first_side in 0..polygon.len() {
+        for second_side in (first_side + 1)..polygon.len() {
+            if polygon_sides_are_adjacent(
+                first_side,
+                second_side,
+                polygon.len(),
+            ) {
+                continue;
+            }
+            if segments_intersect(
+                polygon[first_side],
+                polygon[(first_side + 1) % polygon.len()],
+                polygon[second_side],
+                polygon[(second_side + 1) % polygon.len()],
+            ) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn polygon_sides_are_adjacent(
+    first_side: usize,
+    second_side: usize,
+    point_count: usize,
+) -> bool {
+    (first_side + 1) % point_count == second_side
+        || (second_side + 1) % point_count == first_side
+}
+
+fn segments_intersect(
+    first_start: Point,
+    first_end: Point,
+    second_start: Point,
+    second_end: Point,
+) -> bool {
+    let first_start_side = cross_product(first_start, first_end, second_start);
+    let first_end_side = cross_product(first_start, first_end, second_end);
+    let second_start_side =
+        cross_product(second_start, second_end, first_start);
+    let second_end_side = cross_product(second_start, second_end, first_end);
+
+    if first_start_side == 0.0
+        && point_is_on_segment(second_start, first_start, first_end)
+    {
+        return true;
+    }
+    if first_end_side == 0.0
+        && point_is_on_segment(second_end, first_start, first_end)
+    {
+        return true;
+    }
+    if second_start_side == 0.0
+        && point_is_on_segment(first_start, second_start, second_end)
+    {
+        return true;
+    }
+    if second_end_side == 0.0
+        && point_is_on_segment(first_end, second_start, second_end)
+    {
+        return true;
+    }
+    first_start_side.is_sign_positive() != first_end_side.is_sign_positive()
+        && second_start_side.is_sign_positive()
+            != second_end_side.is_sign_positive()
+}
+
+fn cross_product(start: Point, end: Point, point: Point) -> f64 {
+    (end.lng - start.lng) * (point.lat - start.lat)
+        - (end.lat - start.lat) * (point.lng - start.lng)
+}
+
+fn point_is_on_segment(point: Point, start: Point, end: Point) -> bool {
+    point.lng >= start.lng.min(end.lng)
+        && point.lng <= start.lng.max(end.lng)
+        && point.lat >= start.lat.min(end.lat)
+        && point.lat <= start.lat.max(end.lat)
+}
+
 fn point_in_polygon(point: Point, polygon: &[Point]) -> bool {
     if polygon.len() < 3 {
         return false;
@@ -1960,6 +2052,14 @@ fn normalize_tokens(tokens: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+fn normalize_polygon_coordinates(coordinates: Vec<String>) -> Vec<String> {
+    coordinates
+        .into_iter()
+        .map(|coordinate| coordinate.trim().to_string())
+        .filter(|coordinate| !coordinate.is_empty())
+        .collect()
+}
+
 fn normalize_text(value: &str) -> String {
     value.trim().to_lowercase()
 }
@@ -2027,15 +2127,26 @@ fn automation_view(row: AutomationListRow) -> AutomationView {
     }
 }
 
-fn polygon_view(row: PolygonListRow) -> PolygonView {
-    PolygonView {
+async fn polygon_view(row: PolygonListRow) -> Result<PolygonView> {
+    let coordinates = json_vec(Some(&row.coordinates));
+    let points = parse_polygon(&coordinates)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|point| PolygonPointView {
+            lat: point.lat,
+            lng: point.lng,
+        })
+        .collect();
+    Ok(PolygonView {
         id: row.id,
         name: row.name,
-        coordinates: json_vec(Some(&row.coordinates)),
+        coordinates,
+        points,
         automation_count: row.automation_count,
         created_at: row.created_at.and_utc().timestamp_millis(),
         updated_at: row.updated_at.and_utc().timestamp_millis(),
-    }
+    })
 }
 
 async fn load_polygon_view(
@@ -2062,11 +2173,12 @@ async fn load_polygon_view(
     .all(db)
     .await
     .c(h!())?;
-    rows.into_iter()
+    let row = rows
+        .into_iter()
         .next()
-        .map(polygon_view)
         .with_context(|| format!("polygon not found: {id}"))
-        .c(h!())
+        .c(h!())?;
+    polygon_view(row).await.c(h!())
 }
 
 async fn normalize_polygon_req(
@@ -2076,13 +2188,16 @@ async fn normalize_polygon_req(
     if name.is_empty() {
         bail!("polygon name is required");
     }
-    let coordinates = normalize_tokens(req.coordinates);
+    let coordinates = normalize_polygon_coordinates(req.coordinates);
     if coordinates.len() < 3 {
         bail!("polygon requires at least 3 coordinates");
     }
     let polygon = parse_polygon(&coordinates).await.c(h!())?;
     if polygon.len() < 3 {
         bail!("polygon requires at least 3 valid coordinates");
+    }
+    if polygon_has_crossing_sides(&polygon) {
+        bail!("polygon sides must not cross");
     }
     Ok((name, coordinates))
 }
@@ -2743,6 +2858,101 @@ mod tests {
             ]),
             vec!["alpha".to_string(), "bravo".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn preserves_polygon_coordinate_order() {
+        let coordinates = vec![
+            " 47.900000, 35.900000 ".to_string(),
+            "47.900000, 35.100000".to_string(),
+            "47.100000, 35.100000".to_string(),
+            "47.100000, 35.900000".to_string(),
+        ];
+        let (_, coordinates) = normalize_polygon_req(SavePolygonReq {
+            name: Some("test".to_string()),
+            coordinates,
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(
+            coordinates,
+            vec![
+                "47.900000, 35.900000",
+                "47.900000, 35.100000",
+                "47.100000, 35.100000",
+                "47.100000, 35.900000",
+            ]
+        );
+    }
+
+    #[test]
+    fn detects_crossing_polygon_sides() {
+        let ordered = vec![
+            Point {
+                lat: 47.0,
+                lng: 35.0,
+            },
+            Point {
+                lat: 47.0,
+                lng: 36.0,
+            },
+            Point {
+                lat: 48.0,
+                lng: 36.0,
+            },
+            Point {
+                lat: 48.0,
+                lng: 35.0,
+            },
+        ];
+        let crossing = vec![ordered[0], ordered[2], ordered[1], ordered[3]];
+
+        assert!(!polygon_has_crossing_sides(&ordered));
+        assert!(polygon_has_crossing_sides(&crossing));
+    }
+
+    #[tokio::test]
+    async fn rejects_polygon_with_crossing_sides() {
+        let err = normalize_polygon_req(SavePolygonReq {
+            name: Some("test".to_string()),
+            coordinates: vec![
+                "47.000000, 35.000000".to_string(),
+                "48.000000, 36.000000".to_string(),
+                "47.000000, 36.000000".to_string(),
+                "48.000000, 35.000000".to_string(),
+            ],
+        })
+        .await
+        .unwrap_err();
+
+        assert_eq!(err.to_string(), "polygon sides must not cross");
+    }
+
+    #[tokio::test]
+    async fn polygon_view_projects_coordinate_tokens_to_points() -> Result<()> {
+        let now = Utc::now().naive_utc();
+        let coordinates = vec![
+            "47.421350, 35.621970".to_string(),
+            "47.422000, 35.623000".to_string(),
+            "47.420000, 35.624000".to_string(),
+        ];
+        let polygon = polygon_view(PolygonListRow {
+            id: 1,
+            name: "test".to_string(),
+            coordinates: serde_json::json!(coordinates.clone()),
+            automation_count: 0,
+            created_at: now,
+            updated_at: now,
+        })
+        .await
+        .c(h!())?;
+
+        assert_eq!(polygon.coordinates, coordinates);
+        assert_eq!(polygon.points.len(), 3);
+        assert!((polygon.points[0].lat - 47.42135).abs() < f64::EPSILON);
+        assert!((polygon.points[0].lng - 35.62197).abs() < f64::EPSILON);
+        Ok(())
     }
 
     #[tokio::test]

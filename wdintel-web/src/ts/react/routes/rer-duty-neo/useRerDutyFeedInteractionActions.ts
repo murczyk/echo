@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
-import type { MessageFeedState } from './utils';
+import { compareMessageTuple, type MessageFeedState } from './utils';
 
 type Params = {
   messageFeeds: MessageFeedState[];
@@ -21,13 +21,14 @@ type Params = {
       showLoading?: boolean;
       followGeneration?: number;
     },
-  ) => Promise<void>;
+  ) => Promise<{ ok: boolean; addedCount: number }>;
   requestValidatedInboxCount: (feedId: string) => Promise<{
     feedId: string;
     quantity: number;
     cursorId: number | null;
     hasItems: boolean;
   } | null>;
+  catchUpFeedUnreadToTail: (feedId: string) => void;
   dutyDisableAutoScroll: boolean;
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>;
   beginFollowTail?: (feedId: string) => number;
@@ -43,6 +44,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
     loadFeedInitialMessages,
     loadFeedNewerMessages,
     requestValidatedInboxCount,
+    catchUpFeedUnreadToTail,
     dutyDisableAutoScroll,
     setMessageFeeds,
     beginFollowTail,
@@ -73,28 +75,30 @@ export function useRerDutyFeedInteractionActions(params: Params) {
           }
           const { quantity } = result;
           if (quantity === 0) {
+            catchUpFeedUnreadToTail(feedId);
             showArrowResult(feedId, 'Немає нових повідомлень');
             return;
           }
-          setMessageFeeds((prev) =>
-            prev.map((f) =>
-              f.id === feedId ? { ...f, unreadCount: Math.max(f.unreadCount, quantity) } : f,
-            ),
-          );
           setLoadingNewerFeedIds((prev) => {
             const next = new Set(prev);
             next.add(feedId);
             return next;
           });
-          await loadFeedNewerMessages(feedId, {
+          const newerResult = await loadFeedNewerMessages(feedId, {
             nolimit: true,
             scrollToEndAfterLoad: true,
             showLoading: true,
             followGeneration,
           });
+          if (!newerResult.ok) {
+            showArrowResult(feedId, failureArrowMessage);
+            return;
+          }
+          catchUpFeedUnreadToTail(feedId);
           showArrowResult(feedId, 'Завантажено нові повідомлення');
         } else if (!feed.loading) {
           await loadFeedInitialMessages(feedId);
+          catchUpFeedUnreadToTail(feedId);
           showArrowResult(feedId, 'Завантажено нові повідомлення');
         }
       } catch {
@@ -116,9 +120,10 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       columnRefsRef,
       setWatchModeByFeedId,
       setLoadingNewerFeedIds,
-      setMessageFeeds,
+      catchUpFeedUnreadToTail,
       requestValidatedInboxCount,
       dutyDisableAutoScroll,
+      beginFollowTail,
     ],
   );
 
@@ -130,27 +135,47 @@ export function useRerDutyFeedInteractionActions(params: Params) {
           if (f.id !== feedId) return f;
 
           const newlyReadIds: number[] = [];
-          for (const [id] of f.items) {
+          let lastVisibleTimestamp: number | null | undefined;
+          for (const [id, message] of f.items) {
             if (!f.readIds.has(id)) {
               newlyReadIds.push(id);
             }
             if (id === lastVisibleId) {
+              lastVisibleTimestamp = message.timestamp;
               break;
             }
           }
 
-          if (newlyReadIds.length === 0) return f;
+          let windowedUnreadItems = f.windowedUnreadItems ?? new Map<number, number>();
+          let clearedWindowedCount = 0;
+          if (opts?.atBottom === true && windowedUnreadItems.size > 0) {
+            const boundary = { id: lastVisibleId, timestamp: lastVisibleTimestamp ?? null };
+            const nextWindowed = new Map<number, number>();
+            for (const [id, timestamp] of windowedUnreadItems) {
+              if (compareMessageTuple({ id, timestamp }, boundary) <= 0) {
+                clearedWindowedCount += 1;
+              } else {
+                nextWindowed.set(id, timestamp);
+              }
+            }
+            if (clearedWindowedCount > 0) {
+              windowedUnreadItems = nextWindowed;
+            }
+          } else if (newlyReadIds.length > 0) {
+            windowedUnreadItems = new Map(windowedUnreadItems);
+            newlyReadIds.forEach((id) => windowedUnreadItems.delete(id));
+          }
+
+          if (newlyReadIds.length === 0 && clearedWindowedCount === 0) return f;
 
           changed = true;
           const nextReadIds = new Set(f.readIds);
           newlyReadIds.forEach((id) => nextReadIds.add(id));
-          const windowedUnreadItems = new Map(f.windowedUnreadItems);
-          newlyReadIds.forEach((id) => windowedUnreadItems.delete(id));
           return {
             ...f,
             readIds: nextReadIds,
             windowedUnreadItems,
-            unreadCount: Math.max(0, f.unreadCount - newlyReadIds.length),
+            unreadCount: Math.max(0, f.unreadCount - newlyReadIds.length - clearedWindowedCount),
           };
         });
         return changed ? next : prev;

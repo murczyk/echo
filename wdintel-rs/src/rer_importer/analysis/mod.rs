@@ -589,6 +589,70 @@ where
     Ok(q)
 }
 
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct ExpandedUnitFilter {
+    pub(crate) ordinary_names: Vec<String>,
+    pub(crate) includes_undefined: bool,
+    pub(crate) present: bool,
+}
+
+pub(crate) fn expand_unit_filter_values(
+    units: &Option<Vec<String>>,
+) -> ExpandedUnitFilter {
+    let Some(units) = units.as_ref().filter(|units| !units.is_empty()) else {
+        return ExpandedUnitFilter::default();
+    };
+    let mut ordinary_names = BTreeSet::new();
+    let mut includes_undefined = false;
+    for unit in units {
+        if unit.is_empty() || unit == "Не визначено" {
+            includes_undefined = true;
+            continue;
+        }
+        add_unit_filter_aliases(&mut ordinary_names, unit);
+    }
+    ExpandedUnitFilter {
+        ordinary_names: ordinary_names.into_iter().collect(),
+        includes_undefined,
+        present: true,
+    }
+}
+
+fn add_unit_filter_aliases(aliases: &mut BTreeSet<String>, unit: &str) {
+    let army_suffixes = numeric_army_suffix_aliases(unit)
+        .unwrap_or_else(|| vec![unit.to_string()]);
+    for alias in army_suffixes {
+        aliases.insert(alias.clone());
+        aliases.insert(alias.to_lowercase());
+        aliases.insert(alias.to_uppercase());
+    }
+}
+
+fn numeric_army_suffix_aliases(unit: &str) -> Option<Vec<String>> {
+    let suffix_separator = unit.rfind(char::is_whitespace)?;
+    let prefix = unit[..suffix_separator].trim_end();
+    let suffix = unit[suffix_separator..].trim();
+    if !matches!(suffix.to_uppercase().as_str(), "А" | "ЗА" | "ЗВА") {
+        return None;
+    }
+    let army_number = prefix
+        .rsplit_once(char::is_whitespace)
+        .map_or(prefix, |(_, army_number)| army_number);
+    if army_number.is_empty()
+        || !army_number
+            .chars()
+            .all(|character| character.is_ascii_digit())
+    {
+        return None;
+    }
+    Some(
+        ["А", "ЗА", "ЗВА"]
+            .into_iter()
+            .map(|suffix| format!("{prefix} {suffix}"))
+            .collect(),
+    )
+}
+
 /// Фільтрує запит по підрозділам, які вказані в шапці повідомлення або прив'язані через Еталонні мережі
 ///
 /// Якщо вказано прапорець `units_exact_match_only`, то фільтрує ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
@@ -603,17 +667,9 @@ where
 {
     let mut m_empty_filter = None;
     let mut m_filter = None;
-    if let Some(selected_units) = selected_units.as_ref() {
-        let mut selected_units: BTreeSet<String> =
-            selected_units.iter().cloned().collect::<BTreeSet<_>>();
-        let mut units_contain_empty = false;
-        if selected_units.remove("Не визначено") {
-            units_contain_empty = true;
-        }
-        if selected_units.remove("") {
-            units_contain_empty = true;
-        }
-        if units_contain_empty {
+    let selected_units = expand_unit_filter_values(selected_units);
+    if selected_units.present {
+        if selected_units.includes_undefined {
             // повідомлення без жодного прив'язаного підрозділу мережі
             let no_sigint_units = message_has_linked_unit(
                 Expr::col((
@@ -629,9 +685,8 @@ where
             let contains_empty = unit_is_not_in_message.and(no_sigint_units);
             m_empty_filter = Some(contains_empty);
         }
-        if !selected_units.is_empty() {
-            let selected_units =
-                selected_units.clone().into_iter().collect_vec();
+        if !selected_units.ordinary_names.is_empty() {
+            let selected_units = selected_units.ordinary_names;
             let exact_match_only = units_exact_match_only.unwrap_or(false);
             let linked_unit_match = linked_unit_matches_selected_units(
                 selected_units.clone(),
@@ -679,17 +734,9 @@ where
 {
     let mut m_empty_filter = None;
     let mut m_filter = None;
-    if let Some(denied_units) = denied_units.as_ref() {
-        let mut denied_units: BTreeSet<String> =
-            denied_units.iter().cloned().collect::<BTreeSet<_>>();
-        let mut units_contain_empty = false;
-        if denied_units.remove("Не визначено") {
-            units_contain_empty = true;
-        }
-        if denied_units.remove("") {
-            units_contain_empty = true;
-        }
-        if units_contain_empty {
+    let denied_units = expand_unit_filter_values(denied_units);
+    if denied_units.present {
+        if denied_units.includes_undefined {
             // повідомлення без жодного прив'язаного підрозділу мережі
             let no_sigint_units = message_has_linked_unit(
                 Expr::col((
@@ -705,8 +752,8 @@ where
             let contains_empty = unit_is_not_in_message.and(no_sigint_units);
             m_empty_filter = Some(contains_empty.not());
         }
-        if !denied_units.is_empty() {
-            let selected_units = denied_units.into_iter().collect_vec();
+        if !denied_units.ordinary_names.is_empty() {
+            let selected_units = denied_units.ordinary_names;
             let exact_match_only = units_exact_match_only.unwrap_or(false);
             let linked_unit_match = linked_unit_matches_selected_units(
                 selected_units.clone(),
@@ -744,6 +791,8 @@ fn linked_unit_matches_selected_units(
     selected_units: Vec<String>,
     include_hierarchy: bool,
 ) -> SimpleExpr {
+    let selected_units =
+        expand_unit_filter_values(&Some(selected_units)).ordinary_names;
     let unit_alias = Alias::new("selected_unit");
     let unit_matches =
         Expr::col((unit_alias.clone(), sigint_unit::Column::Name))
@@ -769,21 +818,75 @@ mod unit_filter_query_tests {
     use super::*;
 
     #[test]
-    fn unit_filter_query_excludes_dynamic_suffix_matching() {
+    fn unit_filter_aliases_cover_case_army_suffixes_undefined_and_duplicates() {
+        let unit_filter = expand_unit_filter_values(&Some(vec![
+            "58 А".to_string(),
+            "58 а".to_string(),
+            "344 мсп 69 мсд 6 а".to_string(),
+            "Не визначено".to_string(),
+            "".to_string(),
+        ]));
+
+        assert!(unit_filter.present);
+        assert!(unit_filter.includes_undefined);
+        for alias in ["58 А", "58 а", "58 ЗА", "58 за", "58 ЗВА", "58 зва"]
+        {
+            assert!(unit_filter.ordinary_names.contains(&alias.to_string()));
+        }
+        for alias in [
+            "344 мсп 69 мсд 6 А",
+            "344 мсп 69 мсд 6 ЗА",
+            "344 мсп 69 мсд 6 ЗВА",
+            "344 МСП 69 МСД 6 А",
+        ] {
+            assert!(unit_filter.ordinary_names.contains(&alias.to_string()));
+        }
+    }
+
+    #[test]
+    fn selected_and_denied_unit_filters_use_indexed_alias_comparisons() {
         let query = filter_selected_units(
             sigint_inbox_item::Entity::find(),
-            &Some(vec!["100 pbr".to_string()]),
+            &Some(vec!["58 А".to_string()]),
+            &Some(false),
+        )
+        .unwrap();
+        let query = filter_denied_units(
+            query,
+            &Some(vec!["136 ОМСБР".to_string()]),
             &Some(false),
         )
         .unwrap();
         let sql = query.build(DbBackend::Postgres).to_string();
 
-        assert!(
-            sql.contains(r#""unit_v2" = ANY(ARRAY ['100 pbr'])"#),
-            "{sql}"
-        );
-        assert!(sql.contains(r#""name" IN ('100 pbr')"#), "{sql}");
+        assert!(sql.contains(r#""unit_v2" = ANY(ARRAY"#), "{sql}");
+        assert!(sql.contains(r#""unit_v2" <> ALL(ARRAY"#), "{sql}");
+        for alias in ["58 А", "58 а", "58 ЗА", "58 за", "58 ЗВА", "58 зва"]
+        {
+            assert!(sql.contains(&format!("'{alias}'")), "{sql}");
+        }
+        assert!(sql.contains("'136 ОМСБР'"), "{sql}");
+        assert!(sql.contains("'136 омсбр'"), "{sql}");
+        assert!(!sql.contains("lower("), "{sql}");
         assert!(!sql.contains("right("), "{sql}");
+    }
+
+    #[test]
+    fn exact_linked_unit_filter_expands_aliases_without_header_or_hierarchy() {
+        let query = filter_selected_units(
+            sigint_inbox_item::Entity::find(),
+            &Some(vec!["58 ЗА".to_string()]),
+            &Some(true),
+        )
+        .unwrap();
+        let sql = query.build(DbBackend::Postgres).to_string();
+
+        assert!(!sql.contains(r#""unit_v2" = ANY"#), "{sql}");
+        for alias in ["58 А", "58 а", "58 ЗА", "58 за", "58 ЗВА", "58 зва"]
+        {
+            assert!(sql.contains(&format!("'{alias}'")), "{sql}");
+        }
+        assert!(!sql.contains(r#""selected_unit"."army" IN"#), "{sql}");
     }
 
     #[test]
@@ -805,6 +908,7 @@ mod unit_filter_query_tests {
         assert!(!sql.contains(
             r#"INNER JOIN "sigint_network_unit" AS "selected_unit_network_unit" ON "selected_unit_network_unit"."network_id" = "selected_unit_network"."id""#
         ), "{sql}");
+        assert!(sql.contains(r#""selected_unit"."army" IN"#), "{sql}");
     }
 
     #[test]
@@ -828,6 +932,8 @@ mod unit_filter_query_tests {
         assert!(sql.contains("matching_unit_network_ids"), "{sql}");
         assert!(sql.contains("matching_unit_inbox_item_ids"), "{sql}");
         assert!(sql.contains(" UNION ALL "), "{sql}");
+        assert!(sql.contains("'100 PBR'"), "{sql}");
+        assert!(sql.contains("'100 pbr'"), "{sql}");
         assert!(sql.contains("2026-07-28 00:00:00"), "{sql}");
         assert!(sql.contains("2026-07-29 00:00:00"), "{sql}");
     }
@@ -993,22 +1099,19 @@ pub(super) fn selected_unit_network_ids_query(
     selected_units: &Option<Vec<String>>,
     units_exact_match_only: &Option<bool>,
 ) -> Option<SelectStatement> {
-    let mut selected_units = selected_units
-        .as_ref()?
-        .iter()
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    if selected_units.remove("Не визначено") || selected_units.remove("")
-    {
+    let selected_units = expand_unit_filter_values(selected_units);
+    if selected_units.includes_undefined {
         return None;
     }
-    if selected_units.is_empty() {
+    if selected_units.ordinary_names.is_empty() {
         return None;
     }
-    let selected_units = selected_units.into_iter().collect_vec();
     let exact_match_only = units_exact_match_only.unwrap_or(false);
     Some(select_network_ids_by_unit(
-        linked_unit_matches_selected_units(selected_units, !exact_match_only),
+        linked_unit_matches_selected_units(
+            selected_units.ordinary_names,
+            !exact_match_only,
+        ),
     ))
 }
 
@@ -1019,14 +1122,10 @@ pub(super) fn selected_unit_inbox_item_ids_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
 ) -> Result<SelectStatement, AppError> {
-    let selected_units = selected_units
-        .as_ref()
-        .context(h!())?
-        .iter()
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect_vec();
+    let selected_units = expand_unit_filter_values(selected_units);
+    let selected_units = (!selected_units.ordinary_names.is_empty())
+        .then_some(selected_units.ordinary_names)
+        .context(h!())?;
 
     let linked_inbox_item_ids = select_linked_unit_inbox_item_ids(
         matching_network_ids_alias,
@@ -7348,17 +7447,42 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
+    analytics_inbox_filter_supported(req)
+        && !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
+}
+
+pub(crate) fn analytics_inbox_initial_unit_candidates_supported(
+    req: &InboxMessagesReq,
+) -> bool {
+    analytics_inbox_filter_supported(req)
+        && req.page_id.as_deref() == Some("rer-duty-neo")
+        && crate::rer_importer::inbox::query::inbox_request_is_unbounded_latest(
+            req,
+        )
+        && (req
+            .selected_units
+            .as_ref()
+            .is_some_and(|units| !units.is_empty())
+            || req
+                .denied_units
+                .as_ref()
+                .is_some_and(|units| !units.is_empty()))
+}
+
+pub(crate) fn analytics_inbox_candidates_supported(
+    req: &InboxMessagesReq,
+) -> bool {
+    (analytics_inbox_request_supported(req)
+        || analytics_inbox_initial_unit_candidates_supported(req))
+        && req.nolimit != Some(true)
+}
+
+fn analytics_inbox_filter_supported(req: &InboxMessagesReq) -> bool {
     req.only_with_media != Some(true)
         && req
             .search
             .as_ref()
             .is_none_or(|search| search.trim().is_empty())
-        && req.selected_units.as_ref().is_none_or(Vec::is_empty)
-        && req.denied_units.as_ref().is_none_or(Vec::is_empty)
-        && (req
-            .since_date_inclusive_ms
-            .is_some_and(|since_date| since_date > 0)
-            || req.since_id_noninclusive.is_some())
 }
 
 #[derive(Clone)]
@@ -7614,7 +7738,10 @@ where
     Ok(response)
 }
 
-fn map_postgres_runtime_timeout(error: AppError, operation: &str) -> AppError {
+pub(crate) fn map_postgres_runtime_timeout(
+    error: AppError,
+    operation: &str,
+) -> AppError {
     if !has_postgres_error_code(&error, "57014") {
         return error;
     }

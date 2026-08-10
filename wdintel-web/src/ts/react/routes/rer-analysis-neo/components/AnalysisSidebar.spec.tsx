@@ -6,6 +6,8 @@ import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const callsignsPaneSpy = vi.hoisted(() => vi.fn());
+
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   IconButton: ({
@@ -72,7 +74,10 @@ vi.mock('./AnalysisMapPane', () => ({
 }));
 
 vi.mock('./AnalysisCallsignsPane', () => ({
-  AnalysisCallsignsPane: () => <div>callsigns-pane</div>,
+  AnalysisCallsignsPane: (props: Record<string, unknown>) => {
+    callsignsPaneSpy(props);
+    return <div>callsigns-pane</div>;
+  },
 }));
 
 vi.mock('./AnalysisCallsignGraphPane', () => ({
@@ -181,6 +186,7 @@ describe('AnalysisSidebar', () => {
       });
       item.container.remove();
     }
+    callsignsPaneSpy.mockClear();
   });
 
   it('renders stats content for the stats tab', async () => {
@@ -241,6 +247,29 @@ describe('AnalysisSidebar', () => {
     expect(view.container.textContent).toContain('callsigns-pane');
     expect(view.container.textContent).not.toContain('graph-pane');
     expect(view.container.textContent).not.toContain('overview-card');
+  });
+
+  it('sends lowercase callsigns selected from the right panel', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        options: {
+          callsigns: [{ value: 'НУГУШ', label: 'НУГУШ', count: 3 }],
+          groups: [],
+          networks: [],
+        } as ComponentProps<typeof AnalysisSidebar>['options'],
+        rightSidebarTab: 'callsigns',
+        updateQueryState,
+      }),
+    );
+    rendered.push(view);
+
+    const callsignsProps = callsignsPaneSpy.mock.lastCall?.[0] as {
+      onToggleCallsign: (callsign: string) => void;
+    };
+    callsignsProps.onToggleCallsign('НУГУШ');
+
+    expect(updateQueryState).toHaveBeenCalledWith({ callsignsSelected: ['нугуш'] });
   });
 
   it('renders the relations graph only in the graph tab', async () => {

@@ -16,7 +16,7 @@ import {
   getNetworkCallsignsActivity,
   listSources,
 } from '../../services/api/callsigns';
-import { getUnitsList } from '../../services/api/units';
+import { getUnitsByIds, getUnitsList, mergeUnitsById } from '../../services/api/units';
 import { listPosts } from '../../services/api/posts';
 import { fetchCurrentUser } from '../../services/api/user';
 import { currentSystemSettings } from '../../services/api/system-settings';
@@ -735,6 +735,21 @@ export function useRerNetworkDetailsNeoPageLoad(
           pelengEnabledFreqs: [],
           pelengShowLabels: true,
         }));
+
+        try {
+          const referencedUnits = await getUnitsByIds(network.unitIds ?? []);
+          if (!isCurrent()) return;
+          setState((current) => ({
+            ...current,
+            units: mergeUnitsById(current.units, referencedUnits),
+          }));
+        } catch (error) {
+          if (!isCurrent()) return;
+          setState((current) => ({
+            ...current,
+            referenceWarning: formatErrorMessage(error),
+          }));
+        }
       } catch (error) {
         if (!isCurrent()) return;
         setState((current) => ({
@@ -757,7 +772,7 @@ export function useRerNetworkDetailsNeoPageLoad(
         if (!isCurrent()) return;
         setState((current) => ({
           ...current,
-          units,
+          units: mergeUnitsById(current.units, units),
           posts,
           aors,
           encryptions,

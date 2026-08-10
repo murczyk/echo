@@ -76,8 +76,20 @@ The detailed flow is:
    removed when the transcription worker initializes again.
 
 Retryable failures use persisted exponential backoff and stop after eight
-attempts. Work also has a 24-hour total-age limit. Finished queue rows,
-including their cached transcripts, are retained for two days.
+attempts. Work also has a 24-hour total-age limit. Finished queue rows are
+retained indefinitely because they contain the only durable copy of completed
+transcriptions. Orphaned rows are still removed when their source attachment
+or message no longer exists.
+
+## Maintenance commands
+
+- `oneoff-backfill-audio-transcriber` scans attachments created at or after
+  `--since-ts` and queues eligible audio that has no queue row. Existing queued,
+  processing, completed, and terminal rows are left unchanged.
+- `oneoff-requeue-audio-transcriber` resets one terminal queue row to queued so
+  it can retry from the beginning.
+- `oneoff-retranscribe-audio-transcriber` resets one completed queue row to
+  queued and clears its existing transcription so it is generated again.
 
 ## REST API exposure
 

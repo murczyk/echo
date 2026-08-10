@@ -1158,9 +1158,20 @@ async fn set_message_callsigns(
         .await
         .context(h!())?
         .context(h!())?;
-    let mut inbox_item = inbox_item.into_active_model();
-    inbox_item.callsigns = Set(Some(callsigns));
-    inbox_item.update(db).await.context(h!())?;
+    let callsigns =
+        serde_json::from_value::<Vec<String>>(callsigns).context(h!())?;
+    let actor_id = crate::users::system_login_id(db).await.context(h!())?;
+    crate::inbox::callsigns::sync(
+        db,
+        inbox_item.id,
+        crate::inbox::callsigns::InboxItemCallsigns {
+            primary: callsigns,
+            alg2: Vec::new(),
+        },
+        actor_id,
+    )
+    .await
+    .context(h!())?;
     Ok(())
 }
 
@@ -5387,14 +5398,22 @@ async fn summary_table_chunked_collection_matches_single_window() {
             sigint_inbox_item::Column::NominatimresId,
             Expr::value(nominatimres.id),
         )
-        .col_expr(
-            sigint_inbox_item::Column::Callsigns,
-            Expr::value(serde_json::json!(["Geo"])),
-        )
         .filter(sigint_inbox_item::Column::Id.eq(geocoded_message.id))
         .exec(db)
         .await
         .unwrap();
+    let actor_id = crate::users::system_login_id(db).await.unwrap();
+    crate::inbox::callsigns::sync(
+        db,
+        geocoded_message.id,
+        crate::inbox::callsigns::InboxItemCallsigns {
+            primary: vec!["Geo".to_string()],
+            alg2: Vec::new(),
+        },
+        actor_id,
+    )
+    .await
+    .unwrap();
     let mut req = analysis_stats_req0(&fixture);
     req.since_date_inclusive_ms =
         test_dt(2026, 3, 1, 7, 30).and_utc().timestamp_millis();
@@ -6872,17 +6891,66 @@ fn analytical_inbox_reads_support_callsign_filters_but_reject_search() {
 }
 
 #[test]
-fn analytical_inbox_reads_reject_unit_filters() {
+fn analytical_inbox_reads_support_unit_filters() {
     let mut req = InboxMessagesReq {
         since_date_inclusive_ms: Some(1),
         ..Default::default()
     };
     req.selected_units = Some(vec!["unit".to_string()]);
-    assert!(!analytics_inbox_request_supported(&req));
+    assert!(analytics_inbox_request_supported(&req));
 
     req.selected_units = None;
     req.denied_units = Some(vec!["unit".to_string()]);
-    assert!(!analytics_inbox_request_supported(&req));
+    assert!(analytics_inbox_request_supported(&req));
+}
+
+#[test]
+fn analytical_inbox_candidates_reject_unbounded_media_search_and_nolimit() {
+    let mut req = InboxMessagesReq::default();
+    assert!(!analytics_inbox_candidates_supported(&req));
+
+    req.since_date_inclusive_ms = Some(1);
+    assert!(analytics_inbox_candidates_supported(&req));
+
+    req.only_with_media = Some(true);
+    assert!(!analytics_inbox_candidates_supported(&req));
+
+    req.only_with_media = None;
+    req.search = Some("message".to_string());
+    assert!(!analytics_inbox_candidates_supported(&req));
+
+    req.search = None;
+    req.nolimit = Some(true);
+    assert!(!analytics_inbox_candidates_supported(&req));
+}
+
+#[test]
+fn analytical_inbox_candidates_support_initial_rer_duty_unit_filters() {
+    let mut req = InboxMessagesReq {
+        page_id: Some("rer-duty-neo".to_string()),
+        load_latest: Some(true),
+        selected_units: Some(vec!["unit".to_string()]),
+        ..Default::default()
+    };
+    assert!(analytics_inbox_initial_unit_candidates_supported(&req));
+    assert!(analytics_inbox_candidates_supported(&req));
+
+    req.selected_units = None;
+    req.denied_units = Some(vec!["unit".to_string()]);
+    assert!(analytics_inbox_candidates_supported(&req));
+
+    req.only_with_media = Some(true);
+    assert!(!analytics_inbox_candidates_supported(&req));
+    req.only_with_media = None;
+    req.search = Some("message".to_string());
+    assert!(!analytics_inbox_candidates_supported(&req));
+    req.search = None;
+    req.nolimit = Some(true);
+    assert!(!analytics_inbox_candidates_supported(&req));
+
+    req.nolimit = None;
+    req.page_id = Some("rer-analysis".to_string());
+    assert!(!analytics_inbox_candidates_supported(&req));
 }
 
 #[tokio::test]

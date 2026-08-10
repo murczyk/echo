@@ -194,6 +194,8 @@ pub async fn signal_unit_stats(
             sigint_signal::Relation::SigintUnit.def(),
             Alias::new("sigint_unit"),
         )
+        .filter(sigint_unit::Column::Active.eq(true))
+        .filter(sigint_unit::Column::Deleted.eq(false))
         .select_only()
         .column_as(sigint_signal::Column::Unit.count(), "count")
         .column_as(sigint_signal::Column::Unit, "unit_id")

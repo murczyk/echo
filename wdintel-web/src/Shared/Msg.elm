@@ -37,6 +37,8 @@ type Msg
     | SaveChangelogLastSeen String
     | GotLocation LocationRes
     | MasterUnitsLoadedByApi (Result ApiError B.ListUnitsRsp)
+    | LoadReferencedUnits (List Int)
+    | ReferencedUnitsLoadedByApi (Result ApiError B.ListUnitsByIdRsp)
     | NetworksLoadedByApi (Result ApiError B.ListNetworksRsp)
     | CallsignsInfoReturnedByApi (Result ApiError (List B.CallsignInfoRes))
     | CallsignsInfoAskedByPage (List String)

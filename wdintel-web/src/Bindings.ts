@@ -2115,8 +2115,10 @@ export type ZoneDatasourceGroup = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   allowedUsers: Array<string>;
+  allowedUserDetails: Array<SignalGroupLogin>;
   allowedOrganismIds: Array<number>;
   adminLogins: Array<string>;
+  adminLoginDetails: Array<SignalGroupLogin>;
   shortNote: string | null;
   longNote: string | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -2162,6 +2164,7 @@ export type SignalGroupLogin = {
   loginId: string;
   login: string;
   deltaLogin: string | null;
+  isAiManaged: boolean;
 };
 
 export type MyAdminSignalGroup = {
@@ -2381,6 +2384,31 @@ export type ListUnitsSortBy =
   | 'CreatedAtDesc'
   | 'CreatedAtAsc'
   | 'NaturalMilitarySortAsc'
+  | 'UnitNameAsc'
+  | 'UnitNameDesc'
+  | 'UnitCompanyAsc'
+  | 'UnitCompanyDesc'
+  | 'UnitBattalionAsc'
+  | 'UnitBattalionDesc'
+  | 'UnitRegimentAsc'
+  | 'UnitRegimentDesc'
+  | 'UnitDivisionAsc'
+  | 'UnitDivisionDesc'
+  | 'UnitArmyAsc'
+  | 'UnitArmyDesc'
+  | 'UnitMilitaryDistrictAsc'
+  | 'UnitMilitaryDistrictDesc'
+  | 'UnitArmyRegionAsc'
+  | 'UnitArmyRegionDesc'
+  | 'UnitCommentAsc'
+  | 'UnitCommentDesc'
+  | 'UnitOrbitNoteAsc'
+  | 'UnitOrbitNoteDesc'
+;
+
+export type ListUnitsSearchMode =
+  | 'Strict'
+  | 'Relaxed'
 ;
 
 export type Unit = {
@@ -2407,11 +2435,34 @@ export type ListUnitsReq = {
   sortBy: ListUnitsSortBy | null;
   afterUnitId: number | null;
   beforeUnitId: number | null;
+  includeInactive: boolean;
+  filterActive: boolean | null;
+  filterText: string | null;
+  filterName: string | null;
+  filterCompany: string | null;
+  filterBattalion: string | null;
+  filterRegiment: string | null;
+  filterDivision: string | null;
+  filterArmy: string | null;
+  filterMilitaryDistrict: string | null;
+  filterArmyRegion: string | null;
+  filterComment: string | null;
+  filterOrbitNote: string | null;
+  searchMode: ListUnitsSearchMode | null;
+  limit: number | null;
+  offset: number | null;
 };
 
 export type ListUnitsRsp = {
   showLoadMore: boolean;
+  totalCount: number;
+  statusCounts: UnitStatusCountsRsp;
   units: Array<Unit>;
+};
+
+export type UnitStatusCountsRsp = {
+  active: number;
+  inactive: number;
 };
 
 export type ListUnitsByIdReq = {
@@ -2420,6 +2471,16 @@ export type ListUnitsByIdReq = {
 
 export type ListUnitsByIdRsp = {
   units: Array<Unit>;
+};
+
+export type UnitDuplicate = {
+  sigintUnit: Unit;
+  orbitUnitId: string;
+  orbitUnitFullName: string;
+};
+
+export type ListUnitDuplicatesRsp = {
+  units: Array<UnitDuplicate>;
 };
 
 export type CreateUnitReq = {
@@ -2434,6 +2495,7 @@ export type CreateUnitReq = {
   isDeduplicateCandidate: boolean | null;
   comment: string;
   orbitNote: string | null;
+  duplicateUnitIds: Array<number>;
 };
 
 export type CreateUnitWithAutoNetworkReq = {
@@ -2500,14 +2562,16 @@ export type OrbitParentUnit = {
 };
 
 export type OrbitChildUnit = {
-  orbitUnitId: string;
   sigintUnitId: number;
   name: string;
+  active: boolean;
+  orbitUnitIds: Array<string>;
+  isGenerative: boolean;
+  isOperational: boolean;
 };
 
 export type UnitOrbitChildrenRsp = {
-  generativeUnits: Array<OrbitChildUnit>;
-  operationalUnits: Array<OrbitChildUnit>;
+  units: Array<OrbitChildUnit>;
 };
 
 export type OrbitUnitDetails = {

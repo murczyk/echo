@@ -368,6 +368,8 @@ async fn load_report(
     )
     .await
     .c(h!())?;
+    let callsigns_by_item_id =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &item_ids).await?;
     let blacklist = crate::sigint::comments::load_blacklist(dbx).await?;
     let mut report = RerReport::default();
     for item_id in item_ids {
@@ -406,6 +408,11 @@ async fn load_report(
         else {
             continue;
         };
+        let callsigns = callsigns_by_item_id
+            .get(&item_id)
+            .cloned()
+            .unwrap_or_default()
+            .effective();
         insert_report_message(
             &mut report,
             target,
@@ -416,7 +423,7 @@ async fn load_report(
                 &message, &comments, &blacklist,
             )
             .c(h!())?,
-            parse_callsigns(&item),
+            parse_callsigns(&callsigns),
             parse_points(&item),
         );
     }
@@ -1094,12 +1101,9 @@ fn unit_identity(unit: &sigint_unit::Model) -> Option<UnitIdentity> {
     })
 }
 
-fn parse_callsigns(item: &sigint_inbox_item::Model) -> Vec<String> {
-    item.callsigns
-        .clone()
-        .and_then(|value| serde_json::from_value::<Vec<String>>(value).ok())
-        .unwrap_or_default()
-        .into_iter()
+fn parse_callsigns(callsigns: &[String]) -> Vec<String> {
+    callsigns
+        .iter()
         .map(|callsign| callsign.trim().to_uppercase())
         .filter(|callsign| !callsign.is_empty())
         .collect::<BTreeSet<_>>()
@@ -1442,7 +1446,6 @@ fn default_run(text: &str, bold: bool, italic: bool) -> Run {
 mod tests {
     use super::*;
     use chrono::{NaiveDate, TimeZone};
-    use serde_json::json;
     use std::io::Read;
     use tempfile::NamedTempFile;
     use zip::ZipArchive;
@@ -1487,7 +1490,6 @@ mod tests {
             time: None,
             freq: None,
             coords: None,
-            callsigns: None,
             checked: None,
             reviewed: None,
             unit: None,
@@ -1499,8 +1501,6 @@ mod tests {
             nominatimres_id: None,
             location: None,
             tags: None,
-            callsigns_alg2: None,
-            callsigns_alg1: None,
             datetime,
             datetime_neo: datetime,
             signal_tokens: None,
@@ -1770,7 +1770,6 @@ mod tests {
             time: None,
             freq: None,
             coords: Some("48.1, 37.2".to_string()),
-            callsigns: None,
             checked: None,
             reviewed: None,
             unit: None,
@@ -1782,8 +1781,6 @@ mod tests {
             nominatimres_id: None,
             location: None,
             tags: None,
-            callsigns_alg2: None,
-            callsigns_alg1: None,
             datetime: None,
             datetime_neo: None,
             signal_tokens: None,
@@ -1807,39 +1804,12 @@ mod tests {
 
     #[test]
     fn parse_callsigns_uppercases_and_deduplicates_values() {
-        let item = sigint_inbox_item::Model {
-            id: 1,
-            date: None,
-            time: None,
-            freq: None,
-            coords: None,
-            callsigns: Some(json!(["барс", " БАРС ", "сова"])),
-            checked: None,
-            reviewed: None,
-            unit: None,
-            callsign_tokens: None,
-            keyword_tokens: None,
-            unit_v2: None,
-            lat: None,
-            lng: None,
-            nominatimres_id: None,
-            location: None,
-            tags: None,
-            callsigns_alg2: None,
-            callsigns_alg1: None,
-            datetime: None,
-            datetime_neo: None,
-            signal_tokens: None,
-            body_noheader: None,
-            parsed_unit_v2: false,
-            location_v2: None,
-            post_id: None,
-            device_name_id: None,
-            network: None,
-        };
-
         assert_eq!(
-            parse_callsigns(&item),
+            parse_callsigns(&[
+                "барс".to_string(),
+                " БАРС ".to_string(),
+                "сова".to_string(),
+            ]),
             vec!["БАРС".to_string(), "СОВА".to_string()]
         );
     }
@@ -2270,7 +2240,6 @@ mod tests {
             time: None,
             freq: None,
             coords: None,
-            callsigns: None,
             checked: None,
             reviewed: None,
             unit: None,
@@ -2282,8 +2251,6 @@ mod tests {
             nominatimres_id: None,
             location: None,
             tags: None,
-            callsigns_alg2: None,
-            callsigns_alg1: None,
             datetime: None,
             datetime_neo: None,
             signal_tokens: None,
@@ -2321,7 +2288,6 @@ mod tests {
             time: None,
             freq: None,
             coords: None,
-            callsigns: None,
             checked: None,
             reviewed: None,
             unit: None,
@@ -2333,8 +2299,6 @@ mod tests {
             nominatimres_id: None,
             location: None,
             tags: None,
-            callsigns_alg2: None,
-            callsigns_alg1: None,
             datetime: Some(dt(5, 58)),
             datetime_neo: Some(dt(5, 58)),
             signal_tokens: None,

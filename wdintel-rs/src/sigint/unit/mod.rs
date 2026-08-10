@@ -1,5 +1,8 @@
 use self::types::*;
-use crate::config::SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME;
+use crate::config::{
+    SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME, SIGINT_UNIT_LIST_DEFAULT_LIMIT,
+    SIGINT_UNIT_LIST_MAX_LIMIT,
+};
 use crate::entities::sea_orm_active_enums::ChangelogActionEnum;
 use crate::entities::*;
 use crate::error::AppError;
@@ -14,7 +17,7 @@ use actix_web::web::Json;
 use sea_orm::*;
 use sea_query::types::IntoColumnRef;
 use sea_query::{Expr, OnConflict, SimpleExpr};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 pub mod attachment;
 pub mod orbit;
@@ -64,9 +67,17 @@ pub async fn list_units(
         .c(h!())?;
     let can_view_orbit =
         orbit::can_view_orbit_data(&env.dbx, &login_id).await?;
-    let mut response = read_units(&env.dbx, &req).await?;
+    let mut response =
+        read_units_with_orbit_visibility(&env.dbx, &req, can_view_orbit)
+            .await?;
     if can_view_orbit {
-        let orbit_unit_ids = orbit::unit_ids_with_orbit(&env.dbx).await?;
+        let unit_ids = response
+            .units
+            .iter()
+            .map(|unit| unit.id)
+            .collect::<Vec<_>>();
+        let orbit_unit_ids =
+            orbit::unit_ids_with_orbit(&env.dbx, &unit_ids).await?;
         for unit in &mut response.units {
             unit.orbit_unit_ids =
                 orbit_unit_ids.get(&unit.id).cloned().unwrap_or_default();
@@ -80,106 +91,394 @@ pub async fn list_units(
     Ok(Json(response))
 }
 
+#[post("/api/sigint/units/status-counts")]
+pub async fn unit_status_counts(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<UnitStatusCountsRsp>, AppError> {
+    let login_id = login_id_from_identity(&user)?;
+    has_any_role(&env.dbx, &login_id, vec!["Rer", "Api"])
+        .await
+        .c(h!())?;
+    Ok(Json(read_unit_status_counts(&env.dbx).await?))
+}
+
+async fn read_unit_status_counts(
+    dbx: &DatabaseConnection,
+) -> Result<UnitStatusCountsRsp, AppError> {
+    count_unit_statuses(dbx, available_units_query(true)).await
+}
+
+async fn count_unit_statuses(
+    dbx: &DatabaseConnection,
+    units: Select<sigint_unit::Entity>,
+) -> Result<UnitStatusCountsRsp, AppError> {
+    #[derive(FromQueryResult)]
+    struct Row {
+        active: i64,
+        inactive: i64,
+    }
+
+    let counts = units
+        .select_only()
+        .column_as(
+            Expr::cust("COUNT(*) FILTER (WHERE sigint_unit.active = true)"),
+            "active",
+        )
+        .column_as(
+            Expr::cust("COUNT(*) FILTER (WHERE sigint_unit.active = false)"),
+            "inactive",
+        )
+        .into_model::<Row>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+
+    Ok(UnitStatusCountsRsp {
+        active: counts.active,
+        inactive: counts.inactive,
+    })
+}
+
 pub(crate) async fn read_units(
     dbx: &DatabaseConnection,
     req: &ListUnitsReq,
 ) -> Result<ListUnitsRsp, AppError> {
-    const LIMIT: u64 = 100000;
-    let mut units = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Deleted.eq(false));
-    let sort_by = req
-        .sort_by
-        .clone()
-        .unwrap_or(ListUnitsSortBy::NaturalMilitarySortAsc);
-    match sort_by {
-        ListUnitsSortBy::CreatedAtDesc => {
-            if let Some(before_unit_id) = &req.before_unit_id {
-                let before_unit =
-                    find_unit(dbx, *before_unit_id).await.c(h!())?;
-                units = units.filter(
-                    Expr::tuple([
-                        sigint_unit::Column::CreatedAt.into_column_ref().into(),
-                        sigint_unit::Column::Id.into_column_ref().into(),
-                    ])
-                    .lt(SimpleExpr::Tuple(vec![
-                        before_unit.created_at.into(),
-                        before_unit.id.into(),
-                    ])),
-                );
+    read_units_with_orbit_visibility(dbx, req, true).await
+}
+
+async fn read_units_with_orbit_visibility(
+    dbx: &DatabaseConnection,
+    req: &ListUnitsReq,
+    can_view_orbit: bool,
+) -> Result<ListUnitsRsp, AppError> {
+    let mut units = available_units_query(true);
+    units = apply_unit_list_filters(units, req, can_view_orbit);
+    let status_counts = count_unit_statuses(dbx, units.clone()).await?;
+    if let Some(active) = req.filter_active {
+        units = units.filter(sigint_unit::Column::Active.eq(active));
+    } else if !req.include_inactive {
+        units = units.filter(sigint_unit::Column::Active.eq(true));
+    }
+    let total_count = selected_unit_count(req, &status_counts);
+    let total_count_u64 = u64::try_from(total_count).c(h!())?;
+    let sort_by = unit_list_sort(req.sort_by.as_ref(), can_view_orbit);
+    if let Some((column, order)) = simple_unit_list_sort(&sort_by) {
+        units = units
+            .order_by(column, order.clone())
+            .order_by(sigint_unit::Column::Id, order);
+    } else {
+        match sort_by {
+            ListUnitsSortBy::CreatedAtDesc => {
+                if let Some(before_unit_id) = &req.before_unit_id {
+                    let before_unit =
+                        find_unit(dbx, *before_unit_id).await.c(h!())?;
+                    units = units.filter(
+                        Expr::tuple([
+                            sigint_unit::Column::CreatedAt
+                                .into_column_ref()
+                                .into(),
+                            sigint_unit::Column::Id.into_column_ref().into(),
+                        ])
+                        .lt(SimpleExpr::Tuple(vec![
+                            before_unit.created_at.into(),
+                            before_unit.id.into(),
+                        ])),
+                    );
+                }
+                units = units
+                    .order_by_desc(sigint_unit::Column::CreatedAt)
+                    .order_by_desc(sigint_unit::Column::Id);
             }
-            units = units
-                .order_by_desc(sigint_unit::Column::CreatedAt)
-                .order_by_desc(sigint_unit::Column::Id);
-        }
-        ListUnitsSortBy::CreatedAtAsc => {
-            if let Some(after_unit_id) = &req.after_unit_id {
-                let after_unit =
-                    find_unit(dbx, *after_unit_id).await.c(h!())?;
-                units = units.filter(
-                    Expr::tuple([
-                        sigint_unit::Column::CreatedAt.into_column_ref().into(),
-                        sigint_unit::Column::Id.into_column_ref().into(),
-                    ])
-                    .gt(SimpleExpr::Tuple(vec![
-                        after_unit.created_at.into(),
-                        after_unit.id.into(),
-                    ])),
-                );
+            ListUnitsSortBy::CreatedAtAsc => {
+                if let Some(after_unit_id) = &req.after_unit_id {
+                    let after_unit =
+                        find_unit(dbx, *after_unit_id).await.c(h!())?;
+                    units = units.filter(
+                        Expr::tuple([
+                            sigint_unit::Column::CreatedAt
+                                .into_column_ref()
+                                .into(),
+                            sigint_unit::Column::Id.into_column_ref().into(),
+                        ])
+                        .gt(SimpleExpr::Tuple(vec![
+                            after_unit.created_at.into(),
+                            after_unit.id.into(),
+                        ])),
+                    );
+                }
+                units = units
+                    .order_by_asc(sigint_unit::Column::CreatedAt)
+                    .order_by_asc(sigint_unit::Column::Id);
             }
-            units = units
-                .order_by_asc(sigint_unit::Column::CreatedAt)
-                .order_by_asc(sigint_unit::Column::Id);
-        }
-        ListUnitsSortBy::NaturalMilitarySortAsc => {
-            if let Some(after_unit_id) = &req.after_unit_id {
-                let after_unit =
-                    find_unit(dbx, *after_unit_id).await.c(h!())?;
-                units = units.filter(
-                    Expr::tuple([
-                        sigint_unit::Column::ArmyRegion
-                            .into_column_ref()
-                            .into(),
-                        sigint_unit::Column::MilitaryDistrict
-                            .into_column_ref()
-                            .into(),
-                        sigint_unit::Column::Army.into_column_ref().into(),
-                        sigint_unit::Column::Division.into_column_ref().into(),
-                        sigint_unit::Column::Regiment.into_column_ref().into(),
-                        sigint_unit::Column::Battalion.into_column_ref().into(),
-                        sigint_unit::Column::Company.into_column_ref().into(),
-                        sigint_unit::Column::Id.into_column_ref().into(),
-                    ])
-                    .gt(SimpleExpr::Tuple(vec![
-                        after_unit.army_region.into(),
-                        after_unit.military_district.into(),
-                        after_unit.army.into(),
-                        after_unit.division.into(),
-                        after_unit.regiment.into(),
-                        after_unit.battalion.into(),
-                        after_unit.company.into(),
-                        after_unit.id.into(),
-                    ])),
-                );
+            ListUnitsSortBy::NaturalMilitarySortAsc => {
+                if let Some(after_unit_id) = &req.after_unit_id {
+                    let after_unit =
+                        find_unit(dbx, *after_unit_id).await.c(h!())?;
+                    units = units.filter(
+                        Expr::tuple([
+                            sigint_unit::Column::ArmyRegion
+                                .into_column_ref()
+                                .into(),
+                            sigint_unit::Column::MilitaryDistrict
+                                .into_column_ref()
+                                .into(),
+                            sigint_unit::Column::Army.into_column_ref().into(),
+                            sigint_unit::Column::Division
+                                .into_column_ref()
+                                .into(),
+                            sigint_unit::Column::Regiment
+                                .into_column_ref()
+                                .into(),
+                            sigint_unit::Column::Battalion
+                                .into_column_ref()
+                                .into(),
+                            sigint_unit::Column::Company
+                                .into_column_ref()
+                                .into(),
+                            sigint_unit::Column::Id.into_column_ref().into(),
+                        ])
+                        .gt(SimpleExpr::Tuple(vec![
+                            after_unit.army_region.into(),
+                            after_unit.military_district.into(),
+                            after_unit.army.into(),
+                            after_unit.division.into(),
+                            after_unit.regiment.into(),
+                            after_unit.battalion.into(),
+                            after_unit.company.into(),
+                            after_unit.id.into(),
+                        ])),
+                    );
+                }
+                units = units.order_by_asc(sigint_unit::Column::ArmyRegion);
+                units =
+                    units.order_by_asc(sigint_unit::Column::MilitaryDistrict);
+                units = units.order_by_asc(sigint_unit::Column::Army);
+                units = units.order_by_asc(sigint_unit::Column::Division);
+                units = units.order_by_asc(sigint_unit::Column::Regiment);
+                units = units.order_by_asc(sigint_unit::Column::Battalion);
+                units = units.order_by_asc(sigint_unit::Column::Company);
+                units = units.order_by_asc(sigint_unit::Column::Id);
             }
-            units = units.order_by_asc(sigint_unit::Column::ArmyRegion);
-            units = units.order_by_asc(sigint_unit::Column::MilitaryDistrict);
-            units = units.order_by_asc(sigint_unit::Column::Army);
-            units = units.order_by_asc(sigint_unit::Column::Division);
-            units = units.order_by_asc(sigint_unit::Column::Regiment);
-            units = units.order_by_asc(sigint_unit::Column::Battalion);
-            units = units.order_by_asc(sigint_unit::Column::Company);
-            units = units.order_by_asc(sigint_unit::Column::Id);
+            _ => unreachable!("simple unit list sorts are handled above"),
         }
     }
-    let units = units.limit(LIMIT).all(dbx).await.c(h!())?;
+    let limit = req
+        .limit
+        .and_then(|limit| u64::try_from(limit).ok())
+        .unwrap_or(SIGINT_UNIT_LIST_DEFAULT_LIMIT)
+        .clamp(1, SIGINT_UNIT_LIST_MAX_LIMIT);
+    let offset = req
+        .offset
+        .and_then(|offset| u64::try_from(offset).ok())
+        .unwrap_or(0);
+    let units = units.limit(limit).offset(offset).all(dbx).await.c(h!())?;
     let mut res = vec![];
     for unit in units {
         res.push(render_unit(&unit)?);
     }
+    let show_load_more =
+        if req.after_unit_id.is_some() || req.before_unit_id.is_some() {
+            res.len() as u64 == limit
+        } else {
+            offset.saturating_add(res.len() as u64) < total_count_u64
+        };
     Ok(ListUnitsRsp {
-        show_load_more: res.len() as u64 == LIMIT,
+        show_load_more,
+        total_count,
+        status_counts,
         units: res,
     })
+}
+
+fn selected_unit_count(
+    req: &ListUnitsReq,
+    status_counts: &UnitStatusCountsRsp,
+) -> i64 {
+    match req.filter_active {
+        Some(true) => status_counts.active,
+        Some(false) => status_counts.inactive,
+        None if req.include_inactive => {
+            status_counts.active.saturating_add(status_counts.inactive)
+        }
+        None => status_counts.active,
+    }
+}
+
+fn unit_list_sort(
+    sort_by: Option<&ListUnitsSortBy>,
+    can_view_orbit: bool,
+) -> ListUnitsSortBy {
+    match sort_by {
+        Some(
+            ListUnitsSortBy::UnitOrbitNoteAsc
+            | ListUnitsSortBy::UnitOrbitNoteDesc,
+        ) if !can_view_orbit => ListUnitsSortBy::NaturalMilitarySortAsc,
+        Some(sort_by) => sort_by.clone(),
+        None => ListUnitsSortBy::NaturalMilitarySortAsc,
+    }
+}
+
+fn simple_unit_list_sort(
+    sort_by: &ListUnitsSortBy,
+) -> Option<(sigint_unit::Column, Order)> {
+    use ListUnitsSortBy::*;
+
+    Some(match sort_by {
+        UnitNameAsc => (sigint_unit::Column::Name, Order::Asc),
+        UnitNameDesc => (sigint_unit::Column::Name, Order::Desc),
+        UnitCompanyAsc => (sigint_unit::Column::Company, Order::Asc),
+        UnitCompanyDesc => (sigint_unit::Column::Company, Order::Desc),
+        UnitBattalionAsc => (sigint_unit::Column::Battalion, Order::Asc),
+        UnitBattalionDesc => (sigint_unit::Column::Battalion, Order::Desc),
+        UnitRegimentAsc => (sigint_unit::Column::Regiment, Order::Asc),
+        UnitRegimentDesc => (sigint_unit::Column::Regiment, Order::Desc),
+        UnitDivisionAsc => (sigint_unit::Column::Division, Order::Asc),
+        UnitDivisionDesc => (sigint_unit::Column::Division, Order::Desc),
+        UnitArmyAsc => (sigint_unit::Column::Army, Order::Asc),
+        UnitArmyDesc => (sigint_unit::Column::Army, Order::Desc),
+        UnitMilitaryDistrictAsc => {
+            (sigint_unit::Column::MilitaryDistrict, Order::Asc)
+        }
+        UnitMilitaryDistrictDesc => {
+            (sigint_unit::Column::MilitaryDistrict, Order::Desc)
+        }
+        UnitArmyRegionAsc => (sigint_unit::Column::ArmyRegion, Order::Asc),
+        UnitArmyRegionDesc => (sigint_unit::Column::ArmyRegion, Order::Desc),
+        UnitCommentAsc => (sigint_unit::Column::Comment, Order::Asc),
+        UnitCommentDesc => (sigint_unit::Column::Comment, Order::Desc),
+        UnitOrbitNoteAsc => (sigint_unit::Column::OrbitNote, Order::Asc),
+        UnitOrbitNoteDesc => (sigint_unit::Column::OrbitNote, Order::Desc),
+        CreatedAtDesc | CreatedAtAsc | NaturalMilitarySortAsc => return None,
+    })
+}
+
+fn apply_unit_list_filters(
+    mut units: Select<sigint_unit::Entity>,
+    req: &ListUnitsReq,
+    can_view_orbit: bool,
+) -> Select<sigint_unit::Entity> {
+    let mode = req
+        .search_mode
+        .as_ref()
+        .unwrap_or(&ListUnitsSearchMode::Strict);
+    let global_filter_columns = if can_view_orbit {
+        "concat_ws(' ', \"sigint_unit\".\"name\", \"sigint_unit\".\"company\", \"sigint_unit\".\"battalion\", \"sigint_unit\".\"regiment\", \"sigint_unit\".\"division\", \"sigint_unit\".\"army\", \"sigint_unit\".\"military_district\", \"sigint_unit\".\"army_region\", \"sigint_unit\".\"comment\", \"sigint_unit\".\"orbit_note\")"
+    } else {
+        "concat_ws(' ', \"sigint_unit\".\"name\", \"sigint_unit\".\"company\", \"sigint_unit\".\"battalion\", \"sigint_unit\".\"regiment\", \"sigint_unit\".\"division\", \"sigint_unit\".\"army\", \"sigint_unit\".\"military_district\", \"sigint_unit\".\"army_region\", \"sigint_unit\".\"comment\")"
+    };
+    let orbit_note_filter = if can_view_orbit {
+        req.filter_orbit_note.as_deref()
+    } else {
+        None
+    };
+    let filters = [
+        (global_filter_columns, req.filter_text.as_deref()),
+        ("\"sigint_unit\".\"name\"", req.filter_name.as_deref()),
+        ("\"sigint_unit\".\"company\"", req.filter_company.as_deref()),
+        (
+            "\"sigint_unit\".\"battalion\"",
+            req.filter_battalion.as_deref(),
+        ),
+        (
+            "\"sigint_unit\".\"regiment\"",
+            req.filter_regiment.as_deref(),
+        ),
+        (
+            "\"sigint_unit\".\"division\"",
+            req.filter_division.as_deref(),
+        ),
+        ("\"sigint_unit\".\"army\"", req.filter_army.as_deref()),
+        (
+            "\"sigint_unit\".\"military_district\"",
+            req.filter_military_district.as_deref(),
+        ),
+        (
+            "\"sigint_unit\".\"army_region\"",
+            req.filter_army_region.as_deref(),
+        ),
+        ("\"sigint_unit\".\"comment\"", req.filter_comment.as_deref()),
+        (
+            "coalesce(\"sigint_unit\".\"orbit_note\", '')",
+            orbit_note_filter,
+        ),
+    ];
+
+    for (column_sql, value) in filters {
+        if let Some(condition) = unit_text_filter(column_sql, value, mode) {
+            units = units.filter(condition);
+        }
+    }
+    units
+}
+
+fn unit_text_filter(
+    column_sql: &str,
+    value: Option<&str>,
+    mode: &ListUnitsSearchMode,
+) -> Option<Condition> {
+    let value = value?.trim();
+    if value.is_empty() {
+        return None;
+    }
+
+    match mode {
+        ListUnitsSearchMode::Strict => {
+            let mut condition = Condition::all();
+            for token in value.split_whitespace() {
+                let token = regex::escape(&token.to_lowercase());
+                let token_pattern = if token
+                    .chars()
+                    .all(|ch| ch.is_ascii_digit())
+                {
+                    format!("(^|[[:space:]]){token}([[:space:]]|$)")
+                } else {
+                    format!(
+                        "(^|[[:space:]])[^[:space:]]*{token}[^[:space:]]*([[:space:]]|$)"
+                    )
+                };
+                condition = condition.add(Expr::cust_with_values(
+                    format!("lower({column_sql}) ~ $1"),
+                    [token_pattern],
+                ));
+            }
+            Some(condition)
+        }
+        ListUnitsSearchMode::Relaxed => {
+            let escaped = value
+                .to_lowercase()
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            Some(Condition::any().add(Expr::cust_with_values(
+                format!(
+                    "lower({column_sql}) LIKE $1 ESCAPE E'\\\\' OR word_similarity(lower($2), lower({column_sql})) > 0.3"
+                ),
+                [format!("%{escaped}%"), value.to_lowercase()],
+            )))
+        }
+    }
+}
+
+fn available_units_query(
+    include_inactive: bool,
+) -> Select<sigint_unit::Entity> {
+    let units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false));
+    if include_inactive {
+        units
+    } else {
+        units.filter(sigint_unit::Column::Active.eq(true))
+    }
+}
+
+fn units_by_id_query(ids: Option<&[i64]>) -> Select<sigint_unit::Entity> {
+    let mut units = available_units_query(true);
+    if let Some(ids) = ids {
+        units = units.filter(sigint_unit::Column::Id.eq_any(ids.to_vec()));
+    }
+    units
 }
 
 #[post("/api/sigint/units-by-id")]
@@ -193,12 +492,10 @@ pub async fn list_units_by_id(
         .await
         .c(h!())?;
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
-    let mut units = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Deleted.eq(false));
-    if let Some(ids) = &req.ids {
-        units = units.filter(sigint_unit::Column::Id.eq_any(ids.clone()));
-    }
-    let units = units.all(&env.dbx).await.c(h!())?;
+    let units = units_by_id_query(req.ids.as_deref())
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
 
     let mut res = vec![];
     for unit in units {
@@ -221,32 +518,8 @@ pub async fn create_unit(
     let login = login_id_from_identity(&user)?;
     has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
 
-    let mut req = req.into_inner();
-    let can_view_orbit =
-        clear_create_unit_orbit_note_if_hidden(&env.dbx, &login, &mut req)
-            .await?;
-    let transaction = env.dbx.begin().await.context(h!())?;
-    let unit = insert_unit_with_changelog(&transaction, &login, &req).await?;
-    if unit.active {
-        reconcile_parent_unit_activity(
-            &transaction,
-            &login,
-            std::slice::from_ref(&unit),
-        )
-        .await?;
-    }
-    transaction.commit().await.context(h!())?;
-
-    if unit.active {
-        crate::orbit::link_new_sigint_unit_with_lock(&env.dbx, unit.id)
-            .await
-            .c(h!())?;
-    }
-    let unit = sigint_unit::Entity::find_by_id(unit.id)
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
+    let (unit, can_view_orbit) =
+        create_unit_for_login(&login, &env, req.into_inner()).await?;
 
     fanout_unit_changed(&env).await?;
 
@@ -257,6 +530,20 @@ pub async fn create_unit(
         redact_unit_orbit_data(&mut unit);
     }
     Ok(Json(unit))
+}
+
+async fn create_unit_for_login(
+    login: &uuid::Uuid,
+    env: &Env,
+    mut req: CreateUnitReq,
+) -> Result<(sigint_unit::Model, bool), AppError> {
+    let can_view_orbit =
+        clear_create_unit_orbit_note_if_hidden(&env.dbx, login, &mut req)
+            .await?;
+    let transaction = begin_unit_creation_transaction(&env.dbx, &req).await?;
+    let unit = insert_merge_link_unit(&transaction, login, &req).await?;
+    transaction.commit().await.context(h!())?;
+    Ok((unit, can_view_orbit))
 }
 
 #[post("/api/sigint/unit/create-with-auto-network")]
@@ -353,12 +640,7 @@ pub async fn create_unit_with_auto_network_for_login(
         .c(h!())?;
     clear_create_unit_orbit_note_if_hidden(&env.dbx, login, &mut req.unit)
         .await?;
-
-    let txn = env.dbx.begin().await.context(h!())?;
-    let unit = insert_unit_with_changelog(&txn, login, &req.unit)
-        .await
-        .c(h!())?;
-    let network = if req.skip_network_creation {
+    let network_locations = if req.skip_network_creation {
         None
     } else {
         let locations = normalize_network_locations(req.locations.clone());
@@ -367,36 +649,136 @@ pub async fn create_unit_with_auto_network_for_login(
                 msg: "network locations are required".to_string(),
             });
         }
-        Some(
-            insert_auto_cyber_network(
-                &txn,
-                login,
-                &req,
-                unit.id,
-                locations,
-                req.unit_mask.clone(),
-            )
-            .await
-            .c(h!())?,
-        )
+        Some(locations)
     };
+
+    let transaction =
+        begin_unit_creation_transaction(&env.dbx, &req.unit).await?;
+    let unit = insert_merge_link_unit(&transaction, login, &req.unit).await?;
+    let (network_id, created_network) = match network_locations {
+        None => (None, None),
+        Some(locations) => {
+            if let Some(network) =
+                active_network_for_unit(&transaction, unit.id).await?
+            {
+                (Some(network.id), None)
+            } else {
+                let network = insert_auto_cyber_network(
+                    &transaction,
+                    login,
+                    &req,
+                    unit.id,
+                    locations,
+                    req.unit_mask.clone(),
+                )
+                .await
+                .c(h!())?;
+                (Some(network.id), Some(network))
+            }
+        }
+    };
+    transaction.commit().await.context(h!())?;
+
+    render_created_unit_with_optional_network(
+        login,
+        env,
+        unit,
+        network_id,
+        created_network,
+    )
+    .await
+}
+
+async fn begin_unit_creation_transaction(
+    dbx: &DatabaseConnection,
+    req: &CreateUnitReq,
+) -> Result<DatabaseTransaction, AppError> {
+    if req.active {
+        Ok(crate::orbit::acquire_import_lock(dbx).await.c(h!())?)
+    } else {
+        Ok(dbx.begin().await.context(h!())?)
+    }
+}
+
+async fn insert_merge_link_unit(
+    transaction: &DatabaseTransaction,
+    login: &uuid::Uuid,
+    req: &CreateUnitReq,
+) -> Result<sigint_unit::Model, AppError> {
+    let duplicate_unit_ids =
+        validated_duplicate_unit_ids(transaction, req).await?;
+    let unit = insert_unit_with_changelog(transaction, login, req)
+        .await
+        .c(h!())?;
     if unit.active {
         reconcile_parent_unit_activity(
-            &txn,
+            transaction,
             login,
             std::slice::from_ref(&unit),
         )
         .await?;
     }
-    txn.commit().await.context(h!())?;
-
+    let unit = merge_requested_duplicate_units(
+        *login,
+        transaction,
+        unit.id,
+        duplicate_unit_ids,
+    )
+    .await?;
     if unit.active {
-        crate::orbit::link_new_sigint_unit_with_lock(&env.dbx, unit.id)
+        crate::orbit::link_new_sigint_unit_in_transaction(transaction, unit.id)
             .await
             .c(h!())?;
     }
+    Ok(unit)
+}
 
-    render_created_unit_with_optional_network(login, env, unit, network).await
+async fn validated_duplicate_unit_ids<C>(
+    dbx: &C,
+    req: &CreateUnitReq,
+) -> Result<BTreeSet<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let duplicate_unit_ids = req
+        .duplicate_unit_ids
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    if duplicate_unit_ids.is_empty() {
+        return Ok(duplicate_unit_ids);
+    }
+    let candidate_ids =
+        orbit::create_unit_duplicate_candidate_ids_for_req(dbx, req).await?;
+    if !duplicate_unit_ids.is_subset(&candidate_ids) {
+        return Err(AppError::BL {
+            msg: "Selected duplicate units are no longer available".to_string(),
+        });
+    }
+    Ok(duplicate_unit_ids)
+}
+
+async fn merge_requested_duplicate_units<C>(
+    login: uuid::Uuid,
+    dbx: &C,
+    unit_id: i64,
+    duplicate_unit_ids: BTreeSet<i64>,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    if duplicate_unit_ids.contains(&unit_id) {
+        return Err(AppError::BL {
+            msg: "new unit cannot be merged into itself".to_string(),
+        });
+    }
+    for duplicate_unit_id in duplicate_unit_ids {
+        merge_units_in_transaction(login, dbx, duplicate_unit_id, unit_id)
+            .await
+            .c(h!())?;
+    }
+    active_network_for_unit(dbx, unit_id).await?;
+    find_unit(dbx, unit_id).await
 }
 
 async fn clear_create_unit_orbit_note_if_hidden(
@@ -407,6 +789,7 @@ async fn clear_create_unit_orbit_note_if_hidden(
     let can_view_orbit = orbit::can_view_orbit_data(dbx, login).await?;
     if !can_view_orbit {
         req.orbit_note = None;
+        req.duplicate_unit_ids.clear();
     }
     Ok(can_view_orbit)
 }
@@ -415,11 +798,12 @@ async fn render_created_unit_with_optional_network(
     login: &uuid::Uuid,
     env: &Env,
     unit: sigint_unit::Model,
-    network: Option<sigint_network::Model>,
+    network_id: Option<i64>,
+    created_network: Option<sigint_network::Model>,
 ) -> Result<CreateUnitWithAutoNetworkRsp, AppError> {
     fanout_unit_changed_data(env).await?;
 
-    if let Some(network) = network.clone() {
+    if let Some(network) = created_network {
         fanout_created_network(env, network).await?;
     }
 
@@ -434,10 +818,7 @@ async fn render_created_unit_with_optional_network(
     } else {
         redact_unit_orbit_data(&mut unit);
     }
-    Ok(CreateUnitWithAutoNetworkRsp {
-        unit,
-        network_id: network.map(|network| network.id),
-    })
+    Ok(CreateUnitWithAutoNetworkRsp { unit, network_id })
 }
 
 async fn insert_unit_with_changelog<'a, 'async_trait, C>(
@@ -579,7 +960,17 @@ pub(super) async fn unit_has_active_network<C>(
 where
     C: ConnectionTrait,
 {
-    Ok(sigint_network::Entity::find()
+    Ok(active_network_for_unit(dbx, unit_id).await?.is_some())
+}
+
+async fn active_network_for_unit<C>(
+    dbx: &C,
+    unit_id: i64,
+) -> Result<Option<sigint_network::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut networks = sigint_network::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_network::Relation::SigintNetworkUnit.def(),
@@ -587,10 +978,16 @@ where
         .filter(sigint_network_unit::Column::UnitId.eq(unit_id))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_network::Column::ActiveTo.is_null())
-        .one(dbx)
+        .limit(2)
+        .all(dbx)
         .await
-        .c(h!())?
-        .is_some())
+        .c(h!())?;
+    if networks.len() > 1 {
+        return Err(AppError::BL {
+            msg: "unit has multiple active networks".to_string(),
+        });
+    }
+    Ok(networks.pop())
 }
 
 async fn fanout_created_network(
@@ -1018,9 +1415,36 @@ pub async fn merge_units(
     unit_to_delete_id: i64,
     original_id: i64,
 ) -> Result<sigint_unit::Model, AppError> {
+    let transaction = dbx.begin().await.context(h!())?;
+    let unit = merge_units_in_transaction(
+        login,
+        &transaction,
+        unit_to_delete_id,
+        original_id,
+    )
+    .await?;
+    transaction.commit().await.context(h!())?;
+    Ok(unit)
+}
+
+async fn merge_units_in_transaction<C>(
+    login: uuid::Uuid,
+    dbx: &C,
+    unit_to_delete_id: i64,
+    original_id: i64,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    if unit_to_delete_id == original_id {
+        return Err(AppError::BL {
+            msg: "unit cannot be merged into itself".to_string(),
+        });
+    }
     let unit_to_delete =
-        find_unit(dbx, unit_to_delete_id).await.context(h!())?;
-    let unit_original = find_unit(dbx, original_id).await.context(h!())?;
+        find_available_unit_for_update(dbx, unit_to_delete_id).await?;
+    let unit_original =
+        find_available_unit_for_update(dbx, original_id).await?;
     let previous_unit_original = unit_original.clone();
     let unit_original =
         update_original_unit(unit_original, &unit_to_delete, dbx)
@@ -1079,10 +1503,29 @@ pub async fn merge_units(
     find_unit(dbx, unit_original.id).await
 }
 
-pub async fn find_unit(
-    dbx: &DbConn,
+async fn find_available_unit_for_update<C>(
+    dbx: &C,
     unit_id: i64,
-) -> Result<sigint_unit::Model, AppError> {
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    sigint_unit::Entity::find_by_id(unit_id)
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .lock_exclusive()
+        .one(dbx)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)
+}
+
+pub async fn find_unit<C>(
+    dbx: &C,
+    unit_id: i64,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
     let unit = sigint_unit::Entity::find_by_id(unit_id)
         .one(dbx)
         .await
@@ -1120,12 +1563,15 @@ pub(crate) fn redact_unit_orbit_data(unit: &mut Unit) {
     unit.is_deduplicate_candidate = None;
 }
 
-async fn swap_units(
+async fn swap_units<C>(
     old_unit_id: i64,
     new_unit_id: i64,
     login: uuid::Uuid,
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<()> {
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     let callsigns = sigint_callsign::Entity::find()
         .filter(sigint_callsign::Column::UnitId.eq(old_unit_id))
         .all(dbx)
@@ -1261,11 +1707,14 @@ async fn swap_units(
     Ok(())
 }
 
-async fn swap_unit_devices(
+async fn swap_unit_devices<C>(
     old_unit_id: i64,
     new_unit_id: i64,
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<()> {
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     device::Entity::update_many()
         .col_expr(device::Column::UnitId, Expr::value(Some(new_unit_id)))
         .col_expr(
@@ -1279,18 +1728,20 @@ async fn swap_unit_devices(
     Ok(())
 }
 
-async fn move_orbit_unit_links(
+async fn move_orbit_unit_links<C>(
     old_unit_id: i64,
     new_unit_id: i64,
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<()> {
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     if old_unit_id == new_unit_id {
         return Ok(());
     }
-    let transaction = dbx.begin().await.context(h!())?;
     let links = orbit_unit_sigint_unit::Entity::find()
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(old_unit_id))
-        .all(&transaction)
+        .all(dbx)
         .await
         .context(h!())?;
     if !links.is_empty() {
@@ -1298,7 +1749,7 @@ async fn move_orbit_unit_links(
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId.eq(new_unit_id),
             )
-            .all(&transaction)
+            .all(dbx)
             .await
             .context(h!())?
             .into_iter()
@@ -1330,24 +1781,26 @@ async fn move_orbit_unit_links(
                 ])
                 .to_owned(),
             )
-            .exec_without_returning(&transaction)
+            .exec_without_returning(dbx)
             .await
             .context(h!())?;
     }
     orbit_unit_sigint_unit::Entity::delete_many()
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(old_unit_id))
-        .exec(&transaction)
+        .exec(dbx)
         .await
         .context(h!())?;
-    transaction.commit().await.context(h!())?;
     Ok(())
 }
 
-async fn update_original_unit(
+async fn update_original_unit<C>(
     unit_original: sigint_unit::Model,
     unit_to_merge: &sigint_unit::Model,
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<sigint_unit::Model> {
+    dbx: &C,
+) -> anyhow::Result<sigint_unit::Model>
+where
+    C: ConnectionTrait,
+{
     let mut unit = unit_original.clone().into_active_model();
     unit.name = Set(unit_name_from_hierarchy([
         merged_unit_value(&unit_original.company, &unit_to_merge.company),
@@ -1504,8 +1957,7 @@ pub async fn units_search(
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
 
     let search_phrase = req.search.trim();
-    let mut q = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Deleted.eq(false));
+    let mut q = available_units_query(false);
 
     if !search_phrase.is_empty() {
         q = q.filter(Expr::cust_with_values(
@@ -1573,6 +2025,7 @@ mod tests {
             is_deduplicate_candidate: None,
             comment: "main section".to_string(),
             orbit_note: None,
+            duplicate_unit_ids: Vec::new(),
         }
     }
 
@@ -1640,6 +2093,46 @@ mod tests {
 
     async fn unit_count(dbx: &DatabaseConnection) -> u64 {
         sigint_unit::Entity::find().count(dbx).await.unwrap()
+    }
+
+    async fn link_current_duplicate_candidate(
+        dbx: &DatabaseConnection,
+        sigint_unit_id: i64,
+    ) -> uuid::Uuid {
+        let synced_at = Utc::now().naive_utc();
+        let orbit_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            unit_name_short: Set(Some("2 шр".to_string())),
+            operational_unit_name_full: Set(Some(
+                "2 шр / 3 ошб / 44 осбр".to_string(),
+            )),
+            created_at: Set(synced_at),
+            updated_at: Set(synced_at),
+            is_snapshot_root: Set(true),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        orbit_sync::ActiveModel {
+            synced_at: Set(synced_at),
+            archive_md5: Set(uuid::Uuid::new_v4().simple().to_string()),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit_id),
+            sigint_unit_id: Set(sigint_unit_id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        orbit_unit_id
     }
 
     struct OrbitHierarchyFixture {
@@ -1768,6 +2261,247 @@ mod tests {
         .unwrap()
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn unit_list_excludes_inactive_units_unless_requested() {
+        let env = cleanup().await.unwrap();
+        let active_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Alpha unit".to_string()),
+                active: Set(true),
+                orbit_note: Set(Some("Protected orbit phrase".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inactive_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Beta unit".to_string()),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let active_units = read_units(
+            &env.dbx,
+            &ListUnitsReq {
+                sort_by: None,
+                after_unit_id: None,
+                before_unit_id: None,
+                include_inactive: false,
+                filter_active: None,
+                filter_text: None,
+                filter_name: None,
+                filter_company: None,
+                filter_battalion: None,
+                filter_regiment: None,
+                filter_division: None,
+                filter_army: None,
+                filter_military_district: None,
+                filter_army_region: None,
+                filter_comment: None,
+                filter_orbit_note: None,
+                search_mode: None,
+                limit: None,
+                offset: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(active_units
+            .units
+            .iter()
+            .any(|unit| unit.id == active_unit.id));
+        assert!(active_units
+            .units
+            .iter()
+            .all(|unit| unit.id != inactive_unit.id));
+        assert_eq!(active_units.total_count, 1);
+        assert_eq!(
+            active_units.status_counts,
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 1,
+            }
+        );
+
+        let all_units = read_units(
+            &env.dbx,
+            &ListUnitsReq {
+                sort_by: None,
+                after_unit_id: None,
+                before_unit_id: None,
+                include_inactive: true,
+                filter_active: None,
+                filter_text: None,
+                filter_name: None,
+                filter_company: None,
+                filter_battalion: None,
+                filter_regiment: None,
+                filter_division: None,
+                filter_army: None,
+                filter_military_district: None,
+                filter_army_region: None,
+                filter_comment: None,
+                filter_orbit_note: None,
+                search_mode: None,
+                limit: None,
+                offset: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(all_units.units.iter().any(|unit| unit.id == active_unit.id));
+        assert!(all_units
+            .units
+            .iter()
+            .any(|unit| unit.id == inactive_unit.id));
+        assert_eq!(all_units.total_count, 2);
+        assert_eq!(
+            all_units.status_counts,
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 1,
+            }
+        );
+
+        let inactive_page = read_units(
+            &env.dbx,
+            &ListUnitsReq {
+                sort_by: Some(ListUnitsSortBy::UnitNameAsc),
+                include_inactive: true,
+                filter_active: Some(false),
+                limit: Some(1),
+                offset: Some(0),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(inactive_page.total_count, 1);
+        assert_eq!(inactive_page.units.len(), 1);
+        assert_eq!(inactive_page.units[0].id, inactive_unit.id);
+        assert!(!inactive_page.show_load_more);
+        assert_eq!(
+            inactive_page.status_counts,
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 1,
+            }
+        );
+
+        let filtered_page = read_units(
+            &env.dbx,
+            &ListUnitsReq {
+                filter_text: Some("Alpha".to_string()),
+                search_mode: Some(ListUnitsSearchMode::Relaxed),
+                limit: Some(20),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(filtered_page.total_count, 1);
+        assert_eq!(filtered_page.units[0].id, active_unit.id);
+        assert_eq!(
+            filtered_page.status_counts,
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 0,
+            }
+        );
+
+        let ignored_orbit_filter = read_units_with_orbit_visibility(
+            &env.dbx,
+            &ListUnitsReq {
+                filter_orbit_note: Some("not present".to_string()),
+                limit: Some(20),
+                ..Default::default()
+            },
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(ignored_orbit_filter.total_count, 1);
+        assert_eq!(ignored_orbit_filter.units[0].id, active_unit.id);
+        assert_eq!(
+            ignored_orbit_filter.status_counts,
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 1,
+            }
+        );
+
+        let restricted_global_filter = read_units_with_orbit_visibility(
+            &env.dbx,
+            &ListUnitsReq {
+                filter_text: Some("Protected orbit phrase".to_string()),
+                limit: Some(20),
+                ..Default::default()
+            },
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(restricted_global_filter.total_count, 0);
+        assert_eq!(
+            restricted_global_filter.status_counts,
+            UnitStatusCountsRsp {
+                active: 0,
+                inactive: 0,
+            }
+        );
+
+        let allowed_global_filter = read_units_with_orbit_visibility(
+            &env.dbx,
+            &ListUnitsReq {
+                filter_text: Some("Protected orbit phrase".to_string()),
+                limit: Some(20),
+                ..Default::default()
+            },
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(allowed_global_filter.total_count, 1);
+        assert_eq!(
+            allowed_global_filter.status_counts,
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 0,
+            }
+        );
+        assert_eq!(
+            unit_list_sort(Some(&ListUnitsSortBy::UnitOrbitNoteAsc), false),
+            ListUnitsSortBy::NaturalMilitarySortAsc
+        );
+
+        let units_by_id = units_by_id_query(Some(&[inactive_unit.id]))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(
+            units_by_id
+                .into_iter()
+                .map(|unit| unit.id)
+                .collect::<Vec<_>>(),
+            vec![inactive_unit.id]
+        );
+
+        assert_eq!(
+            read_unit_status_counts(&env.dbx).await.unwrap(),
+            UnitStatusCountsRsp {
+                active: 1,
+                inactive: 1,
+            }
+        );
+    }
+
     async fn assert_full_active_orbit_hierarchy(
         dbx: &DatabaseConnection,
         orbit_unit_ids: Vec<uuid::Uuid>,
@@ -1856,9 +2590,313 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn create_unit_ignores_orbit_note_when_orbit_data_is_hidden() {
+    async fn create_unit_merges_requested_duplicates_after_insert() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_current_duplicate_candidate(&env.dbx, duplicate.id).await;
+        let mut req = auto_req(true, vec![], vec![]);
+        req.unit.duplicate_unit_ids = vec![duplicate.id, duplicate.id];
+
+        let rsp = create_unit_with_auto_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap();
+
+        assert_ne!(rsp.unit.id, duplicate.id);
+        assert!(
+            sigint_unit::Entity::find_by_id(duplicate.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
+        assert!(
+            !sigint_unit::Entity::find_by_id(rsp.unit.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_creation_rejects_suppressed_duplicate_candidate() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let orbit_unit_id =
+            link_current_duplicate_candidate(&env.dbx, duplicate.id).await;
+        let mut req = auto_req(true, vec![], vec![]);
+        req.unit.duplicate_unit_ids = vec![duplicate.id];
+        assert!(orbit::create_unit_duplicate_candidate_ids_for_req(
+            &env.dbx, &req.unit,
+        )
+        .await
+        .unwrap()
+        .contains(&duplicate.id));
+        let link = orbit_unit_sigint_unit::Entity::find_by_id((
+            orbit_unit_id,
+            duplicate.id,
+        ))
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        let mut link = link.into_active_model();
+        link.is_suppressed = Set(true);
+        link.update(&env.dbx).await.unwrap();
+        let unit_count_before = unit_count(&env.dbx).await;
+
+        let err = create_unit_with_auto_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::BL { .. }));
+        assert_eq!(unit_count(&env.dbx).await, unit_count_before);
+        assert!(
+            !sigint_unit::Entity::find_by_id(duplicate.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_creation_rolls_back_for_stale_duplicates() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let auto_duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_current_duplicate_candidate(&env.dbx, auto_duplicate.id).await;
+        delete_unit_for_login(&env.dbx, &login_id, auto_duplicate.id)
+            .await
+            .unwrap();
+        let mut req = auto_req(false, vec!["Роботине"], vec!["2 шр"]);
+        req.unit.duplicate_unit_ids = vec![auto_duplicate.id];
+        let unit_count_before = unit_count(&env.dbx).await;
+
+        let err = create_unit_with_auto_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::BL { .. }));
+        assert_eq!(unit_count(&env.dbx).await, unit_count_before);
+        assert_eq!(network_count(&env.dbx).await, 0);
+
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_current_duplicate_candidate(&env.dbx, duplicate.id).await;
+        delete_unit_for_login(&env.dbx, &login_id, duplicate.id)
+            .await
+            .unwrap();
+        let mut req = unit_req();
+        req.duplicate_unit_ids = vec![duplicate.id];
+        let unit_count_before = unit_count(&env.dbx).await;
+
+        let err = create_unit_for_login(&login_id, &env, req)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, AppError::BL { .. }));
+        assert_eq!(unit_count(&env.dbx).await, unit_count_before);
+        assert_eq!(
+            sigint_unit::Entity::find()
+                .filter(sigint_unit::Column::Deleted.eq(false))
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_with_auto_network_skips_network_after_merge() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_current_duplicate_candidate(&env.dbx, duplicate.id).await;
+        let existing_network = create_device_network_for_login(
+            &login_id,
+            &env,
+            CreateDeviceNetworkReq {
+                unit_id: duplicate.id,
+                locations: vec!["Роботине".to_string()],
+                unit_mask: Vec::new(),
+            },
+        )
+        .await
+        .unwrap();
+        let mut req = auto_req(false, vec!["Роботине"], vec!["2 шр"]);
+        req.unit.duplicate_unit_ids = vec![duplicate.id];
+
+        let rsp = create_unit_with_auto_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap();
+
+        assert_eq!(rsp.network_id, Some(existing_network.network_id));
+        assert_eq!(network_count(&env.dbx).await, 1);
+        assert!(unit_has_active_network(&env.dbx, rsp.unit.id)
+            .await
+            .unwrap());
+        let relation = sigint_network_unit::Entity::find()
+            .filter(
+                sigint_network_unit::Column::NetworkId
+                    .eq(existing_network.network_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(relation.unit_id, rsp.unit.id);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_rejects_multiple_inherited_active_networks() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
+        let first_duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let orbit_unit_id =
+            link_current_duplicate_candidate(&env.dbx, first_duplicate.id)
+                .await;
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit_id),
+            sigint_unit_id: Set(second_duplicate.id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        for unit_id in [first_duplicate.id, second_duplicate.id] {
+            create_device_network_for_login(
+                &login_id,
+                &env,
+                CreateDeviceNetworkReq {
+                    unit_id,
+                    locations: vec!["Роботине".to_string()],
+                    unit_mask: Vec::new(),
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let mut req = auto_req(false, vec!["Роботине"], vec!["2 шр"]);
+        req.unit.duplicate_unit_ids =
+            vec![first_duplicate.id, second_duplicate.id];
+        let candidate_ids = orbit::create_unit_duplicate_candidate_ids_for_req(
+            &env.dbx, &req.unit,
+        )
+        .await
+        .unwrap();
+        assert!(candidate_ids.contains(&first_duplicate.id));
+        assert!(candidate_ids.contains(&second_duplicate.id));
+
+        let err = create_unit_with_auto_network_for_login(&login_id, &env, req)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            AppError::BL { msg } if msg == "unit has multiple active networks"
+        ));
+        assert_eq!(unit_count(&env.dbx).await, 2);
+        assert_eq!(network_count(&env.dbx).await, 2);
+        let network_unit_ids = sigint_network_unit::Entity::find()
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|network_unit| network_unit.unit_id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            network_unit_ids,
+            BTreeSet::from([first_duplicate.id, second_duplicate.id])
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_ignores_orbit_fields_when_orbit_data_is_hidden() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_current_duplicate_candidate(&env.dbx, duplicate.id).await;
         let settings = system_settings::Entity::find()
             .filter(system_settings::Column::Deleted.eq(false))
             .one(&env.dbx)
@@ -1870,8 +2908,8 @@ mod tests {
         settings.update(&env.dbx).await.unwrap();
         let login_id = test_login_id(&env).await;
         let mut req = auto_req(true, vec![], vec![]);
-        req.unit.active = false;
         req.unit.orbit_note = Some("Hidden note".to_string());
+        req.unit.duplicate_unit_ids = vec![duplicate.id];
 
         let rsp = create_unit_with_auto_network_for_login(&login_id, &env, req)
             .await
@@ -1883,6 +2921,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(unit.orbit_note, None);
+        assert!(
+            !sigint_unit::Entity::find_by_id(duplicate.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
     }
 
     #[tokio::test]
@@ -2263,6 +3309,58 @@ mod tests {
             .exec(&env.dbx)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn oneoff_imports_lower_orbit_echelon_using_unit_number() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let login_id = test_login_id(&env).await;
+        let echelon_id = uuid::Uuid::new_v4();
+        orbit_unit_echelon::ActiveModel {
+            id: Set(echelon_id),
+            key: Set("teamOrCrew".to_string()),
+            name: Set(format!("Розрахунок-{}", uuid::Uuid::new_v4())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let orbit_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            unit_number: Set(Some("5101".to_string())),
+            unit_echelon_id: Set(Some(echelon_id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let imported = orbit::import_unlinked_orbit_units(&env.dbx, &login_id)
+            .await
+            .unwrap();
+
+        assert_eq!(imported, 1);
+        let link = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId.eq(orbit_unit_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let unit = sigint_unit::Entity::find_by_id(link.sigint_unit_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(unit.company, "5101");
+        assert!(!unit.active);
     }
 
     #[tokio::test]

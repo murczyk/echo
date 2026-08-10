@@ -37,6 +37,7 @@ const otherApiMocks = vi.hoisted(() => ({
   listNetworkPoints: vi.fn(),
   getEncryptions: vi.fn(),
   getUnitsList: vi.fn(),
+  getUnitsByIds: vi.fn(),
   listPosts: vi.fn(),
   fetchCurrentUser: vi.fn(),
 }));
@@ -50,7 +51,15 @@ vi.mock('../../services/api/networks', () => ({
   listNetworkPoints: otherApiMocks.listNetworkPoints,
 }));
 vi.mock('../../services/api/encryptions', () => ({ getEncryptions: otherApiMocks.getEncryptions }));
-vi.mock('../../services/api/units', () => ({ getUnitsList: otherApiMocks.getUnitsList }));
+vi.mock('../../services/api/units', () => ({
+  getUnitsList: otherApiMocks.getUnitsList,
+  getUnitsByIds: otherApiMocks.getUnitsByIds,
+  mergeUnitsById: (...unitLists: Array<Array<{ id: number }>>) => {
+    const unitsById = new Map<number, { id: number }>();
+    unitLists.flat().forEach((unit) => unitsById.set(unit.id, unit));
+    return Array.from(unitsById.values());
+  },
+}));
 vi.mock('../../services/api/posts', () => ({ listPosts: otherApiMocks.listPosts }));
 vi.mock('../../services/api/user', () => ({ fetchCurrentUser: otherApiMocks.fetchCurrentUser }));
 
@@ -152,6 +161,7 @@ afterEach(() => {
   otherApiMocks.listNetworkPoints.mockReset();
   otherApiMocks.getEncryptions.mockReset();
   otherApiMocks.getUnitsList.mockReset();
+  otherApiMocks.getUnitsByIds.mockReset();
   otherApiMocks.listPosts.mockReset();
   otherApiMocks.fetchCurrentUser.mockReset();
 });
@@ -170,6 +180,7 @@ function installDefaultApiMocks() {
   otherApiMocks.listAors.mockResolvedValue([]);
   otherApiMocks.getEncryptions.mockResolvedValue([]);
   otherApiMocks.getUnitsList.mockResolvedValue([]);
+  otherApiMocks.getUnitsByIds.mockResolvedValue([]);
   otherApiMocks.listPosts.mockResolvedValue([]);
   otherApiMocks.getNetworkCallsignRelations.mockResolvedValue({ nodes: [], edges: [], freqs: [] });
   otherApiMocks.getNetworkGroupsActivityOne.mockResolvedValue({});

@@ -87,6 +87,24 @@ CLIENT_HOST=echo-cbr just smoke
 CLIENT_HOST=local just smoke
 ```
 
+## Add an Echo client
+
+Share/grant the router node into the Echo deployment's tailnet, then verify the
+route from that Echo host rather than from the operator workstation:
+
+```bash
+cd echo-vllm-router
+CLIENT_HOST=<echo-ssh-alias> just verify-client
+CLIENT_HOST=<echo-ssh-alias> just smoke
+```
+
+Only after both checks pass, configure one enabled tokenless Echo AI engine
+with Base URL `http://100.105.172.96:8000/v1` and model
+`google/gemma-4-26B-A4B-it`. The engine can then be selected for the AI-agent
+default/reviewer roles and the callsign worker. `echo-cbr`, `echo-kharkiv2`,
+`echo-siversk`, `echo-zp2`, `echo-pivnich`, and `echo-skhid` are verified
+clients as of 2026-08-08.
+
 The checks cover both enabled/active units, the pinned installed version and
 collector checksum, exact listeners, `/health`, `/v1/models`, router metrics,
 and a minimal Chat Completions request. Do not stop the live Spark backend as

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Network, Unit } from '../../../../Bindings';
 import { getNetworksByIds } from '../../services/api/networks';
-import { getUnitsList } from '../../services/api/units';
+import { getUnitsByIds, getUnitsList } from '../../services/api/units';
 import { createMasterUnitText } from './utils';
 import type { MessageFeedState } from './utils';
 
@@ -22,6 +22,14 @@ export function useRerDutyReferenceData(messageFeeds: MessageFeedState[]) {
 
   const networkMapRef = useRef(networkMap);
   networkMapRef.current = networkMap;
+  const unitsMapRef = useRef(unitsMap);
+  unitsMapRef.current = unitsMap;
+
+  const referencedUnitIds = useMemo(
+    () =>
+      Array.from(new Set(Object.values(networkMap).flatMap((network) => network.unitIds ?? []))),
+    [networkMap],
+  );
 
   useEffect(() => {
     const missing = allNetworkIds.filter((id) => !(id in networkMapRef.current));
@@ -65,6 +73,29 @@ export function useRerDutyReferenceData(messageFeeds: MessageFeedState[]) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const missing = referencedUnitIds.filter((id) => !(id in unitsMapRef.current));
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+    getUnitsByIds(missing)
+      .then((units) => {
+        if (cancelled) return;
+        setUnitsMap((prev) => {
+          const next = { ...prev };
+          units.forEach((unit) => {
+            next[unit.id] = unit;
+          });
+          return next;
+        });
+      })
+      .catch((err) => console.error('Failed to load referenced units', err));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [referencedUnitIds.join(',')]);
 
   const networkDisplayMap = useMemo(() => {
     const next: Record<number, string> = {};

@@ -362,6 +362,7 @@ export function useRerDutyFeeds(
     setWatchModeByFeedId: feedState.setWatchModeByFeedId,
     setLoadingNewerFeedIds: feedState.setLoadingNewerFeedIds,
     requestValidatedInboxCount: feedState.requestValidatedInboxCount,
+    catchUpFeedUnreadToTail: feedState.catchUpFeedUnreadToTail,
     authUserName,
     currentUserOrganismId,
     profiles: filterOpts.profiles,

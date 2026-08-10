@@ -18,6 +18,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import type { CountStatsRsp } from '../../../../../Bindings';
 
 import type { AnalysisFilterSectionId } from '../types';
+import { normalizeCallsignFilterValues } from '../../../utils/callsign-normalization';
 import { NO_DATA_LABEL } from '../../../utils/misc';
 import { AnalysisFilterField } from './AnalysisFilterField';
 import { AnalysisDeviceNamesFilter } from './AnalysisDeviceNamesFilter';
@@ -280,7 +281,11 @@ export function AnalysisFiltersPanelSections({
           emptyLoading={isFilterSectionEmptyLoading('callsigns', derived.callsignsOptions.length)}
           value={queryState.callsignsSelected}
           deferredCommit
-          onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
+          onChange={(callsignsSelected) =>
+            updateQueryState({
+              callsignsSelected: normalizeCallsignFilterValues(callsignsSelected),
+            })
+          }
         />
       </FilterSection>
       <FilterSection
@@ -339,6 +344,8 @@ export function AnalysisFiltersPanelSections({
             value={queryState.unitsSelected}
             normalizeUnknownAliases
             deferredCommit
+            preserveInputOnSelect
+            preserveSelectedOptionValuesOnChange
             onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
           />
           {queryState.unitsSelected.length > 0 ? (

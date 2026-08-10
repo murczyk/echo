@@ -213,6 +213,7 @@ vi.mock('./useRerDutyFeedState', () => ({
       ),
       showArrowResult: vi.fn(),
       setLoadingNewerFeedIds: vi.fn(),
+      catchUpFeedUnreadToTail: vi.fn(),
       watchModeByFeedId: {},
       loadingNewerFeedIds: new Set(),
       arrowResultByFeedId: {},

@@ -98,6 +98,22 @@ pub(crate) async fn units(
         sort_by: None,
         after_unit_id: None,
         before_unit_id: None,
+        include_inactive: false,
+        filter_active: None,
+        filter_text: None,
+        filter_name: None,
+        filter_company: None,
+        filter_battalion: None,
+        filter_regiment: None,
+        filter_division: None,
+        filter_army: None,
+        filter_military_district: None,
+        filter_army_region: None,
+        filter_comment: None,
+        filter_orbit_note: None,
+        search_mode: None,
+        limit: None,
+        offset: None,
     };
     let mut response = crate::sigint::unit::read_units(&env.dbx, &req)
         .await

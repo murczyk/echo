@@ -824,29 +824,6 @@ fn callsign_exists_condition(callsign: String) -> SimpleExpr {
                   and not siic.deleted
                   and upper(siic.callsign) = $1
             )
-            or (
-                not exists (
-                    select 1
-                    from sigint_inbox_item_callsign siic
-                    where siic.sigint_inbox_item_id = sigint_inbox_item.id
-                )
-                and (
-                    exists (
-                        select 1
-                        from jsonb_array_elements_text(
-                            coalesce(sigint_inbox_item.callsigns, '[]'::jsonb)
-                        ) legacy_callsign(value)
-                        where upper(legacy_callsign.value) = $1
-                    )
-                    or exists (
-                        select 1
-                        from jsonb_array_elements_text(
-                            coalesce(sigint_inbox_item.callsigns_alg2, '[]'::jsonb)
-                        ) legacy_callsign(value)
-                        where upper(legacy_callsign.value) = $1
-                    )
-                )
-            )
         )"#,
         [callsign],
     )

@@ -45,6 +45,7 @@ vi.mock('../../services/api/networks', () => ({
 
 vi.mock('../../services/api/units', () => ({
   getUnitsList: vi.fn(() => Promise.resolve([])),
+  getUnitsByIds: vi.fn(() => Promise.resolve([])),
 }));
 
 function inboxRsp(
@@ -295,6 +296,164 @@ describe('useRerDutyFeedState — loading', () => {
     expect(
       feedIndicatorUnreadCount(feed, apiRef.current!.confirmedTailPreviewByFeedId['mf-0']),
     ).toBe(0);
+  });
+
+  it('clears poll-inflated unread at near-bottom when newer fetch returns empty', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          readIds: new Set([...feed.readIds, 1]),
+          unreadCount: 4,
+        })),
+      );
+    });
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = true;
+    apiRef.current!.cancelFollowTail('mf-0');
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', {
+        skipIfNewestExhausted: true,
+        showLoading: false,
+      });
+    });
+
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(0);
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('exhausted');
+
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 4, firstElementTs: null });
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    await startPoll();
+
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(0);
+  });
+
+  it('does not inflate unreadCount from inbox count while near bottom', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          readIds: new Set([...feed.readIds, 1]),
+          unreadCount: 0,
+        })),
+      );
+    });
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = true;
+    apiRef.current!.cancelFollowTail('mf-0');
+
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 4, firstElementTs: null });
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    await startPoll();
+
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(0);
+  });
+
+  it('empty newer at near-bottom does not resurrect unread after concurrent mark-read', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          readIds: new Set<number>(),
+          unreadCount: 4,
+        })),
+      );
+    });
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = true;
+    apiRef.current!.cancelFollowTail('mf-0');
+
+    hoisted.fetchInboxMessages.mockImplementationOnce(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) =>
+          feed.id === 'mf-0'
+            ? {
+                ...feed,
+                readIds: new Set(feed.items.map(([id]) => id)),
+                windowedUnreadItems: new Map(),
+                unreadCount: 0,
+              }
+            : feed,
+        ),
+      );
+      return inboxRsp([]);
+    });
+
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', {
+        skipIfNewestExhausted: true,
+        showLoading: false,
+      });
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.readIds.has(1)).toBe(true);
+    expect(feed.unreadCount).toBe(0);
+    expect(feedIndicatorUnreadCount(feed, undefined, { includeBeyondTailResidual: false })).toBe(0);
+  });
+
+  it('pins the unread cursor to the loaded tail once every loaded message is read', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([
+        [2, minimalInboxMessage({ timestamp: 200 })],
+        [3, minimalInboxMessage({ timestamp: 300 })],
+      ]),
+    );
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', { showLoading: false });
+    });
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([1, 2, 3]);
+
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          readIds: new Set([1, 2, 3]),
+          unreadCount: 0,
+          windowedUnreadItems: new Map(),
+        })),
+      );
+      await flushMicrotasks();
+    });
+
+    hoisted.fetchInboxCount.mockClear();
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = false;
+    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
+    await startPoll();
+
+    expect(
+      hoisted.fetchInboxCount.mock.calls.some(([request]) => request?.sinceIdNoninclusive === 3),
+    ).toBe(true);
+  });
+
+  it('catchUpFeedUnreadToTail clears local unread and badges to zero', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          readIds: new Set<number>(),
+          unreadCount: 9,
+          windowedUnreadItems: new Map([[5, 50]]),
+        })),
+      );
+    });
+
+    await act(async () => {
+      apiRef.current!.catchUpFeedUnreadToTail('mf-0');
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.unreadCount).toBe(0);
+    expect(feed.windowedUnreadItems.size).toBe(0);
+    expect(feed.readIds.has(1)).toBe(true);
+    expect(feedIndicatorUnreadCount(feed)).toBe(0);
   });
 
   it('confirms newer messages without appending or scrolling while away from bottom', async () => {
@@ -1262,6 +1421,53 @@ describe('useRerDutyFeedState — loading', () => {
 
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
     expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id).sort()).toEqual([1, 3]);
+  });
+
+  it('near-bottom catch-up pages until at least 10 loaded unread after last-seen', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          readIds: new Set(feed.items.map(([id]) => id)),
+          windowedUnreadItems: new Map<number, number>(),
+          unreadCount: 0,
+        })),
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    hoisted.fetchInboxMessages.mockImplementation(
+      (req: { sinceIdNoninclusive?: number | null }) => {
+        const since = req.sinceIdNoninclusive;
+        if (since == null) {
+          return Promise.resolve(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]));
+        }
+        return Promise.resolve(rangeRsp(since + 1, since + 5));
+      },
+    );
+    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 25, firstElementTs: null });
+
+    await act(async () => {
+      apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+      apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = false;
+      apiRef.current!.cancelFollowTail('mf-0');
+    });
+
+    await startPoll();
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feedLoadedUnreadCount(feed)).toBeGreaterThanOrEqual(10);
+    expect(feedLoadedUnreadCount(feed)).toBeLessThan(25);
+    const newerLoads = hoisted.fetchInboxMessages.mock.calls.filter(
+      ([request]) => request?.sinceIdNoninclusive != null,
+    );
+    expect(newerLoads.length).toBe(2);
   });
 
   it('preserves a larger server unreadCount when appending a partially loaded newer batch', async () => {
@@ -2843,7 +3049,7 @@ describe('useRerDutyFeedState — loading', () => {
     );
   });
 
-  it('retains and reconciles unread IDs across newer append and older prepend window boundaries', async () => {
+  it('marks previous-window unread as read when newer append start-trims them', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
@@ -2862,6 +3068,7 @@ describe('useRerDutyFeedState — loading', () => {
         feeds.map((feed) => ({
           ...feed,
           readIds: new Set([...feed.readIds].filter((id) => id !== 1)),
+          unreadCount: 1,
         })),
       ),
     );
@@ -2874,8 +3081,8 @@ describe('useRerDutyFeedState — loading', () => {
       ),
     );
     await act(async () => apiRef.current!.loadFeedNewerMessages('mf-0'));
-    expect(apiRef.current!.messageFeeds[0].windowedUnreadItems).toEqual(new Map([[1, 100]]));
-    expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(21);
+    expect(apiRef.current!.messageFeeds[0].windowedUnreadItems.has(1)).toBe(false);
+    expect(apiRef.current!.messageFeeds[0].readIds.has(1)).toBe(true);
 
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(

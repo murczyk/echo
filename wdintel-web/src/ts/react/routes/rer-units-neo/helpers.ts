@@ -1,7 +1,73 @@
-import type { CreateUnitReq, Unit } from '../../../../Bindings';
+import type { CreateUnitReq, ListUnitsReq, ListUnitsSortBy, Unit } from '../../../../Bindings';
+import type {
+  MRT_ColumnFiltersState,
+  MRT_PaginationState,
+  MRT_SortingState,
+} from 'material-react-table';
+import { DEFAULT_LIST_UNITS_REQ } from '../../services/api/units';
+import type { UnitSearchMode } from './search-mode';
 
 export type UnitForm = CreateUnitReq;
 export type UnitStatusFilter = 'all' | 'active' | 'inactive';
+
+const UNIT_SORTS: Record<string, [ListUnitsSortBy, ListUnitsSortBy]> = {
+  name: ['UnitNameAsc', 'UnitNameDesc'],
+  company: ['UnitCompanyAsc', 'UnitCompanyDesc'],
+  battalion: ['UnitBattalionAsc', 'UnitBattalionDesc'],
+  regiment: ['UnitRegimentAsc', 'UnitRegimentDesc'],
+  division: ['UnitDivisionAsc', 'UnitDivisionDesc'],
+  army: ['UnitArmyAsc', 'UnitArmyDesc'],
+  militaryDistrict: ['UnitMilitaryDistrictAsc', 'UnitMilitaryDistrictDesc'],
+  armyRegion: ['UnitArmyRegionAsc', 'UnitArmyRegionDesc'],
+  createdAt: ['CreatedAtAsc', 'CreatedAtDesc'],
+  comment: ['UnitCommentAsc', 'UnitCommentDesc'],
+  hasOrbit: ['UnitOrbitNoteAsc', 'UnitOrbitNoteDesc'],
+};
+
+function textColumnFilter(filters: MRT_ColumnFiltersState, id: string): string | null {
+  const value = filters.find((filter) => filter.id === id)?.value;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+export function buildUnitsListReq({
+  statusFilter,
+  globalFilter,
+  columnFilters,
+  sorting,
+  searchMode,
+  pagination,
+}: {
+  statusFilter: UnitStatusFilter;
+  globalFilter: string;
+  columnFilters: MRT_ColumnFiltersState;
+  sorting: MRT_SortingState;
+  searchMode: UnitSearchMode;
+  pagination: MRT_PaginationState;
+}): ListUnitsReq {
+  const sort = sorting[0];
+  const sortOptions = sort ? UNIT_SORTS[sort.id] : undefined;
+
+  return {
+    ...DEFAULT_LIST_UNITS_REQ,
+    sortBy: sortOptions?.[Number(sort?.desc ?? false)] ?? 'UnitNameAsc',
+    includeInactive: statusFilter !== 'active',
+    filterActive: statusFilter === 'all' ? null : statusFilter === 'active',
+    filterText: globalFilter.trim() || null,
+    filterName: textColumnFilter(columnFilters, 'name'),
+    filterCompany: textColumnFilter(columnFilters, 'company'),
+    filterBattalion: textColumnFilter(columnFilters, 'battalion'),
+    filterRegiment: textColumnFilter(columnFilters, 'regiment'),
+    filterDivision: textColumnFilter(columnFilters, 'division'),
+    filterArmy: textColumnFilter(columnFilters, 'army'),
+    filterMilitaryDistrict: textColumnFilter(columnFilters, 'militaryDistrict'),
+    filterArmyRegion: textColumnFilter(columnFilters, 'armyRegion'),
+    filterComment: textColumnFilter(columnFilters, 'comment'),
+    filterOrbitNote: textColumnFilter(columnFilters, 'hasOrbit'),
+    searchMode: searchMode === 'strict' ? 'Strict' : 'Relaxed',
+    limit: pagination.pageSize,
+    offset: pagination.pageIndex * pagination.pageSize,
+  };
+}
 
 export const EMPTY_UNIT_FORM: UnitForm = {
   company: '',
@@ -15,6 +81,7 @@ export const EMPTY_UNIT_FORM: UnitForm = {
   isDeduplicateCandidate: null,
   comment: '',
   orbitNote: null,
+  duplicateUnitIds: [],
 };
 
 export function unitToForm(unit: Unit): UnitForm {
@@ -30,6 +97,7 @@ export function unitToForm(unit: Unit): UnitForm {
     isDeduplicateCandidate: unit.isDeduplicateCandidate,
     comment: unit.comment,
     orbitNote: unit.orbitNote,
+    duplicateUnitIds: [],
   };
 }
 
@@ -46,6 +114,7 @@ export function trimUnitForm(form: UnitForm): UnitForm {
     isDeduplicateCandidate: form.isDeduplicateCandidate,
     comment: form.comment.trim(),
     orbitNote: form.orbitNote?.trim() || null,
+    duplicateUnitIds: form.duplicateUnitIds,
   };
 }
 

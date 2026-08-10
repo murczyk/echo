@@ -236,11 +236,11 @@ describe('rer-analysis-neo helpers', () => {
     expect(restored.tagsExcludeMode).toBe(true);
   });
 
-  it('preserves selected callsign casing for case-sensitive backend filtering', () => {
+  it('normalizes selected callsigns for case-sensitive backend filtering', () => {
     expect(
-      normalizeQueryState(createQueryState({ callsignsSelected: ['alpha', 'Bravo'] }))
+      normalizeQueryState(createQueryState({ callsignsSelected: ['alpha', 'Bravo', ' BRAVO '] }))
         .callsignsSelected,
-    ).toEqual(['alpha', 'Bravo']);
+    ).toEqual(['alpha', 'bravo']);
   });
 
   it('persists device-name selections in requests and saved filters', () => {
