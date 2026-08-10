@@ -612,6 +612,11 @@ export function VideoAttachmentPreviewRenderer({
   const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    setZoom(100);
+    setPan({ x: 0, y: 0 });
+  }, [navigation.index, video.source]);
+
+  useEffect(() => {
     if (stageEl === null) return;
 
     let touchStartDist = 0;

@@ -124,13 +124,18 @@ export function DocumentAttachmentPreviewRenderer({
   };
 
   useEffect(() => {
+    setZoom(100);
+    setInfoAnchorEl(null);
+  }, [currentDocument.href, resolvedIndex]);
+
+  useEffect(() => {
     if (!canZoom && zoom !== 100) {
       setZoom(100);
     }
     if (!canFullscreen && isFullscreen) {
       changeFullscreen(false);
     }
-  }, [canFullscreen, canZoom, changeFullscreen, currentDocument, isFullscreen, zoom]);
+  }, [canFullscreen, canZoom, changeFullscreen, isFullscreen, zoom]);
 
   const setPreviewZoom = (nextZoom: number) => {
     setZoom(clamp(nextZoom, DOCUMENT_PREVIEW_ZOOM_MIN, DOCUMENT_PREVIEW_ZOOM_MAX));

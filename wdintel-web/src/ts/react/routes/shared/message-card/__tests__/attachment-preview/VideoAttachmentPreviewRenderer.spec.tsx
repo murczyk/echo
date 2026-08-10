@@ -126,8 +126,16 @@ vi.mock('../../attachment-preview/message-card-preview-config', () => ({
 }));
 
 vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage', () => ({
-  MessageCardAttachmentPreviewStage: ({ children }: { children?: ReactNode }) => (
-    <div data-video-stage>{children}</div>
+  MessageCardAttachmentPreviewStage: ({
+    children,
+    onDoubleClick,
+  }: {
+    children?: ReactNode;
+    onDoubleClick?: () => void;
+  }) => (
+    <div data-video-stage onDoubleClick={onDoubleClick}>
+      {children}
+    </div>
   ),
 }));
 
@@ -704,6 +712,14 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(latestControlsProps?.playerState.currentTime).toBe(37);
 
     await act(async () => {
+      document.body
+        .querySelector('[data-video-stage]')
+        ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    });
+
+    expect(document.body.querySelector('[data-zoom-badge]')?.textContent).toBe('150%');
+
+    await act(async () => {
       root.render(
         <TestVideoPreviewDialog
           open
@@ -721,6 +737,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(pauseSpy).toHaveBeenCalled();
     expect(latestControlsProps?.playerState.isPlaying).toBe(false);
     expect(latestControlsProps?.playerState.currentTime).toBe(0);
+    expect(document.body.querySelector('[data-zoom-badge]')?.textContent).toBe('100%');
     root.unmount();
   });
 

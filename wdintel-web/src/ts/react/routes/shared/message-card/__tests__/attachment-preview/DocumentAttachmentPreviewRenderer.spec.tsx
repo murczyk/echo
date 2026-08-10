@@ -85,10 +85,20 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage', () => ({
   MessageCardAttachmentPreviewStage: ({
     children,
     isFullscreen,
+    onDoubleClick,
   }: {
     children?: ReactNode;
     isFullscreen: boolean;
-  }) => <div data-fullscreen={String(isFullscreen)}>{children}</div>,
+    onDoubleClick?: () => void;
+  }) => (
+    <div
+      data-preview-stage="document"
+      data-fullscreen={String(isFullscreen)}
+      onDoubleClick={onDoubleClick}
+    >
+      {children}
+    </div>
+  ),
 }));
 
 vi.mock('../../renderers/PdfDocumentPreview', () => ({
@@ -401,6 +411,52 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     expect(
       document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
     ).toBeNull();
+    root.unmount();
+  });
+
+  it('resets zoom when switching between zoomable documents', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const documents: TestDocumentPreviewDialogProps['documents'] = [
+      {
+        href: 'https://example.test/files/report.pdf',
+        fileName: 'report.pdf',
+        kind: 'pdf',
+      },
+      {
+        href: 'https://example.test/files/report.docx',
+        fileName: 'report.docx',
+        kind: 'docx',
+      },
+    ];
+    const commonProps = {
+      documents,
+      open: true,
+      onClose: vi.fn(),
+      onIndexChange: vi.fn(),
+      isDownloadStarting: () => false,
+      onDownloadStart: vi.fn(() => true),
+    };
+
+    await act(async () => {
+      root.render(<TestDocumentPreviewDialog {...commonProps} currentIndex={0} />);
+    });
+
+    await act(async () => {
+      document.body
+        .querySelector('[data-preview-stage="document"]')
+        ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    });
+
+    expect(document.body.textContent).toContain('150%');
+
+    await act(async () => {
+      root.render(<TestDocumentPreviewDialog {...commonProps} currentIndex={1} />);
+    });
+
+    expect(document.body.textContent).toContain('100%');
+    expect(document.body.textContent).not.toContain('150%');
     root.unmount();
   });
 
