@@ -41,24 +41,40 @@ pub async fn can_view_orbit_data(
     }
 }
 
-pub async fn unit_ids_with_orbit(
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnitOrbitLink {
+    pub orbit_unit_id: String,
+    pub generative_unit_name_full: String,
+}
+
+#[derive(FromQueryResult)]
+struct UnitOrbitLinkRow {
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+    generative_unit_name_full: Option<String>,
+}
+
+pub async fn unit_orbit_links(
     dbx: &DatabaseConnection,
     sigint_unit_ids: &[i64],
-) -> Result<HashMap<i64, Vec<String>>, AppError> {
+) -> Result<HashMap<i64, Vec<UnitOrbitLink>>, AppError> {
     if sigint_unit_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let mut unit_ids = HashMap::<i64, Vec<String>>::new();
+    let mut unit_links = HashMap::<i64, Vec<UnitOrbitLink>>::new();
     let sql = r#"
-        select link.*
+        select
+            link.sigint_unit_id,
+            link.orbit_unit_id,
+            nullif(btrim(unit.generative_unit_name_full), '') as generative_unit_name_full
         from orbit_unit_sigint_unit link
         inner join orbit_unit unit on unit.unit_id = link.orbit_unit_id
         where link.is_suppressed = false
             and link.sigint_unit_id = any($1::bigint[])
             and unit.deleted = false
-        order by link.sigint_unit_id, link.orbit_unit_id
+        order by link.sigint_unit_id, unit.generative_unit_name_full nulls last, link.orbit_unit_id
     "#;
-    for link in orbit_unit_sigint_unit::Model::find_by_statement(
+    for link in UnitOrbitLinkRow::find_by_statement(
         Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
@@ -69,12 +85,34 @@ pub async fn unit_ids_with_orbit(
     .await
     .c(h!())?
     {
-        unit_ids
+        unit_links
             .entry(link.sigint_unit_id)
             .or_default()
-            .push(link.orbit_unit_id.to_string());
+            .push(UnitOrbitLink {
+                orbit_unit_id: link.orbit_unit_id.to_string(),
+                generative_unit_name_full: link
+                    .generative_unit_name_full
+                    .unwrap_or_default(),
+            });
     }
-    Ok(unit_ids)
+    Ok(unit_links)
+}
+
+#[cfg(test)]
+pub async fn unit_ids_with_orbit(
+    dbx: &DatabaseConnection,
+    sigint_unit_ids: &[i64],
+) -> Result<HashMap<i64, Vec<String>>, AppError> {
+    Ok(unit_orbit_links(dbx, sigint_unit_ids)
+        .await?
+        .into_iter()
+        .map(|(sigint_unit_id, links)| {
+            (
+                sigint_unit_id,
+                links.into_iter().map(|link| link.orbit_unit_id).collect(),
+            )
+        })
+        .collect())
 }
 
 pub async fn unit_has_orbit(
@@ -524,14 +562,15 @@ async fn create_unit_duplicate_candidates_for_req(
     let units =
         create_unit_duplicate_candidate_models_for_req(dbx, req).await?;
     let unit_ids = units.iter().map(|unit| unit.id).collect::<Vec<_>>();
-    let orbit_unit_ids = unit_ids_with_orbit(dbx, &unit_ids).await?;
+    let orbit_links = unit_orbit_links(dbx, &unit_ids).await?;
     units
         .into_iter()
         .map(|unit| {
             let mut unit = super::render_unit(&unit)?;
-            unit.orbit_unit_ids =
-                orbit_unit_ids.get(&unit.id).cloned().unwrap_or_default();
-            unit.has_orbit = !unit.orbit_unit_ids.is_empty();
+            super::apply_unit_orbit_links(
+                &mut unit,
+                orbit_links.get(&unit.id).map(Vec::as_slice),
+            );
             Ok(unit)
         })
         .collect()

@@ -628,6 +628,19 @@ function useUnitColumns(
         size: 220,
         Cell: ({ row }) => <OrbitCell unit={row.original} />,
       },
+      {
+        header: 'Назва в Orbit',
+        id: 'orbitUnitGenerativeNames',
+        accessorFn: (unit) => unit.orbitUnitGenerativeNames.join('\n'),
+        enableSorting: false,
+        enableColumnFilter: false,
+        size: 360,
+        Cell: ({ cell }) => (
+          <Box sx={{ whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>
+            {String(cell.getValue() ?? '')}
+          </Box>
+        ),
+      },
     ],
     [attachmentUnitIds, searchMode, onSearchModeChange, compactSearchMode],
   );

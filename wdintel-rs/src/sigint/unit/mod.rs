@@ -76,12 +76,9 @@ pub async fn list_units(
             .iter()
             .map(|unit| unit.id)
             .collect::<Vec<_>>();
-        let orbit_unit_ids =
-            orbit::unit_ids_with_orbit(&env.dbx, &unit_ids).await?;
+        let orbit_links = orbit::unit_orbit_links(&env.dbx, &unit_ids).await?;
         for unit in &mut response.units {
-            unit.orbit_unit_ids =
-                orbit_unit_ids.get(&unit.id).cloned().unwrap_or_default();
-            unit.has_orbit = !unit.orbit_unit_ids.is_empty();
+            apply_unit_orbit_links(unit, orbit_links.get(&unit.id).map(Vec::as_slice));
         }
     } else {
         for unit in &mut response.units {
@@ -1628,12 +1625,35 @@ pub fn render_unit(unit: &sigint_unit::Model) -> Result<Unit, AppError> {
         created_by_login_id: unit.created_by_login_id.to_string(),
         has_orbit: false,
         orbit_unit_ids: Vec::new(),
+        orbit_unit_generative_names: Vec::new(),
     })
+}
+
+pub(crate) fn apply_unit_orbit_links(
+    unit: &mut Unit,
+    links: Option<&[orbit::UnitOrbitLink]>,
+) {
+    let Some(links) = links else {
+        return;
+    };
+    unit.orbit_unit_ids = links
+        .iter()
+        .map(|link| link.orbit_unit_id.clone())
+        .collect();
+    unit.orbit_unit_generative_names = links
+        .iter()
+        .filter_map(|link| {
+            (!link.generative_unit_name_full.is_empty())
+                .then(|| link.generative_unit_name_full.clone())
+        })
+        .collect();
+    unit.has_orbit = !unit.orbit_unit_ids.is_empty();
 }
 
 pub(crate) fn redact_unit_orbit_data(unit: &mut Unit) {
     unit.has_orbit = false;
     unit.orbit_unit_ids.clear();
+    unit.orbit_unit_generative_names.clear();
     unit.orbit_note = None;
     unit.is_deduplicate_candidate = None;
 }
@@ -4411,12 +4431,14 @@ mod tests {
             created_by_login_id: String::new(),
             has_orbit: true,
             orbit_unit_ids: vec![Uuid::nil().to_string()],
+            orbit_unit_generative_names: vec!["106 пдд / МВО".to_string()],
         };
 
         redact_unit_orbit_data(&mut unit);
 
         assert!(!unit.has_orbit);
         assert!(unit.orbit_unit_ids.is_empty());
+        assert!(unit.orbit_unit_generative_names.is_empty());
         assert_eq!(unit.orbit_note, None);
         assert_eq!(unit.is_deduplicate_candidate, None);
     }
