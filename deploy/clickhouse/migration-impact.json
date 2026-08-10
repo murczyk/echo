@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20260810_062938_echo_automation_coordinates_screenshot": {
+      "changes": [
+        { "table": "public.echo_automation", "strategy": "cdc_backfill" }
+      ]
+    },
     "echo:m20260806_120000_drop_legacy_inbox_callsigns": {
       "changes": [
         {

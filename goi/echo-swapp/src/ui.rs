@@ -185,6 +185,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
             </label>
           </div>
           <label class="flex items-center gap-2 text-sm text-zinc-300">
+            <input id="coordinatesScreenshotInput" type="checkbox" class="h-4 w-4 rounded border-zinc-700 bg-zinc-950" />
+            Додавати скріншот з координатами
+          </label>
+          <label class="flex items-center gap-2 text-sm text-zinc-300">
             <input id="resendAttachmentsInput" type="checkbox" class="h-4 w-4 rounded border-zinc-700 bg-zinc-950" />
             Пересилати вкладення
           </label>
@@ -333,6 +337,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
             </select>
           </label>
         </div>
+        <label class="flex items-center gap-2 text-sm text-zinc-300">
+          <input id="editCoordinatesScreenshotInput" type="checkbox" class="h-4 w-4 rounded border-zinc-700 bg-zinc-950" />
+          Додавати скріншот з координатами
+        </label>
         <label class="flex items-center gap-2 text-sm text-zinc-300">
           <input id="editResendAttachmentsInput" type="checkbox" class="h-4 w-4 rounded border-zinc-700 bg-zinc-950" />
           Пересилати вкладення
@@ -1298,6 +1306,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
               ${automationField('Куди', `${item.targetAccountName} / ${item.targetGroupName}`)}
               ${automationField('Фільтри', filters)}
               ${item.polygonFilterMode !== 'none' ? automationField('Район Інтересу', item.polygonName || '-') : ''}
+              ${item.coordinatesScreenshot ? automationField('Скріншот координат', 'увімкнено') : ''}
               ${automationField('Синхронізовано до', checkpoint)}
             </div>
             ${warnings.map(warning => `<p class="mt-1 text-xs text-amber-300">${warning}</p>`).join('')}
@@ -1330,6 +1339,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         frequencyTokens,
         staleMessageCutoffMinutes: Number(document.getElementById('staleMinutesInput').value),
         resendAttachments: document.getElementById('resendAttachmentsInput').checked,
+        coordinatesScreenshot: document.getElementById('coordinatesScreenshotInput').checked,
         coordinatePresenceMode: document.getElementById('coordinatePresenceInput').value,
         polygonFilterMode: polygonId === null ? 'none' : document.getElementById('polygonModeInput').value,
         polygonId,
@@ -1348,6 +1358,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         frequencyTokens: editFrequencyTokens,
         staleMessageCutoffMinutes: Number(document.getElementById('editStaleMinutesInput').value),
         resendAttachments: document.getElementById('editResendAttachmentsInput').checked,
+        coordinatesScreenshot: document.getElementById('editCoordinatesScreenshotInput').checked,
         coordinatePresenceMode: document.getElementById('editCoordinatePresenceInput').value,
         polygonFilterMode: polygonId === null ? 'none' : document.getElementById('editPolygonModeInput').value,
         polygonId,
@@ -1379,6 +1390,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       renderToken('editFrequencyTokens', editFrequencyTokens, 'edit-frequency');
       document.getElementById('editStaleMinutesInput').value = item.staleMessageCutoffMinutes;
       document.getElementById('editResendAttachmentsInput').checked = item.resendAttachments;
+      document.getElementById('editCoordinatesScreenshotInput').checked = item.coordinatesScreenshot;
       document.getElementById('editCoordinatePresenceInput').value = item.coordinatePresenceMode;
       document.getElementById('editPolygonModeInput').value = item.polygonFilterMode;
       renderPolygonSelect(document.getElementById('editPolygonInput'));
@@ -1613,7 +1625,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
       const skipCoordinates = document.getElementById('coordinatePresenceInput').value === 'skip_with_coordinates';
       if (skipCoordinates) {
         document.getElementById('polygonInput').value = '';
+        document.getElementById('coordinatesScreenshotInput').checked = false;
       }
+      document.getElementById('coordinatesScreenshotInput').disabled = skipCoordinates;
       const noPolygon = polygonIdValue('polygonInput') === null;
       document.getElementById('polygonInput').disabled = skipCoordinates;
       document.getElementById('polygonModeInput').disabled = noPolygon;
@@ -1627,7 +1641,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
       const skipCoordinates = document.getElementById('editCoordinatePresenceInput').value === 'skip_with_coordinates';
       if (skipCoordinates) {
         document.getElementById('editPolygonInput').value = '';
+        document.getElementById('editCoordinatesScreenshotInput').checked = false;
       }
+      document.getElementById('editCoordinatesScreenshotInput').disabled = skipCoordinates;
       const noPolygon = polygonIdValue('editPolygonInput') === null;
       document.getElementById('editPolygonInput').disabled = skipCoordinates;
       document.getElementById('editPolygonModeInput').disabled = noPolygon;
