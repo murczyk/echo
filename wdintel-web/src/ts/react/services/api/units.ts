@@ -138,6 +138,14 @@ export async function createUnit(unit: CreateUnitReq): Promise<Unit> {
   return transformSnakeToCamel<Unit>(raw);
 }
 
+export async function getCreateUnitDuplicateCandidates(unit: CreateUnitReq): Promise<Unit[]> {
+  const raw = await postJson<unknown>(
+    '/api/sigint/unit/create-duplicate-candidates',
+    transformCamelToSnake(unit),
+  );
+  return transformSnakeToCamel<ListUnitsByIdRsp>(raw).units ?? [];
+}
+
 export async function createUnitWithAutoNetwork(
   req: CreateUnitWithAutoNetworkReq,
 ): Promise<CreateUnitWithAutoNetworkRsp> {

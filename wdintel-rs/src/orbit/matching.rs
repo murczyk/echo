@@ -138,6 +138,23 @@ pub fn matching_sigint_unit_ids(
     result
 }
 
+pub fn matching_orbit_unit_ids(
+    orbit_units: &[SourceUnit],
+    sigint_unit: &sigint_unit::Model,
+) -> BTreeSet<uuid::Uuid> {
+    best_matching_orbit_units(
+        orbit_units
+            .iter()
+            .filter_map(|orbit_unit| {
+                match_score(orbit_unit, sigint_unit)
+                    .map(|score| (orbit_unit, score))
+            })
+            .collect(),
+    )
+    .into_iter()
+    .collect()
+}
+
 pub fn closest_orbit_matches<'a>(
     orbit_units: &'a [SourceUnit],
     sigint_unit: &sigint_unit::Model,
@@ -904,10 +921,17 @@ mod tests {
         let sigint_unit = echo_unit("", "", "1111 бр", "45 д", "56 А");
         assert_eq!(
             matching_sigint_unit_ids(
-                &[less_specific, closest.clone()],
+                &[less_specific.clone(), closest.clone()],
                 &[sigint_unit]
             ),
             HashMap::from([(closest.unit_id, BTreeSet::from([1]))])
+        );
+        assert_eq!(
+            matching_orbit_unit_ids(
+                &[less_specific, closest.clone()],
+                &echo_unit("", "", "1111 бр", "45 д", "56 А")
+            ),
+            BTreeSet::from([closest.unit_id])
         );
     }
 
