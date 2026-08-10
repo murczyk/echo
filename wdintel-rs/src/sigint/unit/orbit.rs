@@ -809,6 +809,25 @@ async fn import_missing_orbit_ancestors<C>(
 where
     C: ConnectionTrait,
 {
+    let mut import_state = OrbitAncestorImportState::default();
+    import_missing_orbit_ancestors_with_state(
+        dbx,
+        login,
+        root,
+        &mut import_state,
+    )
+    .await
+}
+
+async fn import_missing_orbit_ancestors_with_state<C>(
+    dbx: &C,
+    login: &Uuid,
+    root: &orbit_unit::Model,
+    import_state: &mut OrbitAncestorImportState,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
     for ancestor in orbit_ancestors(dbx, root).await? {
         if orbit_unit_has_active_sigint_link(dbx, ancestor.unit_id).await? {
             activate_sigint_units_linked_to_orbit_units(
@@ -825,7 +844,11 @@ where
             Ok(unit_req) => unit_req,
             Err(err @ AppError::BL { .. }) => {
                 let orbit_unit_id = ancestor.unit_id;
-                debug!("Skipping unsupported ORBIT ancestor {orbit_unit_id}: {err}");
+                if import_state.should_log_unsupported_ancestor(orbit_unit_id) {
+                    debug!(
+                        "Skipping unsupported ORBIT ancestor {orbit_unit_id}: {err}"
+                    );
+                }
                 continue;
             }
             Err(err) => return Err(err),
@@ -842,6 +865,18 @@ where
         link_orbit_ancestor(dbx, ancestor.unit_id, unit.id).await?;
     }
     Ok(())
+}
+
+#[derive(Default)]
+struct OrbitAncestorImportState {
+    reported_unsupported_orbit_ancestor_ids: HashSet<Uuid>,
+}
+
+impl OrbitAncestorImportState {
+    fn should_log_unsupported_ancestor(&mut self, orbit_unit_id: Uuid) -> bool {
+        self.reported_unsupported_orbit_ancestor_ids
+            .insert(orbit_unit_id)
+    }
 }
 
 async fn find_existing_sigint_unit<C>(
@@ -967,8 +1002,15 @@ where
         .all(dbx)
         .await
         .c(h!())?;
+    let mut import_state = OrbitAncestorImportState::default();
     for orbit_unit in linked_orbit_units {
-        import_missing_orbit_ancestors(dbx, login, &orbit_unit).await?;
+        import_missing_orbit_ancestors_with_state(
+            dbx,
+            login,
+            &orbit_unit,
+            &mut import_state,
+        )
+        .await?;
     }
     crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx).await?;
     let linked_sigint_unit_ids = links
@@ -1627,6 +1669,17 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[test]
+    fn ancestor_import_state_reports_each_unsupported_ancestor_once() {
+        let mut import_state = OrbitAncestorImportState::default();
+        let first_unit_id = Uuid::from_u128(1);
+        let second_unit_id = Uuid::from_u128(2);
+
+        assert!(import_state.should_log_unsupported_ancestor(first_unit_id));
+        assert!(!import_state.should_log_unsupported_ancestor(first_unit_id));
+        assert!(import_state.should_log_unsupported_ancestor(second_unit_id));
     }
 
     #[test]
