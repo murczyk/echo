@@ -21,6 +21,7 @@ pub struct InboxMessage {
     pub time: Option<String>,
     pub freq: Option<String>,
     pub coords: Option<String>,
+    #[serde(default)]
     pub coords_with_locality: Vec<crate::location::CoordinateWithLocality>,
     pub callsigns: Vec<String>,
     pub callsigns_alg2: Vec<String>,

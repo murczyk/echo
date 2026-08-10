@@ -150,8 +150,7 @@
       "changes": [
         {
           "table": "public.sigint_peleng",
-          "strategy": "cdc_backfill",
-          "backfill": "wdintel-rs/src/location/worker.rs"
+          "strategy": "mirror_resync"
         }
       ]
     }
