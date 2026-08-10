@@ -1137,13 +1137,24 @@ async fn process_automation(
     if messages.is_empty() {
         advance_empty_checkpoint(db, &automation).await.c(h!())?;
     }
+    let mut last_warning = None;
     for message in messages {
-        process_message(db, &automation, &message).await.c(h!())?;
+        if let Some(warning) =
+            process_message(db, &automation, &message).await.c(h!())?
+        {
+            last_warning = Some(warning);
+        }
         update_checkpoint(db, automation.id, message.id, message.message_at)
             .await
             .c(h!())?;
     }
-    set_status(db, automation.id, "idle", None).await.c(h!())?;
+    if let Some(warning) = last_warning {
+        set_status(db, automation.id, "warning", Some(&warning))
+            .await
+            .c(h!())?;
+    } else {
+        set_status(db, automation.id, "idle", None).await.c(h!())?;
+    }
     Ok(())
 }
 
@@ -1195,9 +1206,9 @@ async fn process_message(
     db: &DatabaseConnection,
     automation: &AutomationWorkerRow,
     message: &InboxMessageRow,
-) -> Result<()> {
+) -> Result<Option<String>> {
     if already_sent(db, automation.id, message).await.c(h!())? {
-        return Ok(());
+        return Ok(None);
     }
     let coords = extract_points(&message.body).await;
     let polygon = if automation.polygon_filter_mode == "none" {
@@ -1240,7 +1251,7 @@ async fn process_message(
             )
             .await
             .c(h!())?;
-            Ok(())
+            Ok(None)
         }
         MatchDecision::Send => {
             send_matching_message(db, automation, message, &coords)
@@ -1255,7 +1266,7 @@ async fn send_matching_message(
     automation: &AutomationWorkerRow,
     message: &InboxMessageRow,
     coordinates: &[Point],
-) -> Result<()> {
+) -> Result<Option<String>> {
     let target = load_send_target(
         db,
         automation.target_account_id,
@@ -1298,7 +1309,7 @@ async fn send_matching_message(
         )
         .await
         .c(h!())?;
-        return Ok(());
+        return Ok(None);
     };
     messenger::enqueue(
         &txn,
@@ -1326,12 +1337,7 @@ async fn send_matching_message(
     messenger::tick_after_send(db, &client_name, kind)
         .await
         .c(h!())?;
-    if let Some(warning) = attachments.warning {
-        set_status(db, automation.id, "warning", Some(&warning))
-            .await
-            .c(h!())?;
-    }
-    Ok(())
+    Ok(attachments.warning)
 }
 
 async fn add_coordinate_screenshot(
