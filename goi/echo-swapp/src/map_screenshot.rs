@@ -1,6 +1,8 @@
 use crate::config::{
     AUTOMATION_MAP_SCREENSHOT_BASE_TILE_URL, AUTOMATION_MAP_SCREENSHOT_HEIGHT,
+    AUTOMATION_MAP_SCREENSHOT_LABEL_RETRY_SECS,
     AUTOMATION_MAP_SCREENSHOT_LABEL_TILE_URL,
+    AUTOMATION_MAP_SCREENSHOT_LABEL_TIMEOUT_MILLIS,
     AUTOMATION_MAP_SCREENSHOT_MARKER_COLOR,
     AUTOMATION_MAP_SCREENSHOT_MARKER_RADIUS,
     AUTOMATION_MAP_SCREENSHOT_MARKER_WEIGHT,
@@ -16,10 +18,13 @@ use image::{imageops, DynamicImage, ImageFormat, Rgba, RgbaImage};
 use reqwest::Client;
 use std::f64::consts::PI;
 use std::io::Cursor;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::task::JoinSet;
+use tokio::time::{sleep, timeout};
 
 const WEB_MERCATOR_MAX_LATITUDE: f64 = 85.051_128_78;
+static LABEL_TILES_ENABLED: AtomicBool = AtomicBool::new(true);
 
 #[derive(Clone, Copy, Debug)]
 pub struct MapCoordinate {
@@ -212,11 +217,12 @@ async fn download_tile(
         tile_url(AUTOMATION_MAP_SCREENSHOT_LABEL_TILE_URL, position, zoom);
     let (base, labels) = tokio::join!(
         download_image(client, &base_url),
-        download_image(client, &label_url)
+        download_label_image(client, &label_url)
     );
     let mut base = base.c(h!())?;
     match labels {
-        Ok(labels) => imageops::overlay(&mut base, &labels, 0, 0),
+        Ok(Some(labels)) => imageops::overlay(&mut base, &labels, 0, 0),
+        Ok(None) => {}
         Err(err) => log::warn!(
             "coordinate screenshot label tile {zoom}/{}/{} failed: {err:#}",
             position.x,
@@ -224,6 +230,47 @@ async fn download_tile(
         ),
     }
     Ok(base)
+}
+
+async fn download_label_image(
+    client: &Client,
+    url: &str,
+) -> Result<Option<RgbaImage>> {
+    if label_tiles_suspended() {
+        return Ok(None);
+    }
+    match timeout(
+        Duration::from_millis(AUTOMATION_MAP_SCREENSHOT_LABEL_TIMEOUT_MILLIS),
+        download_image(client, url),
+    )
+    .await
+    {
+        Ok(Ok(labels)) => Ok(Some(labels)),
+        Ok(Err(err)) => {
+            suspend_label_tiles();
+            Err(err)
+        }
+        Err(err) => {
+            suspend_label_tiles();
+            Err(err).c(h!())
+        }
+    }
+}
+
+fn label_tiles_suspended() -> bool {
+    !LABEL_TILES_ENABLED.load(Ordering::Relaxed)
+}
+
+fn suspend_label_tiles() {
+    if LABEL_TILES_ENABLED.swap(false, Ordering::Relaxed) {
+        tokio::spawn(async {
+            sleep(Duration::from_secs(
+                AUTOMATION_MAP_SCREENSHOT_LABEL_RETRY_SECS,
+            ))
+            .await;
+            LABEL_TILES_ENABLED.store(true, Ordering::Relaxed);
+        });
+    }
 }
 
 fn tile_url(template: &str, position: TilePosition, zoom: u8) -> String {
