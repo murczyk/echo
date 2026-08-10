@@ -5230,6 +5230,127 @@ fn summary_table_analytics_rows_build_expected_response() {
 }
 
 #[test]
+fn summary_table_postgres_unit_filter_is_period_bounded() {
+    let mut req = mk_analysis_stats_req(0, 86_400_000);
+    req.selected_units = Some(vec!["100 pbr".to_string()]);
+
+    let sql = build_summary_table_filtered_messages_query(
+        &uuid::Uuid::nil(),
+        &req,
+        &["group".to_string()],
+    )
+    .unwrap()
+    .build(DbBackend::Postgres)
+    .to_string();
+
+    assert_eq!(sql.matches("MATERIALIZED").count(), 2, "{sql}");
+    assert!(sql.contains("matching_unit_network_ids"), "{sql}");
+    assert!(sql.contains("matching_unit_inbox_item_ids"), "{sql}");
+    assert!(sql.contains("1970-01-01 00:00:00"), "{sql}");
+    assert!(sql.contains("1970-01-02 00:00:00"), "{sql}");
+}
+
+#[test]
+fn summary_table_analytics_unit_filter_uses_bounded_flat_joins() {
+    let mut req = mk_analysis_stats_req(0, 86_400_000);
+    req.selected_callsigns = Some(vec!["CALLSIGN".to_string()]);
+    req.selected_tags = Some(vec![3]);
+    req.selected_aors = Some(vec![5]);
+    req.selected_networks = Some(vec![7]);
+    let scope = AnalyticsMessageIdScope::Inclusive {
+        min_id: 10,
+        max_id: 20,
+    };
+    let tag_access = stats::AnalyticsTagAccess {
+        accessible_tag_ids: vec![3],
+        unit_login_ids: Vec::new(),
+    };
+    let filtered_messages =
+        build_summary_table_filtered_messages_query_with_access(
+            &uuid::Uuid::nil(),
+            &req,
+            &["group".to_string()],
+            Some(&tag_access),
+            Some(&scope),
+        )
+        .unwrap();
+    let mut selected =
+        analytics_unit::split_analytics_unit_filter(&Some(vec![
+            "58 А".to_string(),
+            "Не визначено".to_string(),
+        ]));
+    selected.linked_network_ids = vec![11];
+    let filtered_messages =
+        analytics_unit::apply_resolved_analytics_unit_filters(
+            filtered_messages,
+            &analytics_unit::ResolvedAnalyticsUnitFilters {
+                selected,
+                all_unit_network_ids: vec![11, 12],
+                ..Default::default()
+            },
+            &scope,
+            false,
+        );
+    let sql =
+        summary_table_freq_callsigns_query(filtered_messages, Some(&scope))
+            .build(DbBackend::Postgres)
+            .to_string();
+
+    for bounded_column in [
+        r#""sigint_inbox_item"."id" BETWEEN 10 AND 20"#,
+        r#""signal_message"."id" BETWEEN 10 AND 20"#,
+        r#""analytics_message_access"."signal_message_id" BETWEEN 10 AND 20"#,
+        r#""sigint_inbox_item_tag"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+        r#""analytics_message_aor_link"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+        r#""analytics_network_filter_link"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+        r#""analytics_selected_unit_link"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+        r#""analytics_any_unit_link"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+        r#""new_callsign_filter"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+        r#""summary_table_callsign"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+    ] {
+        assert!(sql.contains(bounded_column), "{bounded_column}: {sql}");
+    }
+    assert!(sql.contains(r#""unit_v2" IN"#), "{sql}");
+    for alias in ["58 А", "58 а", "58 ЗА", "58 за", "58 ЗВА", "58 зва"]
+    {
+        assert!(sql.contains(&format!("'{alias}'")), "{sql}");
+    }
+    assert!(sql.contains(r#""unit_v2" IS NULL"#), "{sql}");
+    assert!(sql.contains(r#""active_from" <= "datetime""#), "{sql}");
+    assert!(sql.contains(r#""active_to" >= "datetime""#), "{sql}");
+    assert!(!sql.contains(r#"JOIN "sigint_unit""#), "{sql}");
+    assert!(!sql.contains(r#"JOIN "sigint_network_unit""#), "{sql}");
+}
+
+#[test]
+fn summary_table_analytics_exact_unit_filter_ignores_header_units() {
+    let scope = AnalyticsMessageIdScope::From(10);
+    let mut selected =
+        analytics_unit::split_analytics_unit_filter(&Some(vec![
+            "58 А".to_string()
+        ]));
+    selected.linked_network_ids = vec![11];
+    let sql = analytics_unit::apply_resolved_analytics_unit_filters(
+        signal_message::Entity::find().join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        ),
+        &analytics_unit::ResolvedAnalyticsUnitFilters {
+            selected,
+            ..Default::default()
+        },
+        &scope,
+        true,
+    )
+    .build(DbBackend::Postgres)
+    .to_string();
+
+    assert!(sql.contains("analytics_selected_unit_link"), "{sql}");
+    assert!(!sql.contains(r#""unit_v2" IN"#), "{sql}");
+    assert!(!sql.contains(r#"JOIN "sigint_unit""#), "{sql}");
+}
+
+#[test]
 fn summary_table_report_message_limit_allows_maximum() {
     assert!(ensure_summary_table_report_message_limit(
         &uuid::Uuid::nil(),
@@ -6865,6 +6986,18 @@ fn count_stats_analytics_rejects_unit_filters() {
     req.selected_units = Some(vec!["unit".to_string()]);
 
     assert!(!analytics_count_request_supported(&req));
+}
+
+#[test]
+fn summary_table_analytics_supports_unit_filters_but_rejects_search() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_units = Some(vec!["unit".to_string()]);
+
+    assert!(analytics_summary_table_request_supported(&req));
+    assert!(!analytics_count_request_supported(&req));
+
+    req.search = Some("message".to_string());
+    assert!(!analytics_summary_table_request_supported(&req));
 }
 
 #[test]

@@ -35,6 +35,7 @@ use std::error::Error as StdError;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tempfile::TempDir;
 
+pub(in crate::rer_importer) mod analytics_unit;
 pub mod geojson;
 pub mod kmz;
 pub mod search;
@@ -3195,7 +3196,7 @@ async fn summary_table_freq_by_login_with_coordinate_loading(
     master_keys: &[String],
     load_coordinates: bool,
 ) -> Result<SummaryTableFreq, AppError> {
-    let analytics_supported = analytics_count_request_supported(req);
+    let analytics_supported = analytics_summary_table_request_supported(req);
     let analytics_tag_access = if env.analytics.is_some() && analytics_supported
     {
         Some(
@@ -3290,13 +3291,47 @@ async fn query_summary_table_freq_analytics(
     tag_access: &stats::AnalyticsTagAccess,
     load_coordinates: bool,
 ) -> Result<SummaryTableFreq, AppError> {
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let (scope, resolved_units) = tokio::try_join!(
+        stats::resolve_analytics_message_id_scope(
+            req,
+            db,
+            freshness_max_age_ms,
+        ),
+        analytics_unit::resolve_analytics_unit_filters(
+            &env.dbx,
+            &req.selected_units,
+            &None,
+            req.units_exact_match_only,
+        ),
+    )
+    .context(h!())?;
+    if scope.is_empty() {
+        return Ok(SummaryTableFreq { rows: Vec::new() });
+    }
+    let mut analytics_req = req.clone();
+    analytics_req.selected_units = None;
     let filtered_messages =
         build_summary_table_filtered_messages_query_with_access(
             login,
-            req,
+            &analytics_req,
             master_keys,
             Some(tag_access),
-        )?;
+            Some(&scope),
+        )
+        .context(h!())?;
+    let filtered_messages =
+        analytics_unit::apply_resolved_analytics_unit_filters(
+            filtered_messages,
+            &resolved_units,
+            &scope,
+            req.units_exact_match_only.unwrap_or(false),
+        );
     let counts = filtered_messages
         .clone()
         .select_only()
@@ -3323,10 +3358,12 @@ async fn query_summary_table_freq_analytics(
     )
     .into_model::<SummaryTableFreqValueRow>()
     .all(db);
-    let callsigns =
-        summary_table_freq_callsigns_query(filtered_messages.clone())
-            .into_model::<SummaryTableFreqValueRow>()
-            .all(db);
+    let callsigns = summary_table_freq_callsigns_query(
+        filtered_messages.clone(),
+        Some(&scope),
+    )
+    .into_model::<SummaryTableFreqValueRow>()
+    .all(db);
     let coordinate_rows = async {
         if load_coordinates {
             summary_table_freq_coordinate_query(filtered_messages)
@@ -3369,8 +3406,19 @@ fn summary_table_freq_distinct_values_query(
 
 fn summary_table_freq_callsigns_query(
     mut filtered_messages: Select<signal_message::Entity>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Select<signal_message::Entity> {
     let callsign_alias = Alias::new("summary_table_callsign");
+    let mut join_condition = Condition::all().add(
+        Expr::col((callsign_alias.clone(), Alias::new("sigint_inbox_item_id")))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+    );
+    if let Some(scope) = scope {
+        join_condition = join_condition.add(scope.condition((
+            callsign_alias.clone(),
+            Alias::new("sigint_inbox_item_id"),
+        )));
+    }
     QuerySelect::query(&mut filtered_messages).join_as(
         JoinType::InnerJoin,
         (
@@ -3378,8 +3426,7 @@ fn summary_table_freq_callsigns_query(
             Alias::new("message_callsign"),
         ),
         callsign_alias.clone(),
-        Expr::col((callsign_alias.clone(), Alias::new("sigint_inbox_item_id")))
-            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        join_condition,
     );
     filtered_messages
         .select_only()
@@ -3507,6 +3554,7 @@ async fn query_summary_table_freq_rows(
             req,
             master_keys,
             analytics_tag_access,
+            None,
         )?
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
@@ -3847,6 +3895,7 @@ pub(crate) fn build_summary_table_filtered_messages_query(
         req,
         master_keys,
         None,
+        None,
     )
 }
 
@@ -3855,13 +3904,64 @@ fn build_summary_table_filtered_messages_query_with_access(
     req: &AnalysisStatsReq,
     master_keys: &[String],
     analytics_tag_access: Option<&stats::AnalyticsTagAccess>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<signal_message::Entity>, AppError> {
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
-    let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
 
-    let q = signal_message::Entity::find()
+    let q = build_summary_table_base_query(dt_since, dt_till, scope);
+    let q = stats::apply_message_access_filter(
+        q,
+        &req.selected_groups,
+        &req.selected_senders,
+        master_keys,
+        scope,
+    )
+    .context(h!())?;
+    let q = filter_selected_freqs(q, &req.selected_freqs).context(h!())?;
+    let q = filter_selected_posts(q, &req.selected_posts).context(h!())?;
+    let q = filter_selected_units_for_period(
+        q,
+        &req.selected_units,
+        &req.units_exact_match_only,
+        dt_since,
+        dt_till,
+    )
+    .context(h!())?;
+    let q = filter_selected_locations(
+        q,
+        &req.selected_locations,
+        include_peleng_locations,
+    )
+    .context(h!())?;
+    let q = filter_summary_table_callsigns_for_scope(q, req, scope)
+        .context(h!())?;
+    let q = filter_summary_table_tags_for_access(
+        q,
+        req,
+        login,
+        analytics_tag_access,
+        scope,
+    )
+    .context(h!())?;
+    let q = filter_summary_table_aors_and_networks_for_scope(q, req, scope)
+        .context(h!())?;
+    let q =
+        filter_selected_metadata_for_analysis_stats(q, req).context(h!())?;
+    let q = filter_search(q, &req.search).context(h!())?;
+    Ok(filter_selected_device_names(q, &req.selected_device_names)
+        .context(h!())?)
+}
+
+fn build_summary_table_base_query(
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Select<signal_message::Entity> {
+    let query = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
@@ -3870,32 +3970,49 @@ fn build_summary_table_filtered_messages_query_with_access(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .filter(message_in_groups_exists(master_keys.to_vec()))
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
-    let q = filter_selected_freqs(q, &req.selected_freqs)?;
-    let q = filter_selected_posts(q, &req.selected_posts)?;
-    let q = filter_selected_groups_and_senders_with_access(
-        q,
-        &req.selected_groups,
-        &req.selected_senders,
-        master_keys,
-    )?;
-    let q = filter_selected_units(
-        q,
-        &req.selected_units,
-        &req.units_exact_match_only,
-    )?;
-    let q = filter_selected_locations(
-        q,
-        &req.selected_locations,
-        include_peleng_locations,
-    )?;
-    let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
-    let q = if let Some(tag_access) = analytics_tag_access {
+    match scope {
+        Some(scope) => query
+            .filter(scope.condition((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Id,
+            )))
+            .filter(scope.condition((
+                signal_message::Entity,
+                signal_message::Column::Id,
+            ))),
+        None => query,
+    }
+}
+
+fn filter_summary_table_callsigns_for_scope(
+    query: Select<signal_message::Entity>,
+    req: &AnalysisStatsReq,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<signal_message::Entity>, AppError> {
+    match scope {
+        Some(_) => filter_selected_callsigns_for_source(
+            query,
+            &req.selected_callsigns,
+            crate::inbox::callsigns::EffectiveCallsignSqlSource::Analytics,
+            scope,
+        ),
+        None => filter_selected_callsigns(query, &req.selected_callsigns),
+    }
+}
+
+fn filter_summary_table_tags_for_access(
+    query: Select<signal_message::Entity>,
+    req: &AnalysisStatsReq,
+    login: &uuid::Uuid,
+    analytics_tag_access: Option<&stats::AnalyticsTagAccess>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<signal_message::Entity>, AppError> {
+    if let Some(tag_access) = analytics_tag_access {
         filter_selected_tags_analytics(
-            q,
+            query,
             &req.selected_tags,
             &req.denied_tags,
             &req.tag_presence,
@@ -3910,11 +4027,11 @@ fn build_summary_table_filtered_messages_query_with_access(
             req.report_tags_only_this_unit.unwrap_or(false),
             &tag_access.accessible_tag_ids,
             &tag_access.unit_login_ids,
-            None,
-        )?
+            scope,
+        )
     } else {
         filter_selected_tags(
-            q,
+            query,
             &req.selected_tags,
             &req.denied_tags,
             &req.tag_presence,
@@ -3927,18 +4044,31 @@ fn build_summary_table_filtered_messages_query_with_access(
             &req.without_model_tags,
             login,
             req.report_tags_only_this_unit.unwrap_or(false),
-        )?
-    };
-    let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
-    let q = filter_selected_networks(
-        q,
-        &req.selected_networks,
-        &req.without_network,
-    )
-    .context(h!())?;
-    let q = filter_selected_metadata_for_analysis_stats(q, req)?;
-    let q = filter_search(q, &req.search)?;
-    filter_selected_device_names(q, &req.selected_device_names)
+        )
+    }
+}
+
+fn filter_summary_table_aors_and_networks_for_scope(
+    query: Select<signal_message::Entity>,
+    req: &AnalysisStatsReq,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<signal_message::Entity>, AppError> {
+    let query =
+        stats::filter_selected_aors_for_scope(query, &req.selected_aors, scope)
+            .context(h!())?;
+    match scope {
+        Some(_) => filter_selected_networks_analytics(
+            query,
+            &req.selected_networks,
+            &req.without_network,
+            scope,
+        ),
+        None => filter_selected_networks(
+            query,
+            &req.selected_networks,
+            &req.without_network,
+        ),
+    }
 }
 
 async fn summary_table_last_datetime_by_freq_by_login(
@@ -7416,6 +7546,12 @@ fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
         .as_ref()
         .is_none_or(|search| search.trim().is_empty())
         && req.selected_units.as_ref().is_none_or(Vec::is_empty)
+}
+
+fn analytics_summary_table_request_supported(req: &AnalysisStatsReq) -> bool {
+    let mut req = req.clone();
+    req.selected_units = None;
+    analytics_count_request_supported(&req)
 }
 
 fn analytics_stats_request_supported(

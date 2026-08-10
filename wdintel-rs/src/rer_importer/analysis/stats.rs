@@ -775,7 +775,7 @@ where
     }
 }
 
-fn apply_message_access_filter<E>(
+pub(super) fn apply_message_access_filter<E>(
     mut query: Select<E>,
     selected_groups: &Option<Vec<String>>,
     selected_senders: &Option<Vec<String>>,
