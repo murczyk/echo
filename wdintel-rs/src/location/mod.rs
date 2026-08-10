@@ -2,7 +2,8 @@ use crate::location::trie::Trie;
 use crate::location::types::Language;
 pub use crate::location::types::SettlementsDataConfig;
 pub(crate) use crate::location::types::{
-    FindSettlementReq, SettlementDetails, SettlementFileRow,
+    CoordinateWithLocality, FindSettlementReq, LocalityDetails,
+    MapCoordinatesReq, SettlementDetails, SettlementFileRow,
 };
 use crate::types::*;
 use crate::users::ensure_rer_role;
@@ -29,6 +30,63 @@ pub type SettlementsData = (
     BTreeMap<i32, SettlementDetails>,
     BTreeMap<String, Vec<SettlementDetails>>,
 );
+
+#[post("/api/location/map-coordinates")]
+async fn map_coordinates(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<MapCoordinatesReq>,
+) -> Result<Json<Vec<CoordinateWithLocality>>, AppError> {
+    let login = crate::users::login_id_from_identity(&user)?;
+    crate::users::ensure_rer_role_by_id(&env.dbx, &login)
+        .await
+        .c(h!())?;
+
+    let coords = req.into_inner().coords;
+    let indexed_coords = coords
+        .iter()
+        .enumerate()
+        .map(|(index, coord)| {
+            (
+                index as i64,
+                milgeo_rs::coord_util::LatLng {
+                    lat: coord.lat,
+                    lng: coord.lon,
+                },
+            )
+        })
+        .collect();
+    let mapped_coords = milgeo_rs::coord_util::map_coords(
+        indexed_coords,
+        env.mil_geo.clone(),
+        3,
+    )
+    .await
+    .c(h!())?;
+
+    let result = coords
+        .into_iter()
+        .enumerate()
+        .map(|(index, coords)| CoordinateWithLocality {
+            coords,
+            locality: mapped_coords
+                .get(&(index as i64))
+                .into_iter()
+                .flatten()
+                .next()
+                .map(|locality| LocalityDetails {
+                    settlement_name: locality.settlement_name.clone(),
+                    direction: locality.direction.clone(),
+                    region: locality.region.clone(),
+                    country: locality.country.clone(),
+                    distance_m: locality.distance_m,
+                    is_rf: locality.is_rf,
+                }),
+        })
+        .collect();
+
+    Ok(Json(result))
+}
 
 #[post("/api/settlement/find")]
 async fn find_locations(

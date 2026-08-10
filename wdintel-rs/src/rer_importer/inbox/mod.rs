@@ -1192,7 +1192,7 @@ fn generic_submit_item_to_inbox_message(
         date: Some(date),
         time: Some(time),
         freq: item.freq.clone(),
-        coords: format_submit_coordinates(&item.coords),
+        coords: format_geo_coordinates(&item.coords),
         callsigns: submit_item_callsigns(item),
         callsigns_alg2: vec![],
         checked: true,
@@ -1353,7 +1353,7 @@ async fn replace_submit_tags(
     add_submit_tags(txn, inbox_id, login, Some(tag_ids)).await
 }
 
-fn format_submit_coordinates(coords: &[SubmitCoordinates]) -> Option<String> {
+fn format_geo_coordinates(coords: &[GeoCoordinates]) -> Option<String> {
     coords
         .first()
         .map(|coords| format!("{}, {}", coords.lat, coords.lon))
@@ -3355,11 +3355,11 @@ mod tests {
             comment: Some("Коментар".to_string()),
             timestamp: "2026-06-25T12:34:56Z".to_string(),
             coords: vec![
-                SubmitCoordinates {
+                GeoCoordinates {
                     lat: 49.12345,
                     lon: 37.12345,
                 },
-                SubmitCoordinates {
+                GeoCoordinates {
                     lat: 50.0,
                     lon: 38.0,
                 },
@@ -4004,7 +4004,7 @@ mod tests {
             text: Some("рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string()),
             comment: Some("Сигнали: dmr".to_string()),
             freq: Some("145.02678".to_string()),
-            coords: vec![SubmitCoordinates {
+            coords: vec![GeoCoordinates {
                 lat: 49.12345,
                 lon: 37.12345,
             }],

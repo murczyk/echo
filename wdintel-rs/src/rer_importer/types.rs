@@ -514,7 +514,7 @@ pub struct InboxSubmitItem {
     #[serde(default)]
     pub freq: Option<String>,
     #[serde(default)]
-    pub coords: Vec<SubmitCoordinates>,
+    pub coords: Vec<GeoCoordinates>,
     #[serde(default, rename = "from")]
     pub from_callsign: Option<String>,
     #[serde(default)]
@@ -571,7 +571,7 @@ impl Default for InboxSubmitItem {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct SubmitCoordinates {
+pub struct GeoCoordinates {
     pub lat: f64,
     pub lon: f64,
 }
@@ -1744,7 +1744,7 @@ mod tests {
         assert_eq!(item.to, vec!["светлый".to_string()]);
         assert_eq!(
             item.coords,
-            vec![SubmitCoordinates {
+            vec![GeoCoordinates {
                 lat: 49.12345,
                 lon: 37.12345,
             }]
