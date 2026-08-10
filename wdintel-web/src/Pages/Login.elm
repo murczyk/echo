@@ -13,6 +13,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Maybe
 import Page exposing (Page)
+import Process
 import Regex
 import Route exposing (Route)
 import Route.Path
@@ -33,6 +34,7 @@ type alias Model =
     , passwordInp : String
     , redirect : Maybe String
     , serverInfo : Maybe B.ServerInfo
+    , showCredsLogin : Bool
     }
 
 
@@ -67,9 +69,15 @@ init route shared _ =
       , passwordInp = ""
       , redirect = Dict.get "redirect" route.query
       , serverInfo = shared.serverInfo
+      , showCredsLogin = False
       }
     , E.batch
-        ((E.sendCmd <| focusLoginInput)
+        ((if isFeatureDeltaEnabled shared.serverInfo then
+            E.none
+
+          else
+            E.sendCmd <| focusLoginInput
+         )
             :: (case mDeltaRedirectError of
                     Just deltaError ->
                         [ E.sendCmd <| Shared.Components.Toast.addError ToastMsg deltaError
@@ -89,11 +97,22 @@ type Msg
     | SharedToastMsg Shared.Components.Toast.Msg
     | SetLoginInp String
     | SetPasswordInp String
+    | ToggleCredsLogin
     | Login
     | LoginDone (Result ApiError ())
     | GotLocation LocationRes
     | GetDeltaRedirectUrl
     | GotDeltaRedirectUrl (Result ApiError B.DeltaLoginUrl)
+
+
+isFeatureDeltaEnabled : Maybe B.ServerInfo -> Bool
+isFeatureDeltaEnabled maybeServerInfo =
+    case maybeServerInfo of
+        Just info ->
+            info.featureDelta
+
+        Nothing ->
+            False
 
 
 focusLoginInput : Cmd Msg
@@ -134,6 +153,23 @@ update shared msg model =
 
         SetPasswordInp s ->
             ( { model | passwordInp = s }, E.none )
+
+        ToggleCredsLogin ->
+            let
+                showCredsLogin =
+                    not model.showCredsLogin
+            in
+            ( { model | showCredsLogin = showCredsLogin }
+            , if showCredsLogin then
+                E.sendCmd <|
+                    (Process.sleep 320
+                        |> Task.andThen (\_ -> Browser.Dom.focus "login")
+                        |> Task.attempt (\_ -> NoOp)
+                    )
+
+              else
+                E.none
+            )
 
         Login ->
             ( model
@@ -250,6 +286,153 @@ subscriptions _ =
 
 body : Bool -> Bool -> Shared.Components.Toast.Model -> Model -> List (Html Msg)
 body _ deltaLoginFlag sharedToasts model =
+    let
+        formWidth =
+            style "width" "280px"
+
+        logoBlock =
+            div [ class "mb-4 pt-2" ]
+                [ div
+                    [ class "logo-animated d-flex justify-content-center align-items-center"
+                    , style "gap" "5px"
+                    ]
+                    [ div
+                        [ class "d-flex align-items-center justify-content-center"
+                        , style "width" "65px"
+                        , style "height" "60px"
+                        , style "position" "relative"
+                        ]
+                        [ div
+                            [ class "main-image"
+                            , style "width" "60px"
+                            , style "height" "60px"
+                            ]
+                            [ img
+                                [ src "/img/SIGINT_190_kraken_transparent.png"
+                                , style "width" "60px"
+                                , style "height" "60px"
+                                , alt "SIGINT 190 Kraken"
+                                ]
+                                []
+                            ]
+                        , div
+                            [ class "hover-image"
+                            , style "width" "60px"
+                            , style "height" "60px"
+                            , style "background-color" "#000"
+                            , style "border-radius" "50%"
+                            ]
+                            [ img
+                                [ src "/img/flying_skull_logo_transparent.png"
+                                , style "width" "60px"
+                                , style "height" "42px"
+                                , style "z-index" "1"
+                                , alt "Flying Skull"
+                                ]
+                                []
+                            ]
+                        ]
+                    , div []
+                        [ img
+                            [ src "/img/echo-logo-white.svg"
+                            , class "h-[50px]"
+                            ]
+                            []
+                        ]
+                    ]
+                ]
+
+        credsFields =
+            [ div [ class "mb-2 w-100" ] <|
+                input
+                    [ type_ "text"
+                    , class "form-control"
+                    , id "login"
+                    , placeholder "логін"
+                    , value model.loginInp
+                    , onInput SetLoginInp
+                    , isInvalidCls "login" model.formErrors
+                    ]
+                    []
+                    :: fieldError "login" model.formErrors
+            , div [ class "mb-2 w-100" ] <|
+                input
+                    [ type_ "password"
+                    , class "form-control"
+                    , placeholder "пароль"
+                    , value model.passwordInp
+                    , onInput SetPasswordInp
+                    , isInvalidCls "password" model.formErrors
+                    ]
+                    []
+                    :: fieldError "password" model.formErrors
+            , div
+                [ class "mb-2 w-100 d-flex justify-content-center"
+                ]
+                [ button
+                    [ type_ "submit"
+                    , class "btn btn-primary btn-dark w-100"
+                    ]
+                    [ text "увійти" ]
+                ]
+            ]
+
+        deltaButton =
+            button
+                [ type_ "button"
+                , class "btn btn-primary btn-dark text-nowrap w-100"
+                , onClick GetDeltaRedirectUrl
+                ]
+                [ img
+                    [ src "/img/delta-icon.webp"
+                    , class "me-2 inline-block"
+                    , style "height" "18px"
+                    ]
+                    []
+                , span [] [ text "увійти з delta" ]
+                ]
+
+        credsOpenLink =
+            button
+                [ type_ "button"
+                , class "btn btn-link btn-sm text-decoration-none p-0"
+                , style "color" "var(--bs-secondary-color)"
+                , onClick ToggleCredsLogin
+                ]
+                [ text "або увійти з логіном" ]
+
+        deltaFormChildren =
+            [ div [ class "mb-3 w-100" ] [ deltaButton ]
+            , div
+                [ classList
+                    [ ( "login-creds-link-wrap", True )
+                    , ( "is-hidden", model.showCredsLogin )
+                    ]
+                ]
+                [ div [ class "login-creds-link-wrap__inner w-100 text-center" ]
+                    [ credsOpenLink ]
+                ]
+            , div
+                [ classList
+                    [ ( "login-creds-panel", True )
+                    , ( "is-open", model.showCredsLogin )
+                    ]
+                ]
+                [ div
+                    [ class "login-creds-panel__inner w-100 d-flex flex-column align-items-center pt-3"
+                    , style "border-top" "1px solid var(--bs-border-color)"
+                    ]
+                    credsFields
+                ]
+            ]
+
+        formChildren =
+            if deltaLoginFlag then
+                logoBlock :: deltaFormChildren
+
+            else
+                logoBlock :: credsFields
+    in
     [ Shared.Components.Toast.overlay SharedToastMsg sharedToasts
     , Shared.Components.Toast.view ToastMsg model.toasts <|
         div
@@ -260,132 +443,11 @@ body _ deltaLoginFlag sharedToasts model =
             [ Html.form
                 [ class "d-flex flex-column justify-content-center align-items-center"
                 , class "border shadow-lg p-4"
+                , formWidth
                 , style "background-image" "linear-gradient(to bottom, rgba(var(--bs-body-bg-rgb), .7), rgba(var(--bs-body-bg-rgb), .9))"
                 , onSubmit Login
-
-                -- , style "background-color" "var(--bs-body-bg)"
                 ]
-                [ div [ class "mb-4 pt-2" ]
-                    [ div
-                        [ class "logo-animated d-flex justify-content-center align-items-center"
-                        , style "gap" "5px"
-                        ]
-                        [ div
-                            [ class "d-flex align-items-center justify-content-center"
-                            , style "width" "65px"
-                            , style "height" "60px"
-                            , style "position" "relative"
-                            ]
-                            [ div
-                                [ class "main-image"
-                                , style "width" "60px"
-                                , style "height" "60px"
-                                ]
-                                [ img
-                                    [ src "/img/SIGINT_190_kraken_transparent.png"
-                                    , style "width" "60px"
-                                    , style "height" "60px"
-                                    , alt "SIGINT 190 Kraken"
-                                    ]
-                                    []
-                                ]
-                            , div
-                                [ class "hover-image"
-                                , style "width" "60px"
-                                , style "height" "60px"
-                                , style "background-color" "#000"
-                                , style "border-radius" "50%"
-                                ]
-                                [ img
-                                    [ src "/img/flying_skull_logo_transparent.png"
-                                    , style "width" "60px"
-                                    , style "height" "42px"
-                                    , style "z-index" "1"
-                                    , alt "Flying Skull"
-                                    ]
-                                    []
-                                ]
-                            ]
-                        , div []
-                            [ img
-                                [ src "/img/echo-logo-white.svg"
-                                , class "h-[50px]"
-                                ]
-                                []
-                            ]
-
-                        -- , div
-                        --     [ class "display-3"
-                        --     ]
-                        --     [ text "Е Х О"
-                        --     ]
-                        ]
-                    ]
-                , div [ class "mb-2 w-[240px]" ] <|
-                    input
-                        [ type_ "text"
-                        , class "form-control"
-                        , id "login"
-                        , placeholder "логін"
-                        , value model.loginInp
-                        , onInput SetLoginInp
-                        , isInvalidCls "login" model.formErrors
-                        ]
-                        []
-                        :: fieldError "login" model.formErrors
-                , div [ class "mb-2 w-[240px]" ] <|
-                    input
-                        [ type_ "password"
-                        , class "form-control"
-                        , placeholder "пароль"
-                        , value model.passwordInp
-                        , onInput SetPasswordInp
-                        , isInvalidCls "password" model.formErrors
-                        ]
-                        []
-                        :: fieldError "password" model.formErrors
-                , div
-                    [ class "mb-2"
-                    , style "width" "100%"
-                    , class "d-flex justify-content-center"
-                    ]
-                    [ button
-                        [ type_ "submit"
-                        , class "btn btn-primary btn-dark"
-                        , style "width" "50%"
-                        , style "min-width" "160px"
-                        ]
-                        [ text "увійти" ]
-                    ]
-                , if deltaLoginFlag then
-                    div
-                        [ style "border-top" "1px solid var(--bs-border-color)"
-                        , style "width" "100%"
-                        , class "d-flex justify-content-center"
-                        ]
-                        [ button
-                            [ type_ "button"
-                            , class "btn btn-primary btn-dark"
-                            , class "text-nowrap"
-                            , onClick GetDeltaRedirectUrl
-                            , style "min-width" "160px"
-                            ]
-                            [ img
-                                [ src "/img/delta-icon.webp"
-                                , class "me-2 inline-block"
-                                , style "height" "18px"
-                                ]
-                                []
-                            , span
-                                [ style "margin-right" "4px"
-                                ]
-                                [ text "увійти з delta" ]
-                            ]
-                        ]
-
-                  else
-                    text ""
-                ]
+                formChildren
             ]
     ]
 
@@ -394,12 +456,7 @@ view : Shared.Model -> Model -> View Msg
 view shared model =
     let
         featureDelta =
-            case shared.serverInfo of
-                Just info ->
-                    info.featureDelta
-
-                Nothing ->
-                    False
+            isFeatureDeltaEnabled shared.serverInfo
     in
     { title = "логін"
     , body = body (isDarkMode shared.themeMode) featureDelta shared.toasts model

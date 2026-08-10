@@ -936,6 +936,53 @@ sl-tooltip {
   transform: rotateY(0deg);
 }
 
+.login-creds-link-wrap {
+  display: grid;
+  grid-template-rows: 1fr;
+  width: 100%;
+  opacity: 1;
+  transition:
+    grid-template-rows 0.28s ease,
+    opacity 0.2s ease;
+}
+
+.login-creds-link-wrap.is-hidden {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.login-creds-link-wrap__inner,
+.login-creds-panel__inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.login-creds-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  width: 100%;
+  transition: grid-template-rows 0.32s ease;
+}
+
+.login-creds-panel.is-open {
+  grid-template-rows: 1fr;
+}
+
+.login-creds-panel__inner {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition:
+    opacity 0.24s ease,
+    transform 0.24s ease;
+}
+
+.login-creds-panel.is-open .login-creds-panel__inner {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 0.06s;
+}
+
 .grid-container {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
