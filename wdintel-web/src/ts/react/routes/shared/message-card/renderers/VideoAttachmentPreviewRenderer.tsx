@@ -516,7 +516,7 @@ export function VideoAttachmentPreviewRenderer({
       currentTime: 0,
       error: undefined,
     }));
-  }, [video]);
+  }, [navigation.index, video.source]);
 
   useEffect(() => {
     if (!src) return;

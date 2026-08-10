@@ -689,7 +689,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(document.body.textContent).toContain('Не вдалося завантажити відео.');
   });
 
-  it('resets playback state when the index changes or the dialog reopens', async () => {
+  it('resets playback state only when the selected video changes', async () => {
     const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     const { root } = renderDialog({
       currentIndex: 0,
@@ -717,6 +717,27 @@ describe('VideoAttachmentPreviewRenderer', () => {
         ?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     });
 
+    expect(document.body.querySelector('[data-zoom-badge]')?.textContent).toBe('150%');
+
+    const pauseCallsBeforeEquivalentRerender = pauseSpy.mock.calls.length;
+    await act(async () => {
+      root.render(
+        <TestVideoPreviewDialog
+          open
+          onClose={vi.fn()}
+          videos={[
+            { id: 'video-1', name: 'video-1.mp4', source: '/video-1.mp4' },
+            { id: 'video-2', name: 'video-2.mp4', source: '/video-2.mp4' },
+          ]}
+          currentIndex={0}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+
+    expect(pauseSpy).toHaveBeenCalledTimes(pauseCallsBeforeEquivalentRerender);
+    expect(latestControlsProps?.playerState.isPlaying).toBe(true);
+    expect(latestControlsProps?.playerState.currentTime).toBe(37);
     expect(document.body.querySelector('[data-zoom-badge]')?.textContent).toBe('150%');
 
     await act(async () => {
