@@ -148,7 +148,11 @@
     },
     "echo:m20260810_125939_add_sigint_peleng_locality_details": {
       "changes": [
-        { "table": "public.sigint_peleng", "strategy": "cdc_backfill" }
+        {
+          "table": "public.sigint_peleng",
+          "strategy": "cdc_backfill",
+          "backfill": "wdintel-rs/src/location/worker.rs"
+        }
       ]
     }
   },
