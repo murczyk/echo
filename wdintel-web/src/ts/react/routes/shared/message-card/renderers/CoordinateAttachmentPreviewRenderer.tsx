@@ -501,7 +501,7 @@ function CoordinateMapPreview({
                 py: 1,
                 borderRadius: 999,
                 bgcolor: panelBackground,
-                color: 'common.white',
+                color: 'text.primary',
               }}
             >
               <CircularProgress size={18} color="inherit" />
@@ -520,7 +520,7 @@ function CoordinateMapPreview({
                 py: 1.5,
                 borderRadius: 2,
                 bgcolor: panelBackground,
-                color: 'common.white',
+                color: 'text.primary',
               }}
             >
               <Typography variant="body2" sx={{ fontWeight: 700 }}>
