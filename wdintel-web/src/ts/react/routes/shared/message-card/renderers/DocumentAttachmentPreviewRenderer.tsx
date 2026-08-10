@@ -95,6 +95,7 @@ export function DocumentAttachmentPreviewRenderer({
   const previewConfig = getMessageCardAttachmentPreviewConfig(currentDocumentKind);
   const currentDocumentCapabilities = getDocumentPreviewCapabilities(currentDocument.kind);
   const canZoom = currentDocumentCapabilities?.zoomable === true;
+  const canSwipeCarousel = currentDocumentCapabilities?.carouselSwipeable === true;
   const canFullscreen = previewConfig.supportsFullscreen;
   const dialogIsFullscreen = canFullscreen && isFullscreen;
   const changeFullscreen = useCallback(
@@ -309,7 +310,7 @@ export function DocumentAttachmentPreviewRenderer({
       header={header}
       infoPopover={infoPopover}
       navigation={navigation}
-      swipeEnabled={dialogZoom <= 100}
+      swipeEnabled={canSwipeCarousel && dialogZoom <= 100}
       onToggleFullscreen={() => changeFullscreen(!dialogIsFullscreen)}
     />
   );

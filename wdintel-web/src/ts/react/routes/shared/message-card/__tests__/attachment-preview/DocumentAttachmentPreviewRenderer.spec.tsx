@@ -10,6 +10,7 @@ let latestDialogOnClose: ((event: Event, reason: string) => void) | null = null;
 let dialogEscapeListenerInstalled = false;
 const dialogProps: Array<{ disableRestoreFocus?: boolean }> = [];
 let latestDocumentKind: string | null = null;
+let latestSwipeEnabled: boolean | null = null;
 
 vi.mock('@mui/material', () => {
   const passthrough =
@@ -101,6 +102,12 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage', () => ({
   ),
 }));
 
+vi.mock('../../attachment-preview/useAttachmentPreviewSwipe', () => ({
+  useAttachmentPreviewSwipe: ({ enabled }: { enabled: boolean }) => {
+    latestSwipeEnabled = enabled;
+  },
+}));
+
 vi.mock('../../renderers/PdfDocumentPreview', () => ({
   PdfDocumentPreview: () => <div data-document-kind="pdf" />,
 }));
@@ -165,6 +172,7 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     dialogEscapeListenerInstalled = false;
     dialogProps.splice(0);
     latestDocumentKind = null;
+    latestSwipeEnabled = null;
   });
 
   it('exits fullscreen on Escape before closing the dialog', async () => {
@@ -457,6 +465,45 @@ describe('DocumentAttachmentPreviewRenderer', () => {
 
     expect(document.body.textContent).toContain('100%');
     expect(document.body.textContent).not.toContain('150%');
+    root.unmount();
+  });
+
+  it.each([
+    ['xlsx', false],
+    ['csv', false],
+    ['pdf', true],
+    ['docx', true],
+  ] as const)('sets base-zoom carousel swipes for %s previews to %s', async (kind, expected) => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <TestDocumentPreviewDialog
+          documents={[
+            {
+              href: `https://example.test/files/report.${kind}`,
+              fileName: `report.${kind}`,
+              kind,
+            },
+            {
+              href: 'https://example.test/files/other.pdf',
+              fileName: 'other.pdf',
+              kind: 'pdf',
+            },
+          ]}
+          currentIndex={0}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+          isDownloadStarting={() => false}
+          onDownloadStart={vi.fn(() => true)}
+        />,
+      );
+    });
+
+    expect(latestSwipeEnabled).toBe(expected);
     root.unmount();
   });
 
