@@ -37,6 +37,46 @@ struct DistinctCountRes {
     count: i64,
 }
 
+async fn with_redis_stats_fallback<T, R, RFut, D, DFut>(
+    operation: &str,
+    redis_query: R,
+    database_query: D,
+) -> Result<T, AppError>
+where
+    R: FnOnce() -> RFut,
+    RFut: Future<Output = anyhow::Result<T>>,
+    D: FnOnce() -> DFut,
+    DFut: Future<Output = Result<T, AppError>>,
+{
+    match redis_query().await {
+        Ok(result) => Ok(result),
+        Err(error) => {
+            warn!(
+                "Redis {operation} read failed; using database query: {error:#}"
+            );
+            database_query().await
+        }
+    }
+}
+
+#[cfg(test)]
+mod redis_stats_fallback_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn redis_stats_error_uses_database_fallback() {
+        let result = with_redis_stats_fallback(
+            "test stats",
+            || async { Err(anyhow::anyhow!("timed out")) },
+            || async { Ok(42) },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result, 42);
+    }
+}
+
 #[derive(Clone)]
 pub(in crate::rer_importer) struct AnalyticsTagAccess {
     pub(in crate::rer_importer) accessible_tag_ids: Vec<i64>,
@@ -2110,15 +2150,28 @@ pub async fn fetch_freqs_for_login(
     if let Some((dt_since, dt_till)) =
         stats_aggregated_range(&req_json, env, dt_since, dt_till).c(h!())?
     {
-        let result = read_frequency_stats_aggregated(
-            env,
-            master_keys,
-            dt_since,
-            dt_till,
+        let redis_master_keys = master_keys.clone();
+        return with_redis_stats_fallback(
+            "frequency stats",
+            || {
+                read_frequency_stats_aggregated(
+                    env,
+                    redis_master_keys,
+                    dt_since,
+                    dt_till,
+                )
+            },
+            || {
+                fetch_freqs_for_login_with_db(
+                    req,
+                    login_str,
+                    &env.dbx,
+                    master_keys,
+                    None,
+                )
+            },
         )
-        .await
-        .c(h!())?;
-        return Ok(result);
+        .await;
     }
 
     fetch_freqs_for_login_with_db(req, login_str, &env.dbx, master_keys, None)
@@ -3136,16 +3189,30 @@ pub async fn fetch_tags_for_login(
             .c(h!())?
             .filter(|_| req.without_model_tags != Some(true))
     {
-        let result = read_tag_stats_aggregated(
-            env,
-            login_str,
-            master_keys,
-            dt_since,
-            dt_till,
+        let redis_master_keys = master_keys.clone();
+        return with_redis_stats_fallback(
+            "tag stats",
+            || {
+                read_tag_stats_aggregated(
+                    env,
+                    login_str,
+                    redis_master_keys,
+                    dt_since,
+                    dt_till,
+                )
+            },
+            || {
+                fetch_tags_for_login_with_db(
+                    &req.0,
+                    login_str,
+                    &env.dbx,
+                    master_keys,
+                    None,
+                    None,
+                )
+            },
         )
-        .await
-        .c(h!())?;
-        return Ok(result);
+        .await;
     }
 
     fetch_tags_for_login_with_db(
