@@ -64,6 +64,8 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     DeviceName,
+    #[sea_orm(has_one = "super::failed_inbox_unit::Entity")]
+    FailedInboxUnit,
     #[sea_orm(
         belongs_to = "super::nominatimres::Entity",
         from = "Column::NominatimresId",
@@ -72,16 +74,18 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Nominatimres,
-    #[sea_orm(has_many = "super::sigint_inbox_item_metadata::Entity")]
-    SigintInboxItemMetadata,
     #[sea_orm(has_many = "super::sigint_inbox_item_callsign::Entity")]
     SigintInboxItemCallsign,
+    #[sea_orm(has_many = "super::sigint_inbox_item_metadata::Entity")]
+    SigintInboxItemMetadata,
     #[sea_orm(has_many = "super::sigint_inbox_item_network::Entity")]
     SigintInboxItemNetwork,
     #[sea_orm(has_many = "super::sigint_inbox_item_point_token::Entity")]
     SigintInboxItemPointToken,
     #[sea_orm(has_many = "super::sigint_inbox_item_tag::Entity")]
     SigintInboxItemTag,
+    #[sea_orm(has_many = "super::sigint_inbox_item_unit::Entity")]
+    SigintInboxItemUnit,
     #[sea_orm(has_one = "super::sigint_inbox_item_unit_tag_queue::Entity")]
     SigintInboxItemUnitTagQueue,
     #[sea_orm(has_many = "super::sigint_inbox_tag_model_error::Entity")]
@@ -120,21 +124,27 @@ impl Related<super::device_name::Entity> for Entity {
     }
 }
 
+impl Related<super::failed_inbox_unit::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FailedInboxUnit.def()
+    }
+}
+
 impl Related<super::nominatimres::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Nominatimres.def()
     }
 }
 
-impl Related<super::sigint_inbox_item_metadata::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SigintInboxItemMetadata.def()
-    }
-}
-
 impl Related<super::sigint_inbox_item_callsign::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItemCallsign.def()
+    }
+}
+
+impl Related<super::sigint_inbox_item_metadata::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemMetadata.def()
     }
 }
 
@@ -153,6 +163,12 @@ impl Related<super::sigint_inbox_item_point_token::Entity> for Entity {
 impl Related<super::sigint_inbox_item_tag::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItemTag.def()
+    }
+}
+
+impl Related<super::sigint_inbox_item_unit::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemUnit.def()
     }
 }
 

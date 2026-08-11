@@ -20,6 +20,7 @@ use sea_query::{Expr, OnConflict, SimpleExpr};
 use std::collections::{BTreeSet, HashMap};
 
 pub mod attachment;
+pub mod labels;
 pub mod orbit;
 pub mod types;
 
@@ -76,12 +77,14 @@ pub async fn list_units(
             .iter()
             .map(|unit| unit.id)
             .collect::<Vec<_>>();
-        let orbit_unit_ids =
-            orbit::unit_ids_with_orbit(&env.dbx, &unit_ids).await?;
+        let orbit_links = orbit::unit_orbit_links(&env.dbx, &unit_ids)
+            .await
+            .context(h!())?;
         for unit in &mut response.units {
-            unit.orbit_unit_ids =
-                orbit_unit_ids.get(&unit.id).cloned().unwrap_or_default();
-            unit.has_orbit = !unit.orbit_unit_ids.is_empty();
+            apply_unit_orbit_links(
+                unit,
+                orbit_links.get(&unit.id).map(Vec::as_slice),
+            );
         }
     } else {
         for unit in &mut response.units {
@@ -599,11 +602,9 @@ pub async fn create_unit(
     fanout_unit_changed(&env).await?;
 
     let mut unit = render_unit(&unit)?;
-    if can_view_orbit {
-        unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
-    } else {
-        redact_unit_orbit_data(&mut unit);
-    }
+    apply_unit_orbit_visibility(&env.dbx, &mut unit, can_view_orbit)
+        .await
+        .context(h!())?;
     Ok(Json(unit))
 }
 
@@ -888,11 +889,10 @@ async fn render_created_unit_with_optional_network(
         .c(h!())?
         .ok_or(AppError::NotFound)?;
     let mut unit = render_unit(&unit)?;
-    if orbit::can_view_orbit_data(&env.dbx, login).await? {
-        unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
-    } else {
-        redact_unit_orbit_data(&mut unit);
-    }
+    let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, login).await?;
+    apply_unit_orbit_visibility(&env.dbx, &mut unit, can_view_orbit)
+        .await
+        .context(h!())?;
     Ok(CreateUnitWithAutoNetworkRsp { unit, network_id })
 }
 
@@ -1150,11 +1150,9 @@ pub async fn update_unit(
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
     let mut unit = render_unit(&unit)?;
-    if can_update_orbit_note {
-        unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
-    } else {
-        redact_unit_orbit_data(&mut unit);
-    }
+    apply_unit_orbit_visibility(&env.dbx, &mut unit, can_update_orbit_note)
+        .await
+        .context(h!())?;
     Ok(Json(unit))
 }
 
@@ -1476,11 +1474,10 @@ pub async fn delete_unit_duplicate(
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
     let mut unit = render_unit(&unit)?;
-    if orbit::can_view_orbit_data(dbx, &login).await? {
-        unit.has_orbit = orbit::unit_has_orbit(dbx, unit.id).await?;
-    } else {
-        redact_unit_orbit_data(&mut unit);
-    }
+    let can_view_orbit = orbit::can_view_orbit_data(dbx, &login).await?;
+    apply_unit_orbit_visibility(dbx, &mut unit, can_view_orbit)
+        .await
+        .context(h!())?;
     Ok(Json(unit))
 }
 
@@ -1628,12 +1625,50 @@ pub fn render_unit(unit: &sigint_unit::Model) -> Result<Unit, AppError> {
         created_by_login_id: unit.created_by_login_id.to_string(),
         has_orbit: false,
         orbit_unit_ids: Vec::new(),
+        orbit_unit_generative_names: Vec::new(),
     })
+}
+
+pub(crate) fn apply_unit_orbit_links(
+    unit: &mut Unit,
+    links: Option<&[orbit::UnitOrbitLink]>,
+) {
+    let Some(links) = links else {
+        return;
+    };
+    unit.orbit_unit_ids = links
+        .iter()
+        .map(|link| link.orbit_unit_id.clone())
+        .collect();
+    unit.orbit_unit_generative_names = links
+        .iter()
+        .filter(|link| !link.generative_unit_name_full.is_empty())
+        .map(|link| link.generative_unit_name_full.clone())
+        .collect();
+    unit.has_orbit = !unit.orbit_unit_ids.is_empty();
+}
+
+pub(crate) async fn apply_unit_orbit_visibility(
+    dbx: &DatabaseConnection,
+    unit: &mut Unit,
+    can_view_orbit: bool,
+) -> Result<(), AppError> {
+    if !can_view_orbit {
+        redact_unit_orbit_data(unit);
+        return Ok(());
+    }
+    let unit_id = unit.id;
+    let orbit_links = orbit::unit_orbit_links(dbx, &[unit_id])
+        .await
+        .context(h!())?;
+    apply_unit_orbit_links(unit, orbit_links.get(&unit_id).map(Vec::as_slice));
+    Ok(())
 }
 
 pub(crate) fn redact_unit_orbit_data(unit: &mut Unit) {
     unit.has_orbit = false;
     unit.orbit_unit_ids.clear();
+    unit.orbit_unit_generative_names.clear();
     unit.orbit_note = None;
     unit.is_deduplicate_candidate = None;
 }
@@ -1776,9 +1811,55 @@ where
         .await
         .context(h!())?;
 
+    sigint_unit_label::Entity::update_many()
+        .col_expr(
+            sigint_unit_label::Column::SigintUnitId,
+            Expr::value(new_unit_id),
+        )
+        .filter(sigint_unit_label::Column::SigintUnitId.eq(old_unit_id))
+        .exec(dbx)
+        .await
+        .context(h!())?;
+
+    move_inbox_item_unit_links(old_unit_id, new_unit_id, dbx)
+        .await
+        .context(h!())?;
+
     move_orbit_unit_links(old_unit_id, new_unit_id, dbx).await?;
     swap_unit_devices(old_unit_id, new_unit_id, dbx).await?;
 
+    Ok(())
+}
+
+async fn move_inbox_item_unit_links<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let links = sigint_inbox_item_unit::Entity::find()
+        .filter(sigint_inbox_item_unit::Column::UnitId.eq(old_unit_id))
+        .all(dbx)
+        .await
+        .context(h!())?;
+    for link in links {
+        let duplicate = sigint_inbox_item_unit::Entity::find()
+            .filter(sigint_inbox_item_unit::Column::ItemId.eq(link.item_id))
+            .filter(sigint_inbox_item_unit::Column::UnitId.eq(new_unit_id))
+            .filter(sigint_inbox_item_unit::Column::Kind.eq(link.kind.clone()))
+            .one(dbx)
+            .await
+            .context(h!())?;
+        if duplicate.is_some() {
+            link.delete(dbx).await.context(h!())?;
+            continue;
+        }
+        let mut link = link.into_active_model();
+        link.unit_id = Set(new_unit_id);
+        link.update(dbx).await.context(h!())?;
+    }
     Ok(())
 }
 
@@ -4411,14 +4492,72 @@ mod tests {
             created_by_login_id: String::new(),
             has_orbit: true,
             orbit_unit_ids: vec![Uuid::nil().to_string()],
+            orbit_unit_generative_names: vec!["106 пдд / МВО".to_string()],
         };
 
         redact_unit_orbit_data(&mut unit);
 
         assert!(!unit.has_orbit);
         assert!(unit.orbit_unit_ids.is_empty());
+        assert!(unit.orbit_unit_generative_names.is_empty());
         assert_eq!(unit.orbit_note, None);
         assert_eq!(unit.is_deduplicate_candidate, None);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orbit_visibility_populates_and_redacts_all_orbit_fields() {
+        let env = cleanup().await.unwrap();
+        let sigint_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                orbit_note: Set(Some("Orbit note".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let orbit_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::Entity::insert(orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            generative_unit_name_full: Set(Some("106 пдд / МВО".to_string())),
+            ..Default::default()
+        })
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::Entity::insert(
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(orbit_unit_id),
+                sigint_unit_id: Set(sigint_unit.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
+        )
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        let mut unit = render_unit(&sigint_unit).unwrap();
+
+        apply_unit_orbit_visibility(&env.dbx, &mut unit, true)
+            .await
+            .unwrap();
+
+        assert!(unit.has_orbit);
+        assert_eq!(unit.orbit_unit_ids, vec![orbit_unit_id.to_string()]);
+        assert_eq!(
+            unit.orbit_unit_generative_names,
+            vec!["106 пдд / МВО".to_string()]
+        );
+
+        apply_unit_orbit_visibility(&env.dbx, &mut unit, false)
+            .await
+            .unwrap();
+
+        assert!(!unit.has_orbit);
+        assert!(unit.orbit_unit_ids.is_empty());
+        assert!(unit.orbit_unit_generative_names.is_empty());
+        assert_eq!(unit.orbit_note, None);
     }
 
     #[tokio::test]
@@ -4497,6 +4636,31 @@ mod tests {
         .exec(&env.dbx)
         .await
         .unwrap();
+        let label = sigint_unit_label::ActiveModel {
+            sigint_unit_id: Set(duplicate.id),
+            label: Set(format!("merge-label-{}", uuid::Uuid::new_v4())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let inbox_item = crate::functest::tests::mk_sigint_inbox_item(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let inbox_item_unit = sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(inbox_item.id),
+            unit_id: Set(duplicate.id),
+            kind: Set(
+                crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind::Parsed,
+            ),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
 
         let merged =
             merge_units(login_id, &env.dbx, duplicate.id, surviving.id)
@@ -4507,6 +4671,24 @@ mod tests {
         assert!(!merged.deleted);
         assert_eq!(merged.is_deduplicate_candidate, Some(true));
         assert_eq!(merged.orbit_note.as_deref(), Some("Duplicate Orbit note"));
+        assert_eq!(
+            sigint_unit_label::Entity::find_by_id(label.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .sigint_unit_id,
+            surviving.id
+        );
+        assert_eq!(
+            sigint_inbox_item_unit::Entity::find_by_id(inbox_item_unit.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .unit_id,
+            surviving.id
+        );
         assert!(orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId.eq(duplicate.id)

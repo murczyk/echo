@@ -2433,6 +2433,7 @@ export type Unit = {
   createdByLoginId: string;
   hasOrbit: boolean;
   orbitUnitIds: Array<string>;
+  orbitUnitGenerativeNames: Array<string>;
 };
 
 export type ListUnitsReq = {
@@ -2557,6 +2558,50 @@ export type UnitAttachment = {
   createdAt: number;
 };
 
+export type UnitLabel = {
+  id: number;
+  label: string;
+};
+
+export type CreateUnitLabelReq = {
+  unitId: number;
+  label: string;
+};
+
+export type DeleteUnitLabelReq = {
+  labelId: number;
+};
+
+export type UnresolvedUnitLabel = {
+  unitTxt: string;
+  quantity: number;
+};
+
+export type ListUnresolvedUnitLabelsReq = {
+  page: number | null;
+};
+
+export type ListUnresolvedUnitLabelsRsp = {
+  rows: Array<UnresolvedUnitLabel>;
+  totalCount: number;
+  page: number;
+  pageSize: number;
+};
+
+export type ClassifyUnresolvedUnitLabelReq = {
+  unitTxt: string;
+};
+
+export type ResolveUnresolvedUnitLabelReq = {
+  unitTxt: string;
+  label: string;
+  orbitUnitId: string;
+};
+
+export type UpdateUnresolvedUnitLabelsRsp = {
+  affectedCount: number;
+};
+
 export type OrbitDictionaryValue = {
   id: string;
   key: string;
@@ -2635,9 +2680,11 @@ export type LinkOrbitUnitReq = {
 export type UnitDetailsRsp = {
   unit: Unit;
   attachments: Array<UnitAttachment>;
+  labels: Array<UnitLabel>;
   orbitUnits: Array<OrbitUnitDetails>;
   canLinkOrbitUnit: boolean;
   canCreateDeviceNetwork: boolean;
+  canEditUnitLabels: boolean;
 };
 
 export type UnitAttachmentUnitIdsRsp = {

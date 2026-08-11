@@ -35,6 +35,7 @@ function unit(overrides: Partial<Unit>): Unit {
     createdByLoginId: '',
     hasOrbit: false,
     orbitUnitIds: [],
+    orbitUnitGenerativeNames: [],
     ...overrides,
   };
 }

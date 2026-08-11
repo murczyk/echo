@@ -417,6 +417,7 @@ fn spawn_background_workers(
     let dbx9 = env.dbx.clone();
     let dbx10 = env.dbx.clone();
     let dbx11 = env.dbx.clone();
+    let failed_inbox_unit_db = env.dbx.clone();
     let mil_geo2 = env.mil_geo.clone();
 
     if let Some(secret_config) = config.vault_config.clone() {
@@ -512,6 +513,12 @@ fn spawn_background_workers(
     });
     spawn_named_worker("unit_tag_queue_worker", bg_set, async move {
         crate::sigint::unit_tag::run_unit_tag_queue_worker_nofail(mode).await;
+    });
+    spawn_named_worker("failed_inbox_unit_worker", bg_set, async move {
+        crate::inbox::unit_resolution::failed_inbox_unit_worker_nofail(
+            failed_inbox_unit_db,
+        )
+        .await;
     });
     spawn_named_worker(
         "inbox_network_daily_consistency_worker",
@@ -938,6 +945,18 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::unit::delete_unit_duplicate)
             .service(crate::sigint::unit::units_search)
             .service(crate::sigint::unit::attachment::unit_details)
+            .service(crate::sigint::unit::labels::create_unit_label)
+            .service(crate::sigint::unit::labels::delete_unit_label)
+            .service(
+                crate::inbox::unresolved_units::list_unresolved_unit_labels,
+            )
+            .service(
+                crate::inbox::unresolved_units::classify_unresolved_unit_label,
+            )
+            .service(crate::inbox::unresolved_units::search_orbit_units)
+            .service(
+                crate::inbox::unresolved_units::resolve_unresolved_unit_label,
+            )
             .service(crate::sigint::unit::orbit::unit_orbit_children)
             .service(crate::sigint::unit::orbit::list_unit_duplicates)
             .service(crate::sigint::unit::orbit::orbit_link_candidates)

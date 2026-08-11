@@ -35,6 +35,7 @@ describe('isUnitSearchMatchForUnit', () => {
       createdByLoginId: 'alice',
       hasOrbit: false,
       orbitUnitIds: [],
+      orbitUnitGenerativeNames: [],
     };
 
     expect(isUnitSearchMatchForUnit(unit, '22')).toBe(false);

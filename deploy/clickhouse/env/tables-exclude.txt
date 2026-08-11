@@ -23,6 +23,8 @@ public.goi_palitra_sync
 
 # PostgreSQL-only parsing configuration.
 public.sigint_comment_blacklist
+public.failed_inbox_unit
+public.sigint_unit_label
 
 # ORBIT unit catalog remains PostgreSQL-only.
 public.orbit_grouping_of_forces

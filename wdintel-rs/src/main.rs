@@ -286,6 +286,16 @@ pub struct OneoffReprocessInboxMetadataPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillInboxUnitLinksPs {
+    /// Start datetime in UTC (inclusive). Example: `2026-07-10T12:00:00`
+    #[arg(long)]
+    pub start_ts: Option<String>,
+    /// End datetime in UTC (non-inclusive). Example: `2026-08-10T12:00:00`
+    #[arg(long)]
+    pub till_ts: Option<String>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffReprocessUnitNamesPs {
     /// Start datetime in UTC (inclusive). Example: `2026-07-16T05:45:00Z`
     #[arg(long)]
@@ -912,6 +922,7 @@ enum Cmd {
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
     OneoffBackfillSigintInboxItemDatetimeNeo,
+    OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
     OneoffBackfillInboxNetworkUnitsTui(OneoffBackfillInboxNetworkUnitsTuiPs),
     OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
@@ -1639,6 +1650,9 @@ async fn async_main(
         }
         Cmd::OneoffBackfillSigintInboxItemDatetimeNeo => {
             inbox::datetime::oneoff_backfill(mode).await
+        }
+        Cmd::OneoffBackfillInboxUnitLinks(ps) => {
+            sigint::oneoff::oneoff_backfill_inbox_unit_links(mode, &ps).await
         }
         Cmd::OneoffReprocessInboxMetadata(ps) => {
             rer_importer::inbox::metadata::oneoff::oneoff_reprocess_inbox_metadata(

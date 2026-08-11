@@ -5045,7 +5045,15 @@ pub async fn edit_freq_unit_name(
             row.unit = Set(Some(req.unit_new.clone()));
             row.unit_v2 = Set(Some(req.unit_new.clone()));
             row.parsed_unit_v2 = Set(true);
-            row.update(&txn).await.c(h!())?;
+            let row = row.update(&txn).await.c(h!())?;
+            crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
+                &txn,
+                row.id,
+                row.unit_v2.as_deref(),
+                row.unit.as_deref(),
+            )
+            .await
+            .c(h!())?;
             crate::stats::enqueue_group_stats_recalculation_for_message(
                 &txn,
                 id,

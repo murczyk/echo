@@ -33,6 +33,7 @@ const duplicate = {
   createdByLoginId: '',
   hasOrbit: true,
   orbitUnitIds: ['orbit-id'],
+  orbitUnitGenerativeNames: ['106 пдд / МВО'],
 } satisfies Unit;
 
 function findButton(label: string): HTMLButtonElement {
