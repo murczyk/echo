@@ -37,6 +37,7 @@ pub struct Model {
     pub source_account_id: i32,
     pub target_account_id: i32,
     pub polygon_id: Option<i64>,
+    pub coordinates_screenshot: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
