@@ -37,7 +37,7 @@ async fn map_coordinates(
     env: actix_web::web::Data<Env>,
     req: Json<MapCoordinatesReq>,
 ) -> Result<Json<Vec<CoordinateWithLocality>>, AppError> {
-    let login = crate::users::login_id_from_identity(&user)?;
+    let login = crate::users::login_id_from_identity(&user).c(h!())?;
     crate::users::ensure_rer_role_by_id(&env.dbx, &login)
         .await
         .c(h!())?;
