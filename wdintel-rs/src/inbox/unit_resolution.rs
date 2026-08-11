@@ -17,23 +17,24 @@ use crate::entities::{
 use crate::{h, orbit};
 use anyhow::Context;
 use chrono::{Duration, NaiveDateTime, Utc};
+use indicatif::ProgressBar;
 use itertools::Itertools;
-use log::warn;
+use log::{debug, info, warn};
 use sea_orm::sea_query::{Expr, LockBehavior, LockType};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ActiveValue::Set, ColumnTrait,
     ConnectionTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
-    JoinType, ModelTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
-    RelationTrait, TransactionTrait,
+    JoinType, ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    QueryTrait, RelationTrait, TransactionTrait,
 };
 use std::time::Duration as StdDuration;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum StructuralResolution {
     Resolved(i64),
     NoMatch,
-    Blocked,
+    Blocked(String),
 }
 
 pub(crate) fn normalize_unit_label(value: &str) -> String {
@@ -184,8 +185,9 @@ where
     let Some(highest_echelon) =
         candidates.iter().map(|(_, echelon)| *echelon).max()
     else {
-        warn!("No supported ORBIT echelon for unit_v2={unit_v2:?}");
-        return Ok(StructuralResolution::Blocked);
+        return Ok(StructuralResolution::Blocked(format!(
+            "no supported ORBIT echelon for unit_v2={unit_v2:?}",
+        )));
     };
     let candidates = candidates
         .into_iter()
@@ -193,11 +195,10 @@ where
         .map(|(unit, _)| unit)
         .collect_vec();
     if candidates.len() != 1 {
-        warn!(
+        return Ok(StructuralResolution::Blocked(format!(
             "Multiple ORBIT unit matches at the same echelon for unit_v2={unit_v2:?}: {:?}",
             candidates.iter().map(|unit| unit.unit_id).collect_vec()
-        );
-        return Ok(StructuralResolution::Blocked);
+        )));
     }
 
     let orbit_unit_id = candidates[0].unit_id;
@@ -205,11 +206,10 @@ where
         .await
         .context(h!())?;
     if sigint_unit_ids.len() != 1 {
-        warn!(
+        return Ok(StructuralResolution::Blocked(format!(
             "ORBIT unit {orbit_unit_id} matched unit_v2={unit_v2:?}, but has {} non-suppressed SIGINT links",
             sigint_unit_ids.len()
-        );
-        return Ok(StructuralResolution::Blocked);
+        )));
     }
     Ok(StructuralResolution::Resolved(sigint_unit_ids[0]))
 }
@@ -259,7 +259,19 @@ where
             StructuralResolution::Resolved(sigint_unit_id) => {
                 return Ok(Some(sigint_unit_id));
             }
-            StructuralResolution::Blocked | StructuralResolution::NoMatch => {
+            StructuralResolution::Blocked(reason) => {
+                let sigint_unit_id =
+                    resolve_by_label(db, unit_v2).await.context(h!())?;
+                if let Some(sigint_unit_id) = sigint_unit_id {
+                    debug!(
+                        "{reason}; resolved unit_v2={unit_v2:?} by SIGINT unit label to sigint_unit_id={sigint_unit_id}"
+                    );
+                } else {
+                    warn!("{reason}; no SIGINT unit label fallback matched");
+                }
+                return Ok(sigint_unit_id);
+            }
+            StructuralResolution::NoMatch => {
                 return resolve_by_label(db, unit_v2).await.context(h!());
             }
         }
@@ -667,6 +679,7 @@ pub(crate) async fn backfill_inbox_unit_links(
     db: &DatabaseConnection,
     start_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
+    progress: Option<&ProgressBar>,
 ) -> anyhow::Result<u64> {
     if start_ts >= till_ts {
         anyhow::bail!("start_ts must be earlier than till_ts");
@@ -701,9 +714,18 @@ pub(crate) async fn backfill_inbox_unit_links(
             .await
             .context(h!())?;
             processed += 1;
+            if let Some(progress) = progress {
+                progress.inc(1);
+            }
         }
         sync_network_unit_links(db, &item_ids).await.context(h!())?;
         last_id = items.last().unwrap().id;
+        info!(
+            "backfilled inbox unit links batch: processed={processed}, last_inbox_item_id={last_id}"
+        );
+        if let Some(progress) = progress {
+            progress.set_message(format!("last inbox item {last_id}"));
+        }
         if items.len()
             == usize::try_from(FAILED_INBOX_UNIT_BACKFILL_BATCH_SIZE)
                 .context(h!())?
@@ -715,6 +737,26 @@ pub(crate) async fn backfill_inbox_unit_links(
         }
     }
     Ok(processed)
+}
+
+pub(crate) async fn count_inbox_unit_link_backfill_items(
+    db: &DatabaseConnection,
+    start_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+) -> anyhow::Result<u64> {
+    if start_ts >= till_ts {
+        anyhow::bail!("start_ts must be earlier than till_ts");
+    }
+    sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .filter(signal_message::Column::CreatedAt.gte(start_ts))
+        .filter(signal_message::Column::CreatedAt.lt(till_ts))
+        .count(db)
+        .await
+        .context(h!())
 }
 
 #[cfg(test)]
@@ -1280,6 +1322,7 @@ mod tests {
                 &env.dbx,
                 now - Duration::minutes(1),
                 now + Duration::minutes(1),
+                None,
             )
             .await
             .unwrap(),
