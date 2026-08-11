@@ -2348,6 +2348,7 @@ export type ReportPreviewReq = {
   tagReportSortBy: TagReportSortBy | null;
   report1213LinkedNetworksOnly: boolean | null;
   withoutComments: boolean | null;
+  babakNewCallsignMinMentions: number | null;
   interceptionKeepFullMessage: boolean | null;
   interceptionKeepOldColors: boolean | null;
   digestOmitExoId: boolean | null;
@@ -4320,9 +4321,15 @@ export type AiCallsignWorkerSettingsItem = {
 
 export type AiCallsignPageRsp = {
   prompt: string;
+  promptOverridden: boolean;
   engines: Array<AiCallsignEngineItem>;
   messages: Array<AiCallsignTestMessageItem>;
   worker: AiCallsignWorkerSettingsItem;
+};
+
+export type AiCallsignPromptState = {
+  prompt: string;
+  promptOverridden: boolean;
 };
 
 export type CreateAiCallsignTestMessageReq = {

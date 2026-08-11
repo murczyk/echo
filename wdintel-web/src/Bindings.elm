@@ -6077,6 +6077,7 @@ type alias ReportPreviewReq =
     , tagReportSortBy : Maybe (TagReportSortBy)
     , report1213LinkedNetworksOnly : Maybe (Bool)
     , withoutComments : Maybe (Bool)
+    , babakNewCallsignMinMentions : Maybe (Int)
     , interceptionKeepFullMessage : Maybe (Bool)
     , interceptionKeepOldColors : Maybe (Bool)
     , digestOmitExoId : Maybe (Bool)
@@ -6095,6 +6096,7 @@ reportPreviewReqEncoder struct =
         , ( "tag_report_sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (tagReportSortByEncoder)) struct.tagReportSortBy )
         , ( "report_1213_linked_networks_only", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.report1213LinkedNetworksOnly )
         , ( "without_comments", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.withoutComments )
+        , ( "babak_new_callsign_min_mentions", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.babakNewCallsignMinMentions )
         , ( "interception_keep_full_message", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.interceptionKeepFullMessage )
         , ( "interception_keep_old_colors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.interceptionKeepOldColors )
         , ( "digest_omit_exo_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.digestOmitExoId )
@@ -11150,6 +11152,7 @@ aiCallsignWorkerSettingsItemEncoder struct =
 
 type alias AiCallsignPageRsp =
     { prompt : String
+    , promptOverridden : Bool
     , engines : List (AiCallsignEngineItem)
     , messages : List (AiCallsignTestMessageItem)
     , worker : AiCallsignWorkerSettingsItem
@@ -11160,9 +11163,24 @@ aiCallsignPageRspEncoder : AiCallsignPageRsp -> Json.Encode.Value
 aiCallsignPageRspEncoder struct =
     Json.Encode.object
         [ ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "promptOverridden", (Json.Encode.bool) struct.promptOverridden )
         , ( "engines", (Json.Encode.list (aiCallsignEngineItemEncoder)) struct.engines )
         , ( "messages", (Json.Encode.list (aiCallsignTestMessageItemEncoder)) struct.messages )
         , ( "worker", (aiCallsignWorkerSettingsItemEncoder) struct.worker )
+        ]
+
+
+type alias AiCallsignPromptState =
+    { prompt : String
+    , promptOverridden : Bool
+    }
+
+
+aiCallsignPromptStateEncoder : AiCallsignPromptState -> Json.Encode.Value
+aiCallsignPromptStateEncoder struct =
+    Json.Encode.object
+        [ ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "promptOverridden", (Json.Encode.bool) struct.promptOverridden )
         ]
 
 
@@ -15497,6 +15515,7 @@ reportPreviewReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_report_sort_by" (Json.Decode.nullable (tagReportSortByDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_1213_linked_networks_only" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_comments" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "babak_new_callsign_min_mentions" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interception_keep_full_message" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interception_keep_old_colors" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "digest_omit_exo_id" (Json.Decode.nullable (Json.Decode.bool))))
@@ -18641,9 +18660,17 @@ aiCallsignPageRspDecoder : Json.Decode.Decoder AiCallsignPageRsp
 aiCallsignPageRspDecoder =
     Json.Decode.succeed AiCallsignPageRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "promptOverridden" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engines" (Json.Decode.list (aiCallsignEngineItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (aiCallsignTestMessageItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "worker" (aiCallsignWorkerSettingsItemDecoder)))
+
+
+aiCallsignPromptStateDecoder : Json.Decode.Decoder AiCallsignPromptState
+aiCallsignPromptStateDecoder =
+    Json.Decode.succeed AiCallsignPromptState
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "promptOverridden" (Json.Decode.bool)))
 
 
 createAiCallsignTestMessageReqDecoder : Json.Decode.Decoder CreateAiCallsignTestMessageReq

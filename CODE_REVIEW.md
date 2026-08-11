@@ -7,6 +7,18 @@ Require every propagated fallible Rust call to attach the source location with
 `Result`; use `.c(h!())?` when converting concrete library or infrastructure
 errors and `.context(h!())?` when propagating an existing application error.
 
+## Test scope
+
+Do not require a test for every change. Keep the default suite focused on
+database-backed business logic, operational parsers, issue- or PR-linked
+regressions, and critical migration, authorization, concurrency, idempotency,
+or destructive-data safeguards.
+
+Reject nonessential tests that only restate implementation details, rendered
+SQL, trivial helpers, defaults, formatting, or mocks without protecting a
+real failure mode. Prefer a focused fixture in an existing functional or
+parser test over adding another isolated unit test.
+
 ## Replicated PostgreSQL migrations
 
 CI compares migration DDL with

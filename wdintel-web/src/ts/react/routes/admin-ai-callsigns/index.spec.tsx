@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   test: vi.fn(),
   save: vi.fn(),
   recalculate: vi.fn(),
+  reset: vi.fn(),
   saveWorker: vi.fn(),
   deleteMessage: vi.fn(),
   notify: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock('../../services/api/ai-callsigns', () => ({
   testAiCallsignParsing: mocks.test,
   saveAiCallsignParsing: mocks.save,
   recalculateAiCallsignParsing: mocks.recalculate,
+  resetAiCallsignPrompt: mocks.reset,
   saveAiCallsignWorkerSettings: mocks.saveWorker,
   deleteAiCallsignTestMessage: mocks.deleteMessage,
   createAiCallsignTestMessage: vi.fn(),
@@ -61,11 +63,13 @@ beforeEach(() => {
   mocks.test.mockReset();
   mocks.save.mockReset();
   mocks.recalculate.mockReset();
+  mocks.reset.mockReset();
   mocks.saveWorker.mockReset();
   mocks.deleteMessage.mockReset();
   mocks.notify.mockReset();
   mocks.getPage.mockResolvedValue({
     prompt: 'Find callsigns',
+    promptOverridden: true,
     engines: [{ id: 'engine-a', name: 'Engine A', modelName: 'model-a' }],
     messages: [
       {
@@ -81,6 +85,10 @@ beforeEach(() => {
   mocks.test.mockResolvedValue({ results: [testResult] });
   mocks.save.mockResolvedValue({
     results: [{ ...testResult, updatedAt: 2 }],
+  });
+  mocks.reset.mockResolvedValue({
+    prompt: 'Default callsign prompt',
+    promptOverridden: false,
   });
   mocks.saveWorker.mockResolvedValue({
     enabled: true,
@@ -157,6 +165,25 @@ describe('AdminAiCallsignsPage', () => {
     expect(mocks.notify).toHaveBeenCalledWith({
       severity: 'success',
       message: 'Налаштування воркера збережено.',
+    });
+    await act(async () => root.unmount());
+  });
+
+  it('resets the override and clears unsaved test results', async () => {
+    const { container, root } = await renderPage();
+
+    await act(async () => button(container, 'Тест')?.click());
+    expect(container.textContent).toContain('ТЕСТ:');
+
+    await act(async () => button(container, 'Скинути до стандартного')?.click());
+
+    expect(mocks.reset).toHaveBeenCalledOnce();
+    expect(container.querySelector('textarea')?.value).toBe('Default callsign prompt');
+    expect(container.textContent).not.toContain('ТЕСТ:');
+    expect(button(container, 'Скинути до стандартного')?.disabled).toBe(true);
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'success',
+      message: 'Відновлено стандартний промпт.',
     });
     await act(async () => root.unmount());
   });

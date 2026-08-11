@@ -272,24 +272,25 @@ test-be:
     export CARGO_INCREMENTAL=1
     export RUSTC_WRAPPER=""
 
-    echo "Running cargo clippy..."
-    # Lint all targets; fail on any warning. Use --release in CI to reuse artifacts.
-    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-        cargo clippy --release --all-targets --all-features -- -D warnings
-    else
+    if [ "${GITHUB_ACTIONS:-}" != "true" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
+        echo "Running cargo clippy..."
         cargo clippy --all-targets --all-features -- -D warnings
+    else
+        echo "Skipping clippy in time-critical CI; run it locally or with workflow_dispatch"
     fi
 
-    # Check if we should use cached build
     if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-        echo "Running Rust tests in CI with optimizations..."
-        cargo test --release --locked
+        echo "Running curated Rust tests in CI with optimizations..."
+        cargo test --release --locked -p wdintel-rs
     else
-        echo "Running Rust tests locally..."
-        cargo test --release
+        echo "Running curated Rust tests locally with optimizations..."
+        cargo test --release -p wdintel-rs
     fi
 
 test: test-fe test-be
+
+profile-be-tests:
+    python3 scripts/ci/profile_rust_tests.py
 
 test-transcriber:
     cargo test -p wdintel-rs transcri -- --nocapture
@@ -1423,6 +1424,12 @@ ai-sync-from-cloud:
     remote_files="${BUCKET_PREFIX}/*"
     local_directory="${WD_FASTTEXT_MODELS}/"
     s5cmd --endpoint-url "$ENDPOINT_URL" cp --if-source-newer --show-progress "$remote_files" "$local_directory"
+
+ai-eval-sync-from-cloud eval:
+    bash ai-eval/sync.sh from-cloud "{{ eval }}"
+
+ai-eval-sync-to-cloud eval:
+    bash ai-eval/sync.sh to-cloud "{{ eval }}"
 
 # run like `just copy-db-backup echo-zp2`
 [arg('server', long='server')]

@@ -640,16 +640,34 @@ export function AnalysisReportDialog({
                   ) : null;
                 })()}
                 {report.template === 'babak' ? (
-                  <ReportCheckboxLabel
-                    checked={report.withoutComments}
-                    label="Не включати коментарі"
-                    onChange={(value) =>
-                      onUpdate({
-                        withoutComments: value,
-                        reportTagsOnlyThisUnit: value ? false : report.reportTagsOnlyThisUnit,
-                      })
-                    }
-                  />
+                  <>
+                    <ReportCheckboxLabel
+                      checked={report.withoutComments}
+                      label="Не включати коментарі"
+                      onChange={(value) =>
+                        onUpdate({
+                          withoutComments: value,
+                          reportTagsOnlyThisUnit: value ? false : report.reportTagsOnlyThisUnit,
+                        })
+                      }
+                    />
+                    <TextField
+                      type="number"
+                      size="small"
+                      label="Мінімальна кількість згадок нового позивного"
+                      value={report.babakNewCallsignMinMentions}
+                      onChange={(event) =>
+                        onUpdate({
+                          babakNewCallsignMinMentions: Math.max(
+                            1,
+                            Number.parseInt(event.target.value, 10) || 1,
+                          ),
+                        })
+                      }
+                      slotProps={{ htmlInput: { min: 1, step: 1 } }}
+                      sx={{ mt: 1, maxWidth: 360 }}
+                    />
+                  </>
                 ) : null}
                 <ReportCheckboxLabel
                   checked={report.withoutModelTags}

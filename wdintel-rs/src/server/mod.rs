@@ -157,13 +157,9 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         };
     let settlement_paths = config.settlement_paths().c(h!())?;
     let settlements_data =
-        crate::location::load_settlements_data_config(settlement_paths, mode)
-            .c(h!())?;
+        load_settlements_data(settlement_paths, mode).c(h!())?;
     let settlements = Arc::new(RwLock::new(settlements_data));
-    let callsigns_whitelist =
-        crate::sigint::callsign::load_whitelist_from_file(mode)
-            .await
-            .c(h!())?;
+    let callsigns_whitelist = load_callsigns_whitelist(mode).await.c(h!())?;
 
     let version_file = match mode {
         Mode::Debug | Mode::Test => {
@@ -222,6 +218,48 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     .await
     .c(h!())?;
     Ok(Arc::new(env))
+}
+
+fn load_settlements_data(
+    settlement_paths: Vec<String>,
+    mode: Mode,
+) -> anyhow::Result<crate::location::SettlementsDataConfig> {
+    #[cfg(test)]
+    if mode == Mode::Test {
+        static TEST_SETTLEMENTS: std::sync::OnceLock<
+            crate::location::SettlementsDataConfig,
+        > = std::sync::OnceLock::new();
+        return Ok(TEST_SETTLEMENTS
+            .get_or_init(|| {
+                crate::location::load_settlements_data_config(
+                    settlement_paths,
+                    mode,
+                )
+                .expect("test settlement data must load")
+            })
+            .clone());
+    }
+
+    crate::location::load_settlements_data_config(settlement_paths, mode)
+}
+
+async fn load_callsigns_whitelist(
+    mode: Mode,
+) -> anyhow::Result<std::collections::HashSet<String>> {
+    #[cfg(test)]
+    if mode == Mode::Test {
+        static TEST_CALLSIGNS: tokio::sync::OnceCell<
+            std::collections::HashSet<String>,
+        > = tokio::sync::OnceCell::const_new();
+        return Ok(TEST_CALLSIGNS
+            .get_or_try_init(|| {
+                crate::sigint::callsign::load_whitelist_from_file(mode)
+            })
+            .await?
+            .clone());
+    }
+
+    crate::sigint::callsign::load_whitelist_from_file(mode).await
 }
 
 #[derive(Debug, PartialEq)]
@@ -788,6 +826,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_agent::admin::stop_user_agent)
             .service(crate::ai_agent::admin::test_user_agent)
             .service(crate::ai_callsign::get_ai_callsign_page)
+            .service(crate::ai_callsign::reset_ai_callsign_prompt)
             .service(crate::ai_callsign::create_ai_callsign_test_message)
             .service(crate::ai_callsign::update_ai_callsign_test_message)
             .service(crate::ai_callsign::delete_ai_callsign_test_message)

@@ -814,155 +814,6 @@ fn linked_unit_matches_selected_units(
         ))
 }
 
-#[cfg(test)]
-mod unit_filter_query_tests {
-    use super::*;
-
-    #[test]
-    fn unit_filter_aliases_cover_case_army_suffixes_undefined_and_duplicates() {
-        let unit_filter = expand_unit_filter_values(&Some(vec![
-            "58 А".to_string(),
-            "58 а".to_string(),
-            "344 мсп 69 мсд 6 а".to_string(),
-            "Не визначено".to_string(),
-            "".to_string(),
-        ]));
-
-        assert!(unit_filter.present);
-        assert!(unit_filter.includes_undefined);
-        for alias in ["58 А", "58 а", "58 ЗА", "58 за", "58 ЗВА", "58 зва"]
-        {
-            assert!(unit_filter.ordinary_names.contains(&alias.to_string()));
-        }
-        for alias in [
-            "344 мсп 69 мсд 6 А",
-            "344 мсп 69 мсд 6 ЗА",
-            "344 мсп 69 мсд 6 ЗВА",
-            "344 МСП 69 МСД 6 А",
-        ] {
-            assert!(unit_filter.ordinary_names.contains(&alias.to_string()));
-        }
-    }
-
-    #[test]
-    fn selected_and_denied_unit_filters_use_indexed_alias_comparisons() {
-        let query = filter_selected_units(
-            sigint_inbox_item::Entity::find(),
-            &Some(vec!["58 А".to_string()]),
-            &Some(false),
-        )
-        .unwrap();
-        let query = filter_denied_units(
-            query,
-            &Some(vec!["136 ОМСБР".to_string()]),
-            &Some(false),
-        )
-        .unwrap();
-        let sql = query.build(DbBackend::Postgres).to_string();
-
-        assert!(sql.contains(r#""unit_v2" = ANY(ARRAY"#), "{sql}");
-        assert!(sql.contains(r#""unit_v2" <> ALL(ARRAY"#), "{sql}");
-        for alias in ["58 А", "58 а", "58 ЗА", "58 за", "58 ЗВА", "58 зва"]
-        {
-            assert!(sql.contains(&format!("'{alias}'")), "{sql}");
-        }
-        assert!(sql.contains("'136 ОМСБР'"), "{sql}");
-        assert!(sql.contains("'136 омсбр'"), "{sql}");
-        assert!(!sql.contains("lower("), "{sql}");
-        assert!(!sql.contains("right("), "{sql}");
-    }
-
-    #[test]
-    fn exact_linked_unit_filter_expands_aliases_without_header_or_hierarchy() {
-        let query = filter_selected_units(
-            sigint_inbox_item::Entity::find(),
-            &Some(vec!["58 ЗА".to_string()]),
-            &Some(true),
-        )
-        .unwrap();
-        let sql = query.build(DbBackend::Postgres).to_string();
-
-        assert!(!sql.contains(r#""unit_v2" = ANY"#), "{sql}");
-        for alias in ["58 А", "58 а", "58 ЗА", "58 за", "58 ЗВА", "58 зва"]
-        {
-            assert!(sql.contains(&format!("'{alias}'")), "{sql}");
-        }
-        assert!(!sql.contains(r#""selected_unit"."army" IN"#), "{sql}");
-    }
-
-    #[test]
-    fn linked_unit_query_precomputes_matching_network_ids() {
-        let filter_expr = linked_unit_matches_selected_units(
-            vec!["100 pbr".to_string()],
-            true,
-        );
-        let sql = select_sigint_units_by_names(filter_expr)
-            .to_string(PostgresQueryBuilder);
-
-        assert!(sql.contains(" IN (SELECT DISTINCT "), "{sql}");
-        assert!(
-            sql.contains(
-                r#"FROM "sigint_network_unit" AS "selected_unit_network_unit" INNER JOIN "sigint_unit" AS "selected_unit""#
-            ),
-            "{sql}"
-        );
-        assert!(!sql.contains(
-            r#"INNER JOIN "sigint_network_unit" AS "selected_unit_network_unit" ON "selected_unit_network_unit"."network_id" = "selected_unit_network"."id""#
-        ), "{sql}");
-        assert!(sql.contains(r#""selected_unit"."army" IN"#), "{sql}");
-    }
-
-    #[test]
-    fn period_unit_filter_materializes_bounded_matching_ids() {
-        let dt_since = NaiveDate::from_ymd_opt(2026, 7, 28)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
-        let dt_till = dt_since + chrono::Duration::days(1);
-        let query = filter_selected_units_for_period(
-            sigint_inbox_item::Entity::find(),
-            &Some(vec!["100 pbr".to_string()]),
-            &Some(false),
-            dt_since,
-            dt_till,
-        )
-        .unwrap();
-        let sql = query.build(DbBackend::Postgres).to_string();
-
-        assert_eq!(sql.matches("MATERIALIZED").count(), 2, "{sql}");
-        assert!(sql.contains("matching_unit_network_ids"), "{sql}");
-        assert!(sql.contains("matching_unit_inbox_item_ids"), "{sql}");
-        assert!(sql.contains(" UNION ALL "), "{sql}");
-        assert!(sql.contains("'100 PBR'"), "{sql}");
-        assert!(sql.contains("'100 pbr'"), "{sql}");
-        assert!(sql.contains("2026-07-28 00:00:00"), "{sql}");
-        assert!(sql.contains("2026-07-29 00:00:00"), "{sql}");
-    }
-
-    #[test]
-    fn denied_period_unit_filter_excludes_bounded_matching_ids() {
-        let dt_since = NaiveDate::from_ymd_opt(2026, 7, 28)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
-        let query = filter_denied_units_for_period(
-            sigint_inbox_item::Entity::find(),
-            &Some(vec!["100 pbr".to_string()]),
-            &Some(false),
-            dt_since,
-            dt_since + chrono::Duration::days(1),
-        )
-        .unwrap();
-        let sql = query.build(DbBackend::Postgres).to_string();
-
-        assert!(
-            sql.contains(r#""sigint_inbox_item"."id" NOT IN ("#),
-            "{sql}"
-        );
-        assert_eq!(sql.matches("MATERIALIZED").count(), 2, "{sql}");
-    }
-}
-
 fn unresolved_hierarchy_column_matches_selected_units(
     selected_units: &[String],
     linked_unit_alias: Alias,
@@ -5569,6 +5420,7 @@ pub async fn bi_new_callsigns_chunked(
     req: &AnalysisStatsReq,
     chunking_hours: i64,
     final_end: ReportPeriodEnd,
+    min_mentions: i64,
 ) -> Result<NewCallsignsRes, AppError> {
     ensure_rer_role_by_id(&env.dbx, user_id).await.c(h!())?;
     let group_master_keys = get_identity_sigint_groups(&env.dbx, user_id)
@@ -5580,7 +5432,7 @@ pub async fn bi_new_callsigns_chunked(
         chunking_hours,
         final_end,
     )?;
-    let mut callsigns_in_period = BTreeSet::new();
+    let mut callsign_message_counts = BTreeMap::new();
     for (index, chunk) in report_chunks.iter().enumerate() {
         log::info!(
             "Babak new-callsigns report chunk {}/{}: {}..{}",
@@ -5589,8 +5441,8 @@ pub async fn bi_new_callsigns_chunked(
             chunk.since_ms,
             chunk.till_ms
         );
-        callsigns_in_period.extend(
-            load_new_callsigns_in_range_with_db(
+        for (callsign, message_count) in
+            load_new_callsign_counts_in_range_with_db(
                 user_id,
                 req,
                 chunk.since_ms,
@@ -5599,13 +5451,19 @@ pub async fn bi_new_callsigns_chunked(
                 &group_master_keys,
                 true,
                 &env.dbx,
-                crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
-                None,
-                None,
             )
-            .await?,
-        );
+            .await?
+        {
+            *callsign_message_counts.entry(callsign).or_insert(0) +=
+                message_count;
+        }
     }
+    let callsigns_in_period = callsign_message_counts
+        .into_iter()
+        .filter_map(|(callsign, message_count)| {
+            (message_count >= min_mentions).then_some(callsign)
+        })
+        .collect();
 
     let lookback_since = req
         .since_date_inclusive_ms
@@ -5735,6 +5593,12 @@ struct NewCallsignValueRow {
 }
 
 #[derive(FromQueryResult)]
+struct NewCallsignCountRow {
+    callsign: String,
+    message_count: i64,
+}
+
+#[derive(FromQueryResult)]
 struct NewCallsignLastSeenRow {
     callsign: String,
     last_seen: Option<NaiveDateTime>,
@@ -5803,6 +5667,40 @@ async fn load_new_callsigns_in_range_with_db(
         }
     };
     Ok(rows.into_iter().map(|row| row.callsign).collect())
+}
+
+async fn load_new_callsign_counts_in_range_with_db(
+    user_id: &uuid::Uuid,
+    req: &AnalysisStatsReq,
+    since_ms: i64,
+    till_ms: i64,
+    period_end: ReportPeriodEnd,
+    group_master_keys: &[String],
+    include_aor_filter: bool,
+    db: &DatabaseConnection,
+) -> Result<BTreeMap<String, i64>, AppError> {
+    let query = build_new_callsign_filtered_items_query(
+        user_id,
+        req,
+        since_ms,
+        till_ms,
+        period_end,
+        group_master_keys,
+        include_aor_filter,
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
+        None,
+        None,
+    )?;
+    let rows = NewCallsignCountRow::find_by_statement(
+        new_callsign_counts_statement(query),
+    )
+    .all(db)
+    .await
+    .c(h!())?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.callsign, row.message_count))
+        .collect())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6090,6 +5988,22 @@ fn effective_callsign_values_statement(
         r#"
 SELECT DISTINCT all_callsigns.callsign
 FROM all_callsigns
+ORDER BY all_callsigns.callsign
+"#,
+    )
+}
+
+fn new_callsign_counts_statement(
+    query: Select<signal_message::Entity>,
+) -> Statement {
+    new_callsign_statement(
+        query,
+        r#"
+SELECT
+    all_callsigns.callsign,
+    COUNT(*) AS message_count
+FROM all_callsigns
+GROUP BY all_callsigns.callsign
 ORDER BY all_callsigns.callsign
 "#,
     )

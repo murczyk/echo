@@ -27,6 +27,7 @@ import {
   deleteAiCallsignTestMessage,
   getAiCallsignPage,
   recalculateAiCallsignParsing,
+  resetAiCallsignPrompt,
   saveAiCallsignParsing,
   testAiCallsignParsing,
 } from '../../services/api/ai-callsigns';
@@ -72,6 +73,7 @@ export function AdminAiCallsignsPage() {
   );
   const [messages, setMessages] = useState<AiCallsignTestMessageItem[]>([]);
   const [prompt, setPrompt] = useState('');
+  const [promptOverridden, setPromptOverridden] = useState(false);
   const [selectedEngineIds, setSelectedEngineIds] = useState<string[]>([]);
   const [testResults, setTestResults] = useState<AiCallsignParseResultItem[]>([]);
   const [workerSettings, setWorkerSettings] = useState<AiCallsignWorkerSettingsItem>({
@@ -102,6 +104,7 @@ export function AdminAiCallsignsPage() {
       setEngines(page.engines);
       setMessages(page.messages);
       setPrompt(page.prompt);
+      setPromptOverridden(page.promptOverridden);
       setSelectedEngineIds(page.engines.map((engine) => engine.id));
       setWorkerSettings(page.worker);
     } catch (loadError) {
@@ -152,6 +155,7 @@ export function AdminAiCallsignsPage() {
       setMessages((current) => mergeSavedResults(current, response.results));
       setTestResults([]);
       setPrompt(prompt.trim());
+      setPromptOverridden(true);
       notify({ severity: 'success', message: 'Промпт і результати збережено.' });
     } catch (saveError) {
       setError(`Помилка збереження: ${errorMessage(saveError)}`);
@@ -173,9 +177,27 @@ export function AdminAiCallsignsPage() {
       setMessages((current) => mergeSavedResults(current, response.results));
       setTestResults([]);
       setPrompt(prompt.trim());
+      setPromptOverridden(true);
       notify({ severity: 'success', message: 'Усі результати перераховано і збережено.' });
     } catch (recalculateError) {
       setError(`Помилка перерахунку: ${errorMessage(recalculateError)}`);
+    } finally {
+      setAction(null);
+    }
+  }
+
+  async function resetPrompt() {
+    if (action) return;
+    setAction('reset');
+    setError(null);
+    try {
+      const state = await resetAiCallsignPrompt();
+      setPrompt(state.prompt);
+      setPromptOverridden(state.promptOverridden);
+      setTestResults([]);
+      notify({ severity: 'success', message: 'Відновлено стандартний промпт.' });
+    } catch (resetError) {
+      setError(`Помилка скидання промпту: ${errorMessage(resetError)}`);
     } finally {
       setAction(null);
     }
@@ -325,9 +347,11 @@ export function AdminAiCallsignsPage() {
             canRun={canRun}
             engines={engines}
             prompt={prompt}
+            promptOverridden={promptOverridden}
             selectedEngineIds={selectedEngineIds}
             onPromptChange={updatePrompt}
             onRecalculate={() => void recalculate()}
+            onReset={() => void resetPrompt()}
             onSave={() => void save()}
             onSelectionChange={updateSelectedEngines}
             onTest={() => void runTest()}
