@@ -10,11 +10,6 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
-drop index if exists sigint_inbox_item_sigint_unit_id_idx;
-
-alter table sigint_inbox_item
-    drop column if exists sigint_unit_id;
-
 create type sigint_inbox_item_unit_kind as enum ('parsed', 'network');
 
 create table sigint_inbox_item_unit (
@@ -46,14 +41,6 @@ create index sigint_inbox_item_unit_unit_id_kind_item_id_idx
                 r#"
 drop table if exists sigint_inbox_item_unit;
 drop type if exists sigint_inbox_item_unit_kind;
-
-alter table sigint_inbox_item
-    add column sigint_unit_id bigint
-        references sigint_unit(id) on delete set null;
-
-create index sigint_inbox_item_sigint_unit_id_idx
-    on sigint_inbox_item (sigint_unit_id)
-    where sigint_unit_id is not null;
                 "#,
             )
             .await?;

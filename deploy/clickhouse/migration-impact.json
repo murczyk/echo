@@ -10,20 +10,12 @@
     },
     "echo:m20260810_140653_inbox_unit_resolution": {
       "changes": [
-        {
-          "table": "public.sigint_inbox_item",
-          "strategy": "mirror_resync"
-        },
         { "table": "public.failed_inbox_unit", "strategy": "excluded" },
         { "table": "public.sigint_unit_label", "strategy": "excluded" }
       ]
     },
     "echo:m20260811_064758_sigint_inbox_item_units": {
       "changes": [
-        {
-          "table": "public.sigint_inbox_item",
-          "strategy": "mirror_resync"
-        },
         {
           "table": "public.sigint_inbox_item_unit",
           "strategy": "replicated_snapshot"

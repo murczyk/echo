@@ -1493,6 +1493,12 @@ pub async fn oneoff_reprocess_unit_names(
                 reset_inbox_pelengs(id, &dbx).await.c(h!())?;
             }
         }
+        crate::inbox::unit_resolution::sync_network_unit_links(
+            &dbx,
+            &inbox_item_ids,
+        )
+        .await
+        .c(h!())?;
     }
     Ok(())
 }
