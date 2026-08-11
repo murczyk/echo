@@ -78,7 +78,10 @@ pub async fn list_units(
             .collect::<Vec<_>>();
         let orbit_links = orbit::unit_orbit_links(&env.dbx, &unit_ids).await?;
         for unit in &mut response.units {
-            apply_unit_orbit_links(unit, orbit_links.get(&unit.id).map(Vec::as_slice));
+            apply_unit_orbit_links(
+                unit,
+                orbit_links.get(&unit.id).map(Vec::as_slice),
+            );
         }
     } else {
         for unit in &mut response.units {
@@ -1642,10 +1645,8 @@ pub(crate) fn apply_unit_orbit_links(
         .collect();
     unit.orbit_unit_generative_names = links
         .iter()
-        .filter_map(|link| {
-            (!link.generative_unit_name_full.is_empty())
-                .then(|| link.generative_unit_name_full.clone())
-        })
+        .filter(|link| !link.generative_unit_name_full.is_empty())
+        .map(|link| link.generative_unit_name_full.clone())
         .collect();
     unit.has_orbit = !unit.orbit_unit_ids.is_empty();
 }

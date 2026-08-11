@@ -65,6 +65,7 @@ const sigintUnit: Unit = {
   createdByLoginId: '',
   hasOrbit: false,
   orbitUnitIds: [],
+  orbitUnitGenerativeNames: [],
 };
 
 async function renderDialog(

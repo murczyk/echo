@@ -74,45 +74,26 @@ pub async fn unit_orbit_links(
             and unit.deleted = false
         order by link.sigint_unit_id, unit.generative_unit_name_full nulls last, link.orbit_unit_id
     "#;
-    for link in UnitOrbitLinkRow::find_by_statement(
-        Statement::from_sql_and_values(
+    for link in
+        UnitOrbitLinkRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
             [sigint_unit_ids.to_vec().into()],
-        ),
-    )
-    .all(dbx)
-    .await
-    .c(h!())?
+        ))
+        .all(dbx)
+        .await
+        .c(h!())?
     {
-        unit_links
-            .entry(link.sigint_unit_id)
-            .or_default()
-            .push(UnitOrbitLink {
+        unit_links.entry(link.sigint_unit_id).or_default().push(
+            UnitOrbitLink {
                 orbit_unit_id: link.orbit_unit_id.to_string(),
                 generative_unit_name_full: link
                     .generative_unit_name_full
                     .unwrap_or_default(),
-            });
+            },
+        );
     }
     Ok(unit_links)
-}
-
-#[cfg(test)]
-pub async fn unit_ids_with_orbit(
-    dbx: &DatabaseConnection,
-    sigint_unit_ids: &[i64],
-) -> Result<HashMap<i64, Vec<String>>, AppError> {
-    Ok(unit_orbit_links(dbx, sigint_unit_ids)
-        .await?
-        .into_iter()
-        .map(|(sigint_unit_id, links)| {
-            (
-                sigint_unit_id,
-                links.into_iter().map(|link| link.orbit_unit_id).collect(),
-            )
-        })
-        .collect())
 }
 
 pub async fn unit_has_orbit(
@@ -567,9 +548,10 @@ async fn create_unit_duplicate_candidates_for_req(
         .into_iter()
         .map(|unit| {
             let mut unit = super::render_unit(&unit)?;
+            let unit_id = unit.id;
             super::apply_unit_orbit_links(
                 &mut unit,
-                orbit_links.get(&unit.id).map(Vec::as_slice),
+                orbit_links.get(&unit_id).map(Vec::as_slice),
             );
             Ok(unit)
         })
@@ -1991,7 +1973,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn unit_ids_with_orbit_accepts_more_than_postgres_bind_limit() {
+    async fn unit_orbit_links_accepts_more_than_postgres_bind_limit() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
@@ -2008,6 +1990,7 @@ mod tests {
         let orbit_unit_id = Uuid::new_v4();
         orbit_unit::Entity::insert(orbit_unit::ActiveModel {
             unit_id: Set(orbit_unit_id),
+            generative_unit_name_full: Set(Some("106 пдд / МВО".to_string())),
             ..Default::default()
         })
         .exec(&env.dbx)
@@ -2028,8 +2011,14 @@ mod tests {
         unit_ids.push(sigint_unit.id);
 
         assert_eq!(
-            unit_ids_with_orbit(&env.dbx, &unit_ids).await.unwrap(),
-            HashMap::from([(sigint_unit.id, vec![orbit_unit_id.to_string()])])
+            unit_orbit_links(&env.dbx, &unit_ids).await.unwrap(),
+            HashMap::from([(
+                sigint_unit.id,
+                vec![UnitOrbitLink {
+                    orbit_unit_id: orbit_unit_id.to_string(),
+                    generative_unit_name_full: "106 пдд / МВО".to_string(),
+                }]
+            )])
         );
     }
 
