@@ -911,7 +911,6 @@ enum Cmd {
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
-    OneoffBackfillSigintPelengLocality,
     OneoffBackfillSigintInboxItemDatetimeNeo,
     OneoffBackfillInboxNetworkUnitsTui(OneoffBackfillInboxNetworkUnitsTuiPs),
     OneoffBackfillPalitraPointLexemes,
@@ -1637,9 +1636,6 @@ async fn async_main(
                 mode, &ps,
             )
             .await
-        }
-        Cmd::OneoffBackfillSigintPelengLocality => {
-            location::worker::oneoff_backfill_sigint_peleng_locality(mode).await
         }
         Cmd::OneoffBackfillSigintInboxItemDatetimeNeo => {
             inbox::datetime::oneoff_backfill(mode).await

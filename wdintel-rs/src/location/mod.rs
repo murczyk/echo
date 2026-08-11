@@ -77,8 +77,6 @@ async fn map_coordinates(
                 .map(|locality| LocalityDetails {
                     settlement_name: locality.settlement_name.clone(),
                     direction: locality.direction.clone(),
-                    region: locality.region.clone(),
-                    country: locality.country.clone(),
                     distance_m: locality.distance_m,
                     is_rf: locality.is_rf,
                 }),

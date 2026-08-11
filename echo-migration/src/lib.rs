@@ -361,7 +361,6 @@ mod m20260806_120000_drop_legacy_inbox_callsigns;
 mod m20260806_134330_sigint_unit_extended_echelons;
 mod m20260806_141904_report_history_duplicate_lookup;
 mod m20260810_062938_echo_automation_coordinates_screenshot;
-mod m20260810_125939_add_sigint_peleng_locality_details;
 
 pub struct Migrator;
 
@@ -825,9 +824,6 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260810_062938_echo_automation_coordinates_screenshot::Migration,
-            ),
-            Box::new(
-                m20260810_125939_add_sigint_peleng_locality_details::Migration,
             ),
         ]
     }
