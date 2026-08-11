@@ -56,11 +56,18 @@ function upsertTag(tags: AdminAnalyticsTag[], tag: AdminAnalyticsTag): AdminAnal
   return tags.map((candidate) => (candidate.id === tag.id ? tag : candidate));
 }
 
+function ruleExpressionsAreEqual(
+  left: TagDraft['ruleExpression'],
+  right: TagDraft['ruleExpression'],
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function draftIsDirty(draft: TagDraft): boolean {
   if (draft.persisted === null) return draft.name.trim() !== '' || draft.ruleExpression !== null;
   return (
     draft.name !== draft.persisted.name ||
-    JSON.stringify(draft.ruleExpression) !== JSON.stringify(draft.persisted.ruleExpression)
+    !ruleExpressionsAreEqual(draft.ruleExpression, draft.persisted.ruleExpression)
   );
 }
 
@@ -128,11 +135,13 @@ export function DeviceTagsSettingsPanel() {
         setDraft((current) => (current ? { ...current, persisted } : current));
       }
 
-      const saved = await saveAnalyticsTagRule({
-        id: persisted.id,
-        ruleExpression: draft.ruleExpression,
-      });
-      setTags((current) => upsertTag(current, saved));
+      if (!ruleExpressionsAreEqual(draft.ruleExpression, persisted.ruleExpression)) {
+        const saved = await saveAnalyticsTagRule({
+          id: persisted.id,
+          ruleExpression: draft.ruleExpression,
+        });
+        setTags((current) => upsertTag(current, saved));
+      }
       setDraft(null);
       notify({ severity: 'success', message: 'Тег пристроїв і його активне правило збережено.' });
     } catch (error) {

@@ -182,6 +182,45 @@ describe('AdminDeviceAnalyticsPage', () => {
     });
   });
 
+  it('creates a tag without saving an unchanged empty rule', async () => {
+    await openDeviceTagsTab();
+
+    await act(async () => buttonWithText('Створити тег')?.click());
+    const nameInput = document.querySelector<HTMLInputElement>('input');
+    expect(nameInput).not.toBeNull();
+    act(() => setInputValue(nameInput!, 'Звіти'));
+    await act(async () => buttonWithText('Зберегти')?.click());
+    await flush();
+
+    expect(mocks.createTag).toHaveBeenCalledWith({ name: 'Звіти' });
+    expect(mocks.saveRule).not.toHaveBeenCalled();
+  });
+
+  it('skips rule saving when a renamed or unchanged tag keeps the same rule', async () => {
+    const existingTag = { ...createdTag, ruleExpression: localExpression };
+    const renamedTag = { ...existingTag, name: 'Оновлені звіти' };
+    mocks.listTags.mockResolvedValue({ tags: [existingTag] });
+    mocks.updateTag.mockResolvedValue(renamedTag);
+    await openDeviceTagsTab();
+
+    await act(async () => buttonWithText('Редагувати')?.click());
+    const nameInput = document.querySelector<HTMLInputElement>('input');
+    expect(nameInput).not.toBeNull();
+    act(() => setInputValue(nameInput!, renamedTag.name));
+    await act(async () => buttonWithText('Зберегти')?.click());
+    await flush();
+
+    expect(mocks.updateTag).toHaveBeenCalledWith({ id: TAG_ID, name: renamedTag.name });
+    expect(mocks.saveRule).not.toHaveBeenCalled();
+
+    await act(async () => buttonWithText('Редагувати')?.click());
+    await act(async () => buttonWithText('Зберегти')?.click());
+    await flush();
+
+    expect(mocks.updateTag).toHaveBeenCalledTimes(1);
+    expect(mocks.saveRule).not.toHaveBeenCalled();
+  });
+
   it('archives and restores an existing tag from the edit dialog', async () => {
     await openDeviceTagsTab();
 
