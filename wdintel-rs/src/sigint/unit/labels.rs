@@ -9,8 +9,8 @@ use actix_web::web::{Data, Json};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ActiveValue::Set, ColumnTrait,
-    ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    TransactionTrait,
+    ConnectionTrait, DatabaseConnection, EntityTrait, ModelTrait, QueryFilter,
+    QueryOrder, TransactionTrait,
 };
 
 pub(crate) fn validate_label(value: &str) -> Result<String, AppError> {
@@ -106,6 +106,30 @@ where
     })
 }
 
+async fn delete_label_and_reprocess<C>(
+    db: &C,
+    label_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let label = sigint_unit_label::Entity::find_by_id(label_id)
+        .one(db)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
+    let label_text = label.label.clone();
+    label.delete(db).await.c(h!())?;
+    crate::inbox::unit_resolution::reprocess_inbox_items_for_text(
+        db,
+        &label_text,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
 async fn ensure_label_editor(
     db: &DatabaseConnection,
     user: &actix_identity::Identity,
@@ -144,13 +168,11 @@ pub async fn delete_unit_label(
     req: Json<DeleteUnitLabelReq>,
 ) -> Result<Json<()>, AppError> {
     ensure_label_editor(&env.dbx, &user).await.c(h!())?;
-    let result = sigint_unit_label::Entity::delete_by_id(req.label_id)
-        .exec(&env.dbx)
+    let transaction = env.dbx.begin().await.c(h!())?;
+    delete_label_and_reprocess(&transaction, req.label_id)
         .await
         .c(h!())?;
-    if result.rows_affected == 0 {
-        return Err(AppError::NotFound);
-    }
+    transaction.commit().await.c(h!())?;
     Ok(Json(()))
 }
 
@@ -207,5 +229,84 @@ mod tests {
             insert_label(&env.dbx, second.id, &label.to_lowercase()).await,
             Err(AppError::BL { .. })
         ));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn deleting_a_label_reprocesses_its_inbox_links() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let label_text = format!("deleted-label-{}", uuid::Uuid::new_v4());
+        let label = insert_label(&env.dbx, unit.id, &label_text).await.unwrap();
+        let inbox_item = crate::functest::tests::mk_sigint_inbox_item(
+            &env.dbx,
+            crate::entities::sigint_inbox_item::ActiveModel {
+                unit_v2: Set(Some(label_text.clone())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let untouched_inbox_item =
+            crate::functest::tests::mk_sigint_inbox_item(
+                &env.dbx,
+                crate::entities::sigint_inbox_item::ActiveModel {
+                    unit_v2: Set(Some(label_text.clone())),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
+            &env.dbx,
+            inbox_item.id,
+            inbox_item.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        delete_label_and_reprocess(&env.dbx, label.id)
+            .await
+            .unwrap();
+
+        assert!(crate::entities::sigint_inbox_item_unit::Entity::find()
+            .filter(
+                crate::entities::sigint_inbox_item_unit::Column::ItemId
+                    .eq(inbox_item.id),
+            )
+            .filter(
+                crate::entities::sigint_inbox_item_unit::Column::Kind.eq(
+                    crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind::Parsed,
+                ),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(crate::entities::failed_inbox_unit::Entity::find()
+            .filter(
+                crate::entities::failed_inbox_unit::Column::InboxItemId
+                    .eq(inbox_item.id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+        assert!(crate::entities::failed_inbox_unit::Entity::find()
+            .filter(
+                crate::entities::failed_inbox_unit::Column::InboxItemId
+                    .eq(untouched_inbox_item.id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
     }
 }

@@ -3,7 +3,7 @@ use crate::config::{
     FAILED_INBOX_UNIT_BACKFILL_BATCH_SIZE, FAILED_INBOX_UNIT_RETENTION_DAYS,
     FAILED_INBOX_UNIT_WORKER_BATCH_SIZE,
     FAILED_INBOX_UNIT_WORKER_ERROR_SLEEP_SECS,
-    FAILED_INBOX_UNIT_WORKER_SLEEP_SECS,
+    FAILED_INBOX_UNIT_WORKER_SLEEP_SECS, INBOX_ITEM_UNIT_REPROCESS_BATCH_SIZE,
     INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE,
     INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE,
 };
@@ -23,8 +23,8 @@ use sea_orm::sea_query::{Expr, LockBehavior, LockType};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ActiveValue::Set, ColumnTrait,
     ConnectionTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
-    JoinType, ModelTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
-    TransactionTrait,
+    JoinType, ModelTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
+    RelationTrait, TransactionTrait,
 };
 use std::time::Duration as StdDuration;
 use uuid::Uuid;
@@ -51,11 +51,18 @@ fn unresolved_text<'a>(
     nonempty(unit_v2).or_else(|| nonempty(unit))
 }
 
-fn escape_like(value: &str) -> String {
+fn normalize_structural_text(value: &str) -> String {
     value
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_lowercase)
+        .join(" ")
+}
+
+fn contains_structural_segment(value: &str, segment: &str) -> bool {
+    let value = format!(" {} ", normalize_structural_text(value));
+    let segment = format!(" {} ", normalize_structural_text(segment));
+    value.contains(&segment)
 }
 
 async fn structural_candidates<C>(
@@ -74,16 +81,26 @@ where
     if segments.is_empty() {
         return Ok(Vec::new());
     }
+    let words = segments
+        .iter()
+        .flat_map(|segment| {
+            segment
+                .split(|character: char| !character.is_alphanumeric())
+                .filter(|word| !word.is_empty())
+                .map(str::to_string)
+        })
+        .unique()
+        .collect_vec();
 
     let mut query = orbit_unit::Entity::find()
         .find_also_related(orbit_unit_echelon::Entity)
         .filter(orbit_unit::Column::Deleted.eq(false))
         .filter(orbit_unit::Column::GenerativeUnitNameFull.is_not_null());
-    for segment in segments {
-        query = query.filter(Expr::cust_with_values(
-            "lower(regexp_replace(btrim(orbit_unit.generative_unit_name_full), '[[:space:]]+', ' ', 'g')) like $1 escape '\\'",
-            vec![format!("%{}%", escape_like(&segment))],
-        ));
+    for word in words {
+        query = query.filter(
+            orbit_unit::Column::GenerativeUnitNameFull
+                .ilike(format!("%{word}%")),
+        );
     }
 
     Ok(query
@@ -92,6 +109,15 @@ where
         .context(h!())?
         .into_iter()
         .filter_map(|(unit, echelon)| echelon.map(|echelon| (unit, echelon)))
+        .filter(|(unit, _)| {
+            unit.generative_unit_name_full
+                .as_deref()
+                .is_some_and(|full_name| {
+                    segments.iter().all(|segment| {
+                        contains_structural_segment(full_name, segment)
+                    })
+                })
+        })
         .collect())
 }
 
@@ -218,8 +244,7 @@ where
             StructuralResolution::Resolved(sigint_unit_id) => {
                 return Ok(Some(sigint_unit_id));
             }
-            StructuralResolution::Blocked => return Ok(None),
-            StructuralResolution::NoMatch => {
+            StructuralResolution::Blocked | StructuralResolution::NoMatch => {
                 return resolve_by_label(db, unit_v2).await.context(h!());
             }
         }
@@ -259,6 +284,17 @@ async fn upsert_failure<C>(
 where
     C: ConnectionTrait,
 {
+    let is_bad_data = failed_inbox_unit::Entity::find()
+        .filter(failed_inbox_unit::Column::Deleted.eq(false))
+        .filter(failed_inbox_unit::Column::IsBadData.eq(true))
+        .filter(Expr::cust_with_values(
+            "lower(regexp_replace(btrim(failed_inbox_unit.unit_txt), '[[:space:]]+', ' ', 'g')) = $1",
+            vec![normalize_unit_label(unit_txt)],
+        ))
+        .one(db)
+        .await
+        .context(h!())?
+        .is_some();
     let existing = failed_inbox_unit::Entity::find()
         .filter(failed_inbox_unit::Column::InboxItemId.eq(inbox_item_id))
         .one(db)
@@ -269,7 +305,7 @@ where
             id: NotSet,
             created_at: NotSet,
             deleted: Set(false),
-            is_bad_data: Set(false),
+            is_bad_data: Set(is_bad_data),
             inbox_item_id: Set(inbox_item_id),
             unit_txt: Set(unit_txt.trim().to_string()),
             deleted_at: Set(None),
@@ -280,15 +316,11 @@ where
         return Ok(());
     };
 
-    let text_changed = normalize_unit_label(&existing.unit_txt)
-        != normalize_unit_label(unit_txt);
     let mut existing = existing.into_active_model();
     existing.deleted = Set(false);
     existing.deleted_at = Set(None);
     existing.unit_txt = Set(unit_txt.trim().to_string());
-    if text_changed {
-        existing.is_bad_data = Set(false);
-    }
+    existing.is_bad_data = Set(is_bad_data);
     existing.update(db).await.context(h!())?;
     Ok(())
 }
@@ -460,6 +492,56 @@ where
     Ok(result.rows_affected)
 }
 
+pub(crate) async fn reprocess_inbox_items_for_text<C>(
+    db: &C,
+    unit_txt: &str,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let normalized_unit_txt = normalize_unit_label(unit_txt);
+    let mut last_id = None;
+    loop {
+        let items = sigint_inbox_item::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item::Relation::SigintInboxItemUnit.def(),
+            )
+            .filter(
+                sigint_inbox_item_unit::Column::Kind
+                    .eq(SigintInboxItemUnitKind::Parsed),
+            )
+            .filter(Expr::cust_with_values(
+                "lower(regexp_replace(btrim(coalesce(nullif(btrim(sigint_inbox_item.unit_v2), ''), sigint_inbox_item.unit)), '[[:space:]]+', ' ', 'g')) = $1",
+                vec![normalized_unit_txt.clone()],
+            ))
+            .apply_if(last_id, |query, last_id| {
+                query.filter(sigint_inbox_item::Column::Id.gt(last_id))
+            })
+            .order_by_asc(sigint_inbox_item::Column::Id)
+            .distinct()
+            .limit(INBOX_ITEM_UNIT_REPROCESS_BATCH_SIZE)
+            .all(db)
+            .await
+            .context(h!())?;
+        if items.is_empty() {
+            break;
+        }
+        for item in items {
+            last_id = Some(item.id);
+            resolve_and_sync_inbox_item(
+                db,
+                item.id,
+                item.unit_v2.as_deref(),
+                item.unit.as_deref(),
+            )
+            .await
+            .context(h!())?;
+        }
+    }
+    Ok(())
+}
+
 async fn verify_pending_failure<C>(
     db: &C,
     failure: failed_inbox_unit::Model,
@@ -549,6 +631,8 @@ pub(crate) async fn run_failed_inbox_unit_worker_once(
 
 pub(crate) async fn failed_inbox_unit_worker_nofail(db: DatabaseConnection) {
     loop {
+        let _loop_guard =
+            crate::utils::worker_watch::loop_guard("failed_inbox_unit_worker");
         if let Err(error) = run_failed_inbox_unit_worker_once(&db).await {
             warn!("Failed inbox unit verification worker error: {error:#?}");
             tokio::time::sleep(StdDuration::from_secs(
@@ -591,6 +675,7 @@ pub(crate) async fn backfill_inbox_unit_links(
         if items.is_empty() {
             break;
         }
+        let item_ids = items.iter().map(|item| item.id).collect_vec();
         for item in &items {
             resolve_and_sync_inbox_item(
                 db,
@@ -602,6 +687,7 @@ pub(crate) async fn backfill_inbox_unit_links(
             .context(h!())?;
             processed += 1;
         }
+        sync_network_unit_links(db, &item_ids).await.context(h!())?;
         last_id = items.last().unwrap().id;
         if items.len()
             == usize::try_from(FAILED_INBOX_UNIT_BACKFILL_BATCH_SIZE)
@@ -738,6 +824,12 @@ mod tests {
     }
 
     #[test]
+    fn structural_segments_match_only_complete_words() {
+        assert!(contains_structural_segment("1 омсбр / 20 ЗВА", "1 ОМСБР"));
+        assert!(!contains_structural_segment("11 омсбр", "1 омсбр"));
+    }
+
+    #[test]
     fn unresolved_text_prefers_unit_v2() {
         assert_eq!(
             unresolved_text(Some(" 1 мсб "), Some("raw")),
@@ -866,7 +958,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn a_structural_match_without_one_link_does_not_use_a_label() {
+    async fn an_exact_label_disambiguates_a_blocked_structural_match() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let label_unit = crate::functest::tests::mk_sigint_unit(
@@ -897,7 +989,7 @@ mod tests {
             resolve_sigint_unit_id(&env.dbx, Some(&label), None)
                 .await
                 .unwrap(),
-            None
+            Some(label_unit.id)
         );
         delete_orbit_units(&env.dbx, vec![orbit_unit]).await;
     }
@@ -980,6 +1072,50 @@ mod tests {
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].unit_txt, "невідомий   сирий підрозділ");
         assert!(!failures[0].deleted);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn new_failures_inherit_bad_data_classification() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let first =
+            insert_inbox_item(&env.dbx, None, Some("bad unit text"), None)
+                .await;
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            first.id,
+            None,
+            first.unit.as_deref(),
+        )
+        .await
+        .unwrap();
+        failed_inbox_unit::Entity::update_many()
+            .col_expr(failed_inbox_unit::Column::IsBadData, Expr::value(true))
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(first.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+
+        let second =
+            insert_inbox_item(&env.dbx, None, Some(" BAD   UNIT TEXT "), None)
+                .await;
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            second.id,
+            None,
+            second.unit.as_deref(),
+        )
+        .await
+        .unwrap();
+
+        let failure = failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(second.id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(failure.is_bad_data);
     }
 
     #[tokio::test]
@@ -1077,6 +1213,65 @@ mod tests {
             )
             .await,
             vec![second_unit.id]
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn backfill_syncs_network_derived_unit_links() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let network = crate::functest::tests::mk_sigint_network(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        crate::functest::tests::mk_sigint_network_unit(
+            &env.dbx,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(network.id),
+                unit_id: Set(unit.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_item = insert_inbox_item(&env.dbx, None, None, None).await;
+        sigint_inbox_item_network::ActiveModel {
+            sigint_inbox_item_id: Set(inbox_item.id),
+            sigint_network_id: Set(network.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let now = Utc::now().naive_utc();
+
+        assert_eq!(
+            backfill_inbox_unit_links(
+                &env.dbx,
+                now - Duration::minutes(1),
+                now + Duration::minutes(1),
+            )
+            .await
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                inbox_item.id,
+                SigintInboxItemUnitKind::Network,
+            )
+            .await,
+            vec![unit.id]
         );
     }
 

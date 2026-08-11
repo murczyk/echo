@@ -64,7 +64,7 @@ pub async fn oneoff_backfill_inbox_unit_links(
         .unwrap_or(now - Duration::days(30));
     let till_ts = parse_optional_utc_ts(ps.till_ts.as_deref())
         .c(h!())?
-        .unwrap_or(now - Duration::hours(1));
+        .unwrap_or(now);
     let processed = crate::inbox::unit_resolution::backfill_inbox_unit_links(
         &db, start_ts, till_ts,
     )

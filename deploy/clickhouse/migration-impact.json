@@ -14,8 +14,8 @@
           "table": "public.sigint_inbox_item",
           "strategy": "mirror_resync"
         },
-         { "table": "public.failed_inbox_unit", "strategy": "excluded" },
-         { "table": "public.sigint_unit_label", "strategy": "excluded" }
+        { "table": "public.failed_inbox_unit", "strategy": "excluded" },
+        { "table": "public.sigint_unit_label", "strategy": "excluded" }
       ]
     },
     "echo:m20260811_064758_sigint_inbox_item_units": {
@@ -28,6 +28,11 @@
           "table": "public.sigint_inbox_item_unit",
           "strategy": "replicated_snapshot"
         }
+      ]
+    },
+    "echo:m20260811_073954_failed_inbox_unit_bad_text_index": {
+      "changes": [
+        { "table": "public.failed_inbox_unit", "strategy": "excluded" }
       ]
     },
     "echo:m20260806_120000_drop_legacy_inbox_callsigns": {

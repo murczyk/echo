@@ -34,7 +34,6 @@ import { hasRole } from '../../utils/roles';
 import { OrbitUnitPickerDialog } from '../rer-unit-details/OrbitUnitLinkDialog';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
 
-const PAGE_SIZE = 20;
 const DEFAULT_COLUMN_ORDER = ['mrt-row-numbers', 'unitTxt', 'quantity', 'mrt-row-actions'];
 const DEFAULT_COLUMN_VISIBILITY = {
   unitTxt: true,
@@ -58,6 +57,7 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
   const [rows, setRows] = useState<UnresolvedUnitLabel[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  const [pageSize, setPageSize] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +78,7 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
         if (signal?.aborted) return;
         setRows(response.rows);
         setTotalCount(response.totalCount);
+        setPageSize(response.pageSize);
       } catch (error) {
         if (!signal?.aborted) setError(formatError(error));
       } finally {
@@ -229,7 +230,7 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
         </Box>
         <Stack direction="row" justifyContent="center">
           <Pagination
-            count={Math.max(1, Math.ceil(totalCount / PAGE_SIZE))}
+            count={Math.max(1, pageSize ? Math.ceil(totalCount / pageSize) : 1)}
             page={pageIndex + 1}
             disabled={loading || processing}
             onChange={(_, page) => setPageIndex(page - 1)}

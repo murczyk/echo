@@ -85,7 +85,7 @@ const firstPage = {
   rows: [{ unitTxt: '123 омсбр', quantity: 7 }],
   totalCount: 21,
   page: 0,
-  pageSize: 20,
+  pageSize: 10,
 };
 
 function button(label: string): HTMLButtonElement {
@@ -118,7 +118,7 @@ afterEach(() => {
 });
 
 describe('AdminUnitUnparsedPage', () => {
-  it('loads grouped rows and requests server-side pages of 20', async () => {
+  it('loads grouped rows and uses the server-reported page size', async () => {
     const root = await renderPage();
 
     expect(document.body.textContent).toContain('Нерозпізнані підрозділи');
@@ -128,6 +128,7 @@ describe('AdminUnitUnparsedPage', () => {
       { page: 0 },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+    expect(document.body.querySelector('button[aria-label="Go to page 3"]')).not.toBeNull();
 
     const secondPage = document.body.querySelector(
       'button[aria-label="Go to page 2"]',
