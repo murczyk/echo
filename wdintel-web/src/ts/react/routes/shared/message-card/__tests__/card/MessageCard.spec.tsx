@@ -1086,7 +1086,7 @@ describe('MessageCard', () => {
     },
   );
 
-  it('shows the concise persisted locality in the header', async () => {
+  it('shows the WGS coordinates in the header without locality', async () => {
     const view = await renderHeader({
       displayMode: 'duty',
       msg: buildMessage({
@@ -1109,8 +1109,8 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     const text = view.container.querySelector('[data-message-header-grid="true"]')?.textContent;
-    expect(text).toContain('5,4 км на пд-зх від Степногірськ');
-    expect(text).not.toContain('49.1, 37.2');
+    expect(text).toContain('49.1, 37.2');
+    expect(text).not.toContain('Степногірськ');
   });
 
   it.each(['duty', 'analysis'] as const)(

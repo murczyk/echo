@@ -68,6 +68,13 @@ vi.mock('../../../../../web-components/analysis-map/tile-layers', () => ({
 
 vi.mock('../../../../services/api/location', () => ({ mapCoordinates: vi.fn() }));
 
+vi.mock('../../message-card/attachment-preview/MessageCardAttachmentPreviewProvider', async () => {
+  const { createElement } = await import('react');
+  return {
+    MessageCardAttachmentPreviewProvider: () => createElement('div', { role: 'dialog' }),
+  };
+});
+
 let container: HTMLDivElement;
 let root: Root;
 

@@ -32,7 +32,7 @@ const MAP_HOST_MIN_SIZE_PX = 48;
 const COORDINATE_ROW_HEIGHT = 24;
 const COORDINATE_ROW_GAP = 6;
 const COORDINATE_LABEL_WIDTH = 80;
-const COORDINATE_PANEL_WIDTH = 330;
+const COORDINATE_PANEL_WIDTH = 300;
 const COORDINATE_COPY_SIZE = 20;
 const COORDINATE_COPY_GAP = 4;
 
@@ -87,6 +87,7 @@ export function CoordinateAttachmentPreviewRenderer({
         <CoordinateMapPreview
           points={points}
           activeIndex={activeIndex}
+          onActiveIndexChange={changeActiveIndex}
           baseLayerId={baseLayerId}
           isFullscreen={dialogIsFullscreen}
         />
@@ -114,11 +115,13 @@ export function CoordinateAttachmentPreviewRenderer({
 function CoordinateMapPreview({
   points,
   activeIndex,
+  onActiveIndexChange,
   baseLayerId,
   isFullscreen,
 }: {
   points: CoordinatePreviewPoint[];
   activeIndex: number;
+  onActiveIndexChange: (index: number) => void;
   baseLayerId: BaseLayerId;
   isFullscreen: boolean;
 }) {
@@ -131,6 +134,7 @@ function CoordinateMapPreview({
   const baseLayerIdRef = useRef<BaseLayerId>('googleHybrid');
   const pointsRef = useRef(points);
   const activeIndexRef = useRef(activeIndex);
+  const onActiveIndexChangeRef = useRef(onActiveIndexChange);
   const initFrameRef = useRef<number | null>(null);
   const invalidateFrameRef = useRef<number | null>(null);
   const initTimeoutRef = useRef<number | null>(null);
@@ -151,6 +155,10 @@ function CoordinateMapPreview({
   useEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
+
+  useEffect(() => {
+    onActiveIndexChangeRef.current = onActiveIndexChange;
+  }, [onActiveIndexChange]);
 
   useEffect(() => {
     setCopyStatus('idle');
@@ -182,7 +190,7 @@ function CoordinateMapPreview({
       return;
     }
 
-    const activePoint = points[activeIndex];
+    const activePoint = pointsRef.current[activeIndex];
     if (activePoint == null) {
       return;
     }
@@ -205,7 +213,7 @@ function CoordinateMapPreview({
       invalidateFrameRef.current = null;
       mapRef.current?.invalidateSize();
     });
-  }, [activeIndex, points]);
+  }, [activeIndex]);
 
   useEffect(() => {
     if (invalidateFrameRef.current !== null) {
@@ -319,16 +327,22 @@ function CoordinateMapPreview({
           : tileLayers.openStreetMap;
       baseLayer.addTo(map);
 
-      const markers = visiblePoints.map(({ lat, lng }, index) =>
-        L.circleMarker([lat, lng], {
+      const markers = visiblePoints.map(({ lat, lng }, index) => {
+        const marker = L.circleMarker([lat, lng], {
           radius: index === activeIndexRef.current ? 10 : 8,
           color: '#ffffff',
           weight: 3,
           fillColor: index === activeIndexRef.current ? '#1976d2' : '#ff4d2d',
           fillOpacity: 1,
-          interactive: false,
-        }).addTo(map),
-      );
+          interactive: true,
+          bubblingMouseEvents: false,
+        }).addTo(map);
+        marker.on('click', () => {
+          map.setView([lat, lng], map.getZoom());
+          onActiveIndexChangeRef.current(index);
+        });
+        return marker;
+      });
 
       mapRef.current = map;
       markerRefs.current = markers;

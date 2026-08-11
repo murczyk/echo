@@ -1,8 +1,8 @@
 export type CoordinateLocality = {
   settlementName: string;
   direction: string;
-  region: string | null;
-  country: string | null;
+  region?: string | null;
+  country?: string | null;
   distanceM: number;
   isRf: boolean;
 };

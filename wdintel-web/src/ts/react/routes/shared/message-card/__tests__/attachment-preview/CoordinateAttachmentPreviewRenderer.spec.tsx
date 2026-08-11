@@ -47,6 +47,7 @@ const leafletMock = vi.hoisted(() => {
   };
   const marker = {
     addTo: vi.fn(() => marker),
+    on: vi.fn(() => marker),
     setLatLng: vi.fn(() => marker),
     setStyle: vi.fn(() => marker),
     remove: vi.fn(),
@@ -530,7 +531,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     );
     expect(leaflet.circleMarker).toHaveBeenCalledWith(
       [50.45044, 30.52355],
-      expect.objectContaining({ interactive: false }),
+      expect.objectContaining({ interactive: true, bubblingMouseEvents: false }),
     );
     expect(leaflet.circleMarker).toHaveBeenCalledTimes(2);
     expect(leaflet.map().invalidateSize).toHaveBeenCalledTimes(1);
@@ -651,6 +652,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
       invalidateSize: ReturnType<typeof vi.fn>;
     };
     const markerInstance = leaflet.circleMarker.mock.results[0]?.value as {
+      on: ReturnType<typeof vi.fn>;
       setLatLng: ReturnType<typeof vi.fn>;
       setStyle: ReturnType<typeof vi.fn>;
     };
@@ -678,6 +680,63 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(leaflet.map).toHaveBeenCalledTimes(1);
     expect(mapInstance.setView).toHaveBeenLastCalledWith([50.45044, 30.52355], 13);
     expect(markerInstance.setStyle).toHaveBeenCalled();
+
+    const selectSecondMarker = markerInstance.on.mock.calls[1]?.[1] as (() => void) | undefined;
+    expect(selectSecondMarker).toBeTypeOf('function');
+    await act(async () => {
+      selectSecondMarker?.();
+      await Promise.resolve();
+    });
+
+    expect(mapInstance.setView).toHaveBeenLastCalledWith([50.5, 30.6], 13);
+    expect(document.body.querySelector('[data-coordinate-point-counter]')?.textContent).toContain(
+      '2 / 2',
+    );
+  });
+
+  it('keeps all points in view when coordinate metadata updates', async () => {
+    const points = [
+      { lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' as const },
+      { lat: 50.5, lng: 30.6, label: '50.50000, 30.60000', source: 'direct' as const },
+    ];
+
+    await act(async () => {
+      root.render(
+        <TestCoordinatePreviewDialog
+          open
+          points={points}
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    hostRect = { width: 800, height: 600 };
+    await act(async () => {
+      resizeObserverInstances.at(-1)?.trigger();
+      await Promise.resolve();
+    });
+
+    const mapInstance = leafletMock.map.mock.results[0]?.value;
+    const setViewCalls = mapInstance.setView.mock.calls.length;
+    const fitBoundsCalls = mapInstance.fitBounds.mock.calls.length;
+    expect(fitBoundsCalls).toBeGreaterThan(0);
+
+    await act(async () => {
+      root.render(
+        <TestCoordinatePreviewDialog
+          open
+          points={points.map((point) => ({ ...point, label: `mapped ${point.label}` }))}
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(mapInstance.setView).toHaveBeenCalledTimes(setViewCalls);
+    expect(mapInstance.fitBounds).toHaveBeenCalledTimes(fitBoundsCalls);
   });
 
   it('does not navigate the carousel when swiping across the map surface', async () => {

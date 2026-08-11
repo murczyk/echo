@@ -1,5 +1,5 @@
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
-import { Badge, IconButton, Tooltip } from '@mui/material';
+import { IconButton, Tooltip } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 
 import { getCoordinateText } from '../../../../../maps/coordinate-format';
@@ -75,13 +75,12 @@ export function CoordinateInputPreview({ value, busy, onError }: Props) {
         <span>
           <IconButton
             size="small"
+            color={canPreview ? 'primary' : 'default'}
             aria-label="Превʼю координат"
             onClick={() => setOpen(true)}
             disabled={!canPreview}
           >
-            <Badge badgeContent={points.length} color="primary" invisible={points.length === 0}>
-              <MapOutlinedIcon fontSize="small" />
-            </Badge>
+            <MapOutlinedIcon fontSize="small" />
           </IconButton>
         </span>
       </Tooltip>
