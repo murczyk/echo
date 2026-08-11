@@ -1220,7 +1220,7 @@ unitLabelsCard model details =
     in
     div [ class "border rounded p-4 bg-card" ]
         [ div [ class "d-flex align-items-center gap-2 mb-3" ]
-            [ h2 [ class "h4 mb-0" ] [ text "Тег підрозділу" ]
+            [ h2 [ class "h4 mb-0" ] [ text "Теги підрозділу" ]
             , i
                 [ class "bi bi-info-circle text-secondary"
                 , title tooltip
