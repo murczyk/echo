@@ -1213,7 +1213,7 @@ unitLabelsCard : Model -> B.UnitDetailsRsp -> Html Msg
 unitLabelsCard model details =
     let
         tooltip =
-            "Якщо в перехопленні зустрічається такий тег - ми прив'язуємо перехоплення до даного підрозділу"
+            "Якщо в перехопленні зустрічається такий текст - ми прив'язуємо перехоплення до даного підрозділу"
 
         inputTooShort =
             String.length (String.trim model.unitLabelInput) < 2
