@@ -599,11 +599,9 @@ pub async fn create_unit(
     fanout_unit_changed(&env).await?;
 
     let mut unit = render_unit(&unit)?;
-    if can_view_orbit {
-        unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
-    } else {
-        redact_unit_orbit_data(&mut unit);
-    }
+    apply_unit_orbit_visibility(&env.dbx, &mut unit, can_view_orbit)
+        .await
+        .context(h!())?;
     Ok(Json(unit))
 }
 
@@ -888,11 +886,10 @@ async fn render_created_unit_with_optional_network(
         .c(h!())?
         .ok_or(AppError::NotFound)?;
     let mut unit = render_unit(&unit)?;
-    if orbit::can_view_orbit_data(&env.dbx, login).await? {
-        unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
-    } else {
-        redact_unit_orbit_data(&mut unit);
-    }
+    let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, login).await?;
+    apply_unit_orbit_visibility(&env.dbx, &mut unit, can_view_orbit)
+        .await
+        .context(h!())?;
     Ok(CreateUnitWithAutoNetworkRsp { unit, network_id })
 }
 
@@ -1150,11 +1147,9 @@ pub async fn update_unit(
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
     let mut unit = render_unit(&unit)?;
-    if can_update_orbit_note {
-        unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
-    } else {
-        redact_unit_orbit_data(&mut unit);
-    }
+    apply_unit_orbit_visibility(&env.dbx, &mut unit, can_update_orbit_note)
+        .await
+        .context(h!())?;
     Ok(Json(unit))
 }
 
@@ -1476,11 +1471,10 @@ pub async fn delete_unit_duplicate(
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
     let mut unit = render_unit(&unit)?;
-    if orbit::can_view_orbit_data(dbx, &login).await? {
-        unit.has_orbit = orbit::unit_has_orbit(dbx, unit.id).await?;
-    } else {
-        redact_unit_orbit_data(&mut unit);
-    }
+    let can_view_orbit = orbit::can_view_orbit_data(dbx, &login).await?;
+    apply_unit_orbit_visibility(dbx, &mut unit, can_view_orbit)
+        .await
+        .context(h!())?;
     Ok(Json(unit))
 }
 
@@ -1649,6 +1643,23 @@ pub(crate) fn apply_unit_orbit_links(
         .map(|link| link.generative_unit_name_full.clone())
         .collect();
     unit.has_orbit = !unit.orbit_unit_ids.is_empty();
+}
+
+pub(crate) async fn apply_unit_orbit_visibility(
+    dbx: &DatabaseConnection,
+    unit: &mut Unit,
+    can_view_orbit: bool,
+) -> Result<(), AppError> {
+    if !can_view_orbit {
+        redact_unit_orbit_data(unit);
+        return Ok(());
+    }
+    let unit_id = unit.id;
+    let orbit_links = orbit::unit_orbit_links(dbx, &[unit_id])
+        .await
+        .context(h!())?;
+    apply_unit_orbit_links(unit, orbit_links.get(&unit_id).map(Vec::as_slice));
+    Ok(())
 }
 
 pub(crate) fn redact_unit_orbit_data(unit: &mut Unit) {
@@ -4442,6 +4453,62 @@ mod tests {
         assert!(unit.orbit_unit_generative_names.is_empty());
         assert_eq!(unit.orbit_note, None);
         assert_eq!(unit.is_deduplicate_candidate, None);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orbit_visibility_populates_and_redacts_all_orbit_fields() {
+        let env = cleanup().await.unwrap();
+        let sigint_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                orbit_note: Set(Some("Orbit note".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let orbit_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::Entity::insert(orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            generative_unit_name_full: Set(Some("106 пдд / МВО".to_string())),
+            ..Default::default()
+        })
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::Entity::insert(
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(orbit_unit_id),
+                sigint_unit_id: Set(sigint_unit.id),
+                is_manual: Set(true),
+                is_suppressed: Set(false),
+            },
+        )
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        let mut unit = render_unit(&sigint_unit).unwrap();
+
+        apply_unit_orbit_visibility(&env.dbx, &mut unit, true)
+            .await
+            .unwrap();
+
+        assert!(unit.has_orbit);
+        assert_eq!(unit.orbit_unit_ids, vec![orbit_unit_id.to_string()]);
+        assert_eq!(
+            unit.orbit_unit_generative_names,
+            vec!["106 пдд / МВО".to_string()]
+        );
+
+        apply_unit_orbit_visibility(&env.dbx, &mut unit, false)
+            .await
+            .unwrap();
+
+        assert!(!unit.has_orbit);
+        assert!(unit.orbit_unit_ids.is_empty());
+        assert!(unit.orbit_unit_generative_names.is_empty());
+        assert_eq!(unit.orbit_note, None);
     }
 
     #[tokio::test]
