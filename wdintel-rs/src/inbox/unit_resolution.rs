@@ -121,6 +121,35 @@ where
         .collect())
 }
 
+async fn sigint_unit_ids_for_orbit<C>(
+    db: &C,
+    orbit_unit_id: Uuid,
+    active_only: bool,
+) -> anyhow::Result<Vec<i64>>
+where
+    C: ConnectionTrait,
+{
+    let mut query = orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+        )
+        .filter(orbit_unit_sigint_unit::Column::OrbitUnitId.eq(orbit_unit_id))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false));
+    if active_only {
+        query = query.filter(sigint_unit::Column::Active.eq(true));
+    }
+    query
+        .select_only()
+        .column(orbit_unit_sigint_unit::Column::SigintUnitId)
+        .distinct()
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .context(h!())
+}
+
 pub(crate) async fn active_sigint_unit_ids_for_orbit<C>(
     db: &C,
     orbit_unit_id: Uuid,
@@ -128,20 +157,7 @@ pub(crate) async fn active_sigint_unit_ids_for_orbit<C>(
 where
     C: ConnectionTrait,
 {
-    orbit_unit_sigint_unit::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
-        )
-        .filter(orbit_unit_sigint_unit::Column::OrbitUnitId.eq(orbit_unit_id))
-        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
-        .filter(sigint_unit::Column::Active.eq(true))
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .select_only()
-        .column(orbit_unit_sigint_unit::Column::SigintUnitId)
-        .distinct()
-        .into_tuple::<i64>()
-        .all(db)
+    sigint_unit_ids_for_orbit(db, orbit_unit_id, true)
         .await
         .context(h!())
 }
@@ -185,12 +201,12 @@ where
     }
 
     let orbit_unit_id = candidates[0].unit_id;
-    let sigint_unit_ids = active_sigint_unit_ids_for_orbit(db, orbit_unit_id)
+    let sigint_unit_ids = sigint_unit_ids_for_orbit(db, orbit_unit_id, false)
         .await
         .context(h!())?;
     if sigint_unit_ids.len() != 1 {
         warn!(
-            "ORBIT unit {orbit_unit_id} matched unit_v2={unit_v2:?}, but has {} active, non-suppressed SIGINT links",
+            "ORBIT unit {orbit_unit_id} matched unit_v2={unit_v2:?}, but has {} non-suppressed SIGINT links",
             sigint_unit_ids.len()
         );
         return Ok(StructuralResolution::Blocked);
@@ -215,7 +231,6 @@ where
             "lower(regexp_replace(btrim(sigint_unit_label.label), '[[:space:]]+', ' ', 'g')) = $1",
             vec![normalized],
         ))
-        .filter(sigint_unit::Column::Active.eq(true))
         .filter(sigint_unit::Column::Deleted.eq(false))
         .select_only()
         .column(sigint_unit_label::Column::SigintUnitId)
@@ -840,12 +855,15 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn exact_label_matching_normalizes_case_and_whitespace() {
+    async fn inactive_exact_label_matching_normalizes_case_and_whitespace() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let unit = crate::functest::tests::mk_sigint_unit(
             &env.dbx,
-            Default::default(),
+            sigint_unit::ActiveModel {
+                active: Set(false),
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -874,7 +892,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn structural_matching_prefers_the_highest_echelon() {
+    async fn structural_matching_prefers_inactive_unit_at_highest_echelon() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let battalion = crate::functest::tests::mk_sigint_unit(
@@ -885,7 +903,10 @@ mod tests {
         .unwrap();
         let brigade = crate::functest::tests::mk_sigint_unit(
             &env.dbx,
-            Default::default(),
+            sigint_unit::ActiveModel {
+                active: Set(false),
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
