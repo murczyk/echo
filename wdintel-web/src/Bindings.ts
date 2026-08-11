@@ -4634,8 +4634,6 @@ export type CoordinateWithLocality = {
 export type LocalityDetails = {
   settlementName: string;
   direction: string;
-  region: string | null;
-  country: string | null;
   distanceM: number;
   isRf: boolean;
 };

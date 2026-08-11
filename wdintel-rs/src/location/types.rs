@@ -85,8 +85,6 @@ pub struct CoordinateWithLocality {
 pub struct LocalityDetails {
     pub settlement_name: String,
     pub direction: String,
-    pub region: Option<String>,
-    pub country: Option<String>,
     pub distance_m: f64,
     pub is_rf: bool,
 }

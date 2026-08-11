@@ -135,8 +135,6 @@ fn stored_locality(peleng: &sigint_peleng::Model) -> Option<LocalityDetails> {
     Some(LocalityDetails {
         settlement_name: peleng.settlement.clone()?,
         direction: peleng.locality_direction.clone()?,
-        region: Some(peleng.region.clone()?.to_string()),
-        country: Some(peleng.country_name.clone()?.to_string()),
         distance_m: peleng.distance_m?,
         is_rf: peleng.country_code.as_deref() == Some("ru"),
     })
@@ -149,8 +147,6 @@ fn locality_details(
     LocalityDetails {
         settlement_name: locality.settlement_name.clone(),
         direction: locality.direction.clone(),
-        region: locality.region.clone(),
-        country: locality.country.clone(),
         distance_m: locality.distance_m,
         is_rf: locality.is_rf,
     }

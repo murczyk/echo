@@ -2,14 +2,13 @@ use crate::entities::sigint_peleng::Model;
 use crate::entities::{freq_location, sigint_inbox_item, sigint_peleng};
 use crate::location::utils::{format_locations_list, to_location_list};
 use crate::location::*;
-use crate::mk_conn_string;
-use crate::types::{Mode, ShortContext};
+use crate::types::ShortContext;
 use milgeo_rs::coord_util::{LatLng, Locality};
 use milgeo_rs::MilGeo;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend,
-    DatabaseConnection, EntityTrait, IntoActiveModel, NotSet, QueryFilter,
-    QueryOrder, QuerySelect, Set, Statement,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait, IntoActiveModel, NotSet, QueryFilter, QueryOrder, QuerySelect,
+    Set,
 };
 
 pub async fn process_location_v2_coords_worker(
@@ -122,140 +121,18 @@ pub async fn run_process_coords_locations_worker(
     }
 }
 
-pub async fn oneoff_backfill_sigint_peleng_locality(
-    mode: Mode,
-) -> Result<(), AppError> {
-    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
-    let config = crate::config::read_config(mode).c(h!())?;
-    let mil_geo = MilGeo::new(&mk_conn_string(&config));
-    let mut updated = 0;
-
-    loop {
-        let pelengs = sigint_peleng::Entity::find()
-            .filter(sigint_peleng::Column::Region.is_null())
-            .order_by_desc(sigint_peleng::Column::CreatedAt)
-            .limit(crate::config::SIGINT_PELENG_LOCALITY_BACKFILL_BATCH_SIZE)
-            .all(&dbx)
-            .await
-            .c(h!())?;
-        if pelengs.is_empty() {
-            break;
-        }
-        let peleng_locations =
-            collect_peleng_locations(pelengs, &mil_geo).await.c(h!())?;
-        update_peleng_locality_batch(&dbx, &peleng_locations)
-            .await
-            .c(h!())?;
-        updated += peleng_locations.len();
-    }
-    println!("> updated {updated} sigint peleng locality records");
-    Ok(())
-}
-
 fn set_peleng_locality(
     model: &mut sigint_peleng::ActiveModel,
     locality: Option<&Locality>,
 ) {
     let Some(locality) = locality else {
         model.settlement = Set(Some(String::from("")));
-        model.region = Set(Some(String::from("")));
-        model.country_name = Set(Some(String::from("")));
         return;
     };
     model.country_code = Set(Some(String::from(locality.get_country_code())));
     model.settlement = Set(Some(locality.settlement_name.clone()));
     model.distance_m = Set(Some(locality.distance_m));
     model.locality_direction = Set(Some(locality.direction.clone()));
-    model.region = Set(Some(locality.region.clone().unwrap_or_default()));
-    model.country_name = Set(Some(locality_country_name(locality)));
-}
-
-fn locality_country_name(locality: &Locality) -> String {
-    locality.country.clone().unwrap_or_else(|| {
-        if locality.is_rf {
-            String::from("Росія")
-        } else {
-            String::from("Україна")
-        }
-    })
-}
-
-async fn update_peleng_locality_batch(
-    dbx: &DatabaseConnection,
-    peleng_locations: &[(sigint_peleng::Model, Vec<Locality>)],
-) -> anyhow::Result<()> {
-    let mut placeholders = Vec::with_capacity(peleng_locations.len());
-    let mut values = Vec::with_capacity(peleng_locations.len() * 7);
-    for (index, (peleng, localities)) in peleng_locations.iter().enumerate() {
-        let offset = index * 7;
-        placeholders.push(format!(
-            "(${0}, ${1}, ${2}, ${3}, ${4}, ${5}, ${6})",
-            offset + 1,
-            offset + 2,
-            offset + 3,
-            offset + 4,
-            offset + 5,
-            offset + 6,
-            offset + 7,
-        ));
-        let (
-            settlement,
-            direction,
-            distance_m,
-            country_code,
-            region,
-            country_name,
-        ) = locality_update_values(localities.first());
-        values.push(peleng.id.into());
-        values.push(settlement.into());
-        values.push(direction.into());
-        values.push(distance_m.into());
-        values.push(country_code.into());
-        values.push(region.into());
-        values.push(country_name.into());
-    }
-    let sql = format!(
-        "UPDATE sigint_peleng AS target SET settlement = updates.settlement, locality_direction = updates.locality_direction, distance_m = updates.distance_m, country_code = updates.country_code, region = updates.region, country_name = updates.country_name FROM (VALUES {}) AS updates(id, settlement, locality_direction, distance_m, country_code, region, country_name) WHERE target.id = updates.id",
-        placeholders.join(", "),
-    );
-    dbx.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        sql,
-        values,
-    ))
-    .await
-    .c(h!())?;
-    Ok(())
-}
-
-fn locality_update_values(
-    locality: Option<&Locality>,
-) -> (
-    Option<String>,
-    Option<String>,
-    Option<f64>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-) {
-    let Some(locality) = locality else {
-        return (
-            Some(String::new()),
-            Some(String::new()),
-            None,
-            None,
-            Some(String::new()),
-            Some(String::new()),
-        );
-    };
-    (
-        Some(locality.settlement_name.clone()),
-        Some(locality.direction.clone()),
-        Some(locality.distance_m),
-        Some(String::from(locality.get_country_code())),
-        Some(locality.region.clone().unwrap_or_default()),
-        Some(locality_country_name(locality)),
-    )
 }
 
 async fn push_frequency_locations<'a, 'async_trait, C>(

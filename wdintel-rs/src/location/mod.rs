@@ -13,7 +13,7 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::ConnectionTrait;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
 pub mod aor_config;
@@ -37,55 +37,54 @@ async fn map_coordinates(
     env: actix_web::web::Data<Env>,
     req: Json<MapCoordinatesReq>,
 ) -> Result<Json<Vec<CoordinateWithLocality>>, AppError> {
-    let login = crate::users::login_id_from_identity(&user)?;
+    let login = crate::users::login_id_from_identity(&user).c(h!())?;
     crate::users::ensure_rer_role_by_id(&env.dbx, &login)
         .await
         .c(h!())?;
 
     let coords = req.into_inner().coords;
-    let indexed_coords = coords
-        .iter()
-        .enumerate()
-        .map(|(index, coord)| {
-            (
-                index as i64,
-                milgeo_rs::coord_util::LatLng {
-                    lat: coord.lat,
-                    lng: coord.lon,
-                },
-            )
-        })
-        .collect();
-    let mapped_coords = milgeo_rs::coord_util::map_coords(
-        indexed_coords,
-        env.mil_geo.clone(),
-        3,
-    )
-    .await
-    .c(h!())?;
+    let localities =
+        futures::future::try_join_all(coords.iter().map(|coord| {
+            map_coordinate_to_locality(coord, env.mil_geo.clone())
+        }))
+        .await
+        .c(h!())?;
 
     let result = coords
         .into_iter()
-        .enumerate()
-        .map(|(index, coords)| CoordinateWithLocality {
-            coords,
-            locality: mapped_coords
-                .get(&(index as i64))
-                .into_iter()
-                .flatten()
-                .next()
-                .map(|locality| LocalityDetails {
-                    settlement_name: locality.settlement_name.clone(),
-                    direction: locality.direction.clone(),
-                    region: locality.region.clone(),
-                    country: locality.country.clone(),
-                    distance_m: locality.distance_m,
-                    is_rf: locality.is_rf,
-                }),
-        })
+        .zip(localities)
+        .map(|(coords, locality)| CoordinateWithLocality { coords, locality })
         .collect();
 
     Ok(Json(result))
+}
+
+async fn map_coordinate_to_locality(
+    coord: &crate::rer_importer::types::GeoCoordinates,
+    mil_geo: milgeo_rs::MilGeo,
+) -> anyhow::Result<Option<LocalityDetails>> {
+    let mapped_coords = milgeo_rs::coord_util::map_coords(
+        BTreeMap::from([(
+            0,
+            milgeo_rs::coord_util::LatLng {
+                lat: coord.lat,
+                lng: coord.lon,
+            },
+        )]),
+        mil_geo,
+        1,
+    )
+    .await
+    .c(h!())?;
+    Ok(mapped_coords
+        .get(&0)
+        .and_then(|localities| localities.first())
+        .map(|locality| LocalityDetails {
+            settlement_name: locality.settlement_name.clone(),
+            direction: locality.direction.clone(),
+            distance_m: locality.distance_m,
+            is_rf: locality.is_rf,
+        }))
 }
 
 #[post("/api/settlement/find")]

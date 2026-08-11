@@ -11979,8 +11979,6 @@ coordinateWithLocalityEncoder struct =
 type alias LocalityDetails =
     { settlementName : String
     , direction : String
-    , region : Maybe (String)
-    , country : Maybe (String)
     , distanceM : Float
     , isRf : Bool
     }
@@ -11991,8 +11989,6 @@ localityDetailsEncoder struct =
     Json.Encode.object
         [ ( "settlement_name", (Json.Encode.string) struct.settlementName )
         , ( "direction", (Json.Encode.string) struct.direction )
-        , ( "region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.region )
-        , ( "country", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.country )
         , ( "distance_m", (Json.Encode.float) struct.distanceM )
         , ( "is_rf", (Json.Encode.bool) struct.isRf )
         ]
@@ -18812,8 +18808,6 @@ localityDetailsDecoder =
     Json.Decode.succeed LocalityDetails
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement_name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "direction" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "region" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "country" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "distance_m" (Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rf" (Json.Decode.bool)))
 
