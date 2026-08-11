@@ -1,3 +1,7 @@
+use crate::config::{
+    SIGINT_UNIT_DYNAMIC_REGEX_CHUNK_SIZE,
+    SIGINT_UNIT_DYNAMIC_REGEX_SIZE_LIMIT_BYTES,
+};
 use crate::entities::*;
 use crate::types::*;
 use crate::unit::const_units::*;
@@ -9,12 +13,14 @@ use std::sync::OnceLock;
 mod const_units;
 pub mod parser;
 
-static NAMES_RE: OnceLock<Regex> = OnceLock::new();
-static DIVISIONS_RE: OnceLock<Regex> = OnceLock::new();
-static BATTALIONS_RE: OnceLock<Regex> = OnceLock::new();
-static COMPANIES_RE: OnceLock<Regex> = OnceLock::new();
-static ARMIES_RE: OnceLock<Regex> = OnceLock::new();
-static REGIMENTS_RE: OnceLock<Regex> = OnceLock::new();
+type UnitRegexCache = OnceLock<Result<Vec<Regex>, String>>;
+
+static NAMES_RE: UnitRegexCache = OnceLock::new();
+static DIVISIONS_RE: UnitRegexCache = OnceLock::new();
+static BATTALIONS_RE: UnitRegexCache = OnceLock::new();
+static COMPANIES_RE: UnitRegexCache = OnceLock::new();
+static ARMIES_RE: UnitRegexCache = OnceLock::new();
+static REGIMENTS_RE: UnitRegexCache = OnceLock::new();
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnitInfo {
@@ -203,15 +209,8 @@ where
         None => load_unit_companies(dbx).await.c(h!())?,
         _some => vec![],
     };
-    let companies_re =
-        COMPANIES_RE.get_or_init(|| regex_from_data(data)).clone();
-    let mut companies = vec![];
-    for cap in companies_re.captures_iter(text) {
-        if let Some(name) = cap.name("name") {
-            companies.push(name.as_str().to_string());
-        }
-    }
-    Ok(companies)
+    let companies_re = cached_unit_regexes(&COMPANIES_RE, data).c(h!())?;
+    Ok(capture_unit_name(text, companies_re).into_iter().collect())
 }
 
 async fn collect_battalions<'a, 'async_trait, C>(
@@ -225,15 +224,8 @@ where
         None => load_unit_battalions(dbx).await.c(h!())?,
         _some => vec![],
     };
-    let battalions_re =
-        BATTALIONS_RE.get_or_init(|| regex_from_data(data)).clone();
-    let mut battalions = vec![];
-    for cap in battalions_re.captures_iter(text) {
-        if let Some(name) = cap.name("name") {
-            battalions.push(name.as_str().to_string());
-        }
-    }
-    Ok(battalions)
+    let battalions_re = cached_unit_regexes(&BATTALIONS_RE, data).c(h!())?;
+    Ok(capture_unit_name(text, battalions_re).into_iter().collect())
 }
 
 async fn collect_armies<'a, 'async_trait, C>(
@@ -247,14 +239,8 @@ where
         None => load_unit_armies(dbx).await.c(h!())?,
         _some => vec![],
     };
-    let armies_re = ARMIES_RE.get_or_init(|| regex_from_data(data)).clone();
-    let mut armies = vec![];
-    for cap in armies_re.captures_iter(text) {
-        if let Some(name) = cap.name("name") {
-            armies.push(name.as_str().to_string());
-        }
-    }
-    Ok(armies)
+    let armies_re = cached_unit_regexes(&ARMIES_RE, data).c(h!())?;
+    Ok(capture_unit_name(text, armies_re).into_iter().collect())
 }
 
 async fn collect_divisions<'a, 'async_trait, C>(
@@ -268,15 +254,8 @@ where
         None => load_unit_divisions(dbx).await.c(h!())?,
         _some => vec![],
     };
-    let divisions_re =
-        DIVISIONS_RE.get_or_init(|| regex_from_data(data)).clone();
-    let mut divisions = vec![];
-    for cap in divisions_re.captures_iter(text) {
-        if let Some(name) = cap.name("name") {
-            divisions.push(name.as_str().to_string());
-        }
-    }
-    Ok(divisions)
+    let divisions_re = cached_unit_regexes(&DIVISIONS_RE, data).c(h!())?;
+    Ok(capture_unit_name(text, divisions_re).into_iter().collect())
 }
 
 async fn collect_regiments<'a, 'async_trait, C>(
@@ -290,15 +269,8 @@ where
         None => load_unit_regiments(dbx).await.c(h!())?,
         _some => vec![],
     };
-    let regiments_re =
-        REGIMENTS_RE.get_or_init(|| regex_from_data(data)).clone();
-    let mut regiments = vec![];
-    for cap in regiments_re.captures_iter(text) {
-        if let Some(name) = cap.name("name") {
-            regiments.push(name.as_str().to_string());
-        }
-    }
-    Ok(regiments)
+    let regiments_re = cached_unit_regexes(&REGIMENTS_RE, data).c(h!())?;
+    Ok(capture_unit_name(text, regiments_re).into_iter().collect())
 }
 
 async fn parse_existing_units<'a, 'async_trait, C>(
@@ -312,15 +284,8 @@ where
         None => load_unit_names(dbx).await.c(h!())?,
         _some => vec![],
     };
-    let names_re = NAMES_RE.get_or_init(|| regex_from_data(unit_names)).clone();
-
-    let mut units_info = vec![];
-    for cap in names_re.captures_iter(text) {
-        if let Some(name) = cap.name("name") {
-            units_info.push(name.as_str().to_string());
-        }
-    }
-    Ok(units_info)
+    let names_re = cached_unit_regexes(&NAMES_RE, unit_names).c(h!())?;
+    Ok(capture_unit_name(text, names_re).into_iter().collect())
 }
 
 pub fn has_unit(text: &String) -> bool {
@@ -475,12 +440,43 @@ fn crop_prefix(name: &String, regex: &Regex) -> String {
     name
 }
 
-fn regex_from_data(data: Vec<String>) -> Regex {
-    let expression = "^(?<name>$s)".replace("$s", &data.join("|"));
-    RegexBuilder::new(&expression)
-        .case_insensitive(true)
-        .build()
-        .expect("Invalid Regex")
+fn regexes_from_data(data: Vec<String>) -> Result<Vec<Regex>, regex::Error> {
+    let data = data
+        .into_iter()
+        .map(|value| regex::escape(&value))
+        .collect_vec();
+    data.chunks(SIGINT_UNIT_DYNAMIC_REGEX_CHUNK_SIZE)
+        .map(|data| {
+            let expression = "^(?<name>$s)".replace("$s", &data.join("|"));
+            RegexBuilder::new(&expression)
+                .case_insensitive(true)
+                .size_limit(SIGINT_UNIT_DYNAMIC_REGEX_SIZE_LIMIT_BYTES)
+                .build()
+        })
+        .collect()
+}
+
+fn cached_unit_regexes(
+    cache: &UnitRegexCache,
+    data: Vec<String>,
+) -> anyhow::Result<&[Regex]> {
+    let regexes = cache
+        .get_or_init(|| {
+            regexes_from_data(data).map_err(|error| error.to_string())
+        })
+        .as_ref()
+        .map_err(|error| anyhow::anyhow!(error.clone()))
+        .c(h!())?;
+    Ok(regexes)
+}
+
+fn capture_unit_name(text: &str, regexes: &[Regex]) -> Option<String> {
+    regexes.iter().find_map(|regex| {
+        regex
+            .captures(text)
+            .and_then(|captures| captures.name("name"))
+            .map(|name| name.as_str().to_string())
+    })
 }
 
 async fn load_unit_names<'a, 'async_trait, C>(
@@ -774,6 +770,37 @@ mod tests {
         assert_units_unrelated(
             mk_unit(1, "reg-1", "1 army", "1 div", "1 reg", "", ""),
             mk_unit(2, "reg-2", "2 army", "2 div", "2 reg", "", ""),
+        );
+    }
+
+    #[test]
+    fn regex_from_data_treats_unit_names_as_literals() {
+        let unit_name = "1436 мсп (на МТ-ЛБ)";
+        let regexes =
+            regexes_from_data(vec![unit_name.to_string(), ")".to_string()])
+                .unwrap();
+
+        assert_eq!(
+            Some(unit_name.to_string()),
+            capture_unit_name(unit_name, &regexes)
+        );
+        assert_eq!(Some(")".to_string()), capture_unit_name(")", &regexes));
+    }
+
+    #[test]
+    fn regex_from_data_accepts_production_sized_unit_list() {
+        let unit_names = (0..50_000)
+            .map(|idx| {
+                format!("{idx:05} підрозділ {idx:05} бригада {idx:05} армія")
+            })
+            .collect_vec();
+        let expected = unit_names.last().unwrap().clone();
+        let regexes = regexes_from_data(unit_names).unwrap();
+
+        assert!(regexes.len() > 1);
+        assert_eq!(
+            Some(expected.clone()),
+            capture_unit_name(&expected, &regexes)
         );
     }
 
