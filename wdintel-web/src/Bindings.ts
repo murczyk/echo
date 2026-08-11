@@ -2432,6 +2432,7 @@ export type Unit = {
   createdByLoginId: string;
   hasOrbit: boolean;
   orbitUnitIds: Array<string>;
+  orbitUnitGenerativeNames: Array<string>;
 };
 
 export type ListUnitsReq = {

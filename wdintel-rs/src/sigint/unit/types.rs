@@ -37,6 +37,8 @@ pub struct Unit {
     pub has_orbit: bool,
     #[serde(default, skip_deserializing)]
     pub orbit_unit_ids: Vec<String>,
+    #[serde(default, skip_deserializing)]
+    pub orbit_unit_generative_names: Vec<String>,
 }
 
 #[cfg(test)]
@@ -64,6 +66,7 @@ mod tests {
         assert_eq!(unit.is_deduplicate_candidate, None);
         assert_eq!(unit.military_district, "");
         assert_eq!(unit.army_region, "");
+        assert!(unit.orbit_unit_generative_names.is_empty());
     }
 
     #[test]

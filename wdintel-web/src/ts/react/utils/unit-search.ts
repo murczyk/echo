@@ -38,6 +38,7 @@ function createSyntheticUnsetUnit(): Unit {
     createdByLoginId: '',
     hasOrbit: false,
     orbitUnitIds: [],
+    orbitUnitGenerativeNames: [],
   };
 }
 

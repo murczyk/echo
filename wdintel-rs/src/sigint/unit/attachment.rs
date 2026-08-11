@@ -6,7 +6,7 @@ use super::types::{
     UnitAttachmentAor, UnitAttachmentDownloadReq, UnitAttachmentUnitIdsRsp,
     UnitDetailsReq, UnitDetailsRsp, UpdateUnitAttachmentReq,
 };
-use super::{redact_unit_orbit_data, render_unit};
+use super::{apply_unit_orbit_visibility, render_unit};
 use crate::config::{
     SIGINT_UNIT_ATTACHMENT_DOWNLOAD_TIMEOUT_SECS,
     SIGINT_UNIT_ATTACHMENT_MAX_AORS,
@@ -76,15 +76,9 @@ pub async fn unit_details(
         && crate::system_settings::devices_section_enabled(&env.dbx).await?
         && !super::unit_has_active_network(&env.dbx, unit.id).await?;
     let mut unit = render_unit(&unit)?;
-    if can_view_orbit {
-        unit.has_orbit = !orbit_units.is_empty();
-        unit.orbit_unit_ids = orbit_units
-            .iter()
-            .map(|orbit_unit| orbit_unit.unit_id.clone())
-            .collect();
-    } else {
-        redact_unit_orbit_data(&mut unit);
-    }
+    apply_unit_orbit_visibility(&env.dbx, &mut unit, can_view_orbit)
+        .await
+        .context(h!())?;
     Ok(Json(UnitDetailsRsp {
         unit,
         attachments,

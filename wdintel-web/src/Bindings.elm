@@ -6289,6 +6289,7 @@ type alias Unit =
     , createdByLoginId : String
     , hasOrbit : Bool
     , orbitUnitIds : List (String)
+    , orbitUnitGenerativeNames : List (String)
     }
 
 
@@ -6312,6 +6313,7 @@ unitEncoder struct =
         , ( "created_by_login_id", (Json.Encode.string) struct.createdByLoginId )
         , ( "has_orbit", (Json.Encode.bool) struct.hasOrbit )
         , ( "orbit_unit_ids", (Json.Encode.list (Json.Encode.string)) struct.orbitUnitIds )
+        , ( "orbit_unit_generative_names", (Json.Encode.list (Json.Encode.string)) struct.orbitUnitGenerativeNames )
         ]
 
 
@@ -15767,6 +15769,7 @@ unitDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by_login_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_orbit" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_ids" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_generative_names" (Json.Decode.list (Json.Decode.string))))
 
 
 listUnitsReqDecoder : Json.Decode.Decoder ListUnitsReq
