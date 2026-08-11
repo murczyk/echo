@@ -69,6 +69,7 @@ async fn load_coords_with_locality(
     let pelengs = sigint_peleng::Entity::find()
         .filter(sigint_peleng::Column::SourceInboxItemId.eq_any(message_ids))
         .filter(sigint_peleng::Column::Deleted.eq(false))
+        .order_by_asc(sigint_peleng::Column::Id)
         .all(&env.dbx)
         .await
         .c(h!())?;
@@ -1104,7 +1105,8 @@ pub async fn submit_upsert_inbox_item(
         );
     }
 
-    let coords_s = parse_submitted_coords(message.coords.as_deref()).await;
+    let submitted_coords =
+        parse_submitted_coords(message.coords.as_deref()).await;
 
     let mut coords_vec = if parse_body_coordinates {
         match &message.no_headers_body.clone().map(|n| n.body) {
@@ -1116,15 +1118,18 @@ pub async fn submit_upsert_inbox_item(
     } else {
         vec![]
     };
-    if let Some(c1) = &coords_s {
-        if !coords_vec.iter().any(|c| c.text == c1.text) {
-            coords_vec.push(c1.clone())
+    for coord in &submitted_coords {
+        if !coords_vec
+            .iter()
+            .any(|existing| existing.text == coord.text)
+        {
+            coords_vec.push(coord.clone());
         }
     }
     let peleng_bounds = crate::system_settings::get_active_peleng_bounds(txn)
         .await
         .c(h!())?;
-    let coords_s = coords_s.filter(|coord| {
+    let coords_s = submitted_coords.into_iter().find(|coord| {
         crate::location::peleng::coord_matches_peleng_bounds(
             coord,
             peleng_bounds.as_ref(),
@@ -1396,22 +1401,37 @@ async fn clear_body_derived_fields(
     Ok(())
 }
 
-async fn parse_submitted_coords(coords: Option<&str>) -> Option<Coords> {
-    let coords = coords?.trim();
-    if coords.is_empty() {
-        return None;
-    }
+async fn parse_submitted_coords(coords: Option<&str>) -> Vec<Coords> {
+    let Some(coords) =
+        coords.map(str::trim).filter(|coords| !coords.is_empty())
+    else {
+        return vec![];
+    };
+    let mut result = vec![];
 
-    if let Ok((lat, lng)) = parse_latlng_f64(coords) {
-        if let Some(coords) = coords_from_latlng(lat, lng) {
-            return Some(coords);
+    for line in coords
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        if let Ok((lat, lng)) = parse_latlng_f64(line) {
+            if let Some(coords) = coords_from_latlng(lat, lng) {
+                result.push(coords);
+            }
         }
     }
 
-    crate::rer_importer::coordinates::extract_coords(coords)
-        .await
-        .into_iter()
-        .next()
+    for coord in crate::rer_importer::coordinates::extract_coords(coords).await
+    {
+        if !result
+            .iter()
+            .any(|existing: &Coords| existing.text == coord.text)
+        {
+            result.push(coord);
+        }
+    }
+
+    result
 }
 
 fn coords_from_latlng(lat: f64, lng: f64) -> Option<Coords> {
@@ -1597,9 +1617,9 @@ mod tests {
 
     #[tokio::test]
     async fn parse_submitted_coords_keeps_decimal_wgs84() {
-        let coords = parse_submitted_coords(Some("50.4494874, 30.6658124"))
-            .await
-            .unwrap();
+        let coords =
+            parse_submitted_coords(Some("50.4494874, 30.6658124")).await;
+        let coords = coords.first().unwrap();
 
         assert_eq!(coords.text, "50.4494874, 30.6658124");
         assert_eq!(coords.lat, 50.4494874);
@@ -1608,9 +1628,8 @@ mod tests {
 
     #[tokio::test]
     async fn parse_submitted_coords_falls_back_to_main_parser_for_usk2000() {
-        let coords = parse_submitted_coords(Some("52-20714 65-51696"))
-            .await
-            .unwrap();
+        let coords = parse_submitted_coords(Some("52-20714 65-51696")).await;
+        let coords = coords.first().unwrap();
 
         assert_eq!(coords.capture.trim(), "52-20714 65-51696");
         assert!((coords.lat - 47.11815353886478).abs() < 0.000001);
@@ -1619,12 +1638,23 @@ mod tests {
 
     #[tokio::test]
     async fn parse_submitted_coords_falls_back_for_invalid_integer_latlng() {
-        let coords = parse_submitted_coords(Some("4494874 6658124"))
-            .await
-            .unwrap();
+        let coords = parse_submitted_coords(Some("4494874 6658124")).await;
+        let coords = coords.first().unwrap();
 
         assert_eq!(coords.capture.trim(), "4494874 6658124");
         assert!(is_wgs84_ok(coords.lat, coords.lng));
         assert_ne!(coords.text, "4494874, 6658124");
+    }
+
+    #[tokio::test]
+    async fn parse_submitted_coords_keeps_all_decimal_wgs84_values() {
+        let coords = parse_submitted_coords(Some(
+            "50.4494874, 30.6658124\n49.12345, 37.12345",
+        ))
+        .await;
+
+        assert_eq!(coords.len(), 2);
+        assert_eq!(coords[0].text, "50.4494874, 30.6658124");
+        assert_eq!(coords[1].text, "49.12345, 37.12345");
     }
 }

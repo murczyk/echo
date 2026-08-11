@@ -139,7 +139,9 @@ vi.mock('@uppy/core', () => {
   return { default: FakeUppy };
 });
 vi.mock('@uppy/tus', () => ({ default: class {} }));
+vi.mock('@mui/icons-material/Add', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/DeleteOutline', () => ({ default: () => <span /> }));
+vi.mock('./drawer-sections/CoordinateInputPreview', () => ({ CoordinateInputPreview: () => null }));
 
 vi.mock('../../../components/PowerDateTimePicker', () => ({
   PowerDatePicker: ({ label, value }: { label?: string; value?: unknown }) => {
@@ -168,6 +170,7 @@ type TextFieldMockProps = {
   label?: ReactNode;
   multiline?: boolean;
   onChange?: (event: { target: { value: string } }) => void;
+  onBlur?: () => void;
   onKeyDown?: (event: KeyboardEvent) => void;
   placeholder?: string;
   value?: string;
@@ -282,11 +285,13 @@ vi.mock('@mui/material', () => ({
       )}
     </span>
   ),
+  InputAdornment: ({ children }: { children?: ReactNode }) => <>{children}</>,
   Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
   TextField: ({
     label,
     multiline,
     onChange,
+    onBlur,
     onKeyDown,
     placeholder,
     value,
@@ -297,6 +302,7 @@ vi.mock('@mui/material', () => ({
       label: labelKey,
       multiline,
       onChange,
+      onBlur,
       onKeyDown,
       placeholder,
       value,
@@ -310,6 +316,7 @@ vi.mock('@mui/material', () => ({
         value={value ?? ''}
         disabled={disabled}
         onChange={(event) => onChange?.(event as never)}
+        onBlur={onBlur}
         onKeyDown={onKeyDown as never}
       />
     ) : (
@@ -319,6 +326,7 @@ vi.mock('@mui/material', () => ({
         value={value ?? ''}
         disabled={disabled}
         onChange={(event) => onChange?.(event as never)}
+        onBlur={onBlur}
         onKeyDown={onKeyDown as never}
       />
     );
@@ -607,16 +615,24 @@ describe('ManageMessageDrawer edit mode', () => {
 
     await act(async () => {
       textFieldPropsByLabel
-        .get('Координати (lat, lon або MGRS)')
+        .get('Додати координату')
         ?.onChange?.({ target: { value: 'not-a-coordinate' } });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      textFieldPropsByLabel.get('Додати координату')?.onBlur?.();
       await Promise.resolve();
     });
     expect(submitButton.disabled).toBe(true);
 
     await act(async () => {
       textFieldPropsByLabel
-        .get('Координати (lat, lon або MGRS)')
+        .get('Додати координату')
         ?.onChange?.({ target: { value: '49.1, 37.2' } });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      textFieldPropsByLabel.get('Додати координату')?.onBlur?.();
       await Promise.resolve();
     });
     expect(submitButton.disabled).toBe(false);

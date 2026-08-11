@@ -285,6 +285,7 @@ export function convertCoordinateToWgs84(coord: ImporterCoordinate): LatLng | nu
   try {
     if (coord.kind === 'usk2000') {
       const result = td_usk2000_to_wgs84({ x: coord.x, y: coord.y });
+      if (!result) return null;
       return coordinateToLatLng({ kind: 'wgs84', lat: result.x, lng: result.y });
     }
     if (coord.kind === 'mgrs') {

@@ -10,7 +10,7 @@ import {
   type DirectSubmitResponse,
 } from '../../../services/api/direct-submit';
 import type { RecentValues } from './useRecentValues';
-import { parseCoordLine, type MessageFormData } from './manage-message-drawer.schema';
+import { parseCoords, type MessageFormData } from './manage-message-drawer.schema';
 import { combineDateTimeToMs, formatDateInputValueInTimeZone } from '../../../utils/misc';
 import { MAX_MESSAGE_ATTACHMENTS } from './useMessageUppy';
 
@@ -102,11 +102,7 @@ export function useMessageSubmit({
         }
       }
 
-      const coordsResult: { lat: number; lon: number }[] = [];
-      if (data.coords && data.coords.trim()) {
-        const coord = parseCoordLine(data.coords);
-        if (coord) coordsResult.push(coord);
-      }
+      const coordsResult = parseCoords(data.coords ?? '');
 
       const dateValue = data.date as Dayjs | null;
       const timeValue = data.time as Dayjs | null;

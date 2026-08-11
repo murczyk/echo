@@ -1355,9 +1355,12 @@ async fn replace_submit_tags(
 }
 
 fn format_geo_coordinates(coords: &[GeoCoordinates]) -> Option<String> {
-    coords
-        .first()
-        .map(|coords| format!("{}, {}", coords.lat, coords.lon))
+    (!coords.is_empty()).then(|| {
+        coords
+            .iter()
+            .map(|coords| format!("{}, {}", coords.lat, coords.lon))
+            .join("\n")
+    })
 }
 
 fn format_submit_locations(locations: &[String]) -> Option<String> {
@@ -3394,7 +3397,10 @@ mod tests {
                 .and_hms_opt(12, 34, 56)
                 .unwrap()
         );
-        assert_eq!(message.coords.as_deref(), Some("49.12345, 37.12345"));
+        assert_eq!(
+            message.coords.as_deref(),
+            Some("49.12345, 37.12345\n50, 38")
+        );
         assert_eq!(message.text, "Повне повідомлення");
         assert_eq!(message.extended_form.as_deref(), Some("Коментар"));
         assert_eq!(
@@ -4005,10 +4011,16 @@ mod tests {
             text: Some("рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string()),
             comment: Some("Сигнали: dmr".to_string()),
             freq: Some("145.02678".to_string()),
-            coords: vec![GeoCoordinates {
-                lat: 49.12345,
-                lon: 37.12345,
-            }],
+            coords: vec![
+                GeoCoordinates {
+                    lat: 49.12345,
+                    lon: 37.12345,
+                },
+                GeoCoordinates {
+                    lat: 49.22345,
+                    lon: 37.22345,
+                },
+            ],
             from_callsign: Some("ЯРУС".to_string()),
             to: vec!["СВЕТЛЫЙ".to_string()],
             timestamp: submit_timestamp(now),
@@ -4081,6 +4093,17 @@ mod tests {
         assert_eq!(inbox_item.lat, Some(49.12345));
         assert_eq!(inbox_item.lng, Some(37.12345));
         assert_eq!(inbox_item.checked, Some(true));
+        let pelengs = sigint_peleng::Entity::find()
+            .filter(
+                sigint_peleng::Column::SourceInboxItemId.eq(submitted.inbox_id),
+            )
+            .order_by_asc(sigint_peleng::Column::Id)
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(pelengs.len(), 2);
+        assert_eq!((pelengs[0].lat, pelengs[0].lng), (49.12345, 37.12345));
+        assert_eq!((pelengs[1].lat, pelengs[1].lng), (49.22345, 37.22345));
         let comment = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
             .one(&env.dbx)

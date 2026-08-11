@@ -34,6 +34,7 @@ import { memo, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentProps, MouseEvent, ReactNode } from 'react';
 import { ELLIPSIS, isPresent } from '../../../utils/misc';
 import { blurActiveElement } from '../../../utils/focus';
+import { formatCoordinateLocality } from '../../../../maps/coordinate-locality';
 
 import type { InboxMessage } from '../../../../../Bindings';
 import type {
@@ -46,6 +47,7 @@ import {
   type MessageCardEtalonDisplayModel,
   type MessageCardNavigationMenuItem,
 } from './message-card.utils';
+import { formatCoordinatePreviewPointCount } from './message-coordinate-preview';
 
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
@@ -946,8 +948,19 @@ function MessageCardHeaderComponent({
   const locationDisplayValue = etalonDisplayModel.locationDisplayValue;
   const showTopGridLocation =
     etalonDisplayModel.primaryKind !== 'location' && locationDisplayValue != null;
-  let coordsDisplayValue: string | null = null;
-  if (isPresent(msg.coords) && msg.coords.trim() !== '') {
+  const persistedCoordinates = msg.coordsWithLocality ?? [];
+  const primaryLocality = formatCoordinateLocality(persistedCoordinates[0]?.locality ?? null);
+  let coordsDisplayValue: string | null = primaryLocality;
+  if (primaryLocality != null) {
+    if (persistedCoordinates.length > 1) {
+      coordsDisplayValue = `${primaryLocality} · ще ${persistedCoordinates.length - 1}`;
+    }
+  } else if (persistedCoordinates.length > 1) {
+    coordsDisplayValue = formatCoordinatePreviewPointCount(persistedCoordinates.length);
+  } else if (primaryLocality == null && persistedCoordinates[0] != null) {
+    const { lat, lon } = persistedCoordinates[0].coords;
+    coordsDisplayValue = `${Number(lat.toFixed(5))}, ${Number(lon.toFixed(5))}`;
+  } else if (isPresent(msg.coords) && msg.coords.trim() !== '') {
     coordsDisplayValue = msg.coords.trim();
     const match = coordsDisplayValue.match(/^([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)$/);
     if (match) {

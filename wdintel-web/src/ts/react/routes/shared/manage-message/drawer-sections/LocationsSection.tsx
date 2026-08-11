@@ -4,6 +4,8 @@ import { FormSectionWrapper } from './FormSectionWrapper';
 import { normalizeMultiValue, type MessageFormData } from '../manage-message-drawer.schema';
 import type { SettlementDetails } from '../../../../services/api/settlements';
 import { useSettlementAutocomplete } from './useSettlementAutocomplete';
+import { CoordinateInputPreview } from './CoordinateInputPreview';
+import { CoordinateListInput } from './CoordinateListInput';
 
 type LocationAutocompleteOption =
   | { kind: 'recent'; key: string; name: string }
@@ -31,6 +33,8 @@ function optionKey(option: AutocompleteValue): string {
 export function LocationsSection({ busy, recentValues, open, onError }: Props) {
   const {
     control,
+    clearErrors,
+    setError,
     formState: { errors },
   } = useFormContext<MessageFormData>();
   const coordsText = useWatch({ control, name: 'coords' });
@@ -68,7 +72,10 @@ export function LocationsSection({ busy, recentValues, open, onError }: Props) {
   ];
 
   return (
-    <FormSectionWrapper title="Локації та координати">
+    <FormSectionWrapper
+      title="Локації та координати"
+      action={<CoordinateInputPreview value={coordsText ?? ''} busy={busy} onError={onError} />}
+    >
       <Controller
         name="locations"
         control={control}
@@ -140,14 +147,16 @@ export function LocationsSection({ busy, recentValues, open, onError }: Props) {
         name="coords"
         control={control}
         render={({ field }) => (
-          <TextField
-            {...field}
-            label="Координати (lat, lon або MGRS)"
-            fullWidth
-            error={!!errors.coords}
-            helperText={errors.coords?.message ?? null}
+          <CoordinateListInput
+            value={field.value ?? ''}
+            onChange={field.onChange}
+            onBlur={field.onBlur}
+            onErrorChange={(message) => {
+              if (message) setError('coords', { type: 'manual', message });
+              else clearErrors('coords');
+            }}
             disabled={busy}
-            placeholder="49.12345, 37.12345"
+            error={errors.coords?.message}
           />
         )}
       />

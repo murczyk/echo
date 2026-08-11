@@ -467,7 +467,24 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(mgrsLabel?.style.lineHeight).toBe('1');
     expect(wgsValue?.style.fontVariantNumeric).toBe('tabular-nums');
     expect(mgrsValue?.style.fontVariantNumeric).toBe('tabular-nums');
-    expect(panel?.children.length).toBe(2);
+    expect(document.body.querySelector('[data-coordinate-row="ск-42"]')).toBeNull();
+    expect(document.body.querySelector('[data-coordinate-row="уск-2000"]')).toBeNull();
+    expect(document.body.querySelector('[data-coordinate-row="utm"]')).toBeNull();
+
+    const expandButton = document.body.querySelector(
+      'button[aria-label="Показати інші формати"]',
+    ) as HTMLButtonElement | null;
+    expect(expandButton).not.toBeNull();
+
+    await act(async () => {
+      expandButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(document.body.querySelector('[data-coordinate-row="ск-42"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-coordinate-row="уск-2000"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-coordinate-row="utm"]')).not.toBeNull();
+
     const wgsRow = document.body.querySelector(
       '[data-coordinate-row="wgs84"]',
     ) as HTMLElement | null;
@@ -480,8 +497,8 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(mgrsRow?.style.display).toBe('flex');
     expect(mgrsRow?.style.alignItems).toBe('center');
     expect(mgrsRow?.style.height).toBe('24px');
-    expect(wgsLabel?.style.width).toBe('56px');
-    expect(mgrsLabel?.style.width).toBe('56px');
+    expect(wgsLabel?.style.width).toBe('80px');
+    expect(mgrsLabel?.style.width).toBe('80px');
     const mgrsContent = document.body.querySelector(
       '[data-coordinate-row="mgrs-content"]',
     ) as HTMLElement | null;
