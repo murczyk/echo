@@ -608,6 +608,76 @@ bin/resync.sh --yes
 bin/finish-resync.sh
 ```
 
+### Bounded ClickHouse diagnostic logs
+
+Initial provisioning installs a fleet-wide policy with `information` server
+and `system.text_log` levels. It retains `system.text_log` for 3 days,
+`system.query_log` for 7 days, and `system.trace_log` plus
+`system.processors_profile_log` for 1 day. Existing hosts receive the same
+policy through the fail-fast maintenance command without rerunning the whole
+`02-configure-analytics.sh` step.
+
+Install the updated day-two command from the synced analytics bundle, then run
+the read-only check as root. The check authenticates with
+`/etc/echo-analytics/clickhouse.env`, prints effective levels, table TTLs, row
+counts, and compressed sizes, and exits nonzero on drift:
+
+```bash
+bin/03-install-services.sh --no-start
+sudo /opt/echo-analytics/bin/manage-system-logs.sh --check
+```
+
+Before each apply, record `df -h / /var/lib/clickhouse`, `bin/status.sh`, all
+`echo-analytics.target` service states, and the corresponding Proxmox
+`pvesm status`/`zpool list` output. Do not create a ZFS snapshot on `pve-hz-1`:
+it does not have safe snapshot headroom, and the existing February snapshots
+must remain untouched.
+
+Apply only with all three explicit mutation flags:
+
+```bash
+sudo /opt/echo-analytics/bin/manage-system-logs.sh --apply --truncate --yes
+```
+
+The command validates the ClickHouse XML, flushes the current log buffers and
+aligns the four live table TTLs to prevent ClickHouse from rolling them aside,
+atomically installs the XML, restarts ClickHouse, waits for an authenticated
+health response, and synchronously truncates only these four diagnostic
+tables:
+
+- `system.text_log`
+- `system.query_log`
+- `system.trace_log`
+- `system.processors_profile_log`
+
+TTL alignment disables immediate TTL materialization because the same four
+tables are truncated later in the command. Each allowlisted truncate also
+disables ClickHouse's per-query table-size drop limit so oversized diagnostic
+logs do not fail after configuration and restart have already succeeded.
+
+It never truncates replicated application tables, touches ZFS snapshots, or
+restarts any other service. A failed health, configuration, truncate, or TTL
+operation aborts immediately; do not continue the fleet rollout after a
+failure.
+
+Canary `echo-kharkiv2-clickhouse` first. For 15 minutes after apply, require
+all analytics services to remain active, `bin/check-analytics-health.sh` and
+`bin/status.sh` to pass, the CDC heartbeat and gateway query path to remain
+fresh, `--check` to report the expected levels/TTLs, and all four tables to
+resume normal inserts without a trace-level `text_log` flood. Then apply one
+production node at a time in this order, repeating the same checks and
+checking its Proxmox pool before continuing:
+
+1. `echo-pivnich-clickhouse`
+2. `echo-zp2-clickhouse`
+3. `echo-skhid-clickhouse`
+4. `echo-siversk-clickhouse`
+
+Expected aggregate recovery is approximately 547 GiB on `pve-hz-1` and
+418 GiB on `pve-hz-3`. Recheck diagnostic-table sizes and pool growth after
+one hour and 24 hours; production acceptance requires both pools to stay on a
+bounded growth trajectory for the full 24 hours.
+
 ### The correct day-two table-selection solution
 
 [env/tables-exclude.txt](env/tables-exclude.txt) is the versioned source of
@@ -852,3 +922,13 @@ Remove or disable `[analytics]` in Echo and restart it. PostgreSQL operation is
 unchanged. Stop the analytics target afterward if desired. Keep the source
 slot only while planning to resume; otherwise deliberately drop the mirror
 and verify the slot is gone so WAL is no longer retained.
+
+To roll back only the diagnostic-log policy without rolling the current tables
+aside, authenticate with `/etc/echo-analytics/clickhouse.env`, run `SYSTEM
+FLUSH LOGS`, remove the TTL from `text_log`, `query_log`, and `trace_log`, and
+restore the package-default 30-day TTL on `processors_profile_log`. Then move
+`/etc/clickhouse-server/config.d/echo-system-logs.xml` to a non-XML backup and
+restart ClickHouse. Run the analytics health check; the policy `--check` is
+expected to report drift after this intentional rollback. Previously truncated
+diagnostic rows cannot be recovered; replicated application data, MinIO,
+PostgreSQL, and ZFS snapshots are unaffected.

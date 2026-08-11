@@ -10,6 +10,7 @@
 
 ## NEXT
 
+- [#3129](https://github.com/echoua/echo/issues/3129) 🐞👷🚨 Аналітика: обмежено рівень і термін зберігання діагностичних логів ClickHouse; після встановлення оновлених analytics-скриптів спочатку виконати `sudo /opt/echo-analytics/bin/manage-system-logs.sh --apply --truncate --yes` на `echo-kharkiv2-clickhouse`, перевірити аналітику протягом 15 хвилин, а потім по одному на `echo-pivnich-clickhouse`, `echo-zp2-clickhouse`, `echo-skhid-clickhouse` і `echo-siversk-clickhouse`; команда безповоротно очищає лише чотири системні таблиці логів.
 - [#3108](https://github.com/echoua/echo/issues/3108) ✅🛡️👷 Адмін, ШІ-парсинг позивних: додано вбудований промпт і кнопку скидання тимчасового перевизначення; після деплою скинути перевизначення на `echo-siversk`, `echo-zp2`, `echo-pivnich` і `echo-skhid`.
 - [#3113](https://github.com/echoua/echo/issues/3113) ✅🛡️👷 Підрозділи: додано автоматичну прив'язку перехоплень через структурну ієрархію ORBIT, мережі й редаговані теги, керування тегами на сторінці підрозділу та адмінку нерозпізнаних підрозділів із перевіркою кожні 10 секунд і очищенням за 30 днів; після деплою запустити `sudo /usr/bin/wdintel-rs --mode=live oneoff-backfill-inbox-unit-links`, а на інстансах із ClickHouse перед ручним застосуванням міграцій виконати `/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes` і перевірити mirror resync `sigint_inbox_item` та snapshot `sigint_inbox_item_unit`.
 - [#2917](https://github.com/echoua/echo/issues/2917) ✅ Аналіз: додано наскрізний перегляд вкладень повідомлення всіх типів.

@@ -700,6 +700,14 @@ environment files by deployment commands. Each participating Echo instance
 receives its own analytics container, credentials, publication, replication
 slot, ClickHouse data, and recovery lifecycle.
 
+ClickHouse's local diagnostic tables are operational metadata rather than part
+of the raw, current-state, or derived application datasets. Provisioning and
+the day-two maintenance command keep server and `text_log` verbosity at
+`information`, retain `text_log` for 3 days, `query_log` for 7 days, and
+`trace_log` plus `processors_profile_log` for 1 day. The maintenance boundary
+permits a ClickHouse-only restart and truncation of those four system tables;
+it does not mutate CDC data, application storage, or ZFS snapshots.
+
 GOI deployments build the `echo-swapp` and messenger Debian artifacts on the
 builder configured by `goi_builder` in `goi/justfile`, using its
 `~/workspace/echo` checkout. The operator workstation only transfers the
