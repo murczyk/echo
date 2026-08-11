@@ -27,6 +27,7 @@ use sea_orm::{
     JoinType, ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
     QueryTrait, RelationTrait, TransactionTrait,
 };
+use std::collections::BTreeSet;
 use std::time::Duration as StdDuration;
 use uuid::Uuid;
 
@@ -45,11 +46,41 @@ fn nonempty(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|value| !value.is_empty())
 }
 
-fn unresolved_text<'a>(
-    unit_v2: Option<&'a str>,
-    unit: Option<&'a str>,
-) -> Option<&'a str> {
-    nonempty(unit_v2).or_else(|| nonempty(unit))
+#[derive(Debug, Clone, Copy)]
+enum UnitTextSource {
+    UnitV2,
+    Unit,
+}
+
+#[derive(Debug, Clone)]
+struct UnitTextCandidate {
+    text: String,
+    source: UnitTextSource,
+}
+
+fn unit_text_candidates(
+    unit_v2: Option<&str>,
+    unit: Option<&str>,
+) -> Vec<UnitTextCandidate> {
+    let (source, texts): (UnitTextSource, Vec<&str>) =
+        if let Some(unit_v2) = nonempty(unit_v2) {
+            (UnitTextSource::UnitV2, unit_v2.split(',').collect_vec())
+        } else if let Some(unit) = nonempty(unit) {
+            (UnitTextSource::Unit, vec![unit])
+        } else {
+            return Vec::new();
+        };
+
+    texts
+        .into_iter()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(|text| UnitTextCandidate {
+            text: text.to_string(),
+            source,
+        })
+        .unique_by(|candidate| normalize_unit_label(&candidate.text))
+        .collect_vec()
 }
 
 fn normalize_structural_text(value: &str) -> String {
@@ -282,6 +313,33 @@ where
     }
 }
 
+async fn resolve_unit_text_candidates<C>(
+    db: &C,
+    unit_v2: Option<&str>,
+    unit: Option<&str>,
+) -> anyhow::Result<Vec<(String, Option<i64>)>>
+where
+    C: ConnectionTrait,
+{
+    let mut resolved = Vec::new();
+    for candidate in unit_text_candidates(unit_v2, unit) {
+        let sigint_unit_id = match candidate.source {
+            UnitTextSource::UnitV2 => {
+                resolve_sigint_unit_id(db, Some(&candidate.text), None)
+                    .await
+                    .context(h!())?
+            }
+            UnitTextSource::Unit => {
+                resolve_sigint_unit_id(db, None, Some(&candidate.text))
+                    .await
+                    .context(h!())?
+            }
+        };
+        resolved.push((candidate.text, sigint_unit_id));
+    }
+    Ok(resolved)
+}
+
 async fn mark_failure_resolved<C>(
     db: &C,
     inbox_item_id: i64,
@@ -324,6 +382,11 @@ where
         .is_some();
     let existing = failed_inbox_unit::Entity::find()
         .filter(failed_inbox_unit::Column::InboxItemId.eq(inbox_item_id))
+        .filter(Expr::cust_with_values(
+            "lower(regexp_replace(btrim(failed_inbox_unit.unit_txt), '[[:space:]]+', ' ', 'g')) = $1",
+            vec![normalize_unit_label(unit_txt)],
+        ))
+        .order_by_asc(failed_inbox_unit::Column::Id)
         .one(db)
         .await
         .context(h!())?;
@@ -336,6 +399,7 @@ where
             inbox_item_id: Set(inbox_item_id),
             unit_txt: Set(unit_txt.trim().to_string()),
             deleted_at: Set(None),
+            note: NotSet,
         }
         .insert(db)
         .await
@@ -352,10 +416,10 @@ where
     Ok(())
 }
 
-async fn replace_parsed_unit_link<C>(
+async fn replace_parsed_unit_links<C>(
     db: &C,
     inbox_item_id: i64,
-    sigint_unit_id: Option<i64>,
+    sigint_unit_ids: &[i64],
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
@@ -369,17 +433,25 @@ where
         .exec(db)
         .await
         .context(h!())?;
-    if let Some(sigint_unit_id) = sigint_unit_id {
-        sigint_inbox_item_unit::ActiveModel {
+
+    let unit_links = sigint_unit_ids
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|sigint_unit_id| sigint_inbox_item_unit::ActiveModel {
             id: NotSet,
             created_at: NotSet,
             item_id: Set(inbox_item_id),
             unit_id: Set(sigint_unit_id),
             kind: Set(SigintInboxItemUnitKind::Parsed),
-        }
-        .insert(db)
-        .await
-        .context(h!())?;
+        })
+        .collect_vec();
+    if !unit_links.is_empty() {
+        sigint_inbox_item_unit::Entity::insert_many(unit_links)
+            .exec_without_returning(db)
+            .await
+            .context(h!())?;
     }
     Ok(())
 }
@@ -469,29 +541,36 @@ pub(crate) async fn resolve_and_sync_inbox_item<C>(
 where
     C: ConnectionTrait,
 {
-    let sigint_unit_id = resolve_sigint_unit_id(db, unit_v2, unit)
+    let resolved_unit_texts = resolve_unit_text_candidates(db, unit_v2, unit)
         .await
         .context(h!())?;
-    replace_parsed_unit_link(db, inbox_item_id, sigint_unit_id)
+    let sigint_unit_ids = resolved_unit_texts
+        .iter()
+        .filter_map(|(_, sigint_unit_id)| *sigint_unit_id)
+        .collect_vec();
+    replace_parsed_unit_links(db, inbox_item_id, &sigint_unit_ids)
         .await
         .context(h!())?;
 
-    if sigint_unit_id.is_some() {
-        mark_failure_resolved(db, inbox_item_id)
-            .await
-            .context(h!())?;
-    } else if let Some(unit_txt) = unresolved_text(unit_v2, unit) {
-        upsert_failure(db, inbox_item_id, unit_txt)
-            .await
-            .context(h!())?;
-    } else {
+    if resolved_unit_texts.is_empty() {
         failed_inbox_unit::Entity::delete_many()
             .filter(failed_inbox_unit::Column::InboxItemId.eq(inbox_item_id))
             .exec(db)
             .await
             .context(h!())?;
+    } else {
+        mark_failure_resolved(db, inbox_item_id)
+            .await
+            .context(h!())?;
+        for (unit_txt, sigint_unit_id) in resolved_unit_texts {
+            if sigint_unit_id.is_none() {
+                upsert_failure(db, inbox_item_id, &unit_txt)
+                    .await
+                    .context(h!())?;
+            }
+        }
     }
-    Ok(sigint_unit_id)
+    Ok(sigint_unit_ids.into_iter().next())
 }
 
 pub(crate) async fn mark_failures_pending_for_text<C>(
@@ -539,7 +618,7 @@ where
                     .eq(SigintInboxItemUnitKind::Parsed),
             )
             .filter(Expr::cust_with_values(
-                "lower(regexp_replace(btrim(coalesce(nullif(btrim(sigint_inbox_item.unit_v2), ''), sigint_inbox_item.unit)), '[[:space:]]+', ' ', 'g')) = $1",
+                "exists (select 1 from regexp_split_to_table(coalesce(nullif(btrim(sigint_inbox_item.unit_v2), ''), sigint_inbox_item.unit), ',') as unit_part(unit_txt) where lower(regexp_replace(btrim(unit_part.unit_txt), '[[:space:]]+', ' ', 'g')) = $1)",
                 vec![normalized_unit_txt.clone()],
             ))
             .apply_if(last_id, |query, last_id| {
@@ -585,42 +664,43 @@ where
         failure.delete(db).await.context(h!())?;
         return Ok(());
     };
-    let current_text = unresolved_text(
+    let current_unit_texts = unit_text_candidates(
         inbox_item.unit_v2.as_deref(),
         inbox_item.unit.as_deref(),
     );
-    let sigint_unit_id = resolve_sigint_unit_id(
+    let failure_unit_txt = normalize_unit_label(&failure.unit_txt);
+    if !current_unit_texts.iter().any(|candidate| {
+        normalize_unit_label(&candidate.text) == failure_unit_txt
+    }) {
+        failure.delete(db).await.context(h!())?;
+        return Ok(());
+    }
+
+    let failure_id = failure.id;
+    resolve_and_sync_inbox_item(
         db,
+        inbox_item.id,
         inbox_item.unit_v2.as_deref(),
         inbox_item.unit.as_deref(),
     )
     .await
     .context(h!())?;
-    replace_parsed_unit_link(db, inbox_item.id, sigint_unit_id)
+    match failed_inbox_unit::Entity::find_by_id(failure_id)
+        .one(db)
         .await
-        .context(h!())?;
-    if sigint_unit_id.is_some() || current_text.is_none() {
-        failure.delete(db).await.context(h!())?;
-        return Ok(());
+        .context(h!())?
+    {
+        Some(failure) if failure.deleted => {
+            failure.delete(db).await.context(h!())?;
+        }
+        Some(_) => {
+            warn!(
+                "Reactivated unresolved inbox unit failure id={} inbox_item_id={} after verification failed",
+                failure_id, inbox_item.id
+            );
+        }
+        None => {}
     }
-
-    let current_text = current_text.unwrap();
-    let text_changed = normalize_unit_label(current_text)
-        != normalize_unit_label(&failure.unit_txt);
-    let failure_id = failure.id;
-    let mut failure = failure.into_active_model();
-    failure.deleted = Set(false);
-    failure.deleted_at = Set(None);
-    failure.unit_txt = Set(current_text.to_string());
-    if text_changed {
-        failure.is_bad_data = Set(false);
-    }
-    failure.update(db).await.context(h!())?;
-    warn!(
-        "Reactivated unresolved inbox unit failure id={} inbox_item_id={} after verification failed",
-        failure_id,
-        inbox_item.id
-    );
     Ok(())
 }
 
@@ -887,12 +967,21 @@ mod tests {
     }
 
     #[test]
-    fn unresolved_text_prefers_unit_v2() {
+    fn unit_text_candidates_split_unit_v2_and_prefer_it_over_unit() {
         assert_eq!(
-            unresolved_text(Some(" 1 мсб "), Some("raw")),
-            Some("1 мсб")
+            unit_text_candidates(Some(" 1 мсб, 2 мсб, 1 мсб "), Some("raw"))
+                .into_iter()
+                .map(|candidate| candidate.text)
+                .collect_vec(),
+            vec!["1 мсб", "2 мсб"]
         );
-        assert_eq!(unresolved_text(Some(" "), Some(" raw ")), Some("raw"));
+        assert_eq!(
+            unit_text_candidates(Some(" "), Some(" raw "))
+                .into_iter()
+                .map(|candidate| candidate.text)
+                .collect_vec(),
+            vec!["raw"]
+        );
     }
 
     #[tokio::test]
@@ -929,6 +1018,82 @@ mod tests {
                 .await
                 .unwrap(),
             None
+        );
+        assert_eq!(
+            resolve_sigint_unit_id(&env.dbx, Some("333 мсб власний тег"), None)
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn comma_separated_unit_v2_syncs_each_text_independently() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let first = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let second = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let first_label = format!("multi-first-{}", Uuid::new_v4());
+        let second_label = format!("multi-second-{}", Uuid::new_v4());
+        let missing_label = format!("multi-missing-{}", Uuid::new_v4());
+        for (unit, label) in [(&first, &first_label), (&second, &second_label)]
+        {
+            sigint_unit_label::ActiveModel {
+                sigint_unit_id: Set(unit.id),
+                label: Set(label.to_string()),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        let item = insert_inbox_item(
+            &env.dbx,
+            Some(&format!(" {first_label}, {missing_label}, {second_label} ")),
+            None,
+            None,
+        )
+        .await;
+
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            item.id,
+            item.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                item.id,
+                SigintInboxItemUnitKind::Parsed,
+            )
+            .await,
+            vec![first.id, second.id]
+        );
+        let failures = failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(item.id))
+            .filter(failed_inbox_unit::Column::Deleted.eq(false))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(failures.len(), 1);
+        assert_eq!(
+            normalize_unit_label(&failures[0].unit_txt),
+            normalize_unit_label(&missing_label)
         );
     }
 

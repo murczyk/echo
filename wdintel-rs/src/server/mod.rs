@@ -953,7 +953,12 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(
                 crate::inbox::unresolved_units::classify_unresolved_unit_label,
             )
-            .service(crate::inbox::unresolved_units::search_orbit_units)
+            .service(
+                crate::inbox::unresolved_units::archive_unresolved_unit_label,
+            )
+            .service(
+                crate::inbox::unresolved_units::update_unresolved_unit_label_note,
+            )
             .service(
                 crate::inbox::unresolved_units::resolve_unresolved_unit_label,
             )

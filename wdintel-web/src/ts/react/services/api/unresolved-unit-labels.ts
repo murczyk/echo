@@ -1,11 +1,10 @@
 import type {
+  ArchiveUnresolvedUnitLabelReq,
   ClassifyUnresolvedUnitLabelReq,
   ListUnresolvedUnitLabelsReq,
   ListUnresolvedUnitLabelsRsp,
-  OrbitUnitLinkCandidate,
-  OrbitUnitLinkCandidatesRsp,
-  OrbitUnitSearchReq,
   ResolveUnresolvedUnitLabelReq,
+  UpdateUnresolvedUnitLabelNoteReq,
   UpdateUnresolvedUnitLabelsRsp,
 } from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
@@ -34,6 +33,26 @@ export async function classifyUnresolvedUnitLabel(
   return transformSnakeToCamel<UpdateUnresolvedUnitLabelsRsp>(raw);
 }
 
+export async function archiveUnresolvedUnitLabel(
+  req: ArchiveUnresolvedUnitLabelReq,
+): Promise<UpdateUnresolvedUnitLabelsRsp> {
+  const raw = await postJson<unknown>(
+    '/api/admin/unresolved-unit-label/archive',
+    transformCamelToSnake(req),
+  );
+  return transformSnakeToCamel<UpdateUnresolvedUnitLabelsRsp>(raw);
+}
+
+export async function updateUnresolvedUnitLabelNote(
+  req: UpdateUnresolvedUnitLabelNoteReq,
+): Promise<UpdateUnresolvedUnitLabelsRsp> {
+  const raw = await postJson<unknown>(
+    '/api/admin/unresolved-unit-label/note',
+    transformCamelToSnake(req),
+  );
+  return transformSnakeToCamel<UpdateUnresolvedUnitLabelsRsp>(raw);
+}
+
 export async function resolveUnresolvedUnitLabel(
   req: ResolveUnresolvedUnitLabelReq,
 ): Promise<UpdateUnresolvedUnitLabelsRsp> {
@@ -42,16 +61,4 @@ export async function resolveUnresolvedUnitLabel(
     transformCamelToSnake(req),
   );
   return transformSnakeToCamel<UpdateUnresolvedUnitLabelsRsp>(raw);
-}
-
-export async function searchUnresolvedUnitOrbitUnits(
-  req: OrbitUnitSearchReq,
-  options?: RequestOptions,
-): Promise<OrbitUnitLinkCandidate[]> {
-  const raw = await postJson<unknown>(
-    '/api/admin/unresolved-unit-label/orbit-search',
-    transformCamelToSnake(req),
-    options,
-  );
-  return transformSnakeToCamel<OrbitUnitLinkCandidatesRsp>(raw).units ?? [];
 }

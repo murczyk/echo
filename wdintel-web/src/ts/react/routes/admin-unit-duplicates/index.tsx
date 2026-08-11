@@ -45,7 +45,15 @@ function sigintUnitSegments(unit: Unit): string {
     .join(' ');
 }
 
-export function AdminUnitDuplicatesPage({ authUserRoles }: { authUserRoles: string[] }) {
+type AdminUnitDuplicatesPageProps = {
+  authUserRoles: string[];
+  embedded?: boolean;
+};
+
+export function AdminUnitDuplicatesPage({
+  authUserRoles,
+  embedded = false,
+}: AdminUnitDuplicatesPageProps) {
   const [units, setUnits] = useState<UnitDuplicate[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -174,7 +182,7 @@ export function AdminUnitDuplicatesPage({ authUserRoles }: { authUserRoles: stri
       defaultColumnVisibility={DEFAULT_COLUMN_VISIBILITY}
       defaultEnableColumnOrdering={false}
     >
-      <Stack spacing={1.5} sx={{ height: '100%', minHeight: 0, p: 2 }}>
+      <Stack spacing={1.5} sx={{ height: '100%', minHeight: 0, p: embedded ? 0 : 2 }}>
         <TablePageToolbar
           title="Дублікати Підрозділів"
           withGlobalTextFilter

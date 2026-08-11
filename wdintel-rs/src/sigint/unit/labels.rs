@@ -3,7 +3,9 @@ use crate::entities::{sigint_unit, sigint_unit_label};
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Env, ShortContext};
-use crate::users::{ensure_rer_role, has_role, login_id_from_identity};
+use crate::users::{
+    ensure_admin, ensure_rer_role, has_role, login_id_from_identity,
+};
 use actix_web::post;
 use actix_web::web::{Data, Json};
 use sea_orm::sea_query::Expr;
@@ -17,7 +19,8 @@ pub(crate) fn validate_label(value: &str) -> Result<String, AppError> {
     let label = value.split_whitespace().collect::<Vec<_>>().join(" ");
     if label.chars().count() < 2 {
         return Err(AppError::BL {
-            msg: "Тег підрозділу має містити щонайменше 2 символи".to_string(),
+            msg: "Синонім підрозділу має містити щонайменше 2 символи"
+                .to_string(),
         });
     }
     Ok(label)
@@ -80,7 +83,8 @@ where
             return Ok(existing);
         }
         return Err(AppError::BL {
-            msg: "Такий тег уже прив'язаний до іншого підрозділу".to_string(),
+            msg: "Такий синонім уже прив'язаний до іншого підрозділу"
+                .to_string(),
         });
     }
 
@@ -98,7 +102,7 @@ where
             .contains("sigint_unit_label_normalized_uq")
         {
             AppError::BL {
-                msg: "Такий тег уже існує".to_string(),
+                msg: "Такий синонім уже існує".to_string(),
             }
         } else {
             AppError::from(error)
@@ -134,6 +138,7 @@ async fn ensure_label_editor(
     db: &DatabaseConnection,
     user: &actix_identity::Identity,
 ) -> Result<(), AppError> {
+    ensure_admin(db, user).await.c(h!())?;
     ensure_rer_role(db, user).await.c(h!())?;
     let login = login_id_from_identity(user).c(h!())?;
     has_role(db, &login, "UnitsEditor").await.c(h!())?;
