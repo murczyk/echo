@@ -364,6 +364,7 @@ mod m20260810_062938_echo_automation_coordinates_screenshot;
 mod m20260810_140653_inbox_unit_resolution;
 mod m20260811_064758_sigint_inbox_item_units;
 mod m20260811_073954_failed_inbox_unit_bad_text_index;
+mod m20260811_174133_drop_echo_automation_coordinates_screenshot;
 
 pub struct Migrator;
 
@@ -832,6 +833,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260811_064758_sigint_inbox_item_units::Migration),
             Box::new(
                 m20260811_073954_failed_inbox_unit_bad_text_index::Migration,
+            ),
+            Box::new(
+                m20260811_174133_drop_echo_automation_coordinates_screenshot::Migration,
             ),
         ]
     }

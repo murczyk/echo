@@ -8,6 +8,14 @@
         }
       ]
     },
+    "echo:m20260811_174133_drop_echo_automation_coordinates_screenshot": {
+      "changes": [
+        {
+          "table": "public.echo_automation",
+          "strategy": "empty_table_resnapshot"
+        }
+      ]
+    },
     "echo:m20260810_140653_inbox_unit_resolution": {
       "changes": [
         { "table": "public.failed_inbox_unit", "strategy": "excluded" },

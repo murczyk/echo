@@ -554,6 +554,7 @@ async fn ensure_automation_columns(db: &DatabaseConnection) -> Result<()> {
         alter table echo_automation
             add column if not exists stale_message_cutoff_minutes integer,
             add column if not exists resend_attachments boolean,
+            add column if not exists coordinates_screenshot boolean,
             add column if not exists coordinate_presence_mode text,
             add column if not exists polygon_filter_mode text,
             add column if not exists polygon_id bigint,
@@ -567,6 +568,7 @@ async fn ensure_automation_columns(db: &DatabaseConnection) -> Result<()> {
         update echo_automation
         set stale_message_cutoff_minutes = coalesce(stale_message_cutoff_minutes, 60),
             resend_attachments = coalesce(resend_attachments, false),
+            coordinates_screenshot = coalesce(coordinates_screenshot, false),
             coordinate_presence_mode = coalesce(coordinate_presence_mode, 'any'),
             polygon_filter_mode = coalesce(polygon_filter_mode, 'none'),
             is_paused = coalesce(is_paused, false),
@@ -581,6 +583,8 @@ async fn ensure_automation_columns(db: &DatabaseConnection) -> Result<()> {
             alter column stale_message_cutoff_minutes set not null,
             alter column resend_attachments set default false,
             alter column resend_attachments set not null,
+            alter column coordinates_screenshot set default false,
+            alter column coordinates_screenshot set not null,
             alter column coordinate_presence_mode set default 'any',
             alter column coordinate_presence_mode set not null,
             alter column polygon_filter_mode set default 'none',
