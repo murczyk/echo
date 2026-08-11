@@ -1,6 +1,7 @@
 import type {
   AiCallsignPageRsp,
   AiCallsignParsingRsp,
+  AiCallsignPromptState,
   AiCallsignTestMessageIdReq,
   AiCallsignTestMessageItem,
   AiCallsignWorkerSettingsItem,
@@ -14,6 +15,10 @@ import { postJson, postVoid } from './client';
 
 export function getAiCallsignPage(): Promise<AiCallsignPageRsp> {
   return postJson<AiCallsignPageRsp>('/api/admin/ai-callsigns/page');
+}
+
+export function resetAiCallsignPrompt(): Promise<AiCallsignPromptState> {
+  return postJson<AiCallsignPromptState>('/api/admin/ai-callsigns/prompt/reset');
 }
 
 export function createAiCallsignTestMessage(

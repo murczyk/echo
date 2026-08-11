@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "guardRowsPerSourceSplit": 32,
+  "sources": [
+    {
+      "name": "full-wip",
+      "path": "raw/reviews/full-wip.csv",
+      "delimiter": ";",
+      "priority": 10
+    },
+    {
+      "name": "batch-01",
+      "path": "raw/reviews/batch-01.csv",
+      "delimiter": ",",
+      "priority": 20
+    }
+  ]
+}

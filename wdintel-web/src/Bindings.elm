@@ -11022,6 +11022,7 @@ aiCallsignWorkerSettingsItemEncoder struct =
 
 type alias AiCallsignPageRsp =
     { prompt : String
+    , promptOverridden : Bool
     , engines : List (AiCallsignEngineItem)
     , messages : List (AiCallsignTestMessageItem)
     , worker : AiCallsignWorkerSettingsItem
@@ -11032,9 +11033,24 @@ aiCallsignPageRspEncoder : AiCallsignPageRsp -> Json.Encode.Value
 aiCallsignPageRspEncoder struct =
     Json.Encode.object
         [ ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "promptOverridden", (Json.Encode.bool) struct.promptOverridden )
         , ( "engines", (Json.Encode.list (aiCallsignEngineItemEncoder)) struct.engines )
         , ( "messages", (Json.Encode.list (aiCallsignTestMessageItemEncoder)) struct.messages )
         , ( "worker", (aiCallsignWorkerSettingsItemEncoder) struct.worker )
+        ]
+
+
+type alias AiCallsignPromptState =
+    { prompt : String
+    , promptOverridden : Bool
+    }
+
+
+aiCallsignPromptStateEncoder : AiCallsignPromptState -> Json.Encode.Value
+aiCallsignPromptStateEncoder struct =
+    Json.Encode.object
+        [ ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "promptOverridden", (Json.Encode.bool) struct.promptOverridden )
         ]
 
 
@@ -18449,9 +18465,17 @@ aiCallsignPageRspDecoder : Json.Decode.Decoder AiCallsignPageRsp
 aiCallsignPageRspDecoder =
     Json.Decode.succeed AiCallsignPageRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "promptOverridden" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engines" (Json.Decode.list (aiCallsignEngineItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (aiCallsignTestMessageItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "worker" (aiCallsignWorkerSettingsItemDecoder)))
+
+
+aiCallsignPromptStateDecoder : Json.Decode.Decoder AiCallsignPromptState
+aiCallsignPromptStateDecoder =
+    Json.Decode.succeed AiCallsignPromptState
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "promptOverridden" (Json.Decode.bool)))
 
 
 createAiCallsignTestMessageReqDecoder : Json.Decode.Decoder CreateAiCallsignTestMessageReq

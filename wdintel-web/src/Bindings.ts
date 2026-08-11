@@ -4274,9 +4274,15 @@ export type AiCallsignWorkerSettingsItem = {
 
 export type AiCallsignPageRsp = {
   prompt: string;
+  promptOverridden: boolean;
   engines: Array<AiCallsignEngineItem>;
   messages: Array<AiCallsignTestMessageItem>;
   worker: AiCallsignWorkerSettingsItem;
+};
+
+export type AiCallsignPromptState = {
+  prompt: string;
+  promptOverridden: boolean;
 };
 
 export type CreateAiCallsignTestMessageReq = {

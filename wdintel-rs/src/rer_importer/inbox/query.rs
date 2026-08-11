@@ -7,11 +7,6 @@ use crate::error::AppError;
 use crate::rer_importer::analysis::analytics_unit::{
     apply_resolved_analytics_unit_filters, resolve_analytics_unit_filters,
 };
-#[cfg(test)]
-use crate::rer_importer::analysis::analytics_unit::{
-    split_analytics_unit_filter, ResolvedAnalyticsUnitFilter,
-    ResolvedAnalyticsUnitFilters,
-};
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::types::*;
 use crate::sigint::sender::preferred_sender_expr;

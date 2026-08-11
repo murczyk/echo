@@ -163,6 +163,10 @@ only rows orphaned from their source message or attachment are removed.
 Admins configure OpenAI-compatible engines in `/admin/system-settings-neo`.
 `/admin/ai-callsigns` provides prompt testing and an optional sequential
 bgworker that replaces regular parsed callsigns with the AI result.
+Tracked AI evaluation prompts, tools, and notes live under `ai-eval/`. Raw
+production-derived corpora stay in dated, gitignored `ai-eval/*/raw/`
+directories and are synchronized separately to Backblaze B2; see
+[`ai-eval/README.md`](../ai-eval/README.md).
 See [Echo vLLM](../echo-vllm/README.md) for the `echo-gpu-spark` worker and
 [Echo vLLM Router](../echo-vllm-router/README.md) for routing, observability,
 deployment, verification, and rollback commands. Echo uses the router as its

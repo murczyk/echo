@@ -1425,6 +1425,12 @@ ai-sync-from-cloud:
     local_directory="${WD_FASTTEXT_MODELS}/"
     s5cmd --endpoint-url "$ENDPOINT_URL" cp --if-source-newer --show-progress "$remote_files" "$local_directory"
 
+ai-eval-sync-from-cloud eval:
+    bash ai-eval/sync.sh from-cloud "{{ eval }}"
+
+ai-eval-sync-to-cloud eval:
+    bash ai-eval/sync.sh to-cloud "{{ eval }}"
+
 # run like `just copy-db-backup echo-zp2`
 [arg('server', long='server')]
 copy-db-backup server:

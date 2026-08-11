@@ -819,6 +819,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_agent::admin::stop_user_agent)
             .service(crate::ai_agent::admin::test_user_agent)
             .service(crate::ai_callsign::get_ai_callsign_page)
+            .service(crate::ai_callsign::reset_ai_callsign_prompt)
             .service(crate::ai_callsign::create_ai_callsign_test_message)
             .service(crate::ai_callsign::update_ai_callsign_test_message)
             .service(crate::ai_callsign::delete_ai_callsign_test_message)
