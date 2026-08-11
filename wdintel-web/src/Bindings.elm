@@ -6629,6 +6629,130 @@ unitAttachmentEncoder struct =
         ]
 
 
+type alias UnitLabel =
+    { id : Int
+    , label : String
+    }
+
+
+unitLabelEncoder : UnitLabel -> Json.Encode.Value
+unitLabelEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "label", (Json.Encode.string) struct.label )
+        ]
+
+
+type alias CreateUnitLabelReq =
+    { unitId : Int
+    , label : String
+    }
+
+
+createUnitLabelReqEncoder : CreateUnitLabelReq -> Json.Encode.Value
+createUnitLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_id", (Json.Encode.int) struct.unitId )
+        , ( "label", (Json.Encode.string) struct.label )
+        ]
+
+
+type alias DeleteUnitLabelReq =
+    { labelId : Int
+    }
+
+
+deleteUnitLabelReqEncoder : DeleteUnitLabelReq -> Json.Encode.Value
+deleteUnitLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "label_id", (Json.Encode.int) struct.labelId )
+        ]
+
+
+type alias UnresolvedUnitLabel =
+    { unitTxt : String
+    , quantity : Int
+    }
+
+
+unresolvedUnitLabelEncoder : UnresolvedUnitLabel -> Json.Encode.Value
+unresolvedUnitLabelEncoder struct =
+    Json.Encode.object
+        [ ( "unit_txt", (Json.Encode.string) struct.unitTxt )
+        , ( "quantity", (Json.Encode.int) struct.quantity )
+        ]
+
+
+type alias ListUnresolvedUnitLabelsReq =
+    { page : Maybe (Int)
+    }
+
+
+listUnresolvedUnitLabelsReqEncoder : ListUnresolvedUnitLabelsReq -> Json.Encode.Value
+listUnresolvedUnitLabelsReqEncoder struct =
+    Json.Encode.object
+        [ ( "page", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.page )
+        ]
+
+
+type alias ListUnresolvedUnitLabelsRsp =
+    { rows : List (UnresolvedUnitLabel)
+    , totalCount : Int
+    , page : Int
+    , pageSize : Int
+    }
+
+
+listUnresolvedUnitLabelsRspEncoder : ListUnresolvedUnitLabelsRsp -> Json.Encode.Value
+listUnresolvedUnitLabelsRspEncoder struct =
+    Json.Encode.object
+        [ ( "rows", (Json.Encode.list (unresolvedUnitLabelEncoder)) struct.rows )
+        , ( "total_count", (Json.Encode.int) struct.totalCount )
+        , ( "page", (Json.Encode.int) struct.page )
+        , ( "page_size", (Json.Encode.int) struct.pageSize )
+        ]
+
+
+type alias ClassifyUnresolvedUnitLabelReq =
+    { unitTxt : String
+    }
+
+
+classifyUnresolvedUnitLabelReqEncoder : ClassifyUnresolvedUnitLabelReq -> Json.Encode.Value
+classifyUnresolvedUnitLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_txt", (Json.Encode.string) struct.unitTxt )
+        ]
+
+
+type alias ResolveUnresolvedUnitLabelReq =
+    { unitTxt : String
+    , label : String
+    , orbitUnitId : String
+    }
+
+
+resolveUnresolvedUnitLabelReqEncoder : ResolveUnresolvedUnitLabelReq -> Json.Encode.Value
+resolveUnresolvedUnitLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_txt", (Json.Encode.string) struct.unitTxt )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "orbit_unit_id", (Json.Encode.string) struct.orbitUnitId )
+        ]
+
+
+type alias UpdateUnresolvedUnitLabelsRsp =
+    { affectedCount : Int
+    }
+
+
+updateUnresolvedUnitLabelsRspEncoder : UpdateUnresolvedUnitLabelsRsp -> Json.Encode.Value
+updateUnresolvedUnitLabelsRspEncoder struct =
+    Json.Encode.object
+        [ ( "affected_count", (Json.Encode.int) struct.affectedCount )
+        ]
+
+
 type alias OrbitDictionaryValue =
     { id : String
     , key : String
@@ -6826,9 +6950,11 @@ linkOrbitUnitReqEncoder struct =
 type alias UnitDetailsRsp =
     { unit : Unit
     , attachments : List (UnitAttachment)
+    , labels : List (UnitLabel)
     , orbitUnits : List (OrbitUnitDetails)
     , canLinkOrbitUnit : Bool
     , canCreateDeviceNetwork : Bool
+    , canEditUnitLabels : Bool
     }
 
 
@@ -6837,9 +6963,11 @@ unitDetailsRspEncoder struct =
     Json.Encode.object
         [ ( "unit", (unitEncoder) struct.unit )
         , ( "attachments", (Json.Encode.list (unitAttachmentEncoder)) struct.attachments )
+        , ( "labels", (Json.Encode.list (unitLabelEncoder)) struct.labels )
         , ( "orbit_units", (Json.Encode.list (orbitUnitDetailsEncoder)) struct.orbitUnits )
         , ( "can_link_orbit_unit", (Json.Encode.bool) struct.canLinkOrbitUnit )
         , ( "can_create_device_network", (Json.Encode.bool) struct.canCreateDeviceNetwork )
+        , ( "can_edit_unit_labels", (Json.Encode.bool) struct.canEditUnitLabels )
         ]
 
 
@@ -15921,6 +16049,68 @@ unitAttachmentDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
 
 
+unitLabelDecoder : Json.Decode.Decoder UnitLabel
+unitLabelDecoder =
+    Json.Decode.succeed UnitLabel
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+
+
+createUnitLabelReqDecoder : Json.Decode.Decoder CreateUnitLabelReq
+createUnitLabelReqDecoder =
+    Json.Decode.succeed CreateUnitLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+
+
+deleteUnitLabelReqDecoder : Json.Decode.Decoder DeleteUnitLabelReq
+deleteUnitLabelReqDecoder =
+    Json.Decode.succeed DeleteUnitLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label_id" (Json.Decode.int)))
+
+
+unresolvedUnitLabelDecoder : Json.Decode.Decoder UnresolvedUnitLabel
+unresolvedUnitLabelDecoder =
+    Json.Decode.succeed UnresolvedUnitLabel
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quantity" (Json.Decode.int)))
+
+
+listUnresolvedUnitLabelsReqDecoder : Json.Decode.Decoder ListUnresolvedUnitLabelsReq
+listUnresolvedUnitLabelsReqDecoder =
+    Json.Decode.succeed ListUnresolvedUnitLabelsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page" (Json.Decode.nullable (Json.Decode.int))))
+
+
+listUnresolvedUnitLabelsRspDecoder : Json.Decode.Decoder ListUnresolvedUnitLabelsRsp
+listUnresolvedUnitLabelsRspDecoder =
+    Json.Decode.succeed ListUnresolvedUnitLabelsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rows" (Json.Decode.list (unresolvedUnitLabelDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_size" (Json.Decode.int)))
+
+
+classifyUnresolvedUnitLabelReqDecoder : Json.Decode.Decoder ClassifyUnresolvedUnitLabelReq
+classifyUnresolvedUnitLabelReqDecoder =
+    Json.Decode.succeed ClassifyUnresolvedUnitLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
+
+
+resolveUnresolvedUnitLabelReqDecoder : Json.Decode.Decoder ResolveUnresolvedUnitLabelReq
+resolveUnresolvedUnitLabelReqDecoder =
+    Json.Decode.succeed ResolveUnresolvedUnitLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_id" (Json.Decode.string)))
+
+
+updateUnresolvedUnitLabelsRspDecoder : Json.Decode.Decoder UpdateUnresolvedUnitLabelsRsp
+updateUnresolvedUnitLabelsRspDecoder =
+    Json.Decode.succeed UpdateUnresolvedUnitLabelsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "affected_count" (Json.Decode.int)))
+
+
 orbitDictionaryValueDecoder : Json.Decode.Decoder OrbitDictionaryValue
 orbitDictionaryValueDecoder =
     Json.Decode.succeed OrbitDictionaryValue
@@ -16023,9 +16213,11 @@ unitDetailsRspDecoder =
     Json.Decode.succeed UnitDetailsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (unitDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments" (Json.Decode.list (unitAttachmentDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (unitLabelDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_units" (Json.Decode.list (orbitUnitDetailsDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_link_orbit_unit" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_create_device_network" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_edit_unit_labels" (Json.Decode.bool)))
 
 
 unitAttachmentUnitIdsRspDecoder : Json.Decode.Decoder UnitAttachmentUnitIdsRsp

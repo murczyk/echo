@@ -1480,7 +1480,7 @@ async fn automatic_orbit_link_candidates(
     Ok(candidates.into_iter().map(render_match_candidate).collect())
 }
 
-async fn manual_orbit_link_candidates(
+pub(crate) async fn manual_orbit_link_candidates(
     dbx: &DatabaseConnection,
     search: &str,
 ) -> Result<Vec<OrbitUnitLinkCandidate>, AppError> {

@@ -299,6 +299,12 @@ where
             .c(h!())?;
         }
     }
+    crate::inbox::unit_resolution::sync_network_unit_links(
+        db,
+        &[sigint_inbox_item_id],
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -328,6 +334,12 @@ where
         .exec(db)
         .await
         .c(h!())?;
+    crate::inbox::unit_resolution::sync_network_unit_links(
+        db,
+        &[sigint_inbox_item_id],
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 

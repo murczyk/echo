@@ -7,7 +7,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { OrbitUnitLinkCandidate, Unit } from '../../../../Bindings';
 import { getOrbitUnitLinkCandidates, searchOrbitUnits } from '../../services/api/units';
-import { OrbitUnitImportDialog, OrbitUnitLinkDialog } from './OrbitUnitLinkDialog';
+import {
+  OrbitUnitImportDialog,
+  OrbitUnitLinkDialog,
+  OrbitUnitPickerDialog,
+} from './OrbitUnitLinkDialog';
 
 vi.mock('material-react-table', () => ({
   MaterialReactTable: () => <div data-testid="orbit-candidates-table" />,
@@ -166,6 +170,30 @@ describe('OrbitUnitLinkDialog', () => {
     });
 
     expect(document.body.textContent).toContain('Пошук');
+    expect(document.body.querySelector('input[placeholder^="Повна назва"]')).not.toBeNull();
+    expect(getOrbitUnitLinkCandidates).not.toHaveBeenCalled();
+
+    act(() => root.unmount());
+  });
+
+  it('reuses the shared advanced search dialog for Orbit selection', async () => {
+    const searchUnits = vi.fn().mockResolvedValue([]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <OrbitUnitPickerDialog
+          title="Оберіть підрозділ ORBIT"
+          searchUnits={searchUnits}
+          onClose={vi.fn()}
+          onSelected={vi.fn()}
+        />,
+      );
+    });
+
+    expect(document.body.textContent).toContain('Оберіть підрозділ ORBIT');
     expect(document.body.querySelector('input[placeholder^="Повна назва"]')).not.toBeNull();
     expect(getOrbitUnitLinkCandidates).not.toHaveBeenCalled();
 

@@ -20,6 +20,7 @@ use sea_query::{Expr, OnConflict, SimpleExpr};
 use std::collections::{BTreeSet, HashMap};
 
 pub mod attachment;
+pub mod labels;
 pub mod orbit;
 pub mod types;
 
@@ -1810,9 +1811,55 @@ where
         .await
         .context(h!())?;
 
+    sigint_unit_label::Entity::update_many()
+        .col_expr(
+            sigint_unit_label::Column::SigintUnitId,
+            Expr::value(new_unit_id),
+        )
+        .filter(sigint_unit_label::Column::SigintUnitId.eq(old_unit_id))
+        .exec(dbx)
+        .await
+        .context(h!())?;
+
+    move_inbox_item_unit_links(old_unit_id, new_unit_id, dbx)
+        .await
+        .context(h!())?;
+
     move_orbit_unit_links(old_unit_id, new_unit_id, dbx).await?;
     swap_unit_devices(old_unit_id, new_unit_id, dbx).await?;
 
+    Ok(())
+}
+
+async fn move_inbox_item_unit_links<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let links = sigint_inbox_item_unit::Entity::find()
+        .filter(sigint_inbox_item_unit::Column::UnitId.eq(old_unit_id))
+        .all(dbx)
+        .await
+        .context(h!())?;
+    for link in links {
+        let duplicate = sigint_inbox_item_unit::Entity::find()
+            .filter(sigint_inbox_item_unit::Column::ItemId.eq(link.item_id))
+            .filter(sigint_inbox_item_unit::Column::UnitId.eq(new_unit_id))
+            .filter(sigint_inbox_item_unit::Column::Kind.eq(link.kind.clone()))
+            .one(dbx)
+            .await
+            .context(h!())?;
+        if duplicate.is_some() {
+            link.delete(dbx).await.context(h!())?;
+            continue;
+        }
+        let mut link = link.into_active_model();
+        link.unit_id = Set(new_unit_id);
+        link.update(dbx).await.context(h!())?;
+    }
     Ok(())
 }
 
@@ -4589,6 +4636,31 @@ mod tests {
         .exec(&env.dbx)
         .await
         .unwrap();
+        let label = sigint_unit_label::ActiveModel {
+            sigint_unit_id: Set(duplicate.id),
+            label: Set(format!("merge-label-{}", uuid::Uuid::new_v4())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let inbox_item = crate::functest::tests::mk_sigint_inbox_item(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let inbox_item_unit = sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(inbox_item.id),
+            unit_id: Set(duplicate.id),
+            kind: Set(
+                crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind::Parsed,
+            ),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
 
         let merged =
             merge_units(login_id, &env.dbx, duplicate.id, surviving.id)
@@ -4599,6 +4671,24 @@ mod tests {
         assert!(!merged.deleted);
         assert_eq!(merged.is_deduplicate_candidate, Some(true));
         assert_eq!(merged.orbit_note.as_deref(), Some("Duplicate Orbit note"));
+        assert_eq!(
+            sigint_unit_label::Entity::find_by_id(label.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .sigint_unit_id,
+            surviving.id
+        );
+        assert_eq!(
+            sigint_inbox_item_unit::Entity::find_by_id(inbox_item_unit.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .unit_id,
+            surviving.id
+        );
         assert!(orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId.eq(duplicate.id)

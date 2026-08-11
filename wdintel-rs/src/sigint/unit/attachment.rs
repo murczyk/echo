@@ -57,6 +57,9 @@ pub async fn unit_details(
     let unit = find_available_unit(&env.dbx, req.unit_id).await?;
     let attachments =
         list_visible_attachments(&env.dbx, &login, unit.id).await?;
+    let labels = super::labels::list_labels(&env.dbx, unit.id)
+        .await
+        .c(h!())?;
     let can_view_orbit = can_view_orbit_data(&env.dbx, &login).await?;
     let orbit_units = if can_view_orbit {
         unit_orbit_details(&env.dbx, unit.id).await?
@@ -82,9 +85,11 @@ pub async fn unit_details(
     Ok(Json(UnitDetailsRsp {
         unit,
         attachments,
+        labels,
         orbit_units,
         can_link_orbit_unit,
         can_create_device_network,
+        can_edit_unit_labels: can_edit_units,
     }))
 }
 
