@@ -134,6 +134,7 @@ pub use super::sigint_inbox_item_metadata::Entity as SigintInboxItemMetadata;
 pub use super::sigint_inbox_item_network::Entity as SigintInboxItemNetwork;
 pub use super::sigint_inbox_item_point_token::Entity as SigintInboxItemPointToken;
 pub use super::sigint_inbox_item_tag::Entity as SigintInboxItemTag;
+pub use super::sigint_inbox_item_unit::Entity as SigintInboxItemUnit;
 pub use super::sigint_inbox_item_unit_tag_queue::Entity as SigintInboxItemUnitTagQueue;
 pub use super::sigint_inbox_tag_model_error::Entity as SigintInboxTagModelError;
 pub use super::sigint_key_share_policy::Entity as SigintKeySharePolicy;

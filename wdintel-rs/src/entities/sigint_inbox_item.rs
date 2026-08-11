@@ -50,7 +50,6 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub network: Option<String>,
     pub datetime_neo: Option<DateTime>,
-    pub sigint_unit_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -85,6 +84,8 @@ pub enum Relation {
     SigintInboxItemPointToken,
     #[sea_orm(has_many = "super::sigint_inbox_item_tag::Entity")]
     SigintInboxItemTag,
+    #[sea_orm(has_many = "super::sigint_inbox_item_unit::Entity")]
+    SigintInboxItemUnit,
     #[sea_orm(has_one = "super::sigint_inbox_item_unit_tag_queue::Entity")]
     SigintInboxItemUnitTagQueue,
     #[sea_orm(has_many = "super::sigint_inbox_tag_model_error::Entity")]
@@ -101,14 +102,6 @@ pub enum Relation {
     SigintPost,
     #[sea_orm(has_one = "super::sigint_search::Entity")]
     SigintSearch,
-    #[sea_orm(
-        belongs_to = "super::sigint_unit::Entity",
-        from = "Column::SigintUnitId",
-        to = "super::sigint_unit::Column::Id",
-        on_update = "NoAction",
-        on_delete = "SetNull"
-    )]
-    SigintUnit,
     #[sea_orm(
         belongs_to = "super::signal_message::Entity",
         from = "Column::Id",
@@ -173,6 +166,12 @@ impl Related<super::sigint_inbox_item_tag::Entity> for Entity {
     }
 }
 
+impl Related<super::sigint_inbox_item_unit::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemUnit.def()
+    }
+}
+
 impl Related<super::sigint_inbox_item_unit_tag_queue::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItemUnitTagQueue.def()
@@ -200,12 +199,6 @@ impl Related<super::sigint_post::Entity> for Entity {
 impl Related<super::sigint_search::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintSearch.def()
-    }
-}
-
-impl Related<super::sigint_unit::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SigintUnit.def()
     }
 }
 

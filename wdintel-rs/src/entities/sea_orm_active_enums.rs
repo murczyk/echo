@@ -285,6 +285,27 @@ pub enum SettlementKind {
 #[sea_orm(
     rs_type = "String",
     db_type = "Enum",
+    enum_name = "sigint_inbox_item_unit_kind"
+)]
+pub enum SigintInboxItemUnitKind {
+    #[sea_orm(string_value = "parsed")]
+    Parsed,
+    #[sea_orm(string_value = "network")]
+    Network,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "String",
+    db_type = "Enum",
     enum_name = "sigint_network_kind"
 )]
 pub enum SigintNetworkKind {

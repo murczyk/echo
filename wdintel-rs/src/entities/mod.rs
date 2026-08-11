@@ -137,6 +137,7 @@ pub mod sigint_inbox_item_metadata;
 pub mod sigint_inbox_item_network;
 pub mod sigint_inbox_item_point_token;
 pub mod sigint_inbox_item_tag;
+pub mod sigint_inbox_item_unit;
 pub mod sigint_inbox_item_unit_tag_queue;
 pub mod sigint_inbox_tag_model_error;
 pub mod sigint_key_share_policy;

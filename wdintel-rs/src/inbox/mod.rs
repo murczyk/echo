@@ -281,7 +281,6 @@ where
         unit_v2: Set(unit_v2),
         parsed_unit_v2: Set(true),
         network: Set(None),
-        sigint_unit_id: NotSet,
     };
     let result = sigint_inbox_item::Entity::insert(result)
         .on_conflict(
@@ -423,7 +422,7 @@ where
     Ok(ConstructInboxItemResult::changed(message.id))
 }
 
-fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 22] {
+fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 21] {
     [
         sigint_inbox_item::Column::Date,
         sigint_inbox_item::Column::Time,
@@ -446,7 +445,6 @@ fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 22] {
         sigint_inbox_item::Column::DeviceNameId,
         sigint_inbox_item::Column::UnitV2,
         sigint_inbox_item::Column::ParsedUnitV2,
-        sigint_inbox_item::Column::SigintUnitId,
     ]
 }
 

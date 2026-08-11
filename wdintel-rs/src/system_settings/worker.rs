@@ -629,9 +629,16 @@ where
         post_id: Set(source.inbox_item.post_id),
         device_name_id: Set(source.inbox_item.device_name_id),
         network: Set(source.inbox_item.network.clone()),
-        sigint_unit_id: Set(source.inbox_item.sigint_unit_id),
     }
     .insert(dbx)
+    .await
+    .c(h!())?;
+    crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
+        dbx,
+        inserted.id,
+        source.inbox_item.unit_v2.as_deref(),
+        source.inbox_item.unit.as_deref(),
+    )
     .await
     .c(h!())?;
     let callsigns =
@@ -686,6 +693,9 @@ where
         .await
         .c(h!())?;
     }
+    crate::inbox::unit_resolution::sync_network_unit_links(dbx, &[inserted.id])
+        .await
+        .c(h!())?;
 
     for tag in &source.tags {
         sigint_inbox_item_tag::ActiveModel {

@@ -4,10 +4,15 @@ use crate::config::{
     FAILED_INBOX_UNIT_WORKER_BATCH_SIZE,
     FAILED_INBOX_UNIT_WORKER_ERROR_SLEEP_SECS,
     FAILED_INBOX_UNIT_WORKER_SLEEP_SECS,
+    INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE,
+    INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE,
 };
+use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
 use crate::entities::{
     failed_inbox_unit, orbit_unit, orbit_unit_echelon, orbit_unit_sigint_unit,
-    sigint_inbox_item, sigint_unit, sigint_unit_label, signal_message,
+    sigint_inbox_item, sigint_inbox_item_network, sigint_inbox_item_unit,
+    sigint_network, sigint_network_unit, sigint_unit, sigint_unit_label,
+    signal_message,
 };
 use crate::{h, orbit};
 use anyhow::Context;
@@ -288,6 +293,114 @@ where
     Ok(())
 }
 
+async fn replace_parsed_unit_link<C>(
+    db: &C,
+    inbox_item_id: i64,
+    sigint_unit_id: Option<i64>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    sigint_inbox_item_unit::Entity::delete_many()
+        .filter(sigint_inbox_item_unit::Column::ItemId.eq(inbox_item_id))
+        .filter(
+            sigint_inbox_item_unit::Column::Kind
+                .eq(SigintInboxItemUnitKind::Parsed),
+        )
+        .exec(db)
+        .await
+        .context(h!())?;
+    if let Some(sigint_unit_id) = sigint_unit_id {
+        sigint_inbox_item_unit::ActiveModel {
+            id: NotSet,
+            created_at: NotSet,
+            item_id: Set(inbox_item_id),
+            unit_id: Set(sigint_unit_id),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+        }
+        .insert(db)
+        .await
+        .context(h!())?;
+    }
+    Ok(())
+}
+
+async fn network_unit_links<C>(
+    db: &C,
+    inbox_item_ids: &[i64],
+) -> anyhow::Result<Vec<(i64, i64)>>
+where
+    C: ConnectionTrait,
+{
+    sigint_inbox_item_network::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Relation::SigintNetwork.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_network::Relation::SigintNetworkUnit.def(),
+        )
+        .filter(
+            sigint_inbox_item_network::Column::SigintInboxItemId
+                .is_in(inbox_item_ids.to_vec()),
+        )
+        .select_only()
+        .column(sigint_inbox_item_network::Column::SigintInboxItemId)
+        .column(sigint_network_unit::Column::UnitId)
+        .distinct()
+        .into_tuple::<(i64, i64)>()
+        .all(db)
+        .await
+        .context(h!())
+}
+
+pub(crate) async fn sync_network_unit_links<C>(
+    db: &C,
+    inbox_item_ids: &[i64],
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    for inbox_item_ids in
+        inbox_item_ids.chunks(INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE)
+    {
+        sigint_inbox_item_unit::Entity::delete_many()
+            .filter(
+                sigint_inbox_item_unit::Column::ItemId
+                    .is_in(inbox_item_ids.to_vec()),
+            )
+            .filter(
+                sigint_inbox_item_unit::Column::Kind
+                    .eq(SigintInboxItemUnitKind::Network),
+            )
+            .exec(db)
+            .await
+            .context(h!())?;
+        let unit_links = network_unit_links(db, inbox_item_ids)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|(item_id, unit_id)| sigint_inbox_item_unit::ActiveModel {
+                id: NotSet,
+                created_at: NotSet,
+                item_id: Set(item_id),
+                unit_id: Set(unit_id),
+                kind: Set(SigintInboxItemUnitKind::Network),
+            })
+            .collect_vec();
+        for unit_links in
+            unit_links.chunks(INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE)
+        {
+            sigint_inbox_item_unit::Entity::insert_many(unit_links.to_vec())
+                .exec_without_returning(db)
+                .await
+                .context(h!())?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) async fn resolve_and_sync_inbox_item<C>(
     db: &C,
     inbox_item_id: i64,
@@ -300,13 +413,7 @@ where
     let sigint_unit_id = resolve_sigint_unit_id(db, unit_v2, unit)
         .await
         .context(h!())?;
-    sigint_inbox_item::Entity::update_many()
-        .col_expr(
-            sigint_inbox_item::Column::SigintUnitId,
-            Expr::value(sigint_unit_id),
-        )
-        .filter(sigint_inbox_item::Column::Id.eq(inbox_item_id))
-        .exec(db)
+    replace_parsed_unit_link(db, inbox_item_id, sigint_unit_id)
         .await
         .context(h!())?;
 
@@ -380,13 +487,7 @@ where
     )
     .await
     .context(h!())?;
-    sigint_inbox_item::Entity::update_many()
-        .col_expr(
-            sigint_inbox_item::Column::SigintUnitId,
-            Expr::value(sigint_unit_id),
-        )
-        .filter(sigint_inbox_item::Column::Id.eq(inbox_item.id))
-        .exec(db)
+    replace_parsed_unit_link(db, inbox_item.id, sigint_unit_id)
         .await
         .context(h!())?;
     if sigint_unit_id.is_some() || current_text.is_none() {
@@ -587,17 +688,45 @@ mod tests {
         unit: Option<&str>,
         sigint_unit_id: Option<i64>,
     ) -> sigint_inbox_item::Model {
-        crate::functest::tests::mk_sigint_inbox_item(
+        let inbox_item = crate::functest::tests::mk_sigint_inbox_item(
             db,
             sigint_inbox_item::ActiveModel {
                 unit_v2: Set(unit_v2.map(str::to_string)),
                 unit: Set(unit.map(str::to_string)),
-                sigint_unit_id: Set(sigint_unit_id),
                 ..Default::default()
             },
         )
         .await
-        .unwrap()
+        .unwrap();
+        if let Some(sigint_unit_id) = sigint_unit_id {
+            sigint_inbox_item_unit::ActiveModel {
+                item_id: Set(inbox_item.id),
+                unit_id: Set(sigint_unit_id),
+                kind: Set(SigintInboxItemUnitKind::Parsed),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+        inbox_item
+    }
+
+    async fn unit_ids_for_kind(
+        db: &DatabaseConnection,
+        inbox_item_id: i64,
+        kind: SigintInboxItemUnitKind,
+    ) -> Vec<i64> {
+        sigint_inbox_item_unit::Entity::find()
+            .filter(sigint_inbox_item_unit::Column::ItemId.eq(inbox_item_id))
+            .filter(sigint_inbox_item_unit::Column::Kind.eq(kind))
+            .order_by_asc(sigint_inbox_item_unit::Column::UnitId)
+            .select_only()
+            .column(sigint_inbox_item_unit::Column::UnitId)
+            .into_tuple::<i64>()
+            .all(db)
+            .await
+            .unwrap()
     }
 
     #[test]
@@ -836,12 +965,13 @@ mod tests {
             );
         }
 
-        let inbox_item = sigint_inbox_item::Entity::find_by_id(inbox_item.id)
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(inbox_item.sigint_unit_id, None);
+        assert!(unit_ids_for_kind(
+            &env.dbx,
+            inbox_item.id,
+            SigintInboxItemUnitKind::Parsed,
+        )
+        .await
+        .is_empty());
         let failures = failed_inbox_unit::Entity::find()
             .filter(failed_inbox_unit::Column::InboxItemId.eq(inbox_item.id))
             .all(&env.dbx)
@@ -850,6 +980,104 @@ mod tests {
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].unit_txt, "невідомий   сирий підрозділ");
         assert!(!failures[0].deleted);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn network_sync_stores_distinct_union_and_removes_stale_units() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let first_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let second_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let first_network = crate::functest::tests::mk_sigint_network(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let second_network = crate::functest::tests::mk_sigint_network(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        for (network_id, unit_id) in [
+            (first_network.id, first_unit.id),
+            (first_network.id, second_unit.id),
+            (second_network.id, second_unit.id),
+        ] {
+            crate::functest::tests::mk_sigint_network_unit(
+                &env.dbx,
+                sigint_network_unit::ActiveModel {
+                    network_id: Set(network_id),
+                    unit_id: Set(unit_id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let inbox_item = insert_inbox_item(&env.dbx, None, None, None).await;
+        for network_id in [first_network.id, second_network.id] {
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item.id),
+                sigint_network_id: Set(network_id),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+
+        sync_network_unit_links(&env.dbx, &[inbox_item.id])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                inbox_item.id,
+                SigintInboxItemUnitKind::Network,
+            )
+            .await,
+            vec![first_unit.id, second_unit.id]
+        );
+
+        sigint_inbox_item_network::Entity::delete_many()
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .eq(inbox_item.id),
+            )
+            .filter(
+                sigint_inbox_item_network::Column::SigintNetworkId
+                    .eq(first_network.id),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        sync_network_unit_links(&env.dbx, &[inbox_item.id])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                inbox_item.id,
+                SigintInboxItemUnitKind::Network,
+            )
+            .await,
+            vec![second_unit.id]
+        );
     }
 
     #[tokio::test]
@@ -906,12 +1134,15 @@ mod tests {
 
         run_failed_inbox_unit_worker_once(&env.dbx).await.unwrap();
 
-        let successful = sigint_inbox_item::Entity::find_by_id(successful.id)
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(successful.sigint_unit_id, Some(sigint_unit.id));
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                successful.id,
+                SigintInboxItemUnitKind::Parsed,
+            )
+            .await,
+            vec![sigint_unit.id]
+        );
         assert!(failed_inbox_unit::Entity::find()
             .filter(failed_inbox_unit::Column::InboxItemId.eq(successful.id),)
             .one(&env.dbx)

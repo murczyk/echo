@@ -1572,7 +1572,6 @@ mod tests {
             post_id: None,
             device_name_id: None,
             network: None,
-            sigint_unit_id: None,
         }
     }
 
@@ -1873,7 +1872,6 @@ mod tests {
             post_id: None,
             device_name_id: None,
             network: None,
-            sigint_unit_id: None,
         };
 
         assert_eq!(
@@ -2344,7 +2342,6 @@ mod tests {
             post_id: None,
             device_name_id: None,
             network: None,
-            sigint_unit_id: None,
         };
         let message = signal_message::Model {
             id: 1,
@@ -2393,7 +2390,6 @@ mod tests {
             post_id: None,
             device_name_id: None,
             network: None,
-            sigint_unit_id: None,
         };
         let message = signal_message::Model {
             id: 1,
