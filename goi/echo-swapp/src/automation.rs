@@ -2,7 +2,7 @@ use crate::config::{
     AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX,
     AUTOMATION_SEND_LOG_RETENTION_DAYS,
 };
-use crate::error::ShortContext;
+use crate::error::{bad_request, conflict, not_found, ShortContext};
 use crate::h;
 use crate::map_screenshot::{self, MapCoordinate};
 use crate::messenger::{self, MessengerKind};
@@ -272,7 +272,9 @@ impl CoordinatePresenceMode {
             "any" => Ok(Self::Any),
             "skip_with_coordinates" => Ok(Self::SkipWithCoordinates),
             "skip_without_coordinates" => Ok(Self::SkipWithoutCoordinates),
-            _ => bail!("unknown coordinate presence mode: {value}"),
+            _ => Err(bad_request(format!(
+                "Невідомий режим фільтрації координат: {value}. Оновіть сторінку та виберіть режим ще раз."
+            ))),
         }
     }
 
@@ -298,7 +300,9 @@ impl PolygonFilterMode {
             "none" => Ok(Self::None),
             "inside" => Ok(Self::Inside),
             "outside" => Ok(Self::Outside),
-            _ => bail!("unknown polygon filter mode: {value}"),
+            _ => Err(bad_request(format!(
+                "Невідомий режим фільтрації за районом: {value}. Оновіть сторінку та виберіть режим ще раз."
+            ))),
         }
     }
 
@@ -447,7 +451,9 @@ pub async fn delete_polygon(db: &DatabaseConnection, id: i64) -> Result<()> {
         .c(h!())?;
     let usage_count: i64 = row.try_get("", "count").c(h!())?;
     if usage_count > 0 {
-        bail!("area of interest is used by automations");
+        return Err(conflict(
+            "Район інтересу використовується в автоматизаціях. Спочатку приберіть його з цих автоматизацій, а потім повторіть видалення.",
+        ));
     }
     db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
@@ -975,25 +981,31 @@ async fn load_view(db: &DatabaseConnection, id: i64) -> Result<AutomationView> {
     rows.into_iter()
         .next()
         .map(automation_view)
-        .with_context(|| format!("automation not found: {id}"))
+        .ok_or_else(|| {
+            not_found(format!(
+                "Автоматизацію {id} не знайдено. Оновіть сторінку та повторіть спробу."
+            ))
+        })
         .c(h!())
 }
 
 async fn normalize_req(req: SaveAutomationReq) -> Result<NormalizedAutomation> {
     if req.source_account_id <= 0 {
-        bail!("source account is required");
+        return Err(bad_request("Оберіть обліковий запис-джерело."));
     }
     if req.source_group_id <= 0 {
-        bail!("source group is required");
+        return Err(bad_request("Оберіть групу-джерело."));
     }
     if req.target_account_id <= 0 {
-        bail!("target account is required");
+        return Err(bad_request("Оберіть цільовий обліковий запис."));
     }
     if req.target_group_id <= 0 {
-        bail!("target group is required");
+        return Err(bad_request("Оберіть цільову групу."));
     }
     if req.stale_message_cutoff_minutes < 0 {
-        bail!("stale message cutoff must not be negative");
+        return Err(bad_request(
+            "Час актуальності повідомлення не може бути від’ємним.",
+        ));
     }
     let keyword_tokens = normalize_tokens(req.keyword_tokens);
     let frequency_tokens = normalize_tokens(req.frequency_tokens);
@@ -1017,12 +1029,16 @@ async fn normalize_req(req: SaveAutomationReq) -> Result<NormalizedAutomation> {
     if coordinate_presence_mode == CoordinatePresenceMode::SkipWithCoordinates
         && polygon_filter_mode != PolygonFilterMode::None
     {
-        bail!("polygon filter is not allowed when messages with coordinates are ignored");
+        return Err(bad_request(
+            "Не можна фільтрувати за районом, коли повідомлення з координатами ігноруються.",
+        ));
     }
     if coordinate_presence_mode == CoordinatePresenceMode::SkipWithCoordinates
         && req.coordinates_screenshot
     {
-        bail!("coordinate screenshot is not allowed when messages with coordinates are ignored");
+        return Err(bad_request(
+            "Не можна створювати знімок координат, коли повідомлення з координатами ігноруються.",
+        ));
     }
     let polygon_id = if polygon_filter_mode == PolygonFilterMode::None {
         None
@@ -1061,13 +1077,19 @@ async fn validate_polygon_ref(
         ))
         .await
         .c(h!())?
-        .with_context(|| format!("polygon not found: {polygon_id}"))
+        .ok_or_else(|| {
+            not_found(format!(
+                "Район інтересу {polygon_id} не знайдено. Оновіть список і виберіть район ще раз."
+            ))
+        })
         .c(h!())?;
     let coordinates: Json = row.try_get("", "coordinates").c(h!())?;
     let coordinates = json_vec(Some(&coordinates));
     let polygon = parse_polygon(&coordinates).await.c(h!())?;
     if polygon.len() < 3 {
-        bail!("polygon filter requires at least 3 valid coordinates");
+        return Err(bad_request(
+            "Для фільтрації за районом потрібно щонайменше 3 коректні координати.",
+        ));
     }
     Ok(())
 }
@@ -1109,11 +1131,15 @@ async fn validate_group_accounts(
         .c(h!())?;
     let source_ok: bool = row.try_get("", "source_ok").c(h!())?;
     if !source_ok {
-        bail!("source group does not belong to selected source account");
+        return Err(bad_request(
+            "Група-джерело не належить вибраному обліковому запису. Виберіть групу зі списку цього облікового запису.",
+        ));
     }
     let target_ok: bool = row.try_get("", "target_ok").c(h!())?;
     if !target_ok {
-        bail!("target group does not belong to selected target account");
+        return Err(bad_request(
+            "Цільова група не належить вибраному обліковому запису. Виберіть групу зі списку цього облікового запису.",
+        ));
     }
     Ok(())
 }
@@ -1996,7 +2022,9 @@ async fn parse_polygon(tokens: &[String]) -> Result<Vec<Point>> {
         let mut coords =
             milgeo_rs::coordinates::rer_extract_coords(token).await;
         if coords.is_empty() {
-            bail!("invalid polygon coordinate: {token}");
+            return Err(bad_request(format!(
+                "Некоректна координата району: {token}."
+            )));
         }
         let coords = coords.remove(0);
         points.push(Point {
@@ -2315,7 +2343,11 @@ async fn load_polygon_view(
     let row = rows
         .into_iter()
         .next()
-        .with_context(|| format!("polygon not found: {id}"))
+        .ok_or_else(|| {
+            not_found(format!(
+                "Район інтересу {id} не знайдено. Оновіть сторінку та повторіть спробу."
+            ))
+        })
         .c(h!())?;
     polygon_view(row).await.c(h!())
 }
@@ -2325,18 +2357,24 @@ async fn normalize_polygon_req(
 ) -> Result<(String, Vec<String>)> {
     let name = req.name.unwrap_or_default().trim().to_string();
     if name.is_empty() {
-        bail!("polygon name is required");
+        return Err(bad_request("Вкажіть назву району інтересу."));
     }
     let coordinates = normalize_polygon_coordinates(req.coordinates);
     if coordinates.len() < 3 {
-        bail!("polygon requires at least 3 coordinates");
+        return Err(bad_request(
+            "Для району інтересу потрібно щонайменше 3 координати.",
+        ));
     }
     let polygon = parse_polygon(&coordinates).await.c(h!())?;
     if polygon.len() < 3 {
-        bail!("polygon requires at least 3 valid coordinates");
+        return Err(bad_request(
+            "Для району інтересу потрібно щонайменше 3 коректні координати.",
+        ));
     }
     if polygon_has_crossing_sides(&polygon) {
-        bail!("polygon sides must not cross");
+        return Err(bad_request(
+            "Сторони району інтересу не мають перетинатися.",
+        ));
     }
     Ok((name, coordinates))
 }
@@ -3067,7 +3105,10 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert_eq!(err.to_string(), "polygon sides must not cross");
+        assert_eq!(
+            err.to_string(),
+            "Сторони району інтересу не мають перетинатися."
+        );
     }
 
     #[tokio::test]
@@ -3148,7 +3189,7 @@ mod tests {
 
         assert_eq!(
             err.to_string(),
-            "coordinate screenshot is not allowed when messages with coordinates are ignored"
+            "Не можна створювати знімок координат, коли повідомлення з координатами ігноруються."
         );
     }
 
