@@ -155,10 +155,10 @@ describe('menu-items', () => {
     expect(menuIsActive('rer-delta-import', importGroup!)).toBe(true);
   });
 
-  it('groups the database administration block under Бази', () => {
+  it('groups the database administration block under База Знань', () => {
     const databaseGroup = adminSubs.find(
       (item): item is Extract<Menu, { type: 'group' }> =>
-        item.type === 'group' && item.label === 'Бази',
+        item.type === 'group' && item.label === 'База Знань',
     );
 
     expect(databaseGroup?.subs).toBe(adminDatabaseSubs);
@@ -169,6 +169,7 @@ describe('menu-items', () => {
       'Echo GPU Сервери',
       'Всі звіти',
       'Дублікати Підрозділів',
+      'Нерозпізнані підрозділи',
       'ГОІ',
       'Ключі',
       'Населені пункти смуг',

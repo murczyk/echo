@@ -1,4 +1,4 @@
-use super::parse_callsigns;
+use super::{effective_prompt, parse_callsigns};
 use crate::ai_engine::{request_ai_response, AiEngineMessage};
 use crate::config::{
     AI_CALLSIGN_SETTINGS_ID, AI_CALLSIGN_WORKER_IDLE_SLEEP_MS,
@@ -189,7 +189,7 @@ async fn load_worker_config(
             msg: "ШІ движок воркера позивних вимкнено або видалено".to_string(),
         })?;
     Ok(Some(WorkerConfig {
-        prompt: settings.prompt,
+        prompt: effective_prompt(&settings.prompt).to_string(),
         ai_engine,
     }))
 }

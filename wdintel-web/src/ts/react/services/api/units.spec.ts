@@ -254,7 +254,15 @@ describe('units API', () => {
   it('loads ORBIT-linked duplicate candidates before unit creation', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
-        units: [{ id: 7, name: '2 батальйон', active: true, orbit_unit_ids: ['orbit-id'] }],
+        units: [
+          {
+            id: 7,
+            name: '2 батальйон',
+            active: true,
+            orbit_unit_ids: ['orbit-id'],
+            orbit_unit_generative_names: ['106 пдд / МВО'],
+          },
+        ],
       }),
     );
     vi.stubGlobal('fetch', fetchMock);
@@ -274,7 +282,13 @@ describe('units API', () => {
         orbitNote: null,
         duplicateUnitIds: [],
       }),
-    ).resolves.toMatchObject([{ id: 7, orbitUnitIds: ['orbit-id'] }]);
+    ).resolves.toMatchObject([
+      {
+        id: 7,
+        orbitUnitIds: ['orbit-id'],
+        orbitUnitGenerativeNames: ['106 пдд / МВО'],
+      },
+    ]);
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/sigint/unit/create-duplicate-candidates');
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       battalion: '2 батальйон',

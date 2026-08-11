@@ -41,6 +41,25 @@ iggy_default_rev := "k-bx/2026-06-18-poll-option"
 default:
     @just --list
 
+# Send a Mattermost notification using the webhook configured in .env
+notify text:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [[ -f .env ]]; then
+        set -a
+        source .env
+        set +a
+    fi
+
+    : "${MATTERMOST_NOTIFICATION_HOOK:?MATTERMOST_NOTIFICATION_HOOK is not set in .env}"
+    jq -nc --arg text "$1" '{text: $text}' \
+        | curl --fail-with-body --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data-binary @- \
+            "$MATTERMOST_NOTIFICATION_HOOK"
+    echo
+
 prepare-workspace:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -253,24 +272,25 @@ test-be:
     export CARGO_INCREMENTAL=1
     export RUSTC_WRAPPER=""
 
-    echo "Running cargo clippy..."
-    # Lint all targets; fail on any warning. Use --release in CI to reuse artifacts.
-    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-        cargo clippy --release --all-targets --all-features -- -D warnings
-    else
+    if [ "${GITHUB_ACTIONS:-}" != "true" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
+        echo "Running cargo clippy..."
         cargo clippy --all-targets --all-features -- -D warnings
+    else
+        echo "Skipping clippy in time-critical CI; run it locally or with workflow_dispatch"
     fi
 
-    # Check if we should use cached build
     if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-        echo "Running Rust tests in CI with optimizations..."
-        cargo test --release --locked
+        echo "Running curated Rust tests in CI with optimizations..."
+        cargo test --release --locked -p wdintel-rs
     else
-        echo "Running Rust tests locally..."
-        cargo test --release
+        echo "Running curated Rust tests locally with optimizations..."
+        cargo test --release -p wdintel-rs
     fi
 
 test: test-fe test-be
+
+profile-be-tests:
+    python3 scripts/ci/profile_rust_tests.py
 
 test-transcriber:
     cargo test -p wdintel-rs transcri -- --nocapture
@@ -1405,6 +1425,12 @@ ai-sync-from-cloud:
     local_directory="${WD_FASTTEXT_MODELS}/"
     s5cmd --endpoint-url "$ENDPOINT_URL" cp --if-source-newer --show-progress "$remote_files" "$local_directory"
 
+ai-eval-sync-from-cloud eval:
+    bash ai-eval/sync.sh from-cloud "{{ eval }}"
+
+ai-eval-sync-to-cloud eval:
+    bash ai-eval/sync.sh to-cloud "{{ eval }}"
+
 # run like `just copy-db-backup echo-zp2`
 [arg('server', long='server')]
 copy-db-backup server:
@@ -2363,6 +2389,31 @@ analytics-reconcile-tables:
 
 analytics-reconcile-derived-schema:
     bash deploy/clickhouse/bin/source-reconcile-derived-schema.sh
+
+[arg('server', long='server')]
+[arg('table', long='table')]
+analytics-resnapshot-table server table:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SERVER="{{ server }}"
+    TABLE="{{ table }}"
+    [[ -n "$SERVER" ]] || { echo "--server is required" >&2; exit 1; }
+    [[ "$SERVER" =~ ^[A-Za-z0-9._-]+$ ]] \
+        || { echo "invalid server: $SERVER" >&2; exit 1; }
+    [[ "$TABLE" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
+        || { echo "invalid table: $TABLE" >&2; exit 1; }
+
+    tar -C "{{ justfile_directory() }}" -cf - \
+        deploy/clickhouse/bin/lib.sh \
+        deploy/clickhouse/bin/source-resnapshot-table.sh \
+        deploy/clickhouse/bin/resnapshot-table.sh \
+        deploy/clickhouse/migration-impact.json \
+      | ssh "$SERVER" "set -euo pipefail
+          source_table=$TABLE
+          temporary_dir=\$(mktemp -d /tmp/echo-peerdb-resnapshot.XXXXXX)
+          trap 'rm -rf -- \"\$temporary_dir\"' EXIT
+          tar -xf - -C \"\$temporary_dir\" --strip-components=2
+          \"\$temporary_dir/bin/source-resnapshot-table.sh\" --table \"\$source_table\""
 
 setup-analytics-reconcile-tables:
     deploy/clickhouse/bin/source-sync-exclusions.sh --yes

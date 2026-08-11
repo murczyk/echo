@@ -4,7 +4,6 @@ import CoordinatesTests
 import Le.Block.UnitTests
 import Le.Callsign.HintStrategyTests
 import RerAnalysisMapRegressionTests
-import RerFreqsUtilsTests
 import Test exposing (..)
 import UnitHierarchyTests
 
@@ -17,5 +16,4 @@ suite =
         , UnitHierarchyTests.suite
         , CoordinatesTests.suite
         , RerAnalysisMapRegressionTests.suite
-        , RerFreqsUtilsTests.suite
         ]

@@ -2,7 +2,29 @@
   "migrations": {
     "echo:m20260810_062938_echo_automation_coordinates_screenshot": {
       "changes": [
-        { "table": "public.echo_automation", "strategy": "cdc_backfill" }
+        {
+          "table": "public.echo_automation",
+          "strategy": "empty_table_resnapshot"
+        }
+      ]
+    },
+    "echo:m20260810_140653_inbox_unit_resolution": {
+      "changes": [
+        { "table": "public.failed_inbox_unit", "strategy": "excluded" },
+        { "table": "public.sigint_unit_label", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260811_064758_sigint_inbox_item_units": {
+      "changes": [
+        {
+          "table": "public.sigint_inbox_item_unit",
+          "strategy": "replicated_snapshot"
+        }
+      ]
+    },
+    "echo:m20260811_073954_failed_inbox_unit_bad_text_index": {
+      "changes": [
+        { "table": "public.failed_inbox_unit", "strategy": "excluded" }
       ]
     },
     "echo:m20260806_120000_drop_legacy_inbox_callsigns": {

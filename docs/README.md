@@ -163,6 +163,10 @@ only rows orphaned from their source message or attachment are removed.
 Admins configure OpenAI-compatible engines in `/admin/system-settings-neo`.
 `/admin/ai-callsigns` provides prompt testing and an optional sequential
 bgworker that replaces regular parsed callsigns with the AI result.
+Tracked AI evaluation prompts, tools, and notes live under `ai-eval/`. Raw
+production-derived corpora stay in dated, gitignored `ai-eval/*/raw/`
+directories and are synchronized separately to Backblaze B2; see
+[`ai-eval/README.md`](../ai-eval/README.md).
 See [Echo vLLM](../echo-vllm/README.md) for the `echo-gpu-spark` worker and
 [Echo vLLM Router](../echo-vllm-router/README.md) for routing, observability,
 deployment, verification, and rollback commands. Echo uses the router as its
@@ -398,7 +402,7 @@ flowchart TB
     api -.-> api_vault_worker["secret_worker<br/>when Vault is configured"]
     bg -.-> bg_vault_worker["secret_worker<br/>when Vault is configured"]
 
-    bg --> core_workers["Core workers<br/>healthcheck_worker<br/>worker_calculate_group_stats<br/>iggy_integration_worker<br/>aor_assignments_worker<br/>operator_inbox_worker<br/>rer_duty_historical_interceptions_worker<br/>unit_tag_queue_worker"]
+    bg --> core_workers["Core workers<br/>healthcheck_worker<br/>worker_calculate_group_stats<br/>iggy_integration_worker<br/>aor_assignments_worker<br/>operator_inbox_worker<br/>rer_duty_historical_interceptions_worker<br/>unit_tag_queue_worker<br/>failed_inbox_unit_worker"]
     bg --> messenger_workers["Messenger workers<br/>messenger_receive_worker<br/>process_queue_nofail<br/>echo_im_cleanup"]
     bg --> network_workers["Network workers<br/>recent_inbox_network_worker<br/>old_inbox_network_worker<br/>inbox_network_daily_consistency_worker"]
     bg --> palitra_workers["Palitra worker<br/>palitra_highlight_worker"]
@@ -416,6 +420,17 @@ flowchart TB
 ```
 
 `worker_calculate_group_stats` also owns historical group-stat recalculation.
+
+`failed_inbox_unit_worker` owns verification of unresolved-unit rows marked
+pending by label changes or admin resolution. Every 10 seconds it claims a
+bounded batch with `FOR UPDATE SKIP LOCKED`, reruns the canonical inbox-unit
+resolver against each item's current `unit_v2` or raw `unit`, and either
+persists a parsed `sigint_inbox_item_unit` link and hard-deletes the failure or
+reactivates the failure for admin review. Network-derived links use the same
+table with `network` kind and are rebuilt as the distinct unit union during
+the existing inbox-network recalculation flow. Errors are logged and retried
+without stopping the worker; deleted rows older than 30 days are removed
+before each verification batch.
 
 Report generation is isolated in `wdintel-rs-report-worker.service`. At most
 four reports run concurrently across the per-kind queues. The unit has a fixed
@@ -684,6 +699,14 @@ stored as separate Bitwarden Secure Notes and rendered to root-owned
 environment files by deployment commands. Each participating Echo instance
 receives its own analytics container, credentials, publication, replication
 slot, ClickHouse data, and recovery lifecycle.
+
+ClickHouse's local diagnostic tables are operational metadata rather than part
+of the raw, current-state, or derived application datasets. Provisioning and
+the day-two maintenance command keep server and `text_log` verbosity at
+`information`, retain `text_log` for 3 days, `query_log` for 7 days, and
+`trace_log` plus `processors_profile_log` for 1 day. The maintenance boundary
+permits a ClickHouse-only restart and truncation of those four system tables;
+it does not mutate CDC data, application storage, or ZFS snapshots.
 
 GOI deployments build the `echo-swapp` and messenger Debian artifacts on the
 builder configured by `goi_builder` in `goi/justfile`, using its

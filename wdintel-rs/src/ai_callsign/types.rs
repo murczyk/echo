@@ -51,9 +51,19 @@ pub struct AiCallsignWorkerSettingsItem {
 #[serde(rename_all = "camelCase")]
 pub struct AiCallsignPageRsp {
     pub prompt: String,
+    pub prompt_overridden: bool,
     pub engines: Vec<AiCallsignEngineItem>,
     pub messages: Vec<AiCallsignTestMessageItem>,
     pub worker: AiCallsignWorkerSettingsItem,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiCallsignPromptState {
+    pub prompt: String,
+    pub prompt_overridden: bool,
 }
 
 #[derive(

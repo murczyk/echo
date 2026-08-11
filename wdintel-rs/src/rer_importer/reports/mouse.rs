@@ -1772,6 +1772,7 @@ mod tests {
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
             without_comments: Some(false),
+            babak_new_callsign_min_mentions: None,
             interception_keep_full_message: None,
             interception_keep_old_colors: None,
             digest_omit_exo_id: None,

@@ -20,6 +20,7 @@ const ENTRYPOINTS = [
   { modulePath: './tags-neo-element', tag: 'tags-neo' },
   { modulePath: './admin-all-reports-element', tag: 'admin-all-reports' },
   { modulePath: './admin-unit-duplicates-element', tag: 'admin-unit-duplicates' },
+  { modulePath: './admin-unit-unparsed-element', tag: 'admin-unit-unparsed' },
   { modulePath: './admin-ai-callsigns-element', tag: 'admin-ai-callsigns' },
   { modulePath: './admin-ai-agent-element', tag: 'admin-ai-agent' },
   { modulePath: './ai-agent-chat-element', tag: 'ai-agent-chat' },

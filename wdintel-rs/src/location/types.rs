@@ -89,6 +89,7 @@ pub struct LocalityDetails {
     pub is_rf: bool,
 }
 
+#[derive(Clone)]
 pub struct SettlementsDataConfig {
     pub aor_id_to_settlements_data: HashMap<i64, Arc<SettlementsData>>,
     pub aor_id_to_config_names: HashMap<i64, Vec<String>>,

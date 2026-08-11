@@ -1499,6 +1499,23 @@ pub async fn oneoff_reprocess_callsigns(
     Ok(())
 }
 
+fn count_callsigns_per_message(
+    rows: Vec<serde_json::Value>,
+) -> Result<BTreeMap<String, i64>, AppError> {
+    let mut per_callsign_count = BTreeMap::new();
+    for callsigns_jv in rows {
+        let callsigns: Vec<String> =
+            serde_json::from_value(callsigns_jv).c(h!())?;
+        for callsign in callsigns {
+            per_callsign_count
+                .entry(callsign)
+                .and_modify(|count| *count += 1)
+                .or_insert(1);
+        }
+    }
+    Ok(per_callsign_count)
+}
+
 /// Graph data in D3 format. See [neo4jd3](https://github.com/eisman/neo4jd3)
 #[post("/api/rer/analysis/callsigns-graph")]
 pub async fn callsigns_graph(
@@ -1575,7 +1592,6 @@ pub async fn callsigns_graph(
     #[derive(FromQueryResult, Debug)]
     struct Row {
         callsigns: serde_json::Value,
-        count: i64,
     }
     let rows_res = signal_message::Entity::find()
         .join(
@@ -1597,7 +1613,6 @@ pub async fn callsigns_graph(
             ),
             "callsigns",
         )
-        .column_as(Expr::cust("1"), "count")
         .filter(
             datasource_group::Column::GroupMasterKey.eq_any(
                 crate::messenger::group::get_identity_sigint_groups(
@@ -1624,18 +1639,11 @@ pub async fn callsigns_graph(
         rows_res.into_model::<Row>().all(&env.dbx).await.c(h!())?;
     // println!("> rows_res: {rows_res:?}");
 
-    let mut per_callsign_count: BTreeMap<String, i64> = BTreeMap::new();
-    for row in rows_res {
-        let callsigns_jv = row.callsigns;
-        let callsigns: Vec<String> =
-            serde_json::from_value(callsigns_jv).c(h!())?;
-        for callsign in callsigns {
-            per_callsign_count
-                .entry(callsign)
-                .and_modify(|c| *c += row.count)
-                .or_insert(row.count);
-        }
-    }
+    let per_callsign_count = count_callsigns_per_message(
+        rows_res.into_iter().map(|row| row.callsigns).collect(),
+    )
+    .context(h!())?;
+
     let mut callsigns: Vec<AnalysisStatsCallsign> = per_callsign_count
         .iter()
         .filter(|(csgn, _c)| {
@@ -1646,7 +1654,6 @@ pub async fn callsigns_graph(
             count: *c,
         })
         .collect();
-
     // let mut callsigns = crate::rer_importer::analysis::stats_get_callsigns(
     //     &env,
     //     &,
@@ -1896,6 +1903,18 @@ async fn load_callsign_graph_items(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn callsign_graph_counts_each_message_once() {
+        let counts = count_callsigns_per_message(vec![
+            serde_json::json!(["ALPHA", "BRAVO"]),
+            serde_json::json!(["ALPHA"]),
+        ])
+        .unwrap();
+
+        assert_eq!(counts.get("ALPHA"), Some(&2));
+        assert_eq!(counts.get("BRAVO"), Some(&1));
+    }
 
     fn message_with_callsigns(callsigns: Vec<&str>) -> InboxMessage {
         InboxMessage {

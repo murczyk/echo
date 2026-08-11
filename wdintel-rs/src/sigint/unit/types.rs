@@ -37,6 +37,8 @@ pub struct Unit {
     pub has_orbit: bool,
     #[serde(default, skip_deserializing)]
     pub orbit_unit_ids: Vec<String>,
+    #[serde(default, skip_deserializing)]
+    pub orbit_unit_generative_names: Vec<String>,
 }
 
 #[cfg(test)]
@@ -64,6 +66,7 @@ mod tests {
         assert_eq!(unit.is_deduplicate_candidate, None);
         assert_eq!(unit.military_district, "");
         assert_eq!(unit.army_region, "");
+        assert!(unit.orbit_unit_generative_names.is_empty());
     }
 
     #[test]
@@ -346,11 +349,37 @@ pub struct UnitAttachment {
 pub struct UnitDetailsRsp {
     pub unit: Unit,
     pub attachments: Vec<UnitAttachment>,
+    pub labels: Vec<UnitLabel>,
     pub orbit_units: Vec<OrbitUnitDetails>,
     #[serde(default)]
     pub can_link_orbit_unit: bool,
     #[serde(default)]
     pub can_create_device_network: bool,
+    #[serde(default)]
+    pub can_edit_unit_labels: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitLabel {
+    pub id: i64,
+    pub label: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CreateUnitLabelReq {
+    pub unit_id: i64,
+    pub label: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct DeleteUnitLabelReq {
+    pub label_id: i64,
 }
 
 #[derive(

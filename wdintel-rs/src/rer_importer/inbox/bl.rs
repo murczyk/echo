@@ -1243,6 +1243,14 @@ pub async fn submit_upsert_inbox_item(
         .await
         .c(h!())?;
     let inbox_id = insert_res.last_insert_id;
+    crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
+        txn,
+        inbox_id,
+        message.unit.as_deref(),
+        message.unit.as_deref(),
+    )
+    .await
+    .c(h!())?;
     crate::rer_importer::inbox::metadata::refresh_metadata(inbox_id, txn)
         .await
         .c(h!())?;

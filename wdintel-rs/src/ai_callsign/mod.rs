@@ -30,7 +30,7 @@ use sea_orm::{
 use std::collections::{HashMap, HashSet};
 use types::{
     AiCallsignEngineItem, AiCallsignPageRsp, AiCallsignParseResultItem,
-    AiCallsignParsingRsp, AiCallsignTestMessageIdReq,
+    AiCallsignParsingRsp, AiCallsignPromptState, AiCallsignTestMessageIdReq,
     AiCallsignTestMessageItem, AiCallsignWorkerSettingsItem,
     CreateAiCallsignTestMessageReq, RunAiCallsignParsingReq,
     SaveAiCallsignParsingReq, SaveAiCallsignWorkerSettingsReq,
@@ -45,6 +45,16 @@ pub async fn get_ai_callsign_page(
 ) -> Result<Json<AiCallsignPageRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     Ok(Json(load_page(&env.dbx).await?))
+}
+
+#[post("/api/admin/ai-callsigns/prompt/reset")]
+pub async fn reset_ai_callsign_prompt(
+    env: actix_web::web::Data<Env>,
+    user: Identity,
+) -> Result<Json<AiCallsignPromptState>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    reset_prompt(&env.dbx).await?;
+    Ok(Json(prompt_state("")))
 }
 
 #[post("/api/admin/ai-callsigns/messages/create")]
@@ -180,10 +190,10 @@ async fn load_page(
             .one(dbx)
             .await
             .c(h!())?;
-    let prompt = settings
-        .as_ref()
-        .map(|settings| settings.prompt.clone())
-        .unwrap_or_else(|| AI_CALLSIGN_DEFAULT_PROMPT.to_string());
+    let prompt_override =
+        settings.as_ref().map(|settings| settings.prompt.as_str());
+    let prompt =
+        effective_prompt(prompt_override.unwrap_or_default()).to_string();
     let worker = settings.as_ref().map(worker_settings_item).unwrap_or(
         AiCallsignWorkerSettingsItem {
             enabled: false,
@@ -220,6 +230,8 @@ async fn load_page(
     }
     Ok(AiCallsignPageRsp {
         prompt,
+        prompt_overridden: prompt_override
+            .is_some_and(|prompt| !prompt.is_empty()),
         worker,
         engines: engines
             .into_iter()
@@ -287,7 +299,7 @@ async fn save_worker_settings(
     let now = Utc::now().naive_utc();
     ai_callsign_settings::Entity::insert(ai_callsign_settings::ActiveModel {
         id: Set(AI_CALLSIGN_SETTINGS_ID),
-        prompt: Set(AI_CALLSIGN_DEFAULT_PROMPT.to_string()),
+        prompt: Set(String::new()),
         updated_at: Set(now),
         worker_enabled: Set(enabled),
         worker_ai_engine_id: Set(ai_engine_id),
@@ -311,6 +323,21 @@ async fn save_worker_settings(
             .c(h!())?
             .c(h!())?,
     )
+}
+
+pub(crate) fn effective_prompt(prompt: &str) -> &str {
+    if prompt.is_empty() {
+        AI_CALLSIGN_DEFAULT_PROMPT
+    } else {
+        prompt
+    }
+}
+
+fn prompt_state(prompt: &str) -> AiCallsignPromptState {
+    AiCallsignPromptState {
+        prompt: effective_prompt(prompt).to_string(),
+        prompt_overridden: !prompt.is_empty(),
+    }
 }
 
 async fn load_enabled_engines(
@@ -660,6 +687,13 @@ async fn save_prompt(
     Ok(())
 }
 
+async fn reset_prompt(dbx: &DatabaseConnection) -> Result<(), AppError> {
+    let transaction = dbx.begin().await.c(h!())?;
+    save_prompt(&transaction, String::new(), Utc::now().naive_utc()).await?;
+    transaction.commit().await.c(h!())?;
+    Ok(())
+}
+
 async fn save_result(
     transaction: &DatabaseTransaction,
     result: &AiCallsignParseResultItem,
@@ -743,7 +777,13 @@ fn parse_unique_uuids(values: Vec<String>) -> Result<HashSet<Uuid>, AppError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_callsigns, strip_json_code_fence};
+    use super::{
+        effective_prompt, parse_callsigns, prompt_state, strip_json_code_fence,
+    };
+    use crate::config::{AI_CALLSIGN_DEFAULT_PROMPT, AI_CALLSIGN_SETTINGS_ID};
+    use crate::entities::ai_callsign_settings;
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
+    use serial_test::serial;
 
     #[test]
     fn parses_object_and_deduplicates_callsigns() {
@@ -773,5 +813,49 @@ mod tests {
     #[test]
     fn rejects_non_string_callsigns() {
         assert!(parse_callsigns(r#"{"callsigns":[42]}"#).is_err());
+    }
+
+    #[test]
+    fn empty_prompt_uses_static_default_while_override_is_retained() {
+        assert_eq!(effective_prompt(""), AI_CALLSIGN_DEFAULT_PROMPT);
+        assert_eq!(effective_prompt("override"), "override");
+        assert!(!prompt_state("").prompt_overridden);
+        assert!(prompt_state("override").prompt_overridden);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn reset_persists_fallback_without_changing_worker_settings() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        ai_callsign_settings::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let now = chrono::Utc::now().naive_utc();
+        ai_callsign_settings::ActiveModel {
+            id: Set(AI_CALLSIGN_SETTINGS_ID),
+            prompt: Set("override".to_string()),
+            updated_at: Set(now),
+            worker_enabled: Set(true),
+            worker_ai_engine_id: Set(None),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        super::reset_prompt(&env.dbx).await.unwrap();
+
+        let settings =
+            ai_callsign_settings::Entity::find_by_id(AI_CALLSIGN_SETTINGS_ID)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(settings.prompt.is_empty());
+        assert!(settings.worker_enabled);
+        assert_eq!(settings.worker_ai_engine_id, None);
+        let page = super::load_page(&env.dbx).await.unwrap();
+        assert_eq!(page.prompt, AI_CALLSIGN_DEFAULT_PROMPT);
+        assert!(!page.prompt_overridden);
     }
 }
