@@ -76,7 +76,9 @@ pub async fn list_units(
             .iter()
             .map(|unit| unit.id)
             .collect::<Vec<_>>();
-        let orbit_links = orbit::unit_orbit_links(&env.dbx, &unit_ids).await?;
+        let orbit_links = orbit::unit_orbit_links(&env.dbx, &unit_ids)
+            .await
+            .context(h!())?;
         for unit in &mut response.units {
             apply_unit_orbit_links(
                 unit,
