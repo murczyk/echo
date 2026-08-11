@@ -271,7 +271,7 @@ updateDetails result model =
                     if model.activeTab == ChildUnits && List.isEmpty details.orbitUnits then
                         Overview
 
-                    else if model.activeTab == Management && not details.canEditUnitLabels then
+                    else if model.activeTab == Management && not details.canEditUnitLabels && List.isEmpty details.labels then
                         Overview
 
                     else
@@ -704,7 +704,9 @@ detailsView user shared model details =
         , deviceNetworkDialog model details
         , unitEditDialog model details.unit
         , orbitLinkDialog model details.unit
-        , tabsView model.activeTab (not (List.isEmpty details.orbitUnits)) details.canEditUnitLabels
+        , tabsView model.activeTab
+            (not (List.isEmpty details.orbitUnits))
+            (details.canEditUnitLabels || not (List.isEmpty details.labels))
         , case model.activeTab of
             Overview ->
                 overviewTab user shared model details
@@ -884,7 +886,7 @@ defaultUnitMasks unit =
 
 
 tabsView : Tab -> Bool -> Bool -> Html Msg
-tabsView activeTab hasOrbitUnit canManage =
+tabsView activeTab hasOrbitUnit showManagement =
     let
         tabButton tab label =
             button
@@ -912,7 +914,7 @@ tabsView activeTab hasOrbitUnit canManage =
         ]
         [ tabButton Overview "Огляд"
         , tabButton Files "Файли"
-        , if canManage then
+        , if showManagement then
             tabButton Management "Керування"
 
           else

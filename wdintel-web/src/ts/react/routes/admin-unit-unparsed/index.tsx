@@ -49,6 +49,7 @@ const DEFAULT_COLUMN_VISIBILITY = {
   note: true,
   'mrt-row-actions': true,
 };
+const UNIT_SEARCH_DEBOUNCE_MS = 300;
 
 type ArchiveFilter = 'all' | 'new' | 'archived';
 
@@ -269,28 +270,34 @@ export function AdminUnitUnparsedPage({
     const search = unitSearch.trim() || resolveRowText;
     setUnitLoading(true);
     setUnitSearchError(null);
-    void searchUnitsStrictThenRelaxed(
-      {
-        ...DEFAULT_LIST_UNITS_REQ,
-        sortBy: 'UnitNameLengthAsc',
-        includeInactive: true,
-        filterText: search,
-        limit: 50,
-        offset: 0,
-      },
-      { signal: controller.signal },
-    )
-      .then((units) => {
-        if (!controller.signal.aborted) setUnitOptions(units);
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted) setUnitSearchError(formatError(error));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setUnitLoading(false);
-      });
+    setUnitOptions([]);
+    const timeout = window.setTimeout(() => {
+      void searchUnitsStrictThenRelaxed(
+        {
+          ...DEFAULT_LIST_UNITS_REQ,
+          sortBy: 'UnitNameLengthAsc',
+          includeInactive: true,
+          filterText: search,
+          limit: 50,
+          offset: 0,
+        },
+        { signal: controller.signal },
+      )
+        .then((units) => {
+          if (!controller.signal.aborted) setUnitOptions(units);
+        })
+        .catch((error) => {
+          if (!controller.signal.aborted) setUnitSearchError(formatError(error));
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setUnitLoading(false);
+        });
+    }, UNIT_SEARCH_DEBOUNCE_MS);
 
-    return () => controller.abort();
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
   }, [resolveRowText, unitSearch]);
 
   async function refreshAfterAction() {

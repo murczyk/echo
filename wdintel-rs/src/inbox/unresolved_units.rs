@@ -10,9 +10,8 @@ use actix_web::web::{Data, Json};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseBackend, EntityTrait, FromQueryResult, IntoActiveModel,
-    QueryFilter, Statement, TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait,
+    FromQueryResult, QueryFilter, Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 
@@ -195,12 +194,12 @@ where
 async fn ensure_admin_unit_editor(
     env: &Env,
     user: &actix_identity::Identity,
-) -> Result<(), AppError> {
+) -> Result<uuid::Uuid, AppError> {
     ensure_admin(&env.dbx, user).await.c(h!())?;
     ensure_rer_role(&env.dbx, user).await.c(h!())?;
     let login = login_id_from_identity(user).c(h!())?;
     has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
-    Ok(())
+    Ok(login)
 }
 
 #[post("/api/admin/unresolved-unit-label/list")]
@@ -312,7 +311,7 @@ pub async fn resolve_unresolved_unit_label(
     env: Data<Env>,
     req: Json<ResolveUnresolvedUnitLabelReq>,
 ) -> Result<Json<UpdateUnresolvedUnitLabelsRsp>, AppError> {
-    ensure_admin_unit_editor(&env, &user).await.c(h!())?;
+    let login = ensure_admin_unit_editor(&env, &user).await.c(h!())?;
     crate::sigint::unit::labels::validate_label(&req.label).c(h!())?;
     crate::sigint::unit::labels::validate_label(&req.unit_txt).c(h!())?;
 
@@ -325,10 +324,15 @@ pub async fn resolve_unresolved_unit_label(
         .ok_or(AppError::NotFound)
         .c(h!())?;
     let sigint_unit_id = sigint_unit.id;
-    if !sigint_unit.active {
-        let mut sigint_unit = sigint_unit.into_active_model();
-        sigint_unit.active = Set(true);
-        sigint_unit.update(&transaction).await.c(h!())?;
+    let unit_activated = !sigint_unit.active;
+    if unit_activated {
+        crate::sigint::unit::activate_unit_for_login(
+            &transaction,
+            &login,
+            &sigint_unit,
+        )
+        .await
+        .c(h!())?;
     }
 
     crate::sigint::unit::labels::insert_label(
@@ -356,6 +360,11 @@ pub async fn resolve_unresolved_unit_label(
         return Err(AppError::NotFound);
     }
     transaction.commit().await.c(h!())?;
+    if unit_activated {
+        crate::sigint::unit::fanout_unit_changed_data(&env)
+            .await
+            .c(h!())?;
+    }
     Ok(Json(UpdateUnresolvedUnitLabelsRsp { affected_count }))
 }
 

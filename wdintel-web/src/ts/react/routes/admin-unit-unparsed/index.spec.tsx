@@ -163,6 +163,7 @@ async function renderPage(): Promise<Root> {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers();
   mocks.archive.mockReset().mockResolvedValue({ affectedCount: 1 });
   mocks.list.mockReset().mockResolvedValue(firstPage);
   mocks.resolve.mockReset().mockResolvedValue({ affectedCount: 1 });
@@ -171,6 +172,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   document.body.replaceChildren();
 });
 
@@ -238,7 +240,7 @@ describe('AdminUnitUnparsedPage', () => {
     const root = await renderPage();
 
     act(() => button("Прив'язати до підрозділу").click());
-    await act(async () => Promise.resolve());
+    await act(async () => vi.advanceTimersByTimeAsync(300));
     expect(mocks.searchUnits).toHaveBeenCalledWith(
       expect.objectContaining({ includeInactive: true, filterText: '123 омсбр' }),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),

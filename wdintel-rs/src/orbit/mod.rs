@@ -516,9 +516,14 @@ where
         .c("failed to load active SIGINT units for ORBIT matching")?;
     let sigint_unit_ids_by_orbit_unit =
         matching::matching_sigint_unit_ids(&units, &sigint_units);
+    let duplicate_candidate_count = sigint_unit_ids_by_orbit_unit
+        .values()
+        .filter(|sigint_unit_ids| sigint_unit_ids.len() > 1)
+        .map(BTreeSet::len)
+        .sum::<usize>();
     log::info!(
-        "matched {} ORBIT roots to active SIGINT units",
-        sigint_unit_ids_by_orbit_unit.len()
+        "matched {} ORBIT roots to active SIGINT units; found {duplicate_candidate_count} possible duplicate SIGINT units",
+        sigint_unit_ids_by_orbit_unit.len(),
     );
     let transaction = db.begin().await.c(h!())?;
     persistence::replace_sigint_unit_links_in_transaction(
