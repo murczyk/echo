@@ -258,6 +258,13 @@ pub async fn resolve_unresolved_unit_label(
     )
     .await
     .c(h!())?;
+    crate::sigint::unit::labels::insert_label(
+        &transaction,
+        sigint_unit_ids[0],
+        &req.unit_txt,
+    )
+    .await
+    .c(h!())?;
     let affected_count =
         super::unit_resolution::mark_failures_pending_for_text(
             &transaction,

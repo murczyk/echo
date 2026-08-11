@@ -215,12 +215,12 @@ where
             }
             StructuralResolution::Blocked => return Ok(None),
             StructuralResolution::NoMatch => {
-                return resolve_by_label(db, unit_v2).await;
+                return resolve_by_label(db, unit_v2).await.context(h!());
             }
         }
     }
     match nonempty(unit) {
-        Some(unit) => resolve_by_label(db, unit).await,
+        Some(unit) => resolve_by_label(db, unit).await.context(h!()),
         None => Ok(None),
     }
 }
