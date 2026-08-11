@@ -41,6 +41,9 @@ async fn messenger_worker_tick(db: &DatabaseConnection) -> anyhow::Result<()> {
             .await
             .c(h!())?;
     }
+    messenger::repair_blank_whatsapp_group_names(db)
+        .await
+        .c(h!())?;
     automation::worker_tick(db).await.c(h!())?;
     Ok(())
 }

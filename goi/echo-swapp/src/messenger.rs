@@ -7,17 +7,19 @@ use echo_im::entities::sea_orm_active_enums::{
 };
 use echo_im::entities::{
     echo_account, echo_client, echo_client_config, echo_client_lock,
-    echo_qr_code, echo_sender,
+    echo_group, echo_qr_code, echo_sender,
 };
 use echo_im::types::{MessageSource, OutboxAttachmentInput, SendMessageReq};
 use regex::Regex;
+use std::collections::BTreeMap;
 use std::process::Command;
 use std::time::Duration;
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend,
-    DatabaseConnection, DatabaseTransaction, EntityTrait, JoinType,
-    QueryFilter, QuerySelect, RelationTrait, Set, Statement, TransactionTrait,
+    DatabaseConnection, DatabaseTransaction, EntityTrait, IntoActiveModel,
+    JoinType, QueryFilter, QuerySelect, RelationTrait, Set, Statement,
+    TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 
@@ -344,6 +346,50 @@ pub async fn groups(
         .collect();
     txn.commit().await.c(h!())?;
     Ok(groups)
+}
+
+pub(crate) async fn repair_blank_whatsapp_group_names(
+    db: &DatabaseConnection,
+) -> Result<()> {
+    let groups = echo_group::Entity::find()
+        .join(JoinType::InnerJoin, echo_group::Relation::EchoAccount.def())
+        .join(
+            JoinType::InnerJoin,
+            echo_account::Relation::EchoClientLock.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            echo_client_lock::Relation::EchoClient.def(),
+        )
+        .filter(echo_account::Column::Source.eq(EchoMessageSource::Whatsapp))
+        .filter(echo_client::Column::Deleted.eq(false))
+        .filter(echo_client::Column::Name.starts_with(OWNED_CLIENT_PREFIX))
+        .distinct()
+        .all(db)
+        .await
+        .c(h!())?;
+    let resolved_names = groups
+        .iter()
+        .filter_map(|group| {
+            group
+                .name
+                .as_ref()
+                .filter(|name| !name.is_empty())
+                .map(|name| (group.group_id.clone(), name.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for group in groups
+        .into_iter()
+        .filter(|group| group.name.as_deref() == Some(""))
+    {
+        let Some(name) = resolved_names.get(&group.group_id) else {
+            continue;
+        };
+        let mut group = group.into_active_model();
+        group.name = Set(Some(name.clone()));
+        group.update(db).await.c(h!())?;
+    }
+    Ok(())
 }
 
 pub async fn chats(
