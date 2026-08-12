@@ -1,5 +1,11 @@
 {
   "migrations": {
+    "echo:m20260812_113859_signal_message_copy": {
+      "changes": [
+        { "table": "public.signal_message", "strategy": "mirror_resync" },
+        { "table": "public.signal_message_media", "strategy": "mirror_resync" }
+      ]
+    },
     "echo:m20260810_062938_echo_automation_coordinates_screenshot": {
       "changes": [
         {
