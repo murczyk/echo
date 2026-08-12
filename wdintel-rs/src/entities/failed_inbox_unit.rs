@@ -13,11 +13,12 @@ pub struct Model {
     pub created_at: DateTime,
     pub deleted: bool,
     pub is_bad_data: bool,
-    #[sea_orm(unique)]
     pub inbox_item_id: i64,
     #[sea_orm(column_type = "Text")]
     pub unit_txt: String,
     pub deleted_at: Option<DateTime>,
+    #[sea_orm(column_type = "Text")]
+    pub note: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

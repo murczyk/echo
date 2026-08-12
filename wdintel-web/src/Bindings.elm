@@ -7086,6 +7086,8 @@ deleteUnitLabelReqEncoder struct =
 type alias UnresolvedUnitLabel =
     { unitTxt : String
     , quantity : Int
+    , note : String
+    , isArchived : Bool
     }
 
 
@@ -7094,11 +7096,30 @@ unresolvedUnitLabelEncoder struct =
     Json.Encode.object
         [ ( "unit_txt", (Json.Encode.string) struct.unitTxt )
         , ( "quantity", (Json.Encode.int) struct.quantity )
+        , ( "note", (Json.Encode.string) struct.note )
+        , ( "is_archived", (Json.Encode.bool) struct.isArchived )
         ]
 
 
+type UnresolvedUnitLabelArchiveFilter
+    = AllUnresolvedUnitLabels
+    | NewUnresolvedUnitLabels
+    | ArchivedUnresolvedUnitLabels
+
+
+unresolvedUnitLabelArchiveFilterEncoder : UnresolvedUnitLabelArchiveFilter -> Json.Encode.Value
+unresolvedUnitLabelArchiveFilterEncoder enum =
+    case enum of
+        AllUnresolvedUnitLabels ->
+            Json.Encode.string "AllUnresolvedUnitLabels"
+        NewUnresolvedUnitLabels ->
+            Json.Encode.string "NewUnresolvedUnitLabels"
+        ArchivedUnresolvedUnitLabels ->
+            Json.Encode.string "ArchivedUnresolvedUnitLabels"
+
 type alias ListUnresolvedUnitLabelsReq =
     { page : Maybe (Int)
+    , archiveFilter : Maybe (UnresolvedUnitLabelArchiveFilter)
     }
 
 
@@ -7106,6 +7127,7 @@ listUnresolvedUnitLabelsReqEncoder : ListUnresolvedUnitLabelsReq -> Json.Encode.
 listUnresolvedUnitLabelsReqEncoder struct =
     Json.Encode.object
         [ ( "page", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.page )
+        , ( "archive_filter", (Maybe.withDefault Json.Encode.null << Maybe.map (unresolvedUnitLabelArchiveFilterEncoder)) struct.archiveFilter )
         ]
 
 
@@ -7139,10 +7161,24 @@ classifyUnresolvedUnitLabelReqEncoder struct =
         ]
 
 
+type alias ArchiveUnresolvedUnitLabelReq =
+    { unitTxt : String
+    , archived : Bool
+    }
+
+
+archiveUnresolvedUnitLabelReqEncoder : ArchiveUnresolvedUnitLabelReq -> Json.Encode.Value
+archiveUnresolvedUnitLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_txt", (Json.Encode.string) struct.unitTxt )
+        , ( "archived", (Json.Encode.bool) struct.archived )
+        ]
+
+
 type alias ResolveUnresolvedUnitLabelReq =
     { unitTxt : String
     , label : String
-    , orbitUnitId : String
+    , sigintUnitId : Int
     }
 
 
@@ -7151,7 +7187,23 @@ resolveUnresolvedUnitLabelReqEncoder struct =
     Json.Encode.object
         [ ( "unit_txt", (Json.Encode.string) struct.unitTxt )
         , ( "label", (Json.Encode.string) struct.label )
-        , ( "orbit_unit_id", (Json.Encode.string) struct.orbitUnitId )
+        , ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        ]
+
+
+type alias UpdateUnresolvedUnitLabelNoteReq =
+    { unitTxt : String
+    , note : String
+    , isArchived : Bool
+    }
+
+
+updateUnresolvedUnitLabelNoteReqEncoder : UpdateUnresolvedUnitLabelNoteReq -> Json.Encode.Value
+updateUnresolvedUnitLabelNoteReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_txt", (Json.Encode.string) struct.unitTxt )
+        , ( "note", (Json.Encode.string) struct.note )
+        , ( "is_archived", (Json.Encode.bool) struct.isArchived )
         ]
 
 
@@ -16800,12 +16852,47 @@ unresolvedUnitLabelDecoder =
     Json.Decode.succeed UnresolvedUnitLabel
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quantity" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "note" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
 
+
+unresolvedUnitLabelArchiveFilterDecoder : Json.Decode.Decoder UnresolvedUnitLabelArchiveFilter
+unresolvedUnitLabelArchiveFilterDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "AllUnresolvedUnitLabels" ->
+                            Json.Decode.succeed AllUnresolvedUnitLabels
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "NewUnresolvedUnitLabels" ->
+                            Json.Decode.succeed NewUnresolvedUnitLabels
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ArchivedUnresolvedUnitLabels" ->
+                            Json.Decode.succeed ArchivedUnresolvedUnitLabels
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 listUnresolvedUnitLabelsReqDecoder : Json.Decode.Decoder ListUnresolvedUnitLabelsReq
 listUnresolvedUnitLabelsReqDecoder =
     Json.Decode.succeed ListUnresolvedUnitLabelsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_filter" (Json.Decode.nullable (unresolvedUnitLabelArchiveFilterDecoder))))
 
 
 listUnresolvedUnitLabelsRspDecoder : Json.Decode.Decoder ListUnresolvedUnitLabelsRsp
@@ -16823,12 +16910,27 @@ classifyUnresolvedUnitLabelReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
 
 
+archiveUnresolvedUnitLabelReqDecoder : Json.Decode.Decoder ArchiveUnresolvedUnitLabelReq
+archiveUnresolvedUnitLabelReqDecoder =
+    Json.Decode.succeed ArchiveUnresolvedUnitLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archived" (Json.Decode.bool)))
+
+
 resolveUnresolvedUnitLabelReqDecoder : Json.Decode.Decoder ResolveUnresolvedUnitLabelReq
 resolveUnresolvedUnitLabelReqDecoder =
     Json.Decode.succeed ResolveUnresolvedUnitLabelReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+
+
+updateUnresolvedUnitLabelNoteReqDecoder : Json.Decode.Decoder UpdateUnresolvedUnitLabelNoteReq
+updateUnresolvedUnitLabelNoteReqDecoder =
+    Json.Decode.succeed UpdateUnresolvedUnitLabelNoteReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "note" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
 
 
 updateUnresolvedUnitLabelsRspDecoder : Json.Decode.Decoder UpdateUnresolvedUnitLabelsRsp

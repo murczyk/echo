@@ -1,9 +1,12 @@
-import BlockIcon from '@mui/icons-material/Block';
+import ArchiveIcon from '@mui/icons-material/Archive';
+import UnarchiveIcon from '@mui/icons-material/Unarchive';
 import LinkIcon from '@mui/icons-material/Link';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import {
   Box,
   Button,
+  Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -18,27 +21,42 @@ import {
 import type { MRT_ColumnDef } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { OrbitUnitLinkCandidate, UnresolvedUnitLabel } from '../../../../Bindings';
+import type {
+  Unit,
+  UnresolvedUnitLabel,
+  UnresolvedUnitLabelArchiveFilter,
+} from '../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PowerAlert } from '../../components/PowerAlert';
+import { PowerChip } from '../../components/PowerChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { HttpRequestError } from '../../services/api/client';
+import { DEFAULT_LIST_UNITS_REQ, searchUnitsStrictThenRelaxed } from '../../services/api/units';
 import {
-  classifyUnresolvedUnitLabel,
+  archiveUnresolvedUnitLabel,
   listUnresolvedUnitLabels,
   resolveUnresolvedUnitLabel,
-  searchUnresolvedUnitOrbitUnits,
+  updateUnresolvedUnitLabelNote,
 } from '../../services/api/unresolved-unit-labels';
 import { hasRole } from '../../utils/roles';
-import { OrbitUnitPickerDialog } from '../rer-unit-details/OrbitUnitLinkDialog';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
 
-const DEFAULT_COLUMN_ORDER = ['mrt-row-numbers', 'unitTxt', 'quantity', 'mrt-row-actions'];
+const DEFAULT_COLUMN_ORDER = ['mrt-row-numbers', 'unitTxt', 'quantity', 'note', 'mrt-row-actions'];
 const DEFAULT_COLUMN_VISIBILITY = {
   unitTxt: true,
   quantity: true,
+  note: true,
   'mrt-row-actions': true,
+};
+const UNIT_SEARCH_DEBOUNCE_MS = 300;
+
+type ArchiveFilter = 'all' | 'new' | 'archived';
+
+const ARCHIVE_FILTER_REQ: Record<ArchiveFilter, UnresolvedUnitLabelArchiveFilter> = {
+  all: 'AllUnresolvedUnitLabels',
+  new: 'NewUnresolvedUnitLabels',
+  archived: 'ArchivedUnresolvedUnitLabels',
 };
 
 function formatError(error: unknown): string {
@@ -47,15 +65,154 @@ function formatError(error: unknown): string {
   return 'Помилка запиту до сервера.';
 }
 
+function unitSegments(unit: Unit): string {
+  return [
+    unit.company,
+    unit.battalion,
+    unit.regiment,
+    unit.division,
+    unit.army,
+    unit.militaryDistrict,
+    unit.armyRegion,
+  ]
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join(' ');
+}
+
+function unitTitle(unit: Unit): string {
+  const segments = unitSegments(unit);
+  return segments ? `${unit.name} — ${segments}` : unit.name;
+}
+
+function ArchiveFilterChips({
+  value,
+  onChange,
+}: {
+  value: ArchiveFilter;
+  onChange: (value: ArchiveFilter) => void;
+}) {
+  return (
+    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+      <PowerChip
+        selected={value === 'all'}
+        onClick={() => onChange('all')}
+        label="Всі"
+        interactive
+        fontWeight={700}
+      />
+      <PowerChip
+        selected={value === 'new'}
+        onClick={() => onChange('new')}
+        label="Нові"
+        interactive
+        fontWeight={700}
+      />
+      <PowerChip
+        selected={value === 'archived'}
+        onClick={() => onChange('archived')}
+        label="Архів"
+        interactive
+        fontWeight={700}
+      />
+    </Stack>
+  );
+}
+
+function UnitCandidateButton({
+  unit,
+  selected,
+  disabled,
+  onClick,
+}: {
+  unit: Unit;
+  selected: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      variant={selected ? 'contained' : 'outlined'}
+      color={unit.active ? 'primary' : 'warning'}
+      disabled={disabled}
+      onClick={onClick}
+      sx={{ justifyContent: 'flex-start', textAlign: 'left', py: 1 }}
+    >
+      <Stack spacing={0.5} sx={{ minWidth: 0, width: '100%' }}>
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
+          <Typography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
+            {unit.name || `#${unit.id}`}
+          </Typography>
+          <Chip
+            size="small"
+            label={unit.active ? 'Активний' : 'Неактивний'}
+            color={unit.active ? 'success' : 'warning'}
+            variant={selected ? 'filled' : 'outlined'}
+          />
+        </Stack>
+        {unitSegments(unit) ? (
+          <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+            {unitSegments(unit)}
+          </Typography>
+        ) : null}
+      </Stack>
+    </Button>
+  );
+}
+
 type ResolveState = {
   row: UnresolvedUnitLabel;
   label: string;
-  orbitUnit: OrbitUnitLinkCandidate | null;
+  sigintUnit: Unit | null;
 };
 
-export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string[] }) {
+type AdminUnitUnparsedPageProps = {
+  authUserRoles: string[];
+  embedded?: boolean;
+};
+
+type NoteCellProps = {
+  row: UnresolvedUnitLabel;
+  disabled: boolean;
+  onSave: (row: UnresolvedUnitLabel, note: string) => Promise<void>;
+};
+
+function NoteCell({ row, disabled, onSave }: NoteCellProps) {
+  const [value, setValue] = useState(row.note);
+
+  useEffect(() => setValue(row.note), [row.note]);
+
+  async function commit() {
+    const note = value.trim();
+    if (note === row.note) return;
+    try {
+      await onSave(row, note);
+    } catch {
+      setValue(row.note);
+    }
+  }
+
+  return (
+    <TextField
+      fullWidth
+      size="small"
+      value={value}
+      disabled={disabled}
+      placeholder="Нотатка"
+      inputProps={{ 'aria-label': `Нотатка для ${row.unitTxt}` }}
+      onChange={(event) => setValue(event.target.value)}
+      onBlur={() => void commit()}
+    />
+  );
+}
+
+export function AdminUnitUnparsedPage({
+  authUserRoles,
+  embedded = false,
+}: AdminUnitUnparsedPageProps) {
   const [rows, setRows] = useState<UnresolvedUnitLabel[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
+  const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('new');
   const [totalCount, setTotalCount] = useState(0);
   const [pageSize, setPageSize] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,8 +220,15 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [resolveState, setResolveState] = useState<ResolveState | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const canResolve = hasRole(authUserRoles, 'Rer') && hasRole(authUserRoles, 'UnitsEditor');
+  const [unitSearch, setUnitSearch] = useState('');
+  const [unitOptions, setUnitOptions] = useState<Unit[]>([]);
+  const [unitLoading, setUnitLoading] = useState(false);
+  const [unitSearchError, setUnitSearchError] = useState<string | null>(null);
+  const canResolve =
+    hasRole(authUserRoles, 'Admin') &&
+    hasRole(authUserRoles, 'Rer') &&
+    hasRole(authUserRoles, 'UnitsEditor');
+  const resolveRowText = resolveState?.row.unitTxt ?? null;
 
   const loadRows = useCallback(
     async (signal?: AbortSignal) => {
@@ -72,7 +236,7 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
       setError(null);
       try {
         const response = await listUnresolvedUnitLabels(
-          { page: pageIndex },
+          { page: pageIndex, archiveFilter: ARCHIVE_FILTER_REQ[archiveFilter] },
           signal ? { signal } : undefined,
         );
         if (signal?.aborted) return;
@@ -85,7 +249,7 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [pageIndex],
+    [archiveFilter, pageIndex],
   );
 
   useEffect(() => {
@@ -93,6 +257,48 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
     void loadRows(controller.signal);
     return () => controller.abort();
   }, [loadRows]);
+
+  useEffect(() => {
+    if (resolveRowText === null) {
+      setUnitOptions([]);
+      setUnitSearchError(null);
+      setUnitLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const search = unitSearch.trim() || resolveRowText;
+    setUnitLoading(true);
+    setUnitSearchError(null);
+    setUnitOptions([]);
+    const timeout = window.setTimeout(() => {
+      void searchUnitsStrictThenRelaxed(
+        {
+          ...DEFAULT_LIST_UNITS_REQ,
+          sortBy: 'UnitNameLengthAsc',
+          includeInactive: true,
+          filterText: search,
+          limit: 50,
+          offset: 0,
+        },
+        { signal: controller.signal },
+      )
+        .then((units) => {
+          if (!controller.signal.aborted) setUnitOptions(units);
+        })
+        .catch((error) => {
+          if (!controller.signal.aborted) setUnitSearchError(formatError(error));
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setUnitLoading(false);
+        });
+    }, UNIT_SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [resolveRowText, unitSearch]);
 
   async function refreshAfterAction() {
     if (rows.length <= 1 && pageIndex > 0) {
@@ -102,12 +308,14 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
     }
   }
 
-  async function markBadData(row: UnresolvedUnitLabel) {
+  async function setArchived(row: UnresolvedUnitLabel, archived: boolean) {
     setProcessing(true);
     setError(null);
     try {
-      await classifyUnresolvedUnitLabel({ unitTxt: row.unitTxt });
-      setStatus(`«${row.unitTxt}» позначено як погані дані.`);
+      await archiveUnresolvedUnitLabel({ unitTxt: row.unitTxt, archived });
+      setStatus(
+        archived ? `«${row.unitTxt}» перенесено в архів.` : `«${row.unitTxt}» повернено з архіву.`,
+      );
       await refreshAfterAction();
     } catch (error) {
       setError(formatError(error));
@@ -116,17 +324,42 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
     }
   }
 
+  const saveNote = useCallback(async (row: UnresolvedUnitLabel, note: string) => {
+    setProcessing(true);
+    setError(null);
+    try {
+      await updateUnresolvedUnitLabelNote({
+        unitTxt: row.unitTxt,
+        note,
+        isArchived: row.isArchived,
+      });
+      setRows((currentRows) =>
+        currentRows.map((currentRow) =>
+          currentRow.unitTxt === row.unitTxt && currentRow.isArchived === row.isArchived
+            ? { ...currentRow, note }
+            : currentRow,
+        ),
+      );
+      setStatus(`Нотатку для «${row.unitTxt}» збережено.`);
+    } catch (error) {
+      setError(formatError(error));
+      throw error;
+    } finally {
+      setProcessing(false);
+    }
+  }, []);
+
   async function resolveGroup() {
-    if (!resolveState?.orbitUnit) return;
+    if (!resolveState?.sigintUnit) return;
     setProcessing(true);
     setError(null);
     try {
       await resolveUnresolvedUnitLabel({
         unitTxt: resolveState.row.unitTxt,
         label: resolveState.label,
-        orbitUnitId: resolveState.orbitUnit.unitId,
+        sigintUnitId: resolveState.sigintUnit.id,
       });
-      setStatus(`«${resolveState.row.unitTxt}» передано на перевірку прив'язки.`);
+      setStatus(`Синонім для «${resolveState.row.unitTxt}» збережено.`);
       setResolveState(null);
       await refreshAfterAction();
     } catch (error) {
@@ -141,7 +374,7 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
       {
         accessorKey: 'unitTxt',
         header: 'Текст підрозділу',
-        size: 600,
+        size: 520,
         Cell: ({ cell }) => (
           <Box sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
             {String(cell.getValue() ?? '')}
@@ -151,10 +384,17 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
       {
         accessorKey: 'quantity',
         header: 'Кількість',
-        size: 140,
+        size: 120,
+      },
+      {
+        accessorKey: 'note',
+        header: 'Нотатка',
+        size: 360,
+        enableSorting: false,
+        Cell: ({ row }) => <NoteCell row={row.original} disabled={processing} onSave={saveNote} />,
       },
     ],
-    [],
+    [processing, saveNote],
   );
 
   return (
@@ -164,9 +404,18 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
       defaultColumnVisibility={DEFAULT_COLUMN_VISIBILITY}
       defaultEnableColumnOrdering={false}
     >
-      <Stack spacing={1.5} sx={{ height: '100%', minHeight: 0, p: 2 }}>
+      <Stack spacing={1.5} sx={{ height: '100%', minHeight: 0, p: embedded ? 0 : 2 }}>
         <TablePageToolbar
           title="Нерозпізнані підрозділи"
+          trailingActionsBeforeInternal={
+            <ArchiveFilterChips
+              value={archiveFilter}
+              onChange={(value) => {
+                setArchiveFilter(value);
+                setPageIndex(0);
+              }}
+            />
+          }
           trailingActionsAfterInternal={
             <Tooltip title="Оновити">
               <span>
@@ -202,26 +451,37 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
             renderRowActions={({ row }) => (
               <MrtRowActions forceMenu>
                 <MrtRowActionButton
-                  label="Погані дані"
-                  icon={<BlockIcon fontSize="small" />}
-                  tone="danger"
+                  label={row.original.isArchived ? 'Розархівувати' : 'Архів'}
+                  icon={
+                    row.original.isArchived ? (
+                      <UnarchiveIcon fontSize="small" />
+                    ) : (
+                      <ArchiveIcon fontSize="small" />
+                    )
+                  }
+                  tone={row.original.isArchived ? undefined : 'danger'}
                   disabled={processing}
-                  onClick={() => void markBadData(row.original)}
+                  onClick={() => void setArchived(row.original, !row.original.isArchived)}
                 />
-                <MrtRowActionButton
-                  label="Прив'язати до підрозділу"
-                  icon={<LinkIcon fontSize="small" />}
-                  opensModal
-                  disabled={!canResolve || processing}
-                  onClick={() => {
-                    setError(null);
-                    setResolveState({
-                      row: row.original,
-                      label: row.original.unitTxt,
-                      orbitUnit: null,
-                    });
-                  }}
-                />
+                {!row.original.isArchived ? (
+                  <MrtRowActionButton
+                    label="Прив'язати до підрозділу"
+                    icon={<LinkIcon fontSize="small" />}
+                    opensModal
+                    disabled={!canResolve || processing}
+                    onClick={() => {
+                      setError(null);
+                      setUnitSearch(row.original.unitTxt);
+                      setUnitOptions([]);
+                      setUnitSearchError(null);
+                      setResolveState({
+                        row: row.original,
+                        label: row.original.unitTxt,
+                        sigintUnit: null,
+                      });
+                    }}
+                  />
+                ) : null}
               </MrtRowActions>
             )}
             tablePaperSx={{ height: '100%', minHeight: 0 }}
@@ -243,7 +503,7 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
       <Dialog
         open={resolveState !== null}
         fullWidth
-        maxWidth="sm"
+        maxWidth="md"
         onClose={processing ? undefined : () => setResolveState(null)}
       >
         <DialogTitle>Прив'язати до підрозділу</DialogTitle>
@@ -256,33 +516,78 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
               <TextField
                 autoFocus
                 fullWidth
-                label="Тег підрозділу"
+                label="Синонім підрозділу"
                 value={resolveState.label}
                 disabled={processing}
                 error={resolveState.label.trim().length < 2}
                 helperText={
                   resolveState.label.trim().length < 2
-                    ? 'Тег має містити щонайменше 2 символи.'
+                    ? 'Синонім має містити щонайменше 2 символи.'
                     : 'Текст можна відредагувати перед збереженням.'
                 }
                 onChange={(event) =>
                   setResolveState({ ...resolveState, label: event.target.value })
                 }
               />
-              <Box>
-                <Button
-                  variant="outlined"
-                  startIcon={<LinkIcon />}
-                  disabled={processing}
-                  onClick={() => setPickerOpen(true)}
-                >
-                  Обрати підрозділ ORBIT
-                </Button>
-              </Box>
+              {unitOptions.length > 0 ? (
+                <Stack spacing={1}>
+                  <Typography variant="subtitle2">Топ кандидатів</Typography>
+                  {unitOptions.slice(0, 3).map((unit) => (
+                    <UnitCandidateButton
+                      key={unit.id}
+                      unit={unit}
+                      selected={resolveState.sigintUnit?.id === unit.id}
+                      disabled={processing}
+                      onClick={() =>
+                        setResolveState((current) =>
+                          current ? { ...current, sigintUnit: unit } : current,
+                        )
+                      }
+                    />
+                  ))}
+                </Stack>
+              ) : null}
+              <TextField
+                fullWidth
+                label="Пошук підрозділу SIGINT"
+                value={unitSearch}
+                disabled={processing}
+                helperText="Пошук включає неактивні підрозділи. Неактивний підрозділ буде активовано після збереження синоніму."
+                onChange={(event) => setUnitSearch(event.target.value)}
+              />
+              {unitSearchError ? <PowerAlert severity="error">{unitSearchError}</PowerAlert> : null}
+              <Stack spacing={1}>
+                {unitLoading ? (
+                  <Stack direction="row" alignItems="center" spacing={1}>
+                    <CircularProgress size={18} />
+                    <Typography variant="body2" color="text.secondary">
+                      Пошук підрозділів…
+                    </Typography>
+                  </Stack>
+                ) : null}
+                {!unitLoading && unitOptions.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    Підрозділів не знайдено.
+                  </Typography>
+                ) : null}
+                {unitOptions.slice(3).map((unit) => (
+                  <UnitCandidateButton
+                    key={unit.id}
+                    unit={unit}
+                    selected={resolveState.sigintUnit?.id === unit.id}
+                    disabled={processing}
+                    onClick={() =>
+                      setResolveState((current) =>
+                        current ? { ...current, sigintUnit: unit } : current,
+                      )
+                    }
+                  />
+                ))}
+              </Stack>
               <Typography variant="body2">
-                {resolveState.orbitUnit
-                  ? `Обрано: ${resolveState.orbitUnit.fullName}`
-                  : 'Підрозділ ORBIT не обрано.'}
+                {resolveState.sigintUnit
+                  ? `Обрано: ${unitTitle(resolveState.sigintUnit)}`
+                  : 'Підрозділ SIGINT не обрано.'}
               </Typography>
             </Stack>
           ) : null}
@@ -297,7 +602,7 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
               processing ||
               resolveState === null ||
               resolveState.label.trim().length < 2 ||
-              resolveState.orbitUnit === null
+              resolveState.sigintUnit === null
             }
             onClick={() => void resolveGroup()}
           >
@@ -305,18 +610,6 @@ export function AdminUnitUnparsedPage({ authUserRoles }: { authUserRoles: string
           </Button>
         </DialogActions>
       </Dialog>
-
-      {pickerOpen ? (
-        <OrbitUnitPickerDialog
-          title="Оберіть підрозділ ORBIT"
-          searchUnits={searchUnresolvedUnitOrbitUnits}
-          onClose={() => setPickerOpen(false)}
-          onSelected={(unit) => {
-            setResolveState((current) => (current ? { ...current, orbitUnit: unit } : current));
-            setPickerOpen(false);
-          }}
-        />
-      ) : null}
     </TableStateProvider>
   );
 }

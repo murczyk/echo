@@ -2728,10 +2728,19 @@ export type DeleteUnitLabelReq = {
 export type UnresolvedUnitLabel = {
   unitTxt: string;
   quantity: number;
+  note: string;
+  isArchived: boolean;
 };
+
+export type UnresolvedUnitLabelArchiveFilter =
+  | 'AllUnresolvedUnitLabels'
+  | 'NewUnresolvedUnitLabels'
+  | 'ArchivedUnresolvedUnitLabels'
+;
 
 export type ListUnresolvedUnitLabelsReq = {
   page: number | null;
+  archiveFilter: UnresolvedUnitLabelArchiveFilter | null;
 };
 
 export type ListUnresolvedUnitLabelsRsp = {
@@ -2745,10 +2754,21 @@ export type ClassifyUnresolvedUnitLabelReq = {
   unitTxt: string;
 };
 
+export type ArchiveUnresolvedUnitLabelReq = {
+  unitTxt: string;
+  archived: boolean;
+};
+
 export type ResolveUnresolvedUnitLabelReq = {
   unitTxt: string;
   label: string;
-  orbitUnitId: string;
+  sigintUnitId: number;
+};
+
+export type UpdateUnresolvedUnitLabelNoteReq = {
+  unitTxt: string;
+  note: string;
+  isArchived: boolean;
 };
 
 export type UpdateUnresolvedUnitLabelsRsp = {

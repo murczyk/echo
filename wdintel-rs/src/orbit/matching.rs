@@ -117,8 +117,8 @@ pub fn matching_sigint_unit_ids(
     let mut matches_by_sigint_unit =
         HashMap::<i64, Vec<(&SourceUnit, MatchScore)>>::new();
     for orbit_unit in orbit_units {
-        if let Some((sigint_unit_id, score)) =
-            best_matching_sigint_unit(orbit_unit, sigint_units)
+        for (sigint_unit_id, score) in
+            best_matching_sigint_units(orbit_unit, sigint_units)
         {
             matches_by_sigint_unit
                 .entry(sigint_unit_id)
@@ -221,10 +221,10 @@ fn search_score(
     })
 }
 
-fn best_matching_sigint_unit(
+fn best_matching_sigint_units(
     orbit_unit: &SourceUnit,
     sigint_units: &[sigint_unit::Model],
-) -> Option<(i64, MatchScore)> {
+) -> Vec<(i64, MatchScore)> {
     let mut candidates = sigint_units
         .iter()
         .filter_map(|sigint_unit| {
@@ -239,7 +239,9 @@ fn best_matching_sigint_unit(
             sigint_unit.id,
         )
     });
-    let (_, best_score) = candidates.first()?;
+    let Some((_, best_score)) = candidates.first() else {
+        return Vec::new();
+    };
     let best_quality = (best_score.echelon_distance, best_score.matched_names);
     let closest = candidates
         .iter()
@@ -252,11 +254,12 @@ fn best_matching_sigint_unit(
     if closest.iter().skip(1).any(|sigint_unit| {
         parent_signature(sigint_unit) != closest_parent_signature
     }) {
-        return None;
+        return Vec::new();
     }
     closest
-        .first()
+        .into_iter()
         .map(|sigint_unit| (sigint_unit.id, *best_score))
+        .collect()
 }
 
 fn best_matching_orbit_units(
@@ -703,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_matches_with_same_parents_pick_lowest_id() {
+    fn duplicate_matches_with_same_parents_return_all_candidates() {
         let first = source_unit("1 рота", vec![("company", "1 рота", 0)]);
         let second = source_unit("2 рота", vec![("company", "2 рота", 0)]);
         let mut first_match = echo_unit("1 рота", "", "", "", "");
@@ -718,7 +721,7 @@ mod tests {
         );
         assert_eq!(
             matches,
-            HashMap::from([(first.unit_id, BTreeSet::from([1]))])
+            HashMap::from([(first.unit_id, BTreeSet::from([1, 2]))])
         );
     }
 
