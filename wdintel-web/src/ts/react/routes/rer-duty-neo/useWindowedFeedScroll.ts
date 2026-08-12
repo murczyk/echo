@@ -861,7 +861,7 @@ export function useWindowedFeedScroll({
     recordDutyScrollDebugEvent(
       debugFeedId,
       'anchor:missing',
-      `visible=${snapshot.anchors.map((anchor) => anchor.id).join(',')}; mounted=${snapshot.itemIds.join(',')}`,
+      `visible=${snapshot.anchors.map((anchor) => anchor.id).join(',')}; snapshotMounted=${snapshot.itemIds.join(',')}; liveMounted=${[...itemRefsRef.current.keys()].join(',')}; unmountedAnchor=${snapshot.anchors.some((anchor) => !itemRefsRef.current.has(anchor.id))}`,
     );
     return false;
   }, [debugFeedId]);

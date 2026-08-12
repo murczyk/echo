@@ -245,6 +245,21 @@ describe('FeedColumn', () => {
     expect(onReachedBottom).not.toHaveBeenCalled();
   });
 
+  it('mounts the full message window in the duty feed list', async () => {
+    const props = buildProps();
+    props.column.feed.items = [
+      [1, minimalInboxMessage({ timestamp: 100 })],
+      [2, minimalInboxMessage({ timestamp: 200 })],
+    ];
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    expect(container.querySelector('[data-duty-feed-list]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-duty-message-id]')).toHaveLength(2);
+  });
+
   it('shows waterfall debug info after eight quick bell presses', async () => {
     const props = buildProps();
     props.column.view.feedCount = 4;

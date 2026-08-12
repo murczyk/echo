@@ -12,6 +12,7 @@ Issue: [#3059](https://github.com/echoua/echo/issues/3059).
 - **Near bottom** ≈ within **640px** of the end. If unread prefetch is still needed, the load zone expands up to about **two viewports** (capped at `2×640`), not “last 10 tall messages” (that fired loads thousands of px early and froze scroll on window trim).
 - **Scroll-idle newer loads:** when not physically at the bottom, `onLoadNewer` waits ~140ms after the last scroll event so a mid-fling fetch does not commit a 40-card window trim under the user’s finger.
 - **Badge** = loaded unread + trimmed unread + (beyond-tail preview when known). Near bottom **ignores** residual poll stock from a lagging read cursor; it **keeps** a real matching tail preview.
+- Mid-list read cursor advances from **DOM viewport-visible** rows. At bottom still marks through the **window tail** id.
 - Near bottom without watch: keep loading newer until there are **≥10 loaded-unread after last-seen** (or the server is exhausted). Watch + physical bottom still mark-all-read and drains the live tail.
 - Arrow down: load (if needed) → follow → hard unread catch-up. FAB shows a spinner while newer `get-inbox` is in flight.
 
