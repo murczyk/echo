@@ -1,19 +1,35 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage, Tag } from '../../../../../Bindings';
 import { NeoMuiThemeProvider } from '../../../mui-theme';
 import { PowerSnackbarProvider } from '../../../components/PowerSnackbar';
+import { PointBlacklistPaletteNamesCacheProvider } from './PointBlacklistPaletteNamesCache';
 import { MessageCardContent } from './MessageCardContent';
 
-const api = vi.hoisted(() => ({ listPalitras: vi.fn() }));
+const api = vi.hoisted(() => ({ resolvePalitraNames: vi.fn() }));
 
 vi.mock('../../../services/api/palitra', () => ({
-  listPalitras: api.listPalitras,
+  resolvePalitraNames: api.resolvePalitraNames,
+}));
+
+vi.mock('react-virtuoso', () => ({
+  Virtuoso: ({
+    data,
+    itemContent,
+  }: {
+    data: Array<{ id: number; name: string }>;
+    itemContent: (index: number, item: { id: number; name: string }) => ReactNode;
+  }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'virtualized-palitra-list' },
+      data.slice(0, 10).map((item, index) => itemContent(index, item)),
+    ),
 }));
 
 function createMessage(palitraIds: number[]): InboxMessage {
@@ -70,12 +86,47 @@ function renderMessage(
     root.render(
       <NeoMuiThemeProvider>
         <PowerSnackbarProvider>
-          <MessageCardContent
-            messageId={42}
-            msg={createMessage(palitraIds)}
-            tagsMap={{ 1: { isPalitra: true } as Tag }}
-            onAddPointHighlightBlacklist={onAddPointToBlacklist}
-          />
+          <PointBlacklistPaletteNamesCacheProvider>
+            <MessageCardContent
+              messageId={42}
+              msg={createMessage(palitraIds)}
+              tagsMap={{ 1: { isPalitra: true } as Tag }}
+              onAddPointHighlightBlacklist={onAddPointToBlacklist}
+            />
+          </PointBlacklistPaletteNamesCacheProvider>
+        </PowerSnackbarProvider>
+      </NeoMuiThemeProvider>,
+    );
+  });
+  return { container, root };
+}
+
+function renderMessages(
+  entries: Array<{ messageId: number; palitraIds: number[] }>,
+  onAddPointToBlacklist: (request: {
+    messageId: number;
+    etalon: string;
+    palitraId: number;
+  }) => Promise<void>,
+) {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  act(() => {
+    root.render(
+      <NeoMuiThemeProvider>
+        <PowerSnackbarProvider>
+          <PointBlacklistPaletteNamesCacheProvider>
+            {entries.map(({ messageId, palitraIds }) => (
+              <MessageCardContent
+                key={messageId}
+                messageId={messageId}
+                msg={createMessage(palitraIds)}
+                tagsMap={{ 1: { isPalitra: true } as Tag }}
+                onAddPointHighlightBlacklist={onAddPointToBlacklist}
+              />
+            ))}
+          </PointBlacklistPaletteNamesCacheProvider>
         </PowerSnackbarProvider>
       </NeoMuiThemeProvider>,
     );
@@ -92,12 +143,29 @@ async function openPointMenu(container: HTMLElement) {
   });
 }
 
+async function openPaletteChooser(container: HTMLElement, pointIndex = 0) {
+  await act(async () => {
+    container
+      .querySelectorAll('.content-token--point')
+      .item(pointIndex)
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+  });
+  const action = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find((item) =>
+    item.textContent?.includes('Додати до чорного списку'),
+  ) as HTMLElement;
+  await act(async () => {
+    action.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+  });
+}
+
 describe('MessageCardContent point blacklist actions', () => {
   let activeRoot: Root | null = null;
   let activeContainer: HTMLElement | null = null;
 
   beforeEach(() => {
-    api.listPalitras.mockResolvedValue([
+    api.resolvePalitraNames.mockResolvedValue([
       { id: 7, name: 'Палітра сім' },
       { id: 12, name: 'Палітра дванадцять' },
     ]);
@@ -146,10 +214,10 @@ describe('MessageCardContent point blacklist actions', () => {
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it('keeps fallback choices active when palette lookup fails and retries', async () => {
-    api.listPalitras.mockRejectedValueOnce(new Error('lookup failed'));
+  it('shows a recoverable resolver error without fallback choices', async () => {
+    api.resolvePalitraNames.mockRejectedValueOnce(new Error('lookup failed'));
     const onAdd = vi.fn(() => Promise.resolve());
-    ({ root: activeRoot, container: activeContainer } = renderMessage([7, 12], onAdd));
+    ({ root: activeRoot, container: activeContainer } = renderMessage([17, 22], onAdd));
     await openPointMenu(activeContainer);
     Array.from(document.body.querySelectorAll('[role="menuitem"]'))
       .find((item) => item.textContent?.includes('Додати до чорного списку'))
@@ -157,19 +225,9 @@ describe('MessageCardContent point blacklist actions', () => {
     await act(async () => {
       await new Promise((resolve) => window.setTimeout(resolve, 0));
     });
-    expect(document.body.textContent).toContain('Палітра #7');
     expect(document.body.textContent).toContain('lookup failed');
     expect(document.body.textContent).toContain('Повторити');
-    const fallbackOption = Array.from(document.body.querySelectorAll('[role="button"]')).find(
-      (item) => item.textContent?.includes('Палітра #7'),
-    ) as HTMLButtonElement;
-    await act(async () => {
-      fallbackOption.click();
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(onAdd).toHaveBeenCalledWith({ messageId: 42, etalon: 'Альфа', palitraId: 7 });
+    expect(onAdd).not.toHaveBeenCalled();
   });
 
   it('keeps direct success feedback visible after the route callback resolves', async () => {
@@ -304,5 +362,66 @@ describe('MessageCardContent point blacklist actions', () => {
     });
     expect(onAdd).not.toHaveBeenCalled();
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('virtualizes a large palette set and filters its browseable choices', async () => {
+    const names = Array.from({ length: 51 }, (_value, index) => ({
+      id: index + 1,
+      name: `Палітра ${index + 1}`,
+    }));
+    api.resolvePalitraNames.mockResolvedValueOnce(names);
+    const onAdd = vi.fn(() => Promise.resolve());
+    ({ root: activeRoot, container: activeContainer } = renderMessage(
+      names.map((entry) => entry.id),
+      onAdd,
+    ));
+
+    await openPaletteChooser(activeContainer);
+
+    expect(document.body.textContent).toContain('Точка знайдена у 51 палітрах');
+    expect(document.body.textContent).toContain('Палітра 1');
+    expect(document.body.querySelectorAll('[role="button"]').length).toBeLessThan(51);
+
+    const search = document.body.querySelector('input') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        search,
+        'Палітра 51',
+      );
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    expect(document.body.textContent).toContain('Палітра 51');
+    expect(document.body.textContent).not.toContain('Палітра 50');
+  });
+
+  it('shares resolver names within one provider and clears them after provider remount', async () => {
+    const onAdd = vi.fn(() => Promise.resolve());
+    ({ root: activeRoot, container: activeContainer } = renderMessages(
+      [
+        { messageId: 42, palitraIds: [7, 12] },
+        { messageId: 43, palitraIds: [7, 12] },
+      ],
+      onAdd,
+    ));
+
+    await openPaletteChooser(activeContainer, 0);
+    await act(async () => {
+      (
+        Array.from(document.body.querySelectorAll('button')).find((button) =>
+          button.textContent?.includes('Закрити'),
+        ) as HTMLButtonElement
+      ).click();
+    });
+    await openPaletteChooser(activeContainer, 1);
+    expect(api.resolvePalitraNames).toHaveBeenCalledTimes(1);
+
+    act(() => activeRoot?.unmount());
+    activeContainer?.remove();
+    activeRoot = null;
+    activeContainer = null;
+    ({ root: activeRoot, container: activeContainer } = renderMessage([7, 12], onAdd));
+    await openPaletteChooser(activeContainer);
+    expect(api.resolvePalitraNames).toHaveBeenCalledTimes(2);
   });
 });

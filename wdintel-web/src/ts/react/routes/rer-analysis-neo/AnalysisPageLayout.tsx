@@ -19,6 +19,7 @@ import { getAnalysisCenterTabs } from './types';
 import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
+import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 
 export type RerAnalysisNeoPageProps = {
   authUserName?: string | null;
@@ -140,30 +141,32 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
               isCompactLayout={isAnalysisCompactLayout}
             />
           ) : null}
-          {showLoadingSkeletons ? (
-            <AnalysisLoadingSkeletons rightPanelVisible={inlineRightPanelVisible} />
-          ) : (
-            <AudioTranscriptionPreferencesProvider
-              collapsedByDefault={page.audioTranscriptionCollapsed}
-              enabled={page.audioTranscriptionEnabled}
-            >
-              <AnalysisCenterPanel
-                page={page}
-                centerTab={centerTab}
-                centerTabs={centerTabs}
-                isCompactLayout={isAnalysisCompactLayout}
-                isNarrowLayout={isNarrowLayout}
-                rightPanelVisible={inlineRightPanelVisible}
-                messagesPaneLoading={messagesPaneLoading}
-                messagesPanelId={messagesPanelId}
-                messagesTabId={messagesTabId}
-                summaryPanelId={summaryPanelId}
-                summaryTabId={summaryTabId}
-                mapPanelId={mapPanelId}
-                mapTabId={mapTabId}
-              />
-            </AudioTranscriptionPreferencesProvider>
-          )}
+          <PointBlacklistPaletteNamesCacheProvider>
+            {showLoadingSkeletons ? (
+              <AnalysisLoadingSkeletons rightPanelVisible={inlineRightPanelVisible} />
+            ) : (
+              <AudioTranscriptionPreferencesProvider
+                collapsedByDefault={page.audioTranscriptionCollapsed}
+                enabled={page.audioTranscriptionEnabled}
+              >
+                <AnalysisCenterPanel
+                  page={page}
+                  centerTab={centerTab}
+                  centerTabs={centerTabs}
+                  isCompactLayout={isAnalysisCompactLayout}
+                  isNarrowLayout={isNarrowLayout}
+                  rightPanelVisible={inlineRightPanelVisible}
+                  messagesPaneLoading={messagesPaneLoading}
+                  messagesPanelId={messagesPanelId}
+                  messagesTabId={messagesTabId}
+                  summaryPanelId={summaryPanelId}
+                  summaryTabId={summaryTabId}
+                  mapPanelId={mapPanelId}
+                  mapTabId={mapTabId}
+                />
+              </AudioTranscriptionPreferencesProvider>
+            )}
+          </PointBlacklistPaletteNamesCacheProvider>
           {!showLoadingSkeletons && inlineRightPanelVisible ? (
             <AnalysisRightPanel
               page={page}

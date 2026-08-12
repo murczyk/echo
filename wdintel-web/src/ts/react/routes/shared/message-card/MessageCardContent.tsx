@@ -4,7 +4,7 @@ import type {
   InboxMessage,
   MessageComment,
   Network,
-  Palitra,
+  PalitraName,
   Tag,
   Unit,
 } from '../../../../../Bindings';
@@ -18,8 +18,10 @@ import {
   List,
   ListItemButton,
   ListItemText,
+  TextField,
   Typography,
 } from '@mui/material';
+import { Virtuoso } from 'react-virtuoso';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -60,7 +62,8 @@ import { collectMessageDocuments } from './message-card-document-utils';
 import { blurActiveElement } from '../../../utils/focus';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
-import { listPalitras } from '../../../services/api/palitra';
+import { resolvePalitraNames } from '../../../services/api/palitra';
+import { usePointBlacklistPaletteNamesCache } from './PointBlacklistPaletteNamesCache';
 import {
   MessageCardAttachmentPreviewProvider,
   type MessageCardPreviewAttachment,
@@ -105,7 +108,7 @@ type PointBlacklistDialogState = {
 
 function PointBlacklistPaletteDialog({
   state,
-  palitras,
+  palitraNames,
   loading,
   error,
   pendingPalitraIds,
@@ -115,7 +118,7 @@ function PointBlacklistPaletteDialog({
   onClose,
 }: {
   state: PointBlacklistDialogState;
-  palitras: Palitra[];
+  palitraNames: PalitraName[];
   loading: boolean;
   error: string | null;
   pendingPalitraIds: Set<number>;
@@ -124,6 +127,15 @@ function PointBlacklistPaletteDialog({
   onChoose: (palitraId: number) => void;
   onClose: () => void;
 }) {
+  const [search, setSearch] = useState('');
+  const searchable = palitraNames.length >= 10;
+  const filteredNames = useMemo(
+    () =>
+      palitraNames.filter((entry) =>
+        entry.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()),
+      ),
+    [palitraNames, search],
+  );
   return (
     <Dialog open onClose={onClose} disableRestoreFocus>
       <DialogTitle>Додати до чорного списку</DialogTitle>
@@ -141,22 +153,65 @@ function PointBlacklistPaletteDialog({
             {error}
           </PowerAlert>
         ) : null}
-        <List disablePadding>
-          {state.palitraIds.map((palitraId) => {
-            const palitra = palitras.find((entry) => entry.id === palitraId);
-            const pending = pendingPalitraIds.has(palitraId);
-            return (
-              <ListItemButton
-                key={palitraId}
-                disabled={palitraId <= 0 || pending}
-                onClick={() => onChoose(palitraId)}
-              >
-                {pending ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
-                <ListItemText primary={palitra?.name?.trim() || `Палітра #${palitraId}`} />
-              </ListItemButton>
-            );
-          })}
-        </List>
+        {!loading && searchable ? (
+          <TextField
+            label="Пошук палітри"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            fullWidth
+            size="small"
+            sx={{ mb: 1.5 }}
+          />
+        ) : null}
+        {!loading && palitraNames.length > 50 ? (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            Точка знайдена у {palitraNames.length} палітрах. Оберіть палітру або скористайтеся
+            пошуком.
+          </Typography>
+        ) : null}
+        {!loading && palitraNames.length === 0 && !error ? (
+          <Typography>Жодна доступна палітра для цієї точки не знайдена.</Typography>
+        ) : null}
+        {!loading && palitraNames.length > 0 && filteredNames.length === 0 ? (
+          <Typography>За запитом палітри не знайдені.</Typography>
+        ) : null}
+        {!loading && filteredNames.length > 0 && palitraNames.length > 50 ? (
+          <Virtuoso
+            data={filteredNames}
+            style={{ height: 360 }}
+            overscan={240}
+            itemContent={(_index, { id: palitraId, name }) => {
+              const pending = pendingPalitraIds.has(palitraId);
+              return (
+                <ListItemButton
+                  key={palitraId}
+                  disabled={pending}
+                  onClick={() => onChoose(palitraId)}
+                >
+                  {pending ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
+                  <ListItemText primary={name} />
+                </ListItemButton>
+              );
+            }}
+          />
+        ) : null}
+        {!loading && filteredNames.length > 0 && palitraNames.length <= 50 ? (
+          <List disablePadding>
+            {filteredNames.map(({ id: palitraId, name }) => {
+              const pending = pendingPalitraIds.has(palitraId);
+              return (
+                <ListItemButton
+                  key={palitraId}
+                  disabled={palitraId <= 0 || pending}
+                  onClick={() => onChoose(palitraId)}
+                >
+                  {pending ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
+                  <ListItemText primary={name} />
+                </ListItemButton>
+              );
+            })}
+          </List>
+        ) : null}
         {mutationError ? <PowerAlert severity="error">{mutationError}</PowerAlert> : null}
       </DialogContent>
       <DialogActions>
@@ -215,6 +270,7 @@ export function MessageCardMessageBody({
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
 }) {
+  const nameCache = usePointBlacklistPaletteNamesCache();
   const { notify } = useOptionalPowerSnackbar();
   const images = collectMessageImages(msg);
   const messageText = msg.text ?? '';
@@ -261,7 +317,7 @@ export function MessageCardMessageBody({
   );
   const [pointBlacklistDialog, setPointBlacklistDialog] =
     useState<PointBlacklistDialogState | null>(null);
-  const [pointBlacklistPalitras, setPointBlacklistPalitras] = useState<Palitra[]>([]);
+  const [pointBlacklistPalitraNames, setPointBlacklistPalitraNames] = useState<PalitraName[]>([]);
   const [pointBlacklistLoading, setPointBlacklistLoading] = useState(false);
   const [pointBlacklistLoadError, setPointBlacklistLoadError] = useState<string | null>(null);
   const [pointBlacklistPendingPalitraIds, setPointBlacklistPendingPalitraIds] = useState<
@@ -273,7 +329,7 @@ export function MessageCardMessageBody({
   const [pointBlacklistMutationError, setPointBlacklistMutationError] = useState<string | null>(
     null,
   );
-  const pointBlacklistPalitrasPromiseRef = useRef<Promise<Palitra[]> | null>(null);
+  const pointBlacklistResolutionGenerationRef = useRef(0);
   const pointBlacklistPendingKeysRef = useRef<Set<string>>(new Set());
   const mountedRef = useRef(true);
 
@@ -283,25 +339,49 @@ export function MessageCardMessageBody({
     };
   }, []);
 
-  const loadPointBlacklistPalitras = useCallback(() => {
-    if (pointBlacklistPalitrasPromiseRef.current) return;
+  const loadPointBlacklistPalitraNames = useCallback((palitraIds: number[]) => {
+    const generation = ++pointBlacklistResolutionGenerationRef.current;
+    const cachedNames = palitraIds
+      .map((id) => {
+        const name = nameCache?.get(id);
+        return name ? { id, name } : null;
+      })
+      .filter((entry): entry is PalitraName => entry !== null);
+    setPointBlacklistPalitraNames(cachedNames);
     setPointBlacklistLoading(true);
     setPointBlacklistLoadError(null);
-    const promise = listPalitras();
-    pointBlacklistPalitrasPromiseRef.current = promise;
-    promise
-      .then((palitras) => {
-        if (mountedRef.current) setPointBlacklistPalitras(palitras);
+    const unresolvedIds = palitraIds.filter((id) => !nameCache?.has(id));
+    if (unresolvedIds.length === 0) {
+      setPointBlacklistLoading(false);
+      return;
+    }
+    resolvePalitraNames(unresolvedIds)
+      .then((names) => {
+        if (!mountedRef.current || pointBlacklistResolutionGenerationRef.current !== generation) {
+          return;
+        }
+        names.forEach(({ id, name }) => nameCache?.set(id, name));
+        const resolvedNames = new Map(names.map((entry) => [entry.id, entry.name]));
+        setPointBlacklistPalitraNames(
+          palitraIds
+            .map((id) => {
+              const name = nameCache?.get(id) ?? resolvedNames.get(id);
+              return name ? { id, name } : null;
+            })
+            .filter((entry): entry is PalitraName => entry !== null),
+        );
       })
       .catch((loadError: unknown) => {
-        if (mountedRef.current) {
+        if (mountedRef.current && pointBlacklistResolutionGenerationRef.current === generation) {
           setPointBlacklistLoadError(
             loadError instanceof Error ? loadError.message : String(loadError),
           );
         }
       })
       .finally(() => {
-        if (mountedRef.current) setPointBlacklistLoading(false);
+        if (mountedRef.current && pointBlacklistResolutionGenerationRef.current === generation) {
+          setPointBlacklistLoading(false);
+        }
       });
   }, []);
 
@@ -350,11 +430,12 @@ export function MessageCardMessageBody({
       if (!onAddPointHighlightBlacklist || palitraIds.length === 0) return;
       if (palitraIds.length > 1) {
         setPointBlacklistMutationError(null);
+        setPointBlacklistPalitraNames([]);
         setPointBlacklistDialog({
           request: { messageId: source.messageId, etalon: source.etalon, palitraId: palitraIds[0] },
           palitraIds,
         });
-        loadPointBlacklistPalitras();
+        loadPointBlacklistPalitraNames(palitraIds);
         return;
       }
       void submitPointBlacklist({
@@ -363,7 +444,7 @@ export function MessageCardMessageBody({
         palitraId: palitraIds[0],
       });
     },
-    [loadPointBlacklistPalitras, onAddPointHighlightBlacklist, submitPointBlacklist],
+    [loadPointBlacklistPalitraNames, onAddPointHighlightBlacklist, submitPointBlacklist],
   );
 
   const choosePointBlacklistPalitra = useCallback(
@@ -385,10 +466,9 @@ export function MessageCardMessageBody({
     [pointBlacklistDialog, submitPointBlacklist],
   );
 
-  const retryPointBlacklistPalitras = useCallback(() => {
-    pointBlacklistPalitrasPromiseRef.current = null;
-    loadPointBlacklistPalitras();
-  }, [loadPointBlacklistPalitras]);
+  const retryPointBlacklistPalitraNames = useCallback(() => {
+    if (pointBlacklistDialog) loadPointBlacklistPalitraNames(pointBlacklistDialog.palitraIds);
+  }, [loadPointBlacklistPalitraNames, pointBlacklistDialog]);
 
   const imageHrefSet = useMemo(() => new Set(images.map((image) => image.href)), [images]);
   const documents = collectMessageDocuments(msg);
@@ -467,15 +547,19 @@ export function MessageCardMessageBody({
       {pointBlacklistDialog ? (
         <PointBlacklistPaletteDialog
           state={pointBlacklistDialog}
-          palitras={pointBlacklistPalitras}
+          palitraNames={pointBlacklistPalitraNames}
           loading={pointBlacklistLoading}
           error={pointBlacklistLoadError}
           pendingPalitraIds={pointBlacklistPendingPalitraIds}
           mutationError={pointBlacklistMutationError}
-          onRetry={retryPointBlacklistPalitras}
+          onRetry={retryPointBlacklistPalitraNames}
           onChoose={choosePointBlacklistPalitra}
           onClose={() => {
+            pointBlacklistResolutionGenerationRef.current += 1;
             setPointBlacklistDialog(null);
+            setPointBlacklistPalitraNames([]);
+            setPointBlacklistLoading(false);
+            setPointBlacklistLoadError(null);
             setPointBlacklistPendingPalitraIds(new Set());
             setPointBlacklistMutationError(null);
           }}

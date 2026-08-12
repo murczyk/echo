@@ -45,6 +45,21 @@ impl PalitraAccess {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct PalitraResolveNamesReq {
+    pub palitra_ids: Vec<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraName {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct PalitraChangelogEntry {
     pub is_ok: bool,
     pub timestamp: String,

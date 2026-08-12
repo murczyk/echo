@@ -1348,6 +1348,15 @@ export type PalitraHighlightBlacklistAddReq = {
   label: string;
 };
 
+export type PalitraResolveNamesReq = {
+  palitraIds: Array<number>;
+};
+
+export type PalitraName = {
+  id: number;
+  name: string;
+};
+
 export type NoHeadersBody = {
   body: string;
   start: number;

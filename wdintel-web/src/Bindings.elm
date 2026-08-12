@@ -3512,6 +3512,32 @@ palitraHighlightBlacklistAddReqEncoder struct =
         ]
 
 
+type alias PalitraResolveNamesReq =
+    { palitraIds : List (Int)
+    }
+
+
+palitraResolveNamesReqEncoder : PalitraResolveNamesReq -> Json.Encode.Value
+palitraResolveNamesReqEncoder struct =
+    Json.Encode.object
+        [ ( "palitra_ids", (Json.Encode.list (Json.Encode.int)) struct.palitraIds )
+        ]
+
+
+type alias PalitraName =
+    { id : Int
+    , name : String
+    }
+
+
+palitraNameEncoder : PalitraName -> Json.Encode.Value
+palitraNameEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
 type alias NoHeadersBody =
     { body : String
     , start : Int
@@ -13857,6 +13883,19 @@ palitraHighlightBlacklistAddReqDecoder : Json.Decode.Decoder PalitraHighlightBla
 palitraHighlightBlacklistAddReqDecoder =
     Json.Decode.succeed PalitraHighlightBlacklistAddReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+
+
+palitraResolveNamesReqDecoder : Json.Decode.Decoder PalitraResolveNamesReq
+palitraResolveNamesReqDecoder =
+    Json.Decode.succeed PalitraResolveNamesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+palitraNameDecoder : Json.Decode.Decoder PalitraName
+palitraNameDecoder =
+    Json.Decode.succeed PalitraName
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
 
 
 noHeadersBodyDecoder : Json.Decode.Decoder NoHeadersBody

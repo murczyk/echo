@@ -1,5 +1,6 @@
 use crate::entities::{
-    login, palitra_geometry, palitra_highlight_blacklist, palitra_point,
+    login, palitra, palitra_geometry, palitra_highlight_blacklist,
+    palitra_point,
 };
 use crate::error::AppError;
 use crate::h;
@@ -53,6 +54,25 @@ where
         .select_only()
         .column(palitra_highlight_blacklist::Column::PalitraId)
         .column(palitra_highlight_blacklist::Column::NormalizedLabel)
+        .into_tuple::<(i64, String)>()
+        .all(dbx)
+        .await
+        .c(h!())?)
+}
+
+pub async fn resolve_names<C>(
+    dbx: &C,
+    palitra_ids: &[i64],
+) -> Result<Vec<(i64, String)>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(palitra::Entity::find()
+        .filter(palitra::Column::Id.eq_any(palitra_ids))
+        .filter(palitra::Column::Deleted.eq(false))
+        .select_only()
+        .column(palitra::Column::Id)
+        .column(palitra::Column::Name)
         .into_tuple::<(i64, String)>()
         .all(dbx)
         .await

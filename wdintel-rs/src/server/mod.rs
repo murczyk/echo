@@ -1097,6 +1097,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::group_update)
             .service(crate::operator::message_submit)
             .service(crate::palitra::list_all_palitras)
+            .service(crate::palitra::highlight_blacklist::resolve_palitra_names)
             .service(crate::palitra::list_all_palitras_v2)
             .service(crate::palitra::list_map_palitras_v2)
             .service(crate::palitra::list_all_palitras_detailed)

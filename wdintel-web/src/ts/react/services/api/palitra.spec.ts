@@ -11,6 +11,7 @@ import {
   fetchPalitraReferenceData,
   getPalitraHighlightBlacklist,
   listPalitras,
+  resolvePalitraNames,
 } from './palitra';
 
 describe('palitra API 401 handling', () => {
@@ -246,5 +247,35 @@ describe('palitra highlight blacklist', () => {
       createdByLoginId: 'a',
       createdByLogin: 'b',
     });
+  });
+});
+
+describe('palitra name resolution', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('deduplicates IDs and preserves valid response items', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify([{ id: 7, name: ' Палітра сім ' }]), { status: 200 }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(resolvePalitraNames([7, 7, 12])).resolves.toEqual([
+      { id: 7, name: 'Палітра сім' },
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ palitra_ids: [7, 12] });
+  });
+
+  it('does not request empty IDs and rejects malformed items', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(resolvePalitraNames([])).resolves.toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify([{ id: '7', name: 'bad' }]), { status: 200 }),
+    );
+    await expect(resolvePalitraNames([7])).rejects.toThrow('некоректну назву');
   });
 });

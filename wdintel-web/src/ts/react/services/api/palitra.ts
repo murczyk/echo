@@ -12,6 +12,7 @@ import {
   PalitraDetails,
   PalitraGeometryDetails,
   PalitraHighlightBlacklistEntry,
+  PalitraName,
   PalitraReadV2,
   PalitraPoints,
   User,
@@ -529,6 +530,30 @@ export async function listMapPalitrasV2(): Promise<PalitraReadV2[]> {
   const data = await postJson<PalitraReadV2Like[]>('/api/palitra/v2/list-map');
 
   return (data ?? []).map((entry) => normalizePalitraReadV2(entry));
+}
+
+export async function resolvePalitraNames(palitraIds: number[]): Promise<PalitraName[]> {
+  const uniqueIds = Array.from(new Set(palitraIds.filter((id) => Number.isInteger(id))));
+  if (uniqueIds.length === 0) return [];
+
+  const data = await postJson<unknown>('/api/palitra/resolve-names', {
+    palitra_ids: uniqueIds,
+  });
+  if (!Array.isArray(data)) throw new Error('Сервер повернув некоректні назви палітр.');
+
+  return data.map((item) => {
+    if (
+      !item ||
+      typeof item !== 'object' ||
+      !Number.isInteger((item as { id?: unknown }).id) ||
+      typeof (item as { name?: unknown }).name !== 'string' ||
+      !(item as { name: string }).name.trim()
+    ) {
+      throw new Error('Сервер повернув некоректну назву палітри.');
+    }
+    const value = item as { id: number; name: string };
+    return { id: value.id, name: value.name.trim() };
+  });
 }
 
 export async function searchPalitraPoints(
