@@ -25,7 +25,6 @@ function TestScroller(props: {
   enabled?: boolean;
   isWatchMode?: boolean;
   unreadPrefetchNeeded?: boolean;
-  unreadPrefetchMin?: number;
   itemHeightPx?: number;
   bottomLoadBufferPx?: number;
 }) {
@@ -45,7 +44,6 @@ function TestScroller(props: {
     enabled: props.enabled ?? true,
     isWatchMode: props.isWatchMode ?? true,
     unreadPrefetchNeeded: props.unreadPrefetchNeeded,
-    unreadPrefetchMin: props.unreadPrefetchMin,
     topLoadBufferPx: 80,
     bottomLoadBufferPx: props.bottomLoadBufferPx ?? 80,
     atBottomThresholdPx: 10,
@@ -115,6 +113,15 @@ function setClampedScrollMetrics(
 async function waitForAnimationFrame(): Promise<void> {
   await new Promise<void>((resolve) => {
     requestAnimationFrame(() => resolve());
+  });
+}
+
+async function flushLoadNewerIdle(): Promise<void> {
+  await act(async () => {
+    await waitForAnimationFrame();
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 160);
+    });
   });
 }
 
@@ -819,7 +826,37 @@ describe('useWindowedFeedScroll', () => {
     await act(async () => {
       scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
     });
+    expect(onLoadNewer).not.toHaveBeenCalled();
+    await flushLoadNewerIdle();
 
+    expect(onLoadNewer).toHaveBeenCalledTimes(1);
+  });
+
+  it('defers near-bottom newer loads until scroll is idle', async () => {
+    const onLoadNewer = vi.fn();
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2, 3, 4]} onLoadNewer={onLoadNewer} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 130, clientHeight: 100, scrollHeight: 300 });
+
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onLoadNewer).not.toHaveBeenCalled();
+
+    // Keep flinging — idle timer should keep resetting.
+    setScrollMetrics(scroller, { scrollTop: 140, clientHeight: 100, scrollHeight: 300 });
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+      await new Promise<void>((resolve) => setTimeout(resolve, 80));
+    });
+    expect(onLoadNewer).not.toHaveBeenCalled();
+
+    await flushLoadNewerIdle();
     expect(onLoadNewer).toHaveBeenCalledTimes(1);
   });
 
@@ -841,19 +878,17 @@ describe('useWindowedFeedScroll', () => {
     expect(onLoadNewer).not.toHaveBeenCalled();
   });
 
-  it('calls onLoadNewer in the trailing prefetch zone even when pixel distance exceeds the buffer', async () => {
+  it('expands the bottom load buffer when unread prefetch is needed, but not unboundedly', async () => {
     const onLoadNewer = vi.fn();
-    const onNearBottomChange = vi.fn();
     const ids = Array.from({ length: 20 }, (_, index) => index + 1);
     await act(async () => {
       root.render(<TestScroller ids={[]} />);
     });
 
     const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
-    // Tall rows: last few messages alone exceed the 80px bottom buffer.
     const itemHeight = 400;
     const metrics = {
-      scrollTop: 18 * itemHeight,
+      scrollTop: 0,
       clientHeight: 100,
       scrollHeight: 20 * itemHeight,
     };
@@ -868,25 +903,73 @@ describe('useWindowedFeedScroll', () => {
         <TestScroller
           ids={ids}
           onLoadNewer={onLoadNewer}
-          onNearBottomChange={onNearBottomChange}
           unreadPrefetchNeeded
-          unreadPrefetchMin={10}
           bottomLoadBufferPx={80}
         />,
       );
     });
 
+    // Leave the initial bottom pin; sit beyond the expanded prefetch buffer.
+    scroller.scrollTop = metrics.scrollHeight - metrics.clientHeight - 450;
     onLoadNewer.mockClear();
-    onNearBottomChange.mockClear();
-
-    // bottomDistance = 8000 - 100 - 7200 = 700 > 80, but viewport intersects last-10 zone.
-    expect(metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop).toBe(700);
-
     await act(async () => {
       scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onLoadNewer).not.toHaveBeenCalled();
+
+    // Move into the expanded prefetch buffer (distance 120 <= 160).
+    scroller.scrollTop = metrics.scrollHeight - metrics.clientHeight - 120;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onLoadNewer).not.toHaveBeenCalled();
+    await flushLoadNewerIdle();
+    expect(onLoadNewer).toHaveBeenCalled();
+  });
+
+  it('does not treat a multi-thousand-px trailing message span as near-bottom', async () => {
+    const onLoadNewer = vi.fn();
+    const ids = Array.from({ length: 20 }, (_, index) => index + 1);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} />);
     });
 
-    expect(onLoadNewer).toHaveBeenCalled();
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const itemHeight = 400;
+    const metrics = {
+      scrollTop: 0,
+      clientHeight: 100,
+      scrollHeight: 20 * itemHeight,
+    };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = {
+      items: new Map(ids.map((id, index) => [id, { top: index * itemHeight, height: itemHeight }])),
+    };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={ids}
+          onLoadNewer={onLoadNewer}
+          unreadPrefetchNeeded
+          bottomLoadBufferPx={80}
+        />,
+      );
+    });
+
+    // Same shape as the production bug: ~3100px from the end while still in the last tall rows.
+    scroller.scrollTop = 12 * itemHeight;
+    onLoadNewer.mockClear();
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+
+    expect(metrics.scrollHeight - metrics.clientHeight - scroller.scrollTop).toBe(3100);
+    expect(onLoadNewer).not.toHaveBeenCalled();
   });
 
   it('does not repeatedly call onLoadNewer while already loading newer items', async () => {
@@ -961,9 +1044,15 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(200);
 
     scroller.scrollTop = 100;
-    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
     scroller.scrollTop = 125;
-    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
 
     layout.items = createItemLayouts(nextIds);
     await act(async () => {
@@ -1031,7 +1120,10 @@ describe('useWindowedFeedScroll', () => {
       root.render(<TestScroller ids={ids} />);
     });
     scroller.scrollTop = 50;
-    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
 
     metrics.scrollHeight = 240;
     layout.items = createItemLayouts(ids, 40);
@@ -1062,7 +1154,10 @@ describe('useWindowedFeedScroll', () => {
       root.render(<TestScroller ids={ids} loadingOlder />);
     });
     scroller.scrollTop = 91;
-    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
 
     await act(async () => {
       root.render(<TestScroller ids={ids} loadingOlder enabled={false} />);
@@ -1100,7 +1195,10 @@ describe('useWindowedFeedScroll', () => {
       root.render(<TestScroller ids={ids} />);
     });
     scroller.scrollTop = 51;
-    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
 
     metrics.scrollHeight = 230;
     layout.items = new Map([
@@ -1260,9 +1358,10 @@ describe('useWindowedFeedScroll', () => {
     mockVerticalLayout(scroller, layout);
 
     await act(async () => {
-      root.render(<TestScroller ids={initialIds} isWatchMode={false} />);
+      root.render(<TestScroller ids={initialIds} isWatchMode={false} bottomLoadBufferPx={2000} />);
     });
     // Viewport shows ids 5-6 only; those are removed by the slide.
+    // Large bottom buffer so the scroll-path takes a full offset snapshot for restore.
     scroller.scrollTop = 200;
     await act(async () => {
       scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
@@ -1272,7 +1371,7 @@ describe('useWindowedFeedScroll', () => {
     metrics.scrollHeight = 2000;
     layout.items = createItemLayouts(nextIds);
     await act(async () => {
-      root.render(<TestScroller ids={nextIds} isWatchMode={false} />);
+      root.render(<TestScroller ids={nextIds} isWatchMode={false} bottomLoadBufferPx={2000} />);
     });
 
     expect(scroller.scrollTop).toBe(0);

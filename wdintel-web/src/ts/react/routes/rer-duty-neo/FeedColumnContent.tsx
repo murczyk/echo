@@ -3,6 +3,7 @@ import { Box, CircularProgress, Fab, Paper, Typography } from '@mui/material';
 import {
   forwardRef,
   memo,
+  Profiler,
   useCallback,
   useImperativeHandle,
   useLayoutEffect,
@@ -10,6 +11,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { ProfilerOnRenderCallback } from 'react';
 import type {
   CallsignInfoRes,
   InboxMessage,
@@ -36,6 +38,7 @@ import {
 import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
 import { dutyTopScrollButtonSx } from './top-action-styles';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
+import { recordDutyScrollDebugTiming, useDutyScrollDebugEnabled } from './duty-scroll-debug';
 
 /** Start loading older messages when the user scrolls close to the top of the DOM list. */
 const LOAD_OLDER_BUFFER_PX = 160;
@@ -367,6 +370,17 @@ export const FeedColumnContent = memo(
     ref,
   ) {
     const { feed, view, messageCard, actions } = column;
+    const debugEnabled = useDutyScrollDebugEnabled();
+    const onDebugRender = useCallback<ProfilerOnRenderCallback>(
+      (_id, phase, actualDuration) => {
+        recordDutyScrollDebugTiming(feed.id, {
+          phase: 'render',
+          durationMs: actualDuration,
+          reason: phase,
+        });
+      },
+      [feed.id],
+    );
     const {
       narrowScreen = false,
       feedCount,
@@ -483,6 +497,57 @@ export const FeedColumnContent = memo(
       );
     }
 
+    const messageList =
+      feed.items.length === 0 ? (
+        <Typography color="text.secondary" className="p-4">
+          Немає повідомлень
+        </Typography>
+      ) : (
+        <DutyMessageList
+          items={feed.items}
+          feedId={feed.id}
+          feedCount={feedCount}
+          tagsLayout={tagsLayout}
+          botTagAction={botTagAction}
+          onCancelBotTagAction={stableOnCancelBotTagAction}
+          onMarkBotTagWrong={stableOnMarkBotTagWrong}
+          referenceTimeMs={feed.referenceTimeMs}
+          authUserName={authUserName}
+          tagContributionsOrganismId={tagContributionsOrganismId}
+          groupInfos={groupInfos}
+          profiles={profiles}
+          copiedFeedbackId={copiedFeedbackId}
+          networkDisplayMap={networkDisplayMap}
+          networkMap={networkMap}
+          unitsMap={unitsMap}
+          callsignInfoMap={callsignInfoMap}
+          networks={networks}
+          featureStrictNetworks={featureStrictNetworks}
+          tagsMap={tagsMap}
+          tagsOrder={tagsOrder}
+          filterState={feed.filter}
+          onMessageBookmark={stableOnMessageBookmark}
+          onMessageImportant={stableOnMessageImportant}
+          onMessageCopy={stableOnMessageCopy}
+          onMessageAddFrequencyToFilter={stableOnMessageAddFrequencyToFilter}
+          onMessageComment={stableOnMessageComment}
+          onMessageExcludeEntity={stableOnMessageExcludeEntity}
+          onMessageToggleTag={stableOnMessageToggleTag}
+          onMessageEdit={stableOnMessageEdit}
+          onOpenPointsOnMap={onOpenPointsOnMap ? stableOnOpenPointsOnMap : undefined}
+          setItemRef={scroll.setItemRef}
+          listRef={scroll.listRef}
+        />
+      );
+    const profiledMessageList =
+      debugEnabled && feed.items.length > 0 ? (
+        <Profiler id={`duty-feed-list-${feed.id}`} onRender={onDebugRender}>
+          {messageList}
+        </Profiler>
+      ) : (
+        messageList
+      );
+
     return (
       <Paper
         data-duty-feed-content-root
@@ -534,47 +599,7 @@ export const FeedColumnContent = memo(
               Немає старіших повідомлень
             </Typography>
           ) : null}
-          {feed.items.length === 0 ? (
-            <Typography color="text.secondary" className="p-4">
-              Немає повідомлень
-            </Typography>
-          ) : (
-            <DutyMessageList
-              items={feed.items}
-              feedId={feed.id}
-              feedCount={feedCount}
-              tagsLayout={tagsLayout}
-              botTagAction={botTagAction}
-              onCancelBotTagAction={stableOnCancelBotTagAction}
-              onMarkBotTagWrong={stableOnMarkBotTagWrong}
-              referenceTimeMs={feed.referenceTimeMs}
-              authUserName={authUserName}
-              tagContributionsOrganismId={tagContributionsOrganismId}
-              groupInfos={groupInfos}
-              profiles={profiles}
-              copiedFeedbackId={copiedFeedbackId}
-              networkDisplayMap={networkDisplayMap}
-              networkMap={networkMap}
-              unitsMap={unitsMap}
-              callsignInfoMap={callsignInfoMap}
-              networks={networks}
-              featureStrictNetworks={featureStrictNetworks}
-              tagsMap={tagsMap}
-              tagsOrder={tagsOrder}
-              filterState={feed.filter}
-              onMessageBookmark={stableOnMessageBookmark}
-              onMessageImportant={stableOnMessageImportant}
-              onMessageCopy={stableOnMessageCopy}
-              onMessageAddFrequencyToFilter={stableOnMessageAddFrequencyToFilter}
-              onMessageComment={stableOnMessageComment}
-              onMessageExcludeEntity={stableOnMessageExcludeEntity}
-              onMessageToggleTag={stableOnMessageToggleTag}
-              onMessageEdit={stableOnMessageEdit}
-              onOpenPointsOnMap={onOpenPointsOnMap ? stableOnOpenPointsOnMap : undefined}
-              setItemRef={scroll.setItemRef}
-              listRef={scroll.listRef}
-            />
-          )}
+          {profiledMessageList}
         </Box>
         {feed.items.length > 0 &&
           isPresent(actions.onArrowClick) &&
@@ -690,6 +715,7 @@ export const FeedColumnContent = memo(
       prevView.bottomUnreadCount !== nextView.bottomUnreadCount ||
       prevView.physicallyAtBottom !== nextView.physicallyAtBottom ||
       prevView.tailAvailability !== nextView.tailAvailability ||
+      prevView.unreadPrefetchNeeded !== nextView.unreadPrefetchNeeded ||
       prevView.workspaceFabAvoidance !== nextView.workspaceFabAvoidance
     ) {
       return false;

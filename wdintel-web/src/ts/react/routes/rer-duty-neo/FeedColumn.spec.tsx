@@ -235,6 +235,11 @@ describe('FeedColumn', () => {
       scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     });
+    // Near-bottom (not physical bottom) defers onLoadNewer until scroll idle (~140ms).
+    expect(onLoadNewer).not.toHaveBeenCalled();
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 160));
+    });
 
     expect(onLoadNewer).toHaveBeenCalledTimes(1);
     expect(onReachedBottom).not.toHaveBeenCalled();
