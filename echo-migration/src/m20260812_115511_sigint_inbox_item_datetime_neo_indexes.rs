@@ -1,5 +1,11 @@
 use sea_orm_migration::prelude::*;
 
+macro_rules! h {
+    () => {
+        concat!("at ", file!(), " line ", line!(), " column ", column!())
+    };
+}
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -20,7 +26,8 @@ create index sigint_inbox_item_unit_v2_datetime_neo_idx
     where unit_v2 is not null and unit_v2 <> '';
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 
@@ -33,7 +40,8 @@ drop index if exists sigint_inbox_item_unit_v2_datetime_neo_idx;
 drop index if exists sigint_inbox_item_datetime_backfill_idx;
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 }
