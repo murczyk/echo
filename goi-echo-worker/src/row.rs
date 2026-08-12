@@ -79,6 +79,21 @@ impl AssociationRow {
     pub fn source_date(&self) -> Option<DateTime<Utc>> {
         parse_goi_datetime(self.source_date_raw.as_deref()?)
     }
+
+    pub fn excel_unescaped_cells(&self) -> Vec<AssociationCell> {
+        self.cells
+            .iter()
+            .cloned()
+            .map(|mut cell| {
+                if cell.kind == "string" {
+                    if let Value::String(value) = &mut cell.value {
+                        *value = unescape_excel_text(value);
+                    }
+                }
+                cell
+            })
+            .collect()
+    }
 }
 
 pub fn parse_goi_datetime(raw: &str) -> Option<DateTime<Utc>> {

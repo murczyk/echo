@@ -6,6 +6,7 @@ mod m20260315_200000_create_association;
 mod m20260317_214944_create_knowledge;
 mod m20260701_120000_create_sync_lock;
 mod m20260730_120000_drop_knowledge_deleted;
+mod m20260812_115619_add_association_dedupe_key_version;
 
 pub struct Migrator;
 
@@ -16,6 +17,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260317_214944_create_knowledge::Migration),
             Box::new(m20260701_120000_create_sync_lock::Migration),
             Box::new(m20260730_120000_drop_knowledge_deleted::Migration),
+            Box::new(
+                m20260812_115619_add_association_dedupe_key_version::Migration,
+            ),
         ]
     }
 }
