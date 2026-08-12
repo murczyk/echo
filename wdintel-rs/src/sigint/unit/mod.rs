@@ -1117,7 +1117,9 @@ async fn fanout_unit_changed(
     Ok(())
 }
 
-async fn fanout_unit_changed_data(env: &Env) -> Result<(), AppError> {
+pub(crate) async fn fanout_unit_changed_data(
+    env: &Env,
+) -> Result<(), AppError> {
     let mut redis = env.redis.clone();
     let event = EventMsg::new(EventType::ETUnitChanged);
     fanout(&mut redis, event).await.context(h!())?;
@@ -1338,6 +1340,26 @@ where
     let new_value = unit_json(dbx, unit.id).await?;
     insert_unit_update_changelog(dbx, login, unit.id, old_value, new_value)
         .await?;
+    Ok(unit)
+}
+
+pub(crate) async fn activate_unit_for_login<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    unit: &sigint_unit::Model,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    if unit.active {
+        return Ok(unit.clone());
+    }
+    let unit = set_unit_activity(dbx, login, unit, true)
+        .await
+        .context(h!())?;
+    reconcile_parent_unit_activity(dbx, login, std::slice::from_ref(&unit))
+        .await
+        .context(h!())?;
     Ok(unit)
 }
 

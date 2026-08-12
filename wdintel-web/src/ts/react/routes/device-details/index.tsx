@@ -2,7 +2,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EditIcon from '@mui/icons-material/Edit';
 import { Box, Skeleton, Stack, Tooltip, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageHeader } from '../../components/PageHeader';
@@ -11,8 +11,11 @@ import { PowerIconButton } from '../../components/PowerIconButton';
 import { SectionLoadingOverlay } from '../../components/SectionLoadingOverlay';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { navigateWithinSpa } from '../../utils/browser';
+import { hasRole } from '../../utils/roles';
 import { DeviceUpsertDrawer } from '../devices/components/DeviceUpsertDrawer';
 import { DeviceFileTree } from '../device-files/components/DeviceFileTree';
+import type { DeviceAnalyticsTagFilter } from '../device-files/types';
+import { useDeviceAnalyticsTags } from '../device-files/use-device-analytics-tags';
 import { useDeviceFileJournal } from '../device-files/use-device-file-journal';
 import { useDeviceFiles } from '../device-files/use-device-files';
 import { DeviceDetailsLeftPanel } from './components/DeviceDetailsLeftPanel';
@@ -86,17 +89,39 @@ export function DeviceDetailsPage({
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const [activeTab, setActiveTab] = useState<DeviceDetailsTab>('analytical');
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [tagFilter, setTagFilter] = useState<DeviceAnalyticsTagFilter>({
+    tagIds: [],
+    tagMatch: 'any',
+    untagged: false,
+  });
   const device = page.device;
   const canSyncFiles = page.permissions.canSyncFiles && device !== null && !device.archived;
+  const tagsState = useDeviceAnalyticsTags({
+    deviceId,
+    enabled: page.permissions.canRead && device !== null,
+  });
   const files = useDeviceFiles({
     deviceId,
     enabled: activeTab === 'files' && page.permissions.canRead && device !== null,
     canSync: canSyncFiles,
+    tagFilter,
   });
   const journal = useDeviceFileJournal({
     deviceId,
     enabled: activeTab === 'journal' && page.permissions.canRead && device !== null,
+    tagFilter,
   });
+  useEffect(() => {
+    setTagFilter({ tagIds: [], tagMatch: 'any', untagged: false });
+  }, [deviceId]);
+  useEffect(() => {
+    if (tagsState.loading || tagsState.error !== null) return;
+    const activeTagIds = new Set(tagsState.tags.map((tag) => tag.id));
+    setTagFilter((current) => {
+      const tagIds = current.tagIds.filter((tagId) => activeTagIds.has(tagId));
+      return tagIds.length === current.tagIds.length ? current : { ...current, tagIds };
+    });
+  }, [tagsState.error, tagsState.loading, tagsState.tags]);
   const leftPanelVisible = isMobileLayout || leftPanelOpen;
   const toggleSidePanelLabel = leftPanelVisible ? 'Згорнути ліву панель' : 'Розгорнути ліву панель';
 
@@ -210,6 +235,11 @@ export function DeviceDetailsPage({
                 journal={journal}
                 files={files}
                 canSyncFiles={canSyncFiles}
+                deviceId={deviceId}
+                isAdmin={hasRole(authUserRoles, 'Admin')}
+                tagsState={tagsState}
+                tagFilter={tagFilter}
+                onTagFilterChange={setTagFilter}
                 onTabChange={setActiveTab}
               />
             </Box>

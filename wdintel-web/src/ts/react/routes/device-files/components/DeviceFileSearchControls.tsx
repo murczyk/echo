@@ -12,8 +12,14 @@ import dayjs from 'dayjs';
 
 import { PowerButton } from '../../../components/PowerButton';
 import { PowerDateTimePicker } from '../../../components/PowerDateTimePicker';
+import { DeviceAnalyticsTagFilterControls } from './DeviceAnalyticsTagFilterControls';
 import { createDefaultFileSearchDraft } from '../helpers';
-import type { DeviceFileSearchDraft, DeviceFileSearchValidationErrors } from '../types';
+import type {
+  DeviceAnalyticsTagFilter,
+  DeviceFileSearchDraft,
+  DeviceFileSearchValidationErrors,
+} from '../types';
+import type { DeviceAnalyticsTagsState } from '../use-device-analytics-tags';
 
 type Props = {
   draft: DeviceFileSearchDraft;
@@ -22,9 +28,12 @@ type Props = {
   scopeLabel: string | null;
   searching: boolean;
   searchMode: boolean;
+  tagsState: DeviceAnalyticsTagsState;
+  tagFilter: DeviceAnalyticsTagFilter;
   onChange: (draft: DeviceFileSearchDraft) => void;
   onSearch: () => void;
   onBackToBrowse: () => void;
+  onTagFilterChange: (filter: DeviceAnalyticsTagFilter) => void;
 };
 
 export function DeviceFileSearchControls({
@@ -34,9 +43,12 @@ export function DeviceFileSearchControls({
   scopeLabel,
   searching,
   searchMode,
+  tagsState,
+  tagFilter,
   onChange,
   onSearch,
   onBackToBrowse,
+  onTagFilterChange,
 }: Props) {
   return (
     <Box component="section" aria-label="Пошук файлів">
@@ -53,6 +65,11 @@ export function DeviceFileSearchControls({
             </>
           )}
         </Typography>
+        <DeviceAnalyticsTagFilterControls
+          tagsState={tagsState}
+          filter={tagFilter}
+          onChange={onTagFilterChange}
+        />
         <Stack
           direction={{ xs: 'column', md: 'row' }}
           spacing={1.5}

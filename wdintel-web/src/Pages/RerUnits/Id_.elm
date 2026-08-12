@@ -48,6 +48,7 @@ toLayout user _ =
 type Tab
     = Overview
     | Files
+    | Management
     | ChildUnits
 
 
@@ -97,11 +98,15 @@ init _ route _ =
       , detailsLoading = unitId /= Nothing
       , detailsLoadFailed = False
       , activeTab =
-            if Dict.get "tab" route.query == Just "files" then
-                Files
+            case Dict.get "tab" route.query of
+                Just "files" ->
+                    Files
 
-            else
-                Overview
+                Just "management" ->
+                    Management
+
+                _ ->
+                    Overview
       , childUnits = Nothing
       , childUnitsLoading = False
       , downloadInProgress = Nothing
@@ -264,6 +269,9 @@ updateDetails result model =
                 , detailsLoadFailed = False
                 , activeTab =
                     if model.activeTab == ChildUnits && List.isEmpty details.orbitUnits then
+                        Overview
+
+                    else if model.activeTab == Management && not details.canEditUnitLabels && List.isEmpty details.labels then
                         Overview
 
                     else
@@ -577,7 +585,7 @@ unitLabelCreated result model =
     case result of
         Err err ->
             ( { model | unitLabelSaving = False }
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання тегу підрозділу" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання синоніму підрозділу" err
             )
 
         Ok _ ->
@@ -613,7 +621,7 @@ unitLabelDeleted _ result model =
     case result of
         Err err ->
             ( { model | unitLabelDeleting = Nothing }
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення тегу підрозділу" err
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення синоніму підрозділу" err
             )
 
         Ok () ->
@@ -696,13 +704,18 @@ detailsView user shared model details =
         , deviceNetworkDialog model details
         , unitEditDialog model details.unit
         , orbitLinkDialog model details.unit
-        , tabsView model.activeTab (not (List.isEmpty details.orbitUnits))
+        , tabsView model.activeTab
+            (not (List.isEmpty details.orbitUnits))
+            (details.canEditUnitLabels || not (List.isEmpty details.labels))
         , case model.activeTab of
             Overview ->
                 overviewTab user shared model details
 
             Files ->
                 filesTab user shared model details.attachments
+
+            Management ->
+                managementTab model details
 
             ChildUnits ->
                 childUnitsTab model
@@ -872,8 +885,8 @@ defaultUnitMasks unit =
         [ forward, backward ]
 
 
-tabsView : Tab -> Bool -> Html Msg
-tabsView activeTab hasOrbitUnit =
+tabsView : Tab -> Bool -> Bool -> Html Msg
+tabsView activeTab hasOrbitUnit showManagement =
     let
         tabButton tab label =
             button
@@ -901,6 +914,11 @@ tabsView activeTab hasOrbitUnit =
         ]
         [ tabButton Overview "Огляд"
         , tabButton Files "Файли"
+        , if showManagement then
+            tabButton Management "Керування"
+
+          else
+            text ""
         , if hasOrbitUnit then
             tabButton ChildUnits "Підпорядковані підрозділи"
 
@@ -1078,7 +1096,6 @@ overviewTab user shared model details =
             shared
             model
             details
-            :: unitLabelsCard model details
             :: orbitCards
         )
 
@@ -1209,18 +1226,27 @@ unitOverviewActions state canCreateDeviceNetwork =
         ]
 
 
+managementTab : Model -> B.UnitDetailsRsp -> Html Msg
+managementTab model details =
+    div
+        [ class "flex flex-col gap-4"
+        , attribute "role" "tabpanel"
+        ]
+        [ unitLabelsCard model details ]
+
+
 unitLabelsCard : Model -> B.UnitDetailsRsp -> Html Msg
 unitLabelsCard model details =
     let
         tooltip =
-            "Якщо в перехопленні зустрічається такий текст - ми прив'язуємо перехоплення до даного підрозділу"
+            "Якщо в перехопленні зустрічається такий синонім - ми прив'язуємо перехоплення до даного підрозділу"
 
         inputTooShort =
             String.length (String.trim model.unitLabelInput) < 2
     in
     div [ class "border rounded p-4 bg-card" ]
         [ div [ class "d-flex align-items-center gap-2 mb-3" ]
-            [ h2 [ class "h4 mb-0" ] [ text "Теги підрозділу" ]
+            [ h2 [ class "h4 mb-0" ] [ text "Синоніми підрозділу" ]
             , i
                 [ class "bi bi-info-circle text-secondary"
                 , title tooltip
@@ -1229,11 +1255,10 @@ unitLabelsCard model details =
                 []
             ]
         , if List.isEmpty details.labels then
-            p [ class "text-secondary" ] [ text "Тегів немає." ]
+            p [ class "text-secondary" ] [ text "Синонімів немає." ]
 
           else
-            div [ class "d-flex flex-wrap gap-2 mb-3" ]
-                (List.map (unitLabelBadge model details.canEditUnitLabels) details.labels)
+            unitLabelsTable model details.canEditUnitLabels details.labels
         , if details.canEditUnitLabels then
             div []
                 [ div [ class "input-group", style "max-width" "560px" ]
@@ -1241,7 +1266,7 @@ unitLabelsCard model details =
                         [ class "form-control"
                         , type_ "text"
                         , value model.unitLabelInput
-                        , placeholder "Введіть тег підрозділу"
+                        , placeholder "Введіть синонім підрозділу"
                         , disabled model.unitLabelSaving
                         , on "input" (Decode.map SetUnitLabelInput (Decode.at [ "target", "value" ] Decode.string))
                         ]
@@ -1263,7 +1288,7 @@ unitLabelsCard model details =
                     ]
                 , if not (String.isEmpty model.unitLabelInput) && inputTooShort then
                     div [ class "text-danger text-sm mt-1" ]
-                        [ text "Тег має містити щонайменше 2 символи." ]
+                        [ text "Синонім має містити щонайменше 2 символи." ]
 
                   else
                     text ""
@@ -1274,28 +1299,45 @@ unitLabelsCard model details =
         ]
 
 
-unitLabelBadge : Model -> Bool -> B.UnitLabel -> Html Msg
-unitLabelBadge model canEdit label =
-    span [ class "badge text-bg-light border d-inline-flex align-items-center gap-2 fs-6" ]
-        [ text label.label
-        , if canEdit then
-            button
-                [ class "btn btn-sm p-0 text-danger border-0"
-                , type_ "button"
-                , title "Видалити тег"
-                , attribute "aria-label" ("Видалити тег " ++ label.label)
-                , disabled (model.unitLabelDeleting /= Nothing)
-                , onClick (DeleteUnitLabel label.id)
+unitLabelsTable : Model -> Bool -> List B.UnitLabel -> Html Msg
+unitLabelsTable model canEdit labels =
+    div [ class "table-responsive mb-3" ]
+        [ table [ class "table table-bordered align-middle mb-0" ]
+            [ thead []
+                [ tr []
+                    [ th [ scope "col" ] [ text "Синонім" ]
+                    , th [ scope "col", class "text-end", style "width" "96px" ] [ text "Дії" ]
+                    ]
                 ]
-                [ if model.unitLabelDeleting == Just label.id then
-                    span [ class "spinner-border spinner-border-sm" ] []
+            , tbody [] (List.map (unitLabelRow model canEdit) labels)
+            ]
+        ]
 
-                  else
-                    i [ class "bi bi-x-lg" ] []
-                ]
 
-          else
-            text ""
+unitLabelRow : Model -> Bool -> B.UnitLabel -> Html Msg
+unitLabelRow model canEdit label =
+    tr []
+        [ td [ class "text-break" ] [ text label.label ]
+        , td [ class "text-end" ]
+            [ if canEdit then
+                button
+                    [ class "btn btn-sm btn-outline-danger"
+                    , type_ "button"
+                    , title "Видалити синонім"
+                    , attribute "aria-label" ("Видалити синонім " ++ label.label)
+                    , disabled (model.unitLabelDeleting /= Nothing)
+                    , onClick (DeleteUnitLabel label.id)
+                    ]
+                    [ if model.unitLabelDeleting == Just label.id then
+                        span [ class "spinner-border spinner-border-sm" ] []
+
+                      else
+                        i [ class "bi bi-trash" ] []
+                    ]
+
+              else
+                text ""
+            ]
         ]
 
 

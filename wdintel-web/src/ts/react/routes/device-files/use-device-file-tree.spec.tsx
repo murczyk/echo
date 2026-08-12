@@ -57,6 +57,7 @@ function buildEntry(
     fileMetadataModifiedAt: null,
     createdAt: NOW,
     updatedAt: NOW,
+    tags: [],
   };
 }
 
@@ -84,6 +85,7 @@ function Harness() {
     deviceId: DEVICE_ID,
     enabled: true,
     roots,
+    tagFilter: { tagIds: [], tagMatch: 'any', untagged: false },
     onDirectoryMissing,
     onDirectoriesLoaded,
   });

@@ -642,7 +642,7 @@ deploy-echo-swapp server builder=goi_builder:
     ssh "$SERVER" "set -euo pipefail
       export DEBIAN_FRONTEND=noninteractive
       sudo apt-get update
-      sudo apt-get install -y openjdk-21-jdk
+      sudo apt-get install -y openjdk-25-jre-headless
       cd /var/tmp
       sudo apt-get install -y --reinstall --allow-downgrades \"./${SIGNAL_DEB_NAME}\" \"./${WHATSAPP_DEB_NAME}\"
       rm -f \"./${SIGNAL_DEB_NAME}\" \"./${WHATSAPP_DEB_NAME}\"

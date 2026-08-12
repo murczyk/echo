@@ -2,6 +2,7 @@ pub(crate) const ROLE_CYBER: &str = "Cyber";
 pub(crate) const ROLE_DEVICE_SOURCE: &str = "DeviceSource";
 
 mod access;
+pub(crate) mod analytics;
 
 #[allow(clippy::module_inception)]
 pub(crate) mod devices;

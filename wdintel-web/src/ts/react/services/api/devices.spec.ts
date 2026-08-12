@@ -8,14 +8,19 @@ import {
   countDeviceFileSubtrees,
   createDevice,
   getDeviceDetail,
+  getDeviceAnalyticsSummary,
   getDeviceUnitStats,
   listDeviceAors,
   listDeviceUnits,
+  listAnalyticsTags,
   journalDeviceFiles,
   listDeviceFileRoots,
   listDevices,
   searchDeviceFiles,
+  listDeviceAnalyticsFiles,
   syncDeviceFiles,
+  reanalyzeAll,
+  reanalyzeDevice,
   toDeviceUpdatePatchReq,
   updateDevice,
 } from './devices';
@@ -24,6 +29,7 @@ const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
 const ROOT_ID = '018f0000-0000-7000-8000-000000000001';
 const ENTRY_ID = '018f0000-0000-7000-8000-000000000002';
 const FILE_ID = '018f0000-0000-7000-8000-000000000003';
+const TAG_ID = '018f0000-0000-7000-8000-000000000004';
 const CREATED_AT = '2026-07-24T06:00:00Z';
 const UPDATED_AT = '2026-07-24T07:00:00Z';
 
@@ -300,14 +306,19 @@ describe('device filesystem API service routes', () => {
       includeBreadcrumbs: true,
       limit: 25,
       cursor: null,
+      tagIds: [TAG_ID],
+      tagMatch: 'all',
+      untagged: false,
     });
-
     expect(requestBody()).toEqual({
       device_id: DEVICE_ID,
       parent_entry_id: ROOT_ID,
       include_breadcrumbs: true,
       limit: 25,
       cursor: null,
+      tag_ids: [TAG_ID],
+      tag_match: 'all',
+      untagged: false,
     });
     expect(rsp.entries[0].fileId).toBe(FILE_ID);
     expect(rsp.entries[0].hasContent).toBe(true);
@@ -328,8 +339,10 @@ describe('device filesystem API service routes', () => {
       fileMetadataModifiedTo: UPDATED_AT,
       limit: 10,
       cursor: null,
+      tagIds: [TAG_ID],
+      tagMatch: 'any',
+      untagged: false,
     });
-
     expect(requestBody()).toEqual({
       device_id: DEVICE_ID,
       scope_entry_id: ROOT_ID,
@@ -341,6 +354,9 @@ describe('device filesystem API service routes', () => {
       file_metadata_modified_to: UPDATED_AT,
       limit: 10,
       cursor: null,
+      tag_ids: [TAG_ID],
+      tag_match: 'any',
+      untagged: false,
     });
   });
 
@@ -365,13 +381,18 @@ describe('device filesystem API service routes', () => {
       deviceId: DEVICE_ID,
       limit: 100,
       cursor: null,
+      tagIds: [],
+      tagMatch: 'any',
+      untagged: true,
     });
-
     expect(fetchMock()).toHaveBeenCalledWith('/api/device/files/journal', expect.any(Object));
     expect(requestBody()).toEqual({
       device_id: DEVICE_ID,
       limit: 100,
       cursor: null,
+      tag_ids: [],
+      tag_match: 'any',
+      untagged: true,
     });
     expect(rsp).toEqual({
       entries: [
@@ -506,6 +527,106 @@ describe('device filesystem API service routes', () => {
         },
       ],
     });
+  });
+});
+
+describe('device analytics API service routes', () => {
+  it('loads dynamic tags and summary rows with canonical field names', async () => {
+    fetchMock()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          tags: [{ id: TAG_ID, name: 'Звіти' }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          total_file_count: 20,
+          analyzed_file_count: 12,
+          items: [
+            {
+              tag: { id: TAG_ID, name: 'Звіти' },
+              file_count: 12,
+              latest_file_entry_created_at: CREATED_AT,
+            },
+          ],
+        }),
+      );
+
+    const tags = await listAnalyticsTags({ deviceId: DEVICE_ID });
+    const summary = await getDeviceAnalyticsSummary({ deviceId: DEVICE_ID });
+
+    expect(fetchMock().mock.calls[0][0]).toBe('/api/device/analytics/tags');
+    expect(requestBody(0)).toEqual({ device_id: DEVICE_ID });
+    expect(tags.tags).toEqual([{ id: TAG_ID, name: 'Звіти' }]);
+    expect(fetchMock().mock.calls[1][0]).toBe('/api/device/analytics/summary');
+    expect(requestBody(1)).toEqual({ device_id: DEVICE_ID });
+    expect(summary.totalFileCount).toBe(20);
+    expect(summary.analyzedFileCount).toBe(12);
+    expect(summary.items).toEqual([
+      {
+        tag: { id: TAG_ID, name: 'Звіти' },
+        fileCount: 12,
+        latestFileEntryCreatedAt: CREATED_AT,
+      },
+    ]);
+  });
+
+  it('loads one tag file page with stable cursor fields', async () => {
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({
+        files: [
+          {
+            file_id: FILE_ID,
+            name: 'report.log',
+            absolute_path: 'C:\\report.log',
+            file_entry_created_at: CREATED_AT,
+          },
+        ],
+        next_cursor: 'next',
+      }),
+    );
+
+    const rsp = await listDeviceAnalyticsFiles({
+      deviceId: DEVICE_ID,
+      tagId: TAG_ID,
+      limit: 10,
+      cursor: null,
+    });
+
+    expect(fetchMock()).toHaveBeenCalledWith('/api/device/analytics/files', expect.any(Object));
+    expect(requestBody()).toEqual({
+      device_id: DEVICE_ID,
+      tag_id: TAG_ID,
+      limit: 10,
+      cursor: null,
+    });
+    expect(rsp).toEqual({
+      files: [
+        {
+          fileId: FILE_ID,
+          name: 'report.log',
+          absolutePath: 'C:\\report.log',
+          fileEntryCreatedAt: CREATED_AT,
+        },
+      ],
+      nextCursor: 'next',
+    });
+  });
+
+  it('schedules device and global reanalysis through the admin routes', async () => {
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({ scheduled_file_count: 2 }))
+      .mockResolvedValueOnce(jsonResponse({ scheduled_file_count: 5 }));
+
+    const deviceRsp = await reanalyzeDevice({ deviceId: DEVICE_ID });
+    const allRsp = await reanalyzeAll();
+
+    expect(fetchMock().mock.calls[0][0]).toBe('/api/admin/device-analytics/reanalyze/device');
+    expect(requestBody(0)).toEqual({ device_id: DEVICE_ID });
+    expect(deviceRsp).toEqual({ scheduledFileCount: 2 });
+    expect(fetchMock().mock.calls[1][0]).toBe('/api/admin/device-analytics/reanalyze/all');
+    expect(requestBody(1)).toBeUndefined();
+    expect(allRsp).toEqual({ scheduledFileCount: 5 });
   });
 });
 

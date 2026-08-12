@@ -263,7 +263,9 @@ async fn prepare_association_message_work_item(
     }
     let Some(association_message) =
         association_original_message(&association.row)
-            .map(normalize_message_body)
+            .map(|message| {
+                normalize_association_message_body(&association.row, message)
+            })
             .filter(|message| !message.is_empty())
     else {
         return Ok(None);
@@ -719,13 +721,17 @@ pub(crate) fn association_original_message(
 }
 
 fn normalize_message_body(message: &str) -> String {
-    message
-        .replace("_x000d_", "\n")
-        .replace("\r\n", "\n")
-        .replace('\r', "\n")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    message.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn normalize_association_message_body(
+    row: &serde_json::Value,
+    message: &str,
+) -> String {
+    if goi_echo_worker::row::association_excel_text_is_unescaped(row) {
+        return normalize_message_body(message);
+    }
+    normalize_message_body(&goi_echo_worker::row::unescape_excel_text(message))
 }
 
 fn message_probe(message: &str) -> Option<String> {
@@ -971,15 +977,46 @@ mod tests {
     }
 
     #[test]
-    fn message_body_normalization_handles_excel_carriage_returns() {
+    fn legacy_association_body_normalization_handles_excel_carriage_returns() {
+        let row = serde_json::json!({});
         assert_eq!(
-            normalize_message_body("first_x000d_\r\n second\tthird"),
+            normalize_association_message_body(
+                &row,
+                "first_x000d_\r\n second\tthird"
+            ),
             "first second third"
         );
-        assert!(message_bodies_equal(
-            "prefix_x000d_message",
-            "prefix message"
+    }
+
+    #[test]
+    fn normalized_association_and_signal_bodies_preserve_literal_excel_tokens()
+    {
+        let row = serde_json::json!({ "excel_text_unescaped": true });
+        let association_message =
+            normalize_association_message_body(&row, "literal _x0041_ token");
+        assert_eq!(association_message, "literal _x0041_ token");
+        assert_eq!(
+            normalize_message_body("literal _x0041_ token"),
+            "literal _x0041_ token"
+        );
+        assert!(!message_bodies_equal(
+            "literal _x0041_ token",
+            "literal A token"
         ));
+
+        let (window_start, window_end) = test_window();
+        let selected = select_matching_original_message_uid(
+            &association_message,
+            &message_probe(&association_message).unwrap(),
+            window_start,
+            window_end,
+            &[
+                test_message(1, "literal-token", "literal _x0041_ token"),
+                test_message(2, "decoded-token", "literal A token"),
+            ],
+        );
+
+        assert_eq!(selected.as_deref(), Some("literal-token"));
     }
 
     #[test]
@@ -994,7 +1031,11 @@ mod tests {
 
     #[test]
     fn message_probe_does_not_span_normalized_whitespace() {
-        let message = normalize_message_body("short_x000d_distinctive-message");
+        let row = serde_json::json!({});
+        let message = normalize_association_message_body(
+            &row,
+            "short_x000d_distinctive-message",
+        );
 
         assert_eq!(
             message_probe(&message),
@@ -1009,7 +1050,7 @@ mod tests {
 
     #[test]
     fn message_bodies_equal_only_after_normalization() {
-        assert!(message_bodies_equal("first_x000d_ second", "first second"));
+        assert!(message_bodies_equal("first\r\n second", "first second"));
         assert!(!message_bodies_equal("message", "prefix message suffix"));
     }
 

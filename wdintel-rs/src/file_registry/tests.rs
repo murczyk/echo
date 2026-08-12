@@ -1,12 +1,14 @@
 use super::entities::file_entry;
 use super::entities::sea_orm_active_enums::FileEntryKind;
 use super::*;
+use crate::devices::analytics::types::RuleExpression;
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
     DbBackend, DbErr, EntityTrait, IntoActiveModel, Set, Statement,
     TransactionTrait,
 };
+use sqlx::migrate::MigrateDatabase;
 use std::{collections::BTreeMap, error::Error as StdError, future::Future};
 
 #[tokio::test]
@@ -73,18 +75,39 @@ async fn missing_file_database_has_actionable_error() {
 #[tokio::test]
 #[serial_test::serial]
 async fn file_registry_schema_and_entity_round_trip() {
-    let config = crate::config::read_config(Mode::Test).unwrap();
-    run_migrations(&config, Mode::Test).await.unwrap();
-    run_migrations(&config, Mode::Test).await.unwrap();
-    let file_registry_db =
-        connect_runtime(&config, Mode::Test).await.unwrap().unwrap();
-    let connection = file_registry_db.connection();
+    let (config, database_url) = isolated_file_registry_config().await;
 
-    assert_migration_versions(connection).await;
-    assert_public_extensions(connection).await;
-    assert_legacy_file_table_is_absent(connection).await;
-    assert_file_entry_schema(connection).await;
-    assert_file_entry_entity_round_trip(connection).await;
+    run_migrations(&config, Mode::Debug).await.unwrap();
+    run_migrations(&config, Mode::Debug).await.unwrap();
+    {
+        let file_registry_db = connect_runtime(&config, Mode::Debug)
+            .await
+            .unwrap()
+            .unwrap();
+        let connection = file_registry_db.connection();
+
+        assert_migration_versions(connection).await;
+        assert_public_extensions(connection).await;
+        assert_legacy_file_table_is_absent(connection).await;
+        assert_file_entry_schema(connection).await;
+        assert_file_analysis_schema(connection).await;
+        assert_default_analytics_tags(connection).await;
+        assert_file_entry_entity_round_trip(connection).await;
+    }
+
+    sqlx::Postgres::drop_database(&database_url).await.unwrap();
+}
+
+async fn isolated_file_registry_config() -> (Config, String) {
+    let mut config = crate::config::read_config(Mode::Test).unwrap();
+    let file_registry = config.file_registry.as_mut().unwrap();
+    file_registry.pg_dbname =
+        Some(format!("wd_files_test_schema_{}", Uuid::new_v4().simple()));
+    let database_url = crate::mk_wdfile_conn_string(file_registry, Mode::Debug);
+    sqlx::Postgres::create_database(&database_url)
+        .await
+        .unwrap();
+    (config, database_url)
 }
 
 async fn assert_migration_versions(connection: &DatabaseConnection) {
@@ -108,8 +131,64 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260728_111013_add_file_entry_journal_index".to_string(),
             "m20260728_182132_add_file_entry_content_path".to_string(),
             "m20260803_164204_file_entry_kind_and_windows_paths".to_string(),
+            "m20260806_160450_device_analytics_tags".to_string(),
+            "m20260807_125456_analytics_tag_rule_revision".to_string(),
+            "m20260807_162040_file_analysis_state".to_string(),
+            "m20260808_113748_file_analysis_device_queue".to_string(),
+            "m20260808_134904_file_analysis_retry_limit".to_string(),
+            "m20260808_134905_analytics_tag_test_expectation".to_string(),
+            "m20260810_120000_seed_default_analytics_tags".to_string(),
         ]
     );
+}
+
+async fn assert_default_analytics_tags(connection: &DatabaseConnection) {
+    let tags = connection
+        .query_all_raw(Statement::from_string(
+            DbBackend::Postgres,
+            r#"
+select id::text as id, name, rule_expression
+from analytics_tag
+where archived_at is null
+"#
+            .to_string(),
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            let name = row.try_get("", "name").unwrap();
+            let id = row.try_get("", "id").unwrap();
+            let rule_expression = row.try_get("", "rule_expression").unwrap();
+            (name, (id, rule_expression))
+        })
+        .collect::<BTreeMap<String, (String, serde_json::Value)>>();
+    let expected = [
+        ("Втрати", "019fdb64-4e45-76e2-b1e8-29945f919883"),
+        ("Доповіді", "019fdb5c-70d1-72b3-b533-554037355265"),
+        ("Озброєння", "019fdb63-23c0-7841-9896-cc3623deb46b"),
+        ("Штатки", "019fdb5b-1673-7d23-82ab-b4b05cb119ce"),
+        ("Бойові документи", "019fdb5e-e895-70c0-9cd9-fbc02c4d5372"),
+        ("Військовий файл", "019fdb68-9ef1-7d51-82a8-a365ddd38e39"),
+        ("Карти командира", "019fdaed-f5e0-7a50-ac3f-d31c101b9bf2"),
+        ("Плани противника", "019fdb5d-2858-7c31-ad0c-794e9bb3b379"),
+        ("Профільні програми", "019feace-8369-7732-aace-2907fdc7540c"),
+        ("Робота з радіо", "019fdb62-317c-74c3-ad84-ed794053fce3"),
+        ("Маршрути, палітри", "019fdb59-4305-74b0-8c19-50f2bcaacc54"),
+        ("Паролі, доступи", "019fdb65-bbc0-7141-aff9-87332813a834"),
+    ];
+
+    for (name, expected_id) in expected {
+        let (actual_id, rule_expression) =
+            tags.get(name).unwrap_or_else(|| {
+                panic!("default analytics tag {name:?} is missing")
+            });
+        assert_eq!(actual_id, expected_id, "unexpected id for tag {name:?}");
+        serde_json::from_value::<RuleExpression>(rule_expression.clone())
+            .unwrap_or_else(|error| {
+                panic!("default analytics tag {name:?} has an invalid rule: {error}")
+            });
+    }
 }
 
 async fn assert_public_extensions(connection: &DatabaseConnection) {
@@ -209,6 +288,97 @@ async fn assert_file_entry_schema(connection: &DatabaseConnection) {
     assert_file_entry_constraints(connection).await;
     assert_file_entry_triggers(connection).await;
     assert_file_entry_indexes(connection).await;
+}
+
+async fn assert_file_analysis_schema(connection: &DatabaseConnection) {
+    let table_names = connection
+        .query_all_raw(Statement::from_string(
+            DbBackend::Postgres,
+            r#"
+select table_name
+from information_schema.tables
+where table_schema = 'public'
+  and table_name in (
+      'analytics_tag',
+      'analytics_tag_rule_set_state',
+      'analytics_tag_test_file',
+      'device_file_tag',
+      'file_analysis_control',
+      'file_analysis_device_state',
+      'file_analysis_reanalysis_job',
+      'file_analysis_state'
+  )
+order by table_name
+"#
+            .to_string(),
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| row.try_get("", "table_name").unwrap())
+        .collect::<Vec<String>>();
+    assert_eq!(
+        table_names,
+        vec![
+            "analytics_tag".to_string(),
+            "analytics_tag_rule_set_state".to_string(),
+            "analytics_tag_test_file".to_string(),
+            "device_file_tag".to_string(),
+            "file_analysis_control".to_string(),
+            "file_analysis_device_state".to_string(),
+            "file_analysis_reanalysis_job".to_string(),
+            "file_analysis_state".to_string(),
+        ]
+    );
+
+    let link_foreign_keys = connection
+        .query_all_raw(Statement::from_string(
+            DbBackend::Postgres,
+            r#"
+select conname, pg_get_constraintdef(oid) as definition
+from pg_constraint
+where conrelid = 'public.device_file_tag'::regclass
+  and contype = 'f'
+order by conname
+"#
+            .to_string(),
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get("", "conname").unwrap(),
+                row.try_get("", "definition").unwrap(),
+            )
+        })
+        .collect::<Vec<(String, String)>>();
+    assert_eq!(
+        link_foreign_keys,
+        vec![
+            (
+                "device_file_tag_file_entry_fk".to_string(),
+                "FOREIGN KEY (device_id, file_entry_id) REFERENCES file_entry(device_id, id) ON DELETE CASCADE".to_string(),
+            ),
+            (
+                "device_file_tag_tag_id_fkey".to_string(),
+                "FOREIGN KEY (tag_id) REFERENCES analytics_tag(id) ON DELETE CASCADE".to_string(),
+            ),
+        ]
+    );
+
+    let rule_revision: i64 = connection
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "select revision from public.analytics_tag_rule_set_state where id"
+                .to_string(),
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "revision")
+        .unwrap();
+    assert_eq!(rule_revision, 1);
 }
 
 async fn assert_exact_columns(
@@ -348,6 +518,18 @@ order by tgname
     assert_eq!(
         triggers,
         vec![
+            (
+                "file_analysis_enqueue_insert_trg".to_string(),
+                false,
+                false,
+                "CREATE TRIGGER file_analysis_enqueue_insert_trg AFTER INSERT ON public.file_entry FOR EACH ROW EXECUTE FUNCTION file_analysis_enqueue_file_entry()".to_string(),
+            ),
+            (
+                "file_analysis_enqueue_update_trg".to_string(),
+                false,
+                false,
+                "CREATE TRIGGER file_analysis_enqueue_update_trg AFTER UPDATE OF name, absolute_path, extension ON public.file_entry FOR EACH ROW EXECUTE FUNCTION file_analysis_enqueue_file_entry()".to_string(),
+            ),
             (
                 "file_entry_hierarchy_trg".to_string(),
                 true,

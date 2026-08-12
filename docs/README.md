@@ -57,6 +57,7 @@ flowchart LR
         api -->|transactions and queries| postgres
         api -.->|device file metadata| file_registry
         bg -->|queues and message state| postgres
+        bg -.->|pending device file metadata| file_registry
         api --> redis
         bg --> redis
         api -.->|tokenization and inference| nlp
@@ -152,6 +153,11 @@ unavailable. When configured, operators must
 provision the database before restart, and startup applies its schema migrations
 automatically. See [File registry database](../deploy/README.md#file-registry-database)
 for configuration and provisioning.
+
+The `device_file_analytics_worker` runs in `wdintel-rs-bgworker`, reads pending
+file metadata from `wd_files`, and writes derived tag assignments to `wd`.
+It classifies only normalized file names, paths, and extensions; it does not
+read or transfer file content.
 
 See [Echo GPU audio transcription](ECHO_GPU_TRANSCRIPTION.md) for its
 configuration, network requirements, queue, cache, retry, and REST API flow.
@@ -424,13 +430,15 @@ flowchart TB
 `failed_inbox_unit_worker` owns verification of unresolved-unit rows marked
 pending by label changes or admin resolution. Every 10 seconds it claims a
 bounded batch with `FOR UPDATE SKIP LOCKED`, reruns the canonical inbox-unit
-resolver against each item's current `unit_v2` or raw `unit`, and either
-persists a parsed `sigint_inbox_item_unit` link and hard-deletes the failure or
-reactivates the failure for admin review. Network-derived links use the same
-table with `network` kind and are rebuilt as the distinct unit union during
-the existing inbox-network recalculation flow. Errors are logged and retried
-without stopping the worker; deleted rows older than 30 days are removed
-before each verification batch.
+resolver against each item's current `unit_v2` or raw `unit`, and independently
+persists links or unresolved rows for every parsed unit text. One inbox item can
+therefore have multiple `parsed` `sigint_inbox_item_unit` links and multiple
+unresolved-unit rows. Resolved failures are hard-deleted; failures that remain
+unresolved are reactivated for admin review. Network-derived links use the same
+table with `network` kind and are rebuilt as the distinct unit union during the
+existing inbox-network recalculation flow. Errors are logged and retried
+without stopping the worker; deleted rows older than 30 days are removed before
+each verification batch.
 
 Report generation is isolated in `wdintel-rs-report-worker.service`. At most
 four reports run concurrently across the per-kind queues. The unit has a fixed
@@ -725,6 +733,13 @@ supplies the facet dimension. Open ranges retain only the safe lower bound,
 and an empty scope returns an empty result without querying the large
 relations. Time and access predicates remain authoritative; ID bounds are
 only ClickHouse pruning hints.
+
+The RER analysis message list requires fresher results than analytical
+counters and facets. Requests whose selected range ends in the live analytics
+overlap use PostgreSQL directly when the range is shorter than 25 hours. Longer
+live ranges merge ClickHouse candidates with a PostgreSQL fresh tail before
+authoritative PostgreSQL hydration and pagination. Closed historical ranges
+continue to use ClickHouse with whole-query PostgreSQL fallback.
 
 PostgreSQL remains responsible for transactions, authoritative catalog and
 comment lookups, mutable caches, PostGIS processing, repeatable-read report

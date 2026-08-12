@@ -1,7 +1,7 @@
 import { createRoot, Root } from 'react-dom/client';
 
 import { NeoMuiThemeProvider } from './mui-theme';
-import { AdminUnitDuplicatesPage } from './routes/admin-unit-duplicates';
+import { AdminUnitsPage } from './routes/admin-units';
 
 function getAuthUserRolesFromShell(element: Element): string[] {
   const raw =
@@ -17,7 +17,7 @@ function getAuthUserRolesFromShell(element: Element): string[] {
 function AdminUnitDuplicatesRoot({ authUserRoles }: { authUserRoles: string[] }) {
   return (
     <NeoMuiThemeProvider>
-      <AdminUnitDuplicatesPage authUserRoles={authUserRoles} />
+      <AdminUnitsPage authUserRoles={authUserRoles} initialTab="duplicates" />
     </NeoMuiThemeProvider>
   );
 }

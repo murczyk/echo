@@ -5,7 +5,11 @@ import { redirectToLogin } from '../../auth-redirect';
 import { isAbortError, isUnauthorizedError } from '../../services/api/client';
 import { journalDeviceFiles } from '../../services/api/devices';
 import { toDeviceFileLoadError } from './helpers';
-import { DEVICE_FILE_PAGE_SIZE, type DeviceFileLoadError } from './types';
+import {
+  DEVICE_FILE_PAGE_SIZE,
+  type DeviceAnalyticsTagFilter,
+  type DeviceFileLoadError,
+} from './types';
 
 export type DeviceFileJournalState = {
   entries: DeviceFileJournalEntry[];
@@ -30,9 +34,11 @@ function appendJournalEntries(
 export function useDeviceFileJournal({
   deviceId,
   enabled,
+  tagFilter,
 }: {
   deviceId: string;
   enabled: boolean;
+  tagFilter: DeviceAnalyticsTagFilter;
 }): DeviceFileJournalState {
   const [entries, setEntries] = useState<DeviceFileJournalEntry[]>([]);
   const [totalCount, setTotalCount] = useState<number | null>(null);
@@ -44,6 +50,9 @@ export function useDeviceFileJournal({
   const nextCursorRef = useRef<string | null>(null);
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const tagFilterKey = JSON.stringify(tagFilter);
+  const tagFilterRef = useRef(tagFilter);
+  tagFilterRef.current = tagFilter;
 
   const load = useCallback(
     async (append: boolean) => {
@@ -68,12 +77,16 @@ export function useDeviceFileJournal({
         setTotalCount(null);
       }
 
+      const currentTagFilter = tagFilterRef.current;
       try {
         const rsp = await journalDeviceFiles(
           {
             deviceId,
             limit: DEVICE_FILE_PAGE_SIZE,
             cursor,
+            tagIds: currentTagFilter.tagIds.length === 0 ? null : currentTagFilter.tagIds,
+            tagMatch: currentTagFilter.tagIds.length === 0 ? null : currentTagFilter.tagMatch,
+            untagged: currentTagFilter.untagged || null,
           },
           { signal: controller.signal },
         );
@@ -107,7 +120,7 @@ export function useDeviceFileJournal({
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
-    [deviceId, enabled],
+    [deviceId, enabled, tagFilterKey],
   );
 
   useEffect(() => {

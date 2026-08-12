@@ -3,16 +3,22 @@ use super::error::{FilesystemError, FilesystemFieldError};
 use super::query;
 use super::sync_pipeline::sync_files;
 use super::types::{
-    BrowseFilesCommand, BrowseFilesResult, EntryQueryScope, FileSearchFilters,
-    JournalFilesCommand, JournalFilesResult, KeysetPageRequest, RootEntry,
-    SearchFilesCommand, SearchFilesResult, SubtreeFileCount,
-    SubtreeFileCountsCommand, SyncFilesCommand, SyncFilesResult,
+    BrowseFilesCommand, BrowseFilesResult, EntryQueryScope, EntrySortKey,
+    FileSearchFilters, JournalFilesCommand, JournalFilesResult,
+    KeysetPageRequest, RootEntry, SearchEntry, SearchFilesCommand,
+    SearchFilesResult, SubtreeFileCount, SubtreeFileCountsCommand,
+    SyncFilesCommand, SyncFilesResult, TreeEntry,
 };
 use super::validation::{
     duplicate_file_ids, validate_subtree_count_directories,
     validate_sync_batch_size,
 };
 use crate::devices::access;
+use crate::devices::analytics::types::TagFilter;
+use crate::devices::analytics::{
+    hydrate_active_tags, load_active_tag_memberships, matches_tag_filter,
+    normalize_tag_filter,
+};
 use crate::devices::devices::query::{
     self as device_query, FileRegistryDeviceAccess,
 };
@@ -86,12 +92,23 @@ pub(in crate::devices) async fn journal(
         device_id,
         limit,
         cursor,
+        tag_ids,
+        tag_match,
+        untagged,
     } = command;
     let device_id = device_query::authorize_file_registry_access(
         main_db,
         login,
         device_id,
         FileRegistryDeviceAccess::Read,
+    )
+    .await
+    .c(h!())?;
+    let tag_filter = normalize_tag_filter(
+        file_registry_db.connection(),
+        tag_ids,
+        tag_match,
+        untagged,
     )
     .await
     .c(h!())?;
@@ -112,21 +129,35 @@ pub(in crate::devices) async fn journal(
         }
         None => None,
     };
-    let page = KeysetPageRequest::try_new(limit, after)
+    let requested_page = KeysetPageRequest::try_new(limit, after)
         .map_err(map_read_error)
         .c(h!())?;
-    let (page, total_count) =
-        query::list_file_journal_with_total(file_registry_db, device_id, page)
+    let (page, total_count) = query::list_file_journal_with_total(
+        file_registry_db,
+        device_id,
+        requested_page,
+        tag_filter.as_ref(),
+    )
+    .await
+    .map_err(map_read_error)
+    .c(h!())?;
+    let next_cursor =
+        page.next.map(|sort_key| cursor::encode(sort_key.file_id()));
+    let entries = page.entries;
+    let file_entry_ids = entries
+        .iter()
+        .map(|entry| entry.file_id)
+        .collect::<Vec<_>>();
+    let tags_by_file =
+        hydrate_active_tags(file_registry_db.connection(), &file_entry_ids)
             .await
-            .map_err(map_read_error)
             .c(h!())?;
 
     Ok(JournalFilesResult {
         total_count,
-        entries: page.entries,
-        next_cursor: page
-            .next
-            .map(|sort_key| cursor::encode(sort_key.file_id())),
+        entries,
+        next_cursor,
+        tags_by_file,
     })
 }
 
@@ -142,12 +173,23 @@ pub(in crate::devices) async fn browse(
         include_breadcrumbs,
         limit,
         cursor,
+        tag_ids,
+        tag_match,
+        untagged,
     } = command;
     let device_id = device_query::authorize_file_registry_access(
         main_db,
         login,
         device_id,
         FileRegistryDeviceAccess::Read,
+    )
+    .await
+    .c(h!())?;
+    let tag_filter = normalize_tag_filter(
+        file_registry_db.connection(),
+        tag_ids,
+        tag_match,
+        untagged,
     )
     .await
     .c(h!())?;
@@ -177,15 +219,31 @@ pub(in crate::devices) async fn browse(
         }
         None => None,
     };
-    let page = KeysetPageRequest::try_new(limit, after)
+    let requested_page = KeysetPageRequest::try_new(limit, after)
         .map_err(map_read_error)
         .c(h!())?;
-    let page = query::list_children(file_registry_db, &scope, page)
-        .await
-        .map_err(map_read_error)
-        .c(h!())?;
+    let (entries, next_cursor) = if let Some(tag_filter) = &tag_filter {
+        filtered_browse_page(
+            file_registry_db,
+            &scope,
+            requested_page,
+            tag_filter,
+        )
+        .await?
+    } else {
+        let page =
+            query::list_children(file_registry_db, &scope, requested_page)
+                .await
+                .map_err(map_read_error)
+                .c(h!())?;
+        (
+            page.entries,
+            page.next
+                .map(|sort_key| cursor::encode(sort_key.entry_id())),
+        )
+    };
     let entry_path_components =
-        query::load_path_components(file_registry_db, &page.entries)
+        query::load_path_components(file_registry_db, &entries)
             .await
             .map_err(map_read_error)
             .c(h!())?;
@@ -197,14 +255,18 @@ pub(in crate::devices) async fn browse(
     } else {
         Vec::new()
     };
+    let file_entry_ids = entries.iter().map(tree_entry_id).collect::<Vec<_>>();
+    let tags_by_file =
+        hydrate_active_tags(file_registry_db.connection(), &file_entry_ids)
+            .await
+            .c(h!())?;
 
     Ok(BrowseFilesResult {
         breadcrumbs,
-        entries: page.entries,
+        entries,
         entry_path_components,
-        next_cursor: page
-            .next
-            .map(|entry_sort_key| cursor::encode(entry_sort_key.entry_id())),
+        next_cursor,
+        tags_by_file,
     })
 }
 
@@ -220,12 +282,23 @@ pub(in crate::devices) async fn search(
         filters,
         limit,
         cursor,
+        tag_ids,
+        tag_match,
+        untagged,
     } = command;
     let device_id = device_query::authorize_file_registry_access(
         main_db,
         login,
         device_id,
         FileRegistryDeviceAccess::Read,
+    )
+    .await
+    .c(h!())?;
+    let tag_filter = normalize_tag_filter(
+        file_registry_db.connection(),
+        tag_ids,
+        tag_match,
+        untagged,
     )
     .await
     .c(h!())?;
@@ -261,19 +334,45 @@ pub(in crate::devices) async fn search(
         }
         None => None,
     };
-    let page = KeysetPageRequest::try_new(limit, after)
+    let requested_page = KeysetPageRequest::try_new(limit, after)
         .map_err(map_read_error)
         .c(h!())?;
-    let page = query::search_entries(file_registry_db, &scope, &filters, page)
+    let (entries, next_cursor) = if let Some(tag_filter) = &tag_filter {
+        filtered_search_page(
+            file_registry_db,
+            &scope,
+            &filters,
+            requested_page,
+            tag_filter,
+        )
+        .await?
+    } else {
+        let page = query::search_entries(
+            file_registry_db,
+            &scope,
+            &filters,
+            requested_page,
+        )
         .await
         .map_err(map_read_error)
         .c(h!())?;
+        (
+            page.entries,
+            page.next
+                .map(|sort_key| cursor::encode(sort_key.entry_id())),
+        )
+    };
+    let file_entry_ids =
+        entries.iter().map(search_entry_id).collect::<Vec<_>>();
+    let tags_by_file =
+        hydrate_active_tags(file_registry_db.connection(), &file_entry_ids)
+            .await
+            .c(h!())?;
 
     Ok(SearchFilesResult {
-        entries: page.entries,
-        next_cursor: page
-            .next
-            .map(|entry_sort_key| cursor::encode(entry_sort_key.entry_id())),
+        entries,
+        next_cursor,
+        tags_by_file,
     })
 }
 pub(in crate::devices) async fn sync(
@@ -297,9 +396,148 @@ pub(in crate::devices) async fn sync(
     .await
     .c(h!())?;
 
-    sync_files(file_registry_db, device_id, files, duplicate_file_ids)
+    let mut result =
+        sync_files(file_registry_db, device_id, files, duplicate_file_ids)
+            .await
+            .map_err(map_sync_error)?;
+    let file_entry_ids = result
+        .results
+        .iter()
+        .filter_map(|result| match &result.outcome {
+            super::types::SyncFileItemOutcome::Accepted { file, .. } => {
+                Some(file.file_id)
+            }
+            super::types::SyncFileItemOutcome::Rejected { .. } => None,
+        })
+        .collect::<Vec<_>>();
+    result.tags_by_file =
+        hydrate_active_tags(file_registry_db.connection(), &file_entry_ids)
+            .await
+            .c(h!())?;
+    Ok(result)
+}
+async fn filtered_browse_page(
+    file_registry_db: &FileRegistryDb,
+    scope: &super::types::DirectoryScope,
+    requested_page: KeysetPageRequest<EntrySortKey>,
+    tag_filter: &TagFilter,
+) -> Result<(Vec<TreeEntry>, Option<String>), AppError> {
+    let target_len = usize::try_from(requested_page.limit())
+        .expect("validated file page limit must fit usize");
+    let mut after = requested_page.after().cloned();
+    let mut entries = Vec::with_capacity(target_len);
+    loop {
+        let page = query::list_children(
+            file_registry_db,
+            scope,
+            KeysetPageRequest::try_new(
+                Some(crate::config::DEVICE_FILE_PAGE_MAX_LIMIT),
+                after,
+            )
+            .expect("configured file page limit must be valid"),
+        )
         .await
-        .map_err(map_sync_error)
+        .map_err(map_read_error)
+        .c(h!())?;
+        let page_len = page.entries.len();
+        let has_later_page = page.next.is_some();
+        let entry_ids =
+            page.entries.iter().map(tree_entry_id).collect::<Vec<_>>();
+        let matching_entry_ids = query::find_matching_tree_entry_ids(
+            file_registry_db,
+            scope.device_id(),
+            &entry_ids,
+            tag_filter,
+        )
+        .await
+        .map_err(map_read_error)
+        .c(h!())?;
+        for (index, entry) in page.entries.into_iter().enumerate() {
+            let entry_id = tree_entry_id(&entry);
+            if matching_entry_ids.contains(&entry_id) {
+                entries.push(entry);
+                if entries.len() == target_len {
+                    let has_later_candidate =
+                        index + 1 < page_len || has_later_page;
+                    return Ok((
+                        entries,
+                        has_later_candidate.then(|| cursor::encode(entry_id)),
+                    ));
+                }
+            }
+        }
+        let Some(next) = page.next else {
+            return Ok((entries, None));
+        };
+        after = Some(next);
+    }
+}
+
+async fn filtered_search_page(
+    file_registry_db: &FileRegistryDb,
+    scope: &super::types::DirectoryScope,
+    filters: &FileSearchFilters,
+    requested_page: KeysetPageRequest<EntrySortKey>,
+    tag_filter: &TagFilter,
+) -> Result<(Vec<SearchEntry>, Option<String>), AppError> {
+    let target_len = usize::try_from(requested_page.limit())
+        .expect("validated file page limit must fit usize");
+    let mut after = requested_page.after().cloned();
+    let mut entries = Vec::with_capacity(target_len);
+    loop {
+        let page = query::search_entries(
+            file_registry_db,
+            scope,
+            filters,
+            KeysetPageRequest::try_new(
+                Some(crate::config::DEVICE_FILE_PAGE_MAX_LIMIT),
+                after,
+            )
+            .expect("configured file page limit must be valid"),
+        )
+        .await
+        .map_err(map_read_error)
+        .c(h!())?;
+        let page_len = page.entries.len();
+        let has_later_page = page.next.is_some();
+        let entry_ids =
+            page.entries.iter().map(search_entry_id).collect::<Vec<_>>();
+        let memberships = load_active_tag_memberships(
+            file_registry_db.connection(),
+            &entry_ids,
+        )
+        .await
+        .c(h!())?;
+        for (index, entry) in page.entries.into_iter().enumerate() {
+            let entry_id = search_entry_id(&entry);
+            if matches_tag_filter(memberships.get(&entry_id), tag_filter) {
+                entries.push(entry);
+                if entries.len() == target_len {
+                    let has_later_candidate =
+                        index + 1 < page_len || has_later_page;
+                    return Ok((
+                        entries,
+                        has_later_candidate.then(|| cursor::encode(entry_id)),
+                    ));
+                }
+            }
+        }
+        let Some(next) = page.next else {
+            return Ok((entries, None));
+        };
+        after = Some(next);
+    }
+}
+
+fn tree_entry_id(entry: &TreeEntry) -> Uuid {
+    match entry {
+        TreeEntry::Directory(directory) => directory.entry_id,
+        TreeEntry::File(file) => file.file_id,
+    }
+}
+
+fn search_entry_id(entry: &SearchEntry) -> Uuid {
+    tree_entry_id(&entry.entry)
 }
 
 fn validation_form(errors: Vec<FilesystemFieldError>) -> AppError {
@@ -359,8 +597,10 @@ mod mapping {
         RootEntry, SearchFilesResult, SubtreeFileCount, SyncFileItemOutcome,
         SyncFileOperation, SyncFileRejectionKind, SyncFilesResult, TreeEntry,
     };
+    use crate::devices::analytics::AnalyticsTag;
     use crate::devices::types::format_datetime;
     use crate::error::AppError;
+    use std::collections::BTreeMap;
 
     pub(in crate::devices) fn map_roots(
         roots: Vec<RootEntry>,
@@ -387,7 +627,14 @@ mod mapping {
     pub(in crate::devices) fn map_browse(
         result: BrowseFilesResult,
     ) -> Result<BrowseDeviceFilesRsp, AppError> {
-        if result.entries.len() != result.entry_path_components.len() {
+        let BrowseFilesResult {
+            breadcrumbs,
+            entries,
+            entry_path_components,
+            next_cursor,
+            mut tags_by_file,
+        } = result;
+        if entries.len() != entry_path_components.len() {
             return Err(AppError::AnyhowError {
                 source: anyhow::anyhow!(
                     "browse result context does not match entries"
@@ -395,62 +642,83 @@ mod mapping {
             });
         }
         Ok(BrowseDeviceFilesRsp {
-            breadcrumbs: result
-                .breadcrumbs
+            breadcrumbs: breadcrumbs.into_iter().map(map_breadcrumb).collect(),
+            entries: entries
                 .into_iter()
-                .map(map_breadcrumb)
-                .collect(),
-            entries: result
-                .entries
-                .into_iter()
-                .zip(result.entry_path_components)
+                .zip(entry_path_components)
                 .map(|(entry, path_components)| {
-                    map_tree_entry(entry, path_components)
+                    let tags = take_tags(
+                        &mut tags_by_file,
+                        super::tree_entry_id(&entry),
+                    );
+                    map_tree_entry(entry, path_components, tags)
                 })
                 .collect(),
-            next_cursor: result.next_cursor,
+            next_cursor,
         })
     }
 
     pub(in crate::devices) fn map_search(
         result: SearchFilesResult,
     ) -> SearchDeviceFilesRsp {
+        let SearchFilesResult {
+            entries,
+            next_cursor,
+            mut tags_by_file,
+        } = result;
         SearchDeviceFilesRsp {
-            entries: result
-                .entries
+            entries: entries
                 .into_iter()
-                .map(|entry| map_tree_entry(entry.entry, entry.path_components))
+                .map(|entry| {
+                    let tags = take_tags(
+                        &mut tags_by_file,
+                        super::search_entry_id(&entry),
+                    );
+                    map_tree_entry(entry.entry, entry.path_components, tags)
+                })
                 .collect(),
-            next_cursor: result.next_cursor,
+            next_cursor,
         }
     }
 
     pub(in crate::devices) fn map_journal(
         result: JournalFilesResult,
     ) -> JournalDeviceFilesRsp {
+        let JournalFilesResult {
+            entries,
+            next_cursor,
+            total_count,
+            mut tags_by_file,
+        } = result;
         JournalDeviceFilesRsp {
-            entries: result
-                .entries
+            entries: entries
                 .into_iter()
-                .map(|entry| DeviceFileJournalEntry {
-                    file_id: entry.file_id.hyphenated().to_string(),
-                    name: entry.name,
-                    absolute_path: entry.absolute_path,
-                    has_content: entry.has_content,
-                    synchronized_at: format_datetime(entry.synchronized_at),
+                .map(|entry| {
+                    let tags = take_tags(&mut tags_by_file, entry.file_id);
+                    DeviceFileJournalEntry {
+                        file_id: entry.file_id.hyphenated().to_string(),
+                        name: entry.name,
+                        absolute_path: entry.absolute_path,
+                        has_content: entry.has_content,
+                        synchronized_at: format_datetime(entry.synchronized_at),
+                        tags,
+                    }
                 })
                 .collect(),
-            total_count: result.total_count,
-            next_cursor: result.next_cursor,
+            total_count,
+            next_cursor,
         }
     }
 
     pub(in crate::devices) fn map_sync(
         result: SyncFilesResult,
     ) -> SyncDeviceFilesRsp {
+        let SyncFilesResult {
+            results,
+            mut tags_by_file,
+        } = result;
         SyncDeviceFilesRsp {
-            results: result
-                .results
+            results: results
                 .into_iter()
                 .map(|result| match result.outcome {
                     SyncFileItemOutcome::Accepted {
@@ -458,12 +726,20 @@ mod mapping {
                         root,
                         file,
                         path_components,
-                    } => FileSyncResult::Accepted {
-                        index: result.index,
-                        operation: map_sync_operation(operation),
-                        file: map_file(file, root.entry_id, path_components),
-                        root: map_root(root),
-                    },
+                    } => {
+                        let tags = take_tags(&mut tags_by_file, file.file_id);
+                        FileSyncResult::Accepted {
+                            index: result.index,
+                            operation: map_sync_operation(operation),
+                            file: map_file(
+                                file,
+                                root.entry_id,
+                                path_components,
+                                tags,
+                            ),
+                            root: map_root(root),
+                        }
+                    }
                     SyncFileItemOutcome::Rejected {
                         kind,
                         message,
@@ -503,6 +779,7 @@ mod mapping {
             name: root.name,
             created_at: format_datetime(root.created_at),
             updated_at: format_datetime(root.updated_at),
+            tags: Vec::new(),
         }
     }
 
@@ -516,6 +793,7 @@ mod mapping {
     fn map_tree_entry(
         entry: TreeEntry,
         path_components: Vec<String>,
+        tags: Vec<AnalyticsTag>,
     ) -> DeviceFileTreeEntry {
         match entry {
             TreeEntry::Directory(directory) => DeviceFileTreeEntry {
@@ -536,6 +814,7 @@ mod mapping {
                 file_metadata_modified_at: None,
                 created_at: format_datetime(directory.created_at),
                 updated_at: format_datetime(directory.updated_at),
+                tags: Vec::new(),
             },
             TreeEntry::File(file) => DeviceFileTreeEntry {
                 entry_id: file.file_id.hyphenated().to_string(),
@@ -556,6 +835,7 @@ mod mapping {
                     .map(format_datetime),
                 created_at: format_datetime(file.created_at),
                 updated_at: format_datetime(file.updated_at),
+                tags,
             },
         }
     }
@@ -564,6 +844,7 @@ mod mapping {
         file: FileEntry,
         root_entry_id: uuid::Uuid,
         path_components: Vec<String>,
+        tags: Vec<AnalyticsTag>,
     ) -> DeviceFile {
         DeviceFile {
             file_id: file.file_id.hyphenated().to_string(),
@@ -584,7 +865,14 @@ mod mapping {
                 .map(format_datetime),
             created_at: format_datetime(file.created_at),
             updated_at: format_datetime(file.updated_at),
+            tags,
         }
+    }
+    fn take_tags(
+        tags_by_file: &mut BTreeMap<uuid::Uuid, Vec<AnalyticsTag>>,
+        file_entry_id: uuid::Uuid,
+    ) -> Vec<AnalyticsTag> {
+        tags_by_file.remove(&file_entry_id).unwrap_or_default()
     }
 
     fn map_sync_operation(operation: SyncFileOperation) -> FileSyncOperation {

@@ -73,7 +73,10 @@ where
         }
     }
 
-    Ok(SyncFilesResult { results })
+    Ok(SyncFilesResult {
+        results,
+        tags_by_file: Default::default(),
+    })
 }
 
 pub(super) async fn mutate_file_with_retry<T, M, Fut>(

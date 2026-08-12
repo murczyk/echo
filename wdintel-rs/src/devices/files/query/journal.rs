@@ -1,14 +1,15 @@
 use super::{core, model};
+use crate::devices::analytics::types::TagFilter;
 use crate::devices::files::{
-    map_database_error, DomainFileEntryKind, FileJournalEntry,
-    FileJournalSortKey, FilesystemError, KeysetPage, KeysetPageRequest,
+    map_database_error, FileJournalEntry, FileJournalSortKey, FilesystemError,
+    KeysetPage, KeysetPageRequest,
 };
 use crate::file_registry::entities::file_entry;
 use crate::h;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
-    QueryFilter, QueryOrder, QuerySelect, Select,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select,
 };
 use uuid::Uuid;
 
@@ -16,8 +17,9 @@ pub(in crate::devices::files) async fn list_file_journal(
     db: &impl ConnectionTrait,
     device_id: Uuid,
     page: KeysetPageRequest<FileJournalSortKey>,
+    tag_filter: Option<&TagFilter>,
 ) -> Result<KeysetPage<FileJournalEntry, FileJournalSortKey>, FilesystemError> {
-    let entries = file_journal_query(device_id, page.after())
+    let entries = file_journal_query(device_id, page.after(), tag_filter)
         .limit(page.limit() + 1)
         .all(db)
         .await
@@ -35,12 +37,25 @@ pub(in crate::devices::files) async fn list_file_journal(
     ))
 }
 
+pub(in crate::devices::files) async fn count_file_journal(
+    db: &impl ConnectionTrait,
+    device_id: Uuid,
+    tag_filter: Option<&TagFilter>,
+) -> Result<u64, FilesystemError> {
+    file_journal_scope_query(device_id, tag_filter)
+        .count(db)
+        .await
+        .map_err(|error| {
+            map_database_error(anyhow::Error::new(error).context(h!()))
+        })
+}
+
 pub(in crate::devices::files) async fn resolve_file_journal_cursor(
     db: &impl ConnectionTrait,
     device_id: Uuid,
     boundary_file_id: Uuid,
 ) -> Result<FileJournalSortKey, FilesystemError> {
-    let entry = file_journal_scope_query(device_id)
+    let entry = file_journal_scope_query(device_id, None)
         .filter(file_entry::Column::Id.eq(boundary_file_id))
         .one(db)
         .await
@@ -52,11 +67,12 @@ pub(in crate::devices::files) async fn resolve_file_journal_cursor(
     Ok(FileJournalSortKey::new(entry.updated_at, entry.id))
 }
 
-pub(super) fn file_journal_query(
+fn file_journal_query(
     device_id: Uuid,
     after: Option<&FileJournalSortKey>,
+    tag_filter: Option<&TagFilter>,
 ) -> Select<file_entry::Entity> {
-    let mut query = file_journal_scope_query(device_id)
+    let mut query = file_journal_scope_query(device_id, tag_filter)
         .order_by_desc(file_entry::Column::UpdatedAt)
         .order_by_desc(file_entry::Column::Id);
     if let Some(after) = after {
@@ -65,10 +81,20 @@ pub(super) fn file_journal_query(
     query
 }
 
-fn file_journal_scope_query(device_id: Uuid) -> Select<file_entry::Entity> {
-    file_entry::Entity::find()
+fn file_journal_scope_query(
+    device_id: Uuid,
+    tag_filter: Option<&TagFilter>,
+) -> Select<file_entry::Entity> {
+    // A literal invariant lets PostgreSQL generic plans prove the predicate of
+    // `file_entry_journal_idx`; binding the enum can force a full scan.
+    let mut query = file_entry::Entity::find()
         .filter(file_entry::Column::DeviceId.eq(device_id))
-        .filter(file_entry::Column::Kind.eq(DomainFileEntryKind::File))
+        .filter(Expr::cust("file_entry.kind = 'file'"));
+    if let Some(tag_filter) = tag_filter {
+        query =
+            query.filter(core::file_tag_filter(file_entry::Entity, tag_filter));
+    }
+    query
 }
 
 fn file_journal_strict_after_condition(
