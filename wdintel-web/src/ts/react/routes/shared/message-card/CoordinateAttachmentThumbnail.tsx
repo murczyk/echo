@@ -170,7 +170,7 @@ export function CoordinateAttachmentThumbnail({
 
   const widthStyle = fullWidth ? '100%' : '180px';
   const heightStyle = fullWidth ? '100%' : '120px';
-  const flexStyle = fullWidth ? '1 1 auto' : '0 0 180px';
+  const flexStyle = fullWidth ? '1 1 auto' : '0 0 120px';
   const maxWidthStyle = fullWidth ? '100%' : 'none';
 
   return (

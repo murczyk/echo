@@ -143,7 +143,7 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(button?.getAttribute('style')).toContain('max-width: none');
     expect(button?.getAttribute('style')).toContain('flex-grow: 0');
     expect(button?.getAttribute('style')).toContain('flex-shrink: 0');
-    expect(button?.getAttribute('style')).toContain('flex-basis: 180px');
+    expect(button?.getAttribute('style')).toContain('flex-basis: 120px');
     expect(
       container.querySelector('[data-coordinate-preview-root]')?.getAttribute('style'),
     ).toContain('width: 180px');
@@ -210,7 +210,7 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(button?.getAttribute('style')).toContain('max-width: none');
     expect(button?.getAttribute('style')).toContain('flex-grow: 0');
     expect(button?.getAttribute('style')).toContain('flex-shrink: 0');
-    expect(button?.getAttribute('style')).toContain('flex-basis: 180px');
+    expect(button?.getAttribute('style')).toContain('flex-basis: 120px');
 
     await act(async () => {
       button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
