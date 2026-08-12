@@ -20,6 +20,7 @@ public.echo_automation_send_log
 public.palitra_goi_sync_job
 public.palitra_conversion_job
 public.goi_palitra_sync
+public.palitra_highlight_blacklist
 
 # PostgreSQL-only parsing configuration.
 public.sigint_comment_blacklist

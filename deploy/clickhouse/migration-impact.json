@@ -4,7 +4,7 @@
       "changes": [
         {
           "table": "public.palitra_highlight_blacklist",
-          "strategy": "replicated_snapshot"
+          "strategy": "excluded"
         }
       ]
     },
