@@ -674,8 +674,8 @@ mod tests {
 
     #[test]
     fn association_rekey_preserves_existing_id_after_excel_unescape() {
-        let legacy = association_row("first_x000d_\nsecond");
-        let desired = association_row("first\nsecond");
+        let legacy = association_row("first_x000d_\nsecond", false);
+        let desired = association_row("first\nsecond", true);
         let legacy_key = legacy.dedupe_key();
         let desired_key = desired.dedupe_key();
         let dedupe_targets =
@@ -700,7 +700,7 @@ mod tests {
             Set(crate::config::GOI_ASSOCIATION_DEDUPE_KEY_VERSION)
         );
 
-        let literal = association_row("literal _x000D_ token");
+        let literal = association_row("literal _x000D_ token", true);
         let dedupe_targets =
             association_dedupe_targets(std::slice::from_ref(&literal))
                 .expect("literal dedupe targets");
@@ -785,7 +785,10 @@ mod tests {
         }
     }
 
-    fn association_row(note: &str) -> AssociationRow {
+    fn association_row(
+        note: &str,
+        excel_text_unescaped: bool,
+    ) -> AssociationRow {
         AssociationRow {
             sheet_name: "Associations".to_string(),
             row_num: 1,
@@ -793,6 +796,7 @@ mod tests {
                 kind: "string".to_string(),
                 value: Value::String(note.to_string()),
             }],
+            excel_text_unescaped,
             association_type: None,
             frequency: Some("145.1000".to_string()),
             coordinates: Some("37UDR0682401768".to_string()),

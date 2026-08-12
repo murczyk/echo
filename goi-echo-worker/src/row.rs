@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::Path;
 
+pub const ASSOCIATION_EXCEL_TEXT_UNESCAPED_FIELD: &str = "excel_text_unescaped";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AssociationCell {
     pub kind: String,
@@ -17,6 +19,8 @@ pub struct AssociationRow {
     pub sheet_name: String,
     pub row_num: u32,
     pub cells: Vec<AssociationCell>,
+    #[serde(default)]
+    pub excel_text_unescaped: bool,
     pub association_type: Option<String>,
     pub frequency: Option<String>,
     pub coordinates: Option<String>,
@@ -96,6 +100,12 @@ impl AssociationRow {
     }
 }
 
+pub fn association_excel_text_is_unescaped(row: &Value) -> bool {
+    row.get(ASSOCIATION_EXCEL_TEXT_UNESCAPED_FIELD)
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
 pub fn parse_goi_datetime(raw: &str) -> Option<DateTime<Utc>> {
     let raw = raw.trim();
     if raw.is_empty() {
@@ -137,6 +147,7 @@ fn parse_association_row(
         sheet_name: sheet_name.to_string(),
         row_num: (row_idx + 1) as u32,
         cells,
+        excel_text_unescaped: true,
         association_type: normalize_text(cell_string(row.first())),
         frequency: normalize_text(cell_string(row.get(1))),
         coordinates: normalize_text(cell_string(row.get(2 + column_offset))),
@@ -443,6 +454,7 @@ mod tests {
             sheet_name: "Sheet1".to_string(),
             row_num: 1,
             cells: Vec::new(),
+            excel_text_unescaped: true,
             association_type: None,
             frequency: Some("145.1000".to_string()),
             coordinates: Some("37UDR0682401768".to_string()),
@@ -469,6 +481,7 @@ mod tests {
             sheet_name: "Sheet1".to_string(),
             row_num: 4,
             cells: Vec::new(),
+            excel_text_unescaped: true,
             association_type: None,
             frequency: Some("162.6375".to_string()),
             coordinates: None,
@@ -495,6 +508,7 @@ mod tests {
             sheet_name: "Sheet1".to_string(),
             row_num: 19,
             cells: Vec::new(),
+            excel_text_unescaped: true,
             association_type: None,
             frequency: Some("173.6750".to_string()),
             coordinates: Some("37UBR9821185404".to_string()),
