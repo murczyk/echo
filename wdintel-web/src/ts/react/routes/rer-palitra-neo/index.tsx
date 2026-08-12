@@ -371,16 +371,14 @@ function RerPalitraNeoPageBody() {
       {page.highlightBlacklistPalitra ? (
         <PalitraHighlightBlacklistDialog
           palitra={page.highlightBlacklistPalitra}
-          data={page.highlightBlacklistData}
           entries={page.highlightBlacklistEntries}
           loading={page.highlightBlacklistLoading}
           error={page.highlightBlacklistError}
           mutationError={page.highlightBlacklistMutationError}
           mutationBlocked={page.highlightBlacklistMutationBlocked}
           pendingEntryIds={page.highlightBlacklistPendingIds}
-          pendingLabels={page.highlightBlacklistPendingLabels}
           onRetry={page.loadHighlightBlacklist}
-          onToggle={page.toggleHighlightBlacklist}
+          onDelete={page.deleteHighlightBlacklistEntry}
           onClose={page.closeHighlightBlacklist}
         />
       ) : null}

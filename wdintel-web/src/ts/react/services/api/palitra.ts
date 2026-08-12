@@ -79,6 +79,8 @@ type PalitraBulkActionRspBody = {
 
 type PalitraLike = {
   id?: number | string;
+  highlightBlacklistCount?: number | string | null;
+  highlight_blacklist_count?: number | string | null;
   name?: string;
   folder?: string | null;
   colorHex?: string;
@@ -283,6 +285,9 @@ function normalizePalitra(raw: PalitraLike | null | undefined): Palitra {
   const changelog = (raw?.changelog ?? []).map(normalizePalitraChangelogEntry);
   return {
     id: normalizeNumber(raw?.id),
+    highlightBlacklistCount: normalizeNumber(
+      raw?.highlightBlacklistCount ?? raw?.highlight_blacklist_count,
+    ),
     name: raw?.name ?? '',
     folder: folder.length > 0 ? folder : null,
     isArchived: raw?.isArchived ?? raw?.is_archived ?? false,

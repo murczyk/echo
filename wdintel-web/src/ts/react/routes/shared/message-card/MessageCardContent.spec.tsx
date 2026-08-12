@@ -86,7 +86,7 @@ function renderMessage(
 async function openPointMenu(container: HTMLElement) {
   await act(async () => {
     container
-      .querySelector('button[aria-label="Показати на мапі"]')
+      .querySelector('.content-token--point')
       ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     await Promise.resolve();
   });
@@ -117,7 +117,7 @@ describe('MessageCardContent point blacklist actions', () => {
     ({ root: activeRoot, container: activeContainer } = renderMessage([7, 12, 7], onAdd));
     await openPointMenu(activeContainer);
     const multiAction = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
-      (item) => item.textContent?.includes('Додати до чорного списку…'),
+      (item) => item.textContent?.includes('Додати до чорного списку'),
     ) as HTMLElement;
     await act(async () => {
       multiAction.click();
@@ -152,7 +152,7 @@ describe('MessageCardContent point blacklist actions', () => {
     ({ root: activeRoot, container: activeContainer } = renderMessage([7, 12], onAdd));
     await openPointMenu(activeContainer);
     Array.from(document.body.querySelectorAll('[role="menuitem"]'))
-      .find((item) => item.textContent?.includes('Додати до чорного списку…'))
+      .find((item) => item.textContent?.includes('Додати до чорного списку'))
       ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     await act(async () => {
       await new Promise((resolve) => window.setTimeout(resolve, 0));
@@ -224,7 +224,7 @@ describe('MessageCardContent point blacklist actions', () => {
     ({ root: activeRoot, container: activeContainer } = renderMessage([7, 12], onAdd));
     await openPointMenu(activeContainer);
     const multiAction = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
-      (item) => item.textContent?.includes('Додати до чорного списку…'),
+      (item) => item.textContent?.includes('Додати до чорного списку'),
     ) as HTMLElement;
     await act(async () => {
       multiAction.click();
@@ -256,7 +256,7 @@ describe('MessageCardContent point blacklist actions', () => {
     ({ root: activeRoot, container: activeContainer } = renderMessage([7, 12], onAdd));
     await openPointMenu(activeContainer);
     const multiAction = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
-      (item) => item.textContent?.includes('Додати до чорного списку…'),
+      (item) => item.textContent?.includes('Додати до чорного списку'),
     ) as HTMLElement;
     await act(async () => {
       multiAction.click();
@@ -287,7 +287,7 @@ describe('MessageCardContent point blacklist actions', () => {
     ({ root: activeRoot, container: activeContainer } = renderMessage([7, 12], onAdd));
     await openPointMenu(activeContainer);
     const multiAction = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
-      (item) => item.textContent?.includes('Додати до чорного списку…'),
+      (item) => item.textContent?.includes('Додати до чорного списку'),
     ) as HTMLElement;
     await act(async () => {
       multiAction.click();

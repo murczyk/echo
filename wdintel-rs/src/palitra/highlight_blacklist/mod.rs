@@ -12,6 +12,7 @@ pub(crate) mod bl;
 mod query;
 
 pub(crate) use bl::{filter_blacklisted_points, load_blacklisted_labels};
+pub(crate) use query::counts_by_palitra_ids;
 
 #[get("/api/palitra/{palitra_id}/highlight-blacklist")]
 pub async fn list_palitra_highlight_blacklist(

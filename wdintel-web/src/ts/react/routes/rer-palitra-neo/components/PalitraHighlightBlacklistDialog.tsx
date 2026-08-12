@@ -1,5 +1,4 @@
-import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
-import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
+import DeleteIcon from '@mui/icons-material/Delete';
 import {
   Box,
   Button,
@@ -13,7 +12,7 @@ import {
 } from '@mui/material';
 import type { MRT_ColumnDef, MRT_RowData } from 'material-react-table';
 import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import type { Palitra, PalitraHighlightBlacklistEntry } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -29,29 +28,19 @@ import {
   getDefaultMRTOptions,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
-import { highlightBlacklistLabelKey } from '../../../services/api/palitra';
-import { deriveHighlightBlacklistPoints } from './PalitraHighlightBlacklistDialog.helpers';
 
-type BlacklistRow = MRT_RowData & {
-  id: string;
-  label: string;
-  normalizedLabel: string;
-  entry: PalitraHighlightBlacklistEntry | null;
-  isCurrentPoint: boolean;
-};
+type BlacklistRow = MRT_RowData & PalitraHighlightBlacklistEntry;
 
 type Props = {
-  palitra: Palitra | null;
-  data: Parameters<typeof deriveHighlightBlacklistPoints>[0] | null;
+  palitra: Palitra;
   entries: PalitraHighlightBlacklistEntry[];
   loading: boolean;
   error: string | null;
   mutationError: string | null;
   mutationBlocked: boolean;
   pendingEntryIds: Set<number>;
-  pendingLabels: Set<string>;
   onRetry: () => void;
-  onToggle: (label: string, entry: PalitraHighlightBlacklistEntry | null) => void;
+  onDelete: (entry: PalitraHighlightBlacklistEntry) => void;
   onClose: () => void;
 };
 
@@ -60,61 +49,65 @@ export const PALITRA_HIGHLIGHT_BLACKLIST_TABLE_HEAD_CELL_PROPS = {
   ...CUSTOM_STYLES.muiTableHeadCellProps,
   sx: {
     ...CUSTOM_STYLES.muiTableHeadCellProps.sx,
-    '& .Mui-TableHeadCell-ResizeHandle-Wrapper': {
-      mr: '-8px',
-    },
+    '& .Mui-TableHeadCell-ResizeHandle-Wrapper': { mr: '-8px' },
   },
 };
 
-function buildRows(
-  data: Parameters<typeof deriveHighlightBlacklistPoints>[0],
-  entries: PalitraHighlightBlacklistEntry[],
-): BlacklistRow[] {
-  const derived = deriveHighlightBlacklistPoints(data, entries);
-  const entriesByKey = new Map(
-    entries.map((entry) => [highlightBlacklistLabelKey(entry.label), entry]),
-  );
-
-  return [
-    ...derived.points.map((point): BlacklistRow => ({
-      id: `point:${point.normalizedLabel}`,
-      label: point.label,
-      normalizedLabel: point.normalizedLabel,
-      entry: entriesByKey.get(point.normalizedLabel) ?? null,
-      isCurrentPoint: true,
-    })),
-    ...derived.missingEntries.map((entry): BlacklistRow => ({
-      id: `entry:${entry.id}`,
-      label: entry.label,
-      normalizedLabel: highlightBlacklistLabelKey(entry.label),
-      entry,
-      isCurrentPoint: false,
-    })),
-  ];
-}
-
-function getActionLabel(row: BlacklistRow) {
-  return row.entry ? 'Прибрати з чорного списку' : 'Додати до чорного списку';
-}
-
 export function PalitraHighlightBlacklistDialog({
   palitra,
-  data,
   entries,
   loading,
   error,
   mutationError,
   mutationBlocked,
   pendingEntryIds,
-  pendingLabels,
   onRetry,
-  onToggle,
+  onDelete,
   onClose,
 }: Props) {
   const [globalFilter, setGlobalFilter] = useState('');
-  const rows = useMemo(() => (data ? buildRows(data, entries) : []), [data, entries]);
   const columns = useMemo<MRT_ColumnDef<BlacklistRow>[]>(
     () => [
+      {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
+        id: 'mrt-row-numbers',
+        header: '№',
+        accessorFn: () => null,
+        enableGlobalFilter: false,
+        enableColumnFilter: false,
+        enableResizing: false,
+        enableSorting: false,
+        size: 48,
+        minSize: 48,
+        maxSize: 48,
+        grow: false,
+        Cell: ({ row }) => row.index + 1,
+      },
+      {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        id: 'mrt-row-actions',
+        header: 'Дії',
+        enableGlobalFilter: false,
+        enableColumnFilter: false,
+        enableResizing: false,
+        enableSorting: false,
+        size: 48,
+        minSize: 48,
+        maxSize: 48,
+        grow: false,
+        Cell: ({ row }) => {
+          const pending = pendingEntryIds.has(row.original.id);
+          return (
+            <MrtRowActionButton
+              label="Видалити"
+              disabled={mutationBlocked || pending}
+              onClick={() => onDelete(row.original)}
+              tone="danger"
+              icon={pending ? <CircularProgress size={18} /> : <DeleteIcon fontSize="small" />}
+            />
+          );
+        },
+      },
       {
         accessorKey: 'label',
         header: 'Назва',
@@ -126,27 +119,22 @@ export function PalitraHighlightBlacklistDialog({
       },
       {
         id: 'createdByLogin',
-        accessorFn: (row) => row.entry?.createdByLogin ?? null,
+        accessorFn: (row) => row.createdByLogin,
         header: 'Додано',
         enableGlobalFilter: false,
         enableColumnFilter: false,
         enableResizing: true,
-        Cell: ({ row }) => row.original.entry?.createdByLogin || '—',
+        Cell: ({ row }) => row.original.createdByLogin || '—',
         minSize: 160,
         size: 220,
       },
     ],
-    [],
+    [mutationBlocked, onDelete, pendingEntryIds],
   );
-
-  useEffect(() => {
-    if (palitra === null) setGlobalFilter('');
-  }, [palitra]);
-
   const table = useMaterialReactTable({
     ...defaultMRTOptions,
     columns,
-    data: error || loading ? [] : rows,
+    data: error || loading ? [] : entries,
     enablePagination: false,
     enableBottomToolbar: false,
     enableTopToolbar: false,
@@ -159,62 +147,24 @@ export function PalitraHighlightBlacklistDialog({
     enableGlobalFilter: true,
     enableHiding: false,
     enableSorting: false,
-    enableRowNumbers: true,
-    enableRowActions: true,
+    enableRowNumbers: false,
+    enableRowActions: false,
     enableRowSelection: false,
-    enableRowVirtualization: rows.length > 100,
+    enableRowVirtualization: entries.length > 100,
     enableColumnResizing: true,
-    positionActionsColumn: 'first',
     globalFilterFn: 'contains',
     onGlobalFilterChange: setGlobalFilter,
     muiTableHeadCellProps: PALITRA_HIGHLIGHT_BLACKLIST_TABLE_HEAD_CELL_PROPS,
-    renderRowActions: ({ row }) => {
-      const pending = row.original.entry
-        ? pendingEntryIds.has(row.original.entry.id)
-        : pendingLabels.has(row.original.normalizedLabel);
-      const actionLabel = pending
-        ? `${getActionLabel(row.original)}…`
-        : getActionLabel(row.original);
-      return (
-        <MrtRowActionButton
-          label={actionLabel}
-          disabled={mutationBlocked || pending}
-          onClick={() => onToggle(row.original.label, row.original.entry)}
-          icon={
-            pending ? (
-              <CircularProgress size={18} />
-            ) : row.original.entry ? (
-              <VisibilityOutlinedIcon fontSize="small" />
-            ) : (
-              <VisibilityOffOutlinedIcon fontSize="small" />
-            )
-          }
-        />
-      );
-    },
-    displayColumnDefOptions: {
-      ...CUSTOM_STYLES.displayColumnDefOptions,
-      'mrt-row-numbers': {
-        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
-        header: '№',
-        enableResizing: false,
-      },
-      'mrt-row-actions': {
-        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        header: 'Дії',
-        enableResizing: false,
-      },
-    },
     state: {
-      globalFilter,
       columnOrder: ['mrt-row-numbers', 'mrt-row-actions', 'label', 'createdByLogin'],
+      globalFilter,
       isLoading: loading,
       showSkeletons: loading,
     },
     renderEmptyRowsFallback: ({ table: emptyTable }) =>
       renderDefaultMrtEmptyRowsFallback({
         table: emptyTable,
-        noDataMessage: 'У палітрі немає придатних точок.',
+        noDataMessage: 'У чорному списку немає точок.',
         filteredMessage: 'Збігів не знайдено.',
       }),
     muiTablePaperProps: ({ table: paperTable }) => getDefaultMrtPaperProps({ table: paperTable }),
@@ -222,7 +172,7 @@ export function PalitraHighlightBlacklistDialog({
       const containerProps = getDefaultMrtContainerProps({
         layout: 'list',
         fullScreen: containerTable.getState().isFullScreen,
-        hasRows: rows.length > 0,
+        hasRows: entries.length > 0,
       });
       return {
         ...containerProps,
@@ -232,11 +182,11 @@ export function PalitraHighlightBlacklistDialog({
   });
 
   return (
-    <Dialog open={palitra !== null} onClose={onClose} disableRestoreFocus fullWidth maxWidth="md">
+    <Dialog open onClose={onClose} disableRestoreFocus fullWidth maxWidth="md">
       <DialogTitle>Чорний список</DialogTitle>
       <DialogContent sx={{ pb: 0 }}>
         <Stack spacing={2} sx={{ pt: 1 }}>
-          <Typography variant="subtitle1">{palitra?.name ?? ''}</Typography>
+          <Typography variant="subtitle1">{palitra.name}</Typography>
           <Typography variant="body2" color="text.secondary">
             Точки з чорного списку не підсвічуються в картках повідомлень.
           </Typography>

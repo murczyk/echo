@@ -403,7 +403,7 @@ describe('MarkedText', () => {
     });
     await act(async () => {
       container
-        .querySelector('button[aria-label="Показати на мапі"]')
+        .querySelector('.content-token--point')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
       await Promise.resolve();
     });
@@ -433,7 +433,7 @@ describe('MarkedText', () => {
         />,
       );
       container
-        .querySelector('button[aria-label="Показати на мапі"]')
+        .querySelector('.content-token--point')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
       await Promise.resolve();
     });
@@ -461,7 +461,7 @@ describe('MarkedText', () => {
       });
       await act(async () => {
         container
-          .querySelector('button[aria-label="Показати на мапі"]')
+          .querySelector('.content-token--point')
           ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
         await Promise.resolve();
       });
@@ -480,7 +480,7 @@ describe('MarkedText', () => {
 
     await renderPoint([7, 12, 7]);
     const multiAction = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
-      (item) => item.textContent?.includes('Додати до чорного списку…'),
+      (item) => item.textContent?.includes('Додати до чорного списку'),
     ) as HTMLElement;
     multiAction.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     await act(async () => {
@@ -979,14 +979,14 @@ describe('MarkedText', () => {
 
     const menuItems = Array.from(document.body.querySelectorAll('[role="menuitem"]'));
     expect(menuItems).toHaveLength(2);
-    expect(menuItems[0]?.textContent).toContain('Показати на мапі всі точки');
+    expect(menuItems[0]?.textContent).toContain('Показати на мапі цю точку');
     expect(decodeMapHrefState(menuItems[0]?.getAttribute('href') ?? null)).toMatchObject({
-      search: 'P-1,P-2',
+      search: 'P-1',
       freqs_selected: ['100.125'],
     });
-    expect(menuItems[1]?.textContent).toContain('Показати на мапі цю точку');
+    expect(menuItems[1]?.textContent).toContain('Показати на мапі всі точки');
     expect(decodeMapHrefState(menuItems[1]?.getAttribute('href') ?? null)).toMatchObject({
-      search: 'P-1',
+      search: 'P-1,P-2',
       freqs_selected: ['100.125'],
     });
   });
@@ -1029,7 +1029,7 @@ describe('MarkedText', () => {
 
     const menuItems = Array.from(document.body.querySelectorAll('[role="menuitem"]'));
     expect(menuItems).toHaveLength(1);
-    expect(menuItems[0]?.textContent).toContain('Показати на мапі');
+    expect(menuItems[0]?.textContent).toContain('Показати на мапі цю точку');
     expect(decodeMapHrefState(menuItems[0]?.getAttribute('href') ?? null)).toMatchObject({
       search: 'P-1',
       freqs_selected: ['200'],

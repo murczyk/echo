@@ -7,9 +7,37 @@ use crate::types::ShortContext;
 use sea_orm::prelude::Expr;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect, RelationTrait, Set,
+    ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
+    QueryOrder, QuerySelect, RelationTrait, Set,
 };
+
+pub async fn counts_by_palitra_ids<C>(
+    dbx: &C,
+    palitra_ids: Vec<i64>,
+) -> Result<Vec<(i64, i64)>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if palitra_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    Ok(palitra_highlight_blacklist::Entity::find()
+        .filter(
+            palitra_highlight_blacklist::Column::PalitraId.eq_any(palitra_ids),
+        )
+        .select_only()
+        .column(palitra_highlight_blacklist::Column::PalitraId)
+        .expr_as(
+            Expr::col(palitra_highlight_blacklist::Column::Id).count(),
+            "count",
+        )
+        .group_by(palitra_highlight_blacklist::Column::PalitraId)
+        .into_tuple::<(i64, i64)>()
+        .all(dbx)
+        .await
+        .c(h!())?)
+}
 
 pub async fn load_labels<C>(
     dbx: &C,

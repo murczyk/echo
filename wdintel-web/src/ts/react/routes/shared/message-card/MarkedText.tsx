@@ -1,6 +1,17 @@
-import { Box, IconButton, ListItemText, MenuItem, Tooltip, Typography } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import PlaceIcon from '@mui/icons-material/Place';
+import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import {
+  Box,
+  IconButton,
+  ListItemIcon,
+  ListItemText,
+  MenuItem,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import { useId, useState } from 'react';
 import type { CSSProperties, ReactNode, SyntheticEvent } from 'react';
 import type { Theme } from '@mui/material/styles';
@@ -271,32 +282,6 @@ function PointToken({
       >
         <span className="content-token--point-link">{text}</span>
       </Box>
-      {onRequestPointBlacklist ? (
-        <IconButton
-          size="small"
-          aria-label="Показати на мапі"
-          aria-controls={menuAnchorEl ? menuId : undefined}
-          aria-haspopup="menu"
-          aria-expanded={menuAnchorEl ? 'true' : undefined}
-          title={title}
-          onClick={openMenu}
-          sx={{
-            color: ORANGE_TOKEN_FG,
-            fontWeight: 600,
-            padding: 0,
-            ml: 0,
-            cursor: 'pointer',
-            '&:hover': { backgroundColor: 'transparent' },
-          }}
-        >
-          <span
-            aria-hidden
-            style={{ lineHeight: 1, fontSize: '1em', fontWeight: 'inherit', margin: '0 2px' }}
-          >
-            ⋮
-          </span>
-        </IconButton>
-      ) : null}
       <PowerMenu
         id={menuId}
         anchorEl={menuAnchorEl}
@@ -310,31 +295,28 @@ function PointToken({
               <MenuItem
                 onClick={() => {
                   setMenuAnchorEl(null);
-                  onOpenPointsOnMap(etalonsAll, message);
+                  onOpenPointsOnMap([etalonSingle], message);
                 }}
               >
-                Показати на мапі всі точки
+                <ListItemIcon>
+                  <PlaceIcon />
+                </ListItemIcon>
+                Показати на мапі цю точку
               </MenuItem>
               <MenuItem
                 onClick={() => {
                   setMenuAnchorEl(null);
-                  onOpenPointsOnMap([etalonSingle], message);
+                  onOpenPointsOnMap(etalonsAll, message);
                 }}
               >
-                Показати на мапі цю точку
+                <ListItemIcon>
+                  <ScatterPlotIcon />
+                </ListItemIcon>
+                Показати на мапі всі точки
               </MenuItem>
             </>
           ) : (
             <>
-              <MenuItem
-                component="a"
-                href={hrefAll}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => setMenuAnchorEl(null)}
-              >
-                Показати на мапі всі точки
-              </MenuItem>
               <MenuItem
                 component="a"
                 href={hrefSingle}
@@ -342,7 +324,22 @@ function PointToken({
                 rel="noopener noreferrer"
                 onClick={() => setMenuAnchorEl(null)}
               >
+                <ListItemIcon>
+                  <PlaceIcon />
+                </ListItemIcon>
                 Показати на мапі цю точку
+              </MenuItem>
+              <MenuItem
+                component="a"
+                href={hrefAll}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMenuAnchorEl(null)}
+              >
+                <ListItemIcon>
+                  <ScatterPlotIcon />
+                </ListItemIcon>
+                Показати на мапі всі точки
               </MenuItem>
             </>
           )
@@ -353,7 +350,10 @@ function PointToken({
               onOpenPointsOnMap([etalonSingle], message);
             }}
           >
-            Показати на мапі
+            <ListItemIcon>
+              <PlaceIcon />
+            </ListItemIcon>
+            Показати на мапі цю точку
           </MenuItem>
         ) : (
           <MenuItem
@@ -363,12 +363,18 @@ function PointToken({
             rel="noopener noreferrer"
             onClick={() => setMenuAnchorEl(null)}
           >
-            Показати на мапі
+            <ListItemIcon>
+              <PlaceIcon />
+            </ListItemIcon>
+            Показати на мапі цю точку
           </MenuItem>
         )}
         {onRequestPointBlacklist ? (
           sourcePalitraIds.length === 0 ? (
             <MenuItem disabled>
+              <ListItemIcon>
+                <VisibilityOffIcon />
+              </ListItemIcon>
               <ListItemText
                 primary="Додати до чорного списку"
                 secondary="Неможливо визначити палітру-джерело"
@@ -386,6 +392,9 @@ function PointToken({
               }}
               disabled={pendingBlacklistKeys.has(directBlacklistKey)}
             >
+              <ListItemIcon>
+                <VisibilityOffIcon />
+              </ListItemIcon>
               {pendingBlacklistKeys.has(directBlacklistKey)
                 ? 'Додавання…'
                 : 'Додати до чорного списку'}
@@ -405,7 +414,10 @@ function PointToken({
                 }, 0);
               }}
             >
-              Додати до чорного списку…
+              <ListItemIcon>
+                <VisibilityOffIcon />
+              </ListItemIcon>
+              Додати до чорного списку
             </MenuItem>
           )
         ) : null}

@@ -1953,6 +1953,7 @@ async fn render_created_palitra_response(
         .c(h!())?;
     Ok(Palitra {
         id: palitra.id,
+        highlight_blacklist_count: 0,
         name: palitra.name,
         folder: bl::normalize_palitra_folder_from_db(palitra.folder),
         is_archived: palitra.is_archived,

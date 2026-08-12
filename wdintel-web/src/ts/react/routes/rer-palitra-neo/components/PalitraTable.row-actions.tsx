@@ -207,13 +207,15 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
           icon={<HistoryIcon fontSize="small" />}
           opensModal
         />
-        <MrtRowActionButton
-          label="Чорний список"
-          onClick={() => props.onOpenHighlightBlacklist(row.palitra)}
-          disabled={highlightBlacklistDisabled}
-          icon={<VisibilityOffOutlinedIcon fontSize="small" />}
-          opensModal
-        />
+        {row.palitra.highlightBlacklistCount > 0 ? (
+          <MrtRowActionButton
+            label="Чорний список"
+            onClick={() => props.onOpenHighlightBlacklist(row.palitra)}
+            disabled={highlightBlacklistDisabled}
+            icon={<VisibilityOffOutlinedIcon fontSize="small" />}
+            opensModal
+          />
+        ) : null}
         <MrtRowActionButton
           label="Перемістити в папку"
           onClick={() => props.onRequestAssignFolder(row.palitra)}

@@ -1227,6 +1227,7 @@ export type PalitraAccessLogin = {
 
 export type Palitra = {
   id: number;
+  highlightBlacklistCount: number;
   name: string;
   folder: string | null;
   isArchived: boolean;

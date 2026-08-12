@@ -60,6 +60,7 @@ let root: Root | null = null;
 function makePalitra(overrides: Partial<Palitra> = {}): Palitra {
   return {
     id: 10,
+    highlightBlacklistCount: 1,
     name: 'GOI Palette',
     folder: null,
     isArchived: false,
@@ -309,6 +310,12 @@ describe('PalitraTable row actions', () => {
     expect(action?.dataset.disabled).toBe('false');
     act(() => action?.click());
     expect(onOpenHighlightBlacklist).toHaveBeenCalledWith(palitra);
+  });
+
+  it('hides the highlight blacklist action when the count is zero', () => {
+    const { container } = renderActions(makeRow(makePalitra({ highlightBlacklistCount: 0 })));
+
+    expect(container.querySelector('[data-label="Чорний список"]')).toBeNull();
   });
 
   it('hides generic conversion retry for a malformed direct GOI import', () => {

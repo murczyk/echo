@@ -1,128 +1,84 @@
-/**
- * @vitest-environment happy-dom
- */
-import { act, createElement } from 'react';
+/** @vitest-environment happy-dom */
+import { act, createElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { Palitra, PalitraHighlightBlacklistEntry, PalitraReadV2 } from '../../../../Bindings';
+import type { Palitra, PalitraHighlightBlacklistEntry } from '../../../../Bindings';
 
-const mocks = vi.hoisted(() => ({
-  add: vi.fn(),
-  remove: vi.fn(),
-  list: vi.fn(),
-  read: vi.fn(),
-}));
-
+const mocks = vi.hoisted(() => ({ list: vi.fn(), remove: vi.fn() }));
 vi.mock('../../services/api/palitra', () => ({
-  addPalitraHighlightBlacklistEntry: mocks.add,
-  deletePalitraHighlightBlacklistEntry: mocks.remove,
   getPalitraHighlightBlacklist: mocks.list,
-  highlightBlacklistLabelKey: (label: string) => label.trim().toLowerCase(),
-  readPalitraV2: mocks.read,
+  deletePalitraHighlightBlacklistEntry: mocks.remove,
 }));
 
 import { useRerPalitraNeoPageHighlightBlacklist } from './use-rer-palitra-neo-page.highlight-blacklist';
 
-const entryA: PalitraHighlightBlacklistEntry = {
+const entry: PalitraHighlightBlacklistEntry = {
   id: 11,
   palitraId: 1,
   label: 'Точка А',
   createdByLoginId: 'login-a',
   createdByLogin: 'operator',
 };
-
 function palitra(id: number): Palitra {
-  return { id, name: `Палітра ${id}` } as Palitra;
-}
-
-function readData(): PalitraReadV2 {
-  return { palitra: {} as Palitra, geometries: [] };
+  return { id, name: `Палітра ${id}`, highlightBlacklistCount: 1 } as Palitra;
 }
 
 let root: Root | null = null;
 let latest: ReturnType<typeof useRerPalitraNeoPageHighlightBlacklist> | null = null;
-
+let setCount: ((id: number, count: number) => void) | null = null;
 function Harness() {
-  latest = useRerPalitraNeoPageHighlightBlacklist();
+  const [, setVersion] = useState(0);
+  setCount = () => setVersion((value) => value + 1);
+  latest = useRerPalitraNeoPageHighlightBlacklist(setCount, vi.fn());
   return null;
 }
-
 function renderHook() {
   const container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => root?.render(createElement(Harness)));
-  if (!latest) throw new Error('Hook did not render');
-  return latest;
 }
-
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
   latest = null;
+  setCount = null;
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
 
-describe('highlight blacklist stale mutations', () => {
-  it('ignores stale add and delete completions after switching palettes', async () => {
-    mocks.list.mockImplementation(async (id: number) => (id === 1 ? [entryA] : []));
-    mocks.read.mockResolvedValue(readData());
-    let resolveAdd!: (value: PalitraHighlightBlacklistEntry) => void;
-    let resolveRemove!: () => void;
-    mocks.add.mockImplementation(
-      () => new Promise<PalitraHighlightBlacklistEntry>((resolve) => (resolveAdd = resolve)),
-    );
-    mocks.remove.mockImplementation(
-      () => new Promise<void>((resolve) => (resolveRemove = resolve)),
-    );
-
+describe('highlight blacklist removal hook', () => {
+  it('loads only the blacklist and removes an entry', async () => {
+    mocks.list.mockResolvedValue([entry]);
+    mocks.remove.mockResolvedValue(undefined);
     renderHook();
+    await act(async () => latest?.openHighlightBlacklist(palitra(1)));
+    expect(mocks.list).toHaveBeenCalledWith(1);
+    expect(latest?.highlightBlacklistEntries).toEqual([entry]);
     await act(async () => {
-      latest?.openHighlightBlacklist(palitra(1));
+      void latest?.deleteHighlightBlacklistEntry(entry);
       await Promise.resolve();
     });
-
-    await act(async () => {
-      void latest?.toggleHighlightBlacklist(' Нова Точка ', null);
-      await Promise.resolve();
-    });
-    act(() => latest?.closeHighlightBlacklist());
-    await act(async () => {
-      latest?.openHighlightBlacklist(palitra(2));
-      await Promise.resolve();
-    });
-    await act(async () => {
-      resolveAdd({ ...entryA, id: 12, palitraId: 1, label: 'Нова Точка' });
-      await Promise.resolve();
-    });
-
+    expect(mocks.remove).toHaveBeenCalledWith(1, 11);
     expect(latest?.highlightBlacklistEntries).toEqual([]);
-    expect(latest?.highlightBlacklistPendingLabels).toEqual(new Set());
-    expect(latest?.highlightBlacklistMutationError).toBeNull();
-    expect(latest?.highlightBlacklistMutationBlocked).toBe(false);
+  });
 
+  it('ignores a stale delete completion after another palette opens', async () => {
+    let resolve!: () => void;
+    mocks.list.mockResolvedValue([]);
+    mocks.remove.mockReturnValue(new Promise<void>((done) => (resolve = done)));
+    renderHook();
+    await act(async () => latest?.openHighlightBlacklist(palitra(1)));
+    await act(async () => {
+      void latest?.deleteHighlightBlacklistEntry(entry);
+      await Promise.resolve();
+    });
     act(() => latest?.closeHighlightBlacklist());
-    await act(async () => {
-      latest?.openHighlightBlacklist(palitra(1));
-      await Promise.resolve();
-    });
-    await act(async () => {
-      void latest?.toggleHighlightBlacklist('Точка А', entryA);
-      await Promise.resolve();
-    });
-    act(() => latest?.closeHighlightBlacklist());
-    await act(async () => {
-      latest?.openHighlightBlacklist(palitra(2));
-      await Promise.resolve();
-      resolveRemove();
-      await Promise.resolve();
-    });
-
+    await act(async () => latest?.openHighlightBlacklist(palitra(2)));
+    await act(async () => resolve());
+    expect(latest?.highlightBlacklistPalitra?.id).toBe(2);
     expect(latest?.highlightBlacklistEntries).toEqual([]);
     expect(latest?.highlightBlacklistPendingIds).toEqual(new Set());
-    expect(latest?.highlightBlacklistMutationError).toBeNull();
-    expect(latest?.highlightBlacklistMutationBlocked).toBe(false);
   });
 });

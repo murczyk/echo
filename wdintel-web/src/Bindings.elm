@@ -3192,6 +3192,7 @@ palitraAccessLoginEncoder struct =
 
 type alias Palitra =
     { id : Int
+    , highlightBlacklistCount : Int
     , name : String
     , folder : Maybe (String)
     , isArchived : Bool
@@ -3219,6 +3220,7 @@ palitraEncoder : Palitra -> Json.Encode.Value
 palitraEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
+        , ( "highlight_blacklist_count", (Json.Encode.int) struct.highlightBlacklistCount )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "folder", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.folder )
         , ( "is_archived", (Json.Encode.bool) struct.isArchived )
@@ -13700,6 +13702,7 @@ palitraDecoder : Json.Decode.Decoder Palitra
 palitraDecoder =
     Json.Decode.succeed Palitra
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_blacklist_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "folder" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))

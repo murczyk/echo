@@ -3,6 +3,7 @@ use crate::config::{
     PALITRA_GOI_SYNC_DIRECTION_GOI, PALITRA_POINTS_INSERT_BATCH_SIZE,
 };
 use crate::entities::*;
+use crate::palitra::highlight_blacklist::counts_by_palitra_ids;
 use crate::palitra::types::*;
 use crate::palitra::{cancel_palitra_conversion, schedule_palitra_goi_delete};
 use crate::sigint::aor::bl::expand_aor_ids_to_descendants;
@@ -936,6 +937,12 @@ pub async fn list_all_palitras(
         read_palitra_goi_sync_summaries(dbx, palitra_ids.clone(), false)
             .await
             .c(h!())?;
+    let highlight_blacklist_counts =
+        counts_by_palitra_ids(dbx, palitra_ids.clone())
+            .await
+            .c(h!())?
+            .into_iter()
+            .collect::<HashMap<_, _>>();
     let mut result = vec![];
     for id in palitra_ids {
         let goi_sync_summary =
@@ -944,6 +951,10 @@ pub async fn list_all_palitras(
             Either::Right(id),
             dbx,
             goi_sync_summary,
+            highlight_blacklist_counts
+                .get(&id)
+                .copied()
+                .unwrap_or_default(),
         )
         .await
         .c(h!())?;
@@ -2185,7 +2196,7 @@ where
     let goi_sync_summary = read_palitra_goi_sync_summary(dbx, palitra_id)
         .await
         .c(h!())?;
-    render_palitra_model(palitra_model, dbx, goi_sync_summary)
+    render_palitra_model(palitra_model, dbx, goi_sync_summary, 0)
         .await
         .c(h!())
 }
@@ -2194,6 +2205,7 @@ async fn render_palitra_with_summary<'a, 'async_trait, C>(
     e_palitra_model: Either<palitra::Model, i64>,
     dbx: &'a C,
     goi_sync_summary: PalitraGoiSyncSummary,
+    highlight_blacklist_count: i64,
 ) -> anyhow::Result<Palitra>
 where
     C: ConnectionTrait + 'async_trait,
@@ -2206,15 +2218,21 @@ where
             .c(h!())?
             .c(h!())?,
     };
-    render_palitra_model(palitra_model, dbx, goi_sync_summary)
-        .await
-        .c(h!())
+    render_palitra_model(
+        palitra_model,
+        dbx,
+        goi_sync_summary,
+        highlight_blacklist_count,
+    )
+    .await
+    .c(h!())
 }
 
 async fn render_palitra_model<'a, 'async_trait, C>(
     palitra_model: palitra::Model,
     dbx: &'a C,
     goi_sync_summary: PalitraGoiSyncSummary,
+    highlight_blacklist_count: i64,
 ) -> anyhow::Result<Palitra>
 where
     C: ConnectionTrait + 'async_trait,
@@ -2302,6 +2320,7 @@ where
     };
     Ok(Palitra {
         id: palitra_id,
+        highlight_blacklist_count,
         name: palitra_model.name,
         folder: normalize_palitra_folder_from_db(palitra_model.folder),
         is_archived: palitra_model.is_archived,
@@ -2385,11 +2404,14 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let palitra = match goi_sync_summary {
-        Some(goi_sync_summary) => {
-            render_palitra_with_summary(e_palitra_model, dbx, goi_sync_summary)
-                .await
-                .c(h!())?
-        }
+        Some(goi_sync_summary) => render_palitra_with_summary(
+            e_palitra_model,
+            dbx,
+            goi_sync_summary,
+            0,
+        )
+        .await
+        .c(h!())?,
         None => render_palitra(e_palitra_model, dbx).await.c(h!())?,
     };
     let palitra_geometry_models =

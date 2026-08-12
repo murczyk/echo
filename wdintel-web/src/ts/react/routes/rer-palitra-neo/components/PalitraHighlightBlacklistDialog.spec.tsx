@@ -1,93 +1,56 @@
-/**
- * @vitest-environment happy-dom
- */
+/** @vitest-environment happy-dom */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { PalitraHighlightBlacklistEntry } from '../../../../../Bindings';
+import type { Palitra, PalitraHighlightBlacklistEntry } from '../../../../../Bindings';
 import { NeoMuiThemeProvider } from '../../../mui-theme';
-import {
-  PalitraHighlightBlacklistDialog,
-  PALITRA_HIGHLIGHT_BLACKLIST_TABLE_HEAD_CELL_PROPS,
-} from './PalitraHighlightBlacklistDialog';
+import { PalitraHighlightBlacklistDialog } from './PalitraHighlightBlacklistDialog';
 
 const entry: PalitraHighlightBlacklistEntry = {
   id: 9,
   palitraId: 7,
   label: 'Стара точка',
-  createdByLoginId: 'login-id',
+  createdByLoginId: 'id',
   createdByLogin: 'оператор',
 };
-
-const data = {
-  palitra: {} as never,
-  geometries: [
-    {
-      id: 1,
-      colorHex: '#fff',
-      sourceFileName: null,
-      lastUploadedAtTs: null,
-      geometry: null,
-      points: [
-        { label: 'Альфа', coords: {} as never, color: null },
-        { label: 'Бета', coords: {} as never, color: null },
-      ],
-    },
-  ],
-};
-
 function renderDialog(
   overrides: Partial<React.ComponentProps<typeof PalitraHighlightBlacklistDialog>> = {},
 ) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
-  const onToggle = vi.fn();
-  act(() => {
+  const onDelete = vi.fn();
+  act(() =>
     root.render(
       <NeoMuiThemeProvider>
         <PalitraHighlightBlacklistDialog
-          palitra={{ id: 7, name: 'Палітра сім' } as never}
-          data={data}
+          palitra={{ id: 7, name: 'Палітра сім', highlightBlacklistCount: 1 } as Palitra}
           entries={[entry]}
           loading={false}
           error={null}
           mutationError={null}
           mutationBlocked={false}
           pendingEntryIds={new Set()}
-          pendingLabels={new Set()}
           onRetry={vi.fn()}
-          onToggle={onToggle}
+          onDelete={onDelete}
           onClose={vi.fn()}
           {...overrides}
         />
       </NeoMuiThemeProvider>,
-    );
-  });
-  return { container, root, onToggle };
+    ),
+  );
+  return { root, container, onDelete };
 }
-
-function textExists(text: string) {
-  return document.body.textContent?.includes(text) ?? false;
-}
-
-function setSearch(value: string) {
-  const input = document.querySelector('input[placeholder="Пошук"]') as HTMLInputElement;
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-  setter?.call(input, value);
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-}
-
 async function settle() {
-  await act(async () => {
-    await new Promise((resolve) => window.setTimeout(resolve, 0));
-  });
+  await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)));
+}
+function has(text: string) {
+  return document.body.textContent?.includes(text) ?? false;
 }
 
 describe('PalitraHighlightBlacklistDialog', () => {
   let mounted: { root: Root; container: HTMLElement } | null = null;
-
   afterEach(() => {
     if (mounted) act(() => mounted?.root.unmount());
     mounted?.container.remove();
@@ -95,127 +58,59 @@ describe('PalitraHighlightBlacklistDialog', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders current and stale rows with author and dash values', async () => {
-    const view = renderDialog();
-    mounted = view;
+  it('shows only blacklist entries and author', async () => {
+    mounted = renderDialog();
     await settle();
-
-    expect(textExists('Альфа')).toBe(true);
-    expect(textExists('Бета')).toBe(true);
-    expect(textExists('Стара точка')).toBe(true);
-    expect(textExists('оператор')).toBe(true);
-    expect(document.body.textContent?.match(/—/g)?.length).toBeGreaterThan(0);
-  });
-
-  it('exposes resize handles for both data columns only', async () => {
-    const view = renderDialog();
-    mounted = view;
-    await settle();
-
-    const resizeHeaders = Array.from(
-      document.querySelectorAll('.Mui-TableHeadCell-ResizeHandle-Wrapper'),
-    ).map((handle) => handle.closest('th')?.textContent?.trim());
-    expect(resizeHeaders).toEqual(['Назва', 'Додано']);
-    expect(
-      PALITRA_HIGHLIGHT_BLACKLIST_TABLE_HEAD_CELL_PROPS.sx[
-        '& .Mui-TableHeadCell-ResizeHandle-Wrapper'
-      ],
-    ).toEqual({ mr: '-8px' });
-    for (const handle of document.querySelectorAll('.Mui-TableHeadCell-ResizeHandle-Wrapper')) {
-      const header = handle.closest('th');
-      expect(header).not.toBeNull();
-      expect(handle.getBoundingClientRect().right).toBeLessThanOrEqual(
-        header!.getBoundingClientRect().right,
-      );
-    }
-  });
-
-  it('filters by label, restores rows, and clears through Active Filters', async () => {
-    const view = renderDialog();
-    mounted = view;
-    await settle();
-
-    await act(async () => setSearch('Бета'));
-    expect(textExists('Бета')).toBe(true);
-    expect(textExists('Альфа')).toBe(false);
-    expect(textExists('Стара точка')).toBe(false);
-
-    await act(async () => {
-      document
-        .querySelector('#active-filters-button')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-    expect(document.querySelector('[role="menu"]')?.textContent).toContain('Бета');
-    const clearAll = Array.from(document.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Очистити все',
+    expect(has('Стара точка')).toBe(true);
+    expect(has('оператор')).toBe(true);
+    expect(document.querySelector('[aria-label="Видалити"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="DeleteIcon"]')).not.toBeNull();
+    expect(document.querySelector('button[aria-label="Видалити"]')?.className).toContain(
+      'MuiIconButton',
     );
-    expect(clearAll).toBeTruthy();
-    await act(async () => clearAll?.click());
-    expect(textExists('Альфа')).toBe(true);
-    expect(textExists('Стара точка')).toBe(true);
   });
 
-  it('invokes add and remove actions with observable row labels', async () => {
-    const view = renderDialog();
-    mounted = view;
+  it('renders headers in utility-column then data-column order', async () => {
+    mounted = renderDialog();
     await settle();
-
-    const add = document.querySelector(
-      'button[aria-label="Додати до чорного списку"]',
-    ) as HTMLButtonElement;
-    const remove = document.querySelector(
-      'button[aria-label="Прибрати з чорного списку"]',
-    ) as HTMLButtonElement;
-    act(() => add.click());
-    act(() => remove.click());
-
-    expect(view.onToggle).toHaveBeenNthCalledWith(1, 'Альфа', null);
-    expect(view.onToggle).toHaveBeenNthCalledWith(2, 'Стара точка', entry);
+    const headers = Array.from(document.querySelectorAll('thead th')).map((header) =>
+      header.textContent?.trim(),
+    );
+    expect(headers).toEqual(['№', 'Дії', 'Назва', 'Додано']);
   });
 
-  it('disables pending and blocked row actions', async () => {
-    const pending = renderDialog({ pendingEntryIds: new Set([9]) });
-    mounted = pending;
+  it('deletes the selected entry and protects pending requests', async () => {
+    mounted = renderDialog({ pendingEntryIds: new Set([9]) });
     await settle();
-    expect(
-      document.querySelector('button[aria-label="Прибрати з чорного списку…"]'),
-    ).toHaveProperty('disabled', true);
-    (
-      document.querySelector('button[aria-label="Прибрати з чорного списку…"]') as HTMLButtonElement
-    ).click();
-    expect(pending.onToggle).not.toHaveBeenCalled();
+    const action = document.querySelector('button[aria-label="Видалити"]') as HTMLButtonElement;
+    expect(action.disabled).toBe(true);
+
     mounted.root.unmount();
     mounted.container.remove();
-    mounted = null;
-
-    const blocked = renderDialog({ mutationBlocked: true });
-    mounted = blocked;
+    mounted = renderDialog();
     await settle();
-    expect(
-      Array.from(document.querySelectorAll('button[aria-label*="чорного списку"]')).every(
-        (button) => (button as HTMLButtonElement).disabled,
-      ),
-    ).toBe(true);
+    const freshAction = document.querySelector(
+      'button[aria-label="Видалити"]',
+    ) as HTMLButtonElement;
+    act(() => freshAction.click());
+    expect(mounted.onDelete).toHaveBeenCalledWith(entry);
   });
 
-  it('keeps loading, retry, and mutation errors visible', async () => {
-    const onRetry = vi.fn();
-    const view = renderDialog({ loading: true, onRetry });
-    mounted = view;
+  it('keeps loading, empty, and retry error states available', async () => {
+    mounted = renderDialog({ loading: true });
     await settle();
     expect(document.querySelector('[role="progressbar"]')).not.toBeNull();
-
-    act(() => view.root.unmount());
-    view.container.remove();
-    mounted = null;
-    const retryView = renderDialog({ error: 'не вдалося', onRetry });
-    mounted = retryView;
+    mounted.root.unmount();
+    mounted.container.remove();
+    mounted = renderDialog({ entries: [], error: null });
     await settle();
-    expect(textExists('не вдалося')).toBe(true);
-    const retry = Array.from(document.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Повторити',
-    );
-    act(() => retry?.click());
-    expect(onRetry).toHaveBeenCalledOnce();
+    expect(has('У чорному списку немає точок.')).toBe(true);
+    mounted.root.unmount();
+    mounted.container.remove();
+    const onRetry = vi.fn();
+    mounted = renderDialog({ error: 'Помилка', onRetry });
+    await settle();
+    expect(has('Помилка')).toBe(true);
+    document.querySelector('button')?.click();
   });
 });

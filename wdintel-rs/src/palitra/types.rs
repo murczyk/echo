@@ -65,6 +65,7 @@ pub struct PalitraAccessLogin {
 )]
 pub struct Palitra {
     pub id: i64,
+    pub highlight_blacklist_count: i64,
     pub name: String,
     pub folder: Option<String>,
     pub is_archived: bool,

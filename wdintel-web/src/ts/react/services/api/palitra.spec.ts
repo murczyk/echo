@@ -10,6 +10,7 @@ import {
   downloadPalitras,
   fetchPalitraReferenceData,
   getPalitraHighlightBlacklist,
+  listPalitras,
 } from './palitra';
 
 describe('palitra API 401 handling', () => {
@@ -99,6 +100,24 @@ describe('palitra reference loading', () => {
 
     expect(requestedUrls).not.toContain('/api/organism/list-logins');
     expect(requestedUrls).not.toContain('/api/logins');
+  });
+});
+
+describe('palitra list normalization', () => {
+  it('accepts the generated blacklist count and defaults older responses to zero', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify([{ id: 7, name: 'Палітра', highlight_blacklist_count: '3' }]), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+
+    await expect(listPalitras()).resolves.toEqual([
+      expect.objectContaining({ id: 7, highlightBlacklistCount: 3 }),
+    ]);
   });
 });
 
