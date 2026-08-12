@@ -2,6 +2,22 @@ use anyhow::Result;
 use sea_orm::DatabaseConnection;
 use sea_orm_migration::prelude::*;
 
+macro_rules! h {
+    () => {
+        concat!("at ", file!(), " line ", line!(), " column ", column!())
+    };
+}
+
+trait MigrationContext<T> {
+    fn c(self, context: &'static str) -> std::result::Result<T, DbErr>;
+}
+
+impl<T> MigrationContext<T> for std::result::Result<T, DbErr> {
+    fn c(self, context: &'static str) -> std::result::Result<T, DbErr> {
+        self.map_err(|error| DbErr::Migration(format!("{context}: {error}")))
+    }
+}
+
 mod m20260315_200000_create_association;
 mod m20260317_214944_create_knowledge;
 mod m20260701_120000_create_sync_lock;

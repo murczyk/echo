@@ -1,3 +1,4 @@
+use super::MigrationContext;
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]
@@ -14,7 +15,8 @@ impl MigrationTrait for Migration {
                         add column dedupe_key_version smallint not null default 1;
                 "#,
             )
-            .await?;
+            .await
+            .c(h!())?;
         Ok(())
     }
 
@@ -27,7 +29,8 @@ impl MigrationTrait for Migration {
                         drop column dedupe_key_version;
                 "#,
             )
-            .await?;
+            .await
+            .c(h!())?;
         Ok(())
     }
 }
