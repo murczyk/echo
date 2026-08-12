@@ -1004,11 +1004,9 @@ export function useWindowedFeedScroll({
 
   useEffect(() => {
     return () => {
-      if (handleScrollRafRef.current !== null) {
-        cancelAnimationFrame(handleScrollRafRef.current);
-      }
+      cancelPendingScrollProcessing();
     };
-  }, []);
+  }, [cancelPendingScrollProcessing]);
 
   const handleScroll = useCallback<UIEventHandler<HTMLDivElement>>(() => {
     if (!enabledRef.current) return;

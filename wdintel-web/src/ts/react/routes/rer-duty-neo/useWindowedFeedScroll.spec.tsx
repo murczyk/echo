@@ -860,6 +860,29 @@ describe('useWindowedFeedScroll', () => {
     expect(onLoadNewer).toHaveBeenCalledTimes(1);
   });
 
+  it('cancels a pending idle newer load when the scroller unmounts', async () => {
+    const onLoadNewer = vi.fn();
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2, 3, 4]} onLoadNewer={onLoadNewer} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 130, clientHeight: 100, scrollHeight: 300 });
+
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onLoadNewer).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    await flushLoadNewerIdle();
+
+    expect(onLoadNewer).not.toHaveBeenCalled();
+  });
+
   it('does not call onLoadNewer near bottom when unread prefetch runway is already full', async () => {
     const onLoadNewer = vi.fn();
     await act(async () => {
