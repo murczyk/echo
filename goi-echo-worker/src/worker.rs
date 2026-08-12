@@ -14,7 +14,7 @@ use sea_orm::{
     EntityTrait, IntoActiveModel, NotSet, PaginatorTrait, QueryFilter, Set,
     TransactionTrait, TryInsertResult,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -232,24 +232,166 @@ async fn insert_association_rows(
     db: &DatabaseConnection,
     rows: Vec<AssociationRow>,
 ) -> Result<()> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let dedupe_targets = association_dedupe_targets(&rows)
+        .context("building association dedupe targets")
+        .context(h!())?;
+    let tx = db
+        .begin()
+        .await
+        .context("beginning association insert tx")
+        .context(h!())?;
+    rekey_existing_association_rows(&tx, &dedupe_targets)
+        .await
+        .context("rekeying existing associations")
+        .context(h!())?;
+
     let mut models_batch = Vec::new();
     for association_row in rows {
-        models_batch.push(association_row_to_active_model(association_row)?);
+        models_batch.push(
+            association_row_to_active_model(association_row)
+                .context("building association model")
+                .context(h!())?,
+        );
         if models_batch.len()
             >= crate::config::GOI_ASSOCIATIONS_INSERT_BATCH_SIZE
         {
             insert_association_model_batch(
-                db,
+                &tx,
                 std::mem::take(&mut models_batch),
             )
-            .await?;
+            .await
+            .context("inserting association batch")
+            .context(h!())?;
         }
     }
-    if models_batch.is_empty() {
+    if !models_batch.is_empty() {
+        insert_association_model_batch(&tx, models_batch)
+            .await
+            .context("inserting final association batch")
+            .context(h!())?;
+    }
+    tx.commit()
+        .await
+        .context("committing association insert tx")
+        .context(h!())?;
+    Ok(())
+}
+
+fn association_dedupe_targets(
+    rows: &[AssociationRow],
+) -> Result<BTreeMap<String, String>> {
+    rows.iter()
+        .map(|association_row| {
+            let cells = serde_json::to_string(&association_row.cells)
+                .context("serializing association cells")
+                .context(h!())?;
+            Ok((cells, association_row.dedupe_key()))
+        })
+        .collect()
+}
+
+async fn rekey_existing_association_rows<C>(
+    db: &C,
+    dedupe_targets: &BTreeMap<String, String>,
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let legacy_key_count = association::Entity::find()
+        .filter(
+            association::Column::DedupeKeyVersion
+                .lt(crate::config::GOI_ASSOCIATION_DEDUPE_KEY_VERSION),
+        )
+        .count(db)
+        .await
+        .context("counting legacy association dedupe keys")
+        .context(h!())?;
+    if legacy_key_count == 0 {
         return Ok(());
     }
-    insert_association_model_batch(db, models_batch).await?;
+
+    let existing_rows = association::Entity::find()
+        .all(db)
+        .await
+        .context("loading existing association dedupe keys")
+        .context(h!())?;
+    let key_updates = plan_association_rekey(existing_rows, dedupe_targets)
+        .context("planning association dedupe rekey")
+        .context(h!())?;
+    let update_count = key_updates.len();
+    for (association, dedupe_key) in key_updates {
+        let association_id = association.id;
+        let mut association = association.into_active_model();
+        association.dedupe_key = Set(dedupe_key);
+        association.dedupe_key_version =
+            Set(crate::config::GOI_ASSOCIATION_DEDUPE_KEY_VERSION);
+        association
+            .update(db)
+            .await
+            .with_context(|| {
+                format!("rekeying association row {association_id}")
+            })
+            .context(h!())?;
+    }
+    if update_count > 0 {
+        log::info!(
+            "GOI associations worker normalized {update_count} existing dedupe keys"
+        );
+    }
     Ok(())
+}
+
+fn plan_association_rekey(
+    mut existing_rows: Vec<association::Model>,
+    dedupe_targets: &BTreeMap<String, String>,
+) -> Result<Vec<(association::Model, String)>> {
+    let mut occupied_keys = existing_rows
+        .iter()
+        .map(|association| association.dedupe_key.clone())
+        .collect::<BTreeSet<_>>();
+    existing_rows.sort_by_key(|association| association.id);
+
+    let mut key_updates = Vec::new();
+    for association in existing_rows {
+        if association.dedupe_key_version
+            >= crate::config::GOI_ASSOCIATION_DEDUPE_KEY_VERSION
+        {
+            continue;
+        }
+        let association_row =
+            serde_json::from_value::<AssociationRow>(association.row.clone())
+                .with_context(|| {
+                    format!(
+                        "deserializing stored association row {}",
+                        association.id
+                    )
+                })
+                .context(h!())?;
+        let cells =
+            serde_json::to_string(&association_row.excel_unescaped_cells())
+                .with_context(|| {
+                    format!(
+                        "serializing stored association row {}",
+                        association.id
+                    )
+                })
+                .context(h!())?;
+        let Some(dedupe_key) = dedupe_targets.get(&cells) else {
+            continue;
+        };
+        if association.dedupe_key != *dedupe_key
+            && occupied_keys.contains(dedupe_key)
+        {
+            continue;
+        }
+        occupied_keys.remove(&association.dedupe_key);
+        occupied_keys.insert(dedupe_key.clone());
+        key_updates.push((association, dedupe_key.clone()));
+    }
+    Ok(key_updates)
 }
 
 fn association_row_to_active_model(
@@ -257,25 +399,33 @@ fn association_row_to_active_model(
 ) -> Result<association::ActiveModel> {
     let dedupe_key = association_row.dedupe_key();
     let association_row = serde_json::to_value(association_row)
-        .context("serializing association row")?;
+        .context("serializing association row")
+        .context(h!())?;
     Ok(association::ActiveModel {
         id: NotSet,
         row: Set(association_row),
         created_at: NotSet,
         deleted: Set(false),
         dedupe_key: Set(dedupe_key),
+        dedupe_key_version: Set(
+            crate::config::GOI_ASSOCIATION_DEDUPE_KEY_VERSION,
+        ),
     })
 }
 
-async fn insert_association_model_batch(
-    db: &DatabaseConnection,
+async fn insert_association_model_batch<C>(
+    db: &C,
     models_batch: Vec<association::ActiveModel>,
-) -> Result<()> {
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
     let result = association::Entity::insert_many(models_batch)
         .on_conflict_do_nothing_on([association::Column::DedupeKey])
         .exec(db)
         .await
-        .context("inserting association rows")?;
+        .context("inserting association rows")
+        .context(h!())?;
     log_insert_result(result);
     Ok(())
 }
@@ -517,7 +667,7 @@ mod tests {
         read_knowledge_rows, KnowledgeCell, KNOWLEDGE_KIND_CALL_SIGN,
         KNOWLEDGE_WORKER_AUTHOR, KNOWLEDGE_WORKER_ID_PREFIX,
     };
-    use goi_echo_worker::row::read_association_rows;
+    use goi_echo_worker::row::{read_association_rows, AssociationCell};
     use serde_json::Value;
 
     #[test]
@@ -539,6 +689,47 @@ mod tests {
             key_updates[0].1,
             format!("{KNOWLEDGE_WORKER_DEDUPE_KEY_PREFIX}42")
         );
+    }
+
+    #[test]
+    fn association_rekey_preserves_existing_id_after_excel_unescape() {
+        let legacy = association_row("first_x000d_\nsecond", false);
+        let desired = association_row("first\nsecond", true);
+        let legacy_key = legacy.dedupe_key();
+        let desired_key = desired.dedupe_key();
+        let dedupe_targets =
+            association_dedupe_targets(std::slice::from_ref(&desired))
+                .expect("dedupe targets");
+
+        let key_updates = plan_association_rekey(
+            vec![stored_association(7, &legacy_key, &legacy)],
+            &dedupe_targets,
+        )
+        .expect("plan rekey");
+
+        assert_ne!(legacy_key, desired_key);
+        assert_eq!(key_updates.len(), 1);
+        assert_eq!(key_updates[0].0.id, 7);
+        assert_eq!(key_updates[0].1, desired_key);
+
+        let active = association_row_to_active_model(desired)
+            .expect("association active model");
+        assert_eq!(
+            active.dedupe_key_version,
+            Set(crate::config::GOI_ASSOCIATION_DEDUPE_KEY_VERSION)
+        );
+
+        let literal = association_row("literal _x000D_ token", true);
+        let dedupe_targets =
+            association_dedupe_targets(std::slice::from_ref(&literal))
+                .expect("literal dedupe targets");
+        let mut stored = stored_association(8, &literal.dedupe_key(), &literal);
+        stored.dedupe_key_version =
+            crate::config::GOI_ASSOCIATION_DEDUPE_KEY_VERSION;
+
+        assert!(plan_association_rekey(vec![stored], &dedupe_targets)
+            .expect("plan current rekey")
+            .is_empty());
     }
 
     #[test]
@@ -610,6 +801,49 @@ mod tests {
             note: Some(note.to_string()),
             source_date_raw: None,
             formation: None,
+        }
+    }
+
+    fn association_row(
+        note: &str,
+        excel_text_unescaped: bool,
+    ) -> AssociationRow {
+        AssociationRow {
+            sheet_name: "Associations".to_string(),
+            row_num: 1,
+            cells: vec![AssociationCell {
+                kind: "string".to_string(),
+                value: Value::String(note.to_string()),
+            }],
+            excel_text_unescaped,
+            association_type: None,
+            frequency: Some("145.1000".to_string()),
+            coordinates: Some("37UDR0682401768".to_string()),
+            note: Some(note.to_string()),
+            category: None,
+            call_signs: Vec::new(),
+            formation: None,
+            association_count: None,
+            sidc: None,
+            author: None,
+            source_date_raw: None,
+            palettes: None,
+        }
+    }
+
+    fn stored_association(
+        id: i64,
+        dedupe_key: &str,
+        association_row: &AssociationRow,
+    ) -> association::Model {
+        association::Model {
+            id,
+            row: serde_json::to_value(association_row)
+                .expect("serialize association row"),
+            created_at: chrono::Utc::now().fixed_offset(),
+            deleted: false,
+            dedupe_key: dedupe_key.to_string(),
+            dedupe_key_version: 1,
         }
     }
 
