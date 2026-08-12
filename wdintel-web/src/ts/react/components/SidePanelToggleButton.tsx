@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import { IconButton, Tooltip, SvgIcon } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import type { SvgIconProps } from '@mui/material';
@@ -117,67 +118,64 @@ function RightPanelActiveIcon(props: SvgIconProps) {
   );
 }
 
-export function SidePanelToggleButton({
-  side,
-  active,
-  label,
-  onClick,
-  disabled = false,
-}: SidePanelToggleButtonProps) {
-  const Icon =
-    side === 'left'
-      ? active
-        ? LeftPanelActiveIcon
-        : LeftPanelIcon
-      : active
-        ? RightPanelActiveIcon
-        : RightPanelIcon;
+export const SidePanelToggleButton = forwardRef<HTMLButtonElement, SidePanelToggleButtonProps>(
+  function SidePanelToggleButton({ side, active, label, onClick, disabled = false }, ref) {
+    const Icon =
+      side === 'left'
+        ? active
+          ? LeftPanelActiveIcon
+          : LeftPanelIcon
+        : active
+          ? RightPanelActiveIcon
+          : RightPanelIcon;
 
-  return (
-    <Tooltip title={label} arrow placement={side === 'left' ? 'bottom-start' : 'bottom-end'}>
-      <span>
-        <IconButton
-          onClick={onClick}
-          disabled={disabled}
-          aria-label={label}
-          aria-pressed={active}
-          sx={(theme) => {
-            const tone =
-              theme.palette.mode === 'dark'
-                ? theme.palette.common.white
-                : theme.palette.common.black;
+    return (
+      <Tooltip title={label} arrow placement={side === 'left' ? 'bottom-start' : 'bottom-end'}>
+        <span>
+          <IconButton
+            ref={ref}
+            onClick={onClick}
+            disabled={disabled}
+            aria-label={label}
+            aria-pressed={active}
+            sx={(theme) => {
+              const tone =
+                theme.palette.mode === 'dark'
+                  ? theme.palette.common.white
+                  : theme.palette.common.black;
 
-            return {
-              width: 40,
-              height: 40,
-              boxSizing: 'border-box',
-              borderRadius: 1,
-              border: '1px solid',
-              borderColor: theme.palette.divider,
-              bgcolor: 'transparent',
-              color: active ? tone : theme.palette.text.secondary,
-              transition: 'color 0.15s ease',
-
-              '&:hover': {
-                bgcolor: 'transparent',
+              return {
+                width: 40,
+                height: 40,
+                boxSizing: 'border-box',
+                borderRadius: 1,
+                border: '1px solid',
                 borderColor: theme.palette.divider,
-                color: tone,
-              },
+                bgcolor: 'transparent',
+                color: active ? tone : theme.palette.text.secondary,
+                transition: 'color 0.15s ease',
 
-              '&.Mui-disabled': {
-                color: theme.palette.action.disabled,
-                borderColor: theme.palette.action.disabledBackground,
-              },
+                '&:hover': {
+                  bgcolor: 'transparent',
+                  borderColor: theme.palette.divider,
+                  color: tone,
+                },
 
-              '& .MuiSvgIcon-root': {
-                fontSize: 21,
-              },
-            };
-          }}
-        >
-          <Icon />
-        </IconButton>
-      </span>
-    </Tooltip>
-  );
-}
+                '&.Mui-disabled': {
+                  color: theme.palette.action.disabled,
+                  borderColor: theme.palette.action.disabledBackground,
+                },
+
+                '& .MuiSvgIcon-root': {
+                  fontSize: 21,
+                },
+              };
+            }}
+          >
+            <Icon />
+          </IconButton>
+        </span>
+      </Tooltip>
+    );
+  },
+);

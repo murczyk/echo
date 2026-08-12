@@ -48,7 +48,6 @@ import './ts/react/admin-unit-unparsed-element';
 import './ts/react/admin-ai-callsigns-element';
 import './ts/react/admin-ai-agent-element';
 import './ts/react/ai-agent-chat-element';
-import './ts/react/home-loading-card-element';
 import './ts/react/my-reports-element';
 import './ts/react/admin-echo-missing-messages-element';
 import './ts/react/settings-neo-element';

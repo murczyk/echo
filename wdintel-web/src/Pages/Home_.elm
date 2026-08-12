@@ -22,13 +22,20 @@ import View exposing (View)
 
 
 type alias Model =
-    { aiChatEnabled : Maybe Bool
+    { aiChatState : AiChatState
     , inboxGroupsActivityStats : RD.RemoteData Core.Types.ApiError B.InboxByGroupDigestRsp
     }
 
 
+type AiChatState
+    = Checking
+    | Enabled
+    | Disabled
+    | Unavailable
+
+
 type Msg
-    = AiChatAvailabilityChanged Bool
+    = AiChatAvailabilityChanged AiChatState
     | GotInboxGroupsActivityStats (Result Core.Types.ApiError B.InboxByGroupDigestRsp)
 
 
@@ -53,7 +60,7 @@ toLayout user _ =
 
 init : () -> ( Model, Effect Msg )
 init _ =
-    ( { aiChatEnabled = Nothing
+    ( { aiChatState = Checking
       , inboxGroupsActivityStats = RD.Loading
       }
     , E.getInboxGroupsActivityStats GotInboxGroupsActivityStats
@@ -63,8 +70,8 @@ init _ =
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        AiChatAvailabilityChanged enabled ->
-            ( { model | aiChatEnabled = Just enabled }, E.none )
+        AiChatAvailabilityChanged state ->
+            ( { model | aiChatState = state }, E.none )
 
         GotInboxGroupsActivityStats (Err err) ->
             ( { model | inboxGroupsActivityStats = RD.Failure err }
@@ -88,32 +95,46 @@ view shared user model =
     , body =
         [ div
             [ class <|
-                if canShowAiChat user && model.aiChatEnabled /= Just False then
-                    "app-shell-fill-height box-border min-h-0 w-full px-2 py-2 flex flex-col overflow-hidden"
+                if shouldShowAiChat shared user model then
+                    "app-shell-fill-height box-border min-h-0 w-full flex flex-col overflow-hidden"
 
                 else
                     "box-border container mx-auto px-4 py-6"
             ]
-            [ if not shared.userLoaded then
-                viewHomeLoading
-
-              else if canShowAiChat user then
-                viewAiHome user model
+            [ if shouldShowAiChat shared user model then
+                viewAiHome model
 
               else
                 viewClassicHome user model
             ]
         ]
+
     }
 
 
-viewHomeLoading : Html Msg
-viewHomeLoading =
-    Html.node "home-loading-card"
-        [ class "block w-full"
-        , Attr.attribute "aria-label" "Завантаження головної сторінки"
-        ]
-        []
+shouldShowAiChat : Shared.Model -> Auth.User -> Model -> Bool
+shouldShowAiChat shared user model =
+    not shared.userLoaded || (canShowAiChat user && model.aiChatState /= Disabled)
+
+
+aiChatStateDecoder : Decode.Decoder AiChatState
+aiChatStateDecoder =
+    Decode.string
+        |> Decode.andThen
+            (\state ->
+                case state of
+                    "enabled" ->
+                        Decode.succeed Enabled
+
+                    "disabled" ->
+                        Decode.succeed Disabled
+
+                    "unavailable" ->
+                        Decode.succeed Unavailable
+
+                    _ ->
+                        Decode.fail "Unknown AI chat availability state"
+            )
 
 
 canShowAiChat : Auth.User -> Bool
@@ -225,28 +246,19 @@ hasEmptyInboxGroupsActivityData model =
             False
 
 
-viewAiHome : Auth.User -> Model -> Html Msg
-viewAiHome user model =
+viewAiHome : Model -> Html Msg
+viewAiHome model =
     div [ class "w-full flex flex-col flex-1 min-h-0" ]
         [ Html.node "ai-agent-chat"
             [ class <|
-                if model.aiChatEnabled == Just False then
+                if model.aiChatState == Disabled then
                     "hidden"
 
                 else
                     "react-fill-host flex-1"
             , on "ai-agent-availability" <|
                 Decode.map AiChatAvailabilityChanged <|
-                    Decode.at [ "detail", "enabled" ] Decode.bool
+                    Decode.at [ "detail", "state" ] aiChatStateDecoder
             ]
             []
-        , case model.aiChatEnabled of
-            Nothing ->
-                text ""
-
-            Just False ->
-                viewClassicHome user model
-
-            Just True ->
-                text ""
         ]

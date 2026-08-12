@@ -24,7 +24,6 @@ const ENTRYPOINTS = [
   { modulePath: './admin-ai-callsigns-element', tag: 'admin-ai-callsigns' },
   { modulePath: './admin-ai-agent-element', tag: 'admin-ai-agent' },
   { modulePath: './ai-agent-chat-element', tag: 'ai-agent-chat' },
-  { modulePath: './home-loading-card-element', tag: 'home-loading-card' },
   { modulePath: './admin-echo-missing-messages-element', tag: 'admin-echo-missing-messages' },
   { modulePath: './admin-directions-neo-element', tag: 'admin-directions-neo' },
   { modulePath: './transcription-settings-element', tag: 'transcription-settings' },
@@ -72,6 +71,10 @@ describe('React custom element entrypoints', () => {
         },
       },
     });
+  });
+
+  it('does not register the removed Home loading card', () => {
+    expect(customElements.get('home-loading-card')).toBeUndefined();
   });
 
   it.each(ENTRYPOINTS)(
