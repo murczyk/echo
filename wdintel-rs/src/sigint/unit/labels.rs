@@ -123,11 +123,11 @@ where
         .c(h!())?
         .ok_or(AppError::NotFound)
         .c(h!())?;
-    let label_text = label.label.clone();
+    let sigint_unit_id = label.sigint_unit_id;
     label.delete(db).await.c(h!())?;
-    crate::inbox::unit_resolution::reprocess_inbox_items_for_text(
+    crate::inbox::unit_resolution::reprocess_inbox_items_for_unit(
         db,
-        &label_text,
+        sigint_unit_id,
     )
     .await
     .c(h!())?;
@@ -247,12 +247,26 @@ mod tests {
         )
         .await
         .unwrap();
-        let label_text = format!("deleted-label-{}", uuid::Uuid::new_v4());
+        let other_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let number = chrono::Utc::now().timestamp_micros().unsigned_abs()
+            % 7_000_000
+            + 1_000_000;
+        let label_text = format!("{number} омсбр");
+        let other_label_text = format!("{} омсбр", number + 1);
         let label = insert_label(&env.dbx, unit.id, &label_text).await.unwrap();
+        insert_label(&env.dbx, other_unit.id, &other_label_text)
+            .await
+            .unwrap();
+        let unit_v2 = format!("{label_text} та {other_label_text}");
         let inbox_item = crate::functest::tests::mk_sigint_inbox_item(
             &env.dbx,
             crate::entities::sigint_inbox_item::ActiveModel {
-                unit_v2: Set(Some(label_text.clone())),
+                unit_v2: Set(Some(unit_v2.clone())),
                 ..Default::default()
             },
         )
@@ -262,7 +276,7 @@ mod tests {
             crate::functest::tests::mk_sigint_inbox_item(
                 &env.dbx,
                 crate::entities::sigint_inbox_item::ActiveModel {
-                    unit_v2: Set(Some(label_text.clone())),
+                    unit_v2: Set(Some(unit_v2)),
                     ..Default::default()
                 },
             )
@@ -291,10 +305,32 @@ mod tests {
                     crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind::Parsed,
                 ),
             )
+            .filter(
+                crate::entities::sigint_inbox_item_unit::Column::UnitId
+                    .eq(unit.id),
+            )
             .one(&env.dbx)
             .await
             .unwrap()
             .is_none());
+        assert!(crate::entities::sigint_inbox_item_unit::Entity::find()
+            .filter(
+                crate::entities::sigint_inbox_item_unit::Column::ItemId
+                    .eq(inbox_item.id),
+            )
+            .filter(
+                crate::entities::sigint_inbox_item_unit::Column::Kind.eq(
+                    crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind::Parsed,
+                ),
+            )
+            .filter(
+                crate::entities::sigint_inbox_item_unit::Column::UnitId
+                    .eq(other_unit.id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
         assert!(crate::entities::failed_inbox_unit::Entity::find()
             .filter(
                 crate::entities::failed_inbox_unit::Column::InboxItemId

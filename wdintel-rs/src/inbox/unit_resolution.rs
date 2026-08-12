@@ -55,14 +55,40 @@ enum UnitTextSource {
 #[derive(Debug, Clone)]
 struct UnitTextCandidate {
     text: String,
+    source_text: String,
     source: UnitTextSource,
+    is_fallback: bool,
+}
+
+#[derive(Debug, Clone)]
+struct UnitTextResolution {
+    text: String,
+    source_text: String,
+    sigint_unit_id: Option<i64>,
+    is_fallback: bool,
+}
+
+fn resolution_texts(value: &str) -> Vec<(String, bool)> {
+    let parsed = crate::unit::parse_library_unit(&value.to_string());
+    let original = value.trim().to_string();
+    if parsed.is_empty() {
+        return vec![(original, false)];
+    }
+    let has_original = parsed.iter().any(|value| {
+        normalize_unit_label(value) == normalize_unit_label(&original)
+    });
+    let mut texts = parsed.into_iter().map(|text| (text, false)).collect_vec();
+    if !has_original {
+        texts.push((original, true));
+    }
+    texts
 }
 
 fn unit_text_candidates(
     unit_v2: Option<&str>,
     unit: Option<&str>,
 ) -> Vec<UnitTextCandidate> {
-    let (source, texts): (UnitTextSource, Vec<&str>) =
+    let (source, source_texts): (UnitTextSource, Vec<&str>) =
         if let Some(unit_v2) = nonempty(unit_v2) {
             (UnitTextSource::UnitV2, unit_v2.split(',').collect_vec())
         } else if let Some(unit) = nonempty(unit) {
@@ -71,15 +97,32 @@ fn unit_text_candidates(
             return Vec::new();
         };
 
-    texts
+    source_texts
         .into_iter()
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .map(|text| UnitTextCandidate {
-            text: text.to_string(),
-            source,
+        .flat_map(|source_text| {
+            let texts = match source {
+                UnitTextSource::UnitV2 => resolution_texts(source_text),
+                UnitTextSource::Unit => {
+                    vec![(source_text.trim().to_string(), false)]
+                }
+            };
+            let source_text = normalize_unit_label(source_text);
+            texts.into_iter().map(move |(text, is_fallback)| {
+                UnitTextCandidate {
+                    text,
+                    source_text: source_text.clone(),
+                    source,
+                    is_fallback,
+                }
+            })
         })
-        .unique_by(|candidate| normalize_unit_label(&candidate.text))
+        .filter(|candidate| !candidate.text.is_empty())
+        .unique_by(|candidate| {
+            (
+                candidate.source_text.clone(),
+                normalize_unit_label(&candidate.text),
+            )
+        })
         .collect_vec()
 }
 
@@ -305,26 +348,46 @@ async fn resolve_unit_text_candidates<C>(
     db: &C,
     unit_v2: Option<&str>,
     unit: Option<&str>,
-) -> anyhow::Result<Vec<(String, Option<i64>)>>
+) -> anyhow::Result<Vec<UnitTextResolution>>
 where
     C: ConnectionTrait,
 {
     let mut resolved = Vec::new();
     for candidate in unit_text_candidates(unit_v2, unit) {
-        let sigint_unit_id = match candidate.source {
-            UnitTextSource::UnitV2 => {
-                resolve_sigint_unit_id(db, Some(&candidate.text), None)
-                    .await
-                    .context(h!())?
-            }
-            UnitTextSource::Unit => {
-                resolve_sigint_unit_id(db, None, Some(&candidate.text))
-                    .await
-                    .context(h!())?
+        let sigint_unit_id = if candidate.is_fallback {
+            resolve_by_label(db, &candidate.text).await.context(h!())?
+        } else {
+            match candidate.source {
+                UnitTextSource::UnitV2 => {
+                    resolve_sigint_unit_id(db, Some(&candidate.text), None)
+                        .await
+                        .context(h!())?
+                }
+                UnitTextSource::Unit => {
+                    resolve_sigint_unit_id(db, None, Some(&candidate.text))
+                        .await
+                        .context(h!())?
+                }
             }
         };
-        resolved.push((candidate.text, sigint_unit_id));
+        resolved.push(UnitTextResolution {
+            text: candidate.text,
+            source_text: candidate.source_text,
+            sigint_unit_id,
+            is_fallback: candidate.is_fallback,
+        });
     }
+    let resolved_fallbacks = resolved
+        .iter()
+        .filter(|resolution| {
+            resolution.is_fallback && resolution.sigint_unit_id.is_some()
+        })
+        .map(|resolution| resolution.source_text.clone())
+        .collect::<BTreeSet<_>>();
+    resolved.retain(|resolution| {
+        resolution.is_fallback
+            || !resolved_fallbacks.contains(&resolution.source_text)
+    });
     Ok(resolved)
 }
 
@@ -541,7 +604,7 @@ where
         .context(h!())?;
     let sigint_unit_ids = resolved_unit_texts
         .iter()
-        .filter_map(|(_, sigint_unit_id)| *sigint_unit_id)
+        .filter_map(|resolution| resolution.sigint_unit_id)
         .collect_vec();
     replace_parsed_unit_links(db, inbox_item_id, &sigint_unit_ids)
         .await
@@ -557,9 +620,9 @@ where
         mark_failure_resolved(db, inbox_item_id)
             .await
             .context(h!())?;
-        for (unit_txt, sigint_unit_id) in resolved_unit_texts {
-            if sigint_unit_id.is_none() {
-                upsert_failure(db, inbox_item_id, &unit_txt)
+        for resolution in resolved_unit_texts {
+            if resolution.sigint_unit_id.is_none() && !resolution.is_fallback {
+                upsert_failure(db, inbox_item_id, &resolution.text)
                     .await
                     .context(h!())?;
             }
@@ -593,14 +656,13 @@ where
     Ok(result.rows_affected)
 }
 
-pub(crate) async fn reprocess_inbox_items_for_text<C>(
+pub(crate) async fn reprocess_inbox_items_for_unit<C>(
     db: &C,
-    unit_txt: &str,
+    sigint_unit_id: i64,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
-    let normalized_unit_txt = normalize_unit_label(unit_txt);
     let mut last_id = None;
     loop {
         let items = sigint_inbox_item::Entity::find()
@@ -612,10 +674,7 @@ where
                 sigint_inbox_item_unit::Column::Kind
                     .eq(SigintInboxItemUnitKind::Parsed),
             )
-            .filter(Expr::cust_with_values(
-                "exists (select 1 from regexp_split_to_table(coalesce(nullif(btrim(sigint_inbox_item.unit_v2), ''), sigint_inbox_item.unit), ',') as unit_part(unit_txt) where lower(regexp_replace(btrim(unit_part.unit_txt), '[[:space:]]+', ' ', 'g')) = $1)",
-                vec![normalized_unit_txt.clone()],
-            ))
+            .filter(sigint_inbox_item_unit::Column::UnitId.eq(sigint_unit_id))
             .apply_if(last_id, |query, last_id| {
                 query.filter(sigint_inbox_item::Column::Id.gt(last_id))
             })
@@ -833,6 +892,12 @@ mod tests {
         format!("{number} омсбр")
     }
 
+    fn unique_unit_labels() -> [String; 2] {
+        let number = Utc::now().timestamp_micros().unsigned_abs() % 7_000_000
+            + 1_000_000;
+        [format!("{number} омсбр"), format!("{} омсбр", number + 1)]
+    }
+
     async fn insert_orbit_unit(
         db: &DatabaseConnection,
         generative_unit_name_full: &str,
@@ -967,6 +1032,21 @@ mod tests {
         );
     }
 
+    #[test]
+    fn resolution_texts_keeps_original_label_as_fallback() {
+        assert_eq!(
+            resolution_texts("  власний тег 123 омсбр  "),
+            vec![
+                ("123 омсбр".to_string(), false),
+                ("власний тег 123 омсбр".to_string(), true)
+            ]
+        );
+        assert_eq!(
+            resolution_texts("123 ОМСБР"),
+            vec![("123 омсбр".to_string(), false)]
+        );
+    }
+
     #[tokio::test]
     #[serial]
     async fn inactive_exact_label_matching_normalizes_case_and_whitespace() {
@@ -1078,6 +1158,117 @@ mod tests {
             normalize_unit_label(&failures[0].unit_txt),
             normalize_unit_label(&missing_label)
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn resolved_parser_texts_do_not_queue_unresolved_fallback() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let first = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let second = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let labels = unique_unit_labels();
+        for (unit, label) in [(&first, &labels[0]), (&second, &labels[1])] {
+            sigint_unit_label::ActiveModel {
+                sigint_unit_id: Set(unit.id),
+                label: Set(label.clone()),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        let unit_v2 = labels.join(" та ");
+        let item =
+            insert_inbox_item(&env.dbx, Some(&unit_v2), None, None).await;
+
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            item.id,
+            item.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let mut expected = vec![first.id, second.id];
+        expected.sort();
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                item.id,
+                SigintInboxItemUnitKind::Parsed,
+            )
+            .await,
+            expected
+        );
+        assert!(failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(item.id))
+            .filter(failed_inbox_unit::Column::Deleted.eq(false))
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn resolved_exact_fallback_suppresses_parsed_failure() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let unit_v2 = format!("власний тег {}", unique_unit_label());
+        sigint_unit_label::ActiveModel {
+            sigint_unit_id: Set(unit.id),
+            label: Set(unit_v2.clone()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let item =
+            insert_inbox_item(&env.dbx, Some(&unit_v2), None, None).await;
+
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            item.id,
+            item.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                item.id,
+                SigintInboxItemUnitKind::Parsed,
+            )
+            .await,
+            vec![unit.id]
+        );
+        assert!(failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(item.id))
+            .filter(failed_inbox_unit::Column::Deleted.eq(false))
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]

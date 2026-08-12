@@ -430,13 +430,15 @@ flowchart TB
 `failed_inbox_unit_worker` owns verification of unresolved-unit rows marked
 pending by label changes or admin resolution. Every 10 seconds it claims a
 bounded batch with `FOR UPDATE SKIP LOCKED`, reruns the canonical inbox-unit
-resolver against each item's current `unit_v2` or raw `unit`, and either
-persists a parsed `sigint_inbox_item_unit` link and hard-deletes the failure or
-reactivates the failure for admin review. Network-derived links use the same
-table with `network` kind and are rebuilt as the distinct unit union during
-the existing inbox-network recalculation flow. Errors are logged and retried
-without stopping the worker; deleted rows older than 30 days are removed
-before each verification batch.
+resolver against each item's current `unit_v2` or raw `unit`, and independently
+persists links or unresolved rows for every parsed unit text. One inbox item can
+therefore have multiple `parsed` `sigint_inbox_item_unit` links and multiple
+unresolved-unit rows. Resolved failures are hard-deleted; failures that remain
+unresolved are reactivated for admin review. Network-derived links use the same
+table with `network` kind and are rebuilt as the distinct unit union during the
+existing inbox-network recalculation flow. Errors are logged and retried
+without stopping the worker; deleted rows older than 30 days are removed before
+each verification batch.
 
 Report generation is isolated in `wdintel-rs-report-worker.service`. At most
 four reports run concurrently across the per-kind queues. The unit has a fixed
