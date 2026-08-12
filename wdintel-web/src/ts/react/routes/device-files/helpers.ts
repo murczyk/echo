@@ -10,6 +10,7 @@ import { HttpRequestError } from '../../services/api/client';
 import { formatDeviceErrorMessage } from '../devices/helpers';
 import {
   DEVICE_FILE_PAGE_SIZE,
+  type DeviceAnalyticsTagFilter,
   type DeviceFileLoadError,
   type DeviceFileSearchDraft,
   type DeviceFileSearchValidationErrors,
@@ -64,6 +65,7 @@ export function buildBrowseDeviceFilesReq(params: {
   deviceId: string;
   parentEntryId: string;
   cursor: string | null;
+  tagFilter: DeviceAnalyticsTagFilter;
 }): BrowseDeviceFilesReq {
   return {
     deviceId: params.deviceId,
@@ -71,6 +73,9 @@ export function buildBrowseDeviceFilesReq(params: {
     includeBreadcrumbs: true,
     limit: DEVICE_FILE_PAGE_SIZE,
     cursor: params.cursor,
+    tagIds: params.tagFilter.tagIds.length === 0 ? null : params.tagFilter.tagIds,
+    tagMatch: params.tagFilter.tagIds.length === 0 ? null : params.tagFilter.tagMatch,
+    untagged: params.tagFilter.untagged || null,
   };
 }
 
@@ -79,6 +84,7 @@ export function buildSearchDeviceFilesReq(params: {
   scopeEntryId: string;
   draft: DeviceFileSearchDraft;
   cursor: string | null;
+  tagFilter: DeviceAnalyticsTagFilter;
 }): SearchDeviceFilesReq {
   const nameQuery = params.draft.nameQuery.trim();
   return {
@@ -92,6 +98,9 @@ export function buildSearchDeviceFilesReq(params: {
     fileMetadataModifiedTo: params.draft.modifiedTo,
     limit: DEVICE_FILE_PAGE_SIZE,
     cursor: params.cursor,
+    tagIds: params.tagFilter.tagIds.length === 0 ? null : params.tagFilter.tagIds,
+    tagMatch: params.tagFilter.tagIds.length === 0 ? null : params.tagFilter.tagMatch,
+    untagged: params.tagFilter.untagged || null,
   };
 }
 
@@ -99,8 +108,15 @@ export function buildSearchFingerprint(
   deviceId: string,
   scopeEntryId: string,
   draft: DeviceFileSearchDraft,
+  tagFilter: DeviceAnalyticsTagFilter,
 ): string {
-  const req = buildSearchDeviceFilesReq({ deviceId, scopeEntryId, draft, cursor: null });
+  const req = buildSearchDeviceFilesReq({
+    deviceId,
+    scopeEntryId,
+    draft,
+    cursor: null,
+    tagFilter,
+  });
   return JSON.stringify(req);
 }
 

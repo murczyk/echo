@@ -38,6 +38,12 @@ beforeEach(() => {
       if (url === '/api/device/files/roots') {
         return jsonResponse({ roots: [] });
       }
+      if (url === '/api/device/analytics/tags') {
+        return jsonResponse({ tags: [] });
+      }
+      if (url === '/api/device/analytics/summary') {
+        return jsonResponse({ total_file_count: 0, analyzed_file_count: 0, items: [] });
+      }
       return jsonResponse({});
     }),
   );

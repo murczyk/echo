@@ -55,7 +55,7 @@ async fn process_queue_inner_iteration(
     dbx: &DatabaseConnection,
 ) -> Result<bool, AppError> {
     let datasources = list_echo_accounts(None, dbx).await.c(h!())?;
-    let active_status = AccountStatus::Active.into_value();
+    let active_status = AccountStatus::Active.into_value().value.into_owned();
     let datasource_ids = datasources
         .iter()
         .filter(|a| a.is_linked && a.status == active_status)

@@ -281,6 +281,12 @@ export const adminDatabaseSubs: Menu[] = [
     activeName: 'tags-neo',
     label: 'Теги',
   },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/device-analytics' },
+    activeName: 'device-analytics',
+    label: 'Аналіз пристроїв',
+  },
 ];
 
 export const adminSubs: Menu[] = [

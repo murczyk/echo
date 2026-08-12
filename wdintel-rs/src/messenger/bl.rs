@@ -683,7 +683,7 @@ where
             (
                 a.echo_phone_number.c(h!())?,
                 false,
-                a.source.c(h!())?.into_value(),
+                a.source.c(h!())?.into_value().value.into_owned(),
             )
         } else {
             let Some(phone) = a.datasource_phone_number else {
@@ -709,7 +709,7 @@ where
         datasources.push(EchoAccountF1 {
             id: a.id,
             area_of_responsibility,
-            status: a.status.into_value(),
+            status: a.status.into_value().value.into_owned(),
             created_at: a.created_at.and_utc().timestamp_millis(),
             client_id: a.client_id,
             display_name: a.display_name,
@@ -757,7 +757,7 @@ where
             datasources.push(EchoAccountF1 {
                 id: ods.id,
                 area_of_responsibility: aor,
-                status: ods.status.into_value(),
+                status: ods.status.into_value().value.into_owned(),
                 created_at: ods.created_at.and_utc().timestamp_millis(),
                 client_id: None,
                 display_name: ods.display_name,

@@ -27,20 +27,26 @@ use super::{
 use crate::file_registry::FileRegistryDb;
 use crate::h;
 use crate::types::ShortContext;
+use sea_orm::sea_query::{Alias, Expr, Func, Query};
 use sea_orm::{
-    AccessMode, ConnectionTrait, DatabaseTransaction, DbBackend,
-    IsolationLevel, Statement, TransactionTrait,
+    AccessMode, ConnectionTrait, DatabaseTransaction, ExprTrait,
+    IsolationLevel, TransactionTrait,
 };
+use std::collections::BTreeSet;
 use uuid::Uuid;
 
 pub(in crate::devices) async fn capture_transaction_id(
     transaction: &DatabaseTransaction,
 ) -> Result<String, FilesystemError> {
+    let query = Query::select()
+        .expr_as(
+            Expr::expr(Func::cust(Alias::new("pg_current_xact_id")))
+                .cast_as(Alias::new("text")),
+            Alias::new("transaction_id"),
+        )
+        .to_owned();
     let row = transaction
-        .query_one_raw(Statement::from_string(
-            DbBackend::Postgres,
-            "select pg_current_xact_id()::text as transaction_id".to_string(),
-        ))
+        .query_one(&query)
         .await
         .map_err(|error| {
             map_transaction_body_error(anyhow::Error::new(error).context(h!()))
@@ -189,15 +195,18 @@ pub(in crate::devices) async fn list_file_journal_with_total(
     file_registry_db: &FileRegistryDb,
     device_id: Uuid,
     page: KeysetPageRequest<FileJournalSortKey>,
+    tag_filter: Option<&crate::devices::analytics::types::TagFilter>,
 ) -> Result<
     (KeysetPage<FileJournalEntry, FileJournalSortKey>, u64),
     FilesystemError,
 > {
     let transaction = begin_read_snapshot(file_registry_db).await?;
     let total_count =
-        counts::count_device_files(&transaction, device_id).await?;
+        journal::count_file_journal(&transaction, device_id, tag_filter)
+            .await?;
     let page =
-        journal::list_file_journal(&transaction, device_id, page).await?;
+        journal::list_file_journal(&transaction, device_id, page, tag_filter)
+            .await?;
     commit_read_snapshot(transaction).await?;
     Ok((page, total_count))
 }
@@ -221,6 +230,21 @@ pub(in crate::devices) async fn list_children(
     page: KeysetPageRequest<EntrySortKey>,
 ) -> Result<KeysetPage<TreeEntry, EntrySortKey>, FilesystemError> {
     browse::list_children(file_registry_db.connection(), scope, page).await
+}
+
+pub(in crate::devices) async fn find_matching_tree_entry_ids(
+    file_registry_db: &FileRegistryDb,
+    device_id: Uuid,
+    entry_ids: &[Uuid],
+    tag_filter: &crate::devices::analytics::types::TagFilter,
+) -> Result<BTreeSet<Uuid>, FilesystemError> {
+    browse::find_matching_tree_entry_ids(
+        file_registry_db.connection(),
+        device_id,
+        entry_ids,
+        tag_filter,
+    )
+    .await
 }
 
 pub(in crate::devices) async fn load_path_components(

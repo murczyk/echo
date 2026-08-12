@@ -13,10 +13,11 @@ use crate::file_registry::entities::file_entry;
 use crate::h;
 use crate::types::ShortContext;
 use chrono::NaiveDateTime;
+use sea_orm::sea_query::{Alias, Expr, Func, Query};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, DatabaseTransaction, DbBackend, EntityTrait,
-    IntoActiveModel, QueryFilter, QuerySelect, Select, Statement,
+    DatabaseConnection, DatabaseTransaction, EntityTrait, ExprTrait,
+    IntoActiveModel, QueryFilter, QuerySelect, Select,
 };
 use uuid::Uuid;
 
@@ -122,16 +123,19 @@ pub(super) async fn reconcile_file_mutation(
     expected: &FileMutationResult,
     transaction_id: &str,
 ) -> Result<bool, FilesystemError> {
-    let status = db
-        .query_one_raw(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            "select pg_xact_status($1::text::xid8) as status",
-            [transaction_id.into()],
-        ))
-        .await
-        .map_err(|error| {
-            map_database_error(anyhow::Error::new(error).context(h!()))
-        })?;
+    let transaction_id = Expr::expr(
+        Expr::val(transaction_id.to_owned()).cast_as(Alias::new("text")),
+    )
+    .cast_as(Alias::new("xid8"));
+    let query = Query::select()
+        .expr_as(
+            Func::cust(Alias::new("pg_xact_status")).arg(transaction_id),
+            Alias::new("status"),
+        )
+        .to_owned();
+    let status = db.query_one(&query).await.map_err(|error| {
+        map_database_error(anyhow::Error::new(error).context(h!()))
+    })?;
     let Some(status) = status else {
         return Ok(false);
     };

@@ -36,7 +36,7 @@ pub enum Relation {
         belongs_to = "super::login::Entity",
         from = "Column::CreatedBy",
         to = "super::login::Column::Login",
-        on_update = "Cascade",
+        on_update = "NoAction",
         on_delete = "NoAction"
     )]
     Login,

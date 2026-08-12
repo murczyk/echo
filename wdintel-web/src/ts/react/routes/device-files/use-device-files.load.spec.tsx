@@ -52,18 +52,13 @@ function buildEntry(entryId: string, parentEntryId: string): DeviceFileTreeEntry
     fileMetadataCreatedAt: null,
     fileMetadataModifiedAt: null,
     createdAt: NOW,
+    tags: [],
     updatedAt: NOW,
   };
 }
 
 function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
+  return Promise.withResolvers<T>();
 }
 
 let container: HTMLDivElement | null = null;
@@ -71,7 +66,11 @@ let root: Root | null = null;
 let latest: ReturnType<typeof useDeviceFilesLoad> | null = null;
 
 function Harness() {
-  latest = useDeviceFilesLoad({ deviceId: DEVICE_ID, enabled: true });
+  latest = useDeviceFilesLoad({
+    deviceId: DEVICE_ID,
+    enabled: true,
+    tagFilter: { tagIds: [], tagMatch: 'any', untagged: false },
+  });
   return null;
 }
 

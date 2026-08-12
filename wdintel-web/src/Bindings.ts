@@ -1705,6 +1705,7 @@ export type DeviceFileRoot = {
   name: string;
   createdAt: string;
   updatedAt: string;
+  tags: Array<AnalyticsTag>;
 };
 
 export type FileBreadcrumb = {
@@ -1727,6 +1728,7 @@ export type DeviceFileTreeEntry = {
   fileMetadataModifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  tags: Array<AnalyticsTag>;
 };
 
 export type DeviceFile = {
@@ -1744,6 +1746,7 @@ export type DeviceFile = {
   fileMetadataModifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  tags: Array<AnalyticsTag>;
 };
 
 export type ListDeviceFileRootsReq = {
@@ -1775,6 +1778,9 @@ export type BrowseDeviceFilesReq = {
   includeBreadcrumbs: boolean | null;
   limit: number | null;
   cursor: string | null;
+  tagIds: Array<string> | null;
+  tagMatch: TagMatch | null;
+  untagged: boolean | null;
 };
 
 export type BrowseDeviceFilesRsp = {
@@ -1794,6 +1800,9 @@ export type SearchDeviceFilesReq = {
   fileMetadataModifiedTo: string | null;
   limit: number | null;
   cursor: string | null;
+  tagIds: Array<string> | null;
+  tagMatch: TagMatch | null;
+  untagged: boolean | null;
 };
 
 export type SearchDeviceFilesRsp = {
@@ -1807,12 +1816,16 @@ export type DeviceFileJournalEntry = {
   absolutePath: string;
   hasContent: boolean;
   synchronizedAt: string;
+  tags: Array<AnalyticsTag>;
 };
 
 export type JournalDeviceFilesReq = {
   deviceId: string;
   limit: number | null;
   cursor: string | null;
+  tagIds: Array<string> | null;
+  tagMatch: TagMatch | null;
+  untagged: boolean | null;
 };
 
 export type JournalDeviceFilesRsp = {
@@ -1862,6 +1875,146 @@ export type SyncDeviceFilesReq = {
 export type SyncDeviceFilesRsp = {
   results: Array<FileSyncResult>;
 };
+
+export type RuleField =
+  | 'file_name'
+  | 'directory_path'
+  | 'full_path'
+  | 'extension'
+;
+
+export type RuleMatcher =
+  | 'equals'
+  | 'contains'
+  | 'contains_token'
+  | 'regex'
+;
+
+export type RuleExpression =
+  | { all: { children: Array<RuleExpression> } }
+  | { any: { children: Array<RuleExpression> } }
+  | { not: { child: RuleExpression } }
+  | { match: { field: RuleField; matcher: RuleMatcher; values: Array<string> } }
+;
+
+export type RuleValidationError = {
+  path: string;
+  code: string;
+  message: string;
+};
+
+export type AnalyticsTag = {
+  id: string;
+  name: string;
+};
+
+export type AdminAnalyticsTag = {
+  id: string;
+  name: string;
+  ruleExpression: RuleExpression | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ListAnalyticsTagsRsp = {
+  tags: Array<AdminAnalyticsTag>;
+};
+
+export type CreateAnalyticsTagReq = {
+  name: string;
+};
+
+export type UpdateAnalyticsTagReq = {
+  id: string;
+  name: string;
+};
+
+export type AnalyticsTagIdReq = {
+  id: string;
+};
+
+export type SaveAnalyticsTagRuleReq = {
+  id: string;
+  ruleExpression: RuleExpression | null;
+};
+
+export type RuleTestFile = {
+  absolutePath: string;
+  expectedMatch: boolean;
+};
+
+export type ListAnalyticsTagTestFilesRsp = {
+  files: Array<RuleTestFile>;
+};
+
+export type TestAnalyticsTagRuleReq = {
+  id: string;
+  ruleExpression: RuleExpression | null;
+  files: Array<RuleTestFile>;
+};
+
+export type RuleTestFileResult = {
+  index: number;
+  matched: boolean;
+  passed: boolean;
+};
+
+export type TestAnalyticsTagRuleRsp = {
+  results: Array<RuleTestFileResult>;
+};
+
+export type ReanalyzeDeviceReq = {
+  deviceId: string;
+};
+
+export type ReanalysisRsp = {
+  scheduledFileCount: number;
+};
+
+export type DeviceAnalyticsReq = {
+  deviceId: string;
+};
+
+export type DeviceAnalyticsTagsRsp = {
+  tags: Array<AnalyticsTag>;
+};
+
+export type DeviceAnalyticsSummaryItem = {
+  tag: AnalyticsTag;
+  fileCount: number;
+  latestFileEntryCreatedAt: string;
+};
+
+export type DeviceAnalyticsSummaryRsp = {
+  totalFileCount: number;
+  analyzedFileCount: number;
+  items: Array<DeviceAnalyticsSummaryItem>;
+};
+
+export type DeviceAnalyticsFilesReq = {
+  deviceId: string;
+  tagId: string;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type DeviceAnalyticsFile = {
+  fileId: string;
+  name: string;
+  absolutePath: string;
+  fileEntryCreatedAt: string;
+};
+
+export type DeviceAnalyticsFilesRsp = {
+  files: Array<DeviceAnalyticsFile>;
+  nextCursor: string | null;
+};
+
+export type TagMatch =
+  | 'any'
+  | 'all'
+;
 
 export type Organism = {
   id: number;

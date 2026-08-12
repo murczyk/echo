@@ -2433,11 +2433,7 @@ pub async fn add_network_freq_v2(
         .one(&txn)
         .await
         .context(h!())?;
-    let kind = if &req.freq_rec.modulation == "DMR" {
-        &req.freq_rec.modulation
-    } else {
-        &"VHF".to_string()
-    };
+    let kind = kind_from_modulation(&req.freq_rec.modulation);
     let network_freq = if existing_freq.is_none() {
         let active_from = req
             .freq_rec
@@ -2460,7 +2456,7 @@ pub async fn add_network_freq_v2(
             freq: Set(req.freq_rec.freq.trim().to_string()),
             created_at: NotSet,
             last_seen_dt: NotSet,
-            kind: Set(SigintNetworkKind::try_from_value(kind)?),
+            kind: Set(kind),
             modulation: Set(req.freq_rec.modulation.clone()),
             modulation_id: Set(None),
             active_from: Set(active_from),
@@ -2891,13 +2887,9 @@ pub async fn update_network_freq_v2(
         .await
         .context(h!())?;
 
-        let kind = if &req.modulation == "DMR" {
-            &req.modulation
-        } else {
-            &"VHF".to_string()
-        };
+        let kind = kind_from_modulation(&req.modulation);
         let mut model = network_freq_model.into_active_model();
-        model.kind = Set(SigintNetworkKind::try_from_value(kind)?);
+        model.kind = Set(kind);
         model.modulation_id = Set(None);
         model.active_from = Set(updated_freq_active_from);
         model.active_to = Set(updated_freq_active_to);

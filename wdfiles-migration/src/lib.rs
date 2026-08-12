@@ -6,6 +6,13 @@ mod m20260721_124518_drop_legacy_device_file;
 mod m20260728_111013_add_file_entry_journal_index;
 mod m20260728_182132_add_file_entry_content_path;
 mod m20260803_164204_file_entry_kind_and_windows_paths;
+mod m20260806_160450_device_analytics_tags;
+mod m20260807_125456_analytics_tag_rule_revision;
+mod m20260807_162040_file_analysis_state;
+mod m20260808_113748_file_analysis_device_queue;
+mod m20260808_134904_file_analysis_retry_limit;
+mod m20260808_134905_analytics_tag_test_expectation;
+mod m20260810_120000_seed_default_analytics_tags;
 
 pub struct Migrator;
 
@@ -23,6 +30,15 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260803_164204_file_entry_kind_and_windows_paths::Migration,
             ),
+            Box::new(m20260806_160450_device_analytics_tags::Migration),
+            Box::new(m20260807_125456_analytics_tag_rule_revision::Migration),
+            Box::new(m20260807_162040_file_analysis_state::Migration),
+            Box::new(m20260808_113748_file_analysis_device_queue::Migration),
+            Box::new(m20260808_134904_file_analysis_retry_limit::Migration),
+            Box::new(
+                m20260808_134905_analytics_tag_test_expectation::Migration,
+            ),
+            Box::new(m20260810_120000_seed_default_analytics_tags::Migration),
         ]
     }
 }

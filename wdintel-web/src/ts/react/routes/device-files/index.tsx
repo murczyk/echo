@@ -9,6 +9,8 @@ import { PowerIconButton } from '../../components/PowerIconButton';
 import { DeviceFileEntries } from './components/DeviceFileEntries';
 import { DeviceFileSearchControls } from './components/DeviceFileSearchControls';
 import { DeviceFileSyncDialog } from './components/DeviceFileSyncDialog';
+import type { DeviceAnalyticsTagFilter } from './types';
+import type { DeviceAnalyticsTagsState } from './use-device-analytics-tags';
 import type { DeviceFilesState } from './use-device-files';
 
 function formatSearchScopeLabel(entry: DeviceFileTreeEntry): string {
@@ -20,9 +22,15 @@ function formatSearchScopeLabel(entry: DeviceFileTreeEntry): string {
 export function DeviceFilesPanel({
   files,
   canSync,
+  tagsState,
+  tagFilter,
+  onTagFilterChange,
 }: {
   files: DeviceFilesState;
   canSync: boolean;
+  tagsState: DeviceAnalyticsTagsState;
+  tagFilter: DeviceAnalyticsTagFilter;
+  onTagFilterChange: (filter: DeviceAnalyticsTagFilter) => void;
 }) {
   const openSearchDirectory = (entryId: string) => {
     if (files.searchScope?.entryId === entryId) {
@@ -112,9 +120,12 @@ export function DeviceFilesPanel({
               scopeLabel={files.searchScope?.label ?? null}
               searching={files.searchLoading || files.searchRefreshing}
               searchMode={files.searchActive}
+              tagsState={tagsState}
+              tagFilter={tagFilter}
               onChange={files.setSearchDraft}
               onSearch={files.submitSearch}
               onBackToBrowse={files.clearSearchResults}
+              onTagFilterChange={onTagFilterChange}
             />
             {files.searchActive ? (
               <DeviceFileEntries
