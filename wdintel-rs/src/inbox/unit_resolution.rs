@@ -56,42 +56,56 @@ enum UnitTextSource {
 struct UnitTextCandidate {
     text: String,
     source: UnitTextSource,
+    is_fallback: bool,
 }
 
-fn resolution_texts(value: &str) -> Vec<String> {
-    let mut parsed = crate::unit::parse_library_unit(&value.to_string());
+#[derive(Debug, Clone)]
+struct UnitTextResolution {
+    text: String,
+    sigint_unit_id: Option<i64>,
+    is_fallback: bool,
+}
+
+fn resolution_texts(value: &str) -> Vec<(String, bool)> {
+    let parsed = crate::unit::parse_library_unit(&value.to_string());
     let original = value.trim().to_string();
     if parsed.is_empty() {
-        return vec![original];
+        return vec![(original, false)];
     }
-    if !parsed.iter().any(|value| {
+    let has_original = parsed.iter().any(|value| {
         normalize_unit_label(value) == normalize_unit_label(&original)
-    }) {
-        parsed.push(original);
+    });
+    let mut texts = parsed.into_iter().map(|text| (text, false)).collect_vec();
+    if !has_original {
+        texts.push((original, true));
     }
-    parsed
+    texts
 }
 
 fn unit_text_candidates(
     unit_v2: Option<&str>,
     unit: Option<&str>,
 ) -> Vec<UnitTextCandidate> {
-    let (source, texts): (UnitTextSource, Vec<String>) =
+    let (source, texts): (UnitTextSource, Vec<(String, bool)>) =
         if let Some(unit_v2) = nonempty(unit_v2) {
             (
                 UnitTextSource::UnitV2,
                 unit_v2.split(',').flat_map(resolution_texts).collect_vec(),
             )
         } else if let Some(unit) = nonempty(unit) {
-            (UnitTextSource::Unit, vec![unit.to_string()])
+            (UnitTextSource::Unit, vec![(unit.to_string(), false)])
         } else {
             return Vec::new();
         };
 
     texts
         .into_iter()
-        .filter(|text| !text.is_empty())
-        .map(|text| UnitTextCandidate { text, source })
+        .filter(|(text, _)| !text.is_empty())
+        .map(|(text, is_fallback)| UnitTextCandidate {
+            text,
+            source,
+            is_fallback,
+        })
         .unique_by(|candidate| normalize_unit_label(&candidate.text))
         .collect_vec()
 }
@@ -318,25 +332,33 @@ async fn resolve_unit_text_candidates<C>(
     db: &C,
     unit_v2: Option<&str>,
     unit: Option<&str>,
-) -> anyhow::Result<Vec<(String, Option<i64>)>>
+) -> anyhow::Result<Vec<UnitTextResolution>>
 where
     C: ConnectionTrait,
 {
     let mut resolved = Vec::new();
     for candidate in unit_text_candidates(unit_v2, unit) {
-        let sigint_unit_id = match candidate.source {
-            UnitTextSource::UnitV2 => {
-                resolve_sigint_unit_id(db, Some(&candidate.text), None)
-                    .await
-                    .context(h!())?
-            }
-            UnitTextSource::Unit => {
-                resolve_sigint_unit_id(db, None, Some(&candidate.text))
-                    .await
-                    .context(h!())?
+        let sigint_unit_id = if candidate.is_fallback {
+            resolve_by_label(db, &candidate.text).await.context(h!())?
+        } else {
+            match candidate.source {
+                UnitTextSource::UnitV2 => {
+                    resolve_sigint_unit_id(db, Some(&candidate.text), None)
+                        .await
+                        .context(h!())?
+                }
+                UnitTextSource::Unit => {
+                    resolve_sigint_unit_id(db, None, Some(&candidate.text))
+                        .await
+                        .context(h!())?
+                }
             }
         };
-        resolved.push((candidate.text, sigint_unit_id));
+        resolved.push(UnitTextResolution {
+            text: candidate.text,
+            sigint_unit_id,
+            is_fallback: candidate.is_fallback,
+        });
     }
     Ok(resolved)
 }
@@ -554,7 +576,7 @@ where
         .context(h!())?;
     let sigint_unit_ids = resolved_unit_texts
         .iter()
-        .filter_map(|(_, sigint_unit_id)| *sigint_unit_id)
+        .filter_map(|resolution| resolution.sigint_unit_id)
         .collect_vec();
     replace_parsed_unit_links(db, inbox_item_id, &sigint_unit_ids)
         .await
@@ -570,9 +592,9 @@ where
         mark_failure_resolved(db, inbox_item_id)
             .await
             .context(h!())?;
-        for (unit_txt, sigint_unit_id) in resolved_unit_texts {
-            if sigint_unit_id.is_none() {
-                upsert_failure(db, inbox_item_id, &unit_txt)
+        for resolution in resolved_unit_texts {
+            if resolution.sigint_unit_id.is_none() && !resolution.is_fallback {
+                upsert_failure(db, inbox_item_id, &resolution.text)
                     .await
                     .context(h!())?;
             }
@@ -846,6 +868,12 @@ mod tests {
         format!("{number} омсбр")
     }
 
+    fn unique_unit_labels() -> [String; 2] {
+        let number = Utc::now().timestamp_micros().unsigned_abs() % 7_000_000
+            + 1_000_000;
+        [format!("{number} омсбр"), format!("{} омсбр", number + 1)]
+    }
+
     async fn insert_orbit_unit(
         db: &DatabaseConnection,
         generative_unit_name_full: &str,
@@ -984,9 +1012,15 @@ mod tests {
     fn resolution_texts_keeps_original_label_as_fallback() {
         assert_eq!(
             resolution_texts("  власний тег 123 омсбр  "),
-            vec!["123 омсбр", "власний тег 123 омсбр"]
+            vec![
+                ("123 омсбр".to_string(), false),
+                ("власний тег 123 омсбр".to_string(), true)
+            ]
         );
-        assert_eq!(resolution_texts("123 ОМСБР"), vec!["123 омсбр"]);
+        assert_eq!(
+            resolution_texts("123 ОМСБР"),
+            vec![("123 омсбр".to_string(), false)]
+        );
     }
 
     #[tokio::test]
@@ -1100,6 +1134,67 @@ mod tests {
             normalize_unit_label(&failures[0].unit_txt),
             normalize_unit_label(&missing_label)
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn resolved_parser_texts_do_not_queue_unresolved_fallback() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let first = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let second = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let labels = unique_unit_labels();
+        for (unit, label) in [(&first, &labels[0]), (&second, &labels[1])] {
+            sigint_unit_label::ActiveModel {
+                sigint_unit_id: Set(unit.id),
+                label: Set(label.clone()),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        let unit_v2 = labels.join(" та ");
+        let item =
+            insert_inbox_item(&env.dbx, Some(&unit_v2), None, None).await;
+
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            item.id,
+            item.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let mut expected = vec![first.id, second.id];
+        expected.sort();
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                item.id,
+                SigintInboxItemUnitKind::Parsed,
+            )
+            .await,
+            expected
+        );
+        assert!(failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(item.id))
+            .filter(failed_inbox_unit::Column::Deleted.eq(false))
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
