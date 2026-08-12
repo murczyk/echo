@@ -7,6 +7,7 @@ const DOCUMENTS_ID = '018f0000-0000-7000-8000-000000000003';
 const USERS_ID = '018f0000-0000-7000-8000-000000000004';
 const NOW = '2026-07-24T08:00:00Z';
 const JOURNAL_FILE_ID = '018f0000-0000-7000-8000-000000000005';
+const ANALYTICS_TAG_ID = '018f0000-0000-7000-8000-000000000006';
 
 function fulfillJson(route: Route, body: unknown) {
   return route.fulfill({
@@ -52,12 +53,14 @@ function entry({
     path_components: [name],
     path_syntax: pathSyntax,
     absolute_path: absolutePath,
+    has_content: kind === 'file',
     mime_type: kind === 'file' ? 'text/plain' : null,
     extension: kind === 'file' ? name.split('.').at(-1) : null,
     file_metadata_created_at: null,
     file_metadata_modified_at: NOW,
     created_at: NOW,
     updated_at: NOW,
+    tags: [],
   };
 }
 
@@ -89,10 +92,13 @@ function systemSettings() {
     enable_audio_transcription: false,
     show_classic_duty: false,
     show_classic_analysis: false,
+    hide_orbit_data: false,
   };
 }
 
 type ApiTracker = {
+  analyticsSummaryRequestCount: number;
+  analyticsTagsRequestCount: number;
   journalRequestCount: number;
   rootsRequestCount: number;
   subtreeCountRequestCount: number;
@@ -106,6 +112,8 @@ async function installMocks(page: Page): Promise<ApiTracker> {
     releaseSubtreeCounts = resolve;
   });
   const tracker: ApiTracker = {
+    analyticsSummaryRequestCount: 0,
+    analyticsTagsRequestCount: 0,
     journalRequestCount: 0,
     rootsRequestCount: 0,
     subtreeCountRequestCount: 0,
@@ -214,6 +222,28 @@ async function installMocks(page: Page): Promise<ApiTracker> {
       });
       return;
     }
+    if (pathname === '/api/device/analytics/tags') {
+      tracker.analyticsTagsRequestCount += 1;
+      await fulfillJson(route, {
+        tags: [{ id: ANALYTICS_TAG_ID, name: 'Документи' }],
+      });
+      return;
+    }
+    if (pathname === '/api/device/analytics/summary') {
+      tracker.analyticsSummaryRequestCount += 1;
+      await fulfillJson(route, {
+        total_file_count: 2,
+        analyzed_file_count: 1,
+        items: [
+          {
+            tag: { id: ANALYTICS_TAG_ID, name: 'Документи' },
+            file_count: 1,
+            latest_file_entry_created_at: NOW,
+          },
+        ],
+      });
+      return;
+    }
     if (pathname === '/api/device/files/roots') {
       tracker.rootsRequestCount += 1;
       await fulfillJson(route, {
@@ -297,7 +327,9 @@ async function installMocks(page: Page): Promise<ApiTracker> {
             file_id: JOURNAL_FILE_ID,
             name: 'journal.log',
             absolute_path: '/var/log/journal.log',
+            has_content: true,
             synchronized_at: '2026-07-28T08:15:30Z',
+            tags: [],
           },
         ],
         total_count: 1,
@@ -339,6 +371,16 @@ test('@smoke device details uses tabs, a synchronization journal, a collapsible 
   });
   await expect(page.getByRole('tab', { name: 'Файли' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Журнал' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Аналітика файлів' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Аналітика файлів' })).toBeVisible();
+  await expect(page.getByText('Документи', { exact: true })).toBeVisible();
+  const analyticsProgress = page.getByTestId('device-analytics-progress');
+  await expect(analyticsProgress).toContainText('Усього файлів');
+  await expect(analyticsProgress).toContainText('2');
+  await expect(analyticsProgress).toContainText('Проаналізовано файлів');
+  await expect(analyticsProgress).toContainText('1');
+  await expect.poll(() => tracker.analyticsTagsRequestCount).toBe(1);
+  await expect.poll(() => tracker.analyticsSummaryRequestCount).toBe(1);
   expect(tracker.journalRequestCount).toBe(0);
   expect(tracker.rootsRequestCount).toBe(0);
   const metadataPanel = page.getByTestId('device-details-left-panel');
@@ -359,12 +401,13 @@ test('@smoke device details uses tabs, a synchronization journal, a collapsible 
   await expect(journalTable.getByRole('columnheader')).toHaveText([
     'Назва файлу',
     'Шлях до файлу',
+    'Теги',
     'Контент',
     'Дата й час синхронізації',
   ]);
   const journalRow = journalTable.getByRole('row').filter({ hasText: 'journal.log' });
   await expect(journalRow).toContainText('/var/log/journal.log');
-  await expect(journalRow.getByRole('cell').nth(3)).not.toHaveText('');
+  await expect(journalRow.getByRole('img', { name: 'Контент файлу наявний' })).toBeVisible();
   await expect.poll(() => tracker.journalRequestCount).toBe(1);
   await expect(page.getByRole('status', { name: 'Показано 1 з 1 файлів' })).toBeVisible();
 
@@ -381,6 +424,9 @@ test('@smoke device details uses tabs, a synchronization journal, a collapsible 
   await expect(page.getByLabel('Вибрати каталог / як область пошуку')).toBeVisible();
   await expect(page.getByLabel('Вибрати каталог C:\\ як область пошуку')).toBeVisible();
   await expect(page.getByText('root.log', { exact: true })).toBeVisible();
+  const rootFileRow = fileTree.getByRole('listitem').filter({ hasText: /^root\.log$/ });
+  await expect(rootFileRow.getByText('.log', { exact: true })).toHaveCount(0);
+  await expect(rootFileRow).not.toContainText('text/plain');
   await expect(page.getByLabel('Вибрати каталог Users як область пошуку')).toBeVisible();
   await expect(page.getByLabel('Завантаження кількості файлів')).toBeVisible();
   await expect.poll(() => tracker.subtreeCountRequestCount).toBe(1);

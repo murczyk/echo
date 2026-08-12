@@ -8,6 +8,11 @@ import type {
   DeviceDetailReq,
   DeviceDetails,
   DeviceFile,
+  DeviceAnalyticsFilesReq,
+  DeviceAnalyticsFilesRsp,
+  DeviceAnalyticsReq,
+  DeviceAnalyticsSummaryRsp,
+  DeviceAnalyticsTagsRsp,
   DeviceFileRoot,
   DeviceUnitStat,
   JournalDeviceFilesReq,
@@ -22,6 +27,8 @@ import type {
   SearchDeviceFilesReq,
   SearchDeviceFilesRsp,
   SyncDeviceFilesReq,
+  ReanalysisRsp,
+  ReanalyzeDeviceReq,
   SyncDeviceFilesRsp,
   Unit,
   UpdateDeviceReq,
@@ -240,4 +247,45 @@ export async function syncDeviceFiles(
 ): Promise<SyncDeviceFilesRsp> {
   const data = await postJson('/api/device/files/sync', serializeSyncRequest(req), options);
   return normalizeSyncResponse(data);
+}
+
+export async function listAnalyticsTags(
+  req: DeviceAnalyticsReq,
+  options?: RequestOptions,
+): Promise<DeviceAnalyticsTagsRsp> {
+  const data = await postJson('/api/device/analytics/tags', transformCamelToSnake(req), options);
+  return transformSnakeToCamel<DeviceAnalyticsTagsRsp>(data);
+}
+
+export async function getDeviceAnalyticsSummary(
+  req: DeviceAnalyticsReq,
+  options?: RequestOptions,
+): Promise<DeviceAnalyticsSummaryRsp> {
+  const data = await postJson('/api/device/analytics/summary', transformCamelToSnake(req), options);
+  return transformSnakeToCamel<DeviceAnalyticsSummaryRsp>(data);
+}
+
+export async function listDeviceAnalyticsFiles(
+  req: DeviceAnalyticsFilesReq,
+  options?: RequestOptions,
+): Promise<DeviceAnalyticsFilesRsp> {
+  const data = await postJson('/api/device/analytics/files', transformCamelToSnake(req), options);
+  return transformSnakeToCamel<DeviceAnalyticsFilesRsp>(data);
+}
+
+export async function reanalyzeDevice(
+  req: ReanalyzeDeviceReq,
+  options?: RequestOptions,
+): Promise<ReanalysisRsp> {
+  const data = await postJson(
+    '/api/admin/device-analytics/reanalyze/device',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<ReanalysisRsp>(data);
+}
+
+export async function reanalyzeAll(options?: RequestOptions): Promise<ReanalysisRsp> {
+  const data = await postJson('/api/admin/device-analytics/reanalyze/all', undefined, options);
+  return transformSnakeToCamel<ReanalysisRsp>(data);
 }

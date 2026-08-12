@@ -168,13 +168,17 @@ describe('menu-items', () => {
       'Інтеграції API',
       'Echo GPU Сервери',
       'Всі звіти',
-      'Дублікати Підрозділів',
-      'Нерозпізнані підрозділи',
+      'Підрозділи',
       'ГОІ',
       'Ключі',
       'Населені пункти смуг',
       'Теги',
+      'Аналіз пристроїв',
     ]);
     expect(menuIsActive('tags-neo', databaseGroup!)).toBe(true);
+    expect(menuIsActive('device-analytics', databaseGroup!)).toBe(true);
+    expect(
+      adminSubs.some((item) => item.type === 'item' && item.activeName === 'device-analytics'),
+    ).toBe(false);
   });
 });

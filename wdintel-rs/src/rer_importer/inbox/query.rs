@@ -879,6 +879,15 @@ fn analytics_inbox_order_is_descending(req: &InboxMessagesReq) -> bool {
         || req.before_id_noninclusive.is_some()
 }
 
+pub(crate) fn inbox_results_reverse_query_order(
+    req: &InboxMessagesReq,
+) -> bool {
+    req.load_latest == Some(true)
+        || (req.load_latest != Some(true)
+            && req.newest_first != Some(true)
+            && req.before_id_noninclusive.is_some())
+}
+
 #[derive(Debug, Default)]
 struct ResolvedAnalyticsAorFilter {
     group_keys: Vec<String>,

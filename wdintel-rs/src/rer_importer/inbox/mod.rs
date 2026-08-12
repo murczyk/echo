@@ -41,6 +41,20 @@ use submit_bl::*;
 
 type InboxDigest = (i64, Option<NaiveDateTime>);
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RerAnalysisInboxRoute {
+    Default,
+    PostgresRecent,
+    AnalyticsHybrid,
+}
+
+struct HybridInboxCandidateIds {
+    ids: Vec<i64>,
+    analytics_count: usize,
+    postgres_tail_count: usize,
+    postgres_tail_ms: u128,
+}
+
 struct InboxCountSingleflightEntry {
     gate: Arc<Mutex<()>>,
     cached: Option<(Instant, InboxDigest)>,
@@ -2396,6 +2410,32 @@ async fn get_inbox_messages_with_analytics_candidates(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let now = Utc::now().naive_utc();
+    let freshness_max_age_ms = analytics_freshness_max_age_ms(env);
+    match rer_analysis_inbox_route(req, now, freshness_max_age_ms) {
+        RerAnalysisInboxRoute::PostgresRecent => {
+            return load_recent_rer_analysis_inbox_from_postgres(
+                login, logins, env, req,
+            )
+            .await;
+        }
+        RerAnalysisInboxRoute::AnalyticsHybrid => {
+            if analytics_inbox_candidates_supported(req) {
+                if let Some(messages) =
+                    try_load_rer_analysis_inbox_hybrid(login, logins, env, req)
+                        .await?
+                {
+                    return Ok(messages);
+                }
+            }
+            return get_inbox_messages_with_internal_lower_bound(
+                login, logins, env, req, None,
+            )
+            .await;
+        }
+        RerAnalysisInboxRoute::Default => {}
+    }
+
     if analytics_inbox_initial_unit_candidates_supported(req) {
         if let Some(messages) =
             try_load_initial_unit_inbox_hybrid(login, logins, env, req).await?
@@ -2431,6 +2471,126 @@ async fn get_inbox_messages_with_analytics_candidates(
     .await
 }
 
+fn rer_analysis_inbox_route(
+    req: &InboxMessagesReq,
+    now: NaiveDateTime,
+    freshness_max_age_ms: u64,
+) -> RerAnalysisInboxRoute {
+    if req.page_id.as_deref() != Some("rer-analysis") {
+        return RerAnalysisInboxRoute::Default;
+    }
+    let (Some(since_ms), Some(till_ms)) =
+        (req.since_date_inclusive_ms, req.till_date_inclusive_ms)
+    else {
+        return RerAnalysisInboxRoute::Default;
+    };
+    let (Ok(since), Ok(till)) = (
+        crate::utils::dt_from_millis(since_ms),
+        crate::utils::dt_from_millis(till_ms),
+    ) else {
+        return RerAnalysisInboxRoute::Default;
+    };
+    let fresh_tail_lower_bound = analytics_fresh_tail_lower_bound(
+        now,
+        freshness_max_age_ms,
+        RER_ANALYSIS_ANALYTICS_FRESH_TAIL_MINUTES,
+    );
+    if since > now || till < since || till < fresh_tail_lower_bound {
+        return RerAnalysisInboxRoute::Default;
+    }
+    if till - since < Duration::hours(RER_ANALYSIS_POSTGRES_RECENT_RANGE_HOURS)
+    {
+        RerAnalysisInboxRoute::PostgresRecent
+    } else {
+        RerAnalysisInboxRoute::AnalyticsHybrid
+    }
+}
+
+async fn load_recent_rer_analysis_inbox_from_postgres(
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let started = Instant::now();
+    let messages = get_inbox_messages_with_internal_lower_bound(
+        login, logins, env, req, None,
+    )
+    .await
+    .context(h!())?;
+    info!(
+        target: "rer_analysis_inbox_route",
+        "rer_analysis_inbox_route route=postgres_recent result_count={} elapsed_ms={}",
+        messages.len(),
+        started.elapsed().as_millis(),
+    );
+    Ok(messages)
+}
+
+async fn try_load_rer_analysis_inbox_hybrid(
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Option<Vec<(i64, InboxMessage)>>, AppError> {
+    let started = Instant::now();
+    let candidates = match load_hybrid_inbox_candidate_ids(
+        login,
+        env,
+        req,
+        RER_ANALYSIS_ANALYTICS_FRESH_TAIL_MINUTES,
+    )
+    .await
+    {
+        Ok(Some(candidates)) => candidates,
+        Ok(None) => {
+            warn!(
+                target: "rer_analysis_inbox_route",
+                "rer_analysis_inbox_route route=postgres_fallback analytics_candidates_available=false elapsed_ms={}",
+                started.elapsed().as_millis(),
+            );
+            return Ok(None);
+        }
+        Err(error) => {
+            warn!(
+                target: "rer_analysis_inbox_route",
+                "rer_analysis_inbox_route route=postgres_fallback postgres_tail_failed=true elapsed_ms={} error={error:?}",
+                started.elapsed().as_millis(),
+            );
+            return Ok(None);
+        }
+    };
+    let merged_candidate_count = candidates.ids.len();
+    let Some(messages) = hydrate_hybrid_inbox_candidates(
+        login,
+        logins,
+        env,
+        req,
+        &candidates.ids,
+    )
+    .await?
+    else {
+        warn!(
+            target: "rer_analysis_inbox_route",
+            "rer_analysis_inbox_route route=postgres_fallback candidate_revalidation_complete=false merged_candidate_count={} elapsed_ms={}",
+            merged_candidate_count,
+            started.elapsed().as_millis(),
+        );
+        return Ok(None);
+    };
+    info!(
+        target: "rer_analysis_inbox_route",
+        "rer_analysis_inbox_route route=analytics_hybrid analytics_candidate_count={} postgres_tail_candidate_count={} merged_candidate_count={} result_count={} postgres_tail_ms={} elapsed_ms={}",
+        candidates.analytics_count,
+        candidates.postgres_tail_count,
+        merged_candidate_count,
+        messages.len(),
+        candidates.postgres_tail_ms,
+        started.elapsed().as_millis(),
+    );
+    Ok(Some(messages))
+}
+
 async fn try_load_initial_unit_inbox_hybrid(
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
@@ -2438,51 +2598,46 @@ async fn try_load_initial_unit_inbox_hybrid(
     req: &InboxMessagesReq,
 ) -> Result<Option<Vec<(i64, InboxMessage)>>, AppError> {
     let started = Instant::now();
-    let Some(analytics_ids) =
-        load_analytics_inbox_candidate_ids(login, env, req).await?
-    else {
-        warn!(
-            target: "rer_duty_neo_inbox_route",
-            "rer_duty_neo_inbox_route route=postgres_cutoff analytics_candidates_available=false elapsed_ms={}",
-            started.elapsed().as_millis(),
-        );
-        return Ok(None);
-    };
-    let tail_started = Instant::now();
-    let fresh_tail_ids = match load_postgres_fresh_tail_candidate_ids(
-        login, env, req,
+    let candidates = match load_hybrid_inbox_candidate_ids(
+        login,
+        env,
+        req,
+        RER_DUTY_NEO_ANALYTICS_FRESH_TAIL_MINUTES,
     )
     .await
     {
-        Ok(ids) => ids,
-        Err(_error) => {
+        Ok(Some(candidates)) => candidates,
+        Ok(None) => {
             warn!(
                 target: "rer_duty_neo_inbox_route",
-                "rer_duty_neo_inbox_route route=postgres_cutoff postgres_tail_failed=true analytics_candidate_count={} elapsed_ms={}",
-                analytics_ids.len(),
+                "rer_duty_neo_inbox_route route=postgres_cutoff analytics_candidates_available=false elapsed_ms={}",
+                started.elapsed().as_millis(),
+            );
+            return Ok(None);
+        }
+        Err(error) => {
+            warn!(
+                target: "rer_duty_neo_inbox_route",
+                "rer_duty_neo_inbox_route route=postgres_cutoff postgres_tail_failed=true elapsed_ms={} error={error:?}",
                 started.elapsed().as_millis(),
             );
             return Ok(None);
         }
     };
-    let postgres_tail_ms = tail_started.elapsed().as_millis();
-    let analytics_candidate_count = analytics_ids.len();
-    let postgres_tail_candidate_count = fresh_tail_ids.len();
-    let candidate_ids =
-        merge_inbox_candidate_ids(analytics_ids, fresh_tail_ids);
-    let Some(messages) = hydrate_initial_unit_inbox_candidates(
+    let merged_candidate_count = candidates.ids.len();
+    let Some(messages) = hydrate_hybrid_inbox_candidates(
         login,
         logins,
         env,
         req,
-        &candidate_ids,
+        &candidates.ids,
     )
     .await?
     else {
         warn!(
             target: "rer_duty_neo_inbox_route",
             "rer_duty_neo_inbox_route route=postgres_cutoff candidate_revalidation_complete=false merged_candidate_count={} elapsed_ms={}",
-            candidate_ids.len(),
+            merged_candidate_count,
             started.elapsed().as_millis(),
         );
         return Ok(None);
@@ -2490,25 +2645,60 @@ async fn try_load_initial_unit_inbox_hybrid(
     info!(
         target: "rer_duty_neo_inbox_route",
         "rer_duty_neo_inbox_route route=analytics_hybrid analytics_candidate_count={} postgres_tail_candidate_count={} merged_candidate_count={} result_count={} postgres_tail_ms={} elapsed_ms={}",
-        analytics_candidate_count,
-        postgres_tail_candidate_count,
-        candidate_ids.len(),
+        candidates.analytics_count,
+        candidates.postgres_tail_count,
+        merged_candidate_count,
         messages.len(),
-        postgres_tail_ms,
+        candidates.postgres_tail_ms,
         started.elapsed().as_millis(),
     );
     Ok(Some(messages))
+}
+
+async fn load_hybrid_inbox_candidate_ids(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    minimum_tail_minutes: i64,
+) -> Result<Option<HybridInboxCandidateIds>, AppError> {
+    let Some(analytics_ids) =
+        load_analytics_inbox_candidate_ids(login, env, req)
+            .await
+            .context(h!())?
+    else {
+        return Ok(None);
+    };
+    let tail_started = Instant::now();
+    let fresh_tail_ids = load_postgres_fresh_tail_candidate_ids(
+        login,
+        env,
+        req,
+        minimum_tail_minutes,
+    )
+    .await
+    .context(h!())?;
+    let postgres_tail_ms = tail_started.elapsed().as_millis();
+    let analytics_count = analytics_ids.len();
+    let postgres_tail_count = fresh_tail_ids.len();
+    Ok(Some(HybridInboxCandidateIds {
+        ids: merge_inbox_candidate_ids(analytics_ids, fresh_tail_ids),
+        analytics_count,
+        postgres_tail_count,
+        postgres_tail_ms,
+    }))
 }
 
 async fn load_postgres_fresh_tail_candidate_ids(
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
+    minimum_tail_minutes: i64,
 ) -> Result<Vec<i64>, AppError> {
     let freshness_max_age_ms = analytics_freshness_max_age_ms(env);
     let created_at_lower_bound = analytics_fresh_tail_lower_bound(
         Utc::now().naive_utc(),
         freshness_max_age_ms,
+        minimum_tail_minutes,
     );
     let query = build_postgres_fresh_tail_inbox_candidates_query(
         &env.dbx,
@@ -2517,17 +2707,20 @@ async fn load_postgres_fresh_tail_candidate_ids(
         req,
         created_at_lower_bound,
     )
-    .await?;
-    query_inbox_candidate_ids(env.dbx.clone(), query).await
+    .await
+    .context(h!())?;
+    Ok(query_inbox_candidate_ids(env.dbx.clone(), query)
+        .await
+        .context(h!())?)
 }
 
 fn analytics_fresh_tail_lower_bound(
     now: NaiveDateTime,
     freshness_max_age_ms: u64,
+    minimum_tail_minutes: i64,
 ) -> NaiveDateTime {
     let minimum_ms = u64::try_from(
-        Duration::minutes(RER_DUTY_NEO_ANALYTICS_FRESH_TAIL_MINUTES)
-            .num_milliseconds(),
+        Duration::minutes(minimum_tail_minutes).num_milliseconds(),
     )
     .unwrap_or_default();
     let overlap_ms = std::cmp::min(
@@ -2626,7 +2819,7 @@ async fn hydrate_analytics_inbox_candidates(
     Ok(None)
 }
 
-async fn hydrate_initial_unit_inbox_candidates(
+async fn hydrate_hybrid_inbox_candidates(
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
     env: &Env,
@@ -2654,13 +2847,18 @@ async fn hydrate_initial_unit_inbox_candidates(
     if !analytics_candidate_revalidation_is_complete(&messages, candidate_ids) {
         return Ok(None);
     }
-    retain_latest_inbox_page(&mut messages);
+    retain_hybrid_inbox_page(&mut messages, req);
     Ok(Some(messages))
 }
 
-fn retain_latest_inbox_page<T>(rows: &mut Vec<T>) {
-    if rows.len() > INBOX_MESSAGES_PAGE_LIMIT {
+fn retain_hybrid_inbox_page<T>(rows: &mut Vec<T>, req: &InboxMessagesReq) {
+    if rows.len() <= INBOX_MESSAGES_PAGE_LIMIT {
+        return;
+    }
+    if inbox_results_reverse_query_order(req) {
         rows.drain(..rows.len() - INBOX_MESSAGES_PAGE_LIMIT);
+    } else {
+        rows.truncate(INBOX_MESSAGES_PAGE_LIMIT);
     }
 }
 
@@ -2904,6 +3102,19 @@ mod tests {
         }
     }
 
+    fn rer_analysis_req(
+        since: NaiveDateTime,
+        till: NaiveDateTime,
+    ) -> InboxMessagesReq {
+        InboxMessagesReq {
+            page_id: Some("rer-analysis".to_string()),
+            since_date_inclusive_ms: Some(since.and_utc().timestamp_millis()),
+            till_date_inclusive_ms: Some(till.and_utc().timestamp_millis()),
+            newest_first: Some(true),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn adaptive_cutoff_requires_traffic_above_threshold() {
         let now = NaiveDate::from_ymd_opt(2026, 8, 9)
@@ -3029,17 +3240,80 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            analytics_fresh_tail_lower_bound(now, 90_000),
+            analytics_fresh_tail_lower_bound(now, 90_000, 5),
             now - Duration::minutes(5)
         );
         assert_eq!(
-            analytics_fresh_tail_lower_bound(now, 240_000),
+            analytics_fresh_tail_lower_bound(now, 240_000, 5),
             now - Duration::minutes(8)
         );
     }
 
     #[test]
-    fn hybrid_candidates_are_deduplicated_revalidated_and_page_limited() {
+    fn rer_analysis_recent_and_hybrid_routes_cover_the_fresh_tail() {
+        let now = NaiveDate::from_ymd_opt(2026, 8, 12)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let recent = rer_analysis_req(
+            now - Duration::hours(24),
+            now - Duration::minutes(1),
+        );
+        assert_eq!(
+            rer_analysis_inbox_route(&recent, now, 90_000),
+            RerAnalysisInboxRoute::PostgresRecent
+        );
+
+        let exact_threshold = rer_analysis_req(now - Duration::hours(25), now);
+        assert_eq!(
+            rer_analysis_inbox_route(&exact_threshold, now, 90_000),
+            RerAnalysisInboxRoute::AnalyticsHybrid
+        );
+
+        let historical = rer_analysis_req(
+            now - Duration::hours(26),
+            now - Duration::minutes(6),
+        );
+        assert_eq!(
+            rer_analysis_inbox_route(&historical, now, 90_000),
+            RerAnalysisInboxRoute::Default
+        );
+
+        let mut other_page = recent;
+        other_page.page_id = Some("rer-duty-neo".to_string());
+        assert_eq!(
+            rer_analysis_inbox_route(&other_page, now, 90_000),
+            RerAnalysisInboxRoute::Default
+        );
+    }
+
+    #[test]
+    fn rer_analysis_fresh_tail_scales_with_analytics_freshness() {
+        let now = NaiveDate::from_ymd_opt(2026, 8, 12)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let within_eight_minutes = rer_analysis_req(
+            now - Duration::hours(24),
+            now - Duration::minutes(7),
+        );
+        assert_eq!(
+            rer_analysis_inbox_route(&within_eight_minutes, now, 240_000),
+            RerAnalysisInboxRoute::PostgresRecent
+        );
+
+        let outside_eight_minutes = rer_analysis_req(
+            now - Duration::hours(24),
+            now - Duration::minutes(9),
+        );
+        assert_eq!(
+            rer_analysis_inbox_route(&outside_eight_minutes, now, 240_000),
+            RerAnalysisInboxRoute::Default
+        );
+    }
+
+    #[test]
+    fn hybrid_candidates_include_fresh_postgres_ids_and_revalidate() {
         let ids = merge_inbox_candidate_ids(vec![5, 4, 3], vec![6, 5, 4]);
         assert_eq!(ids, vec![5, 4, 3, 6]);
         assert!(analytics_candidate_revalidation_is_complete(
@@ -3050,11 +3324,49 @@ mod tests {
             &[(3, "three"), (4, "four"), (5, "five")],
             &ids,
         ));
+    }
 
-        let mut rows = (1..=INBOX_MESSAGES_PAGE_LIMIT + 3).collect::<Vec<_>>();
-        retain_latest_inbox_page(&mut rows);
+    #[test]
+    fn hybrid_page_limit_preserves_response_ordering() {
+        let rows = (1..=INBOX_MESSAGES_PAGE_LIMIT + 3).collect::<Vec<_>>();
+
+        let mut latest_rows = rows.clone();
+        retain_hybrid_inbox_page(
+            &mut latest_rows,
+            &InboxMessagesReq {
+                load_latest: Some(true),
+                ..Default::default()
+            },
+        );
         assert_eq!(
-            rows,
+            latest_rows,
+            (4..=INBOX_MESSAGES_PAGE_LIMIT + 3).collect::<Vec<_>>()
+        );
+
+        let mut newest_first_rows = rows.clone();
+        retain_hybrid_inbox_page(
+            &mut newest_first_rows,
+            &InboxMessagesReq {
+                newest_first: Some(true),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            newest_first_rows,
+            (1..=INBOX_MESSAGES_PAGE_LIMIT).collect::<Vec<_>>()
+        );
+
+        let mut ascending_before_cursor_rows = rows;
+        retain_hybrid_inbox_page(
+            &mut ascending_before_cursor_rows,
+            &InboxMessagesReq {
+                before_id_noninclusive: Some(100),
+                newest_first: Some(false),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            ascending_before_cursor_rows,
             (4..=INBOX_MESSAGES_PAGE_LIMIT + 3).collect::<Vec<_>>()
         );
     }

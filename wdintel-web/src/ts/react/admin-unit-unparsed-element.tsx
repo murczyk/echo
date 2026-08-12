@@ -1,7 +1,7 @@
 import { createRoot, Root } from 'react-dom/client';
 
 import { NeoMuiThemeProvider } from './mui-theme';
-import { AdminUnitUnparsedPage } from './routes/admin-unit-unparsed';
+import { AdminUnitsPage } from './routes/admin-units';
 
 function getAuthUserRoles(element: Element): string[] {
   const raw =
@@ -24,7 +24,7 @@ class AdminUnitUnparsedElement extends HTMLElement {
   private renderRoot() {
     this.root?.render(
       <NeoMuiThemeProvider>
-        <AdminUnitUnparsedPage authUserRoles={getAuthUserRoles(this)} />
+        <AdminUnitsPage authUserRoles={getAuthUserRoles(this)} initialTab="unparsed" />
       </NeoMuiThemeProvider>,
     );
   }

@@ -13,7 +13,9 @@ use crate::messenger::group::{collect_groups, CollectGroupsOpts};
 use crate::palitra::bl::collect_accessible_palitra_ids;
 use crate::rer_importer::collect_profiles_data;
 use crate::rer_importer::highlight::*;
-use crate::rer_importer::inbox::query::build_inbox_query;
+use crate::rer_importer::inbox::query::{
+    build_inbox_query, inbox_results_reverse_query_order,
+};
 use crate::rer_importer::signals::*;
 use crate::storage::mk_media_url;
 use crate::types::*;
@@ -568,11 +570,7 @@ pub async fn aggregate_to_inbox_messages(
         ));
     }
 
-    if req.load_latest == Some(true)
-        || (req.load_latest != Some(true)
-            && req.newest_first != Some(true)
-            && req.before_id_noninclusive.is_some())
-    {
+    if inbox_results_reverse_query_order(req) {
         res.reverse();
     }
 

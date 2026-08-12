@@ -71,6 +71,12 @@ pub async fn unit_details(
         Err(AppError::Forbidden(_)) => false,
         Err(err) => return Err(err),
     };
+    let can_edit_unit_labels = can_edit_units
+        && match ensure_admin(&env.dbx, &user).await {
+            Ok(()) => true,
+            Err(AppError::Forbidden(_)) => false,
+            Err(err) => return Err(err),
+        };
     let can_link_orbit_unit = can_view_orbit
         && can_edit_units
         && orbit_units.is_empty()
@@ -89,7 +95,7 @@ pub async fn unit_details(
         orbit_units,
         can_link_orbit_unit,
         can_create_device_network,
-        can_edit_unit_labels: can_edit_units,
+        can_edit_unit_labels,
     }))
 }
 

@@ -4,17 +4,20 @@ import { useDeviceFileCounts } from './use-device-file-counts';
 import { useDeviceFileTree } from './use-device-file-tree';
 import { useDeviceFilesLoad } from './use-device-files.load';
 import { useDeviceFilesSync } from './use-device-files.sync';
+import type { DeviceAnalyticsTagFilter } from './types';
 
 export function useDeviceFiles({
   deviceId,
   enabled,
   canSync,
+  tagFilter,
 }: {
   deviceId: string;
   enabled: boolean;
   canSync: boolean;
+  tagFilter: DeviceAnalyticsTagFilter;
 }) {
-  const load = useDeviceFilesLoad({ deviceId, enabled });
+  const load = useDeviceFilesLoad({ deviceId, enabled, tagFilter });
   const counts = useDeviceFileCounts({ deviceId, enabled });
   const enqueueLoadedDirectories = useCallback(
     (parentEntryId: string, directoryEntryIds: string[]) =>
@@ -26,6 +29,7 @@ export function useDeviceFiles({
     enabled,
     roots: load.roots,
     onDirectoryMissing: load.handleDirectoryMissing,
+    tagFilter,
     onDirectoriesLoaded: enqueueLoadedDirectories,
   });
   useEffect(() => {

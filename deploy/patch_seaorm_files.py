@@ -5,16 +5,36 @@ from pathlib import Path
 import sys
 
 
-GENERATED_FIELD = '''    #[sea_orm(column_type = "custom(\\"ltree\\")")]
+GENERATED_FIELDS = (
+    '''    #[sea_orm(column_type = "custom(\\"ltree\\")")]
     pub hierarchy_path: String,
-'''
-PATCHED_FIELD = '''    #[sea_orm(
+''',
+    '''    #[sea_orm(
+        ignore,
+        column_type = "custom(\\"ltree\\")",
+        select_as = "text",
+        unique_key = "file_entry_hierarchy_uidx"
+    )]
+    pub hierarchy_path: String,
+''',
+)
+PATCHED_FIELDS = (
+    '''    #[sea_orm(
         column_type = "custom(\\"ltree\\")",
         select_as = "text",
         save_as = "ltree"
     )]
     pub hierarchy_path: String,
-'''
+''',
+    '''    #[sea_orm(
+        column_type = "custom(\\"ltree\\")",
+        select_as = "text",
+        save_as = "ltree",
+        unique_key = "file_entry_hierarchy_uidx"
+    )]
+    pub hierarchy_path: String,
+''',
+)
 
 
 def fail(message: str) -> None:
@@ -37,12 +57,17 @@ def patch_file_entry(entity_dir: Path) -> None:
             f"found {field_count}"
         )
 
-    generated_count = source.count(GENERATED_FIELD)
-    patched_count = source.count(PATCHED_FIELD)
-    if generated_count == 1 and patched_count == 0:
-        file_entry.write_text(source.replace(GENERATED_FIELD, PATCHED_FIELD, 1))
+    generated_matches = [
+        (generated, patched)
+        for generated, patched in zip(GENERATED_FIELDS, PATCHED_FIELDS)
+        if source.count(generated) == 1
+    ]
+    patched_count = sum(source.count(field) for field in PATCHED_FIELDS)
+    if len(generated_matches) == 1 and patched_count == 0:
+        generated, patched = generated_matches[0]
+        file_entry.write_text(source.replace(generated, patched, 1))
         return
-    if generated_count == 0 and patched_count == 1:
+    if not generated_matches and patched_count == 1:
         return
     fail(
         "file_entry.rs has an unexpected hierarchy_path annotation; expected exactly "

@@ -80,6 +80,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
       </div>
     </header>
 
+    <p id="actionError" class="hidden rounded-md border border-red-900 bg-red-950/50 px-4 py-3 text-sm text-red-300" role="alert"></p>
+
     <nav class="flex gap-2 border-b border-zinc-800" aria-label="Розділи">
       <button id="integrationsTabBtn" class="border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100" type="button">Інтеграції</button>
       <button id="automationsTabBtn" class="border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100" type="button">Автоматизації</button>
@@ -418,6 +420,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     const automationEditFormMsg = document.getElementById('automationEditFormMsg');
     const polygonEditDialog = document.getElementById('polygonEditDialog');
     const polygonEditFormMsg = document.getElementById('polygonEditFormMsg');
+    const actionError = document.getElementById('actionError');
     const phoneInput = document.getElementById('phoneInput');
     const phoneError = document.getElementById('phoneError');
     const qrDialog = document.getElementById('qrDialog');
@@ -460,13 +463,78 @@ const INDEX_HTML: &str = r#"<!doctype html>
       return `${window.location.origin}${appUrl(`/api/${name}`)}`;
     }
 
+    function httpErrorMessage(status) {
+      const messages = {
+        400: 'Перевірте введені дані та повторіть спробу.',
+        401: 'Увійдіть у систему та повторіть спробу.',
+        403: 'У вас немає дозволу на цю дію. Зверніться до адміністратора.',
+        404: 'Запитані дані не знайдено. Оновіть сторінку та повторіть спробу.',
+        409: 'Дані змінилися або вже використовуються. Оновіть сторінку, перевірте вибір і повторіть спробу.',
+        422: 'Не вдалося обробити введені дані. Перевірте їх і повторіть спробу.',
+        429: 'Забагато запитів. Зачекайте трохи та повторіть спробу.',
+        500: 'Не вдалося виконати дію через внутрішню помилку. Повторіть спробу пізніше. Якщо помилка не зникне, зверніться до адміністратора.',
+        502: 'Зовнішній сервіс повернув некоректну відповідь. Повторіть спробу пізніше.',
+        503: 'Сервіс тимчасово недоступний. Зачекайте трохи та повторіть спробу.',
+        504: 'Сервіс не відповів вчасно. Зачекайте трохи та повторіть спробу.',
+      };
+      return messages[status] || `Не вдалося виконати запит (HTTP ${status}). Повторіть спробу.`;
+    }
+
+    async function responseError(rsp) {
+      const contentType = rsp.headers.get('content-type') || '';
+      let payload = null;
+      if (contentType.includes('application/json')) {
+        try {
+          payload = await rsp.json();
+        } catch (_) {
+          payload = null;
+        }
+      }
+      const hasSafeMessage = payload
+        && typeof payload.code === 'string'
+        && typeof payload.message === 'string'
+        && payload.message.trim() !== '';
+      const err = new Error(hasSafeMessage ? payload.message : httpErrorMessage(rsp.status));
+      err.status = rsp.status;
+      err.code = hasSafeMessage ? payload.code : `http_${rsp.status}`;
+      return err;
+    }
+
     async function request(url, options = {}) {
-      const rsp = await fetch(url, {
-        headers: { 'Content-Type': 'application/json' },
-        ...options,
-      });
-      if (!rsp.ok) throw new Error(await rsp.text());
-      return rsp.headers.get('content-type')?.includes('application/json') ? rsp.json() : null;
+      let rsp;
+      try {
+        rsp = await fetch(url, {
+          headers: { 'Content-Type': 'application/json' },
+          ...options,
+        });
+      } catch (_) {
+        const err = new Error('Не вдалося з’єднатися із сервером. Перевірте мережеве з’єднання та повторіть спробу.');
+        err.status = 0;
+        err.code = 'network_error';
+        throw err;
+      }
+      if (!rsp.ok) throw await responseError(rsp);
+      if (!rsp.headers.get('content-type')?.includes('application/json')) return null;
+      try {
+        return await rsp.json();
+      } catch (_) {
+        const err = new Error('Сервер повернув некоректні дані. Повторіть спробу пізніше. Якщо помилка не зникне, зверніться до адміністратора.');
+        err.status = rsp.status;
+        err.code = 'invalid_response';
+        throw err;
+      }
+    }
+
+    function clearActionError() {
+      actionError.textContent = '';
+      actionError.classList.add('hidden');
+    }
+
+    function showActionError(err) {
+      actionError.textContent = typeof err?.code === 'string'
+        ? err.message
+        : 'Не вдалося виконати дію. Повторіть спробу. Якщо помилка не зникне, зверніться до адміністратора.';
+      actionError.classList.remove('hidden');
     }
 
     function normalizedPhone(value) {
@@ -504,9 +572,15 @@ const INDEX_HTML: &str = r#"<!doctype html>
     }
 
     async function load() {
-      await loadGlobalPause();
-      await loadAutomationAccounts();
-      await loadAutomationGroups();
+      clearActionError();
+      try {
+        await loadGlobalPause();
+        await loadAutomationAccounts();
+        await loadAutomationGroups();
+      } catch (err) {
+        showActionError(err);
+        return;
+      }
       await loadPolygons();
       await loadAutomations();
       list.innerHTML = '<div class="p-4 text-sm text-zinc-400">Завантаження...</div>';
@@ -1550,75 +1624,89 @@ const INDEX_HTML: &str = r#"<!doctype html>
     polygonList.addEventListener('click', async (event) => {
       const button = event.target.closest('button');
       if (!button) return;
-      const editId = button.dataset.polygonEdit;
-      const deleteId = button.dataset.polygonDelete;
-      if (editId) {
-        openPolygonEdit(editId);
-      }
-      if (deleteId) {
-        if (!confirm('Видалити район інтересу?')) return;
-        await request(appUrl(`/ui-api/polygons/${deleteId}`), { method: 'DELETE' });
-        await loadPolygons();
-        await loadAutomations();
+      clearActionError();
+      try {
+        const editId = button.dataset.polygonEdit;
+        const deleteId = button.dataset.polygonDelete;
+        if (editId) {
+          openPolygonEdit(editId);
+        }
+        if (deleteId) {
+          if (!confirm('Видалити район інтересу?')) return;
+          await request(appUrl(`/ui-api/polygons/${deleteId}`), { method: 'DELETE' });
+          await loadPolygons();
+          await loadAutomations();
+        }
+      } catch (err) {
+        showActionError(err);
       }
     });
 
     automationList.addEventListener('click', async (event) => {
       const button = event.target.closest('button');
       if (!button) return;
-      const editId = button.dataset.automationEdit;
-      const pauseId = button.dataset.automationPause;
-      const deleteId = button.dataset.automationDelete;
-      if (editId) {
-        openAutomationEdit(editId);
-      }
-      if (pauseId) {
-        await request(appUrl(`/ui-api/automations/${pauseId}/pause`), {
-          method: 'POST',
-          body: JSON.stringify({ isPaused: button.dataset.paused !== 'true' }),
-        });
-        await loadAutomations();
-      }
-      if (deleteId) {
-        if (!confirm('Видалити автоматизацію?')) return;
-        await request(appUrl(`/ui-api/automations/${deleteId}`), { method: 'DELETE' });
-        await loadAutomations();
+      clearActionError();
+      try {
+        const editId = button.dataset.automationEdit;
+        const pauseId = button.dataset.automationPause;
+        const deleteId = button.dataset.automationDelete;
+        if (editId) {
+          openAutomationEdit(editId);
+        }
+        if (pauseId) {
+          await request(appUrl(`/ui-api/automations/${pauseId}/pause`), {
+            method: 'POST',
+            body: JSON.stringify({ isPaused: button.dataset.paused !== 'true' }),
+          });
+          await loadAutomations();
+        }
+        if (deleteId) {
+          if (!confirm('Видалити автоматизацію?')) return;
+          await request(appUrl(`/ui-api/automations/${deleteId}`), { method: 'DELETE' });
+          await loadAutomations();
+        }
+      } catch (err) {
+        showActionError(err);
       }
     });
 
     list.addEventListener('click', async (event) => {
       const button = event.target.closest('button');
       if (!button) return;
+      clearActionError();
+      try {
+        const linkName = button.dataset.link;
+        const unlinkName = button.dataset.unlink;
+        const copyName = button.dataset.copy;
+        const deleteName = button.dataset.delete;
+        const pauseName = button.dataset.pause;
 
-      const linkName = button.dataset.link;
-      const unlinkName = button.dataset.unlink;
-      const copyName = button.dataset.copy;
-      const deleteName = button.dataset.delete;
-      const pauseName = button.dataset.pause;
-
-      if (pauseName) {
-        await request(appUrl(`/ui-api/messengers/${pauseName}/pause`), {
-          method: 'POST',
-          body: JSON.stringify({ isPaused: button.dataset.paused !== 'true' }),
-        });
-        await load();
+        if (pauseName) {
+          await request(appUrl(`/ui-api/messengers/${pauseName}/pause`), {
+            method: 'POST',
+            body: JSON.stringify({ isPaused: button.dataset.paused !== 'true' }),
+          });
+          await load();
+        }
+        if (copyName) {
+          await navigator.clipboard.writeText(apiBase(copyName));
+          button.innerHTML = checkIcon();
+          setTimeout(() => button.innerHTML = copyIcon(), 1200);
+        }
+        if (deleteName) {
+          if (!confirm(`Видалити месенджер ${messengerDisplayName(deleteName)}?`)) return;
+          await request(appUrl(`/ui-api/messengers/${deleteName}`), { method: 'DELETE' });
+          await load();
+        }
+        if (unlinkName) {
+          if (!confirm(`Відключити месенджер ${messengerDisplayName(unlinkName)}?`)) return;
+          await request(appUrl(`/ui-api/messengers/${unlinkName}/unlink`), { method: 'POST' });
+          await load();
+        }
+        if (linkName) openQr(linkName);
+      } catch (err) {
+        showActionError(err);
       }
-      if (copyName) {
-        await navigator.clipboard.writeText(apiBase(copyName));
-        button.innerHTML = checkIcon();
-        setTimeout(() => button.innerHTML = copyIcon(), 1200);
-      }
-      if (deleteName) {
-        if (!confirm(`Видалити месенджер ${messengerDisplayName(deleteName)}?`)) return;
-        await request(appUrl(`/ui-api/messengers/${deleteName}`), { method: 'DELETE' });
-        await load();
-      }
-      if (unlinkName) {
-        if (!confirm(`Відключити месенджер ${messengerDisplayName(unlinkName)}?`)) return;
-        await request(appUrl(`/ui-api/messengers/${unlinkName}/unlink`), { method: 'POST' });
-        await load();
-      }
-      if (linkName) openQr(linkName);
     });
 
     function updatePolygonAvailability() {
@@ -1724,11 +1812,17 @@ const INDEX_HTML: &str = r#"<!doctype html>
         const rsp = await request(appUrl(`/ui-api/messengers/${name}/link`), { method: 'POST' });
         qrBox.innerHTML = `<img class="max-h-72 max-w-full" src="${rsp.qrCodeBase64}" alt="QR code" />`;
         pollTimer = setInterval(async () => {
-          const status = await request(appUrl(`/ui-api/messengers/${name}/status`));
-          if (status.isLinked) {
+          try {
+            const status = await request(appUrl(`/ui-api/messengers/${name}/status`));
+            if (!status.isLinked) return;
             clearInterval(pollTimer);
             qrStatus.textContent = 'Підключено.';
             await load();
+          } catch (err) {
+            clearInterval(pollTimer);
+            qrBox.textContent = err.message;
+            qrStatus.textContent = 'Не вдалося перевірити підключення.';
+            refreshQr.disabled = false;
           }
         }, 3000);
       } catch (err) {
@@ -1749,11 +1843,16 @@ const INDEX_HTML: &str = r#"<!doctype html>
       qrDialog.close();
     });
     globalPauseBtn.addEventListener('click', async () => {
-      await request(appUrl('/ui-api/sync-pause'), {
-        method: 'POST',
-        body: JSON.stringify({ isPaused: !globalPaused }),
-      });
-      await load();
+      clearActionError();
+      try {
+        await request(appUrl('/ui-api/sync-pause'), {
+          method: 'POST',
+          body: JSON.stringify({ isPaused: !globalPaused }),
+        });
+        await load();
+      } catch (err) {
+        showActionError(err);
+      }
     });
     document.getElementById('refreshBtn').addEventListener('click', load);
     document.getElementById('integrationsTabBtn').addEventListener('click', () => setActiveTab('integrations'));

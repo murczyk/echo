@@ -9,7 +9,7 @@ import {
   buildBrowseDeviceFilesReq,
   toDeviceFileLoadError,
 } from './helpers';
-import type { DeviceFileLoadError } from './types';
+import type { DeviceAnalyticsTagFilter, DeviceFileLoadError } from './types';
 
 export type DeviceFileTreeBranch = {
   entries: DeviceFileTreeEntry[];
@@ -47,12 +47,14 @@ export function useDeviceFileTree({
   deviceId,
   enabled,
   roots,
+  tagFilter,
   onDirectoryMissing,
   onDirectoriesLoaded,
 }: {
   deviceId: string;
   enabled: boolean;
   roots: DeviceFileRoot[];
+  tagFilter: DeviceAnalyticsTagFilter;
   onDirectoryMissing: (entryId: string) => void;
   onDirectoriesLoaded: (parentEntryId: string, directoryEntryIds: string[]) => void;
 }) {
@@ -65,10 +67,13 @@ export function useDeviceFileTree({
   const onDirectoriesLoadedRef = useRef(onDirectoriesLoaded);
   const requestsRef = useRef(new Map<string, BranchRequest>());
   const requestIdRef = useRef(0);
+  const tagFilterKey = JSON.stringify(tagFilter);
+  const tagFilterRef = useRef(tagFilter);
 
   rootsRef.current = roots;
   onDirectoryMissingRef.current = onDirectoryMissing;
   onDirectoriesLoadedRef.current = onDirectoriesLoaded;
+  tagFilterRef.current = tagFilter;
 
   const updateBranch = useCallback(
     (entryId: string, update: (branch: DeviceFileTreeBranch) => DeviceFileTreeBranch) => {
@@ -113,7 +118,12 @@ export function useDeviceFileTree({
 
       try {
         const rsp = await browseDeviceFiles(
-          buildBrowseDeviceFilesReq({ deviceId, parentEntryId, cursor }),
+          buildBrowseDeviceFilesReq({
+            deviceId,
+            parentEntryId,
+            cursor,
+            tagFilter: tagFilterRef.current,
+          }),
           { signal: controller.signal },
         );
         const activeRequest = requestsRef.current.get(parentEntryId);
@@ -156,7 +166,7 @@ export function useDeviceFileTree({
         }
       }
     },
-    [deviceId, enabled, updateBranch],
+    [deviceId, enabled, tagFilterKey, updateBranch],
   );
 
   const toggleDirectory = useCallback(

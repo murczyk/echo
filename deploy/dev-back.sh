@@ -78,14 +78,80 @@ ensure_pid_dir() {
     mkdir -p "$(dirname "$pidfile")"
 }
 
+# cargo / cargo-watch often move the server binary into its own process group,
+# so killing only the session leader's group leaves wdintel-rs running after Ctrl+C.
+list_descendant_pids() {
+    local pid="$1"
+    local child
+
+    for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+        list_descendant_pids "$child"
+        printf '%s\n' "$child"
+    done
+}
+
+unique_pids() {
+    printf '%s\n' "$@" | awk 'NF && !seen[$0]++'
+}
+
+signal_pid_and_group() {
+    local signal="$1"
+    local pid="$2"
+
+    kill "-$signal" -- "-$pid" 2>/dev/null || true
+    kill "-$signal" "$pid" 2>/dev/null || true
+}
+
+stop_pids_and_groups() {
+    local signal_wait_seconds="${1:-1}"
+    shift
+    local id
+    local ids
+
+    ids="$(unique_pids "$@")"
+    [ -n "$ids" ] || return 0
+
+    for id in $ids; do
+        signal_pid_and_group TERM "$id"
+    done
+    # Signal delivery can interrupt sleep; never fail the stop path under `set -e`.
+    sleep "$signal_wait_seconds" || true
+    for id in $ids; do
+        signal_pid_and_group KILL "$id"
+    done
+}
+
 stop_pid_and_group() {
     local pid="$1"
+    local ids
+    local id
 
-    kill -TERM -- "-$pid" 2>/dev/null || true
-    kill -TERM "$pid" 2>/dev/null || true
-    sleep 1
-    kill -KILL -- "-$pid" 2>/dev/null || true
-    kill -KILL "$pid" 2>/dev/null || true
+    ids="$(list_descendant_pids "$pid"; printf '%s\n' "$pid")"
+    ids="$(unique_pids $ids)"
+
+    for id in $ids; do
+        signal_pid_and_group TERM "$id"
+    done
+    # Signal delivery can interrupt sleep; never fail the stop path under `set -e`.
+    sleep 1 || true
+
+    # Re-scan: cargo-watch may respawn the binary in a new process group after TERM.
+    ids="$(unique_pids $ids $(list_descendant_pids "$pid") "$pid")"
+    for id in $ids; do
+        signal_pid_and_group KILL "$id"
+    done
+}
+
+# Linux has `setsid`; macOS does not. Prefer setsid, else perl POSIX::setsid.
+# IMPORTANT: this must `exec` so that `start_detached ... &` replaces the bash
+# function subshell. Otherwise the subshell stays in the terminal process group,
+# dies on Ctrl+C, and cleanup can no longer find/kill cargo's detached server.
+start_detached() {
+    if command -v setsid >/dev/null 2>&1; then
+        exec setsid "$@"
+    else
+        exec perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- "$@"
+    fi
 }
 
 pid_exists() {
@@ -139,41 +205,56 @@ is_expected_process() {
     return 1
 }
 
+collect_expected_backend_pids() {
+    local pid
+    local self_pid=$$
+
+    # Avoid `pgrep -f -- --mode=...`: macOS pgrep treats leading dashes as options.
+    for pid in $(pgrep -f 'mode=debug server --no-bgworker' 2>/dev/null || true); do
+        if [ "$pid" = "$self_pid" ]; then
+            continue
+        fi
+        if is_expected_process "$pid"; then
+            printf '%s\n' "$pid"
+        fi
+    done
+}
+
 stop_port_listener_fallback() {
     local pid
+    local pids=""
 
     for pid in $(lsof -tiTCP:"$server_port" -sTCP:LISTEN 2>/dev/null || true); do
         if is_expected_process "$pid"; then
-            stop_pid_and_group "$pid"
+            pids="$pids $pid"
         else
             echo "refusing to kill unexpected process $pid listening on port $server_port" >&2
         fi
     done
+
+    stop_pids_and_groups 1 $pids
+}
+
+stop_orphaned_expected_processes() {
+    local pids
+
+    pids="$(unique_pids $(collect_expected_backend_pids))"
+    stop_pids_and_groups 1 $pids
 }
 
 stop_existing_server() {
     local pid
 
-    if [ ! -f "$pidfile" ]; then
-        stop_port_listener_fallback
-        return 0
-    fi
-
-    pid="$(cat "$pidfile" 2>/dev/null || true)"
-    if [ -z "$pid" ]; then
+    if [ -f "$pidfile" ]; then
+        pid="$(cat "$pidfile" 2>/dev/null || true)"
+        if [ -n "$pid" ] && is_expected_process "$pid"; then
+            stop_pid_and_group "$pid"
+        fi
         rm -f "$pidfile"
-        stop_port_listener_fallback
-        return 0
     fi
 
-    if is_expected_process "$pid"; then
-        stop_pid_and_group "$pid"
-        rm -f "$pidfile"
-        return 0
-    fi
-
-    rm -f "$pidfile"
     stop_port_listener_fallback
+    stop_orphaned_expected_processes
 }
 
 server_is_ready() {
@@ -231,7 +312,8 @@ run_server() {
         echo "starting backend in quiet mode on port ${server_port}; successful HTTP access logs are hidden" >&2
 
         : > "$server_logfile"
-        setsid env REPO_ROOT="$repo_root" bash -lc "$cmd" bash "${server_args[@]}" > "$server_logfile" 2>&1 &
+        # macOS bash 3.2 + `set -u`: expanding an empty `${array[@]}` is an error.
+        start_detached env REPO_ROOT="$repo_root" bash -lc "$cmd" bash ${server_args[@]+"${server_args[@]}"} > "$server_logfile" 2>&1 &
         pid=$!
         follow_server_log="true"
     else
@@ -241,16 +323,22 @@ run_server() {
 
         echo "starting backend on port ${server_port}..." >&2
 
-        setsid env REPO_ROOT="$repo_root" bash -lc "$cmd" bash "${server_args[@]}" &
+        start_detached env REPO_ROOT="$repo_root" bash -lc "$cmd" bash ${server_args[@]+"${server_args[@]}"} &
         pid=$!
     fi
 
     echo "$pid" > "$pidfile"
 
-    monitor_server_readiness "$pid" &
+    # Keep readiness monitor out of the tty SIGINT process group side-effects.
+    (
+        trap '' INT
+        monitor_server_readiness "$pid"
+    ) &
     readiness_monitor_pid=$!
 
     cleanup() {
+        # Ensure Ctrl+C / HUP mid-cleanup cannot abort via `set -e` (e.g. interrupted sleep).
+        set +e
         if [ -n "$server_log_tail_pid" ]; then
             kill "$server_log_tail_pid" 2>/dev/null || true
             wait "$server_log_tail_pid" 2>/dev/null || true
@@ -259,16 +347,25 @@ run_server() {
             kill "$readiness_monitor_pid" 2>/dev/null || true
             wait "$readiness_monitor_pid" 2>/dev/null || true
         fi
-        if is_expected_process "$pid"; then
+        if pid_exists "$pid"; then
             stop_pid_and_group "$pid"
         fi
-        rm -f "$pidfile"
+        # Only remove the pidfile if it still points at this instance (a replacement
+        # `dev-back` may have already claimed it).
+        if [ -f "$pidfile" ]; then
+            if [ "$(cat "$pidfile" 2>/dev/null || true)" = "$pid" ]; then
+                rm -f "$pidfile"
+            fi
+        fi
     }
 
-    trap cleanup EXIT INT TERM
+    trap cleanup EXIT INT TERM HUP
 
     if [ "$follow_server_log" = "true" ]; then
-        tail -n +1 -f "$server_logfile" &
+        (
+            trap '' INT
+            tail -n +1 -f "$server_logfile"
+        ) &
         server_log_tail_pid=$!
     fi
 

@@ -390,6 +390,33 @@ fn spawn_goi_sync_worker_pool(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
     }
 }
 
+fn spawn_device_file_analytics_worker_pool(
+    bg_set: &mut JoinSet<()>,
+    env: Arc<Env>,
+    cancellation_token: CancellationToken,
+) {
+    let rule_cache =
+        Arc::new(crate::devices::analytics::worker::RuleCache::default());
+    for worker_index in 0..crate::devices::analytics::WORKER_COUNT {
+        let env = env.clone();
+        let cancellation_token = cancellation_token.clone();
+        let rule_cache = rule_cache.clone();
+        spawn_named_worker(
+            format!("device_file_analytics_worker_{worker_index}"),
+            bg_set,
+            async move {
+                crate::devices::analytics::worker::run_nofail(
+                    env,
+                    cancellation_token,
+                    rule_cache,
+                    crate::devices::analytics::BATCH_SIZE,
+                )
+                .await;
+            },
+        );
+    }
+}
+
 fn spawn_palitra_conversion_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
     spawn_named_worker("palitra_conversion_worker", bg_set, async move {
         crate::palitra::conversion_worker::palitra_conversion_worker_nofail(
@@ -630,6 +657,13 @@ fn spawn_background_workers(
                 )
                 .await;
             },
+        );
+    }
+    if env.file_registry_db.is_some() {
+        spawn_device_file_analytics_worker_pool(
+            bg_set,
+            env.clone(),
+            cancel_token.clone(),
         );
     }
     spawn_palitra_conversion_worker(bg_set, env);
@@ -903,6 +937,19 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::files::search)
             .service(crate::devices::files::journal)
             .service(crate::devices::files::sync)
+            .service(crate::devices::analytics::list_tags)
+            .service(crate::devices::analytics::create_tag)
+            .service(crate::devices::analytics::update_tag)
+            .service(crate::devices::analytics::archive_tag)
+            .service(crate::devices::analytics::restore_tag)
+            .service(crate::devices::analytics::save_tag_rule)
+            .service(crate::devices::analytics::list_tag_test_files)
+            .service(crate::devices::analytics::test_tag_rule)
+            .service(crate::devices::analytics::reanalyze_all)
+            .service(crate::devices::analytics::reanalyze_device)
+            .service(crate::devices::analytics::device_tags)
+            .service(crate::devices::analytics::device_summary)
+            .service(crate::devices::analytics::device_files)
             .service(crate::organism::goi::integrations::list_admin_goi_integrations)
             .service(crate::organism::goi::integrations::get_admin_goi_integration)
             .service(crate::organism::goi::integrations::upsert_admin_goi_integration)
@@ -954,7 +1001,12 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(
                 crate::inbox::unresolved_units::classify_unresolved_unit_label,
             )
-            .service(crate::inbox::unresolved_units::search_orbit_units)
+            .service(
+                crate::inbox::unresolved_units::archive_unresolved_unit_label,
+            )
+            .service(
+                crate::inbox::unresolved_units::update_unresolved_unit_label_note,
+            )
             .service(
                 crate::inbox::unresolved_units::resolve_unresolved_unit_label,
             )

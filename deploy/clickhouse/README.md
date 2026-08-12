@@ -518,6 +518,8 @@ decoding and PostgreSQL query semantics consistent with the source database.
 
 The analysis result, facet, and dedicated facet-count endpoints use this path:
 
+- `/api/rer-importer/get-inbox` for closed RER analysis ranges and the
+  historical portion of long live ranges;
 - `/api/rer-importer/get-inbox-count`
 - `/api/rer/analysis/stats/count`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}`
@@ -539,6 +541,16 @@ Existing five-minute aggregate generation remains intact. Count dimension totals
 message-ID sets. Selected-callsign filters use pushed-down JSONB top-level
 existence predicates. Filter shapes without a verified ClickHouse pushdown,
 such as free-text search, use PostgreSQL directly.
+
+`/api/rer-importer/get-inbox` uses a stricter live-data policy than the
+eventually consistent endpoints below. RER analysis ranges shorter than 25
+hours and ending within `max(2 * freshness_max_age_ms, 5 minutes)` of the
+current time read from source PostgreSQL. Longer live ranges merge the
+ClickHouse candidate page with a source PostgreSQL candidate page restricted
+to that fresh overlap, then deduplicate, hydrate, revalidate, order, and limit
+the merged IDs on source PostgreSQL. Any analytics, tail, or revalidation
+failure retries the complete message query on PostgreSQL. Other callers retain
+their existing routing.
 
 ## WAL retention and recovery
 
@@ -745,6 +757,16 @@ deadline is 300 seconds and can be changed with
 `wdintel-rs migrate` refuses to run while the packaged and deployed exclusion
 sets differ; use `source-sync-exclusions-if-needed.sh --yes` first.
 
+Post-migration verification recognizes transient PostgreSQL deadlocks, tuple
+update conflicts, reconciliation-lock contention, and DDL lock timeouts. It
+makes up to five attempts at 30-second intervals before failing the deployment.
+An unrecognized failure stops immediately. If all transient
+attempts fail, the deployment prints a prominent banner, the latest service
+log, and asks for one retry after two minutes; a further failure requires
+investigation rather than repeated deployment attempts. Override the bounded
+retry only through `ANALYTICS_RECONCILE_DEPLOY_RETRY_ATTEMPTS` and
+`ANALYTICS_RECONCILE_DEPLOY_RETRY_DELAY_SECONDS` in `source.env`.
+
 Migration pull requests are checked against
 `migration-impact.json`. New tables declare `excluded` or
 `replicated_snapshot`; additive replicated columns declare `cdc_backfill` with
@@ -894,7 +916,8 @@ continuing.
 ## Consistency and type limits
 
 The target is eventually consistent; 5–60 seconds of lag is acceptable for
-analytical counters, facets, and reports. `FINAL` produces current rows but is more expensive than
+analytical counters, facets, and reports, but not for the live RER analysis
+message list covered by the source-tail policy above. `FINAL` produces current rows but is more expensive than
 querying raw MergeTree parts. Validate pushdown with PostgreSQL `EXPLAIN
 (VERBOSE)` before routing each report. PostgreSQL-side JSON and `tsvector`
 conversion prevents those expressions from being pushed into ClickHouse, so

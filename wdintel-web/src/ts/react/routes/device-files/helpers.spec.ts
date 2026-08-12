@@ -26,6 +26,7 @@ const ROOT_ID = '018f0000-0000-7000-8000-000000000001';
 const ENTRY_ID = '018f0000-0000-7000-8000-000000000002';
 const FILE_ID = '018f0000-0000-7000-8000-000000000003';
 const NOW = '2026-07-24T08:00:00Z';
+const EMPTY_TAG_FILTER = { tagIds: [], tagMatch: 'any' as const, untagged: false };
 
 function buildEntry(overrides: Partial<DeviceFileTreeEntry> = {}): DeviceFileTreeEntry {
   return {
@@ -81,13 +82,21 @@ function buildFile(absolutePath = 'C:\\data\\звіт %.log'): DeviceFile {
 describe('device file request helpers', () => {
   it('builds direct-child browse requests without client path semantics', () => {
     expect(
-      buildBrowseDeviceFilesReq({ deviceId: DEVICE_ID, parentEntryId: ROOT_ID, cursor: 'next' }),
+      buildBrowseDeviceFilesReq({
+        deviceId: DEVICE_ID,
+        parentEntryId: ROOT_ID,
+        cursor: 'next',
+        tagFilter: EMPTY_TAG_FILTER,
+      }),
     ).toEqual({
       deviceId: DEVICE_ID,
       parentEntryId: ROOT_ID,
       includeBreadcrumbs: true,
       limit: 100,
       cursor: 'next',
+      tagIds: null,
+      tagMatch: null,
+      untagged: null,
     });
   });
 
@@ -96,6 +105,7 @@ describe('device file request helpers', () => {
       deviceId: DEVICE_ID,
       scopeEntryId: ROOT_ID,
       cursor: null,
+      tagFilter: EMPTY_TAG_FILTER,
       draft: {
         ...createDefaultFileSearchDraft(),
         nameQuery: '  %_\\  ',

@@ -1,7 +1,10 @@
 use crate::config::Config;
-use crate::error::ShortContext;
+use crate::error::{
+    bad_request, conflict, not_found, service_unavailable,
+    service_unavailable_with_source, ShortContext,
+};
 use crate::h;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use echo_im::entities::sea_orm_active_enums::{
     EchoMessageSource, SignalCliMode,
 };
@@ -218,7 +221,11 @@ pub async fn load(
     load_optional_owned(db, &owned_client_name(name))
         .await
         .c(h!())?
-        .with_context(|| format!("messenger not found: {name}"))
+        .ok_or_else(|| {
+            not_found(format!(
+                "Месенджер «{name}» не знайдено. Оновіть сторінку та повторіть спробу."
+            ))
+        })
         .c(h!())
 }
 
@@ -458,7 +465,9 @@ pub(crate) async fn enqueue(
     attachments: Vec<String>,
 ) -> Result<()> {
     if text.trim().is_empty() && attachments.is_empty() {
-        bail!("message or attachment is required");
+        return Err(bad_request(
+            "Вкажіть текст повідомлення або додайте вкладення.",
+        ));
     }
     let client_name = owned_client_name(name);
     echo_im::send_message(
@@ -478,7 +487,11 @@ pub(crate) async fn enqueue(
     )
     .await
     .c(h!())?
-    .context("messenger account is not linked")
+    .ok_or_else(|| {
+        conflict(
+            "Обліковий запис месенджера не підключено. Підключіть його та повторіть спробу.",
+        )
+    })
     .c(h!())?;
     Ok(())
 }
@@ -602,7 +615,9 @@ async fn available_public_name(
             return Ok(name);
         }
     }
-    bail!("unable to find available messenger name");
+    Err(conflict(
+        "Не вдалося підібрати унікальне ім’я месенджера. Змініть назву та повторіть спробу.",
+    ))
 }
 
 fn public_name_with_suffix(name: &str, suffix: usize) -> String {
@@ -688,7 +703,9 @@ async fn ensure_client_available(
         .await
         .c(h!())?;
     if existing.is_some() {
-        bail!("messenger already exists: {name}");
+        return Err(conflict(format!(
+            "Месенджер «{name}» уже існує. Виберіть іншу назву."
+        )));
     }
     Ok(())
 }
@@ -779,10 +796,11 @@ async fn wait_for_signal_client(kind: MessengerKind, port: i32) -> Result<()> {
             }
         }
     }
-    let err = last_err
-        .map(|err| err.to_string())
-        .unwrap_or_else(|| "unknown error".to_string());
-    bail!("signal service did not become ready on {addr}: {err}");
+    let message = "Сервіс Signal тимчасово недоступний. Зачекайте кілька секунд і повторіть спробу. Якщо помилка не зникне, зверніться до адміністратора.";
+    match last_err {
+        Some(err) => Err(service_unavailable_with_source(message, err)),
+        None => Err(service_unavailable(message)),
+    }
 }
 
 async fn start_client(
@@ -886,12 +904,14 @@ async fn restart_client_process(
 fn validate_name(name: &str) -> Result<()> {
     let re = Regex::new(r"^[a-z0-9][a-z0-9_-]{2,49}$").c(h!())?;
     if !re.is_match(name) {
-        bail!("name must be 3-50 lowercase latin letters, digits, hyphens, or underscores");
+        return Err(bad_request(
+            "Ім’я має містити 3–50 малих латинських літер, цифр, дефісів або підкреслень.",
+        ));
     }
     if name.starts_with(OWNED_CLIENT_PREFIX) {
-        bail!(
-            "name must not start with reserved prefix: {OWNED_CLIENT_PREFIX}"
-        );
+        return Err(bad_request(format!(
+            "Ім’я не може починатися із зарезервованого префікса {OWNED_CLIENT_PREFIX}."
+        )));
     }
     Ok(())
 }
@@ -989,7 +1009,9 @@ fn normalize_phone(phone: &str) -> Result<String> {
     };
     let re = Regex::new(r"^\+380\d{9}$").c(h!())?;
     if !re.is_match(&phone) {
-        bail!("phone must use +380XXXXXXXXX or 0XXXXXXXXX format");
+        return Err(bad_request(
+            "Введіть номер телефону у форматі +380XXXXXXXXX або 0XXXXXXXXX.",
+        ));
     }
     Ok(phone)
 }
