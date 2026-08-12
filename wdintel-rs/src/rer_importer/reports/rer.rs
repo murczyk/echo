@@ -1538,6 +1538,7 @@ mod tests {
             datasource_group_id: None,
             operator_tags: None,
             attachments_hash: None,
+            parent_signal_message_id: None,
         }
     }
 
@@ -2188,6 +2189,7 @@ mod tests {
             datasource_group_id: None,
             operator_tags: None,
             attachments_hash: None,
+            parent_signal_message_id: None,
         };
 
         assert_eq!(
@@ -2215,6 +2217,7 @@ mod tests {
             datasource_group_id: None,
             operator_tags: None,
             attachments_hash: None,
+            parent_signal_message_id: None,
         };
 
         assert_eq!(
@@ -2366,6 +2369,7 @@ mod tests {
             datasource_group_id: None,
             operator_tags: None,
             attachments_hash: None,
+            parent_signal_message_id: None,
         };
 
         assert_eq!(report_message_timestamp(&item, &message), Some(dt(8, 58)));
@@ -2414,6 +2418,7 @@ mod tests {
             datasource_group_id: None,
             operator_tags: None,
             attachments_hash: None,
+            parent_signal_message_id: None,
         };
 
         assert_eq!(report_message_timestamp(&item, &message), Some(dt(8, 58)));

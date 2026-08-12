@@ -908,6 +908,7 @@ async fn xlsx_import_process_one(
         message_uid: NotSet,
         operator_tags: NotSet,
         attachments_hash: NotSet,
+        parent_signal_message_id: NotSet,
     }
     .insert(dbx)
     .await

@@ -108,6 +108,7 @@ pub async fn process_signal_message_queue_item_with_options(
         message_uid: NotSet,
         operator_tags: NotSet,
         attachments_hash: Set(attachments_hash),
+        parent_signal_message_id: Set(None),
     }
     .insert(txn)
     .await
