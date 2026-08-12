@@ -169,7 +169,8 @@ async fn process_next(
     };
     let changed =
         complete_job(dbx, job.sigint_inbox_item_id, callsigns, callsign_tokens)
-            .await?;
+            .await
+            .c(h!())?;
     if changed {
         fanout_mult(
             redis,
