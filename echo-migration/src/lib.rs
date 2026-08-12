@@ -366,6 +366,7 @@ mod m20260811_064758_sigint_inbox_item_units;
 mod m20260811_073954_failed_inbox_unit_bad_text_index;
 mod m20260811_142447_failed_inbox_unit_note;
 mod m20260811_161634_failed_inbox_unit_multi_text;
+mod m20260812_113859_signal_message_copy;
 mod m20260812_115511_sigint_inbox_item_datetime_neo_indexes;
 
 pub struct Migrator;
@@ -838,6 +839,7 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260811_142447_failed_inbox_unit_note::Migration),
             Box::new(m20260811_161634_failed_inbox_unit_multi_text::Migration),
+            Box::new(m20260812_113859_signal_message_copy::Migration),
             Box::new(
                 m20260812_115511_sigint_inbox_item_datetime_neo_indexes::Migration,
             ),
