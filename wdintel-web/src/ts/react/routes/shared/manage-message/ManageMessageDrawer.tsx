@@ -84,6 +84,7 @@ export function ManageMessageDrawer(props: Props) {
       onClose={busy ? undefined : handleDrawerClose}
       sx={{ zIndex: 1200 }}
       ModalProps={{
+        closeAfterTransition: true,
         BackdropProps: {
           sx: (theme) => pageDrawerBackdropSx(theme),
         },

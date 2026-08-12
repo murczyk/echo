@@ -185,6 +185,7 @@ const autocompleteValuesByLabel = new Map<string, unknown>();
 const autocompleteInputValuesByLabel = new Map<string, string>();
 const autocompleteOptionLabelsByLabel = new Map<string, string[]>();
 const pickerValuesByLabel = new Map<string, unknown>();
+let drawerModalProps: { closeAfterTransition?: boolean } | undefined;
 
 function setRecentValues(values: Record<string, unknown>) {
   Object.defineProperty(globalThis, 'localStorage', {
@@ -229,8 +230,18 @@ vi.mock('@mui/material', () => ({
     const Component = component as keyof HTMLElementTagNameMap;
     return <Component>{children}</Component>;
   },
-  Drawer: ({ children, open }: { children?: ReactNode; open?: boolean }) =>
-    open ? <div role="dialog">{children}</div> : null,
+  Drawer: ({
+    children,
+    open,
+    ModalProps,
+  }: {
+    children?: ReactNode;
+    open?: boolean;
+    ModalProps?: { closeAfterTransition?: boolean };
+  }) => {
+    drawerModalProps = ModalProps;
+    return open ? <div role="dialog">{children}</div> : null;
+  },
   Button: ({
     children,
     type = 'button',
@@ -430,6 +441,7 @@ describe('ManageMessageDrawer edit mode', () => {
     autocompleteInputValuesByLabel.clear();
     autocompleteOptionLabelsByLabel.clear();
     pickerValuesByLabel.clear();
+    drawerModalProps = undefined;
     directSubmitMocks.submitDirect.mockReset();
     directSubmitMocks.submitDirect.mockResolvedValue({ signal_message_id: 1 });
     directSubmitMocks.editDirectSubmit.mockReset();
@@ -450,6 +462,22 @@ describe('ManageMessageDrawer edit mode', () => {
     referenceDataMocks.getGroupInfosBatch.mockResolvedValue([]);
     setRecentValues({});
     uppyMocks.latest = null;
+  });
+
+  it('restores focus before hiding the drawer from assistive technology', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+      );
+    });
+
+    expect(drawerModalProps?.closeAfterTransition).toBe(true);
+
+    root.unmount();
   });
 
   it('initializes shared create fields from recent values without applying suggestions as defaults', async () => {
