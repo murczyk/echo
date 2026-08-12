@@ -22,6 +22,7 @@ type FeedFilterSelectionViewModel<T> = {
   placeholder?: string;
   autocompleteClassName?: string;
   rankedSearch?: boolean;
+  keepOpenAndPreserveInputOnSelect?: boolean;
 };
 
 export type FeedFilterPanelViewModel = {
@@ -206,6 +207,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       getOptionLabel: (name: string) => name,
       getOptionKey: (name: string) => name,
       rankedSearch: true,
+      keepOpenAndPreserveInputOnSelect: true,
       placeholder: unitSelectionState.localValue.length === 0 ? unitEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1',
       unitsExactMatchOnly: unitsExactMatchOnly ?? false,

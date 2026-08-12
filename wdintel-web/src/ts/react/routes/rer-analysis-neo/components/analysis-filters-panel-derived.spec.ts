@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { SignalGroupEntry } from '../../../../../Bindings';
+import type { SignalGroupEntry, Unit } from '../../../../../Bindings';
 import { emptyQueryState } from '../helpers';
 import { buildAnalysisFiltersPanelDerivedData } from './analysis-filters-panel-derived';
 
@@ -106,6 +106,58 @@ describe('buildAnalysisFiltersPanelDerivedData', () => {
     });
 
     expect(derived.unitsOptions).toEqual([{ value: '', label: '<Не вказано>', count: 7 }]);
+  });
+
+  it('groups unit aliases under canonical catalog labels while retaining raw values', () => {
+    const derived = buildAnalysisFiltersPanelDerivedData({
+      aorEntries: [],
+      counts: null,
+      groupInfos: {},
+      options: {
+        tags: [],
+        aors: [],
+        groups: [],
+        senders: [],
+        freqs: [],
+        newFreqs: [],
+        callsigns: [],
+        units: [
+          { value: '58 а', label: '58 а', count: 2 },
+          { value: '58 ЗА', label: '58 ЗА', count: 3 },
+          { value: '58 зва', label: '58 зва', count: 5 },
+          { value: '136 ОМСБР', label: '136 ОМСБР', count: 7 },
+          { value: '136 омсбр', label: '136 омсбр', count: 11 },
+        ],
+        locations: [],
+        posts: [],
+        networks: [],
+        metadataCcs: [],
+        metadataSenders: [],
+        metadataReceivers: [],
+        metadataHashes: [],
+      },
+      queryState: emptyQueryState(),
+      tagsMap: {},
+      unitsMap: {
+        1: { id: 1, name: '58 А' } as Unit,
+        2: { id: 2, name: '136 омсбр' } as Unit,
+      },
+    });
+
+    expect(derived.unitsOptions).toEqual([
+      {
+        value: '58 А',
+        label: '58 А',
+        count: 10,
+        values: ['58 а', '58 ЗА', '58 зва'],
+      },
+      {
+        value: '136 омсбр',
+        label: '136 омсбр',
+        count: 18,
+        values: ['136 ОМСБР', '136 омсбр'],
+      },
+    ]);
   });
 
   it('keeps uppercase callsign labels backed by lowercase filter values', () => {

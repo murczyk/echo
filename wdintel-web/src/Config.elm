@@ -1,6 +1,7 @@
 module Config exposing
     ( adjacentFreqsRangeOptions
     , analysisHourAfterWhichWeTakeADayTomorrow
+    , babakNewCallsignMinMentionsDefault
     , featureAudioTranscriptionBesidePlayer
     , featureDisableRerDutyDedup
     , featureEnableTornado
@@ -38,6 +39,11 @@ featureAudioTranscriptionBesidePlayer =
 featureHideDocuments : Bool
 featureHideDocuments =
     False
+
+
+babakNewCallsignMinMentionsDefault : Int
+babakNewCallsignMinMentionsDefault =
+    3
 
 
 {-| Only after X allow loading earlier messages

@@ -1,11 +1,15 @@
 use crate::automation::{
     self, PauseAutomationReq, SaveAutomationReq, SavePolygonReq,
 };
-use crate::error::ShortContext;
+use crate::error::{
+    bad_request, not_found, ShortContext, UserError, UserErrorKind,
+};
 use crate::h;
 use crate::messenger::{self, CreateMessengerReq, MessengerKind};
 use crate::AppState;
-use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
+use actix_web::{
+    delete, get, http::StatusCode, post, put, web, HttpResponse, Responder,
+};
 use base64::{engine::general_purpose, Engine};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -570,17 +574,46 @@ async fn require_kind(
         .c(h!())
         .map_err(error)?;
     if messenger.kind != kind {
-        return Err(actix_web::error::ErrorNotFound(format!(
-            "{name} is not a {} messenger",
+        return Err(error(not_found(format!(
+            "Месенджер «{name}» не використовує {}. Оновіть сторінку та виберіть потрібний месенджер ще раз.",
             kind.as_str()
-        )));
+        ))));
     }
     Ok(messenger)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ErrorRsp {
+    code: &'static str,
+    message: String,
+}
+
 fn error(err: anyhow::Error) -> actix_web::Error {
     log::error!("echo-swapp API error: {err:#}");
-    actix_web::error::ErrorInternalServerError(err.to_string())
+    let (status, code, message) = error_response(&err);
+    let response = HttpResponse::build(status).json(ErrorRsp { code, message });
+    actix_web::error::InternalError::from_response(err, response).into()
+}
+
+fn error_response(err: &anyhow::Error) -> (StatusCode, &'static str, String) {
+    let Some(err) = err.downcast_ref::<UserError>() else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal_error",
+            "Не вдалося виконати запит через внутрішню помилку. Повторіть спробу пізніше. Якщо помилка не зникне, зверніться до адміністратора."
+                .to_string(),
+        );
+    };
+    let (status, code) = match err.kind {
+        UserErrorKind::BadRequest => (StatusCode::BAD_REQUEST, "bad_request"),
+        UserErrorKind::NotFound => (StatusCode::NOT_FOUND, "not_found"),
+        UserErrorKind::Conflict => (StatusCode::CONFLICT, "conflict"),
+        UserErrorKind::ServiceUnavailable => {
+            (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable")
+        }
+    };
+    (status, code, err.to_string())
 }
 
 fn prepare_whatsapp_attachments(
@@ -595,7 +628,9 @@ fn prepare_whatsapp_attachments(
     }
     let screenshot = strip_base64_data_uri(screenshot)?;
     general_purpose::STANDARD.decode(screenshot).map_err(|_| {
-        actix_web::error::ErrorBadRequest("invalid WhatsApp screenshot base64")
+        error(bad_request(
+            "Некоректні base64-дані знімка WhatsApp. Створіть знімок ще раз і повторіть відправлення.",
+        ))
     })?;
     Ok(vec![screenshot.to_string()])
 }
@@ -605,17 +640,17 @@ fn strip_base64_data_uri(screenshot: &str) -> actix_web::Result<&str> {
         return Ok(screenshot);
     };
     let Some((metadata, content_base64)) = data_uri.split_once(',') else {
-        return Err(actix_web::error::ErrorBadRequest(
-            "invalid WhatsApp screenshot data URI",
-        ));
+        return Err(error(bad_request(
+            "Некоректний data URI знімка WhatsApp. Створіть знімок ще раз і повторіть відправлення.",
+        )));
     };
     if !metadata
         .split(';')
         .any(|part| part.eq_ignore_ascii_case("base64"))
     {
-        return Err(actix_web::error::ErrorBadRequest(
-            "WhatsApp screenshot data URI must be base64 encoded",
-        ));
+        return Err(error(bad_request(
+            "Data URI знімка WhatsApp має містити base64-дані. Створіть знімок ще раз і повторіть відправлення.",
+        )));
     }
     Ok(content_base64.trim())
 }
@@ -654,6 +689,29 @@ mod tests {
 
     fn known_group_ids(ids: &[&str]) -> HashSet<String> {
         ids.iter().map(|id| id.to_string()).collect()
+    }
+
+    #[test]
+    fn user_error_returns_actionable_message_and_status() {
+        let err = bad_request("Перевірте номер телефону та повторіть спробу.")
+            .context("at goi/echo-swapp/src/api.rs line 73 column 12");
+        let (status, code, message) = error_response(&err);
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(code, "bad_request");
+        assert_eq!(message, "Перевірте номер телефону та повторіть спробу.");
+    }
+
+    #[test]
+    fn internal_error_hides_sensitive_details() {
+        let err = anyhow::anyhow!("password=secret")
+            .context("at goi/echo-swapp/src/api.rs line 73 column 12");
+        let (status, code, message) = error_response(&err);
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(code, "internal_error");
+        assert!(!message.contains("secret"));
+        assert!(!message.contains("api.rs"));
     }
 
     #[test]

@@ -1,5 +1,9 @@
 use crate::entities::*;
 use crate::error::AppError;
+use crate::rer_importer::report_chunking::{
+    build_filtered_inbox_report_chunk_query, inbox_report_chunk_req,
+    inbox_report_period_chunks, ReportPeriodEnd,
+};
 use crate::rer_importer::reports::types::TagReportSortBy;
 use crate::types::*;
 use crate::utils::*;
@@ -108,18 +112,51 @@ async fn load_tag_report_data(
     period: &TagReportPeriod,
     tag_report_sort_by: TagReportSortBy,
 ) -> Result<TagReportData, AppError> {
-    let txn = read_db
-        .begin_with_config(
-            Some(IsolationLevel::RepeatableRead),
-            Some(AccessMode::ReadOnly),
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks =
+        inbox_report_period_chunks(req, report_settings.chunking_hours)
+            .context(h!())?;
+    let mut important_ids = BTreeSet::new();
+    let mut messages_by_id = BTreeMap::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "Tag report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let chunk_req = inbox_report_chunk_req(req, chunk);
+        let txn = read_db
+            .begin_with_config(
+                Some(IsolationLevel::RepeatableRead),
+                Some(AccessMode::ReadOnly),
+            )
+            .await
+            .context(h!())?;
+        let snapshot = load_tag_report_snapshot_txn(
+            &txn, login, env, &chunk_req, period, chunk.end,
         )
         .await
         .context(h!())?;
-    let snapshot = load_tag_report_snapshot_txn(&txn, login, env, req, period)
-        .await
-        .context(h!())?;
-    txn.commit().await.context(h!())?;
-    Ok(collect_tag_report_data(req, tag_report_sort_by, snapshot))
+        txn.commit().await.context(h!())?;
+        let chunk_data =
+            collect_tag_report_data(&chunk_req, tag_report_sort_by, snapshot);
+        important_ids.extend(chunk_data.important_ids);
+        for message in chunk_data.messages {
+            messages_by_id.entry(message.message_id).or_insert(message);
+        }
+    }
+    let mut messages = messages_by_id.into_values().collect::<Vec<_>>();
+    sort_tag_report_messages(&mut messages, tag_report_sort_by);
+    Ok(TagReportData {
+        important_ids,
+        messages,
+    })
 }
 
 async fn load_tag_report_snapshot_txn(
@@ -128,11 +165,15 @@ async fn load_tag_report_snapshot_txn(
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
     period: &TagReportPeriod,
+    period_end: ReportPeriodEnd,
 ) -> Result<TagReportSnapshot, AppError> {
     let login_ids = crate::users::get_organism_login_ids_by_id(txn, login)
         .await
         .c(h!())?;
-    let candidates = load_tag_report_candidates(txn, login, env, req).await?;
+    let candidates =
+        load_tag_report_candidates(txn, login, env, req, period_end)
+            .await
+            .context(h!())?;
     let message_ids: Vec<i64> =
         candidates.iter().map(|message| message.id).collect();
     let important_ids = load_tag_report_important_ids(
@@ -142,18 +183,28 @@ async fn load_tag_report_snapshot_txn(
         &message_ids,
         period,
     )
-    .await?;
-    let signal_messages =
-        load_tag_report_signal_messages(txn, &message_ids).await?;
-    let inbox_items = load_tag_report_inbox_items(txn, &message_ids).await?;
+    .await
+    .context(h!())?;
+    let signal_messages = load_tag_report_signal_messages(txn, &message_ids)
+        .await
+        .context(h!())?;
+    let inbox_items = load_tag_report_inbox_items(txn, &message_ids)
+        .await
+        .context(h!())?;
     let datasources =
-        load_tag_report_datasources(txn, signal_messages.values()).await?;
+        load_tag_report_datasources(txn, signal_messages.values())
+            .await
+            .context(h!())?;
     let own_comments =
-        load_tag_report_comments(txn, &message_ids, Some(&login_ids)).await?;
+        load_tag_report_comments(txn, &message_ids, Some(&login_ids))
+            .await
+            .context(h!())?;
     let report_comments = if req.report_tags_only_this_unit.is_some() {
         own_comments.clone()
     } else {
-        load_tag_report_comments(txn, &message_ids, None).await?
+        load_tag_report_comments(txn, &message_ids, None)
+            .await
+            .context(h!())?
     };
     Ok(TagReportSnapshot {
         important_ids,
@@ -193,22 +244,46 @@ async fn load_tag_report_candidates(
     login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<TagReportMessageCandidate>, AppError> {
-    let messages =
-        crate::rer_importer::inbox::query::build_filtered_inbox_query(
-            txn, login, env, req,
-        )
-        .await
-        .context(h!())?
-        .select_only()
-        .column_as(signal_message::Column::Id, "id")
-        .column_as(sigint_inbox_item::Column::Freq, "freq")
-        .column_as(sigint_inbox_item::Column::Datetime, "datetime")
-        .into_model::<TagReportMessageCandidate>()
-        .all(txn)
-        .await
-        .context(h!())?;
+    let messages = build_filtered_inbox_report_chunk_query(
+        txn, login, env, req, period_end,
+    )
+    .await
+    .context(h!())?
+    .select_only()
+    .column_as(signal_message::Column::Id, "id")
+    .column_as(sigint_inbox_item::Column::Freq, "freq")
+    .column_as(sigint_inbox_item::Column::Datetime, "datetime")
+    .into_model::<TagReportMessageCandidate>()
+    .all(txn)
+    .await
+    .context(h!())?;
     Ok(messages)
+}
+
+fn sort_tag_report_messages(
+    messages: &mut [TagReportMessage],
+    tag_report_sort_by: TagReportSortBy,
+) {
+    messages.sort_by(|left, right| match tag_report_sort_by {
+        TagReportSortBy::ByTime => tag_report_message_time_order(left, right),
+        TagReportSortBy::ByFreqThenTime => left
+            .inbox
+            .freq
+            .as_deref()
+            .unwrap_or("")
+            .cmp(right.inbox.freq.as_deref().unwrap_or(""))
+            .then_with(|| tag_report_message_time_order(left, right)),
+    });
+}
+
+fn tag_report_message_time_order(
+    left: &TagReportMessage,
+    right: &TagReportMessage,
+) -> std::cmp::Ordering {
+    (left.inbox.datetime, left.message_id)
+        .cmp(&(right.inbox.datetime, right.message_id))
 }
 
 fn sort_tag_report_candidates(
@@ -591,6 +666,11 @@ fn message_full_text_nocomments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::*;
+    use crate::rer_importer::types::{InboxMessagesReq, InboxMessagesSortBy};
+    use sea_orm::prelude::Expr;
+    use sea_orm::ActiveValue::Set;
+    use serial_test::serial;
 
     fn dt(hour: u32, minute: u32) -> chrono::NaiveDateTime {
         chrono::NaiveDate::from_ymd_opt(2026, 6, 30)
@@ -650,5 +730,116 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![3, 2, 1]
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn tag_report_keeps_importance_across_timestamp_chunks() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        set_report_chunking_hours(&env.dbx, 1).await;
+        let timestamp = dt(10, 30);
+
+        let signal_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("important-across-chunks".to_string())),
+                created_at: Set(timestamp),
+                timestamp: Set(Some(timestamp)),
+                message_uid: Set(Some("important-across-chunks".to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(signal_message.id),
+                group_master_key: Set(Some(
+                    datasource_group.group_master_key.clone(),
+                )),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                sender: Set(Some("sender-1".to_string())),
+                message_uid: Set(Some("important-across-chunks".to_string())),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(signal_message.id),
+                date: Set(Some(timestamp.date().to_string())),
+                time: Set(Some(
+                    timestamp.time().format("%H:%M:%S").to_string(),
+                )),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_important(
+            &env.dbx,
+            sigint_important::ActiveModel {
+                login_id: Set(Some(login.id)),
+                signal_message_id: Set(signal_message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(
+                dt(7, 0).and_utc().timestamp_millis(),
+            ),
+            till_date_inclusive_ms: Some(
+                dt(12, 0).and_utc().timestamp_millis(),
+            ),
+            nolimit: Some(true),
+            sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+            ..Default::default()
+        };
+        let period = tag_report_period(&req).unwrap();
+        let data = load_tag_report_data(
+            &env.dbx,
+            &login.id,
+            &env,
+            &req,
+            &period,
+            TagReportSortBy::ByTime,
+        )
+        .await
+        .unwrap();
+
+        assert!(data.important_ids.contains(&signal_message.id));
+    }
+
+    async fn set_report_chunking_hours(db: &DatabaseConnection, hours: i32) {
+        let result = system_settings::Entity::update_many()
+            .col_expr(
+                system_settings::Column::ReportChunkingHours,
+                Expr::value(hours),
+            )
+            .filter(system_settings::Column::Deleted.eq(false))
+            .exec(db)
+            .await
+            .unwrap();
+        if result.rows_affected == 0 {
+            system_settings::ActiveModel {
+                report_chunking_hours: Set(hours),
+                limit_big_reports: Set(false),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
     }
 }

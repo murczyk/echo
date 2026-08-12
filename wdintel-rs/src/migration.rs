@@ -2,6 +2,7 @@ use crate::config::read_config;
 use crate::types::*;
 use sea_orm::{ConnectionTrait, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
+use sqlx::{pool::PoolConnection, Postgres};
 use std::{fs, path::Path};
 use tokio::process::Command;
 // use std::env;
@@ -18,9 +19,11 @@ pub async fn run_migration_1(mode: Mode) -> Result<(), AppError> {
         return Ok(());
     }
     require_current_analytics_exclusions(mode).context(h!())?;
-    println!("Running migration");
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
 
+    println!("Waiting for migration lock");
+    let _migration_lock = acquire_migration_lock(&dbx).await.context(h!())?;
+    println!("Running migration");
     echo_im::run_migration(&dbx).await.context(h!())?;
     ensure_echo_gpu_uuid_v7_generator(&dbx)
         .await
@@ -34,6 +37,29 @@ pub async fn run_migration_1(mode: Mode) -> Result<(), AppError> {
         .context(h!())?;
     println!("Running migration: done");
     Ok(())
+}
+
+async fn acquire_migration_lock(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<PoolConnection<Postgres>> {
+    let mut connection = dbx
+        .get_postgres_connection_pool()
+        .acquire()
+        .await
+        .context(h!())?;
+    connection.close_on_drop();
+    sqlx::query(
+        r#"
+select pg_advisory_lock(
+    hashtextextended(current_database() || ':' || $1::text, 0)
+)
+"#,
+    )
+    .bind(crate::config::MIGRATION_ADVISORY_LOCK_NAME)
+    .execute(&mut *connection)
+    .await
+    .context(h!())?;
+    Ok(connection)
 }
 
 fn require_current_analytics_exclusions(mode: Mode) -> anyhow::Result<()> {
@@ -169,8 +195,13 @@ pub async fn request_analytics_table_reconciliation() {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_analytics_exclusions;
+    use super::{acquire_migration_lock, parse_analytics_exclusions};
+    use crate::types::{serial, Mode};
+    use sea_orm::DatabaseConnection;
     use std::collections::BTreeSet;
+    use std::time::Duration;
+    use tokio::sync::oneshot;
+    use tokio::time::timeout;
 
     #[test]
     fn analytics_exclusions_ignore_comments_order_and_duplicates() {
@@ -193,5 +224,63 @@ mod tests {
     fn analytics_exclusions_reject_quoted_or_unqualified_names() {
         assert!(parse_analytics_exclusions("public_table", "test").is_err());
         assert!(parse_analytics_exclusions("public.MixedCase", "test").is_err());
+    }
+
+    async fn fail_while_holding_migration_lock(
+        dbx: &DatabaseConnection,
+    ) -> anyhow::Result<()> {
+        let _migration_lock = acquire_migration_lock(dbx).await?;
+        anyhow::bail!("expected migration failure")
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn migration_lock_serializes_callers() {
+        crate::tests::test::init().await;
+        let dbx = crate::new_pg_pool_from_mode(Mode::Test).await.unwrap();
+        let first_dbx = dbx.clone();
+        let (first_entered_tx, first_entered_rx) = oneshot::channel();
+        let (release_first_tx, release_first_rx) = oneshot::channel();
+        let first = tokio::spawn(async move {
+            let _migration_lock = acquire_migration_lock(&first_dbx).await?;
+            first_entered_tx.send(()).unwrap();
+            release_first_rx.await.unwrap();
+            Ok::<(), anyhow::Error>(())
+        });
+        first_entered_rx.await.unwrap();
+
+        let second_dbx = dbx.clone();
+        let (second_entered_tx, mut second_entered_rx) = oneshot::channel();
+        let second = tokio::spawn(async move {
+            let _migration_lock = acquire_migration_lock(&second_dbx).await?;
+            second_entered_tx.send(()).unwrap();
+            Ok::<(), anyhow::Error>(())
+        });
+
+        assert!(timeout(Duration::from_millis(100), &mut second_entered_rx)
+            .await
+            .is_err());
+        release_first_tx.send(()).unwrap();
+        first.await.unwrap().unwrap();
+        timeout(Duration::from_secs(1), second_entered_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        second.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn migration_lock_releases_after_error() {
+        crate::tests::test::init().await;
+        let dbx = crate::new_pg_pool_from_mode(Mode::Test).await.unwrap();
+        let error = fail_while_holding_migration_lock(&dbx).await.unwrap_err();
+        assert!(error.to_string().contains("expected migration failure"));
+
+        let _migration_lock =
+            timeout(Duration::from_secs(1), acquire_migration_lock(&dbx))
+                .await
+                .unwrap()
+                .unwrap();
     }
 }

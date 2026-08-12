@@ -98,7 +98,7 @@ pub async fn oneoff_export_sigint_comments(
         )
         .filter(time_condition)
         .select_only()
-        .column(sigint_comment::Column::LoginId)
+        .column_as(sigint_comment::Column::LoginId, "login")
         .column(sigint_comment::Column::Comment)
         .column_as(
             Expr::col((signal_message::Entity, signal_message::Column::Body)),

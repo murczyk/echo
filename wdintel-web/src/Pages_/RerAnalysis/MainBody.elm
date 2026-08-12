@@ -947,20 +947,37 @@ view user model shared route =
                             ]
                         ]
                     , HtmlX.viewIf (model.reportTemplate == RTBabak) <|
-                        div [ class "form-check mt-2" ]
-                            [ input
-                                [ class "form-check-input"
-                                , type_ "checkbox"
-                                , checked model.reportWithoutComments
-                                , id "report-without-comments"
-                                , onClick ReportWithoutCommentsToggle
+                        div [ class "mt-2" ]
+                            [ div [ class "form-check" ]
+                                [ input
+                                    [ class "form-check-input"
+                                    , type_ "checkbox"
+                                    , checked model.reportWithoutComments
+                                    , id "report-without-comments"
+                                    , onClick ReportWithoutCommentsToggle
+                                    ]
+                                    []
+                                , label
+                                    [ class "form-check-label"
+                                    , for "report-without-comments"
+                                    ]
+                                    [ text "не включати коментарі" ]
+                                ]
+                            , label
+                                [ class "form-label block mt-3"
+                                , for "report-babak-new-callsign-min-mentions"
+                                ]
+                                [ text "Мінімальна кількість згадок нового позивного" ]
+                            , input
+                                [ class "form-control w-32"
+                                , type_ "number"
+                                , Html.Attributes.min "1"
+                                , step "1"
+                                , id "report-babak-new-callsign-min-mentions"
+                                , value (String.fromInt model.reportBabakNewCallsignMinMentions)
+                                , onInput ReportBabakNewCallsignMinMentionsInput
                                 ]
                                 []
-                            , label
-                                [ class "form-check-label"
-                                , for "report-without-comments"
-                                ]
-                                [ text "не включати коментарі" ]
                             ]
                     ]
             , HtmlX.viewIf (model.reportTemplate == RTReport1213) <|

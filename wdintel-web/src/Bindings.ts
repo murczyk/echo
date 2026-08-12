@@ -2348,6 +2348,7 @@ export type ReportPreviewReq = {
   tagReportSortBy: TagReportSortBy | null;
   report1213LinkedNetworksOnly: boolean | null;
   withoutComments: boolean | null;
+  babakNewCallsignMinMentions: number | null;
   interceptionKeepFullMessage: boolean | null;
   interceptionKeepOldColors: boolean | null;
   digestOmitExoId: boolean | null;
@@ -2384,6 +2385,7 @@ export type ListUnitsSortBy =
   | 'CreatedAtDesc'
   | 'CreatedAtAsc'
   | 'NaturalMilitarySortAsc'
+  | 'UnitNameLengthAsc'
   | 'UnitNameAsc'
   | 'UnitNameDesc'
   | 'UnitCompanyAsc'
@@ -2404,6 +2406,8 @@ export type ListUnitsSortBy =
   | 'UnitCommentDesc'
   | 'UnitOrbitNoteAsc'
   | 'UnitOrbitNoteDesc'
+  | 'UnitOrbitLinkedAsc'
+  | 'UnitOrbitLinkedDesc'
 ;
 
 export type ListUnitsSearchMode =
@@ -2429,6 +2433,7 @@ export type Unit = {
   createdByLoginId: string;
   hasOrbit: boolean;
   orbitUnitIds: Array<string>;
+  orbitUnitGenerativeNames: Array<string>;
 };
 
 export type ListUnitsReq = {
@@ -2448,6 +2453,9 @@ export type ListUnitsReq = {
   filterArmyRegion: string | null;
   filterComment: string | null;
   filterOrbitNote: string | null;
+  filterIsDeduplicateCandidate: boolean | null;
+  filterHasOrbit: boolean | null;
+  filterHasOrbitNote: boolean | null;
   searchMode: ListUnitsSearchMode | null;
   limit: number | null;
   offset: number | null;
@@ -2495,6 +2503,7 @@ export type CreateUnitReq = {
   isDeduplicateCandidate: boolean | null;
   comment: string;
   orbitNote: string | null;
+  duplicateUnitIds: Array<number>;
 };
 
 export type CreateUnitWithAutoNetworkReq = {
@@ -2547,6 +2556,50 @@ export type UnitAttachment = {
   fullDescription: string;
   aors: Array<UnitAttachmentAor> | null;
   createdAt: number;
+};
+
+export type UnitLabel = {
+  id: number;
+  label: string;
+};
+
+export type CreateUnitLabelReq = {
+  unitId: number;
+  label: string;
+};
+
+export type DeleteUnitLabelReq = {
+  labelId: number;
+};
+
+export type UnresolvedUnitLabel = {
+  unitTxt: string;
+  quantity: number;
+};
+
+export type ListUnresolvedUnitLabelsReq = {
+  page: number | null;
+};
+
+export type ListUnresolvedUnitLabelsRsp = {
+  rows: Array<UnresolvedUnitLabel>;
+  totalCount: number;
+  page: number;
+  pageSize: number;
+};
+
+export type ClassifyUnresolvedUnitLabelReq = {
+  unitTxt: string;
+};
+
+export type ResolveUnresolvedUnitLabelReq = {
+  unitTxt: string;
+  label: string;
+  orbitUnitId: string;
+};
+
+export type UpdateUnresolvedUnitLabelsRsp = {
+  affectedCount: number;
 };
 
 export type OrbitDictionaryValue = {
@@ -2627,9 +2680,11 @@ export type LinkOrbitUnitReq = {
 export type UnitDetailsRsp = {
   unit: Unit;
   attachments: Array<UnitAttachment>;
+  labels: Array<UnitLabel>;
   orbitUnits: Array<OrbitUnitDetails>;
   canLinkOrbitUnit: boolean;
   canCreateDeviceNetwork: boolean;
+  canEditUnitLabels: boolean;
 };
 
 export type UnitAttachmentUnitIdsRsp = {
@@ -4266,9 +4321,15 @@ export type AiCallsignWorkerSettingsItem = {
 
 export type AiCallsignPageRsp = {
   prompt: string;
+  promptOverridden: boolean;
   engines: Array<AiCallsignEngineItem>;
   messages: Array<AiCallsignTestMessageItem>;
   worker: AiCallsignWorkerSettingsItem;
+};
+
+export type AiCallsignPromptState = {
+  prompt: string;
+  promptOverridden: boolean;
 };
 
 export type CreateAiCallsignTestMessageReq = {

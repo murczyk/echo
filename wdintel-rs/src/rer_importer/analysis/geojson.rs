@@ -6,6 +6,22 @@ use tempfile::TempDir;
 
 const GEOJSON_COMMENT_MAX_LEN: usize = 2000;
 
+#[derive(FromQueryResult)]
+struct GeoJsonReportItem {
+    freq: Option<String>,
+    lat: Option<f64>,
+    lng: Option<f64>,
+    datetime: NaiveDateTime,
+    group_name: String,
+    body: Option<String>,
+}
+
+#[derive(FromQueryResult)]
+struct CallsignInboxItem {
+    id: i64,
+    freq: Option<String>,
+}
+
 fn split_geojson_comment(comment: &str) -> Vec<String> {
     if comment.chars().count() <= GEOJSON_COMMENT_MAX_LEN {
         return vec![comment.to_string()];
@@ -52,117 +68,58 @@ pub(crate) async fn rer_analysis_geojson_bytes(
     env: &Env,
     req: AnalysisStatsReq,
 ) -> Result<Vec<u8>, AppError> {
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_since_minus_24h =
-        dt_from_millis(req.since_date_inclusive_ms - 24 * 60 * 60 * 1000)?;
-    let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
+        dt_from_millis(req.since_date_inclusive_ms - 24 * 60 * 60 * 1000)
+            .context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
 
-    #[derive(FromQueryResult)]
-    struct Res {
-        // id: i64,
-        freq: Option<String>,
-        lat: Option<f64>,
-        lng: Option<f64>,
-        datetime: NaiveDateTime,
-        group_name: String,
-        body: Option<String>,
-    }
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
-    let items = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            datasource_group::Relation::SignalGroup.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
-        )
-        .select_only()
-        .column_as(sigint_inbox_item::Column::Id, "id")
-        .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .column_as(signal_group::Column::Name, "group_name")
-        .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
-        .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
-        .column_as(sigint_inbox_item::Column::Datetime, "datetime")
-        .column_as(Expr::col(signal_message::Column::Body), "body")
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            datasource_group::Column::GroupMasterKey
-                .eq_any(sigint_groups.clone()),
-        )
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .filter(sigint_inbox_item::Column::Lat.is_not_null())
-        .filter(sigint_inbox_item::Column::Lng.is_not_null());
-    let items = filter_selected_freqs(items, &req.selected_freqs)?;
-    let items = filter_selected_posts(items, &req.selected_posts)?;
-    let items = filter_selected_groups_and_senders_with_access(
-        items,
-        &req.selected_groups,
-        &req.selected_senders,
-        &sigint_groups,
-    )?;
-    let items = filter_selected_units(
-        items,
-        &req.selected_units,
-        &req.units_exact_match_only,
-    )?;
-    let items = filter_selected_callsigns(items, &req.selected_callsigns)?;
-    let items = filter_selected_tags(
-        items,
-        &req.selected_tags,
-        &req.denied_tags,
-        &req.tag_presence,
-        &req.or_bookmarked,
-        &req.or_important,
-        &req.or_with_coords,
-        &req.or_without_coords,
-        &req.or_with_extended_form,
-        &req.filter_tags_option,
-        &req.without_model_tags,
-        login,
-        req.report_tags_only_this_unit.unwrap_or(false),
-    )?;
-    let items =
-        filter_selected_aors(items, &req.selected_aors).context(h!())?;
-    let items = filter_selected_networks(
-        items,
-        &req.selected_networks,
-        &req.without_network,
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks = report_period_chunks(
+        req.since_date_inclusive_ms,
+        req.till_date_noninclusive_ms,
+        report_settings.chunking_hours,
+        ReportPeriodEnd::NonInclusive,
     )
     .context(h!())?;
-    let items = filter_selected_metadata_for_analysis_stats(items, &req)?;
-    let items = filter_search(items, &req.search)?;
-    let items =
-        filter_selected_device_names(items, &req.selected_device_names)?;
-    let items = filter_selected_locations(
-        items,
-        &req.selected_locations,
-        include_peleng_locations,
-    )?;
-    // println!(
-    //     "> download kmz items query: {}",
-    //     items.build(DbBackend::Postgres).to_string()
-    // );
-    let items = items.into_model::<Res>().all(&env.dbx).await.c(h!())?;
+    let mut items = Vec::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "GeoJSON report chunk {}/{}: {}..{}",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms
+        );
+        items.extend(
+            load_geojson_report_items(
+                login,
+                env,
+                &req,
+                &sigint_groups,
+                include_peleng_locations,
+                dt_from_millis(chunk.since_ms).context(h!())?,
+                dt_from_millis(chunk.till_ms).context(h!())?,
+            )
+            .await
+            .context(h!())?,
+        );
+    }
     // Collect unique freqs from main query results
     let unique_freqs: HashSet<String> =
         items.iter().filter_map(|item| item.freq.clone()).collect();
 
-    let tmp_dir = TempDir::new()?;
+    let tmp_dir = TempDir::new().context(h!())?;
     let now = Utc::now();
     let outpath = tmp_dir
         .path()
@@ -190,28 +147,43 @@ pub(crate) async fn rer_analysis_geojson_bytes(
         .collect();
 
     // Pre-load callsigns
-    #[derive(FromQueryResult)]
-    struct CallsignInboxItem {
-        id: i64,
-        freq: Option<String>,
+    let callsign_chunks = report_period_chunks(
+        dt_since_minus_24h.and_utc().timestamp_millis(),
+        req.till_date_noninclusive_ms,
+        report_settings.chunking_hours,
+        ReportPeriodEnd::NonInclusive,
+    )
+    .context(h!())?;
+    let mut callsign_inbox_items = Vec::new();
+    for chunk in callsign_chunks {
+        callsign_inbox_items.extend(
+            signal_message::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::SigintInboxItem.def(),
+                )
+                .select_only()
+                .column_as(sigint_inbox_item::Column::Id, "id")
+                .column_as(sigint_inbox_item::Column::Freq, "freq")
+                .filter(
+                    sigint_inbox_item::Column::Freq
+                        .eq_any(unique_freqs.clone()),
+                )
+                .filter(
+                    sigint_inbox_item::Column::Datetime
+                        .gte(dt_from_millis(chunk.since_ms).context(h!())?),
+                )
+                .filter(
+                    sigint_inbox_item::Column::Datetime
+                        .lt(dt_from_millis(chunk.till_ms).context(h!())?),
+                )
+                .filter(signal_message::Column::Deleted.eq(false))
+                .into_model::<CallsignInboxItem>()
+                .all(&env.dbx)
+                .await
+                .context(h!())?,
+        );
     }
-
-    let callsign_inbox_items = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .select_only()
-        .column_as(sigint_inbox_item::Column::Id, "id")
-        .column_as(sigint_inbox_item::Column::Freq, "freq")
-        .filter(sigint_inbox_item::Column::Freq.eq_any(unique_freqs.clone()))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since_minus_24h))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .filter(signal_message::Column::Deleted.eq(false))
-        .into_model::<CallsignInboxItem>()
-        .all(&env.dbx)
-        .await
-        .context(h!())?;
     let callsign_inbox_item_ids = callsign_inbox_items
         .iter()
         .map(|inbox_item| inbox_item.id)
@@ -220,7 +192,8 @@ pub(crate) async fn rer_analysis_geojson_bytes(
         &env.dbx,
         &callsign_inbox_item_ids,
     )
-    .await?;
+    .await
+    .context(h!())?;
     let mut callsigns: HashMap<String, Vec<String>> = HashMap::new();
     for inbox_item in callsign_inbox_items {
         let Some(freq) = inbox_item.freq else {
@@ -320,9 +293,113 @@ pub(crate) async fn rer_analysis_geojson_bytes(
         features: features.values().cloned().collect(),
     };
     let geojson = serde_json::to_string(&geojson).context(h!())?;
-    std::fs::write(&outpath, geojson)?;
+    std::fs::write(&outpath, geojson).context(h!())?;
     let bytes = tokio::fs::read(&outpath).await.c(h!())?;
     Ok(bytes)
+}
+
+async fn load_geojson_report_items(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &AnalysisStatsReq,
+    sigint_groups: &[String],
+    include_peleng_locations: bool,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> Result<Vec<GeoJsonReportItem>, AppError> {
+    let items = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            datasource_group::Relation::SignalGroup.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Id, "id")
+        .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
+        .column_as(signal_group::Column::Name, "group_name")
+        .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
+        .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
+        .column_as(sigint_inbox_item::Column::Datetime, "datetime")
+        .column_as(Expr::col(signal_message::Column::Body), "body")
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .eq_any(sigint_groups.to_vec()),
+        )
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .filter(sigint_inbox_item::Column::Lat.is_not_null())
+        .filter(sigint_inbox_item::Column::Lng.is_not_null());
+    let items =
+        filter_selected_freqs(items, &req.selected_freqs).context(h!())?;
+    let items =
+        filter_selected_posts(items, &req.selected_posts).context(h!())?;
+    let items = filter_selected_groups_and_senders_with_access(
+        items,
+        &req.selected_groups,
+        &req.selected_senders,
+        sigint_groups,
+    )
+    .context(h!())?;
+    let items = filter_selected_units(
+        items,
+        &req.selected_units,
+        &req.units_exact_match_only,
+    )
+    .context(h!())?;
+    let items = filter_selected_callsigns(items, &req.selected_callsigns)
+        .context(h!())?;
+    let items = filter_selected_tags(
+        items,
+        &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
+        &req.or_bookmarked,
+        &req.or_important,
+        &req.or_with_coords,
+        &req.or_without_coords,
+        &req.or_with_extended_form,
+        &req.filter_tags_option,
+        &req.without_model_tags,
+        login,
+        req.report_tags_only_this_unit.unwrap_or(false),
+    )
+    .context(h!())?;
+    let items =
+        filter_selected_aors(items, &req.selected_aors).context(h!())?;
+    let items = filter_selected_networks(
+        items,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
+    let items = filter_selected_metadata_for_analysis_stats(items, req)
+        .context(h!())?;
+    let items = filter_search(items, &req.search).context(h!())?;
+    let items = filter_selected_device_names(items, &req.selected_device_names)
+        .context(h!())?;
+    let items = filter_selected_locations(
+        items,
+        &req.selected_locations,
+        include_peleng_locations,
+    )
+    .context(h!())?;
+    Ok(items
+        .into_model::<GeoJsonReportItem>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?)
 }
 
 #[cfg(test)]

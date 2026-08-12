@@ -62,6 +62,8 @@ pub struct ReportPreviewReq {
     pub tag_report_sort_by: Option<TagReportSortBy>,
     pub report_1213_linked_networks_only: Option<bool>,
     pub without_comments: Option<bool>,
+    #[serde(default)]
+    pub babak_new_callsign_min_mentions: Option<i64>,
     pub interception_keep_full_message: Option<bool>,
     pub interception_keep_old_colors: Option<bool>,
     pub digest_omit_exo_id: Option<bool>,

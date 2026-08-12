@@ -17,7 +17,7 @@ import {
 import type { AiCallsignEngineItem } from '../../../../Bindings';
 import { PowerButton } from '../../components/PowerButton';
 
-export type AiCallsignAction = 'test' | 'save' | 'recalculate';
+export type AiCallsignAction = 'test' | 'save' | 'recalculate' | 'reset';
 
 export function AiCallsignControls({
   action,

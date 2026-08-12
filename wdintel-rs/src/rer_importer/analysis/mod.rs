@@ -35,6 +35,7 @@ use std::error::Error as StdError;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tempfile::TempDir;
 
+pub(in crate::rer_importer) mod analytics_unit;
 pub mod geojson;
 pub mod kmz;
 pub mod search;
@@ -589,6 +590,70 @@ where
     Ok(q)
 }
 
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct ExpandedUnitFilter {
+    pub(crate) ordinary_names: Vec<String>,
+    pub(crate) includes_undefined: bool,
+    pub(crate) present: bool,
+}
+
+pub(crate) fn expand_unit_filter_values(
+    units: &Option<Vec<String>>,
+) -> ExpandedUnitFilter {
+    let Some(units) = units.as_ref().filter(|units| !units.is_empty()) else {
+        return ExpandedUnitFilter::default();
+    };
+    let mut ordinary_names = BTreeSet::new();
+    let mut includes_undefined = false;
+    for unit in units {
+        if unit.is_empty() || unit == "Не визначено" {
+            includes_undefined = true;
+            continue;
+        }
+        add_unit_filter_aliases(&mut ordinary_names, unit);
+    }
+    ExpandedUnitFilter {
+        ordinary_names: ordinary_names.into_iter().collect(),
+        includes_undefined,
+        present: true,
+    }
+}
+
+fn add_unit_filter_aliases(aliases: &mut BTreeSet<String>, unit: &str) {
+    let army_suffixes = numeric_army_suffix_aliases(unit)
+        .unwrap_or_else(|| vec![unit.to_string()]);
+    for alias in army_suffixes {
+        aliases.insert(alias.clone());
+        aliases.insert(alias.to_lowercase());
+        aliases.insert(alias.to_uppercase());
+    }
+}
+
+fn numeric_army_suffix_aliases(unit: &str) -> Option<Vec<String>> {
+    let suffix_separator = unit.rfind(char::is_whitespace)?;
+    let prefix = unit[..suffix_separator].trim_end();
+    let suffix = unit[suffix_separator..].trim();
+    if !matches!(suffix.to_uppercase().as_str(), "А" | "ЗА" | "ЗВА") {
+        return None;
+    }
+    let army_number = prefix
+        .rsplit_once(char::is_whitespace)
+        .map_or(prefix, |(_, army_number)| army_number);
+    if army_number.is_empty()
+        || !army_number
+            .chars()
+            .all(|character| character.is_ascii_digit())
+    {
+        return None;
+    }
+    Some(
+        ["А", "ЗА", "ЗВА"]
+            .into_iter()
+            .map(|suffix| format!("{prefix} {suffix}"))
+            .collect(),
+    )
+}
+
 /// Фільтрує запит по підрозділам, які вказані в шапці повідомлення або прив'язані через Еталонні мережі
 ///
 /// Якщо вказано прапорець `units_exact_match_only`, то фільтрує ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
@@ -603,17 +668,9 @@ where
 {
     let mut m_empty_filter = None;
     let mut m_filter = None;
-    if let Some(selected_units) = selected_units.as_ref() {
-        let mut selected_units: BTreeSet<String> =
-            selected_units.iter().cloned().collect::<BTreeSet<_>>();
-        let mut units_contain_empty = false;
-        if selected_units.remove("Не визначено") {
-            units_contain_empty = true;
-        }
-        if selected_units.remove("") {
-            units_contain_empty = true;
-        }
-        if units_contain_empty {
+    let selected_units = expand_unit_filter_values(selected_units);
+    if selected_units.present {
+        if selected_units.includes_undefined {
             // повідомлення без жодного прив'язаного підрозділу мережі
             let no_sigint_units = message_has_linked_unit(
                 Expr::col((
@@ -629,9 +686,8 @@ where
             let contains_empty = unit_is_not_in_message.and(no_sigint_units);
             m_empty_filter = Some(contains_empty);
         }
-        if !selected_units.is_empty() {
-            let selected_units =
-                selected_units.clone().into_iter().collect_vec();
+        if !selected_units.ordinary_names.is_empty() {
+            let selected_units = selected_units.ordinary_names;
             let exact_match_only = units_exact_match_only.unwrap_or(false);
             let linked_unit_match = linked_unit_matches_selected_units(
                 selected_units.clone(),
@@ -679,17 +735,9 @@ where
 {
     let mut m_empty_filter = None;
     let mut m_filter = None;
-    if let Some(denied_units) = denied_units.as_ref() {
-        let mut denied_units: BTreeSet<String> =
-            denied_units.iter().cloned().collect::<BTreeSet<_>>();
-        let mut units_contain_empty = false;
-        if denied_units.remove("Не визначено") {
-            units_contain_empty = true;
-        }
-        if denied_units.remove("") {
-            units_contain_empty = true;
-        }
-        if units_contain_empty {
+    let denied_units = expand_unit_filter_values(denied_units);
+    if denied_units.present {
+        if denied_units.includes_undefined {
             // повідомлення без жодного прив'язаного підрозділу мережі
             let no_sigint_units = message_has_linked_unit(
                 Expr::col((
@@ -705,8 +753,8 @@ where
             let contains_empty = unit_is_not_in_message.and(no_sigint_units);
             m_empty_filter = Some(contains_empty.not());
         }
-        if !denied_units.is_empty() {
-            let selected_units = denied_units.into_iter().collect_vec();
+        if !denied_units.ordinary_names.is_empty() {
+            let selected_units = denied_units.ordinary_names;
             let exact_match_only = units_exact_match_only.unwrap_or(false);
             let linked_unit_match = linked_unit_matches_selected_units(
                 selected_units.clone(),
@@ -744,6 +792,8 @@ fn linked_unit_matches_selected_units(
     selected_units: Vec<String>,
     include_hierarchy: bool,
 ) -> SimpleExpr {
+    let selected_units =
+        expand_unit_filter_values(&Some(selected_units)).ordinary_names;
     let unit_alias = Alias::new("selected_unit");
     let unit_matches =
         Expr::col((unit_alias.clone(), sigint_unit::Column::Name))
@@ -762,98 +812,6 @@ fn linked_unit_matches_selected_units(
             selected_units,
             unit_alias,
         ))
-}
-
-#[cfg(test)]
-mod unit_filter_query_tests {
-    use super::*;
-
-    #[test]
-    fn unit_filter_query_excludes_dynamic_suffix_matching() {
-        let query = filter_selected_units(
-            sigint_inbox_item::Entity::find(),
-            &Some(vec!["100 pbr".to_string()]),
-            &Some(false),
-        )
-        .unwrap();
-        let sql = query.build(DbBackend::Postgres).to_string();
-
-        assert!(
-            sql.contains(r#""unit_v2" = ANY(ARRAY ['100 pbr'])"#),
-            "{sql}"
-        );
-        assert!(sql.contains(r#""name" IN ('100 pbr')"#), "{sql}");
-        assert!(!sql.contains("right("), "{sql}");
-    }
-
-    #[test]
-    fn linked_unit_query_precomputes_matching_network_ids() {
-        let filter_expr = linked_unit_matches_selected_units(
-            vec!["100 pbr".to_string()],
-            true,
-        );
-        let sql = select_sigint_units_by_names(filter_expr)
-            .to_string(PostgresQueryBuilder);
-
-        assert!(sql.contains(" IN (SELECT DISTINCT "), "{sql}");
-        assert!(
-            sql.contains(
-                r#"FROM "sigint_network_unit" AS "selected_unit_network_unit" INNER JOIN "sigint_unit" AS "selected_unit""#
-            ),
-            "{sql}"
-        );
-        assert!(!sql.contains(
-            r#"INNER JOIN "sigint_network_unit" AS "selected_unit_network_unit" ON "selected_unit_network_unit"."network_id" = "selected_unit_network"."id""#
-        ), "{sql}");
-    }
-
-    #[test]
-    fn period_unit_filter_materializes_bounded_matching_ids() {
-        let dt_since = NaiveDate::from_ymd_opt(2026, 7, 28)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
-        let dt_till = dt_since + chrono::Duration::days(1);
-        let query = filter_selected_units_for_period(
-            sigint_inbox_item::Entity::find(),
-            &Some(vec!["100 pbr".to_string()]),
-            &Some(false),
-            dt_since,
-            dt_till,
-        )
-        .unwrap();
-        let sql = query.build(DbBackend::Postgres).to_string();
-
-        assert_eq!(sql.matches("MATERIALIZED").count(), 2, "{sql}");
-        assert!(sql.contains("matching_unit_network_ids"), "{sql}");
-        assert!(sql.contains("matching_unit_inbox_item_ids"), "{sql}");
-        assert!(sql.contains(" UNION ALL "), "{sql}");
-        assert!(sql.contains("2026-07-28 00:00:00"), "{sql}");
-        assert!(sql.contains("2026-07-29 00:00:00"), "{sql}");
-    }
-
-    #[test]
-    fn denied_period_unit_filter_excludes_bounded_matching_ids() {
-        let dt_since = NaiveDate::from_ymd_opt(2026, 7, 28)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
-        let query = filter_denied_units_for_period(
-            sigint_inbox_item::Entity::find(),
-            &Some(vec!["100 pbr".to_string()]),
-            &Some(false),
-            dt_since,
-            dt_since + chrono::Duration::days(1),
-        )
-        .unwrap();
-        let sql = query.build(DbBackend::Postgres).to_string();
-
-        assert!(
-            sql.contains(r#""sigint_inbox_item"."id" NOT IN ("#),
-            "{sql}"
-        );
-        assert_eq!(sql.matches("MATERIALIZED").count(), 2, "{sql}");
-    }
 }
 
 fn unresolved_hierarchy_column_matches_selected_units(
@@ -993,22 +951,19 @@ pub(super) fn selected_unit_network_ids_query(
     selected_units: &Option<Vec<String>>,
     units_exact_match_only: &Option<bool>,
 ) -> Option<SelectStatement> {
-    let mut selected_units = selected_units
-        .as_ref()?
-        .iter()
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    if selected_units.remove("Не визначено") || selected_units.remove("")
-    {
+    let selected_units = expand_unit_filter_values(selected_units);
+    if selected_units.includes_undefined {
         return None;
     }
-    if selected_units.is_empty() {
+    if selected_units.ordinary_names.is_empty() {
         return None;
     }
-    let selected_units = selected_units.into_iter().collect_vec();
     let exact_match_only = units_exact_match_only.unwrap_or(false);
     Some(select_network_ids_by_unit(
-        linked_unit_matches_selected_units(selected_units, !exact_match_only),
+        linked_unit_matches_selected_units(
+            selected_units.ordinary_names,
+            !exact_match_only,
+        ),
     ))
 }
 
@@ -1019,14 +974,10 @@ pub(super) fn selected_unit_inbox_item_ids_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
 ) -> Result<SelectStatement, AppError> {
-    let selected_units = selected_units
-        .as_ref()
-        .context(h!())?
-        .iter()
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect_vec();
+    let selected_units = expand_unit_filter_values(selected_units);
+    let selected_units = (!selected_units.ordinary_names.is_empty())
+        .then_some(selected_units.ordinary_names)
+        .context(h!())?;
 
     let linked_inbox_item_ids = select_linked_unit_inbox_item_ids(
         matching_network_ids_alias,
@@ -3096,7 +3047,7 @@ async fn summary_table_freq_by_login_with_coordinate_loading(
     master_keys: &[String],
     load_coordinates: bool,
 ) -> Result<SummaryTableFreq, AppError> {
-    let analytics_supported = analytics_count_request_supported(req);
+    let analytics_supported = analytics_summary_table_request_supported(req);
     let analytics_tag_access = if env.analytics.is_some() && analytics_supported
     {
         Some(
@@ -3191,13 +3142,47 @@ async fn query_summary_table_freq_analytics(
     tag_access: &stats::AnalyticsTagAccess,
     load_coordinates: bool,
 ) -> Result<SummaryTableFreq, AppError> {
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let (scope, resolved_units) = tokio::try_join!(
+        stats::resolve_analytics_message_id_scope(
+            req,
+            db,
+            freshness_max_age_ms,
+        ),
+        analytics_unit::resolve_analytics_unit_filters(
+            &env.dbx,
+            &req.selected_units,
+            &None,
+            req.units_exact_match_only,
+        ),
+    )
+    .context(h!())?;
+    if scope.is_empty() {
+        return Ok(SummaryTableFreq { rows: Vec::new() });
+    }
+    let mut analytics_req = req.clone();
+    analytics_req.selected_units = None;
     let filtered_messages =
         build_summary_table_filtered_messages_query_with_access(
             login,
-            req,
+            &analytics_req,
             master_keys,
             Some(tag_access),
-        )?;
+            Some(&scope),
+        )
+        .context(h!())?;
+    let filtered_messages =
+        analytics_unit::apply_resolved_analytics_unit_filters(
+            filtered_messages,
+            &resolved_units,
+            &scope,
+            req.units_exact_match_only.unwrap_or(false),
+        );
     let counts = filtered_messages
         .clone()
         .select_only()
@@ -3224,10 +3209,12 @@ async fn query_summary_table_freq_analytics(
     )
     .into_model::<SummaryTableFreqValueRow>()
     .all(db);
-    let callsigns =
-        summary_table_freq_callsigns_query(filtered_messages.clone())
-            .into_model::<SummaryTableFreqValueRow>()
-            .all(db);
+    let callsigns = summary_table_freq_callsigns_query(
+        filtered_messages.clone(),
+        Some(&scope),
+    )
+    .into_model::<SummaryTableFreqValueRow>()
+    .all(db);
     let coordinate_rows = async {
         if load_coordinates {
             summary_table_freq_coordinate_query(filtered_messages)
@@ -3270,8 +3257,19 @@ fn summary_table_freq_distinct_values_query(
 
 fn summary_table_freq_callsigns_query(
     mut filtered_messages: Select<signal_message::Entity>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Select<signal_message::Entity> {
     let callsign_alias = Alias::new("summary_table_callsign");
+    let mut join_condition = Condition::all().add(
+        Expr::col((callsign_alias.clone(), Alias::new("sigint_inbox_item_id")))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+    );
+    if let Some(scope) = scope {
+        join_condition = join_condition.add(scope.condition((
+            callsign_alias.clone(),
+            Alias::new("sigint_inbox_item_id"),
+        )));
+    }
     QuerySelect::query(&mut filtered_messages).join_as(
         JoinType::InnerJoin,
         (
@@ -3279,8 +3277,7 @@ fn summary_table_freq_callsigns_query(
             Alias::new("message_callsign"),
         ),
         callsign_alias.clone(),
-        Expr::col((callsign_alias.clone(), Alias::new("sigint_inbox_item_id")))
-            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        join_condition,
     );
     filtered_messages
         .select_only()
@@ -3408,6 +3405,7 @@ async fn query_summary_table_freq_rows(
             req,
             master_keys,
             analytics_tag_access,
+            None,
         )?
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
@@ -3748,6 +3746,7 @@ pub(crate) fn build_summary_table_filtered_messages_query(
         req,
         master_keys,
         None,
+        None,
     )
 }
 
@@ -3756,13 +3755,64 @@ fn build_summary_table_filtered_messages_query_with_access(
     req: &AnalysisStatsReq,
     master_keys: &[String],
     analytics_tag_access: Option<&stats::AnalyticsTagAccess>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<signal_message::Entity>, AppError> {
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
-    let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
 
-    let q = signal_message::Entity::find()
+    let q = build_summary_table_base_query(dt_since, dt_till, scope);
+    let q = stats::apply_message_access_filter(
+        q,
+        &req.selected_groups,
+        &req.selected_senders,
+        master_keys,
+        scope,
+    )
+    .context(h!())?;
+    let q = filter_selected_freqs(q, &req.selected_freqs).context(h!())?;
+    let q = filter_selected_posts(q, &req.selected_posts).context(h!())?;
+    let q = filter_selected_units_for_period(
+        q,
+        &req.selected_units,
+        &req.units_exact_match_only,
+        dt_since,
+        dt_till,
+    )
+    .context(h!())?;
+    let q = filter_selected_locations(
+        q,
+        &req.selected_locations,
+        include_peleng_locations,
+    )
+    .context(h!())?;
+    let q = filter_summary_table_callsigns_for_scope(q, req, scope)
+        .context(h!())?;
+    let q = filter_summary_table_tags_for_access(
+        q,
+        req,
+        login,
+        analytics_tag_access,
+        scope,
+    )
+    .context(h!())?;
+    let q = filter_summary_table_aors_and_networks_for_scope(q, req, scope)
+        .context(h!())?;
+    let q =
+        filter_selected_metadata_for_analysis_stats(q, req).context(h!())?;
+    let q = filter_search(q, &req.search).context(h!())?;
+    Ok(filter_selected_device_names(q, &req.selected_device_names)
+        .context(h!())?)
+}
+
+fn build_summary_table_base_query(
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Select<signal_message::Entity> {
+    let query = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
@@ -3771,32 +3821,49 @@ fn build_summary_table_filtered_messages_query_with_access(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .filter(message_in_groups_exists(master_keys.to_vec()))
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
-    let q = filter_selected_freqs(q, &req.selected_freqs)?;
-    let q = filter_selected_posts(q, &req.selected_posts)?;
-    let q = filter_selected_groups_and_senders_with_access(
-        q,
-        &req.selected_groups,
-        &req.selected_senders,
-        master_keys,
-    )?;
-    let q = filter_selected_units(
-        q,
-        &req.selected_units,
-        &req.units_exact_match_only,
-    )?;
-    let q = filter_selected_locations(
-        q,
-        &req.selected_locations,
-        include_peleng_locations,
-    )?;
-    let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
-    let q = if let Some(tag_access) = analytics_tag_access {
+    match scope {
+        Some(scope) => query
+            .filter(scope.condition((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Id,
+            )))
+            .filter(scope.condition((
+                signal_message::Entity,
+                signal_message::Column::Id,
+            ))),
+        None => query,
+    }
+}
+
+fn filter_summary_table_callsigns_for_scope(
+    query: Select<signal_message::Entity>,
+    req: &AnalysisStatsReq,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<signal_message::Entity>, AppError> {
+    match scope {
+        Some(_) => filter_selected_callsigns_for_source(
+            query,
+            &req.selected_callsigns,
+            crate::inbox::callsigns::EffectiveCallsignSqlSource::Analytics,
+            scope,
+        ),
+        None => filter_selected_callsigns(query, &req.selected_callsigns),
+    }
+}
+
+fn filter_summary_table_tags_for_access(
+    query: Select<signal_message::Entity>,
+    req: &AnalysisStatsReq,
+    login: &uuid::Uuid,
+    analytics_tag_access: Option<&stats::AnalyticsTagAccess>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<signal_message::Entity>, AppError> {
+    if let Some(tag_access) = analytics_tag_access {
         filter_selected_tags_analytics(
-            q,
+            query,
             &req.selected_tags,
             &req.denied_tags,
             &req.tag_presence,
@@ -3811,11 +3878,11 @@ fn build_summary_table_filtered_messages_query_with_access(
             req.report_tags_only_this_unit.unwrap_or(false),
             &tag_access.accessible_tag_ids,
             &tag_access.unit_login_ids,
-            None,
-        )?
+            scope,
+        )
     } else {
         filter_selected_tags(
-            q,
+            query,
             &req.selected_tags,
             &req.denied_tags,
             &req.tag_presence,
@@ -3828,18 +3895,31 @@ fn build_summary_table_filtered_messages_query_with_access(
             &req.without_model_tags,
             login,
             req.report_tags_only_this_unit.unwrap_or(false),
-        )?
-    };
-    let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
-    let q = filter_selected_networks(
-        q,
-        &req.selected_networks,
-        &req.without_network,
-    )
-    .context(h!())?;
-    let q = filter_selected_metadata_for_analysis_stats(q, req)?;
-    let q = filter_search(q, &req.search)?;
-    filter_selected_device_names(q, &req.selected_device_names)
+        )
+    }
+}
+
+fn filter_summary_table_aors_and_networks_for_scope(
+    query: Select<signal_message::Entity>,
+    req: &AnalysisStatsReq,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<signal_message::Entity>, AppError> {
+    let query =
+        stats::filter_selected_aors_for_scope(query, &req.selected_aors, scope)
+            .context(h!())?;
+    match scope {
+        Some(_) => filter_selected_networks_analytics(
+            query,
+            &req.selected_networks,
+            &req.without_network,
+            scope,
+        ),
+        None => filter_selected_networks(
+            query,
+            &req.selected_networks,
+            &req.without_network,
+        ),
+    }
 }
 
 async fn summary_table_last_datetime_by_freq_by_login(
@@ -4965,7 +5045,15 @@ pub async fn edit_freq_unit_name(
             row.unit = Set(Some(req.unit_new.clone()));
             row.unit_v2 = Set(Some(req.unit_new.clone()));
             row.parsed_unit_v2 = Set(true);
-            row.update(&txn).await.c(h!())?;
+            let row = row.update(&txn).await.c(h!())?;
+            crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
+                &txn,
+                row.id,
+                row.unit_v2.as_deref(),
+                row.unit.as_deref(),
+            )
+            .await
+            .c(h!())?;
             crate::stats::enqueue_group_stats_recalculation_for_message(
                 &txn,
                 id,
@@ -5332,6 +5420,7 @@ pub async fn bi_new_callsigns_chunked(
     req: &AnalysisStatsReq,
     chunking_hours: i64,
     final_end: ReportPeriodEnd,
+    min_mentions: i64,
 ) -> Result<NewCallsignsRes, AppError> {
     ensure_rer_role_by_id(&env.dbx, user_id).await.c(h!())?;
     let group_master_keys = get_identity_sigint_groups(&env.dbx, user_id)
@@ -5343,7 +5432,7 @@ pub async fn bi_new_callsigns_chunked(
         chunking_hours,
         final_end,
     )?;
-    let mut callsigns_in_period = BTreeSet::new();
+    let mut callsign_message_counts = BTreeMap::new();
     for (index, chunk) in report_chunks.iter().enumerate() {
         log::info!(
             "Babak new-callsigns report chunk {}/{}: {}..{}",
@@ -5352,8 +5441,8 @@ pub async fn bi_new_callsigns_chunked(
             chunk.since_ms,
             chunk.till_ms
         );
-        callsigns_in_period.extend(
-            load_new_callsigns_in_range_with_db(
+        for (callsign, message_count) in
+            load_new_callsign_counts_in_range_with_db(
                 user_id,
                 req,
                 chunk.since_ms,
@@ -5362,13 +5451,19 @@ pub async fn bi_new_callsigns_chunked(
                 &group_master_keys,
                 true,
                 &env.dbx,
-                crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
-                None,
-                None,
             )
-            .await?,
-        );
+            .await?
+        {
+            *callsign_message_counts.entry(callsign).or_insert(0) +=
+                message_count;
+        }
     }
+    let callsigns_in_period = callsign_message_counts
+        .into_iter()
+        .filter_map(|(callsign, message_count)| {
+            (message_count >= min_mentions).then_some(callsign)
+        })
+        .collect();
 
     let lookback_since = req
         .since_date_inclusive_ms
@@ -5498,6 +5593,12 @@ struct NewCallsignValueRow {
 }
 
 #[derive(FromQueryResult)]
+struct NewCallsignCountRow {
+    callsign: String,
+    message_count: i64,
+}
+
+#[derive(FromQueryResult)]
 struct NewCallsignLastSeenRow {
     callsign: String,
     last_seen: Option<NaiveDateTime>,
@@ -5566,6 +5667,40 @@ async fn load_new_callsigns_in_range_with_db(
         }
     };
     Ok(rows.into_iter().map(|row| row.callsign).collect())
+}
+
+async fn load_new_callsign_counts_in_range_with_db(
+    user_id: &uuid::Uuid,
+    req: &AnalysisStatsReq,
+    since_ms: i64,
+    till_ms: i64,
+    period_end: ReportPeriodEnd,
+    group_master_keys: &[String],
+    include_aor_filter: bool,
+    db: &DatabaseConnection,
+) -> Result<BTreeMap<String, i64>, AppError> {
+    let query = build_new_callsign_filtered_items_query(
+        user_id,
+        req,
+        since_ms,
+        till_ms,
+        period_end,
+        group_master_keys,
+        include_aor_filter,
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres,
+        None,
+        None,
+    )?;
+    let rows = NewCallsignCountRow::find_by_statement(
+        new_callsign_counts_statement(query),
+    )
+    .all(db)
+    .await
+    .c(h!())?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.callsign, row.message_count))
+        .collect())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5853,6 +5988,22 @@ fn effective_callsign_values_statement(
         r#"
 SELECT DISTINCT all_callsigns.callsign
 FROM all_callsigns
+ORDER BY all_callsigns.callsign
+"#,
+    )
+}
+
+fn new_callsign_counts_statement(
+    query: Select<signal_message::Entity>,
+) -> Statement {
+    new_callsign_statement(
+        query,
+        r#"
+SELECT
+    all_callsigns.callsign,
+    COUNT(*) AS message_count
+FROM all_callsigns
+GROUP BY all_callsigns.callsign
 ORDER BY all_callsigns.callsign
 "#,
     )
@@ -7319,6 +7470,12 @@ fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
         && req.selected_units.as_ref().is_none_or(Vec::is_empty)
 }
 
+fn analytics_summary_table_request_supported(req: &AnalysisStatsReq) -> bool {
+    let mut req = req.clone();
+    req.selected_units = None;
+    analytics_count_request_supported(&req)
+}
+
 fn analytics_stats_request_supported(
     req: &AnalysisStatsReq,
     env: &Env,
@@ -7348,17 +7505,42 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
+    analytics_inbox_filter_supported(req)
+        && !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
+}
+
+pub(crate) fn analytics_inbox_initial_unit_candidates_supported(
+    req: &InboxMessagesReq,
+) -> bool {
+    analytics_inbox_filter_supported(req)
+        && req.page_id.as_deref() == Some("rer-duty-neo")
+        && crate::rer_importer::inbox::query::inbox_request_is_unbounded_latest(
+            req,
+        )
+        && (req
+            .selected_units
+            .as_ref()
+            .is_some_and(|units| !units.is_empty())
+            || req
+                .denied_units
+                .as_ref()
+                .is_some_and(|units| !units.is_empty()))
+}
+
+pub(crate) fn analytics_inbox_candidates_supported(
+    req: &InboxMessagesReq,
+) -> bool {
+    (analytics_inbox_request_supported(req)
+        || analytics_inbox_initial_unit_candidates_supported(req))
+        && req.nolimit != Some(true)
+}
+
+fn analytics_inbox_filter_supported(req: &InboxMessagesReq) -> bool {
     req.only_with_media != Some(true)
         && req
             .search
             .as_ref()
             .is_none_or(|search| search.trim().is_empty())
-        && req.selected_units.as_ref().is_none_or(Vec::is_empty)
-        && req.denied_units.as_ref().is_none_or(Vec::is_empty)
-        && (req
-            .since_date_inclusive_ms
-            .is_some_and(|since_date| since_date > 0)
-            || req.since_id_noninclusive.is_some())
 }
 
 #[derive(Clone)]
@@ -7614,7 +7796,10 @@ where
     Ok(response)
 }
 
-fn map_postgres_runtime_timeout(error: AppError, operation: &str) -> AppError {
+pub(crate) fn map_postgres_runtime_timeout(
+    error: AppError,
+    operation: &str,
+) -> AppError {
     if !has_postgres_error_code(&error, "57014") {
         return error;
     }

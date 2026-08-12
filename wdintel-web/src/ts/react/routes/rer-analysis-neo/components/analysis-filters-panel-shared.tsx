@@ -34,6 +34,7 @@ export type AnalysisFiltersPanelPage = Pick<
   | 'savedFilters'
   | 'tagsMap'
   | 'tagsOrder'
+  | 'unitsMap'
 > &
   Pick<
     AnalysisPageActions,

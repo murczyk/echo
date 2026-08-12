@@ -253,6 +253,12 @@ export const adminDatabaseSubs: Menu[] = [
   },
   {
     type: 'item',
+    link: { type: 'internal', path: '/admin/unit-unparsed' },
+    activeName: 'unit-unparsed',
+    label: 'Нерозпізнані підрозділи',
+  },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/admin/goi-integrations-neo' },
     activeName: 'goi-integrations-neo',
     label: 'ГОІ',
@@ -317,7 +323,7 @@ export const adminSubs: Menu[] = [
   { type: 'separator' },
   {
     type: 'group',
-    label: 'Бази',
+    label: 'База Знань',
     subs: adminDatabaseSubs,
   },
   { type: 'separator' },

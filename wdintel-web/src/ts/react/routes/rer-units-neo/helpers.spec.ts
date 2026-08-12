@@ -8,6 +8,8 @@ import {
   filterUnitsByStatus,
   findPotentialDuplicates,
   isUnitFormValid,
+  readUnitNameColumnFilter,
+  readUnitOrbitColumnFilter,
   trimUnitForm,
   unitToForm,
   unitStatusCounts,
@@ -33,6 +35,7 @@ function unit(overrides: Partial<Unit>): Unit {
     createdByLoginId: '',
     hasOrbit: false,
     orbitUnitIds: [],
+    orbitUnitGenerativeNames: [],
     ...overrides,
   };
 }
@@ -57,6 +60,47 @@ describe('rer units helpers', () => {
       searchMode: 'Strict',
       limit: 20,
       offset: 40,
+    });
+  });
+
+  it('builds duplicate and Orbit presence filters with Orbit-link sorting', () => {
+    expect(
+      buildUnitsListReq({
+        statusFilter: 'all',
+        globalFilter: '',
+        columnFilters: [
+          {
+            id: 'name',
+            value: { text: ' 55 омсбр ', duplicateCandidate: 'yes' },
+          },
+          {
+            id: 'hasOrbit',
+            value: { text: ' примітка ', linked: 'no', comment: 'yes' },
+          },
+        ],
+        sorting: [{ id: 'hasOrbit', desc: true }],
+        searchMode: 'strict',
+        pagination: { pageIndex: 0, pageSize: 20 },
+      }),
+    ).toMatchObject({
+      sortBy: 'UnitOrbitLinkedDesc',
+      filterName: '55 омсбр',
+      filterIsDeduplicateCandidate: true,
+      filterOrbitNote: 'примітка',
+      filterHasOrbit: false,
+      filterHasOrbitNote: true,
+    });
+  });
+
+  it('keeps legacy text-only unit column filters', () => {
+    expect(readUnitNameColumnFilter('назва')).toEqual({
+      text: 'назва',
+      duplicateCandidate: 'Усі',
+    });
+    expect(readUnitOrbitColumnFilter('коментар')).toEqual({
+      text: 'коментар',
+      linked: 'Усі',
+      comment: 'Усі',
     });
   });
 

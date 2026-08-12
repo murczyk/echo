@@ -305,18 +305,18 @@ where
     let sigint_inbox_items = filter_network_calc_items(sigint_inbox_items, dbx)
         .await
         .c(h!())?;
-    if sigint_inbox_items.is_empty() {
-        return Ok(result);
+    if !sigint_inbox_items.is_empty() {
+        insert_calculated_sigint_inbox_item_networks(
+            sigint_inbox_items,
+            dbx,
+            &mut result,
+        )
+        .await
+        .c(h!())?;
     }
-    let sigint_inbox_item_ids =
-        sigint_inbox_items.iter().map(|i| i.id).collect::<Vec<_>>();
-    if sigint_inbox_item_ids.is_empty() {
-        return Ok(result);
-    }
-    insert_calculated_sigint_inbox_item_networks(
-        sigint_inbox_items,
+    crate::inbox::unit_resolution::sync_network_unit_links(
         dbx,
-        &mut result,
+        &sigint_inbox_item_ids,
     )
     .await
     .c(h!())?;

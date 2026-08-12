@@ -11,6 +11,8 @@ use sea_orm::*;
 
 pub mod callsigns;
 pub mod datetime;
+pub mod unit_resolution;
+pub mod unresolved_units;
 
 pub struct ConstructInboxItemResult {
     pub spawned_message_ids: Vec<i64>,
@@ -289,6 +291,14 @@ where
         .exec_with_returning(txn)
         .await
         .c(h!())?;
+    unit_resolution::resolve_and_sync_inbox_item(
+        txn,
+        result.id,
+        result.unit_v2.as_deref(),
+        result.unit.as_deref(),
+    )
+    .await
+    .c(h!())?;
     let system_login_id = crate::users::system_login_id(txn).await.c(h!())?;
     callsigns::sync(
         txn,

@@ -5,9 +5,13 @@ use crate::location::peleng::{
     collect_inbox_pelengs, inbox_item_has_active_peleng_exists,
 };
 use crate::rer_importer::analysis::*;
+use crate::rer_importer::report_chunking::{
+    inbox_report_chunk_req, inbox_report_period_chunks, ReportPeriodEnd,
+};
 use crate::sigint::sender::preferred_sender_sql_snippet;
 use crate::types::*;
-use anyhow::bail;
+use crate::utils::dt_from_millis;
+use anyhow::{bail, Context};
 use chrono::prelude::*;
 use echo_migration::IntoCondition;
 use itertools::Itertools;
@@ -35,6 +39,55 @@ pub async fn get_inbox_messages_report(
     user_login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
+) -> Result<Vec<(i64, Option<(f64, f64)>, InboxMessage)>, AppError> {
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let mut chunks =
+        inbox_report_period_chunks(req, report_settings.chunking_hours)
+            .context(h!())?;
+    if req.load_latest == Some(true)
+        || req.newest_first == Some(true)
+        || req.before_id_noninclusive.is_some()
+    {
+        chunks.reverse();
+    }
+    let mut messages = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "Pelengs report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let chunk_req = inbox_report_chunk_req(req, chunk);
+        for message in get_inbox_messages_report_chunk(
+            user_login, env, &chunk_req, chunk.end,
+        )
+        .await
+        .context(h!())?
+        {
+            let key = (
+                message.0,
+                message.1.map(|(lat, lng)| (lat.to_bits(), lng.to_bits())),
+            );
+            if seen.insert(key) {
+                messages.push(message);
+            }
+        }
+    }
+    Ok(messages)
+}
+
+async fn get_inbox_messages_report_chunk(
+    user_login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<(i64, Option<(f64, f64)>, InboxMessage)>, AppError> {
     let login = *user_login;
     let include_peleng_locations =
@@ -147,13 +200,34 @@ pub async fn get_inbox_messages_report(
                 .eq_any(sigint_groups.clone()),
         );
 
+    let mut pagination_req = req.clone();
+    if period_end == ReportPeriodEnd::NonInclusive {
+        pagination_req.till_date_inclusive_ms = None;
+    }
     q = crate::rer_importer::inbox::query::get_pagination_filters(
         env,
-        req,
+        &pagination_req,
         q.clone(),
     )
     .await
     .c(h!())?;
+    if period_end == ReportPeriodEnd::NonInclusive {
+        let till = req
+            .till_date_inclusive_ms
+            .ok_or_else(|| AppError::BL {
+                msg: "Until date must be specified".to_string(),
+            })
+            .context(h!())?;
+        let till = dt_from_millis(till).context(h!())?;
+        q = match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+            InboxMessagesSortBy::IMSDatetime => {
+                q.filter(sigint_inbox_item::Column::Datetime.lt(till))
+            }
+            InboxMessagesSortBy::IMSTimestamp => {
+                q.filter(signal_message::Column::Timestamp.lt(till))
+            }
+        };
+    }
     q = crate::rer_importer::inbox::query::get_bl_ordering_select(
         req,
         q.clone(),
@@ -722,6 +796,16 @@ mod tests {
             &login.id,
             &env,
             &InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    (dt - chrono::Duration::days(1))
+                        .and_utc()
+                        .timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    (dt + chrono::Duration::days(1))
+                        .and_utc()
+                        .timestamp_millis(),
+                ),
                 nolimit: Some(true),
                 ..Default::default()
             },

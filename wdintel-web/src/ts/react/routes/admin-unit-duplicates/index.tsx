@@ -97,7 +97,7 @@ export function AdminUnitDuplicatesPage({ authUserRoles }: { authUserRoles: stri
     () => [
       {
         id: 'sigintUnitName',
-        accessorFn: (row) => row.sigintUnit.name,
+        accessorFn: (row) => row.sigintUnit?.name ?? '',
         header: 'Назва SIGINT підрозділу',
         size: 280,
         Cell: ({ row }) => {
@@ -111,7 +111,7 @@ export function AdminUnitDuplicatesPage({ authUserRoles }: { authUserRoles: stri
       },
       {
         id: 'sigintUnitSegments',
-        accessorFn: (row) => sigintUnitSegments(row.sigintUnit),
+        accessorFn: (row) => (row.sigintUnit ? sigintUnitSegments(row.sigintUnit) : ''),
         header: 'Сегменти назви SIGINT',
         size: 360,
         Cell: ({ cell }) => String(cell.getValue() || '—'),

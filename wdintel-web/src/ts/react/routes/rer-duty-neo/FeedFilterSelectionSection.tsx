@@ -29,6 +29,7 @@ export type FeedFilterSelectionSectionProps<T> = {
   includeLabel?: string;
   excludeLabel?: string;
   rankedSearch?: boolean;
+  keepOpenAndPreserveInputOnSelect?: boolean;
 };
 
 export function FeedFilterSelectionSection<T>({
@@ -47,6 +48,7 @@ export function FeedFilterSelectionSection<T>({
   includeLabel = 'лише',
   excludeLabel = 'окрім',
   rankedSearch = false,
+  keepOpenAndPreserveInputOnSelect = false,
 }: FeedFilterSelectionSectionProps<T>) {
   const toggleGroupSx = useMemo(
     () =>
@@ -100,12 +102,17 @@ export function FeedFilterSelectionSection<T>({
       }) as const,
     [],
   );
-  const filterOptions = useMemo(
+  const rankedFilterOptions = useMemo(
     () => (rankedSearch ? createRankedFilterOptions(getOptionLabel) : undefined),
     [getOptionLabel, rankedSearch],
   );
   const [inputValue, setInputValue] = useState('');
   const applyResetAfterSelectionRef = useRef(false);
+  const filterOptions = useMemo(() => {
+    if (rankedFilterOptions == null) return undefined;
+    if (!keepOpenAndPreserveInputOnSelect) return rankedFilterOptions;
+    return (availableOptions: T[]) => rankedFilterOptions(availableOptions, { inputValue });
+  }, [inputValue, keepOpenAndPreserveInputOnSelect, rankedFilterOptions]);
 
   return (
     <Box>
@@ -136,19 +143,28 @@ export function FeedFilterSelectionSection<T>({
           getOptionLabel={getOptionLabel}
           value={value as T[]}
           inputValue={rankedSearch ? inputValue : undefined}
-          onChange={(_, nextValue) => {
+          onChange={(_, nextValue, reason) => {
             if (rankedSearch) {
-              applyResetAfterSelectionRef.current = true;
+              applyResetAfterSelectionRef.current = reason === 'selectOption';
             }
             onValueChange(nextValue);
           }}
           onInputChange={
             rankedSearch
               ? (_, nextValue, reason) => {
+                  if (
+                    keepOpenAndPreserveInputOnSelect &&
+                    (reason === 'selectOption' || reason === 'removeOption')
+                  ) {
+                    applyResetAfterSelectionRef.current = false;
+                    return;
+                  }
                   if (reason === 'reset') {
                     if (applyResetAfterSelectionRef.current) {
                       applyResetAfterSelectionRef.current = false;
-                      setInputValue(nextValue);
+                      if (!keepOpenAndPreserveInputOnSelect) {
+                        setInputValue(nextValue);
+                      }
                     }
                     return;
                   }
@@ -157,6 +173,12 @@ export function FeedFilterSelectionSection<T>({
                 }
               : undefined
           }
+          disableCloseOnSelect={keepOpenAndPreserveInputOnSelect}
+          onClose={() => {
+            if (keepOpenAndPreserveInputOnSelect) {
+              setInputValue('');
+            }
+          }}
           isOptionEqualToValue={isOptionEqualToValue}
           filterOptions={filterOptions}
           filterSelectedOptions

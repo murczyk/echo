@@ -1,6 +1,7 @@
 import type { AnalysisFilterOption } from '../types';
 import { normalizeFilterLabel, sortFilterOptionsByLabel } from '../use-analysis-data.shared';
 import {
+  groupEquivalentAnalysisUnitOptions,
   normalizeUnknownUnitFilterLabel,
   normalizeUnknownUnitFilterValue,
 } from '../../shared/analysis-unit-filter';
@@ -11,7 +12,8 @@ import type { AnalysisFiltersPanelPage } from './analysis-filters-panel-shared';
 type Params = Pick<
   AnalysisFiltersPanelPage,
   'aorEntries' | 'counts' | 'groupInfos' | 'options' | 'queryState' | 'tagsMap' | 'tagsOrder'
->;
+> &
+  Partial<Pick<AnalysisFiltersPanelPage, 'unitsMap'>>;
 
 export type AnalysisFiltersPanelDerivedData = {
   groupOptions: AnalysisFilterOption[];
@@ -100,6 +102,7 @@ export function buildAnalysisFiltersPanelDerivedData({
   queryState,
   tagsMap,
   tagsOrder = [],
+  unitsMap = {},
 }: Params): AnalysisFiltersPanelDerivedData {
   const groupOptions = buildMergedGroupOptions(options.groups, groupInfos);
 
@@ -217,7 +220,7 @@ export function buildAnalysisFiltersPanelDerivedData({
   );
 
   const unitsOptions = sortFilterOptionsByLabel(
-    options.units.map((option) => ({
+    groupEquivalentAnalysisUnitOptions(options.units, Object.values(unitsMap)).map((option) => ({
       ...option,
       value: normalizeUnknownUnitFilterValue(option.value),
       label: normalizeUnknownUnitFilterLabel(option.label ?? option.value),
