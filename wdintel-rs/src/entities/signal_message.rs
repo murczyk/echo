@@ -27,6 +27,7 @@ pub struct Model {
     pub echo_inbox_message_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub attachments_hash: Option<String>,
+    pub parent_signal_message_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
