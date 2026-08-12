@@ -180,6 +180,9 @@ export function useWindowedFeedScroll({
   const isWatchModeRef = useRef<boolean>(isWatchMode);
   const loadingNewerRef = useRef(loadingNewer);
   loadingNewerRef.current = loadingNewer;
+  const unreadPrefetchNeededRef = useRef(unreadPrefetchNeeded);
+  unreadPrefetchNeededRef.current = unreadPrefetchNeeded;
+  const prevUnreadPrefetchNeededRef = useRef(unreadPrefetchNeeded);
   // Narrow-screen feeds remain mounted while hidden. Disabled tracking must not
   // report visibility, bottom state, loads, or read-state side effects.
   const enabledRef = useRef<boolean>(enabled);
@@ -509,6 +512,10 @@ export function useWindowedFeedScroll({
         loadNewerIdleTimeoutRef.current = null;
         if (!enabledRef.current) return;
         if (loadingNewerRef.current) return;
+        if (!unreadPrefetchNeededRef.current) {
+          loadNewerTriggeredRef.current = false;
+          return;
+        }
         if (nearBottomRef.current !== true) {
           loadNewerTriggeredRef.current = false;
           return;
@@ -708,18 +715,24 @@ export function useWindowedFeedScroll({
     ],
   );
 
-  const unreadPrefetchNeededRef = useRef(unreadPrefetchNeeded);
   useEffect(() => {
-    const wasNeeded = unreadPrefetchNeededRef.current;
-    unreadPrefetchNeededRef.current = unreadPrefetchNeeded;
-    if (!unreadPrefetchNeeded || !enabledRef.current) return;
+    const wasNeeded = prevUnreadPrefetchNeededRef.current;
+    prevUnreadPrefetchNeededRef.current = unreadPrefetchNeeded;
+    if (!unreadPrefetchNeeded) {
+      // A concurrent physical-bottom / onReachedBottom load may have already filled
+      // the runway while a near-bottom idle timer was still armed.
+      cancelLoadNewerIdle();
+      loadNewerTriggeredRef.current = false;
+      return;
+    }
+    if (!enabledRef.current) return;
     loadNewerTriggeredRef.current = false;
     // Only re-evaluate when prefetch becomes needed again — not on the initial mount
     // (initial bottom pin intentionally suppresses load-newer).
     if (!wasNeeded) {
       updateScrollState({ allowLoadOlder: false, allowTopReached: false });
     }
-  }, [unreadPrefetchNeeded, updateScrollState]);
+  }, [cancelLoadNewerIdle, unreadPrefetchNeeded, updateScrollState]);
 
   const scrollToBottom = useCallback(
     (behavior: ScrollBehavior = 'auto', debugReason = 'imperative') => {

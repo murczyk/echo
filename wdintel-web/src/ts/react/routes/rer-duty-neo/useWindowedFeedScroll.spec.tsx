@@ -901,6 +901,48 @@ describe('useWindowedFeedScroll', () => {
     expect(onLoadNewer).not.toHaveBeenCalled();
   });
 
+  it('cancels a pending idle newer load when unread prefetch becomes unnecessary', async () => {
+    const onLoadNewer = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller ids={[1, 2, 3, 4]} onLoadNewer={onLoadNewer} unreadPrefetchNeeded />,
+      );
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 130, clientHeight: 100, scrollHeight: 300 });
+
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onLoadNewer).not.toHaveBeenCalled();
+
+    // Concurrent physical-bottom load fills the runway before the idle timer fires.
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4, 5, 6]}
+          loadingNewer
+          onLoadNewer={onLoadNewer}
+          unreadPrefetchNeeded={false}
+        />,
+      );
+    });
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4, 5, 6]}
+          onLoadNewer={onLoadNewer}
+          unreadPrefetchNeeded={false}
+        />,
+      );
+    });
+
+    await flushLoadNewerIdle();
+    expect(onLoadNewer).not.toHaveBeenCalled();
+  });
+
   it('expands the bottom load buffer when unread prefetch is needed, but not unboundedly', async () => {
     const onLoadNewer = vi.fn();
     const ids = Array.from({ length: 20 }, (_, index) => index + 1);
