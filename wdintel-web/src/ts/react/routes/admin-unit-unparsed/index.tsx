@@ -85,6 +85,22 @@ function unitTitle(unit: Unit): string {
   return segments ? `${unit.name} — ${segments}` : unit.name;
 }
 
+function unitEchelon(unit: Unit): number {
+  return [
+    unit.company,
+    unit.battalion,
+    unit.regiment,
+    unit.division,
+    unit.army,
+    unit.militaryDistrict,
+    unit.armyRegion,
+  ].findIndex((segment) => segment.trim().length > 0);
+}
+
+function sortUnitsByDescendingEchelon(units: Unit[]): Unit[] {
+  return [...units].sort((left, right) => unitEchelon(right) - unitEchelon(left));
+}
+
 function ArchiveFilterChips({
   value,
   onChange,
@@ -284,7 +300,9 @@ export function AdminUnitUnparsedPage({
         { signal: controller.signal },
       )
         .then((units) => {
-          if (!controller.signal.aborted) setUnitOptions(units);
+          if (!controller.signal.aborted) {
+            setUnitOptions(sortUnitsByDescendingEchelon(units));
+          }
         })
         .catch((error) => {
           if (!controller.signal.aborted) setUnitSearchError(formatError(error));

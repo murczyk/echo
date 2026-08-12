@@ -261,6 +261,43 @@ describe('AdminUnitUnparsedPage', () => {
     act(() => root.unmount());
   });
 
+  it('sorts unit candidates by descending echelon', async () => {
+    const companyUnit: Unit = {
+      ...sigintUnit,
+      id: 1,
+      name: 'Company candidate',
+      company: '1 р',
+      battalion: '3 мсб',
+      regiment: '82 мсп',
+      division: '69 мсд',
+    };
+    const battalionUnit: Unit = {
+      ...companyUnit,
+      id: 2,
+      name: 'Battalion candidate',
+      company: '',
+    };
+    const armyUnit: Unit = {
+      ...battalionUnit,
+      id: 3,
+      name: 'Army candidate',
+      battalion: '',
+      regiment: '',
+      division: '',
+    };
+    mocks.searchUnits.mockResolvedValueOnce([companyUnit, battalionUnit, armyUnit]);
+    const root = await renderPage();
+
+    act(() => button("Прив'язати до підрозділу").click());
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+
+    const text = document.body.textContent ?? '';
+    expect(text.indexOf('Army candidate')).toBeLessThan(text.indexOf('Battalion candidate'));
+    expect(text.indexOf('Battalion candidate')).toBeLessThan(text.indexOf('Company candidate'));
+
+    act(() => root.unmount());
+  });
+
   it('shows request errors instead of silently ignoring them', async () => {
     mocks.archive.mockRejectedValueOnce(new Error('Сервер відхилив запит'));
     const root = await renderPage();
