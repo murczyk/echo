@@ -409,8 +409,8 @@ type FeedColumnScrollFabProps = {
   isWatchMode: boolean;
   isPhysicallyAtBottom: boolean;
   hasItems: boolean;
-  bottom: number;
-  right: number;
+  bottom: number | string;
+  right: number | string;
   onArrowClick?: () => void;
 };
 

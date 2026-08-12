@@ -1109,15 +1109,9 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(200);
 
     scroller.scrollTop = 100;
-    await act(async () => {
-      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
-      await waitForAnimationFrame();
-    });
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
     scroller.scrollTop = 125;
-    await act(async () => {
-      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
-      await waitForAnimationFrame();
-    });
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
 
     layout.items = createItemLayouts(nextIds);
     await act(async () => {
@@ -1437,6 +1431,52 @@ describe('useWindowedFeedScroll', () => {
     layout.items = createItemLayouts(nextIds);
     await act(async () => {
       root.render(<TestScroller ids={nextIds} isWatchMode={false} bottomLoadBufferPx={2000} />);
+    });
+
+    expect(scroller.scrollTop).toBe(0);
+    expect(
+      (container.querySelector('[data-testid="item-21"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(0);
+  });
+
+  it('keeps full mid-list offsets while a newer load is in flight so a trim can restore', async () => {
+    const initialIds = Array.from({ length: 40 }, (_, index) => index + 1);
+    const nextIds = Array.from({ length: 40 }, (_, index) => index + 21);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 2000 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(
+        <TestScroller ids={initialIds} isWatchMode={false} loadingNewer bottomLoadBufferPx={80} />,
+      );
+    });
+    // Mid-list: away from both load edges, so only loadingNewer forces a full snapshot.
+    scroller.scrollTop = 900;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      // Clear physical-bottom / follow on rAF; snapshot was already synced on scroll.
+      await waitForAnimationFrame();
+    });
+
+    metrics.scrollHeight = 2000;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={nextIds}
+          isWatchMode={false}
+          loadingNewer={false}
+          bottomLoadBufferPx={80}
+        />,
+      );
     });
 
     expect(scroller.scrollTop).toBe(0);

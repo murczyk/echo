@@ -1048,18 +1048,19 @@ export function useWindowedFeedScroll({
       }
     }
 
-    touchAnchorSnapshotScrollMetrics();
+    // Sync-capture so an in-flight newer commit before the next frame can restore.
+    // Full offsets near load edges, or while newer is in flight (mid-list may still trim).
+    // Otherwise visible-only to avoid measuring the whole 40-item window on every scroll.
+    const latest = scrollerRef.current;
+    if (latest) {
+      const bottomDistance = distanceToBottom(latest);
+      const nearLoadEdge =
+        latest.scrollTop <= topLoadBufferPx * 2 || bottomDistance <= bottomLoadBufferPx * 2;
+      if (nearLoadEdge || loadingNewerRef.current) captureAnchorSnapshot();
+      else captureVisibleAnchorSnapshot();
+    }
     if (handleScrollRafRef.current !== null) return;
     handleScrollRafRef.current = requestAnimationFrame(() => {
-      const latest = scrollerRef.current;
-      if (latest) {
-        const bottomDistance = distanceToBottom(latest);
-        // Full offsets only near load edges (restore after trim). Mid-list stays visible-only.
-        const nearLoadEdge =
-          latest.scrollTop <= topLoadBufferPx * 2 || bottomDistance <= bottomLoadBufferPx * 2;
-        if (nearLoadEdge) captureAnchorSnapshot();
-        else captureVisibleAnchorSnapshot();
-      }
       updateScrollState();
       handleScrollRafRef.current = null;
     });
@@ -1069,7 +1070,6 @@ export function useWindowedFeedScroll({
     captureVisibleAnchorSnapshot,
     debugFeedId,
     topLoadBufferPx,
-    touchAnchorSnapshotScrollMetrics,
     updateScrollState,
     stopBottomSettle,
   ]);
