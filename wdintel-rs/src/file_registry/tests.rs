@@ -8,6 +8,7 @@ use sea_orm::{
     DbBackend, DbErr, EntityTrait, IntoActiveModel, Set, Statement,
     TransactionTrait,
 };
+use sqlx::migrate::MigrateDatabase;
 use std::{collections::BTreeMap, error::Error as StdError, future::Future};
 
 #[tokio::test]
@@ -74,20 +75,39 @@ async fn missing_file_database_has_actionable_error() {
 #[tokio::test]
 #[serial_test::serial]
 async fn file_registry_schema_and_entity_round_trip() {
-    let config = crate::config::read_config(Mode::Test).unwrap();
-    run_migrations(&config, Mode::Test).await.unwrap();
-    run_migrations(&config, Mode::Test).await.unwrap();
-    let file_registry_db =
-        connect_runtime(&config, Mode::Test).await.unwrap().unwrap();
-    let connection = file_registry_db.connection();
+    let (config, database_url) = isolated_file_registry_config().await;
 
-    assert_migration_versions(connection).await;
-    assert_public_extensions(connection).await;
-    assert_legacy_file_table_is_absent(connection).await;
-    assert_file_entry_schema(connection).await;
-    assert_file_analysis_schema(connection).await;
-    assert_default_analytics_tags(connection).await;
-    assert_file_entry_entity_round_trip(connection).await;
+    run_migrations(&config, Mode::Debug).await.unwrap();
+    run_migrations(&config, Mode::Debug).await.unwrap();
+    {
+        let file_registry_db = connect_runtime(&config, Mode::Debug)
+            .await
+            .unwrap()
+            .unwrap();
+        let connection = file_registry_db.connection();
+
+        assert_migration_versions(connection).await;
+        assert_public_extensions(connection).await;
+        assert_legacy_file_table_is_absent(connection).await;
+        assert_file_entry_schema(connection).await;
+        assert_file_analysis_schema(connection).await;
+        assert_default_analytics_tags(connection).await;
+        assert_file_entry_entity_round_trip(connection).await;
+    }
+
+    sqlx::Postgres::drop_database(&database_url).await.unwrap();
+}
+
+async fn isolated_file_registry_config() -> (Config, String) {
+    let mut config = crate::config::read_config(Mode::Test).unwrap();
+    let file_registry = config.file_registry.as_mut().unwrap();
+    file_registry.pg_dbname =
+        Some(format!("wd_files_test_schema_{}", Uuid::new_v4().simple()));
+    let database_url = crate::mk_wdfile_conn_string(file_registry, Mode::Debug);
+    sqlx::Postgres::create_database(&database_url)
+        .await
+        .unwrap();
+    (config, database_url)
 }
 
 async fn assert_migration_versions(connection: &DatabaseConnection) {

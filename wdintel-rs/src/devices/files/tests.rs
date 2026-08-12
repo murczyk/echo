@@ -29,9 +29,9 @@ use crate::types::{AppError, Mode, ShortContext, Uuid};
 use chrono::{Duration, NaiveDate, NaiveDateTime};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, DatabaseTransaction, EntityTrait, IntoActiveModel,
-    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection,
+    DatabaseTransaction, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
+    QuerySelect, TransactionTrait,
 };
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
