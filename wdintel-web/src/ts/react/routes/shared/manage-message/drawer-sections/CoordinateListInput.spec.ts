@@ -16,6 +16,7 @@ describe('CoordinateListInput helpers', () => {
     );
 
     expect(result.added).toBe(2);
+    expect(result.fullyParsed).toBe(true);
     expect(parseCoordinateBlock(result.value).map(({ format }) => format)).toEqual([
       'wgs84',
       'wgs84',
@@ -23,6 +24,16 @@ describe('CoordinateListInput helpers', () => {
     ]);
     expect(result.value).not.toContain('37U DR');
     expect(result.value).not.toContain('СК-42');
+  });
+
+  it('rejects the entire input when a coordinate is not parsed', () => {
+    const currentValue = '50.12345, 38.12345';
+    const result = mergeCoordinateInput(currentValue, '49.12345, 37.12345\nunsupported coordinate');
+
+    expect(result.fullyParsed).toBe(false);
+    expect(result.parsed).toBe(1);
+    expect(result.added).toBe(0);
+    expect(result.value).toBe(currentValue);
   });
 
   it('does not add the same point twice', () => {

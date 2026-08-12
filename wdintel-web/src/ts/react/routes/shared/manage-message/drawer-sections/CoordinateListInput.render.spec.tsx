@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CoordinateListInput } from './CoordinateListInput';
 
-describe('CoordinateListInput duplicate feedback', () => {
+describe('CoordinateListInput feedback', () => {
   afterEach(() => {
     document.body.innerHTML = '';
   });
@@ -31,7 +31,7 @@ describe('CoordinateListInput duplicate feedback', () => {
       );
     });
 
-    const input = container.querySelector<HTMLInputElement>('input');
+    const input = container.querySelector<HTMLTextAreaElement>('textarea');
     const pasteEvent = new Event('paste', { bubbles: true, cancelable: true });
     Object.defineProperty(pasteEvent, 'clipboardData', {
       value: { getData: () => '49.12346, 37.23457' },
@@ -72,10 +72,10 @@ describe('CoordinateListInput duplicate feedback', () => {
       );
     });
 
-    const input = container.querySelector<HTMLInputElement>('input');
+    const input = container.querySelector<HTMLTextAreaElement>('textarea');
     await act(async () => {
       const setInputValue = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
+        HTMLTextAreaElement.prototype,
         'value',
       )?.set;
       if (input) setInputValue?.call(input, '49.12346, 37.23457');
@@ -89,6 +89,44 @@ describe('CoordinateListInput duplicate feedback', () => {
     expect(container.querySelector('[data-coordinate-duplicate="true"]')?.textContent).toContain(
       '49.12346, 37.23457',
     );
+
+    await act(async () => root.unmount());
+  });
+
+  it('keeps and rejects a paste containing an unparsed coordinate', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onChange = vi.fn();
+    const onErrorChange = vi.fn();
+    const pasted = '49.12345, 37.12345\nunsupported coordinate';
+
+    await act(async () => {
+      root.render(
+        <CoordinateListInput
+          value=""
+          onChange={onChange}
+          onBlur={vi.fn()}
+          onErrorChange={onErrorChange}
+          disabled={false}
+        />,
+      );
+    });
+
+    const input = container.querySelector<HTMLTextAreaElement>('textarea');
+    const pasteEvent = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(pasteEvent, 'clipboardData', {
+      value: { getData: () => pasted },
+    });
+    await act(async () => {
+      input?.dispatchEvent(pasteEvent);
+    });
+
+    expect(input?.value).toBe(pasted);
+    expect(input?.getAttribute('aria-invalid')).toBe('true');
+    expect(container.textContent).toContain('Не вдалося розпізнати всі координати');
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onErrorChange).toHaveBeenLastCalledWith('Не вдалося розпізнати всі координати');
 
     await act(async () => root.unmount());
   });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { getCoordinateText } from './coordinate-format';
-import { parseCoordinateBlock } from './coordinate-parser';
+import { isCoordinateBlockFullyParsed, parseCoordinateBlock } from './coordinate-parser';
 
 describe('parseCoordinateBlock', () => {
   it('parses mixed coordinate formats and keeps every point', () => {
@@ -61,5 +61,29 @@ describe('parseCoordinateBlock', () => {
     expect(point?.format).toBe('usk2000');
     expect(point?.lat).toBeCloseTo(49, 4);
     expect(point?.lng).toBeCloseTo(24, 4);
+  });
+
+  it('accepts fully parsed mixed coordinate blocks', () => {
+    expect(
+      isCoordinateBlockFullyParsed(`
+49.12345, 37.12345
+37U DR 05997 22279
+36U 350000 5500000
+СК-42: X=5215227.19, Y=6548668.84
+УСК-2000: X=5420714, Y=4551696
+47°14'31.4"N 33°35'57.8"E
+52-20714
+65-51696
+`),
+    ).toBe(true);
+  });
+
+  it('rejects a coordinate block with unparsed input', () => {
+    expect(isCoordinateBlockFullyParsed('49.12345, 37.12345\nunsupported coordinate')).toBe(false);
+    expect(isCoordinateBlockFullyParsed('49.12345, 37.12345 typo')).toBe(false);
+  });
+
+  it('accepts repeated valid entries separated by a semicolon', () => {
+    expect(isCoordinateBlockFullyParsed('49.12345, 37.12345; 49.12345, 37.12345')).toBe(true);
   });
 });

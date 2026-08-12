@@ -15,6 +15,7 @@ import { useMemo, useState, type ClipboardEvent, type KeyboardEvent, type ReactN
 
 import { getCoordinateText } from '../../../../../maps/coordinate-format';
 import {
+  isCoordinateBlockFullyParsed,
   parseCoordinateBlock,
   type CoordinateInputFormat,
   type ParsedCoordinate,
@@ -81,9 +82,19 @@ export function mergeCoordinateInput(
   value: string;
   added: number;
   parsed: number;
+  fullyParsed: boolean;
 } {
   const current = parseCoordinateBlock(currentValue);
   const parsed = parseCoordinateBlock(input);
+  const fullyParsed = isCoordinateBlockFullyParsed(input);
+  if (!fullyParsed) {
+    return {
+      value: currentValue,
+      added: 0,
+      parsed: parsed.length,
+      fullyParsed,
+    };
+  }
   const keys = new Set(current.map(coordinateDuplicateKey));
   const added = parsed.filter((point) => {
     const key = coordinateDuplicateKey(point);
@@ -96,6 +107,7 @@ export function mergeCoordinateInput(
     value: serializeCoordinates([...current, ...added]),
     added: added.length,
     parsed: parsed.length,
+    fullyParsed,
   };
 }
 
@@ -125,10 +137,15 @@ export function CoordinateListInput({
     if (!candidate.trim()) return false;
     const result = mergeCoordinateInput(value, candidate);
     onBlur();
-    if (result.parsed === 0) {
+    if (!result.fullyParsed) {
+      const message =
+        result.parsed === 0
+          ? 'Не вдалося розпізнати координату'
+          : 'Не вдалося розпізнати всі координати';
+      setInput(candidate);
       setInputHint(null);
-      setInputError('Не вдалося розпізнати координату');
-      onErrorChange('Не вдалося розпізнати координату');
+      setInputError(message);
+      onErrorChange(message);
       return false;
     }
     if (result.added === 0) {
@@ -149,13 +166,13 @@ export function CoordinateListInput({
     return true;
   };
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
     event.preventDefault();
     addCoordinates(input);
   };
 
-  const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
+  const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
     const pasted = event.clipboardData.getData('text');
     if (parseCoordinateBlock(pasted).length === 0) return;
     event.preventDefault();
@@ -187,6 +204,8 @@ export function CoordinateListInput({
         placeholder="WGS-84, MGRS, UTM, СК-42…"
         size="small"
         fullWidth
+        multiline
+        maxRows={4}
         disabled={disabled}
         error={!!shownError}
         helperText={

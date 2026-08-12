@@ -21,6 +21,15 @@ const SK42_PATTERN = new RegExp(
   String.raw`(?:МСК|СК|SK)\s*[-‑]?\s*42\s*:?\s*(?:[XХxх]\s*=?\s*)?(?<x>${GRID_VALUE})\s*[,;/\s]+\s*(?:[YУyу]\s*=?\s*)?(?<y>${GRID_VALUE})`,
   'giu',
 );
+const USK2000_FULL_PATTERN = new RegExp(
+  String.raw`^(?:УСК\s*[-‑]?\s*2000\s*:?\s*)?(?:[XХxх]\s*=?\s*)?${GRID_VALUE}\s*[,;/\s]+\s*(?:[YУyу]\s*=?\s*)?${GRID_VALUE}$`,
+  'iu',
+);
+const DMS_VALUE = String.raw`-?\d{1,3}°\d{1,2}'\d+(?:\.\d+)?["″”]?`;
+const DMS_FULL_PATTERN = new RegExp(
+  String.raw`^${DMS_VALUE}\s*[NSEWСЮВЗ]?\s*[,;/\s]+\s*${DMS_VALUE}\s*[NSEWСЮВЗ]?$`,
+  'iu',
+);
 
 function parseGridValue(value: string): number | null {
   const parsed = Number(value.replace(/[-‐–—\s]/g, ''));
@@ -157,4 +166,44 @@ export function parseCoordinateBlock(value: string): ParsedCoordinate[] {
       seen.add(key);
       return [coords];
     });
+}
+
+function isWholeCoordinateEntry(value: string): boolean {
+  const input = value.trim();
+  if (!input) return false;
+  if (parseCoordinateInput(input)) return true;
+
+  const points = parseCoordinateBlock(input);
+  const [point] = points;
+  if (points.length === 1 && point) {
+    if (point.format === 'sk42' && point.source === input) return true;
+    if (point.format === 'dms' && DMS_FULL_PATTERN.test(input)) return true;
+    if (point.format === 'usk2000' && USK2000_FULL_PATTERN.test(input)) return true;
+  }
+
+  const entries = input.split(';').map((entry) => entry.trim());
+  return entries.length > 1 && entries.every(isWholeCoordinateEntry);
+}
+
+export function isCoordinateBlockFullyParsed(value: string): boolean {
+  const entries = value
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (entries.length === 0) return false;
+
+  for (let index = 0; index < entries.length; index += 1) {
+    if (isWholeCoordinateEntry(entries[index])) continue;
+
+    const nextEntry = entries[index + 1];
+    if (nextEntry && isWholeCoordinateEntry(`${entries[index]}\n${nextEntry}`)) {
+      index += 1;
+      continue;
+    }
+
+    return false;
+  }
+
+  return true;
 }
