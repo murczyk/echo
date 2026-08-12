@@ -1653,6 +1653,52 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
+  it('applies a coordinate deletion locally without requesting a fallback reload', async () => {
+    const editedMessage = buildMessage({ coords: null, coordsWithLocality: [] });
+    const onSubmitEdit = vi.fn();
+    const onEditSuccess = vi.fn();
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({
+      signal_message_id: 124,
+      message: editedMessage,
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{ id: 124, message: buildMessage() }}
+          onSubmitEdit={onSubmitEdit}
+          onEditSuccess={onEditSuccess}
+        />,
+      );
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Видалити координату 1"]')
+        ?.click();
+    });
+    await act(async () => {
+      (container.querySelector('form') as HTMLFormElement).dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      124,
+      expect.objectContaining({ coords: [] }),
+    );
+    expect(onSubmitEdit).toHaveBeenCalledWith(124, editedMessage);
+    expect(onEditSuccess).not.toHaveBeenCalled();
+
+    root.unmount();
+  });
+
   it('closes and reports edit success when the response has no inline message', async () => {
     const onSubmitEdit = vi.fn();
     const onEditSuccess = vi.fn();

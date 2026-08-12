@@ -165,18 +165,22 @@ export function useMessageSubmit({
       if (isEditMode && editTarget) {
         const res = await editDirectSubmit(editTarget.id, payload);
         addValues(recentValues);
+        let editAppliedLocally = false;
         if (onSubmitEdit && res.message) {
           try {
             await onSubmitEdit(editTarget.id, res.message);
+            editAppliedLocally = true;
           } catch (error) {
             console.error('Error handling edited message', error);
           }
         }
         handleDrawerCloseAfterSubmit();
-        try {
-          await onEditSuccess?.(res);
-        } catch (error) {
-          console.error('Error handling edit success', error);
+        if (!editAppliedLocally) {
+          try {
+            await onEditSuccess?.(res);
+          } catch (error) {
+            console.error('Error handling edit success', error);
+          }
         }
       } else {
         const result = await submitDirect(payload);

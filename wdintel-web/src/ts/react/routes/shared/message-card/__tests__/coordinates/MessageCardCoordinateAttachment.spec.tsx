@@ -249,6 +249,10 @@ describe('MessageCardCoordinateAttachment', () => {
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
     });
     expect(leaflet.map).toHaveBeenCalledTimes(1);
+    expect(leaflet.map).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ preferCanvas: false }),
+    );
 
     await act(async () => {
       root.render(<CoordinateAttachmentThumbnail points={[points[1]]} onOpen={vi.fn()} />);

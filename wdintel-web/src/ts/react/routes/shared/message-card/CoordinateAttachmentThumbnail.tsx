@@ -109,7 +109,7 @@ export function CoordinateAttachmentThumbnail({
         touchZoom: false,
         boxZoom: false,
         keyboard: false,
-        preferCanvas: true,
+        preferCanvas: false,
         minZoom: 2,
         maxZoom: 17,
       });
