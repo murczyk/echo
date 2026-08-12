@@ -1,42 +1,42 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import type { TailAvailability } from './types';
 
-export type FeedColumnChrome = {
+export type FeedColumnFabState = {
   bottomUnreadCount: number;
   arrowResultMessage: string | null;
   tailAvailability: TailAvailability;
 };
 
-const EMPTY_CHROME: FeedColumnChrome = {
+const EMPTY_FAB_STATE: FeedColumnFabState = {
   bottomUnreadCount: 0,
   arrowResultMessage: null,
   tailAvailability: 'unknown',
 };
 
-const chromeByFeedId = new Map<string, FeedColumnChrome>();
+const fabByFeedId = new Map<string, FeedColumnFabState>();
 const listenersByFeedId = new Map<string, Set<() => void>>();
 
 function emit(feedId: string): void {
   listenersByFeedId.get(feedId)?.forEach((listener) => listener());
 }
 
-export function publishFeedColumnChrome(feedId: string, chrome: FeedColumnChrome): void {
-  const previous = chromeByFeedId.get(feedId);
+export function publishFeedColumnFab(feedId: string, fab: FeedColumnFabState): void {
+  const previous = fabByFeedId.get(feedId);
   if (
     previous &&
-    previous.bottomUnreadCount === chrome.bottomUnreadCount &&
-    previous.arrowResultMessage === chrome.arrowResultMessage &&
-    previous.tailAvailability === chrome.tailAvailability
+    previous.bottomUnreadCount === fab.bottomUnreadCount &&
+    previous.arrowResultMessage === fab.arrowResultMessage &&
+    previous.tailAvailability === fab.tailAvailability
   ) {
     return;
   }
-  chromeByFeedId.set(feedId, chrome);
+  fabByFeedId.set(feedId, fab);
   emit(feedId);
 }
 
-export function clearFeedColumnChrome(feedId: string): void {
-  if (!chromeByFeedId.has(feedId)) return;
-  chromeByFeedId.delete(feedId);
+export function clearFeedColumnFab(feedId: string): void {
+  if (!fabByFeedId.has(feedId)) return;
+  fabByFeedId.delete(feedId);
   emit(feedId);
 }
 
@@ -53,11 +53,11 @@ function subscribe(feedId: string, listener: () => void): () => void {
   };
 }
 
-function getSnapshot(feedId: string): FeedColumnChrome {
-  return chromeByFeedId.get(feedId) ?? EMPTY_CHROME;
+function getSnapshot(feedId: string): FeedColumnFabState {
+  return fabByFeedId.get(feedId) ?? EMPTY_FAB_STATE;
 }
 
-export function useFeedColumnChrome(feedId: string): FeedColumnChrome {
+export function useFeedColumnFab(feedId: string): FeedColumnFabState {
   const subscribeFeed = useCallback(
     (listener: () => void) => subscribe(feedId, listener),
     [feedId],

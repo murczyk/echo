@@ -23,7 +23,7 @@ import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import type { FeedColumnModel } from './types';
 import { DutyScrollDebugPanel } from './DutyScrollDebugPanel';
 import { registerDutyScrollDebugBellPress } from './duty-scroll-debug';
-import { clearFeedColumnChrome, publishFeedColumnChrome } from './feedColumnChrome';
+import { clearFeedColumnFab, publishFeedColumnFab } from './feedColumnFab';
 
 export type FeedColumnProps = {
   column: FeedColumnModel;
@@ -168,17 +168,17 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     [feed.items.length],
   );
 
-  // Badge chrome bypasses FeedColumnContent memo so poll/unread ticks don't rebuild the list.
+  // FAB badge/arrow state bypasses FeedColumnContent memo so poll/unread ticks don't rebuild the list.
   // Publish after render — sync emit during render updates FeedColumnScrollFab mid-tree.
   useLayoutEffect(() => {
-    publishFeedColumnChrome(feed.id, {
+    publishFeedColumnFab(feed.id, {
       bottomUnreadCount: view.bottomUnreadCount ?? 0,
       arrowResultMessage: view.arrowResultMessage ?? null,
       tailAvailability: view.tailAvailability ?? 'unknown',
     });
   }, [feed.id, view.arrowResultMessage, view.bottomUnreadCount, view.tailAvailability]);
 
-  useEffect(() => () => clearFeedColumnChrome(feed.id), [feed.id]);
+  useEffect(() => () => clearFeedColumnFab(feed.id), [feed.id]);
 
   return (
     <Box

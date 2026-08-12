@@ -41,7 +41,7 @@ import { feedListRenderStateEqual } from './utils';
 import { dutyTopScrollButtonSx } from './top-action-styles';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 import { recordDutyScrollDebugTiming, useDutyScrollDebugEnabled } from './duty-scroll-debug';
-import { useFeedColumnChrome } from './feedColumnChrome';
+import { useFeedColumnFab } from './feedColumnFab';
 
 /** Start loading older messages when the user scrolls close to the top of the DOM list. */
 const LOAD_OLDER_BUFFER_PX = 160;
@@ -424,7 +424,7 @@ const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
   right,
   onArrowClick,
 }: FeedColumnScrollFabProps) {
-  const { bottomUnreadCount, arrowResultMessage, tailAvailability } = useFeedColumnChrome(feedId);
+  const { bottomUnreadCount, arrowResultMessage, tailAvailability } = useFeedColumnFab(feedId);
   if (
     !hasItems ||
     !isPresent(onArrowClick) ||

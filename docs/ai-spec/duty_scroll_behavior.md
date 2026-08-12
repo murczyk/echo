@@ -6,6 +6,9 @@ Short guide for humans. Full behavior and acceptance scenarios:
 
 Issue: [#3059](https://github.com/echoua/echo/issues/3059).
 
+Scroll/commit performance notes (Virtuoso rollback, profile, next levers):
+[`archive/2026-08-12-duty-feed-scroll-perf/README.md`](../../archive/2026-08-12-duty-feed-scroll-perf/README.md).
+
 ## What you need to know
 
 - Each column keeps a **40-message window**. Older prepends / newer appends trim the other end.
