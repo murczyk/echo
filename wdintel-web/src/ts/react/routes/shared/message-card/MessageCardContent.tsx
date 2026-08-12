@@ -141,7 +141,7 @@ function PointBlacklistPaletteDialog({
       <DialogTitle>Додати до чорного списку</DialogTitle>
       <DialogContent>
         <Typography variant="body2" sx={{ mb: 1.5 }}>
-          Точка: {state.request.etalon}
+          Точка «{state.request.etalon}»
         </Typography>
         {loading ? <CircularProgress size={24} aria-label="Завантаження палітр" /> : null}
         {error ? (
@@ -173,7 +173,9 @@ function PointBlacklistPaletteDialog({
           <Typography>Жодна доступна палітра для цієї точки не знайдена.</Typography>
         ) : null}
         {!loading && palitraNames.length > 0 && filteredNames.length === 0 ? (
-          <Typography>За запитом палітри не знайдені.</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Палітр за запитом не знайдено.
+          </Typography>
         ) : null}
         {!loading && filteredNames.length > 0 && palitraNames.length > 50 ? (
           <Virtuoso
