@@ -78,7 +78,8 @@ pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
             break;
         }
         let _loop_guard = worker_watch::loop_guard("ai_callsign_worker");
-        let processed = match process_next(&env.dbx, &mut redis).await {
+        let processed = match process_next(&env.dbx, &env.rq, &mut redis).await
+        {
             Ok(processed) => processed,
             Err(error) => {
                 error!("ai_callsign_worker failed: {error:#?}");
@@ -99,6 +100,7 @@ pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
 
 async fn process_next(
     dbx: &DatabaseConnection,
+    rq: &reqwest::Client,
     redis: &mut redis::aio::ConnectionManager,
 ) -> Result<bool, AppError> {
     let Some(config) = load_worker_config(dbx).await? else {
@@ -116,6 +118,7 @@ async fn process_next(
         delete_job(dbx, job.sigint_inbox_item_id).await?;
         return Ok(true);
     };
+    let body = message.body.unwrap_or_default();
     let response = request_ai_response(
         &config.ai_engine,
         vec![
@@ -125,7 +128,7 @@ async fn process_next(
             },
             AiEngineMessage {
                 role: AI_CHAT_ROLE_USER.to_string(),
-                content: message.body.unwrap_or_default(),
+                content: body.clone(),
             },
         ],
     )
@@ -148,8 +151,26 @@ async fn process_next(
             return Ok(true);
         }
     };
+    let callsigns = normalize_callsigns(callsigns);
+    let callsign_tokens = if callsigns.is_empty() {
+        vec![]
+    } else {
+        match crate::rer_importer::callsigns::highlight_callsigns(
+            rq, &body, &callsigns,
+        )
+        .await
+        {
+            Ok(callsign_tokens) => callsign_tokens,
+            Err(error) => {
+                fail_job(dbx, job, error.to_string()).await.c(h!())?;
+                return Ok(true);
+            }
+        }
+    };
     let changed =
-        complete_job(dbx, job.sigint_inbox_item_id, callsigns).await?;
+        complete_job(dbx, job.sigint_inbox_item_id, callsigns, callsign_tokens)
+            .await
+            .c(h!())?;
     if changed {
         fanout_mult(
             redis,
@@ -214,7 +235,9 @@ async fn complete_job(
     dbx: &DatabaseConnection,
     sigint_inbox_item_id: i64,
     callsigns: Vec<String>,
+    callsign_tokens: Vec<crate::rer_importer::highlight::CNCallsign>,
 ) -> Result<bool, AppError> {
+    let callsign_tokens = serde_json::to_value(callsign_tokens).c(h!())?;
     let transaction = dbx.begin().await.c(h!())?;
     let inbox_item =
         sigint_inbox_item::Entity::find_by_id(sigint_inbox_item_id)
@@ -235,16 +258,16 @@ async fn complete_job(
     .unwrap_or_default();
     let current = current_callsigns.primary;
     let suggested = current_callsigns.alg2;
-    let callsigns = normalize_callsigns(callsigns);
     let callsigns_changed = callsigns != current;
-    let changed = callsigns_changed || !suggested.is_empty();
+    let should_update_callsign_tokens =
+        inbox_item.callsign_tokens.as_ref() != Some(&callsign_tokens);
+    let changed = callsigns_changed
+        || should_update_callsign_tokens
+        || !suggested.is_empty();
     if changed {
-        if callsigns_changed {
+        if should_update_callsign_tokens {
             let mut inbox_item = inbox_item.into_active_model();
-            inbox_item.callsign_tokens = Set(Some(
-                serde_json::to_value(Vec::<serde_json::Value>::new())
-                    .c(h!())?,
-            ));
+            inbox_item.callsign_tokens = Set(Some(callsign_tokens));
             inbox_item.update(&transaction).await.c(h!())?;
         }
         let system_login_id =
