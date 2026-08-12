@@ -726,6 +726,13 @@ and an empty scope returns an empty result without querying the large
 relations. Time and access predicates remain authoritative; ID bounds are
 only ClickHouse pruning hints.
 
+The RER analysis message list requires fresher results than analytical
+counters and facets. Requests whose selected range ends in the live analytics
+overlap use PostgreSQL directly when the range is shorter than 25 hours. Longer
+live ranges merge ClickHouse candidates with a PostgreSQL fresh tail before
+authoritative PostgreSQL hydration and pagination. Closed historical ranges
+continue to use ClickHouse with whole-query PostgreSQL fallback.
+
 PostgreSQL remains responsible for transactions, authoritative catalog and
 comment lookups, mutable caches, PostGIS processing, repeatable-read report
 snapshots, and analysis filters whose ClickHouse shape is not a single flat
