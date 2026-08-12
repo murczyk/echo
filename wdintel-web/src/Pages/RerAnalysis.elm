@@ -211,6 +211,7 @@ init route _ =
             , reportTagsOnlyThisUnitForReport = False
             , report1213LinkedNetworksOnly = True
             , reportWithoutComments = False
+            , reportBabakNewCallsignMinMentions = Config.babakNewCallsignMinMentionsDefault
             , reportDigestOmitExoId = False
             , reportDigestForm1217 = False
             , reportAdvancedSenders = False
@@ -3644,6 +3645,16 @@ update user shared route msg model =
             , E.none
             )
 
+        ReportBabakNewCallsignMinMentionsInput mentions ->
+            ( case String.toInt mentions of
+                Just value_ ->
+                    { model | reportBabakNewCallsignMinMentions = Basics.max 1 value_ }
+
+                Nothing ->
+                    model
+            , E.none
+            )
+
         ReportDigestOmitExoIdToggle ->
             ( { model | reportDigestOmitExoId = not model.reportDigestOmitExoId }
             , E.none
@@ -3714,6 +3725,12 @@ update user shared route msg model =
                         , withoutComments =
                             if model.reportTemplate == RTBabak then
                                 Just model.reportWithoutComments
+
+                            else
+                                Nothing
+                        , babakNewCallsignMinMentions =
+                            if model.reportTemplate == RTBabak then
+                                Just model.reportBabakNewCallsignMinMentions
 
                             else
                                 Nothing

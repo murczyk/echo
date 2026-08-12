@@ -32,6 +32,7 @@ export type SenderAggregation = 'ByProfile' | 'ByPost';
 
 export type AnalysisReportState = {
   activeNetworksAorIds: number[];
+  babakNewCallsignMinMentions: number;
   interceptionKeepFullMessage: boolean;
   interceptionKeepOldColors: boolean;
   open: boolean;
@@ -54,6 +55,7 @@ export type AppliedReportFilters = {
 };
 
 export const REPORT_ADJACENT_FREQS_OPTIONS = [0, 0.0005, 0.002, 0.005] as const;
+export const BABAK_NEW_CALLSIGN_MIN_MENTIONS_DEFAULT = 3;
 
 export function isExportReportTemplate(template: ReportTemplateId): boolean {
   return template === 'summary_table' || template === 'kmz' || template === 'geojson';
@@ -66,6 +68,7 @@ export function reportTemplateToMode(template: ReportTemplateId): ReportBuilderM
 export function createDefaultReportState(): AnalysisReportState {
   return {
     activeNetworksAorIds: [],
+    babakNewCallsignMinMentions: BABAK_NEW_CALLSIGN_MIN_MENTIONS_DEFAULT,
     interceptionKeepFullMessage: false,
     interceptionKeepOldColors: false,
     open: false,
@@ -172,6 +175,8 @@ export function buildReportRequest(
     tagReportSortBy: state.template === 'tags' ? state.tagReportSortBy : null,
     report1213LinkedNetworksOnly: null,
     withoutComments: state.template === 'babak' ? state.withoutComments : null,
+    babakNewCallsignMinMentions:
+      state.template === 'babak' ? state.babakNewCallsignMinMentions : null,
     interceptionKeepFullMessage:
       state.template === 'interception' ? state.interceptionKeepFullMessage : null,
     interceptionKeepOldColors:

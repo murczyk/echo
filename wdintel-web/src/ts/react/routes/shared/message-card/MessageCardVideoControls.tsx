@@ -93,9 +93,11 @@ export function VolumeControl({
 export function SpeedSelect({
   playbackRate,
   onRateChange,
+  color = 'rgba(255, 255, 255, 0.9)',
 }: {
   playbackRate: 0.5 | 1 | 1.5 | 2;
   onRateChange: (rate: 0.5 | 1 | 1.5 | 2) => void;
+  color?: string;
 }) {
   return (
     <Select
@@ -106,16 +108,19 @@ export function SpeedSelect({
       }
       variant="outlined"
       sx={{
-        color: 'text.secondary',
-        '& .MuiOutlinedInput-notchedOutline': { borderColor: 'divider' },
+        color,
+        minWidth: { xs: 44, sm: 54 },
+        '& .MuiSelect-select': { py: 0.25, px: { xs: 0.75, sm: 1 } },
+        '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255, 255, 255, 0.2)' },
         '&:hover .MuiOutlinedInput-notchedOutline': {
-          borderColor: 'text.secondary',
+          borderColor: 'rgba(255, 255, 255, 0.4)',
         },
-        '& .MuiSvgIcon-root': { color: 'text.secondary' },
+        '& .MuiSvgIcon-root': { color, right: { xs: 2, sm: 7 } },
         '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
           borderColor: 'primary.light',
         },
         fontSize: '0.85rem',
+        fontWeight: 500,
         height: 28,
       }}
       MenuProps={{

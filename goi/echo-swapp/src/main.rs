@@ -3,6 +3,7 @@ mod automation;
 mod config;
 mod db;
 mod error;
+mod map_screenshot;
 mod messenger;
 mod ui;
 mod worker;

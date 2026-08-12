@@ -448,9 +448,8 @@ function DuplicateMergeSelection({
   return (
     <Stack spacing={2}>
       <PowerAlert severity="warning" autoHideDuration={null}>
-        Ці підрозділи SIGINT уже прив’язані до того самого підрозділу Orbit, з яким буде пов’язано
-        новий підрозділ. Виберіть дублікати, дані яких потрібно перенести до нового підрозділу. Якщо
-        нічого не вибрати, вони залишаться окремими.
+        Схоже що даний підрозділ вже прив'язаний до Orbit, будь-ласка оберіть які дублікати бажаєте
+        виправити.
       </PowerAlert>
       <Stack spacing={1}>
         {units.map((unit) => (

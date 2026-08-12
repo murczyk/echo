@@ -203,6 +203,9 @@ assets = [
 	[ "../deploy/clickhouse/bin/source-reconcile-tables.sh", "opt/echo-peerdb/bin/source-reconcile-tables.sh", "755", ],
 	[ "../deploy/clickhouse/bin/source-reconcile-if-needed.sh", "opt/echo-peerdb/bin/source-reconcile-if-needed.sh", "755", ],
 	[ "../deploy/clickhouse/bin/source-reconcile-derived-schema.sh", "opt/echo-peerdb/bin/source-reconcile-derived-schema.sh", "755", ],
+	[ "../deploy/clickhouse/bin/source-resnapshot-table.sh", "opt/echo-peerdb/bin/source-resnapshot-table.sh", "755", ],
+	[ "../deploy/clickhouse/bin/resnapshot-table.sh", "opt/echo-peerdb/bin/resnapshot-table.sh", "755", ],
 	[ "../deploy/clickhouse/bin/reconcile-derived-schema.sh", "opt/echo-peerdb/bin/reconcile-derived-schema-remote.sh", "755", ],
 	[ "../deploy/clickhouse/env/tables-exclude.txt", "opt/echo-peerdb/env/tables-exclude.txt", "644", ],
+	[ "../deploy/clickhouse/migration-impact.json", "opt/echo-peerdb/migration-impact.json", "644", ],
 ]

@@ -701,7 +701,15 @@ async fn apply_backfill_entry(
         item.unit_v2 = Set(Some(unit.clone()));
         item.parsed_unit_v2 = Set(true);
     }
-    item.update(&txn).await.c(h!())?;
+    let item = item.update(&txn).await.c(h!())?;
+    crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
+        &txn,
+        item.id,
+        item.unit_v2.as_deref(),
+        item.unit.as_deref(),
+    )
+    .await
+    .c(h!())?;
     crate::stats::enqueue_group_stats_recalculation_for_message(
         &txn,
         expected.id,

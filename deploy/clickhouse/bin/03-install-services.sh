@@ -27,6 +27,8 @@ sudo install -d -o root -g root -m 0755 /opt/echo-analytics
 sudo install -d -o root -g root -m 0755 /opt/echo-analytics/bin
 sudo install -o root -g root -m 0755 "$SCRIPT_DIR/lib.sh" \
   /opt/echo-analytics/bin/lib.sh
+sudo install -o root -g root -m 0755 "$SCRIPT_DIR/clickhouse-system-log-policy.sh" \
+  /opt/echo-analytics/bin/clickhouse-system-log-policy.sh
 sudo install -o root -g root -m 0644 "$BUNDLE_DIR/versions.env" \
   /opt/echo-analytics/versions.env
 for wrapper in \
@@ -40,7 +42,8 @@ for wrapper in \
   reconcile-table-selection.sh \
   refresh-current-views.sh \
   refresh-gateway.sh \
-  query-performance-report.sh
+  query-performance-report.sh \
+  manage-system-logs.sh
 do
   sudo install -m 0755 "$SCRIPT_DIR/$wrapper" "/opt/echo-analytics/bin/$wrapper"
 done

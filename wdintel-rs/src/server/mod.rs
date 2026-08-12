@@ -157,13 +157,9 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         };
     let settlement_paths = config.settlement_paths().c(h!())?;
     let settlements_data =
-        crate::location::load_settlements_data_config(settlement_paths, mode)
-            .c(h!())?;
+        load_settlements_data(settlement_paths, mode).c(h!())?;
     let settlements = Arc::new(RwLock::new(settlements_data));
-    let callsigns_whitelist =
-        crate::sigint::callsign::load_whitelist_from_file(mode)
-            .await
-            .c(h!())?;
+    let callsigns_whitelist = load_callsigns_whitelist(mode).await.c(h!())?;
 
     let version_file = match mode {
         Mode::Debug | Mode::Test => {
@@ -222,6 +218,48 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     .await
     .c(h!())?;
     Ok(Arc::new(env))
+}
+
+fn load_settlements_data(
+    settlement_paths: Vec<String>,
+    mode: Mode,
+) -> anyhow::Result<crate::location::SettlementsDataConfig> {
+    #[cfg(test)]
+    if mode == Mode::Test {
+        static TEST_SETTLEMENTS: std::sync::OnceLock<
+            crate::location::SettlementsDataConfig,
+        > = std::sync::OnceLock::new();
+        return Ok(TEST_SETTLEMENTS
+            .get_or_init(|| {
+                crate::location::load_settlements_data_config(
+                    settlement_paths,
+                    mode,
+                )
+                .expect("test settlement data must load")
+            })
+            .clone());
+    }
+
+    crate::location::load_settlements_data_config(settlement_paths, mode)
+}
+
+async fn load_callsigns_whitelist(
+    mode: Mode,
+) -> anyhow::Result<std::collections::HashSet<String>> {
+    #[cfg(test)]
+    if mode == Mode::Test {
+        static TEST_CALLSIGNS: tokio::sync::OnceCell<
+            std::collections::HashSet<String>,
+        > = tokio::sync::OnceCell::const_new();
+        return Ok(TEST_CALLSIGNS
+            .get_or_try_init(|| {
+                crate::sigint::callsign::load_whitelist_from_file(mode)
+            })
+            .await?
+            .clone());
+    }
+
+    crate::sigint::callsign::load_whitelist_from_file(mode).await
 }
 
 #[derive(Debug, PartialEq)]
@@ -379,6 +417,7 @@ fn spawn_background_workers(
     let dbx9 = env.dbx.clone();
     let dbx10 = env.dbx.clone();
     let dbx11 = env.dbx.clone();
+    let failed_inbox_unit_db = env.dbx.clone();
     let mil_geo2 = env.mil_geo.clone();
 
     if let Some(secret_config) = config.vault_config.clone() {
@@ -474,6 +513,12 @@ fn spawn_background_workers(
     });
     spawn_named_worker("unit_tag_queue_worker", bg_set, async move {
         crate::sigint::unit_tag::run_unit_tag_queue_worker_nofail(mode).await;
+    });
+    spawn_named_worker("failed_inbox_unit_worker", bg_set, async move {
+        crate::inbox::unit_resolution::failed_inbox_unit_worker_nofail(
+            failed_inbox_unit_db,
+        )
+        .await;
     });
     spawn_named_worker(
         "inbox_network_daily_consistency_worker",
@@ -781,6 +826,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_agent::admin::stop_user_agent)
             .service(crate::ai_agent::admin::test_user_agent)
             .service(crate::ai_callsign::get_ai_callsign_page)
+            .service(crate::ai_callsign::reset_ai_callsign_prompt)
             .service(crate::ai_callsign::create_ai_callsign_test_message)
             .service(crate::ai_callsign::update_ai_callsign_test_message)
             .service(crate::ai_callsign::delete_ai_callsign_test_message)
@@ -899,6 +945,18 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::unit::delete_unit_duplicate)
             .service(crate::sigint::unit::units_search)
             .service(crate::sigint::unit::attachment::unit_details)
+            .service(crate::sigint::unit::labels::create_unit_label)
+            .service(crate::sigint::unit::labels::delete_unit_label)
+            .service(
+                crate::inbox::unresolved_units::list_unresolved_unit_labels,
+            )
+            .service(
+                crate::inbox::unresolved_units::classify_unresolved_unit_label,
+            )
+            .service(crate::inbox::unresolved_units::search_orbit_units)
+            .service(
+                crate::inbox::unresolved_units::resolve_unresolved_unit_label,
+            )
             .service(crate::sigint::unit::orbit::unit_orbit_children)
             .service(crate::sigint::unit::orbit::list_unit_duplicates)
             .service(crate::sigint::unit::orbit::orbit_link_candidates)
@@ -1471,6 +1529,9 @@ mod tests {
                 filter_army_region: None,
                 filter_comment: None,
                 filter_orbit_note: None,
+                filter_is_deduplicate_candidate: None,
+                filter_has_orbit: None,
+                filter_has_orbit_note: None,
                 search_mode: None,
                 limit: None,
                 offset: None,

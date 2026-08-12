@@ -8,6 +8,7 @@ import {
   MAX_XLSX_FILE_BYTES,
   type XlsxPreviewResult,
 } from '../xlsx/xlsx-preview-utils';
+import { fetchCachedDocumentResponse } from '../document-preview-utils';
 import { runWorkerTask } from '../workers/worker-client';
 import { debugDocumentPreview } from '../document-preview-debug';
 
@@ -40,27 +41,25 @@ export function XlsxDocumentPreview({
           throw new Error('XLSX_FILE_TOO_LARGE');
         }
 
-        const response = await fetch(href, { signal: abortController.signal });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
+        const { buffer, contentLength, contentType } = await fetchCachedDocumentResponse(
+          href,
+          MAX_XLSX_FILE_BYTES,
+          'XLSX_FILE_TOO_LARGE',
+          abortController.signal,
+        );
 
-        const contentLength = response.headers.get('content-length');
-        if (
-          contentLength != null &&
-          Number.isFinite(Number(contentLength)) &&
-          Number(contentLength) > MAX_XLSX_FILE_BYTES
-        ) {
-          throw new Error('XLSX_FILE_TOO_LARGE');
-        }
-
-        const buffer = await response.arrayBuffer();
         debugDocumentPreview('xlsx', 'fetched workbook', {
           href,
           sizeBytes,
-          contentLength: response.headers.get('content-length'),
+          contentLength,
+          contentType,
           bufferByteLength: buffer.byteLength,
         });
+
+        if (contentLength != null && contentLength > MAX_XLSX_FILE_BYTES) {
+          throw new Error('XLSX_FILE_TOO_LARGE');
+        }
+
         if (buffer.byteLength > MAX_XLSX_FILE_BYTES) {
           throw new Error('XLSX_FILE_TOO_LARGE');
         }

@@ -9,7 +9,7 @@ use super::types::{
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-use crate::types::{warn, Env, Mode, ShortContext};
+use crate::types::{debug, warn, Env, Mode, ShortContext};
 use crate::users::{
     ensure_admin, ensure_rer_role, has_role, login_id_from_identity,
 };
@@ -41,40 +41,59 @@ pub async fn can_view_orbit_data(
     }
 }
 
-pub async fn unit_ids_with_orbit(
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnitOrbitLink {
+    pub orbit_unit_id: String,
+    pub generative_unit_name_full: String,
+}
+
+#[derive(FromQueryResult)]
+struct UnitOrbitLinkRow {
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+    generative_unit_name_full: Option<String>,
+}
+
+pub async fn unit_orbit_links(
     dbx: &DatabaseConnection,
     sigint_unit_ids: &[i64],
-) -> Result<HashMap<i64, Vec<String>>, AppError> {
+) -> Result<HashMap<i64, Vec<UnitOrbitLink>>, AppError> {
     if sigint_unit_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let mut unit_ids = HashMap::<i64, Vec<String>>::new();
+    let mut unit_links = HashMap::<i64, Vec<UnitOrbitLink>>::new();
     let sql = r#"
-        select link.*
+        select
+            link.sigint_unit_id,
+            link.orbit_unit_id,
+            nullif(btrim(unit.generative_unit_name_full), '') as generative_unit_name_full
         from orbit_unit_sigint_unit link
         inner join orbit_unit unit on unit.unit_id = link.orbit_unit_id
         where link.is_suppressed = false
             and link.sigint_unit_id = any($1::bigint[])
             and unit.deleted = false
-        order by link.sigint_unit_id, link.orbit_unit_id
+        order by link.sigint_unit_id, unit.generative_unit_name_full nulls last, link.orbit_unit_id
     "#;
-    for link in orbit_unit_sigint_unit::Model::find_by_statement(
-        Statement::from_sql_and_values(
+    for link in
+        UnitOrbitLinkRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
             [sigint_unit_ids.to_vec().into()],
-        ),
-    )
-    .all(dbx)
-    .await
-    .c(h!())?
+        ))
+        .all(dbx)
+        .await
+        .c(h!())?
     {
-        unit_ids
-            .entry(link.sigint_unit_id)
-            .or_default()
-            .push(link.orbit_unit_id.to_string());
+        unit_links.entry(link.sigint_unit_id).or_default().push(
+            UnitOrbitLink {
+                orbit_unit_id: link.orbit_unit_id.to_string(),
+                generative_unit_name_full: link
+                    .generative_unit_name_full
+                    .unwrap_or_default(),
+            },
+        );
     }
-    Ok(unit_ids)
+    Ok(unit_links)
 }
 
 pub async fn unit_has_orbit(
@@ -524,14 +543,16 @@ async fn create_unit_duplicate_candidates_for_req(
     let units =
         create_unit_duplicate_candidate_models_for_req(dbx, req).await?;
     let unit_ids = units.iter().map(|unit| unit.id).collect::<Vec<_>>();
-    let orbit_unit_ids = unit_ids_with_orbit(dbx, &unit_ids).await?;
+    let orbit_links = unit_orbit_links(dbx, &unit_ids).await?;
     units
         .into_iter()
         .map(|unit| {
             let mut unit = super::render_unit(&unit)?;
-            unit.orbit_unit_ids =
-                orbit_unit_ids.get(&unit.id).cloned().unwrap_or_default();
-            unit.has_orbit = !unit.orbit_unit_ids.is_empty();
+            let unit_id = unit.id;
+            super::apply_unit_orbit_links(
+                &mut unit,
+                orbit_links.get(&unit_id).map(Vec::as_slice),
+            );
             Ok(unit)
         })
         .collect()
@@ -809,6 +830,25 @@ async fn import_missing_orbit_ancestors<C>(
 where
     C: ConnectionTrait,
 {
+    let mut import_state = OrbitAncestorImportState::default();
+    import_missing_orbit_ancestors_with_state(
+        dbx,
+        login,
+        root,
+        &mut import_state,
+    )
+    .await
+}
+
+async fn import_missing_orbit_ancestors_with_state<C>(
+    dbx: &C,
+    login: &Uuid,
+    root: &orbit_unit::Model,
+    import_state: &mut OrbitAncestorImportState,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
     for ancestor in orbit_ancestors(dbx, root).await? {
         if orbit_unit_has_active_sigint_link(dbx, ancestor.unit_id).await? {
             activate_sigint_units_linked_to_orbit_units(
@@ -819,18 +859,21 @@ where
             .await?;
             continue;
         }
-        let unit_req =
-            match create_unit_req_from_orbit(dbx, &ancestor, true).await {
-                Ok(unit_req) => unit_req,
-                Err(err @ AppError::BL { .. }) => {
-                    let orbit_unit_id = ancestor.unit_id;
-                    warn!(
-                    "Skipping unsupported ORBIT ancestor {orbit_unit_id}: {err}"
-                );
-                    continue;
+        let unit_req = match create_unit_req_from_orbit(dbx, &ancestor, true)
+            .await
+        {
+            Ok(unit_req) => unit_req,
+            Err(err @ AppError::BL { .. }) => {
+                let orbit_unit_id = ancestor.unit_id;
+                if import_state.should_log_unsupported_ancestor(orbit_unit_id) {
+                    debug!(
+                        "Skipping unsupported ORBIT ancestor {orbit_unit_id}: {err}"
+                    );
                 }
-                Err(err) => return Err(err),
-            };
+                continue;
+            }
+            Err(err) => return Err(err),
+        };
         let unit = match find_existing_sigint_unit(dbx, &unit_req).await? {
             Some(unit) => unit,
             None => super::insert_unit_with_changelog(dbx, login, &unit_req)
@@ -843,6 +886,18 @@ where
         link_orbit_ancestor(dbx, ancestor.unit_id, unit.id).await?;
     }
     Ok(())
+}
+
+#[derive(Default)]
+struct OrbitAncestorImportState {
+    reported_unsupported_orbit_ancestor_ids: HashSet<Uuid>,
+}
+
+impl OrbitAncestorImportState {
+    fn should_log_unsupported_ancestor(&mut self, orbit_unit_id: Uuid) -> bool {
+        self.reported_unsupported_orbit_ancestor_ids
+            .insert(orbit_unit_id)
+    }
 }
 
 async fn find_existing_sigint_unit<C>(
@@ -968,8 +1023,15 @@ where
         .all(dbx)
         .await
         .c(h!())?;
+    let mut import_state = OrbitAncestorImportState::default();
     for orbit_unit in linked_orbit_units {
-        import_missing_orbit_ancestors(dbx, login, &orbit_unit).await?;
+        import_missing_orbit_ancestors_with_state(
+            dbx,
+            login,
+            &orbit_unit,
+            &mut import_state,
+        )
+        .await?;
     }
     crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx).await?;
     let linked_sigint_unit_ids = links
@@ -1418,7 +1480,7 @@ async fn automatic_orbit_link_candidates(
     Ok(candidates.into_iter().map(render_match_candidate).collect())
 }
 
-async fn manual_orbit_link_candidates(
+pub(crate) async fn manual_orbit_link_candidates(
     dbx: &DatabaseConnection,
     search: &str,
 ) -> Result<Vec<OrbitUnitLinkCandidate>, AppError> {
@@ -1628,6 +1690,17 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[test]
+    fn ancestor_import_state_reports_each_unsupported_ancestor_once() {
+        let mut import_state = OrbitAncestorImportState::default();
+        let first_unit_id = Uuid::from_u128(1);
+        let second_unit_id = Uuid::from_u128(2);
+
+        assert!(import_state.should_log_unsupported_ancestor(first_unit_id));
+        assert!(!import_state.should_log_unsupported_ancestor(first_unit_id));
+        assert!(import_state.should_log_unsupported_ancestor(second_unit_id));
     }
 
     #[test]
@@ -1900,7 +1973,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn unit_ids_with_orbit_accepts_more_than_postgres_bind_limit() {
+    async fn unit_orbit_links_accepts_more_than_postgres_bind_limit() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
@@ -1917,6 +1990,7 @@ mod tests {
         let orbit_unit_id = Uuid::new_v4();
         orbit_unit::Entity::insert(orbit_unit::ActiveModel {
             unit_id: Set(orbit_unit_id),
+            generative_unit_name_full: Set(Some("106 пдд / МВО".to_string())),
             ..Default::default()
         })
         .exec(&env.dbx)
@@ -1937,8 +2011,14 @@ mod tests {
         unit_ids.push(sigint_unit.id);
 
         assert_eq!(
-            unit_ids_with_orbit(&env.dbx, &unit_ids).await.unwrap(),
-            HashMap::from([(sigint_unit.id, vec![orbit_unit_id.to_string()])])
+            unit_orbit_links(&env.dbx, &unit_ids).await.unwrap(),
+            HashMap::from([(
+                sigint_unit.id,
+                vec![UnitOrbitLink {
+                    orbit_unit_id: orbit_unit_id.to_string(),
+                    generative_unit_name_full: "106 пдд / МВО".to_string(),
+                }]
+            )])
         );
     }
 

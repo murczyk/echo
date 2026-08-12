@@ -17,6 +17,7 @@ import {
   getUnitsList,
   importOrbitUnit,
   mergeUnitsById,
+  searchUnitsStrictThenRelaxed,
   searchOrbitUnits,
   updateUnitAttachment,
   uploadUnitAttachment,
@@ -39,6 +40,58 @@ describe('units API', () => {
     const inactive = { id: 2, name: 'Inactive', active: false } as Unit;
 
     expect(mergeUnitsById([active], [active, inactive])).toEqual([active, inactive]);
+  });
+
+  it('returns strict unit matches before deduplicated relaxed matches', async () => {
+    const strict = { id: 1, name: 'Strict' } as Unit;
+    const relaxed = { id: 2, name: 'Relaxed' } as Unit;
+    const fetchMock = vi.fn().mockImplementation((_: string, init: RequestInit) => {
+      const request = JSON.parse(String(init.body));
+      return Promise.resolve(
+        jsonResponse({
+          units: request.search_mode === 'Strict' ? [strict] : [strict, relaxed],
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      searchUnitsStrictThenRelaxed({
+        ...DEFAULT_LIST_UNITS_REQ,
+        filterText: 'unit',
+      }),
+    ).resolves.toEqual([strict, relaxed]);
+    expect(
+      fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init.body)).search_mode),
+    ).toEqual(['Strict', 'Relaxed']);
+  });
+
+  it('searches SIGINT unit names in both strict and relaxed modes', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse({ units: [] })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await searchUnitsStrictThenRelaxed({
+      ...DEFAULT_LIST_UNITS_REQ,
+      sortBy: 'UnitNameLengthAsc',
+      filterName: '20 army',
+    });
+
+    expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init.body)))).toMatchObject([
+      {
+        sort_by: 'UnitNameLengthAsc',
+        filter_text: null,
+        filter_name: '20 army',
+        search_mode: 'Strict',
+      },
+      {
+        sort_by: 'UnitNameLengthAsc',
+        filter_text: null,
+        filter_name: '20 army',
+        search_mode: 'Relaxed',
+      },
+    ]);
   });
 
   it('normalizes unit response fields to camel case', async () => {
@@ -201,7 +254,15 @@ describe('units API', () => {
   it('loads ORBIT-linked duplicate candidates before unit creation', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({
-        units: [{ id: 7, name: '2 батальйон', active: true, orbit_unit_ids: ['orbit-id'] }],
+        units: [
+          {
+            id: 7,
+            name: '2 батальйон',
+            active: true,
+            orbit_unit_ids: ['orbit-id'],
+            orbit_unit_generative_names: ['106 пдд / МВО'],
+          },
+        ],
       }),
     );
     vi.stubGlobal('fetch', fetchMock);
@@ -221,7 +282,13 @@ describe('units API', () => {
         orbitNote: null,
         duplicateUnitIds: [],
       }),
-    ).resolves.toMatchObject([{ id: 7, orbitUnitIds: ['orbit-id'] }]);
+    ).resolves.toMatchObject([
+      {
+        id: 7,
+        orbitUnitIds: ['orbit-id'],
+        orbitUnitGenerativeNames: ['106 пдд / МВО'],
+      },
+    ]);
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/sigint/unit/create-duplicate-candidates');
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       battalion: '2 батальйон',

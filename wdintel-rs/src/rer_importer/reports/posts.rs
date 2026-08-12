@@ -1,10 +1,14 @@
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
+use crate::rer_importer::report_chunking::{
+    build_filtered_inbox_report_chunk_query, inbox_report_chunk_req,
+    inbox_report_period_chunks, ReportPeriodChunk, ReportPeriodEnd,
+};
 use crate::rer_importer::reports::inbox_light::blank_inbox_message;
 use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::rer_importer::types::InboxMessage;
-use crate::types::{Env, ShortContext};
+use crate::types::{info, Env, ShortContext};
 use crate::utils::dt_zoned_from_millis;
 use anyhow::Context;
 use chrono::{DateTime, Datelike, TimeZone};
@@ -78,7 +82,22 @@ pub async fn report_docx_kind_posts(
     };
 
     current_req.return_duplicates = Some(false);
-    let previous_req = build_shifted_req(&current_req, -DAY_MS)?;
+    let previous_req =
+        build_shifted_req(&current_req, -DAY_MS).context(h!())?;
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let current_chunks = inbox_report_period_chunks(
+        &current_req,
+        report_settings.chunking_hours,
+    )
+    .context(h!())?;
+    let previous_chunks = inbox_report_period_chunks(
+        &previous_req,
+        report_settings.chunking_hours,
+    )
+    .context(h!())?;
     let analytics_supported =
         crate::rer_importer::analysis::analytics_inbox_request_supported(
             &current_req,
@@ -89,6 +108,10 @@ pub async fn report_docx_kind_posts(
     let analytics_previous_req = &previous_req;
     let postgres_current_req = &current_req;
     let postgres_previous_req = &previous_req;
+    let analytics_current_chunks = &current_chunks;
+    let analytics_previous_chunks = &previous_chunks;
+    let postgres_current_chunks = &current_chunks;
+    let postgres_previous_chunks = &previous_chunks;
     let (current_messages, previous_messages) =
         crate::rer_importer::analysis::with_analytics_read_fallback(
             env,
@@ -96,36 +119,40 @@ pub async fn report_docx_kind_posts(
             analytics_supported,
             |db| async move {
                 Ok((
-                    load_post_report_messages(
+                    load_post_report_messages_chunks(
                         &db,
                         &login,
                         env,
                         analytics_current_req,
+                        analytics_current_chunks,
                     )
                     .await?,
-                    load_post_report_messages(
+                    load_post_report_messages_chunks(
                         &db,
                         &login,
                         env,
                         analytics_previous_req,
+                        analytics_previous_chunks,
                     )
                     .await?,
                 ))
             },
             |db| async move {
                 Ok((
-                    load_post_report_messages(
+                    load_post_report_messages_chunks(
                         &db,
                         &login,
                         env,
                         postgres_current_req,
+                        postgres_current_chunks,
                     )
                     .await?,
-                    load_post_report_messages(
+                    load_post_report_messages_chunks(
                         &db,
                         &login,
                         env,
                         postgres_previous_req,
+                        postgres_previous_chunks,
                     )
                     .await?,
                 ))
@@ -219,14 +246,44 @@ pub async fn report_docx_kind_posts(
     build_docx_kind_posts(outpath, doc)
 }
 
+async fn load_post_report_messages_chunks(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &crate::rer_importer::types::InboxMessagesReq,
+    chunks: &[ReportPeriodChunk],
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let mut messages = BTreeMap::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "Posts report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let chunk_req = inbox_report_chunk_req(req, chunk);
+        for (id, message) in
+            load_post_report_messages(dbx, login, env, &chunk_req, chunk.end)
+                .await
+                .context(h!())?
+        {
+            messages.entry(id).or_insert(message);
+        }
+    }
+    Ok(messages.into_iter().collect())
+}
+
 async fn load_post_report_messages(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let rows = crate::rer_importer::inbox::query::build_filtered_inbox_query(
-        dbx, login, env, req,
+    let rows = build_filtered_inbox_report_chunk_query(
+        dbx, login, env, req, period_end,
     )
     .await
     .c(h!())?

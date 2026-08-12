@@ -55,7 +55,26 @@ Then open http://wildducks.localhost
 
 ## Tests
 
-Frontend unit checks:
+The required suite is intentionally limited to:
+
+- database-backed functional tests that seed state and call production business logic;
+- operational parser fixtures for messages, callsigns, units, metadata, coordinates, and dates;
+- focused regressions linked in the test to an Echo issue or pull request;
+- migration, authorization, concurrency, idempotency, and destructive-data safeguards.
+
+Run backend validation with:
+
+```bash
+just test-be
+```
+
+Profile retained backend tests sequentially with:
+
+```bash
+just profile-be-tests
+```
+
+Run frontend regression checks with:
 
 ```bash
 just test-fe

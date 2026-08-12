@@ -46,6 +46,7 @@ const DEFAULT_COLUMN_VISIBILITY = {
   createdAt: true,
   comment: true,
   hasOrbit: true,
+  orbitUnitGenerativeNames: false,
 };
 
 const DEFAULT_COLUMN_ORDER = [
@@ -62,6 +63,7 @@ const DEFAULT_COLUMN_ORDER = [
   'createdAt',
   'comment',
   'hasOrbit',
+  'orbitUnitGenerativeNames',
 ];
 
 function SearchModeSettingsButton({

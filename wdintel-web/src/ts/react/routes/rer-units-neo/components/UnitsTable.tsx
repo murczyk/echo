@@ -25,6 +25,7 @@ import {
   useTheme,
 } from '@mui/material';
 import {
+  type MRT_Column,
   type MRT_ColumnDef,
   type MRT_PaginationState,
   MaterialReactTable,
@@ -40,17 +41,37 @@ import {
   getDefaultMrtPaperProps,
 } from '../../../components/mui-customized/table/custom-styles';
 import {
+  buildExplicitSingleSelectColumnFilter,
   getDefaultMRTOptions,
   getFilterModeHelperText,
   getSharedFilterTextFieldProps,
   renderColumnActionsMenuItems,
+  withExplicitSelectAllOption,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
+import {
+  readUnitNameColumnFilter,
+  readUnitOrbitColumnFilter,
+  type UnitNameColumnFilter,
+  type UnitOrbitColumnFilter,
+} from '../helpers';
 import type { UnitSearchMode } from '../search-mode';
 
 const defaultMrtOptions = getDefaultMRTOptions<Unit>();
 const ROW_ACTIONS_COLUMN_SIZE = 76;
+const DUPLICATE_CANDIDATE_FILTER_OPTIONS = withExplicitSelectAllOption([
+  { text: 'Можливий дублікат', value: 'yes' },
+  { text: 'Не є можливим дублікатом', value: 'no' },
+]);
+const ORBIT_LINK_FILTER_OPTIONS = withExplicitSelectAllOption([
+  { text: 'Прив’язано до Orbit', value: 'yes' },
+  { text: 'Не прив’язано до Orbit', value: 'no' },
+]);
+const ORBIT_COMMENT_FILTER_OPTIONS = withExplicitSelectAllOption([
+  { text: 'Є коментар', value: 'yes' },
+  { text: 'Немає коментаря', value: 'no' },
+]);
 
 function SearchModeSettingsButton({
   compact,
@@ -138,16 +159,33 @@ function buildTextColumnFilter({
   onSearchModeChange,
   compactSearchMode,
   menuIdPrefix,
+  placeholder = 'Пошук',
+  readFilterText,
+  onFilterTextChange,
 }: {
   searchMode: UnitSearchMode;
   onSearchModeChange: (searchMode: UnitSearchMode) => void;
   compactSearchMode: boolean;
   menuIdPrefix: string;
+  placeholder?: string;
+  readFilterText?: (value: unknown) => string;
+  onFilterTextChange?: (column: MRT_Column<Unit>, value: string) => void;
 }) {
   return ({ column }) => {
     const sharedFilterProps = getSharedFilterTextFieldProps(column.columnDef.filterVariant);
     const filterValue = column.getFilterValue();
-    const inputValue = typeof filterValue === 'string' ? filterValue : '';
+    const inputValue = readFilterText
+      ? readFilterText(filterValue)
+      : typeof filterValue === 'string'
+        ? filterValue
+        : '';
+    const setFilterText = (value: string) => {
+      if (onFilterTextChange) {
+        onFilterTextChange(column, value);
+      } else {
+        column.setFilterValue(value);
+      }
+    };
 
     return (
       <TextField
@@ -157,8 +195,8 @@ function buildTextColumnFilter({
         value={inputValue}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
-        onChange={(event) => column.setFilterValue(event.target.value)}
-        placeholder="Пошук"
+        onChange={(event) => setFilterText(event.target.value)}
+        placeholder={placeholder}
         helperText={TEXT_FILTER_HELPERS[searchMode]}
         slotProps={{
           ...(sharedFilterProps.slotProps ?? {}),
@@ -184,7 +222,7 @@ function buildTextColumnFilter({
                   aria-label="Очистити фільтр"
                   onClick={(event) => {
                     event.stopPropagation();
-                    column.setFilterValue('');
+                    setFilterText('');
                   }}
                   disabled={inputValue.length === 0}
                 >
@@ -204,6 +242,114 @@ function buildTextColumnFilter({
       />
     );
   };
+}
+
+function setUnitNameColumnFilter(column: MRT_Column<Unit>, value: UnitNameColumnFilter) {
+  column.setFilterValue(
+    value.text.trim() || value.duplicateCandidate !== 'Усі' ? value : undefined,
+  );
+}
+
+function setUnitOrbitColumnFilter(column: MRT_Column<Unit>, value: UnitOrbitColumnFilter) {
+  column.setFilterValue(
+    value.text.trim() || value.linked !== 'Усі' || value.comment !== 'Усі' ? value : undefined,
+  );
+}
+
+function buildUnitNameColumnFilter({
+  searchMode,
+  onSearchModeChange,
+  compactSearchMode,
+}: {
+  searchMode: UnitSearchMode;
+  onSearchModeChange: (searchMode: UnitSearchMode) => void;
+  compactSearchMode: boolean;
+}) {
+  const TextFilter = buildTextColumnFilter({
+    searchMode,
+    onSearchModeChange,
+    compactSearchMode,
+    menuIdPrefix: 'name',
+    readFilterText: (value) => readUnitNameColumnFilter(value).text,
+    onFilterTextChange: (column, text) =>
+      setUnitNameColumnFilter(column, {
+        ...readUnitNameColumnFilter(column.getFilterValue()),
+        text,
+      }),
+  });
+  const DuplicateCandidateFilter = buildExplicitSingleSelectColumnFilter<Unit>({
+    options: DUPLICATE_CANDIDATE_FILTER_OPTIONS,
+    fallbackValue: 'Усі',
+    label: 'Статус дубліката',
+    getValue: (column) => readUnitNameColumnFilter(column.getFilterValue()).duplicateCandidate,
+    onChange: (column, duplicateCandidate) =>
+      setUnitNameColumnFilter(column, {
+        ...readUnitNameColumnFilter(column.getFilterValue()),
+        duplicateCandidate:
+          duplicateCandidate === 'yes' || duplicateCandidate === 'no' ? duplicateCandidate : 'Усі',
+      }),
+  });
+
+  return (props) => (
+    <Stack spacing={1.5}>
+      <TextFilter {...props} />
+      <DuplicateCandidateFilter {...props} />
+    </Stack>
+  );
+}
+
+function buildUnitOrbitColumnFilter({
+  searchMode,
+  onSearchModeChange,
+  compactSearchMode,
+}: {
+  searchMode: UnitSearchMode;
+  onSearchModeChange: (searchMode: UnitSearchMode) => void;
+  compactSearchMode: boolean;
+}) {
+  const TextFilter = buildTextColumnFilter({
+    searchMode,
+    onSearchModeChange,
+    compactSearchMode,
+    menuIdPrefix: 'orbit',
+    placeholder: 'Пошук коментаря',
+    readFilterText: (value) => readUnitOrbitColumnFilter(value).text,
+    onFilterTextChange: (column, text) =>
+      setUnitOrbitColumnFilter(column, {
+        ...readUnitOrbitColumnFilter(column.getFilterValue()),
+        text,
+      }),
+  });
+  const LinkedFilter = buildExplicitSingleSelectColumnFilter<Unit>({
+    options: ORBIT_LINK_FILTER_OPTIONS,
+    fallbackValue: 'Усі',
+    label: 'Прив’язка до Orbit',
+    getValue: (column) => readUnitOrbitColumnFilter(column.getFilterValue()).linked,
+    onChange: (column, linked) =>
+      setUnitOrbitColumnFilter(column, {
+        ...readUnitOrbitColumnFilter(column.getFilterValue()),
+        linked: linked === 'yes' || linked === 'no' ? linked : 'Усі',
+      }),
+  });
+  const CommentFilter = buildExplicitSingleSelectColumnFilter<Unit>({
+    options: ORBIT_COMMENT_FILTER_OPTIONS,
+    fallbackValue: 'Усі',
+    label: 'Коментар Orbit',
+    getValue: (column) => readUnitOrbitColumnFilter(column.getFilterValue()).comment,
+    onChange: (column, comment) =>
+      setUnitOrbitColumnFilter(column, {
+        ...readUnitOrbitColumnFilter(column.getFilterValue()),
+        comment: comment === 'yes' || comment === 'no' ? comment : 'Усі',
+      }),
+  });
+
+  return (props) => (
+    <Stack spacing={1.5}>
+      <TextFilter {...props} />
+      <LinkedFilter {...props} />
+      <CommentFilter {...props} />
+    </Stack>
+  );
 }
 
 function formatDateTime(value: number): string {
@@ -277,11 +423,10 @@ function useUnitColumns(
       {
         header: 'Назва',
         accessorKey: 'name',
-        Filter: buildTextColumnFilter({
+        Filter: buildUnitNameColumnFilter({
           searchMode,
           onSearchModeChange,
           compactSearchMode,
-          menuIdPrefix: 'name',
         }),
         size: 240,
         muiTableBodyCellProps: {
@@ -475,14 +620,26 @@ function useUnitColumns(
         ),
         id: 'hasOrbit',
         accessorFn: (unit) => unit.orbitNote ?? '',
-        Filter: buildTextColumnFilter({
+        Filter: buildUnitOrbitColumnFilter({
           searchMode,
           onSearchModeChange,
           compactSearchMode,
-          menuIdPrefix: 'orbit',
         }),
-        size: 170,
+        size: 220,
         Cell: ({ row }) => <OrbitCell unit={row.original} />,
+      },
+      {
+        header: 'Назва в Orbit',
+        id: 'orbitUnitGenerativeNames',
+        accessorFn: (unit) => unit.orbitUnitGenerativeNames.join('\n'),
+        enableSorting: false,
+        enableColumnFilter: false,
+        size: 360,
+        Cell: ({ cell }) => (
+          <Box sx={{ whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>
+            {String(cell.getValue() ?? '')}
+          </Box>
+        ),
       },
     ],
     [attachmentUnitIds, searchMode, onSearchModeChange, compactSearchMode],

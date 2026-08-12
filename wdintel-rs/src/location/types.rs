@@ -65,6 +65,7 @@ pub struct SettlementFileRow {
     pub language_details: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct SettlementsDataConfig {
     pub aor_id_to_settlements_data: HashMap<i64, Arc<SettlementsData>>,
     pub aor_id_to_config_names: HashMap<i64, Vec<String>>,

@@ -161,7 +161,7 @@ fi
 
 export TEST_DB_NAME="$DB_NAME"
 export TEST_WDFILE_DB_NAME="$FILE_REGISTRY_DB_NAME"
-just create-file-registry-database --mode=test
+createdb -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" "$FILE_REGISTRY_DB_NAME"
 
 echo "Database setup complete!"
 

@@ -3,11 +3,16 @@ use crate::delta::bgtask_log;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
+use crate::info;
 use crate::location::utils::to_location_list;
 use crate::rer_importer::inbox::query::build_filtered_inbox_query;
+use crate::rer_importer::report_chunking::{
+    inbox_report_chunk_req, inbox_report_period_chunks, ReportPeriodEnd,
+};
 use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::types::{Env, ShortContext};
 use crate::utils::{dt_from_millis, dt_zoned_from_millis};
+use anyhow::Context;
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Utc};
 use docx_rs::{
     AlignmentType, BreakType, Docx, LineSpacing, PageMargin, Paragraph, Run,
@@ -557,6 +562,51 @@ async fn load_candidate_item_ids(
     require_network_link: bool,
     require_non_empty_comments: bool,
 ) -> Result<Vec<i64>, AppError> {
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks =
+        inbox_report_period_chunks(&req.req, report_settings.chunking_hours)
+            .context(h!())?;
+    let mut item_ids = BTreeSet::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "RER report candidate chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let mut chunk_req = req.clone();
+        chunk_req.req = inbox_report_chunk_req(&req.req, chunk);
+        item_ids.extend(
+            load_candidate_item_ids_chunk(
+                dbx,
+                user_login,
+                env,
+                &chunk_req,
+                chunk.end,
+                require_network_link,
+                require_non_empty_comments,
+            )
+            .await
+            .context(h!())?,
+        );
+    }
+    Ok(item_ids.into_iter().collect())
+}
+
+async fn load_candidate_item_ids_chunk(
+    dbx: &DatabaseConnection,
+    user_login: &uuid::Uuid,
+    env: &Env,
+    req: &ReportPreviewReq,
+    period_end: ReportPeriodEnd,
+    require_network_link: bool,
+    require_non_empty_comments: bool,
+) -> Result<Vec<i64>, AppError> {
     let (candidate_req, since_ms, till_ms) =
         candidate_query_req_without_date_bounds(req);
     let query =
@@ -567,6 +617,7 @@ async fn load_candidate_item_ids(
         query,
         since_ms,
         till_ms,
+        period_end,
         require_network_link,
         require_non_empty_comments,
     )?;
@@ -585,16 +636,27 @@ fn apply_candidate_item_filters(
     mut query: Select<signal_message::Entity>,
     since_ms: Option<i64>,
     till_ms: Option<i64>,
+    period_end: ReportPeriodEnd,
     require_network_link: bool,
     require_non_empty_comments: bool,
 ) -> Result<Select<signal_message::Entity>, AppError> {
     let candidate_timestamp = candidate_report_timestamp_expr();
     if let Some(since_ms) = since_ms {
-        query = query
-            .filter(candidate_timestamp.clone().gte(dt_from_millis(since_ms)?));
+        query = query.filter(
+            candidate_timestamp
+                .clone()
+                .gte(dt_from_millis(since_ms).context(h!())?),
+        );
     }
     if let Some(till_ms) = till_ms {
-        query = query.filter(candidate_timestamp.lte(dt_from_millis(till_ms)?));
+        query = match period_end {
+            ReportPeriodEnd::Inclusive => query.filter(
+                candidate_timestamp.lte(dt_from_millis(till_ms).context(h!())?),
+            ),
+            ReportPeriodEnd::NonInclusive => query.filter(
+                candidate_timestamp.lt(dt_from_millis(till_ms).context(h!())?),
+            ),
+        };
     }
     if require_network_link {
         query = query.filter(item_network_link_exists());
@@ -1565,6 +1627,7 @@ mod tests {
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
             without_comments: None,
+            babak_new_callsign_min_mentions: None,
             interception_keep_full_message: None,
             interception_keep_old_colors: None,
             digest_omit_exo_id: None,
@@ -1588,6 +1651,7 @@ mod tests {
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
             without_comments: None,
+            babak_new_callsign_min_mentions: None,
             interception_keep_full_message: None,
             interception_keep_old_colors: None,
             digest_omit_exo_id: None,
@@ -1623,6 +1687,7 @@ mod tests {
             signal_message::Entity::find(),
             None,
             None,
+            ReportPeriodEnd::Inclusive,
             false,
             false,
         )
@@ -1634,6 +1699,7 @@ mod tests {
             signal_message::Entity::find(),
             None,
             None,
+            ReportPeriodEnd::Inclusive,
             true,
             false,
         )
@@ -1649,6 +1715,24 @@ mod tests {
             &sql_with_network,
             "sigint_inbox_item_network"
         ));
+    }
+
+    #[test]
+    fn candidate_item_filters_use_noninclusive_chunk_boundaries() {
+        let query = apply_candidate_item_filters(
+            signal_message::Entity::find(),
+            Some(1_000),
+            Some(2_000),
+            ReportPeriodEnd::NonInclusive,
+            false,
+            false,
+        )
+        .unwrap();
+        let sql = query.build(DbBackend::Postgres).to_string();
+
+        assert!(str::contains(&sql, " >= "));
+        assert!(str::contains(&sql, " < "));
+        assert!(!str::contains(&sql, " <= "));
     }
 
     #[test]

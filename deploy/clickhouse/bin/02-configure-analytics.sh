@@ -5,12 +5,14 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=./lib.sh
 source "$SCRIPT_DIR/lib.sh"
+# shellcheck source=./clickhouse-system-log-policy.sh
+source "$SCRIPT_DIR/clickhouse-system-log-policy.sh"
 load_analytics_config
 validate_runtime_identifiers
 validate_ipv4_address ANALYTICS_LISTEN_ADDRESS "$ANALYTICS_LISTEN_ADDRESS"
 validate_ipv4_address ANALYTICS_ALLOWED_CLIENT "$ANALYTICS_ALLOWED_CLIENT"
 
-for command in base64 clickhouse-client jq openssl pg_conftool psql ss sudo systemctl; do
+for command in base64 clickhouse clickhouse-client cmp jq openssl pg_conftool psql ss sudo systemctl; do
   require_cmd "$command"
 done
 [[ ${ANALYTICS_GATEWAY_STATEMENT_TIMEOUT_MS:-25000} =~ ^[1-9][0-9]*$ ]] \
@@ -45,6 +47,8 @@ hba_file=/etc/postgresql/$POSTGRESQL_MAJOR/main/pg_hba.conf
 hba_clean=$(mktemp /tmp/echo-analytics-hba-clean.XXXXXX)
 hba_tmp=$(mktemp /tmp/echo-analytics-hba.XXXXXX)
 trap 'rm -f -- "$hba_clean" "$hba_tmp"' EXIT
+# sudo is required to read hba_file, not for the redirect.
+# shellcheck disable=SC2024
 sudo awk '
   $0 == "# BEGIN ECHO ANALYTICS" { managed = 1; next }
   $0 == "# END ECHO ANALYTICS" { managed = 0; next }
@@ -230,6 +234,13 @@ sudo chown root:clickhouse \
   /etc/clickhouse-server/users.d/echo-analytics.xml
 sudo systemctl restart clickhouse-server
 wait_for_command ClickHouse clickhouse_admin --query 'SELECT 1'
+# Keep the existing system-log table identities when the configured TTLs become active.
+clickhouse_admin --query 'SYSTEM FLUSH LOGS'
+apply_clickhouse_system_log_ttls
+install_clickhouse_system_log_config
+sudo systemctl restart clickhouse-server
+wait_for_command ClickHouse clickhouse_admin --query 'SELECT 1'
+verify_clickhouse_system_log_policy
 
 while IFS= read -r listener; do
   case "$listener" in

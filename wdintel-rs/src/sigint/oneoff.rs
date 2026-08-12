@@ -53,6 +53,41 @@ pub async fn oneoff_fill_sigint_inbox_item_tags(
     Ok(())
 }
 
+pub async fn oneoff_backfill_inbox_unit_links(
+    mode: Mode,
+    ps: &crate::OneoffBackfillInboxUnitLinksPs,
+) -> Result<(), AppError> {
+    let db = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
+    let now = Utc::now().naive_utc();
+    let start_ts = parse_optional_utc_ts(ps.start_ts.as_deref())
+        .c(h!())?
+        .unwrap_or(now - Duration::days(30));
+    let till_ts = parse_optional_utc_ts(ps.till_ts.as_deref())
+        .c(h!())?
+        .unwrap_or(now);
+    let processed = crate::inbox::unit_resolution::backfill_inbox_unit_links(
+        &db, start_ts, till_ts,
+    )
+    .await
+    .c(h!())?;
+    info!("backfilled {processed} inbox unit links in [{start_ts}, {till_ts})");
+    Ok(())
+}
+
+fn parse_optional_utc_ts(
+    value: Option<&str>,
+) -> Result<Option<NaiveDateTime>, AppError> {
+    value
+        .map(|value| {
+            NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S").map_err(
+                |error| AppError::BL {
+                    msg: format!("Invalid UTC timestamp {value:?}: {error}"),
+                },
+            )
+        })
+        .transpose()
+}
+
 pub async fn oneoff_suggest_inbox_message_tags(
     mode: Mode,
     ps: &OneoffSuggestInboxMessageTagsPs,

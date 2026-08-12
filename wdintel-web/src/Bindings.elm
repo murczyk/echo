@@ -6077,6 +6077,7 @@ type alias ReportPreviewReq =
     , tagReportSortBy : Maybe (TagReportSortBy)
     , report1213LinkedNetworksOnly : Maybe (Bool)
     , withoutComments : Maybe (Bool)
+    , babakNewCallsignMinMentions : Maybe (Int)
     , interceptionKeepFullMessage : Maybe (Bool)
     , interceptionKeepOldColors : Maybe (Bool)
     , digestOmitExoId : Maybe (Bool)
@@ -6095,6 +6096,7 @@ reportPreviewReqEncoder struct =
         , ( "tag_report_sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (tagReportSortByEncoder)) struct.tagReportSortBy )
         , ( "report_1213_linked_networks_only", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.report1213LinkedNetworksOnly )
         , ( "without_comments", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.withoutComments )
+        , ( "babak_new_callsign_min_mentions", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.babakNewCallsignMinMentions )
         , ( "interception_keep_full_message", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.interceptionKeepFullMessage )
         , ( "interception_keep_old_colors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.interceptionKeepOldColors )
         , ( "digest_omit_exo_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.digestOmitExoId )
@@ -6177,6 +6179,7 @@ type ListUnitsSortBy
     = CreatedAtDesc
     | CreatedAtAsc
     | NaturalMilitarySortAsc
+    | UnitNameLengthAsc
     | UnitNameAsc
     | UnitNameDesc
     | UnitCompanyAsc
@@ -6197,6 +6200,8 @@ type ListUnitsSortBy
     | UnitCommentDesc
     | UnitOrbitNoteAsc
     | UnitOrbitNoteDesc
+    | UnitOrbitLinkedAsc
+    | UnitOrbitLinkedDesc
 
 
 listUnitsSortByEncoder : ListUnitsSortBy -> Json.Encode.Value
@@ -6208,6 +6213,8 @@ listUnitsSortByEncoder enum =
             Json.Encode.string "CreatedAtAsc"
         NaturalMilitarySortAsc ->
             Json.Encode.string "NaturalMilitarySortAsc"
+        UnitNameLengthAsc ->
+            Json.Encode.string "UnitNameLengthAsc"
         UnitNameAsc ->
             Json.Encode.string "UnitNameAsc"
         UnitNameDesc ->
@@ -6248,6 +6255,10 @@ listUnitsSortByEncoder enum =
             Json.Encode.string "UnitOrbitNoteAsc"
         UnitOrbitNoteDesc ->
             Json.Encode.string "UnitOrbitNoteDesc"
+        UnitOrbitLinkedAsc ->
+            Json.Encode.string "UnitOrbitLinkedAsc"
+        UnitOrbitLinkedDesc ->
+            Json.Encode.string "UnitOrbitLinkedDesc"
 
 type ListUnitsSearchMode
     = Strict
@@ -6280,6 +6291,7 @@ type alias Unit =
     , createdByLoginId : String
     , hasOrbit : Bool
     , orbitUnitIds : List (String)
+    , orbitUnitGenerativeNames : List (String)
     }
 
 
@@ -6303,6 +6315,7 @@ unitEncoder struct =
         , ( "created_by_login_id", (Json.Encode.string) struct.createdByLoginId )
         , ( "has_orbit", (Json.Encode.bool) struct.hasOrbit )
         , ( "orbit_unit_ids", (Json.Encode.list (Json.Encode.string)) struct.orbitUnitIds )
+        , ( "orbit_unit_generative_names", (Json.Encode.list (Json.Encode.string)) struct.orbitUnitGenerativeNames )
         ]
 
 
@@ -6323,6 +6336,9 @@ type alias ListUnitsReq =
     , filterArmyRegion : Maybe (String)
     , filterComment : Maybe (String)
     , filterOrbitNote : Maybe (String)
+    , filterIsDeduplicateCandidate : Maybe (Bool)
+    , filterHasOrbit : Maybe (Bool)
+    , filterHasOrbitNote : Maybe (Bool)
     , searchMode : Maybe (ListUnitsSearchMode)
     , limit : Maybe (Int)
     , offset : Maybe (Int)
@@ -6348,6 +6364,9 @@ listUnitsReqEncoder struct =
         , ( "filter_army_region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterArmyRegion )
         , ( "filter_comment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterComment )
         , ( "filter_orbit_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterOrbitNote )
+        , ( "filter_is_deduplicate_candidate", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.filterIsDeduplicateCandidate )
+        , ( "filter_has_orbit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.filterHasOrbit )
+        , ( "filter_has_orbit_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.filterHasOrbitNote )
         , ( "search_mode", (Maybe.withDefault Json.Encode.null << Maybe.map (listUnitsSearchModeEncoder)) struct.searchMode )
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
         , ( "offset", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.offset )
@@ -6612,6 +6631,130 @@ unitAttachmentEncoder struct =
         ]
 
 
+type alias UnitLabel =
+    { id : Int
+    , label : String
+    }
+
+
+unitLabelEncoder : UnitLabel -> Json.Encode.Value
+unitLabelEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "label", (Json.Encode.string) struct.label )
+        ]
+
+
+type alias CreateUnitLabelReq =
+    { unitId : Int
+    , label : String
+    }
+
+
+createUnitLabelReqEncoder : CreateUnitLabelReq -> Json.Encode.Value
+createUnitLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_id", (Json.Encode.int) struct.unitId )
+        , ( "label", (Json.Encode.string) struct.label )
+        ]
+
+
+type alias DeleteUnitLabelReq =
+    { labelId : Int
+    }
+
+
+deleteUnitLabelReqEncoder : DeleteUnitLabelReq -> Json.Encode.Value
+deleteUnitLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "label_id", (Json.Encode.int) struct.labelId )
+        ]
+
+
+type alias UnresolvedUnitLabel =
+    { unitTxt : String
+    , quantity : Int
+    }
+
+
+unresolvedUnitLabelEncoder : UnresolvedUnitLabel -> Json.Encode.Value
+unresolvedUnitLabelEncoder struct =
+    Json.Encode.object
+        [ ( "unit_txt", (Json.Encode.string) struct.unitTxt )
+        , ( "quantity", (Json.Encode.int) struct.quantity )
+        ]
+
+
+type alias ListUnresolvedUnitLabelsReq =
+    { page : Maybe (Int)
+    }
+
+
+listUnresolvedUnitLabelsReqEncoder : ListUnresolvedUnitLabelsReq -> Json.Encode.Value
+listUnresolvedUnitLabelsReqEncoder struct =
+    Json.Encode.object
+        [ ( "page", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.page )
+        ]
+
+
+type alias ListUnresolvedUnitLabelsRsp =
+    { rows : List (UnresolvedUnitLabel)
+    , totalCount : Int
+    , page : Int
+    , pageSize : Int
+    }
+
+
+listUnresolvedUnitLabelsRspEncoder : ListUnresolvedUnitLabelsRsp -> Json.Encode.Value
+listUnresolvedUnitLabelsRspEncoder struct =
+    Json.Encode.object
+        [ ( "rows", (Json.Encode.list (unresolvedUnitLabelEncoder)) struct.rows )
+        , ( "total_count", (Json.Encode.int) struct.totalCount )
+        , ( "page", (Json.Encode.int) struct.page )
+        , ( "page_size", (Json.Encode.int) struct.pageSize )
+        ]
+
+
+type alias ClassifyUnresolvedUnitLabelReq =
+    { unitTxt : String
+    }
+
+
+classifyUnresolvedUnitLabelReqEncoder : ClassifyUnresolvedUnitLabelReq -> Json.Encode.Value
+classifyUnresolvedUnitLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_txt", (Json.Encode.string) struct.unitTxt )
+        ]
+
+
+type alias ResolveUnresolvedUnitLabelReq =
+    { unitTxt : String
+    , label : String
+    , orbitUnitId : String
+    }
+
+
+resolveUnresolvedUnitLabelReqEncoder : ResolveUnresolvedUnitLabelReq -> Json.Encode.Value
+resolveUnresolvedUnitLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_txt", (Json.Encode.string) struct.unitTxt )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "orbit_unit_id", (Json.Encode.string) struct.orbitUnitId )
+        ]
+
+
+type alias UpdateUnresolvedUnitLabelsRsp =
+    { affectedCount : Int
+    }
+
+
+updateUnresolvedUnitLabelsRspEncoder : UpdateUnresolvedUnitLabelsRsp -> Json.Encode.Value
+updateUnresolvedUnitLabelsRspEncoder struct =
+    Json.Encode.object
+        [ ( "affected_count", (Json.Encode.int) struct.affectedCount )
+        ]
+
+
 type alias OrbitDictionaryValue =
     { id : String
     , key : String
@@ -6809,9 +6952,11 @@ linkOrbitUnitReqEncoder struct =
 type alias UnitDetailsRsp =
     { unit : Unit
     , attachments : List (UnitAttachment)
+    , labels : List (UnitLabel)
     , orbitUnits : List (OrbitUnitDetails)
     , canLinkOrbitUnit : Bool
     , canCreateDeviceNetwork : Bool
+    , canEditUnitLabels : Bool
     }
 
 
@@ -6820,9 +6965,11 @@ unitDetailsRspEncoder struct =
     Json.Encode.object
         [ ( "unit", (unitEncoder) struct.unit )
         , ( "attachments", (Json.Encode.list (unitAttachmentEncoder)) struct.attachments )
+        , ( "labels", (Json.Encode.list (unitLabelEncoder)) struct.labels )
         , ( "orbit_units", (Json.Encode.list (orbitUnitDetailsEncoder)) struct.orbitUnits )
         , ( "can_link_orbit_unit", (Json.Encode.bool) struct.canLinkOrbitUnit )
         , ( "can_create_device_network", (Json.Encode.bool) struct.canCreateDeviceNetwork )
+        , ( "can_edit_unit_labels", (Json.Encode.bool) struct.canEditUnitLabels )
         ]
 
 
@@ -11005,6 +11152,7 @@ aiCallsignWorkerSettingsItemEncoder struct =
 
 type alias AiCallsignPageRsp =
     { prompt : String
+    , promptOverridden : Bool
     , engines : List (AiCallsignEngineItem)
     , messages : List (AiCallsignTestMessageItem)
     , worker : AiCallsignWorkerSettingsItem
@@ -11015,9 +11163,24 @@ aiCallsignPageRspEncoder : AiCallsignPageRsp -> Json.Encode.Value
 aiCallsignPageRspEncoder struct =
     Json.Encode.object
         [ ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "promptOverridden", (Json.Encode.bool) struct.promptOverridden )
         , ( "engines", (Json.Encode.list (aiCallsignEngineItemEncoder)) struct.engines )
         , ( "messages", (Json.Encode.list (aiCallsignTestMessageItemEncoder)) struct.messages )
         , ( "worker", (aiCallsignWorkerSettingsItemEncoder) struct.worker )
+        ]
+
+
+type alias AiCallsignPromptState =
+    { prompt : String
+    , promptOverridden : Bool
+    }
+
+
+aiCallsignPromptStateEncoder : AiCallsignPromptState -> Json.Encode.Value
+aiCallsignPromptStateEncoder struct =
+    Json.Encode.object
+        [ ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "promptOverridden", (Json.Encode.bool) struct.promptOverridden )
         ]
 
 
@@ -15352,6 +15515,7 @@ reportPreviewReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_report_sort_by" (Json.Decode.nullable (tagReportSortByDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_1213_linked_networks_only" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_comments" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "babak_new_callsign_min_mentions" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interception_keep_full_message" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interception_keep_old_colors" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "digest_omit_exo_id" (Json.Decode.nullable (Json.Decode.bool))))
@@ -15497,6 +15661,15 @@ listUnitsSortByDecoder =
                     case x of
                         "NaturalMilitarySortAsc" ->
                             Json.Decode.succeed NaturalMilitarySortAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitNameLengthAsc" ->
+                            Json.Decode.succeed UnitNameLengthAsc
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
@@ -15680,6 +15853,24 @@ listUnitsSortByDecoder =
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitOrbitLinkedAsc" ->
+                            Json.Decode.succeed UnitOrbitLinkedAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitOrbitLinkedDesc" ->
+                            Json.Decode.succeed UnitOrbitLinkedDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
         ]
 
 listUnitsSearchModeDecoder : Json.Decode.Decoder ListUnitsSearchMode
@@ -15725,6 +15916,7 @@ unitDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by_login_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_orbit" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_ids" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_generative_names" (Json.Decode.list (Json.Decode.string))))
 
 
 listUnitsReqDecoder : Json.Decode.Decoder ListUnitsReq
@@ -15746,6 +15938,9 @@ listUnitsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_army_region" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_comment" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_orbit_note" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_is_deduplicate_candidate" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_has_orbit" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_has_orbit_note" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search_mode" (Json.Decode.nullable (listUnitsSearchModeDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "offset" (Json.Decode.nullable (Json.Decode.int))))
@@ -15873,6 +16068,68 @@ unitAttachmentDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
 
 
+unitLabelDecoder : Json.Decode.Decoder UnitLabel
+unitLabelDecoder =
+    Json.Decode.succeed UnitLabel
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+
+
+createUnitLabelReqDecoder : Json.Decode.Decoder CreateUnitLabelReq
+createUnitLabelReqDecoder =
+    Json.Decode.succeed CreateUnitLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+
+
+deleteUnitLabelReqDecoder : Json.Decode.Decoder DeleteUnitLabelReq
+deleteUnitLabelReqDecoder =
+    Json.Decode.succeed DeleteUnitLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label_id" (Json.Decode.int)))
+
+
+unresolvedUnitLabelDecoder : Json.Decode.Decoder UnresolvedUnitLabel
+unresolvedUnitLabelDecoder =
+    Json.Decode.succeed UnresolvedUnitLabel
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quantity" (Json.Decode.int)))
+
+
+listUnresolvedUnitLabelsReqDecoder : Json.Decode.Decoder ListUnresolvedUnitLabelsReq
+listUnresolvedUnitLabelsReqDecoder =
+    Json.Decode.succeed ListUnresolvedUnitLabelsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page" (Json.Decode.nullable (Json.Decode.int))))
+
+
+listUnresolvedUnitLabelsRspDecoder : Json.Decode.Decoder ListUnresolvedUnitLabelsRsp
+listUnresolvedUnitLabelsRspDecoder =
+    Json.Decode.succeed ListUnresolvedUnitLabelsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rows" (Json.Decode.list (unresolvedUnitLabelDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_size" (Json.Decode.int)))
+
+
+classifyUnresolvedUnitLabelReqDecoder : Json.Decode.Decoder ClassifyUnresolvedUnitLabelReq
+classifyUnresolvedUnitLabelReqDecoder =
+    Json.Decode.succeed ClassifyUnresolvedUnitLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
+
+
+resolveUnresolvedUnitLabelReqDecoder : Json.Decode.Decoder ResolveUnresolvedUnitLabelReq
+resolveUnresolvedUnitLabelReqDecoder =
+    Json.Decode.succeed ResolveUnresolvedUnitLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_id" (Json.Decode.string)))
+
+
+updateUnresolvedUnitLabelsRspDecoder : Json.Decode.Decoder UpdateUnresolvedUnitLabelsRsp
+updateUnresolvedUnitLabelsRspDecoder =
+    Json.Decode.succeed UpdateUnresolvedUnitLabelsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "affected_count" (Json.Decode.int)))
+
+
 orbitDictionaryValueDecoder : Json.Decode.Decoder OrbitDictionaryValue
 orbitDictionaryValueDecoder =
     Json.Decode.succeed OrbitDictionaryValue
@@ -15975,9 +16232,11 @@ unitDetailsRspDecoder =
     Json.Decode.succeed UnitDetailsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (unitDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments" (Json.Decode.list (unitAttachmentDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (unitLabelDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_units" (Json.Decode.list (orbitUnitDetailsDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_link_orbit_unit" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_create_device_network" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_edit_unit_labels" (Json.Decode.bool)))
 
 
 unitAttachmentUnitIdsRspDecoder : Json.Decode.Decoder UnitAttachmentUnitIdsRsp
@@ -18401,9 +18660,17 @@ aiCallsignPageRspDecoder : Json.Decode.Decoder AiCallsignPageRsp
 aiCallsignPageRspDecoder =
     Json.Decode.succeed AiCallsignPageRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "promptOverridden" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engines" (Json.Decode.list (aiCallsignEngineItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (aiCallsignTestMessageItemDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "worker" (aiCallsignWorkerSettingsItemDecoder)))
+
+
+aiCallsignPromptStateDecoder : Json.Decode.Decoder AiCallsignPromptState
+aiCallsignPromptStateDecoder =
+    Json.Decode.succeed AiCallsignPromptState
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "promptOverridden" (Json.Decode.bool)))
 
 
 createAiCallsignTestMessageReqDecoder : Json.Decode.Decoder CreateAiCallsignTestMessageReq

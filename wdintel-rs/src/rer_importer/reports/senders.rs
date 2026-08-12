@@ -2,7 +2,10 @@ use super::types::ReportAggregation;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-use crate::rer_importer::inbox::query::build_filtered_inbox_query;
+use crate::rer_importer::report_chunking::{
+    build_filtered_inbox_report_chunk_query, inbox_report_chunk_req,
+    inbox_report_period_chunks, ReportPeriodChunk, ReportPeriodEnd,
+};
 use crate::rer_importer::types::InboxMessagesReq;
 use crate::sigint::sender::preferred_sender_expr;
 use crate::types::info;
@@ -63,24 +66,44 @@ pub async fn report_xlsx_kind_senders(
     let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms else {
         return Err("Until date must be specified".into());
     };
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks =
+        inbox_report_period_chunks(&req, report_settings.chunking_hours)
+            .context(h!())?;
     let analytics_req = &req;
     let postgres_req = &req;
-    let messages =
-        crate::rer_importer::analysis::with_analytics_read_fallback(
-            env,
-            "senders report message aggregation",
-            crate::rer_importer::analysis::analytics_inbox_request_supported(
-                &req,
-            ),
-            |db| async move {
-                load_message_stats(&db, &login, env, analytics_req).await
-            },
-            |db| async move {
-                load_message_stats(&db, &login, env, postgres_req).await
-            },
-        )
-        .await
-        .context(h!())?;
+    let analytics_chunks = &chunks;
+    let postgres_chunks = &chunks;
+    let messages = crate::rer_importer::analysis::with_analytics_read_fallback(
+        env,
+        "senders report message aggregation",
+        crate::rer_importer::analysis::analytics_inbox_request_supported(&req),
+        |db| async move {
+            load_message_stats_chunks(
+                &db,
+                &login,
+                env,
+                analytics_req,
+                analytics_chunks,
+            )
+            .await
+        },
+        |db| async move {
+            load_message_stats_chunks(
+                &db,
+                &login,
+                env,
+                postgres_req,
+                postgres_chunks,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
 
     let read_db = env.replica();
     let senders = map_senders(&aggregation_kind, &read_db, &messages)
@@ -129,16 +152,46 @@ pub async fn report_xlsx_kind_senders(
     Ok(())
 }
 
+async fn load_message_stats_chunks(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    chunks: &[ReportPeriodChunk],
+) -> Result<Vec<MessageStatRecord>, AppError> {
+    let mut messages = Vec::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "Senders report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let chunk_req = inbox_report_chunk_req(req, chunk);
+        messages.extend(
+            load_message_stats(dbx, login, env, &chunk_req, chunk.end)
+                .await
+                .context(h!())?,
+        );
+    }
+    Ok(messages)
+}
+
 async fn load_message_stats(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<MessageStatRecord>, AppError> {
     let kyiv_date_expr = Expr::cust(
         r#"("sigint_inbox_item"."datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date"#,
     );
-    let rows = build_filtered_inbox_query(dbx, login, env, req)
+    let rows = build_filtered_inbox_report_chunk_query(
+        dbx, login, env, req, period_end,
+    )
         .await
         .c(h!())?
         .select_only()

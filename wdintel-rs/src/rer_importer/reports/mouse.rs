@@ -3,7 +3,8 @@ use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::report_chunking::{
-    report_period_chunks, ReportPeriodChunk, ReportPeriodEnd,
+    build_filtered_inbox_report_chunk_query, report_period_chunks,
+    ReportPeriodChunk, ReportPeriodEnd,
 };
 use crate::rer_importer::reports::inbox_light::blank_inbox_message;
 use crate::types::*;
@@ -1254,26 +1255,6 @@ async fn load_mouse_enrichment_maps(
     Ok((message_map, inbox_map, comments_map))
 }
 
-async fn load_mouse_report_messages(
-    dbx: &DatabaseConnection,
-    login: &uuid::Uuid,
-    env: &Env,
-    req: &InboxMessagesReq,
-    include_tags: bool,
-    max_messages: Option<usize>,
-) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    load_mouse_report_messages_chunk(
-        dbx,
-        login,
-        env,
-        req,
-        include_tags,
-        max_messages,
-        ReportPeriodEnd::Inclusive,
-    )
-    .await
-}
-
 async fn load_mouse_report_messages_chunk(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
@@ -1283,31 +1264,11 @@ async fn load_mouse_report_messages_chunk(
     max_messages: Option<usize>,
     period_end: ReportPeriodEnd,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let mut query_req = req.clone();
-    if period_end == ReportPeriodEnd::NonInclusive {
-        query_req.till_date_inclusive_ms = None;
-    }
-    let query = crate::rer_importer::inbox::query::build_filtered_inbox_query(
-        dbx, login, env, &query_req,
+    let query = build_filtered_inbox_report_chunk_query(
+        dbx, login, env, req, period_end,
     )
     .await
     .c(h!())?;
-    let query = if period_end == ReportPeriodEnd::NonInclusive {
-        let till = req.till_date_inclusive_ms.ok_or_else(|| AppError::BL {
-            msg: "Until date must be specified".to_string(),
-        })?;
-        let till = dt_from_millis(till)?;
-        match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
-            InboxMessagesSortBy::IMSDatetime => {
-                query.filter(sigint_inbox_item::Column::Datetime.lt(till))
-            }
-            InboxMessagesSortBy::IMSTimestamp => {
-                query.filter(signal_message::Column::Timestamp.lt(till))
-            }
-        }
-    } else {
-        query
-    };
     let query = query
         .select_only()
         .column_as(signal_message::Column::Id, "id")
@@ -1467,11 +1428,32 @@ pub async fn report_xlsx_kind_pelengs(
     let login = *user_login;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
-    let messages = load_mouse_report_messages(
-        &read_db, &login, env, &inbox_req, false, None,
-    )
-    .await
-    .c(h!())?;
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks =
+        crate::rer_importer::report_chunking::inbox_report_period_chunks(
+            &inbox_req,
+            report_settings.chunking_hours,
+        )
+        .context(h!())?;
+    let mut messages_by_id = BTreeMap::new();
+    for chunk in chunks {
+        let chunk_req =
+            crate::rer_importer::report_chunking::inbox_report_chunk_req(
+                &inbox_req, chunk,
+            );
+        for (id, message) in load_mouse_report_messages_chunk(
+            &read_db, &login, env, &chunk_req, false, None, chunk.end,
+        )
+        .await
+        .c(h!())?
+        {
+            messages_by_id.entry(id).or_insert(message);
+        }
+    }
+    let messages = messages_by_id.into_iter().collect::<Vec<_>>();
     let messages: Vec<(i64, InboxMessage)> = messages
         .iter()
         .filter(|(_, m)| m.coords.is_some())
@@ -1790,6 +1772,7 @@ mod tests {
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
             without_comments: Some(false),
+            babak_new_callsign_min_mentions: None,
             interception_keep_full_message: None,
             interception_keep_old_colors: None,
             digest_omit_exo_id: None,

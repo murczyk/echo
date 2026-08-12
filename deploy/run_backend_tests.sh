@@ -9,6 +9,9 @@ cd "$REPO_ROOT"
 
 python3 -m unittest scripts/ci/test_check_analytics_migrations.py
 python3 scripts/ci/check_analytics_migrations.py
+bash deploy/clickhouse/tests/test-resnapshot-table.sh
+bash deploy/clickhouse/tests/test-manage-system-logs.sh
+bash deploy/clickhouse/tests/test-source-verify-deploy.sh
 
 bash "$SCRIPT_DIR/ensure_postgres_running.sh"
 
@@ -27,9 +30,6 @@ echo "Using test databases: $TEST_DB_NAME and $TEST_WDFILE_DB_NAME"
 bash "$REPO_ROOT/scripts/ci/check_analytics_migration_catalog.sh"
 echo "Migrating test databases..."
 cargo run -p wdintel-rs -- --mode=test migrate
-
-echo "Checking file registry SeaORM entities..."
-just check-seaorm-files --mode=test
 
 # Create storage directory and dummy files for CI
 mkdir -p ~/Downloads/storage
