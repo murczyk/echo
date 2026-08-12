@@ -151,8 +151,24 @@ async fn process_next(
             return Ok(true);
         }
     };
+    let callsigns = normalize_callsigns(callsigns);
+    let callsign_tokens = if callsigns.is_empty() {
+        vec![]
+    } else {
+        match crate::rer_importer::callsigns::highlight_callsigns(
+            rq, &body, &callsigns,
+        )
+        .await
+        {
+            Ok(callsign_tokens) => callsign_tokens,
+            Err(error) => {
+                fail_job(dbx, job, error.to_string()).await?;
+                return Ok(true);
+            }
+        }
+    };
     let changed =
-        complete_job(dbx, rq, job.sigint_inbox_item_id, &body, callsigns)
+        complete_job(dbx, job.sigint_inbox_item_id, callsigns, callsign_tokens)
             .await?;
     if changed {
         fanout_mult(
@@ -216,21 +232,10 @@ async fn load_next_job(
 
 async fn complete_job(
     dbx: &DatabaseConnection,
-    rq: &reqwest::Client,
     sigint_inbox_item_id: i64,
-    body: &str,
     callsigns: Vec<String>,
+    callsign_tokens: Vec<crate::rer_importer::highlight::CNCallsign>,
 ) -> Result<bool, AppError> {
-    let callsigns = normalize_callsigns(callsigns);
-    let callsign_tokens = if callsigns.is_empty() {
-        vec![]
-    } else {
-        crate::rer_importer::callsigns::highlight_callsigns(
-            rq, body, &callsigns,
-        )
-        .await
-        .c(h!())?
-    };
     let transaction = dbx.begin().await.c(h!())?;
     let inbox_item =
         sigint_inbox_item::Entity::find_by_id(sigint_inbox_item_id)
