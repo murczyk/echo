@@ -6,6 +6,8 @@ use crate::types::{Mode, ShortContext};
 use anyhow::Context;
 use chrono::NaiveDateTime;
 use dialoguer::{theme::ColorfulTheme, Confirm};
+#[cfg(test)]
+use sea_orm::NotSet;
 use sea_orm::{
     ColumnTrait, EntityTrait, ExprTrait, QueryFilter, QueryOrder, QuerySelect,
     RelationTrait,
@@ -311,6 +313,7 @@ mod tests {
             file_name: Set(Some("exact.ogg".into())),
             size_bytes: Set(104_857_600),
             is_encrypted: Set(false),
+            storage_key: NotSet,
             created_at: Set(since),
         });
         for _ in 0..ECHO_AUDIO_TRANSCRIPTION_BACKFILL_BATCH_SIZE {
@@ -322,6 +325,7 @@ mod tests {
                 file_name: Set(Some("batch.ogg".into())),
                 size_bytes: Set(1),
                 is_encrypted: Set(false),
+                storage_key: NotSet,
                 created_at: Set(since),
             });
         }
@@ -333,6 +337,7 @@ mod tests {
             file_name: Set(Some("large.ogg".into())),
             size_bytes: Set(104_857_601),
             is_encrypted: Set(false),
+            storage_key: NotSet,
             created_at: Set(since),
         });
         rows.push(signal_message_media::ActiveModel {
@@ -343,6 +348,7 @@ mod tests {
             file_name: Set(Some("note.txt".into())),
             size_bytes: Set(1),
             is_encrypted: Set(false),
+            storage_key: NotSet,
             created_at: Set(since),
         });
         rows.push(signal_message_media::ActiveModel {
@@ -353,6 +359,7 @@ mod tests {
             file_name: Set(Some("old.ogg".into())),
             size_bytes: Set(1),
             is_encrypted: Set(false),
+            storage_key: NotSet,
             created_at: Set(since - chrono::Duration::seconds(1)),
         });
         signal_message_media::Entity::insert_many(rows)

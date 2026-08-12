@@ -419,6 +419,7 @@ pub async fn store_media_attachments(
             file_name: Set(file_name),
             size_bytes: Set(size_bytes),
             is_encrypted: Set(is_encrypted),
+            storage_key: Set(Some(object_key)),
             created_at: NotSet,
         }
         .insert(txn)
@@ -736,6 +737,9 @@ pub async fn stream_plaintext_media_range(
 }
 
 pub fn media_object_key(media: &signal_message_media::Model) -> String {
+    if let Some(storage_key) = &media.storage_key {
+        return storage_key.clone();
+    }
     if media.is_encrypted {
         storage::nested_object_key(&media.id)
     } else {
@@ -1089,6 +1093,7 @@ mod tests {
             file_name: file_name.map(str::to_string),
             size_bytes: 1,
             is_encrypted: true,
+            storage_key: None,
             created_at: Default::default(),
         }
     }
@@ -1274,6 +1279,14 @@ mod tests {
             media_object_key(&media),
             "019f7/019f7ec5-e60d-7e23-b4e7-b605ba6dcfff.plaintext"
         );
+    }
+
+    #[test]
+    fn media_object_key_reuses_shared_storage_key() {
+        let mut media = media("image/jpeg", Some("jpg"), Some("photo.jpg"));
+        media.storage_key = Some("shared/photo-object".to_string());
+
+        assert_eq!(media_object_key(&media), "shared/photo-object");
     }
 
     #[test]

@@ -578,6 +578,7 @@ where
         datasource_group_id: Set(source.message.datasource_group_id),
         operator_tags: Set(source.message.operator_tags.clone()),
         attachments_hash: Set(source.message.attachments_hash.clone()),
+        parent_signal_message_id: Set(None),
     }
     .insert(dbx)
     .await
