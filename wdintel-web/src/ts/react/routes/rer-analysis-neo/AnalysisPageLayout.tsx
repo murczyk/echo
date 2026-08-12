@@ -1,5 +1,5 @@
 import { Box } from '@mui/material';
-import { useId, useState } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
@@ -28,6 +28,8 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const page = useRerAnalysisNeoPage(authUserName);
   const theme = useTheme();
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  const reportFocusTargetRef = useRef<HTMLElement | null>(null);
+  const reportFallbackFocusRef = useRef<HTMLDivElement | null>(null);
   const { notify } = usePowerSnackbar();
   const isAnalysisCompactLayout = useMediaQuery(theme.breakpoints.down('md'));
   const isNarrowLayout = useMediaQuery(theme.breakpoints.down('lg'));
@@ -51,6 +53,13 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
     centerTab === 'map' ||
     (page.analysisMapInSidebar && rightPanelVisible && page.rightSidebarTab === 'map');
   const messagesPaneLoading = useMinDurationBusy(page.messagesLoading, 450);
+  const openReport = useCallback(
+    (focusTarget: HTMLElement) => {
+      reportFocusTargetRef.current = focusTarget;
+      page.openReport();
+    },
+    [page.openReport],
+  );
 
   return (
     <Box
@@ -64,7 +73,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         overflow: 'hidden',
       }}
     >
-      <Box sx={{ px: { xs: 1, lg: 2 }, pt: 0.5 }}>
+      <Box ref={reportFallbackFocusRef} tabIndex={-1} sx={{ px: { xs: 1, lg: 2 }, pt: 0.5 }}>
         <AnalysisPageHeader
           page={page}
           centerTab={centerTab}
@@ -72,6 +81,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
           isNarrowLayout={isNarrowLayout}
           leftPanelVisible={leftPanelVisible}
           rightPanelVisible={rightPanelVisible}
+          onOpenReport={openReport}
         />
       </Box>
 
@@ -203,6 +213,8 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         report={page.report}
         queryState={page.queryState}
         onClose={page.closeReport}
+        focusReturnTargetRef={reportFocusTargetRef}
+        fallbackFocusTargetRef={reportFallbackFocusRef}
         onDownload={page.downloadReport}
         onRepeatTaskRun={page.repeatReportTaskRun}
         onSetProgressExpanded={page.setReportProgressExpanded}

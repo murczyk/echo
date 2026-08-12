@@ -21,19 +21,19 @@ import {
   LinearProgress,
   MenuItem,
   Select,
+  Stack,
   Tab,
   Tabs,
-  Stack,
   TextField,
   Typography,
 } from '@mui/material';
-import { useId } from 'react';
+import { useEffect, useId } from 'react';
+import type { MutableRefObject } from 'react';
 
 import type { User } from '../../../../../Bindings';
 import { ELLIPSIS } from '../../../utils/misc';
 import { hasAnyRole } from '../../../utils/roles';
 import { parseUtcDateTime } from '../../../services/api/report-history';
-import { analysisCompactTabsSx } from '../analysis-tab-styles';
 import {
   describeAppliedReportFilters,
   REPORT_ADJACENT_FREQS_OPTIONS,
@@ -61,6 +61,53 @@ export const analysisReportTemplateGridSx = {
   gap: 1.5,
 } as const;
 
+export const analysisReportTagSortSx = {
+  width: '100%',
+  maxWidth: 320,
+} as const;
+
+export const analysisReportTagsControlsSx = {
+  alignItems: { sm: 'center' },
+} as const;
+
+export const analysisReportTagsCheckboxSx = {
+  minHeight: 40,
+  m: 0,
+  display: 'flex',
+  alignItems: 'center',
+} as const;
+
+export const analysisReportModeTabsSx = {
+  width: 'fit-content',
+  maxWidth: '100%',
+  minHeight: 40,
+  '& .MuiTabs-flexContainer': {
+    gap: 0.5,
+  },
+  '& .MuiTabs-scroller': {
+    overflowX: 'auto',
+  },
+  '& .MuiTab-root': {
+    minWidth: 0,
+    minHeight: 40,
+    px: 2,
+    py: 0.5,
+    color: 'text.secondary',
+    fontSize: '0.875rem',
+    fontWeight: 500,
+    lineHeight: 1.15,
+    textTransform: 'uppercase',
+    whiteSpace: 'nowrap',
+    '&.Mui-selected': {
+      color: 'primary.main',
+    },
+  },
+  '& .MuiTabs-indicator': {
+    height: 2,
+    bgcolor: 'primary.main',
+  },
+} as const;
+
 type Props = {
   aors: AnalysisAorEntry[];
   downloadInFlight: boolean;
@@ -77,6 +124,8 @@ type Props = {
   onSetProgressExpanded: (expanded: boolean) => void;
   onToggleTaskRunLogs: (id: number, expanded: boolean) => void;
   onUpdate: (patch: Partial<AnalysisReportState>) => void;
+  focusReturnTargetRef?: MutableRefObject<HTMLElement | null>;
+  fallbackFocusTargetRef?: MutableRefObject<HTMLElement | null>;
 };
 
 type StageStatus = 'success' | 'running' | 'error' | 'cancelled' | 'pending';
@@ -206,6 +255,13 @@ const checkboxLabelSx = {
   cursor: 'pointer',
 };
 
+export const analysisReportCheckboxLabelTypographySx = {
+  whiteSpace: 'nowrap',
+  fontSize: '1rem',
+  lineHeight: 1.2,
+  fontWeight: 400,
+} as const;
+
 function ReportCheckboxLabel({
   checked,
   disabled = false,
@@ -235,7 +291,7 @@ function ReportCheckboxLabel({
         onChange={(_event, value) => onChange(value)}
         sx={{ p: 0.5 }}
       />
-      <Typography component="span" sx={{ whiteSpace: 'nowrap' }}>
+      <Typography component="span" sx={analysisReportCheckboxLabelTypographySx}>
         {label}
       </Typography>
     </Box>
@@ -262,6 +318,8 @@ export function AnalysisReportDialog({
   onSetProgressExpanded,
   onToggleTaskRunLogs,
   onUpdate,
+  focusReturnTargetRef,
+  fallbackFocusTargetRef,
 }: Props) {
   const titleId = useId().replace(/:/g, '-');
   const appliedFilters = describeAppliedReportFilters(queryState, report);
@@ -355,6 +413,33 @@ export function AnalysisReportDialog({
     : builderMode === 'exports'
       ? 'Завантажити'
       : undefined;
+  const restoreFocusAfterExit = () => {
+    const focusTarget = focusReturnTargetRef?.current ?? fallbackFocusTargetRef?.current;
+    if (focusTarget == null) return;
+
+    window.setTimeout(() => {
+      if (document.querySelector('[role="dialog"]:not([aria-hidden="true"])') != null) return;
+      const isVisible =
+        getComputedStyle(focusTarget).display !== 'none' &&
+        getComputedStyle(focusTarget).visibility !== 'hidden';
+      if (focusTarget.isConnected && isVisible && !focusTarget.hasAttribute('disabled')) {
+        focusTarget.focus();
+      } else if (
+        fallbackFocusTargetRef?.current?.isConnected &&
+        !fallbackFocusTargetRef.current.hasAttribute('disabled')
+      ) {
+        fallbackFocusTargetRef.current.focus();
+      }
+      if (focusReturnTargetRef) focusReturnTargetRef.current = null;
+    }, 0);
+  };
+
+  useEffect(
+    () => () => {
+      if (focusReturnTargetRef) focusReturnTargetRef.current = null;
+    },
+    [focusReturnTargetRef],
+  );
 
   return (
     <Dialog
@@ -366,11 +451,13 @@ export function AnalysisReportDialog({
         onClose();
       }}
       disableEscapeKeyDown={isDialogLocked}
+      disableRestoreFocus
+      TransitionProps={{ onExited: restoreFocusAfterExit }}
       fullWidth
       maxWidth="lg"
       aria-labelledby={titleId}
     >
-      <DialogTitle id={titleId}>Конструктор звітів</DialogTitle>
+      <DialogTitle id={titleId}>Звіти</DialogTitle>
       <DialogContent dividers sx={{ pt: 0 }}>
         <Stack spacing={3}>
           <Stack spacing={1.5}>
@@ -381,10 +468,10 @@ export function AnalysisReportDialog({
               }
               variant="scrollable"
               allowScrollButtonsMobile
-              sx={analysisCompactTabsSx}
+              sx={analysisReportModeTabsSx}
             >
-              <Tab value="reports" label="Звіти" />
-              <Tab value="exports" label="Експорт" />
+              <Tab value="reports" label="СТВОРЕННЯ" />
+              <Tab value="exports" label="ЕКСПОРТ" />
             </Tabs>
             <Typography variant="body2" color="text.secondary">
               Переглядайте свої звіти в{' '}
@@ -463,22 +550,35 @@ export function AnalysisReportDialog({
           </Stack>
 
           {report.template === 'tags' ? (
-            <FormControl size="small" sx={{ flex: '1 1 220px', maxWidth: 320, minWidth: 220 }}>
-              <InputLabel id="analysis-report-tag-sort-label">Сортування</InputLabel>
-              <Select
-                labelId="analysis-report-tag-sort-label"
-                label="Сортування"
-                value={report.tagReportSortBy}
-                onChange={(event) =>
-                  onUpdate({
-                    tagReportSortBy: event.target.value as AnalysisReportState['tagReportSortBy'],
-                  })
-                }
-              >
-                <MenuItem value="ByTime">За часом</MenuItem>
-                <MenuItem value="ByFreqThenTime">За частотою та часом</MenuItem>
-              </Select>
-            </FormControl>
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1.5}
+              alignItems={analysisReportTagsControlsSx.alignItems}
+              flexWrap="wrap"
+            >
+              <FormControl size="small" sx={analysisReportTagSortSx}>
+                <InputLabel id="analysis-report-tag-sort-label">Сортування</InputLabel>
+                <Select
+                  labelId="analysis-report-tag-sort-label"
+                  label="Сортування"
+                  value={report.tagReportSortBy}
+                  onChange={(event) =>
+                    onUpdate({
+                      tagReportSortBy: event.target.value as AnalysisReportState['tagReportSortBy'],
+                    })
+                  }
+                >
+                  <MenuItem value="ByTime">За часом</MenuItem>
+                  <MenuItem value="ByFreqThenTime">За частотою та часом</MenuItem>
+                </Select>
+              </FormControl>
+              <ReportCheckboxLabel
+                checked={report.reportTagsOnlyThisUnit}
+                label="Лише теги/коментарі мого підрозділу"
+                onChange={(value) => onUpdate({ reportTagsOnlyThisUnit: value })}
+                sx={analysisReportTagsCheckboxSx}
+              />
+            </Stack>
           ) : null}
 
           {report.template === 'sposob' ? (
@@ -612,7 +712,7 @@ export function AnalysisReportDialog({
             </Stack>
           ) : null}
 
-          {showReportTagsOnlyThisUnit ? (
+          {showReportTagsOnlyThisUnit && report.template !== 'tags' ? (
             isBabakOrInterception ? (
               <Stack spacing={0.5}>
                 <ReportCheckboxLabel
