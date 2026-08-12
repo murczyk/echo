@@ -368,7 +368,9 @@ async fn load_goi_association_comment_rows(
     let mut csv_rows = Vec::new();
     let mut skipped = 0_usize;
     for (association, organism) in associations {
-        let Some(comment) = non_empty_text(association.note.as_deref()) else {
+        let Some(comment) =
+            non_empty_unescaped_excel_text(association.note.as_deref())
+        else {
             skipped += 1;
             continue;
         };
@@ -415,15 +417,26 @@ fn goi_association_export_message(
         .as_deref()
         .and_then(|message_uid| non_empty_text(Some(message_uid)))
     {
-        return messages
-            .get(&message_uid)
-            .map(|message| (message.body.clone(), message.message_ts));
+        return messages.get(&message_uid).and_then(|message| {
+            non_empty_unescaped_excel_text(Some(&message.body))
+                .map(|body| (body, message.message_ts))
+        });
     }
-    crate::organism::goi::message_uid::association_original_message(
-        &association.row,
-    )
-    .and_then(|body| non_empty_text(Some(body)))
-    .map(|body| (body, goi_association_message_ts(association)))
+    goi_association_original_message_for_export(&association.row)
+        .map(|body| (body, goi_association_message_ts(association)))
+}
+
+fn goi_association_original_message_for_export(
+    row: &serde_json::Value,
+) -> Option<String> {
+    crate::organism::goi::message_uid::association_original_message(row)
+        .and_then(|body| non_empty_unescaped_excel_text(Some(body)))
+}
+
+fn non_empty_unescaped_excel_text(value: Option<&str>) -> Option<String> {
+    let value = value?;
+    let value = goi_echo_worker::row::unescape_excel_text(value);
+    non_empty_text(Some(&value))
 }
 
 async fn load_mapped_goi_association_comment_rows(
@@ -442,7 +455,9 @@ async fn load_mapped_goi_association_comment_rows(
     let mut csv_rows = Vec::new();
     let mut skipped = 0_usize;
     for (association, organism) in associations {
-        let Some(comment) = non_empty_text(association.note.as_deref()) else {
+        let Some(comment) =
+            non_empty_unescaped_excel_text(association.note.as_deref())
+        else {
             skipped += 1;
             continue;
         };
@@ -458,8 +473,13 @@ async fn load_mapped_goi_association_comment_rows(
             skipped += 1;
             continue;
         };
+        let Some(body) = non_empty_unescaped_excel_text(Some(&message.body))
+        else {
+            skipped += 1;
+            continue;
+        };
         csv_rows.push(CommentCsvRow {
-            body: message.body.clone(),
+            body,
             comment,
             message_ts: format_export_ts(message.message_ts),
             source_login: association.author.unwrap_or_default(),
@@ -586,6 +606,29 @@ fn goi_association_message_ts(
 
 fn fixed_offset_utc(ts: NaiveDateTime) -> DateTime<FixedOffset> {
     DateTime::<Utc>::from_naive_utc_and_offset(ts, Utc).fixed_offset()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn goi_association_original_message_for_export_unescapes_excel_body() {
+        let mut cells = vec![
+            serde_json::Value::Null;
+            crate::config::ORGANISM_GOI_ORIGINAL_MESSAGE_CELL_INDEX
+        ];
+        cells.push(serde_json::json!({
+            "kind": "string",
+            "value": "first_x000d_\nsecond_x000A_third",
+        }));
+        let row = serde_json::json!({ "cells": cells });
+
+        assert_eq!(
+            goi_association_original_message_for_export(&row),
+            Some("first\nsecond\nthird".to_string())
+        );
+    }
 }
 
 pub async fn oneoff_import_sigint_comments(

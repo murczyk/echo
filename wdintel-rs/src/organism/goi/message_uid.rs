@@ -719,10 +719,7 @@ pub(crate) fn association_original_message(
 }
 
 fn normalize_message_body(message: &str) -> String {
-    message
-        .replace("_x000d_", "\n")
-        .replace("\r\n", "\n")
-        .replace('\r', "\n")
+    goi_echo_worker::row::unescape_excel_text(message)
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
