@@ -162,7 +162,7 @@ async fn process_next(
         {
             Ok(callsign_tokens) => callsign_tokens,
             Err(error) => {
-                fail_job(dbx, job, error.to_string()).await?;
+                fail_job(dbx, job, error.to_string()).await.c(h!())?;
                 return Ok(true);
             }
         }
