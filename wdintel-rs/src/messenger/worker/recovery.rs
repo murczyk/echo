@@ -183,7 +183,7 @@ async fn load_scheduled_missing_messages_for_accounts(
 async fn active_linked_datasources_by_account(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<BTreeMap<i32, EchoAccountF1>> {
-    let active_status = AccountStatus::Active.into_value();
+    let active_status = AccountStatus::Active.into_value().value.into_owned();
     let mut datasources = BTreeMap::new();
     for datasource in list_echo_accounts(None, dbx).await.c(h!())? {
         if !datasource.is_linked || datasource.status != active_status {

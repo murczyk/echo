@@ -1148,6 +1148,80 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn automatic_rebuild_marks_multiple_matches_as_duplicate_candidates()
+    {
+        crate::tests::test::init().await;
+        let db = crate::new_pg_pool_from_mode(Mode::Test).await.unwrap();
+        let orbit_unit = import_unit();
+        insert_unit(&db, &orbit_unit, Utc::now().naive_utc())
+            .await
+            .unwrap();
+        let login_id = crate::users::login_id_by_name(
+            &db,
+            crate::config::SYSTEM_LOGIN_NAME,
+        )
+        .await
+        .unwrap();
+        let first = crate::functest::tests::mk_sigint_unit(
+            &db,
+            sigint_unit::ActiveModel {
+                created_by_login_id: Set(login_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second = crate::functest::tests::mk_sigint_unit(
+            &db,
+            sigint_unit::ActiveModel {
+                created_by_login_id: Set(login_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        replace_sigint_unit_links(
+            &db,
+            &HashMap::from([(
+                orbit_unit.unit_id,
+                BTreeSet::from([first.id, second.id]),
+            )]),
+        )
+        .await
+        .unwrap();
+
+        let links = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .eq(orbit_unit.unit_id),
+            )
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(links.len(), 2);
+        let candidates = sigint_unit::Entity::find()
+            .filter(sigint_unit::Column::Id.is_in([first.id, second.id]))
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(candidates
+            .iter()
+            .all(|unit| unit.is_deduplicate_candidate == Some(true)));
+
+        sigint_unit::Entity::delete_many()
+            .filter(sigint_unit::Column::Id.is_in([first.id, second.id]))
+            .exec(&db)
+            .await
+            .unwrap();
+        orbit_unit::Entity::delete_by_id(orbit_unit.unit_id)
+            .exec(&db)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn manual_sigint_links_survive_automatic_rebuild() {
         crate::tests::test::init().await;
         let db = crate::new_pg_pool_from_mode(Mode::Test).await.unwrap();

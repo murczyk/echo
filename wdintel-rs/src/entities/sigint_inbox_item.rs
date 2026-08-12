@@ -64,7 +64,7 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     DeviceName,
-    #[sea_orm(has_one = "super::failed_inbox_unit::Entity")]
+    #[sea_orm(has_many = "super::failed_inbox_unit::Entity")]
     FailedInboxUnit,
     #[sea_orm(
         belongs_to = "super::nominatimres::Entity",

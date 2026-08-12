@@ -27,7 +27,7 @@ toLayout : Auth.User -> Model -> Layouts.Layout Msg
 toLayout user _ =
     Layouts.Navbar
         { user = user
-        , activeName = "unit-duplicates"
+        , activeName = "unit-admin"
         }
 
 
@@ -78,7 +78,7 @@ subscriptions _ =
 
 view : Auth.User -> Model -> View Msg
 view user _ =
-    { title = "Адмін: дублікати підрозділів"
+    { title = "Адмін: підрозділи"
     , body =
         [ div [ class "app-shell-fill-height box-border min-h-0 px-6 pt-2 pb-6 w-full flex flex-col overflow-visible lg:overflow-hidden" ]
             [ div [ class "flex-1 min-h-0 w-full" ]

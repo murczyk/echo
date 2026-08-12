@@ -5,8 +5,9 @@ use chrono::{
 };
 use chrono_tz::Europe::Kyiv;
 use indicatif::ProgressBar;
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
+use sea_query::types::IntoColumnRef;
 
 use crate::config::{
     SIGINT_INBOX_DATETIME_NEO_BACKFILL_BATCH_SIZE,
@@ -174,14 +175,15 @@ where
         .context(h!())
 }
 
-fn backfill_cursor_filter(cursor: BackfillCursor) -> Condition {
-    Condition::any()
-        .add(sigint_inbox_item::Column::Datetime.gt(cursor.datetime))
-        .add(
-            Condition::all()
-                .add(sigint_inbox_item::Column::Datetime.eq(cursor.datetime))
-                .add(sigint_inbox_item::Column::Id.gt(cursor.id)),
-        )
+fn backfill_cursor_filter(cursor: BackfillCursor) -> SimpleExpr {
+    Expr::tuple([
+        sigint_inbox_item::Column::Datetime.into_column_ref().into(),
+        sigint_inbox_item::Column::Id.into_column_ref().into(),
+    ])
+    .gt(SimpleExpr::Tuple(vec![
+        cursor.datetime.into(),
+        cursor.id.into(),
+    ]))
 }
 
 fn build_backfill_update(

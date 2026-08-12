@@ -4429,6 +4429,7 @@ type alias DeviceFileRoot =
     , name : String
     , createdAt : String
     , updatedAt : String
+    , tags : List (AnalyticsTag)
     }
 
 
@@ -4442,6 +4443,7 @@ deviceFileRootEncoder struct =
         , ( "name", (Json.Encode.string) struct.name )
         , ( "created_at", (Json.Encode.string) struct.createdAt )
         , ( "updated_at", (Json.Encode.string) struct.updatedAt )
+        , ( "tags", (Json.Encode.list (analyticsTagEncoder)) struct.tags )
         ]
 
 
@@ -4474,6 +4476,7 @@ type alias DeviceFileTreeEntry =
     , fileMetadataModifiedAt : Maybe (String)
     , createdAt : String
     , updatedAt : String
+    , tags : List (AnalyticsTag)
     }
 
 
@@ -4494,6 +4497,7 @@ deviceFileTreeEntryEncoder struct =
         , ( "file_metadata_modified_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileMetadataModifiedAt )
         , ( "created_at", (Json.Encode.string) struct.createdAt )
         , ( "updated_at", (Json.Encode.string) struct.updatedAt )
+        , ( "tags", (Json.Encode.list (analyticsTagEncoder)) struct.tags )
         ]
 
 
@@ -4512,6 +4516,7 @@ type alias DeviceFile =
     , fileMetadataModifiedAt : Maybe (String)
     , createdAt : String
     , updatedAt : String
+    , tags : List (AnalyticsTag)
     }
 
 
@@ -4532,6 +4537,7 @@ deviceFileEncoder struct =
         , ( "file_metadata_modified_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileMetadataModifiedAt )
         , ( "created_at", (Json.Encode.string) struct.createdAt )
         , ( "updated_at", (Json.Encode.string) struct.updatedAt )
+        , ( "tags", (Json.Encode.list (analyticsTagEncoder)) struct.tags )
         ]
 
 
@@ -4607,6 +4613,9 @@ type alias BrowseDeviceFilesReq =
     , includeBreadcrumbs : Maybe (Bool)
     , limit : Maybe (Int)
     , cursor : Maybe (String)
+    , tagIds : Maybe (List (String))
+    , tagMatch : Maybe (TagMatch)
+    , untagged : Maybe (Bool)
     }
 
 
@@ -4618,6 +4627,9 @@ browseDeviceFilesReqEncoder struct =
         , ( "include_breadcrumbs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeBreadcrumbs )
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
         , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        , ( "tag_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.tagIds )
+        , ( "tag_match", (Maybe.withDefault Json.Encode.null << Maybe.map (tagMatchEncoder)) struct.tagMatch )
+        , ( "untagged", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.untagged )
         ]
 
 
@@ -4648,6 +4660,9 @@ type alias SearchDeviceFilesReq =
     , fileMetadataModifiedTo : Maybe (String)
     , limit : Maybe (Int)
     , cursor : Maybe (String)
+    , tagIds : Maybe (List (String))
+    , tagMatch : Maybe (TagMatch)
+    , untagged : Maybe (Bool)
     }
 
 
@@ -4664,6 +4679,9 @@ searchDeviceFilesReqEncoder struct =
         , ( "file_metadata_modified_to", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileMetadataModifiedTo )
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
         , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        , ( "tag_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.tagIds )
+        , ( "tag_match", (Maybe.withDefault Json.Encode.null << Maybe.map (tagMatchEncoder)) struct.tagMatch )
+        , ( "untagged", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.untagged )
         ]
 
 
@@ -4687,6 +4705,7 @@ type alias DeviceFileJournalEntry =
     , absolutePath : String
     , hasContent : Bool
     , synchronizedAt : String
+    , tags : List (AnalyticsTag)
     }
 
 
@@ -4698,6 +4717,7 @@ deviceFileJournalEntryEncoder struct =
         , ( "absolute_path", (Json.Encode.string) struct.absolutePath )
         , ( "has_content", (Json.Encode.bool) struct.hasContent )
         , ( "synchronized_at", (Json.Encode.string) struct.synchronizedAt )
+        , ( "tags", (Json.Encode.list (analyticsTagEncoder)) struct.tags )
         ]
 
 
@@ -4705,6 +4725,9 @@ type alias JournalDeviceFilesReq =
     { deviceId : String
     , limit : Maybe (Int)
     , cursor : Maybe (String)
+    , tagIds : Maybe (List (String))
+    , tagMatch : Maybe (TagMatch)
+    , untagged : Maybe (Bool)
     }
 
 
@@ -4714,6 +4737,9 @@ journalDeviceFilesReqEncoder struct =
         [ ( "device_id", (Json.Encode.string) struct.deviceId )
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
         , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        , ( "tag_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.tagIds )
+        , ( "tag_match", (Maybe.withDefault Json.Encode.null << Maybe.map (tagMatchEncoder)) struct.tagMatch )
+        , ( "untagged", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.untagged )
         ]
 
 
@@ -4844,6 +4870,392 @@ syncDeviceFilesRspEncoder struct =
         [ ( "results", (Json.Encode.list (fileSyncResultEncoder)) struct.results )
         ]
 
+
+type RuleField
+    = FileName
+    | DirectoryPath
+    | FullPath
+    | Extension
+
+
+ruleFieldEncoder : RuleField -> Json.Encode.Value
+ruleFieldEncoder enum =
+    case enum of
+        FileName ->
+            Json.Encode.string "file_name"
+        DirectoryPath ->
+            Json.Encode.string "directory_path"
+        FullPath ->
+            Json.Encode.string "full_path"
+        Extension ->
+            Json.Encode.string "extension"
+
+type RuleMatcher
+    = Equals
+    | Contains
+    | ContainsToken
+    | Regex
+
+
+ruleMatcherEncoder : RuleMatcher -> Json.Encode.Value
+ruleMatcherEncoder enum =
+    case enum of
+        Equals ->
+            Json.Encode.string "equals"
+        Contains ->
+            Json.Encode.string "contains"
+        ContainsToken ->
+            Json.Encode.string "contains_token"
+        Regex ->
+            Json.Encode.string "regex"
+
+type RuleExpression
+    = RuleAll { children : List (RuleExpression) }
+    | RuleAny { children : List (RuleExpression) }
+    | Not { child : RuleExpression }
+    | Match { field : RuleField, matcher : RuleMatcher, values : List (String) }
+
+
+ruleExpressionEncoder : RuleExpression -> Json.Encode.Value
+ruleExpressionEncoder enum =
+    case enum of
+        RuleAll { children } ->
+            Json.Encode.object [ ( "all", Json.Encode.object [ ( "children", Json.Encode.list (ruleExpressionEncoder) children ) ] ) ]
+        RuleAny { children } ->
+            Json.Encode.object [ ( "any", Json.Encode.object [ ( "children", Json.Encode.list (ruleExpressionEncoder) children ) ] ) ]
+        Not { child } ->
+            Json.Encode.object [ ( "not", Json.Encode.object [ ( "child", ruleExpressionEncoder child ) ] ) ]
+        Match { field, matcher, values } ->
+            Json.Encode.object [ ( "match", Json.Encode.object [ ( "field", ruleFieldEncoder field ), ( "matcher", ruleMatcherEncoder matcher ), ( "values", Json.Encode.list (Json.Encode.string) values ) ] ) ]
+
+type alias RuleValidationError =
+    { path : String
+    , code : String
+    , message : String
+    }
+
+
+ruleValidationErrorEncoder : RuleValidationError -> Json.Encode.Value
+ruleValidationErrorEncoder struct =
+    Json.Encode.object
+        [ ( "path", (Json.Encode.string) struct.path )
+        , ( "code", (Json.Encode.string) struct.code )
+        , ( "message", (Json.Encode.string) struct.message )
+        ]
+
+
+type alias AnalyticsTag =
+    { id : String
+    , name : String
+    }
+
+
+analyticsTagEncoder : AnalyticsTag -> Json.Encode.Value
+analyticsTagEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias AdminAnalyticsTag =
+    { id : String
+    , name : String
+    , ruleExpression : Maybe (RuleExpression)
+    , archivedAt : Maybe (String)
+    , createdAt : String
+    , updatedAt : String
+    }
+
+
+adminAnalyticsTagEncoder : AdminAnalyticsTag -> Json.Encode.Value
+adminAnalyticsTagEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "rule_expression", (Maybe.withDefault Json.Encode.null << Maybe.map (ruleExpressionEncoder)) struct.ruleExpression )
+        , ( "archived_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.archivedAt )
+        , ( "created_at", (Json.Encode.string) struct.createdAt )
+        , ( "updated_at", (Json.Encode.string) struct.updatedAt )
+        ]
+
+
+type alias ListAnalyticsTagsRsp =
+    { tags : List (AdminAnalyticsTag)
+    }
+
+
+listAnalyticsTagsRspEncoder : ListAnalyticsTagsRsp -> Json.Encode.Value
+listAnalyticsTagsRspEncoder struct =
+    Json.Encode.object
+        [ ( "tags", (Json.Encode.list (adminAnalyticsTagEncoder)) struct.tags )
+        ]
+
+
+type alias CreateAnalyticsTagReq =
+    { name : String
+    }
+
+
+createAnalyticsTagReqEncoder : CreateAnalyticsTagReq -> Json.Encode.Value
+createAnalyticsTagReqEncoder struct =
+    Json.Encode.object
+        [ ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias UpdateAnalyticsTagReq =
+    { id : String
+    , name : String
+    }
+
+
+updateAnalyticsTagReqEncoder : UpdateAnalyticsTagReq -> Json.Encode.Value
+updateAnalyticsTagReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias AnalyticsTagIdReq =
+    { id : String
+    }
+
+
+analyticsTagIdReqEncoder : AnalyticsTagIdReq -> Json.Encode.Value
+analyticsTagIdReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        ]
+
+
+type alias SaveAnalyticsTagRuleReq =
+    { id : String
+    , ruleExpression : Maybe (RuleExpression)
+    }
+
+
+saveAnalyticsTagRuleReqEncoder : SaveAnalyticsTagRuleReq -> Json.Encode.Value
+saveAnalyticsTagRuleReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "rule_expression", (Maybe.withDefault Json.Encode.null << Maybe.map (ruleExpressionEncoder)) struct.ruleExpression )
+        ]
+
+
+type alias RuleTestFile =
+    { absolutePath : String
+    , expectedMatch : Bool
+    }
+
+
+ruleTestFileEncoder : RuleTestFile -> Json.Encode.Value
+ruleTestFileEncoder struct =
+    Json.Encode.object
+        [ ( "absolute_path", (Json.Encode.string) struct.absolutePath )
+        , ( "expected_match", (Json.Encode.bool) struct.expectedMatch )
+        ]
+
+
+type alias ListAnalyticsTagTestFilesRsp =
+    { files : List (RuleTestFile)
+    }
+
+
+listAnalyticsTagTestFilesRspEncoder : ListAnalyticsTagTestFilesRsp -> Json.Encode.Value
+listAnalyticsTagTestFilesRspEncoder struct =
+    Json.Encode.object
+        [ ( "files", (Json.Encode.list (ruleTestFileEncoder)) struct.files )
+        ]
+
+
+type alias TestAnalyticsTagRuleReq =
+    { id : String
+    , ruleExpression : Maybe (RuleExpression)
+    , files : List (RuleTestFile)
+    }
+
+
+testAnalyticsTagRuleReqEncoder : TestAnalyticsTagRuleReq -> Json.Encode.Value
+testAnalyticsTagRuleReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "rule_expression", (Maybe.withDefault Json.Encode.null << Maybe.map (ruleExpressionEncoder)) struct.ruleExpression )
+        , ( "files", (Json.Encode.list (ruleTestFileEncoder)) struct.files )
+        ]
+
+
+type alias RuleTestFileResult =
+    { index : Int
+    , matched : Bool
+    , passed : Bool
+    }
+
+
+ruleTestFileResultEncoder : RuleTestFileResult -> Json.Encode.Value
+ruleTestFileResultEncoder struct =
+    Json.Encode.object
+        [ ( "index", (Json.Encode.int) struct.index )
+        , ( "matched", (Json.Encode.bool) struct.matched )
+        , ( "passed", (Json.Encode.bool) struct.passed )
+        ]
+
+
+type alias TestAnalyticsTagRuleRsp =
+    { results : List (RuleTestFileResult)
+    }
+
+
+testAnalyticsTagRuleRspEncoder : TestAnalyticsTagRuleRsp -> Json.Encode.Value
+testAnalyticsTagRuleRspEncoder struct =
+    Json.Encode.object
+        [ ( "results", (Json.Encode.list (ruleTestFileResultEncoder)) struct.results )
+        ]
+
+
+type alias ReanalyzeDeviceReq =
+    { deviceId : String
+    }
+
+
+reanalyzeDeviceReqEncoder : ReanalyzeDeviceReq -> Json.Encode.Value
+reanalyzeDeviceReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        ]
+
+
+type alias ReanalysisRsp =
+    { scheduledFileCount : Int
+    }
+
+
+reanalysisRspEncoder : ReanalysisRsp -> Json.Encode.Value
+reanalysisRspEncoder struct =
+    Json.Encode.object
+        [ ( "scheduled_file_count", (Json.Encode.int) struct.scheduledFileCount )
+        ]
+
+
+type alias DeviceAnalyticsReq =
+    { deviceId : String
+    }
+
+
+deviceAnalyticsReqEncoder : DeviceAnalyticsReq -> Json.Encode.Value
+deviceAnalyticsReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        ]
+
+
+type alias DeviceAnalyticsTagsRsp =
+    { tags : List (AnalyticsTag)
+    }
+
+
+deviceAnalyticsTagsRspEncoder : DeviceAnalyticsTagsRsp -> Json.Encode.Value
+deviceAnalyticsTagsRspEncoder struct =
+    Json.Encode.object
+        [ ( "tags", (Json.Encode.list (analyticsTagEncoder)) struct.tags )
+        ]
+
+
+type alias DeviceAnalyticsSummaryItem =
+    { tag : AnalyticsTag
+    , fileCount : Int
+    , latestFileEntryCreatedAt : String
+    }
+
+
+deviceAnalyticsSummaryItemEncoder : DeviceAnalyticsSummaryItem -> Json.Encode.Value
+deviceAnalyticsSummaryItemEncoder struct =
+    Json.Encode.object
+        [ ( "tag", (analyticsTagEncoder) struct.tag )
+        , ( "file_count", (Json.Encode.int) struct.fileCount )
+        , ( "latest_file_entry_created_at", (Json.Encode.string) struct.latestFileEntryCreatedAt )
+        ]
+
+
+type alias DeviceAnalyticsSummaryRsp =
+    { totalFileCount : Int
+    , analyzedFileCount : Int
+    , items : List (DeviceAnalyticsSummaryItem)
+    }
+
+
+deviceAnalyticsSummaryRspEncoder : DeviceAnalyticsSummaryRsp -> Json.Encode.Value
+deviceAnalyticsSummaryRspEncoder struct =
+    Json.Encode.object
+        [ ( "total_file_count", (Json.Encode.int) struct.totalFileCount )
+        , ( "analyzed_file_count", (Json.Encode.int) struct.analyzedFileCount )
+        , ( "items", (Json.Encode.list (deviceAnalyticsSummaryItemEncoder)) struct.items )
+        ]
+
+
+type alias DeviceAnalyticsFilesReq =
+    { deviceId : String
+    , tagId : String
+    , limit : Maybe (Int)
+    , cursor : Maybe (String)
+    }
+
+
+deviceAnalyticsFilesReqEncoder : DeviceAnalyticsFilesReq -> Json.Encode.Value
+deviceAnalyticsFilesReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "tag_id", (Json.Encode.string) struct.tagId )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        ]
+
+
+type alias DeviceAnalyticsFile =
+    { fileId : String
+    , name : String
+    , absolutePath : String
+    , fileEntryCreatedAt : String
+    }
+
+
+deviceAnalyticsFileEncoder : DeviceAnalyticsFile -> Json.Encode.Value
+deviceAnalyticsFileEncoder struct =
+    Json.Encode.object
+        [ ( "file_id", (Json.Encode.string) struct.fileId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "absolute_path", (Json.Encode.string) struct.absolutePath )
+        , ( "file_entry_created_at", (Json.Encode.string) struct.fileEntryCreatedAt )
+        ]
+
+
+type alias DeviceAnalyticsFilesRsp =
+    { files : List (DeviceAnalyticsFile)
+    , nextCursor : Maybe (String)
+    }
+
+
+deviceAnalyticsFilesRspEncoder : DeviceAnalyticsFilesRsp -> Json.Encode.Value
+deviceAnalyticsFilesRspEncoder struct =
+    Json.Encode.object
+        [ ( "files", (Json.Encode.list (deviceAnalyticsFileEncoder)) struct.files )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        ]
+
+
+type TagMatch
+    = TagAny
+    | TagAll
+
+
+tagMatchEncoder : TagMatch -> Json.Encode.Value
+tagMatchEncoder enum =
+    case enum of
+        TagAny ->
+            Json.Encode.string "any"
+        TagAll ->
+            Json.Encode.string "all"
 
 type alias Organism =
     { id : Int
@@ -6674,6 +7086,8 @@ deleteUnitLabelReqEncoder struct =
 type alias UnresolvedUnitLabel =
     { unitTxt : String
     , quantity : Int
+    , note : String
+    , isArchived : Bool
     }
 
 
@@ -6682,11 +7096,30 @@ unresolvedUnitLabelEncoder struct =
     Json.Encode.object
         [ ( "unit_txt", (Json.Encode.string) struct.unitTxt )
         , ( "quantity", (Json.Encode.int) struct.quantity )
+        , ( "note", (Json.Encode.string) struct.note )
+        , ( "is_archived", (Json.Encode.bool) struct.isArchived )
         ]
 
 
+type UnresolvedUnitLabelArchiveFilter
+    = AllUnresolvedUnitLabels
+    | NewUnresolvedUnitLabels
+    | ArchivedUnresolvedUnitLabels
+
+
+unresolvedUnitLabelArchiveFilterEncoder : UnresolvedUnitLabelArchiveFilter -> Json.Encode.Value
+unresolvedUnitLabelArchiveFilterEncoder enum =
+    case enum of
+        AllUnresolvedUnitLabels ->
+            Json.Encode.string "AllUnresolvedUnitLabels"
+        NewUnresolvedUnitLabels ->
+            Json.Encode.string "NewUnresolvedUnitLabels"
+        ArchivedUnresolvedUnitLabels ->
+            Json.Encode.string "ArchivedUnresolvedUnitLabels"
+
 type alias ListUnresolvedUnitLabelsReq =
     { page : Maybe (Int)
+    , archiveFilter : Maybe (UnresolvedUnitLabelArchiveFilter)
     }
 
 
@@ -6694,6 +7127,7 @@ listUnresolvedUnitLabelsReqEncoder : ListUnresolvedUnitLabelsReq -> Json.Encode.
 listUnresolvedUnitLabelsReqEncoder struct =
     Json.Encode.object
         [ ( "page", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.page )
+        , ( "archive_filter", (Maybe.withDefault Json.Encode.null << Maybe.map (unresolvedUnitLabelArchiveFilterEncoder)) struct.archiveFilter )
         ]
 
 
@@ -6727,10 +7161,24 @@ classifyUnresolvedUnitLabelReqEncoder struct =
         ]
 
 
+type alias ArchiveUnresolvedUnitLabelReq =
+    { unitTxt : String
+    , archived : Bool
+    }
+
+
+archiveUnresolvedUnitLabelReqEncoder : ArchiveUnresolvedUnitLabelReq -> Json.Encode.Value
+archiveUnresolvedUnitLabelReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_txt", (Json.Encode.string) struct.unitTxt )
+        , ( "archived", (Json.Encode.bool) struct.archived )
+        ]
+
+
 type alias ResolveUnresolvedUnitLabelReq =
     { unitTxt : String
     , label : String
-    , orbitUnitId : String
+    , sigintUnitId : Int
     }
 
 
@@ -6739,7 +7187,23 @@ resolveUnresolvedUnitLabelReqEncoder struct =
     Json.Encode.object
         [ ( "unit_txt", (Json.Encode.string) struct.unitTxt )
         , ( "label", (Json.Encode.string) struct.label )
-        , ( "orbit_unit_id", (Json.Encode.string) struct.orbitUnitId )
+        , ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        ]
+
+
+type alias UpdateUnresolvedUnitLabelNoteReq =
+    { unitTxt : String
+    , note : String
+    , isArchived : Bool
+    }
+
+
+updateUnresolvedUnitLabelNoteReqEncoder : UpdateUnresolvedUnitLabelNoteReq -> Json.Encode.Value
+updateUnresolvedUnitLabelNoteReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_txt", (Json.Encode.string) struct.unitTxt )
+        , ( "note", (Json.Encode.string) struct.note )
+        , ( "is_archived", (Json.Encode.bool) struct.isArchived )
         ]
 
 
@@ -14361,6 +14825,7 @@ deviceFileRootDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (analyticsTagDecoder))))
 
 
 fileBreadcrumbDecoder : Json.Decode.Decoder FileBreadcrumb
@@ -14387,6 +14852,7 @@ deviceFileTreeEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_metadata_modified_at" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (analyticsTagDecoder))))
 
 
 deviceFileDecoder : Json.Decode.Decoder DeviceFile
@@ -14406,6 +14872,7 @@ deviceFileDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_metadata_modified_at" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (analyticsTagDecoder))))
 
 
 listDeviceFileRootsReqDecoder : Json.Decode.Decoder ListDeviceFileRootsReq
@@ -14428,6 +14895,9 @@ browseDeviceFilesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_breadcrumbs" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_match" (Json.Decode.nullable (tagMatchDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "untagged" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 browseDeviceFilesRspDecoder : Json.Decode.Decoder BrowseDeviceFilesRsp
@@ -14451,6 +14921,9 @@ searchDeviceFilesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_metadata_modified_to" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_match" (Json.Decode.nullable (tagMatchDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "untagged" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 searchDeviceFilesRspDecoder : Json.Decode.Decoder SearchDeviceFilesRsp
@@ -14468,6 +14941,7 @@ deviceFileJournalEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_content" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "synchronized_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (analyticsTagDecoder))))
 
 
 journalDeviceFilesReqDecoder : Json.Decode.Decoder JournalDeviceFilesReq
@@ -14476,6 +14950,9 @@ journalDeviceFilesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_match" (Json.Decode.nullable (tagMatchDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "untagged" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 journalDeviceFilesRspDecoder : Json.Decode.Decoder JournalDeviceFilesRsp
@@ -14603,6 +15080,288 @@ syncDeviceFilesRspDecoder =
     Json.Decode.succeed SyncDeviceFilesRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "results" (Json.Decode.list (fileSyncResultDecoder))))
 
+
+ruleFieldDecoder : Json.Decode.Decoder RuleField
+ruleFieldDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "file_name" ->
+                            Json.Decode.succeed FileName
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "directory_path" ->
+                            Json.Decode.succeed DirectoryPath
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "full_path" ->
+                            Json.Decode.succeed FullPath
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "extension" ->
+                            Json.Decode.succeed Extension
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+ruleMatcherDecoder : Json.Decode.Decoder RuleMatcher
+ruleMatcherDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "equals" ->
+                            Json.Decode.succeed Equals
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "contains" ->
+                            Json.Decode.succeed Contains
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "contains_token" ->
+                            Json.Decode.succeed ContainsToken
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "regex" ->
+                            Json.Decode.succeed Regex
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+ruleExpressionDecoder : Json.Decode.Decoder RuleExpression
+ruleExpressionDecoder =
+        let
+            elmRsConstructRuleAll children =
+                        RuleAll { children = children }
+            elmRsConstructRuleAny children =
+                        RuleAny { children = children }
+            elmRsConstructNot child =
+                        Not { child = child }
+            elmRsConstructMatch field matcher values =
+                        Match { field = field, matcher = matcher, values = values }
+        in
+    Json.Decode.oneOf
+        [ Json.Decode.field "all" (Json.Decode.succeed elmRsConstructRuleAll |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "children" (Json.Decode.list (ruleExpressionDecoder)))))
+        , Json.Decode.field "any" (Json.Decode.succeed elmRsConstructRuleAny |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "children" (Json.Decode.list (ruleExpressionDecoder)))))
+        , Json.Decode.field "not" (Json.Decode.succeed elmRsConstructNot |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "child" (ruleExpressionDecoder))))
+        , Json.Decode.field "match" (Json.Decode.succeed elmRsConstructMatch |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "field" (ruleFieldDecoder))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "matcher" (ruleMatcherDecoder))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "values" (Json.Decode.list (Json.Decode.string)))))
+        ]
+
+ruleValidationErrorDecoder : Json.Decode.Decoder RuleValidationError
+ruleValidationErrorDecoder =
+    Json.Decode.succeed RuleValidationError
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "path" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "code" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
+
+
+analyticsTagDecoder : Json.Decode.Decoder AnalyticsTag
+analyticsTagDecoder =
+    Json.Decode.succeed AnalyticsTag
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+adminAnalyticsTagDecoder : Json.Decode.Decoder AdminAnalyticsTag
+adminAnalyticsTagDecoder =
+    Json.Decode.succeed AdminAnalyticsTag
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rule_expression" (Json.Decode.nullable (ruleExpressionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archived_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.string)))
+
+
+listAnalyticsTagsRspDecoder : Json.Decode.Decoder ListAnalyticsTagsRsp
+listAnalyticsTagsRspDecoder =
+    Json.Decode.succeed ListAnalyticsTagsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (adminAnalyticsTagDecoder))))
+
+
+createAnalyticsTagReqDecoder : Json.Decode.Decoder CreateAnalyticsTagReq
+createAnalyticsTagReqDecoder =
+    Json.Decode.succeed CreateAnalyticsTagReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+updateAnalyticsTagReqDecoder : Json.Decode.Decoder UpdateAnalyticsTagReq
+updateAnalyticsTagReqDecoder =
+    Json.Decode.succeed UpdateAnalyticsTagReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+analyticsTagIdReqDecoder : Json.Decode.Decoder AnalyticsTagIdReq
+analyticsTagIdReqDecoder =
+    Json.Decode.succeed AnalyticsTagIdReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+
+
+saveAnalyticsTagRuleReqDecoder : Json.Decode.Decoder SaveAnalyticsTagRuleReq
+saveAnalyticsTagRuleReqDecoder =
+    Json.Decode.succeed SaveAnalyticsTagRuleReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rule_expression" (Json.Decode.nullable (ruleExpressionDecoder))))
+
+
+ruleTestFileDecoder : Json.Decode.Decoder RuleTestFile
+ruleTestFileDecoder =
+    Json.Decode.succeed RuleTestFile
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expected_match" (Json.Decode.bool)))
+
+
+listAnalyticsTagTestFilesRspDecoder : Json.Decode.Decoder ListAnalyticsTagTestFilesRsp
+listAnalyticsTagTestFilesRspDecoder =
+    Json.Decode.succeed ListAnalyticsTagTestFilesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "files" (Json.Decode.list (ruleTestFileDecoder))))
+
+
+testAnalyticsTagRuleReqDecoder : Json.Decode.Decoder TestAnalyticsTagRuleReq
+testAnalyticsTagRuleReqDecoder =
+    Json.Decode.succeed TestAnalyticsTagRuleReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rule_expression" (Json.Decode.nullable (ruleExpressionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "files" (Json.Decode.list (ruleTestFileDecoder))))
+
+
+ruleTestFileResultDecoder : Json.Decode.Decoder RuleTestFileResult
+ruleTestFileResultDecoder =
+    Json.Decode.succeed RuleTestFileResult
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "index" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "matched" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "passed" (Json.Decode.bool)))
+
+
+testAnalyticsTagRuleRspDecoder : Json.Decode.Decoder TestAnalyticsTagRuleRsp
+testAnalyticsTagRuleRspDecoder =
+    Json.Decode.succeed TestAnalyticsTagRuleRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "results" (Json.Decode.list (ruleTestFileResultDecoder))))
+
+
+reanalyzeDeviceReqDecoder : Json.Decode.Decoder ReanalyzeDeviceReq
+reanalyzeDeviceReqDecoder =
+    Json.Decode.succeed ReanalyzeDeviceReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+
+
+reanalysisRspDecoder : Json.Decode.Decoder ReanalysisRsp
+reanalysisRspDecoder =
+    Json.Decode.succeed ReanalysisRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "scheduled_file_count" (Json.Decode.int)))
+
+
+deviceAnalyticsReqDecoder : Json.Decode.Decoder DeviceAnalyticsReq
+deviceAnalyticsReqDecoder =
+    Json.Decode.succeed DeviceAnalyticsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+
+
+deviceAnalyticsTagsRspDecoder : Json.Decode.Decoder DeviceAnalyticsTagsRsp
+deviceAnalyticsTagsRspDecoder =
+    Json.Decode.succeed DeviceAnalyticsTagsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (analyticsTagDecoder))))
+
+
+deviceAnalyticsSummaryItemDecoder : Json.Decode.Decoder DeviceAnalyticsSummaryItem
+deviceAnalyticsSummaryItemDecoder =
+    Json.Decode.succeed DeviceAnalyticsSummaryItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag" (analyticsTagDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "latest_file_entry_created_at" (Json.Decode.string)))
+
+
+deviceAnalyticsSummaryRspDecoder : Json.Decode.Decoder DeviceAnalyticsSummaryRsp
+deviceAnalyticsSummaryRspDecoder =
+    Json.Decode.succeed DeviceAnalyticsSummaryRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total_file_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analyzed_file_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (deviceAnalyticsSummaryItemDecoder))))
+
+
+deviceAnalyticsFilesReqDecoder : Json.Decode.Decoder DeviceAnalyticsFilesReq
+deviceAnalyticsFilesReqDecoder =
+    Json.Decode.succeed DeviceAnalyticsFilesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceAnalyticsFileDecoder : Json.Decode.Decoder DeviceAnalyticsFile
+deviceAnalyticsFileDecoder =
+    Json.Decode.succeed DeviceAnalyticsFile
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_entry_created_at" (Json.Decode.string)))
+
+
+deviceAnalyticsFilesRspDecoder : Json.Decode.Decoder DeviceAnalyticsFilesRsp
+deviceAnalyticsFilesRspDecoder =
+    Json.Decode.succeed DeviceAnalyticsFilesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "files" (Json.Decode.list (deviceAnalyticsFileDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+tagMatchDecoder : Json.Decode.Decoder TagMatch
+tagMatchDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "any" ->
+                            Json.Decode.succeed TagAny
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "all" ->
+                            Json.Decode.succeed TagAll
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 organismDecoder : Json.Decode.Decoder Organism
 organismDecoder =
@@ -16093,12 +16852,47 @@ unresolvedUnitLabelDecoder =
     Json.Decode.succeed UnresolvedUnitLabel
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quantity" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "note" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
 
+
+unresolvedUnitLabelArchiveFilterDecoder : Json.Decode.Decoder UnresolvedUnitLabelArchiveFilter
+unresolvedUnitLabelArchiveFilterDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "AllUnresolvedUnitLabels" ->
+                            Json.Decode.succeed AllUnresolvedUnitLabels
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "NewUnresolvedUnitLabels" ->
+                            Json.Decode.succeed NewUnresolvedUnitLabels
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ArchivedUnresolvedUnitLabels" ->
+                            Json.Decode.succeed ArchivedUnresolvedUnitLabels
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 listUnresolvedUnitLabelsReqDecoder : Json.Decode.Decoder ListUnresolvedUnitLabelsReq
 listUnresolvedUnitLabelsReqDecoder =
     Json.Decode.succeed ListUnresolvedUnitLabelsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_filter" (Json.Decode.nullable (unresolvedUnitLabelArchiveFilterDecoder))))
 
 
 listUnresolvedUnitLabelsRspDecoder : Json.Decode.Decoder ListUnresolvedUnitLabelsRsp
@@ -16116,12 +16910,27 @@ classifyUnresolvedUnitLabelReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
 
 
+archiveUnresolvedUnitLabelReqDecoder : Json.Decode.Decoder ArchiveUnresolvedUnitLabelReq
+archiveUnresolvedUnitLabelReqDecoder =
+    Json.Decode.succeed ArchiveUnresolvedUnitLabelReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archived" (Json.Decode.bool)))
+
+
 resolveUnresolvedUnitLabelReqDecoder : Json.Decode.Decoder ResolveUnresolvedUnitLabelReq
 resolveUnresolvedUnitLabelReqDecoder =
     Json.Decode.succeed ResolveUnresolvedUnitLabelReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+
+
+updateUnresolvedUnitLabelNoteReqDecoder : Json.Decode.Decoder UpdateUnresolvedUnitLabelNoteReq
+updateUnresolvedUnitLabelNoteReqDecoder =
+    Json.Decode.succeed UpdateUnresolvedUnitLabelNoteReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_txt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "note" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
 
 
 updateUnresolvedUnitLabelsRspDecoder : Json.Decode.Decoder UpdateUnresolvedUnitLabelsRsp

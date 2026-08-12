@@ -29,6 +29,7 @@ function journalEntry(
     name,
     absolutePath: `/var/log/${name}`,
     hasContent: false,
+    tags: [],
     synchronizedAt,
   };
 }
@@ -47,7 +48,11 @@ let enabled = false;
 let latest: DeviceFileJournalState | null = null;
 
 function Harness() {
-  latest = useDeviceFileJournal({ deviceId: DEVICE_ID, enabled });
+  latest = useDeviceFileJournal({
+    deviceId: DEVICE_ID,
+    enabled,
+    tagFilter: { tagIds: [], tagMatch: 'any', untagged: false },
+  });
   return null;
 }
 

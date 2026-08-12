@@ -1,10 +1,13 @@
 use self::schema::device_active_model;
-use crate::config::IDENTITY_DURATION_HOURS;
+use crate::config::{IDENTITY_DURATION_HOURS, ROLE_ADMIN};
 use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
 use crate::entities::{
     area_of_responsibility, login, organism, sigint_unit, system_settings,
 };
-use crate::file_registry::entities::file_entry;
+use crate::file_registry::entities::{
+    analytics_tag, device_file_tag, file_analysis_state, file_entry,
+    sea_orm_active_enums::FileEntryKind,
+};
 use crate::functest::tests::{
     cleanup_locked, mk_aor, mk_login, mk_organism, mk_sigint_unit,
 };
@@ -17,8 +20,11 @@ use actix_web::web::ServiceConfig;
 use actix_web::{
     http::StatusCode, test, web, App, HttpMessage, HttpRequest, HttpResponse,
 };
+use chrono::{NaiveDateTime, Utc};
+use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
+    IntoActiveModel, QueryFilter,
 };
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -36,12 +42,78 @@ fn configure_routes(cfg: &mut ServiceConfig) {
         .service(super::files::browse)
         .service(super::files::search)
         .service(super::files::journal)
-        .service(super::files::sync);
+        .service(super::files::sync)
+        .service(super::analytics::list_tags)
+        .service(super::analytics::create_tag)
+        .service(super::analytics::update_tag)
+        .service(super::analytics::archive_tag)
+        .service(super::analytics::restore_tag)
+        .service(super::analytics::save_tag_rule)
+        .service(super::analytics::list_tag_test_files)
+        .service(super::analytics::test_tag_rule)
+        .service(super::analytics::reanalyze_all)
+        .service(super::analytics::reanalyze_device)
+        .service(super::analytics::device_tags)
+        .service(super::analytics::device_summary)
+        .service(super::analytics::device_files);
 }
 
 async fn login(request: HttpRequest, login: web::Path<String>) -> HttpResponse {
     Identity::login(&request.extensions(), login.into_inner()).unwrap();
     HttpResponse::NoContent().finish()
+}
+
+fn analytics_root_entry(
+    id: Uuid,
+    device_id: Uuid,
+    timestamp: NaiveDateTime,
+) -> file_entry::ActiveModel {
+    file_entry::ActiveModel {
+        id: Set(id),
+        device_id: Set(device_id),
+        parent_id: Set(None),
+        kind: Set(FileEntryKind::Directory),
+        name: Set("C:\\".to_string()),
+        absolute_path: Set(None),
+        hierarchy_path: Set(format!("n{}", id.to_string().replace('-', ""))),
+        mime_type: Set(None),
+        extension: Set(None),
+        file_metadata_created_at: Set(None),
+        file_metadata_modified_at: Set(None),
+        created_at: Set(timestamp),
+        updated_at: Set(timestamp),
+        content_path: Set(None),
+    }
+}
+
+fn analytics_file_entry(
+    id: Uuid,
+    device_id: Uuid,
+    parent_id: Uuid,
+    name: &str,
+    extension: &str,
+    timestamp: NaiveDateTime,
+) -> file_entry::ActiveModel {
+    let root_path = format!("n{}", parent_id.to_string().replace('-', ""));
+    file_entry::ActiveModel {
+        id: Set(id),
+        device_id: Set(device_id),
+        parent_id: Set(Some(parent_id)),
+        kind: Set(FileEntryKind::File),
+        name: Set(name.to_string()),
+        absolute_path: Set(Some(format!(r"C:\{name}"))),
+        hierarchy_path: Set(format!(
+            "{root_path}.n{}",
+            id.to_string().replace('-', ""),
+        )),
+        mime_type: Set(None),
+        extension: Set(Some(extension.to_string())),
+        file_metadata_created_at: Set(None),
+        file_metadata_modified_at: Set(None),
+        created_at: Set(timestamp),
+        updated_at: Set(timestamp),
+        content_path: Set(None),
+    }
 }
 
 #[actix_web::test]
@@ -565,7 +637,637 @@ async fn target_api_smoke_covers_all_routes() {
     }
 }
 
-const TARGET_ROUTES: [&str; 13] = [
+#[actix_web::test]
+#[serial_test::serial]
+async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    system_settings::ActiveModel {
+        devices_section_enabled: Set(true),
+        ..Default::default()
+    }
+    .insert(&env.dbx)
+    .await
+    .unwrap();
+
+    let organism = mk_organism(
+        &env.dbx,
+        organism::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let foreign_organism = mk_organism(
+        &env.dbx,
+        organism::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let admin = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("analytics-admin-{}", Uuid::now_v7())),
+            roles: Set(json!([ROLE_ADMIN])),
+            organism_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let reader = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("analytics-reader-{}", Uuid::now_v7())),
+            roles: Set(json!([ROLE_CYBER])),
+            organism_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let foreign_reader = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("analytics-foreign-{}", Uuid::now_v7())),
+            roles: Set(json!([ROLE_CYBER])),
+            organism_id: Set(Some(foreign_organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let device = device_active_model(
+        &admin.login,
+        organism.id,
+        Some("Analytics API device"),
+        json!({}),
+        false,
+        None,
+    )
+    .insert(&env.dbx)
+    .await
+    .unwrap();
+
+    let now = Utc::now();
+    let root_id = Uuid::now_v7();
+    let tagged_file_id = Uuid::now_v7();
+    let untagged_file_id = Uuid::now_v7();
+    let file_db = env.file_registry_db().unwrap().connection();
+    analytics_root_entry(root_id, device.id, now.naive_utc())
+        .insert(file_db)
+        .await
+        .unwrap();
+    analytics_file_entry(
+        tagged_file_id,
+        device.id,
+        root_id,
+        "tagged.pdf",
+        "pdf",
+        now.naive_utc(),
+    )
+    .insert(file_db)
+    .await
+    .unwrap();
+    analytics_file_entry(
+        untagged_file_id,
+        device.id,
+        root_id,
+        "untagged.txt",
+        "txt",
+        now.naive_utc(),
+    )
+    .insert(file_db)
+    .await
+    .unwrap();
+
+    let active_tag_id = Uuid::now_v7();
+    let archived_tag_id = Uuid::now_v7();
+    for (id, name, archived_at) in [
+        (active_tag_id, "Active tag", None),
+        (archived_tag_id, "Archived tag", Some(now.fixed_offset())),
+    ] {
+        analytics_tag::ActiveModel {
+            id: Set(id),
+            name: Set(name.to_string()),
+            rule_expression: Set(None),
+            archived_at: Set(archived_at),
+            created_at: Set(now.fixed_offset()),
+            updated_at: Set(now.fixed_offset()),
+        }
+        .insert(file_db)
+        .await
+        .unwrap();
+    }
+    device_file_tag::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        file_entry_id: Set(tagged_file_id),
+        device_id: Set(device.id),
+        file_entry_created_at: Set(now.fixed_offset()),
+        tag_id: Set(active_tag_id),
+        created_at: Set(now.fixed_offset()),
+        updated_at: Set(now.fixed_offset()),
+    }
+    .insert(file_db)
+    .await
+    .unwrap();
+
+    let config = env.config.clone();
+    let redis_session_store =
+        RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
+            .await
+            .unwrap();
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::from(env.clone()))
+            .wrap(
+                IdentityMiddleware::builder()
+                    .visit_deadline(Some(std::time::Duration::from_secs(
+                        IDENTITY_DURATION_HOURS * 60 * 60,
+                    )))
+                    .build(),
+            )
+            .wrap(SessionMiddleware::new(redis_session_store, Key::generate()))
+            .route("/test/login/{login}", web::post().to(self::login))
+            .configure(configure_routes),
+    )
+    .await;
+
+    macro_rules! login_cookie {
+        ($login_id:expr) => {{
+            let response = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri(&format!("/test/login/{}", $login_id))
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::NO_CONTENT);
+            let cookie: Cookie<'static> =
+                response.response().cookies().next().unwrap().into_owned();
+            cookie
+        }};
+    }
+    macro_rules! post_as {
+        ($cookie:expr, $path:expr, $body:expr) => {{
+            test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri($path)
+                    .cookie($cookie.clone())
+                    .set_json(&$body)
+                    .to_request(),
+            )
+            .await
+        }};
+    }
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/device/analytics/tags")
+            .set_json(json!({"device_id": device.id}))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let reader_cookie = login_cookie!(reader.id);
+    let foreign_cookie = login_cookie!(foreign_reader.id);
+    let admin_cookie = login_cookie!(admin.id);
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/analytics/tags",
+        json!({"device_id": device.id})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let tags: Value = test::read_body_json(response).await;
+    assert_eq!(
+        tags["tags"],
+        json!([{"id": active_tag_id, "name": "Active tag"}]),
+    );
+
+    let response = post_as!(
+        foreign_cookie,
+        "/api/device/analytics/tags",
+        json!({"device_id": device.id})
+    );
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/analytics/summary",
+        json!({"device_id": device.id})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let summary: Value = test::read_body_json(response).await;
+    assert_eq!(summary["total_file_count"], 2);
+    assert_eq!(summary["analyzed_file_count"], 0);
+    assert_eq!(summary["items"].as_array().unwrap().len(), 1);
+    assert_eq!(summary["items"][0]["tag"]["id"], active_tag_id.to_string());
+    assert_eq!(summary["items"][0]["file_count"], 1);
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/analytics/files",
+        json!({
+            "device_id": device.id,
+            "tag_id": active_tag_id,
+            "limit": 10,
+            "cursor": null
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let files: Value = test::read_body_json(response).await;
+    assert_eq!(files["files"].as_array().unwrap().len(), 1);
+    assert_eq!(files["files"][0]["file_id"], tagged_file_id.to_string());
+    assert_eq!(files["files"][0]["name"], "tagged.pdf");
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/files/browse",
+        json!({
+            "device_id": device.id,
+            "parent_entry_id": root_id,
+            "tag_ids": [active_tag_id],
+            "tag_match": "any",
+            "untagged": false
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let browse: Value = test::read_body_json(response).await;
+    assert_eq!(browse["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(browse["entries"][0]["entry_id"], tagged_file_id.to_string());
+    assert_eq!(
+        browse["entries"][0]["tags"],
+        json!([{"id": active_tag_id, "name": "Active tag"}]),
+    );
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/files/search",
+        json!({
+            "device_id": device.id,
+            "scope_entry_id": root_id,
+            "untagged": true
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let search: Value = test::read_body_json(response).await;
+    assert_eq!(search["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        search["entries"][0]["entry_id"],
+        untagged_file_id.to_string(),
+    );
+    assert_eq!(search["entries"][0]["tags"], json!([]));
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/files/journal",
+        json!({
+            "device_id": device.id,
+            "tag_ids": [active_tag_id],
+            "tag_match": "all"
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let journal: Value = test::read_body_json(response).await;
+    assert_eq!(journal["total_count"], 1);
+    assert_eq!(journal["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(journal["entries"][0]["file_id"], tagged_file_id.to_string(),);
+    assert_eq!(
+        journal["entries"][0]["tags"],
+        json!([{"id": active_tag_id, "name": "Active tag"}]),
+    );
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/files/browse",
+        json!({
+            "device_id": device.id,
+            "parent_entry_id": root_id,
+            "tag_ids": [archived_tag_id]
+        })
+    );
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let sparse_file_ids = (0..=100).map(|_| Uuid::now_v7()).collect::<Vec<_>>();
+    file_entry::Entity::insert_many(sparse_file_ids.iter().enumerate().map(
+        |(index, file_id)| {
+            analytics_file_entry(
+                *file_id,
+                device.id,
+                root_id,
+                &format!("z-sparse-{index:03}.txt"),
+                "txt",
+                now.naive_utc(),
+            )
+        },
+    ))
+    .exec(file_db)
+    .await
+    .unwrap();
+    file_analysis_state::Entity::update_many()
+        .col_expr(
+            file_analysis_state::Column::AnalyzedSourceRevision,
+            Expr::col(file_analysis_state::Column::SourceRevision),
+        )
+        .col_expr(
+            file_analysis_state::Column::AnalyzedGeneration,
+            Expr::col(file_analysis_state::Column::RequiredGeneration),
+        )
+        .col_expr(file_analysis_state::Column::Pending, Expr::value(false))
+        .filter(file_analysis_state::Column::DeviceId.eq(device.id))
+        .exec(file_db)
+        .await
+        .unwrap();
+    let sparse_tagged_file_id = *sparse_file_ids.last().unwrap();
+    device_file_tag::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        file_entry_id: Set(sparse_tagged_file_id),
+        device_id: Set(device.id),
+        file_entry_created_at: Set(now.fixed_offset()),
+        tag_id: Set(active_tag_id),
+        created_at: Set(now.fixed_offset()),
+        updated_at: Set(now.fixed_offset()),
+    }
+    .insert(file_db)
+    .await
+    .unwrap();
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/files/browse",
+        json!({
+            "device_id": device.id,
+            "parent_entry_id": root_id,
+            "tag_ids": [active_tag_id],
+            "tag_match": "any",
+            "limit": 1
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let first_filtered_page: Value = test::read_body_json(response).await;
+    assert_eq!(
+        first_filtered_page["entries"][0]["entry_id"],
+        tagged_file_id.to_string(),
+    );
+    let first_filtered_cursor =
+        first_filtered_page["next_cursor"].as_str().unwrap();
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/files/browse",
+        json!({
+            "device_id": device.id,
+            "parent_entry_id": root_id,
+            "tag_ids": [active_tag_id],
+            "tag_match": "any",
+            "limit": 1,
+            "cursor": first_filtered_cursor
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let second_filtered_page: Value = test::read_body_json(response).await;
+    assert_eq!(
+        second_filtered_page["entries"][0]["entry_id"],
+        sparse_tagged_file_id.to_string(),
+    );
+    assert_eq!(second_filtered_page["next_cursor"], Value::Null);
+
+    let nested_directory_id = Uuid::now_v7();
+    let nested_file_id = Uuid::now_v7();
+    let root_hierarchy_path =
+        format!("n{}", root_id.to_string().replace('-', ""));
+    let directory_hierarchy_path = format!(
+        "{root_hierarchy_path}.n{}",
+        nested_directory_id.to_string().replace('-', ""),
+    );
+    file_entry::ActiveModel {
+        id: Set(nested_directory_id),
+        device_id: Set(device.id),
+        parent_id: Set(Some(root_id)),
+        kind: Set(FileEntryKind::Directory),
+        name: Set("Nested".to_string()),
+        absolute_path: Set(None),
+        hierarchy_path: Set(directory_hierarchy_path.clone()),
+        mime_type: Set(None),
+        extension: Set(None),
+        file_metadata_created_at: Set(None),
+        file_metadata_modified_at: Set(None),
+        created_at: Set(now.naive_utc()),
+        updated_at: Set(now.naive_utc()),
+        content_path: Set(None),
+    }
+    .insert(file_db)
+    .await
+    .unwrap();
+    file_entry::ActiveModel {
+        id: Set(nested_file_id),
+        device_id: Set(device.id),
+        parent_id: Set(Some(nested_directory_id)),
+        kind: Set(FileEntryKind::File),
+        name: Set("nested.pdf".to_string()),
+        absolute_path: Set(Some(r"C:\Nested\nested.pdf".to_string())),
+        hierarchy_path: Set(format!(
+            "{directory_hierarchy_path}.n{}",
+            nested_file_id.to_string().replace('-', ""),
+        )),
+        mime_type: Set(None),
+        extension: Set(Some("pdf".to_string())),
+        file_metadata_created_at: Set(None),
+        file_metadata_modified_at: Set(None),
+        created_at: Set(now.naive_utc()),
+        updated_at: Set(now.naive_utc()),
+        content_path: Set(None),
+    }
+    .insert(file_db)
+    .await
+    .unwrap();
+    device_file_tag::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        file_entry_id: Set(nested_file_id),
+        device_id: Set(device.id),
+        file_entry_created_at: Set(now.fixed_offset()),
+        tag_id: Set(active_tag_id),
+        created_at: Set(now.fixed_offset()),
+        updated_at: Set(now.fixed_offset()),
+    }
+    .insert(file_db)
+    .await
+    .unwrap();
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/files/browse",
+        json!({
+            "device_id": device.id,
+            "parent_entry_id": root_id,
+            "tag_ids": [active_tag_id]
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let filtered_root: Value = test::read_body_json(response).await;
+    assert!(filtered_root["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["entry_id"] == nested_directory_id.to_string()));
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/files/browse",
+        json!({
+            "device_id": device.id,
+            "parent_entry_id": nested_directory_id,
+            "tag_ids": [active_tag_id]
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let filtered_directory: Value = test::read_body_json(response).await;
+    assert_eq!(
+        filtered_directory["entries"][0]["entry_id"],
+        nested_file_id.to_string(),
+    );
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/admin/device-analytics/tags/create",
+        json!({"name": "Forbidden"})
+    );
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let response = post_as!(
+        admin_cookie,
+        "/api/admin/device-analytics/tags/list",
+        json!({})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let admin_tags: Value = test::read_body_json(response).await;
+    assert_eq!(admin_tags["tags"].as_array().unwrap().len(), 2);
+
+    let response = post_as!(
+        admin_cookie,
+        "/api/admin/device-analytics/tags/rule/test",
+        json!({
+            "id": active_tag_id,
+            "rule_expression": {
+                "op": "match",
+                "field": "extension",
+                "matcher": "equals",
+                "values": ["pdf"]
+            },
+            "files": [{
+                "absolute_path": "C:\\draft.pdf",
+                "expected_match": true
+            }]
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let tested: Value = test::read_body_json(response).await;
+    assert_eq!(
+        tested["results"],
+        json!([{"index": 0, "matched": true, "passed": true}]),
+    );
+
+    let response = post_as!(
+        admin_cookie,
+        "/api/admin/device-analytics/tags/rule/test-files/list",
+        json!({"id": active_tag_id})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let test_files: Value = test::read_body_json(response).await;
+    assert_eq!(
+        test_files["files"],
+        json!([{"absolute_path": "C:\\draft.pdf", "expected_match": true}])
+    );
+
+    let response = post_as!(
+        admin_cookie,
+        "/api/admin/device-analytics/tags/create",
+        json!({"name": " active TAG "})
+    );
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+
+    let response = post_as!(
+        admin_cookie,
+        "/api/admin/device-analytics/tags/create",
+        json!({"name": "  Temporary tag  "})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let created: Value = test::read_body_json(response).await;
+    assert_eq!(created["name"], "Temporary tag");
+    assert_eq!(created["rule_expression"], Value::Null);
+    let created_tag_id = created["id"].as_str().unwrap();
+
+    let response = post_as!(
+        admin_cookie,
+        "/api/admin/device-analytics/tags/rule/save",
+        json!({
+            "id": created_tag_id,
+            "rule_expression": {"op": "any", "children": []}
+        })
+    );
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let validation: Value = test::read_body_json(response).await;
+    assert_eq!(validation["code"], "empty_group");
+    assert_eq!(validation["path"], "rule_expression.children");
+
+    let response = post_as!(
+        admin_cookie,
+        "/api/admin/device-analytics/tags/rule/save",
+        json!({
+            "id": created_tag_id,
+            "rule_expression": {
+                "op": "match",
+                "field": "extension",
+                "matcher": "equals",
+                "values": ["txt"]
+            }
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = post_as!(
+        admin_cookie,
+        "/api/admin/device-analytics/tags/update",
+        json!({"id": created_tag_id, "name": "Renamed tag"})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let renamed: Value = test::read_body_json(response).await;
+    assert_eq!(renamed["name"], "Renamed tag");
+
+    for path in [
+        "/api/admin/device-analytics/tags/archive",
+        "/api/admin/device-analytics/tags/restore",
+    ] {
+        let response =
+            post_as!(admin_cookie, path, json!({"id": created_tag_id}));
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    let response = post_as!(
+        admin_cookie,
+        "/api/admin/device-analytics/reanalyze/device",
+        json!({"device_id": device.id})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let scheduled: Value = test::read_body_json(response).await;
+    assert_eq!(scheduled["scheduled_file_count"], 103);
+
+    let response = post_as!(
+        admin_cookie,
+        "/api/admin/device-analytics/reanalyze/all",
+        json!({})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let scheduled: Value = test::read_body_json(response).await;
+    assert_eq!(scheduled["scheduled_file_count"], 0);
+}
+
+const TARGET_ROUTES: [&str; 25] = [
     "/api/device/list",
     "/api/device/unit-stats",
     "/api/device/aors",
@@ -579,6 +1281,18 @@ const TARGET_ROUTES: [&str; 13] = [
     "/api/device/files/search",
     "/api/device/files/journal",
     "/api/device/files/sync",
+    "/api/admin/device-analytics/tags/list",
+    "/api/admin/device-analytics/tags/create",
+    "/api/admin/device-analytics/tags/update",
+    "/api/admin/device-analytics/tags/archive",
+    "/api/admin/device-analytics/tags/restore",
+    "/api/admin/device-analytics/tags/rule/save",
+    "/api/admin/device-analytics/tags/rule/test",
+    "/api/admin/device-analytics/reanalyze/all",
+    "/api/admin/device-analytics/reanalyze/device",
+    "/api/device/analytics/tags",
+    "/api/device/analytics/summary",
+    "/api/device/analytics/files",
 ];
 
 const EXCLUDED_ROUTES: [&str; 8] = [
@@ -593,7 +1307,7 @@ const EXCLUDED_ROUTES: [&str; 8] = [
 ];
 
 #[actix_web::test]
-async fn target_route_matrix_has_only_thirteen_post_routes() {
+async fn target_route_matrix_registers_only_post_routes() {
     let config = crate::config::read_config(Mode::Test).unwrap();
     let redis_session_store =
         RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())

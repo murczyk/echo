@@ -5,6 +5,7 @@ import type {
   FileEntryKind,
   FileSyncError,
   FileSyncOperation,
+  TagMatch,
 } from '../../../../Bindings';
 
 export const DEVICE_FILE_PAGE_SIZE = 100;
@@ -19,6 +20,11 @@ export type DeviceFileSearchScope = {
   entryId: string;
   rootEntryId: string;
   label: string;
+};
+export type DeviceAnalyticsTagFilter = {
+  tagIds: string[];
+  tagMatch: TagMatch;
+  untagged: boolean;
 };
 
 export type DeviceFileSearchDraft = {

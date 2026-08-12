@@ -22,6 +22,7 @@ const ENTRYPOINTS = [
   { modulePath: './admin-unit-duplicates-element', tag: 'admin-unit-duplicates' },
   { modulePath: './admin-unit-unparsed-element', tag: 'admin-unit-unparsed' },
   { modulePath: './admin-ai-callsigns-element', tag: 'admin-ai-callsigns' },
+  { modulePath: './admin-device-analytics-element', tag: 'admin-device-analytics' },
   { modulePath: './admin-ai-agent-element', tag: 'admin-ai-agent' },
   { modulePath: './ai-agent-chat-element', tag: 'ai-agent-chat' },
   { modulePath: './home-loading-card-element', tag: 'home-loading-card' },

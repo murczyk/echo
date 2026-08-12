@@ -1,9 +1,6 @@
-use crate::entities::{failed_inbox_unit, orbit_unit};
+use crate::entities::{failed_inbox_unit, sigint_unit};
 use crate::error::AppError;
 use crate::h;
-use crate::sigint::unit::types::{
-    OrbitUnitLinkCandidatesRsp, OrbitUnitSearchReq,
-};
 use crate::types::{Env, ShortContext};
 use crate::users::{
     ensure_admin, ensure_rer_role, has_role, login_id_from_identity,
@@ -17,7 +14,6 @@ use sea_orm::{
     FromQueryResult, QueryFilter, Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 const PAGE_SIZE: u64 = 20;
 
@@ -27,6 +23,17 @@ const PAGE_SIZE: u64 = 20;
 pub struct UnresolvedUnitLabel {
     pub unit_txt: String,
     pub quantity: i64,
+    pub note: String,
+    pub is_archived: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub enum UnresolvedUnitLabelArchiveFilter {
+    AllUnresolvedUnitLabels,
+    NewUnresolvedUnitLabels,
+    ArchivedUnresolvedUnitLabels,
 }
 
 #[derive(
@@ -34,6 +41,7 @@ pub struct UnresolvedUnitLabel {
 )]
 pub struct ListUnresolvedUnitLabelsReq {
     pub page: Option<u64>,
+    pub archive_filter: Option<UnresolvedUnitLabelArchiveFilter>,
 }
 
 #[derive(
@@ -56,10 +64,27 @@ pub struct ClassifyUnresolvedUnitLabelReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct ArchiveUnresolvedUnitLabelReq {
+    pub unit_txt: String,
+    pub archived: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct ResolveUnresolvedUnitLabelReq {
     pub unit_txt: String,
     pub label: String,
-    pub orbit_unit_id: String,
+    pub sigint_unit_id: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UpdateUnresolvedUnitLabelNoteReq {
+    pub unit_txt: String,
+    pub note: String,
+    pub is_archived: bool,
 }
 
 #[derive(
@@ -73,6 +98,8 @@ pub struct UpdateUnresolvedUnitLabelsRsp {
 struct UnresolvedUnitLabelRow {
     unit_txt: String,
     quantity: i64,
+    note: String,
+    is_archived: bool,
 }
 
 fn normalized_text_sql(table: &str) -> String {
@@ -81,19 +108,35 @@ fn normalized_text_sql(table: &str) -> String {
     )
 }
 
+fn archive_filter_sql(
+    archive_filter: &UnresolvedUnitLabelArchiveFilter,
+) -> &'static str {
+    match archive_filter {
+        UnresolvedUnitLabelArchiveFilter::AllUnresolvedUnitLabels => "",
+        UnresolvedUnitLabelArchiveFilter::NewUnresolvedUnitLabels => {
+            " and is_bad_data = false"
+        }
+        UnresolvedUnitLabelArchiveFilter::ArchivedUnresolvedUnitLabels => {
+            " and is_bad_data = true"
+        }
+    }
+}
+
 async fn list_rows<C>(
     db: &C,
     page: u64,
+    archive_filter: UnresolvedUnitLabelArchiveFilter,
 ) -> Result<ListUnresolvedUnitLabelsRsp, AppError>
 where
     C: ConnectionTrait,
 {
     let normalized = normalized_text_sql("failed_inbox_unit");
+    let archive_filter_sql = archive_filter_sql(&archive_filter);
     let total_sql = format!(
         "select count(*)::bigint as count from (\
          select 1 from failed_inbox_unit \
-         where deleted = false and is_bad_data = false \
-         group by {normalized}) grouped"
+         where deleted = false {archive_filter_sql} \
+         group by {normalized}, is_bad_data) grouped"
     );
     let total_count = db
         .query_one_raw(Statement::from_string(
@@ -108,11 +151,13 @@ where
         .unwrap_or(0);
 
     let list_sql = format!(
-        "select min(unit_txt) as unit_txt, count(*)::bigint as quantity \
+        "select min(unit_txt) as unit_txt, count(*)::bigint as quantity, \
+         coalesce(max(nullif(note, '')), '') as note, \
+         is_bad_data as is_archived \
          from failed_inbox_unit \
-         where deleted = false and is_bad_data = false \
-         group by {normalized} \
-         order by quantity desc, {normalized} asc \
+         where deleted = false {archive_filter_sql} \
+         group by {normalized}, is_bad_data \
+         order by is_bad_data asc, quantity desc, {normalized} asc \
          limit $1 offset $2"
     );
     let rows = UnresolvedUnitLabelRow::find_by_statement(
@@ -134,6 +179,8 @@ where
     .map(|row| UnresolvedUnitLabel {
         unit_txt: row.unit_txt,
         quantity: row.quantity,
+        note: row.note,
+        is_archived: row.is_archived,
     })
     .collect();
     Ok(ListUnresolvedUnitLabelsRsp {
@@ -144,23 +191,42 @@ where
     })
 }
 
-async fn ensure_admin_orbit_editor(
+async fn ensure_admin_unit_editor(
     env: &Env,
     user: &actix_identity::Identity,
-) -> Result<(), AppError> {
+) -> Result<uuid::Uuid, AppError> {
     ensure_admin(&env.dbx, user).await.c(h!())?;
     ensure_rer_role(&env.dbx, user).await.c(h!())?;
     let login = login_id_from_identity(user).c(h!())?;
     has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
-    if !crate::sigint::unit::orbit::can_view_orbit_data(&env.dbx, &login)
-        .await
-        .c(h!())?
-    {
-        return Err(AppError::Forbidden(
-            "ORBIT data access denied".to_string(),
-        ));
+    Ok(login)
+}
+
+async fn mark_resolved_failures_pending<C>(
+    db: &C,
+    unit_txt: &str,
+    label: &str,
+) -> anyhow::Result<u64>
+where
+    C: ConnectionTrait,
+{
+    let normalized_unit_txt =
+        super::unit_resolution::normalize_unit_label(unit_txt);
+    let normalized_label = super::unit_resolution::normalize_unit_label(label);
+    let mut affected_count =
+        super::unit_resolution::mark_failures_pending_for_text(db, unit_txt)
+            .await
+            .c(h!())?;
+    if normalized_label != normalized_unit_txt {
+        affected_count +=
+            super::unit_resolution::mark_failures_pending_for_text(
+                db,
+                &normalized_label,
+            )
+            .await
+            .c(h!())?;
     }
-    Ok(())
+    Ok(affected_count)
 }
 
 #[post("/api/admin/unresolved-unit-label/list")]
@@ -171,7 +237,15 @@ pub async fn list_unresolved_unit_labels(
 ) -> Result<Json<ListUnresolvedUnitLabelsRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     Ok(Json(
-        list_rows(&env.dbx, req.page.unwrap_or(0)).await.c(h!())?,
+        list_rows(
+            &env.dbx,
+            req.page.unwrap_or(0),
+            req.archive_filter.clone().unwrap_or(
+                UnresolvedUnitLabelArchiveFilter::NewUnresolvedUnitLabels,
+            ),
+        )
+        .await
+        .c(h!())?,
     ))
 }
 
@@ -200,20 +274,62 @@ pub async fn classify_unresolved_unit_label(
     }))
 }
 
-#[post("/api/admin/unresolved-unit-label/orbit-search")]
-pub async fn search_orbit_units(
+#[post("/api/admin/unresolved-unit-label/archive")]
+pub async fn archive_unresolved_unit_label(
     user: actix_identity::Identity,
     env: Data<Env>,
-    req: Json<OrbitUnitSearchReq>,
-) -> Result<Json<OrbitUnitLinkCandidatesRsp>, AppError> {
-    ensure_admin_orbit_editor(&env, &user).await.c(h!())?;
-    let units = crate::sigint::unit::orbit::manual_orbit_link_candidates(
-        &env.dbx,
-        &req.search,
-    )
-    .await
-    .c(h!())?;
-    Ok(Json(OrbitUnitLinkCandidatesRsp { units }))
+    req: Json<ArchiveUnresolvedUnitLabelReq>,
+) -> Result<Json<UpdateUnresolvedUnitLabelsRsp>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let result = failed_inbox_unit::Entity::update_many()
+        .col_expr(
+            failed_inbox_unit::Column::IsBadData,
+            Expr::value(req.archived),
+        )
+        .filter(failed_inbox_unit::Column::Deleted.eq(false))
+        .filter(failed_inbox_unit::Column::IsBadData.eq(!req.archived))
+        .filter(Expr::cust_with_values(
+            format!("{} = $1", normalized_text_sql("failed_inbox_unit")),
+            vec![super::unit_resolution::normalize_unit_label(&req.unit_txt)],
+        ))
+        .exec(&env.dbx)
+        .await
+        .c(h!())?;
+    if result.rows_affected == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(UpdateUnresolvedUnitLabelsRsp {
+        affected_count: result.rows_affected,
+    }))
+}
+
+#[post("/api/admin/unresolved-unit-label/note")]
+pub async fn update_unresolved_unit_label_note(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<UpdateUnresolvedUnitLabelNoteReq>,
+) -> Result<Json<UpdateUnresolvedUnitLabelsRsp>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let result = failed_inbox_unit::Entity::update_many()
+        .col_expr(
+            failed_inbox_unit::Column::Note,
+            Expr::value(req.note.trim().to_string()),
+        )
+        .filter(failed_inbox_unit::Column::Deleted.eq(false))
+        .filter(failed_inbox_unit::Column::IsBadData.eq(req.is_archived))
+        .filter(Expr::cust_with_values(
+            format!("{} = $1", normalized_text_sql("failed_inbox_unit")),
+            vec![super::unit_resolution::normalize_unit_label(&req.unit_txt)],
+        ))
+        .exec(&env.dbx)
+        .await
+        .c(h!())?;
+    if result.rows_affected == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(UpdateUnresolvedUnitLabelsRsp {
+        affected_count: result.rows_affected,
+    }))
 }
 
 #[post("/api/admin/unresolved-unit-label/resolve")]
@@ -222,60 +338,57 @@ pub async fn resolve_unresolved_unit_label(
     env: Data<Env>,
     req: Json<ResolveUnresolvedUnitLabelReq>,
 ) -> Result<Json<UpdateUnresolvedUnitLabelsRsp>, AppError> {
-    ensure_admin_orbit_editor(&env, &user).await.c(h!())?;
-    let orbit_unit_id = Uuid::parse_str(&req.orbit_unit_id)
-        .map_err(|_| AppError::BL {
-            msg: "Некоректний ідентифікатор підрозділу ORBIT".to_string(),
-        })
-        .c(h!())?;
+    let login = ensure_admin_unit_editor(&env, &user).await.c(h!())?;
+    crate::sigint::unit::labels::validate_label(&req.label).c(h!())?;
+    crate::sigint::unit::labels::validate_label(&req.unit_txt).c(h!())?;
+
     let transaction = env.dbx.begin().await.c(h!())?;
-    orbit_unit::Entity::find_by_id(orbit_unit_id)
-        .filter(orbit_unit::Column::Deleted.eq(false))
+    let sigint_unit = sigint_unit::Entity::find_by_id(req.sigint_unit_id)
+        .filter(sigint_unit::Column::Deleted.eq(false))
         .one(&transaction)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)
         .c(h!())?;
-    let sigint_unit_ids =
-        super::unit_resolution::active_sigint_unit_ids_for_orbit(
+    let sigint_unit_id = sigint_unit.id;
+    let unit_activated = !sigint_unit.active;
+    if unit_activated {
+        crate::sigint::unit::activate_unit_for_login(
             &transaction,
-            orbit_unit_id,
+            &login,
+            &sigint_unit,
         )
         .await
         .c(h!())?;
-    if sigint_unit_ids.len() != 1 {
-        return Err(AppError::BL {
-            msg: format!(
-                "Підрозділ ORBIT повинен мати рівно один активний зв'язок із підрозділом SIGINT; знайдено {}",
-                sigint_unit_ids.len()
-            ),
-        });
     }
+
     crate::sigint::unit::labels::insert_label(
         &transaction,
-        sigint_unit_ids[0],
+        sigint_unit_id,
         &req.label,
     )
     .await
     .c(h!())?;
     crate::sigint::unit::labels::insert_label(
         &transaction,
-        sigint_unit_ids[0],
+        sigint_unit_id,
         &req.unit_txt,
     )
     .await
     .c(h!())?;
     let affected_count =
-        super::unit_resolution::mark_failures_pending_for_text(
-            &transaction,
-            &req.unit_txt,
-        )
-        .await
-        .c(h!())?;
+        mark_resolved_failures_pending(&transaction, &req.unit_txt, &req.label)
+            .await
+            .c(h!())?;
     if affected_count == 0 {
         return Err(AppError::NotFound);
     }
     transaction.commit().await.c(h!())?;
+    if unit_activated {
+        crate::sigint::unit::fanout_unit_changed_data(&env)
+            .await
+            .c(h!())?;
+    }
     Ok(Json(UpdateUnresolvedUnitLabelsRsp { affected_count }))
 }
 
@@ -328,7 +441,13 @@ mod tests {
         insert_failure(&env.dbx, "Group Gamma", false, true).await;
         insert_failure(&env.dbx, "Group Delta", true, false).await;
 
-        let response = list_rows(&env.dbx, 0).await.unwrap();
+        let response = list_rows(
+            &env.dbx,
+            0,
+            UnresolvedUnitLabelArchiveFilter::NewUnresolvedUnitLabels,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(response.total_count, 2);
         assert_eq!(response.page_size, 20);
@@ -341,5 +460,34 @@ mod tests {
             "group alpha"
         );
         assert_eq!(response.rows[1].quantity, 2);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn resolving_edited_label_marks_both_failure_groups_pending() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        insert_failure(&env.dbx, "original label", false, false).await;
+        insert_failure(&env.dbx, "EDITED   LABEL", false, false).await;
+
+        let affected_count = mark_resolved_failures_pending(
+            &env.dbx,
+            "original label",
+            " edited label ",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(affected_count, 2);
+        let failures = failed_inbox_unit::Entity::find()
+            .filter(
+                failed_inbox_unit::Column::UnitTxt
+                    .is_in(["original label", "EDITED   LABEL"]),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(failures.len(), 2);
+        assert!(failures.iter().all(|failure| failure.deleted));
     }
 }

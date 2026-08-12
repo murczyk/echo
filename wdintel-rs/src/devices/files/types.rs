@@ -1,5 +1,7 @@
 use super::error::{FilesystemError, FilesystemFieldError};
+use crate::devices::analytics::types::{AnalyticsTag, TagMatch};
 use chrono::NaiveDateTime;
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 pub(in crate::devices) use crate::file_registry::entities::sea_orm_active_enums::FileEntryKind as DomainFileEntryKind;
@@ -228,6 +230,9 @@ pub(in crate::devices) struct BrowseFilesCommand {
     pub(in crate::devices) include_breadcrumbs: bool,
     pub(in crate::devices) limit: Option<u64>,
     pub(in crate::devices) cursor: Option<String>,
+    pub(in crate::devices) tag_ids: Vec<String>,
+    pub(in crate::devices) tag_match: Option<TagMatch>,
+    pub(in crate::devices) untagged: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -236,6 +241,7 @@ pub(in crate::devices) struct BrowseFilesResult {
     pub(in crate::devices) entries: Vec<TreeEntry>,
     pub(in crate::devices) entry_path_components: Vec<Vec<String>>,
     pub(in crate::devices) next_cursor: Option<String>,
+    pub(in crate::devices) tags_by_file: BTreeMap<Uuid, Vec<AnalyticsTag>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -245,12 +251,16 @@ pub(in crate::devices) struct SearchFilesCommand {
     pub(in crate::devices) filters: RawFileSearchFilters,
     pub(in crate::devices) limit: Option<u64>,
     pub(in crate::devices) cursor: Option<String>,
+    pub(in crate::devices) tag_ids: Vec<String>,
+    pub(in crate::devices) tag_match: Option<TagMatch>,
+    pub(in crate::devices) untagged: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct SearchFilesResult {
     pub(in crate::devices) entries: Vec<SearchEntry>,
     pub(in crate::devices) next_cursor: Option<String>,
+    pub(in crate::devices) tags_by_file: BTreeMap<Uuid, Vec<AnalyticsTag>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -258,6 +268,9 @@ pub(in crate::devices) struct JournalFilesCommand {
     pub(in crate::devices) device_id: Uuid,
     pub(in crate::devices) limit: Option<u64>,
     pub(in crate::devices) cursor: Option<String>,
+    pub(in crate::devices) tag_ids: Vec<String>,
+    pub(in crate::devices) tag_match: Option<TagMatch>,
+    pub(in crate::devices) untagged: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -265,6 +278,7 @@ pub(in crate::devices) struct JournalFilesResult {
     pub(in crate::devices) entries: Vec<FileJournalEntry>,
     pub(in crate::devices) next_cursor: Option<String>,
     pub(in crate::devices) total_count: u64,
+    pub(in crate::devices) tags_by_file: BTreeMap<Uuid, Vec<AnalyticsTag>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -375,6 +389,7 @@ pub(in crate::devices) struct SyncFilesCommand {
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::devices) struct SyncFilesResult {
     pub(in crate::devices) results: Vec<SyncFileItemResult>,
+    pub(in crate::devices) tags_by_file: BTreeMap<Uuid, Vec<AnalyticsTag>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -557,6 +572,7 @@ pub struct DeviceFileRoot {
     pub name: String,
     pub created_at: String,
     pub updated_at: String,
+    pub tags: Vec<AnalyticsTag>,
 }
 
 #[derive(
@@ -603,6 +619,7 @@ pub struct DeviceFileTreeEntry {
     pub file_metadata_modified_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub tags: Vec<AnalyticsTag>,
 }
 
 #[derive(
@@ -632,6 +649,7 @@ pub struct DeviceFile {
     pub file_metadata_modified_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub tags: Vec<AnalyticsTag>,
 }
 
 #[derive(
@@ -740,6 +758,9 @@ pub struct BrowseDeviceFilesReq {
     pub include_breadcrumbs: Option<bool>,
     pub limit: Option<u64>,
     pub cursor: Option<String>,
+    pub tag_ids: Option<Vec<String>>,
+    pub tag_match: Option<TagMatch>,
+    pub untagged: Option<bool>,
 }
 
 #[derive(
@@ -787,6 +808,9 @@ pub struct SearchDeviceFilesReq {
     pub file_metadata_modified_to: Option<String>,
     pub limit: Option<u64>,
     pub cursor: Option<String>,
+    pub tag_ids: Option<Vec<String>>,
+    pub tag_match: Option<TagMatch>,
+    pub untagged: Option<bool>,
 }
 
 #[derive(
@@ -824,6 +848,7 @@ pub struct DeviceFileJournalEntry {
     pub absolute_path: String,
     pub has_content: bool,
     pub synchronized_at: String,
+    pub tags: Vec<AnalyticsTag>,
 }
 
 #[derive(
@@ -843,6 +868,9 @@ pub struct JournalDeviceFilesReq {
     pub device_id: String,
     pub limit: Option<u64>,
     pub cursor: Option<String>,
+    pub tag_ids: Option<Vec<String>>,
+    pub tag_match: Option<TagMatch>,
+    pub untagged: Option<bool>,
 }
 
 #[derive(

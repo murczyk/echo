@@ -17,23 +17,25 @@ use crate::entities::{
 use crate::{h, orbit};
 use anyhow::Context;
 use chrono::{Duration, NaiveDateTime, Utc};
+use indicatif::ProgressBar;
 use itertools::Itertools;
-use log::warn;
+use log::{debug, info, warn};
 use sea_orm::sea_query::{Expr, LockBehavior, LockType};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ActiveValue::Set, ColumnTrait,
     ConnectionTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
-    JoinType, ModelTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
-    RelationTrait, TransactionTrait,
+    JoinType, ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    QueryTrait, RelationTrait, TransactionTrait,
 };
+use std::collections::BTreeSet;
 use std::time::Duration as StdDuration;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum StructuralResolution {
     Resolved(i64),
     NoMatch,
-    Blocked,
+    Blocked(String),
 }
 
 pub(crate) fn normalize_unit_label(value: &str) -> String {
@@ -44,11 +46,84 @@ fn nonempty(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|value| !value.is_empty())
 }
 
-fn unresolved_text<'a>(
-    unit_v2: Option<&'a str>,
-    unit: Option<&'a str>,
-) -> Option<&'a str> {
-    nonempty(unit_v2).or_else(|| nonempty(unit))
+#[derive(Debug, Clone, Copy)]
+enum UnitTextSource {
+    UnitV2,
+    Unit,
+}
+
+#[derive(Debug, Clone)]
+struct UnitTextCandidate {
+    text: String,
+    source_text: String,
+    source: UnitTextSource,
+    is_fallback: bool,
+}
+
+#[derive(Debug, Clone)]
+struct UnitTextResolution {
+    text: String,
+    source_text: String,
+    sigint_unit_id: Option<i64>,
+    is_fallback: bool,
+}
+
+fn resolution_texts(value: &str) -> Vec<(String, bool)> {
+    let parsed = crate::unit::parse_library_unit(&value.to_string());
+    let original = value.trim().to_string();
+    if parsed.is_empty() {
+        return vec![(original, false)];
+    }
+    let has_original = parsed.iter().any(|value| {
+        normalize_unit_label(value) == normalize_unit_label(&original)
+    });
+    let mut texts = parsed.into_iter().map(|text| (text, false)).collect_vec();
+    if !has_original {
+        texts.push((original, true));
+    }
+    texts
+}
+
+fn unit_text_candidates(
+    unit_v2: Option<&str>,
+    unit: Option<&str>,
+) -> Vec<UnitTextCandidate> {
+    let (source, source_texts): (UnitTextSource, Vec<&str>) =
+        if let Some(unit_v2) = nonempty(unit_v2) {
+            (UnitTextSource::UnitV2, unit_v2.split(',').collect_vec())
+        } else if let Some(unit) = nonempty(unit) {
+            (UnitTextSource::Unit, vec![unit])
+        } else {
+            return Vec::new();
+        };
+
+    source_texts
+        .into_iter()
+        .flat_map(|source_text| {
+            let texts = match source {
+                UnitTextSource::UnitV2 => resolution_texts(source_text),
+                UnitTextSource::Unit => {
+                    vec![(source_text.trim().to_string(), false)]
+                }
+            };
+            let source_text = normalize_unit_label(source_text);
+            texts.into_iter().map(move |(text, is_fallback)| {
+                UnitTextCandidate {
+                    text,
+                    source_text: source_text.clone(),
+                    source,
+                    is_fallback,
+                }
+            })
+        })
+        .filter(|candidate| !candidate.text.is_empty())
+        .unique_by(|candidate| {
+            (
+                candidate.source_text.clone(),
+                normalize_unit_label(&candidate.text),
+            )
+        })
+        .collect_vec()
 }
 
 fn normalize_structural_text(value: &str) -> String {
@@ -150,18 +225,6 @@ where
         .context(h!())
 }
 
-pub(crate) async fn active_sigint_unit_ids_for_orbit<C>(
-    db: &C,
-    orbit_unit_id: Uuid,
-) -> anyhow::Result<Vec<i64>>
-where
-    C: ConnectionTrait,
-{
-    sigint_unit_ids_for_orbit(db, orbit_unit_id, true)
-        .await
-        .context(h!())
-}
-
 async fn resolve_structurally<C>(
     db: &C,
     unit_v2: &str,
@@ -184,8 +247,9 @@ where
     let Some(highest_echelon) =
         candidates.iter().map(|(_, echelon)| *echelon).max()
     else {
-        warn!("No supported ORBIT echelon for unit_v2={unit_v2:?}");
-        return Ok(StructuralResolution::Blocked);
+        return Ok(StructuralResolution::Blocked(format!(
+            "no supported ORBIT echelon for unit_v2={unit_v2:?}",
+        )));
     };
     let candidates = candidates
         .into_iter()
@@ -193,11 +257,10 @@ where
         .map(|(unit, _)| unit)
         .collect_vec();
     if candidates.len() != 1 {
-        warn!(
+        return Ok(StructuralResolution::Blocked(format!(
             "Multiple ORBIT unit matches at the same echelon for unit_v2={unit_v2:?}: {:?}",
             candidates.iter().map(|unit| unit.unit_id).collect_vec()
-        );
-        return Ok(StructuralResolution::Blocked);
+        )));
     }
 
     let orbit_unit_id = candidates[0].unit_id;
@@ -205,11 +268,10 @@ where
         .await
         .context(h!())?;
     if sigint_unit_ids.len() != 1 {
-        warn!(
+        return Ok(StructuralResolution::Blocked(format!(
             "ORBIT unit {orbit_unit_id} matched unit_v2={unit_v2:?}, but has {} non-suppressed SIGINT links",
             sigint_unit_ids.len()
-        );
-        return Ok(StructuralResolution::Blocked);
+        )));
     }
     Ok(StructuralResolution::Resolved(sigint_unit_ids[0]))
 }
@@ -259,7 +321,19 @@ where
             StructuralResolution::Resolved(sigint_unit_id) => {
                 return Ok(Some(sigint_unit_id));
             }
-            StructuralResolution::Blocked | StructuralResolution::NoMatch => {
+            StructuralResolution::Blocked(reason) => {
+                let sigint_unit_id =
+                    resolve_by_label(db, unit_v2).await.context(h!())?;
+                if let Some(sigint_unit_id) = sigint_unit_id {
+                    debug!(
+                        "{reason}; resolved unit_v2={unit_v2:?} by SIGINT unit label to sigint_unit_id={sigint_unit_id}"
+                    );
+                } else {
+                    warn!("{reason}; no SIGINT unit label fallback matched");
+                }
+                return Ok(sigint_unit_id);
+            }
+            StructuralResolution::NoMatch => {
                 return resolve_by_label(db, unit_v2).await.context(h!());
             }
         }
@@ -268,6 +342,53 @@ where
         Some(unit) => resolve_by_label(db, unit).await.context(h!()),
         None => Ok(None),
     }
+}
+
+async fn resolve_unit_text_candidates<C>(
+    db: &C,
+    unit_v2: Option<&str>,
+    unit: Option<&str>,
+) -> anyhow::Result<Vec<UnitTextResolution>>
+where
+    C: ConnectionTrait,
+{
+    let mut resolved = Vec::new();
+    for candidate in unit_text_candidates(unit_v2, unit) {
+        let sigint_unit_id = if candidate.is_fallback {
+            resolve_by_label(db, &candidate.text).await.context(h!())?
+        } else {
+            match candidate.source {
+                UnitTextSource::UnitV2 => {
+                    resolve_sigint_unit_id(db, Some(&candidate.text), None)
+                        .await
+                        .context(h!())?
+                }
+                UnitTextSource::Unit => {
+                    resolve_sigint_unit_id(db, None, Some(&candidate.text))
+                        .await
+                        .context(h!())?
+                }
+            }
+        };
+        resolved.push(UnitTextResolution {
+            text: candidate.text,
+            source_text: candidate.source_text,
+            sigint_unit_id,
+            is_fallback: candidate.is_fallback,
+        });
+    }
+    let resolved_fallbacks = resolved
+        .iter()
+        .filter(|resolution| {
+            resolution.is_fallback && resolution.sigint_unit_id.is_some()
+        })
+        .map(|resolution| resolution.source_text.clone())
+        .collect::<BTreeSet<_>>();
+    resolved.retain(|resolution| {
+        resolution.is_fallback
+            || !resolved_fallbacks.contains(&resolution.source_text)
+    });
+    Ok(resolved)
 }
 
 async fn mark_failure_resolved<C>(
@@ -299,22 +420,33 @@ async fn upsert_failure<C>(
 where
     C: ConnectionTrait,
 {
-    let is_bad_data = failed_inbox_unit::Entity::find()
-        .filter(failed_inbox_unit::Column::Deleted.eq(false))
-        .filter(failed_inbox_unit::Column::IsBadData.eq(true))
-        .filter(Expr::cust_with_values(
-            "lower(regexp_replace(btrim(failed_inbox_unit.unit_txt), '[[:space:]]+', ' ', 'g')) = $1",
-            vec![normalize_unit_label(unit_txt)],
-        ))
-        .one(db)
-        .await
-        .context(h!())?
-        .is_some();
+    let normalized_unit_txt = normalize_unit_label(unit_txt);
     let existing = failed_inbox_unit::Entity::find()
         .filter(failed_inbox_unit::Column::InboxItemId.eq(inbox_item_id))
+        .filter(Expr::cust_with_values(
+            "lower(regexp_replace(btrim(failed_inbox_unit.unit_txt), '[[:space:]]+', ' ', 'g')) = $1",
+            vec![normalized_unit_txt.clone()],
+        ))
+        .order_by_asc(failed_inbox_unit::Column::Id)
         .one(db)
         .await
         .context(h!())?;
+    let group_metadata = failed_inbox_unit::Entity::find()
+        .filter(failed_inbox_unit::Column::Deleted.eq(false))
+        .filter(Expr::cust_with_values(
+            "lower(regexp_replace(btrim(failed_inbox_unit.unit_txt), '[[:space:]]+', ' ', 'g')) = $1",
+            vec![normalized_unit_txt],
+        ))
+        .order_by_desc(failed_inbox_unit::Column::IsBadData)
+        .order_by_desc(failed_inbox_unit::Column::Id)
+        .one(db)
+        .await
+        .context(h!())?;
+    let (is_bad_data, note) = group_metadata
+        .as_ref()
+        .or(existing.as_ref())
+        .map(|failure| (failure.is_bad_data, failure.note.clone()))
+        .unwrap_or_default();
     let Some(existing) = existing else {
         failed_inbox_unit::ActiveModel {
             id: NotSet,
@@ -324,6 +456,7 @@ where
             inbox_item_id: Set(inbox_item_id),
             unit_txt: Set(unit_txt.trim().to_string()),
             deleted_at: Set(None),
+            note: Set(note),
         }
         .insert(db)
         .await
@@ -336,14 +469,15 @@ where
     existing.deleted_at = Set(None);
     existing.unit_txt = Set(unit_txt.trim().to_string());
     existing.is_bad_data = Set(is_bad_data);
+    existing.note = Set(note);
     existing.update(db).await.context(h!())?;
     Ok(())
 }
 
-async fn replace_parsed_unit_link<C>(
+async fn replace_parsed_unit_links<C>(
     db: &C,
     inbox_item_id: i64,
-    sigint_unit_id: Option<i64>,
+    sigint_unit_ids: &[i64],
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
@@ -357,17 +491,25 @@ where
         .exec(db)
         .await
         .context(h!())?;
-    if let Some(sigint_unit_id) = sigint_unit_id {
-        sigint_inbox_item_unit::ActiveModel {
+
+    let unit_links = sigint_unit_ids
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|sigint_unit_id| sigint_inbox_item_unit::ActiveModel {
             id: NotSet,
             created_at: NotSet,
             item_id: Set(inbox_item_id),
             unit_id: Set(sigint_unit_id),
             kind: Set(SigintInboxItemUnitKind::Parsed),
-        }
-        .insert(db)
-        .await
-        .context(h!())?;
+        })
+        .collect_vec();
+    if !unit_links.is_empty() {
+        sigint_inbox_item_unit::Entity::insert_many(unit_links)
+            .exec_without_returning(db)
+            .await
+            .context(h!())?;
     }
     Ok(())
 }
@@ -457,29 +599,36 @@ pub(crate) async fn resolve_and_sync_inbox_item<C>(
 where
     C: ConnectionTrait,
 {
-    let sigint_unit_id = resolve_sigint_unit_id(db, unit_v2, unit)
+    let resolved_unit_texts = resolve_unit_text_candidates(db, unit_v2, unit)
         .await
         .context(h!())?;
-    replace_parsed_unit_link(db, inbox_item_id, sigint_unit_id)
+    let sigint_unit_ids = resolved_unit_texts
+        .iter()
+        .filter_map(|resolution| resolution.sigint_unit_id)
+        .collect_vec();
+    replace_parsed_unit_links(db, inbox_item_id, &sigint_unit_ids)
         .await
         .context(h!())?;
 
-    if sigint_unit_id.is_some() {
-        mark_failure_resolved(db, inbox_item_id)
-            .await
-            .context(h!())?;
-    } else if let Some(unit_txt) = unresolved_text(unit_v2, unit) {
-        upsert_failure(db, inbox_item_id, unit_txt)
-            .await
-            .context(h!())?;
-    } else {
+    if resolved_unit_texts.is_empty() {
         failed_inbox_unit::Entity::delete_many()
             .filter(failed_inbox_unit::Column::InboxItemId.eq(inbox_item_id))
             .exec(db)
             .await
             .context(h!())?;
+    } else {
+        mark_failure_resolved(db, inbox_item_id)
+            .await
+            .context(h!())?;
+        for resolution in resolved_unit_texts {
+            if resolution.sigint_unit_id.is_none() && !resolution.is_fallback {
+                upsert_failure(db, inbox_item_id, &resolution.text)
+                    .await
+                    .context(h!())?;
+            }
+        }
     }
-    Ok(sigint_unit_id)
+    Ok(sigint_unit_ids.into_iter().next())
 }
 
 pub(crate) async fn mark_failures_pending_for_text<C>(
@@ -507,14 +656,13 @@ where
     Ok(result.rows_affected)
 }
 
-pub(crate) async fn reprocess_inbox_items_for_text<C>(
+pub(crate) async fn reprocess_inbox_items_for_unit<C>(
     db: &C,
-    unit_txt: &str,
+    sigint_unit_id: i64,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
-    let normalized_unit_txt = normalize_unit_label(unit_txt);
     let mut last_id = None;
     loop {
         let items = sigint_inbox_item::Entity::find()
@@ -526,10 +674,7 @@ where
                 sigint_inbox_item_unit::Column::Kind
                     .eq(SigintInboxItemUnitKind::Parsed),
             )
-            .filter(Expr::cust_with_values(
-                "lower(regexp_replace(btrim(coalesce(nullif(btrim(sigint_inbox_item.unit_v2), ''), sigint_inbox_item.unit)), '[[:space:]]+', ' ', 'g')) = $1",
-                vec![normalized_unit_txt.clone()],
-            ))
+            .filter(sigint_inbox_item_unit::Column::UnitId.eq(sigint_unit_id))
             .apply_if(last_id, |query, last_id| {
                 query.filter(sigint_inbox_item::Column::Id.gt(last_id))
             })
@@ -573,42 +718,31 @@ where
         failure.delete(db).await.context(h!())?;
         return Ok(());
     };
-    let current_text = unresolved_text(
-        inbox_item.unit_v2.as_deref(),
-        inbox_item.unit.as_deref(),
-    );
-    let sigint_unit_id = resolve_sigint_unit_id(
+    let failure_id = failure.id;
+    resolve_and_sync_inbox_item(
         db,
+        inbox_item.id,
         inbox_item.unit_v2.as_deref(),
         inbox_item.unit.as_deref(),
     )
     .await
     .context(h!())?;
-    replace_parsed_unit_link(db, inbox_item.id, sigint_unit_id)
+    match failed_inbox_unit::Entity::find_by_id(failure_id)
+        .one(db)
         .await
-        .context(h!())?;
-    if sigint_unit_id.is_some() || current_text.is_none() {
-        failure.delete(db).await.context(h!())?;
-        return Ok(());
+        .context(h!())?
+    {
+        Some(failure) if failure.deleted => {
+            failure.delete(db).await.context(h!())?;
+        }
+        Some(_) => {
+            warn!(
+                "Reactivated unresolved inbox unit failure id={} inbox_item_id={} after verification failed",
+                failure_id, inbox_item.id
+            );
+        }
+        None => {}
     }
-
-    let current_text = current_text.unwrap();
-    let text_changed = normalize_unit_label(current_text)
-        != normalize_unit_label(&failure.unit_txt);
-    let failure_id = failure.id;
-    let mut failure = failure.into_active_model();
-    failure.deleted = Set(false);
-    failure.deleted_at = Set(None);
-    failure.unit_txt = Set(current_text.to_string());
-    if text_changed {
-        failure.is_bad_data = Set(false);
-    }
-    failure.update(db).await.context(h!())?;
-    warn!(
-        "Reactivated unresolved inbox unit failure id={} inbox_item_id={} after verification failed",
-        failure_id,
-        inbox_item.id
-    );
     Ok(())
 }
 
@@ -667,6 +801,7 @@ pub(crate) async fn backfill_inbox_unit_links(
     db: &DatabaseConnection,
     start_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
+    progress: Option<&ProgressBar>,
 ) -> anyhow::Result<u64> {
     if start_ts >= till_ts {
         anyhow::bail!("start_ts must be earlier than till_ts");
@@ -701,9 +836,18 @@ pub(crate) async fn backfill_inbox_unit_links(
             .await
             .context(h!())?;
             processed += 1;
+            if let Some(progress) = progress {
+                progress.inc(1);
+            }
         }
         sync_network_unit_links(db, &item_ids).await.context(h!())?;
         last_id = items.last().unwrap().id;
+        info!(
+            "backfilled inbox unit links batch: processed={processed}, last_inbox_item_id={last_id}"
+        );
+        if let Some(progress) = progress {
+            progress.set_message(format!("last inbox item {last_id}"));
+        }
         if items.len()
             == usize::try_from(FAILED_INBOX_UNIT_BACKFILL_BATCH_SIZE)
                 .context(h!())?
@@ -717,6 +861,26 @@ pub(crate) async fn backfill_inbox_unit_links(
     Ok(processed)
 }
 
+pub(crate) async fn count_inbox_unit_link_backfill_items(
+    db: &DatabaseConnection,
+    start_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+) -> anyhow::Result<u64> {
+    if start_ts >= till_ts {
+        anyhow::bail!("start_ts must be earlier than till_ts");
+    }
+    sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .filter(signal_message::Column::CreatedAt.gte(start_ts))
+        .filter(signal_message::Column::CreatedAt.lt(till_ts))
+        .count(db)
+        .await
+        .context(h!())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -726,6 +890,12 @@ mod tests {
         let number = Utc::now().timestamp_micros().unsigned_abs() % 8_000_000
             + 1_000_000;
         format!("{number} омсбр")
+    }
+
+    fn unique_unit_labels() -> [String; 2] {
+        let number = Utc::now().timestamp_micros().unsigned_abs() % 7_000_000
+            + 1_000_000;
+        [format!("{number} омсбр"), format!("{} омсбр", number + 1)]
     }
 
     async fn insert_orbit_unit(
@@ -845,12 +1015,36 @@ mod tests {
     }
 
     #[test]
-    fn unresolved_text_prefers_unit_v2() {
+    fn unit_text_candidates_split_unit_v2_and_prefer_it_over_unit() {
         assert_eq!(
-            unresolved_text(Some(" 1 мсб "), Some("raw")),
-            Some("1 мсб")
+            unit_text_candidates(Some(" 1 мсб, 2 мсб, 1 мсб "), Some("raw"))
+                .into_iter()
+                .map(|candidate| candidate.text)
+                .collect_vec(),
+            vec!["1 мсб", "2 мсб"]
         );
-        assert_eq!(unresolved_text(Some(" "), Some(" raw ")), Some("raw"));
+        assert_eq!(
+            unit_text_candidates(Some(" "), Some(" raw "))
+                .into_iter()
+                .map(|candidate| candidate.text)
+                .collect_vec(),
+            vec!["raw"]
+        );
+    }
+
+    #[test]
+    fn resolution_texts_keeps_original_label_as_fallback() {
+        assert_eq!(
+            resolution_texts("  власний тег 123 омсбр  "),
+            vec![
+                ("123 омсбр".to_string(), false),
+                ("власний тег 123 омсбр".to_string(), true)
+            ]
+        );
+        assert_eq!(
+            resolution_texts("123 ОМСБР"),
+            vec![("123 омсбр".to_string(), false)]
+        );
     }
 
     #[tokio::test]
@@ -888,6 +1082,253 @@ mod tests {
                 .unwrap(),
             None
         );
+        assert_eq!(
+            resolve_sigint_unit_id(&env.dbx, Some("333 мсб власний тег"), None)
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn comma_separated_unit_v2_syncs_each_text_independently() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let first = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let second = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let first_label = format!("multi-first-{}", Uuid::new_v4());
+        let second_label = format!("multi-second-{}", Uuid::new_v4());
+        let missing_label = format!("multi-missing-{}", Uuid::new_v4());
+        for (unit, label) in [(&first, &first_label), (&second, &second_label)]
+        {
+            sigint_unit_label::ActiveModel {
+                sigint_unit_id: Set(unit.id),
+                label: Set(label.to_string()),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        let item = insert_inbox_item(
+            &env.dbx,
+            Some(&format!(" {first_label}, {missing_label}, {second_label} ")),
+            None,
+            None,
+        )
+        .await;
+
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            item.id,
+            item.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                item.id,
+                SigintInboxItemUnitKind::Parsed,
+            )
+            .await,
+            vec![first.id, second.id]
+        );
+        let failures = failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(item.id))
+            .filter(failed_inbox_unit::Column::Deleted.eq(false))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(failures.len(), 1);
+        assert_eq!(
+            normalize_unit_label(&failures[0].unit_txt),
+            normalize_unit_label(&missing_label)
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn resolved_parser_texts_do_not_queue_unresolved_fallback() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let first = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let second = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let labels = unique_unit_labels();
+        for (unit, label) in [(&first, &labels[0]), (&second, &labels[1])] {
+            sigint_unit_label::ActiveModel {
+                sigint_unit_id: Set(unit.id),
+                label: Set(label.clone()),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        let unit_v2 = labels.join(" та ");
+        let item =
+            insert_inbox_item(&env.dbx, Some(&unit_v2), None, None).await;
+
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            item.id,
+            item.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let mut expected = vec![first.id, second.id];
+        expected.sort();
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                item.id,
+                SigintInboxItemUnitKind::Parsed,
+            )
+            .await,
+            expected
+        );
+        assert!(failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(item.id))
+            .filter(failed_inbox_unit::Column::Deleted.eq(false))
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn resolved_exact_fallback_suppresses_parsed_failure() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let unit_v2 = format!("власний тег {}", unique_unit_label());
+        sigint_unit_label::ActiveModel {
+            sigint_unit_id: Set(unit.id),
+            label: Set(unit_v2.clone()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let item =
+            insert_inbox_item(&env.dbx, Some(&unit_v2), None, None).await;
+
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            item.id,
+            item.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                item.id,
+                SigintInboxItemUnitKind::Parsed,
+            )
+            .await,
+            vec![unit.id]
+        );
+        assert!(failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(item.id))
+            .filter(failed_inbox_unit::Column::Deleted.eq(false))
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn reprocessing_preserves_archived_failure_metadata() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let label = format!("archived-failure-{}", Uuid::new_v4());
+        let first = insert_inbox_item(&env.dbx, Some(&label), None, None).await;
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            first.id,
+            first.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+        let failure = failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(first.id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut failure = failure.into_active_model();
+        failure.is_bad_data = Set(true);
+        failure.note = Set("keep this note".to_string());
+        failure.update(&env.dbx).await.unwrap();
+
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            first.id,
+            first.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+        let second =
+            insert_inbox_item(&env.dbx, Some(&label), None, None).await;
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            second.id,
+            second.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let failures = failed_inbox_unit::Entity::find()
+            .filter(
+                failed_inbox_unit::Column::InboxItemId
+                    .is_in([first.id, second.id]),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(failures.len(), 2);
+        assert!(failures.iter().all(|failure| failure.is_bad_data));
+        assert!(failures
+            .iter()
+            .all(|failure| failure.note == "keep this note"));
     }
 
     #[tokio::test]
@@ -1280,6 +1721,7 @@ mod tests {
                 &env.dbx,
                 now - Duration::minutes(1),
                 now + Duration::minutes(1),
+                None,
             )
             .await
             .unwrap(),
@@ -1348,6 +1790,26 @@ mod tests {
             .await
             .unwrap();
 
+        let stale_label = format!("worker-stale-{}", Uuid::new_v4());
+        let current_label = format!("worker-current-{}", Uuid::new_v4());
+        let stale =
+            insert_inbox_item(&env.dbx, Some(&stale_label), None, None).await;
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            stale.id,
+            stale.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+        mark_failures_pending_for_text(&env.dbx, &stale_label)
+            .await
+            .unwrap();
+        let stale_id = stale.id;
+        let mut stale = stale.into_active_model();
+        stale.unit_v2 = Set(Some(current_label.clone()));
+        stale.update(&env.dbx).await.unwrap();
+
         run_failed_inbox_unit_worker_once(&env.dbx).await.unwrap();
 
         assert_eq!(
@@ -1374,6 +1836,18 @@ mod tests {
             .unwrap();
         assert!(!failure.deleted);
         assert_eq!(failure.deleted_at, None);
+
+        let failures = failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(stale_id))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(failures.len(), 1);
+        assert_eq!(
+            normalize_unit_label(&failures[0].unit_txt),
+            normalize_unit_label(&current_label)
+        );
+        assert!(!failures[0].deleted);
     }
 
     #[tokio::test]

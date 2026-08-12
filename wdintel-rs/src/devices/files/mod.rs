@@ -12,9 +12,11 @@ mod validation;
 
 pub(in crate::devices::files) use error::{
     classify_transaction_error, map_database_error, map_transaction_body_error,
-    FilesystemError, FilesystemFieldError, TransactionErrorClass,
+    TransactionErrorClass,
 };
+pub(in crate::devices) use error::{FilesystemError, FilesystemFieldError};
 pub(in crate::devices) use metadata::normalize_file_metadata;
+pub(in crate::devices) use path::parse as parse_source_path;
 pub(in crate::devices) use types::{
     Breadcrumb, BrowseFilesCommand, BrowseFilesResult, DirectoryEntry,
     DirectoryScope, DomainFileEntryKind, EntryQueryScope, EntrySortKey,
@@ -116,6 +118,9 @@ pub(crate) async fn browse(
             include_breadcrumbs: body.include_breadcrumbs.unwrap_or(true),
             limit: body.limit,
             cursor: body.cursor,
+            tag_ids: body.tag_ids.unwrap_or_default(),
+            tag_match: body.tag_match,
+            untagged: body.untagged.unwrap_or(false),
         },
     )
     .await
@@ -160,6 +165,9 @@ pub(crate) async fn search(
             },
             limit: body.limit,
             cursor: body.cursor,
+            tag_ids: body.tag_ids.unwrap_or_default(),
+            tag_match: body.tag_match,
+            untagged: body.untagged.unwrap_or(false),
         },
     )
     .await
@@ -184,6 +192,9 @@ pub(crate) async fn journal(
             device_id: parse_uuid(&body.device_id),
             limit: body.limit,
             cursor: body.cursor,
+            tag_ids: body.tag_ids.unwrap_or_default(),
+            tag_match: body.tag_match,
+            untagged: body.untagged.unwrap_or(false),
         },
     )
     .await

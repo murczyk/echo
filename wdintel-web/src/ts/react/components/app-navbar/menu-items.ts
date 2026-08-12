@@ -247,15 +247,9 @@ export const adminDatabaseSubs: Menu[] = [
   },
   {
     type: 'item',
-    link: { type: 'internal', path: '/admin/unit-duplicates' },
-    activeName: 'unit-duplicates',
-    label: 'Дублікати Підрозділів',
-  },
-  {
-    type: 'item',
     link: { type: 'internal', path: '/admin/unit-unparsed' },
-    activeName: 'unit-unparsed',
-    label: 'Нерозпізнані підрозділи',
+    activeName: 'unit-admin',
+    label: 'Підрозділи',
   },
   {
     type: 'item',
@@ -280,6 +274,12 @@ export const adminDatabaseSubs: Menu[] = [
     link: { type: 'internal', path: '/admin/tags-neo' },
     activeName: 'tags-neo',
     label: 'Теги',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/device-analytics' },
+    activeName: 'device-analytics',
+    label: 'Аналіз пристроїв',
   },
 ];
 

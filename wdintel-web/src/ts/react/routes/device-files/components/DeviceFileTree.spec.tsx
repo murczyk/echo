@@ -38,6 +38,7 @@ function buildFileEntry(entryId: string, name: string, hasContent: boolean): Dev
     fileMetadataCreatedAt: null,
     fileMetadataModifiedAt: null,
     createdAt: NOW,
+    tags: [],
     updatedAt: NOW,
   };
 }
@@ -158,5 +159,19 @@ describe('DeviceFileTree counters', () => {
     expect(container?.querySelector('[aria-label="Контент файлу наявний"]')).not.toBeNull();
     expect(container?.querySelector('[aria-label="Контент файлу відсутній"]')).not.toBeNull();
     expect(container?.querySelector('[aria-label^="Синхронізувати файл"]')).toBeNull();
+  });
+
+  it('does not render file metadata beneath the filename', () => {
+    const file = buildFileEntry('018f0000-0000-7000-8000-000000000002', 'available.log', true);
+    file.mimeType = 'text/plain';
+    file.extension = 'log';
+
+    act(() => {
+      root?.render(<DeviceFileTree files={buildFiles({}, [file])} />);
+    });
+
+    expect(container?.querySelector('[title="available.log"]')).not.toBeNull();
+    expect(container?.querySelector('[title=".log"]')).toBeNull();
+    expect(container?.textContent).not.toContain('text/plain');
   });
 });

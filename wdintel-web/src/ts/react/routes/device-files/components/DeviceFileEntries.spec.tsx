@@ -28,6 +28,7 @@ function buildEntry(entryId: string, kind: 'directory' | 'file'): DeviceFileTree
     fileMetadataModifiedAt: null,
     createdAt: NOW,
     updatedAt: NOW,
+    tags: [],
   };
 }
 
