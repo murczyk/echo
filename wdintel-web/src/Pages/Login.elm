@@ -172,13 +172,17 @@ update shared msg model =
             )
 
         Login ->
-            ( model
-            , E.sendCmd <|
-                Api.users_login LoginDone
-                    { user = model.loginInp
-                    , password = model.passwordInp
-                    }
-            )
+            if isFeatureDeltaEnabled shared.serverInfo && not model.showCredsLogin then
+                ( model, E.none )
+
+            else
+                ( model
+                , E.sendCmd <|
+                    Api.users_login LoginDone
+                        { user = model.loginInp
+                        , password = model.passwordInp
+                        }
+                )
 
         LoginDone (Err e) ->
             Api.handleLoginHttpError ToastMsg e model
@@ -342,7 +346,7 @@ body _ deltaLoginFlag sharedToasts model =
                     ]
                 ]
 
-        credsFields =
+        credsFields interactive =
             [ div [ class "mb-2 w-100" ] <|
                 input
                     [ type_ "text"
@@ -351,6 +355,7 @@ body _ deltaLoginFlag sharedToasts model =
                     , placeholder "логін"
                     , value model.loginInp
                     , onInput SetLoginInp
+                    , disabled (not interactive)
                     , isInvalidCls "login" model.formErrors
                     ]
                     []
@@ -362,6 +367,7 @@ body _ deltaLoginFlag sharedToasts model =
                     , placeholder "пароль"
                     , value model.passwordInp
                     , onInput SetPasswordInp
+                    , disabled (not interactive)
                     , isInvalidCls "password" model.formErrors
                     ]
                     []
@@ -372,6 +378,7 @@ body _ deltaLoginFlag sharedToasts model =
                 [ button
                     [ type_ "submit"
                     , class "btn btn-primary btn-dark w-100"
+                    , disabled (not interactive)
                     ]
                     [ text "увійти" ]
                 ]
@@ -413,16 +420,23 @@ body _ deltaLoginFlag sharedToasts model =
                     [ credsOpenLink ]
                 ]
             , div
-                [ classList
+                ([ classList
                     [ ( "login-creds-panel", True )
                     , ( "is-open", model.showCredsLogin )
                     ]
-                ]
+                 ]
+                    ++ (if model.showCredsLogin then
+                            []
+
+                        else
+                            [ attribute "inert" "" ]
+                       )
+                )
                 [ div
                     [ class "login-creds-panel__inner w-100 d-flex flex-column align-items-center pt-3"
                     , style "border-top" "1px solid var(--bs-border-color)"
                     ]
-                    credsFields
+                    (credsFields model.showCredsLogin)
                 ]
             ]
 
@@ -431,7 +445,7 @@ body _ deltaLoginFlag sharedToasts model =
                 logoBlock :: deltaFormChildren
 
             else
-                logoBlock :: credsFields
+                logoBlock :: credsFields True
     in
     [ Shared.Components.Toast.overlay SharedToastMsg sharedToasts
     , Shared.Components.Toast.view ToastMsg model.toasts <|

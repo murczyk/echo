@@ -962,11 +962,13 @@ sl-tooltip {
   display: grid;
   grid-template-rows: 0fr;
   width: 100%;
+  pointer-events: none;
   transition: grid-template-rows 0.32s ease;
 }
 
 .login-creds-panel.is-open {
   grid-template-rows: 1fr;
+  pointer-events: auto;
 }
 
 .login-creds-panel__inner {
