@@ -202,6 +202,33 @@ async fn ensure_admin_unit_editor(
     Ok(login)
 }
 
+async fn mark_resolved_failures_pending<C>(
+    db: &C,
+    unit_txt: &str,
+    label: &str,
+) -> anyhow::Result<u64>
+where
+    C: ConnectionTrait,
+{
+    let normalized_unit_txt =
+        super::unit_resolution::normalize_unit_label(unit_txt);
+    let normalized_label = super::unit_resolution::normalize_unit_label(label);
+    let mut affected_count =
+        super::unit_resolution::mark_failures_pending_for_text(db, unit_txt)
+            .await
+            .c(h!())?;
+    if normalized_label != normalized_unit_txt {
+        affected_count +=
+            super::unit_resolution::mark_failures_pending_for_text(
+                db,
+                &normalized_label,
+            )
+            .await
+            .c(h!())?;
+    }
+    Ok(affected_count)
+}
+
 #[post("/api/admin/unresolved-unit-label/list")]
 pub async fn list_unresolved_unit_labels(
     user: actix_identity::Identity,
@@ -350,12 +377,9 @@ pub async fn resolve_unresolved_unit_label(
     .await
     .c(h!())?;
     let affected_count =
-        super::unit_resolution::mark_failures_pending_for_text(
-            &transaction,
-            &req.unit_txt,
-        )
-        .await
-        .c(h!())?;
+        mark_resolved_failures_pending(&transaction, &req.unit_txt, &req.label)
+            .await
+            .c(h!())?;
     if affected_count == 0 {
         return Err(AppError::NotFound);
     }
@@ -436,5 +460,34 @@ mod tests {
             "group alpha"
         );
         assert_eq!(response.rows[1].quantity, 2);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn resolving_edited_label_marks_both_failure_groups_pending() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        insert_failure(&env.dbx, "original label", false, false).await;
+        insert_failure(&env.dbx, "EDITED   LABEL", false, false).await;
+
+        let affected_count = mark_resolved_failures_pending(
+            &env.dbx,
+            "original label",
+            " edited label ",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(affected_count, 2);
+        let failures = failed_inbox_unit::Entity::find()
+            .filter(
+                failed_inbox_unit::Column::UnitTxt
+                    .is_in(["original label", "EDITED   LABEL"]),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(failures.len(), 2);
+        assert!(failures.iter().all(|failure| failure.deleted));
     }
 }
