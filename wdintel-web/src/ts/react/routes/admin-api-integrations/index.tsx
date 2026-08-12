@@ -17,7 +17,6 @@ import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'materi
 import { useEffect, useMemo, useState } from 'react';
 
 import type { ApiIntegration, Login, UpsertApiIntegrationReq } from '../../../../Bindings';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageLoadingState } from '../../components/PageLoadingState';
@@ -444,7 +443,7 @@ function IntegrationEditorDialog({
           />
         </Stack>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <PowerButton variant="outlined" onClick={onClose} disabled={disabled}>
           Скасувати
         </PowerButton>
@@ -655,7 +654,7 @@ function AdminApiIntegrationsPageBody() {
                 'Вибрана інтеграція буде видалена.'}
             </DialogContentText>
           </DialogContent>
-          <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+          <DialogActions>
             <PowerButton variant="outlined" onClick={() => setDeleteTarget(null)} disabled={saving}>
               Скасувати
             </PowerButton>
