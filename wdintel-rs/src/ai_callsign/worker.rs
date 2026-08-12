@@ -78,7 +78,8 @@ pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
             break;
         }
         let _loop_guard = worker_watch::loop_guard("ai_callsign_worker");
-        let processed = match process_next(&env.dbx, &mut redis).await {
+        let processed = match process_next(&env.dbx, &env.rq, &mut redis).await
+        {
             Ok(processed) => processed,
             Err(error) => {
                 error!("ai_callsign_worker failed: {error:#?}");
@@ -99,6 +100,7 @@ pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
 
 async fn process_next(
     dbx: &DatabaseConnection,
+    rq: &reqwest::Client,
     redis: &mut redis::aio::ConnectionManager,
 ) -> Result<bool, AppError> {
     let Some(config) = load_worker_config(dbx).await? else {
@@ -116,6 +118,7 @@ async fn process_next(
         delete_job(dbx, job.sigint_inbox_item_id).await?;
         return Ok(true);
     };
+    let body = message.body.unwrap_or_default();
     let response = request_ai_response(
         &config.ai_engine,
         vec![
@@ -125,7 +128,7 @@ async fn process_next(
             },
             AiEngineMessage {
                 role: AI_CHAT_ROLE_USER.to_string(),
-                content: message.body.unwrap_or_default(),
+                content: body.clone(),
             },
         ],
     )
@@ -149,7 +152,8 @@ async fn process_next(
         }
     };
     let changed =
-        complete_job(dbx, job.sigint_inbox_item_id, callsigns).await?;
+        complete_job(dbx, rq, job.sigint_inbox_item_id, &body, callsigns)
+            .await?;
     if changed {
         fanout_mult(
             redis,
@@ -212,9 +216,21 @@ async fn load_next_job(
 
 async fn complete_job(
     dbx: &DatabaseConnection,
+    rq: &reqwest::Client,
     sigint_inbox_item_id: i64,
+    body: &str,
     callsigns: Vec<String>,
 ) -> Result<bool, AppError> {
+    let callsigns = normalize_callsigns(callsigns);
+    let callsign_tokens = if callsigns.is_empty() {
+        vec![]
+    } else {
+        crate::rer_importer::callsigns::highlight_callsigns(
+            rq, body, &callsigns,
+        )
+        .await
+        .c(h!())?
+    };
     let transaction = dbx.begin().await.c(h!())?;
     let inbox_item =
         sigint_inbox_item::Entity::find_by_id(sigint_inbox_item_id)
@@ -235,16 +251,20 @@ async fn complete_job(
     .unwrap_or_default();
     let current = current_callsigns.primary;
     let suggested = current_callsigns.alg2;
-    let callsigns = normalize_callsigns(callsigns);
     let callsigns_changed = callsigns != current;
-    let changed = callsigns_changed || !suggested.is_empty();
-    if changed {
-        if callsigns_changed {
-            let mut inbox_item = inbox_item.into_active_model();
-            inbox_item.callsign_tokens = Set(Some(
-                serde_json::to_value(Vec::<serde_json::Value>::new())
-                    .c(h!())?,
+    let should_update_callsign_tokens = callsigns_changed
+        || (!callsigns.is_empty()
+            && stored_callsign_tokens_empty(
+                inbox_item.callsign_tokens.as_ref(),
             ));
+    let changed = callsigns_changed
+        || should_update_callsign_tokens
+        || !suggested.is_empty();
+    if changed {
+        if should_update_callsign_tokens {
+            let mut inbox_item = inbox_item.into_active_model();
+            inbox_item.callsign_tokens =
+                Set(Some(serde_json::to_value(callsign_tokens).c(h!())?));
             inbox_item.update(&transaction).await.c(h!())?;
         }
         let system_login_id =
@@ -304,6 +324,14 @@ where
     Ok(())
 }
 
+fn stored_callsign_tokens_empty(tokens: Option<&serde_json::Value>) -> bool {
+    match tokens {
+        None | Some(serde_json::Value::Null) => true,
+        Some(serde_json::Value::Array(items)) => items.is_empty(),
+        Some(_) => false,
+    }
+}
+
 fn normalize_callsigns(callsigns: Vec<String>) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut normalized = Vec::new();
@@ -332,7 +360,9 @@ fn truncate_error(error: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_callsigns, retry_delay_secs};
+    use super::{
+        normalize_callsigns, retry_delay_secs, stored_callsign_tokens_empty,
+    };
 
     #[test]
     fn normalizes_ai_callsigns_for_replacement() {
@@ -345,6 +375,19 @@ mod tests {
             ]),
             vec!["alpha", "bravo"]
         );
+    }
+
+    #[test]
+    fn detects_empty_stored_callsign_tokens() {
+        assert!(stored_callsign_tokens_empty(None));
+        assert!(stored_callsign_tokens_empty(Some(&serde_json::Value::Null)));
+        assert!(stored_callsign_tokens_empty(Some(&serde_json::json!([]))));
+        assert!(!stored_callsign_tokens_empty(Some(&serde_json::json!([
+            { "text": "ALPHA" }
+        ]))));
+        assert!(!stored_callsign_tokens_empty(Some(&serde_json::json!({
+            "unexpected": true
+        }))));
     }
 
     #[test]
