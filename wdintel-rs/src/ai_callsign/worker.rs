@@ -236,6 +236,7 @@ async fn complete_job(
     callsigns: Vec<String>,
     callsign_tokens: Vec<crate::rer_importer::highlight::CNCallsign>,
 ) -> Result<bool, AppError> {
+    let callsign_tokens = serde_json::to_value(callsign_tokens).c(h!())?;
     let transaction = dbx.begin().await.c(h!())?;
     let inbox_item =
         sigint_inbox_item::Entity::find_by_id(sigint_inbox_item_id)
@@ -257,19 +258,15 @@ async fn complete_job(
     let current = current_callsigns.primary;
     let suggested = current_callsigns.alg2;
     let callsigns_changed = callsigns != current;
-    let should_update_callsign_tokens = callsigns_changed
-        || (!callsigns.is_empty()
-            && stored_callsign_tokens_empty(
-                inbox_item.callsign_tokens.as_ref(),
-            ));
+    let should_update_callsign_tokens =
+        inbox_item.callsign_tokens.as_ref() != Some(&callsign_tokens);
     let changed = callsigns_changed
         || should_update_callsign_tokens
         || !suggested.is_empty();
     if changed {
         if should_update_callsign_tokens {
             let mut inbox_item = inbox_item.into_active_model();
-            inbox_item.callsign_tokens =
-                Set(Some(serde_json::to_value(callsign_tokens).c(h!())?));
+            inbox_item.callsign_tokens = Set(Some(callsign_tokens));
             inbox_item.update(&transaction).await.c(h!())?;
         }
         let system_login_id =
@@ -329,14 +326,6 @@ where
     Ok(())
 }
 
-fn stored_callsign_tokens_empty(tokens: Option<&serde_json::Value>) -> bool {
-    match tokens {
-        None | Some(serde_json::Value::Null) => true,
-        Some(serde_json::Value::Array(items)) => items.is_empty(),
-        Some(_) => false,
-    }
-}
-
 fn normalize_callsigns(callsigns: Vec<String>) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut normalized = Vec::new();
@@ -365,9 +354,7 @@ fn truncate_error(error: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        normalize_callsigns, retry_delay_secs, stored_callsign_tokens_empty,
-    };
+    use super::{normalize_callsigns, retry_delay_secs};
 
     #[test]
     fn normalizes_ai_callsigns_for_replacement() {
@@ -380,19 +367,6 @@ mod tests {
             ]),
             vec!["alpha", "bravo"]
         );
-    }
-
-    #[test]
-    fn detects_empty_stored_callsign_tokens() {
-        assert!(stored_callsign_tokens_empty(None));
-        assert!(stored_callsign_tokens_empty(Some(&serde_json::Value::Null)));
-        assert!(stored_callsign_tokens_empty(Some(&serde_json::json!([]))));
-        assert!(!stored_callsign_tokens_empty(Some(&serde_json::json!([
-            { "text": "ALPHA" }
-        ]))));
-        assert!(!stored_callsign_tokens_empty(Some(&serde_json::json!({
-            "unexpected": true
-        }))));
     }
 
     #[test]
