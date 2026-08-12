@@ -68,6 +68,14 @@ vi.mock('../../../../../web-components/analysis-map/tile-layers', () => ({
 
 vi.mock('../../../../services/api/location', () => ({ mapCoordinates: vi.fn() }));
 
+vi.mock('../../message-card/CoordinateAttachmentThumbnail', async () => {
+  const { createElement } = await import('react');
+  return {
+    CoordinateAttachmentThumbnail: ({ onOpen }: { onOpen: () => void }) =>
+      createElement('button', { 'aria-label': 'Превʼю координат', onClick: onOpen }, 'Map Preview'),
+  };
+});
+
 vi.mock('../../message-card/attachment-preview/MessageCardAttachmentPreviewProvider', async () => {
   const { createElement } = await import('react');
   return {

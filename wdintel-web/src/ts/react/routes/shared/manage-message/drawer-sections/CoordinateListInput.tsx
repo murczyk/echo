@@ -10,7 +10,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useMemo, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
+import { useMemo, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 
 import { getCoordinateText } from '../../../../../maps/coordinate-format';
 import {
@@ -35,6 +35,7 @@ type Props = {
   onErrorChange: (message: string | null) => void;
   disabled: boolean;
   error?: string;
+  previewSlot?: ReactNode;
 };
 
 function coordinateKey(point: ParsedCoordinate): string {
@@ -83,6 +84,7 @@ export function CoordinateListInput({
   onErrorChange,
   disabled,
   error,
+  previewSlot,
 }: Props) {
   const points = useMemo(() => parseCoordinateBlock(value), [value]);
   const [input, setInput] = useState('');
@@ -172,54 +174,89 @@ export function CoordinateListInput({
         }}
       />
 
-      {points.length > 0 ? (
-        <Stack spacing={0.5}>
-          {points.map((point, index) => (
-            <Box
-              key={coordinateKey(point)}
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                minWidth: 0,
-                px: 1,
-                py: 0.5,
-                border: 1,
-                borderColor: 'divider',
-                borderRadius: 1,
-              }}
+      <Box
+        sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, alignItems: 'flex-start' }}
+      >
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            width: '100%',
+            aspectRatio: '1 / 1',
+            borderRadius: 2,
+            border: 1,
+            borderColor: 'divider',
+            bgcolor: 'background.paper',
+            p: points.length > 0 ? 0.75 : 1,
+            overflowY: 'auto',
+            display: points.length > 0 ? 'block' : 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxSizing: 'border-box',
+          }}
+        >
+          {points.length > 0 ? (
+            <Stack spacing={0.5}>
+              {points.map((point, index) => (
+                <Box
+                  key={coordinateKey(point)}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    minWidth: 0,
+                    px: 1,
+                    py: 0.5,
+                    borderBottom: 1,
+                    borderColor: 'divider',
+                    '&:last-child': {
+                      borderBottom: 'none',
+                    },
+                  }}
+                >
+                  {point.format !== 'wgs84' ? (
+                    <Chip
+                      label={FORMAT_LABELS[point.format]}
+                      size="small"
+                      variant="outlined"
+                      sx={{ flexShrink: 0, height: 24 }}
+                    />
+                  ) : null}
+                  <Typography
+                    variant="body2"
+                    noWrap
+                    title={getCoordinateText('wgs', point)}
+                    sx={{ flex: 1, minWidth: 0, fontVariantNumeric: 'tabular-nums' }}
+                  >
+                    {getCoordinateText('wgs', point)}
+                  </Typography>
+                  <IconButton
+                    size="small"
+                    aria-label={`Видалити координату ${index + 1}`}
+                    onClick={() => {
+                      onChange(removeCoordinateAt(value, index));
+                      onBlur();
+                    }}
+                    disabled={disabled}
+                  >
+                    <DeleteOutlineIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              ))}
+            </Stack>
+          ) : (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontSize: 11, textAlign: 'center' }}
             >
-              {point.format !== 'wgs84' ? (
-                <Chip
-                  label={FORMAT_LABELS[point.format]}
-                  size="small"
-                  variant="outlined"
-                  sx={{ flexShrink: 0, height: 24 }}
-                />
-              ) : null}
-              <Typography
-                variant="body2"
-                noWrap
-                title={getCoordinateText('wgs', point)}
-                sx={{ flex: 1, minWidth: 0, fontVariantNumeric: 'tabular-nums' }}
-              >
-                {getCoordinateText('wgs', point)}
-              </Typography>
-              <IconButton
-                size="small"
-                aria-label={`Видалити координату ${index + 1}`}
-                onClick={() => {
-                  onChange(removeCoordinateAt(value, index));
-                  onBlur();
-                }}
-                disabled={disabled}
-              >
-                <DeleteOutlineIcon fontSize="small" />
-              </IconButton>
-            </Box>
-          ))}
-        </Stack>
-      ) : null}
+              Координати ще не додані
+            </Typography>
+          )}
+        </Box>
+
+        {previewSlot}
+      </Box>
     </Stack>
   );
 }

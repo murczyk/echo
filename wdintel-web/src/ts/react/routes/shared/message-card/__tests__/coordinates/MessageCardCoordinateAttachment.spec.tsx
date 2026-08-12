@@ -7,6 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage } from '../../../../../../../Bindings';
+import { CoordinateAttachmentThumbnail } from '../../CoordinateAttachmentThumbnail';
 import { MessageCardCoordinateAttachment } from '../../MessageCardCoordinateAttachment';
 import {
   CoordinatePreviewLookupError,
@@ -63,6 +64,9 @@ vi.mock('leaflet', () => {
     setView() {
       return map;
     },
+    fitBounds() {
+      return map;
+    },
     getContainer() {
       return container;
     },
@@ -79,6 +83,7 @@ vi.mock('leaflet', () => {
   return {
     map: vi.fn(() => map),
     circleMarker: vi.fn(() => marker),
+    latLngBounds: vi.fn(() => ({})),
   };
 });
 
@@ -226,6 +231,33 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(container.querySelector('[role="dialog"]')?.getAttribute('data-attachment-count')).toBe(
       '1',
     );
+  });
+
+  it('updates the thumbnail without recreating the map when a coordinate is removed', async () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 180,
+      height: 120,
+    } as DOMRect);
+    const leaflet = await import('leaflet');
+    const points = [
+      { source: 'direct' as const, lat: 50.45, lng: 30.52, label: 'BRAVO' },
+      { source: 'direct' as const, lat: 50.46, lng: 30.53, label: 'CHARLIE' },
+    ];
+
+    await act(async () => {
+      root.render(<CoordinateAttachmentThumbnail points={points} onOpen={vi.fn()} />);
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    });
+    expect(leaflet.map).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.render(<CoordinateAttachmentThumbnail points={[points[1]]} onOpen={vi.fn()} />);
+      await Promise.resolve();
+    });
+
+    expect(leaflet.map).toHaveBeenCalledTimes(1);
+    expect(leaflet.circleMarker).toHaveBeenCalledTimes(3);
+    rectSpy.mockRestore();
   });
 
   it('renders an inline retry error when the resolver rejects for a palette list failure', async () => {

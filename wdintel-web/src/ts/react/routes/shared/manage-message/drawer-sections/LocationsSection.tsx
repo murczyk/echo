@@ -72,10 +72,7 @@ export function LocationsSection({ busy, recentValues, open, onError }: Props) {
   ];
 
   return (
-    <FormSectionWrapper
-      title="Локації та координати"
-      action={<CoordinateInputPreview value={coordsText ?? ''} busy={busy} onError={onError} />}
-    >
+    <FormSectionWrapper title="Локації та координати">
       <Controller
         name="locations"
         control={control}
@@ -157,6 +154,9 @@ export function LocationsSection({ busy, recentValues, open, onError }: Props) {
             }}
             disabled={busy}
             error={errors.coords?.message}
+            previewSlot={
+              <CoordinateInputPreview value={coordsText ?? ''} busy={busy} onError={onError} />
+            }
           />
         )}
       />
