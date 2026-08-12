@@ -608,29 +608,6 @@ fn fixed_offset_utc(ts: NaiveDateTime) -> DateTime<FixedOffset> {
     DateTime::<Utc>::from_naive_utc_and_offset(ts, Utc).fixed_offset()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn goi_association_original_message_for_export_unescapes_excel_body() {
-        let mut cells = vec![
-            serde_json::Value::Null;
-            crate::config::ORGANISM_GOI_ORIGINAL_MESSAGE_CELL_INDEX
-        ];
-        cells.push(serde_json::json!({
-            "kind": "string",
-            "value": "first_x000d_\nsecond_x000A_third",
-        }));
-        let row = serde_json::json!({ "cells": cells });
-
-        assert_eq!(
-            goi_association_original_message_for_export(&row),
-            Some("first\nsecond\nthird".to_string())
-        );
-    }
-}
-
 pub async fn oneoff_import_sigint_comments(
     mode: Mode,
     ps: &crate::OneoffImportSigintCommentsPs,
@@ -1040,4 +1017,27 @@ fn format_body_sample(body: &str) -> String {
         sample.push_str("...");
     }
     sample
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn goi_association_original_message_for_export_unescapes_excel_body() {
+        let mut cells = vec![
+            serde_json::Value::Null;
+            crate::config::ORGANISM_GOI_ORIGINAL_MESSAGE_CELL_INDEX
+        ];
+        cells.push(serde_json::json!({
+            "kind": "string",
+            "value": "first_x000d_\nsecond_x000A_third",
+        }));
+        let row = serde_json::json!({ "cells": cells });
+
+        assert_eq!(
+            goi_association_original_message_for_export(&row),
+            Some("first\nsecond\nthird".to_string())
+        );
+    }
 }
