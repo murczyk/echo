@@ -175,6 +175,8 @@ type TextFieldMockProps = {
   placeholder?: string;
   value?: string;
   disabled?: boolean;
+  error?: boolean;
+  helperText?: ReactNode;
 };
 
 const textFieldPropsByLabel = new Map<string | undefined, TextFieldMockProps>();
@@ -296,6 +298,8 @@ vi.mock('@mui/material', () => ({
     placeholder,
     value,
     disabled,
+    error,
+    helperText,
   }: TextFieldMockProps) => {
     const labelKey = typeof label === 'string' ? label : undefined;
     textFieldPropsByLabel.set(labelKey, {
@@ -307,28 +311,35 @@ vi.mock('@mui/material', () => ({
       placeholder,
       value,
       disabled,
+      error,
+      helperText,
     });
 
-    return multiline ? (
-      <textarea
-        aria-label={labelKey}
-        placeholder={placeholder}
-        value={value ?? ''}
-        disabled={disabled}
-        onChange={(event) => onChange?.(event as never)}
-        onBlur={onBlur}
-        onKeyDown={onKeyDown as never}
-      />
-    ) : (
-      <input
-        aria-label={labelKey}
-        placeholder={placeholder}
-        value={value ?? ''}
-        disabled={disabled}
-        onChange={(event) => onChange?.(event as never)}
-        onBlur={onBlur}
-        onKeyDown={onKeyDown as never}
-      />
+    return (
+      <>
+        {multiline ? (
+          <textarea
+            aria-label={labelKey}
+            placeholder={placeholder}
+            value={value ?? ''}
+            disabled={disabled}
+            onChange={(event) => onChange?.(event as never)}
+            onBlur={onBlur}
+            onKeyDown={onKeyDown as never}
+          />
+        ) : (
+          <input
+            aria-label={labelKey}
+            placeholder={placeholder}
+            value={value ?? ''}
+            disabled={disabled}
+            onChange={(event) => onChange?.(event as never)}
+            onBlur={onBlur}
+            onKeyDown={onKeyDown as never}
+          />
+        )}
+        {helperText ? <span>{helperText}</span> : null}
+      </>
     );
   },
   Autocomplete: ({
@@ -636,6 +647,45 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
     expect(submitButton.disabled).toBe(false);
+    root.unmount();
+  });
+
+  it('shows an existing coordinate as a neutral hint without blocking submission', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{
+            id: 42,
+            message: buildMessage({ coords: '49.123457, 37.234568' }),
+          }}
+        />,
+      );
+    });
+
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Додати координату')
+        ?.onChange?.({ target: { value: '49.12346, 37.23457' } });
+    });
+    await act(async () => {
+      textFieldPropsByLabel.get('Додати координату')?.onBlur?.();
+    });
+
+    const coordinateField = textFieldPropsByLabel.get('Додати координату');
+    const submitButton = container.querySelector<HTMLButtonElement>('button[type="submit"]');
+    expect(coordinateField?.value).toBe('49.12346, 37.23457');
+    expect(coordinateField?.error).toBe(false);
+    expect(container.textContent).toContain('Координата вже є у списку');
+    expect(submitButton?.disabled).toBe(false);
+
     root.unmount();
   });
 

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseCoordinateBlock } from '../../../../../maps/coordinate-parser';
-import { mergeCoordinateInput, removeCoordinateAt } from './CoordinateListInput';
+import {
+  duplicateCoordinateHint,
+  matchingCoordinateKeys,
+  mergeCoordinateInput,
+  removeCoordinateAt,
+} from './CoordinateListInput';
 
 describe('CoordinateListInput helpers', () => {
   it('adds every coordinate from pasted text without manual separators', () => {
@@ -26,6 +31,29 @@ describe('CoordinateListInput helpers', () => {
     expect(result.parsed).toBe(1);
     expect(result.added).toBe(0);
     expect(parseCoordinateBlock(result.value)).toHaveLength(1);
+  });
+
+  it('detects an existing coordinate directly from the current input', () => {
+    expect(duplicateCoordinateHint('49.123457, 37.234568', '49.12346, 37.23457')).toBe(
+      'Координата вже є у списку',
+    );
+  });
+
+  it('does not add a coordinate copied from the rounded list display', () => {
+    const result = mergeCoordinateInput('49.123457, 37.234568', '49.12346, 37.23457');
+
+    expect(result.added).toBe(0);
+    expect(parseCoordinateBlock(result.value)).toHaveLength(1);
+  });
+
+  it('matches an existing coordinate entered in a different format', () => {
+    const mgrs = '37U DR 05997 22279';
+    const [point] = parseCoordinateBlock(mgrs);
+    const currentValue = `${point.lat}, ${point.lng}`;
+
+    expect(matchingCoordinateKeys(currentValue, mgrs)).toEqual(
+      new Set([`${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`]),
+    );
   });
 
   it('extracts multiple coordinates pasted on one line', () => {
