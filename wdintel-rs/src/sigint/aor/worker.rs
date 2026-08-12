@@ -33,19 +33,37 @@ async fn check_signal_groups(dbx: &DatabaseConnection) -> anyhow::Result<()> {
         *counts.entry(ga.master_key.clone()).or_insert(0) += 1;
     }
 
-    // Iterate all groups and validate exactly 1 AoR per group
+    // Validate active groups with daily activity have at least 1 AoR
     let groups = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .all(dbx)
         .await
         .c(h!())?;
-    for g in groups {
-        let cnt = counts.get(&g.master_key).cloned().unwrap_or(0);
-        if cnt == 0 {
-            if let Some(name) = g.name {
+    let group_keys_without_aor = groups
+        .iter()
+        .filter(|group| {
+            counts.get(&group.master_key).copied().unwrap_or_default() == 0
+        })
+        .map(|group| group.master_key.clone())
+        .collect::<Vec<_>>();
+    let group_stats = crate::messenger::group::collect_group_stats(
+        group_keys_without_aor,
+        dbx,
+    )
+    .await
+    .c(h!())?;
+
+    for group in groups {
+        let has_aor =
+            counts.get(&group.master_key).copied().unwrap_or_default() > 0;
+        let has_daily_activity = group_stats
+            .get(&group.master_key)
+            .is_some_and(|stats| stats.activity_last_day > 0);
+        if !has_aor && has_daily_activity {
+            if let Some(name) = group.name {
                 error!(
                     "[AOR Check] signal_group master_key={} name={} has zero AORs assigned (expected at least 1)",
-                    g.master_key, name
+                    group.master_key, name
                 );
             }
         }

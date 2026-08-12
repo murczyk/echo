@@ -28,9 +28,9 @@ fn order_by_nulls_last(
         format!("CASE WHEN {sort_sql} IS NULL THEN 1 ELSE 0 END");
     let query = query.order_by_asc(Expr::cust(null_rank_sql));
     if descending {
-        query.order_by_desc(Expr::cust(sort_sql))
+        query.order_by_desc(Expr::cust(sort_sql.to_owned()))
     } else {
-        query.order_by_asc(Expr::cust(sort_sql))
+        query.order_by_asc(Expr::cust(sort_sql.to_owned()))
     }
 }
 

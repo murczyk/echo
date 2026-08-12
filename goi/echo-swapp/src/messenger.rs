@@ -1,23 +1,28 @@
 use crate::config::Config;
-use crate::error::ShortContext;
+use crate::error::{
+    bad_request, conflict, not_found, service_unavailable,
+    service_unavailable_with_source, ShortContext,
+};
 use crate::h;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use echo_im::entities::sea_orm_active_enums::{
     EchoMessageSource, SignalCliMode,
 };
 use echo_im::entities::{
     echo_account, echo_client, echo_client_config, echo_client_lock,
-    echo_qr_code, echo_sender,
+    echo_group, echo_qr_code, echo_sender,
 };
 use echo_im::types::{MessageSource, OutboxAttachmentInput, SendMessageReq};
 use regex::Regex;
+use std::collections::BTreeMap;
 use std::process::Command;
 use std::time::Duration;
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend,
-    DatabaseConnection, EntityTrait, JoinType, QueryFilter, QuerySelect,
-    RelationTrait, Set, Statement, TransactionTrait,
+    DatabaseConnection, DatabaseTransaction, EntityTrait, IntoActiveModel,
+    JoinType, QueryFilter, QuerySelect, RelationTrait, Set, Statement,
+    TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 
@@ -118,7 +123,7 @@ pub async fn create(
     let display_name = req.name.clone();
     let name = available_public_name(db, &display_name).await.c(h!())?;
     validate_name(&name).c(h!())?;
-    validate_phone(&req.phone).c(h!())?;
+    let phone = normalize_phone(&req.phone).c(h!())?;
     let client_name = owned_client_name(&name);
     ensure_client_available(db, &client_name).await.c(h!())?;
 
@@ -150,7 +155,7 @@ pub async fn create(
         .await
         .c(h!())?;
     echo_im::set_account_phone(
-        req.phone,
+        phone,
         &client_name,
         req.kind.message_source(),
         true,
@@ -216,7 +221,11 @@ pub async fn load(
     load_optional_owned(db, &owned_client_name(name))
         .await
         .c(h!())?
-        .with_context(|| format!("messenger not found: {name}"))
+        .ok_or_else(|| {
+            not_found(format!(
+                "Месенджер «{name}» не знайдено. Оновіть сторінку та повторіть спробу."
+            ))
+        })
         .c(h!())
 }
 
@@ -346,6 +355,50 @@ pub async fn groups(
     Ok(groups)
 }
 
+pub(crate) async fn repair_blank_whatsapp_group_names(
+    db: &DatabaseConnection,
+) -> Result<()> {
+    let groups = echo_group::Entity::find()
+        .join(JoinType::InnerJoin, echo_group::Relation::EchoAccount.def())
+        .join(
+            JoinType::InnerJoin,
+            echo_account::Relation::EchoClientLock.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            echo_client_lock::Relation::EchoClient.def(),
+        )
+        .filter(echo_account::Column::Source.eq(EchoMessageSource::Whatsapp))
+        .filter(echo_client::Column::Deleted.eq(false))
+        .filter(echo_client::Column::Name.starts_with(OWNED_CLIENT_PREFIX))
+        .distinct()
+        .all(db)
+        .await
+        .c(h!())?;
+    let resolved_names = groups
+        .iter()
+        .filter_map(|group| {
+            group
+                .name
+                .as_ref()
+                .filter(|name| !name.is_empty())
+                .map(|name| (group.group_id.clone(), name.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for group in groups
+        .into_iter()
+        .filter(|group| group.name.as_deref() == Some(""))
+    {
+        let Some(name) = resolved_names.get(&group.group_id) else {
+            continue;
+        };
+        let mut group = group.into_active_model();
+        group.name = Set(Some(name.clone()));
+        group.update(db).await.c(h!())?;
+    }
+    Ok(())
+}
+
 pub async fn chats(
     db: &DatabaseConnection,
     name: &str,
@@ -386,12 +439,37 @@ pub async fn send(
     text: String,
     attachments: Vec<String>,
 ) -> Result<()> {
+    let txn = db.begin().await.c(h!())?;
+    enqueue(
+        &txn,
+        name,
+        kind,
+        group_ids,
+        recipient_phone_numbers,
+        text,
+        attachments,
+    )
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+    tick_after_send(db, name, kind).await.c(h!())
+}
+
+pub(crate) async fn enqueue(
+    txn: &DatabaseTransaction,
+    name: &str,
+    kind: MessengerKind,
+    group_ids: Vec<String>,
+    recipient_phone_numbers: Vec<String>,
+    text: String,
+    attachments: Vec<String>,
+) -> Result<()> {
     if text.trim().is_empty() && attachments.is_empty() {
-        bail!("message or attachment is required");
+        return Err(bad_request(
+            "Вкажіть текст повідомлення або додайте вкладення.",
+        ));
     }
     let client_name = owned_client_name(name);
-    let txn = db.begin().await.c(h!())?;
-    let should_tick_after_send = kind == MessengerKind::Signal;
     echo_im::send_message(
         SendMessageReq {
             text,
@@ -404,13 +482,27 @@ pub async fn send(
                 .collect(),
         },
         &client_name,
-        &txn,
+        txn,
         None,
     )
     .await
+    .c(h!())?
+    .ok_or_else(|| {
+        conflict(
+            "Обліковий запис месенджера не підключено. Підключіть його та повторіть спробу.",
+        )
+    })
     .c(h!())?;
-    txn.commit().await.c(h!())?;
-    if should_tick_after_send
+    Ok(())
+}
+
+pub(crate) async fn tick_after_send(
+    db: &DatabaseConnection,
+    name: &str,
+    kind: MessengerKind,
+) -> Result<()> {
+    let client_name = owned_client_name(name);
+    if kind == MessengerKind::Signal
         && !sync_is_paused(db, &client_name).await.c(h!())?
     {
         echo_im::worker::signal_worker_tick_once(&client_name, db)
@@ -523,7 +615,9 @@ async fn available_public_name(
             return Ok(name);
         }
     }
-    bail!("unable to find available messenger name");
+    Err(conflict(
+        "Не вдалося підібрати унікальне ім’я месенджера. Змініть назву та повторіть спробу.",
+    ))
 }
 
 fn public_name_with_suffix(name: &str, suffix: usize) -> String {
@@ -560,7 +654,7 @@ async fn persist_display_name<C>(
 where
     C: ConnectionTrait,
 {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "update echo_client set display_name = $1 where name = $2",
         vec![
@@ -582,7 +676,7 @@ where
     C: ConnectionTrait,
 {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "
             select coalesce(nullif(display_name, ''), $2) as display_name
@@ -609,7 +703,9 @@ async fn ensure_client_available(
         .await
         .c(h!())?;
     if existing.is_some() {
-        bail!("messenger already exists: {name}");
+        return Err(conflict(format!(
+            "Месенджер «{name}» уже існує. Виберіть іншу назву."
+        )));
     }
     Ok(())
 }
@@ -700,10 +796,11 @@ async fn wait_for_signal_client(kind: MessengerKind, port: i32) -> Result<()> {
             }
         }
     }
-    let err = last_err
-        .map(|err| err.to_string())
-        .unwrap_or_else(|| "unknown error".to_string());
-    bail!("signal service did not become ready on {addr}: {err}");
+    let message = "Сервіс Signal тимчасово недоступний. Зачекайте кілька секунд і повторіть спробу. Якщо помилка не зникне, зверніться до адміністратора.";
+    match last_err {
+        Some(err) => Err(service_unavailable_with_source(message, err)),
+        None => Err(service_unavailable(message)),
+    }
 }
 
 async fn start_client(
@@ -807,12 +904,14 @@ async fn restart_client_process(
 fn validate_name(name: &str) -> Result<()> {
     let re = Regex::new(r"^[a-z0-9][a-z0-9_-]{2,49}$").c(h!())?;
     if !re.is_match(name) {
-        bail!("name must be 3-50 lowercase latin letters, digits, hyphens, or underscores");
+        return Err(bad_request(
+            "Ім’я має містити 3–50 малих латинських літер, цифр, дефісів або підкреслень.",
+        ));
     }
     if name.starts_with(OWNED_CLIENT_PREFIX) {
-        bail!(
-            "name must not start with reserved prefix: {OWNED_CLIENT_PREFIX}"
-        );
+        return Err(bad_request(format!(
+            "Ім’я не може починатися із зарезервованого префікса {OWNED_CLIENT_PREFIX}."
+        )));
     }
     Ok(())
 }
@@ -898,12 +997,23 @@ fn transliterate_cyrillic(ch: char) -> Option<&'static str> {
     }
 }
 
-fn validate_phone(phone: &str) -> Result<()> {
-    let re = Regex::new(r"^\+38\d{10}$").c(h!())?;
-    if !re.is_match(phone) {
-        bail!("phone must start with +38 and contain 12 digits");
+fn normalize_phone(phone: &str) -> Result<String> {
+    let phone = phone
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>();
+    let phone = if Regex::new(r"^0\d{9}$").c(h!())?.is_match(&phone) {
+        format!("+38{phone}")
+    } else {
+        phone
+    };
+    let re = Regex::new(r"^\+380\d{9}$").c(h!())?;
+    if !re.is_match(&phone) {
+        return Err(bad_request(
+            "Введіть номер телефону у форматі +380XXXXXXXXX або 0XXXXXXXXX.",
+        ));
     }
-    Ok(())
+    Ok(phone)
 }
 
 fn unit_name(config: &Config, kind: MessengerKind) -> &str {
@@ -955,7 +1065,7 @@ async fn sync_state_is_paused(
     key: &str,
 ) -> Result<bool> {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "select paused from echo_swapp_sync_state where key = $1",
             [key.into()],
@@ -973,7 +1083,7 @@ async fn set_sync_state_paused(
     key: &str,
     is_paused: bool,
 ) -> Result<()> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "
         insert into echo_swapp_sync_state (key, paused, updated_at)
@@ -1016,5 +1126,26 @@ mod tests {
         assert_eq!(normalize_public_name("echo-swapp-Тест"), "test");
         assert_eq!(normalize_public_name("!!!"), "integration");
         assert_eq!(normalize_public_name("Я"), "ya-im");
+    }
+
+    #[test]
+    fn normalizes_ukrainian_phone_numbers() {
+        assert_eq!(
+            normalize_phone(" +380 50 123 45 67 ").unwrap(),
+            "+380501234567"
+        );
+        assert_eq!(normalize_phone("050 123 45 67").unwrap(), "+380501234567");
+    }
+
+    #[test]
+    fn rejects_invalid_phone_numbers() {
+        for phone in [
+            "380501234567",
+            "+381501234567",
+            "050123456",
+            "050-123-45-67",
+        ] {
+            assert!(normalize_phone(phone).is_err(), "{phone}");
+        }
     }
 }

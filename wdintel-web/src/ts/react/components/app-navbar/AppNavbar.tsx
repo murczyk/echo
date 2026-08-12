@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { CircularProgress } from '@mui/material';
 import {
   Link,
   Menu,
@@ -7,14 +8,67 @@ import {
   goiExternalUrl,
   operationalSubs,
   analysisSubs,
-  databaseSubs,
+  getDatabaseSubs,
   converterSubs,
   adminSubs,
 } from './menu-items';
 import { ChangelogDropdown } from './ChangelogDropdown';
 import { ProfileDropdown } from './ProfileDropdown';
 import { currentSystemSettings } from '../../services/api/system-settings';
-import { hasRole } from '../../utils/roles';
+import { fetchUserSettings, USER_SETTINGS_UPDATED_EVENT } from '../../services/api/user-settings';
+import { canReadDevices, hasRole } from '../../utils/roles';
+
+function filterTranscriptionSettings(items: Menu[], enabled: boolean): Menu[] {
+  return items.flatMap<Menu>((item): Menu[] => {
+    if (item.type === 'item' && item.activeName === 'transcription-settings' && !enabled) {
+      return [];
+    }
+    if (item.type === 'group') {
+      return [{ ...item, subs: filterTranscriptionSettings(item.subs, enabled) }];
+    }
+    return [item];
+  });
+}
+
+function filterAnalysisMenuItemsByAiChat(items: Menu[], aiChatEnabled: boolean): Menu[] {
+  if (aiChatEnabled) {
+    return items;
+  }
+
+  const filtered = items.filter((item) => {
+    if (item.type !== 'item') {
+      return true;
+    }
+
+    return item.activeName !== 'documentation' && item.activeName !== 'group-activity';
+  });
+
+  const withoutExtraSeparators: Menu[] = [];
+
+  for (const item of filtered) {
+    if (item.type === 'separator') {
+      if (withoutExtraSeparators.length === 0) {
+        continue;
+      }
+
+      const previous = withoutExtraSeparators[withoutExtraSeparators.length - 1];
+      if (previous.type === 'separator') {
+        continue;
+      }
+    }
+
+    withoutExtraSeparators.push(item);
+  }
+
+  if (
+    withoutExtraSeparators.length > 0 &&
+    withoutExtraSeparators[withoutExtraSeparators.length - 1].type === 'separator'
+  ) {
+    withoutExtraSeparators.pop();
+  }
+
+  return withoutExtraSeparators;
+}
 
 export interface AppNavbarProps {
   user: {
@@ -37,6 +91,9 @@ export interface AppNavbarProps {
     systemSettings?: {
       defaultNeoAnalysis: boolean;
       enableAudioTranscription: boolean;
+      showClassicDuty: boolean;
+      showClassicAnalysis: boolean;
+      devicesSectionEnabled: boolean;
     } | null;
   };
   activeName: string;
@@ -67,6 +124,17 @@ export function AppNavbar({
   const [loadedAudioTranscription, setLoadedAudioTranscription] = useState<boolean | null>(
     shared?.systemSettings ? shared.systemSettings.enableAudioTranscription : null,
   );
+  const [loadedShowClassicDuty, setLoadedShowClassicDuty] = useState<boolean | null>(
+    shared?.systemSettings ? shared.systemSettings.showClassicDuty : null,
+  );
+  const [loadedShowClassicAnalysis, setLoadedShowClassicAnalysis] = useState<boolean | null>(
+    shared?.systemSettings ? shared.systemSettings.showClassicAnalysis : null,
+  );
+  const [userShowClassicDuty, setUserShowClassicDuty] = useState(false);
+  const [userShowClassicAnalysis, setUserShowClassicAnalysis] = useState(false);
+  const [loadedDevicesSectionEnabled, setLoadedDevicesSectionEnabled] = useState<boolean | null>(
+    shared?.systemSettings ? shared.systemSettings.devicesSectionEnabled : null,
+  );
   const navbarRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -75,6 +143,11 @@ export function AppNavbar({
         prev === null ? shared.systemSettings!.defaultNeoAnalysis : prev,
       );
       setLoadedAudioTranscription(shared.systemSettings.enableAudioTranscription);
+      setLoadedShowClassicDuty(shared.systemSettings.showClassicDuty);
+      setLoadedShowClassicAnalysis(shared.systemSettings.showClassicAnalysis);
+      setLoadedDevicesSectionEnabled((prev) =>
+        prev === null ? shared.systemSettings!.devicesSectionEnabled : prev,
+      );
     }
   }, [shared?.systemSettings]);
 
@@ -87,6 +160,9 @@ export function AppNavbar({
           if (mounted) {
             setLoadedNeoAnalysis(settings.defaultNeoAnalysis);
             setLoadedAudioTranscription(settings.enableAudioTranscription);
+            setLoadedShowClassicDuty(settings.showClassicDuty);
+            setLoadedShowClassicAnalysis(settings.showClassicAnalysis);
+            setLoadedDevicesSectionEnabled(settings.devicesSectionEnabled);
           }
         })
         .catch(() => {});
@@ -102,6 +178,29 @@ export function AppNavbar({
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+
+    const fetchSettings = () => {
+      fetchUserSettings()
+        .then((settings) => {
+          if (mounted) {
+            setUserShowClassicDuty(settings.showClassicDuty);
+            setUserShowClassicAnalysis(settings.showClassicAnalysis);
+          }
+        })
+        .catch(() => {});
+    };
+
+    fetchSettings();
+    window.addEventListener(USER_SETTINGS_UPDATED_EVENT, fetchSettings);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener(USER_SETTINGS_UPDATED_EVENT, fetchSettings);
+    };
+  }, []);
+
+  useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
       if (navbarRef.current && !navbarRef.current.contains(e.target as Node)) {
         setOpenDropdown(null);
@@ -111,7 +210,7 @@ export function AppNavbar({
     return () => document.removeEventListener('click', handleOutsideClick);
   }, []);
 
-  const handleDropdownToggle = (e: React.MouseEvent, key: string) => {
+  const handleDropdownToggle = (e: ReactMouseEvent, key: string) => {
     setOpenDropdown(openDropdown === key ? null : key);
   };
 
@@ -119,7 +218,7 @@ export function AppNavbar({
     setOpenDropdown(null);
   };
 
-  const handleMobileNavToggle = (e: React.MouseEvent) => {
+  const handleMobileNavToggle = (e: ReactMouseEvent) => {
     setMobileNavOpen(!mobileNavOpen);
   };
 
@@ -128,13 +227,60 @@ export function AppNavbar({
   const isAdminMenuVisible = hasRole(user?.roles, 'Admin');
   const isBasic = hasRole(user?.roles, 'Basic');
   const isRer = hasRole(user?.roles, 'Rer');
+  const isApiAgent = hasRole(user?.roles, 'ApiAgent');
+  const isAiChatUser = isRer && !isApiAgent;
+  const devicesReadable = canReadDevices(user?.roles);
+  const devicesMenuIsVisible =
+    serverModeIsLive && loadedDevicesSectionEnabled === true && devicesReadable;
+  const databaseMenuSubs = getDatabaseSubs({
+    includeRerItems: serverModeIsLive && isRer,
+    includeDevicesItem: devicesMenuIsVisible,
+  });
 
   const goiMenuIsVisible = serverModeIsLive && isRer && user.goiIntegrations?.length > 0;
-  const visibleAdminSubs = adminSubs.filter(
-    (item) =>
-      item.type !== 'item' ||
-      item.activeName !== 'transcription-settings' ||
-      loadedAudioTranscription === true,
+  const visibleAdminSubs = filterTranscriptionSettings(
+    adminSubs,
+    loadedAudioTranscription === true,
+  );
+  const showClassicDuty = loadedShowClassicDuty !== false || userShowClassicDuty;
+  const showClassicAnalysis = loadedShowClassicAnalysis !== false || userShowClassicAnalysis;
+  const visibleOperationalSubs = operationalSubs
+    .filter((item) => item.type !== 'item' || item.activeName !== 'rer-duty' || showClassicDuty)
+    .map((item) =>
+      !showClassicDuty && item.type === 'item' && item.activeName === 'rer-duty-neo'
+        ? { ...item, label: 'Оперативний' }
+        : item,
+    );
+  const [isAiChatEnabled, setIsAiChatEnabled] = useState<boolean | null>(null);
+
+  const allowAnalysisDocsAndStatsLinks = isAiChatUser ? isAiChatEnabled !== false : true;
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ enabled?: boolean }>).detail;
+      if (typeof detail?.enabled === 'boolean') {
+        setIsAiChatEnabled(detail.enabled);
+      }
+    };
+
+    window.addEventListener('ai-agent-availability', handler);
+
+    return () => {
+      window.removeEventListener('ai-agent-availability', handler);
+    };
+  }, []);
+
+  const visibleAnalysisSubs = filterAnalysisMenuItemsByAiChat(
+    analysisSubs
+      .filter(
+        (item) => item.type !== 'item' || item.activeName !== 'analysis' || showClassicAnalysis,
+      )
+      .map((item) =>
+        !showClassicAnalysis && item.type === 'item' && item.activeName === 'rer-analysis-neo'
+          ? { ...item, label: 'Аналіз' }
+          : item,
+      ),
+    allowAnalysisDocsAndStatsLinks,
   );
 
   const openGoiSubs: Menu[] = (user.goiIntegrations || []).flatMap((integration) => {
@@ -182,7 +328,7 @@ export function AppNavbar({
     return <span className="inline-flex items-center gap-2">{item.label}</span>;
   };
 
-  const handleInternalLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
+  const handleInternalLinkClick = (e: ReactMouseEvent<HTMLAnchorElement>, path: string) => {
     if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
       e.preventDefault();
       window.history.pushState({}, '', path);
@@ -237,13 +383,20 @@ export function AppNavbar({
     } else if (sub.type === 'group') {
       const active = menuIsActive(activeName, sub);
       return (
-        <li key={index} className="px-2 py-1">
-          <div
-            className={`px-2 py-1 text-xs font-semibold uppercase tracking-wide ${active ? 'text-[var(--color-text)]' : 'text-[var(--color-text-muted)]'}`}
+        <li key={index} className="app-navbar-flyout-item">
+          <button
+            type="button"
+            role="menuitem"
+            aria-haspopup="menu"
+            className={`flex w-full items-center justify-between rounded px-4 py-2 text-[var(--color-text)] transition-all duration-200 hover:bg-black/10 dark:hover:bg-white/10 ${active ? 'font-medium' : ''}`}
           >
-            {sub.label}
-          </div>
-          <ul className="ml-3 border-l border-[var(--color-border)] pl-2">
+            <span>{sub.label}</span>
+            <i className="bi bi-chevron-right ml-3 text-xs text-[var(--color-icons)]" />
+          </button>
+          <ul
+            className="app-navbar-flyout rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-2 shadow-lg"
+            role="menu"
+          >
             {sub.subs.map((s, i) => renderDropdownItem(s, i))}
           </ul>
         </li>
@@ -300,7 +453,7 @@ export function AppNavbar({
           </div>
         ) : (
           <button
-            className={`inline-flex w-full cursor-pointer items-center rounded px-2 py-2 text-white transition-all duration-200 hover:bg-black/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1 lg:w-auto ${active ? 'font-medium' : ''}`}
+            className={`inline-flex w-full cursor-pointer items-center rounded px-3 py-2 text-white transition-all duration-200 hover:bg-black/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1 lg:w-auto lg:px-2 ${active ? 'font-medium' : ''}`}
             onClick={(e) => handleDropdownToggle(e, activeNameExp)}
             aria-haspopup="true"
             aria-controls={dropdownMenuId}
@@ -387,27 +540,31 @@ export function AppNavbar({
 
           <div
             id="app-navbar-links-panel"
-            className={`app-navbar-links w-full min-w-0 basis-full border-t border-[var(--color-border)] lg:mt-0 lg:w-auto lg:min-w-0 lg:flex-none lg:border-t-0 lg:pt-0 ${mobileNavOpen ? 'flex' : 'hidden lg:flex'}`}
+            className={`app-navbar-links w-full min-w-0 basis-full lg:mt-0 lg:w-auto lg:min-w-0 lg:flex-none lg:pt-0 ${mobileNavOpen ? 'flex' : 'hidden lg:flex'}`}
           >
             <ul className="app-navbar-links-list flex min-w-0 w-full flex-col gap-y-1 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-4 lg:gap-y-1">
               {serverModeIsLive &&
                 isRer &&
-                renderDropdownMenu('operational', 'Оперативний', operationalSubs, '/rer-duty-neo')}
+                renderDropdownMenu(
+                  'operational',
+                  'Оперативний',
+                  visibleOperationalSubs,
+                  '/rer-duty-neo',
+                )}
               {serverModeIsLive &&
                 isRer &&
                 renderDropdownMenu(
                   'analysis',
                   'Аналіз',
-                  analysisSubs,
+                  visibleAnalysisSubs,
                   loadedNeoAnalysis === null
                     ? undefined
-                    : loadedNeoAnalysis
+                    : loadedNeoAnalysis || !showClassicAnalysis
                       ? '/rer-analysis-neo'
                       : '/rer-analysis',
                 )}
-              {serverModeIsLive &&
-                isRer &&
-                renderDropdownMenu('database', 'База даних', databaseSubs)}
+              {databaseMenuSubs.length > 0 &&
+                renderDropdownMenu('database', 'База даних', databaseMenuSubs)}
               {goiMenuIsVisible && renderDropdownMenu('goi', 'ГОІ', goiSubs)}
               {serverModeIsLive &&
                 isBasic &&
@@ -437,17 +594,27 @@ export function AppNavbar({
               </button>
             )}
 
-            <ProfileDropdown
-              user={user}
-              shared={shared}
-              isBasic={isBasic}
-              openDropdown={openDropdown}
-              setOpenDropdown={setOpenDropdown}
-              onThemeChange={onThemeChange}
-              onLogout={onLogout}
-              handleInternalLinkClick={handleInternalLinkClick}
-              closeDropdowns={closeDropdowns}
-            />
+            {shared.userLoaded ? (
+              <ProfileDropdown
+                user={user}
+                shared={shared}
+                isBasic={isBasic}
+                openDropdown={openDropdown}
+                setOpenDropdown={setOpenDropdown}
+                onThemeChange={onThemeChange}
+                onLogout={onLogout}
+                handleInternalLinkClick={handleInternalLinkClick}
+                closeDropdowns={closeDropdowns}
+              />
+            ) : (
+              <span
+                className="flex min-w-20 items-center justify-center px-2 py-2"
+                role="status"
+                aria-label="Завантаження користувача"
+              >
+                <CircularProgress color="inherit" size={18} thickness={5} />
+              </span>
+            )}
           </div>
         </div>
       </nav>

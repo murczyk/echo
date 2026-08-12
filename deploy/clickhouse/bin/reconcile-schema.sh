@@ -65,6 +65,9 @@ FROM information_schema.columns columns
 JOIN information_schema.views views
   ON views.table_schema = columns.table_schema
  AND views.table_name = columns.table_name
+JOIN information_schema.foreign_tables foreign_tables
+  ON foreign_tables.foreign_table_schema = 'echo_clickhouse_foreign'
+ AND foreign_tables.foreign_table_name = views.table_name
 WHERE columns.table_schema = 'public'
 ORDER BY columns.table_name, columns.column_name;
 SQL
@@ -73,8 +76,15 @@ SQL
 source_schema=$(source_columns)
 raw_schema=$(clickhouse_raw_columns)
 [[ -n "$source_schema" ]] || die "source publication has no columns"
-[[ "$source_schema" == "$raw_schema" ]] \
-  || die "source and raw ClickHouse schemas differ; waiting for PeerDB schema propagation or resync"
+if [[ "$source_schema" != "$raw_schema" ]]; then
+  log "Columns present only in the source publication:"
+  comm -23 <(printf '%s\n' "$source_schema") <(printf '%s\n' "$raw_schema") \
+    | sed 's/^/  /' >&2
+  log "Columns present only in raw ClickHouse:"
+  comm -13 <(printf '%s\n' "$source_schema") <(printf '%s\n' "$raw_schema") \
+    | sed 's/^/  /' >&2
+  die "source and raw ClickHouse schemas differ; waiting for PeerDB schema propagation or resync"
+fi
 
 current_schema=$(clickhouse_current_columns)
 gateway_schema=$(gateway_columns)

@@ -28,10 +28,17 @@ function createSyntheticUnsetUnit(): Unit {
     regiment: '',
     division: '',
     army: '',
+    militaryDistrict: '',
+    armyRegion: '',
     comment: '',
+    orbitNote: null,
     active: true,
+    isDeduplicateCandidate: null,
     createdAt: 0,
     createdByLoginId: '',
+    hasOrbit: false,
+    orbitUnitIds: [],
+    orbitUnitGenerativeNames: [],
   };
 }
 
@@ -43,6 +50,7 @@ export function buildSelectableUnitOptions(unitsList: Unit[]): Unit[] {
   const byName = new Map<string, Unit>();
 
   for (const unit of unitsList) {
+    if (unit.active === false) continue;
     const name = unit.name.trim();
     if (name.length === 0) continue;
 
@@ -54,6 +62,27 @@ export function buildSelectableUnitOptions(unitsList: Unit[]): Unit[] {
 
   const sorted = Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
   return sorted;
+}
+
+export function buildUnitLookupOptions(
+  unitsList: Unit[],
+  referencedUnitIds: readonly number[] = [],
+): Array<{ id: number; label: string }> {
+  const options = buildSelectableUnitOptions(unitsList).map((unit) => ({
+    id: unit.id,
+    label: getUnitDisplayLabel(unit),
+  }));
+  const optionIds = new Set(options.map((option) => option.id));
+  const unitsById = new Map(unitsList.map((unit) => [unit.id, unit]));
+
+  for (const id of referencedUnitIds) {
+    if (optionIds.has(id)) continue;
+    const unit = unitsById.get(id);
+    options.push({ id, label: unit ? getUnitDisplayLabel(unit) : `#${id}` });
+    optionIds.add(id);
+  }
+
+  return options;
 }
 
 export function unitsFromNames(names: readonly string[], options: readonly Unit[]): Unit[] {

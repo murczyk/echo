@@ -26,6 +26,7 @@ export type AnalysisFiltersPanelPage = Pick<
   | 'groupInfos'
   | 'networkDisplayMap'
   | 'networks'
+  | 'cyberEchoEnabled'
   | 'queryState'
   | 'unitsExactMatchOnlyDefault'
   | 'saveInFlight'
@@ -33,6 +34,7 @@ export type AnalysisFiltersPanelPage = Pick<
   | 'savedFilters'
   | 'tagsMap'
   | 'tagsOrder'
+  | 'unitsMap'
 > &
   Pick<
     AnalysisPageActions,
@@ -51,6 +53,7 @@ export type AnalysisFiltersPanelPage = Pick<
 export type AnalysisFiltersPanelProps = {
   page: AnalysisFiltersPanelPage;
   isCompactLayout?: boolean;
+  fullHeight?: boolean;
 };
 
 export type FilterSectionId =
@@ -63,6 +66,7 @@ export type FilterSectionId =
   | 'freqs'
   | 'callsigns'
   | 'units'
+  | 'devices'
   | 'locations'
   | 'posts'
   | 'metadata';
@@ -77,6 +81,7 @@ const defaultExpandedSections: Record<FilterSectionId, boolean> = {
   freqs: false,
   callsigns: false,
   units: false,
+  devices: false,
   locations: false,
   posts: false,
   metadata: false,

@@ -30,6 +30,7 @@ function MessageCardTagsComponent({
   msg,
   tagsMap,
   tagsOrder,
+  tagContributionsOrganismId,
   onToggleTag,
   tagsLayout,
   interactive = true,
@@ -37,6 +38,7 @@ function MessageCardTagsComponent({
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
   tagsOrder?: number[];
+  tagContributionsOrganismId?: number;
   onToggleTag?: (tagId: number) => void;
   tagsLayout: TagsLayoutVariant;
   interactive?: boolean;
@@ -44,8 +46,8 @@ function MessageCardTagsComponent({
   const [showCompactRest, setShowCompactRest] = useState(false);
   const compactMeasureRef = useRef<HTMLDivElement | null>(null);
   const rows = useMemo(
-    () => buildMessageCardTagRows(msg, tagsMap, tagsOrder),
-    [msg, tagsMap, tagsOrder],
+    () => buildMessageCardTagRows(msg, tagsMap, tagsOrder, tagContributionsOrganismId),
+    [msg, tagsMap, tagsOrder, tagContributionsOrganismId],
   );
   const rowsById = useMemo(() => new Map(rows.map((row) => [row.tagId, row] as const)), [rows]);
   const rowIdKey = useMemo(

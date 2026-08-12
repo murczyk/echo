@@ -3,16 +3,14 @@ use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::report_chunking::{
-    report_period_chunks, ReportPeriodChunk, ReportPeriodEnd,
+    build_filtered_inbox_report_chunk_query, report_period_chunks,
+    ReportPeriodChunk, ReportPeriodEnd,
 };
-use crate::rer_importer::reports::inbox_light::{
-    blank_inbox_message, parse_optional_json_vec,
-};
+use crate::rer_importer::reports::inbox_light::blank_inbox_message;
 use crate::types::*;
 use crate::utils::*;
 use anyhow::Context;
 // Add this import if h!() uses anyhow::Context
-use crate::utils::orm::ArrayColumnOps;
 use chrono::prelude::*;
 use docx_rs::AlignmentType;
 use docx_rs::LineSpacing;
@@ -36,7 +34,6 @@ struct MouseReportMessageRow {
     timestamp: Option<NaiveDateTime>,
     freq: Option<String>,
     coords: Option<String>,
-    callsigns: Option<serde_json::Value>,
     date: Option<String>,
     time: Option<String>,
     unit: Option<String>,
@@ -1258,26 +1255,6 @@ async fn load_mouse_enrichment_maps(
     Ok((message_map, inbox_map, comments_map))
 }
 
-async fn load_mouse_report_messages(
-    dbx: &DatabaseConnection,
-    login: &uuid::Uuid,
-    env: &Env,
-    req: &InboxMessagesReq,
-    include_tags: bool,
-    max_messages: Option<usize>,
-) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    load_mouse_report_messages_chunk(
-        dbx,
-        login,
-        env,
-        req,
-        include_tags,
-        max_messages,
-        ReportPeriodEnd::Inclusive,
-    )
-    .await
-}
-
 async fn load_mouse_report_messages_chunk(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
@@ -1287,38 +1264,17 @@ async fn load_mouse_report_messages_chunk(
     max_messages: Option<usize>,
     period_end: ReportPeriodEnd,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let mut query_req = req.clone();
-    if period_end == ReportPeriodEnd::NonInclusive {
-        query_req.till_date_inclusive_ms = None;
-    }
-    let query = crate::rer_importer::inbox::query::build_filtered_inbox_query(
-        dbx, login, env, &query_req,
+    let query = build_filtered_inbox_report_chunk_query(
+        dbx, login, env, req, period_end,
     )
     .await
     .c(h!())?;
-    let query = if period_end == ReportPeriodEnd::NonInclusive {
-        let till = req.till_date_inclusive_ms.ok_or_else(|| AppError::BL {
-            msg: "Until date must be specified".to_string(),
-        })?;
-        let till = dt_from_millis(till)?;
-        match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
-            InboxMessagesSortBy::IMSDatetime => {
-                query.filter(sigint_inbox_item::Column::Datetime.lt(till))
-            }
-            InboxMessagesSortBy::IMSTimestamp => {
-                query.filter(signal_message::Column::Timestamp.lt(till))
-            }
-        }
-    } else {
-        query
-    };
     let query = query
         .select_only()
         .column_as(signal_message::Column::Id, "id")
         .column_as(signal_message::Column::Timestamp, "timestamp")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .column_as(sigint_inbox_item::Column::Coords, "coords")
-        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .column_as(sigint_inbox_item::Column::Date, "date")
         .column_as(sigint_inbox_item::Column::Time, "time")
         .column_as(sigint_inbox_item::Column::UnitV2, "unit");
@@ -1337,16 +1293,22 @@ async fn load_mouse_report_messages_chunk(
     } else {
         BTreeMap::new()
     };
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &message_ids).await?;
 
     rows.into_iter()
         .map(|row| {
+            let callsigns = normalized_callsigns
+                .remove(&row.id)
+                .unwrap_or_default()
+                .primary;
             let mut message = blank_inbox_message();
             message.timestamp = row
                 .timestamp
                 .map(|timestamp| timestamp.and_utc().timestamp_millis());
             message.freq = row.freq;
             message.coords = row.coords;
-            message.callsigns = parse_optional_json_vec(row.callsigns)?;
+            message.callsigns = callsigns;
             message.date = row.date;
             message.time = row.time;
             message.unit = row.unit;
@@ -1466,11 +1428,32 @@ pub async fn report_xlsx_kind_pelengs(
     let login = *user_login;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
-    let messages = load_mouse_report_messages(
-        &read_db, &login, env, &inbox_req, false, None,
-    )
-    .await
-    .c(h!())?;
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks =
+        crate::rer_importer::report_chunking::inbox_report_period_chunks(
+            &inbox_req,
+            report_settings.chunking_hours,
+        )
+        .context(h!())?;
+    let mut messages_by_id = BTreeMap::new();
+    for chunk in chunks {
+        let chunk_req =
+            crate::rer_importer::report_chunking::inbox_report_chunk_req(
+                &inbox_req, chunk,
+            );
+        for (id, message) in load_mouse_report_messages_chunk(
+            &read_db, &login, env, &chunk_req, false, None, chunk.end,
+        )
+        .await
+        .c(h!())?
+        {
+            messages_by_id.entry(id).or_insert(message);
+        }
+    }
+    let messages = messages_by_id.into_iter().collect::<Vec<_>>();
     let messages: Vec<(i64, InboxMessage)> = messages
         .iter()
         .filter(|(_, m)| m.coords.is_some())
@@ -1737,14 +1720,11 @@ mod tests {
             )
             .await
             .unwrap();
-            mk_sigint_inbox_item(
+            let inbox_item = mk_sigint_inbox_item(
                 &env.dbx,
                 sigint_inbox_item::ActiveModel {
                     id: Set(message.id),
                     freq: Set(Some(format!("12{index}.45"))),
-                    callsigns: Set(Some(serde_json::json!([format!(
-                        "Mouse{index}"
-                    )]))),
                     date: Set(Some(inbox_datetime.date().to_string())),
                     time: Set(Some(
                         inbox_datetime.time().format("%H:%M:%S").to_string(),
@@ -1755,6 +1735,17 @@ mod tests {
                     parsed_unit_v2: Set(false),
                     ..Default::default()
                 },
+            )
+            .await
+            .unwrap();
+            crate::inbox::callsigns::sync(
+                &env.dbx,
+                inbox_item.id,
+                crate::inbox::callsigns::InboxItemCallsigns {
+                    primary: vec![format!("Mouse{index}")],
+                    alg2: Vec::new(),
+                },
+                login.id,
             )
             .await
             .unwrap();
@@ -1781,6 +1772,7 @@ mod tests {
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
             without_comments: Some(false),
+            babak_new_callsign_min_mentions: None,
             interception_keep_full_message: None,
             interception_keep_old_colors: None,
             digest_omit_exo_id: None,

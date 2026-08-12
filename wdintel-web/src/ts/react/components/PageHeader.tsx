@@ -9,8 +9,11 @@ type Props = {
   titleInfo?: ReactNode;
   titleLeadingActions?: ReactNode;
   titleLeadingGap?: ResponsiveSpacing;
+  titleTrailing?: ReactNode;
+  titleTrailingGap?: ResponsiveSpacing;
   titleActions?: ReactNode;
   titleActionsGap?: ResponsiveSpacing;
+  pinTitleActionsToRight?: boolean;
   middleGap?: ResponsiveSpacing;
   middle?: ReactNode;
   actions?: ReactNode;
@@ -25,8 +28,11 @@ export function PageHeader({
   titleInfo,
   titleLeadingActions,
   titleLeadingGap = 1,
+  titleTrailing,
+  titleTrailingGap = 1,
   titleActions,
   titleActionsGap = { xs: 'auto', sm: 0 },
+  pinTitleActionsToRight = false,
   middleGap = 2,
   middle,
   actions,
@@ -45,6 +51,7 @@ export function PageHeader({
         rowGap: 2,
         columnGap: 0,
         width: '100%',
+        position: 'relative',
       }}
     >
       <Box
@@ -55,6 +62,8 @@ export function PageHeader({
           flexShrink: 0,
           minWidth: 0,
           width: compactLayout ? '100%' : { xs: '100%', sm: 'auto' },
+          flexWrap: compactLayout ? 'wrap' : 'nowrap',
+          rowGap: compactLayout ? 1 : 0,
         }}
       >
         {titleLeadingActions ? (
@@ -78,6 +87,19 @@ export function PageHeader({
         >
           {title}
         </Typography>
+        {titleTrailing ? (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              minWidth: 0,
+              flexShrink: 0,
+              ml: titleTrailingGap,
+            }}
+          >
+            {titleTrailing}
+          </Box>
+        ) : null}
         {titleActions ? (
           <Box
             sx={{
@@ -85,7 +107,14 @@ export function PageHeader({
               alignItems: 'center',
               minWidth: 0,
               flexShrink: 0,
-              ml: titleActionsGap,
+              ...(pinTitleActionsToRight
+                ? {
+                    position: 'absolute',
+                    top: 4,
+                    right: 0,
+                    zIndex: 1,
+                  }
+                : { ml: titleActionsGap }),
             }}
           >
             {titleActions}
@@ -126,19 +155,21 @@ export function PageHeader({
           {middle}
         </Box>
       ) : null}
-      <Box
-        sx={{
-          minWidth: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          marginLeft: 'auto',
-          flexShrink: 0,
-          ...(fullWidthActions ? { width: '100%', marginLeft: 0 } : {}),
-        }}
-      >
-        {actions ?? null}
-      </Box>
+      {actions ? (
+        <Box
+          sx={{
+            minWidth: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            marginLeft: 'auto',
+            flexShrink: 0,
+            ...(fullWidthActions ? { width: '100%', marginLeft: 0 } : {}),
+          }}
+        >
+          {actions}
+        </Box>
+      ) : null}
     </Box>
   );
 }

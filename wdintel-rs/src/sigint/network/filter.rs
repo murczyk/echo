@@ -2,7 +2,6 @@ use crate::entities::*;
 use crate::sigint::network::types::{
     ListNetworksReq, ListNetworksStatusFilter,
 };
-use crate::utils::orm::ArrayColumnOps;
 use sea_orm::sea_query::*;
 use sea_orm::*;
 
@@ -11,6 +10,12 @@ enum SearchScope {
     Global,
     NetworkLabel,
     Location,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum NetworkTextSearchMode {
+    ExactWord,
+    Substring,
 }
 
 fn normalize_search_token(token: &str) -> Option<String> {
@@ -52,22 +57,35 @@ pub(crate) fn tokenize_search_text(search_text: &str) -> Vec<String> {
 }
 
 fn token_like_expr(column_sql: &str, token: &str) -> SimpleExpr {
-    let pattern = format!("%{}%", token);
-    Expr::cust_with_values(column_sql, vec![pattern])
+    let pattern = format!("%{}%", escape_like_token(token));
+    Expr::cust_with_values(
+        format!("{column_sql} escape E'\\\\'"),
+        vec![pattern],
+    )
 }
 
 fn token_like_expr_with_normalized_boundaries(
     column_sql: &str,
     token: &str,
 ) -> SimpleExpr {
-    let pattern = format!("% {} %", token);
+    let pattern = format!("% {} %", escape_like_token(token));
     let normalized_text = format!(
         "regexp_replace(lower({column_sql}), '[[:punct:][:space:]]+', ' ', 'g')"
     );
     Expr::cust_with_values(
-        format!("concat(' ', {}, ' ') ilike $1", normalized_text),
+        format!(
+            "concat(' ', {}, ' ') ilike $1 escape E'\\\\'",
+            normalized_text
+        ),
         vec![pattern],
     )
+}
+
+fn escape_like_token(token: &str) -> String {
+    token
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 fn column_matches_tokens(
@@ -87,24 +105,32 @@ fn column_matches_tokens(
 
 fn network_name_matches_tokens(
     tokens: &[String],
-    use_normalized_boundaries: bool,
+    text_search_mode: NetworkTextSearchMode,
 ) -> Condition {
-    let column_sql = if use_normalized_boundaries {
-        "sigint_network.name collate \"ru-x-icu\""
-    } else {
-        "lower(sigint_network.name collate \"ru-x-icu\") ilike $1"
+    let (column_sql, use_normalized_boundaries) = match text_search_mode {
+        NetworkTextSearchMode::ExactWord => {
+            ("sigint_network.name collate \"ru-x-icu\"", true)
+        }
+        NetworkTextSearchMode::Substring => (
+            "lower(sigint_network.name collate \"ru-x-icu\") ilike $1",
+            false,
+        ),
     };
     column_matches_tokens(column_sql, tokens, use_normalized_boundaries)
 }
 
 fn network_unit_exists_for_tokens(
     tokens: &[String],
-    use_normalized_boundaries: bool,
+    text_search_mode: NetworkTextSearchMode,
 ) -> SimpleExpr {
-    let column_sql = if use_normalized_boundaries {
-        "sigint_unit.name collate \"ru-x-icu\""
-    } else {
-        "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1"
+    let (column_sql, use_normalized_boundaries) = match text_search_mode {
+        NetworkTextSearchMode::ExactWord => {
+            ("sigint_unit.name collate \"ru-x-icu\"", true)
+        }
+        NetworkTextSearchMode::Substring => (
+            "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1",
+            false,
+        ),
     };
 
     let unit_exists = sigint_network_unit::Entity::find()
@@ -120,6 +146,7 @@ fn network_unit_exists_for_tokens(
             sigint_network_unit::Relation::SigintUnit.def(),
             Alias::new("sigint_unit"),
         )
+        .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(column_matches_tokens(
             column_sql,
             tokens,
@@ -131,11 +158,30 @@ fn network_unit_exists_for_tokens(
 
 fn network_label_matches_tokens(tokens: &[String]) -> Condition {
     Condition::any()
-        .add(network_name_matches_tokens(tokens, true))
-        .add(network_unit_exists_for_tokens(tokens, true))
+        .add(network_name_matches_tokens(
+            tokens,
+            NetworkTextSearchMode::ExactWord,
+        ))
+        .add(network_unit_exists_for_tokens(
+            tokens,
+            NetworkTextSearchMode::ExactWord,
+        ))
 }
 
-fn network_freq_exists_for_tokens(tokens: &[String]) -> SimpleExpr {
+fn network_freq_exists_for_tokens(
+    tokens: &[String],
+    text_search_mode: NetworkTextSearchMode,
+) -> SimpleExpr {
+    let (column_sql, use_normalized_boundaries) = match text_search_mode {
+        NetworkTextSearchMode::ExactWord => {
+            ("sigint_network_freq.freq collate \"ru-x-icu\"", true)
+        }
+        NetworkTextSearchMode::Substring => (
+            "lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike $1",
+            false,
+        ),
+    };
+
     let freq_exists = sigint_network_freq::Entity::find()
         .select_only()
         .expr(Expr::value(1))
@@ -146,15 +192,28 @@ fn network_freq_exists_for_tokens(tokens: &[String]) -> SimpleExpr {
         )
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(column_matches_tokens(
-            "lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike $1",
+            column_sql,
             tokens,
-            false,
+            use_normalized_boundaries,
         ))
         .into_query();
     Expr::exists(freq_exists)
 }
 
-fn network_aor_exists_for_tokens(tokens: &[String]) -> SimpleExpr {
+fn network_aor_exists_for_tokens(
+    tokens: &[String],
+    text_search_mode: NetworkTextSearchMode,
+) -> SimpleExpr {
+    let (column_sql, use_normalized_boundaries) = match text_search_mode {
+        NetworkTextSearchMode::ExactWord => {
+            ("sigint_aor.name collate \"ru-x-icu\"", true)
+        }
+        NetworkTextSearchMode::Substring => (
+            "lower(sigint_aor.name collate \"ru-x-icu\") ilike $1",
+            false,
+        ),
+    };
+
     let aor_exists = sigint_network_aor::Entity::find()
         .select_only()
         .expr(Expr::value(1))
@@ -170,34 +229,51 @@ fn network_aor_exists_for_tokens(tokens: &[String]) -> SimpleExpr {
         )
         .filter(Expr::cust("\"sigint_aor\".\"deleted\" = false"))
         .filter(column_matches_tokens(
-            "lower(sigint_aor.name collate \"ru-x-icu\") ilike $1",
+            column_sql,
             tokens,
-            false,
+            use_normalized_boundaries,
         ))
         .into_query();
     Expr::exists(aor_exists)
 }
 
-fn network_location_matches_tokens(tokens: &[String]) -> Condition {
-    column_matches_tokens(
-        "lower(sigint_network.location collate \"ru-x-icu\") ilike $1",
-        tokens,
-        false,
-    )
+fn network_location_matches_tokens(
+    tokens: &[String],
+    text_search_mode: NetworkTextSearchMode,
+) -> Condition {
+    let (column_sql, use_normalized_boundaries) = match text_search_mode {
+        NetworkTextSearchMode::ExactWord => {
+            ("sigint_network.location collate \"ru-x-icu\"", true)
+        }
+        NetworkTextSearchMode::Substring => (
+            "lower(sigint_network.location collate \"ru-x-icu\") ilike $1",
+            false,
+        ),
+    };
+    column_matches_tokens(column_sql, tokens, use_normalized_boundaries)
 }
 
-fn network_radio_station_matches_tokens(tokens: &[String]) -> Condition {
-    column_matches_tokens(
-        "lower(sigint_network.radio_station collate \"ru-x-icu\") ilike $1",
-        tokens,
-        false,
-    )
+fn network_radio_station_matches_tokens(
+    tokens: &[String],
+    text_search_mode: NetworkTextSearchMode,
+) -> Condition {
+    let (column_sql, use_normalized_boundaries) = match text_search_mode {
+        NetworkTextSearchMode::ExactWord => {
+            ("sigint_network.radio_station collate \"ru-x-icu\"", true)
+        }
+        NetworkTextSearchMode::Substring => (
+            "lower(sigint_network.radio_station collate \"ru-x-icu\") ilike $1",
+            false,
+        ),
+    };
+    column_matches_tokens(column_sql, tokens, use_normalized_boundaries)
 }
 
 fn filter_network_tokens(
     query: Select<sigint_network::Entity>,
     search_text: &str,
     scope: SearchScope,
+    text_search_mode: NetworkTextSearchMode,
 ) -> Select<sigint_network::Entity> {
     let tokens = tokenize_search_text(search_text);
     if tokens.is_empty() {
@@ -206,14 +282,20 @@ fn filter_network_tokens(
 
     let condition = match scope {
         SearchScope::Global => Condition::any()
-            .add(network_name_matches_tokens(&tokens, false))
-            .add(network_location_matches_tokens(&tokens))
-            .add(network_radio_station_matches_tokens(&tokens))
-            .add(network_unit_exists_for_tokens(&tokens, false))
-            .add(network_freq_exists_for_tokens(&tokens))
-            .add(network_aor_exists_for_tokens(&tokens)),
+            .add(network_name_matches_tokens(&tokens, text_search_mode))
+            .add(network_location_matches_tokens(&tokens, text_search_mode))
+            .add(network_radio_station_matches_tokens(
+                &tokens,
+                text_search_mode,
+            ))
+            .add(network_unit_exists_for_tokens(&tokens, text_search_mode))
+            .add(network_freq_exists_for_tokens(&tokens, text_search_mode))
+            .add(network_aor_exists_for_tokens(&tokens, text_search_mode)),
         SearchScope::NetworkLabel => network_label_matches_tokens(&tokens),
-        SearchScope::Location => network_location_matches_tokens(&tokens),
+        SearchScope::Location => network_location_matches_tokens(
+            &tokens,
+            NetworkTextSearchMode::Substring,
+        ),
     };
 
     query.filter(condition)
@@ -222,22 +304,38 @@ fn filter_network_tokens(
 fn network_text_filter(
     query: Select<sigint_network::Entity>,
     filter_text: &str,
+    text_search_mode: NetworkTextSearchMode,
 ) -> Select<sigint_network::Entity> {
-    filter_network_tokens(query, filter_text, SearchScope::Global)
+    filter_network_tokens(
+        query,
+        filter_text,
+        SearchScope::Global,
+        text_search_mode,
+    )
 }
 
 fn network_name_filter(
     query: Select<sigint_network::Entity>,
     filter_name: &str,
 ) -> Select<sigint_network::Entity> {
-    filter_network_tokens(query, filter_name, SearchScope::NetworkLabel)
+    filter_network_tokens(
+        query,
+        filter_name,
+        SearchScope::NetworkLabel,
+        NetworkTextSearchMode::ExactWord,
+    )
 }
 
 fn network_location_filter(
     query: Select<sigint_network::Entity>,
     filter_location: &str,
 ) -> Select<sigint_network::Entity> {
-    filter_network_tokens(query, filter_location, SearchScope::Location)
+    filter_network_tokens(
+        query,
+        filter_location,
+        SearchScope::Location,
+        NetworkTextSearchMode::Substring,
+    )
 }
 
 fn network_status_filter(
@@ -321,7 +419,9 @@ fn network_unit_hierarchy_filter(
     query: Select<sigint_network::Entity>,
     req: &ListNetworksReq,
 ) -> Select<sigint_network::Entity> {
-    let has_unit_hierarchy_filter = req.filter_unit_army.is_some()
+    let has_unit_hierarchy_filter = req.filter_unit_army_region.is_some()
+        || req.filter_unit_military_district.is_some()
+        || req.filter_unit_army.is_some()
         || req.filter_unit_division.is_some()
         || req.filter_unit_regiment.is_some()
         || req.filter_unit_battalion.is_some();
@@ -343,6 +443,21 @@ fn network_unit_hierarchy_filter(
             Alias::new("sigint_unit"),
         );
 
+    if let Some(filter_unit_army_region) =
+        req.filter_unit_army_region.as_deref()
+    {
+        unit_exists = unit_exists.filter(
+            sigint_unit::Column::ArmyRegion.eq(filter_unit_army_region),
+        );
+    }
+    if let Some(filter_unit_military_district) =
+        req.filter_unit_military_district.as_deref()
+    {
+        unit_exists = unit_exists.filter(
+            sigint_unit::Column::MilitaryDistrict
+                .eq(filter_unit_military_district),
+        );
+    }
     if let Some(filter_unit_army) = req.filter_unit_army.as_deref() {
         unit_exists =
             unit_exists.filter(sigint_unit::Column::Army.eq(filter_unit_army));
@@ -470,10 +585,11 @@ fn network_freq_filter(
     query.filter(Expr::exists(freq_exists))
 }
 
-pub(crate) fn apply_network_list_filters(
+pub(crate) fn apply_network_list_filters_with_text_search_mode(
     query: Select<sigint_network::Entity>,
     req: &ListNetworksReq,
     include_status_filter: bool,
+    text_search_mode: NetworkTextSearchMode,
 ) -> Select<sigint_network::Entity> {
     let mut query = query;
 
@@ -483,7 +599,7 @@ pub(crate) fn apply_network_list_filters(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        query = network_text_filter(query, filter_text);
+        query = network_text_filter(query, filter_text, text_search_mode);
     }
     if let Some(filter_name) = req
         .filter_name
@@ -512,4 +628,14 @@ pub(crate) fn apply_network_list_filters(
     );
     query = network_aor_filter(query, req.aor_ids.as_ref());
     network_freq_filter(query, req.filter_freq.as_deref())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn like_tokens_escape_wildcards() {
+        assert_eq!(escape_like_token(r"50%_\\test"), r"50\%\_\\\\test");
+    }
 }

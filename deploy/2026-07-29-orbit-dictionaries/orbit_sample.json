@@ -1,0 +1,132 @@
+[
+    {
+        "unit_id": "04dbafbc-b227-4145-8e11-0de9d4439d01",
+        "unit_name": "Батарея управління та РЛ розвідки",
+        "unit_name_original": null,
+        "unit_name_short": "батрурлр",
+        "operational_unit_name_full": "батрурлр / 53 зрбр / 20 ЗВА / УВ (с) \"Запад\" / ОУВ(с)",
+        "generative_unit_name_full": "батрурлр / 53 зрбр / 20 ЗВА / МВО",
+        "unit_number": null,
+        "unit_alternate_names": null,
+        "unit_alternate_numbers": null,
+        "unit_echelon": {
+            "key": "battalion",
+            "name": "Батальйон / дивізіон"
+        },
+        "combat_unit_type": {
+            "key": "radioTechnical",
+            "name": "Радіотехнічні війська"
+        },
+        "grouping_of_forces": null,
+        "operational_parent_units": [
+            {
+                "unit_id": "e90230f2-0cdf-4d8f-a5b8-ee26eaa7340b",
+                "unit_name": "Об'єднане угруповання військ (сил)",
+                "unit_name_original": "Объединённая группировка войск (сил)",
+                "unit_name_short": "ОУВ(с)",
+                "unit_number": null,
+                "unit_alternate_names": null,
+                "unit_alternate_numbers": null,
+                "unit_echelon": {
+                    "key": "armyRegion",
+                    "name": "Регіон / ТВД / Збройні Сили"
+                },
+                "path_level": 0
+            },
+            {
+                "unit_id": "a9e55ad6-374d-4c50-bfc0-a2a8e0ee744d",
+                "unit_name": "Угруповання військ (сил) \"Запад\"",
+                "unit_name_original": null,
+                "unit_name_short": "УВ (с) \"Запад\"",
+                "unit_number": null,
+                "unit_alternate_names": null,
+                "unit_alternate_numbers": null,
+                "unit_echelon": {
+                    "key": "militaryDistrict",
+                    "name": "Група армій / фронт / види та роди Збройних Сил"
+                },
+                "path_level": 1
+            },
+            {
+                "unit_id": "a22be150-8f7e-569b-85b5-374c90198981",
+                "unit_name": "20 загальновійськова армія",
+                "unit_name_original": "20-я гвардейская общевойсковая Краснознамённая армия",
+                "unit_name_short": "20 ЗВА",
+                "unit_number": "89425",
+                "unit_alternate_names": [
+                    "20 ОА",
+                    "20 ОВА",
+                    "20 А"
+                ],
+                "unit_alternate_numbers": null,
+                "unit_echelon": {
+                    "key": "fieldArmy",
+                    "name": "Армія / ОК / ОУВ / ПвК"
+                },
+                "path_level": 2
+            },
+            {
+                "unit_id": "ae0d4931-eed6-5980-a811-e73876bdf4aa",
+                "unit_name": "53 зенітна ракетна бригада",
+                "unit_name_original": "53-я зенитная ракетная бригада",
+                "unit_name_short": "53 зрбр",
+                "unit_number": "32406",
+                "unit_alternate_names": null,
+                "unit_alternate_numbers": null,
+                "unit_echelon": {
+                    "key": "brigade",
+                    "name": "Бригада"
+                },
+                "path_level": 3
+            }
+        ],
+        "generative_parent_units": [
+            {
+                "unit_id": "9d4c31b8-ce55-5107-9bf3-efb66ddf3102",
+                "unit_name": "Московський військовий округ",
+                "unit_name_original": "Московский военный округ",
+                "unit_name_short": "МВО",
+                "unit_number": null,
+                "unit_alternate_names": null,
+                "unit_alternate_numbers": null,
+                "unit_echelon": {
+                    "key": "militaryDistrict",
+                    "name": "Група армій / фронт / види та роди Збройних Сил"
+                },
+                "path_level": 0
+            },
+            {
+                "unit_id": "a22be150-8f7e-569b-85b5-374c90198981",
+                "unit_name": "20 загальновійськова армія",
+                "unit_name_original": "20-я гвардейская общевойсковая Краснознамённая армия",
+                "unit_name_short": "20 ЗВА",
+                "unit_number": "89425",
+                "unit_alternate_names": [
+                    "20 ОА",
+                    "20 ОВА",
+                    "20 А"
+                ],
+                "unit_alternate_numbers": null,
+                "unit_echelon": {
+                    "key": "fieldArmy",
+                    "name": "Армія / ОК / ОУВ / ПвК"
+                },
+                "path_level": 1
+            },
+            {
+                "unit_id": "ae0d4931-eed6-5980-a811-e73876bdf4aa",
+                "unit_name": "53 зенітна ракетна бригада",
+                "unit_name_original": "53-я зенитная ракетная бригада",
+                "unit_name_short": "53 зрбр",
+                "unit_number": "32406",
+                "unit_alternate_names": null,
+                "unit_alternate_numbers": null,
+                "unit_echelon": {
+                    "key": "brigade",
+                    "name": "Бригада"
+                },
+                "path_level": 2
+            }
+        ]
+    }
+]

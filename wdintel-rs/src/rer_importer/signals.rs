@@ -31,7 +31,7 @@ where
         [body.into()],
     );
 
-    let result = txn.query_one(stmt).await.c(h!())?;
+    let result = txn.query_one_raw(stmt).await.c(h!())?;
 
     if let Some(row) = result {
         let ts_vector: String = row.try_get("", "ts_vector").c(h!())?;

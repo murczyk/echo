@@ -11,6 +11,7 @@ import { fetchInboxMessages } from '../../services/api/inbox';
 import { appendWindowedMessageItems, prependWindowedMessageItems } from './utils';
 import type { MessageCursor, MessageFeedState, MessageItem } from './utils';
 import type { TailAvailability } from './types';
+import { beginDutyScrollDebugActivity, recordDutyScrollDebugEvent } from './duty-scroll-debug';
 
 type NewerLoadOptions = {
   nolimit?: boolean;
@@ -22,11 +23,18 @@ type NewerLoadOptions = {
   confirmedTailAvailable?: boolean;
 };
 
+export type NewerLoadResult = {
+  ok: boolean;
+  addedCount: number;
+};
+
 type DirectionalOperation = {
   direction: 'older' | 'newer';
   promise: Promise<void>;
   resolve: () => void;
   newerOptions: Required<NewerLoadOptions>;
+  newerResult: NewerLoadResult;
+  newerResultPromise?: Promise<NewerLoadResult>;
   commitExpected: boolean;
   phase: 'running' | 'awaitingCommit';
   run: () => Promise<void>;
@@ -89,6 +97,12 @@ type Params = {
   setTailAvailability: (feedId: string, availability: TailAvailability) => void;
   getTailAvailability: (feedId: string) => TailAvailability;
   invalidateTailPreview: (feedId: string) => void;
+  noteNewerAppendForTailPreview: (
+    feedId: string,
+    previousTailId: number,
+    newTailId: number | null,
+    addedCount: number,
+  ) => void;
 };
 
 function createOperation(
@@ -118,6 +132,8 @@ function createOperation(
       confirmedTailAvailable: options?.confirmedTailAvailable ?? false,
     },
     commitExpected: false,
+    // Default false until a successful run path sets otherwise (invalidate must not look like success).
+    newerResult: { ok: false, addedCount: 0 },
     phase: 'running',
     run: async () => {},
     tailAvailabilityBefore: 'unknown',
@@ -186,10 +202,16 @@ export function useRerDutyDirectionalLoads(params: Params) {
           previous.map((feed) => (feed.id === feedId ? { ...feed, loadingOlder: true } : feed)),
         );
         runParams.setError(null);
+        const finishDebugActivity = beginDutyScrollDebugActivity(
+          feedId,
+          'olderMessages',
+          `before=${beforeIdNoninclusive}; generation=${requestGeneration}`,
+        );
         try {
           const response = await fetchInboxMessages(
             runParams.buildReqForFeed(currentFeed, { beforeIdNoninclusive }),
           );
+          finishDebugActivity(`ok; received=${response.inboxItems.length}`);
           const latestFeed = runParams.messageFeedsRef.current.find(
             (candidate) => candidate.id === feedId,
           );
@@ -231,6 +253,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
             );
           }
         } catch (error) {
+          finishDebugActivity(`error; ${error instanceof Error ? error.message : String(error)}`);
           const latestFeed = runParams.messageFeedsRef.current.find(
             (candidate) => candidate.id === feedId,
           );
@@ -286,21 +309,27 @@ export function useRerDutyDirectionalLoads(params: Params) {
         }
         if (options?.showLoading === true && !existing.newerOptions.showLoading) {
           existing.newerOptions.showLoading = true;
-          currentParams.setLoadingNewerFeedIds((previous) => new Set(previous).add(feedId));
         }
-        return existing.promise;
+        // Always surface in-flight newer get-inbox on the FAB (badge may already show pending).
+        currentParams.setLoadingNewerFeedIds((previous) => new Set(previous).add(feedId));
+        return (
+          existing.newerResultPromise ??
+          (existing.newerResultPromise = existing.promise.then(() => existing.newerResult))
+        );
       }
       const feed = currentParams.messageFeedsRef.current.find(
         (candidate) => candidate.id === feedId,
       );
-      if (!feed || feed.items.length === 0) return Promise.resolve();
+      if (!feed || feed.items.length === 0) return Promise.resolve({ ok: true, addedCount: 0 });
       const operation = createOperation('newer', options);
+      operation.newerResultPromise = operation.promise.then(() => operation.newerResult);
       operation.run = async () => {
         const runParams = paramsRef.current;
         const currentFeed = runParams.messageFeedsRef.current.find(
           (candidate) => candidate.id === feedId,
         );
         if (!currentFeed || currentFeed.items.length === 0) {
+          operation.newerResult = { ok: true, addedCount: 0 };
           lane.active = null;
           operation.resolve();
           startOperationRef.current(feedId);
@@ -324,18 +353,22 @@ export function useRerDutyDirectionalLoads(params: Params) {
           operation.newerOptions.skipIfNewestExhausted &&
           runParams.newestExhaustedCursorByFeedIdRef.current[feedId] === requestedTailId
         ) {
+          operation.newerResult = { ok: true, addedCount: 0 };
           lane.active = null;
           operation.resolve();
           startOperationRef.current(feedId);
           return;
         }
-        if (operation.newerOptions.showLoading) {
-          runParams.setLoadingNewerFeedIds((previous) => new Set(previous).add(feedId));
-        }
+        runParams.setLoadingNewerFeedIds((previous) => new Set(previous).add(feedId));
         operation.tailAvailabilityBefore = runParams.getTailAvailability(feedId);
         if (operation.newerOptions.confirmedTailAvailable) {
           runParams.setTailAvailability(feedId, 'loading');
         }
+        const finishDebugActivity = beginDutyScrollDebugActivity(
+          feedId,
+          'newerMessages',
+          `since=${requestedTailId}; generation=${requestGeneration}; followRequested=${operation.newerOptions.scrollToEndAfterLoad}; followGeneration=${operation.newerOptions.followGeneration}; confirmed=${operation.newerOptions.confirmedTailAvailable}`,
+        );
         try {
           const response = await fetchInboxMessages(
             runParams.buildReqForFeed(currentFeed, {
@@ -343,6 +376,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
               nolimit: operation.newerOptions.nolimit || undefined,
             }),
           );
+          finishDebugActivity(`ok; received=${response.inboxItems.length}`);
           const capturedFollowGeneration = operation.newerOptions.followGeneration;
           const followStillValid = runParams.isFollowTailValid(feedId, capturedFollowGeneration);
           const latestFeed = runParams.messageFeedsRef.current.find(
@@ -362,15 +396,24 @@ export function useRerDutyDirectionalLoads(params: Params) {
               runParams.setGroupInfos((previous) => ({ ...previous, ...groups }));
             }
           }
-          if (!accepted || !latestFeed) return;
-          runParams.invalidateTailPreview(feedId);
+          if (!accepted || !latestFeed) {
+            operation.newerResult = { ok: false, addedCount: 0 };
+            return;
+          }
+          const previousTailId = requestedTailId;
           const latestWindowed = appendWindowedMessageItems(latestFeed.items, response.inboxItems);
           const addedCount = latestWindowed.addedItems.length;
+          operation.newerResult = { ok: true, addedCount };
           const newestItem = latestWindowed.items.at(-1) ?? null;
           const followTail = operation.newerOptions.scrollToEndAfterLoad && followStillValid;
           const markAllRead =
             (followTail && runParams.isFollowTailValid(feedId, capturedFollowGeneration)) ||
             operation.newerOptions.markAllReadAfterAppend;
+          recordDutyScrollDebugEvent(
+            feedId,
+            'newer:decision',
+            `accepted=${accepted}; added=${addedCount}; followValid=${followStillValid}; follow=${followTail}; markRead=${markAllRead}; near=${runParams.nearBottomByFeedIdRef.current[feedId] === true}`,
+          );
           if (markAllRead && newestItem != null) {
             runParams.advanceFeedReadCursor(
               feedId,
@@ -382,9 +425,47 @@ export function useRerDutyDirectionalLoads(params: Params) {
           if (addedCount > 0) {
             delete runParams.newestExhaustedCursorByFeedIdRef.current[feedId];
             runParams.setTailAvailability(feedId, 'unknown');
+            runParams.noteNewerAppendForTailPreview(
+              feedId,
+              previousTailId,
+              newestItem?.[0] ?? null,
+              addedCount,
+            );
           } else {
             runParams.newestExhaustedCursorByFeedIdRef.current[feedId] = requestedTailId;
             runParams.setTailAvailability(feedId, 'exhausted');
+            runParams.invalidateTailPreview(feedId);
+            // Messages API is authoritative: nothing newer than the loaded tail.
+            // Recompute local unread from the latest committed feed state so a concurrent
+            // at-bottom mark-read cannot be overwritten with a stale residual stock.
+            operation.commitExpected = true;
+            let localUnread = 0;
+            runParams.setMessageFeeds((previous) =>
+              previous.map((feed) => {
+                if (feed.id !== feedId) return feed;
+                let nextLocal = 0;
+                for (const [id] of feed.items) {
+                  if (!feed.readIds.has(id)) nextLocal += 1;
+                }
+                nextLocal += feed.windowedUnreadItems?.size ?? 0;
+                localUnread = nextLocal;
+                return nextLocal === feed.unreadCount ? feed : { ...feed, unreadCount: nextLocal };
+              }),
+            );
+            const tailItem = latestFeed.items.at(-1);
+            if (tailItem != null) {
+              runParams.advanceFeedReadCursor(
+                feedId,
+                { id: tailItem[0], timestamp: tailItem[1].timestamp },
+                localUnread,
+                runParams.getFeedCountSignature(latestFeed),
+              );
+            }
+            recordDutyScrollDebugEvent(
+              feedId,
+              'newer:exhausted',
+              `localUnread=${localUnread}; tail=${requestedTailId}`,
+            );
           }
           if (followTail && runParams.isFollowTailValid(feedId, capturedFollowGeneration)) {
             runParams.pendingScrollToEndRef.current[feedId] = capturedFollowGeneration;
@@ -411,17 +492,42 @@ export function useRerDutyDirectionalLoads(params: Params) {
                   if (followTail) return { ...feed };
                   return feed;
                 }
+                // Start-trim drops rows from the previous window (above the retained
+                // viewport when loading newer). Mark those as read. Rows that arrived in
+                // this batch and were immediately trimmed (oversized page) stay unread.
+                const previousIds = new Set(feed.items.map(([id]) => id));
+                const trimmedPreviousUnreadIds = windowed.removedItems
+                  .filter(([id]) => previousIds.has(id) && !feed.readIds.has(id))
+                  .map(([id]) => id);
+                const readIds =
+                  markAllRead || trimmedPreviousUnreadIds.length > 0
+                    ? new Set<number>([
+                        ...feed.readIds,
+                        ...(markAllRead ? windowed.items.map(([id]) => id) : []),
+                        ...trimmedPreviousUnreadIds,
+                      ])
+                    : feed.readIds;
                 const unreadAddedCount = windowed.addedItems.filter(
-                  ([id]) => !feed.readIds.has(id),
+                  ([id]) => !readIds.has(id),
                 ).length;
-                const windowedUnreadItems = reconcileWindowedUnreadIds(feed, windowed, false);
+                const windowedUnreadItems = reconcileWindowedUnreadIds(
+                  { ...feed, readIds },
+                  windowed,
+                  false,
+                );
                 return {
                   ...feed,
                   items: windowed.items,
                   readIds: markAllRead
-                    ? new Set<number>([...feed.readIds, ...windowed.items.map(([id]) => id)])
-                    : feed.readIds,
-                  unreadCount: markAllRead ? 0 : Math.max(feed.unreadCount, unreadAddedCount),
+                    ? new Set<number>([...readIds, ...windowed.items.map(([id]) => id)])
+                    : readIds,
+                  unreadCount: markAllRead
+                    ? 0
+                    : Math.max(
+                        0,
+                        Math.max(feed.unreadCount, unreadAddedCount) -
+                          trimmedPreviousUnreadIds.length,
+                      ),
                   windowedUnreadItems: markAllRead
                     ? new Map<number, number>()
                     : windowedUnreadItems,
@@ -430,17 +536,16 @@ export function useRerDutyDirectionalLoads(params: Params) {
               }),
             );
           }
-        } catch {
+        } catch (error) {
+          finishDebugActivity(`error; ${error instanceof Error ? error.message : String(error)}`);
+          operation.newerResult = { ok: false, addedCount: 0 };
           // Keep polling and the previously loaded messages after a transient failure.
           if (!isStillCurrent()) return;
           if (operation.newerOptions.confirmedTailAvailable) {
             runParams.setTailAvailability(feedId, 'available');
           }
         } finally {
-          if (
-            operation.newerOptions.showLoading &&
-            lanesRef.current[feedId]?.active === operation
-          ) {
+          if (lanesRef.current[feedId]?.active === operation) {
             runParams.setLoadingNewerFeedIds((previous) => {
               if (!previous.has(feedId)) return previous;
               const next = new Set(previous);
@@ -462,7 +567,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
         lane.active = operation;
         void operation.run();
       }
-      return operation.promise;
+      return operation.newerResultPromise!;
     },
     [getLane],
   );

@@ -5,12 +5,11 @@ use crate::entities::*;
 use crate::types::{debug, error, info, warn};
 use crate::types::{Mode, ShortContext};
 use crate::utils::worker_watch;
-use crate::{h, new_pg_pool_from_mode};
-use chrono::{NaiveDateTime, Timelike, Utc};
+use crate::{h, new_pg_pool_from_mode, new_redis_for_db};
+use chrono::{NaiveDate, NaiveDateTime, Timelike, Utc};
 use echo_migration::Expr;
 use sea_orm::*;
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::thread;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant};
 // Worker that keeps recent inbox items aligned with network definitions by
 // picking pending invalidation tasks, normalizing them (split/merge), and
@@ -143,26 +142,61 @@ async fn run_old_inbox_network_worker_inner(mode: Mode) -> anyhow::Result<()> {
     Ok(())
 }
 
-// if we have too much tasks for some reason - drop them all, wait 5 min for the triage and then proceed
+// Emergency reset for a catastrophically large queue.
 async fn try_cleanup(db: &DatabaseConnection) -> anyhow::Result<()> {
-    if network_invalidation_task::Entity::find()
+    let task_count = network_invalidation_task::Entity::find()
         .count(db)
         .await
-        .c(h!())?
-        > NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC
-    {
-        network_invalidation_task::Entity::delete_many()
-            .exec(db)
-            .await
-            .c(h!())?;
-        crate::sigint::network::etalon_calc::oneoff::backfill_inbox_networks(
-            db, None, None,
-        )
+        .c(h!())?;
+    if task_count <= NETWORK_INVALIDATION_TASK_MAX_TASKS {
+        return Ok(());
+    }
+    if has_active_network_invalidation_workers(db).await.c(h!())? {
+        warn!(
+            "skip network invalidation cleanup: total_tasks={task_count}, worker is active"
+        );
+        return Ok(());
+    }
+    warn!("network invalidation cleanup triggered: total_tasks={task_count}");
+    network_invalidation_task::Entity::delete_many()
+        .exec(db)
         .await
         .c(h!())?;
-        thread::sleep(Duration::from_secs(120));
-    }
+    crate::sigint::network::etalon_calc::oneoff::backfill_inbox_networks(
+        db, None, None,
+    )
+    .await
+    .c(h!())?;
+    tokio::time::sleep(Duration::from_secs(
+        NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC,
+    ))
+    .await;
     Ok(())
+}
+
+async fn has_active_network_invalidation_workers(
+    db: &DatabaseConnection,
+) -> anyhow::Result<bool> {
+    let has_started_tasks = network_invalidation_task::Entity::find()
+        .filter(network_invalidation_task::Column::StartedAt.is_not_null())
+        .filter(network_invalidation_task::Column::CompletedAt.is_null())
+        .one(db)
+        .await
+        .c(h!())?
+        .is_some();
+    if has_started_tasks {
+        return Ok(true);
+    }
+    let has_active_worker = network_invalidation_worker::Entity::find()
+        .filter(
+            network_invalidation_worker::Column::Status
+                .ne(NetworkInvalidationWorkerStatus::Sleep),
+        )
+        .one(db)
+        .await
+        .c(h!())?
+        .is_some();
+    Ok(has_active_worker)
 }
 
 // Daily checker: compare calculated networks to stored ones for today's messages.
@@ -174,7 +208,10 @@ pub async fn run_inbox_network_daily_consistency_worker_nofail(mode: Mode) {
         if let Err(e) =
             run_inbox_network_daily_consistency_worker_inner(mode).await
         {
-            error!("run_inbox_network_daily_consistency_worker_inner failed: {:#?}", e);
+            error!(
+                "run_inbox_network_daily_consistency_worker_inner failed: {:#?}",
+                e
+            );
         }
         tokio::time::sleep(Duration::from_secs(
             SIGINT_INBOX_NETWORK_CHECK_SLEEP_SECS,
@@ -220,6 +257,10 @@ async fn run_inbox_network_worker_once(
     is_for_old_worker: bool,
     config: &Config,
 ) -> anyhow::Result<()> {
+    let stats_redis = new_redis_for_db(config, config.group_stats_redis_db())
+        .await
+        .c(h!())?;
+    let stats_redis = crate::stats::redis::GroupStatsRedis::new(stats_redis);
     let (tag, cutoff_days) = if is_for_old_worker {
         (
             NETWORK_INVALIDATION_TASK_TAG_OLD,
@@ -263,10 +304,20 @@ async fn run_inbox_network_worker_once(
     let mut work_started = Instant::now();
     let mut fuel = 1_000_000;
     let mut processed_items = HashSet::new();
+    let mut started_tasks = Vec::new();
+    let mut stats_invalidation = NetworkStatsInvalidation::default();
     let total_counter = task_list.len();
     let mut counter = 0;
     while !task_list.is_empty() {
         if is_for_old_worker && !check_is_worker_night_shift(config) {
+            finish_network_invalidation_tasks(
+                started_tasks,
+                stats_invalidation,
+                db,
+                &stats_redis,
+            )
+            .await
+            .c(h!())?;
             return Ok(());
         }
         let min_till_ts = max_till_ts - chrono::Duration::hours(1);
@@ -278,7 +329,10 @@ async fn run_inbox_network_worker_once(
         max_till_ts = min_till_ts;
         fuel -= 1;
         if fuel < 0 {
-            error!("run_inbox_network_worker_once loop error -- unexpected task list: {:?}", task_list);
+            error!(
+                "run_inbox_network_worker_once loop error -- unexpected task list: {:?}",
+                task_list
+            );
             for task in task_list {
                 // process all remaining tasks at once
                 next_tasks.push(task);
@@ -306,7 +360,7 @@ async fn run_inbox_network_worker_once(
         debug!(
             "[{tag} worker] run_network_invalidation_tasks: processing next tasks batch - {counter}/{total_counter}"
         );
-        run_network_invalidation_tasks(
+        let processed_tasks = run_network_invalidation_tasks(
             next_tasks,
             &signal_group_aors,
             &mut processed_items,
@@ -314,8 +368,19 @@ async fn run_inbox_network_worker_once(
         )
         .await
         .c(h!())?;
+        for task in &processed_tasks {
+            stats_invalidation.add_task(task).c(h!())?;
+        }
+        started_tasks.extend(processed_tasks);
     }
-    Ok(())
+    finish_network_invalidation_tasks(
+        started_tasks,
+        stats_invalidation,
+        db,
+        &stats_redis,
+    )
+    .await
+    .c(h!())
 }
 
 async fn load_and_triage_tasks_batch(
@@ -662,8 +727,8 @@ async fn insert_triaged_tasks(
             started_at: NotSet,
             completed_at: NotSet,
             created_at: NotSet,
-            aor_id: NotSet,
-            group_master_key: NotSet,
+            aor_id: Set(task.aor_id),
+            group_master_key: Set(task.group_master_key.clone()),
             sigint_network_id: Set(task.sigint_network_id),
             tag: Set(tag.to_string()),
         };
@@ -710,31 +775,14 @@ async fn run_network_invalidation_tasks(
     signal_group_aors: &HashMap<i64, Vec<String>>,
     processed_items: &mut HashSet<i64>,
     dbx: &DatabaseConnection,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
     let mut started_tasks = vec![];
     let mut task_filters = Vec::new();
-    let mut network_ids = HashSet::new();
-    let mut needs_all_networks = false;
-    let mut min_since_ts: Option<NaiveDateTime> = None;
-    let mut max_till_ts: Option<NaiveDateTime> = None;
     for task in tasks {
         if task.started_at.is_some() {
             warn!("task {} was already started!", task.id);
         }
         let task = mark_task_started(&task, dbx).await.c(h!())?;
-        min_since_ts = match min_since_ts {
-            Some(prev) => Some(prev.min(task.since_ts)),
-            None => Some(task.since_ts),
-        };
-        max_till_ts = match max_till_ts {
-            Some(prev) => Some(prev.max(task.till_ts)),
-            None => Some(task.till_ts),
-        };
-        if let Some(network_id) = task.sigint_network_id {
-            network_ids.insert(network_id);
-        } else {
-            needs_all_networks = true;
-        }
         started_tasks.push(task.clone());
         task_filters.extend(build_task_filters(&task, signal_group_aors));
     }
@@ -743,23 +791,91 @@ async fn run_network_invalidation_tasks(
         .await
         .c(h!())?;
 
-    if let (Some(since_ts), Some(till_ts)) = (min_since_ts, max_till_ts) {
-        let since_date = crate::stats::get_local_date(since_ts);
-        let till_date = crate::stats::get_local_date(till_ts);
-        let since_ts = crate::stats::start_of_day(since_date).c(h!())?;
+    Ok(started_tasks)
+}
+
+#[derive(Default)]
+struct NetworkStatsInvalidation {
+    scopes_by_date: BTreeMap<NaiveDate, NetworkStatsScope>,
+}
+
+impl NetworkStatsInvalidation {
+    fn add_task(
+        &mut self,
+        task: &network_invalidation_task::Model,
+    ) -> anyhow::Result<()> {
+        let mut date = crate::stats::get_local_date(task.since_ts);
+        let till_date = crate::stats::get_local_date(task.till_ts);
+        if date > till_date {
+            warn!(
+                "skip stats invalidation for task {} with inverted interval: since_ts={} till_ts={}",
+                task.id, task.since_ts, task.till_ts
+            );
+            return Ok(());
+        }
+        loop {
+            self.scopes_by_date
+                .entry(date)
+                .and_modify(|scope| scope.include(task.sigint_network_id))
+                .or_insert_with(|| {
+                    NetworkStatsScope::new(task.sigint_network_id)
+                });
+            if date == till_date {
+                return Ok(());
+            }
+            date = date.succ_opt().c(h!())?;
+        }
+    }
+}
+
+enum NetworkStatsScope {
+    All,
+    Networks(HashSet<i64>),
+}
+
+impl NetworkStatsScope {
+    fn new(network_id: Option<i64>) -> Self {
+        match network_id {
+            Some(network_id) => Self::Networks(HashSet::from([network_id])),
+            None => Self::All,
+        }
+    }
+
+    fn include(&mut self, network_id: Option<i64>) {
+        match network_id {
+            None => *self = Self::All,
+            Some(network_id) => {
+                if let Self::Networks(network_ids) = self {
+                    network_ids.insert(network_id);
+                }
+            }
+        }
+    }
+
+    fn network_ids(&self) -> Option<&HashSet<i64>> {
+        match self {
+            Self::All => None,
+            Self::Networks(network_ids) => Some(network_ids),
+        }
+    }
+}
+
+async fn finish_network_invalidation_tasks(
+    started_tasks: Vec<network_invalidation_task::Model>,
+    stats_invalidation: NetworkStatsInvalidation,
+    dbx: &DatabaseConnection,
+    stats_redis: &crate::stats::redis::GroupStatsRedis,
+) -> anyhow::Result<()> {
+    for (date, scope) in stats_invalidation.scopes_by_date {
+        let since_ts = crate::stats::start_of_day(date).c(h!())?;
         let till_ts =
-            crate::stats::start_of_day(till_date + chrono::Duration::days(1))
-                .c(h!())?;
-        let network_ids = if needs_all_networks {
-            None
-        } else {
-            Some(&network_ids)
-        };
+            crate::stats::start_of_day(date.succ_opt().c(h!())?).c(h!())?;
         crate::stats::recalculate_network_stats(
             dbx,
+            stats_redis,
             since_ts,
             till_ts,
-            network_ids,
+            scope.network_ids(),
         )
         .await
         .c(h!())?;
@@ -991,4 +1107,98 @@ async fn mark_tasks_completed(
         task_rec.update(dbx).await.c(h!())?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn task(
+        since_ts: NaiveDateTime,
+        till_ts: NaiveDateTime,
+        sigint_network_id: Option<i64>,
+    ) -> network_invalidation_task::Model {
+        network_invalidation_task::Model {
+            id: 1,
+            frequency: None,
+            since_ts,
+            till_ts,
+            completed_at: None,
+            created_at: since_ts,
+            sigint_network_id,
+            started_at: None,
+            aor_id: None,
+            group_master_key: None,
+            tag: NETWORK_INVALIDATION_TASK_TAG_RECENT.to_string(),
+        }
+    }
+
+    #[test]
+    fn network_stats_invalidation_coalesces_tasks_by_local_date() {
+        let date = NaiveDate::from_ymd_opt(2026, 7, 29).unwrap();
+        let day_start = crate::stats::start_of_day(date).unwrap();
+        let mut invalidation = NetworkStatsInvalidation::default();
+
+        invalidation
+            .add_task(&task(
+                day_start + chrono::Duration::hours(1),
+                day_start + chrono::Duration::hours(2),
+                Some(10),
+            ))
+            .unwrap();
+        invalidation
+            .add_task(&task(
+                day_start + chrono::Duration::hours(3),
+                day_start + chrono::Duration::hours(4),
+                Some(20),
+            ))
+            .unwrap();
+
+        assert_eq!(invalidation.scopes_by_date.len(), 1);
+        let NetworkStatsScope::Networks(network_ids) =
+            invalidation.scopes_by_date.get(&date).unwrap()
+        else {
+            panic!("expected network-specific invalidation");
+        };
+        assert_eq!(network_ids, &HashSet::from([10, 20]));
+    }
+
+    #[test]
+    fn network_stats_invalidation_promotes_date_to_all_networks() {
+        let date = NaiveDate::from_ymd_opt(2026, 7, 29).unwrap();
+        let day_start = crate::stats::start_of_day(date).unwrap();
+        let mut invalidation = NetworkStatsInvalidation::default();
+
+        invalidation
+            .add_task(&task(day_start, day_start, Some(10)))
+            .unwrap();
+        invalidation
+            .add_task(&task(day_start, day_start, None))
+            .unwrap();
+
+        assert!(matches!(
+            invalidation.scopes_by_date.get(&date).unwrap(),
+            NetworkStatsScope::All
+        ));
+    }
+
+    #[test]
+    fn network_stats_invalidation_skips_inverted_interval() {
+        let mut invalidation = NetworkStatsInvalidation::default();
+        let task = task(
+            NaiveDate::from_ymd_opt(2026, 7, 27)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2026, 6, 22)
+                .unwrap()
+                .and_hms_opt(7, 12, 3)
+                .unwrap(),
+            Some(644),
+        );
+
+        invalidation.add_task(&task).unwrap();
+
+        assert!(invalidation.scopes_by_date.is_empty());
+    }
 }

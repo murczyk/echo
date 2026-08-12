@@ -1,18 +1,38 @@
 import AddIcon from '@mui/icons-material/Add';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import { Box, Button, Stack } from '@mui/material';
-import { useState } from 'react';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import {
+  Box,
+  Button,
+  IconButton,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Stack,
+  Tooltip,
+  useMediaQuery,
+  useTheme,
+} from '@mui/material';
+import type { MRT_PaginationState } from 'material-react-table';
+import { useEffect, useMemo, useState } from 'react';
 
 import { PageErrorState } from '../../components/PageErrorState';
 import { PowerAlert } from '../../components/PowerAlert';
+import { PowerChip } from '../../components/PowerChip';
+import { GlobalFilterTextField } from '../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
+import { OrbitUnitLinkDialog } from '../rer-unit-details/OrbitUnitLinkDialog';
 import { DeleteUnitDialog, MergeUnitDialog } from './components/UnitActionDialogs';
 import { KmzTaskStatus } from './components/KmzTaskStatus';
 import { KmzUploadDialog } from './components/KmzUploadDialog';
 import { UnitFormDialog } from './components/UnitFormDialog';
 import { UnitsTable } from './components/UnitsTable';
+import { UnitsPaginationControl } from './components/UnitsPaginationControl';
+import { buildUnitsListReq, type UnitStatusFilter } from './helpers';
 import { useRerUnitsPage } from './use-rer-units-page';
+import { type UnitSearchMode } from './search-mode';
 
 const DEFAULT_COLUMN_VISIBILITY = {
   name: true,
@@ -21,9 +41,12 @@ const DEFAULT_COLUMN_VISIBILITY = {
   regiment: true,
   division: true,
   army: true,
+  militaryDistrict: false,
+  armyRegion: false,
   createdAt: true,
   comment: true,
-  active: true,
+  hasOrbit: true,
+  orbitUnitGenerativeNames: false,
 };
 
 const DEFAULT_COLUMN_ORDER = [
@@ -35,10 +58,85 @@ const DEFAULT_COLUMN_ORDER = [
   'regiment',
   'division',
   'army',
+  'militaryDistrict',
+  'armyRegion',
   'createdAt',
   'comment',
-  'active',
+  'hasOrbit',
+  'orbitUnitGenerativeNames',
 ];
+
+function SearchModeSettingsButton({
+  compact,
+  searchMode,
+  onSearchModeChange,
+}: {
+  compact: boolean;
+  searchMode: UnitSearchMode;
+  onSearchModeChange: (searchMode: UnitSearchMode) => void;
+}) {
+  const [anchorElement, setAnchorElement] = useState<HTMLElement | null>(null);
+  const menuOpen = Boolean(anchorElement);
+  const menuId = 'unit-search-mode-menu';
+
+  const closeMenu = () => {
+    setAnchorElement(null);
+  };
+
+  const changeMode = (mode: UnitSearchMode) => {
+    onSearchModeChange(mode);
+    closeMenu();
+  };
+
+  return (
+    <>
+      <Tooltip title="Налаштування пошуку" arrow>
+        <IconButton
+          aria-label="Налаштування пошуку"
+          aria-controls={menuOpen ? menuId : undefined}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen ? 'true' : undefined}
+          onClick={(event) => setAnchorElement(event.currentTarget)}
+          sx={{
+            width: compact ? 40 : 32,
+            height: compact ? 40 : 32,
+            borderRadius: 1,
+            border: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <SettingsOutlinedIcon sx={{ fontSize: compact ? 20 : 18 }} />
+        </IconButton>
+      </Tooltip>
+      <Menu
+        id={menuId}
+        anchorEl={anchorElement}
+        open={menuOpen}
+        onClose={closeMenu}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ list: { 'aria-label': 'Налаштування пошуку' } }}
+      >
+        <MenuItem
+          role="menuitemradio"
+          aria-checked={searchMode === 'strict'}
+          selected={searchMode === 'strict'}
+          onClick={() => changeMode('strict')}
+        >
+          <ListItemText>Строгий пошук</ListItemText>
+        </MenuItem>
+        <MenuItem
+          role="menuitemradio"
+          aria-checked={searchMode === 'relaxed'}
+          selected={searchMode === 'relaxed'}
+          onClick={() => changeMode('relaxed')}
+        >
+          <ListItemText>Нечіткий пошук</ListItemText>
+        </MenuItem>
+      </Menu>
+    </>
+  );
+}
 
 function PageActions({
   canEdit,
@@ -79,9 +177,116 @@ function PageActions({
   );
 }
 
+function UnitStatusFilters({
+  status,
+  counts,
+  onChange,
+}: {
+  status: 'all' | 'active' | 'inactive';
+  counts: { active: number; inactive: number };
+  onChange: (status: 'all' | 'active' | 'inactive') => void;
+}) {
+  const statusLabel = (color: string, label: string, count: number) => (
+    <Stack direction="row" spacing={0.75} alignItems="center" useFlexGap>
+      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
+      <Box component="span">{`${label} ${count}`}</Box>
+    </Stack>
+  );
+
+  return (
+    <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+      <PowerChip
+        selected={status === 'all'}
+        onClick={() => onChange('all')}
+        label="Всі"
+        interactive
+        fontWeight={700}
+      />
+      <PowerChip
+        selected={status === 'active'}
+        onClick={() => onChange('active')}
+        label={statusLabel('#54c06c', 'Активні', counts.active)}
+        interactive
+        fontWeight={700}
+      />
+      <PowerChip
+        selected={status === 'inactive'}
+        onClick={() => onChange('inactive')}
+        label={statusLabel('#bfbfbf', 'Неактивні', counts.inactive)}
+        interactive
+        fontWeight={700}
+      />
+    </Stack>
+  );
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [delayMs, value]);
+
+  return debouncedValue;
+}
+
 function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
-  const page = useRerUnitsPage(authUserRoles);
+  const tableState = useTableStateContext();
+  const theme = useTheme();
+  const isSmallScreen = useMediaQuery(theme.breakpoints.down('lg'));
   const [kmzDialogOpen, setKmzDialogOpen] = useState(false);
+  const [orbitLinkOpen, setOrbitLinkOpen] = useState(false);
+  const [searchMode, setSearchMode] = useState<UnitSearchMode>('strict');
+  const [statusFilter, setStatusFilter] = useState<UnitStatusFilter>('active');
+  const [pagination, setPagination] = useState<MRT_PaginationState>({
+    pageIndex: 0,
+    pageSize: 20,
+  });
+  const debouncedGlobalFilter = useDebouncedValue(tableState.globalFilter, 300);
+  const debouncedColumnFilters = useDebouncedValue(tableState.columnFilters, 300);
+  const listReq = useMemo(
+    () =>
+      buildUnitsListReq({
+        statusFilter,
+        globalFilter: debouncedGlobalFilter,
+        columnFilters: debouncedColumnFilters,
+        sorting: tableState.sorting,
+        searchMode,
+        pagination,
+      }),
+    [
+      debouncedColumnFilters,
+      debouncedGlobalFilter,
+      pagination,
+      searchMode,
+      statusFilter,
+      tableState.sorting,
+    ],
+  );
+  const page = useRerUnitsPage(authUserRoles, listReq);
+
+  useEffect(() => {
+    setPagination((current) => (current.pageIndex === 0 ? current : { ...current, pageIndex: 0 }));
+  }, [
+    searchMode,
+    statusFilter,
+    tableState.columnFilters,
+    tableState.globalFilter,
+    tableState.sorting,
+  ]);
+
+  useEffect(() => {
+    setPagination((current) => {
+      const lastPageIndex = Math.max(0, Math.ceil(page.totalCount / current.pageSize) - 1);
+      return current.pageIndex > lastPageIndex ? { ...current, pageIndex: lastPageIndex } : current;
+    });
+  }, [page.totalCount]);
+
+  const changeStatusFilter = (status: UnitStatusFilter) => {
+    setPagination((current) => ({ ...current, pageIndex: 0 }));
+    setStatusFilter(status);
+  };
 
   return (
     <Box
@@ -101,20 +306,66 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
       >
         <TablePageToolbar
           title="Підрозділи противника"
-          withGlobalTextFilter
+          withGlobalTextFilter={false}
+          filter={
+            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+              <Stack
+                direction="row"
+                spacing={1}
+                alignItems="center"
+                sx={{ width: { xs: '100%', sm: 360 }, maxWidth: '100%', minWidth: 0 }}
+              >
+                <GlobalFilterTextField
+                  globalFilter={tableState.globalFilter}
+                  setGlobalFilter={tableState.onChangeGlobalFilter}
+                  disabled={page.loading || page.loadError !== null}
+                />
+                <SearchModeSettingsButton
+                  compact={isSmallScreen}
+                  searchMode={searchMode}
+                  onSearchModeChange={setSearchMode}
+                />
+              </Stack>
+              <UnitStatusFilters
+                status={statusFilter}
+                counts={page.statusCounts}
+                onChange={changeStatusFilter}
+              />
+            </Stack>
+          }
           hideGlobalTextFilter={page.loading || page.loadError !== null}
           internalActionsDisabled={page.loading || page.loadError !== null}
           actions={
-            <PageActions
-              canEdit={page.canEdit}
-              createDisabled={
-                page.loading || page.loadError !== null || page.submitting || !page.settingsReady
-              }
-              kmzDisabled={page.loading || page.loadError !== null || page.submitting}
-              uploadingKmz={page.uploadingKmz}
-              onCreate={page.openCreateDialog}
-              onOpenKmz={() => setKmzDialogOpen(true)}
-            />
+            <Stack direction="row" spacing={1} alignItems="center" useFlexGap>
+              <UnitsPaginationControl
+                pageIndex={pagination.pageIndex}
+                pageSize={pagination.pageSize}
+                totalCount={page.totalCount}
+                loading={page.loading || page.loadError !== null}
+                onPrevPage={() =>
+                  setPagination((current) => ({
+                    ...current,
+                    pageIndex: Math.max(0, current.pageIndex - 1),
+                  }))
+                }
+                onNextPage={() =>
+                  setPagination((current) => ({
+                    ...current,
+                    pageIndex: current.pageIndex + 1,
+                  }))
+                }
+              />
+              <PageActions
+                canEdit={page.canEdit}
+                createDisabled={
+                  page.loading || page.loadError !== null || page.submitting || !page.settingsReady
+                }
+                kmzDisabled={page.loading || page.loadError !== null || page.submitting}
+                uploadingKmz={page.uploadingKmz}
+                onCreate={page.openCreateDialog}
+                onOpenKmz={() => setKmzDialogOpen(true)}
+              />
+            </Stack>
           }
         />
 
@@ -134,6 +385,7 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
           ) : (
             <UnitsTable
               units={page.units}
+              totalCount={page.totalCount}
               attachmentUnitIds={page.attachmentUnitIds}
               loading={page.loading}
               canEdit={page.canEdit}
@@ -141,6 +393,10 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
               onEdit={page.openEditDialog}
               onDelete={page.openDeleteDialog}
               onMerge={page.openMergeDialog}
+              searchMode={searchMode}
+              onSearchModeChange={setSearchMode}
+              pagination={pagination}
+              onPaginationChange={setPagination}
             />
           )}
         </Box>
@@ -149,22 +405,34 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
       <UnitFormDialog
         open={page.createOpen}
         unit={null}
-        units={page.units}
         devicesSectionEnabled={page.devicesSectionEnabled}
         submitting={page.submitting}
         error={page.dialogError}
+        orbitUnits={[]}
+        orbitLinksLoading={false}
+        orbitLinksError={null}
+        canLinkOrbitUnit={false}
+        unlinkingOrbitUnitId={null}
         onClose={page.closeDialogs}
         onSubmit={(value) => void page.submitUnit(value)}
+        onLinkOrbitUnit={() => undefined}
+        onUnlinkOrbitUnit={() => undefined}
       />
       <UnitFormDialog
         open={page.editUnit !== null}
         unit={page.editUnit}
-        units={page.units}
         devicesSectionEnabled={false}
         submitting={page.submitting}
         error={page.dialogError}
+        orbitUnits={page.editOrbitUnits}
+        orbitLinksLoading={page.orbitLinksLoading}
+        orbitLinksError={page.orbitLinksError}
+        canLinkOrbitUnit={page.canLinkEditOrbitUnit}
+        unlinkingOrbitUnitId={page.unlinkingOrbitUnitId}
         onClose={page.closeDialogs}
         onSubmit={(value) => void page.submitUnit(value)}
+        onLinkOrbitUnit={() => setOrbitLinkOpen(true)}
+        onUnlinkOrbitUnit={(orbitUnit) => void page.unlinkEditOrbitUnit(orbitUnit)}
       />
       <DeleteUnitDialog
         unit={page.deleteTarget}
@@ -175,7 +443,6 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
       />
       <MergeUnitDialog
         original={page.mergeTarget}
-        units={page.units}
         submitting={page.submitting}
         error={page.dialogError}
         onClose={page.closeDialogs}
@@ -187,6 +454,17 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         onClose={() => setKmzDialogOpen(false)}
         onUpload={(file) => void page.uploadKmz(file)}
       />
+      {orbitLinkOpen && page.editUnit !== null ? (
+        <OrbitUnitLinkDialog
+          unitId={page.editUnit.id}
+          unit={page.editUnit}
+          onClose={() => setOrbitLinkOpen(false)}
+          onLinked={() => {
+            setOrbitLinkOpen(false);
+            void page.refreshLinkedEditOrbitUnit();
+          }}
+        />
+      ) : null}
     </Box>
   );
 }

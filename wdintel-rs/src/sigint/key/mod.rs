@@ -441,7 +441,7 @@ pub async fn update_network_encryption_key(
         .await
         .c(h!())?;
 
-    if old_key.key.eq(&encryption_key) {
+    if old_key.key == encryption_key {
         let mut key_am = old_key.into_active_model();
         key_am.description = Set(updated_description);
         key_am.key_hash = Set(encryption_key_hash);

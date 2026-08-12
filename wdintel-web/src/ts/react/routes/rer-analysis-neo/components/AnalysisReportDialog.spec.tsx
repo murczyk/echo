@@ -9,7 +9,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AnalysisReportState } from '../report-helpers';
 import { createDefaultReportState } from '../report-helpers';
 import { createResetQueryState } from '../helpers';
-import { AnalysisReportDialog, analysisReportDialogHintSx } from './AnalysisReportDialog';
+import {
+  AnalysisReportDialog,
+  analysisReportDialogHintSx,
+  analysisReportTemplateGridSx,
+} from './AnalysisReportDialog';
 
 const dialogProps: Array<Record<string, unknown>> = [];
 
@@ -88,6 +92,10 @@ describe('AnalysisReportDialog', () => {
   it('keeps the mobile applied-filters hint from reserving a vertical flex basis', () => {
     expect(analysisReportDialogHintSx.flex).toEqual({ xs: '0 1 auto', sm: '1 1 320px' });
     expect(analysisReportDialogHintSx.width).toEqual({ xs: '100%', sm: 'auto' });
+  });
+
+  it('lays out report choices in three equal-width desktop columns', () => {
+    expect(analysisReportTemplateGridSx.gridTemplateColumns.md).toBe('repeat(3, minmax(0, 1fr))');
   });
 
   it('blocks backdrop and escape close while queued', () => {

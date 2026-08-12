@@ -27,6 +27,13 @@ pub async fn aor_list(
     )
     .await?;
 
+    Ok(Json(read_aors(&env.dbx, &req).await?))
+}
+
+pub(crate) async fn read_aors(
+    dbx: &DatabaseConnection,
+    req: &ListAreasOfResponsibilityReq,
+) -> Result<Vec<AreaOfResponsibility>, AppError> {
     let aors = area_of_responsibility::Entity::find()
         .filter(area_of_responsibility::Column::Deleted.eq(false))
         .order_by(
@@ -40,14 +47,13 @@ pub async fn aor_list(
                 Order::Desc
             },
         );
-    let res = aors
-        .all(&env.dbx)
+    Ok(aors
+        .all(dbx)
         .await
         .c(h!())?
         .into_iter()
         .map(render_aor)
-        .collect::<Vec<AreaOfResponsibility>>();
-    Ok(Json(res))
+        .collect())
 }
 
 #[post("/api/sigint/aor/create")]

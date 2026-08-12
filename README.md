@@ -36,7 +36,8 @@ Back-end:
 just dev-back
 ```
 
-If report generation does not start locally, run the worker in a second terminal:
+Background and report workers run together in a separate process. Start one
+additional terminal when working with report generation:
 
 ```
 just dev-bgworker
@@ -54,7 +55,26 @@ Then open http://wildducks.localhost
 
 ## Tests
 
-Frontend unit checks:
+The required suite is intentionally limited to:
+
+- database-backed functional tests that seed state and call production business logic;
+- operational parser fixtures for messages, callsigns, units, metadata, coordinates, and dates;
+- focused regressions linked in the test to an Echo issue or pull request;
+- migration, authorization, concurrency, idempotency, and destructive-data safeguards.
+
+Run backend validation with:
+
+```bash
+just test-be
+```
+
+Profile retained backend tests sequentially with:
+
+```bash
+just profile-be-tests
+```
+
+Run frontend regression checks with:
 
 ```bash
 just test-fe
@@ -172,7 +192,7 @@ read echo-im repo instructions
 For server like echo-kherson do:
 
 ```
-just builder=$BUILDER server=$SERVER deploy
+just deploy --server=$SERVER
 ```
 
 Batch-deploy:

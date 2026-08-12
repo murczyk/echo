@@ -1,0 +1,37 @@
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+host := env_var_or_default("HOST", "echo-vllm-router")
+client_host := env_var_or_default("CLIENT_HOST", "echo-cbr")
+
+setup:
+    ./bin/setup.sh "{{host}}"
+
+preflight:
+    ./bin/preflight.sh "{{host}}"
+
+deploy:
+    ./bin/deploy.sh "{{host}}"
+
+verify:
+    ./bin/verify.sh "{{host}}"
+
+verify-client:
+    ./bin/verify-client.sh "{{client_host}}"
+
+smoke:
+    ./bin/smoke.sh "{{client_host}}"
+
+status:
+    ./bin/service.sh status "{{host}}"
+
+logs:
+    ./bin/service.sh logs "{{host}}"
+
+start:
+    ./bin/service.sh start "{{host}}"
+
+stop:
+    ./bin/service.sh stop "{{host}}"
+
+restart:
+    ./bin/service.sh restart "{{host}}"

@@ -133,6 +133,7 @@ type alias Model =
     , reportTagsOnlyThisUnitForReport : Bool
     , report1213LinkedNetworksOnly : Bool
     , reportWithoutComments : Bool
+    , reportBabakNewCallsignMinMentions : Int
     , reportDigestOmitExoId : Bool
     , reportDigestForm1217 : Bool
     , reportAdvancedSenders : Bool

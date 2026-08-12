@@ -37,7 +37,7 @@ export type NetworkCallsignRelationsGraphView = {
   adjacencyByNodeId: Map<string, Set<string>>;
 };
 
-type NetworkCallsignRelationsRenderLimits = {
+export type NetworkCallsignRelationsRenderLimits = {
   maxRenderNodes: number;
   maxRenderEdges: number;
   softLimitMultiplier: number;
@@ -243,6 +243,39 @@ export function buildNetworkCallsignRelationsGraphView(
     visibleEdgeIds: filteredVisibleEdgeIds,
     adjacencyByNodeId,
   };
+}
+
+export function findMinimumRenderableNetworkCallsignRelationsIntensity(
+  graph: NetworkCallsignRelationsRsp | null,
+  searchText: string,
+  enabledFreqs: string[],
+  renderLimits: NetworkCallsignRelationsRenderLimits = NETWORK_RELATIONS_RENDER_LIMITS,
+): number | null {
+  const graphAtMinimum = buildNetworkCallsignRelationsGraphView(graph, searchText, enabledFreqs, 1);
+  const intensityThresholds = [
+    ...new Set([
+      1,
+      ...graphAtMinimum.edges.map((edge) => Math.max(1, Math.floor(edge.visibleWeight) + 1)),
+    ]),
+  ].sort((left, right) => left - right);
+
+  for (const intensity of intensityThresholds) {
+    const graphView =
+      intensity === 1
+        ? graphAtMinimum
+        : buildNetworkCallsignRelationsGraphView(graph, searchText, enabledFreqs, intensity);
+    const visibleNodeCount = graphView.nodes.filter((node) => node.visible).length;
+    if (
+      graphView.edges.length > 0 &&
+      visibleNodeCount > 0 &&
+      visibleNodeCount <= renderLimits.maxRenderNodes &&
+      graphView.edges.length <= renderLimits.maxRenderEdges
+    ) {
+      return intensity;
+    }
+  }
+
+  return null;
 }
 
 export function normalizeNetworkCallsignRelationSearch(value: string): string {
@@ -472,17 +505,47 @@ export function buildRenderableNetworkCallsignRelationsGraphView(
 export function zoomRelationGraphViewBox(
   viewBox: RelationGraphViewBox,
   factor: number,
+  focalPoint?: { x: number; y: number },
 ): RelationGraphViewBox {
-  const nextWidth = Math.max(MIN_VIEWBOX_SIZE / 2, viewBox.width * factor);
-  const nextHeight = Math.max(MIN_VIEWBOX_SIZE / 2, viewBox.height * factor);
-  const centerX = viewBox.x + viewBox.width / 2;
-  const centerY = viewBox.y + viewBox.height / 2;
+  const nextWidth = Math.min(
+    GRAPH_MAX_VIEWBOX_SIZE,
+    Math.max(MIN_VIEWBOX_SIZE / 2, viewBox.width * factor),
+  );
+  const nextHeight = Math.min(
+    GRAPH_MAX_VIEWBOX_SIZE,
+    Math.max(MIN_VIEWBOX_SIZE / 2, viewBox.height * factor),
+  );
+  const focalX = focalPoint?.x ?? viewBox.x + viewBox.width / 2;
+  const focalY = focalPoint?.y ?? viewBox.y + viewBox.height / 2;
   return clampRelationViewBox({
-    x: centerX - nextWidth / 2,
-    y: centerY - nextHeight / 2,
+    x: focalX - (focalX - viewBox.x) * (nextWidth / viewBox.width),
+    y: focalY - (focalY - viewBox.y) * (nextHeight / viewBox.height),
     width: nextWidth,
     height: nextHeight,
   });
+}
+
+export function getRelationGraphPointFromViewport(
+  viewBox: RelationGraphViewBox,
+  pointerX: number,
+  pointerY: number,
+  viewportWidth: number,
+  viewportHeight: number,
+): { x: number; y: number } {
+  if (viewportWidth <= 0 || viewportHeight <= 0) {
+    return {
+      x: viewBox.x + viewBox.width / 2,
+      y: viewBox.y + viewBox.height / 2,
+    };
+  }
+
+  const scale = Math.min(viewportWidth / viewBox.width, viewportHeight / viewBox.height);
+  const offsetX = (viewportWidth - viewBox.width * scale) / 2;
+  const offsetY = (viewportHeight - viewBox.height * scale) / 2;
+  return {
+    x: viewBox.x + (pointerX - offsetX) / scale,
+    y: viewBox.y + (pointerY - offsetY) / scale,
+  };
 }
 
 export function moveRelationGraphViewBox(

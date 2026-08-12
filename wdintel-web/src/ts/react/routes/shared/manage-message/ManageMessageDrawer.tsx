@@ -73,8 +73,6 @@ export function ManageMessageDrawer(props: Props) {
     canSubmit,
     handleParse,
     handleDrawerClose,
-    getProposedCallsigns,
-    addSuggestedCallsign,
     onSubmit,
     recentValues,
   } = drawerState;
@@ -220,7 +218,6 @@ export function ManageMessageDrawer(props: Props) {
                 />
 
                 <MetadataSection
-                  isEditMode={isEditMode}
                   showAdvanced={showAdvanced}
                   busy={busy}
                   recentValues={recentValues}
@@ -232,8 +229,6 @@ export function ManageMessageDrawer(props: Props) {
                   unitLoading={drawerState.unitLoading}
                   setUnitInput={drawerState.setUnitInput}
                   unitLocked={drawerState.unitLocked}
-                  getProposedCallsigns={getProposedCallsigns}
-                  addSuggestedCallsign={addSuggestedCallsign}
                   callsignOptions={drawerState.callsignOptions}
                   callsignLoading={drawerState.callsignLoading}
                   setCallsignInput={drawerState.setCallsignInput}
@@ -246,6 +241,9 @@ export function ManageMessageDrawer(props: Props) {
                   networkNameOptions={drawerState.networkNameOptions}
                   networkNameLoading={drawerState.networkNameLoading}
                   setNetworkNameInput={drawerState.setNetworkNameInput}
+                  networkUnitNamesById={drawerState.networkUnitNamesById}
+                  selectedNetwork={drawerState.selectedNetwork}
+                  setSelectedNetwork={drawerState.setSelectedNetwork}
                   freqOptions={drawerState.freqOptions}
                   freqLoading={drawerState.freqLoading}
                   setFreqInput={drawerState.setFreqInput}

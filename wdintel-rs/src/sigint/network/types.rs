@@ -367,6 +367,8 @@ pub struct UpdFreqNetwork {
 pub struct ListNetworksReq {
     pub filter_freq: Option<String>,
     pub filter_unit: Option<String>,
+    pub filter_unit_army_region: Option<String>,
+    pub filter_unit_military_district: Option<String>,
     pub filter_unit_army: Option<String>,
     pub filter_unit_division: Option<String>,
     pub filter_unit_regiment: Option<String>,

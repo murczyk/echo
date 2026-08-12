@@ -343,7 +343,9 @@ fn normalize_relative_palette_path(path: &str) -> anyhow::Result<String> {
             Component::ParentDir
             | Component::RootDir
             | Component::Prefix(_) => {
-                bail!("GOI palette path must be relative and may not contain '..'")
+                bail!(
+                    "GOI palette path must be relative and may not contain '..'"
+                )
             }
         }
     }

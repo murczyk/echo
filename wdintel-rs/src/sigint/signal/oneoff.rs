@@ -79,7 +79,9 @@ pub async fn oneoff_import_signals_callsigns_csv(
     };
 
     if !suggested_mapping.is_empty() {
-        warn!("unmapped unit named detected, use --unit-mapping mapping.json, example: ");
+        warn!(
+            "unmapped unit named detected, use --unit-mapping mapping.json, example: "
+        );
         let json = serde_json::to_string_pretty(&suggested_mapping).unwrap();
         println!("{json}")
     }
@@ -295,15 +297,20 @@ mod tests {
             regiment: Default::default(),
             division: Default::default(),
             army: Default::default(),
+            army_region: Default::default(),
+            military_district: Default::default(),
             active: Default::default(),
             deleted: Default::default(),
             created_at: Default::default(),
             created_by_login_id: Default::default(),
             name: String::from("штурмовий загін 11 отбр 25 А"),
             comment: Default::default(),
+            search_tsv: Default::default(),
             battalion: Default::default(),
             sigint_origin_id: Default::default(),
             original_id: Default::default(),
+            is_deduplicate_candidate: Default::default(),
+            orbit_note: Default::default(),
         }];
         let mut unit_mapping = Default::default();
         let mut suggested_mapping = Default::default();
@@ -331,15 +338,20 @@ mod tests {
             regiment: Default::default(),
             division: Default::default(),
             army: Default::default(),
+            army_region: Default::default(),
+            military_district: Default::default(),
             active: Default::default(),
             deleted: Default::default(),
             created_at: Default::default(),
             created_by_login_id: Default::default(),
             name: String::from("пдб 83 одшбр ПДВ"),
             comment: Default::default(),
+            search_tsv: Default::default(),
             battalion: Default::default(),
             sigint_origin_id: Default::default(),
             original_id: Default::default(),
+            is_deduplicate_candidate: Default::default(),
+            orbit_note: Default::default(),
         }];
         let mut unit_mapping = Default::default();
         let mut suggested_mapping = Default::default();

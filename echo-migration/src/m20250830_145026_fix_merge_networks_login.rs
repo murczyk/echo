@@ -9,7 +9,7 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
         let result = db
-            .query_one(Statement::from_string(
+            .query_one_raw(Statement::from_string(
                 DbBackend::Postgres,
                 "SELECT count(*) as cnt from login where login = 'merge_networks_api'"
                     .to_owned(),

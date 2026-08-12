@@ -1,0 +1,17 @@
+[Unit]
+Description=Restricted Echo AI agent dispatcher SSH server
+After=network-online.target incus.service echo-ai-agent-firewall.service
+Wants=network-online.target
+Requires=incus.service echo-ai-agent-firewall.service
+
+[Service]
+ExecStartPre=/usr/local/libexec/echo-ai-agent-prepare-dispatcher-homes
+ExecStartPre=/usr/sbin/sshd -t -f /etc/echo-ai-agent/sshd_config
+ExecStart=/usr/sbin/sshd -D -e -f /etc/echo-ai-agent/sshd_config
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target

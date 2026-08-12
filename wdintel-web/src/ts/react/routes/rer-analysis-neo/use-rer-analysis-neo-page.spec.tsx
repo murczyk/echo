@@ -75,8 +75,8 @@ const baseAnalysisData = {
   callsignGraphLoading: false,
   callsignGraphLoadVersion: 0,
   callsignGraphLoadError: null,
-  callsignGraphNolimit: false,
   correlatedFreqs: [],
+  correlatedFreqsLoaded: false,
   correlatedFreqsLoading: false,
   counts: null,
   countsLoading: false,
@@ -97,11 +97,11 @@ const baseAnalysisData = {
   loadFilterSection: vi.fn(),
   invalidateFilterSectionLoads: vi.fn(),
   invalidateFilterSectionLoadsForPatch: vi.fn(),
-  toggleCallsignGraphNolimit: vi.fn(),
   loadCorrelatedFreqs: vi.fn(),
   loadGroupsActivity: vi.fn(),
   loadNewCallsigns: vi.fn(),
   loadNextPage: vi.fn(),
+  loadMoreMessages: vi.fn(),
   loadPrevPage: vi.fn(),
   loadMessagesForMap: vi.fn(),
   mapAttrs: {
@@ -182,11 +182,11 @@ function buildAnalysisData() {
     loadFilterSection: vi.fn(),
     invalidateFilterSectionLoads: vi.fn(),
     invalidateFilterSectionLoadsForPatch: vi.fn(),
-    toggleCallsignGraphNolimit: vi.fn(),
     loadCorrelatedFreqs: vi.fn(),
     loadGroupsActivity: vi.fn(),
     loadNewCallsigns: vi.fn(),
     loadNextPage: vi.fn(),
+    loadMoreMessages: vi.fn(),
     loadPrevPage: vi.fn(),
     loadMessagesForMap: vi.fn(),
     downloadGeojson: vi.fn(),
@@ -269,6 +269,7 @@ let latest: AnalysisPageViewModel | null = null;
 
 describe('useRerAnalysisNeoPage', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', window.location.pathname);
     container = document.createElement('div');
     document.body.appendChild(container);
     latest = null;
@@ -364,9 +365,11 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
     expect(latest?.rightPanelOpen).toBe(true);
     expect(latest?.rightSidebarTab).toBe('stats');
+    expect(currentAnalysisData?.loadFilterSection).toHaveBeenCalledWith('groups');
 
     await act(async () => latest?.setRightSidebarTab('callsigns'));
     await flushEffects();
+    expect(currentAnalysisData?.loadFilterSection).toHaveBeenCalledWith('callsigns');
     await act(async () => latest?.toggleRightPanel());
     await flushEffects();
 
@@ -419,6 +422,44 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(latest?.leftPanelOpen).toBe(true);
+  });
+
+  it('restores panel visibility from query parameters', async () => {
+    const originalUrl = window.location.href;
+    window.history.replaceState(
+      {},
+      '',
+      `${window.location.pathname}?leftPanelOpen=false&rightPanelOpen=true`,
+    );
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.leftPanelOpen).toBe(false);
+    expect(latest?.rightPanelOpen).toBe(true);
+    expect(latest?.rightSidebarTab).toBe('stats');
+    window.history.replaceState({}, '', originalUrl);
+  });
+
+  it('writes panel visibility to query parameters', async () => {
+    const originalUrl = window.location.href;
+    window.history.replaceState({}, '', window.location.pathname);
+
+    renderHook();
+    await flushEffects();
+
+    expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('true');
+    expect(new URL(window.location.href).searchParams.get('rightPanelOpen')).toBe('false');
+
+    await act(async () => {
+      latest?.toggleLeftPanel();
+      latest?.toggleRightPanel();
+    });
+    await flushEffects();
+
+    expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('false');
+    expect(new URL(window.location.href).searchParams.get('rightPanelOpen')).toBe('true');
+    window.history.replaceState({}, '', originalUrl);
   });
 
   it('moves the active map from the center into the sidebar when the setting turns on', async () => {

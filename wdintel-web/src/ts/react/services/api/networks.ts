@@ -59,6 +59,8 @@ export async function getNetworksList(options?: RequestOptions): Promise<Network
   const req: ListNetworksReq = {
     filterFreq: null,
     filterUnit: null,
+    filterUnitArmyRegion: null,
+    filterUnitMilitaryDistrict: null,
     filterUnitArmy: null,
     filterUnitDivision: null,
     filterUnitRegiment: null,
@@ -323,6 +325,7 @@ function toEtalonkaReportTypeBody(etalonkaType: EtalonkaReportType) {
     return {
       AccordingToTheForm: {
         active_freqs_only: etalonkaType.AccordingToTheForm.activeFreqsOnly,
+        include_callsign_full_names: etalonkaType.AccordingToTheForm.includeCallsignFullNames,
         include_sigint_signs: etalonkaType.AccordingToTheForm.includeSigintSigns,
         include_confirmation: etalonkaType.AccordingToTheForm.includeConfirmation,
         include_headings_and_freqs: etalonkaType.AccordingToTheForm.includeHeadingsAndFreqs,
@@ -335,6 +338,9 @@ function toEtalonkaReportTypeBody(etalonkaType: EtalonkaReportType) {
       since_date_inclusive_ms: etalonkaType.ExtendedReport.sinceDateInclusiveMs,
       till_date_inclusive_ms: etalonkaType.ExtendedReport.tillDateInclusiveMs,
       active_freqs_only: etalonkaType.ExtendedReport.activeFreqsOnly,
+      include_freq_active_from: etalonkaType.ExtendedReport.includeFreqActiveFrom,
+      include_freq_created_at: etalonkaType.ExtendedReport.includeFreqCreatedAt,
+      include_callsign_full_names: etalonkaType.ExtendedReport.includeCallsignFullNames,
       include_unit_callsigns: etalonkaType.ExtendedReport.includeUnitCallsigns,
       include_sigint_signs: etalonkaType.ExtendedReport.includeSigintSigns,
       include_confirmation: etalonkaType.ExtendedReport.includeConfirmation,

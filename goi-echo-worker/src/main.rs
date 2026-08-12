@@ -5,6 +5,7 @@ mod http_api;
 mod migration;
 mod remote_api;
 mod worker;
+mod xlsx_sync;
 
 use actix_web::{web, App, HttpServer};
 use anyhow::Result;

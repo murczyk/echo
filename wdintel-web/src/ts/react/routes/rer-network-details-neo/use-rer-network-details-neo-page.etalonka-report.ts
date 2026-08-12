@@ -23,6 +23,9 @@ export type NetworkEtalonkaReportState = {
   logs: string[];
   reportType: NetworkEtalonkaReportType;
   activeFreqsOnly: boolean;
+  includeFreqActiveFrom: boolean;
+  includeFreqCreatedAt: boolean;
+  includeCallsignFullNames: boolean;
   includeSigintSigns: boolean;
   includeConfirmation: boolean;
   includeHeadingsAndFreqs: boolean;
@@ -49,6 +52,9 @@ export function createDefaultNetworkEtalonkaReportState(): NetworkEtalonkaReport
     logs: [],
     reportType: 'AccordingToTheForm',
     activeFreqsOnly: true,
+    includeFreqActiveFrom: false,
+    includeFreqCreatedAt: true,
+    includeCallsignFullNames: false,
     includeSigintSigns: true,
     includeConfirmation: true,
     includeHeadingsAndFreqs: false,
@@ -74,6 +80,7 @@ function toEtalonkaReportType(report: NetworkEtalonkaReportState): EtalonkaRepor
     return {
       AccordingToTheForm: {
         activeFreqsOnly: report.activeFreqsOnly,
+        includeCallsignFullNames: report.includeCallsignFullNames,
         includeSigintSigns: report.includeSigintSigns,
         includeConfirmation: report.includeConfirmation,
         includeHeadingsAndFreqs: report.includeHeadingsAndFreqs,
@@ -86,6 +93,9 @@ function toEtalonkaReportType(report: NetworkEtalonkaReportState): EtalonkaRepor
       sinceDateInclusiveMs: combineDateTimeInputToMs(report.fromDateTimeStr, APP_TIME_ZONE) ?? 0,
       tillDateInclusiveMs: combineDateTimeInputToMs(report.toDateTimeStr, APP_TIME_ZONE),
       activeFreqsOnly: report.activeFreqsOnly,
+      includeFreqActiveFrom: report.includeFreqActiveFrom,
+      includeFreqCreatedAt: report.includeFreqCreatedAt,
+      includeCallsignFullNames: report.includeCallsignFullNames,
       includeUnitCallsigns: report.includeUnitCallsigns,
       includeSigintSigns: report.includeSigintSigns,
       includeConfirmation: report.includeConfirmation,

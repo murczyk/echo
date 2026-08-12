@@ -39,6 +39,7 @@ import {
   buildNetworkCallsignRelationFreqState,
   buildRenderableNetworkCallsignRelationsGraphView,
   createRelationGraphLayout,
+  getRelationGraphPointFromViewport,
   getRelationEdgeBounds,
   NETWORK_RELATIONS_RENDER_LIMITS,
   intersectsRelationViewBox,
@@ -61,6 +62,10 @@ type Props = {
   relationsTill: string;
   networkId: number | null;
   relationsLoading: boolean;
+  contextDescription?: string;
+  defaultMinIntensity?: number;
+  showDateFilters?: boolean;
+  showMessages?: boolean;
   onReload: () => void;
   onSearchChange: (value: string) => void;
   onEnabledFreqsChange: (freqs: string[]) => void;
@@ -99,6 +104,10 @@ export function NetworkCallsignRelationsGraph({
   relationsTill,
   networkId,
   relationsLoading,
+  contextDescription = "Позивні, зв'язки та перехоплення у вибраних мережі, періоді, інтенсивності й частотах.",
+  defaultMinIntensity = NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY,
+  showDateFilters = true,
+  showMessages = true,
   onReload,
   onSearchChange,
   onEnabledFreqsChange,
@@ -112,6 +121,7 @@ export function NetworkCallsignRelationsGraph({
   const headingId = useId().replace(/:/g, '-');
   const filterButtonId = `${headingId}-filters`;
   const filterPopoverId = `${headingId}-filters-popover`;
+  const intensityPopoverId = `${headingId}-intensity-popover`;
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<{ x: number; y: number; viewBox: RelationGraphViewBox } | null>(null);
   const labelsAutoDisabledRef = useRef(false);
@@ -238,7 +248,7 @@ export function NetworkCallsignRelationsGraph({
   const hasRenderableGraph = renderGraphView.nodes.length > 0 && renderGraphView.edges.length > 0;
   const totalIntensity = summaryEdges.reduce((total, edge) => total + edge.visibleWeight, 0);
   const maxIntensity = Math.max(1, ...summaryEdges.map((edge) => edge.visibleWeight));
-  const intensitySliderMax = Math.max(maxIntensity, NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY);
+  const intensitySliderMax = Math.max(maxIntensity, defaultMinIntensity);
   const denseGraph =
     renderGraphView.nodes.length > 40 ||
     renderGraphView.edges.length > 90 ||
@@ -261,6 +271,7 @@ export function NetworkCallsignRelationsGraph({
     const tillDateNoninclusiveMs = parseDateInputExclusiveEndInTimeZone(relationsTill);
 
     if (
+      !showMessages ||
       networkId === null ||
       selection === null ||
       sinceDateInclusiveMs === null ||
@@ -314,6 +325,7 @@ export function NetworkCallsignRelationsGraph({
     selectedMessageSelection?.callsign,
     selectedMessageSelection?.source,
     selectedMessageSelection?.target,
+    showMessages,
   ]);
   const visibleEdgeIdsForRender = useMemo(() => {
     if (!hasRenderableGraph) return new Set<string>();
@@ -478,8 +490,23 @@ export function NetworkCallsignRelationsGraph({
   const handleWheel = (event: WheelEvent) => {
     if (!hasRenderableGraph) return;
     event.preventDefault();
+    const svg = svgRef.current;
+    if (!svg) return;
+    const viewport = svg.getBoundingClientRect();
     const factor = event.deltaY > 0 ? GRAPH_WHEEL_ZOOM_OUT_FACTOR : GRAPH_WHEEL_ZOOM_IN_FACTOR;
-    setViewBox((current) => zoomRelationGraphViewBox(current, factor));
+    setViewBox((current) =>
+      zoomRelationGraphViewBox(
+        current,
+        factor,
+        getRelationGraphPointFromViewport(
+          current,
+          event.clientX - viewport.left,
+          event.clientY - viewport.top,
+          viewport.width,
+          viewport.height,
+        ),
+      ),
+    );
   };
 
   return (
@@ -512,8 +539,7 @@ export function NetworkCallsignRelationsGraph({
               {totalIntensity} перехоплень
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Позивні, зв&apos;язки та перехоплення у вибраних мережі, періоді, інтенсивності й
-              частотах.
+              {contextDescription}
             </Typography>
           </Stack>
         </Stack>
@@ -576,35 +602,62 @@ export function NetworkCallsignRelationsGraph({
                   ) : undefined,
               }}
             />
-            <NetworkDatePickerField
-              label="Від"
-              value={relationsSince}
-              onChange={onRelationsSinceChange}
-              minDate={relationsDateMin}
-              maxDate={relationsSinceMax}
-              allowEmpty={false}
-              width={148}
-            />
-            <NetworkDatePickerField
-              label="До"
-              value={relationsTill}
-              onChange={onRelationsTillChange}
-              minDate={relationsTillMin}
-              maxDate={relationsDateMax}
-              allowEmpty={false}
-              width={148}
-            />
-            <Stack direction="row" alignItems="center" spacing={2} sx={{ flexShrink: 0 }}>
+            {showDateFilters ? (
+              <>
+                <NetworkDatePickerField
+                  label="Від"
+                  value={relationsSince}
+                  onChange={onRelationsSinceChange}
+                  minDate={relationsDateMin}
+                  maxDate={relationsSinceMax}
+                  allowEmpty={false}
+                  width={148}
+                />
+                <NetworkDatePickerField
+                  label="До"
+                  value={relationsTill}
+                  onChange={onRelationsTillChange}
+                  minDate={relationsTillMin}
+                  maxDate={relationsDateMax}
+                  allowEmpty={false}
+                  width={148}
+                />
+              </>
+            ) : null}
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0 }}>
               <FormControlLabel
                 control={
                   <Switch
+                    size="small"
                     checked={relationsShowLabels}
                     onChange={(_, checked) => onShowLabelsChange(checked)}
                     disabled={renderGraphView.warning || denseGraph}
+                    sx={{
+                      width: 34,
+                      height: 20,
+                      p: 0,
+                      mr: 0.5,
+                      '& .MuiSwitch-switchBase': {
+                        p: '2px',
+                        '&.Mui-checked': { transform: 'translateX(14px)' },
+                      },
+                      '& .MuiSwitch-thumb': { width: 16, height: 16 },
+                      '& .MuiSwitch-track': { borderRadius: 10 },
+                    }}
                   />
                 }
                 label="Підписи"
-                sx={{ m: 0, flexShrink: 0 }}
+                sx={{
+                  height: 34,
+                  m: 0,
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                  '& .MuiFormControlLabel-label': {
+                    fontSize: 11.5,
+                    fontWeight: 500,
+                    lineHeight: 1.2,
+                  },
+                }}
               />
               {graphLabelsHintVisible ? (
                 <Tooltip title="Підписи приховано для збереження швидкодії. Звузьте період або підніміть інтенсивність.">
@@ -626,32 +679,81 @@ export function NetworkCallsignRelationsGraph({
                   </IconButton>
                 </Tooltip>
               ) : null}
-              <Button
-                id={filterButtonId}
-                type="button"
-                variant="outlined"
-                onClick={(event) => setFilterAnchorEl(event.currentTarget)}
-                startIcon={<TuneOutlinedIcon />}
-                sx={{
-                  borderRadius: 2,
-                  px: 1.6,
-                  py: 0.8,
-                  minWidth: 0,
-                  height: 40,
-                  textTransform: 'none',
-                  fontWeight: 700,
-                }}
-              >
-                {formatRelationFreqButtonLabel(
-                  resolvedEnabledFreqs,
-                  availableFreqs.map((freq) => freq.freq),
-                )}
-              </Button>
+              {!isFullscreen ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outlined"
+                    size="small"
+                    onClick={(event) => handleOpenIntensitySettings(event.currentTarget)}
+                    aria-label={`Налаштувати інтенсивність: ${relationsMinIntensity}`}
+                    aria-haspopup="dialog"
+                    aria-expanded={intensityAnchorEl !== null}
+                    aria-controls={intensityAnchorEl !== null ? intensityPopoverId : undefined}
+                    endIcon={
+                      <Tooltip title="Мінімум перехоплень для видимого ребра або вузла.">
+                        <Box component="span" sx={{ display: 'inline-flex' }}>
+                          <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+                        </Box>
+                      </Tooltip>
+                    }
+                    sx={{
+                      borderRadius: 2,
+                      px: 1.1,
+                      py: 0.4,
+                      minWidth: 0,
+                      height: 32,
+                      textTransform: 'none',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: 'text.secondary',
+                      borderColor: 'divider',
+                      '& .MuiButton-endIcon': { ml: 0.5 },
+                      '&:hover': {
+                        color: 'text.primary',
+                        borderColor: 'text.secondary',
+                        bgcolor: 'action.hover',
+                      },
+                    }}
+                  >
+                    Інтенсивність: {relationsMinIntensity}
+                  </Button>
+                  <Button
+                    id={filterButtonId}
+                    type="button"
+                    variant="outlined"
+                    size="small"
+                    onClick={(event) => setFilterAnchorEl(event.currentTarget)}
+                    startIcon={<TuneOutlinedIcon />}
+                    sx={{
+                      borderRadius: 2,
+                      px: 1.1,
+                      py: 0.4,
+                      minWidth: 0,
+                      height: 32,
+                      textTransform: 'none',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: 'text.secondary',
+                      borderColor: 'divider',
+                      '& .MuiButton-startIcon': { mr: 0.5 },
+                      '& .MuiSvgIcon-root': { fontSize: 16 },
+                      '&:hover': {
+                        color: 'text.primary',
+                        borderColor: 'text.secondary',
+                        bgcolor: 'action.hover',
+                      },
+                    }}
+                  >
+                    {formatRelationFreqButtonLabel(
+                      resolvedEnabledFreqs,
+                      availableFreqs.map((freq) => freq.freq),
+                    )}
+                  </Button>
+                </>
+              ) : null}
             </Stack>
           </Stack>
-          <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 720 }}>
-            Поточний граф оновлюється без втрати вже завантажених зв&apos;язків.
-          </Typography>
         </Stack>
 
         <NetworkCallsignRelationsGraphStage
@@ -672,6 +774,7 @@ export function NetworkCallsignRelationsGraph({
           selectedMessages={selectedMessages}
           selectedMessagesLoading={selectedMessagesLoading}
           selectedMessagesError={selectedMessagesError}
+          showMessages={showMessages}
           selectedNeighborIds={selectedNeighborIds}
           visibleEdgeIdsForRender={visibleEdgeIdsForRender}
           visibleNodeIdsForRender={visibleNodeIdsForRender}
@@ -683,6 +786,7 @@ export function NetworkCallsignRelationsGraph({
           legendFreqs={legendFreqs}
           relationFreqState={relationFreqState}
           relationsMinIntensity={relationsMinIntensity}
+          defaultMinIntensity={defaultMinIntensity}
           intensityAnchorEl={intensityAnchorEl}
           filterPopoverId={filterPopoverId}
           onSearchChange={onSearchChange}
@@ -718,7 +822,7 @@ export function NetworkCallsignRelationsGraph({
 
       <NetworkCallsignRelationsIntensityPopover
         anchorEl={intensityAnchorEl}
-        popoverId={`${headingId}-intensity-popover`}
+        popoverId={intensityPopoverId}
         minIntensity={relationsMinIntensity}
         intensitySliderMax={intensitySliderMax}
         isFullscreen={isFullscreen}

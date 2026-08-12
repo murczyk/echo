@@ -1,5 +1,10 @@
-use crate::error::ShortContext;
+use crate::config::{
+    AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX,
+    AUTOMATION_SEND_LOG_RETENTION_DAYS,
+};
+use crate::error::{bad_request, conflict, not_found, ShortContext};
 use crate::h;
+use crate::map_screenshot::{self, MapCoordinate};
 use crate::messenger::{self, MessengerKind};
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose, Engine};
@@ -7,7 +12,7 @@ use chrono::{Duration as ChronoDuration, NaiveDateTime, Utc};
 use regex::Regex;
 use sea_orm::{
     prelude::Json, ConnectionTrait, DatabaseBackend, DatabaseConnection,
-    FromQueryResult, Statement,
+    FromQueryResult, Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -28,6 +33,8 @@ pub struct SaveAutomationReq {
     pub frequency_tokens: Vec<String>,
     pub stale_message_cutoff_minutes: i32,
     pub resend_attachments: bool,
+    #[serde(default)]
+    pub coordinates_screenshot: bool,
     pub coordinate_presence_mode: Option<String>,
     pub polygon_filter_mode: Option<String>,
     pub polygon_id: Option<i64>,
@@ -46,9 +53,16 @@ pub struct PolygonView {
     pub id: i64,
     pub name: String,
     pub coordinates: Vec<String>,
+    pub points: Vec<PolygonPointView>,
     pub automation_count: i64,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PolygonPointView {
+    pub lat: f64,
+    pub lng: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -88,6 +102,7 @@ pub struct AutomationView {
     pub frequency_tokens: Vec<String>,
     pub stale_message_cutoff_minutes: i32,
     pub resend_attachments: bool,
+    pub coordinates_screenshot: bool,
     pub coordinate_presence_mode: String,
     pub polygon_filter_mode: String,
     pub polygon_id: Option<i64>,
@@ -145,6 +160,7 @@ struct AutomationListRow {
     frequency_tokens: Json,
     stale_message_cutoff_minutes: i32,
     resend_attachments: bool,
+    coordinates_screenshot: bool,
     coordinate_presence_mode: String,
     polygon_filter_mode: String,
     polygon_id: Option<i64>,
@@ -172,9 +188,11 @@ struct AutomationWorkerRow {
     frequency_tokens: Json,
     stale_message_cutoff_minutes: i32,
     resend_attachments: bool,
+    coordinates_screenshot: bool,
     coordinate_presence_mode: String,
     polygon_filter_mode: String,
     polygon_coordinates: Option<Json>,
+    last_error: Option<String>,
     checkpoint_at: NaiveDateTime,
     last_processed_inbox_message_id: i32,
 }
@@ -254,7 +272,9 @@ impl CoordinatePresenceMode {
             "any" => Ok(Self::Any),
             "skip_with_coordinates" => Ok(Self::SkipWithCoordinates),
             "skip_without_coordinates" => Ok(Self::SkipWithoutCoordinates),
-            _ => bail!("unknown coordinate presence mode: {value}"),
+            _ => Err(bad_request(format!(
+                "Невідомий режим фільтрації координат: {value}. Оновіть сторінку та виберіть режим ще раз."
+            ))),
         }
     }
 
@@ -280,7 +300,9 @@ impl PolygonFilterMode {
             "none" => Ok(Self::None),
             "inside" => Ok(Self::Inside),
             "outside" => Ok(Self::Outside),
-            _ => bail!("unknown polygon filter mode: {value}"),
+            _ => Err(bad_request(format!(
+                "Невідомий режим фільтрації за районом: {value}. Оновіть сторінку та виберіть режим ще раз."
+            ))),
         }
     }
 
@@ -310,6 +332,7 @@ struct NormalizedAutomation {
     frequency_tokens: Vec<String>,
     stale_message_cutoff_minutes: i32,
     resend_attachments: bool,
+    coordinates_screenshot: bool,
     coordinate_presence_mode: CoordinatePresenceMode,
     polygon_filter_mode: PolygonFilterMode,
     polygon_id: Option<i64>,
@@ -354,7 +377,11 @@ pub async fn list_polygons(
     .all(db)
     .await
     .c(h!())?;
-    Ok(rows.into_iter().map(polygon_view).collect())
+    let mut polygons = Vec::with_capacity(rows.len());
+    for row in rows {
+        polygons.push(polygon_view(row).await.c(h!())?);
+    }
+    Ok(polygons)
 }
 
 pub async fn create_polygon(
@@ -363,7 +390,7 @@ pub async fn create_polygon(
 ) -> Result<PolygonView> {
     let (name, coordinates) = normalize_polygon_req(req).await.c(h!())?;
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             insert into echo_automation_polygon (name, coordinates, updated_at)
@@ -390,7 +417,7 @@ pub async fn update_polygon(
     req: SavePolygonReq,
 ) -> Result<PolygonView> {
     let (name, coordinates) = normalize_polygon_req(req).await.c(h!())?;
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation_polygon
@@ -413,7 +440,7 @@ pub async fn update_polygon(
 
 pub async fn delete_polygon(db: &DatabaseConnection, id: i64) -> Result<()> {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "select count(*)::bigint as count from echo_automation where polygon_id = $1",
             [id.into()],
@@ -424,9 +451,11 @@ pub async fn delete_polygon(db: &DatabaseConnection, id: i64) -> Result<()> {
         .c(h!())?;
     let usage_count: i64 = row.try_get("", "count").c(h!())?;
     if usage_count > 0 {
-        bail!("area of interest is used by automations");
+        return Err(conflict(
+            "Район інтересу використовується в автоматизаціях. Спочатку приберіть його з цих автоматизацій, а потім повторіть видалення.",
+        ));
     }
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "delete from echo_automation_polygon where id = $1",
         [id.into()],
@@ -514,6 +543,7 @@ pub async fn ensure_schema(db: &DatabaseConnection) -> Result<()> {
     ensure_automation_columns(db).await.c(h!())?;
     ensure_automation_polygon_schema(db).await.c(h!())?;
     ensure_automation_delivery_schema(db).await.c(h!())?;
+    ensure_automation_send_log_schema(db).await.c(h!())?;
     drop_legacy_automation_schema(db).await.c(h!())?;
     Ok(())
 }
@@ -524,6 +554,7 @@ async fn ensure_automation_columns(db: &DatabaseConnection) -> Result<()> {
         alter table echo_automation
             add column if not exists stale_message_cutoff_minutes integer,
             add column if not exists resend_attachments boolean,
+            add column if not exists coordinates_screenshot boolean,
             add column if not exists coordinate_presence_mode text,
             add column if not exists polygon_filter_mode text,
             add column if not exists polygon_id bigint,
@@ -537,6 +568,7 @@ async fn ensure_automation_columns(db: &DatabaseConnection) -> Result<()> {
         update echo_automation
         set stale_message_cutoff_minutes = coalesce(stale_message_cutoff_minutes, 60),
             resend_attachments = coalesce(resend_attachments, false),
+            coordinates_screenshot = coalesce(coordinates_screenshot, false),
             coordinate_presence_mode = coalesce(coordinate_presence_mode, 'any'),
             polygon_filter_mode = coalesce(polygon_filter_mode, 'none'),
             is_paused = coalesce(is_paused, false),
@@ -551,6 +583,8 @@ async fn ensure_automation_columns(db: &DatabaseConnection) -> Result<()> {
             alter column stale_message_cutoff_minutes set not null,
             alter column resend_attachments set default false,
             alter column resend_attachments set not null,
+            alter column coordinates_screenshot set default false,
+            alter column coordinates_screenshot set not null,
             alter column coordinate_presence_mode set default 'any',
             alter column coordinate_presence_mode set not null,
             alter column polygon_filter_mode set default 'none',
@@ -695,6 +729,47 @@ async fn ensure_automation_delivery_schema(
     Ok(())
 }
 
+async fn ensure_automation_send_log_schema(
+    db: &DatabaseConnection,
+) -> Result<()> {
+    db.execute_unprepared(
+        r#"
+        create table if not exists echo_automation_send_log (
+            id bigserial primary key,
+            automation_id bigint not null,
+            source_inbox_message_id integer not null,
+            source_internal_id text,
+            source_group_id integer not null,
+            target_group_id integer not null,
+            planned_at timestamp without time zone default (now() at time zone 'utc') not null,
+            sent_at timestamp without time zone,
+            created_at timestamp without time zone default (now() at time zone 'utc') not null
+        );
+
+        create unique index if not exists echo_automation_send_log_route_message_uq
+            on echo_automation_send_log (
+                source_group_id,
+                target_group_id,
+                source_inbox_message_id
+            );
+
+        create unique index if not exists echo_automation_send_log_route_internal_uq
+            on echo_automation_send_log (
+                source_group_id,
+                target_group_id,
+                source_internal_id
+            )
+            where source_internal_id is not null;
+
+        create index if not exists echo_automation_send_log_created_at_idx
+            on echo_automation_send_log (created_at desc);
+        "#,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
 async fn drop_legacy_automation_schema(db: &DatabaseConnection) -> Result<()> {
     db.execute_unprepared(
         r#"
@@ -717,7 +792,7 @@ pub async fn create(
     validate_group_accounts(db, &automation).await.c(h!())?;
     validate_polygon_ref(db, &automation).await.c(h!())?;
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             insert into echo_automation (
@@ -730,12 +805,13 @@ pub async fn create(
                 frequency_tokens,
                 stale_message_cutoff_minutes,
                 resend_attachments,
+                coordinates_screenshot,
                 coordinate_presence_mode,
                 polygon_filter_mode,
                 polygon_id,
                 updated_at
             )
-            values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12, now() at time zone 'utc')
+            values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12, $13, now() at time zone 'utc')
             returning id
             "#,
             vec![
@@ -752,6 +828,7 @@ pub async fn create(
                     .into(),
                 automation.stale_message_cutoff_minutes.into(),
                 automation.resend_attachments.into(),
+                automation.coordinates_screenshot.into(),
                 automation.coordinate_presence_mode.as_str().into(),
                 automation.polygon_filter_mode.as_str().into(),
                 automation.polygon_id.into(),
@@ -772,7 +849,7 @@ pub async fn update(
     let automation = normalize_req(req).await.c(h!())?;
     validate_group_accounts(db, &automation).await.c(h!())?;
     validate_polygon_ref(db, &automation).await.c(h!())?;
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation
@@ -786,9 +863,10 @@ pub async fn update(
             frequency_tokens = $8::jsonb,
             stale_message_cutoff_minutes = $9,
             resend_attachments = $10,
-            coordinate_presence_mode = $11,
-            polygon_filter_mode = $12,
-            polygon_id = $13,
+            coordinates_screenshot = $11,
+            coordinate_presence_mode = $12,
+            polygon_filter_mode = $13,
+            polygon_id = $14,
             updated_at = now() at time zone 'utc'
         where id = $1
         "#,
@@ -807,6 +885,7 @@ pub async fn update(
                 .into(),
             automation.stale_message_cutoff_minutes.into(),
             automation.resend_attachments.into(),
+            automation.coordinates_screenshot.into(),
             automation.coordinate_presence_mode.as_str().into(),
             automation.polygon_filter_mode.as_str().into(),
             automation.polygon_id.into(),
@@ -818,7 +897,7 @@ pub async fn update(
 }
 
 pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "delete from echo_automation where id = $1",
         [id.into()],
@@ -833,7 +912,7 @@ pub async fn set_paused(
     id: i64,
     is_paused: bool,
 ) -> Result<AutomationView> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation
@@ -862,9 +941,11 @@ pub async fn worker_tick(db: &DatabaseConnection) -> Result<()> {
                 frequency_tokens,
                 stale_message_cutoff_minutes,
                 resend_attachments,
+                coordinates_screenshot,
                 coordinate_presence_mode,
                 polygon_filter_mode,
                 polygon.coordinates as polygon_coordinates,
+                automation.last_error,
                 checkpoint_at,
                 last_processed_inbox_message_id
             from echo_automation automation
@@ -904,25 +985,31 @@ async fn load_view(db: &DatabaseConnection, id: i64) -> Result<AutomationView> {
     rows.into_iter()
         .next()
         .map(automation_view)
-        .with_context(|| format!("automation not found: {id}"))
+        .ok_or_else(|| {
+            not_found(format!(
+                "Автоматизацію {id} не знайдено. Оновіть сторінку та повторіть спробу."
+            ))
+        })
         .c(h!())
 }
 
 async fn normalize_req(req: SaveAutomationReq) -> Result<NormalizedAutomation> {
     if req.source_account_id <= 0 {
-        bail!("source account is required");
+        return Err(bad_request("Оберіть обліковий запис-джерело."));
     }
     if req.source_group_id <= 0 {
-        bail!("source group is required");
+        return Err(bad_request("Оберіть групу-джерело."));
     }
     if req.target_account_id <= 0 {
-        bail!("target account is required");
+        return Err(bad_request("Оберіть цільовий обліковий запис."));
     }
     if req.target_group_id <= 0 {
-        bail!("target group is required");
+        return Err(bad_request("Оберіть цільову групу."));
     }
     if req.stale_message_cutoff_minutes < 0 {
-        bail!("stale message cutoff must not be negative");
+        return Err(bad_request(
+            "Час актуальності повідомлення не може бути від’ємним.",
+        ));
     }
     let keyword_tokens = normalize_tokens(req.keyword_tokens);
     let frequency_tokens = normalize_tokens(req.frequency_tokens);
@@ -946,7 +1033,16 @@ async fn normalize_req(req: SaveAutomationReq) -> Result<NormalizedAutomation> {
     if coordinate_presence_mode == CoordinatePresenceMode::SkipWithCoordinates
         && polygon_filter_mode != PolygonFilterMode::None
     {
-        bail!("polygon filter is not allowed when messages with coordinates are ignored");
+        return Err(bad_request(
+            "Не можна фільтрувати за районом, коли повідомлення з координатами ігноруються.",
+        ));
+    }
+    if coordinate_presence_mode == CoordinatePresenceMode::SkipWithCoordinates
+        && req.coordinates_screenshot
+    {
+        return Err(bad_request(
+            "Не можна створювати знімок координат, коли повідомлення з координатами ігноруються.",
+        ));
     }
     let polygon_id = if polygon_filter_mode == PolygonFilterMode::None {
         None
@@ -963,6 +1059,7 @@ async fn normalize_req(req: SaveAutomationReq) -> Result<NormalizedAutomation> {
         frequency_tokens,
         stale_message_cutoff_minutes: req.stale_message_cutoff_minutes,
         resend_attachments: req.resend_attachments,
+        coordinates_screenshot: req.coordinates_screenshot,
         coordinate_presence_mode,
         polygon_filter_mode,
         polygon_id,
@@ -977,20 +1074,26 @@ async fn validate_polygon_ref(
         return Ok(());
     };
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "select coordinates from echo_automation_polygon where id = $1",
             [polygon_id.into()],
         ))
         .await
         .c(h!())?
-        .with_context(|| format!("polygon not found: {polygon_id}"))
+        .ok_or_else(|| {
+            not_found(format!(
+                "Район інтересу {polygon_id} не знайдено. Оновіть список і виберіть район ще раз."
+            ))
+        })
         .c(h!())?;
     let coordinates: Json = row.try_get("", "coordinates").c(h!())?;
     let coordinates = json_vec(Some(&coordinates));
     let polygon = parse_polygon(&coordinates).await.c(h!())?;
     if polygon.len() < 3 {
-        bail!("polygon filter requires at least 3 valid coordinates");
+        return Err(bad_request(
+            "Для фільтрації за районом потрібно щонайменше 3 коректні координати.",
+        ));
     }
     Ok(())
 }
@@ -1000,7 +1103,7 @@ async fn validate_group_accounts(
     automation: &NormalizedAutomation,
 ) -> Result<()> {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             select
@@ -1032,11 +1135,15 @@ async fn validate_group_accounts(
         .c(h!())?;
     let source_ok: bool = row.try_get("", "source_ok").c(h!())?;
     if !source_ok {
-        bail!("source group does not belong to selected source account");
+        return Err(bad_request(
+            "Група-джерело не належить вибраному обліковому запису. Виберіть групу зі списку цього облікового запису.",
+        ));
     }
     let target_ok: bool = row.try_get("", "target_ok").c(h!())?;
     if !target_ok {
-        bail!("target group does not belong to selected target account");
+        return Err(bad_request(
+            "Цільова група не належить вибраному обліковому запису. Виберіть групу зі списку цього облікового запису.",
+        ));
     }
     Ok(())
 }
@@ -1045,7 +1152,11 @@ async fn process_automation(
     db: &DatabaseConnection,
     automation: AutomationWorkerRow,
 ) -> Result<()> {
-    set_status(db, automation.id, "running", None)
+    let mut last_warning = automation.last_error.clone().filter(|warning| {
+        automation.coordinates_screenshot
+            && warning.contains(AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX)
+    });
+    set_status(db, automation.id, "running", last_warning.as_deref())
         .await
         .c(h!())?;
     if let Some(warning) =
@@ -1062,12 +1173,20 @@ async fn process_automation(
         advance_empty_checkpoint(db, &automation).await.c(h!())?;
     }
     for message in messages {
-        process_message(db, &automation, &message).await.c(h!())?;
+        process_message(db, &automation, &message, &mut last_warning)
+            .await
+            .c(h!())?;
         update_checkpoint(db, automation.id, message.id, message.message_at)
             .await
             .c(h!())?;
     }
-    set_status(db, automation.id, "idle", None).await.c(h!())?;
+    if let Some(warning) = last_warning {
+        set_status(db, automation.id, "warning", Some(&warning))
+            .await
+            .c(h!())?;
+    } else {
+        set_status(db, automation.id, "idle", None).await.c(h!())?;
+    }
     Ok(())
 }
 
@@ -1119,6 +1238,7 @@ async fn process_message(
     db: &DatabaseConnection,
     automation: &AutomationWorkerRow,
     message: &InboxMessageRow,
+    last_warning: &mut Option<String>,
 ) -> Result<()> {
     if already_sent(db, automation.id, message).await.c(h!())? {
         return Ok(());
@@ -1166,9 +1286,15 @@ async fn process_message(
             .c(h!())?;
             Ok(())
         }
-        MatchDecision::Send => {
-            send_matching_message(db, automation, message).await.c(h!())
-        }
+        MatchDecision::Send => send_matching_message(
+            db,
+            automation,
+            message,
+            &coords,
+            last_warning,
+        )
+        .await
+        .c(h!()),
     }
 }
 
@@ -1176,7 +1302,23 @@ async fn send_matching_message(
     db: &DatabaseConnection,
     automation: &AutomationWorkerRow,
     message: &InboxMessageRow,
+    coordinates: &[Point],
+    last_warning: &mut Option<String>,
 ) -> Result<()> {
+    if send_is_planned(
+        db,
+        automation.source_group_id,
+        automation.target_group_id,
+        message,
+    )
+    .await
+    .c(h!())?
+    {
+        record_planned_send_skip(db, automation.id, message)
+            .await
+            .c(h!())?;
+        return Ok(());
+    }
     let target = load_send_target(
         db,
         automation.target_account_id,
@@ -1185,7 +1327,7 @@ async fn send_matching_message(
     .await
     .c(h!())?;
     let kind = messenger_kind_from_db(&target.kind).c(h!())?;
-    let attachments = if automation.resend_attachments {
+    let mut attachments = if automation.resend_attachments {
         load_attachment_base64(db, message).await.c(h!())?
     } else {
         LoadedAttachments {
@@ -1193,9 +1335,32 @@ async fn send_matching_message(
             warning: None,
         }
     };
-    messenger::send(
-        db,
-        &public_client_name(&target.client_name),
+    let coordinate_screenshot_attempted =
+        automation.coordinates_screenshot && !coordinates.is_empty();
+    if coordinate_screenshot_attempted {
+        add_coordinate_screenshot(&mut attachments, coordinates).await;
+    }
+    let client_name = public_client_name(&target.client_name);
+    let txn = db.begin().await.c(h!())?;
+    let Some(send_log_id) = plan_send(
+        &txn,
+        automation.id,
+        automation.source_group_id,
+        automation.target_group_id,
+        message,
+    )
+    .await
+    .c(h!())?
+    else {
+        txn.rollback().await.c(h!())?;
+        record_planned_send_skip(db, automation.id, message)
+            .await
+            .c(h!())?;
+        return Ok(());
+    };
+    messenger::enqueue(
+        &txn,
+        &client_name,
         kind,
         vec![target.group_id],
         vec![],
@@ -1204,8 +1369,9 @@ async fn send_matching_message(
     )
     .await
     .c(h!())?;
+    mark_send_sent(&txn, send_log_id).await.c(h!())?;
     record_delivery(
-        db,
+        &txn,
         automation.id,
         message,
         "sent",
@@ -1214,12 +1380,168 @@ async fn send_matching_message(
     )
     .await
     .c(h!())?;
-    if let Some(warning) = attachments.warning {
-        set_status(db, automation.id, "warning", Some(&warning))
-            .await
-            .c(h!())?;
+    txn.commit().await.c(h!())?;
+    messenger::tick_after_send(db, &client_name, kind)
+        .await
+        .c(h!())?;
+    if coordinate_screenshot_attempted || last_warning.is_none() {
+        *last_warning = attachments.warning;
     }
     Ok(())
+}
+
+async fn add_coordinate_screenshot(
+    attachments: &mut LoadedAttachments,
+    coordinates: &[Point],
+) {
+    let coordinates = coordinates
+        .iter()
+        .map(|point| MapCoordinate {
+            lat: point.lat,
+            lng: point.lng,
+        })
+        .collect::<Vec<_>>();
+    match map_screenshot::create(&coordinates).await {
+        Ok(screenshot) => attachments.content_base64.push(screenshot),
+        Err(err) => {
+            let warning =
+                format!("{AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX} {err:#}");
+            log::warn!("{warning}");
+            append_warning(&mut attachments.warning, warning);
+        }
+    }
+}
+
+fn append_warning(warning: &mut Option<String>, value: String) {
+    match warning {
+        Some(warning) => {
+            warning.push_str("; ");
+            warning.push_str(&value);
+        }
+        None => *warning = Some(value),
+    }
+}
+
+async fn send_is_planned(
+    db: &impl ConnectionTrait,
+    source_group_id: i32,
+    target_group_id: i32,
+    message: &InboxMessageRow,
+) -> Result<bool> {
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select exists (
+                select 1
+                from echo_automation_send_log
+                where source_group_id = $1
+                    and target_group_id = $2
+                    and (
+                        source_inbox_message_id = $3
+                        or ($4 is not null and source_internal_id = $4)
+                    )
+            ) as planned
+            "#,
+            vec![
+                source_group_id.into(),
+                target_group_id.into(),
+                message.id.into(),
+                message.internal_id.clone().into(),
+            ],
+        ))
+        .await
+        .c(h!())?
+        .context("planned-send query did not return a row")
+        .c(h!())?;
+    row.try_get("", "planned").c(h!())
+}
+
+async fn record_planned_send_skip(
+    db: &impl ConnectionTrait,
+    automation_id: i64,
+    message: &InboxMessageRow,
+) -> Result<()> {
+    record_delivery(
+        db,
+        automation_id,
+        message,
+        "skipped",
+        Some("message is already planned for this target group"),
+        false,
+    )
+    .await
+    .c(h!())
+}
+
+async fn plan_send(
+    db: &impl ConnectionTrait,
+    automation_id: i64,
+    source_group_id: i32,
+    target_group_id: i32,
+    message: &InboxMessageRow,
+) -> Result<Option<i64>> {
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            insert into echo_automation_send_log (
+                automation_id,
+                source_inbox_message_id,
+                source_internal_id,
+                source_group_id,
+                target_group_id
+            )
+            values ($1, $2, $3, $4, $5)
+            on conflict do nothing
+            returning id
+            "#,
+            vec![
+                automation_id.into(),
+                message.id.into(),
+                message.internal_id.clone().into(),
+                source_group_id.into(),
+                target_group_id.into(),
+            ],
+        ))
+        .await
+        .c(h!())?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    Ok(Some(row.try_get("", "id").c(h!())?))
+}
+
+async fn mark_send_sent(
+    db: &impl ConnectionTrait,
+    send_log_id: i64,
+) -> Result<()> {
+    db.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        update echo_automation_send_log
+        set sent_at = now() at time zone 'utc'
+        where id = $1
+        "#,
+        [send_log_id.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+pub async fn delete_expired_send_log(db: &DatabaseConnection) -> Result<u64> {
+    let cutoff = Utc::now().naive_utc()
+        - ChronoDuration::days(AUTOMATION_SEND_LOG_RETENTION_DAYS);
+    let result = db
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "delete from echo_automation_send_log where created_at < $1",
+            [cutoff.into()],
+        ))
+        .await
+        .c(h!())?;
+    Ok(result.rows_affected())
 }
 
 async fn load_candidate_messages(
@@ -1281,7 +1603,7 @@ async fn advance_empty_checkpoint(
     if checkpoint_at <= automation.checkpoint_at {
         return Ok(());
     }
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation
@@ -1386,7 +1708,7 @@ async fn record_edit_warnings(
     const DESCRIPTION: &str =
         "source message was edited after this automation forwarded it";
     let result = db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
         insert into echo_automation_warning (
@@ -1434,14 +1756,14 @@ async fn record_edit_warnings(
 }
 
 async fn record_delivery(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     automation_id: i64,
     message: &InboxMessageRow,
     status: &str,
     error: Option<&str>,
     is_sent: bool,
 ) -> Result<()> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         insert into echo_automation_delivery (
@@ -1462,6 +1784,8 @@ async fn record_delivery(
             error = excluded.error,
             sent_at = coalesce(excluded.sent_at, echo_automation_delivery.sent_at),
             updated_at = excluded.updated_at
+        where echo_automation_delivery.status <> 'sent'
+            or excluded.status = 'sent'
         "#,
         vec![
             automation_id.into(),
@@ -1484,7 +1808,7 @@ async fn already_sent(
     message: &InboxMessageRow,
 ) -> Result<bool> {
     let row = db
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             select exists (
@@ -1520,7 +1844,7 @@ async fn update_checkpoint(
     inbox_message_id: i32,
     message_at: NaiveDateTime,
 ) -> Result<()> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation
@@ -1548,7 +1872,7 @@ async fn set_status(
     status: &str,
     error: Option<&str>,
 ) -> Result<()> {
-    db.execute(Statement::from_sql_and_values(
+    db.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation
@@ -1669,10 +1993,19 @@ fn matches_any_token(
     frequency_tokens: &[String],
 ) -> bool {
     let body = normalize_text(body);
-    keyword_tokens
-        .iter()
-        .chain(frequency_tokens.iter())
-        .any(|token| body.contains(token))
+    keyword_tokens.iter().any(|token| body.contains(token))
+        || frequency_tokens
+            .iter()
+            .any(|token| contains_word_starting_with(&body, token))
+}
+
+fn contains_word_starting_with(body: &str, prefix: &str) -> bool {
+    body.match_indices(prefix).any(|(start, _)| {
+        body[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|ch| !ch.is_alphanumeric() && ch != '_')
+    })
 }
 
 async fn extract_points(body: &str) -> Vec<Point> {
@@ -1693,7 +2026,9 @@ async fn parse_polygon(tokens: &[String]) -> Result<Vec<Point>> {
         let mut coords =
             milgeo_rs::coordinates::rer_extract_coords(token).await;
         if coords.is_empty() {
-            bail!("invalid polygon coordinate: {token}");
+            return Err(bad_request(format!(
+                "Некоректна координата району: {token}."
+            )));
         }
         let coords = coords.remove(0);
         points.push(Point {
@@ -1702,6 +2037,87 @@ async fn parse_polygon(tokens: &[String]) -> Result<Vec<Point>> {
         });
     }
     Ok(points)
+}
+
+fn polygon_has_crossing_sides(polygon: &[Point]) -> bool {
+    for first_side in 0..polygon.len() {
+        for second_side in (first_side + 1)..polygon.len() {
+            if polygon_sides_are_adjacent(
+                first_side,
+                second_side,
+                polygon.len(),
+            ) {
+                continue;
+            }
+            if segments_intersect(
+                polygon[first_side],
+                polygon[(first_side + 1) % polygon.len()],
+                polygon[second_side],
+                polygon[(second_side + 1) % polygon.len()],
+            ) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn polygon_sides_are_adjacent(
+    first_side: usize,
+    second_side: usize,
+    point_count: usize,
+) -> bool {
+    (first_side + 1) % point_count == second_side
+        || (second_side + 1) % point_count == first_side
+}
+
+fn segments_intersect(
+    first_start: Point,
+    first_end: Point,
+    second_start: Point,
+    second_end: Point,
+) -> bool {
+    let first_start_side = cross_product(first_start, first_end, second_start);
+    let first_end_side = cross_product(first_start, first_end, second_end);
+    let second_start_side =
+        cross_product(second_start, second_end, first_start);
+    let second_end_side = cross_product(second_start, second_end, first_end);
+
+    if first_start_side == 0.0
+        && point_is_on_segment(second_start, first_start, first_end)
+    {
+        return true;
+    }
+    if first_end_side == 0.0
+        && point_is_on_segment(second_end, first_start, first_end)
+    {
+        return true;
+    }
+    if second_start_side == 0.0
+        && point_is_on_segment(first_start, second_start, second_end)
+    {
+        return true;
+    }
+    if second_end_side == 0.0
+        && point_is_on_segment(first_end, second_start, second_end)
+    {
+        return true;
+    }
+    first_start_side.is_sign_positive() != first_end_side.is_sign_positive()
+        && second_start_side.is_sign_positive()
+            != second_end_side.is_sign_positive()
+}
+
+fn cross_product(start: Point, end: Point, point: Point) -> f64 {
+    (end.lng - start.lng) * (point.lat - start.lat)
+        - (end.lat - start.lat) * (point.lng - start.lng)
+}
+
+fn point_is_on_segment(point: Point, start: Point, end: Point) -> bool {
+    point.lng >= start.lng.min(end.lng)
+        && point.lng <= start.lng.max(end.lng)
+        && point.lat >= start.lat.min(end.lat)
+        && point.lat <= start.lat.max(end.lat)
 }
 
 fn point_in_polygon(point: Point, polygon: &[Point]) -> bool {
@@ -1806,6 +2222,14 @@ fn normalize_tokens(tokens: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+fn normalize_polygon_coordinates(coordinates: Vec<String>) -> Vec<String> {
+    coordinates
+        .into_iter()
+        .map(|coordinate| coordinate.trim().to_string())
+        .filter(|coordinate| !coordinate.is_empty())
+        .collect()
+}
+
 fn normalize_text(value: &str) -> String {
     value.trim().to_lowercase()
 }
@@ -1854,6 +2278,7 @@ fn automation_view(row: AutomationListRow) -> AutomationView {
         frequency_tokens: json_vec(Some(&row.frequency_tokens)),
         stale_message_cutoff_minutes: row.stale_message_cutoff_minutes,
         resend_attachments: row.resend_attachments,
+        coordinates_screenshot: row.coordinates_screenshot,
         coordinate_presence_mode: row.coordinate_presence_mode,
         polygon_filter_mode: row.polygon_filter_mode,
         polygon_id: row.polygon_id,
@@ -1873,15 +2298,26 @@ fn automation_view(row: AutomationListRow) -> AutomationView {
     }
 }
 
-fn polygon_view(row: PolygonListRow) -> PolygonView {
-    PolygonView {
+async fn polygon_view(row: PolygonListRow) -> Result<PolygonView> {
+    let coordinates = json_vec(Some(&row.coordinates));
+    let points = parse_polygon(&coordinates)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|point| PolygonPointView {
+            lat: point.lat,
+            lng: point.lng,
+        })
+        .collect();
+    Ok(PolygonView {
         id: row.id,
         name: row.name,
-        coordinates: json_vec(Some(&row.coordinates)),
+        coordinates,
+        points,
         automation_count: row.automation_count,
         created_at: row.created_at.and_utc().timestamp_millis(),
         updated_at: row.updated_at.and_utc().timestamp_millis(),
-    }
+    })
 }
 
 async fn load_polygon_view(
@@ -1908,11 +2344,16 @@ async fn load_polygon_view(
     .all(db)
     .await
     .c(h!())?;
-    rows.into_iter()
+    let row = rows
+        .into_iter()
         .next()
-        .map(polygon_view)
-        .with_context(|| format!("polygon not found: {id}"))
-        .c(h!())
+        .ok_or_else(|| {
+            not_found(format!(
+                "Район інтересу {id} не знайдено. Оновіть сторінку та повторіть спробу."
+            ))
+        })
+        .c(h!())?;
+    polygon_view(row).await.c(h!())
 }
 
 async fn normalize_polygon_req(
@@ -1920,15 +2361,24 @@ async fn normalize_polygon_req(
 ) -> Result<(String, Vec<String>)> {
     let name = req.name.unwrap_or_default().trim().to_string();
     if name.is_empty() {
-        bail!("polygon name is required");
+        return Err(bad_request("Вкажіть назву району інтересу."));
     }
-    let coordinates = normalize_tokens(req.coordinates);
+    let coordinates = normalize_polygon_coordinates(req.coordinates);
     if coordinates.len() < 3 {
-        bail!("polygon requires at least 3 coordinates");
+        return Err(bad_request(
+            "Для району інтересу потрібно щонайменше 3 координати.",
+        ));
     }
     let polygon = parse_polygon(&coordinates).await.c(h!())?;
     if polygon.len() < 3 {
-        bail!("polygon requires at least 3 valid coordinates");
+        return Err(bad_request(
+            "Для району інтересу потрібно щонайменше 3 коректні координати.",
+        ));
+    }
+    if polygon_has_crossing_sides(&polygon) {
+        return Err(bad_request(
+            "Сторони району інтересу не мають перетинатися.",
+        ));
     }
     Ok((name, coordinates))
 }
@@ -1956,6 +2406,7 @@ fn list_sql_head() -> &'static str {
         a.frequency_tokens,
         a.stale_message_cutoff_minutes,
         a.resend_attachments,
+        a.coordinates_screenshot,
         a.coordinate_presence_mode,
         a.polygon_filter_mode,
         a.polygon_id,
@@ -2038,6 +2489,24 @@ mod tests {
         automation_id: i64,
     }
 
+    #[derive(FromQueryResult)]
+    struct TestSendLogRow {
+        automation_id: i64,
+        source_inbox_message_id: i32,
+        source_group_id: i32,
+        target_group_id: i32,
+        planned_at: NaiveDateTime,
+        sent_at: Option<NaiveDateTime>,
+        created_at: NaiveDateTime,
+    }
+
+    #[derive(FromQueryResult)]
+    struct TestDeliveryRow {
+        status: String,
+        error: Option<String>,
+        sent_at: Option<NaiveDateTime>,
+    }
+
     fn filter() -> AutomationFilter {
         AutomationFilter {
             keyword_tokens: vec!["alpha".to_string()],
@@ -2063,6 +2532,7 @@ mod tests {
             frequency_tokens: vec![],
             stale_message_cutoff_minutes: 60,
             resend_attachments: false,
+            coordinates_screenshot: false,
             coordinate_presence_mode: None,
             polygon_filter_mode: polygon_filter_mode.map(str::to_string),
             polygon_id,
@@ -2091,6 +2561,19 @@ mod tests {
         namespace: &str,
         phone_number: &str,
     ) -> Result<()> {
+        execute_test_sql(
+            db,
+            r#"
+            delete from echo_automation_send_log
+            where automation_id in (
+                select id from echo_automation where name = $1
+            )
+                or source_internal_id like ($1 || ':%')
+            "#,
+            vec![namespace.to_string().into()],
+        )
+        .await
+        .c(h!())?;
         execute_test_sql(
             db,
             "delete from echo_automation where name = $1",
@@ -2146,7 +2629,7 @@ mod tests {
         sql: &str,
         values: Vec<Value>,
     ) -> Result<()> {
-        db.execute(Statement::from_sql_and_values(
+        db.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
             values,
@@ -2162,7 +2645,7 @@ mod tests {
         values: Vec<Value>,
     ) -> Result<i32> {
         let row = db
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 sql,
                 values,
@@ -2180,7 +2663,7 @@ mod tests {
         values: Vec<Value>,
     ) -> Result<i64> {
         let row = db
-            .query_one(Statement::from_sql_and_values(
+            .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 sql,
                 values,
@@ -2279,6 +2762,164 @@ mod tests {
             target_group_id,
             automation_id,
         })
+    }
+
+    async fn insert_test_automation(
+        db: &DatabaseConnection,
+        fixture: &TestFixture,
+    ) -> Result<i64> {
+        query_i64(
+            db,
+            r#"
+            insert into echo_automation (
+                name,
+                source_account_id,
+                source_group_id,
+                target_account_id,
+                target_group_id,
+                keyword_tokens,
+                frequency_tokens,
+                stale_message_cutoff_minutes,
+                resend_attachments,
+                coordinate_presence_mode,
+                polygon_filter_mode,
+                polygon_id
+            )
+            values ($1, $2, $3, $2, $4, '["alpha"]'::jsonb, '[]'::jsonb, 60, false, 'any', 'none', null)
+            returning id
+            "#,
+            vec![
+                fixture.namespace.clone().into(),
+                fixture.account_id.into(),
+                fixture.source_group_id.into(),
+                fixture.target_group_id.into(),
+            ],
+        )
+        .await
+        .c(h!())
+    }
+
+    async fn send_log_exists(
+        db: &DatabaseConnection,
+        send_log_id: i64,
+    ) -> Result<bool> {
+        let row = db
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                select exists (
+                    select 1
+                    from echo_automation_send_log
+                    where id = $1
+                ) as value
+                "#,
+                [send_log_id.into()],
+            ))
+            .await
+            .c(h!())?
+            .context("send-log existence query did not return a row")
+            .c(h!())?;
+        row.try_get("", "value").c(h!())
+    }
+
+    async fn load_test_send_log(
+        db: &DatabaseConnection,
+        send_log_id: i64,
+    ) -> Result<TestSendLogRow> {
+        TestSendLogRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select
+                automation_id,
+                source_inbox_message_id,
+                source_group_id,
+                target_group_id,
+                planned_at,
+                sent_at,
+                created_at
+            from echo_automation_send_log
+            where id = $1
+            "#,
+            [send_log_id.into()],
+        ))
+        .one(db)
+        .await
+        .c(h!())?
+        .context("send log was not found")
+        .c(h!())
+    }
+
+    async fn load_test_delivery(
+        db: &DatabaseConnection,
+        automation_id: i64,
+        message_id: i32,
+    ) -> Result<TestDeliveryRow> {
+        TestDeliveryRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select status, error, sent_at
+            from echo_automation_delivery
+            where automation_id = $1
+                and source_inbox_message_id = $2
+            "#,
+            [automation_id.into(), message_id.into()],
+        ))
+        .one(db)
+        .await
+        .c(h!())?
+        .context("delivery was not found")
+        .c(h!())
+    }
+
+    async fn plan_fixture_send(
+        db: &DatabaseConnection,
+        fixture: &TestFixture,
+        message: &InboxMessageRow,
+    ) -> Result<i64> {
+        plan_send(
+            db,
+            fixture.automation_id,
+            fixture.source_group_id,
+            fixture.target_group_id,
+            message,
+        )
+        .await
+        .c(h!())?
+        .context("send log was not planned")
+        .c(h!())
+    }
+
+    async fn claim_send_once(
+        db: &DatabaseConnection,
+        fixture: &TestFixture,
+        second_automation_id: i64,
+        message: &InboxMessageRow,
+    ) -> Result<(i64, i64)> {
+        let (first, second) = tokio::join!(
+            plan_send(
+                db,
+                fixture.automation_id,
+                fixture.source_group_id,
+                fixture.target_group_id,
+                message,
+            ),
+            plan_send(
+                db,
+                second_automation_id,
+                fixture.source_group_id,
+                fixture.target_group_id,
+                message,
+            ),
+        );
+        match (first.c(h!())?, second.c(h!())?) {
+            (Some(send_log_id), None) => {
+                Ok((send_log_id, fixture.automation_id))
+            }
+            (None, Some(send_log_id)) => {
+                Ok((send_log_id, second_automation_id))
+            }
+            claims => bail!("expected exactly one send claim: {claims:?}"),
+        }
     }
 
     async fn insert_group(
@@ -2403,6 +3044,104 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn preserves_polygon_coordinate_order() {
+        let coordinates = vec![
+            " 47.900000, 35.900000 ".to_string(),
+            "47.900000, 35.100000".to_string(),
+            "47.100000, 35.100000".to_string(),
+            "47.100000, 35.900000".to_string(),
+        ];
+        let (_, coordinates) = normalize_polygon_req(SavePolygonReq {
+            name: Some("test".to_string()),
+            coordinates,
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(
+            coordinates,
+            vec![
+                "47.900000, 35.900000",
+                "47.900000, 35.100000",
+                "47.100000, 35.100000",
+                "47.100000, 35.900000",
+            ]
+        );
+    }
+
+    #[test]
+    fn detects_crossing_polygon_sides() {
+        let ordered = vec![
+            Point {
+                lat: 47.0,
+                lng: 35.0,
+            },
+            Point {
+                lat: 47.0,
+                lng: 36.0,
+            },
+            Point {
+                lat: 48.0,
+                lng: 36.0,
+            },
+            Point {
+                lat: 48.0,
+                lng: 35.0,
+            },
+        ];
+        let crossing = vec![ordered[0], ordered[2], ordered[1], ordered[3]];
+
+        assert!(!polygon_has_crossing_sides(&ordered));
+        assert!(polygon_has_crossing_sides(&crossing));
+    }
+
+    #[tokio::test]
+    async fn rejects_polygon_with_crossing_sides() {
+        let err = normalize_polygon_req(SavePolygonReq {
+            name: Some("test".to_string()),
+            coordinates: vec![
+                "47.000000, 35.000000".to_string(),
+                "48.000000, 36.000000".to_string(),
+                "47.000000, 36.000000".to_string(),
+                "48.000000, 35.000000".to_string(),
+            ],
+        })
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Сторони району інтересу не мають перетинатися."
+        );
+    }
+
+    #[tokio::test]
+    async fn polygon_view_projects_coordinate_tokens_to_points() -> Result<()> {
+        let now = Utc::now().naive_utc();
+        let coordinates = vec![
+            "47.421350, 35.621970".to_string(),
+            "47.422000, 35.623000".to_string(),
+            "47.420000, 35.624000".to_string(),
+        ];
+        let polygon = polygon_view(PolygonListRow {
+            id: 1,
+            name: "test".to_string(),
+            coordinates: serde_json::json!(coordinates.clone()),
+            automation_count: 0,
+            created_at: now,
+            updated_at: now,
+        })
+        .await
+        .c(h!())?;
+
+        assert_eq!(polygon.coordinates, coordinates);
+        assert_eq!(polygon.points.len(), 3);
+        assert!((polygon.points[0].lat - 47.42135).abs() < f64::EPSILON);
+        assert!((polygon.points[0].lng - 35.62197).abs() < f64::EPSILON);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn missing_polygon_selection_disables_polygon_filter() -> Result<()> {
         let mut req = save_automation_req(Some("inside"), None);
         req.coordinate_presence_mode =
@@ -2430,6 +3169,32 @@ mod tests {
         assert_eq!(automation.keyword_tokens, Vec::<String>::new());
         assert_eq!(automation.frequency_tokens, Vec::<String>::new());
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn preserves_coordinate_screenshot_setting() -> Result<()> {
+        let mut req = save_automation_req(None, None);
+        req.coordinates_screenshot = true;
+
+        let automation = normalize_req(req).await.c(h!())?;
+
+        assert!(automation.coordinates_screenshot);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rejects_coordinate_screenshot_when_coordinates_are_ignored() {
+        let mut req = save_automation_req(None, None);
+        req.coordinates_screenshot = true;
+        req.coordinate_presence_mode =
+            Some("skip_with_coordinates".to_string());
+
+        let err = normalize_req(req).await.unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Не можна створювати знімок координат, коли повідомлення з координатами ігноруються."
+        );
     }
 
     #[test]
@@ -2479,6 +3244,44 @@ mod tests {
             &[],
         );
         assert_eq!(decision, MatchDecision::Send);
+    }
+
+    #[test]
+    fn matches_frequency_at_start_of_word() {
+        let automation = AutomationFilter {
+            keyword_tokens: vec![],
+            frequency_tokens: vec!["134.50".to_string()],
+            ..filter()
+        };
+        let now = Utc::now().naive_utc();
+
+        for body in ["134.5005", "Frequency: 134.509999", "(134.500)"] {
+            let decision =
+                message_matches_filters(&automation, body, now, now, &[]);
+            assert_eq!(decision, MatchDecision::Send, "{body}");
+        }
+    }
+
+    #[test]
+    fn skips_frequency_inside_word() {
+        let automation = AutomationFilter {
+            keyword_tokens: vec![],
+            frequency_tokens: vec!["134.50".to_string()],
+            ..filter()
+        };
+        let now = Utc::now().naive_utc();
+        let decision = message_matches_filters(
+            &automation,
+            "Frequency: 1134.5005",
+            now,
+            now,
+            &[],
+        );
+
+        assert_eq!(
+            decision,
+            MatchDecision::Skip("keyword/frequency filters did not match")
+        );
     }
 
     #[test]
@@ -2578,6 +3381,196 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn send_plan_is_claimed_once_across_automations() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let second_automation_id =
+                insert_test_automation(&db, &fixture).await.c(h!())?;
+            let message =
+                insert_message(&db, &fixture, "shared", Utc::now().naive_utc())
+                    .await
+                    .c(h!())?;
+            assert!(!send_is_planned(
+                &db,
+                fixture.source_group_id,
+                fixture.target_group_id,
+                &message,
+            )
+            .await
+            .c(h!())?);
+            let (send_log_id, automation_id) =
+                claim_send_once(&db, &fixture, second_automation_id, &message)
+                    .await
+                    .c(h!())?;
+            assert!(send_is_planned(
+                &db,
+                fixture.source_group_id,
+                fixture.target_group_id,
+                &message,
+            )
+            .await
+            .c(h!())?);
+            let send_log =
+                load_test_send_log(&db, send_log_id).await.c(h!())?;
+            assert_eq!(send_log.automation_id, automation_id);
+            assert_eq!(send_log.source_inbox_message_id, message.id);
+            assert_eq!(send_log.source_group_id, fixture.source_group_id);
+            assert_eq!(send_log.target_group_id, fixture.target_group_id);
+            assert!(send_log.planned_at <= Utc::now().naive_utc());
+            assert!(send_log.created_at <= Utc::now().naive_utc());
+            assert_eq!(send_log.sent_at, None);
+
+            mark_send_sent(&db, send_log_id).await.c(h!())?;
+            assert!(load_test_send_log(&db, send_log_id)
+                .await
+                .c(h!())?
+                .sent_at
+                .is_some());
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn rolled_back_send_plan_can_be_reclaimed() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let message = insert_message(
+                &db,
+                &fixture,
+                "rollback",
+                Utc::now().naive_utc(),
+            )
+            .await
+            .c(h!())?;
+            let txn = db.begin().await.c(h!())?;
+            assert!(plan_send(
+                &txn,
+                fixture.automation_id,
+                fixture.source_group_id,
+                fixture.target_group_id,
+                &message,
+            )
+            .await
+            .c(h!())?
+            .is_some());
+            txn.rollback().await.c(h!())?;
+
+            assert!(plan_send(
+                &db,
+                fixture.automation_id,
+                fixture.source_group_id,
+                fixture.target_group_id,
+                &message,
+            )
+            .await
+            .c(h!())?
+            .is_some());
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn send_plan_deduplicates_stable_internal_id() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let second_automation_id =
+                insert_test_automation(&db, &fixture).await.c(h!())?;
+            let now = Utc::now().naive_utc();
+            let original =
+                insert_message(&db, &fixture, "stable-internal-id", now)
+                    .await
+                    .c(h!())?;
+            let duplicate =
+                insert_message(&db, &fixture, "stable-internal-id", now)
+                    .await
+                    .c(h!())?;
+            assert_ne!(original.id, duplicate.id);
+            assert!(
+                plan_fixture_send(&db, &fixture, &original).await.c(h!())? > 0
+            );
+            assert!(plan_send(
+                &db,
+                second_automation_id,
+                fixture.source_group_id,
+                fixture.target_group_id,
+                &duplicate,
+            )
+            .await
+            .c(h!())?
+            .is_none());
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn send_log_retention_hard_deletes_only_expired_rows() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let now = Utc::now().naive_utc();
+            let old_message =
+                insert_message(&db, &fixture, "old-send-log", now)
+                    .await
+                    .c(h!())?;
+            let current_message =
+                insert_message(&db, &fixture, "current-send-log", now)
+                    .await
+                    .c(h!())?;
+            let old_send_log_id =
+                plan_fixture_send(&db, &fixture, &old_message)
+                    .await
+                    .c(h!())?;
+            let current_send_log_id =
+                plan_fixture_send(&db, &fixture, &current_message)
+                    .await
+                    .c(h!())?;
+            execute_test_sql(
+                &db,
+                r#"
+                update echo_automation_send_log
+                set created_at = (now() at time zone 'utc') - interval '31 days'
+                where id = $1
+                "#,
+                vec![old_send_log_id.into()],
+            )
+            .await
+            .c(h!())?;
+
+            assert!(delete_expired_send_log(&db).await.c(h!())? >= 1);
+            assert!(!send_log_exists(&db, old_send_log_id).await.c(h!())?);
+            assert!(send_log_exists(&db, current_send_log_id).await.c(h!())?);
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
     async fn already_sent_matches_original_internal_id() -> Result<()> {
         let _guard = DB_TEST_LOCK.lock().await;
         let db = test_db().await.c(h!())?;
@@ -2622,6 +3615,54 @@ mod tests {
             )
             .await
             .c(h!())?);
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn late_skip_preserves_sent_delivery() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let now = Utc::now().naive_utc();
+            let message = insert_message(&db, &fixture, "late-skip", now)
+                .await
+                .c(h!())?;
+            insert_sent_delivery(&db, &fixture, &message, now)
+                .await
+                .c(h!())?;
+            let sent_delivery =
+                load_test_delivery(&db, fixture.automation_id, message.id)
+                    .await
+                    .c(h!())?;
+
+            record_delivery(
+                &db,
+                fixture.automation_id,
+                &message,
+                "skipped",
+                Some("message is already planned for this target group"),
+                false,
+            )
+            .await
+            .c(h!())?;
+
+            let delivery =
+                load_test_delivery(&db, fixture.automation_id, message.id)
+                    .await
+                    .c(h!())?;
+            assert_eq!(delivery.status, "sent");
+            assert_eq!(delivery.error, None);
+            assert_eq!(delivery.sent_at, sent_delivery.sent_at);
+            assert!(already_sent(&db, fixture.automation_id, &message)
+                .await
+                .c(h!())?);
             Ok(())
         }
         .await;
@@ -2721,6 +3762,7 @@ mod tests {
                 frequency_tokens: serde_json::json!([]),
                 stale_message_cutoff_minutes: 0,
                 resend_attachments: false,
+                coordinates_screenshot: false,
                 coordinate_presence_mode: CoordinatePresenceMode::Any
                     .as_str()
                     .to_string(),
@@ -2728,6 +3770,7 @@ mod tests {
                     .as_str()
                     .to_string(),
                 polygon_coordinates: None,
+                last_error: None,
                 checkpoint_at: now - ChronoDuration::seconds(1),
                 last_processed_inbox_message_id: 0,
             };
@@ -2778,6 +3821,7 @@ mod tests {
                 frequency_tokens: serde_json::json!([]),
                 stale_message_cutoff_minutes: 60,
                 resend_attachments: false,
+                coordinates_screenshot: false,
                 coordinate_presence_mode: CoordinatePresenceMode::Any
                     .as_str()
                     .to_string(),
@@ -2785,6 +3829,7 @@ mod tests {
                     .as_str()
                     .to_string(),
                 polygon_coordinates: None,
+                last_error: None,
                 checkpoint_at: chrono::DateTime::UNIX_EPOCH.naive_utc(),
                 last_processed_inbox_message_id: 0,
             };

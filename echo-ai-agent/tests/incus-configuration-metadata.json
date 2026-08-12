@@ -1,0 +1,43 @@
+{
+  "configs": {
+    "devices": {
+      "nic_bridged": {
+        "keys": [
+          {
+            "security.ipv4_filtering": {
+              "type": "bool"
+            }
+          },
+          {
+            "security.mac_filtering": {
+              "type": "bool"
+            }
+          },
+          {
+            "security.port_isolation": {
+              "type": "bool"
+            }
+          }
+        ]
+      }
+    },
+    "instance": {
+      "security": {
+        "keys": [
+          {
+            "security.guestapi": {
+              "defaultdesc": "`true`",
+              "type": "bool"
+            }
+          },
+          {
+            "security.guestapi.images": {
+              "defaultdesc": "`false`",
+              "type": "bool"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

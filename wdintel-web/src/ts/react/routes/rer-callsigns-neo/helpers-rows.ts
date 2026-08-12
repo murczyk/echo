@@ -26,7 +26,15 @@ function sanitizeCallsignAdditionalSourceIds(
 function compareUnitNames(left: Callsign, right: Callsign, unitsById: Map<number, Unit>) {
   const leftUnit = unitsById.get(left.unitId);
   const rightUnit = unitsById.get(right.unitId);
-  const unitParts = ['army', 'division', 'regiment', 'battalion', 'company'] as const;
+  const unitParts = [
+    'armyRegion',
+    'militaryDistrict',
+    'army',
+    'division',
+    'regiment',
+    'battalion',
+    'company',
+  ] as const;
 
   for (const part of unitParts) {
     const leftValue = String(leftUnit?.[part] ?? '');
@@ -52,6 +60,8 @@ export function mergeUnitStatsWithUnits(
       return {
         ...stat,
         unitName: unit.name,
+        armyRegion: unit.armyRegion,
+        militaryDistrict: unit.militaryDistrict,
         army: unit.army,
         division: unit.division,
         regiment: unit.regiment,

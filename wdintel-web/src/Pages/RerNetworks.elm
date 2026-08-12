@@ -256,6 +256,8 @@ listNetworksReq : Model -> B.ListNetworksReq
 listNetworksReq model =
     { filterFreq = emptySToNothing model.filterState.freq
     , filterUnit = emptySToNothing model.filterState.unit
+    , filterUnitArmyRegion = Nothing
+    , filterUnitMilitaryDistrict = Nothing
     , filterUnitArmy = Nothing
     , filterUnitDivision = Nothing
     , filterUnitRegiment = Nothing
@@ -354,9 +356,12 @@ type Msg
     | GoiReportDownloadReturnedByApi (Result ApiError Bytes)
     | ReportTypeChanged ReportConfig.ReportTypeOption
     | ReportActiveFreqsOnlyChanged Bool
+    | ReportIncludeCallsignFullNamesChanged Bool
     | ReportIncludeSigintSignsChanged Bool
     | ReportIncludeConfirmationChanged Bool
     | ReportIncludeHeadingsAndFreqsChanged Bool
+    | ReportIncludeFreqActiveFromChanged Bool
+    | ReportIncludeFreqCreatedAtChanged Bool
     | ReportIncludeUnitCallsignsChanged Bool
     | ReportIncludePelengsMapChanged Bool
     | ReportDateTimeFromMsg (Shared.Components.DateTime.Msg Msg)
@@ -718,6 +723,8 @@ update shared msg model =
                 req =
                     { filterFreq = emptySToNothing model.filterState.freq
                     , filterUnit = emptySToNothing model.filterState.unit
+                    , filterUnitArmyRegion = Nothing
+                    , filterUnitMilitaryDistrict = Nothing
                     , filterUnitArmy = Nothing
                     , filterUnitDivision = Nothing
                     , filterUnitRegiment = Nothing
@@ -798,6 +805,13 @@ update shared msg model =
             in
             ( { model | report = newReport }, E.none )
 
+        ReportIncludeCallsignFullNamesChanged checked ->
+            let
+                newReport =
+                    ReportUpdate.updateCommonSetting "includeCallsignFullNames" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
         ReportIncludeSigintSignsChanged checked ->
             let
                 newReport =
@@ -816,6 +830,20 @@ update shared msg model =
             let
                 newReport =
                     ReportUpdate.updateCommonSetting "includeHeadingsAndFreqs" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
+        ReportIncludeFreqActiveFromChanged checked ->
+            let
+                newReport =
+                    ReportUpdate.updateExtendedSetting "includeFreqActiveFrom" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
+        ReportIncludeFreqCreatedAtChanged checked ->
+            let
+                newReport =
+                    ReportUpdate.updateExtendedSetting "includeFreqCreatedAt" checked model.report
             in
             ( { model | report = newReport }, E.none )
 
@@ -1726,9 +1754,12 @@ filterPanel user shared model =
             reportFormConfig =
                 { onReportTypeChanged = ReportTypeChanged
                 , onActiveFreqsOnlyChanged = ReportActiveFreqsOnlyChanged
+                , onIncludeCallsignFullNamesChanged = ReportIncludeCallsignFullNamesChanged
                 , onIncludeSigintSignsChanged = ReportIncludeSigintSignsChanged
                 , onIncludeConfirmationChanged = ReportIncludeConfirmationChanged
                 , onIncludeHeadingsAndFreqsChanged = ReportIncludeHeadingsAndFreqsChanged
+                , onIncludeFreqActiveFromChanged = ReportIncludeFreqActiveFromChanged
+                , onIncludeFreqCreatedAtChanged = ReportIncludeFreqCreatedAtChanged
                 , onIncludeUnitCallsignsChanged = ReportIncludeUnitCallsignsChanged
                 , onIncludePelengsMapChanged = ReportIncludePelengsMapChanged
                 , reportFromDate = Just model.reportFromDate
@@ -1872,7 +1903,7 @@ unitsBlock shared model =
             , div [ class "overflow-y-auto grow-1" ]
                 (case shared.masterUnits of
                     Success units ->
-                        [ Core.UnitHierarchy.view config (Dict.values units) (RD.withDefault [] model.unitStats) ]
+                        [ Core.UnitHierarchy.view config (List.filter .active (Dict.values units)) (RD.withDefault [] model.unitStats) ]
 
                     _ ->
                         [ Shared.Components.Spinner.loadingSpinner ]

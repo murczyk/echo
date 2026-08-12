@@ -293,6 +293,7 @@ export function buildInboxReq(opts: {
     deniedFreqs: emptyArrToNull(opts.expandedFreqsDenied ?? f.freqsDenied ?? null),
     selectedCallsigns: null,
     selectedUnits: emptyArrToNull(f.unitsSelected ?? null),
+    selectedDeviceNames: null,
     deniedUnits: emptyArrToNull(f.unitsDenied ?? null),
     selectedLocations: null,
     nolimit: opts.nolimit ?? null,
@@ -682,6 +683,8 @@ export function compareMessageTuple(
 
 export const DUTY_FEED_MESSAGE_PAGE_SIZE = 20;
 export const DUTY_FEED_MESSAGE_WINDOW_LIMIT = 40;
+/** Keep at least this many loaded-unread messages (after last-seen) when near the live tail. */
+export const DUTY_FEED_UNREAD_PREFETCH_MIN = 10;
 
 export type WindowedMessageItemsResult = {
   items: MessageItem[];
@@ -851,26 +854,45 @@ export function feedLoadedUnreadCount(feed: MessageFeedState): number {
   return count;
 }
 
+/** True when the window still needs newer pages to refill the unread runway after last-seen. */
+export function feedNeedsUnreadPrefetch(feed: MessageFeedState): boolean {
+  return feedLoadedUnreadCount(feed) < DUTY_FEED_UNREAD_PREFETCH_MIN;
+}
+
+/**
+ * Badge = loadedUnread + trimmedUnread + beyondTailPending.
+ * Matching tail preview is the beyond-tail term.
+ * Residual `unreadCount` above local loaded+trimmed is only used when
+ * `includeBeyondTailResidual` is true (scrolled up). Near the live tail it
+ * must stay off — otherwise a stale poll stock sticks as a phantom badge.
+ */
 export function feedIndicatorUnreadCount(
   feed: MessageFeedState,
   preview?: { tailId: number; count: number },
+  options?: { includeBeyondTailResidual?: boolean },
 ): number {
   const loadedUnread = feedLoadedUnreadCount(feed);
+  const windowedUnreadItems = feed.windowedUnreadItems ?? new Map<number, number>();
   const currentTailId = feed.items.at(-1)?.[0];
   const hasMatchingPreview = currentTailId != null && preview?.tailId === currentTailId;
   if (hasMatchingPreview) {
     const tail = feed.items.at(-1);
-    const windowedUnreadBeforeOrAtTail = [...(feed.windowedUnreadItems ?? new Map())].filter(
+    const windowedUnreadBeforeOrAtTail = [...windowedUnreadItems].filter(
       ([id, timestamp]) =>
         compareMessageTuple(
           { timestamp, id },
           { timestamp: tail?.[1].timestamp, id: currentTailId },
         ) <= 0,
     ).length;
-    return loadedUnread + Math.max(0, preview.count) + windowedUnreadBeforeOrAtTail;
+    return loadedUnread + windowedUnreadBeforeOrAtTail + Math.max(0, preview.count);
   }
 
-  return Math.max(0, feed.unreadCount, loadedUnread + (feed.windowedUnreadItems?.size ?? 0));
+  const trimmedUnread = windowedUnreadItems.size;
+  const includeResidual = options?.includeBeyondTailResidual !== false;
+  const beyondTailPending = includeResidual
+    ? Math.max(0, feed.unreadCount - loadedUnread - trimmedUnread)
+    : 0;
+  return loadedUnread + trimmedUnread + beyondTailPending;
 }
 
 /** Sum of {@link feedUnreadDisplayCount} across all feeds. */

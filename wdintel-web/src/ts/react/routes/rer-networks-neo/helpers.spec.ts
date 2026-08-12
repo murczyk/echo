@@ -131,6 +131,8 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: '3 АК',
+      filterUnitArmyRegion: null,
+      filterUnitMilitaryDistrict: null,
       filterUnitArmy: null,
       filterUnitDivision: null,
       filterUnitRegiment: null,
@@ -172,6 +174,8 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual(
       expect.objectContaining({
         filterUnit: '1 АК',
+        filterUnitArmyRegion: null,
+        filterUnitMilitaryDistrict: null,
         filterUnitArmy: null,
         filterUnitDivision: null,
         filterUnitRegiment: null,
@@ -185,6 +189,8 @@ describe('rer-networks-neo AOR filters', () => {
       kind: 'group',
       label: '1 АК',
       hierarchy: {
+        armyRegion: 'R',
+        militaryDistrict: 'D',
         army: '1',
         division: '2',
         regiment: '3',
@@ -207,6 +213,8 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual(
       expect.objectContaining({
         filterUnit: null,
+        filterUnitArmyRegion: 'R',
+        filterUnitMilitaryDistrict: 'D',
         filterUnitArmy: '1',
         filterUnitDivision: '2',
         filterUnitRegiment: '3',
@@ -220,6 +228,8 @@ describe('rer-networks-neo AOR filters', () => {
       kind: 'group',
       label: '1 АК',
       hierarchy: {
+        armyRegion: null,
+        militaryDistrict: null,
         army: '',
         division: null,
         regiment: undefined,
@@ -242,6 +252,8 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual(
       expect.objectContaining({
         filterUnit: null,
+        filterUnitArmyRegion: null,
+        filterUnitMilitaryDistrict: null,
         filterUnitArmy: '',
         filterUnitDivision: null,
         filterUnitRegiment: null,
@@ -279,6 +291,8 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: null,
+      filterUnitArmyRegion: null,
+      filterUnitMilitaryDistrict: null,
       filterUnitArmy: null,
       filterUnitDivision: null,
       filterUnitRegiment: null,
@@ -316,6 +330,8 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: '3 АК',
+      filterUnitArmyRegion: null,
+      filterUnitMilitaryDistrict: null,
       filterUnitArmy: null,
       filterUnitDivision: null,
       filterUnitRegiment: null,
@@ -354,6 +370,8 @@ describe('rer-networks-neo AOR filters', () => {
     ).toEqual({
       filterFreq: '128.5',
       filterUnit: '3 АК',
+      filterUnitArmyRegion: null,
+      filterUnitMilitaryDistrict: null,
       filterUnitArmy: null,
       filterUnitDivision: null,
       filterUnitRegiment: null,

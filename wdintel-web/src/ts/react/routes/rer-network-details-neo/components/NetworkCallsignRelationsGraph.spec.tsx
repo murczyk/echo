@@ -196,6 +196,22 @@ describe('NetworkCallsignRelationsGraph', () => {
     expect(getNetworkCallsignRelationMessages).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the frequency legend folded by default and expands it on demand', async () => {
+    const view = renderGraph();
+    rendered.push(view);
+
+    const expandLegend = view.container.querySelector('button[aria-label="Розгорнути частоти"]');
+    expect(expandLegend).not.toBeNull();
+    expect(view.container.querySelector('input[placeholder="Частота"]')).toBeNull();
+
+    await act(async () => {
+      expandLegend?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(view.container.querySelector('button[aria-label="Згорнути частоти"]')).not.toBeNull();
+    expect(view.container.querySelector('input[placeholder="Частота"]')).not.toBeNull();
+  });
+
   it('toggles fullscreen through the stage portal and exits on Escape', async () => {
     const view = renderGraph();
     rendered.push(view);
@@ -229,6 +245,13 @@ describe('NetworkCallsignRelationsGraph', () => {
     const intensityPopover = document.body.querySelector('[data-testid="graph-intensity-popover"]');
     expect(intensityPopover).not.toBeNull();
     expect((intensityPopover as HTMLElement).getAttribute('data-zindex')).toBe('10001');
+    const intensityPopoverRoot = document.body.querySelector<HTMLElement>(
+      '[data-testid="graph-intensity-popover-root"]',
+    );
+    expect(intensityPopoverRoot).not.toBeNull();
+    expect(intensityPopoverRoot ? getComputedStyle(intensityPopoverRoot).zIndex : null).toBe(
+      '10001',
+    );
 
     const filterButton = document.body.querySelector('button[aria-label="Налаштувати частоти"]');
     expect(filterButton).not.toBeNull();
@@ -240,6 +263,11 @@ describe('NetworkCallsignRelationsGraph', () => {
     const filterPopover = document.body.querySelector('[data-testid="graph-filters-popover"]');
     expect(filterPopover).not.toBeNull();
     expect((filterPopover as HTMLElement).getAttribute('data-zindex')).toBe('10001');
+    const filterPopoverRoot = document.body.querySelector<HTMLElement>(
+      '[data-testid="graph-filters-popover-root"]',
+    );
+    expect(filterPopoverRoot).not.toBeNull();
+    expect(filterPopoverRoot ? getComputedStyle(filterPopoverRoot).zIndex : null).toBe('10001');
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));

@@ -12,6 +12,7 @@ import {
   isNullOrUndefined,
 } from '../../utils/misc';
 import { normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
+import { normalizeCallsignFilterValues } from '../../utils/callsign-normalization';
 import type { AnalysisQueryState } from './types';
 
 export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
@@ -20,6 +21,13 @@ export const ANALYSIS_MESSAGES_PAGE_SIZE = 20;
 export const ANALYSIS_SESSION_ACTIVITY_PAGE_ID = 'rer-analysis';
 export const ADJACENT_FREQS_RANGE_OPTIONS = [0, 0.0005, 0.002, 0.005] as const;
 const ONLY_WITH_MEDIA_PARAM = 'only_with_media';
+const LEFT_PANEL_OPEN_PARAM = 'leftPanelOpen';
+const RIGHT_PANEL_OPEN_PARAM = 'rightPanelOpen';
+
+export type AnalysisPanelQueryState = {
+  leftPanelOpen: boolean | null;
+  rightPanelOpen: boolean | null;
+};
 
 /** Duty / deep links append `?showMap=true` so the map center tab opens (see `buildRerAnalysisNeoHref` in rer-duty-neo). */
 export function shouldOpenAnalysisMapFromSearchParams(searchParams: URLSearchParams): boolean {
@@ -63,6 +71,7 @@ export function emptyQueryState(): AnalysisQueryState {
     freqsSelected: [],
     callsignsSelected: [],
     unitsSelected: [],
+    deviceNamesSelected: [],
     locationsSelected: [],
     postsSelected: [],
     networksSelected: [],
@@ -127,6 +136,17 @@ export function parseNewestFirstFromWindow(): boolean {
   return param !== 'false';
 }
 
+export function parseAnalysisPanelQueryStateFromWindow(): AnalysisPanelQueryState {
+  if (typeof window === 'undefined') {
+    return { leftPanelOpen: null, rightPanelOpen: null };
+  }
+  const searchParams = new URL(window.location.href).searchParams;
+  return {
+    leftPanelOpen: parseOptionalBooleanParam(searchParams.get(LEFT_PANEL_OPEN_PARAM)),
+    rightPanelOpen: parseOptionalBooleanParam(searchParams.get(RIGHT_PANEL_OPEN_PARAM)),
+  };
+}
+
 export function createInitialQueryState(
   parsed: AnalysisQueryState,
   now: Date = new Date(),
@@ -163,7 +183,11 @@ export function hasMeaningfulUiFiltersBeyondDateRange(state: AnalysisQueryState)
   return stateKey !== defaultKey;
 }
 
-export function pushQueryStateToUrl(state: AnalysisQueryState, newestFirst: boolean = true) {
+export function pushQueryStateToUrl(
+  state: AnalysisQueryState,
+  newestFirst: boolean = true,
+  panelState?: { leftPanelOpen: boolean; rightPanelOpen: boolean },
+) {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
   writeRerAnalysisQueryStateToSearchParams(url.searchParams, state);
@@ -176,6 +200,10 @@ export function pushQueryStateToUrl(state: AnalysisQueryState, newestFirst: bool
     url.searchParams.set('newestFirst', 'false');
   } else {
     url.searchParams.delete('newestFirst');
+  }
+  if (panelState) {
+    url.searchParams.set(LEFT_PANEL_OPEN_PARAM, String(panelState.leftPanelOpen));
+    url.searchParams.set(RIGHT_PANEL_OPEN_PARAM, String(panelState.rightPanelOpen));
   }
   window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
 }
@@ -208,6 +236,7 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
 
   return {
     ...next,
+    callsignsSelected: normalizeCallsignFilterValues(next.callsignsSelected),
     unitsSelected: normalizeUnknownUnitSelections(next.unitsSelected),
   };
 }
@@ -247,6 +276,7 @@ export function buildAnalysisReq(
     selectedPosts: query.postsSelected.length ? query.postsSelected : null,
     selectedCallsigns: query.callsignsSelected.length ? query.callsignsSelected : null,
     selectedUnits: query.unitsSelected.length ? query.unitsSelected : null,
+    selectedDeviceNames: query.deviceNamesSelected.length ? query.deviceNamesSelected : null,
     selectedLocations: query.locationsSelected.length ? query.locationsSelected : null,
     selectedAors: query.aorsSelected.length
       ? query.aorsSelected.map((value) => Number(value)).filter(Number.isFinite)
@@ -305,6 +335,7 @@ export function buildInboxReq(
     deniedFreqs: null,
     selectedCallsigns: req.selectedCallsigns,
     selectedUnits: req.selectedUnits,
+    selectedDeviceNames: req.selectedDeviceNames,
     deniedUnits: null,
     selectedLocations: req.selectedLocations,
     nolimit: null,
@@ -394,6 +425,7 @@ export function queryStateFromSavedFilter(
     freqsSelected: req.selectedFreqs ?? [],
     callsignsSelected: req.selectedCallsigns ?? [],
     unitsSelected: req.selectedUnits ?? [],
+    deviceNamesSelected: req.selectedDeviceNames ?? [],
     locationsSelected: req.selectedLocations ?? [],
     postsSelected: req.selectedPosts ?? [],
     networksSelected: (req.selectedNetworks ?? []).map(String),
@@ -477,6 +509,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     freqsSelected: normalized.selectedFreqs ?? [],
     callsignsSelected: normalized.selectedCallsigns ?? [],
     unitsSelected: normalized.selectedUnits ?? [],
+    deviceNamesSelected: normalized.selectedDeviceNames ?? [],
     locationsSelected: normalized.selectedLocations ?? [],
     postsSelected: normalized.selectedPosts ?? [],
     networksSelected: (normalized.selectedNetworks ?? []).map(String),

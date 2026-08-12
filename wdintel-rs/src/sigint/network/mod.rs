@@ -9,7 +9,10 @@ use crate::sigint;
 use crate::sigint::etalonka::query::*;
 use crate::sigint::etalonka::types::*;
 use crate::sigint::network::bl::*;
-use crate::sigint::network::filter::apply_network_list_filters;
+use crate::sigint::network::filter::{
+    apply_network_list_filters_with_text_search_mode, tokenize_search_text,
+    NetworkTextSearchMode,
+};
 use crate::sigint::network::merge::*;
 use crate::types::*;
 use crate::users::{
@@ -25,7 +28,7 @@ use sea_orm::*;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
 };
-use sea_query::{extension::postgres::PgExpr, Alias, Expr, Query};
+use sea_query::{Alias, Expr, Query};
 use serde_json;
 use sqlx::FromRow;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -35,6 +38,7 @@ pub mod bl;
 pub mod etalon_calc;
 pub mod filter;
 pub mod goi;
+pub mod inbox_backfill_tui;
 pub mod merge;
 pub mod oneoff;
 pub mod relations;
@@ -63,13 +67,6 @@ pub async fn network_list(
     env: actix_web::web::Data<Env>,
     req: Json<ListNetworksReq>,
 ) -> Result<Json<ListNetworksRsp>, AppError> {
-    #[derive(FromQueryResult)]
-    struct Row {
-        active: i64,
-        inactive: i64,
-        archived: i64,
-    }
-
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
@@ -78,29 +75,26 @@ pub async fn network_list(
     .await?;
     let user_id = login_id_from_identity(&user)?;
 
-    let networks = build_networks_query(&req, NetworkQueryKind::List)
-        .all(&env.dbx)
-        .await
-        .context(h!())?;
+    let text_search_mode =
+        resolve_network_text_search_mode(&env.dbx, &req).await?;
+    let networks = build_networks_query_with_text_search_mode(
+        &req,
+        NetworkQueryKind::List,
+        text_search_mode,
+    )
+    .all(&env.dbx)
+    .await
+    .context(h!())?;
 
     let res = render_networks(networks, &env.dbx, &user_id)
         .await
         .context(h!())?;
 
-    let row = build_networks_counts_query(&req)
-        .into_model::<Row>()
-        .one(&env.dbx)
-        .await
-        .context(h!())?
-        .context(h!())?;
+    let status_counts = load_network_status_counts(&env.dbx, &req).await?;
 
     Ok(Json(ListNetworksRsp {
         list: res,
-        status_counts: ListNetworksStatusCountsRsp {
-            active: row.active,
-            inactive: row.inactive,
-            archived: row.archived,
-        },
+        status_counts,
     }))
 }
 
@@ -110,15 +104,29 @@ enum NetworkQueryKind {
     Counts,
 }
 
+#[cfg(test)]
 fn build_networks_query(
     req: &ListNetworksReq,
     kind: NetworkQueryKind,
 ) -> Select<sigint_network::Entity> {
+    build_networks_query_with_text_search_mode(
+        req,
+        kind,
+        NetworkTextSearchMode::Substring,
+    )
+}
+
+fn build_networks_query_with_text_search_mode(
+    req: &ListNetworksReq,
+    kind: NetworkQueryKind,
+    text_search_mode: NetworkTextSearchMode,
+) -> Select<sigint_network::Entity> {
     let mut query = sigint_network::Entity::find();
-    query = apply_network_list_filters(
+    query = apply_network_list_filters_with_text_search_mode(
         query,
         req,
         matches!(kind, NetworkQueryKind::List),
+        text_search_mode,
     );
 
     if matches!(kind, NetworkQueryKind::List) {
@@ -130,6 +138,8 @@ fn build_networks_query(
             || req.filter_location.is_some()
             || req.status_filter.is_some()
             || req.filter_unit.is_some()
+            || req.filter_unit_army_region.is_some()
+            || req.filter_unit_military_district.is_some()
             || req.filter_unit_army.is_some()
             || req.filter_unit_division.is_some()
             || req.filter_unit_regiment.is_some()
@@ -164,12 +174,27 @@ fn build_networks_query(
     query
 }
 
+#[cfg(test)]
 fn build_networks_counts_query(
     req: &ListNetworksReq,
 ) -> Select<sigint_network::Entity> {
-    build_networks_query(req, NetworkQueryKind::Counts)
-        .select_only()
-        .column_as(
+    build_networks_counts_query_with_text_search_mode(
+        req,
+        NetworkTextSearchMode::Substring,
+    )
+}
+
+fn build_networks_counts_query_with_text_search_mode(
+    req: &ListNetworksReq,
+    text_search_mode: NetworkTextSearchMode,
+) -> Select<sigint_network::Entity> {
+    build_networks_query_with_text_search_mode(
+        req,
+        NetworkQueryKind::Counts,
+        text_search_mode,
+    )
+    .select_only()
+    .column_as(
             Expr::cust(
                 "COUNT(*) FILTER (WHERE sigint_network.deleted = false AND sigint_network.active_to IS NULL)",
             ),
@@ -185,6 +210,127 @@ fn build_networks_counts_query(
             Expr::cust("COUNT(*) FILTER (WHERE sigint_network.deleted = true)"),
             "archived",
         )
+}
+
+fn has_network_global_text_filter(req: &ListNetworksReq) -> bool {
+    req.filter_text.as_deref().is_some_and(|filter_text| {
+        !tokenize_search_text(filter_text).is_empty()
+    })
+}
+
+fn build_network_text_search_probe_query(
+    req: &ListNetworksReq,
+    text_search_mode: NetworkTextSearchMode,
+) -> Select<sigint_network::Entity> {
+    apply_network_list_filters_with_text_search_mode(
+        sigint_network::Entity::find(),
+        req,
+        true,
+        text_search_mode,
+    )
+    .select_only()
+    .column(sigint_network::Column::Id)
+    .limit(1)
+}
+
+pub(crate) async fn resolve_network_text_search_mode(
+    db: &DatabaseConnection,
+    req: &ListNetworksReq,
+) -> Result<NetworkTextSearchMode, AppError> {
+    if !has_network_global_text_filter(req) {
+        return Ok(NetworkTextSearchMode::Substring);
+    }
+
+    let has_exact_match = build_network_text_search_probe_query(
+        req,
+        NetworkTextSearchMode::ExactWord,
+    )
+    .into_tuple::<i64>()
+    .one(db)
+    .await
+    .c(h!())?
+    .is_some();
+
+    if has_exact_match {
+        Ok(NetworkTextSearchMode::ExactWord)
+    } else {
+        Ok(NetworkTextSearchMode::Substring)
+    }
+}
+
+async fn count_networks_for_status(
+    db: &DatabaseConnection,
+    req: &ListNetworksReq,
+    status_filter: ListNetworksStatusFilter,
+) -> Result<i64, AppError> {
+    let mut req = req.clone();
+    req.status_filter = Some(status_filter);
+    let text_search_mode = resolve_network_text_search_mode(db, &req).await?;
+    let count = apply_network_list_filters_with_text_search_mode(
+        sigint_network::Entity::find(),
+        &req,
+        true,
+        text_search_mode,
+    )
+    .count(db)
+    .await
+    .c(h!())?;
+
+    Ok(<i64 as TryFrom<u64>>::try_from(count).c(h!())?)
+}
+
+async fn load_network_status_counts(
+    db: &DatabaseConnection,
+    req: &ListNetworksReq,
+) -> Result<ListNetworksStatusCountsRsp, AppError> {
+    if !has_network_global_text_filter(req) {
+        #[derive(FromQueryResult)]
+        struct Row {
+            active: i64,
+            inactive: i64,
+            archived: i64,
+        }
+
+        let row = build_networks_counts_query_with_text_search_mode(
+            req,
+            NetworkTextSearchMode::Substring,
+        )
+        .into_model::<Row>()
+        .one(db)
+        .await
+        .c(h!())?
+        .c(h!())?;
+
+        return Ok(ListNetworksStatusCountsRsp {
+            active: row.active,
+            inactive: row.inactive,
+            archived: row.archived,
+        });
+    }
+
+    let (active, inactive, archived) = tokio::try_join!(
+        count_networks_for_status(
+            db,
+            req,
+            ListNetworksStatusFilter::ListNetworksActive,
+        ),
+        count_networks_for_status(
+            db,
+            req,
+            ListNetworksStatusFilter::ListNetworksInactive,
+        ),
+        count_networks_for_status(
+            db,
+            req,
+            ListNetworksStatusFilter::ListNetworksArchived,
+        ),
+    )?;
+
+    Ok(ListNetworksStatusCountsRsp {
+        active,
+        inactive,
+        archived,
+    })
 }
 
 #[post("/api/sigint/restore-network")]
@@ -1323,7 +1469,7 @@ pub async fn network_callsigns(
             stats_till,
         ) {
             let callsigns = load_network_callsigns_from_stats(
-                &env.dbx,
+                &env,
                 &groups,
                 &req.network_ids,
                 stats_since,
@@ -1335,115 +1481,99 @@ pub async fn network_callsigns(
         }
     }
 
-    let mut network_messages = Query::select()
-        .expr_as(
-            Expr::col((
-                SigintInboxItemNetwork::Table,
-                SigintInboxItemNetwork::SigintNetworkId,
-            )),
-            Alias::new("network_id"),
-        )
-        .expr_as(
-            Expr::cust(
-                "jsonb_array_elements_text(sigint_inbox_item.callsigns)",
-            ),
-            Alias::new("callsign"),
-        )
-        .from(SignalMessage::Table)
+    let callsigns = load_network_callsigns_from_messages(
+        &env.dbx,
+        &groups,
+        &req.network_ids,
+        cutoff_since,
+    )
+    .await?;
+    Ok(Json(callsigns))
+}
+
+#[derive(FromQueryResult)]
+struct NetworkCallsignInboxItem {
+    network_id: i64,
+    inbox_item_id: i64,
+}
+
+async fn load_network_callsigns_from_messages(
+    dbx: &DatabaseConnection,
+    groups: &[String],
+    network_ids: &[i64],
+    cutoff_since: Option<PrimitiveDateTime>,
+) -> Result<HashMap<String, Vec<String>>, AppError> {
+    let mut query = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
-            SigintInboxItem::Table,
-            Expr::col((SignalMessage::Table, SignalMessage::Id))
-                .equals((SigintInboxItem::Table, SigintInboxItem::Id)),
-        )
-        .join(
-            JoinType::InnerJoin,
-            DatasourceGroup::Table,
-            Expr::col((SignalMessage::Table, SignalMessage::DatasourceGroupId))
-                .equals((DatasourceGroup::Table, DatasourceGroup::Id)),
-        )
-        .join(
-            JoinType::InnerJoin,
-            SigintInboxItemNetwork::Table,
-            Expr::col((SigintInboxItem::Table, SigintInboxItem::Id)).equals((
-                SigintInboxItemNetwork::Table,
-                SigintInboxItemNetwork::SigintInboxItemId,
-            )),
+            signal_message::Relation::SigintInboxItem.def(),
         )
         .join(
             JoinType::InnerJoin,
-            SigintNetwork::Table,
-            Expr::col((
-                SigintInboxItemNetwork::Table,
-                SigintInboxItemNetwork::SigintNetworkId,
-            ))
-            .equals((SigintNetwork::Table, SigintNetwork::Id)),
+            signal_message::Relation::DatasourceGroup.def(),
         )
-        .and_where(
-            Expr::col((SignalMessage::Table, SignalMessage::Deleted)).eq(false),
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
         )
-        .and_where(datasource_group::Column::GroupMasterKey.eq_any(groups))
-        .and_where(
-            Expr::col((
-                SigintInboxItemNetwork::Table,
-                SigintInboxItemNetwork::SigintNetworkId,
-            ))
-            .is_in(req.network_ids.clone()),
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Relation::SigintNetwork.def(),
         )
-        .and_where(
-            Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
+        .select_only()
+        .column_as(
+            sigint_inbox_item_network::Column::SigintNetworkId,
+            "network_id",
         )
-        .to_owned();
-    if let Some(cut) = cutoff_since {
-        network_messages.and_where(
+        .column_as(sigint_inbox_item::Column::Id, "inbox_item_id")
+        .distinct()
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            datasource_group::Column::GroupMasterKey.eq_any(groups.to_vec()),
+        )
+        .filter(
+            sigint_inbox_item_network::Column::SigintNetworkId
+                .eq_any(network_ids.to_vec()),
+        )
+        .filter(sigint_network::Column::Deleted.eq(false));
+    if let Some(cutoff_since) = cutoff_since {
+        query = query.filter(
             Expr::col((SigintInboxItem::Table, SigintInboxItem::Datetime))
-                .gte(cut),
+                .gte(cutoff_since),
         );
     }
-    let network_messages_cte = CommonTableExpression::new()
-        .query(network_messages)
-        .table_name(Alias::new("network_messages"))
-        .to_owned();
-
-    let nm = Alias::new("network_messages");
-    let main_query = Query::select()
-        .expr_as(Expr::col((nm.clone(), "network_id")), Alias::new("id"))
-        .expr_as(
-            Expr::cust(
-                "array_to_json(array_agg(DISTINCT network_messages.callsign))",
-            ),
-            Alias::new("callsigns"),
-        )
-        .from_as(nm.clone(), nm.clone())
-        .group_by_col((nm.clone(), "network_id"))
-        .to_owned();
-
-    let combined_query = Query::with()
-        .cte(network_messages_cte)
-        .clone()
-        .query(main_query)
-        .to_string(PostgresQueryBuilder);
-
-    let rows = env
-        .dbx
-        .query_all(Statement::from_string(
-            DatabaseBackend::Postgres,
-            combined_query,
-        ))
+    let inbox_items = query
+        .into_model::<NetworkCallsignInboxItem>()
+        .all(dbx)
         .await
         .context(h!())?;
-    let mut callsigns = HashMap::new();
-    for row in rows {
-        let id: i64 = row.try_get("", "id").context(h!())?;
-        let row_callsigns: serde_json::Value =
-            row.try_get("", "callsigns").context(h!())?;
-        let all_callsigns =
-            serde_json::from_value::<Vec<String>>(row_callsigns)
-                .unwrap_or_default();
-        callsigns.insert(id.to_string(), all_callsigns);
+    let inbox_item_ids = inbox_items
+        .iter()
+        .map(|inbox_item| inbox_item.inbox_item_id)
+        .collect_vec();
+    let callsigns_by_item_id =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &inbox_item_ids).await?;
+    let mut callsigns_by_network_id =
+        HashMap::<String, BTreeSet<String>>::new();
+    for inbox_item in inbox_items {
+        let Some(callsigns) =
+            callsigns_by_item_id.get(&inbox_item.inbox_item_id)
+        else {
+            continue;
+        };
+        for callsign in callsigns.primary.iter().chain(&callsigns.alg2) {
+            callsigns_by_network_id
+                .entry(inbox_item.network_id.to_string())
+                .or_default()
+                .insert(callsign.clone());
+        }
     }
-
-    Ok(Json(callsigns))
+    Ok(callsigns_by_network_id
+        .into_iter()
+        .map(|(network_id, callsigns)| {
+            (network_id, callsigns.into_iter().collect())
+        })
+        .collect())
 }
 
 #[post("/api/sigint/network-group-activity-one")]
@@ -1520,7 +1650,7 @@ pub async fn network_freqs_activity_one(
         .unwrap_or(FEATURE_GROUP_STATS_AGGREGATED_DEFAULT)
     {
         let res = load_network_freqs_activity_from_stats(
-            &env.dbx,
+            &env,
             &groups,
             req.network_id,
         )
@@ -1577,10 +1707,10 @@ pub async fn network_freqs_activity_one(
     )
     .and_where(Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false))
     .add_group_by([
-        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into(),
+        Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)),
         Expr::cust("day"),
     ])
-    .order_by_expr(Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)).into(), Order::Asc)
+    .order_by_expr(Expr::col((SigintInboxItem::Table, SigintInboxItem::Freq)), Order::Asc)
     .order_by_expr(Expr::cust("day"), Order::Asc)
     .to_owned();
 
@@ -1590,7 +1720,7 @@ pub async fn network_freqs_activity_one(
 
     let rows = env
         .dbx
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             combined_query,
         ))
@@ -1624,20 +1754,14 @@ fn primitive_to_naive_datetime(
 }
 
 async fn load_network_callsigns_from_stats(
-    dbx: &DatabaseConnection,
+    env: &actix_web::web::Data<Env>,
     groups: &Vec<String>,
     network_ids: &Vec<i64>,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<HashMap<String, Vec<String>>, AppError> {
-    #[derive(FromQueryResult)]
-    struct CallsignStatRow {
-        network_id: i64,
-        callsign: String,
-    }
-
     let batches =
-        crate::stats::collect_signal_group_batches(groups.clone(), dbx)
+        crate::stats::collect_signal_group_batches(groups.clone(), &env.dbx)
             .await
             .c(h!())?;
     let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
@@ -1653,40 +1777,36 @@ async fn load_network_callsigns_from_stats(
         .filter(sigint_network::Column::Id.eq_any(network_ids.clone()))
         .filter(sigint_network::Column::Deleted.eq(false))
         .into_tuple::<i64>()
-        .all(dbx)
+        .all(&env.dbx)
         .await
         .c(h!())?;
     if active_network_ids.is_empty() {
         return Ok(HashMap::new());
     }
 
-    let rows = stats_group_network_callsign_day::Entity::find()
-        .select_only()
-        .column(stats_group_network_callsign_day::Column::NetworkId)
-        .column(stats_group_network_callsign_day::Column::Callsign)
-        .filter(
-            stats_group_network_callsign_day::Column::SignalGroupBatchId
-                .eq_any(batch_ids),
-        )
-        .filter(
-            stats_group_network_callsign_day::Column::NetworkId
-                .eq_any(active_network_ids),
-        )
-        .filter(stats_group_network_callsign_day::Column::Dt.gte(since_date))
-        .filter(stats_group_network_callsign_day::Column::Dt.lte(till_date))
-        .group_by(stats_group_network_callsign_day::Column::NetworkId)
-        .group_by(stats_group_network_callsign_day::Column::Callsign)
-        .into_model::<CallsignStatRow>()
-        .all(dbx)
-        .await
-        .c(h!())?;
-
-    let mut callsigns: HashMap<String, Vec<String>> = HashMap::new();
-    for row in rows {
-        callsigns
-            .entry(row.network_id.to_string())
-            .or_default()
-            .push(row.callsign);
+    let batch_ids = batch_ids.into_iter().collect::<HashSet<_>>();
+    let active_network_ids =
+        active_network_ids.into_iter().collect::<HashSet<_>>();
+    let mut callsigns = HashMap::<String, Vec<String>>::new();
+    for (_, bucket) in crate::stats::read_redis_network_days(
+        env,
+        since_date,
+        till_date,
+        &active_network_ids,
+    )
+    .await
+    .c(h!())?
+    {
+        for row in bucket.callsigns {
+            if batch_ids.contains(&row.signal_group_batch_id)
+                && active_network_ids.contains(&row.network_id)
+            {
+                callsigns
+                    .entry(row.network_id.to_string())
+                    .or_default()
+                    .push(row.value);
+            }
+        }
     }
     for list in callsigns.values_mut() {
         list.sort();
@@ -1696,19 +1816,12 @@ async fn load_network_callsigns_from_stats(
 }
 
 async fn load_network_freqs_activity_from_stats(
-    dbx: &DatabaseConnection,
+    env: &actix_web::web::Data<Env>,
     groups: &Vec<String>,
     network_id: i64,
 ) -> Result<HashMap<String, HashMap<String, i64>>, AppError> {
-    #[derive(FromQueryResult)]
-    struct FreqStatRow {
-        dt: NaiveDate,
-        frequency: String,
-        quantity: i64,
-    }
-
     let batches =
-        crate::stats::collect_signal_group_batches(groups.clone(), dbx)
+        crate::stats::collect_signal_group_batches(groups.clone(), &env.dbx)
             .await
             .c(h!())?;
     let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
@@ -1716,36 +1829,39 @@ async fn load_network_freqs_activity_from_stats(
         return Ok(HashMap::new());
     }
 
-    let rows = stats_group_network_freq_day::Entity::find()
-        .select_only()
-        .column(stats_group_network_freq_day::Column::Dt)
-        .column(stats_group_network_freq_day::Column::Frequency)
-        .expr_as(Expr::cust("SUM(quantity)"), "quantity")
-        .filter(
-            stats_group_network_freq_day::Column::SignalGroupBatchId
-                .eq_any(batch_ids),
-        )
-        .filter(stats_group_network_freq_day::Column::NetworkId.eq(network_id))
-        .group_by(stats_group_network_freq_day::Column::Dt)
-        .group_by(stats_group_network_freq_day::Column::Frequency)
-        .into_model::<FreqStatRow>()
-        .all(dbx)
-        .await
-        .c(h!())?;
-
-    let mut res: HashMap<String, HashMap<String, i64>> = HashMap::new();
-    for row in rows {
-        let day_ms = crate::stats::start_of_day(row.dt)
+    let batch_ids = batch_ids.into_iter().collect::<HashSet<_>>();
+    let till_date = crate::stats::get_local_date(Utc::now().naive_utc());
+    let since_date =
+        till_date - chrono::Duration::days(STATS_MIN_DATETIME_DAYS);
+    let mut result = HashMap::<String, HashMap<String, i64>>::new();
+    let network_ids = HashSet::from([network_id]);
+    for (date, bucket) in crate::stats::read_redis_network_days(
+        env,
+        since_date,
+        till_date,
+        &network_ids,
+    )
+    .await
+    .c(h!())?
+    {
+        let day = crate::stats::start_of_day(date)
             .c(h!())?
             .and_utc()
             .timestamp_millis()
             .to_string();
-        res.entry(row.frequency)
-            .or_default()
-            .insert(day_ms, row.quantity);
+        for row in bucket.frequencies {
+            if row.network_id == network_id
+                && batch_ids.contains(&row.signal_group_batch_id)
+            {
+                *result
+                    .entry(row.value)
+                    .or_default()
+                    .entry(day.clone())
+                    .or_default() += row.quantity as i64;
+            }
+        }
     }
-
-    Ok(res)
+    Ok(result)
 }
 
 #[post("/api/sigint/network-points")]
@@ -1760,6 +1876,8 @@ pub async fn list_network_points(
         active_freqs_only: false,
         since_date_inclusive_ms: Some(req.since_date_inclusive_ms),
         till_date_inclusive_ms: req.till_date_noninclusive_ms,
+        till_date_end:
+            crate::rer_importer::report_chunking::ReportPeriodEnd::NonInclusive,
     };
 
     let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
@@ -2028,6 +2146,7 @@ async fn finish_network_freq_mutation(
     network: sigint_network::Model,
     network_id: i64,
     network_freq_id: i64,
+    activate_network: bool,
     invalidation_freq: String,
     invalidation_range: (Option<NaiveDateTime>, Option<NaiveDateTime>),
 ) -> Result<NetworkFreqMutationResult, AppError> {
@@ -2035,6 +2154,10 @@ async fn finish_network_freq_mutation(
         get_network_activity_range(txn, network_id)
             .await
             .context(h!())?;
+    let network_active_to = network_active_to_after_freq_mutation(
+        network_active_to,
+        activate_network,
+    );
 
     let mut network_model = network.into_active_model();
     network_model.active_from = Set(network_active_from);
@@ -2051,6 +2174,17 @@ async fn finish_network_freq_mutation(
         invalidation_freq,
         invalidation_range,
     })
+}
+
+fn network_active_to_after_freq_mutation(
+    network_active_to: Option<NaiveDateTime>,
+    activate_network: bool,
+) -> Option<NaiveDateTime> {
+    if activate_network {
+        None
+    } else {
+        network_active_to
+    }
 }
 
 async fn load_user_organism_id<'a, 'async_trait, C>(
@@ -2234,6 +2368,7 @@ pub async fn add_network_freq(
         network,
         req.network_id,
         network_freq.id,
+        network_freq.active_to.is_none(),
         req.freq_rec.freq.clone(),
         (
             req.freq_rec
@@ -2370,6 +2505,7 @@ pub async fn add_network_freq_v2(
         network,
         req.network_id,
         network_freq.id,
+        network_freq.active_to.is_none(),
         req.freq_rec.freq.clone(),
         (
             req.freq_rec
@@ -2468,7 +2604,7 @@ pub async fn reactivate_network_freq(
     network_freq.active_to = Set(None);
     network_freq.update(&txn).await.context(h!())?;
 
-    let (network_active_from, network_active_to) =
+    let (network_active_from, _) =
         get_network_activity_range(&txn, req.network_id)
             .await
             .context(h!())?;
@@ -2477,7 +2613,7 @@ pub async fn reactivate_network_freq(
     network_model.updated_at = Set(Utc::now().naive_utc());
     network_model.updated_by_login_id = Set(Some(user_id));
     network_model.active_from = Set(network_active_from);
-    network_model.active_to = Set(network_active_to);
+    network_model.active_to = Set(None);
     let network = network_model.update(&txn).await.context(h!())?;
 
     let network_detail =
@@ -2532,6 +2668,8 @@ pub async fn network_unit_stats(
         .select_only()
         .column_as(sigint_network::Column::Id.count(), "count")
         .column_as(sigint_unit::Column::Id, "unit_id")
+        .filter(sigint_unit::Column::Active.eq(true))
+        .filter(sigint_unit::Column::Deleted.eq(false))
         // .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         // .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
         .order_by_asc(sigint_unit::Column::Army)
@@ -2589,6 +2727,7 @@ pub async fn update_network_freq(
     let mut invalidation_range =
         (Some(updated_freq_active_from), updated_freq_active_to);
     let mut invalidation_freq = req.freq.clone();
+    let mut activate_network = false;
 
     // Find the frequency for this network
     let network_freq_model =
@@ -2631,6 +2770,7 @@ pub async fn update_network_freq(
         model.encryption_id = Set(encryption_id);
         model.active_from = Set(updated_freq_active_from);
         model.active_to = Set(updated_freq_active_to);
+        activate_network = updated_freq_active_to.is_none();
         model.update(&txn).await.context(h!())?;
 
         let organism_id = load_user_organism_id(&txn, &user_id).await?;
@@ -2657,6 +2797,7 @@ pub async fn update_network_freq(
         network,
         req.network_id,
         req.network_freq_id,
+        activate_network,
         invalidation_freq.clone(),
         invalidation_range,
     )
@@ -2713,6 +2854,7 @@ pub async fn update_network_freq_v2(
     let mut invalidation_range =
         (Some(updated_freq_active_from), updated_freq_active_to);
     let mut invalidation_freq = req.freq.clone();
+    let mut activate_network = false;
 
     let network_freq_model =
         sigint_network_freq::Entity::find_by_id(req.network_freq_id)
@@ -2759,6 +2901,7 @@ pub async fn update_network_freq_v2(
         model.modulation_id = Set(None);
         model.active_from = Set(updated_freq_active_from);
         model.active_to = Set(updated_freq_active_to);
+        activate_network = updated_freq_active_to.is_none();
         model.encryption_id = Set(normalized_encryption_id);
         model.modulation = Set(req.modulation.clone());
         model.update(&txn).await.context(h!())?;
@@ -2787,6 +2930,7 @@ pub async fn update_network_freq_v2(
         network,
         req.network_id,
         req.network_freq_id,
+        activate_network,
         invalidation_freq.clone(),
         invalidation_range,
     )
@@ -3443,6 +3587,7 @@ pub async fn network_callsigns_list(
         include_activity_info,
         req.section,
         None,
+        false,
     )
     .await
     .context(h!())?;
@@ -3497,13 +3642,10 @@ pub async fn network_freqs_list(
         .feature_group_stats_aggregated
         .unwrap_or(FEATURE_GROUP_STATS_AGGREGATED_DEFAULT)
     {
-        let counts = load_network_freqs_counts_from_stats(
-            &env.dbx,
-            &groups,
-            req.network_id,
-        )
-        .await
-        .context(h!())?;
+        let counts =
+            load_network_freqs_counts_from_stats(&env, &groups, req.network_id)
+                .await
+                .context(h!())?;
         load_freqs_with_stats(
             &env.dbx,
             &groups,
@@ -3806,14 +3948,14 @@ pub async fn update_network_posts(
     // 3. Determine posts to delete and insert
     let to_delete: Vec<i64> = existing_post_ids
         .iter()
-        .filter(|id| !req.post_ids.contains(id))
+        .filter(|id| !req.post_ids.iter().any(|post_id| post_id == *id))
         .copied()
         .collect();
 
     let to_insert: Vec<i64> = req
         .post_ids
         .iter()
-        .filter(|id| !existing_post_ids.contains(id))
+        .filter(|id| !existing_post_ids.iter().any(|post_id| post_id == *id))
         .copied()
         .collect();
 
@@ -3933,14 +4075,14 @@ pub async fn update_network_units(
     // 3. Determine units to delete and insert
     let to_delete: Vec<i64> = existing_unit_ids
         .iter()
-        .filter(|id| !req.unit_ids.contains(id))
+        .filter(|id| !req.unit_ids.iter().any(|unit_id| unit_id == *id))
         .copied()
         .collect();
 
     let to_insert: Vec<i64> = req
         .unit_ids
         .iter()
-        .filter(|id| !existing_unit_ids.contains(id))
+        .filter(|id| !existing_unit_ids.iter().any(|unit_id| unit_id == *id))
         .copied()
         .collect();
 
@@ -4396,7 +4538,7 @@ fn merge_invalidation_range(
         .flatten()
         .min();
     let till_ts = match (old_active_to, new_active_to) {
-        (Some(old_ts), Some(new_ts)) => Some(old_ts.max(new_ts)),
+        (Some(old_ts), Some(new_ts)) => Some(std::cmp::max(old_ts, new_ts)),
         _ => None,
     };
     (since_ts, till_ts)
@@ -4437,10 +4579,10 @@ pub async fn network_search(
         .filter(sigint_network::Column::Deleted.eq(false));
 
     if !search_phrase.is_empty() {
-        query = query.filter(
-            Expr::col(sigint_network::Column::Name)
-                .ilike(format!("%{}%", search_phrase)),
-        );
+        query = query.filter(sea_query::extension::postgres::PgExpr::ilike(
+            Expr::col(sigint_network::Column::Name),
+            format!("%{}%", search_phrase),
+        ));
     }
 
     let networks_db = query
@@ -4472,6 +4614,7 @@ mod tests {
     use super::*;
     use crate::functest::tests::{
         cleanup, mk_sigint_network, mk_sigint_network_freq,
+        mk_sigint_network_unit, mk_sigint_unit,
     };
     use crate::sigint::network::filter::tokenize_search_text;
     use chrono::NaiveDate;
@@ -4488,6 +4631,8 @@ mod tests {
         ListNetworksReq {
             filter_freq: None,
             filter_unit: None,
+            filter_unit_army_region: None,
+            filter_unit_military_district: None,
             filter_unit_army: None,
             filter_unit_division: None,
             filter_unit_regiment: None,
@@ -4591,6 +4736,16 @@ mod tests {
     }
 
     #[test]
+    fn active_frequency_forces_network_activity_range_open() {
+        let network_active_to = Some(dt(20));
+
+        let network_active_to =
+            network_active_to_after_freq_mutation(network_active_to, true);
+
+        assert_eq!(network_active_to, None);
+    }
+
+    #[test]
     fn counts_query_ignores_list_status_scope() {
         let mut req = empty_list_networks_req();
         req.status_filter = Some(ListNetworksStatusFilter::ListNetworksActive);
@@ -4636,6 +4791,14 @@ mod tests {
                 "мсп".to_string(),
             ],
         );
+    }
+
+    #[test]
+    fn global_text_filter_without_searchable_tokens_skips_probe() {
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some(" р/м рм ... ".to_string());
+
+        assert!(!has_network_global_text_filter(&req));
     }
 
     #[test]
@@ -4716,13 +4879,13 @@ mod tests {
             .to_string();
 
         assert!(sql.contains(
-            "(lower(sigint_network.name collate \"ru-x-icu\") ilike '%27%') AND (lower(sigint_network.name collate \"ru-x-icu\") ilike '%омсбр%')"
+            "(lower(sigint_network.name collate \"ru-x-icu\") ilike '%27%' escape E'\\\\') AND (lower(sigint_network.name collate \"ru-x-icu\") ilike '%омсбр%' escape E'\\\\')"
         ));
         assert!(sql.contains(
-            "(lower(sigint_network.location collate \"ru-x-icu\") ilike '%27%') AND (lower(sigint_network.location collate \"ru-x-icu\") ilike '%омсбр%')"
+            "(lower(sigint_network.location collate \"ru-x-icu\") ilike '%27%' escape E'\\\\') AND (lower(sigint_network.location collate \"ru-x-icu\") ilike '%омсбр%' escape E'\\\\')"
         ));
         assert!(sql.contains(
-            "(lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike '%27%') AND (lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike '%омсбр%')"
+            "(lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike '%27%' escape E'\\\\') AND (lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike '%омсбр%' escape E'\\\\')"
         ));
     }
 
@@ -4883,6 +5046,356 @@ mod tests {
         assert!(sql.contains("COUNT(*) FILTER (WHERE sigint_network.deleted = false AND sigint_network.active_to IS NOT NULL)"));
         assert!(sql
             .contains("COUNT(*) FILTER (WHERE sigint_network.deleted = true)"));
+    }
+
+    async fn mk_network_with_unit(
+        db: &DatabaseConnection,
+        network: sigint_network::ActiveModel,
+        unit: sigint_unit::ActiveModel,
+    ) -> sigint_network::Model {
+        let unit = mk_sigint_unit(db, unit).await.unwrap();
+        let network = mk_sigint_network(db, network).await.unwrap();
+        mk_sigint_network_unit(
+            db,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(network.id),
+                unit_id: Set(unit.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        network
+    }
+
+    async fn mk_network_with_unit_name(
+        db: &DatabaseConnection,
+        network_name: &str,
+        unit_name: &str,
+    ) -> sigint_network::Model {
+        mk_network_with_unit(
+            db,
+            sigint_network::ActiveModel {
+                name: Set(network_name.to_string()),
+                ..Default::default()
+            },
+            sigint_unit::ActiveModel {
+                name: Set(unit_name.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn global_text_search_prefers_exact_word_matches() {
+        let env = cleanup().await.unwrap();
+        let exact_network =
+            mk_network_with_unit_name(&env.dbx, "управління", "6 омсбр 3 А")
+                .await;
+        let substring_network = mk_network_with_unit_name(
+            &env.dbx,
+            "управління",
+            "2 мсб 164 омсбр 25 А",
+        )
+        .await;
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some("6 омсбр".to_string());
+
+        let text_search_mode = resolve_network_text_search_mode(&env.dbx, &req)
+            .await
+            .unwrap();
+        let networks = build_networks_query_with_text_search_mode(
+            &req,
+            NetworkQueryKind::List,
+            text_search_mode,
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+        let ids = networks
+            .iter()
+            .map(|network| network.id)
+            .collect::<HashSet<_>>();
+
+        assert_eq!(text_search_mode, NetworkTextSearchMode::ExactWord);
+        assert!(ids.contains(&exact_network.id));
+        assert!(!ids.contains(&substring_network.id));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn global_text_search_falls_back_to_substring_without_exact_words() {
+        let env = cleanup().await.unwrap();
+        let substring_network = mk_network_with_unit_name(
+            &env.dbx,
+            "управління",
+            "2 мсб 164 омсбр 25 А",
+        )
+        .await;
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some("6 омсбр".to_string());
+
+        let text_search_mode = resolve_network_text_search_mode(&env.dbx, &req)
+            .await
+            .unwrap();
+        let networks = build_networks_query_with_text_search_mode(
+            &req,
+            NetworkQueryKind::List,
+            text_search_mode,
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+        let ids = networks
+            .iter()
+            .map(|network| network.id)
+            .collect::<HashSet<_>>();
+
+        assert_eq!(text_search_mode, NetworkTextSearchMode::Substring);
+        assert!(ids.contains(&substring_network.id));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn global_text_search_mode_respects_status_filter() {
+        let env = cleanup().await.unwrap();
+        let active_network = mk_network_with_unit_name(
+            &env.dbx,
+            "активна мережа",
+            "2 мсб 164 омсбр 25 А",
+        )
+        .await;
+        let archived_network = mk_network_with_unit(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("архівна мережа".to_string()),
+                deleted: Set(true),
+                ..Default::default()
+            },
+            sigint_unit::ActiveModel {
+                name: Set("6 омсбр 3 А".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some("6 омсбр".to_string());
+
+        let text_search_mode = resolve_network_text_search_mode(&env.dbx, &req)
+            .await
+            .unwrap();
+        let networks = build_networks_query_with_text_search_mode(
+            &req,
+            NetworkQueryKind::List,
+            text_search_mode,
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+
+        assert_eq!(text_search_mode, NetworkTextSearchMode::Substring);
+        assert_eq!(networks, vec![active_network]);
+
+        req.status_filter =
+            Some(ListNetworksStatusFilter::ListNetworksArchived);
+        let text_search_mode = resolve_network_text_search_mode(&env.dbx, &req)
+            .await
+            .unwrap();
+        let networks = build_networks_query_with_text_search_mode(
+            &req,
+            NetworkQueryKind::List,
+            text_search_mode,
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+
+        assert_eq!(text_search_mode, NetworkTextSearchMode::ExactWord);
+        assert_eq!(networks, vec![archived_network]);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn status_counts_resolve_text_search_mode_per_status() {
+        let env = cleanup().await.unwrap();
+        mk_network_with_unit_name(
+            &env.dbx,
+            "активна мережа",
+            "2 мсб 164 омсбр 25 А",
+        )
+        .await;
+        mk_network_with_unit(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("неактивна мережа".to_string()),
+                active_to: Set(Some(Utc::now().naive_utc())),
+                ..Default::default()
+            },
+            sigint_unit::ActiveModel {
+                name: Set("2 мсб 264 омсбр 25 А".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+        mk_network_with_unit(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("архівна мережа".to_string()),
+                deleted: Set(true),
+                ..Default::default()
+            },
+            sigint_unit::ActiveModel {
+                name: Set("6 омсбр 3 А".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some("6 омсбр".to_string());
+
+        let active_tab_counts =
+            load_network_status_counts(&env.dbx, &req).await.unwrap();
+        req.status_filter =
+            Some(ListNetworksStatusFilter::ListNetworksArchived);
+        let archived_tab_counts =
+            load_network_status_counts(&env.dbx, &req).await.unwrap();
+
+        assert_eq!(
+            active_tab_counts,
+            ListNetworksStatusCountsRsp {
+                active: 1,
+                inactive: 1,
+                archived: 1,
+            }
+        );
+        assert_eq!(archived_tab_counts, active_tab_counts);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn global_text_search_ignores_deleted_units() {
+        let env = cleanup().await.unwrap();
+        let deleted_unit_network = mk_network_with_unit(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("прихована частина".to_string()),
+                ..Default::default()
+            },
+            sigint_unit::ActiveModel {
+                name: Set("6 омсбр 3 А".to_string()),
+                deleted: Set(true),
+                ..Default::default()
+            },
+        )
+        .await;
+        let substring_network = mk_network_with_unit_name(
+            &env.dbx,
+            "видима частина",
+            "2 мсб 164 омсбр 25 А",
+        )
+        .await;
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some("6 омсбр".to_string());
+
+        let text_search_mode = resolve_network_text_search_mode(&env.dbx, &req)
+            .await
+            .unwrap();
+        let networks = build_networks_query_with_text_search_mode(
+            &req,
+            NetworkQueryKind::List,
+            text_search_mode,
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+        let ids = networks
+            .iter()
+            .map(|network| network.id)
+            .collect::<HashSet<_>>();
+
+        assert_eq!(text_search_mode, NetworkTextSearchMode::Substring);
+        assert!(ids.contains(&substring_network.id));
+        assert!(!ids.contains(&deleted_unit_network.id));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn global_text_search_includes_archived_networks() {
+        let env = cleanup().await.unwrap();
+        let archived_network = mk_network_with_unit(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("архівна мережа".to_string()),
+                deleted: Set(true),
+                ..Default::default()
+            },
+            sigint_unit::ActiveModel {
+                name: Set("6 омсбр 3 А".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some("6 омсбр".to_string());
+        req.status_filter =
+            Some(ListNetworksStatusFilter::ListNetworksArchived);
+
+        let text_search_mode = resolve_network_text_search_mode(&env.dbx, &req)
+            .await
+            .unwrap();
+        let networks = build_networks_query_with_text_search_mode(
+            &req,
+            NetworkQueryKind::List,
+            text_search_mode,
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+
+        assert_eq!(text_search_mode, NetworkTextSearchMode::ExactWord);
+        assert_eq!(networks, vec![archived_network]);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn global_text_search_treats_like_wildcards_as_literals() {
+        let env = cleanup().await.unwrap();
+        let ordinary_network = mk_network_with_unit_name(
+            &env.dbx,
+            "звичайна мережа",
+            "6 омсбр 3 А",
+        )
+        .await;
+        let literal_network = mk_network_with_unit_name(
+            &env.dbx,
+            "відсоткова мережа",
+            "готовність 50%",
+        )
+        .await;
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some("%".to_string());
+
+        let text_search_mode = resolve_network_text_search_mode(&env.dbx, &req)
+            .await
+            .unwrap();
+        let networks = build_networks_query_with_text_search_mode(
+            &req,
+            NetworkQueryKind::List,
+            text_search_mode,
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+        let ids = networks
+            .iter()
+            .map(|network| network.id)
+            .collect::<HashSet<_>>();
+
+        assert_eq!(text_search_mode, NetworkTextSearchMode::Substring);
+        assert!(ids.contains(&literal_network.id));
+        assert!(!ids.contains(&ordinary_network.id));
     }
 
     fn cleanup_old_dt() -> NaiveDateTime {

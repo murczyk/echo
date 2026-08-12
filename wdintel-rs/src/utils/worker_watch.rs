@@ -77,10 +77,7 @@ fn record_iteration(name: &'static str, elapsed: Duration) {
             warn!(
                 "worker_busy_loop_detected name={name} iterations={} avg_ms={:.2} last_ms={:.2}",
                 state.iterations,
-                state
-                    .total_elapsed
-                    .as_secs_f64()
-                    / state.iterations as f64
+                state.total_elapsed.as_secs_f64() / state.iterations as f64
                     * 1000.0,
                 elapsed.as_secs_f64() * 1000.0
             );

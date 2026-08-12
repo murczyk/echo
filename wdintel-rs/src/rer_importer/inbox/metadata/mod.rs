@@ -247,32 +247,30 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
-    fn parse_metadata_handles_cyrillic_cc_and_emoji_digits3() {
+    fn parse_metadata_does_not_treat_single_emoji_abonent_as_hash() {
         let metadata = parse_metadata_asserting_spans(
             "25.02.2026 12:09:42 F=145.0260 (МГц)
-🔺УКХ р/м НВ підрозділу 151.600 МГц СС: 7 👥: 24538 🔐", // in case we have line like 👥: 24538 🔐 - we treat trimmed value between : and 🔐 as hash id
+🔺УКХ р/м НВ підрозділу 151.600 МГц СС: 7 👥: 24538 🔐",
         );
         assert_eq!(
             metadata,
             vec![InboxMetadata {
                 cc: Some("7".to_string()),
-                hash_id: Some("24538".to_string()),
                 ..Default::default()
             }]
         );
     }
 
     #[test]
-    fn parse_metadata_handles_cyrillic_cc_and_emoji_digits4() {
+    fn parse_metadata_does_not_treat_compact_emoji_abonent_as_hash() {
         let metadata = parse_metadata_asserting_spans(
             "25.02.2026 12:09:42 F=145.0260 (МГц)
-🔺УКХ р/м управління рр 128 омсбр 44 АК (ВОВЧАНСЬК, ВІЛЬЧА, ХАРКІВСЬКА ОБЛАСТЬ) CC: 1👥: 80132🔐", // in case we have line like 👥: 24538 🔐 - we treat trimmed value between : and 🔐 as hash id
+🔺УКХ р/м управління рр 128 омсбр 44 АК (ВОВЧАНСЬК, ВІЛЬЧА, ХАРКІВСЬКА ОБЛАСТЬ) CC: 1👥: 80132🔐",
         );
         assert_eq!(
             metadata,
             vec![InboxMetadata {
                 cc: Some("1".to_string()),
-                hash_id: Some("80132".to_string()),
                 ..Default::default()
             }]
         );
@@ -312,6 +310,82 @@ ID(CG)⬅️:50📣",
                 },
             ]
         );
+    }
+
+    #[test]
+    fn parse_metadata_handles_hash_after_lock_emoji() {
+        let metadata =
+            parse_metadata_asserting_spans("СС: 8 👥: 15894, 38698🔐 2324D327");
+
+        assert_eq!(
+            metadata,
+            vec![InboxMetadata {
+                cc: Some("8".to_string()),
+                cg: Some("38698".to_string()),
+                id: Some("15894".to_string()),
+                hash_id: Some("2324d327".to_string()),
+                ..Default::default()
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_drops_dot_separated_emoji_abonents() {
+        let metadata = parse_metadata_asserting_spans(
+            "СС: 8 👥: 15894. 38698. 54500. 79476🔐 2324D327",
+        );
+
+        assert_eq!(
+            metadata,
+            vec![InboxMetadata {
+                cc: Some("8".to_string()),
+                hash_id: Some("2324d327".to_string()),
+                ..Default::default()
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_handles_leading_comma_before_emoji_abonent_list() {
+        let body = r#"Отримано з поста "33"
+--------------------------------------
+28.07.2026, 10:18:06
+139.8250
+🔸УКХ р/м управління (ОГ Лева) підрозділом зі складу 121 мсп 68 мсд 6 А (ГОЛУБІВКА, КУП'ЯНСЬК, Харківська область) СС: 3,0 ,7👥:,30,81,5248540,822595,9619,28133,29, 0,404849, 790467, 25, 81,26,31,9556🔐
+НВ
+КРАСИВЫЙ
+
+— Красивый, ты где пропадал"#;
+
+        let metadata = parse_metadata_checked(body);
+
+        assert!(!metadata.is_empty());
+        assert!(metadata.iter().all(|item| item.hash_id.is_none()));
+        assert!(metadata.iter().all(|item| item.id.as_deref() == Some("30")));
+        assert!(metadata.iter().all(|item| item.cg.is_some()));
+        assert!(metadata.iter().all(|item| {
+            matches!(item.cc.as_deref(), Some("3" | "0" | "7"))
+        }));
+    }
+
+    #[test]
+    fn parse_metadata_drops_dot_separated_emoji_abonent_fragments() {
+        let body = r#"Отримано з поста "35"
+--------------------------------------
+28.07.2026, 10:31:48
+150.5000
+🔷УКХ р/м управління 3 бБпС 71 опБпС МВО (БАЛКА ЖУРАВКА, ЧЕРВОНОПОПІВКА) СС: 1, 2, 3, 4, 5, 11, 13, 15, 7. 👥: 1, 0, 2341234, 4097, 10485761, 2341746, 2341238, 2865650, 2342791. 👥: 2337138. 👥: 7109251. 👥: 2341370. 2601330. 2341879. 2335090. 7109507. 2337146. 7305923. 3402234. 2357618. 2357586. 2358138. 2210162. 2342386. 61480. 2341222. 735414. 2341235. 196800. 524305. 2358642. 11. 2357746. 2357362. 2340210. 2214388. 10598512🔐 2865526. 2734419. 7109251. 7142019. 155089. 2341362. 7142275. 2355530. 7099011. 7093955. 11243189. 2208083. 2341246. 2341202. 2340978. 7108739. 7109123. 2341170. 2336882. 2339314. 2308466. 2306394. 2339186. 2341242. 2330994.
+НВ
+НВ"#;
+
+        let metadata = parse_metadata_checked(body);
+
+        assert_eq!(metadata.len(), 9);
+        assert!(metadata.iter().all(|item| item.id.is_none()));
+        assert!(metadata.iter().all(|item| item.cg.is_none()));
+        assert!(metadata
+            .iter()
+            .all(|item| item.hash_id.as_deref() == Some("2865526")));
     }
 
     #[test]
@@ -534,38 +608,34 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
-    fn parse_metadata_handles_multiple_complete_emoji_abonent_groups() {
+    fn parse_metadata_ignores_content_after_first_of_multiple_locks() {
         let metadata = parse_metadata_asserting_spans(
             "🎨:5 👥:111,222🔐 🎨:1 👥:333,444🔐",
         );
         assert_eq!(
             metadata,
-            vec![
-                InboxMetadata {
-                    cc: Some("5".to_string()),
-                    cg: Some("222".to_string()),
-                    id: Some("111".to_string()),
-                    ..Default::default()
-                },
-                InboxMetadata {
-                    cc: Some("1".to_string()),
-                    cg: Some("222".to_string()),
-                    id: Some("111".to_string()),
-                    ..Default::default()
-                },
-                InboxMetadata {
-                    cc: Some("5".to_string()),
-                    cg: Some("444".to_string()),
-                    id: Some("333".to_string()),
-                    ..Default::default()
-                },
-                InboxMetadata {
-                    cc: Some("1".to_string()),
-                    cg: Some("444".to_string()),
-                    id: Some("333".to_string()),
-                    ..Default::default()
-                },
-            ]
+            vec![InboxMetadata {
+                cc: Some("5".to_string()),
+                cg: Some("222".to_string()),
+                id: Some("111".to_string()),
+                ..Default::default()
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_ignores_emoji_abonent_groups_after_second() {
+        let metadata =
+            parse_metadata_asserting_spans("👥:111, 👥:222, 👥:555🔐 2324D327");
+
+        assert_eq!(
+            metadata,
+            vec![InboxMetadata {
+                cg: Some("222".to_string()),
+                id: Some("111".to_string()),
+                hash_id: Some("2324d327".to_string()),
+                ..Default::default()
+            }]
         );
     }
 

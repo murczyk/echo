@@ -1,8 +1,8 @@
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
-import { Box, Button, Paper, Popover, Stack, TextField } from '@mui/material';
+import { Box, Button, IconButton, Paper, Popover, Stack, TextField, Tooltip } from '@mui/material';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 
 import { APP_DATETIME_INPUT_MAX, APP_DATETIME_INPUT_MIN, APP_TIME_ZONE } from '../utils/misc';
@@ -20,15 +20,54 @@ export type DateTimeRangeControlProps = {
   className?: string;
   disabled?: boolean;
   now?: Date;
+  displayMode?: 'date-time' | 'icon';
 };
 
-function formatDisplayValue(value: string): string {
-  if (!value) return '—';
-  const [datePart = '', timePart = ''] = value.split('T');
-  if (datePart === '' || timePart === '') return value;
+type DisplayDateTimeParts = {
+  year: string;
+  month: string;
+  day: string;
+  time: string;
+};
+
+function parseDisplayDateTime(value: string): DisplayDateTimeParts | null {
+  if (!value) return null;
+  const [datePart = '', time = ''] = value.split('T');
+  if (datePart === '' || time === '') return null;
   const [year = '', month = '', day = ''] = datePart.split('-');
-  if (year === '' || month === '' || day === '') return value;
-  return `${day}.${month}.${year} ${timePart}`;
+  if (year === '' || month === '' || day === '') return null;
+  return { year, month, day, time };
+}
+
+function formatDisplayValue(value: string, currentYear: string): string {
+  if (!value) return '—';
+  const parts = parseDisplayDateTime(value);
+  if (!parts) return value;
+  const date =
+    parts.year === currentYear
+      ? `${parts.day}.${parts.month}`
+      : `${parts.day}.${parts.month}.${parts.year}`;
+  return `${date} ${parts.time}`;
+}
+
+export function dateTimeRangeDisplaysYear(
+  value: DateTimeRangeValue,
+  now: Date = new Date(),
+): boolean {
+  const currentYear = dayjs(now).tz(APP_TIME_ZONE).format('YYYY');
+  return [value.fromDateTimeStr, value.toDateTimeStr].some((dateTime) => {
+    if (!dateTime) return false;
+    const parts = parseDisplayDateTime(dateTime);
+    return parts === null || parts.year !== currentYear;
+  });
+}
+
+export function formatDateTimeRangeDisplayValue(
+  value: DateTimeRangeValue,
+  now: Date = new Date(),
+): string {
+  const currentYear = dayjs(now).tz(APP_TIME_ZONE).format('YYYY');
+  return `${formatDisplayValue(value.fromDateTimeStr, currentYear)} — ${formatDisplayValue(value.toDateTimeStr, currentYear)}`;
 }
 
 function parseDateTimeInAppTimeZone(value: string): Dayjs | null {
@@ -85,6 +124,7 @@ export function DateTimeRangeControl({
   className,
   disabled = false,
   now,
+  displayMode = 'date-time',
 }: DateTimeRangeControlProps) {
   const anchorId = useId().replace(/:/g, '-');
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -152,40 +192,68 @@ export function DateTimeRangeControl({
     });
   }, []);
 
-  const intervalLabel = useMemo(
-    () =>
-      `${formatDisplayValue(value.fromDateTimeStr)} — ${formatDisplayValue(value.toDateTimeStr)}`,
-    [value.fromDateTimeStr, value.toDateTimeStr],
-  );
+  const fullIntervalLabel = formatDateTimeRangeDisplayValue(value, now);
+  const intervalAriaLabel = `Інтервал: ${fullIntervalLabel}`;
 
   return (
     <Stack className={className} direction="row" spacing={0} sx={{ minWidth: 0, width: '100%' }}>
-      <TextField
-        id={anchorId}
-        value={intervalLabel}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={openPopover}
-        aria-haspopup="dialog"
-        aria-expanded={open ? 'true' : 'false'}
-        disabled={disabled}
-        fullWidth
-        size="small"
-        placeholder="Інтервал"
-        inputProps={{
-          readOnly: true,
-        }}
-        InputProps={{
-          endAdornment: (
-            <Box
-              component="span"
-              sx={{ display: 'inline-flex', alignItems: 'center', mx: 1.5, color: 'primary.main' }}
+      {displayMode === 'icon' ? (
+        <Tooltip title={fullIntervalLabel} arrow>
+          <span>
+            <IconButton
+              id={anchorId}
+              aria-label={intervalAriaLabel}
+              aria-haspopup="dialog"
+              aria-expanded={open ? 'true' : 'false'}
+              disabled={disabled}
+              onClick={openPopover}
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: open ? 'primary.main' : 'divider',
+                color: 'primary.main',
+              }}
             >
-              <CalendarMonthOutlinedIcon sx={{ fontSize: 16 }} />
-            </Box>
-          ),
-        }}
-        sx={getDateTimeRangeControlTextFieldSx(open)}
-      />
+              <CalendarMonthOutlinedIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </span>
+        </Tooltip>
+      ) : (
+        <TextField
+          id={anchorId}
+          value={fullIntervalLabel}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={openPopover}
+          aria-haspopup="dialog"
+          aria-expanded={open ? 'true' : 'false'}
+          disabled={disabled}
+          fullWidth
+          size="small"
+          placeholder="Інтервал"
+          inputProps={{
+            readOnly: true,
+            'aria-label': intervalAriaLabel,
+          }}
+          InputProps={{
+            endAdornment: (
+              <Box
+                component="span"
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  mx: 1.5,
+                  color: 'primary.main',
+                }}
+              >
+                <CalendarMonthOutlinedIcon sx={{ fontSize: 16 }} />
+              </Box>
+            ),
+          }}
+          sx={getDateTimeRangeControlTextFieldSx(open)}
+        />
+      )}
       <Popover
         open={open}
         anchorEl={anchorEl}

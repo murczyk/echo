@@ -7,7 +7,7 @@ use anyhow::Context;
 use chrono::NaiveDateTime;
 use dialoguer::{theme::ColorfulTheme, Confirm};
 use sea_orm::{
-    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    ColumnTrait, EntityTrait, ExprTrait, QueryFilter, QueryOrder, QuerySelect,
     RelationTrait,
 };
 use uuid::Uuid;

@@ -131,12 +131,28 @@ end-to-end heartbeat check all completed successfully.
 
 1. Development source/container pair.
 2. `echo-staging` plus `echo-staging-clickhouse`.
-3. `echo-kharkiv2`, `echo-kupiansk`, `echo-siversk`, `echo-zp2`,
-   `echo-pivnich`, and `echo-skhid`, one pair at a time.
+3. For the bounded-facet rollout: `echo-kharkiv2`, `echo-siversk`, then
+   `echo-zp2`, one pair at a time and with verification after every deploy.
+4. Schedule the remaining production pairs separately after those three are
+   healthy.
 
 For every stage: snapshot, compare PostgreSQL/ClickHouse counts, verify query
 pushdown, test service/network failure and fallback, then enable the optional
 Echo configuration. Rollback is configuration-only.
+
+All ClickHouse facet routes now share one date-range message-ID scope per
+request. The same envelope bounds every large message and message-link
+relation, while timestamps remain authoritative. Group authorization,
+selected groups, and sender filtering are combined into one bounded, flat
+message-group join unless the joined group relation supplies the facet
+dimension. Empty scopes short-circuit, and selected/denied unit filters remain
+on PostgreSQL until their analytics query is flat.
+
+The gateway enables `pg_stat_statements`, and the bundle includes a read-only
+normalized query report for correlating parent gateway shapes with ClickHouse
+fragments. Rollout checks flag more than 100 remote executions per minute,
+more than 100,000 rows returned by one fragment, or more than 10 million rows
+read by a bounded facet.
 
 The reusable implementation and full operating procedure are in
 [`deploy/clickhouse/README.md`](../../deploy/clickhouse/README.md).

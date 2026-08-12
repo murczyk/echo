@@ -10,13 +10,15 @@ import { emptyQueryState } from './helpers';
 import { useAnalysisSidebarData } from './use-analysis-sidebar-data';
 
 const apiMocks = vi.hoisted(() => ({
-  fetchAnalysisCallsignGraph: vi.fn(),
+  fetchAnalysisActivityDaily: vi.fn(),
+  fetchAnalysisCallsignRelations: vi.fn(),
   fetchAnalysisCorrelatedFreqs: vi.fn(),
   fetchAnalysisCallsignInfos: vi.fn(),
   fetchAnalysisCallsigns: vi.fn(),
   fetchAnalysisLocations: vi.fn(),
   fetchAnalysisSummaryTable: vi.fn(),
   fetchAnalysisUnits: vi.fn(),
+  fetchFreqActivityDaily: vi.fn(),
 }));
 
 vi.mock('../../services/api/analysis', async () => {
@@ -25,13 +27,15 @@ vi.mock('../../services/api/analysis', async () => {
   );
   return {
     ...actual,
-    fetchAnalysisCallsignGraph: apiMocks.fetchAnalysisCallsignGraph,
+    fetchAnalysisActivityDaily: apiMocks.fetchAnalysisActivityDaily,
+    fetchAnalysisCallsignRelations: apiMocks.fetchAnalysisCallsignRelations,
     fetchAnalysisCorrelatedFreqs: apiMocks.fetchAnalysisCorrelatedFreqs,
     fetchAnalysisCallsignInfos: apiMocks.fetchAnalysisCallsignInfos,
     fetchAnalysisCallsigns: apiMocks.fetchAnalysisCallsigns,
     fetchAnalysisLocations: apiMocks.fetchAnalysisLocations,
     fetchAnalysisSummaryTable: apiMocks.fetchAnalysisSummaryTable,
     fetchAnalysisUnits: apiMocks.fetchAnalysisUnits,
+    fetchFreqActivityDaily: apiMocks.fetchFreqActivityDaily,
   };
 });
 
@@ -100,13 +104,15 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
   latest = null;
-  apiMocks.fetchAnalysisCallsignGraph.mockReset();
+  apiMocks.fetchAnalysisActivityDaily.mockReset();
+  apiMocks.fetchAnalysisCallsignRelations.mockReset();
   apiMocks.fetchAnalysisCorrelatedFreqs.mockReset();
   apiMocks.fetchAnalysisCallsignInfos.mockReset();
   apiMocks.fetchAnalysisCallsigns.mockReset();
   apiMocks.fetchAnalysisLocations.mockReset();
   apiMocks.fetchAnalysisSummaryTable.mockReset();
   apiMocks.fetchAnalysisUnits.mockReset();
+  apiMocks.fetchFreqActivityDaily.mockReset();
 });
 
 afterEach(() => {
@@ -119,6 +125,38 @@ afterEach(() => {
 });
 
 describe('useAnalysisSidebarData', () => {
+  it('loads date activity through the global-filter endpoint without a selected frequency', async () => {
+    apiMocks.fetchAnalysisActivityDaily.mockResolvedValue({ dataPerDate: {} });
+    await renderHook(buildQueryState());
+
+    await act(async () => {
+      await latest?.loadGroupsActivity();
+    });
+
+    expect(apiMocks.fetchAnalysisActivityDaily).toHaveBeenCalledTimes(1);
+    expect(apiMocks.fetchFreqActivityDaily).not.toHaveBeenCalled();
+    expect(latest?.groupsActivityLoadedFreq).toBeNull();
+    expect(latest?.groupsActivityLoadedPeriod).toBe('selected');
+  });
+
+  it('keeps the focused frequency endpoint when a frequency is selected', async () => {
+    apiMocks.fetchFreqActivityDaily.mockResolvedValue({ dataPerDate: {} });
+    await renderHook({
+      ...buildQueryState(),
+      freqsSelected: ['100.0000'],
+    });
+
+    await act(async () => {
+      await latest?.loadGroupsActivity();
+    });
+
+    expect(apiMocks.fetchFreqActivityDaily).toHaveBeenCalledWith(
+      expect.objectContaining({ freq: '100.0000' }),
+    );
+    expect(apiMocks.fetchAnalysisActivityDaily).not.toHaveBeenCalled();
+    expect(latest?.groupsActivityLoadedFreq).toBe('100.0000');
+  });
+
   it('aborts the previous summary load when a newer query arrives', async () => {
     const firstLoad = deferred<{ rows: [] }>();
     const secondLoad = deferred<{ rows: [] }>();
@@ -262,17 +300,17 @@ describe('useAnalysisSidebarData', () => {
   });
 
   it('aborts the previous graph load when a newer query arrives', async () => {
-    const firstLoad = deferred<{ callsignGraph: null }>();
-    const secondLoad = deferred<{ callsignGraph: null }>();
-    apiMocks.fetchAnalysisCallsignGraph.mockImplementationOnce(() => firstLoad.promise);
-    apiMocks.fetchAnalysisCallsignGraph.mockImplementationOnce(() => secondLoad.promise);
+    const firstLoad = deferred<{ nodes: []; edges: []; freqs: [] }>();
+    const secondLoad = deferred<{ nodes: []; edges: []; freqs: [] }>();
+    apiMocks.fetchAnalysisCallsignRelations.mockImplementationOnce(() => firstLoad.promise);
+    apiMocks.fetchAnalysisCallsignRelations.mockImplementationOnce(() => secondLoad.promise);
 
     await renderHook(buildQueryState());
 
     act(() => {
       void latest?.loadCallsignGraph();
     });
-    const firstSignal = apiMocks.fetchAnalysisCallsignGraph.mock.calls[0]?.[1]?.signal as
+    const firstSignal = apiMocks.fetchAnalysisCallsignRelations.mock.calls[0]?.[1]?.signal as
       AbortSignal | undefined;
     expect(firstSignal).toBeDefined();
     expect(firstSignal?.aborted).toBe(false);
@@ -281,18 +319,34 @@ describe('useAnalysisSidebarData', () => {
     act(() => {
       void latest?.loadCallsignGraph();
     });
-    const secondSignal = apiMocks.fetchAnalysisCallsignGraph.mock.calls[1]?.[1]?.signal as
+    const secondSignal = apiMocks.fetchAnalysisCallsignRelations.mock.calls[1]?.[1]?.signal as
       AbortSignal | undefined;
 
     expect(firstSignal?.aborted).toBe(true);
     expect(secondSignal).toBeDefined();
     expect(secondSignal?.aborted).toBe(false);
 
-    firstLoad.resolve({ callsignGraph: null });
-    secondLoad.resolve({ callsignGraph: null });
+    firstLoad.resolve({ nodes: [], edges: [], freqs: [] });
+    secondLoad.resolve({ nodes: [], edges: [], freqs: [] });
     await act(async () => {
       await Promise.resolve();
     });
+  });
+
+  it('marks correlated frequencies as loaded after an explicit request', async () => {
+    apiMocks.fetchAnalysisCorrelatedFreqs.mockResolvedValueOnce({ freqs: [] });
+
+    await renderHook({
+      ...buildQueryState(),
+      freqsSelected: ['100.0000'],
+    });
+
+    await act(async () => {
+      await latest?.loadCorrelatedFreqs();
+    });
+
+    expect(latest?.correlatedFreqsLoaded).toBe(true);
+    expect(latest?.correlatedFreqsLoading).toBe(false);
   });
 
   it('aborts correlated freq loading and clears loading on invalidation', async () => {
@@ -316,6 +370,7 @@ describe('useAnalysisSidebarData', () => {
     });
 
     expect(correlatedSignal?.aborted).toBe(true);
+    expect(latest?.correlatedFreqsLoaded).toBe(false);
     expect(latest?.correlatedFreqsLoading).toBe(false);
 
     correlatedLoad.resolve({ freqs: [] });
@@ -341,19 +396,20 @@ describe('useAnalysisSidebarData', () => {
     });
 
     expect(latest?.correlatedFreqsLoading).toBe(false);
+    expect(latest?.correlatedFreqsLoaded).toBe(false);
     expect(latest?.correlatedFreqs).toEqual([]);
   });
 
   it('aborts an in-flight graph load on unmount', async () => {
-    const graphLoad = deferred<{ callsignGraph: null }>();
-    apiMocks.fetchAnalysisCallsignGraph.mockImplementationOnce(() => graphLoad.promise);
+    const graphLoad = deferred<{ nodes: []; edges: []; freqs: [] }>();
+    apiMocks.fetchAnalysisCallsignRelations.mockImplementationOnce(() => graphLoad.promise);
 
     await renderHook(buildQueryState());
 
     act(() => {
       void latest?.loadCallsignGraph();
     });
-    const graphSignal = apiMocks.fetchAnalysisCallsignGraph.mock.calls[0]?.[1]?.signal as
+    const graphSignal = apiMocks.fetchAnalysisCallsignRelations.mock.calls[0]?.[1]?.signal as
       AbortSignal | undefined;
     expect(graphSignal).toBeDefined();
 
@@ -362,19 +418,15 @@ describe('useAnalysisSidebarData', () => {
     });
 
     expect(graphSignal?.aborted).toBe(true);
-    graphLoad.resolve({ callsignGraph: null });
+    graphLoad.resolve({ nodes: [], edges: [], freqs: [] });
   });
 
   it('aborts the previous right-sidebar load when a newer query arrives', async () => {
-    const firstCallsigns = deferred<{ callsigns: [] }>();
-    const secondCallsigns = deferred<{ callsigns: [] }>();
     const firstUnits = deferred<{ units: [] }>();
     const secondUnits = deferred<{ units: [] }>();
     const firstLocations = deferred<{ locations: [] }>();
     const secondLocations = deferred<{ locations: [] }>();
 
-    apiMocks.fetchAnalysisCallsigns.mockImplementationOnce(() => firstCallsigns.promise);
-    apiMocks.fetchAnalysisCallsigns.mockImplementationOnce(() => secondCallsigns.promise);
     apiMocks.fetchAnalysisUnits.mockImplementationOnce(() => firstUnits.promise);
     apiMocks.fetchAnalysisUnits.mockImplementationOnce(() => secondUnits.promise);
     apiMocks.fetchAnalysisLocations.mockImplementationOnce(() => firstLocations.promise);
@@ -385,7 +437,7 @@ describe('useAnalysisSidebarData', () => {
     act(() => {
       void latest?.loadTopSidebarData();
     });
-    const firstSignal = apiMocks.fetchAnalysisCallsigns.mock.calls[0]?.[1]?.signal as
+    const firstSignal = apiMocks.fetchAnalysisUnits.mock.calls[0]?.[1]?.signal as
       AbortSignal | undefined;
     expect(firstSignal).toBeDefined();
     expect(firstSignal?.aborted).toBe(false);
@@ -394,17 +446,15 @@ describe('useAnalysisSidebarData', () => {
     act(() => {
       void latest?.loadTopSidebarData();
     });
-    const secondSignal = apiMocks.fetchAnalysisCallsigns.mock.calls[1]?.[1]?.signal as
+    const secondSignal = apiMocks.fetchAnalysisUnits.mock.calls[1]?.[1]?.signal as
       AbortSignal | undefined;
 
     expect(firstSignal?.aborted).toBe(true);
     expect(secondSignal).toBeDefined();
     expect(secondSignal?.aborted).toBe(false);
-    expect(apiMocks.fetchAnalysisUnits.mock.calls[0]?.[1]?.signal).toBe(firstSignal);
     expect(apiMocks.fetchAnalysisLocations.mock.calls[0]?.[1]?.signal).toBe(firstSignal);
+    expect(apiMocks.fetchAnalysisCallsigns).not.toHaveBeenCalled();
 
-    firstCallsigns.resolve({ callsigns: [] });
-    secondCallsigns.resolve({ callsigns: [] });
     firstUnits.resolve({ units: [] });
     secondUnits.resolve({ units: [] });
     firstLocations.resolve({ locations: [] });
@@ -415,11 +465,9 @@ describe('useAnalysisSidebarData', () => {
   });
 
   it('aborts an in-flight right-sidebar load on unmount', async () => {
-    const callsignsLoad = deferred<{ callsigns: [] }>();
     const unitsLoad = deferred<{ units: [] }>();
     const locationsLoad = deferred<{ locations: [] }>();
 
-    apiMocks.fetchAnalysisCallsigns.mockImplementationOnce(() => callsignsLoad.promise);
     apiMocks.fetchAnalysisUnits.mockImplementationOnce(() => unitsLoad.promise);
     apiMocks.fetchAnalysisLocations.mockImplementationOnce(() => locationsLoad.promise);
 
@@ -428,7 +476,7 @@ describe('useAnalysisSidebarData', () => {
     act(() => {
       void latest?.loadTopSidebarData();
     });
-    const sidebarSignal = apiMocks.fetchAnalysisCallsigns.mock.calls[0]?.[1]?.signal as
+    const sidebarSignal = apiMocks.fetchAnalysisUnits.mock.calls[0]?.[1]?.signal as
       AbortSignal | undefined;
     expect(sidebarSignal).toBeDefined();
 
@@ -437,7 +485,6 @@ describe('useAnalysisSidebarData', () => {
     });
 
     expect(sidebarSignal?.aborted).toBe(true);
-    callsignsLoad.resolve({ callsigns: [] });
     unitsLoad.resolve({ units: [] });
     locationsLoad.resolve({ locations: [] });
   });

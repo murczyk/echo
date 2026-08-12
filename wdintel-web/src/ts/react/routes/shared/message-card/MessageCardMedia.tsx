@@ -7,14 +7,13 @@ import { Box, Button, CircularProgress, Tooltip } from '@mui/material';
 
 import type { MessageMediaInfo } from '../../../../../Bindings';
 import { getMuiPaletteMode, useMuiPaletteMode } from '../../../mui-theme';
-import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
 import { MessageCardDisabledControlCursorWrapper } from './MessageCardDisabledControlCursorWrapper';
 import {
   MessageCardAudioTranscription,
   useAudioTranscriptionPreferences,
 } from './MessageCardAudioTranscription';
 
-const AUDIO_PLAYER_MIN_HEIGHT_PX = 72;
+const AUDIO_PLAYER_MIN_HEIGHT_PX = 48;
 const AUDIO_PLAYER_TOP_PADDING_PX = 0;
 const AUDIO_PLAYER_Z_INDEX = 0;
 const AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES = 100 * 1024 * 1024;
@@ -217,6 +216,7 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
 
     const player = document.createElement('custom-audio-player');
     player.setAttribute('src', href);
+    player.setAttribute('variant', 'echo');
     player.setAttribute('mode', 'compact');
     player.setAttribute('storage-key', storageKey);
     player.setAttribute('theme', getMuiPaletteMode());

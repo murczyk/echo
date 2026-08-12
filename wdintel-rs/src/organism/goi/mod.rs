@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use uuid::Uuid;
 
+pub(crate) mod aor_scope;
 mod callsigns_sync;
 pub mod goi_api;
 mod goi_ssh;
@@ -446,7 +447,7 @@ fn goi_find_source_relative_path(
             let hinted_source_rel_path =
                 goi_build_relative_path_checked(source_folder_hint, file_name)
                     .c(h!())?;
-            if paths.contains(&hinted_source_rel_path) {
+            if paths.iter().any(|path| path == &hinted_source_rel_path) {
                 return Ok(hinted_source_rel_path);
             }
         }
@@ -481,7 +482,7 @@ fn normalize_goi_file_names(
     let mut normalized = Vec::with_capacity(file_names.len());
     for file_name in file_names {
         let file_name = normalize_goi_file_name(file_name).c(h!())?;
-        if !normalized.contains(&file_name) {
+        if !normalized.iter().any(|name| name == &file_name) {
             normalized.push(file_name);
         }
     }
@@ -1432,9 +1433,10 @@ mod tests {
             None,
         )
         .unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("multiple source files named 'palitra.kmz'"));
+        assert!(str::contains(
+            &err.to_string(),
+            "multiple source files named 'palitra.kmz'"
+        ));
     }
 
     #[test]
@@ -1451,7 +1453,10 @@ mod tests {
     fn goi_build_relative_path_checked_rejects_parent_segments() {
         let err =
             goi_build_relative_path_checked(Some(".."), "p.kmz").unwrap_err();
-        assert!(format!("{err:#}").contains("may not contain '.' or '..'"));
+        assert!(str::contains(
+            &format!("{err:#}"),
+            "may not contain '.' or '..'"
+        ));
     }
 
     #[test]

@@ -3,7 +3,7 @@ import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import RemoveIcon from '@mui/icons-material/Remove';
 import { Box, IconButton, ThemeProvider } from '@mui/material';
-import type { SxProps, Theme } from '@mui/material/styles';
+import { alpha, type SxProps, type Theme } from '@mui/material/styles';
 
 import { useNeoMuiTheme } from './mui-theme';
 
@@ -16,13 +16,13 @@ type AnalysisMapWindowControlProps = {
 };
 
 const buttonSx: SxProps<Theme> = {
-  width: 44,
-  height: 44,
+  width: 36,
+  height: 36,
   borderRadius: 0,
-  color: 'var(--bs-body-color)',
+  color: 'text.primary',
   '&:hover': {
-    backgroundColor: 'var(--bs-secondary-bg)',
-    color: 'var(--bs-primary)',
+    backgroundColor: 'action.hover',
+    color: 'text.primary',
   },
   '&:focus-visible': {
     outline: '2px solid var(--bs-primary)',
@@ -37,17 +37,18 @@ function AnalysisMapWindowControlInner({
   return (
     <Box
       className="analysis-map-window-control"
-      sx={{
+      sx={(theme) => ({
         display: 'flex',
-        background: 'var(--bs-card-bg)',
-        border: '1px solid var(--bs-border-color)',
-        borderRadius: '8px',
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+        backgroundColor: alpha(theme.palette.background.paper, 0.86),
+        backdropFilter: 'blur(6px)',
+        border: `1px solid ${alpha(theme.palette.text.primary, 0.16)}`,
+        borderRadius: '6px',
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
         overflow: 'hidden',
         '& .MuiIconButton-root + .MuiIconButton-root': {
-          borderLeft: '1px solid var(--bs-border-color)',
+          borderLeft: `1px solid ${alpha(theme.palette.text.primary, 0.16)}`,
         },
-      }}
+      })}
     >
       <IconButton
         aria-label="Збільшити мапу"
@@ -55,7 +56,7 @@ function AnalysisMapWindowControlInner({
         onClick={props.onZoomIn}
         sx={buttonSx}
       >
-        <AddIcon sx={{ fontSize: 24 }} />
+        <AddIcon sx={{ fontSize: 20 }} />
       </IconButton>
       <IconButton
         aria-label="Зменшити мапу"
@@ -63,7 +64,7 @@ function AnalysisMapWindowControlInner({
         onClick={props.onZoomOut}
         sx={buttonSx}
       >
-        <RemoveIcon sx={{ fontSize: 24 }} />
+        <RemoveIcon sx={{ fontSize: 20 }} />
       </IconButton>
       {showFullscreen ? (
         <IconButton
@@ -73,9 +74,9 @@ function AnalysisMapWindowControlInner({
           sx={buttonSx}
         >
           {props.isFullscreen ? (
-            <FullscreenExitIcon sx={{ fontSize: 24 }} />
+            <FullscreenExitIcon sx={{ fontSize: 20 }} />
           ) : (
-            <FullscreenIcon sx={{ fontSize: 24 }} />
+            <FullscreenIcon sx={{ fontSize: 20 }} />
           )}
         </IconButton>
       ) : null}

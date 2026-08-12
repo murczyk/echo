@@ -9,7 +9,6 @@ pidfile="${repo_root}/.dev-runtime/dev-back.pid"
 server_port="${ECHO_SERVER_PORT:-8081}"
 server_ping_url="http://127.0.0.1:${server_port}/api/ping"
 server_logfile="${repo_root}/.dev-runtime/dev-back.log"
-analytics_source_config="${ECHO_PEERDB_SOURCE_CONFIG_FILE:-/etc/echo-peerdb/source.env}"
 
 usage() {
     cat >&2 <<'EOF'
@@ -36,18 +35,6 @@ parse_bool() {
             exit 2
             ;;
     esac
-}
-
-reconcile_optional_analytics() {
-    local reconcile_script="${repo_root}/deploy/clickhouse/bin/source-reconcile-derived-schema.sh"
-
-    if [ ! -f "$analytics_source_config" ] \
-        && ! sudo -n test -f "$analytics_source_config" 2>/dev/null; then
-        return 0
-    fi
-    if ! timeout --foreground 30s bash "$reconcile_script"; then
-        echo "⚠️ optional analytics derived-schema reconcile failed; PostgreSQL fallback remains available" >&2
-    fi
 }
 
 while [ "$#" -gt 0 ]; do
@@ -242,7 +229,6 @@ run_server() {
         export RUST_LOG=warn
 
         echo "starting backend in quiet mode on port ${server_port}; successful HTTP access logs are hidden" >&2
-        echo "report workers run separately: just dev-bgworker" >&2
 
         : > "$server_logfile"
         setsid env REPO_ROOT="$repo_root" bash -lc "$cmd" bash "${server_args[@]}" > "$server_logfile" 2>&1 &
@@ -254,7 +240,6 @@ run_server() {
         fi
 
         echo "starting backend on port ${server_port}..." >&2
-        echo "report workers run separately: just dev-bgworker" >&2
 
         setsid env REPO_ROOT="$repo_root" bash -lc "$cmd" bash "${server_args[@]}" &
         pid=$!
@@ -295,5 +280,4 @@ run_server() {
 }
 
 cd "$repo_root"
-reconcile_optional_analytics
 run_server "$@"

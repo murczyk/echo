@@ -92,7 +92,8 @@ pub async fn oneoff_rer_csv_import_1(
         return Err(AppError::BL {
             msg: format!(
                 "Signal group for import not found: {}; create in signal_group table",
-                config.signal_import_group_name)
+                config.signal_import_group_name
+            ),
         });
     };
     let group_id = group.master_key;
@@ -108,7 +109,8 @@ pub async fn oneoff_rer_csv_import_1(
         return Err(AppError::BL {
             msg: format!(
                 "Signal profile for import not found: {}; create in signal_profile table",
-                config.signal_import_fiven_name)
+                config.signal_import_fiven_name
+            ),
         });
     };
     let source_uuid = signal_profile.uuid;
@@ -220,9 +222,9 @@ pub async fn rer_csv_import(
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
-    println!("> tmp_dir {}", &tmp_dir.path().display());
+    println!("> tmp_dir {}", tmp_dir.path().display());
     let csv_file = tmp_dir.path().join(field.name().c(h!())?);
-    println!("> csv_file: {}", &csv_file.display());
+    println!("> csv_file: {}", csv_file.display());
     std::fs::write(&csv_file, val)?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
 
@@ -282,9 +284,9 @@ pub async fn rer_delta_csv_import(
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
-    println!("> tmp_dir {}", &tmp_dir.path().display());
+    println!("> tmp_dir {}", tmp_dir.path().display());
     let csv_file = tmp_dir.path().join(field.name().c(h!())?);
-    println!("> csv_file: {}", &csv_file.display());
+    println!("> csv_file: {}", csv_file.display());
     std::fs::write(&csv_file, val)?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
 
@@ -382,7 +384,8 @@ pub async fn rer_delta_csv_import_go(
         return Err(AppError::BL {
             msg: format!(
                 "Signal group for import not found: {}; edit config.signal_admin_api_recepients",
-                config.signal_import_group_name)
+                config.signal_import_group_name
+            ),
         });
     };
     let group_id = group.master_key;
@@ -407,7 +410,8 @@ pub async fn rer_delta_csv_import_go(
         return Err(AppError::BL {
             msg: format!(
                 "Signal profile for import not found: {}; edit config.signal_admin_api_recepients",
-                config.signal_import_fiven_name)
+                config.signal_import_fiven_name
+            ),
         });
     };
     let source_uuid = signal_profile.uuid;
@@ -543,7 +547,9 @@ pub fn parse_delta_csv_method1(
     for e_rec in rdr.deserialize() {
         let rec: Rec = e_rec.c(h!())?;
         if rec.r#type != "10061500002001000000" {
-            println!("Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {rec:?}");
+            println!(
+                "Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {rec:?}"
+            );
             continue;
         }
         let Some(freq) =
@@ -580,7 +586,9 @@ pub fn parse_delta_csv_method2(
     for e_rec in rdr.deserialize() {
         let rec: Rec = e_rec.c(h!())?;
         if rec.sidc != "10061500002001000000" {
-            println!("Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {rec:?}");
+            println!(
+                "Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {rec:?}"
+            );
             continue;
         }
         let Some(freq) =
@@ -641,7 +649,9 @@ pub fn parse_delta_csv_method3(
         let rec: Rec = e_rec.c(h!())?;
         println!("rec: {rec:?}");
         if rec.sidc != "10061500002001000000" {
-            println!("Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {rec:?}");
+            println!(
+                "Only type 10061500002001000000 (Antennae) is supported. Skpiing record: {rec:?}"
+            );
             continue;
         }
         let Some(freq) =
@@ -796,7 +806,9 @@ pub async fn ensure_import_group_exists(
     let _master_key = match group {
         Some(group) => group.master_key,
         None => {
-            warn!("No signal_group found for direction finding imports -- creating a default one!");
+            warn!(
+                "No signal_group found for direction finding imports -- creating a default one!"
+            );
             let group = signal_group::ActiveModel {
                 master_key: Set(IMPORT_DIRECTION_FINDING_UUID.to_string()),
                 name: Set(Some("Імпорт Пеленгів".to_string())),

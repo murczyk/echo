@@ -24,7 +24,7 @@ import type {
   UpdateNetworkCallsignReq,
 } from '../../../../Bindings';
 
-import { getUnitsList } from './units';
+import { getUnitsByIds, getUnitsList, mergeUnitsById } from './units';
 import { HttpRequestError, postJson } from './client';
 import { emitUnauthorizedEvent } from '../../auth-redirect';
 import { isNullOrUndefined } from '../../utils/misc';
@@ -137,6 +137,8 @@ type ListCallsignsReqBody = {
   filter_full_name: ListCallsignsReq['filterFullName'];
   filter_comment: ListCallsignsReq['filterComment'];
   filter_unit: ListCallsignsReq['filterUnit'];
+  filter_unit_army_region: ListCallsignsReq['filterUnitArmyRegion'];
+  filter_unit_military_district: ListCallsignsReq['filterUnitMilitaryDistrict'];
   filter_unit_army: ListCallsignsReq['filterUnitArmy'];
   filter_unit_division: ListCallsignsReq['filterUnitDivision'];
   filter_unit_regiment: ListCallsignsReq['filterUnitRegiment'];
@@ -369,6 +371,8 @@ function toListCallsignsReqBody(req: ListCallsignsReq): ListCallsignsReqBody {
     filter_full_name: req.filterFullName,
     filter_comment: req.filterComment,
     filter_unit: req.filterUnit,
+    filter_unit_army_region: req.filterUnitArmyRegion,
+    filter_unit_military_district: req.filterUnitMilitaryDistrict,
     filter_unit_army: req.filterUnitArmy,
     filter_unit_division: req.filterUnitDivision,
     filter_unit_regiment: req.filterUnitRegiment,
@@ -468,6 +472,9 @@ export async function fetchCallsignsBootstrapData(
     getCallsignUnitStats(),
     listCallsigns(initialReq),
   ]);
+  const referencedUnits = await getUnitsByIds(
+    Array.from(new Set(callsigns.callsigns.map((callsign) => callsign.unitId))),
+  );
 
-  return { user, units, sources, unitStats, callsigns };
+  return { user, units: mergeUnitsById(units, referencedUnits), sources, unitStats, callsigns };
 }

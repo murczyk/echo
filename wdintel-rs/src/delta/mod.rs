@@ -388,9 +388,9 @@ async fn radios_convert(
     ensure_basic_role(&env.dbx, &user).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
-    println!("> tmp_dir {}", &tmp_dir.path().display());
+    println!("> tmp_dir {}", tmp_dir.path().display());
     let data_file = tmp_dir.path().join(field.name().c(h!())?);
-    println!("> data_file: {}", &data_file.display());
+    println!("> data_file: {}", data_file.display());
     std::fs::write(&data_file, val)?;
     let loglines: Vec<String> = vec![];
     let bgtask = bgtask::ActiveModel {
@@ -913,7 +913,7 @@ pub async fn import_map(
             let tmp_dir = TempDir::new()?;
             bgtask_log(
                 Some(bgtask_id),
-                &format!("> tmp_dir {}", &tmp_dir.path().display()),
+                &format!("> tmp_dir {}", tmp_dir.path().display()),
                 &dbx,
             )
             .await
@@ -923,7 +923,7 @@ pub async fn import_map(
             let kmz_file = tmp_dir.path().join(filename);
             bgtask_log(
                 Some(bgtask_id),
-                &format!("> kmz_file: {}", &kmz_file.display()),
+                &format!("> kmz_file: {}", kmz_file.display()),
                 &dbx,
             )
             .await
@@ -934,7 +934,7 @@ pub async fn import_map(
                 .spawn()?;
             bgtask_log(
                 Some(bgtask_id),
-                &format!("> running unzip {}", &kmz_file.display()),
+                &format!("> running unzip {}", kmz_file.display()),
                 &dbx,
             )
             .await
@@ -968,7 +968,7 @@ pub async fn import_map(
             }
             bgtask_log(
                 Some(bgtask_id),
-                &format!("> doc_kml: {}", &doc_kml.display()),
+                &format!("> doc_kml: {}", doc_kml.display()),
                 &dbx,
             )
             .await
@@ -1184,17 +1184,17 @@ pub async fn kmz_to_geojson(
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let filename = field.name().c(h!())?;
     let tmp_dir = TempDir::new()?;
-    println!("> tmp_dir {}", &tmp_dir.path().display());
+    println!("> tmp_dir {}", tmp_dir.path().display());
     let geojson_file = Path::new(&filename).with_extension("geojson");
     let geojson_file = geojson_file.file_name().ok_or("impossible")?;
     let kmz_file = tmp_dir.path().join(filename);
-    println!("> kmz_file: {}", &kmz_file.display());
+    println!("> kmz_file: {}", kmz_file.display());
     std::fs::write(&kmz_file, val)?;
     println!("> running ls");
     std::process::Command::new("ls")
         .args([tmp_dir.path()])
         .spawn()?;
-    println!("> running unzip {}", &kmz_file.display());
+    println!("> running unzip {}", kmz_file.display());
     crate::utils::zip::unzip(&kmz_file)?;
     println!("> unzip done");
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
@@ -1221,7 +1221,7 @@ pub async fn kmz_to_geojson(
             }
         }
     }
-    println!("> doc_kml: {}", &doc_kml.display());
+    println!("> doc_kml: {}", doc_kml.display());
     let output = tmp_dir.path().join(geojson_file);
     kmz_to_geojson_1(&doc_kml, &output)?;
 
@@ -1307,10 +1307,10 @@ pub fn delta_objs_to_kmz(
         }
     }
     let mut styles: Vec<Style> = vec![];
-    for (_, style) in styles_normal.iter() {
+    for style in styles_normal.values() {
         styles.push(style.clone());
     }
-    for (_, style) in styles_highlight.iter() {
+    for style in styles_highlight.values() {
         styles.push(style.clone());
     }
     styles.extend(get_kmz_line_styles());

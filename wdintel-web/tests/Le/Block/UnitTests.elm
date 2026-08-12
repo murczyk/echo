@@ -9,16 +9,23 @@ import Test exposing (Test, describe, test)
 createUnit : Int -> String -> String -> String -> String -> String -> String -> B.Unit
 createUnit id army division regiment battalion company name =
     { id = id
+    , armyRegion = ""
+    , militaryDistrict = ""
     , army = army
     , division = division
     , regiment = regiment
     , battalion = battalion
     , company = company
     , comment = ""
+    , orbitNote = Nothing
     , name = name
     , active = True
+    , isDeduplicateCandidate = Nothing
     , createdAt = 0
     , createdByLoginId = ""
+    , hasOrbit = False
+    , orbitUnitIds = []
+    , orbitUnitGenerativeNames = []
     }
 
 
@@ -73,6 +80,46 @@ suite =
                         in
                         Unit.isSameOrChildUnit regimentUnit companyUnit
                             |> Expect.equal True
+                , test "Військовий округ входить до складу армійського регіону" <|
+                    \_ ->
+                        let
+                            regionUnitBase =
+                                createUnit 30 "" "" "" "" "" "ЗС РФ"
+
+                            regionUnit =
+                                { regionUnitBase | armyRegion = "ЗС РФ" }
+
+                            districtUnitBase =
+                                createUnit 31 "" "" "" "" "" "Західний ВО ЗС РФ"
+
+                            districtUnit =
+                                { districtUnitBase
+                                    | armyRegion = "ЗС РФ"
+                                    , militaryDistrict = "Західний ВО"
+                                }
+                        in
+                        Unit.isSameOrChildUnit regionUnit districtUnit
+                            |> Expect.equal True
+                , test "Legacy parent without region remains related to regional child" <|
+                    \_ ->
+                        let
+                            parentBase =
+                                createUnit 34 "20 ЗВА" "" "" "" "" "20 ЗВА Західний ВО"
+
+                            parentUnit =
+                                { parentBase | militaryDistrict = "Західний ВО" }
+
+                            childBase =
+                                createUnit 35 "20 ЗВА" "45 див" "" "" "" "45 див 20 ЗВА Західний ВО ЗС РФ"
+
+                            childUnit =
+                                { childBase
+                                    | armyRegion = "ЗС РФ"
+                                    , militaryDistrict = "Західний ВО"
+                                }
+                        in
+                        Unit.isSameOrChildUnit parentUnit childUnit
+                            |> Expect.equal True
                 ]
             , describe "Різні підрозділи НЕ повинні бути пов'язані"
                 [ test "Різні дивізії однієї армії НЕ пов'язані між собою" <|
@@ -107,6 +154,52 @@ suite =
                                 createUnit 14 "2-га армія" "" "" "" "" "2-га армія"
                         in
                         Unit.isSameOrChildUnit unit1 unit2
+                            |> Expect.equal False
+                , test "Округи різних армійських регіонів НЕ пов'язані" <|
+                    \_ ->
+                        let
+                            unit1Base =
+                                createUnit 32 "" "" "" "" "" "Західний ВО"
+
+                            unit1 =
+                                { unit1Base
+                                    | armyRegion = "ЗС РФ"
+                                    , militaryDistrict = "Західний ВО"
+                                }
+
+                            unit2Base =
+                                createUnit 33 "" "" "" "" "" "Західний ВО"
+
+                            unit2 =
+                                { unit2Base
+                                    | armyRegion = "Інший регіон"
+                                    , militaryDistrict = "Західний ВО"
+                                }
+                        in
+                        Unit.isSameOrChildUnit unit1 unit2
+                            |> Expect.equal False
+                , test "Заповнений інший регіон батька не відповідає дитині" <|
+                    \_ ->
+                        let
+                            parentBase =
+                                createUnit 36 "20 ЗВА" "" "" "" "" "20 ЗВА Західний ВО"
+
+                            parentUnit =
+                                { parentBase
+                                    | armyRegion = "Регіон 1"
+                                    , militaryDistrict = "Західний ВО"
+                                }
+
+                            childBase =
+                                createUnit 37 "20 ЗВА" "45 див" "" "" "" "45 див 20 ЗВА Західний ВО"
+
+                            childUnit =
+                                { childBase
+                                    | armyRegion = "Регіон 2"
+                                    , militaryDistrict = "Західний ВО"
+                                }
+                        in
+                        Unit.isSameOrChildUnit parentUnit childUnit
                             |> Expect.equal False
                 ]
             , describe "ВИПРАВЛЕННЯ БАГУ - проблема з порожніми рівнями ієрархії"

@@ -138,9 +138,19 @@ file as `/etc/echo-peerdb/tables-exclude.txt`. If the exclusion file is absent,
 `source-configure.sh` installs the shipped
 [default exclusions](env/tables-exclude.txt), which omit superseded
 PostgreSQL aggregates, the highly mutable GOI knowledge table, and transient
-worker queues. The repository file is canonical; deploy it before the first
-snapshot with `just setup-analytics-reconcile-tables`. The analytics copy of
-the same password stays in `echo-peerdb-<source-hostname>`.
+worker queues, the PostgreSQL-only ORBIT unit catalog and force-grouping links,
+and the short-lived `echo_automation_send_log` deduplication state. The
+repository file is canonical; deploy it before the first snapshot with
+`just setup-analytics-reconcile-tables`. The analytics copy of the same
+password stays in `echo-peerdb-<source-hostname>`.
+Exclusions may name optional tables that are absent on an instance; if such a
+table is created later, it remains excluded automatically.
+
+Durable normalized domain tables, including
+`sigint_inbox_item_callsign`, are intentionally not excluded. The automatic
+table reconciler adds them to PeerDB after the source migration; verify the raw
+ClickHouse table and current-state gateway view before considering the
+deployment complete.
 
 The source monitor installer records its invoking Unix account in a systemd
 drop-in. Automatic table reconciliation runs as that account so it can reuse
@@ -221,6 +231,9 @@ systemd WAL monitor and a one-minute table-selection reconciliation timer.
 After a successful migration, `wdintel-rs-bgworker` also requests the same
 reconciliation asynchronously. New non-excluded tables are therefore added to
 the publication and existing PeerDB mirror without blocking Echo startup.
+Replica-identity reconciliation alters only selected tables that are not
+already `FULL` and uses a two-second DDL lock timeout, so a busy table is
+retried later without queueing application reads behind an exclusive lock.
 Changing the exclusion file remains the explicit day-two operation below;
 rerunning only `source-configure.sh` does not update an existing PeerDB mirror
 mapping.
@@ -412,21 +425,68 @@ previous working gateway definitions.
 
 The health timer automatically compares the source publication, raw
 ClickHouse tables, current-state views, and gateway compatibility views after
-each successful replication probe. Once PeerDB propagates a simple added
-column, it refreshes stale current and gateway definitions without operator
-action. Normal and local package deploys do not wait for this asynchronous
-step; queries that use the new column fall back to PostgreSQL until analytics
-is reconciled. Columns added with a PostgreSQL default still require an
-explicit historical backfill or full mirror resync.
+each successful replication probe. Once PeerDB observes a post-DDL row change
+and propagates a simple added column, it refreshes stale current and gateway
+definitions without operator action. A quiet table therefore needs a reviewed,
+safe row touch in the migration or a table/mirror resync; deployment tooling
+must not issue generic no-op updates because tables may have mutating triggers.
+Normal and local package deploys do not wait for this asynchronous step;
+queries that use the new column fall back to PostgreSQL until analytics is
+reconciled. Columns added with a PostgreSQL default still require an explicit
+historical backfill or full mirror resync.
 
-The same reconciliation installs a versioned ClickHouse callsign-expansion
-view and exposes it privately as
-`echo_clickhouse_derived.message_callsign` in the gateway. The gateway object
-is an owner-owned compatibility view over a private foreign table, matching
-the replicated-table gateway pattern so joins and distinct aggregation remain
-pushdown-safe. Existing objects are replaced only when upgrading from the
-earlier direct-foreign-table layout; periodic checks leave the compatibility
-view unchanged.
+The same reconciliation installs versioned ClickHouse derived views and
+exposes owner-owned compatibility views over private foreign tables in the
+gateway:
+
+- `echo_clickhouse_derived.message_callsign` exposes distinct active callsigns
+  from `sigint_inbox_item_callsign`. The legacy JSONB columns are no longer
+  mirrored or used as a fallback.
+- `echo_clickhouse_derived.message_aor_link` combines group and explicit
+  network AOR links into message ID and AOR-bound rows.
+- `echo_clickhouse_derived.message_network_link` exposes current network links
+  ordered by message ID for bounded analytical joins.
+
+The AOR relation lets analytical filters apply the resolved message-ID
+envelope before joining the large group and network link tables. This avoids
+correlated full-history scans while retaining the PostgreSQL overlap
+semantics. The compatibility-view layout matches replicated gateway tables so
+joins and distinct aggregation remain pushdown-safe.
+
+The network and AOR compatibility relations read a derived
+`ReplacingMergeTree` ordered by
+`(sigint_inbox_item_id, id)`. A materialized view copies every PeerDB version
+and deletion marker into it, so `FINAL` preserves current-state semantics
+while the message-ID envelope prunes by the primary key. Reconciliation records
+the PeerDB raw-table UUID and rebuilds the table plus ingestion view after a
+mirror resync replaces that UUID.
+
+The derived-schema reconciliation also owns the ClickHouse data-skipping
+indexes used by time-bounded analytical queries. PeerDB does not copy
+PostgreSQL indexes, and a mirror resync replaces raw tables, so the reconciler
+checks the raw table UUID, adds the expected `minmax` definitions, and
+materializes historical parts once per UUID. Its state is stored in
+`<CLICKHOUSE_CURRENT_DB>_meta.query_index_reconciliation`; a replacement table
+therefore automatically receives fresh indexes during gateway/health
+reconciliation.
+
+Every analysis facet and dedicated facet count first resolves one shared
+minimum/maximum message-ID scope for its requested time interval. Concurrent
+requests for the same unresolved range share that lookup, but completed
+results are not cached. The timestamp predicate stays authoritative, while
+the same ID bounds constrain `signal_message`, `sigint_inbox_item`, every
+message-group relation, and tag, network, callsign, and AOR message links.
+Group authorization, selected groups, and sender filtering use one bounded,
+flat message-group join unless the joined group relation supplies the facet
+dimension. An empty scope returns an empty facet or zero count without
+scanning the large relations.
+
+The envelope is only a pruning hint: timestamps and all access filters remain
+authoritative. A range ending within the analytics freshness window uses only
+the lower ID bound so newly replicated messages cannot be excluded between
+the envelope query and the facet queries. Selected or denied unit filters stay
+on PostgreSQL until they can be represented by one flat ClickHouse query.
+
 Package deployments install the source and remote reconciliation scripts.
 For checkout-based development, `just dev-back` runs the repository copy as a
 bounded best-effort preflight when `/etc/echo-peerdb/source.env` exists; without
@@ -548,6 +608,76 @@ bin/resync.sh --yes
 bin/finish-resync.sh
 ```
 
+### Bounded ClickHouse diagnostic logs
+
+Initial provisioning installs a fleet-wide policy with `information` server
+and `system.text_log` levels. It retains `system.text_log` for 3 days,
+`system.query_log` for 7 days, and `system.trace_log` plus
+`system.processors_profile_log` for 1 day. Existing hosts receive the same
+policy through the fail-fast maintenance command without rerunning the whole
+`02-configure-analytics.sh` step.
+
+Install the updated day-two command from the synced analytics bundle, then run
+the read-only check as root. The check authenticates with
+`/etc/echo-analytics/clickhouse.env`, prints effective levels, table TTLs, row
+counts, and compressed sizes, and exits nonzero on drift:
+
+```bash
+bin/03-install-services.sh --no-start
+sudo /opt/echo-analytics/bin/manage-system-logs.sh --check
+```
+
+Before each apply, record `df -h / /var/lib/clickhouse`, `bin/status.sh`, all
+`echo-analytics.target` service states, and the corresponding Proxmox
+`pvesm status`/`zpool list` output. Do not create a ZFS snapshot on `pve-hz-1`:
+it does not have safe snapshot headroom, and the existing February snapshots
+must remain untouched.
+
+Apply only with all three explicit mutation flags:
+
+```bash
+sudo /opt/echo-analytics/bin/manage-system-logs.sh --apply --truncate --yes
+```
+
+The command validates the ClickHouse XML, flushes the current log buffers and
+aligns the four live table TTLs to prevent ClickHouse from rolling them aside,
+atomically installs the XML, restarts ClickHouse, waits for an authenticated
+health response, and synchronously truncates only these four diagnostic
+tables:
+
+- `system.text_log`
+- `system.query_log`
+- `system.trace_log`
+- `system.processors_profile_log`
+
+TTL alignment disables immediate TTL materialization because the same four
+tables are truncated later in the command. Each allowlisted truncate also
+disables ClickHouse's per-query table-size drop limit so oversized diagnostic
+logs do not fail after configuration and restart have already succeeded.
+
+It never truncates replicated application tables, touches ZFS snapshots, or
+restarts any other service. A failed health, configuration, truncate, or TTL
+operation aborts immediately; do not continue the fleet rollout after a
+failure.
+
+Canary `echo-kharkiv2-clickhouse` first. For 15 minutes after apply, require
+all analytics services to remain active, `bin/check-analytics-health.sh` and
+`bin/status.sh` to pass, the CDC heartbeat and gateway query path to remain
+fresh, `--check` to report the expected levels/TTLs, and all four tables to
+resume normal inserts without a trace-level `text_log` flood. Then apply one
+production node at a time in this order, repeating the same checks and
+checking its Proxmox pool before continuing:
+
+1. `echo-pivnich-clickhouse`
+2. `echo-zp2-clickhouse`
+3. `echo-skhid-clickhouse`
+4. `echo-siversk-clickhouse`
+
+Expected aggregate recovery is approximately 547 GiB on `pve-hz-1` and
+418 GiB on `pve-hz-3`. Recheck diagnostic-table sizes and pool growth after
+one hour and 24 hours; production acceptance requires both pools to stay on a
+bounded growth trajectory for the full 24 hours.
+
 ### The correct day-two table-selection solution
 
 [env/tables-exclude.txt](env/tables-exclude.txt) is the versioned source of
@@ -600,18 +730,84 @@ reconciliation does not update the fingerprint, so it cannot be mistaken for
 success.
 
 The timer uses the already deployed `/etc/echo-peerdb/tables-exclude.txt` and
-does not copy the repository file during an application deploy. Rerun
+does not copy the packaged file on its own. Rerun
 `deploy/clickhouse/bin/install-source-monitor.sh --yes` once on an existing
 source to install this automation. Its invoking account must have passwordless
 sudo and working non-interactive SSH to the paired analytics host.
 
+The standard `just deploy` and `just deploy-from-local` workflows install the
+packaged exclusion file before migrations when its selected table set differs
+from `/etc/echo-peerdb/tables-exclude.txt`. They then run migrations once while
+workers are stopped and require the source reconciliation plus end-to-end
+analytics health check to succeed after service startup. The default health
+deadline is 300 seconds and can be changed with
+`ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS` in `source.env`. A direct
+`wdintel-rs migrate` refuses to run while the packaged and deployed exclusion
+sets differ; use `source-sync-exclusions-if-needed.sh --yes` first.
+
+Post-migration verification recognizes transient PostgreSQL deadlocks, tuple
+update conflicts, reconciliation-lock contention, and DDL lock timeouts. It
+makes up to five attempts at 30-second intervals before failing the deployment.
+An unrecognized failure stops immediately. If all transient
+attempts fail, the deployment prints a prominent banner, the latest service
+log, and asks for one retry after two minutes; a further failure requires
+investigation rather than repeated deployment attempts. Override the bounded
+retry only through `ANALYTICS_RECONCILE_DEPLOY_RETRY_ATTEMPTS` and
+`ANALYTICS_RECONCILE_DEPLOY_RETRY_DELAY_SECONDS` in `source.env`.
+
+Migration pull requests are checked against
+`migration-impact.json`. New tables declare `excluded` or
+`replicated_snapshot`; additive replicated columns declare `cdc_backfill` with
+reviewed post-DDL DML only for the guaranteed-nonempty `system_settings`
+singleton. Additive columns on a table expected to remain empty may declare
+`empty_table_resnapshot`. After migrations, deployment validates that the table
+is still empty and has only source-side additive column drift, then uses
+PeerDB's paused-mirror table editing to remove and re-add only that preserved
+mapping. Drops, renames, type changes, and non-empty incompatible changes use
+`mirror_resync`. Dependency revision changes for `echo-im` and `echo-gpu` must
+declare whether they contain schema changes. Deployment never starts a full
+mirror resync implicitly.
+
+The targeted helper is idempotent and keeps retry state under
+`/var/lib/echo-analytics/table-resnapshot`. It rejects raw-only drift and
+unsupported mapping transforms before mutation. Recoverable failures attempt
+to leave the mirror paused; rerun the same command promptly so retained WAL
+does not continue to grow:
+
+```bash
+just analytics-resnapshot-table \
+  --server echo-skhid \
+  --table public.echo_automation
+```
+
+The command streams the current helper through the source host, takes the same
+lock as table-selection reconciliation, preserves custom destination mapping
+names, snapshots only the empty table, refreshes current-state and gateway
+views, and requires the end-to-end analytics health check to pass. The source
+package installs the helper and manifest under `/opt/echo-peerdb` so the normal
+post-migration deployment verification can apply authorized repairs
+automatically.
+
+```json
+{
+  "migrations": {
+    "echo:m20260801_120000_example": {
+      "changes": [
+        { "table": "public.example", "strategy": "mirror_resync" }
+      ]
+    }
+  },
+  "dependencies": {
+    "echo-im:<commit>": { "changes": [] }
+  }
+}
+```
+
 ### Replacing a development source database
 
-`just copy-db --server <source>` downloads a dump and prints a pasteable block
-selected from the local configuration. Without `/etc/echo-peerdb/source.env`,
-it prints the original PostgreSQL commands. With PeerDB configured, it prints
-the non-interactive coordinated restore command; do not manually drop and
-restore `wd` while PeerDB is attached:
+`just copy-db --server <source>` downloads a dump and always prints the
+non-interactive coordinated restore command. Do not manually drop and restore
+`wd`; the coordinator handles both PostgreSQL-only and PeerDB-attached setups:
 
 ```bash
 deploy/restore-copied-db.sh --yes /var/tmp/wd-<timestamp>.pgrestore
@@ -620,16 +816,29 @@ deploy/restore-copied-db.sh --yes /var/tmp/wd-<timestamp>.pgrestore
 For a separately entered command that retains confirmation, use
 `just restore-copied-db --dump /var/tmp/wd-<timestamp>.pgrestore`.
 
-`deploy/restore-copied-db.sh` checks for `/etc/echo-peerdb/source.env`. When it
-is absent, it performs a PostgreSQL-only restore and current Echo/echo-im
-migrations. When present, it verifies SSH and every required recovery script
-before confirmation or mutation. It then pauses automatic table reconciliation
-under the shared lock, stops the paired analytics stack, and waits for its
-logical slot to become inactive. It restores and migrates `wd`, reconciles the
-source role/publication, starts analytics, requests a clean PeerDB resync, and
-finally re-enables the table timer. It waits for the replacement snapshot,
-refreshes both view layers, and runs the end-to-end replication health check
-before returning.
+`deploy/restore-copied-db.sh` snapshots any configured local AI-agent profile
+after confirmation and before replacing `wd`. After the restore and current
+Echo/echo-im migrations it always clears copied AI-agent conversations,
+requests, reviews, user links, and container state. When a local profile was
+preserved, it then restores the profile and checks the local public-host HTTPS
+proxy and dispatcher template namespace. Dispatcher keys and known-hosts stay
+on the filesystem. If this validation fails, the mode-`0600` temporary profile
+is retained and its path is printed for retry. Use
+`--no-preserve-local-ai-agent-profile` only when the source AI-agent
+configuration is intentionally wanted. If the destination has no local
+profile, the restore also disables and clears the copied AI-agent control
+plane.
+
+The coordinator checks for `/etc/echo-peerdb/source.env`. When it is absent,
+it performs a PostgreSQL-only restore and current Echo/echo-im migrations. When
+present, it verifies SSH and every required recovery script before confirmation
+or mutation. It then pauses automatic table reconciliation under the shared
+lock, stops the paired analytics stack, and waits for its logical slot to
+become inactive. It restores and migrates `wd`, reconciles the source
+role/publication, starts analytics, requests a clean PeerDB resync, and finally
+re-enables the table timer. It waits for the replacement snapshot, refreshes
+both view layers, and runs the end-to-end replication health check before
+returning.
 Echo continues through PostgreSQL fallback while the command waits. The default
 resync timeout is two hours; override it with `MIRROR_RESYNC_TIMEOUT_SECONDS` in
 the analytics instance configuration. Transient freshness failures are retried
@@ -673,8 +882,24 @@ external consumer:
 
 Monitor source slot WAL, ClickHouse/MinIO disk, systemd service health,
 Temporal workflows, mirror status, `echo_analytics_health` age, fallback
-count, and query latency. `status.sh` exits nonzero when the freshness record
-is unhealthy or older than the configured threshold.
+count, and query latency. The gateway preloads `pg_stat_statements`, and
+`bin/query-performance-report.sh [minutes] [limit]` prints read-only summaries
+of normalized gateway parent queries and ClickHouse fragments. It flags a
+shape above 100 remote executions per minute, a fragment returning more than
+100,000 rows to the gateway, and a bounded facet reading more than 10 million
+rows. The report never resets either statistics source.
+
+`status.sh` exits nonzero when the freshness record is unhealthy or older than
+the configured threshold. When analytics is configured,
+`wdintel-rs-bgworker` also checks this record immediately at startup and once
+per minute. It logs an error with the health detail and age while unhealthy,
+and one informational recovery message after health returns.
+
+Roll out facet changes one pair at a time in this order:
+`echo-kharkiv2`, `echo-siversk`, then `echo-zp2`. After every deployment,
+confirm health/freshness, compare PostgreSQL and ClickHouse results, replay the
+representative facet requests, and inspect the performance report before
+continuing.
 
 ## Consistency and type limits
 
@@ -685,6 +910,13 @@ querying raw MergeTree parts. Validate pushdown with PostgreSQL `EXPLAIN
 conversion prevents those expressions from being pushed into ClickHouse, so
 measure those filters separately; ordinary relational filters and aggregates
 can still be pushed down.
+
+The dedicated `wdintel-rs-report-worker` uses the same freshness-gated
+gateway for supported report candidate scans. Babak scans page by
+`(datetime, id)` in 5,000-row batches; any gateway error discards the partial
+candidate list and reruns the complete scan on PostgreSQL. Message bodies,
+comments, tags, and authoritative message-network unit links are enriched from
+PostgreSQL in bounded batches rather than transferred through the gateway.
 
 The initial publication includes sensitive, binary, spatial, JSONB, array,
 enum, tsvector, and audit data. Network and filesystem access must therefore
@@ -700,3 +932,13 @@ Remove or disable `[analytics]` in Echo and restart it. PostgreSQL operation is
 unchanged. Stop the analytics target afterward if desired. Keep the source
 slot only while planning to resume; otherwise deliberately drop the mirror
 and verify the slot is gone so WAL is no longer retained.
+
+To roll back only the diagnostic-log policy without rolling the current tables
+aside, authenticate with `/etc/echo-analytics/clickhouse.env`, run `SYSTEM
+FLUSH LOGS`, remove the TTL from `text_log`, `query_log`, and `trace_log`, and
+restore the package-default 30-day TTL on `processors_profile_log`. Then move
+`/etc/clickhouse-server/config.d/echo-system-logs.xml` to a non-XML backup and
+restart ClickHouse. Run the analytics health check; the policy `--check` is
+expected to report drift after this intentional rollback. Previously truncated
+diagnostic rows cannot be recovered; replicated application data, MinIO,
+PostgreSQL, and ZFS snapshots are unaffected.

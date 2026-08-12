@@ -97,6 +97,10 @@ export function buildListCallsignsReq(input: BuildReqInput): ListCallsignsReq {
     filterFullName: filters.filterFullName.trim() || null,
     filterComment: filters.filterComment.trim() || null,
     filterUnit: filters.filterUnit.trim() || null,
+    filterUnitArmyRegion: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.armyRegion),
+    filterUnitMilitaryDistrict: normalizeHierarchyFilterValue(
+      sidebarUnitHierarchyFilter?.militaryDistrict,
+    ),
     filterUnitArmy: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.army),
     filterUnitDivision: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.division),
     filterUnitRegiment: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.regiment),

@@ -1,8 +1,12 @@
-use super::render_unit;
-use super::types::{
-    UnitAttachment, UnitAttachmentAor, UnitAttachmentDownloadReq,
-    UnitAttachmentUnitIdsRsp, UnitDetailsReq, UnitDetailsRsp,
+use super::orbit::{
+    can_view_orbit_data, has_any_orbit_unit, unit_orbit_details,
 };
+use super::types::{
+    DeleteUnitAttachmentReq, DeleteUnitAttachmentRsp, UnitAttachment,
+    UnitAttachmentAor, UnitAttachmentDownloadReq, UnitAttachmentUnitIdsRsp,
+    UnitDetailsReq, UnitDetailsRsp, UpdateUnitAttachmentReq,
+};
+use super::{apply_unit_orbit_visibility, render_unit};
 use crate::config::{
     SIGINT_UNIT_ATTACHMENT_DOWNLOAD_TIMEOUT_SECS,
     SIGINT_UNIT_ATTACHMENT_MAX_AORS,
@@ -53,9 +57,39 @@ pub async fn unit_details(
     let unit = find_available_unit(&env.dbx, req.unit_id).await?;
     let attachments =
         list_visible_attachments(&env.dbx, &login, unit.id).await?;
+    let labels = super::labels::list_labels(&env.dbx, unit.id)
+        .await
+        .c(h!())?;
+    let can_view_orbit = can_view_orbit_data(&env.dbx, &login).await?;
+    let orbit_units = if can_view_orbit {
+        unit_orbit_details(&env.dbx, unit.id).await?
+    } else {
+        Vec::new()
+    };
+    let can_edit_units = match has_role(&env.dbx, &login, "UnitsEditor").await {
+        Ok(()) => true,
+        Err(AppError::Forbidden(_)) => false,
+        Err(err) => return Err(err),
+    };
+    let can_link_orbit_unit = can_view_orbit
+        && can_edit_units
+        && orbit_units.is_empty()
+        && has_any_orbit_unit(&env.dbx).await?;
+    let can_create_device_network = can_edit_units
+        && crate::system_settings::devices_section_enabled(&env.dbx).await?
+        && !super::unit_has_active_network(&env.dbx, unit.id).await?;
+    let mut unit = render_unit(&unit)?;
+    apply_unit_orbit_visibility(&env.dbx, &mut unit, can_view_orbit)
+        .await
+        .context(h!())?;
     Ok(Json(UnitDetailsRsp {
-        unit: render_unit(&unit)?,
+        unit,
         attachments,
+        labels,
+        orbit_units,
+        can_link_orbit_unit,
+        can_create_device_network,
+        can_edit_unit_labels: can_edit_units,
     }))
 }
 
@@ -63,10 +97,17 @@ pub async fn unit_details(
 pub async fn unit_attachment_unit_ids(
     user: actix_identity::Identity,
     env: Data<Env>,
+    req: Json<Vec<i64>>,
 ) -> Result<Json<UnitAttachmentUnitIdsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
-    let unit_ids = list_visible_attachment_unit_ids(&env.dbx, &login).await?;
+    let requested_unit_ids = req.into_inner();
+    let unit_ids = list_visible_attachment_unit_ids(
+        &env.dbx,
+        &login,
+        Some(&requested_unit_ids),
+    )
+    .await?;
     Ok(Json(UnitAttachmentUnitIdsRsp { unit_ids }))
 }
 
@@ -79,7 +120,10 @@ pub async fn upload_unit_attachment(
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     ensure_attachment_storage_configured(&env)?;
     let login = login_id_from_identity(&user)?;
-    let upload = parse_attachment_upload(payload).await?;
+    let upload = parse_attachment_upload(payload).await.map_err(|err| {
+        error!("failed to parse unit attachment upload: {err:#?}");
+        err
+    })?;
     validate_upload_target(&env.dbx, upload.unit_id, &upload.aor_ids).await?;
 
     let storage_key = crate::messenger::media::store_asset(
@@ -89,15 +133,52 @@ pub async fn upload_unit_attachment(
         Some(&upload.file.content_type),
     )
     .await
-    .c(h!())?;
+    .c(h!())
+    .map_err(|err| {
+        error!(
+            "failed to store unit attachment: unit_id={} file_name={:?} size_bytes={}: {err:#?}",
+            upload.unit_id,
+            upload.file.file_name,
+            upload.file.bytes.len(),
+        );
+        err
+    })?;
 
     match insert_attachment(&env, &login, upload, storage_key.clone()).await {
         Ok(attachment) => Ok(Json(attachment)),
         Err(err) => {
+            error!(
+                "failed to save unit attachment metadata: storage_key={storage_key}: {err:#?}"
+            );
             delete_stored_asset_best_effort(&env, &storage_key).await;
             Err(err)
         }
     }
+}
+
+#[post("/api/sigint/unit/attachment/update")]
+pub async fn update_unit_attachment(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<UpdateUnitAttachmentReq>,
+) -> Result<Json<UnitAttachment>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    Ok(Json(update_attachment(&env.dbx, req.into_inner()).await?))
+}
+
+#[post("/api/sigint/unit/attachment/delete")]
+pub async fn delete_unit_attachment(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<DeleteUnitAttachmentReq>,
+) -> Result<Json<DeleteUnitAttachmentRsp>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let attachment =
+        delete_attachment_record(&env.dbx, req.attachment_id).await?;
+    delete_stored_asset_best_effort(&env, &attachment.storage_key).await;
+    Ok(Json(DeleteUnitAttachmentRsp {
+        attachment_id: attachment.id,
+    }))
 }
 
 fn ensure_attachment_storage_configured(env: &Env) -> Result<(), AppError> {
@@ -160,9 +241,10 @@ async fn list_visible_attachments(
     login: &uuid::Uuid,
     unit_id: i64,
 ) -> Result<Vec<UnitAttachment>, AppError> {
+    let user_is_admin = is_admin(dbx, login).await?;
     let mut attachments = sigint_unit_attachment::Entity::find()
         .filter(sigint_unit_attachment::Column::UnitId.eq(unit_id));
-    if !is_admin(dbx, login).await? {
+    if !user_is_admin {
         let aor_ids =
             crate::sigint::aor::bl::login_aor_ids_with_descendants(dbx, login)
                 .await
@@ -192,19 +274,29 @@ async fn list_visible_attachments(
         .all(dbx)
         .await
         .c(h!())?;
-    render_attachments(dbx, attachments).await
+    render_attachments(dbx, attachments, user_is_admin).await
 }
 
 async fn list_visible_attachment_unit_ids(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
+    unit_ids: Option<&[i64]>,
 ) -> Result<Vec<i64>, AppError> {
+    if unit_ids.is_some_and(|unit_ids| unit_ids.is_empty()) {
+        return Ok(vec![]);
+    }
     let mut attachments = sigint_unit_attachment::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_unit_attachment::Relation::SigintUnit.def(),
         )
         .filter(sigint_unit::Column::Deleted.eq(false));
+    if let Some(unit_ids) = unit_ids {
+        attachments = attachments.filter(
+            sigint_unit_attachment::Column::UnitId
+                .is_in(unit_ids.iter().copied()),
+        );
+    }
     if !is_admin(dbx, login).await? {
         let aor_ids =
             crate::sigint::aor::bl::login_aor_ids_with_descendants(dbx, login)
@@ -255,13 +347,14 @@ async fn visible_attachment_ids(
 async fn render_attachments(
     dbx: &DatabaseConnection,
     attachments: Vec<sigint_unit_attachment::Model>,
+    include_aors: bool,
 ) -> Result<Vec<UnitAttachment>, AppError> {
     let attachment_ids = attachments
         .iter()
         .map(|attachment| attachment.id)
         .collect::<Vec<_>>();
     let mut aors_by_attachment = BTreeMap::new();
-    if !attachment_ids.is_empty() {
+    if include_aors && !attachment_ids.is_empty() {
         let rows = sigint_unit_attachment_aor::Entity::find()
             .find_also_related(area_of_responsibility::Entity)
             .filter(
@@ -290,9 +383,11 @@ async fn render_attachments(
     Ok(attachments
         .into_iter()
         .map(|attachment| {
-            let aors = aors_by_attachment
-                .remove(&attachment.id)
-                .unwrap_or_default();
+            let aors = include_aors.then(|| {
+                aors_by_attachment
+                    .remove(&attachment.id)
+                    .unwrap_or_default()
+            });
             render_attachment(attachment, aors)
         })
         .collect())
@@ -300,7 +395,7 @@ async fn render_attachments(
 
 fn render_attachment(
     attachment: sigint_unit_attachment::Model,
-    aors: Vec<UnitAttachmentAor>,
+    aors: Option<Vec<UnitAttachmentAor>>,
 ) -> UnitAttachment {
     UnitAttachment {
         id: attachment.id,
@@ -457,13 +552,92 @@ async fn insert_attachment(
 
     Ok(render_attachment(
         attachment,
-        aors.into_iter()
-            .map(|aor| UnitAttachmentAor {
-                id: aor.id,
-                name: aor.name,
-            })
-            .collect(),
+        Some(
+            aors.into_iter()
+                .map(|aor| UnitAttachmentAor {
+                    id: aor.id,
+                    name: aor.name,
+                })
+                .collect(),
+        ),
     ))
+}
+
+async fn update_attachment(
+    dbx: &DatabaseConnection,
+    req: UpdateUnitAttachmentReq,
+) -> Result<UnitAttachment, AppError> {
+    let short_description = validate_description(
+        req.short_description,
+        "short_description",
+        SIGINT_UNIT_ATTACHMENT_MAX_SHORT_DESCRIPTION_CHARS,
+    )?;
+    let full_description = validate_description(
+        req.full_description,
+        "full_description",
+        SIGINT_UNIT_ATTACHMENT_MAX_FULL_DESCRIPTION_CHARS,
+    )?;
+    let aor_ids = validate_aor_ids(req.aor_ids)?;
+    let txn = dbx.begin().await.c(h!())?;
+    let attachment =
+        sigint_unit_attachment::Entity::find_by_id(req.attachment_id)
+            .one(&txn)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+    let aors =
+        validate_upload_target(&txn, attachment.unit_id, &aor_ids).await?;
+    let mut attachment = attachment.into_active_model();
+    attachment.short_description = Set(short_description);
+    attachment.full_description = Set(full_description);
+    let attachment = attachment.update(&txn).await.c(h!())?;
+
+    sigint_unit_attachment_aor::Entity::delete_many()
+        .filter(
+            sigint_unit_attachment_aor::Column::AttachmentId.eq(attachment.id),
+        )
+        .exec(&txn)
+        .await
+        .c(h!())?;
+    let attachment_aors = aor_ids
+        .into_iter()
+        .map(|aor_id| sigint_unit_attachment_aor::ActiveModel {
+            id: NotSet,
+            attachment_id: Set(attachment.id),
+            aor_id: Set(aor_id),
+            created_at: NotSet,
+        })
+        .collect::<Vec<_>>();
+    sigint_unit_attachment_aor::Entity::insert_many(attachment_aors)
+        .exec(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+
+    Ok(render_attachment(
+        attachment,
+        Some(
+            aors.into_iter()
+                .map(|aor| UnitAttachmentAor {
+                    id: aor.id,
+                    name: aor.name,
+                })
+                .collect(),
+        ),
+    ))
+}
+
+async fn delete_attachment_record(
+    dbx: &DatabaseConnection,
+    attachment_id: i64,
+) -> Result<sigint_unit_attachment::Model, AppError> {
+    let attachment = sigint_unit_attachment::Entity::find_by_id(attachment_id)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    attachment.clone().delete(dbx).await.c(h!())?;
+    Ok(attachment)
 }
 
 async fn parse_attachment_upload(
@@ -525,7 +699,7 @@ async fn parse_attachment_upload(
             _ => {
                 return Err(AppError::BL {
                     msg: format!("Unknown multipart field: {field_name}"),
-                })
+                });
             }
         }
     }
@@ -661,6 +835,10 @@ fn parse_aor_ids(value: &str) -> Result<Vec<i64>, AppError> {
                 msg: "aor_ids must be a JSON array of integers".to_string(),
             }
         })?;
+    validate_aor_ids(aor_ids)
+}
+
+fn validate_aor_ids(aor_ids: Vec<i64>) -> Result<Vec<i64>, AppError> {
     let aor_ids = aor_ids.into_iter().collect::<BTreeSet<_>>();
     if aor_ids.is_empty() {
         return Err(AppError::BL {
@@ -1004,6 +1182,7 @@ mod tests {
         assert!(!list_visible_attachment_unit_ids(
             &fixture.env.dbx,
             &fixture.unrelated_login_id,
+            None,
         )
         .await
         .unwrap()
@@ -1054,6 +1233,9 @@ mod tests {
         .unwrap();
         assert!(parent_visible
             .iter()
+            .all(|attachment| attachment.aors.is_none()));
+        assert!(parent_visible
+            .iter()
             .any(|attachment| attachment.id == child_attachment.id));
         assert!(parent_visible
             .iter()
@@ -1075,10 +1257,62 @@ mod tests {
         assert!(list_visible_attachment_unit_ids(
             &fixture.env.dbx,
             &fixture.child_login_id,
+            None,
         )
         .await
         .unwrap()
         .contains(&fixture.unit.id));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn updates_and_deletes_attachment_metadata() {
+        let fixture = access_fixture().await;
+        let attachment =
+            insert_attachment_for_aor(&fixture, fixture.child_aor.id, "edit")
+                .await;
+
+        let updated = update_attachment(
+            &fixture.env.dbx,
+            UpdateUnitAttachmentReq {
+                attachment_id: attachment.id,
+                short_description: "updated short".to_string(),
+                full_description: "updated full".to_string(),
+                aor_ids: vec![fixture.unrelated_aor.id],
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(updated.short_description, "updated short");
+        assert_eq!(updated.full_description, "updated full");
+        assert_eq!(
+            updated.aors.unwrap(),
+            vec![UnitAttachmentAor {
+                id: fixture.unrelated_aor.id,
+                name: fixture.unrelated_aor.name.clone(),
+            }]
+        );
+
+        let deleted = delete_attachment_record(&fixture.env.dbx, attachment.id)
+            .await
+            .unwrap();
+        assert_eq!(deleted.id, attachment.id);
+        assert!(sigint_unit_attachment::Entity::find_by_id(attachment.id)
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            sigint_unit_attachment_aor::Entity::find()
+                .filter(
+                    sigint_unit_attachment_aor::Column::AttachmentId
+                        .eq(attachment.id),
+                )
+                .count(&fixture.env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
     }
 
     #[tokio::test]
@@ -1103,22 +1337,31 @@ mod tests {
             .id,
             attachment.id
         );
-        assert!(list_visible_attachments(
+        let admin_visible = list_visible_attachments(
             &fixture.env.dbx,
             &fixture.admin_login_id,
             fixture.unit.id,
         )
         .await
-        .unwrap()
-        .iter()
-        .any(|item| item.id == attachment.id));
+        .unwrap();
+        assert!(admin_visible.iter().any(|item| item.id == attachment.id));
+        assert!(admin_visible.iter().all(|item| item.aors.is_some()));
         assert!(list_visible_attachment_unit_ids(
             &fixture.env.dbx,
             &fixture.admin_login_id,
+            None,
         )
         .await
         .unwrap()
         .contains(&fixture.unit.id));
+        assert!(list_visible_attachment_unit_ids(
+            &fixture.env.dbx,
+            &fixture.admin_login_id,
+            Some(&[-1]),
+        )
+        .await
+        .unwrap()
+        .is_empty());
 
         let mut unrelated_aor = fixture.unrelated_aor.into_active_model();
         unrelated_aor.deleted = Set(true);

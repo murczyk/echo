@@ -7,8 +7,11 @@ use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer;
 use crate::rer_importer::analysis::*;
+use crate::rer_importer::report_chunking::{
+    report_period_chunks, ReportPeriodChunk, ReportPeriodEnd,
+};
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
+use crate::utils::dt_from_millis;
 use chrono::prelude::*;
 use rer_importer::body_noheader::extract_text;
 // Import necessary items from rust_xlsxwriter
@@ -19,6 +22,7 @@ use rust_xlsxwriter::{
 use sea_orm::{prelude::Expr, *};
 use sea_query::*;
 use serde_json::json;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 mod palette;
@@ -65,25 +69,9 @@ pub async fn report_xlsx_kind_interception(
 
     let read_db = env.replica();
     let all_tags = get_all_tags(&read_db).await?;
-
-    let analytics_req = &inbox_req;
-    let postgres_req = &inbox_req;
-    let messages = crate::rer_importer::analysis::with_analytics_read_fallback(
-        env,
-        "interception report message scan",
-        crate::rer_importer::analysis::analytics_inbox_request_supported(
-            &inbox_req,
-        ),
-        |db| async move {
-            get_inbox_messages_report(&db, user_login, env, analytics_req).await
-        },
-        |db| async move {
-            get_inbox_messages_report(&db, user_login, env, postgres_req).await
-        },
-    )
-    .await
-    .context(h!())?;
-    ensure_interception_report_row_limit(user_login, messages.len())?;
+    let messages =
+        collect_interception_report_messages(user_login, env, &inbox_req)
+            .await?;
     process_messages_for_interception_report(
         sheet1,
         messages,
@@ -95,6 +83,120 @@ pub async fn report_xlsx_kind_interception(
     workbook.save(outpath).context(h!())?; // Save the workbook
 
     Ok(())
+}
+
+async fn collect_interception_report_messages(
+    user_login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Vec<InboxMessage>, AppError> {
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let mut chunks =
+        interception_report_chunks(req, report_settings.chunking_hours)?;
+    if interception_report_newest_first(req) {
+        chunks.reverse();
+    }
+
+    let mut seen = HashSet::new();
+    let mut messages = vec![];
+    for (index, chunk) in chunks.iter().enumerate() {
+        log::info!(
+            "Interception report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end,
+        );
+        let mut chunk_req = req.clone();
+        chunk_req.since_date_inclusive_ms = Some(chunk.since_ms);
+        chunk_req.till_date_inclusive_ms = Some(chunk.till_ms);
+        let analytics_req = &chunk_req;
+        let postgres_req = &chunk_req;
+        let chunk_messages =
+            crate::rer_importer::analysis::with_analytics_read_fallback(
+                env,
+                "interception report message scan",
+                crate::rer_importer::analysis::analytics_inbox_request_supported(
+                    &chunk_req,
+                ),
+                |db| async move {
+                    load_interception_report_chunk(
+                        &db,
+                        user_login,
+                        env,
+                        analytics_req,
+                        chunk.end,
+                    )
+                    .await
+                },
+                |db| async move {
+                    load_interception_report_chunk(
+                        &db,
+                        user_login,
+                        env,
+                        postgres_req,
+                        chunk.end,
+                    )
+                    .await
+                },
+            )
+            .await
+            .context(h!())?;
+        merge_interception_report_chunk(
+            &mut messages,
+            &mut seen,
+            chunk_messages,
+        );
+        ensure_interception_report_row_limit(user_login, messages.len())?;
+    }
+    Ok(messages)
+}
+
+fn interception_report_chunks(
+    req: &InboxMessagesReq,
+    chunking_hours: i64,
+) -> Result<Vec<ReportPeriodChunk>, AppError> {
+    let since = req.since_date_inclusive_ms.ok_or_else(|| AppError::BL {
+        msg: "Since date must be specified".to_string(),
+    })?;
+    let till = req.till_date_inclusive_ms.ok_or_else(|| AppError::BL {
+        msg: "Until date must be specified".to_string(),
+    })?;
+    report_period_chunks(
+        since,
+        till,
+        chunking_hours,
+        ReportPeriodEnd::Inclusive,
+    )
+}
+
+fn interception_report_newest_first(req: &InboxMessagesReq) -> bool {
+    req.load_latest == Some(true)
+        || req.newest_first == Some(true)
+        || req.before_id_noninclusive.is_some()
+}
+
+type InterceptionMessageKey = (Option<String>, Option<String>, Option<String>);
+
+fn merge_interception_report_chunk(
+    messages: &mut Vec<InboxMessage>,
+    seen: &mut HashSet<InterceptionMessageKey>,
+    chunk_messages: Vec<InboxMessage>,
+) {
+    for message in chunk_messages {
+        let key = (
+            message.date.clone(),
+            message.time.clone(),
+            message.body.clone(),
+        );
+        if seen.insert(key) {
+            messages.push(message);
+        }
+    }
 }
 
 fn get_worksheet(workbook: &mut Workbook) -> Result<&mut Worksheet, AppError> {
@@ -249,17 +351,19 @@ async fn get_all_tags(
     Ok(all_tags)
 }
 
-async fn get_inbox_messages_report(
+async fn load_interception_report_chunk(
     read_db: &DatabaseConnection,
     user_login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<InboxMessage>, AppError> {
     let combined_query =
-        build_inbox_messages_report_sql(user_login, env, req).await?;
+        build_inbox_messages_report_sql(user_login, env, req, period_end)
+            .await?;
 
     let results = read_db
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             combined_query,
         ))
@@ -272,17 +376,7 @@ async fn get_inbox_messages_report(
         .collect::<Result<Vec<_>, DbErr>>()
         .context(h!())?;
 
-    let mut keys = HashSet::new();
-    let mut result = vec![];
-    for m in messages {
-        let key = (m.date.clone(), m.time.clone(), m.body.clone());
-        if keys.contains(&key) {
-            continue;
-        }
-        keys.insert(key);
-        result.push(m);
-    }
-    Ok(result)
+    Ok(messages)
 }
 
 fn process_messages_for_interception_report(
@@ -361,6 +455,7 @@ async fn build_inbox_messages_report_sql(
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<String, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
@@ -435,7 +530,7 @@ async fn build_inbox_messages_report_sql(
             ),
             "inbox_tags",
         )
-        .column_as(sigint_inbox_item::Column::CallsignsAlg1, "callsigns")
+        .column_as(sigint_inbox_item::Column::Id, "inbox_item_id")
         .column_as(
             Expr::col((
                 signal_message::Entity,
@@ -458,13 +553,13 @@ async fn build_inbox_messages_report_sql(
                     ),
                     sigint_inbox_item.unit_v2
                 )
-            "#.to_string()),
+            "#.into()),
             "unit",
         )
         .column_as(
             SimpleExpr::Custom(r#"
                 STRING_AGG(DISTINCT sigint_comment.comment, E'\n')
-            "#.to_string()),
+            "#.into()),
             "comment",
         )
         .column(sigint_inbox_item::Column::Coords)
@@ -475,7 +570,7 @@ async fn build_inbox_messages_report_sql(
         )
         .join(
             JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq.def()
+            crate::sigint::freq::util::inbox_item_network_freq_relation()
                 .on_condition(|_left, right| {
                     Expr::col((right, sigint_network_freq::Column::Deleted))
                         .eq(false)
@@ -544,9 +639,31 @@ async fn build_inbox_messages_report_sql(
         q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
     }
 
-    q = rer_importer::inbox::query::get_pagination_filters(env, req, q.clone())
-        .await
-        .c(h!())?;
+    let mut pagination_req = req.clone();
+    if period_end == ReportPeriodEnd::NonInclusive {
+        pagination_req.till_date_inclusive_ms = None;
+    }
+    q = rer_importer::inbox::query::get_pagination_filters(
+        env,
+        &pagination_req,
+        q.clone(),
+    )
+    .await
+    .c(h!())?;
+    if period_end == ReportPeriodEnd::NonInclusive {
+        let till = req.till_date_inclusive_ms.ok_or_else(|| AppError::BL {
+            msg: "Until date must be specified".to_string(),
+        })?;
+        let till = dt_from_millis(till)?;
+        q = match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+            InboxMessagesSortBy::IMSDatetime => {
+                q.filter(sigint_inbox_item::Column::Datetime.lt(till))
+            }
+            InboxMessagesSortBy::IMSTimestamp => {
+                q.filter(signal_message::Column::Timestamp.lt(till))
+            }
+        };
+    }
 
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
@@ -606,11 +723,57 @@ async fn build_inbox_messages_report_sql(
         .table_name(inbox_cte_alias.clone())
         .to_owned();
 
+    let inbox_item_id_alias = Alias::new("inbox_item_id");
+    let callsigns_alias = Alias::new("callsigns");
+    let primary_callsigns_cte_alias = Alias::new("primary_callsigns_cte");
+    let mut filtered_inbox_item_ids = Query::select();
+    filtered_inbox_item_ids
+        .column((inbox_cte_alias.clone(), inbox_item_id_alias.clone()))
+        .from(inbox_cte_alias.clone());
+    let mut primary_callsigns_q = Query::select();
+    primary_callsigns_q
+        .column(sigint_inbox_item_callsign::Column::SigintInboxItemId)
+        .expr_as(
+            Expr::cust(
+                "jsonb_agg(sigint_inbox_item_callsign.callsign order by \
+                 sigint_inbox_item_callsign.ordering, \
+                 sigint_inbox_item_callsign.id)",
+            ),
+            callsigns_alias.clone(),
+        )
+        .from(sigint_inbox_item_callsign::Entity)
+        .and_where(
+            Expr::col(sigint_inbox_item_callsign::Column::Deleted).eq(false),
+        )
+        .and_where(Expr::cust("sigint_inbox_item_callsign.source = 'primary'"))
+        .and_where(
+            Expr::col(sigint_inbox_item_callsign::Column::SigintInboxItemId)
+                .in_subquery(filtered_inbox_item_ids),
+        )
+        .group_by_col(sigint_inbox_item_callsign::Column::SigintInboxItemId);
+    let primary_callsigns_cte = CommonTableExpression::new()
+        .query(primary_callsigns_q)
+        .table_name(primary_callsigns_cte_alias.clone())
+        .to_owned();
+
     // Step 2: Build deduplication CTE using DISTINCT ON (dedup_key)
     let dedup_key_alias = Alias::new("dedup_key");
     let mut dedup_q = Query::select()
-        .column(ColumnRef::Asterisk)
+        .column((inbox_cte_alias.clone(), Asterisk))
+        .expr_as(
+            Expr::cust("primary_callsigns_cte.callsigns"),
+            callsigns_alias,
+        )
         .from(inbox_cte_alias.clone())
+        .join(
+            JoinType::LeftJoin,
+            primary_callsigns_cte_alias.clone(),
+            Expr::col((
+                primary_callsigns_cte_alias,
+                sigint_inbox_item_callsign::Column::SigintInboxItemId,
+            ))
+            .equals((inbox_cte_alias.clone(), inbox_item_id_alias)),
+        )
         .distinct_on([dedup_key_alias.clone()])
         .order_by(dedup_key_alias.clone(), Order::Asc)
         // emulate NULLS FIRST: order nulls before non-nulls
@@ -626,6 +789,7 @@ async fn build_inbox_messages_report_sql(
     // Step 3: Combine CTEs and main query, add filter by initial window values and business logic ordering
     let combined_query = Query::with()
         .cte(inbox_cte)
+        .cte(primary_callsigns_cte)
         .clone()
         .query(dedup_q)
         .to_string(PostgresQueryBuilder);
@@ -970,9 +1134,98 @@ fn process_callsigns(callsigns: Vec<String>) -> (String, String) {
 mod tests {
     use super::{
         eject_body_from_message, ensure_interception_report_row_limit,
-        select_report_message_body,
+        interception_report_chunks, interception_report_newest_first,
+        merge_interception_report_chunk, select_report_message_body,
+        InboxMessage,
     };
     use crate::config::XLSX_WORKSHEET_ROW_MAX;
+    use crate::rer_importer::report_chunking::ReportPeriodEnd;
+    use crate::rer_importer::types::InboxMessagesReq;
+    use std::collections::HashSet;
+
+    const HOUR_MS: i64 = 60 * 60 * 1_000;
+
+    fn interception_message(
+        date: &str,
+        time: &str,
+        body: &str,
+    ) -> InboxMessage {
+        InboxMessage {
+            date: Some(date.to_string()),
+            time: Some(time.to_string()),
+            freq: None,
+            unit: None,
+            callsigns: None,
+            body: Some(body.to_string()),
+            comment: None,
+            coords: None,
+            inbox_tags: None,
+            important: None,
+        }
+    }
+
+    #[test]
+    fn interception_report_splits_long_inclusive_period() {
+        let req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(0),
+            till_date_inclusive_ms: Some(25 * HOUR_MS),
+            ..Default::default()
+        };
+
+        let chunks = interception_report_chunks(&req, 12).unwrap();
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].since_ms, 0);
+        assert_eq!(chunks[0].till_ms, 12 * HOUR_MS);
+        assert_eq!(chunks[0].end, ReportPeriodEnd::NonInclusive);
+        assert_eq!(chunks[1].since_ms, 12 * HOUR_MS);
+        assert_eq!(chunks[1].till_ms, 24 * HOUR_MS);
+        assert_eq!(chunks[1].end, ReportPeriodEnd::NonInclusive);
+        assert_eq!(chunks[2].since_ms, 24 * HOUR_MS);
+        assert_eq!(chunks[2].till_ms, 25 * HOUR_MS);
+        assert_eq!(chunks[2].end, ReportPeriodEnd::Inclusive);
+    }
+
+    #[test]
+    fn interception_report_uses_requested_chunk_order() {
+        assert!(!interception_report_newest_first(
+            &InboxMessagesReq::default()
+        ));
+        assert!(interception_report_newest_first(&InboxMessagesReq {
+            newest_first: Some(true),
+            ..Default::default()
+        }));
+    }
+
+    #[test]
+    fn interception_report_merge_preserves_order_and_deduplicates_globally() {
+        let duplicate =
+            interception_message("2026-08-06", "12:00:00", "same message");
+        let mut messages = vec![];
+        let mut seen = HashSet::new();
+
+        merge_interception_report_chunk(
+            &mut messages,
+            &mut seen,
+            vec![
+                interception_message("2026-08-06", "13:00:00", "newest"),
+                duplicate,
+            ],
+        );
+        merge_interception_report_chunk(
+            &mut messages,
+            &mut seen,
+            vec![
+                interception_message("2026-08-06", "12:00:00", "same message"),
+                interception_message("2026-08-06", "11:00:00", "oldest"),
+            ],
+        );
+
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0].body.as_deref(), Some("newest"));
+        assert_eq!(messages[1].body.as_deref(), Some("same message"));
+        assert_eq!(messages[2].body.as_deref(), Some("oldest"));
+    }
 
     #[test]
     fn eject_body_keeps_only_number_long_dash_lines() {

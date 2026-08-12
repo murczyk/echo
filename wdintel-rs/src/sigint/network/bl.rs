@@ -5,7 +5,6 @@ use crate::rer_importer::types::{InboxMapItem, MapPointsFilter};
 use crate::sigint::network::types::*;
 use crate::types::*;
 use crate::users::ensure_rer_role;
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use actix_web::web::Json;
 use chrono::*;
@@ -45,6 +44,18 @@ where
     let aors_map = get_networks_aor_ids(txn, &network_ids)
         .await
         .context(h!())?;
+    let updated_by_login_ids = networks
+        .iter()
+        .filter_map(|network| network.updated_by_login_id)
+        .unique()
+        .collect_vec();
+    let updated_by_logins = if updated_by_login_ids.is_empty() {
+        HashMap::new()
+    } else {
+        crate::users::login_names_by_ids(txn, updated_by_login_ids)
+            .await
+            .context(h!())?
+    };
 
     let mut networks_res = Vec::with_capacity(networks.len());
     for network in &networks {
@@ -67,9 +78,12 @@ where
             operation_type: network.operation_type.clone(),
             operation_period: network.operation_period.clone(),
             last_updated_at: network.updated_at.and_utc().timestamp_millis(),
-            last_updated_by: network
-                .updated_by_login_id
-                .map(|login_id| login_id.to_string()),
+            last_updated_by: network.updated_by_login_id.map(|login_id| {
+                updated_by_logins
+                    .get(&login_id)
+                    .cloned()
+                    .unwrap_or_else(|| login_id.to_string())
+            }),
             active_from: network
                 .active_from
                 .map(|d| d.and_utc().timestamp_millis()),
@@ -779,109 +793,62 @@ pub async fn bl_get_network_active_callsigns_count(
     start_date: NaiveDateTime,
     end_date: NaiveDateTime,
 ) -> Result<i64, AppError> {
-    // Second CTE - network callsingns
-    let network_callsigns = build_network_callsigns_query();
-    let network_callsigns_cte = CommonTableExpression::new()
-        .query(network_callsigns)
-        .table_name(Alias::new("network_callsigns"))
-        .to_owned();
-
-    let conditions = Condition::all()
-        .add(signal_message::Column::Deleted.eq(false))
-        .add(datasource_group::Column::GroupMasterKey.eq_any(groups.clone()))
-        .add(sigint_inbox_item::Column::Datetime.gte(start_date))
-        .add(sigint_inbox_item::Column::Datetime.lt(end_date))
-        .add(sigint_network::Column::Deleted.eq(false));
-
-    let network_messages = Query::select()
-        .columns([
-            (sigint_inbox_item::Entity, sigint_inbox_item::Column::Id),
-            (sigint_inbox_item::Entity, sigint_inbox_item::Column::Freq),
-            (
-                sigint_inbox_item::Entity,
-                sigint_inbox_item::Column::Datetime,
-            ),
-        ])
-        .expr_as(
-            Expr::cust(
-                "jsonb_array_elements_text(sigint_inbox_item.callsigns)",
-            ),
-            Alias::new("callsign"),
-        )
-        .from(signal_message::Entity)
+    let inbox_item_ids = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
-            datasource_group::Entity,
-            SeaExpr::col((
-                signal_message::Entity,
-                signal_message::Column::DatasourceGroupId,
-            ))
-            .equals((datasource_group::Entity, datasource_group::Column::Id)),
+            signal_message::Relation::DatasourceGroup.def(),
         )
         .join(
             JoinType::InnerJoin,
-            sigint_inbox_item::Entity,
-            Expr::col((signal_message::Entity, signal_message::Column::Id))
-                .equals((
-                    sigint_inbox_item::Entity,
-                    sigint_inbox_item::Column::Id,
-                )),
+            signal_message::Relation::SigintInboxItem.def(),
         )
         .join(
             JoinType::InnerJoin,
-            sigint_inbox_item_network::Entity,
-            SeaExpr::col((
-                sigint_inbox_item::Entity,
-                sigint_inbox_item::Column::Id,
-            ))
-            .equals((
-                sigint_inbox_item_network::Entity,
-                sigint_inbox_item_network::Column::SigintInboxItemId,
-            )),
+            sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
         )
         .join(
             JoinType::InnerJoin,
-            sigint_network::Entity,
-            SeaExpr::col((
-                sigint_inbox_item_network::Entity,
-                sigint_inbox_item_network::Column::SigintNetworkId,
-            ))
-            .equals((sigint_network::Entity, sigint_network::Column::Id)),
+            sigint_inbox_item_network::Relation::SigintNetwork.def(),
         )
-        .cond_where(conditions)
-        .to_owned();
-
-    let network_messages_cte = CommonTableExpression::new()
-        .query(network_messages)
-        .table_name(Alias::new("network_messages"))
-        .to_owned();
-
-    // Final query
-    let main_query = Query::select()
-        .expr(Expr::col((Alias::new("c"), "sigint_callsign")).count_distinct())
-        .from_as(Alias::new("network_callsigns"), Alias::new("c"))
-        .and_where(Expr::exists(
-            Query::select()
-                .expr(Expr::value(1))
-                .from_as(Alias::new("network_messages"), Alias::new("m"))
-                .and_where(
-                    Expr::col((Alias::new("m"), "callsign"))
-                        .equals((Alias::new("c"), "sigint_callsign")),
-                )
-                .to_owned(),
-        ))
-        .to_owned();
-
-    // Combine CTEs and execute
-    let query = Query::with()
-        .cte(network_callsigns_cte)
-        .clone()
-        .cte(network_messages_cte)
-        .clone()
-        .query(main_query)
-        .to_owned();
-
-    fetch_count(dbx, query).await
+        .select_only()
+        .column(sigint_inbox_item::Column::Id)
+        .distinct()
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(groups.clone()))
+        .filter(sigint_inbox_item::Column::Datetime.gte(start_date))
+        .filter(sigint_inbox_item::Column::Datetime.lt(end_date))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let message_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &inbox_item_ids)
+            .await?
+            .into_values()
+            .flat_map(|callsigns| callsigns.effective())
+            .collect::<HashSet<_>>();
+    if message_callsigns.is_empty() {
+        return Ok(0);
+    }
+    let active_network_callsigns = sigint_network_callsign::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_callsign::Relation::SigintNetwork.def(),
+        )
+        .select_only()
+        .column(sigint_network_callsign::Column::SigintCallsign)
+        .distinct()
+        .filter(sigint_network_callsign::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .into_tuple::<String>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(active_network_callsigns
+        .into_iter()
+        .filter(|callsign| message_callsigns.contains(callsign))
+        .count() as i64)
 }
 
 /// Run a COUNT(*) query and return the result as `i64`
@@ -899,32 +866,4 @@ pub async fn fetch_count(
     .c(h!())?;
 
     Ok(result.map_or(0, |r| r.count))
-}
-
-/// Build query to select all network callsigns
-fn build_network_callsigns_query() -> sea_query::SelectStatement {
-    Query::select()
-        .columns([
-            (
-                sigint_network_callsign::Entity,
-                sigint_network_callsign::Column::SigintNetworkId,
-            ),
-            (
-                sigint_network_callsign::Entity,
-                sigint_network_callsign::Column::SigintCallsign,
-            ),
-        ])
-        .from(sigint_network::Entity)
-        .join(
-            JoinType::InnerJoin,
-            sigint_network_callsign::Entity,
-            SeaExpr::col((sigint_network::Entity, sigint_network::Column::Id))
-                .equals((
-                    sigint_network_callsign::Entity,
-                    sigint_network_callsign::Column::SigintNetworkId,
-                )),
-        )
-        .and_where(sigint_network::Column::Deleted.eq(false))
-        .and_where(sigint_network_callsign::Column::Deleted.eq(false))
-        .to_owned()
 }

@@ -1,0 +1,176 @@
+{
+  "migrations": {
+    "echo:m20260810_062938_echo_automation_coordinates_screenshot": {
+      "changes": [
+        {
+          "table": "public.echo_automation",
+          "strategy": "empty_table_resnapshot"
+        }
+      ]
+    },
+    "echo:m20260810_140653_inbox_unit_resolution": {
+      "changes": [
+        { "table": "public.failed_inbox_unit", "strategy": "excluded" },
+        { "table": "public.sigint_unit_label", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260811_064758_sigint_inbox_item_units": {
+      "changes": [
+        {
+          "table": "public.sigint_inbox_item_unit",
+          "strategy": "replicated_snapshot"
+        }
+      ]
+    },
+    "echo:m20260811_073954_failed_inbox_unit_bad_text_index": {
+      "changes": [
+        { "table": "public.failed_inbox_unit", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260806_120000_drop_legacy_inbox_callsigns": {
+      "changes": [
+        {
+          "table": "public.sigint_inbox_item",
+          "strategy": "mirror_resync"
+        }
+      ]
+    },
+    "echo:m20260806_091349_add_sigint_inbox_item_datetime_neo": {
+      "changes": [
+        {
+          "table": "public.sigint_inbox_item",
+          "strategy": "cdc_backfill",
+          "backfill": "wdintel-rs/src/inbox/datetime.rs"
+        }
+      ]
+    },
+    "echo:m20260802_174927_rer_duty_test_replay": {
+      "changes": [
+        {
+          "table": "public.system_settings",
+          "strategy": "cdc_backfill"
+        }
+      ]
+    },
+    "echo:m20260729_155811_add_sigint_inbox_item_callsign": {
+      "changes": [
+        {
+          "table": "public.sigint_inbox_item_callsign",
+          "strategy": "replicated_snapshot"
+        }
+      ]
+    },
+    "echo:m20260803_093803_echo_automation_send_log": {
+      "changes": [
+        { "table": "public.echo_automation_send_log", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260707_081900_create_devices": {
+      "changes": [
+        { "table": "public.device", "strategy": "replicated_snapshot" },
+        { "table": "public.device_file", "strategy": "replicated_snapshot" }
+      ]
+    },
+    "echo:m20260707_132105_create_device_aor": {
+      "changes": [
+        { "table": "public.device_aor", "strategy": "replicated_snapshot" }
+      ]
+    },
+    "echo:m20260707_135501_drop_device_aor_id": {
+      "changes": [
+        { "table": "public.device", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260707_180541_rename_device_tags_archive": {
+      "changes": [
+        { "table": "public.device", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260716_101007_device_hostname_ssh_port_and_drop_name_uniqueness": {
+      "changes": [
+        { "table": "public.device", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260716_134601_device_aor_id_uuid": {
+      "changes": [
+        { "table": "public.device_aor", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260721_120720_device_source_label_custom_fields": {
+      "changes": [
+        { "table": "public.device", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260721_124518_drop_legacy_device_file": {
+      "changes": [
+        { "table": "public.device_file", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260729_143549_add_device_organism": {
+      "changes": [
+        { "table": "public.device", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20260803_130117_device_source_role_and_name": {
+      "changes": [
+        { "table": "public.device", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260803_212227_ai_agent_harness": {
+      "changes": [
+        { "table": "public.ai_agent_settings", "strategy": "excluded" },
+        { "table": "public.ai_agent_allowed_engine", "strategy": "excluded" },
+        { "table": "public.ai_agent_echo_proxy", "strategy": "excluded" },
+        { "table": "public.ai_agent_user_link", "strategy": "excluded" },
+        { "table": "public.ai_agent_container", "strategy": "excluded" },
+        { "table": "public.ai_agent_conversation", "strategy": "excluded" },
+        { "table": "public.ai_agent_request", "strategy": "excluded" },
+        { "table": "public.ai_agent_request_event", "strategy": "excluded" },
+        { "table": "public.ai_agent_security_review", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260804_091538_sigint_comment_blacklist": {
+      "changes": [
+        { "table": "public.sigint_comment_blacklist", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260804_093435_hide_orbit_data": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20260804_094408_sigint_unit_deduplicate_candidate": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20260804_095344_ai_agent_dispatcher": {
+      "changes": [
+        { "table": "public.ai_agent_dispatcher", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260805_064150_ai_agent_mattermost_chat": {
+      "changes": [
+        { "table": "public.ai_agent_settings", "strategy": "excluded" },
+        { "table": "public.ai_agent_chat_mattermost_notification", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260805_135334_sigint_unit_orbit_note": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20260806_134330_sigint_unit_extended_echelons": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "cdc_backfill" }
+      ]
+    },
+    "echo:m20260806_141904_report_history_duplicate_lookup": {
+      "changes": []
+    }
+  },
+  "dependencies": {
+    "echo-im:8758373ccd6e914d68ef4c22dd40d364392074ee": { "changes": [] },
+    "echo-gpu:f1a5d2a9ece1561b89afe7b0ae39e689508a67fe": { "changes": [] }
+  }
+}

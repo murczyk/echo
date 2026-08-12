@@ -34,6 +34,8 @@ export type FeedColumnModel = {
     physicallyAtBottom?: boolean;
     tailAvailability?: TailAvailability;
     unreadCount?: number;
+    /** When true, near-bottom should keep loading newer until the unread runway is filled. */
+    unreadPrefetchNeeded?: boolean;
     workspaceFabAvoidance?: DutyWorkspaceFabAvoidance;
   };
   filterPanel: FeedFilterPanelModel;
@@ -45,6 +47,7 @@ export type FeedColumnModel = {
   messageCard: {
     /** Current auth user display name for message watermarks */
     authUserName: string | null;
+    tagContributionsOrganismId?: number;
     copiedFeedbackId: string | null;
     networkDisplayMap: Record<number, string>;
     networkMap: Record<number, Network>;
@@ -77,8 +80,8 @@ export type FeedColumnModel = {
     onMessageEdit: (messageId: number, message: InboxMessage) => void;
     onCreateFeed?: () => void;
     onScrollToTop?: () => void;
-    /** Called when user scrolls to bottom; use to enable watch mode (same as after arrow click). */
-    onReachedBottom?: () => void;
+    /** Called at the physical bottom. Return false to preserve the current anchor instead of following an unread pending tail. */
+    onReachedBottom?: (context: { hasSeenNotAtBottom: boolean }) => boolean | void;
     /** Called when user scrolls away from bottom; use to disable watch mode so we don't load new messages. */
     onLeftBottom?: () => void;
     /** Called when the scroller enters or leaves the near-bottom pixel zone. Used so polling can load newer messages while the user follows the tail. */

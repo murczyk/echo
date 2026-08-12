@@ -210,6 +210,9 @@ vi.mock('../../services/api/user-settings', () => ({
     analysisMapInSidebar: false,
     dutyAudioTranscriptionCollapsed: false,
     analysisAudioTranscriptionCollapsed: false,
+    showAnalysisCallsignAddForm: false,
+    showClassicDuty: false,
+    showClassicAnalysis: false,
   }),
   saveUserSettings: saveUserDutySettings,
 }));
@@ -344,6 +347,9 @@ describe('SettingsNeoPage', () => {
       analysisMapInSidebar: false,
       dutyAudioTranscriptionCollapsed: false,
       analysisAudioTranscriptionCollapsed: false,
+      showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
     });
 
     await act(async () => {
@@ -382,6 +388,40 @@ describe('SettingsNeoPage', () => {
       analysisMapInSidebar: true,
       dutyAudioTranscriptionCollapsed: false,
       analysisAudioTranscriptionCollapsed: false,
+      showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
+    });
+  });
+
+  it('enables the inline callsign form for analysis', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="analysis" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const switchButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.parentElement?.textContent?.includes('Відображати форму додавання позивного'),
+    );
+    expect(switchButton).toBeTruthy();
+
+    await act(async () => {
+      switchButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(saveUserDutySettings).toHaveBeenLastCalledWith({
+      tagsLayout: 'compact',
+      disableAutoScroll: false,
+      analysisMapInSidebar: false,
+      dutyAudioTranscriptionCollapsed: false,
+      analysisAudioTranscriptionCollapsed: false,
+      showAnalysisCallsignAddForm: true,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
     });
   });
 
@@ -410,6 +450,9 @@ describe('SettingsNeoPage', () => {
       analysisMapInSidebar: false,
       dutyAudioTranscriptionCollapsed: true,
       analysisAudioTranscriptionCollapsed: false,
+      showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
     });
 
     saveUserDutySettings.mockClear();
@@ -435,6 +478,9 @@ describe('SettingsNeoPage', () => {
       analysisMapInSidebar: false,
       dutyAudioTranscriptionCollapsed: true,
       analysisAudioTranscriptionCollapsed: true,
+      showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
     });
   });
 

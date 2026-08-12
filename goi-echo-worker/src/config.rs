@@ -23,6 +23,7 @@ pub const SYNC_LOCK_LIVE_TTL_SECS: i64 = 300;
 pub const SYNC_LOCK_ADVISORY_KEY: i64 = 1_096_138_319;
 pub const GOI_ASSOCIATIONS_INSERT_BATCH_SIZE: usize = 20_000;
 pub const GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS: i64 = 30;
+pub const GOI_XLSX_SYNC_FILE_PREFIX: &str = "_sync_";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {

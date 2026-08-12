@@ -5,12 +5,14 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=./lib.sh
 source "$SCRIPT_DIR/lib.sh"
+# shellcheck source=./clickhouse-system-log-policy.sh
+source "$SCRIPT_DIR/clickhouse-system-log-policy.sh"
 load_analytics_config
 validate_runtime_identifiers
 validate_ipv4_address ANALYTICS_LISTEN_ADDRESS "$ANALYTICS_LISTEN_ADDRESS"
 validate_ipv4_address ANALYTICS_ALLOWED_CLIENT "$ANALYTICS_ALLOWED_CLIENT"
 
-for command in base64 clickhouse-client jq openssl pg_conftool psql ss sudo systemctl; do
+for command in base64 clickhouse clickhouse-client cmp jq openssl pg_conftool psql ss sudo systemctl; do
   require_cmd "$command"
 done
 [[ ${ANALYTICS_GATEWAY_STATEMENT_TIMEOUT_MS:-25000} =~ ^[1-9][0-9]*$ ]] \
@@ -18,6 +20,8 @@ done
 [[ -x /opt/temporal/bin/temporal-sql-tool ]] || die "Temporal artifacts are not installed"
 [[ -f /usr/lib/postgresql/$POSTGRESQL_MAJOR/lib/pg_clickhouse.so ]] \
   || die "pg_clickhouse is not installed for PostgreSQL $POSTGRESQL_MAJOR"
+[[ -f /usr/share/postgresql/$POSTGRESQL_MAJOR/extension/pg_stat_statements.control ]] \
+  || die "pg_stat_statements is not installed for PostgreSQL $POSTGRESQL_MAJOR"
 
 enc_key=$(jq -er --arg id "$PEERDB_CURRENT_ENC_KEY_ID" \
   '.[] | select(.id == $id) | .value' <<<"$PEERDB_ENC_KEYS") \
@@ -31,10 +35,20 @@ sudo chmod 0640 "$INSTANCE_FILE" "$CLICKHOUSE_SECRETS_FILE" "$PEERDB_SECRETS_FIL
 log "Configuring the local PostgreSQL $POSTGRESQL_MAJOR gateway and service databases"
 sudo pg_conftool "$POSTGRESQL_MAJOR" main set listen_addresses "127.0.0.1,$ANALYTICS_LISTEN_ADDRESS"
 sudo pg_conftool "$POSTGRESQL_MAJOR" main set port "${ANALYTICS_GATEWAY_PORT:-5432}"
+shared_preload_libraries=$(sudo pg_conftool -s "$POSTGRESQL_MAJOR" main \
+  show shared_preload_libraries || true)
+if [[ ",${shared_preload_libraries// /}," != *,pg_stat_statements,* ]]; then
+  shared_preload_libraries=${shared_preload_libraries:+$shared_preload_libraries,}
+  shared_preload_libraries+=pg_stat_statements
+fi
+sudo pg_conftool "$POSTGRESQL_MAJOR" main set \
+  shared_preload_libraries "$shared_preload_libraries"
 hba_file=/etc/postgresql/$POSTGRESQL_MAJOR/main/pg_hba.conf
 hba_clean=$(mktemp /tmp/echo-analytics-hba-clean.XXXXXX)
 hba_tmp=$(mktemp /tmp/echo-analytics-hba.XXXXXX)
 trap 'rm -f -- "$hba_clean" "$hba_tmp"' EXIT
+# sudo is required to read hba_file, not for the redirect.
+# shellcheck disable=SC2024
 sudo awk '
   $0 == "# BEGIN ECHO ANALYTICS" { managed = 1; next }
   $0 == "# END ECHO ANALYTICS" { managed = 0; next }
@@ -154,6 +168,13 @@ log "Installing the pg_clickhouse extension into the gateway"
 postgres_psql --dbname "$GATEWAY_DB" -v ON_ERROR_STOP=1 -v gateway_user="$GATEWAY_USER" <<'SQL'
 CREATE SCHEMA IF NOT EXISTS pgch AUTHORIZATION postgres;
 CREATE EXTENSION IF NOT EXISTS pg_clickhouse SCHEMA pgch;
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA public;
+REVOKE ALL ON TABLE public.pg_stat_statements FROM PUBLIC;
+REVOKE ALL ON TABLE public.pg_stat_statements_info FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.pg_stat_statements(boolean) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.pg_stat_statements_info() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.pg_stat_statements_reset(oid, oid, bigint, boolean)
+FROM PUBLIC;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 SELECT format('GRANT USAGE ON SCHEMA public TO %I', :'gateway_user') \gexec
 CREATE TABLE IF NOT EXISTS public.echo_analytics_health (
@@ -213,6 +234,13 @@ sudo chown root:clickhouse \
   /etc/clickhouse-server/users.d/echo-analytics.xml
 sudo systemctl restart clickhouse-server
 wait_for_command ClickHouse clickhouse_admin --query 'SELECT 1'
+# Keep the existing system-log table identities when the configured TTLs become active.
+clickhouse_admin --query 'SYSTEM FLUSH LOGS'
+apply_clickhouse_system_log_ttls
+install_clickhouse_system_log_config
+sudo systemctl restart clickhouse-server
+wait_for_command ClickHouse clickhouse_admin --query 'SELECT 1'
+verify_clickhouse_system_log_policy
 
 while IFS= read -r listener; do
   case "$listener" in

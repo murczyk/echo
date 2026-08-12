@@ -1,7 +1,7 @@
 use crate::config::*;
 use crate::types::*;
 use crate::utils::worker_watch::spawn_named_worker;
-use crate::{mk_conn_string, new_redis, new_redisb, storage};
+use crate::{mk_conn_string, new_redis, new_redis_for_db, new_redisb, storage};
 use actix_identity::IdentityMiddleware;
 use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
@@ -9,7 +9,6 @@ use actix_web::{web, App, HttpServer};
 
 use crate::types::Mode::Live;
 use milgeo_rs::MilGeo;
-use sea_orm::DatabaseConnection;
 use std::net::TcpListener;
 use std::os::unix::io::FromRawFd;
 use tokio::runtime::Handle;
@@ -18,6 +17,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 mod admin;
+mod analytics_health;
 pub mod discord;
 mod healthcheck;
 pub mod middleware;
@@ -51,7 +51,11 @@ fn systemd_listener() -> Result<Option<TcpListener>, AppError> {
 
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let config = read_config(mode).c(h!())?;
+    let metrics = crate::telemetry::Metrics::from_config(&config);
     let redis = new_redis(&config).await.c(h!())?;
+    let stats_redis = new_redis_for_db(&config, config.group_stats_redis_db())
+        .await
+        .c(h!())?;
     let redisb = new_redisb(&config).await.c(h!())?;
     let s3_config = mk_s3_config(&config).c(h!())?;
     let s3 = if let Some(s3_config) = &s3_config {
@@ -59,7 +63,9 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         if mode == Live
             && config.s3_config.clone().c(h!())?.strongbox_key.is_empty()
         {
-            error!("strongbox_key is missing! please run oneoff-generate-strongbox-key, then copy strongbox_key from output and put to config.toml");
+            error!(
+                "strongbox_key is missing! please run oneoff-generate-strongbox-key, then copy strongbox_key from output and put to config.toml"
+            );
             None
         } else {
             Some(s3)
@@ -70,6 +76,12 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     };
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
+    crate::ai_agent::dispatcher::import_legacy_config(
+        &dbx,
+        config.ai_agent_dispatcher.as_ref(),
+    )
+    .await
+    .c(h!())?;
     let echo_gpu_client = Arc::new(
         echo_gpu_client::EchoGpuClient::new(
             dbx.clone(),
@@ -78,6 +90,12 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         .await
         .c(h!())?,
     );
+    let file_registry_db = crate::file_registry::connect_runtime(&config, mode)
+        .await
+        .c(h!())?;
+    if file_registry_db.is_none() {
+        log_missing_file_registry_configuration(&dbx, mode).await;
+    }
     let mut replicas = vec![];
     if let Some(replica_configs) = config.replicas.clone() {
         for replica in replica_configs {
@@ -139,13 +157,9 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         };
     let settlement_paths = config.settlement_paths().c(h!())?;
     let settlements_data =
-        crate::location::load_settlements_data_config(settlement_paths, mode)
-            .c(h!())?;
+        load_settlements_data(settlement_paths, mode).c(h!())?;
     let settlements = Arc::new(RwLock::new(settlements_data));
-    let callsigns_whitelist =
-        crate::sigint::callsign::load_whitelist_from_file(mode)
-            .await
-            .c(h!())?;
+    let callsigns_whitelist = load_callsigns_whitelist(mode).await.c(h!())?;
 
     let version_file = match mode {
         Mode::Debug | Mode::Test => {
@@ -166,15 +180,18 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let env = Env {
         mode,
         redis: redis.clone(),
+        stats_redis,
         redisb: redisb.clone(),
         s3,
         s3_config,
         mil_geo: mil_geo.clone(),
         dbx: dbx.clone(),
         echo_gpu_client,
+        file_registry_db,
         rq,
         rq_goi_associations,
         config: config.clone(),
+        metrics,
         greptimedb: Arc::new(RwLock::new(m_greptimedb.clone())),
         settlements: settlements.clone(),
         callsigns_whitelist: callsigns_whitelist.clone(),
@@ -203,6 +220,93 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     Ok(Arc::new(env))
 }
 
+fn load_settlements_data(
+    settlement_paths: Vec<String>,
+    mode: Mode,
+) -> anyhow::Result<crate::location::SettlementsDataConfig> {
+    #[cfg(test)]
+    if mode == Mode::Test {
+        static TEST_SETTLEMENTS: std::sync::OnceLock<
+            crate::location::SettlementsDataConfig,
+        > = std::sync::OnceLock::new();
+        return Ok(TEST_SETTLEMENTS
+            .get_or_init(|| {
+                crate::location::load_settlements_data_config(
+                    settlement_paths,
+                    mode,
+                )
+                .expect("test settlement data must load")
+            })
+            .clone());
+    }
+
+    crate::location::load_settlements_data_config(settlement_paths, mode)
+}
+
+async fn load_callsigns_whitelist(
+    mode: Mode,
+) -> anyhow::Result<std::collections::HashSet<String>> {
+    #[cfg(test)]
+    if mode == Mode::Test {
+        static TEST_CALLSIGNS: tokio::sync::OnceCell<
+            std::collections::HashSet<String>,
+        > = tokio::sync::OnceCell::const_new();
+        return Ok(TEST_CALLSIGNS
+            .get_or_try_init(|| {
+                crate::sigint::callsign::load_whitelist_from_file(mode)
+            })
+            .await?
+            .clone());
+    }
+
+    crate::sigint::callsign::load_whitelist_from_file(mode).await
+}
+
+#[derive(Debug, PartialEq)]
+enum MissingFileRegistryConfigurationLog {
+    Warning(String),
+    Error(String),
+}
+
+fn missing_file_registry_configuration_log(
+    devices_enabled: bool,
+    mode: Mode,
+) -> MissingFileRegistryConfigurationLog {
+    if devices_enabled {
+        MissingFileRegistryConfigurationLog::Error(format!(
+            "Devices functionality is enabled, but the [file_registry] configuration section is missing. Add pg_host, pg_port, pg_user, pg_password, and pg_dbname under [file_registry], run `wdintel-rs --mode={mode} oneoff-create-file-registry-database`, then restart the backend. Device file operations are unavailable."
+        ))
+    } else {
+        MissingFileRegistryConfigurationLog::Warning(
+            "The optional [file_registry] configuration section is missing. Startup will continue without the file registry database; device file operations are unavailable. Add and provision [file_registry] before enabling Devices.".to_string(),
+        )
+    }
+}
+
+async fn log_missing_file_registry_configuration(
+    dbx: &sea_orm::DatabaseConnection,
+    mode: Mode,
+) {
+    match crate::system_settings::devices_section_enabled(dbx).await {
+        Ok(devices_enabled) => {
+            match missing_file_registry_configuration_log(devices_enabled, mode)
+            {
+                MissingFileRegistryConfigurationLog::Warning(message) => {
+                    warn!("{message}");
+                }
+                MissingFileRegistryConfigurationLog::Error(message) => {
+                    error!("{message}");
+                }
+            }
+        }
+        Err(error) => {
+            error!(
+                "The [file_registry] configuration section is missing, and checking whether Devices functionality is enabled failed: {error:?}. Startup will continue without the file registry database; add and provision [file_registry] before using Devices."
+            );
+        }
+    }
+}
+
 async fn connect_analytics(config: &Config) -> Option<AnalyticsPool> {
     let analytics = config.analytics.as_ref()?;
     let host = &analytics.pg_host;
@@ -227,8 +331,12 @@ async fn connect_analytics(config: &Config) -> Option<AnalyticsPool> {
     }
 }
 
-async fn init_runtime_env(mode: Mode) -> Result<Arc<Env>, AppError> {
+async fn init_runtime_env(
+    mode: Mode,
+    role: crate::PgRuntimePoolRole,
+) -> Result<Arc<Env>, AppError> {
     crate::migration::run_migration_1(mode).await.c(h!())?;
+    crate::use_pg_runtime_pool(role);
     let env = new_env(mode).await.c(h!())?;
     let config = env.config.clone();
     if let Err(err) =
@@ -291,33 +399,6 @@ fn spawn_palitra_conversion_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
     });
 }
 
-fn spawn_group_stats_worker_after_startup_recalc(
-    bg_set: &mut JoinSet<()>,
-    dbx: DatabaseConnection,
-    mode: Mode,
-) -> tokio::sync::oneshot::Receiver<Result<(), String>> {
-    let (startup_tx, startup_rx) = tokio::sync::oneshot::channel();
-    spawn_named_worker("worker_calculate_group_stats", bg_set, async move {
-        info!(
-            "recalculating network freq last_seen_dt for active networks before starting worker_calculate_group_stats"
-        );
-        let startup_result =
-            crate::stats::recalculate_last_seen_for_active_network_freqs_on_startup(
-                &dbx,
-            )
-            .await
-            .map_err(|err| format!("{err:#?}"));
-        let startup_ok = startup_result.is_ok();
-        let _ = startup_tx.send(startup_result);
-        if !startup_ok {
-            return;
-        }
-        crate::stats::worker::group_stats::worker_calculate_group_stats(mode)
-            .await;
-    });
-    startup_rx
-}
-
 fn spawn_background_workers(
     mode: Mode,
     env: Arc<Env>,
@@ -336,6 +417,7 @@ fn spawn_background_workers(
     let dbx9 = env.dbx.clone();
     let dbx10 = env.dbx.clone();
     let dbx11 = env.dbx.clone();
+    let failed_inbox_unit_db = env.dbx.clone();
     let mil_geo2 = env.mil_geo.clone();
 
     if let Some(secret_config) = config.vault_config.clone() {
@@ -346,6 +428,18 @@ fn spawn_background_workers(
     spawn_named_worker("healthcheck_worker", bg_set, async move {
         healthcheck::healthcheck_worker(&dbx9, config1).await;
     });
+    if let (Some(analytics), Some(analytics_config)) =
+        (env.analytics.clone(), config.analytics.as_ref())
+    {
+        let freshness_max_age_ms = analytics_config.freshness_max_age_ms();
+        spawn_named_worker("analytics_health_log_worker", bg_set, async move {
+            analytics_health::analytics_health_log_worker(
+                analytics,
+                freshness_max_age_ms,
+            )
+            .await;
+        });
+    }
     if let Some(greptimedb) = env.greptime() {
         let redis = env.redis.clone();
         spawn_named_worker("activity_details_worker", bg_set, async move {
@@ -420,6 +514,12 @@ fn spawn_background_workers(
     spawn_named_worker("unit_tag_queue_worker", bg_set, async move {
         crate::sigint::unit_tag::run_unit_tag_queue_worker_nofail(mode).await;
     });
+    spawn_named_worker("failed_inbox_unit_worker", bg_set, async move {
+        crate::inbox::unit_resolution::failed_inbox_unit_worker_nofail(
+            failed_inbox_unit_db,
+        )
+        .await;
+    });
     spawn_named_worker(
         "inbox_network_daily_consistency_worker",
         bg_set,
@@ -472,6 +572,26 @@ fn spawn_background_workers(
             &dbx11,
             &mut redis,
             &palitra_worker_context,
+        )
+        .await;
+    });
+
+    let ai_callsign_env = env.clone();
+    let ai_callsign_cancellation_token = cancel_token.clone();
+    spawn_named_worker("ai_callsign_worker", bg_set, async move {
+        crate::ai_callsign::worker::run_nofail(
+            ai_callsign_env,
+            ai_callsign_cancellation_token,
+        )
+        .await;
+    });
+
+    let ai_agent_env = env.clone();
+    let ai_agent_cancellation = cancel_token.clone();
+    spawn_named_worker("ai_agent_worker", bg_set, async move {
+        crate::ai_agent::worker::run_nofail(
+            ai_agent_env,
+            ai_agent_cancellation,
         )
         .await;
     });
@@ -531,6 +651,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             // .service(api_logout)
             .service(crate::server::admin::restart_echo)
             .service(crate::server::admin::restart_datasource)
+            .service(
+                crate::stats::cache_backfill::start_group_stats_cache_backfill,
+            )
             .service(crate::kml::operatyvka)
             .service(crate::kml::operatyvka_download)
             .service(crate::kml::api_fix_kmz)
@@ -607,6 +730,11 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::analysis::post_stats)
             .service(crate::rer_importer::analysis::sender_stats)
             .service(crate::rer_importer::analysis::group_stats)
+            .service(crate::rer_importer::analysis::activity_daily)
+            .service(crate::rer_importer::analysis::callsign_relations)
+            .service(
+                crate::rer_importer::analysis::callsign_frequency_matches,
+            )
             .service(crate::rer_importer::analysis::location_stats_count)
             .service(crate::rer_importer::analysis::unit_stats_count)
             .service(crate::rer_importer::analysis::tag_stats_count)
@@ -658,6 +786,54 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::system_settings::list_system_settings)
             .service(crate::system_settings::create_system_settings)
             .service(crate::system_settings::activate_system_settings)
+            .service(crate::system_settings::rer_duty_test_replay_status)
+            .service(crate::ai_engine::list_ai_engines)
+            .service(crate::ai_engine::get_ai_engine)
+            .service(crate::ai_engine::create_ai_engine)
+            .service(crate::ai_engine::update_ai_engine)
+            .service(crate::ai_engine::delete_ai_engine)
+            .service(crate::ai_engine::list_ai_chats)
+            .service(crate::ai_engine::get_ai_chat)
+            .service(crate::ai_engine::send_ai_chat_message)
+            .service(crate::ai_agent::configuration)
+            .service(crate::ai_agent::list_conversations)
+            .service(crate::ai_agent::create_conversation)
+            .service(crate::ai_agent::get_conversation)
+            .service(crate::ai_agent::update_conversation)
+            .service(crate::ai_agent::delete_conversation)
+            .service(crate::ai_agent::create_request)
+            .service(crate::ai_agent::cancel_request)
+            .service(crate::ai_agent::request_events)
+            .service(crate::ai_agent::auth::exchange_bootstrap)
+            .service(
+                crate::ai_agent::provider_gateway::chat_completions,
+            )
+            .service(crate::ai_agent::admin::get_settings)
+            .service(crate::ai_agent::admin::update_settings)
+            .service(crate::ai_agent::admin::get_dispatcher)
+            .service(crate::ai_agent::admin::update_dispatcher)
+            .service(crate::ai_agent::admin::test_dispatcher)
+            .service(crate::ai_agent::admin::list_echo_proxies)
+            .service(crate::ai_agent::admin::upsert_echo_proxy)
+            .service(crate::ai_agent::admin::delete_echo_proxy)
+            .service(crate::ai_agent::admin::test_echo_proxy)
+            .service(crate::ai_agent::admin::list_containers)
+            .service(crate::ai_agent::admin::list_requests)
+            .service(crate::ai_agent::admin::get_request)
+            .service(crate::ai_agent::admin::retry_review)
+            .service(crate::ai_agent::admin::get_user_agent)
+            .service(crate::ai_agent::admin::start_user_agent)
+            .service(crate::ai_agent::admin::stop_user_agent)
+            .service(crate::ai_agent::admin::test_user_agent)
+            .service(crate::ai_callsign::get_ai_callsign_page)
+            .service(crate::ai_callsign::reset_ai_callsign_prompt)
+            .service(crate::ai_callsign::create_ai_callsign_test_message)
+            .service(crate::ai_callsign::update_ai_callsign_test_message)
+            .service(crate::ai_callsign::delete_ai_callsign_test_message)
+            .service(crate::ai_callsign::test_ai_callsign_parsing)
+            .service(crate::ai_callsign::save_ai_callsign_parsing)
+            .service(crate::ai_callsign::recalculate_ai_callsign_parsing)
+            .service(crate::ai_callsign::save_ai_callsign_worker_settings)
             .service(crate::transcriber::list_instances)
             .service(crate::transcriber::create_instance)
             .service(crate::transcriber::update_instance)
@@ -713,6 +889,19 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::api_integrations::upsert_api_integration)
             .service(crate::api_integrations::delete_api_integration)
             .service(crate::api_integrations::test_iggy_connection)
+            .service(crate::devices::devices::list)
+            .service(crate::devices::devices::unit_stats)
+            .service(crate::devices::devices::aors)
+            .service(crate::devices::devices::units)
+            .service(crate::devices::devices::detail)
+            .service(crate::devices::devices::create)
+            .service(crate::devices::devices::update)
+            .service(crate::devices::files::roots)
+            .service(crate::devices::files::subtree_counts)
+            .service(crate::devices::files::browse)
+            .service(crate::devices::files::search)
+            .service(crate::devices::files::journal)
+            .service(crate::devices::files::sync)
             .service(crate::organism::goi::integrations::list_admin_goi_integrations)
             .service(crate::organism::goi::integrations::get_admin_goi_integration)
             .service(crate::organism::goi::integrations::upsert_admin_goi_integration)
@@ -746,18 +935,44 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::zone::my_admin_group_edit_reference)
             .service(crate::sigint::zone::my_admin_group_update)
             .service(crate::sigint::unit::list_units)
+            .service(crate::sigint::unit::unit_status_counts)
             .service(crate::sigint::unit::list_units_by_id)
             .service(crate::sigint::unit::create_unit)
             .service(crate::sigint::unit::create_unit_with_auto_network)
+            .service(crate::sigint::unit::create_device_network)
             .service(crate::sigint::unit::update_unit)
             .service(crate::sigint::unit::delete_unit)
             .service(crate::sigint::unit::delete_unit_duplicate)
             .service(crate::sigint::unit::units_search)
             .service(crate::sigint::unit::attachment::unit_details)
+            .service(crate::sigint::unit::labels::create_unit_label)
+            .service(crate::sigint::unit::labels::delete_unit_label)
+            .service(
+                crate::inbox::unresolved_units::list_unresolved_unit_labels,
+            )
+            .service(
+                crate::inbox::unresolved_units::classify_unresolved_unit_label,
+            )
+            .service(crate::inbox::unresolved_units::search_orbit_units)
+            .service(
+                crate::inbox::unresolved_units::resolve_unresolved_unit_label,
+            )
+            .service(crate::sigint::unit::orbit::unit_orbit_children)
+            .service(crate::sigint::unit::orbit::list_unit_duplicates)
+            .service(crate::sigint::unit::orbit::orbit_link_candidates)
+            .service(
+                crate::sigint::unit::orbit::create_unit_duplicate_candidates,
+            )
+            .service(crate::sigint::unit::orbit::search_orbit_units)
+            .service(crate::sigint::unit::orbit::import_orbit_unit)
+            .service(crate::sigint::unit::orbit::link_orbit_unit)
+            .service(crate::sigint::unit::orbit::unlink_orbit_unit)
             .service(
                 crate::sigint::unit::attachment::unit_attachment_unit_ids,
             )
             .service(crate::sigint::unit::attachment::upload_unit_attachment)
+            .service(crate::sigint::unit::attachment::update_unit_attachment)
+            .service(crate::sigint::unit::attachment::delete_unit_attachment)
             .service(crate::sigint::unit::attachment::download_unit_attachment)
             .service(crate::sigint::callsign::list_callsigns)
             .service(crate::sigint::callsign::callsign_name_search)
@@ -877,6 +1092,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::edit)
             .service(crate::messenger::unlink)
             .service(crate::messenger::link)
+            .service(crate::messenger::system_service_name_availability)
             .service(crate::messenger::link_operator)
             .service(crate::messenger::group_update)
             .service(crate::operator::message_submit)
@@ -931,7 +1147,9 @@ pub async fn main_server(
     cancel_token: CancellationToken,
     shutdown_handle: Handle,
 ) -> Result<(), AppError> {
-    let env = init_runtime_env(mode).await.c(h!())?;
+    let env = init_runtime_env(mode, crate::PgRuntimePoolRole::Web)
+        .await
+        .c(h!())?;
     let config = env.config.clone();
 
     let redis_session_store =
@@ -1003,7 +1221,9 @@ pub async fn main_server(
         info!("port overridden from env: {port}");
         port.parse::<u16>().c(h!())?
     } else {
-        info!("starting echo server on default 8081 port. override it with ECHO_SERVER_PORT variable.");
+        info!(
+            "starting echo server on default 8081 port. override it with ECHO_SERVER_PORT variable."
+        );
         8081
     };
 
@@ -1028,6 +1248,12 @@ pub async fn main_server(
                     )))
                     .build(),
             )
+            .wrap(actix_web::middleware::from_fn(
+                middleware::purge_legacy_identity_middleware,
+            ))
+            .wrap(actix_web::middleware::from_fn(
+                crate::ai_agent::middleware::enforce_agent_routes,
+            ))
             .wrap(SessionMiddleware::new(
                 redis_session_store.clone(),
                 Key::from(cookie_secret.as_bytes()),
@@ -1069,7 +1295,7 @@ pub async fn main_server(
     let mut sigterm = signal(SignalKind::terminate())
         .expect("Failed to register SIGTERM handler");
 
-    shutdown_handle.spawn(async move {
+    let server_result = shutdown_handle.spawn(async move {
         tokio::select! {
             _ = sigint.recv() => {
                 println!("\n[SIGINT / CTRL+C] detected. Signaling shutdown.");
@@ -1095,7 +1321,11 @@ pub async fn main_server(
                 cancel_token.cancel();
             }
         }
-    }).await.c(h!())?;
+    }).await.c(h!());
+    if let Some(metrics) = &env.metrics {
+        metrics.shutdown();
+    }
+    server_result?;
     Ok(())
 }
 
@@ -1104,27 +1334,18 @@ pub async fn main_bgworker(
     cancel_token: CancellationToken,
     shutdown_handle: Handle,
 ) -> Result<(), AppError> {
-    crate::use_bgworker_pg_pool_limits();
-    let env = init_runtime_env(mode).await.c(h!())?;
+    let env = init_runtime_env(mode, crate::PgRuntimePoolRole::Bgworker)
+        .await
+        .c(h!())?;
     crate::migration::request_analytics_table_reconciliation().await;
-    let group_stats_dbx = env.dbx.clone();
-    let report_history_env = env.clone();
     let mut background_tasks: JoinSet<()> = JoinSet::new();
     let mut transcriber_tasks: JoinSet<()> = JoinSet::new();
-    crate::report_history::reset_in_progress_nofail(
-        report_history_env.as_ref(),
-    )
-    .await;
-    crate::report_history::spawn_report_history_workers(
-        &mut background_tasks,
-        report_history_env,
-    );
     spawn_background_workers(
         mode,
         env.clone(),
         cancel_token.clone(),
         shutdown_handle.clone(),
-        false,
+        true,
         true,
         &mut background_tasks,
     );
@@ -1148,30 +1369,9 @@ pub async fn main_bgworker(
             },
         );
     }
-    let group_stats_startup_rx = spawn_group_stats_worker_after_startup_recalc(
-        &mut background_tasks,
-        group_stats_dbx,
-        mode,
-    );
-
     let task_completion_future = async move {
         while background_tasks.join_next().await.is_some() {}
         info!("[Background] All tasks in JoinSet completed on their own.");
-    };
-    let group_stats_startup_failure = async move {
-        match group_stats_startup_rx.await {
-            Ok(Ok(())) => std::future::pending::<()>().await,
-            Ok(Err(err)) => {
-                error!(
-                    "failed to recalculate network freq last_seen_dt for active networks on bgworker startup: {err}"
-                );
-            }
-            Err(err) => {
-                error!(
-                    "worker_calculate_group_stats startup task ended before signaling readiness: {err}"
-                );
-            }
-        }
     };
 
     let mut sigint = signal(SignalKind::interrupt())
@@ -1194,9 +1394,6 @@ pub async fn main_bgworker(
                     info!("\n[CTRL+C] detected. Starting graceful shutdown...");
                     cancel_token.cancel();
                 },
-                _ = group_stats_startup_failure => {
-                    cancel_token.cancel();
-                }
                 _ = task_completion_future => {
                     info!("[Bgworker] All background tasks finished.");
                 }
@@ -1226,10 +1423,73 @@ pub async fn main_bgworker(
     Ok(())
 }
 
+pub async fn main_report_worker(
+    mode: Mode,
+    cancel_token: CancellationToken,
+    shutdown_handle: Handle,
+) -> Result<(), AppError> {
+    crate::use_pg_runtime_pool(crate::PgRuntimePoolRole::ReportWorker);
+    let env = new_env(mode).await.c(h!())?;
+    crate::report_history::reset_in_progress_nofail(env.as_ref()).await;
+
+    let mut report_tasks = JoinSet::new();
+    crate::report_history::spawn_report_history_workers(&mut report_tasks, env);
+    let task_completion_future = async move {
+        while report_tasks.join_next().await.is_some() {}
+        info!("[Report worker] All report tasks finished.");
+    };
+
+    let mut sigint = signal(SignalKind::interrupt())
+        .expect("Failed to register SIGINT handler");
+    let mut sigterm = signal(SignalKind::terminate())
+        .expect("Failed to register SIGTERM handler");
+
+    shutdown_handle
+        .spawn(async move {
+            tokio::select! {
+                _ = sigint.recv() => {
+                    info!("[Report worker] SIGINT detected.");
+                },
+                _ = sigterm.recv() => {
+                    info!("[Report worker] SIGTERM detected.");
+                },
+                _ = tokio::signal::ctrl_c() => {
+                    info!("[Report worker] CTRL+C detected.");
+                },
+                _ = task_completion_future => {
+                    info!("[Report worker] All background tasks finished.");
+                }
+            }
+            cancel_token.cancel();
+        })
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use actix_web::{http::StatusCode, test, App};
+    #[actix_web::test]
+    async fn missing_file_registry_log_escalates_when_devices_are_enabled() {
+        let MissingFileRegistryConfigurationLog::Warning(warning) =
+            missing_file_registry_configuration_log(false, Mode::Live)
+        else {
+            panic!("disabled Devices should produce a warning");
+        };
+        assert!(warning.contains("Startup will continue"));
+
+        let MissingFileRegistryConfigurationLog::Error(error) =
+            missing_file_registry_configuration_log(true, Mode::Live)
+        else {
+            panic!("enabled Devices should produce an error");
+        };
+        assert!(error.contains("[file_registry]"));
+        assert!(error.contains(
+            "wdintel-rs --mode=live oneoff-create-file-registry-database"
+        ));
+    }
 
     #[actix_web::test]
     async fn test_api_sigint_units_route_is_registered() {
@@ -1265,6 +1525,25 @@ mod tests {
                 sort_by: None,
                 after_unit_id: None,
                 before_unit_id: None,
+                include_inactive: false,
+                filter_active: None,
+                filter_text: None,
+                filter_name: None,
+                filter_company: None,
+                filter_battalion: None,
+                filter_regiment: None,
+                filter_division: None,
+                filter_army: None,
+                filter_military_district: None,
+                filter_army_region: None,
+                filter_comment: None,
+                filter_orbit_note: None,
+                filter_is_deduplicate_candidate: None,
+                filter_has_orbit: None,
+                filter_has_orbit_note: None,
+                search_mode: None,
+                limit: None,
+                offset: None,
             })
             .to_request();
         let res = test::call_service(&app, req).await;

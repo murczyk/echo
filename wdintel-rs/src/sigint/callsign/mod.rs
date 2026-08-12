@@ -1,7 +1,7 @@
 use crate::users::{
     ensure_rer_role, has_any_role, has_role, login_id_from_identity,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use self::bl::*;
 use self::types::*;
@@ -15,7 +15,6 @@ use actix_web::web::Json;
 use itertools::Itertools;
 use rust_xlsxwriter::{Format, Workbook};
 use sea_orm::*;
-use sea_orm::{DbBackend, Statement};
 use sea_query::types::IntoColumnRef;
 use sea_query::Alias;
 use sea_query::{extension::postgres::PgExpr, Expr, SimpleExpr};
@@ -353,6 +352,19 @@ async fn list_callsigns_impl(
             ));
         }
     }
+    if let Some(filter_unit_army_region) = &req.filter_unit_army_region {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::ArmyRegion.eq(filter_unit_army_region.clone()),
+        );
+    }
+    if let Some(filter_unit_military_district) =
+        &req.filter_unit_military_district
+    {
+        callsigns = callsigns.filter(
+            sigint_unit::Column::MilitaryDistrict
+                .eq(filter_unit_military_district.clone()),
+        );
+    }
     if let Some(filter_unit_army) = &req.filter_unit_army {
         callsigns = callsigns
             .filter(sigint_unit::Column::Army.eq(filter_unit_army.clone()));
@@ -480,7 +492,7 @@ fn callsigns_sort_radio_freq_expr() -> SimpleExpr {
 }
 
 fn callsigns_id_expr() -> SimpleExpr {
-    Expr::col((sigint_callsign::Entity, sigint_callsign::Column::Id)).into()
+    Expr::col((sigint_callsign::Entity, sigint_callsign::Column::Id))
 }
 
 async fn load_callsign_seek_cursor(
@@ -731,6 +743,10 @@ fn apply_callsigns_after_cursor(
         ),
         ListCallsignsSortBy::CallsignUnitAsc => callsigns.filter(
             Expr::tuple([
+                sigint_unit::Column::ArmyRegion.into_column_ref().into(),
+                sigint_unit::Column::MilitaryDistrict
+                    .into_column_ref()
+                    .into(),
                 sigint_unit::Column::Army.into_column_ref().into(),
                 sigint_unit::Column::Division.into_column_ref().into(),
                 sigint_unit::Column::Regiment.into_column_ref().into(),
@@ -740,6 +756,8 @@ fn apply_callsigns_after_cursor(
                 callsigns_id_expr(),
             ])
             .gt(SimpleExpr::Tuple(vec![
+                cursor.unit.army_region.clone().into(),
+                cursor.unit.military_district.clone().into(),
                 cursor.unit.army.clone().into(),
                 cursor.unit.division.clone().into(),
                 cursor.unit.regiment.clone().into(),
@@ -751,6 +769,10 @@ fn apply_callsigns_after_cursor(
         ),
         ListCallsignsSortBy::CallsignUnitDesc => callsigns.filter(
             Expr::tuple([
+                sigint_unit::Column::ArmyRegion.into_column_ref().into(),
+                sigint_unit::Column::MilitaryDistrict
+                    .into_column_ref()
+                    .into(),
                 sigint_unit::Column::Army.into_column_ref().into(),
                 sigint_unit::Column::Division.into_column_ref().into(),
                 sigint_unit::Column::Regiment.into_column_ref().into(),
@@ -760,6 +782,8 @@ fn apply_callsigns_after_cursor(
                 callsigns_id_expr(),
             ])
             .lt(SimpleExpr::Tuple(vec![
+                cursor.unit.army_region.clone().into(),
+                cursor.unit.military_district.clone().into(),
                 cursor.unit.army.clone().into(),
                 cursor.unit.division.clone().into(),
                 cursor.unit.regiment.clone().into(),
@@ -820,6 +844,8 @@ fn apply_callsigns_sort(
             .order_by_desc(callsigns_sort_created_at_expr())
             .order_by_desc(sigint_callsign::Column::Id),
         ListCallsignsSortBy::CallsignUnitAsc => callsigns
+            .order_by_asc(sigint_unit::Column::ArmyRegion)
+            .order_by_asc(sigint_unit::Column::MilitaryDistrict)
             .order_by_asc(sigint_unit::Column::Army)
             .order_by_asc(sigint_unit::Column::Division)
             .order_by_asc(sigint_unit::Column::Regiment)
@@ -828,6 +854,8 @@ fn apply_callsigns_sort(
             .order_by_asc(sigint_callsign::Column::Callsign)
             .order_by_asc(sigint_callsign::Column::Id),
         ListCallsignsSortBy::CallsignUnitDesc => callsigns
+            .order_by_desc(sigint_unit::Column::ArmyRegion)
+            .order_by_desc(sigint_unit::Column::MilitaryDistrict)
             .order_by_desc(sigint_unit::Column::Army)
             .order_by_desc(sigint_unit::Column::Division)
             .order_by_desc(sigint_unit::Column::Regiment)
@@ -885,38 +913,9 @@ pub async fn get_callsigns_with_units_from_inbox(
 
     #[derive(FromQueryResult, Debug)]
     struct Row {
-        callsign: String,
+        id: i64,
         unit: String,
     }
-
-    // Build the IN clause for the query
-    let callsigns_in_clause = sanitizied_callsigns
-        .iter()
-        .map(|callsign| format!("'{callsign}'"))
-        .collect::<Vec<String>>()
-        .join(", ");
-
-    // Use DISTINCT ON with LATERAL join to get unique callsign-unit pairs efficiently
-    let sql = format!(
-        r#"
-        SELECT DISTINCT ON (sii.unit_v2, cs.value)
-            cs.value as callsign,
-            sii.unit_v2 as unit
-        FROM signal_message sm
-        INNER JOIN datasource_group dg ON sm.datasource_group_id = dg.id
-        INNER JOIN sigint_inbox_item sii ON sm.id = sii.id,
-        LATERAL jsonb_array_elements_text(sii.callsigns) AS cs(value)
-        WHERE dg.group_master_key = ANY($1)
-          AND sm.deleted = false
-          AND sii.checked = true
-          AND sii.unit_v2 IS NOT NULL
-          AND sii.datetime >= $2
-          AND sii.datetime < $3
-          AND sii.callsigns ? ANY($4)
-          AND cs.value IN ({callsigns_in_clause})
-        ORDER BY sii.unit_v2, cs.value
-        "#
-    );
 
     let groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -924,38 +923,57 @@ pub async fn get_callsigns_with_units_from_inbox(
             .c(h!())?;
     let callsigns_array: Vec<String> =
         sanitizied_callsigns.iter().cloned().collect();
-
-    let rows: Vec<Row> =
-        Row::find_by_statement(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            &sql,
-            vec![
-                groups.into(),
-                dt_since.into(),
-                dt_till.into(),
-                callsigns_array.into(),
-            ],
-        ))
+    let rows = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Id, "id")
+        .column_as(sigint_inbox_item::Column::UnitV2, "unit")
+        .distinct()
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(groups))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Checked.eq(true))
+        .filter(sigint_inbox_item::Column::UnitV2.is_not_null())
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .filter(Expr::cust(crate::inbox::callsigns::sql_filter_condition(
+            &callsigns_array,
+        )))
+        .into_model::<Row>()
         .all(&env.dbx)
         .await
         .c(h!())?;
+    let inbox_item_ids = rows.iter().map(|row| row.id).collect_vec();
+    let callsigns_by_item_id =
+        crate::inbox::callsigns::load_by_item_ids(&env.dbx, &inbox_item_ids)
+            .await?;
 
-    // Group results by callsign
-    let mut callsign_units_map: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
-
+    let mut callsign_units_map = HashMap::<String, BTreeSet<String>>::new();
     for row in rows {
-        callsign_units_map
-            .entry(row.callsign)
-            .or_default()
-            .push(row.unit);
+        let Some(callsigns) = callsigns_by_item_id.get(&row.id) else {
+            continue;
+        };
+        for callsign in callsigns.effective() {
+            if sanitizied_callsigns.contains(&callsign) {
+                callsign_units_map
+                    .entry(callsign)
+                    .or_default()
+                    .insert(row.unit.clone());
+            }
+        }
     }
 
     let mut callsigns_with_units = vec![];
     for callsign in sanitizied_callsigns {
         let units = callsign_units_map
             .get(&callsign)
-            .cloned()
+            .map(|units| units.iter().cloned().collect())
             .unwrap_or_default();
         callsigns_with_units.push((callsign, units));
     }
@@ -1157,6 +1175,7 @@ async fn list_callsign_unit_stats(
     }
     let rows = sigint_callsign::Entity::find()
         .filter(sigint_callsign::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Active.eq(true))
         .filter(sigint_unit::Column::Deleted.eq(false))
         .join_as(
             JoinType::InnerJoin,
@@ -1258,11 +1277,23 @@ mod tests {
         login: &uuid::Uuid,
         name: &str,
     ) -> sigint_unit::Model {
+        insert_test_unit_with_upper_hierarchy(dbx, login, name, "", "").await
+    }
+
+    async fn insert_test_unit_with_upper_hierarchy(
+        dbx: &DatabaseConnection,
+        login: &uuid::Uuid,
+        name: &str,
+        army_region: &str,
+        military_district: &str,
+    ) -> sigint_unit::Model {
         sigint_unit::ActiveModel {
             company: Set("C".to_string()),
             regiment: Set("R".to_string()),
             division: Set("D".to_string()),
             army: Set("A".to_string()),
+            army_region: Set(army_region.to_string()),
+            military_district: Set(military_district.to_string()),
             active: Set(true),
             deleted: Set(false),
             created_at: Set(Utc::now().naive_utc()),
@@ -1345,6 +1376,8 @@ mod tests {
             filter_full_name: None,
             filter_comment: None,
             filter_unit: None,
+            filter_unit_army_region: None,
+            filter_unit_military_district: None,
             filter_unit_army: None,
             filter_unit_division: None,
             filter_unit_regiment: None,
@@ -1440,11 +1473,13 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn test_callsign_unit_stats_excludes_deleted_units() {
+    async fn test_callsign_unit_stats_excludes_inactive_and_deleted_units() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let active_unit =
             insert_test_unit(&env.dbx, &login.id, "ActiveUnit").await;
+        let inactive_unit =
+            insert_test_unit(&env.dbx, &login.id, "InactiveUnit").await;
         let deleted_unit =
             insert_test_unit(&env.dbx, &login.id, "DeletedUnit").await;
         let now = Utc::now().naive_utc();
@@ -1452,6 +1487,15 @@ mod tests {
         sigint_unit::ActiveModel {
             id: Set(active_unit.id),
             deleted: Set(false),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
+
+        sigint_unit::ActiveModel {
+            id: Set(inactive_unit.id),
+            active: Set(false),
             ..Default::default()
         }
         .update(&env.dbx)
@@ -1486,6 +1530,8 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
+        insert_test_callsign(&env.dbx, inactive_unit.id, "charlie", now, "")
+            .await;
         insert_test_callsign(&env.dbx, deleted_unit.id, "bravo", now, "").await;
 
         let stats = list_callsign_unit_stats(&env.dbx).await.unwrap();
@@ -1547,6 +1593,71 @@ mod tests {
 
     #[serial]
     #[tokio::test]
+    async fn test_list_callsigns_unit_sort_paginates_extended_hierarchy() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let r2_d1 = insert_test_unit_with_upper_hierarchy(
+            &env.dbx, &login.id, "R2 D1", "R2", "D1",
+        )
+        .await;
+        let r1_d2 = insert_test_unit_with_upper_hierarchy(
+            &env.dbx, &login.id, "R1 D2", "R1", "D2",
+        )
+        .await;
+        let r1_d1 = insert_test_unit_with_upper_hierarchy(
+            &env.dbx, &login.id, "R1 D1", "R1", "D1",
+        )
+        .await;
+        let alpha =
+            insert_test_callsign(&env.dbx, r2_d1.id, "alpha", now, "").await;
+        let bravo =
+            insert_test_callsign(&env.dbx, r1_d2.id, "bravo", now, "").await;
+        let charlie =
+            insert_test_callsign(&env.dbx, r1_d1.id, "charlie", now, "").await;
+
+        for (sort_by, expected_ids) in [
+            (
+                ListCallsignsSortBy::CallsignUnitAsc,
+                vec![charlie.id, bravo.id, alpha.id],
+            ),
+            (
+                ListCallsignsSortBy::CallsignUnitDesc,
+                vec![alpha.id, bravo.id, charlie.id],
+            ),
+        ] {
+            let full = list_callsigns_impl(
+                &env.dbx,
+                &list_req(None, None, sort_by.clone()),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                full.iter().map(|callsign| callsign.id).collect::<Vec<_>>(),
+                expected_ids,
+            );
+
+            let mut paged_ids = vec![];
+            let mut after_id = None;
+            for _ in 0..=expected_ids.len() {
+                let page = list_callsigns_impl(
+                    &env.dbx,
+                    &list_req(after_id, Some(1), sort_by.clone()),
+                )
+                .await
+                .unwrap();
+                if page.is_empty() {
+                    break;
+                }
+                after_id = page.last().map(|callsign| callsign.id);
+                paged_ids.extend(page.into_iter().map(|callsign| callsign.id));
+            }
+            assert_eq!(paged_ids, expected_ids);
+        }
+    }
+
+    #[serial]
+    #[tokio::test]
     async fn test_list_callsigns_filters_by_unit_hierarchy_path() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
@@ -1557,6 +1668,8 @@ mod tests {
             regiment: Set("11".to_string()),
             division: Set("3".to_string()),
             army: Set("A".to_string()),
+            military_district: Set("D1".to_string()),
+            army_region: Set("R1".to_string()),
             active: Set(true),
             deleted: Set(false),
             created_at: Set(now),
@@ -1570,16 +1683,38 @@ mod tests {
         .await
         .unwrap();
 
-        let other_division_unit = sigint_unit::ActiveModel {
+        let other_district_unit = sigint_unit::ActiveModel {
             company: Set("C".to_string()),
             regiment: Set("11".to_string()),
-            division: Set("5".to_string()),
+            division: Set("3".to_string()),
             army: Set("A".to_string()),
+            military_district: Set("D2".to_string()),
+            army_region: Set("R1".to_string()),
             active: Set(true),
             deleted: Set(false),
             created_at: Set(now),
             created_by_login_id: Set(login.id),
-            name: Set("OtherDivisionUnit".to_string()),
+            name: Set("OtherDistrictUnit".to_string()),
+            comment: Set(String::new()),
+            battalion: Set("B".to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let other_region_unit = sigint_unit::ActiveModel {
+            company: Set("C".to_string()),
+            regiment: Set("11".to_string()),
+            division: Set("3".to_string()),
+            army: Set("A".to_string()),
+            military_district: Set("D1".to_string()),
+            army_region: Set("R2".to_string()),
+            active: Set(true),
+            deleted: Set(false),
+            created_at: Set(now),
+            created_by_login_id: Set(login.id),
+            name: Set("OtherRegionUnit".to_string()),
             comment: Set(String::new()),
             battalion: Set("B".to_string()),
             ..Default::default()
@@ -1592,8 +1727,16 @@ mod tests {
             .await;
         insert_test_callsign(
             &env.dbx,
-            other_division_unit.id,
+            other_district_unit.id,
             "bravo",
+            now,
+            "",
+        )
+        .await;
+        insert_test_callsign(
+            &env.dbx,
+            other_region_unit.id,
+            "charlie",
             now,
             "",
         )
@@ -1601,6 +1744,8 @@ mod tests {
 
         let mut req =
             list_req(None, Some(100), ListCallsignsSortBy::CallsignAsc);
+        req.filter_unit_army_region = Some("R1".to_string());
+        req.filter_unit_military_district = Some("D1".to_string());
         req.filter_unit_army = Some("A".to_string());
         req.filter_unit_division = Some("3".to_string());
 

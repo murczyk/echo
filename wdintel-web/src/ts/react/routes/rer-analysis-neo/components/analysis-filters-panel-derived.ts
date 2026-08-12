@@ -1,16 +1,19 @@
 import type { AnalysisFilterOption } from '../types';
 import { normalizeFilterLabel, sortFilterOptionsByLabel } from '../use-analysis-data.shared';
 import {
+  groupEquivalentAnalysisUnitOptions,
   normalizeUnknownUnitFilterLabel,
   normalizeUnknownUnitFilterValue,
 } from '../../shared/analysis-unit-filter';
 import { isPresent } from '../../../utils/misc';
+import { normalizeCallsignFilterValues } from '../../../utils/callsign-normalization';
 import type { AnalysisFiltersPanelPage } from './analysis-filters-panel-shared';
 
 type Params = Pick<
   AnalysisFiltersPanelPage,
   'aorEntries' | 'counts' | 'groupInfos' | 'options' | 'queryState' | 'tagsMap' | 'tagsOrder'
->;
+> &
+  Partial<Pick<AnalysisFiltersPanelPage, 'unitsMap'>>;
 
 export type AnalysisFiltersPanelDerivedData = {
   groupOptions: AnalysisFilterOption[];
@@ -99,19 +102,24 @@ export function buildAnalysisFiltersPanelDerivedData({
   queryState,
   tagsMap,
   tagsOrder = [],
+  unitsMap = {},
 }: Params): AnalysisFiltersPanelDerivedData {
   const groupOptions = buildMergedGroupOptions(options.groups, groupInfos);
 
   const callsignsOptions = options.callsigns.reduce<AnalysisFilterOption[]>((acc, option) => {
-    const label = (option.label ?? option.value).toUpperCase();
-    const values = Array.from(new Set(option.values ?? [option.value]));
+    const label = (option.label ?? option.value).toLocaleUpperCase('uk-UA');
+    const values = normalizeCallsignFilterValues(option.values ?? [option.value]);
+    if (values.length === 0) return acc;
     const existingOption = acc.find((item) => item.label === label);
     if (isPresent(existingOption)) {
-      existingOption.values = Array.from(new Set([...(existingOption.values ?? []), ...values]));
+      existingOption.values = normalizeCallsignFilterValues([
+        ...(existingOption.values ?? []),
+        ...values,
+      ]);
       existingOption.count += option.count;
       return acc;
     }
-    acc.push({ value: label, label, count: option.count, values });
+    acc.push({ value: values[0], label, count: option.count, values });
     return acc;
   }, []);
 
@@ -212,7 +220,7 @@ export function buildAnalysisFiltersPanelDerivedData({
   );
 
   const unitsOptions = sortFilterOptionsByLabel(
-    options.units.map((option) => ({
+    groupEquivalentAnalysisUnitOptions(options.units, Object.values(unitsMap)).map((option) => ({
       ...option,
       value: normalizeUnknownUnitFilterValue(option.value),
       label: normalizeUnknownUnitFilterLabel(option.label ?? option.value),

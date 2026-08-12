@@ -1,97 +1,81 @@
-import { Box, Button, Paper, Stack } from '@mui/material';
-import { useEffect } from 'react';
+import { Box, Stack } from '@mui/material';
 
-import type { CorrelatedFreq, FreqDailyActivityCount } from '../../../../../Bindings';
-import type { AnalysisCountItem, AnalysisGroupsActivityPeriod } from '../types';
+import type { AnalysisCountItem } from '../types';
 import { AnalysisCountBlock } from './AnalysisCountBlock';
-import { AnalysisCorrelatedFreqsCard } from './AnalysisCorrelatedFreqsCard';
-import { AnalysisGroupsActivityCard } from './AnalysisGroupsActivityCard';
-import { PowerAlert } from '../../../components/PowerAlert';
-import { CompactText } from '../../../components/CompactTypography';
+import { normalizeUnknownUnitDisplayValue } from '../../shared/analysis-unit-filter';
 
 type Props = {
-  correlatedFreqs: CorrelatedFreq[];
-  correlatedFreqsLoading: boolean;
+  groupsLoading: boolean;
   rightSidebarLoading: boolean;
-  groupsActivity: FreqDailyActivityCount | null;
-  groupsActivityLoadedFreq: string | null;
-  groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
-  groupsActivityLoading: boolean;
-  groupsActivityPeriod: AnalysisGroupsActivityPeriod;
-  onLoadCorrelatedFreqs: () => void;
-  onLoadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => void;
-  onSelectFreq: (freq: string) => void;
-  selectedFreq: string | null;
+  onClearFreq: () => void;
+  onClearGroup: () => void;
+  onClearLocation: () => void;
+  onClearNetwork: () => void;
+  onClearUnit: () => void;
+  onAddFreq: (freq: string) => void;
+  onAddGroup: (groupKey: string) => void;
+  onAddLocation: (location: string) => void;
+  onAddNetwork: (networkId: string) => void;
+  onAddUnit: (unit: string) => void;
+  onToggleFreq: (freq: string) => void;
+  onToggleGroup: (groupKey: string) => void;
+  onToggleLocation: (location: string) => void;
+  onToggleNetwork: (networkId: string) => void;
+  onToggleUnit: (unit: string) => void;
+  selectedFreqs: readonly string[];
+  selectedGroups: readonly string[];
+  selectedLocations: readonly string[];
+  selectedNetworks: readonly string[];
+  selectedUnits: readonly string[];
   topFreqs: AnalysisCountItem[];
+  topGroups: AnalysisCountItem[];
   topLocations: AnalysisCountItem[];
+  topNetworks: AnalysisCountItem[];
   topUnits: AnalysisCountItem[];
 };
 
 export function AnalysisStatsPane({
-  correlatedFreqs,
-  correlatedFreqsLoading,
-  groupsActivity,
-  groupsActivityLoadedFreq,
-  groupsActivityLoadedPeriod,
-  groupsActivityLoading,
-  groupsActivityPeriod,
-  onLoadCorrelatedFreqs,
-  onLoadGroupsActivity,
-  onSelectFreq,
-  selectedFreq,
+  groupsLoading,
+  onClearFreq,
+  onClearGroup,
+  onClearLocation,
+  onClearNetwork,
+  onClearUnit,
+  onAddFreq,
+  onAddGroup,
+  onAddLocation,
+  onAddNetwork,
+  onAddUnit,
+  onToggleFreq,
+  onToggleGroup,
+  onToggleLocation,
+  onToggleNetwork,
+  onToggleUnit,
+  selectedFreqs,
+  selectedGroups,
+  selectedLocations,
+  selectedNetworks,
+  selectedUnits,
   rightSidebarLoading,
   topFreqs,
+  topGroups,
   topLocations,
+  topNetworks,
   topUnits,
 }: Props) {
-  const suggestedFreqs = topFreqs
-    .filter((item) => item.key.trim().length > 0)
-    .map((item) => item.key)
-    .slice(0, 6);
-
-  useEffect(() => {
-    if (!selectedFreq) return;
-    onLoadCorrelatedFreqs();
-  }, [onLoadCorrelatedFreqs, selectedFreq]);
+  const selectedUnitKeys = selectedUnits.map(normalizeUnknownUnitDisplayValue);
 
   return (
     <Stack spacing={0}>
-      {selectedFreq ? null : (
-        <Paper
-          variant="outlined"
-          component="section"
-          sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}
-        >
-          <Stack spacing={1.5}>
-            <PowerAlert severity="info">
-              Оберіть частоту, щоб завантажити суміжні частоти та активність по датах.
-            </PowerAlert>
-            {suggestedFreqs.length > 0 ? (
-              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                {suggestedFreqs.map((freq) => (
-                  <Button
-                    key={freq}
-                    variant="outlined"
-                    size="small"
-                    onClick={() => onSelectFreq(freq)}
-                  >
-                    {freq}
-                  </Button>
-                ))}
-              </Stack>
-            ) : (
-              <CompactText color="text.secondary">
-                Підкажіть частоту через фільтр вище, щоб побачити пов’язані дані.
-              </CompactText>
-            )}
-          </Stack>
-        </Paper>
-      )}
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCorrelatedFreqsCard
-          correlatedFreqs={correlatedFreqs}
-          loading={correlatedFreqsLoading}
-          selectedFreq={selectedFreq}
+        <AnalysisCountBlock
+          title="Групи"
+          items={topGroups}
+          loading={groupsLoading}
+          onClearSelection={onClearGroup}
+          onItemAdd={onAddGroup}
+          onItemToggle={onToggleGroup}
+          selectedItemKeys={selectedGroups}
         />
       </Box>
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
@@ -99,25 +83,43 @@ export function AnalysisStatsPane({
           title="Частоти"
           items={topFreqs}
           loading={rightSidebarLoading}
-          onItemAction={onSelectFreq}
-          itemActionLabel="У фільтр"
+          onClearSelection={onClearFreq}
+          onItemAdd={onAddFreq}
+          onItemToggle={onToggleFreq}
+          selectedItemKeys={selectedFreqs}
         />
       </Box>
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCountBlock title="Підрозділи" items={topUnits} loading={rightSidebarLoading} />
+        <AnalysisCountBlock
+          title="Мережі"
+          items={topNetworks}
+          loading={rightSidebarLoading}
+          onClearSelection={onClearNetwork}
+          onItemAdd={onAddNetwork}
+          onItemToggle={onToggleNetwork}
+          selectedItemKeys={selectedNetworks}
+        />
       </Box>
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCountBlock title="Локації" items={topLocations} loading={rightSidebarLoading} />
+        <AnalysisCountBlock
+          title="Підрозділи"
+          items={topUnits}
+          loading={rightSidebarLoading}
+          onClearSelection={onClearUnit}
+          onItemAdd={onAddUnit}
+          onItemToggle={onToggleUnit}
+          selectedItemKeys={selectedUnitKeys}
+        />
       </Box>
-      <Box>
-        <AnalysisGroupsActivityCard
-          groupsActivity={groupsActivity}
-          groupsActivityLoadedFreq={groupsActivityLoadedFreq}
-          groupsActivityLoadedPeriod={groupsActivityLoadedPeriod}
-          loading={groupsActivityLoading}
-          period={groupsActivityPeriod}
-          onLoad={onLoadGroupsActivity}
-          selectedFreq={selectedFreq}
+      <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
+        <AnalysisCountBlock
+          title="Локації"
+          items={topLocations}
+          loading={rightSidebarLoading}
+          onClearSelection={onClearLocation}
+          onItemAdd={onAddLocation}
+          onItemToggle={onToggleLocation}
+          selectedItemKeys={selectedLocations}
         />
       </Box>
     </Stack>

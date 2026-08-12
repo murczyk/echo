@@ -4,7 +4,6 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
 use crate::users::{ensure_basic_role, has_role, login_id_from_identity};
-use crate::utils::orm::ArrayColumnOps;
 use crate::{config, h};
 use actix_web::post;
 use actix_web::web::Json;

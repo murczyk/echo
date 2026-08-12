@@ -42,20 +42,53 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let (day_start, day_end) = current_day_bounds_utc();
-    let messages =
-        load_today_inbox_messages_for_network_check(db, day_start, day_end)
+    let Some(upper_message_id) =
+        load_network_check_upper_message_id(db, day_start, day_end)
             .await
-            .c(h!())?;
-    if messages.is_empty() {
+            .c(h!())?
+    else {
         return Ok(());
-    }
-    let expected_map =
-        load_networks_for_inbox_items(db, &messages).await.c(h!())?;
-    let message_ids = messages.iter().map(|msg| msg.id).collect::<Vec<_>>();
-    let actual_map = load_actual_networks_for_messages(&message_ids, db)
+    };
+
+    let mut after_message_id = None;
+    let mut checked = 0;
+    let mut mismatches = NetworkMismatchSummary::default();
+    loop {
+        let messages = load_today_inbox_messages_for_network_check(
+            db,
+            day_start,
+            day_end,
+            after_message_id,
+            upper_message_id,
+            crate::config::SIGINT_INBOX_NETWORK_CHECK_BATCH_SIZE,
+        )
         .await
         .c(h!())?;
-    log_network_mismatches(&messages, &expected_map, &actual_map);
+        let Some(last_message_id) = messages.last().map(|message| message.id)
+        else {
+            break;
+        };
+
+        let expected_map =
+            load_networks_for_inbox_items(db, &messages).await.c(h!())?;
+        let message_ids = messages.iter().map(|msg| msg.id).collect::<Vec<_>>();
+        let actual_map = load_actual_networks_for_messages(&message_ids, db)
+            .await
+            .c(h!())?;
+        mismatches.extend(collect_network_mismatches(
+            &messages,
+            &expected_map,
+            &actual_map,
+            crate::config::SIGINT_INBOX_NETWORK_CHECK_MISMATCH_LOG_LIMIT
+                .saturating_sub(mismatches.examples.len()),
+        ));
+        checked += messages.len();
+        after_message_id = Some(last_message_id);
+        debug!(
+            "sigint inbox network consistency progress: checked={checked} upper_message_id={upper_message_id} last_message_id={last_message_id}"
+        );
+    }
+    log_network_mismatches(checked, &mismatches);
     Ok(())
 }
 
@@ -92,30 +125,47 @@ fn current_day_bounds_utc() -> (NaiveDateTime, NaiveDateTime) {
     (start, end)
 }
 
-async fn load_today_inbox_messages_for_network_check<'a, 'async_trait, C>(
+async fn load_network_check_upper_message_id<'a, 'async_trait, C>(
     db: &'a C,
     day_start: NaiveDateTime,
     day_end: NaiveDateTime,
-) -> anyhow::Result<Vec<InboxItem>>
+) -> anyhow::Result<Option<i64>>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let messages = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
+    let upper_message_id = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
+        .select_only()
+        .column_as(signal_message::Column::Id.max(), "max_id")
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(day_start))
+        .filter(sigint_inbox_item::Column::Datetime.lt(day_end))
+        .into_tuple::<Option<i64>>()
+        .one(db)
+        .await
+        .c(h!())?
+        .flatten();
+    Ok(upper_message_id)
+}
+
+async fn load_today_inbox_messages_for_network_check<'a, 'async_trait, C>(
+    db: &'a C,
+    day_start: NaiveDateTime,
+    day_end: NaiveDateTime,
+    after_message_id: Option<i64>,
+    upper_message_id: i64,
+    batch_size: u64,
+) -> anyhow::Result<Vec<InboxItem>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut query = signal_message::Entity::find()
         .join(
-            JoinType::LeftJoin,
-            datasource_group::Relation::SignalGroup.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
         )
         .select_only()
         .column_as(signal_message::Column::Id, "id")
@@ -127,10 +177,13 @@ where
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(day_start))
         .filter(sigint_inbox_item::Column::Datetime.lt(day_end))
-        .into_model::<InboxItem>()
-        .all(db)
-        .await
-        .c(h!())?;
+        .filter(signal_message::Column::Id.lte(upper_message_id))
+        .order_by_asc(signal_message::Column::Id)
+        .limit(batch_size);
+    if let Some(after_message_id) = after_message_id {
+        query = query.filter(signal_message::Column::Id.gt(after_message_id));
+    }
+    let messages = query.into_model::<InboxItem>().all(db).await.c(h!())?;
     Ok(messages)
 }
 
@@ -696,7 +749,7 @@ fn try_discard_by_unit_name(
             continue;
         };
         for network_unit_name in units {
-            if network_unit_name.eq(message_unit_name)
+            if network_unit_name == message_unit_name
                 || is_parent_of(network_unit_name, message_unit_name)
                 || is_parent_of(message_unit_name, network_unit_name)
             {
@@ -750,12 +803,34 @@ where
     Ok(actual_map)
 }
 
-fn log_network_mismatches(
+#[derive(Default)]
+struct NetworkMismatchSummary {
+    total: usize,
+    examples: Vec<NetworkMismatch>,
+}
+
+struct NetworkMismatch {
+    message_id: i64,
+    expected: BTreeSet<i64>,
+    actual: BTreeSet<i64>,
+    freq: Option<String>,
+    timestamp: Option<NaiveDateTime>,
+}
+
+impl NetworkMismatchSummary {
+    fn extend(&mut self, other: Self) {
+        self.total += other.total;
+        self.examples.extend(other.examples);
+    }
+}
+
+fn collect_network_mismatches(
     messages: &[InboxItem],
     expected_map: &HashMap<i64, Vec<i64>>,
     actual_map: &HashMap<i64, BTreeSet<i64>>,
-) {
-    let mut mismatches = Vec::new();
+    example_limit: usize,
+) -> NetworkMismatchSummary {
+    let mut mismatches = NetworkMismatchSummary::default();
     for msg in messages {
         let expected = expected_map
             .get(&msg.id)
@@ -765,26 +840,42 @@ fn log_network_mismatches(
             .collect::<BTreeSet<_>>();
         let actual = actual_map.get(&msg.id).cloned().unwrap_or_default();
         if expected != actual {
-            mismatches.push((msg, expected, actual));
+            mismatches.total += 1;
+            if mismatches.examples.len() < example_limit {
+                mismatches.examples.push(NetworkMismatch {
+                    message_id: msg.id,
+                    expected,
+                    actual,
+                    freq: msg.freq.clone(),
+                    timestamp: msg.timestamp,
+                });
+            }
         }
     }
-    if mismatches.is_empty() {
-        info!("sigint inbox networks mismatches: total=0");
+    mismatches
+}
+
+fn log_network_mismatches(checked: usize, mismatches: &NetworkMismatchSummary) {
+    if mismatches.total == 0 {
+        info!("sigint inbox networks mismatches: total=0 checked={checked}");
         return;
     }
     error!(
-        "sigint inbox networks mismatches: total={}",
-        mismatches.len()
+        "sigint inbox networks mismatches: total={} checked={checked}",
+        mismatches.total
     );
-    let head = mismatches.len().min(10);
-    for (msg, expected, actual) in mismatches.iter().take(head) {
-        error!(
+    for mismatch in &mismatches.examples {
+        warn!(
             "sigint inbox networks mismatch for message {}: expected={:?} actual={:?} freq={:?} timestamp={:?}",
-            msg.id, expected, actual, msg.freq, msg.timestamp
+            mismatch.message_id,
+            mismatch.expected,
+            mismatch.actual,
+            mismatch.freq,
+            mismatch.timestamp
         );
     }
-    if mismatches.len() > head {
-        error!("...{} more", mismatches.len() - head);
+    if mismatches.total > mismatches.examples.len() {
+        error!("...{} more", mismatches.total - mismatches.examples.len());
     }
 }
 
@@ -955,6 +1046,114 @@ mod tests {
         txn.rollback().await.unwrap();
     }
 
+    #[serial]
+    #[tokio::test]
+    async fn network_consistency_pages_stop_at_initial_watermark() {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let day_start = Utc::now().date_naive().and_hms_opt(0, 0, 0).unwrap();
+        let day_end = day_start + chrono::Duration::days(1);
+        let mut message_ids = Vec::new();
+        for _ in 0..3 {
+            let message = mk_sigint_inbox_item(
+                &txn,
+                sigint_inbox_item::ActiveModel {
+                    date: Set(Some(day_start.format("%Y-%m-%d").to_string())),
+                    time: Set(Some("12:00:00".to_string())),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            message_ids.push(message.id);
+        }
+        let upper_message_id =
+            load_network_check_upper_message_id(&txn, day_start, day_end)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(upper_message_id, message_ids[2]);
+
+        let first_page = load_today_inbox_messages_for_network_check(
+            &txn,
+            day_start,
+            day_end,
+            None,
+            upper_message_id,
+            2,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            first_page.iter().map(|message| message.id).collect_vec(),
+            message_ids[..2]
+        );
+
+        let later_message = mk_sigint_inbox_item(
+            &txn,
+            sigint_inbox_item::ActiveModel {
+                date: Set(Some(day_start.format("%Y-%m-%d").to_string())),
+                time: Set(Some("12:00:00".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_page = load_today_inbox_messages_for_network_check(
+            &txn,
+            day_start,
+            day_end,
+            Some(first_page.last().unwrap().id),
+            upper_message_id,
+            2,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            second_page.iter().map(|message| message.id).collect_vec(),
+            vec![message_ids[2]]
+        );
+        assert_ne!(later_message.id, message_ids[2]);
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[test]
+    fn network_mismatch_summary_caps_examples_across_batches() {
+        let messages = (1..=12)
+            .map(|id| InboxItem {
+                id,
+                timestamp: Some(test_dt()),
+                freq: Some("148.0000".to_string()),
+                unit: None,
+                parsed_unit_v2: false,
+                post_id: None,
+            })
+            .collect_vec();
+        let expected_map = messages
+            .iter()
+            .map(|message| (message.id, vec![1]))
+            .collect();
+        let actual_map = HashMap::new();
+        let mut summary = collect_network_mismatches(
+            &messages[..7],
+            &expected_map,
+            &actual_map,
+            10,
+        );
+        summary.extend(collect_network_mismatches(
+            &messages[7..],
+            &expected_map,
+            &actual_map,
+            10 - summary.examples.len(),
+        ));
+
+        assert_eq!(summary.total, 12);
+        assert_eq!(summary.examples.len(), 10);
+        assert_eq!(summary.examples[0].message_id, 1);
+        assert_eq!(summary.examples[9].message_id, 10);
+    }
+
     #[test]
     fn match_networks_uses_later_group_aor() {
         let item_id = 1;
@@ -1040,6 +1239,8 @@ mod tests {
             regiment: regiment.to_string(),
             division: String::new(),
             army: String::new(),
+            army_region: String::new(),
+            military_district: String::new(),
             active: true,
             deleted: false,
             created_at: chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
@@ -1049,9 +1250,12 @@ mod tests {
             created_by_login_id: uuid::Uuid::nil(),
             name: name.to_string(),
             comment: String::new(),
+            search_tsv: None,
             battalion: String::new(),
             sigint_origin_id: None,
             original_id: None,
+            is_deduplicate_candidate: None,
+            orbit_note: None,
         }
     }
 

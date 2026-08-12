@@ -55,6 +55,14 @@ pub struct PalitraChangelogEntry {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct PalitraAccessLogin {
+    pub id: String,
+    pub login: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct Palitra {
     pub id: i64,
     pub name: String,
@@ -76,7 +84,7 @@ pub struct Palitra {
     pub geometry: Option<Geometry>,
     pub access_aor_id: Vec<i64>,
     pub access_organism_ids: Vec<i64>,
-    pub access_logins: Vec<String>,
+    pub access_logins: Vec<PalitraAccessLogin>,
 }
 
 #[derive(

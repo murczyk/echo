@@ -3,7 +3,6 @@ use crate::entities::*;
 use crate::location::SettlementsDataConfig;
 use crate::sigint::worker::incoming_message_after_insert;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::*;
@@ -267,8 +266,10 @@ where
                 if let Some((key, datasource_id)) =
                     datasource_groups.get(&group_id)
                 {
-                    if !source_datasource_id.eq(datasource_id) {
-                        error!("bad message occurred (id={source_message_id}): expected datasource {source_datasource_id}, actual datasource {datasource_id}. skipping...");
+                    if source_datasource_id != *datasource_id {
+                        error!(
+                            "bad message occurred (id={source_message_id}): expected datasource {source_datasource_id}, actual datasource {datasource_id}. skipping..."
+                        );
                         continue;
                     }
                     Some(
@@ -442,8 +443,10 @@ pub async fn upsert_messages(
             {
                 let (master_key, datasource_id) =
                     datasource_groups.get(&group_id).context(h!())?;
-                if !source_datasource_id.eq(datasource_id) {
-                    error!("bad message occurred (id={source_message_id}): expected datasource {source_datasource_id}, actual datasource {datasource_id}. skipping...");
+                if source_datasource_id != *datasource_id {
+                    error!(
+                        "bad message occurred (id={source_message_id}): expected datasource {source_datasource_id}, actual datasource {datasource_id}. skipping..."
+                    );
                     continue;
                 }
                 let datasource_group_id =

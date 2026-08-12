@@ -228,7 +228,7 @@ async fn load_full_message(
         };
         let attachment = attachments
             .iter()
-            .find(|x| "text/x-signal-plain".eq(&x.content_type));
+            .find(|x| x.content_type == "text/x-signal-plain");
         let Some(attachment) = attachment else {
             if let Some(text) = &msg.message {
                 if text.len() > 1000 {

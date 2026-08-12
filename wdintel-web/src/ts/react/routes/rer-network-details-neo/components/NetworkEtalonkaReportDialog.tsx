@@ -45,6 +45,9 @@ type Props = {
   onSetProgressExpanded: (expanded: boolean) => void;
   onTypeChange: (reportType: NetworkEtalonkaReportType) => void;
   onActiveFreqsOnlyChange: (activeFreqsOnly: boolean) => void;
+  onIncludeFreqActiveFromChange: (includeFreqActiveFrom: boolean) => void;
+  onIncludeFreqCreatedAtChange: (includeFreqCreatedAt: boolean) => void;
+  onIncludeCallsignFullNamesChange: (includeCallsignFullNames: boolean) => void;
   onIncludeSigintSignsChange: (includeSigintSigns: boolean) => void;
   onIncludeConfirmationChange: (includeConfirmation: boolean) => void;
   onIncludeHeadingsAndFreqsChange: (includeHeadingsAndFreqs: boolean) => void;
@@ -212,6 +215,9 @@ export function NetworkEtalonkaReportDialog({
   onSetProgressExpanded,
   onTypeChange,
   onActiveFreqsOnlyChange,
+  onIncludeFreqActiveFromChange,
+  onIncludeFreqCreatedAtChange,
+  onIncludeCallsignFullNamesChange,
   onIncludeSigintSignsChange,
   onIncludeConfirmationChange,
   onIncludeHeadingsAndFreqsChange,
@@ -379,6 +385,12 @@ export function NetworkEtalonkaReportDialog({
                   label="Лише активні частоти"
                 />
                 <ReportCheckboxRow
+                  checked={report.includeCallsignFullNames}
+                  onChange={onIncludeCallsignFullNamesChange}
+                  disabled={report.running}
+                  label="Включити ПІБ у позивні"
+                />
+                <ReportCheckboxRow
                   checked={report.includeSigintSigns}
                   onChange={onIncludeSigintSignsChange}
                   disabled={report.running}
@@ -443,6 +455,18 @@ export function NetworkEtalonkaReportDialog({
                     </Box>
 
                     <Stack spacing={0.75}>
+                      <ReportCheckboxRow
+                        checked={report.includeFreqActiveFrom}
+                        onChange={onIncludeFreqActiveFromChange}
+                        disabled={report.running}
+                        label="Включити «Активна з» для частот"
+                      />
+                      <ReportCheckboxRow
+                        checked={report.includeFreqCreatedAt}
+                        onChange={onIncludeFreqCreatedAtChange}
+                        disabled={report.running}
+                        label="Включити «Дата прив'язки» для частот"
+                      />
                       <ReportCheckboxRow
                         checked={report.includeUnitCallsigns}
                         onChange={onIncludeUnitCallsignsChange}

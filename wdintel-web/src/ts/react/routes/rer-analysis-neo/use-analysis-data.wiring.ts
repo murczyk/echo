@@ -24,6 +24,10 @@ type BuildActionParamsInput = {
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
   queryState: AnalysisQueryState;
+  completeLocalInboxChangeOrigin: (origin: string) => void;
+  failLocalInboxChangeOrigin: (origin: string) => boolean;
+  reconcileTagMutation: (messageId: number) => Promise<void>;
+  registerLocalInboxChangeOrigin: () => string;
   refreshTagFacet: () => Promise<void>;
   reloadRef: React.MutableRefObject<(options?: AnalysisReloadOptions) => Promise<void>>;
   referenceState: ReferenceState;
@@ -39,6 +43,10 @@ export function buildAnalysisActionsParams({
   onError,
   onUnauthorized,
   queryState,
+  completeLocalInboxChangeOrigin,
+  failLocalInboxChangeOrigin,
+  reconcileTagMutation,
+  registerLocalInboxChangeOrigin,
   refreshTagFacet,
   reloadRef,
   referenceState,
@@ -55,6 +63,10 @@ export function buildAnalysisActionsParams({
     onError,
     onUnauthorized,
     queryState,
+    completeLocalInboxChangeOrigin,
+    failLocalInboxChangeOrigin,
+    reconcileTagMutation,
+    registerLocalInboxChangeOrigin,
     refreshTagFacet,
     reload: (options?: AnalysisReloadOptions) => reloadRef.current(options),
     setMapOpenMessages: mapData.setMapOpenMessages,
@@ -102,6 +114,7 @@ export function buildAnalysisActionsParams({
 type BuildReloadParamsInput = {
   centerTab: UseAnalysisDataProps['centerTab'];
   deferInitialLoad: boolean;
+  leftPanelOpen: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
@@ -123,7 +136,7 @@ type BuildReloadParamsInput = {
     networkStatsCache?: Map<string, ReturnType<FetchAnalysisNetworks>>,
     signal?: AbortSignal,
   ) => Promise<void>;
-  invalidateCallsignGraph: () => void;
+  invalidateCallsignGraph: (options?: { clearGraph?: boolean }) => void;
   invalidateCorrelatedFreqsCache: () => void;
   invalidateRightSidebarData: () => void;
   invalidateSummaryData: (keepLoading?: boolean) => void;
@@ -177,6 +190,7 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
   return {
     centerTab: input.centerTab,
     deferInitialLoad: input.deferInitialLoad,
+    leftPanelOpen: input.leftPanelOpen,
     newestFirst: input.newestFirst,
     onError: input.onError,
     onUnauthorized: input.onUnauthorized,

@@ -102,7 +102,7 @@ describe('AnalysisGroupsActivityCard', () => {
     }
   });
 
-  it('shows a hint when no frequency is selected', async () => {
+  it('offers an explicit global-filter load when no frequency is selected', async () => {
     const onLoad = vi.fn();
     const view = await renderComponent({
       groupsActivity: null,
@@ -116,9 +116,15 @@ describe('AnalysisGroupsActivityCard', () => {
     rendered.push(view);
 
     expect(onLoad).not.toHaveBeenCalled();
-    expect(view.container.textContent).toContain(
-      'Оберіть частоту вище, щоб завантажити графік активності по датах.',
+    const loadButton = Array.from(view.container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Завантажити',
     );
+    expect(loadButton).toBeDefined();
+
+    await act(async () => {
+      loadButton?.click();
+    });
+    expect(onLoad).toHaveBeenCalledTimes(1);
   });
 
   it('loads activity automatically when a frequency is already selected', async () => {

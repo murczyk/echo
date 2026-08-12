@@ -1,10 +1,11 @@
-use crate::config::get_tz;
+use crate::config::{get_tz, ORGANISM_GOI_REPORT_XLSX_CREATION_DATE};
 use crate::entities::*;
 use crate::error::AppError;
+use crate::organism::goi::aor_scope::goi_joined_aor_visible_for_organism;
 use crate::sigint::aor::report_order;
 use crate::types::*;
 use chrono::prelude::*;
-use rust_xlsxwriter::Workbook;
+use rust_xlsxwriter::{DocProperties, ExcelDateTime, Workbook};
 use sea_orm::{prelude::Expr, *};
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
@@ -61,7 +62,7 @@ async fn build_goi_report_workbook(
     organism_id: Option<i64>,
 ) -> Result<Workbook, AppError> {
     let grouped = get_goi_report_freqs(env, organism_id).await.context(h!())?;
-    let mut workbook = Workbook::new();
+    let mut workbook = new_goi_report_workbook()?;
 
     let _enemy_sheet =
         workbook.add_worksheet().set_name("Противник").c(h!())?;
@@ -72,6 +73,15 @@ async fn build_goi_report_workbook(
         write_goi_report_sheet(&mut workbook, &aor_name, &freqs)?;
     }
 
+    Ok(workbook)
+}
+
+fn new_goi_report_workbook() -> Result<Workbook, AppError> {
+    let (year, month, day) = ORGANISM_GOI_REPORT_XLSX_CREATION_DATE;
+    let creation_date = ExcelDateTime::from_ymd(year, month, day).c(h!())?;
+    let properties = DocProperties::new().set_creation_datetime(&creation_date);
+    let mut workbook = Workbook::new();
+    workbook.set_properties(&properties);
     Ok(workbook)
 }
 
@@ -125,7 +135,7 @@ async fn get_goi_report_freqs(
         .context(h!())?
         .with_timezone(&Utc)
         .naive_utc();
-    let q = sigint_network::Entity::find()
+    let mut q = sigint_network::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_network::Relation::SigintNetworkFreq.def(),
@@ -193,6 +203,10 @@ async fn get_goi_report_freqs(
         )
         .order_by_asc(sigint_network_aor::Column::Id)
         .order_by_asc(sigint_network_freq::Column::Id);
+
+    if let Some(organism_id) = organism_id {
+        q = q.filter(goi_joined_aor_visible_for_organism(organism_id));
+    }
 
     // debug!(
     //     "GOI report SQL: {}",
@@ -294,7 +308,9 @@ fn sanitize_sheet_name(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{keep_first_network_aor_per_freq, NetworkFreq};
+    use super::{
+        keep_first_network_aor_per_freq, new_goi_report_workbook, NetworkFreq,
+    };
     use chrono::NaiveDate;
 
     fn test_freq(
@@ -358,5 +374,24 @@ mod tests {
             Some("Unit A, Unit B, Unit C")
         );
         assert_eq!(rows[1].unit_name, None);
+    }
+
+    #[test]
+    fn goi_report_workbook_bytes_are_deterministic() {
+        let mut first = new_goi_report_workbook().expect("first workbook");
+        first
+            .add_worksheet()
+            .write_string(0, 0, "same data")
+            .expect("write first workbook");
+        let first = first.save_to_buffer().expect("save first workbook");
+
+        let mut second = new_goi_report_workbook().expect("second workbook");
+        second
+            .add_worksheet()
+            .write_string(0, 0, "same data")
+            .expect("write second workbook");
+        let second = second.save_to_buffer().expect("save second workbook");
+
+        assert_eq!(first, second);
     }
 }

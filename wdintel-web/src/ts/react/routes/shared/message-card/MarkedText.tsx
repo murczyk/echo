@@ -120,6 +120,27 @@ function tokenPillBaseStyle(isInteractive: boolean): CSSProperties {
   };
 }
 
+function pointTokenSx(theme: Theme): CSSProperties {
+  return {
+    display: 'inline',
+    backgroundColor:
+      theme.palette.mode === 'dark' ? 'rgba(253, 136, 79, 0.22)' : 'rgba(253, 136, 79, 0.18)',
+    boxShadow:
+      theme.palette.mode === 'dark'
+        ? 'inset 0 0 0 1px rgba(253, 136, 79, 0.58)'
+        : 'inset 0 0 0 1px rgba(221, 91, 34, 0.48)',
+    color: 'inherit',
+    borderRadius: '2px',
+    padding: '1px 3px',
+    fontSize: 'inherit',
+    fontWeight: 500,
+    lineHeight: 'inherit',
+    cursor: 'pointer',
+    WebkitBoxDecorationBreak: 'clone',
+    boxDecorationBreak: 'clone',
+  };
+}
+
 function tokenInteractiveResetStyle(cursor: CSSProperties['cursor']): CSSProperties {
   return {
     color: 'inherit',
@@ -226,16 +247,6 @@ function PointToken({
   const blacklistLabel = etalonSingle.trim();
   const directBlacklistKey = `${messageId}:${pointBlacklistLabelKey(blacklistLabel)}:${sourcePalitraIds[0] ?? ''}`;
 
-  function chooseBlacklistPalette() {
-    if (!onRequestPointBlacklist) return;
-    setMenuAnchorEl(null);
-    const activeElement = document.activeElement;
-    if (activeElement instanceof HTMLElement) activeElement.blur();
-    window.setTimeout(() => {
-      onRequestPointBlacklist({ messageId, etalon: blacklistLabel, palitraIds: sourcePalitraIds });
-    }, 0);
-  }
-
   function openMenu(event: SyntheticEvent<HTMLElement>) {
     event.preventDefault();
     event.stopPropagation();
@@ -244,9 +255,10 @@ function PointToken({
 
   return (
     <>
-      <span
+      <Box
+        component="span"
         className="content-token--point"
-        style={tokenPillBaseStyle(true)}
+        sx={pointTokenSx}
         title={title}
         role="button"
         tabIndex={0}
@@ -257,9 +269,9 @@ function PointToken({
           }
         }}
       >
-        <span className="content-token--point-link" style={tokenInteractiveResetStyle('pointer')}>
-          {text}
-        </span>
+        <span className="content-token--point-link">{text}</span>
+      </Box>
+      {onRequestPointBlacklist ? (
         <IconButton
           size="small"
           aria-label="Показати на мапі"
@@ -284,7 +296,7 @@ function PointToken({
             ⋮
           </span>
         </IconButton>
-      </span>
+      ) : null}
       <PowerMenu
         id={menuId}
         anchorEl={menuAnchorEl}
@@ -379,7 +391,22 @@ function PointToken({
                 : 'Додати до чорного списку'}
             </MenuItem>
           ) : (
-            <MenuItem onClick={chooseBlacklistPalette}>Додати до чорного списку…</MenuItem>
+            <MenuItem
+              onClick={() => {
+                setMenuAnchorEl(null);
+                const activeElement = document.activeElement;
+                if (activeElement instanceof HTMLElement) activeElement.blur();
+                window.setTimeout(() => {
+                  onRequestPointBlacklist({
+                    messageId,
+                    etalon: blacklistLabel,
+                    palitraIds: sourcePalitraIds,
+                  });
+                }, 0);
+              }}
+            >
+              Додати до чорного списку…
+            </MenuItem>
           )
         ) : null}
       </PowerMenu>
@@ -606,8 +633,8 @@ export function renderMarkedText(
     showPointLinks?: boolean;
     linkCallsigns?: boolean;
     message?: InboxMessage;
-    onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
     messageId?: number;
+    onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
     onRequestPointBlacklist?: (source: PointBlacklistRequestSource) => void;
     pendingBlacklistKeys?: Set<string>;
     callsignInfoMap?: Record<string, CallsignInfoRes>;

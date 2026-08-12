@@ -36,6 +36,7 @@ type Props = {
   showInvestigatingFilter?: boolean;
   isInvestigating?: boolean;
   selectedUnitFilter?: SelectedSidebarUnitFilter;
+  countLabel?: string;
 };
 
 type TreeLeafNode = {
@@ -57,8 +58,22 @@ type TreeGroupNode = {
 
 type TreeNode = TreeGroupNode | TreeLeafNode;
 
-const HIERARCHY_LABELS = ['Армія', 'Дивізія', 'Полк', 'Батальйон'] as const;
-const HIERARCHY_KEYS = ['army', 'division', 'regiment', 'battalion'] as const;
+const HIERARCHY_LABELS = [
+  'Армійський регіон',
+  'Військовий округ',
+  'Армія',
+  'Дивізія',
+  'Полк',
+  'Батальйон',
+] as const;
+const HIERARCHY_KEYS = [
+  'armyRegion',
+  'militaryDistrict',
+  'army',
+  'division',
+  'regiment',
+  'battalion',
+] as const;
 const SIDEBAR_FILTER_DEBOUNCE_MS = 180;
 
 function normalizeHierarchyPart(part: string, level: number): string {
@@ -72,19 +87,30 @@ export function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
   const groups = new Map<string, TreeGroupNode>();
 
   for (const row of stats) {
-    const rawParts = [row.army, row.division, row.regiment, row.battalion];
+    const rawParts = [
+      row.armyRegion,
+      row.militaryDistrict,
+      row.army,
+      row.division,
+      row.regiment,
+      row.battalion,
+    ];
+    const firstVisibleLevel =
+      row.armyRegion.trim() !== '' ? 0 : row.militaryDistrict.trim() !== '' ? 1 : 2;
     let parentChildren = root;
     let path: string[] = [];
     let rawPath: string[] = [];
 
     rawParts.forEach((part, level) => {
+      if (level < firstVisibleLevel) return;
       const hasAnyDeeperPart = rawParts.slice(level).some((item) => item.trim() !== '');
       if (!hasAnyDeeperPart) return;
 
       const rawValue = part.trim();
       const label = normalizeHierarchyPart(rawValue, level);
       path = [...path, `${level}:${rawValue === '' ? '__EMPTY__' : rawValue}`];
-      rawPath = [...rawPath, rawValue];
+      rawPath = [...rawPath];
+      rawPath[level] = rawValue;
       const id = `group:${path.join('|')}`;
 
       let group = groups.get(id);
@@ -132,10 +158,12 @@ function normalizeSearchQuery(value: string): string {
 
 function createHierarchyFilter(rawPath: string[]): UnitHierarchyFilter {
   return {
-    army: rawPath[0] ?? null,
-    division: rawPath[1] ?? null,
-    regiment: rawPath[2] ?? null,
-    battalion: rawPath[3] ?? null,
+    armyRegion: rawPath[0] ?? null,
+    militaryDistrict: rawPath[1] ?? null,
+    army: rawPath[2] ?? null,
+    division: rawPath[3] ?? null,
+    regiment: rawPath[4] ?? null,
+    battalion: rawPath[5] ?? null,
   };
 }
 
@@ -146,7 +174,15 @@ function areHierarchyFiltersEqual(left: UnitHierarchyFilter, right: UnitHierarch
 function matchesUnitSearch(row: UnitStatView, normalizedQuery: string): boolean {
   if (normalizedQuery === '') return true;
 
-  const haystack = [row.unitName, row.army, row.division, row.regiment, row.battalion]
+  const haystack = [
+    row.unitName,
+    row.armyRegion,
+    row.militaryDistrict,
+    row.army,
+    row.division,
+    row.regiment,
+    row.battalion,
+  ]
     .join(' ')
     .toLocaleLowerCase();
 
@@ -177,14 +213,19 @@ function collectExpansionPathToSelectedFilter(
   return path ?? [];
 }
 
+function isSelectedLeafNode(node: TreeLeafNode, selectedUnitFilter?: SelectedSidebarUnitFilter) {
+  if (selectedUnitFilter?.kind !== 'leaf') return false;
+  if (selectedUnitFilter.unitId !== undefined) return selectedUnitFilter.unitId === node.unitId;
+  return selectedUnitFilter.unitName === node.unitName;
+}
+
 function collectExpansionPathToSelectedFilterInner(
   nodes: TreeNode[],
   selectedUnitFilter: SelectedSidebarUnitFilter,
 ): string[] | null {
   for (const node of nodes) {
     if (node.kind === 'leaf') {
-      if (selectedUnitFilter.kind === 'leaf' && node.unitName === selectedUnitFilter.unitName)
-        return [];
+      if (isSelectedLeafNode(node, selectedUnitFilter)) return [];
       continue;
     }
 
@@ -211,6 +252,7 @@ type TreeItemProps = {
   onToggle: (nodeId: string) => void;
   onPickUnitFilter: (filter: SelectedSidebarUnitFilter) => void;
   selectedUnitFilter?: SelectedSidebarUnitFilter;
+  countLabel: string;
 };
 
 function UnitTreeItem({
@@ -220,6 +262,7 @@ function UnitTreeItem({
   onToggle,
   onPickUnitFilter,
   selectedUnitFilter,
+  countLabel,
 }: TreeItemProps) {
   const paddingLeft = 1 + depth * 2;
 
@@ -227,13 +270,16 @@ function UnitTreeItem({
     return (
       <ListItemButton
         onClick={() =>
-          onPickUnitFilter({ kind: 'leaf', label: node.unitName, unitName: node.unitName })
+          onPickUnitFilter({
+            kind: 'leaf',
+            label: node.unitName,
+            unitName: node.unitName,
+            unitId: node.unitId,
+          })
         }
-        selected={
-          selectedUnitFilter?.kind === 'leaf' && selectedUnitFilter.unitName === node.unitName
-        }
+        selected={isSelectedLeafNode(node, selectedUnitFilter)}
         sx={{ pl: paddingLeft + 5, pr: 1.5 }}
-        aria-label={`Фільтрувати за підрозділом ${node.unitName}, позивних ${node.count}`}
+        aria-label={`Фільтрувати за підрозділом ${node.unitName}, ${countLabel.toLocaleLowerCase()} ${node.count}`}
       >
         <ListItemText
           primary={node.unitName}
@@ -282,7 +328,7 @@ function UnitTreeItem({
           }
           selected={isSelected}
           sx={{ minWidth: 0, flex: 1, pr: 1.5 }}
-          aria-label={`Фільтрувати за гілкою ${node.label}, позивних ${node.count}`}
+          aria-label={`Фільтрувати за гілкою ${node.label}, ${countLabel.toLocaleLowerCase()} ${node.count}`}
         >
           <ListItemText
             primary={node.label}
@@ -311,6 +357,7 @@ function UnitTreeItem({
               onToggle={onToggle}
               onPickUnitFilter={onPickUnitFilter}
               selectedUnitFilter={selectedUnitFilter}
+              countLabel={countLabel}
             />
           ))}
         </List>
@@ -344,6 +391,7 @@ export function UnitStatsSidebar({
   showInvestigatingFilter = false,
   isInvestigating = false,
   selectedUnitFilter,
+  countLabel = 'Позивних',
 }: Props) {
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearchInput = useDebouncedValue(searchInput, SIDEBAR_FILTER_DEBOUNCE_MS);
@@ -538,8 +586,8 @@ export function UnitStatsSidebar({
             size="small"
             label={
               normalizedSearchQuery === ''
-                ? `Позивних: ${total}`
-                : `Позивних: ${total} з ${totalOverall}`
+                ? `${countLabel}: ${total}`
+                : `${countLabel}: ${total} з ${totalOverall}`
             }
             interactive={false}
             unselectedOpacity={1}
@@ -592,6 +640,7 @@ export function UnitStatsSidebar({
                 onToggle={onToggle}
                 onPickUnitFilter={onPickUnitFilter}
                 selectedUnitFilter={selectedUnitFilter}
+                countLabel={countLabel}
               />
             ))}
             {stats.length === 0 ? (

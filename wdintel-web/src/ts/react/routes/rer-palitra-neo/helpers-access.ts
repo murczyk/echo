@@ -99,11 +99,17 @@ export function toPalitraAccess(form: PalitraFormState): PalitraAccess {
   return { ByAor: { aorIds: form.aorIds } };
 }
 
-export function toCreateReq(form: PalitraFormState): CreatePalitraReq {
+export function toCreateReq(
+  form: PalitraFormState,
+  loginIdsByName: Record<string, string> = {},
+): CreatePalitraReq {
   return {
     name: form.name,
     colorHex: form.colorHex,
-    access: toPalitraAccess(form),
+    access: toPalitraAccess({
+      ...form,
+      logins: form.logins.map((login) => loginIdsByName[login] ?? login),
+    }),
     sourceFileName: null,
     lastUploadedAtTs: null,
   };
@@ -160,7 +166,7 @@ export function palitraToForm(palitra: Palitra): PalitraFormState {
       name: palitra.name,
       colorHex: palitra.colorHex,
       accessType: 'logins',
-      logins: [...palitra.accessLogins],
+      logins: palitra.accessLogins.map((entry) => entry.login),
       organismIds: [],
       aorIds: [],
     };
@@ -223,7 +229,9 @@ export function getAccessSummary(
   const isAuthor = palitra.author === user?.name;
   if (!admin && !isAuthor) return '—';
 
-  if (palitra.accessLogins.length > 0) return 'Логіни: ' + palitra.accessLogins.join(', ');
+  if (palitra.accessLogins.length > 0) {
+    return 'Логіни: ' + palitra.accessLogins.map((entry) => entry.login).join(', ');
+  }
 
   if (palitra.accessOrganismIds.length > 0) {
     if (admin) {

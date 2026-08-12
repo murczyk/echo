@@ -33,6 +33,7 @@ import type { User } from '../../../../../Bindings';
 import { ELLIPSIS } from '../../../utils/misc';
 import { hasAnyRole } from '../../../utils/roles';
 import { parseUtcDateTime } from '../../../services/api/report-history';
+import { analysisCompactTabsSx } from '../analysis-tab-styles';
 import {
   describeAppliedReportFilters,
   REPORT_ADJACENT_FREQS_OPTIONS,
@@ -52,6 +53,12 @@ export const analysisReportDialogHintSx = {
   width: { xs: '100%', sm: 'auto' },
   flex: { xs: '0 1 auto', sm: '1 1 320px' },
   minWidth: 0,
+} as const;
+
+export const analysisReportTemplateGridSx = {
+  display: 'grid',
+  gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
+  gap: 1.5,
 } as const;
 
 type Props = {
@@ -152,7 +159,8 @@ const reportTemplateOptions: Array<{ id: ReportTemplateId; title: string; descri
   {
     id: 'report_125',
     title: 'Звіт 1.2.5',
-    description: 'Доступно лише для розширених ролей звітів',
+    description:
+      'Таблиця пеленгів із необов’язковим зазначенням об’єктів пеленгації за формою 1.2.5',
   },
   {
     id: 'active_networks',
@@ -373,6 +381,7 @@ export function AnalysisReportDialog({
               }
               variant="scrollable"
               allowScrollButtonsMobile
+              sx={analysisCompactTabsSx}
             >
               <Tab value="reports" label="Звіти" />
               <Tab value="exports" label="Експорт" />
@@ -394,7 +403,7 @@ export function AnalysisReportDialog({
 
             {builderMode === 'reports' ? (
               <Stack spacing={1}>
-                <Stack direction={{ xs: 'column', md: 'row' }} flexWrap="wrap" gap={1.5}>
+                <Box sx={analysisReportTemplateGridSx}>
                   {visibleReportTemplateOptions.map((option) => (
                     <Button
                       key={option.id}
@@ -410,7 +419,8 @@ export function AnalysisReportDialog({
                         textAlign: 'left',
                         p: 2,
                         minWidth: 0,
-                        width: 'fit-content',
+                        width: '100%',
+                        height: '100%',
                       }}
                     >
                       <Stack alignItems="flex-start" spacing={0.75}>
@@ -421,10 +431,10 @@ export function AnalysisReportDialog({
                       </Stack>
                     </Button>
                   ))}
-                </Stack>
+                </Box>
               </Stack>
             ) : (
-              <Stack direction={{ xs: 'column', md: 'row' }} flexWrap="wrap" gap={1.5}>
+              <Box sx={analysisReportTemplateGridSx}>
                 {exportTemplateOptions.map((option) => (
                   <Button
                     key={option.id}
@@ -436,7 +446,8 @@ export function AnalysisReportDialog({
                       textAlign: 'left',
                       p: 2,
                       minWidth: 0,
-                      width: 'fit-content',
+                      width: '100%',
+                      height: '100%',
                     }}
                   >
                     <Stack alignItems="flex-start" spacing={0.75}>
@@ -447,7 +458,7 @@ export function AnalysisReportDialog({
                     </Stack>
                   </Button>
                 ))}
-              </Stack>
+              </Box>
             )}
           </Stack>
 
@@ -628,16 +639,34 @@ export function AnalysisReportDialog({
                   ) : null;
                 })()}
                 {report.template === 'babak' ? (
-                  <ReportCheckboxLabel
-                    checked={report.withoutComments}
-                    label="Не включати коментарі"
-                    onChange={(value) =>
-                      onUpdate({
-                        withoutComments: value,
-                        reportTagsOnlyThisUnit: value ? false : report.reportTagsOnlyThisUnit,
-                      })
-                    }
-                  />
+                  <>
+                    <ReportCheckboxLabel
+                      checked={report.withoutComments}
+                      label="Не включати коментарі"
+                      onChange={(value) =>
+                        onUpdate({
+                          withoutComments: value,
+                          reportTagsOnlyThisUnit: value ? false : report.reportTagsOnlyThisUnit,
+                        })
+                      }
+                    />
+                    <TextField
+                      type="number"
+                      size="small"
+                      label="Мінімальна кількість згадок нового позивного"
+                      value={report.babakNewCallsignMinMentions}
+                      onChange={(event) =>
+                        onUpdate({
+                          babakNewCallsignMinMentions: Math.max(
+                            1,
+                            Number.parseInt(event.target.value, 10) || 1,
+                          ),
+                        })
+                      }
+                      slotProps={{ htmlInput: { min: 1, step: 1 } }}
+                      sx={{ mt: 1, maxWidth: 360 }}
+                    />
+                  </>
                 ) : null}
                 <ReportCheckboxLabel
                   checked={report.withoutModelTags}

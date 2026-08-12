@@ -2,10 +2,11 @@ module RerAnalysisMapRegressionTests exposing (suite)
 
 import Bindings as B
 import Expect
-import Pages.RerAnalysis as RerAnalysis
-import Pages_.RerAnalysis.Query as Query
-import Pages_.RerAnalysis.Msg exposing (Msg(..))
 import Le.Waterfall.MessagesTests exposing (messageStub)
+import Pages.RerAnalysis as RerAnalysis
+import Pages_.RerAnalysis.EventRefresh as EventRefresh
+import Pages_.RerAnalysis.Msg exposing (Msg(..))
+import Pages_.RerAnalysis.Query as Query
 import Route
 import Shared
 import Test exposing (Test, describe, test)
@@ -123,4 +124,42 @@ suite =
                 Expect.equal
                     [ "" ]
                     (Query.normalizeUnitSelections [ "Не визначено", "" ])
+        , test "refreshes only changed messages rendered in the list" <|
+            \_ ->
+                EventRefresh.messageIdsToRefresh
+                    { messagesRendered = True
+                    , renderedMessageIds = [ 7, 8 ]
+                    }
+                    [ inboxChangedEvent 9
+                    , inboxChangedEvent 7
+                    , inboxChangedEvent 7
+                    , genericEvent
+                    ]
+                    |> Expect.equal [ 7 ]
+        , test "does not refresh list messages while the map is rendered" <|
+            \_ ->
+                EventRefresh.messageIdsToRefresh
+                    { messagesRendered = False
+                    , renderedMessageIds = [ 7 ]
+                    }
+                    [ inboxChangedEvent 7 ]
+                    |> Expect.equal []
         ]
+
+
+inboxChangedEvent : Int -> B.EventMsg
+inboxChangedEvent messageId =
+    { id = String.fromInt messageId
+    , eventType = B.EtInboxChanged messageId
+    , createdAt = 0
+    , origin = Nothing
+    }
+
+
+genericEvent : B.EventMsg
+genericEvent =
+    { id = "generic"
+    , eventType = B.EtGeneric
+    , createdAt = 0
+    , origin = Nothing
+    }

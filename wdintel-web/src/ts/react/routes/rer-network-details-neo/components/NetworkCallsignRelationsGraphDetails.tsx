@@ -11,7 +11,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
+import { alpha, useTheme } from '@mui/material/styles';
 import dayjs from 'dayjs';
 
 import type { NetworkCallsignRelationMessage } from '../../../../../Bindings';
@@ -32,6 +32,7 @@ type Props = {
   selectedMessages: NetworkCallsignRelationMessage[];
   selectedMessagesLoading: boolean;
   selectedMessagesError: string | null;
+  showMessages?: boolean;
   selectedEdgeId: string | null;
   onBackToNode: () => void;
   onSelectNodeId: (nodeId: string | null) => void;
@@ -47,6 +48,7 @@ export function NetworkCallsignRelationsGraphDetails({
   selectedMessages,
   selectedMessagesLoading,
   selectedMessagesError,
+  showMessages = true,
   selectedEdgeId,
   onBackToNode,
   onSelectNodeId,
@@ -55,6 +57,10 @@ export function NetworkCallsignRelationsGraphDetails({
 }: Props) {
   const theme = useTheme();
   const graphTheme = getNetworkRelationsGraphTheme(theme);
+  const panelBorder = alpha(
+    theme.palette.text.primary,
+    theme.palette.mode === 'dark' ? 0.14 : 0.12,
+  );
 
   return (
     <Box
@@ -63,7 +69,8 @@ export function NetworkCallsignRelationsGraphDetails({
         right: 16,
         bottom: 16,
         zIndex: 3,
-        width: { xs: 'calc(100% - 32px)', md: 360 },
+        width: selectedEdge || selectedNode ? { xs: 'calc(100% - 32px)', md: 360 } : 'fit-content',
+        maxWidth: 'calc(100% - 32px)',
         maxHeight: 'calc(100% - 32px)',
         display: 'flex',
         flexDirection: 'column',
@@ -77,10 +84,16 @@ export function NetworkCallsignRelationsGraphDetails({
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          borderRadius: 2,
-          bgcolor: graphTheme.overlayBg,
-          border: `1px solid ${graphTheme.overlayBorder}`,
-          boxShadow: graphTheme.overlayShadow,
+          borderRadius: 1,
+          bgcolor: alpha(
+            theme.palette.background.paper,
+            theme.palette.mode === 'dark' ? 0.82 : 0.92,
+          ),
+          border: `1px solid ${panelBorder}`,
+          boxShadow:
+            theme.palette.mode === 'dark'
+              ? '0 4px 12px rgba(0,0,0,0.18)'
+              : '0 4px 12px rgba(0,0,0,0.06)',
           color: graphTheme.overlayText,
         }}
       >
@@ -89,8 +102,7 @@ export function NetworkCallsignRelationsGraphDetails({
             p: 1.5,
             position: 'relative',
             pr: selectedEdge || selectedNode ? 4.5 : 1.5,
-            borderBottom:
-              selectedEdge || selectedNode ? `1px solid ${graphTheme.overlayBorder}` : 'none',
+            borderBottom: selectedEdge || selectedNode ? `1px solid ${panelBorder}` : 'none',
             flexShrink: 0,
           }}
         >
@@ -132,14 +144,9 @@ export function NetworkCallsignRelationsGraphDetails({
               </Typography>
             </Stack>
           ) : (
-            <Stack spacing={0.5}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                Виберіть вузол або зв'язок
-              </Typography>
-              <Typography variant="caption" sx={{ color: graphTheme.overlayTextSecondary }}>
-                Підсвітка сусідів з'явиться тут
-              </Typography>
-            </Stack>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+              Виберіть вузол або зв'язок
+            </Typography>
           )}
           {selectedEdge ? (
             <IconButton
@@ -264,7 +271,7 @@ export function NetworkCallsignRelationsGraphDetails({
               </Stack>
             ) : null}
 
-            {selectedEdge || selectedNode ? (
+            {showMessages && (selectedEdge || selectedNode) ? (
               <Stack spacing={1.5} sx={{ mt: 1.5 }}>
                 <Divider sx={{ borderColor: graphTheme.overlayBorder }} />
                 <Stack spacing={0.75}>

@@ -201,7 +201,6 @@ vi.mock('./useRerDutyFeedState', () => ({
             id: string;
             filter: Record<string, unknown>;
             highlightSignalsEnabled?: boolean;
-            onlyMyUnitTagsEnabled?: boolean;
           },
           opts: { loadLatest?: boolean },
         ) => ({
@@ -209,11 +208,12 @@ vi.mock('./useRerDutyFeedState', () => ({
           filter: feed.filter,
           loadLatest: opts?.loadLatest ?? null,
           highlightSignals: feed.highlightSignalsEnabled ?? false,
-          reportTagsOnlyThisUnit: feed.onlyMyUnitTagsEnabled ? true : null,
+          reportTagsOnlyThisUnit: null,
         }),
       ),
       showArrowResult: vi.fn(),
       setLoadingNewerFeedIds: vi.fn(),
+      catchUpFeedUnreadToTail: vi.fn(),
       watchModeByFeedId: {},
       loadingNewerFeedIds: new Set(),
       arrowResultByFeedId: {},
@@ -657,7 +657,7 @@ describe('useRerDutyFeeds inbox refreshes', () => {
           feedId: 'mf-0',
           loadLatest: true,
           highlightSignals: true,
-          reportTagsOnlyThisUnit: true,
+          reportTagsOnlyThisUnit: null,
         }),
       );
       expect(latest?.messageFeeds[0].items[1]?.[1].text).toBe('updated');

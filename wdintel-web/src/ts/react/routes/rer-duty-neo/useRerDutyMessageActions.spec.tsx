@@ -16,7 +16,6 @@ import type {
 import { minimalInboxMessage } from './inbox-message-mocks';
 import { buildInboxReq, emptyFilter, type MessageFeedState } from './utils';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
-import { HttpRequestError } from '../../services/api/client';
 
 const hoisted = vi.hoisted(() => ({
   deleteMessage: vi.fn(),
@@ -34,13 +33,13 @@ const hoisted = vi.hoisted(() => ({
   savedFilterUpsert: vi.fn(),
   copyTextToClipboard: vi.fn(),
   requestValidatedInboxCount: vi.fn(),
-  loadFeedNewerMessages: vi.fn(() => Promise.resolve()),
+  catchUpFeedUnreadToTail: vi.fn(),
+  loadFeedNewerMessages: vi.fn(() => Promise.resolve({ ok: true, addedCount: 0 })),
   loadFeedInitialMessages: vi.fn(() => Promise.resolve()),
   showArrowResult: vi.fn(),
   setWatchModeByFeedId: vi.fn(),
   setLoadingNewerFeedIds: vi.fn(),
   beginFollowTail: vi.fn(() => 17),
-  addPalitraHighlightBlacklistEntry: vi.fn(),
 }));
 
 vi.mock('../../services/api/inbox', () => ({
@@ -65,10 +64,6 @@ vi.mock('../../../copy-to-clipboard', () => ({
 
 vi.mock('../../services/api/analysis', () => ({
   fetchAnalysisCallsignInfos: vi.fn(() => Promise.resolve([])),
-}));
-
-vi.mock('../../services/api/palitra', () => ({
-  addPalitraHighlightBlacklistEntry: hoisted.addPalitraHighlightBlacklistEntry,
 }));
 
 vi.mock('../../services/api/user-settings', () => ({
@@ -105,7 +100,6 @@ type HarnessApi = ReturnType<typeof useRerDutyMessageActions> & {
   botTagAction: ReturnType<typeof useRerDutyMessageActions>['botTagAction'];
   onCancelBotTagAction: ReturnType<typeof useRerDutyMessageActions>['onCancelBotTagAction'];
   onMarkBotTagWrong: ReturnType<typeof useRerDutyMessageActions>['onMarkBotTagWrong'];
-  setError: ReturnType<typeof vi.fn>;
 };
 
 function buildReqForFeed(_feed: MessageFeedState, opts: BuildReqOpts): InboxMessagesReq {
@@ -165,6 +159,7 @@ function TestHarness(props: {
   initialSavedFilters?: SavedFilterDuty[];
   authUserName?: string | null;
   errorRef?: MutableRefObject<ReturnType<typeof vi.fn> | null>;
+  currentUserOrganismId?: number | null;
   columnRefsRef?: MutableRefObject<
     Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
   >;
@@ -183,11 +178,10 @@ function TestHarness(props: {
     Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
   >({});
   const columnRefsRef = props.columnRefsRef ?? fallbackColumnRefsRef;
-  const setError = props.errorRef?.current ?? vi.fn();
   const actions = useRerDutyMessageActions({
     messageFeeds,
     setMessageFeeds,
-    setError,
+    setError: vi.fn(),
     applyFilter: vi.fn(),
     loadFeedInitialMessages: hoisted.loadFeedInitialMessages,
     loadFeedNewerMessages: hoisted.loadFeedNewerMessages,
@@ -196,7 +190,9 @@ function TestHarness(props: {
     setWatchModeByFeedId: hoisted.setWatchModeByFeedId,
     setLoadingNewerFeedIds: hoisted.setLoadingNewerFeedIds,
     requestValidatedInboxCount: hoisted.requestValidatedInboxCount,
+    catchUpFeedUnreadToTail: hoisted.catchUpFeedUnreadToTail,
     authUserName: props.authUserName ?? null,
+    currentUserOrganismId: props.currentUserOrganismId ?? null,
     profiles: {
       'sender-1': { givenName: 'BBC', familyName: 'SPORT' },
     },
@@ -228,7 +224,6 @@ function TestHarness(props: {
     botTagAction: actions.botTagAction,
     onCancelBotTagAction: actions.onCancelBotTagAction,
     onMarkBotTagWrong: actions.onMarkBotTagWrong,
-    setError,
   };
   return null;
 }
@@ -265,7 +260,7 @@ describe('useRerDutyMessageActions', () => {
       cursorId: 10,
       hasItems: true,
     });
-    hoisted.loadFeedNewerMessages.mockResolvedValue(undefined);
+    hoisted.loadFeedNewerMessages.mockResolvedValue({ ok: true, addedCount: 0 });
     hoisted.loadFeedInitialMessages.mockResolvedValue(undefined);
     hoisted.showArrowResult.mockReset();
     hoisted.beginFollowTail.mockReset();
@@ -324,6 +319,47 @@ describe('useRerDutyMessageActions', () => {
     expect(hoisted.loadFeedNewerMessages).toHaveBeenCalledWith(
       'mf-0',
       expect.objectContaining({ scrollToEndAfterLoad: true }),
+    );
+    expect(hoisted.catchUpFeedUnreadToTail).toHaveBeenCalledWith('mf-0');
+  });
+
+  it('does not clear unread state when arrow newer load fails', async () => {
+    hoisted.requestValidatedInboxCount.mockResolvedValueOnce({
+      feedId: 'mf-0',
+      quantity: 3,
+      cursorId: 10,
+      hasItems: true,
+    });
+    hoisted.loadFeedNewerMessages.mockResolvedValueOnce({ ok: false, addedCount: 0 });
+    const columnRefsRef: MutableRefObject<
+      Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+    > = {
+      current: {
+        'mf-0': { scrollToEnd: vi.fn() },
+      },
+    };
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          columnRefsRef={columnRefsRef}
+          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleArrowClick('mf-0');
+    });
+
+    expect(hoisted.catchUpFeedUnreadToTail).not.toHaveBeenCalled();
+    expect(hoisted.showArrowResult).toHaveBeenCalledWith(
+      'mf-0',
+      'Не вдалося перевірити нові повідомлення',
     );
   });
 
@@ -440,6 +476,7 @@ describe('useRerDutyMessageActions', () => {
     expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
     expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth');
     expect(hoisted.showArrowResult).toHaveBeenCalledWith('mf-0', 'Немає нових повідомлень');
+    expect(hoisted.catchUpFeedUnreadToTail).toHaveBeenCalledWith('mf-0');
     expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
   });
 
@@ -657,6 +694,41 @@ describe('useRerDutyMessageActions', () => {
     expect(apiRef.current!.messageFeeds).toBe(stateBefore);
     expect(apiRef.current!.messageFeeds[0]).toBe(feedBefore);
     expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(5);
+  });
+
+  it('clears scrolled-past windowed unread when reporting atBottom', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[
+            buildFeed({
+              items: Array.from({ length: 40 }, (_, index) => [
+                index + 21,
+                minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+              ]),
+              readIds: new Set<number>(Array.from({ length: 40 }, (_, index) => index + 21)),
+              windowedUnreadItems: new Map(
+                Array.from({ length: 20 }, (_, index) => [index + 1, (index + 1) * 100]),
+              ),
+              unreadCount: 23,
+            }),
+          ]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      apiRef.current!.handleVisibleMessageIds('mf-0')(60, { atBottom: true });
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.windowedUnreadItems.size).toBe(0);
+    expect(feed.unreadCount).toBe(3);
   });
 
   it('decrements unreadCount only when deleting an unread message', async () => {
@@ -985,6 +1057,7 @@ describe('useRerDutyMessageActions', () => {
         <TestHarness
           apiRef={apiRef}
           authUserName="tester"
+          currentUserOrganismId={7}
           initialFeeds={[
             buildFeed({
               items: [
@@ -1011,7 +1084,7 @@ describe('useRerDutyMessageActions', () => {
     expect(hoisted.inboxMessageTagsAdd).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
     expect(apiRef.current!.botTagAction).toBeNull();
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].inboxTags).toEqual([
-      expect.objectContaining({ tagId: 3, login: 'tester', model: null }),
+      expect.objectContaining({ tagId: 3, login: 'tester', model: null, organismId: 7 }),
       expect.objectContaining({ tagId: 3, model: 'bot' }),
     ]);
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].tags).toEqual([3, 4]);
@@ -1038,94 +1111,5 @@ describe('useRerDutyMessageActions', () => {
     expect(apiRef.current!.botTagAction).toBeNull();
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].inboxTags).toEqual([]);
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].tags).toEqual([4]);
-  });
-
-  it('adds a blacklist entry once and patches every loaded feed copy', async () => {
-    const message = buildMessage({
-      textMarked: [{ CNPointC: { etalon: ' Пункт Альфа ', text: 'Альфа', palitraIds: [7, 12] } }],
-      pointTokens: [{ etalon: 'ПУНКТ АЛЬФА', text: 'Альфа', palitraIds: [7, 12] }],
-    });
-    const initialFeeds = [
-      buildFeed({ id: 'mf-a', items: [[42, message]] }),
-      buildFeed({
-        id: 'mf-b',
-        items: [
-          [42, message],
-          [99, buildMessage()],
-        ],
-      }),
-    ];
-    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
-    hoisted.addPalitraHighlightBlacklistEntry.mockResolvedValue(undefined);
-
-    await act(async () => {
-      root.render(<TestHarness apiRef={apiRef} initialFeeds={initialFeeds} />);
-    });
-    const first = apiRef.current!.onAddPointHighlightBlacklist({
-      messageId: 42,
-      etalon: 'Пункт Альфа',
-      palitraId: 7,
-    });
-    const second = apiRef.current!.onAddPointHighlightBlacklist({
-      messageId: 42,
-      etalon: ' пункт альфа ',
-      palitraId: 7,
-    });
-    expect(second).toBe(first);
-    await act(async () => {
-      await first;
-    });
-
-    expect(hoisted.addPalitraHighlightBlacklistEntry).toHaveBeenCalledTimes(1);
-    expect(hoisted.addPalitraHighlightBlacklistEntry).toHaveBeenCalledWith(7, 'Пункт Альфа');
-    expect(apiRef.current!.messageFeeds[0].items[0]?.[1].pointTokens).toEqual([
-      { etalon: 'ПУНКТ АЛЬФА', text: 'Альфа', palitraIds: [12] },
-    ]);
-    expect(apiRef.current!.messageFeeds[1].items[0]?.[1].pointTokens).toEqual([
-      { etalon: 'ПУНКТ АЛЬФА', text: 'Альфа', palitraIds: [12] },
-    ]);
-    expect(apiRef.current!.messageFeeds[1].items[1]?.[1]).toBe(initialFeeds[1].items[1]?.[1]);
-  });
-
-  it('leaves feeds unchanged and reports a failed blacklist request', async () => {
-    const errorRef: MutableRefObject<ReturnType<typeof vi.fn> | null> = { current: vi.fn() };
-    const initialFeeds = [buildFeed({ items: [[42, buildMessage()]] })];
-    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
-    hoisted.addPalitraHighlightBlacklistEntry.mockRejectedValueOnce(new Error('boom'));
-    await act(async () => {
-      root.render(<TestHarness apiRef={apiRef} initialFeeds={initialFeeds} errorRef={errorRef} />);
-    });
-    const original = apiRef.current!.messageFeeds[0].items[0]?.[1];
-    await expect(
-      apiRef.current!.onAddPointHighlightBlacklist({
-        messageId: 42,
-        etalon: 'Альфа',
-        palitraId: 7,
-      }),
-    ).rejects.toThrow('boom');
-    expect(apiRef.current!.messageFeeds[0].items[0]?.[1]).toBe(original);
-    expect(errorRef.current).toHaveBeenCalledWith('boom');
-  });
-
-  it('rejects an unauthorized blacklist request without patching feeds', async () => {
-    hoisted.addPalitraHighlightBlacklistEntry.mockImplementationOnce(async () => {
-      throw new HttpRequestError(401, 'unauthorized');
-    });
-    const initialFeeds = [buildFeed({ items: [[42, buildMessage()]] })];
-    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
-    await act(async () => {
-      root.render(<TestHarness apiRef={apiRef} initialFeeds={initialFeeds} />);
-    });
-    const original = apiRef.current!.messageFeeds[0].items[0]?.[1];
-    const error = await apiRef
-      .current!.onAddPointHighlightBlacklist({
-        messageId: 42,
-        etalon: 'Альфа',
-        palitraId: 7,
-      })
-      .catch((value) => value);
-    expect(error).toBeInstanceOf(HttpRequestError);
-    expect(error).toMatchObject({ status: 401 });
-    expect(apiRef.current!.messageFeeds[0].items[0]?.[1]).toBe(original);
   });
 });

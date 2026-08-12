@@ -8,6 +8,7 @@ rust_log := if log_sql == "true" { "RUST_LOG=sqlx=trace,seaorm=trace " } else { 
 no_bgworker := "false"
 dev_back_args := if no_bgworker == "true" { "--no-bgworker" } else { "" }
 server := ""
+active_servers := "echo-staging echo-cbr echo-kharkiv2 echo-kupiansk echo-zp2 echo-siversk echo-pivnich echo-skhid"
 target := ""
 backup_key_id := `if [ -f "./deploy/config-backup.toml" ]; then tomlq backup_key_id -f ./deploy/config-backup.toml; else echo ""; fi`
 backup_key := `if [ -f "./deploy/config-backup.toml" ]; then tomlq backup_key -f ./deploy/config-backup.toml; else echo ""; fi`
@@ -39,6 +40,25 @@ iggy_default_rev := "k-bx/2026-06-18-poll-option"
 
 default:
     @just --list
+
+# Send a Mattermost notification using the webhook configured in .env
+notify text:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [[ -f .env ]]; then
+        set -a
+        source .env
+        set +a
+    fi
+
+    : "${MATTERMOST_NOTIFICATION_HOOK:?MATTERMOST_NOTIFICATION_HOOK is not set in .env}"
+    jq -nc --arg text "$1" '{text: $text}' \
+        | curl --fail-with-body --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data-binary @- \
+            "$MATTERMOST_NOTIFICATION_HOOK"
+    echo
 
 prepare-workspace:
     #!/usr/bin/env bash
@@ -74,6 +94,9 @@ setup-pgbackrest server backup_name="" daily_restore="false":
 
 _print-servers:
     @echo "❌ Server parameter not recognized. Value: {{ server }}"
+
+active-servers:
+    @echo "{{ active_servers }}"
 
 evaluate:
     @just --evaluate
@@ -138,9 +161,78 @@ setup-dev:
     npm install uglify-js -g
 
 gen-seaorm:
-    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both -u postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd -o src/entities)
-    python3 deploy/patch_seaorm.py
+    #!/bin/bash
+    set -euo pipefail
+    [[ "$(sea-orm-cli --version)" == "sea-orm-cli 2.0.1" ]]
+    sea-orm-cli generate entity --help | grep -q -- "--include-generated-columns"
+    rm -rf wdintel-rs/src/entities
+    (cd wdintel-rs && sea-orm-cli generate entity --entity-format compact --with-serde both --include-generated-columns -u postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd -o src/entities)
     just fmt
+
+[arg('mode', long='mode')]
+create-file-registry-database mode="debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source deploy/resolve_echo_config_path.sh
+    mode="{{ mode }}"
+    config_path="$(resolve_echo_config_path "$mode")"
+    [[ -f "$config_path" ]] || {
+        echo "Echo config not found: $config_path" >&2
+        exit 1
+    }
+    ECHO_CONFIG_PATH="$config_path" cargo run -p wdintel-rs -- --mode="$mode" oneoff-create-file-registry-database
+
+[arg('mode', long='mode')]
+gen-seaorm-files mode="debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source deploy/resolve_echo_config_path.sh
+    mode="{{ mode }}"
+    config_path="$(resolve_echo_config_path "$mode")"
+    [[ -f "$config_path" ]] || {
+        echo "Echo config not found: $config_path" >&2
+        exit 1
+    }
+    pg_host="$(tq -r -f "$config_path" file_registry.pg_host)"
+    pg_port="$(tq -r -f "$config_path" file_registry.pg_port)"
+    pg_user="$(tq -r -f "$config_path" file_registry.pg_user)"
+    pg_password="$(tq -r -f "$config_path" file_registry.pg_password)"
+    pg_dbname="$(tq -r -f "$config_path" file_registry.pg_dbname)"
+    if [[ "$mode" == "test" && -n "${TEST_WDFILE_DB_NAME:-}" ]]; then
+        pg_dbname="$TEST_WDFILE_DB_NAME"
+    fi
+    database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
+    rm -rf wdintel-rs/src/file_registry/entities
+    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables file_entry --database-url "$database_url" --output-dir src/file_registry/entities)
+    python3 deploy/patch_seaorm_files.py
+    rustfmt --config-path wdintel-rs wdintel-rs/src/file_registry/entities/*.rs
+
+[arg('mode', long='mode')]
+check-seaorm-files mode="debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source deploy/resolve_echo_config_path.sh
+    mode="{{ mode }}"
+    config_path="$(resolve_echo_config_path "$mode")"
+    [[ -f "$config_path" ]] || {
+        echo "Echo config not found: $config_path" >&2
+        exit 1
+    }
+    pg_host="$(tq -r -f "$config_path" file_registry.pg_host)"
+    pg_port="$(tq -r -f "$config_path" file_registry.pg_port)"
+    pg_user="$(tq -r -f "$config_path" file_registry.pg_user)"
+    pg_password="$(tq -r -f "$config_path" file_registry.pg_password)"
+    pg_dbname="$(tq -r -f "$config_path" file_registry.pg_dbname)"
+    if [[ "$mode" == "test" && -n "${TEST_WDFILE_DB_NAME:-}" ]]; then
+        pg_dbname="$TEST_WDFILE_DB_NAME"
+    fi
+    database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
+    entity_dir="$(mktemp -d)"
+    trap 'rm -rf "$entity_dir"' EXIT
+    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables file_entry --database-url "$database_url" --output-dir "$entity_dir")
+    python3 deploy/patch_seaorm_files.py --entity-dir "$entity_dir"
+    rustfmt --config-path wdintel-rs "$entity_dir"/*.rs
+    diff -ru "$entity_dir" wdintel-rs/src/file_registry/entities
 
 gen-front: gen-elm gen-ts
 
@@ -180,24 +272,25 @@ test-be:
     export CARGO_INCREMENTAL=1
     export RUSTC_WRAPPER=""
 
-    echo "Running cargo clippy..."
-    # Lint all targets; fail on any warning. Use --release in CI to reuse artifacts.
-    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-        cargo clippy --release --all-targets --all-features -- -D warnings
-    else
+    if [ "${GITHUB_ACTIONS:-}" != "true" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
+        echo "Running cargo clippy..."
         cargo clippy --all-targets --all-features -- -D warnings
+    else
+        echo "Skipping clippy in time-critical CI; run it locally or with workflow_dispatch"
     fi
 
-    # Check if we should use cached build
     if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-        echo "Running Rust tests in CI with optimizations..."
-        cargo test --release --locked
+        echo "Running curated Rust tests in CI with optimizations..."
+        cargo test --release --locked -p wdintel-rs
     else
-        echo "Running Rust tests locally..."
-        cargo test --release
+        echo "Running curated Rust tests locally with optimizations..."
+        cargo test --release -p wdintel-rs
     fi
 
 test: test-fe test-be
+
+profile-be-tests:
+    python3 scripts/ci/profile_rust_tests.py
 
 test-transcriber:
     cargo test -p wdintel-rs transcri -- --nocapture
@@ -787,23 +880,25 @@ deploy _server_pos="" server:
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
     ssh "$SERVER" 'set -euo pipefail
-      if systemctl cat wdintel-rs-bgworker.service >/dev/null 2>&1; then
-        echo "Stopping wdintel-rs-bgworker.service and waiting up to 120 seconds..."
-        sudo systemctl stop wdintel-rs-bgworker.service || true
-        for i in $(seq 1 120); do
-          if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
-            echo "wdintel-rs-bgworker.service is stopped."
-            break
-          fi
-          if [ "$i" -eq 120 ]; then
-            echo "wdintel-rs-bgworker.service did not stop within 120 seconds." >&2
-            exit 1
-          fi
-          sleep 1
-        done
-      else
-        echo "wdintel-rs-bgworker.service is not installed; skipping stop wait."
-      fi'
+      for service in wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
+        if systemctl cat "$service" >/dev/null 2>&1; then
+          echo "Stopping $service and waiting up to 120 seconds..."
+          sudo systemctl stop "$service" || true
+          for i in $(seq 1 120); do
+            if ! systemctl is-active --quiet "$service"; then
+              echo "$service is stopped."
+              break
+            fi
+            if [ "$i" -eq 120 ]; then
+              echo "$service did not stop within 120 seconds." >&2
+              exit 1
+            fi
+            sleep 1
+          done
+        else
+          echo "$service is not installed; skipping stop wait."
+        fi
+      done'
     # Keep apt mostly quiet, but print the command before running it and fail on timeouts.
     ssh "$SERVER" 'set -euo pipefail
       run_logged() {
@@ -836,6 +931,10 @@ deploy _server_pos="" server:
         sudo env DEBIAN_FRONTEND=noninteractive \
           apt-get -o Dpkg::Lock::Timeout=120 -y -qq install echo-install wdintel-rs'
 
+    ssh "$SERVER" 'set -euo pipefail
+      /opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh --yes
+      sudo /usr/bin/wdintel-rs --mode=live migrate'
+
     # Re-assert critical services after deploy package update
     ssh "$SERVER" '
       set -euo pipefail
@@ -855,9 +954,10 @@ deploy _server_pos="" server:
 
       sudo systemctl enable --now wdintel-rs.socket
       sudo systemctl enable --now wdintel-rs-bgworker.service
+      sudo systemctl enable --now wdintel-rs-report-worker.service
       sudo systemctl enable --now wdintel-py.service
 
-      for unit in wdintel-rs.socket wdintel-rs-bgworker.service wdintel-py.service; do
+      for unit in wdintel-rs.socket wdintel-rs-bgworker.service wdintel-rs-report-worker.service wdintel-py.service; do
         if ! systemctl is-enabled --quiet "$unit"; then
           echo "ERROR: $unit is not enabled after deploy." >&2
           systemctl is-enabled "$unit" || true
@@ -868,6 +968,11 @@ deploy _server_pos="" server:
       if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
         echo "ERROR: wdintel-rs-bgworker.service is not active after deploy." >&2
         systemctl status --no-pager wdintel-rs-bgworker.service || true
+        exit 1
+      fi
+      if ! systemctl is-active --quiet wdintel-rs-report-worker.service; then
+        echo "ERROR: wdintel-rs-report-worker.service is not active after deploy." >&2
+        systemctl status --no-pager wdintel-rs-report-worker.service || true
         exit 1
       fi
       if ! systemctl is-active --quiet wdintel-py.service; then
@@ -893,8 +998,9 @@ deploy _server_pos="" server:
         exit 1
       fi
     '
+    ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
     printf "\n⚠️⚠️⚠️ docs were not deployed. Run: just deploy-docs --server %s ⚠️⚠️⚠️\n" "$SERVER"
-    echo "✅✅✅ deploy OK on $SERVER: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
+    echo "✅✅✅ deploy OK on $SERVER: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
 
     # Success notification
     curl -sS -X POST \
@@ -941,7 +1047,7 @@ deploy-from-local _server_pos="" server:
     DEB_NAME="$(basename "$DEB_PATH")"
     REMOTE_DEB_NAME="${DEB_NAME%.deb}-local-$(date -u +%Y%m%d%H%M%S)-$$.deb"
     REMOTE_DEB_PATH="/var/tmp/${REMOTE_DEB_NAME}"
-    RESTART_BGWORKER_ON_FAILURE=0
+    RESTART_WORKERS_ON_FAILURE=0
 
     cleanup() {
       local status=$?
@@ -950,10 +1056,10 @@ deploy-from-local _server_pos="" server:
       if [[ -n "$REMOTE_DEB_PATH" ]]; then
         ssh "$SERVER" "rm -f -- '$REMOTE_DEB_PATH'" >/dev/null 2>&1 || true
       fi
-      if [[ $status -ne 0 && $RESTART_BGWORKER_ON_FAILURE -eq 1 ]]; then
-        echo "Deployment failed; restarting wdintel-rs-bgworker.service..." >&2
-        if ! ssh "$SERVER" 'sudo systemctl start wdintel-rs-bgworker.service'; then
-          echo "Failed to restart wdintel-rs-bgworker.service after deployment failure." >&2
+      if [[ $status -ne 0 && $RESTART_WORKERS_ON_FAILURE -eq 1 ]]; then
+        echo "Deployment failed; restarting worker services..." >&2
+        if ! ssh "$SERVER" 'sudo systemctl start wdintel-rs-bgworker.service wdintel-rs-report-worker.service'; then
+          echo "Failed to restart worker services after deployment failure." >&2
         fi
       fi
 
@@ -964,7 +1070,7 @@ deploy-from-local _server_pos="" server:
     echo "Uploading ${DEB_NAME} to ${SERVER}:${REMOTE_DEB_PATH}..."
     scp "$DEB_PATH" "${SERVER}:${REMOTE_DEB_PATH}"
 
-    RESTART_BGWORKER_ON_FAILURE=1
+    RESTART_WORKERS_ON_FAILURE=1
     ssh "$SERVER" 'set -euo pipefail
       if ! command -v java >/dev/null 2>&1; then
         echo "ERROR: Java is required for Signal normal mode, but java is not installed." >&2
@@ -979,23 +1085,25 @@ deploy-from-local _server_pos="" server:
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
     ssh "$SERVER" 'set -euo pipefail
-      if systemctl cat wdintel-rs-bgworker.service >/dev/null 2>&1; then
-        echo "Stopping wdintel-rs-bgworker.service and waiting up to 120 seconds..."
-        sudo systemctl stop wdintel-rs-bgworker.service || true
-        for i in $(seq 1 120); do
-          if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
-            echo "wdintel-rs-bgworker.service is stopped."
-            break
-          fi
-          if [ "$i" -eq 120 ]; then
-            echo "wdintel-rs-bgworker.service did not stop within 120 seconds." >&2
-            exit 1
-          fi
-          sleep 1
-        done
-      else
-        echo "wdintel-rs-bgworker.service is not installed; skipping stop wait."
-      fi'
+      for service in wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
+        if systemctl cat "$service" >/dev/null 2>&1; then
+          echo "Stopping $service and waiting up to 120 seconds..."
+          sudo systemctl stop "$service" || true
+          for i in $(seq 1 120); do
+            if ! systemctl is-active --quiet "$service"; then
+              echo "$service is stopped."
+              break
+            fi
+            if [ "$i" -eq 120 ]; then
+              echo "$service did not stop within 120 seconds." >&2
+              exit 1
+            fi
+            sleep 1
+          done
+        else
+          echo "$service is not installed; skipping stop wait."
+        fi
+      done'
 
     echo "Installing ${DEB_NAME} on ${SERVER}..."
     ssh "$SERVER" "set -euo pipefail
@@ -1009,6 +1117,10 @@ deploy-from-local _server_pos="" server:
       rm -f './${REMOTE_DEB_NAME}'
     "
     REMOTE_DEB_PATH=""
+
+    ssh "$SERVER" 'set -euo pipefail
+      /opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh --yes
+      sudo /usr/bin/wdintel-rs --mode=live migrate'
 
     ssh "$SERVER" '
       set -euo pipefail
@@ -1027,8 +1139,9 @@ deploy-from-local _server_pos="" server:
 
       sudo systemctl enable --now wdintel-rs.socket
       sudo systemctl enable --now wdintel-rs-bgworker.service
+      sudo systemctl enable --now wdintel-rs-report-worker.service
 
-      for unit in wdintel-rs.socket wdintel-rs-bgworker.service; do
+      for unit in wdintel-rs.socket wdintel-rs-bgworker.service wdintel-rs-report-worker.service; do
         if ! systemctl is-enabled --quiet "$unit"; then
           echo "ERROR: $unit is not enabled after deploy." >&2
           systemctl is-enabled "$unit" || true
@@ -1039,6 +1152,11 @@ deploy-from-local _server_pos="" server:
       if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
         echo "ERROR: wdintel-rs-bgworker.service is not active after deploy." >&2
         systemctl status --no-pager wdintel-rs-bgworker.service || true
+        exit 1
+      fi
+      if ! systemctl is-active --quiet wdintel-rs-report-worker.service; then
+        echo "ERROR: wdintel-rs-report-worker.service is not active after deploy." >&2
+        systemctl status --no-pager wdintel-rs-report-worker.service || true
         exit 1
       fi
       if ! systemctl is-active --quiet wdintel-rs.socket; then
@@ -1059,9 +1177,10 @@ deploy-from-local _server_pos="" server:
         exit 1
       fi
 
-      echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, 8081 via systemd ✅✅✅"
+      echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, 8081 via systemd ✅✅✅"
     '
-    RESTART_BGWORKER_ON_FAILURE=0
+    ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
+    RESTART_WORKERS_ON_FAILURE=0
 
 [arg('server', long='server')]
 deploy-docs-from-local _server_pos="" server:
@@ -1176,11 +1295,62 @@ _collect-ip:
     rm ~/ips/{{ server }}-ip.txt
 
 _update-nginx:
-    #!/bin/bash
+    #!/usr/bin/env bash
+    set -euo pipefail
     scp ./deploy/nginx/{{ server }} {{ server }}:~
     ssh -t {{ server }}  'cd /etc/nginx/sites-enabled && sudo cp {{ server }} ~/_{{ server }}-nginx-bkp'
-    ssh -t {{ server }}  'sudo mv ~/{{ server }} /etc/nginx/sites-enabled && sudo systemctl restart nginx'
+    ssh -t {{ server }}  'sudo mv ~/{{ server }} /etc/nginx/sites-enabled'
+    just setup-nginx-limits --server="{{ server }}"
     ssh -t {{ server }}  'sudo rm ~/_{{ server }}-nginx-bkp'
+
+[arg('server', long='server')]
+setup-nginx-limits server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    limits_file="deploy/nginx/nginx.service.d/limits.conf"
+    expected_limit=$(awk -F= '$1 == "LimitNOFILE" { print $2 }' "$limits_file")
+    remote_tmp="/tmp/echo-nginx-limits-$$.conf"
+
+    scp "$limits_file" "{{ server }}:$remote_tmp"
+    ssh "{{ server }}" bash -se -- "$remote_tmp" "$expected_limit" <<'EOF'
+    remote_tmp="$1"
+    expected_limit="$2"
+    trap 'rm -f "$remote_tmp"' EXIT
+
+    sudo install -D -m 0644 \
+        "$remote_tmp" \
+        /etc/systemd/system/nginx.service.d/limits.conf
+    sudo systemctl daemon-reload
+    sudo nginx -t
+    sudo systemctl restart nginx.service
+    systemctl is-active --quiet nginx.service
+
+    verify_process_limit() {
+        local process_kind="$1"
+        local process_pid="$2"
+        local live_limit
+        live_limit=$(sudo awk '/Max open files/ { print $4 }' \
+            "/proc/$process_pid/limits")
+        if [[ "$live_limit" != "$expected_limit" ]]; then
+            echo "nginx $process_kind $process_pid nofile limit is $live_limit; expected $expected_limit" >&2
+            return 1
+        fi
+    }
+
+    main_pid=$(systemctl show nginx.service -P MainPID)
+    verify_process_limit master "$main_pid"
+    mapfile -t worker_pids < <(pgrep -P "$main_pid" -x nginx)
+    if (( ${#worker_pids[@]} == 0 )); then
+        echo "nginx has no worker processes" >&2
+        exit 1
+    fi
+    for worker_pid in "${worker_pids[@]}"; do
+        verify_process_limit worker "$worker_pid"
+    done
+
+    echo "nginx master and worker nofile limit: $expected_limit"
+    EOF
 
 [arg('server', long='server')]
 copy-db server:
@@ -1200,30 +1370,20 @@ copy-db server:
             ;;
     esac
     { set +x; } 2>/dev/null
-    if [[ -f /etc/echo-peerdb/source.env ]] \
-      || sudo -n test -f /etc/echo-peerdb/source.env 2>/dev/null; then
-        cat <<'COMMANDS'
+    cat <<'COMMANDS'
 
-    # PeerDB is configured. This block is safe to paste all at once.
+    # This coordinator is safe to paste all at once. It retains the local
+    # AI-agent profile, discards copied AI-agent runtime state, and coordinates
+    # PeerDB automatically when configured.
     deploy/restore-copied-db.sh --yes /var/tmp/wd-{{ dt1 }}.pgrestore
 
-    # Optional but recommended when copying a live/staging database into dev:
-    cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im-and-goi
-
-    COMMANDS
-    else
-        cat <<'COMMANDS'
-
-    # PostgreSQL-only restore. This block is safe to paste all at once.
-    sudo -u postgres dropdb --force wd
-    sudo -u postgres psql postgres -c "CREATE DATABASE wd"
-    sudo -u postgres pg_restore -d wd /var/tmp/wd-{{ dt1 }}.pgrestore
+    # To intentionally use the source AI-agent configuration instead:
+    # deploy/restore-copied-db.sh --yes --no-preserve-local-ai-agent-profile /var/tmp/wd-{{ dt1 }}.pgrestore
 
     # Optional but recommended when copying a live/staging database into dev:
     cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im-and-goi
 
     COMMANDS
-    fi
 
 [arg('dump', long='dump')]
 restore-copied-db dump:
@@ -1264,6 +1424,12 @@ ai-sync-from-cloud:
     remote_files="${BUCKET_PREFIX}/*"
     local_directory="${WD_FASTTEXT_MODELS}/"
     s5cmd --endpoint-url "$ENDPOINT_URL" cp --if-source-newer --show-progress "$remote_files" "$local_directory"
+
+ai-eval-sync-from-cloud eval:
+    bash ai-eval/sync.sh from-cloud "{{ eval }}"
+
+ai-eval-sync-to-cloud eval:
+    bash ai-eval/sync.sh to-cloud "{{ eval }}"
 
 # run like `just copy-db-backup echo-zp2`
 [arg('server', long='server')]
@@ -2224,6 +2390,31 @@ analytics-reconcile-tables:
 analytics-reconcile-derived-schema:
     bash deploy/clickhouse/bin/source-reconcile-derived-schema.sh
 
+[arg('server', long='server')]
+[arg('table', long='table')]
+analytics-resnapshot-table server table:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SERVER="{{ server }}"
+    TABLE="{{ table }}"
+    [[ -n "$SERVER" ]] || { echo "--server is required" >&2; exit 1; }
+    [[ "$SERVER" =~ ^[A-Za-z0-9._-]+$ ]] \
+        || { echo "invalid server: $SERVER" >&2; exit 1; }
+    [[ "$TABLE" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
+        || { echo "invalid table: $TABLE" >&2; exit 1; }
+
+    tar -C "{{ justfile_directory() }}" -cf - \
+        deploy/clickhouse/bin/lib.sh \
+        deploy/clickhouse/bin/source-resnapshot-table.sh \
+        deploy/clickhouse/bin/resnapshot-table.sh \
+        deploy/clickhouse/migration-impact.json \
+      | ssh "$SERVER" "set -euo pipefail
+          source_table=$TABLE
+          temporary_dir=\$(mktemp -d /tmp/echo-peerdb-resnapshot.XXXXXX)
+          trap 'rm -rf -- \"\$temporary_dir\"' EXIT
+          tar -xf - -C \"\$temporary_dir\" --strip-components=2
+          \"\$temporary_dir/bin/source-resnapshot-table.sh\" --table \"\$source_table\""
+
 setup-analytics-reconcile-tables:
     deploy/clickhouse/bin/source-sync-exclusions.sh --yes
 
@@ -2388,6 +2579,26 @@ deploy-stg: prepare-workspace
     scp echo-build-main:~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb "echo-staging":/var/tmp
     ssh echo-build-main 'rm ~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb'
     ssh "echo-staging" 'cd /var/tmp/ && sudo apt install -y --reinstall --allow-downgrades ./wdintel-rs*.deb'
+
+deploy-cbr-stg: prepare-workspace
+    #!/bin/bash
+    set -euxo pipefail
+    ssh echo-build-main "cd ~/workspace/krab/echo-feature/echo && \
+        git fetch origin && \
+        git checkout main && \
+        git checkout {{ branch }} && \
+        git pull && \
+        cd wdintel-web && \
+        git pull && \
+        . ~/.nvm/nvm.sh && \
+        npx npm ci && \
+        npm run build && \
+        cd .. && \
+        touch wdintel-rs/build.rs && \
+        \$HOME/.cargo/bin/cargo deb -p wdintel-rs --fast"
+    scp echo-build-main:~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb "echo-cbr-staging":/var/tmp
+    ssh echo-build-main 'rm ~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb'
+    ssh "echo-cbr-staging" 'cd /var/tmp/ && sudo apt install -y --reinstall --allow-downgrades ./wdintel-rs*.deb'
 
 [arg('server', long='server')]
 transcriber-smoke server:
@@ -2611,13 +2822,45 @@ bump-version:
     ROOT="$(pwd)"
     MAIN_TOML="$ROOT/Cargo.toml"  # workspace file
 
-    # Extract current [workspace.package] version (BSD/macOS compatible)
-    CUR=$(sed -n '/^\[workspace\.package\]/,/^\[/p' "$MAIN_TOML" | sed -n -E 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' | head -1)
+    CUR=$(tq -r -f "$MAIN_TOML" workspace.package.version)
     BASE=${CUR%-rc.*}
     if [[ -z "${BASE:-}" ]]; then echo "Cannot determine base version from $MAIN_TOML" >&2; exit 1; fi
     TS=$(date -u +%Y%m%d%H%M)
     NEW_VER="${BASE}-rc.${TS}"
     echo "✅ Bumping to $NEW_VER"
+
+    LOCKFILE="$ROOT/Cargo.lock"
+    LOCKFILE_TMP=$(mktemp "$LOCKFILE.XXXXXX")
+    trap 'rm -f "$LOCKFILE_TMP"' EXIT
+    if ! awk -v oldver="$CUR" -v newver="$NEW_VER" '
+      BEGIN {
+        split("echo-docs echo-install echo-swapp goi-echo-worker wdintel-rs", packages, " ")
+        for (i in packages) expected[packages[i]] = 1
+      }
+      /^\[\[package\]\]$/ { package = "" }
+      /^name = "/ {
+        package = $0
+        sub(/^name = "/, "", package)
+        sub(/"$/, "", package)
+      }
+      package in expected && $0 == "version = \"" oldver "\"" {
+        print "version = \"" newver "\""
+        updated[package]++
+        next
+      }
+      { print }
+      END {
+        for (package in expected) {
+          if (updated[package] != 1) {
+            printf "Expected exactly one Cargo.lock entry for %s at version %s, found %d\\n", package, oldver, updated[package] > "/dev/stderr"
+            failed = 1
+          }
+        }
+        exit failed
+      }
+    ' "$LOCKFILE" > "$LOCKFILE_TMP"; then
+      exit 1
+    fi
 
     # Update workspace version in [workspace.package]
     awk -v newver="$NEW_VER" '
@@ -2630,7 +2873,7 @@ bump-version:
       {print}
     ' "$MAIN_TOML" > "$MAIN_TOML.tmp" && mv "$MAIN_TOML.tmp" "$MAIN_TOML"
 
-    # Update standalone crates that are not in the workspace
+    # Update workspace crates that keep an explicit package version.
     PFILES=(
       "$ROOT/docs/echo-docs/Cargo.toml"
     )
@@ -2648,8 +2891,9 @@ bump-version:
       fi
     done
 
-    # Update lockfile
-    cargo check
+    mv "$LOCKFILE_TMP" "$LOCKFILE"
+    trap - EXIT
+    echo "✅ Updated Cargo.lock without running Cargo"
 
 # Commit bumped versions (includes Cargo.lock)
 bump-version-commit:
@@ -2657,7 +2901,7 @@ bump-version-commit:
     set -euo pipefail
     just bump-version
     MAIN_TOML="Cargo.toml"
-    new_ver=$(sed -n '/^\[workspace\.package\]/,/^\[/p' "$MAIN_TOML" | sed -n -E 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' | head -1)
+    new_ver=$(tq -r -f "$MAIN_TOML" workspace.package.version)
     msg="bump: ${new_ver}{{ message }}"
     git add Cargo.lock Cargo.toml docs/echo-docs/Cargo.toml 2>/dev/null || true
     if git diff --cached --quiet; then

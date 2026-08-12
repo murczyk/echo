@@ -18,8 +18,10 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import type { CountStatsRsp } from '../../../../../Bindings';
 
 import type { AnalysisFilterSectionId } from '../types';
+import { normalizeCallsignFilterValues } from '../../../utils/callsign-normalization';
 import { NO_DATA_LABEL } from '../../../utils/misc';
 import { AnalysisFilterField } from './AnalysisFilterField';
+import { AnalysisDeviceNamesFilter } from './AnalysisDeviceNamesFilter';
 import type { AnalysisFiltersPanelDerivedData } from './analysis-filters-panel-derived';
 import {
   compactCheckboxLabelSx,
@@ -33,6 +35,7 @@ type Props = Pick<
   AnalysisFiltersPanelPage,
   | 'counts'
   | 'countsLoading'
+  | 'cyberEchoEnabled'
   | 'includeOnlyNewFreqs'
   | 'options'
   | 'queryState'
@@ -100,6 +103,7 @@ export function AnalysisFiltersPanelSections({
   derived,
   expandedSections,
   countsLoading,
+  cyberEchoEnabled,
   includeOnlyNewFreqs,
   filtersLoading,
   isFilterSectionLoading,
@@ -277,7 +281,11 @@ export function AnalysisFiltersPanelSections({
           emptyLoading={isFilterSectionEmptyLoading('callsigns', derived.callsignsOptions.length)}
           value={queryState.callsignsSelected}
           deferredCommit
-          onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
+          onChange={(callsignsSelected) =>
+            updateQueryState({
+              callsignsSelected: normalizeCallsignFilterValues(callsignsSelected),
+            })
+          }
         />
       </FilterSection>
       <FilterSection
@@ -336,6 +344,8 @@ export function AnalysisFiltersPanelSections({
             value={queryState.unitsSelected}
             normalizeUnknownAliases
             deferredCommit
+            preserveInputOnSelect
+            preserveSelectedOptionValuesOnChange
             onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
           />
           {queryState.unitsSelected.length > 0 ? (
@@ -397,6 +407,21 @@ export function AnalysisFiltersPanelSections({
           onChange={(sendersSelected) => updateQueryState({ sendersSelected })}
         />
       </FilterSection>
+      {cyberEchoEnabled ? (
+        <FilterSection
+          title="Пристрої"
+          countLabel={sectionCountLabel(queryState.deviceNamesSelected.length, undefined)}
+          expanded={expandedSections.devices}
+          onToggle={() => toggleSection('devices')}
+        >
+          {expandedSections.devices ? (
+            <AnalysisDeviceNamesFilter
+              value={queryState.deviceNamesSelected}
+              onChange={(deviceNamesSelected) => updateQueryState({ deviceNamesSelected })}
+            />
+          ) : null}
+        </FilterSection>
+      ) : null}
       <FilterSection
         title="Пости"
         countLabel={countLabel(

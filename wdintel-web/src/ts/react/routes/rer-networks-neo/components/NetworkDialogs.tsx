@@ -18,6 +18,8 @@ function getEtalonkaLaunchWarning(request: ListNetworksReq | null | undefined): 
     (request.aorIds === null || request.aorIds.length === 0) &&
     request.filterFreq === null &&
     request.filterUnit === null &&
+    request.filterUnitArmyRegion === null &&
+    request.filterUnitMilitaryDistrict === null &&
     request.filterUnitArmy === null &&
     request.filterUnitDivision === null &&
     request.filterUnitRegiment === null &&
@@ -130,6 +132,15 @@ export function NetworkDialogs({ page }: Props) {
         onActiveFreqsOnlyChange={(activeFreqsOnly) =>
           page.setEtalonkaReport((current) => ({ ...current, activeFreqsOnly }))
         }
+        onIncludeFreqActiveFromChange={(includeFreqActiveFrom) =>
+          page.setEtalonkaReport((current) => ({ ...current, includeFreqActiveFrom }))
+        }
+        onIncludeFreqCreatedAtChange={(includeFreqCreatedAt) =>
+          page.setEtalonkaReport((current) => ({ ...current, includeFreqCreatedAt }))
+        }
+        onIncludeCallsignFullNamesChange={(includeCallsignFullNames) =>
+          page.setEtalonkaReport((current) => ({ ...current, includeCallsignFullNames }))
+        }
         onIncludeSigintSignsChange={(includeSigintSigns) =>
           page.setEtalonkaReport((current) => ({ ...current, includeSigintSigns }))
         }
@@ -190,7 +201,7 @@ export function NetworkDialogs({ page }: Props) {
           page.encryptions.length === 0
         }
         aorOptions={page.aorOptions.map((aor) => ({ id: aor.id, label: aor.name }))}
-        unitOptions={page.unitOptions}
+        unitOptions={page.editUnitOptions}
         postOptions={page.postOptions}
         encryptionOptions={page.encryptions.map((enc) => ({ id: enc.id, label: enc.name }))}
         onClose={page.closeEditDialog}

@@ -8,6 +8,7 @@ const CLEANUP_WORKER_SLEEP_MS: u64 = 60_000;
 pub fn spawn_workers(db: DatabaseConnection) {
     tokio::spawn(messenger_worker(db.clone()));
     tokio::spawn(cleanup_worker(db));
+    tokio::spawn(echo_install_utils::tmpdir::cleanup_tmp_worker_nofail());
 }
 
 async fn messenger_worker(db: DatabaseConnection) {
@@ -40,6 +41,9 @@ async fn messenger_worker_tick(db: &DatabaseConnection) -> anyhow::Result<()> {
             .await
             .c(h!())?;
     }
+    messenger::repair_blank_whatsapp_group_names(db)
+        .await
+        .c(h!())?;
     automation::worker_tick(db).await.c(h!())?;
     Ok(())
 }
@@ -47,6 +51,11 @@ async fn messenger_worker_tick(db: &DatabaseConnection) -> anyhow::Result<()> {
 async fn cleanup_worker(db: DatabaseConnection) {
     log::info!("starting echo-swapp cleanup worker");
     loop {
+        if let Err(err) = automation::delete_expired_send_log(&db).await {
+            log::error!(
+                "echo-swapp automation send log cleanup failed: {err:#}"
+            );
+        }
         if let Err(err) = echo_im::worker::run_cleanup_worker(&db).await {
             log::error!("echo-swapp cleanup worker failed: {err:#}");
         }

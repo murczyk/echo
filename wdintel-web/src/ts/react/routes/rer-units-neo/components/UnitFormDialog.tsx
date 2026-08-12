@@ -1,7 +1,9 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import LinkIcon from '@mui/icons-material/Link';
 import {
-  Autocomplete,
   Button,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -9,6 +11,7 @@ import {
   DialogTitle,
   FormControlLabel,
   Link,
+  MenuItem,
   Stack,
   Switch,
   Table,
@@ -22,13 +25,18 @@ import {
 } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 
-import type { CreateUnitReq, Unit } from '../../../../../Bindings';
+import type { CreateUnitReq, OrbitUnitDetails, Unit } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
+import {
+  DEFAULT_LIST_UNITS_REQ,
+  getCreateUnitDuplicateCandidates,
+  getUnitsPage,
+} from '../../../services/api/units';
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
 import {
   defaultUnitMasks,
   EMPTY_UNIT_FORM,
-  findPotentialDuplicates,
+  formatUnitError,
   isUnitFormValid,
   trimUnitForm,
   unitName,
@@ -36,6 +44,7 @@ import {
   uniqueTrimmed,
 } from '../helpers';
 import type { UnitForm } from '../helpers';
+import { AutoNetworkFields } from './AutoNetworkFields';
 
 export type UnitFormSubmit = {
   unit: CreateUnitReq;
@@ -51,16 +60,26 @@ export type UnitFormSubmit = {
 type Props = {
   open: boolean;
   unit: Unit | null;
-  units: Unit[];
   devicesSectionEnabled: boolean;
   submitting: boolean;
   error: string | null;
+  orbitUnits: OrbitUnitDetails[];
+  orbitLinksLoading: boolean;
+  orbitLinksError: string | null;
+  canLinkOrbitUnit: boolean;
+  unlinkingOrbitUnitId: string | null;
   onClose: () => void;
   onSubmit: (value: UnitFormSubmit) => void;
+  onLinkOrbitUnit: () => void;
+  onUnlinkOrbitUnit: (orbitUnit: OrbitUnitDetails) => void;
+  editSection?: 'all' | 'unit' | 'orbit';
 };
 
 const HIERARCHY_FIELDS: Array<{
-  key: keyof Pick<UnitForm, 'company' | 'battalion' | 'regiment' | 'division' | 'army'>;
+  key: keyof Pick<
+    UnitForm,
+    'company' | 'battalion' | 'regiment' | 'division' | 'army' | 'militaryDistrict' | 'armyRegion'
+  >;
   label: string;
   placeholder: string;
 }> = [
@@ -69,11 +88,93 @@ const HIERARCHY_FIELDS: Array<{
   { key: 'regiment', label: 'Полк/Бригада', placeholder: 'Наприклад, 123 бригада' },
   { key: 'division', label: 'Дивізія', placeholder: 'Назва дивізії' },
   { key: 'army', label: 'Корпус/Армія', placeholder: 'Назва корпусу або армії' },
+  {
+    key: 'militaryDistrict',
+    label: 'Група армій/Фронт/Види та роди ЗС',
+    placeholder: 'Назва групи армій, фронту або виду ЗС',
+  },
+  {
+    key: 'armyRegion',
+    label: 'Регіон/ТВД/Збройні Сили',
+    placeholder: 'Назва регіону, ТВД або збройних сил',
+  },
 ];
 
-function DuplicateHint({ units, form }: { units: Unit[]; form: UnitForm }) {
-  const duplicates = useMemo(() => findPotentialDuplicates(units, form), [form, units]);
+function DuplicateHint({ form, unitId }: { form: UnitForm; unitId?: number }) {
+  const [duplicates, setDuplicates] = useState<Unit[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const hierarchyFilters = useMemo(
+    () => ({
+      filterCompany: form.company.trim() || null,
+      filterBattalion: form.battalion.trim() || null,
+      filterRegiment: form.regiment.trim() || null,
+      filterDivision: form.division.trim() || null,
+      filterArmy: form.army.trim() || null,
+      filterMilitaryDistrict: form.militaryDistrict.trim() || null,
+      filterArmyRegion: form.armyRegion.trim() || null,
+    }),
+    [
+      form.army,
+      form.armyRegion,
+      form.battalion,
+      form.company,
+      form.division,
+      form.militaryDistrict,
+      form.regiment,
+    ],
+  );
+
+  useEffect(() => {
+    if (Object.values(hierarchyFilters).every((value) => value === null)) {
+      setDuplicates([]);
+      setTotalCount(0);
+      setError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      setLoading(true);
+      setError(null);
+      void getUnitsPage(
+        {
+          ...DEFAULT_LIST_UNITS_REQ,
+          ...hierarchyFilters,
+          sortBy: 'UnitNameAsc',
+          includeInactive: true,
+          searchMode: 'Strict',
+          limit: 6,
+          offset: 0,
+        },
+        { signal: controller.signal },
+      )
+        .then((response) => {
+          if (controller.signal.aborted) return;
+          const selfIncluded = response.units.some((unit) => unit.id === unitId);
+          setDuplicates(response.units.filter((unit) => unit.id !== unitId));
+          setTotalCount(Math.max(0, response.totalCount - Number(selfIncluded)));
+        })
+        .catch((requestError) => {
+          if (!controller.signal.aborted) setError(formatUnitError(requestError));
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [hierarchyFilters, unitId]);
+
   const visible = duplicates.slice(0, 5);
+  if (loading && visible.length === 0) return <CircularProgress size={20} />;
+  if (error !== null) {
+    return <PowerAlert severity="error">Не вдалося перевірити дублікати: {error}</PowerAlert>;
+  }
   if (visible.length === 0) return null;
 
   return (
@@ -90,6 +191,8 @@ function DuplicateHint({ units, form }: { units: Unit[]; form: UnitForm }) {
                 <TableCell>Полк/Бригада</TableCell>
                 <TableCell>Дивізія</TableCell>
                 <TableCell>Корпус/Армія</TableCell>
+                <TableCell>Група армій/Фронт/Види та роди ЗС</TableCell>
+                <TableCell>Регіон/ТВД/Збройні Сили</TableCell>
                 <TableCell>Статус</TableCell>
               </TableRow>
             </TableHead>
@@ -111,6 +214,8 @@ function DuplicateHint({ units, form }: { units: Unit[]; form: UnitForm }) {
                     <TableCell>{unit.regiment}</TableCell>
                     <TableCell>{unit.division}</TableCell>
                     <TableCell>{unit.army}</TableCell>
+                    <TableCell>{unit.militaryDistrict}</TableCell>
+                    <TableCell>{unit.armyRegion}</TableCell>
                     <TableCell>{unit.active ? 'Активний' : 'Неактивний'}</TableCell>
                   </TableRow>
                 );
@@ -118,9 +223,9 @@ function DuplicateHint({ units, form }: { units: Unit[]; form: UnitForm }) {
             </TableBody>
           </Table>
         </TableContainer>
-        {duplicates.length > visible.length ? (
+        {totalCount > visible.length ? (
           <Typography variant="caption">
-            Показано перші {visible.length} з {duplicates.length} збігів. Уточніть поля, щоб звузити
+            Показано перші {visible.length} з {totalCount} збігів. Уточніть поля, щоб звузити
             список.
           </Typography>
         ) : null}
@@ -131,13 +236,32 @@ function DuplicateHint({ units, form }: { units: Unit[]; form: UnitForm }) {
 
 function UnitDetailsFields({
   form,
+  editing,
   disabled,
+  editSection,
   onChange,
 }: {
   form: UnitForm;
+  editing: boolean;
   disabled: boolean;
+  editSection: 'all' | 'unit' | 'orbit';
   onChange: (value: UnitForm) => void;
 }) {
+  if (editSection === 'orbit') {
+    return (
+      <TextField
+        label="Примітка Orbit"
+        placeholder="Причина відсутності прив’язки до Orbit"
+        value={form.orbitNote ?? ''}
+        onChange={(event) => onChange({ ...form, orbitNote: event.target.value || null })}
+        disabled={disabled}
+        multiline
+        minRows={3}
+        fullWidth
+      />
+    );
+  }
+
   return (
     <>
       <Typography color="text.secondary">
@@ -167,122 +291,221 @@ function UnitDetailsFields({
           fullWidth
           sx={{ gridColumn: { md: '1 / -1' } }}
         />
-        <FormControlLabel
-          control={
-            <Switch
-              checked={form.active}
-              onChange={(event) => onChange({ ...form, active: event.target.checked })}
+        {editSection === 'all' ? (
+          <>
+            <TextField
+              label="Примітка Orbit"
+              placeholder="Причина відсутності прив’язки до Orbit"
+              value={form.orbitNote ?? ''}
+              onChange={(event) => onChange({ ...form, orbitNote: event.target.value || null })}
               disabled={disabled}
+              multiline
+              minRows={3}
+              fullWidth
+              sx={{ gridColumn: { md: '1 / -1' } }}
             />
-          }
-          label="Активний підрозділ"
-        />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={form.active}
+                  onChange={(event) => onChange({ ...form, active: event.target.checked })}
+                  disabled={disabled}
+                />
+              }
+              label="Активний підрозділ"
+            />
+          </>
+        ) : null}
+        {editing && editSection === 'all' ? (
+          <TextField
+            select
+            label="Можливо дублікат"
+            value={
+              form.isDeduplicateCandidate === null ? 'unset' : String(form.isDeduplicateCandidate)
+            }
+            onChange={(event) =>
+              onChange({
+                ...form,
+                isDeduplicateCandidate:
+                  event.target.value === 'unset' ? null : event.target.value === 'true',
+              })
+            }
+            disabled={disabled}
+            fullWidth
+          >
+            <MenuItem value="unset">Не визначено</MenuItem>
+            <MenuItem value="true">Так</MenuItem>
+            <MenuItem value="false">Ні</MenuItem>
+          </TextField>
+        ) : null}
       </div>
     </>
   );
 }
 
-function NetworkFields({
-  form,
-  skipNetworkCreation,
-  locations,
-  unitMask,
-  disabled,
-  onSkipNetworkCreationChange,
-  onLocationsChange,
-  onUnitMaskChange,
+function orbitUnitTitle(orbitUnit: OrbitUnitDetails): string {
+  return (
+    orbitUnit.unitName?.trim() ||
+    orbitUnit.unitNameShort?.trim() ||
+    orbitUnit.generativeUnitNameFull?.trim() ||
+    orbitUnit.unitId
+  );
+}
+
+function OrbitUnitLinks({
+  orbitUnits,
+  loading,
+  error,
+  canLinkOrbitUnit,
+  unlinkingOrbitUnitId,
+  onLink,
+  onUnlink,
 }: {
-  form: UnitForm;
-  skipNetworkCreation: boolean;
-  locations: string[];
-  unitMask: string[];
-  disabled: boolean;
-  onSkipNetworkCreationChange: (value: boolean) => void;
-  onLocationsChange: (value: string[]) => void;
-  onUnitMaskChange: (value: string[]) => void;
+  orbitUnits: OrbitUnitDetails[];
+  loading: boolean;
+  error: string | null;
+  canLinkOrbitUnit: boolean;
+  unlinkingOrbitUnitId: string | null;
+  onLink: () => void;
+  onUnlink: (orbitUnit: OrbitUnitDetails) => void;
 }) {
-  const fieldsDisabled = disabled || skipNetworkCreation;
+  if (!loading && error === null && orbitUnits.length === 0 && !canLinkOrbitUnit) return null;
 
   return (
-    <>
-      <TextField label="Підрозділ" value={unitName(form) || 'Без назви'} disabled fullWidth />
-      <PowerAlert severity="info" autoHideDuration={null}>
-        Разом з підрозділом буде створена SIGINT мережа, яку можна редагувати у База Даних — Мережі.
+    <Stack spacing={1.5}>
+      <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">
+        <Typography variant="h6">Прив’язані Orbit підрозділи</Typography>
+        {canLinkOrbitUnit ? (
+          <Button
+            variant="outlined"
+            startIcon={<LinkIcon />}
+            disabled={loading || unlinkingOrbitUnitId !== null}
+            onClick={onLink}
+          >
+            Прив’язати
+          </Button>
+        ) : null}
+      </Stack>
+      {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
+      {loading ? <CircularProgress size={24} /> : null}
+      {orbitUnits.map((orbitUnit) => (
+        <Stack
+          key={orbitUnit.unitId}
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          alignItems={{ xs: 'stretch', sm: 'center' }}
+          justifyContent="space-between"
+          sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}
+        >
+          <Stack spacing={0.5} sx={{ minWidth: 0 }}>
+            <Link
+              href={`https://delta.mil.gov.ua/orbit/units/${orbitUnit.unitId}/organizational-structure`}
+              target="_blank"
+              rel="noopener noreferrer"
+              fontWeight={600}
+              sx={{ overflowWrap: 'anywhere' }}
+            >
+              {orbitUnitTitle(orbitUnit)}
+            </Link>
+            <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+              ID: {orbitUnit.unitId}
+            </Typography>
+          </Stack>
+          <Button
+            color="error"
+            variant="outlined"
+            startIcon={
+              unlinkingOrbitUnitId === orbitUnit.unitId ? (
+                <CircularProgress size={16} color="inherit" />
+              ) : (
+                <DeleteOutlineIcon />
+              )
+            }
+            disabled={unlinkingOrbitUnitId !== null}
+            onClick={() => onUnlink(orbitUnit)}
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            Видалити
+          </Button>
+        </Stack>
+      ))}
+    </Stack>
+  );
+}
+
+function DuplicateMergeSelection({
+  units,
+  selectedUnitIds,
+  disabled,
+  onToggle,
+}: {
+  units: Unit[];
+  selectedUnitIds: Set<number>;
+  disabled: boolean;
+  onToggle: (unitId: number) => void;
+}) {
+  return (
+    <Stack spacing={2}>
+      <PowerAlert severity="warning" autoHideDuration={null}>
+        Схоже що даний підрозділ вже прив'язаний до Orbit, будь-ласка оберіть які дублікати бажаєте
+        виправити.
       </PowerAlert>
-      <FormControlLabel
-        control={
-          <Switch
-            checked={skipNetworkCreation}
-            onChange={(event) => onSkipNetworkCreationChange(event.target.checked)}
-            disabled={disabled}
+      <Stack spacing={1}>
+        {units.map((unit) => (
+          <FormControlLabel
+            key={unit.id}
+            control={
+              <Checkbox
+                checked={selectedUnitIds.has(unit.id)}
+                onChange={() => onToggle(unit.id)}
+                disabled={disabled}
+              />
+            }
+            label={
+              <Stack>
+                <Typography fontWeight={600}>{unit.name}</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {unit.active ? 'Активний підрозділ' : 'Неактивний підрозділ'}
+                </Typography>
+              </Stack>
+            }
+            sx={{ m: 0, border: 1, borderColor: 'divider', borderRadius: 1, p: 1 }}
           />
-        }
-        label="Пропустити створення мережі"
-      />
-      <Typography variant="body2" color="text.secondary">
-        Без мережі вхідні повідомлення не будуть автоматично зіставлятися з цим підрозділом.
-      </Typography>
-      <TextField
-        label="Назва майбутньої мережі"
-        value={`р/м 💻 ${unitName(form) || 'Без назви'}`}
-        disabled
-        fullWidth
-      />
-      <Autocomplete
-        multiple
-        freeSolo
-        options={[]}
-        value={locations}
-        onChange={(_, value) => onLocationsChange(value)}
-        disabled={fieldsDisabled}
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            label="Локації"
-            placeholder="Введіть локацію та натисніть Enter"
-            required={!skipNetworkCreation}
-          />
-        )}
-      />
-      <Typography variant="body2" color="text.secondary">
-        Якщо текст сигналу містить одну з цих назв, повідомлення буде позначено як повідомлення від
-        цього підрозділу.
-      </Typography>
-      <Autocomplete
-        multiple
-        freeSolo
-        options={[]}
-        value={unitMask}
-        onChange={(_, value) => onUnitMaskChange(value)}
-        disabled={fieldsDisabled}
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            label="Маски підрозділу"
-            placeholder="Введіть маску та натисніть Enter"
-          />
-        )}
-      />
-    </>
+        ))}
+      </Stack>
+    </Stack>
   );
 }
 
 export function UnitFormDialog({
   open,
   unit,
-  units,
   devicesSectionEnabled,
   submitting,
   error,
+  orbitUnits,
+  orbitLinksLoading,
+  orbitLinksError,
+  canLinkOrbitUnit,
+  unlinkingOrbitUnitId,
   onClose,
   onSubmit,
+  onLinkOrbitUnit,
+  onUnlinkOrbitUnit,
+  editSection = 'all',
 }: Props) {
   const [form, setForm] = useState<UnitForm>(EMPTY_UNIT_FORM);
   const [networkStep, setNetworkStep] = useState(false);
   const [skipNetworkCreation, setSkipNetworkCreation] = useState(false);
   const [locations, setLocations] = useState<string[]>([]);
   const [unitMask, setUnitMask] = useState<string[]>([]);
+  const [pendingSubmission, setPendingSubmission] = useState<UnitFormSubmit | null>(null);
+  const [duplicateCandidates, setDuplicateCandidates] = useState<Unit[]>([]);
+  const [selectedDuplicateUnitIds, setSelectedDuplicateUnitIds] = useState<Set<number>>(new Set());
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+  const [duplicateCheckError, setDuplicateCheckError] = useState<string | null>(null);
   const editing = unit !== null;
+  const duplicateStep = pendingSubmission !== null;
 
   useEffect(() => {
     if (!open) return;
@@ -291,11 +514,20 @@ export function UnitFormDialog({
     setSkipNetworkCreation(false);
     setLocations([]);
     setUnitMask([]);
-  }, [open, unit]);
+    setPendingSubmission(null);
+    setDuplicateCandidates([]);
+    setSelectedDuplicateUnitIds(new Set());
+    setCheckingDuplicates(false);
+    setDuplicateCheckError(null);
+  }, [editSection, open, unit]);
 
   function continueFromDetails() {
-    if (!devicesSectionEnabled || editing) {
+    if (editing) {
       onSubmit({ unit: trimUnitForm(form), autoNetwork: undefined });
+      return;
+    }
+    if (!devicesSectionEnabled) {
+      void checkDuplicates({ unit: trimUnitForm(form), autoNetwork: undefined });
       return;
     }
     setUnitMask(defaultUnitMasks(form));
@@ -303,7 +535,7 @@ export function UnitFormDialog({
   }
 
   function submitNetworkStep() {
-    onSubmit({
+    void checkDuplicates({
       unit: trimUnitForm(form),
       autoNetwork: {
         skipNetworkCreation,
@@ -313,72 +545,174 @@ export function UnitFormDialog({
     });
   }
 
+  async function checkDuplicates(value: UnitFormSubmit) {
+    setCheckingDuplicates(true);
+    setDuplicateCheckError(null);
+    try {
+      const units = await getCreateUnitDuplicateCandidates(value.unit);
+      if (units.length === 0) {
+        onSubmit(value);
+        return;
+      }
+      setDuplicateCandidates(units);
+      setSelectedDuplicateUnitIds(new Set());
+      setPendingSubmission(value);
+    } catch (requestError) {
+      setDuplicateCheckError(formatUnitError(requestError));
+    } finally {
+      setCheckingDuplicates(false);
+    }
+  }
+
+  function submitDuplicateStep() {
+    if (pendingSubmission === null) return;
+    onSubmit({
+      ...pendingSubmission,
+      unit: {
+        ...pendingSubmission.unit,
+        duplicateUnitIds: Array.from(selectedDuplicateUnitIds),
+      },
+    });
+  }
+
+  function toggleDuplicate(unitId: number) {
+    setSelectedDuplicateUnitIds((current) => {
+      const next = new Set(current);
+      if (next.has(unitId)) next.delete(unitId);
+      else next.add(unitId);
+      return next;
+    });
+  }
+
+  function goBack() {
+    if (duplicateStep) {
+      setPendingSubmission(null);
+      setDuplicateCandidates([]);
+      setSelectedDuplicateUnitIds(new Set());
+      return;
+    }
+    setNetworkStep(false);
+  }
+
   const confirmDisabled =
     submitting ||
+    checkingDuplicates ||
     !isUnitFormValid(form) ||
     (networkStep && !skipNetworkCreation && locations.length === 0);
 
   return (
     <Dialog
       open={open}
-      onClose={submitting ? undefined : onClose}
+      onClose={
+        submitting || checkingDuplicates || unlinkingOrbitUnitId !== null ? undefined : onClose
+      }
       fullWidth
-      maxWidth={networkStep ? 'sm' : 'lg'}
+      maxWidth={networkStep || editSection === 'orbit' ? 'sm' : 'lg'}
     >
       <DialogTitle>
-        {editing
-          ? 'Редагувати підрозділ'
-          : networkStep
-            ? 'Налаштування радіомережі'
-            : 'Новий підрозділ'}
+        {duplicateStep
+          ? 'Об’єднати дублікати'
+          : editing && editSection === 'unit'
+            ? 'Редагувати дані підрозділу'
+            : editing && editSection === 'orbit'
+              ? 'Редагувати примітку Orbit'
+              : editing
+                ? 'Редагувати підрозділ'
+                : networkStep
+                  ? 'Налаштування радіомережі'
+                  : 'Новий підрозділ'}
       </DialogTitle>
       <DialogContent>
         <Stack spacing={3} sx={{ pt: 1 }}>
-          {networkStep ? (
-            <NetworkFields
-              form={form}
+          {duplicateStep ? (
+            <DuplicateMergeSelection
+              units={duplicateCandidates}
+              selectedUnitIds={selectedDuplicateUnitIds}
+              disabled={submitting}
+              onToggle={toggleDuplicate}
+            />
+          ) : networkStep ? (
+            <AutoNetworkFields
+              unitName={unitName(form)}
               skipNetworkCreation={skipNetworkCreation}
+              allowSkip
               locations={locations}
               unitMask={unitMask}
-              disabled={submitting}
+              disabled={submitting || checkingDuplicates}
               onSkipNetworkCreationChange={setSkipNetworkCreation}
               onLocationsChange={setLocations}
               onUnitMaskChange={setUnitMask}
             />
           ) : (
             <>
-              <UnitDetailsFields form={form} disabled={submitting} onChange={setForm} />
-              {!editing ? <DuplicateHint units={units} form={form} /> : null}
+              <UnitDetailsFields
+                form={form}
+                editing={editing}
+                disabled={submitting || checkingDuplicates}
+                editSection={editSection}
+                onChange={setForm}
+              />
+              {editing && editSection === 'all' ? (
+                <OrbitUnitLinks
+                  orbitUnits={orbitUnits}
+                  loading={orbitLinksLoading}
+                  error={orbitLinksError}
+                  canLinkOrbitUnit={canLinkOrbitUnit}
+                  unlinkingOrbitUnitId={unlinkingOrbitUnitId}
+                  onLink={onLinkOrbitUnit}
+                  onUnlink={onUnlinkOrbitUnit}
+                />
+              ) : (
+                <DuplicateHint form={form} unitId={unit?.id} />
+              )}
             </>
           )}
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
+          {duplicateCheckError ? (
+            <PowerAlert severity="error">
+              Не вдалося перевірити прив’язані дублікати: {duplicateCheckError}
+            </PowerAlert>
+          ) : null}
         </Stack>
       </DialogContent>
       <DialogActions>
-        {networkStep ? (
+        {networkStep || duplicateStep ? (
           <Button
-            onClick={() => setNetworkStep(false)}
-            disabled={submitting}
+            onClick={goBack}
+            disabled={submitting || checkingDuplicates}
             startIcon={<ArrowBackIcon />}
             sx={{ mr: 'auto' }}
           >
             Назад
           </Button>
         ) : null}
-        <Button onClick={onClose} disabled={submitting}>
+        <Button
+          onClick={onClose}
+          disabled={submitting || checkingDuplicates || unlinkingOrbitUnitId !== null}
+        >
           Скасувати
         </Button>
         <Button
-          onClick={networkStep ? submitNetworkStep : continueFromDetails}
+          onClick={
+            duplicateStep
+              ? submitDuplicateStep
+              : networkStep
+                ? submitNetworkStep
+                : continueFromDetails
+          }
           variant="contained"
-          disabled={confirmDisabled}
-          startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : null}
+          disabled={confirmDisabled || unlinkingOrbitUnitId !== null}
+          startIcon={
+            submitting || checkingDuplicates ? <CircularProgress size={16} color="inherit" /> : null
+          }
         >
-          {!editing && devicesSectionEnabled && !networkStep
-            ? 'Далі'
-            : editing
-              ? 'Зберегти'
-              : 'Створити'}
+          {duplicateStep
+            ? 'Створити'
+            : !editing && devicesSectionEnabled && !networkStep
+              ? 'Далі'
+              : editing
+                ? 'Зберегти'
+                : 'Створити'}
         </Button>
       </DialogActions>
     </Dialog>

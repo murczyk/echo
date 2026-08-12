@@ -7,7 +7,6 @@ use crate::messenger::types::*;
 use crate::new_pg_pool_from_mode;
 use crate::types::info;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use ::serde::{Deserialize, Serialize};
 use chrono::*;
 use redis::AsyncCommands;
@@ -282,7 +281,10 @@ async fn spawn_new_worker(
     {
         Ok(_) => false,
         Err(e) => {
-            error!("failed to run worker {worker_name_val}, stopping. Root cause: {:?}", e);
+            error!(
+                "failed to run worker {worker_name_val}, stopping. Root cause: {:?}",
+                e
+            );
             true
         }
     };
@@ -324,7 +326,9 @@ async fn run_new_worker(
                     .await;
                 return Ok(());
             };
-            if cli.status != AccountStatus::Active.into_value() {
+            if cli.status
+                != AccountStatus::Active.into_value()
+            {
                 info!("datasource {datasource_id} is paused, stopping worker...");
                 return Ok(());
             }
@@ -605,7 +609,7 @@ async fn receive_thread(
         trace!("datasource {datasource_id} is not linked, skipping");
         return Ok(0);
     }
-    if datasource.status.eq(&AccountStatus::Paused) {
+    if datasource.status == AccountStatus::Paused {
         trace!("datasource {datasource_id} is paused, skipping");
         return Ok(0);
     }
@@ -684,7 +688,9 @@ async fn sync_inbox(
     let datasource = load_client_datasource(db, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
     if datasource.echo_client_lock_id.is_none() {
-        trace!("[{client_name}] datasource {datasource_id} is not linked, skipping");
+        trace!(
+            "[{client_name}] datasource {datasource_id} is not linked, skipping"
+        );
         return Ok(0);
     }
     let time = inbox_sync_at - TimeDelta::seconds(100); // double-check maybe we missed messages not labeled as seen
@@ -856,9 +862,7 @@ async fn upsert_signal_message_queue_snapshot(
         ) {
             trace!(
                 "skipped unchanged inbox snapshot: queue_id={} datasource_id={} inbox_message_id={}",
-                existing_item.id,
-                datasource_id,
-                item.internal_id
+                existing_item.id, datasource_id, item.internal_id
             );
             return Ok(());
         }
@@ -1625,6 +1629,7 @@ mod tests {
             name: Set(format!("test-client-{}", Uuid::new_v4())),
             created_at: Set(now),
             deleted: Set(false),
+            display_name: Set(None),
         }
         .insert(dbx)
         .await

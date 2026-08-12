@@ -63,308 +63,66 @@ pub mod tests {
             .await;
         let guard = CLEANUP.lock().await;
         let env = crate::server::new_env(Mode::Test).await.context(h!())?;
-        echo_gpu_transcription_queue::Entity::delete_many()
-            .exec(&env.dbx)
+        ensure_test_database(&env.dbx, &env.config).await?;
+        if let Some(file_registry_db) = &env.file_registry_db {
+            file_registry_db
+                .connection()
+                .execute_unprepared("truncate table public.file_entry")
+                .await
+                .context(h!())?;
+        }
+        let transaction = env.dbx.begin().await.context(h!())?;
+        transaction
+            .execute_unprepared(crate::config::FUNCTEST_CLEANUP_SQL)
             .await
             .context(h!())?;
-        gpu_config::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
+        transaction.commit().await.context(h!())?;
         env.echo_gpu_client.reload_instances().await.context(h!())?;
-        // Delete dependent entities first to avoid foreign key constraint violations
-        secret_group_user::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_callsign_changelog::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-
-        // Delete entities that depend on sigint_network first
-        sigint_network_aor::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_network_callsign_changelog::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_network_callsign::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_network_changelog::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_network_freq_changelog::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_network_encryption_key_freq::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_network_encryption_key::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_network_freq::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_network_post::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_network_unit_changelog::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_network_unit::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        callsign_additional_source::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_callsign::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_network_description::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_network::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_settlement::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_signal_changelog::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_signal::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_unit_changelog::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_unit_attachment_aor::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_unit_attachment::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_unit::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        tags_ordering::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        tag_keyword::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_inbox_item_tag::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_inbox_tag_model_error::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        tag::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        log_users_report_generation::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_peleng::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        freq_location::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_bookmark::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_comment::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_important::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        signal_message_media::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        signal_message_queue_attachment::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        signal_message_queue::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_inbox_item::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        signal_message::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        stats_group_5min::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        stats_group_day::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        signal_group_batch::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        signal_group_aor::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        comp_freq::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        comp_freq_callsign::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_zone_aor::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_zone_datasource::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        organism_group::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        goi_association::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        goi_knowledge::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        // Ensure we remove admin data referencing groups before deleting groups
-        group_admin_data::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        datasource_group::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        signal_group::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        datasource::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        report_history::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        system_settings::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        device_name::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        api_integration::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        area_of_responsibility::Entity::update_many()
-            .col_expr(
-                area_of_responsibility::Column::UpdatedByLoginId,
-                sea_orm::sea_query::Expr::value(Option::<uuid::Uuid>::None),
-            )
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_key_share_policy::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        login::Entity::delete_many()
-            .filter(login::Column::Login.ne(crate::config::SYSTEM_LOGIN_NAME))
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        delta_login::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        sigint_zone::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        organism_aor::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        organism::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        area_of_responsibility::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        palitra_point::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        palitra_access_login::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
-        palitra::Entity::delete_many()
-            .exec(&env.dbx)
-            .await
-            .context(h!())?;
 
         fill_initial_data(&env.dbx).await?;
 
         Ok((env, guard))
+    }
+
+    async fn ensure_test_database(
+        dbx: &DatabaseConnection,
+        config: &crate::config::Config,
+    ) -> Result<(), AppError> {
+        let expected = std::env::var("TEST_DB_NAME")
+            .ok()
+            .filter(|name| !name.is_empty())
+            .or_else(|| config.pg_dbname.clone())
+            .unwrap_or_else(|| crate::config::DEFAULT_PG_DBNAME.to_string());
+        let current: String = dbx
+            .query_one_raw(Statement::from_string(
+                DbBackend::Postgres,
+                "select current_database()",
+            ))
+            .await
+            .context(h!())?
+            .context(h!())?
+            .try_get_by_index(0)
+            .context(h!())?;
+
+        if !test_database_is_safe(&expected, &current) {
+            return Err(anyhow::anyhow!(
+                "refusing functional-test cleanup for database {current:?}; expected {expected:?}"
+            )
+            .into());
+        }
+
+        Ok(())
+    }
+
+    fn test_database_is_safe(expected: &str, current: &str) -> bool {
+        current == expected && current.starts_with("wd_test")
+    }
+
+    #[test]
+    fn cleanup_database_guard_requires_exact_test_database() {
+        assert!(test_database_is_safe("wd_test_main", "wd_test_main"));
+        assert!(!test_database_is_safe("wd_test_main", "wd"));
+        assert!(!test_database_is_safe("wd", "wd"));
     }
 
     pub async fn lock_cleanup() -> tokio::sync::MutexGuard<'static, ()> {
@@ -2332,9 +2090,6 @@ pub mod tests {
         }
         if out.freq == NotSet {
             out.freq = Set(None);
-        }
-        if out.callsigns == NotSet {
-            out.callsigns = Set(None);
         }
         if out.checked == NotSet {
             out.checked = Set(None);

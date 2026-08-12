@@ -477,6 +477,7 @@ export type InboxMessagesReq = {
   selectedUnits: Array<string> | null;
   deniedUnits: Array<string> | null;
   selectedLocations: Array<string> | null;
+  selectedDeviceNames: Array<string> | null;
   nolimit: boolean | null;
   orWithExtendedForm: boolean | null;
   loadLatest: boolean | null;
@@ -713,6 +714,7 @@ export type AnalysisStatsReq = {
   selectedCallsigns: Array<string> | null;
   selectedUnits: Array<string> | null;
   selectedLocations: Array<string> | null;
+  selectedDeviceNames: Array<string> | null;
   selectedAors: Array<number> | null;
   orWithExtendedForm: boolean | null;
   orBookmarked: boolean | null;
@@ -736,6 +738,22 @@ export type AnalysisStatsReq = {
   filterTagsOption: TagFilterOption | null;
   withoutModelTags: boolean | null;
   reportTagsOnlyThisUnit: boolean | null;
+};
+
+export type AnalysisCallsignFrequencyMatchesReq = {
+  req: AnalysisStatsReq;
+  callsigns: Array<string>;
+  minMatches: number;
+};
+
+export type AnalysisCallsignFrequencyMatch = {
+  freq: string;
+  callsigns: Array<string>;
+  messageCount: number;
+};
+
+export type AnalysisCallsignFrequencyMatchesRsp = {
+  frequencies: Array<AnalysisCallsignFrequencyMatch>;
 };
 
 export type AnalysisStatsRsp = {
@@ -851,6 +869,7 @@ export type CallsignsGraphReq = {
   selectedCallsigns: Array<string> | null;
   selectedUnits: Array<string> | null;
   selectedLocations: Array<string> | null;
+  selectedDeviceNames: Array<string> | null;
   orWithExtendedForm: boolean | null;
   orBookmarked: boolean | null;
   orImportant: boolean | null;
@@ -1100,6 +1119,7 @@ export type BatchSignalProfileReq = {
 
 export type InboxMessagesRsp = {
   inboxItems: Array<[number, InboxMessage]>;
+  pollCursorId: number | null;
   callsigns: Array<CallsignInfoRes>;
   signalProfiles: Record<string, SignalProfileEntry | null>;
   signalGroups: Array<SignalGroupEntry>;
@@ -1200,6 +1220,11 @@ export type PalitraChangelogEntry = {
   description: string;
 };
 
+export type PalitraAccessLogin = {
+  id: string;
+  login: string;
+};
+
 export type Palitra = {
   id: number;
   name: string;
@@ -1221,7 +1246,7 @@ export type Palitra = {
   geometry: Geometry | null;
   accessAorId: Array<number>;
   accessOrganismIds: Array<number>;
-  accessLogins: Array<string>;
+  accessLogins: Array<PalitraAccessLogin>;
 };
 
 export type PalitraDetails = {
@@ -1578,6 +1603,279 @@ export type TestIggyConnectionReq = {
   password: string;
 };
 
+export type AorSummary = {
+  id: number;
+  name: string;
+};
+
+export type UnitSummary = {
+  id: number;
+  name: string;
+};
+
+export type FileEntryKind =
+  | 'directory'
+  | 'file'
+;
+
+export type DeviceArchivedFilter =
+  | 'active_only'
+  | 'archived_only'
+  | 'all'
+;
+
+export type DeviceListSortBy =
+  | 'display_title_asc'
+  | 'display_title_desc'
+  | 'created_at_asc'
+  | 'created_at_desc'
+  | 'updated_at_asc'
+  | 'updated_at_desc'
+;
+
+export type DeviceStatusCounts = {
+  active: number;
+  archived: number;
+};
+
+export type DeviceListItem = {
+  id: string;
+  name: string | null;
+  aors: Array<AorSummary>;
+  unit: UnitSummary | null;
+  createdBy: string;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+};
+
+export type DeviceDetails = {
+  id: string;
+  name: string | null;
+  aors: Array<AorSummary>;
+  unit: UnitSummary | null;
+  externalUrl: string | null;
+  customFields: Record<string, string>;
+  createdBy: string;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+};
+
+export type DeviceUnitStat = {
+  unit: UnitSummary;
+  count: number;
+};
+
+export type ListDevicesReq = {
+  filterText: string | null;
+  archivedFilter: DeviceArchivedFilter | null;
+  aorIds: Array<number> | null;
+  unitIds: Array<number> | null;
+  limit: number | null;
+  offset: number | null;
+  sortBy: Array<DeviceListSortBy>;
+};
+
+export type ListDevicesRsp = {
+  list: Array<DeviceListItem>;
+  total: number;
+  hasMore: boolean;
+  statusCounts: DeviceStatusCounts;
+};
+
+export type DeviceUnitStatsRsp = {
+  units: Array<DeviceUnitStat>;
+};
+
+export type DeviceDetailReq = {
+  deviceId: string;
+  includeArchived: boolean | null;
+};
+
+export type CreateDeviceReq = {
+  name: string | null;
+  externalUrl: string | null;
+  customFields: Record<string, string> | null;
+};
+
+export type UpdateDeviceReq = {
+  deviceId: string;
+  externalUrl: string | null;
+  customFields: Record<string, string | null> | null;
+  name: string | null;
+  aorIds: Array<number> | null;
+  unitId: number | null;
+};
+
+export type DeviceFileRoot = {
+  entryId: string;
+  deviceId: string;
+  parentEntryId: string | null;
+  kind: FileEntryKind;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FileBreadcrumb = {
+  entryId: string;
+  name: string;
+};
+
+export type DeviceFileTreeEntry = {
+  entryId: string;
+  parentEntryId: string;
+  kind: FileEntryKind;
+  fileId: string | null;
+  name: string;
+  pathComponents: Array<string>;
+  absolutePath: string | null;
+  hasContent: boolean;
+  mimeType: string | null;
+  extension: string | null;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DeviceFile = {
+  fileId: string;
+  deviceId: string;
+  parentEntryId: string;
+  rootEntryId: string;
+  absolutePath: string;
+  hasContent: boolean;
+  name: string;
+  pathComponents: Array<string>;
+  mimeType: string | null;
+  extension: string | null;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ListDeviceFileRootsReq = {
+  deviceId: string;
+};
+
+export type ListDeviceFileRootsRsp = {
+  roots: Array<DeviceFileRoot>;
+};
+
+export type DeviceFileSubtreeCount = {
+  entryId: string;
+  fileCount: number;
+};
+
+export type CountDeviceFileSubtreesReq = {
+  deviceId: string;
+  parentEntryId: string | null;
+  directoryEntryIds: Array<string>;
+};
+
+export type CountDeviceFileSubtreesRsp = {
+  counts: Array<DeviceFileSubtreeCount>;
+};
+
+export type BrowseDeviceFilesReq = {
+  deviceId: string;
+  parentEntryId: string;
+  includeBreadcrumbs: boolean | null;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type BrowseDeviceFilesRsp = {
+  breadcrumbs: Array<FileBreadcrumb>;
+  entries: Array<DeviceFileTreeEntry>;
+  nextCursor: string | null;
+};
+
+export type SearchDeviceFilesReq = {
+  deviceId: string;
+  scopeEntryId: string;
+  nameQuery: string | null;
+  kinds: Array<FileEntryKind> | null;
+  mimeTypes: Array<string> | null;
+  extensions: Array<string> | null;
+  fileMetadataModifiedFrom: string | null;
+  fileMetadataModifiedTo: string | null;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type SearchDeviceFilesRsp = {
+  entries: Array<DeviceFileTreeEntry>;
+  nextCursor: string | null;
+};
+
+export type DeviceFileJournalEntry = {
+  fileId: string;
+  name: string;
+  absolutePath: string;
+  hasContent: boolean;
+  synchronizedAt: string;
+};
+
+export type JournalDeviceFilesReq = {
+  deviceId: string;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type JournalDeviceFilesRsp = {
+  entries: Array<DeviceFileJournalEntry>;
+  totalCount: number;
+  nextCursor: string | null;
+};
+
+export type SyncDeviceFileItem = {
+  fileId: string | null;
+  absolutePath: string;
+  mimeType: string | null;
+  extension: string | null;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+};
+
+export type FileSyncOperation =
+  | 'created'
+  | 'updated'
+;
+
+export type FileSyncErrorKind =
+  | 'validation'
+  | 'not_found'
+  | 'conflict'
+  | 'dependency'
+  | 'internal'
+;
+
+export type FileSyncError = {
+  kind: FileSyncErrorKind;
+  message: string;
+  fieldErrors: Array<[string, string]>;
+};
+
+export type FileSyncResult =
+  | { Accepted: { index: number; operation: FileSyncOperation; root: DeviceFileRoot; file: DeviceFile } }
+  | { Rejected: { index: number; error: FileSyncError } }
+;
+
+export type SyncDeviceFilesReq = {
+  deviceId: string;
+  files: Array<SyncDeviceFileItem>;
+};
+
+export type SyncDeviceFilesRsp = {
+  results: Array<FileSyncResult>;
+};
+
 export type Organism = {
   id: number;
   parentId: number | null;
@@ -1830,8 +2128,10 @@ export type ZoneDatasourceGroup = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   allowedUsers: Array<string>;
+  allowedUserDetails: Array<SignalGroupLogin>;
   allowedOrganismIds: Array<number>;
   adminLogins: Array<string>;
+  adminLoginDetails: Array<SignalGroupLogin>;
   shortNote: string | null;
   longNote: string | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -1877,6 +2177,7 @@ export type SignalGroupLogin = {
   loginId: string;
   login: string;
   deltaLogin: string | null;
+  isAiManaged: boolean;
 };
 
 export type MyAdminSignalGroup = {
@@ -2060,6 +2361,7 @@ export type ReportPreviewReq = {
   tagReportSortBy: TagReportSortBy | null;
   report1213LinkedNetworksOnly: boolean | null;
   withoutComments: boolean | null;
+  babakNewCallsignMinMentions: number | null;
   interceptionKeepFullMessage: boolean | null;
   interceptionKeepOldColors: boolean | null;
   digestOmitExoId: boolean | null;
@@ -2096,6 +2398,34 @@ export type ListUnitsSortBy =
   | 'CreatedAtDesc'
   | 'CreatedAtAsc'
   | 'NaturalMilitarySortAsc'
+  | 'UnitNameLengthAsc'
+  | 'UnitNameAsc'
+  | 'UnitNameDesc'
+  | 'UnitCompanyAsc'
+  | 'UnitCompanyDesc'
+  | 'UnitBattalionAsc'
+  | 'UnitBattalionDesc'
+  | 'UnitRegimentAsc'
+  | 'UnitRegimentDesc'
+  | 'UnitDivisionAsc'
+  | 'UnitDivisionDesc'
+  | 'UnitArmyAsc'
+  | 'UnitArmyDesc'
+  | 'UnitMilitaryDistrictAsc'
+  | 'UnitMilitaryDistrictDesc'
+  | 'UnitArmyRegionAsc'
+  | 'UnitArmyRegionDesc'
+  | 'UnitCommentAsc'
+  | 'UnitCommentDesc'
+  | 'UnitOrbitNoteAsc'
+  | 'UnitOrbitNoteDesc'
+  | 'UnitOrbitLinkedAsc'
+  | 'UnitOrbitLinkedDesc'
+;
+
+export type ListUnitsSearchMode =
+  | 'Strict'
+  | 'Relaxed'
 ;
 
 export type Unit = {
@@ -2105,22 +2435,55 @@ export type Unit = {
   regiment: string;
   division: string;
   army: string;
+  militaryDistrict: string;
+  armyRegion: string;
   comment: string;
+  orbitNote: string | null;
   name: string;
   active: boolean;
+  isDeduplicateCandidate: boolean | null;
   createdAt: number;
   createdByLoginId: string;
+  hasOrbit: boolean;
+  orbitUnitIds: Array<string>;
+  orbitUnitGenerativeNames: Array<string>;
 };
 
 export type ListUnitsReq = {
   sortBy: ListUnitsSortBy | null;
   afterUnitId: number | null;
   beforeUnitId: number | null;
+  includeInactive: boolean;
+  filterActive: boolean | null;
+  filterText: string | null;
+  filterName: string | null;
+  filterCompany: string | null;
+  filterBattalion: string | null;
+  filterRegiment: string | null;
+  filterDivision: string | null;
+  filterArmy: string | null;
+  filterMilitaryDistrict: string | null;
+  filterArmyRegion: string | null;
+  filterComment: string | null;
+  filterOrbitNote: string | null;
+  filterIsDeduplicateCandidate: boolean | null;
+  filterHasOrbit: boolean | null;
+  filterHasOrbitNote: boolean | null;
+  searchMode: ListUnitsSearchMode | null;
+  limit: number | null;
+  offset: number | null;
 };
 
 export type ListUnitsRsp = {
   showLoadMore: boolean;
+  totalCount: number;
+  statusCounts: UnitStatusCountsRsp;
   units: Array<Unit>;
+};
+
+export type UnitStatusCountsRsp = {
+  active: number;
+  inactive: number;
 };
 
 export type ListUnitsByIdReq = {
@@ -2131,14 +2494,29 @@ export type ListUnitsByIdRsp = {
   units: Array<Unit>;
 };
 
+export type UnitDuplicate = {
+  sigintUnit: Unit;
+  orbitUnitId: string;
+  orbitUnitFullName: string;
+};
+
+export type ListUnitDuplicatesRsp = {
+  units: Array<UnitDuplicate>;
+};
+
 export type CreateUnitReq = {
   company: string;
   battalion: string;
   regiment: string;
   division: string;
   army: string;
+  militaryDistrict: string;
+  armyRegion: string;
   active: boolean;
+  isDeduplicateCandidate: boolean | null;
   comment: string;
+  orbitNote: string | null;
+  duplicateUnitIds: Array<number>;
 };
 
 export type CreateUnitWithAutoNetworkReq = {
@@ -2151,6 +2529,16 @@ export type CreateUnitWithAutoNetworkReq = {
 export type CreateUnitWithAutoNetworkRsp = {
   unit: Unit;
   networkId: number | null;
+};
+
+export type CreateDeviceNetworkReq = {
+  unitId: number;
+  locations: Array<string>;
+  unitMask: Array<string>;
+};
+
+export type CreateDeviceNetworkRsp = {
+  networkId: number;
 };
 
 export type DeleteUnitDuplicateReq = {
@@ -2179,17 +2567,156 @@ export type UnitAttachment = {
   sizeBytes: number;
   shortDescription: string;
   fullDescription: string;
-  aors: Array<UnitAttachmentAor>;
+  aors: Array<UnitAttachmentAor> | null;
   createdAt: number;
+};
+
+export type UnitLabel = {
+  id: number;
+  label: string;
+};
+
+export type CreateUnitLabelReq = {
+  unitId: number;
+  label: string;
+};
+
+export type DeleteUnitLabelReq = {
+  labelId: number;
+};
+
+export type UnresolvedUnitLabel = {
+  unitTxt: string;
+  quantity: number;
+};
+
+export type ListUnresolvedUnitLabelsReq = {
+  page: number | null;
+};
+
+export type ListUnresolvedUnitLabelsRsp = {
+  rows: Array<UnresolvedUnitLabel>;
+  totalCount: number;
+  page: number;
+  pageSize: number;
+};
+
+export type ClassifyUnresolvedUnitLabelReq = {
+  unitTxt: string;
+};
+
+export type ResolveUnresolvedUnitLabelReq = {
+  unitTxt: string;
+  label: string;
+  orbitUnitId: string;
+};
+
+export type UpdateUnresolvedUnitLabelsRsp = {
+  affectedCount: number;
+};
+
+export type OrbitDictionaryValue = {
+  id: string;
+  key: string;
+  name: string;
+};
+
+export type OrbitParentUnit = {
+  sigintUnitId: number | null;
+  name: string;
+};
+
+export type OrbitChildUnit = {
+  sigintUnitId: number;
+  name: string;
+  active: boolean;
+  orbitUnitIds: Array<string>;
+  isGenerative: boolean;
+  isOperational: boolean;
+};
+
+export type UnitOrbitChildrenRsp = {
+  units: Array<OrbitChildUnit>;
+};
+
+export type OrbitUnitDetails = {
+  unitId: string;
+  unitName: string | null;
+  unitNameOriginal: string | null;
+  unitNameShort: string | null;
+  operationalUnitNameFull: string | null;
+  generativeUnitNameFull: string | null;
+  unitNumber: string | null;
+  unitAlternateNames: Array<string> | null;
+  unitAlternateNumbers: Array<string> | null;
+  unitEchelon: OrbitDictionaryValue | null;
+  combatUnitType: OrbitDictionaryValue | null;
+  groupingOfForces: Array<OrbitDictionaryValue>;
+  generativeParentUnitId: string | null;
+  operationalParentUnitId: string | null;
+  generativeParentUnits: Array<OrbitParentUnit>;
+  operationalParentUnits: Array<OrbitParentUnit>;
+  deleted: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type OrbitUnitLinkCandidate = {
+  unitId: string;
+  fullName: string;
+  generativeUnitNameFull: string;
+  operationalUnitNameFull: string;
+};
+
+export type OrbitUnitLinkCandidatesReq = {
+  unitId: number;
+  search: string | null;
+};
+
+export type OrbitUnitLinkCandidatesRsp = {
+  units: Array<OrbitUnitLinkCandidate>;
+};
+
+export type OrbitUnitSearchReq = {
+  search: string;
+};
+
+export type ImportOrbitUnitReq = {
+  orbitUnitId: string;
+};
+
+export type LinkOrbitUnitReq = {
+  sigintUnitId: number;
+  orbitUnitId: string;
 };
 
 export type UnitDetailsRsp = {
   unit: Unit;
   attachments: Array<UnitAttachment>;
+  labels: Array<UnitLabel>;
+  orbitUnits: Array<OrbitUnitDetails>;
+  canLinkOrbitUnit: boolean;
+  canCreateDeviceNetwork: boolean;
+  canEditUnitLabels: boolean;
 };
 
 export type UnitAttachmentUnitIdsRsp = {
   unitIds: Array<number>;
+};
+
+export type UpdateUnitAttachmentReq = {
+  attachmentId: number;
+  shortDescription: string;
+  fullDescription: string;
+  aorIds: Array<number>;
+};
+
+export type DeleteUnitAttachmentReq = {
+  attachmentId: number;
+};
+
+export type DeleteUnitAttachmentRsp = {
+  attachmentId: number;
 };
 
 export type UnitAttachmentDownloadReq = {
@@ -2333,6 +2860,8 @@ export type ListCallsignsReq = {
   filterFullName: string | null;
   filterComment: string | null;
   filterUnit: string | null;
+  filterUnitArmyRegion: string | null;
+  filterUnitMilitaryDistrict: string | null;
   filterUnitArmy: string | null;
   filterUnitDivision: string | null;
   filterUnitRegiment: string | null;
@@ -2478,6 +3007,9 @@ export type EtalonkaExtendedSettings = {
   sinceDateInclusiveMs: number;
   tillDateInclusiveMs: number | null;
   activeFreqsOnly: boolean;
+  includeFreqActiveFrom: boolean;
+  includeFreqCreatedAt: boolean;
+  includeCallsignFullNames: boolean;
   includeUnitCallsigns: boolean;
   includeSigintSigns: boolean;
   includeConfirmation: boolean;
@@ -2498,6 +3030,7 @@ export type EtalonkaNetworkBatchReq = {
 
 export type EtalonkaSettings = {
   activeFreqsOnly: boolean;
+  includeCallsignFullNames: boolean;
   includeSigintSigns: boolean;
   includeConfirmation: boolean;
   includeHeadingsAndFreqs: boolean;
@@ -2541,6 +3074,7 @@ export type KnownCallsignShortRes = {
   callsign: string;
   position: string;
   comment: string;
+  fullName: string;
   unitId: number;
   unitName: string;
   sourceName: string;
@@ -2976,6 +3510,8 @@ export type UpdFreqNetwork = {
 export type ListNetworksReq = {
   filterFreq: string | null;
   filterUnit: string | null;
+  filterUnitArmyRegion: string | null;
+  filterUnitMilitaryDistrict: string | null;
   filterUnitArmy: string | null;
   filterUnitDivision: string | null;
   filterUnitRegiment: string | null;
@@ -3342,6 +3878,7 @@ export type SystemSettingsCurrentRsp = {
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
+  rerDutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
@@ -3358,6 +3895,9 @@ export type SystemSettingsCurrentRsp = {
   reportChunkingHours: number;
   limitBigReports: boolean;
   enableAudioTranscription: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
+  hideOrbitData: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -3368,6 +3908,7 @@ export type SystemSettingsItem = {
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
+  rerDutyTestReplayIntervalSec: number;
   createdAt: number;
   updatedAt: number;
   updatedByLoginId: string | null;
@@ -3389,6 +3930,8 @@ export type SystemSettingsItem = {
   reportChunkingHours: number;
   limitBigReports: boolean;
   enableAudioTranscription: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -3402,6 +3945,7 @@ export type CreateSystemSettingsReq = {
   rerDutyTestSinceMs: number;
   rerDutyTestLimit: number;
   rerDutyPollIntervalSec: number;
+  rerDutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
@@ -3419,10 +3963,418 @@ export type CreateSystemSettingsReq = {
   reportChunkingHours: number;
   limitBigReports: boolean;
   enableAudioTranscription: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
 };
 
 export type ActivateSystemSettingsReq = {
   id: number;
+};
+
+export type RerDutyTestReplayStatusRsp = {
+  status: string;
+  sourceCount: number;
+  nextSourcePosition: number | null;
+  generatedCount: number;
+  nextEmitAtMs: number | null;
+};
+
+export type AiEngineItem = {
+  id: string;
+  name: string;
+  url: string;
+  modelName: string;
+  enabled: boolean;
+  hasToken: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AiEngineListRsp = {
+  items: Array<AiEngineItem>;
+};
+
+export type AiEngineIdReq = {
+  id: string;
+};
+
+export type CreateAiEngineReq = {
+  name: string;
+  url: string;
+  token: string | null;
+  modelName: string;
+  enabled: boolean;
+};
+
+export type UpdateAiEngineReq = {
+  id: string;
+  name: string;
+  url: string;
+  token: string | null;
+  clearToken: boolean;
+  modelName: string;
+  enabled: boolean;
+};
+
+export type AiChatSummary = {
+  id: string;
+  title: string;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AiChatListReq = {
+  aiEngineId: string;
+};
+
+export type AiChatListRsp = {
+  items: Array<AiChatSummary>;
+};
+
+export type AiChatGetReq = {
+  aiEngineId: string;
+  chatId: string;
+};
+
+export type AiChatMessageItem = {
+  id: string;
+  role: string;
+  content: string;
+  createdAt: number;
+};
+
+export type AiChatDetail = {
+  id: string;
+  title: string;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: Array<AiChatMessageItem>;
+};
+
+export type SendAiChatMessageReq = {
+  aiEngineId: string;
+  chatId: string | null;
+  prompt: string;
+};
+
+export type AiAgentProviderItem = {
+  id: string;
+  name: string;
+  modelName: string;
+};
+
+export type AiAgentConfigurationRsp = {
+  featureEnabled: boolean;
+  defaultAiEngineId: string | null;
+  providers: Array<AiAgentProviderItem>;
+};
+
+export type AiAgentConversationSummary = {
+  id: string;
+  title: string;
+  aiEngineId: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AiAgentConversationListRsp = {
+  items: Array<AiAgentConversationSummary>;
+};
+
+export type AiAgentConversationCreateReq = {
+  aiEngineId: string | null;
+  title: string | null;
+};
+
+export type AiAgentConversationIdReq = {
+  id: string;
+};
+
+export type AiAgentConversationUpdateReq = {
+  id: string;
+  title: string;
+};
+
+export type AiAgentMessageItem = {
+  requestId: string;
+  requestState: string;
+  role: string;
+  content: string;
+  createdAt: number;
+};
+
+export type AiAgentConversationDetail = {
+  id: string;
+  title: string;
+  aiEngineId: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: Array<AiAgentMessageItem>;
+};
+
+export type AiAgentRequestCreateReq = {
+  conversationId: string | null;
+  aiEngineId: string | null;
+  prompt: string;
+};
+
+export type AiAgentRequestCreateRsp = {
+  requestId: string;
+  conversationId: string;
+  state: string;
+};
+
+export type AiAgentRequestIdReq = {
+  requestId: string;
+};
+
+export type AiAgentRequestCancelRsp = {
+  state: string;
+};
+
+export type AiAgentAdminSettingsItem = {
+  featureEnabled: boolean;
+  templateLoginId: string;
+  defaultAiEngineId: string | null;
+  reviewerAiEngineId: string | null;
+  securityReviewEnabled: boolean;
+  mattermostChatEnabled: boolean;
+  hasMattermostWebhook: boolean;
+  allowedAiEngineIds: Array<string>;
+};
+
+export type AiAgentAdminSettingsUpdateReq = {
+  featureEnabled: boolean;
+  templateLoginId: string | null;
+  defaultAiEngineId: string | null;
+  reviewerAiEngineId: string | null;
+  securityReviewEnabled: boolean;
+  mattermostChatEnabled: boolean;
+  mattermostWebhookUrl: string | null;
+  clearMattermostWebhook: boolean;
+  allowedAiEngineIds: Array<string>;
+};
+
+export type AiAgentDispatcherItem = {
+  configured: boolean;
+  host: string;
+  sshPort: number;
+  sshUser: string;
+  namespace: string;
+  identityFile: string;
+  knownHostsFile: string;
+  identityFilePresent: boolean;
+  knownHostsFilePresent: boolean;
+  lastTestedAt: number | null;
+  lastTestError: string | null;
+};
+
+export type AiAgentDispatcherUpdateReq = {
+  host: string;
+  sshPort: number;
+  sshUser: string;
+  namespace: string;
+};
+
+export type AiAgentEchoProxyItem = {
+  id: string;
+  hostname: string;
+  upstreamHost: string;
+  upstreamPort: number;
+  enabled: boolean;
+  lastTestedAt: number | null;
+  lastTestError: string | null;
+};
+
+export type AiAgentEchoProxyListRsp = {
+  items: Array<AiAgentEchoProxyItem>;
+};
+
+export type AiAgentEchoProxyUpsertReq = {
+  id: string | null;
+  hostname: string;
+  upstreamHost: string;
+  upstreamPort: number;
+  enabled: boolean;
+};
+
+export type AiAgentIdReq = {
+  id: string;
+};
+
+export type AiAgentContainerItem = {
+  linkedAgentId: string;
+  humanLoginId: string;
+  humanLogin: string;
+  agentLoginId: string;
+  agentLogin: string;
+  instanceName: string;
+  state: string;
+  lastError: string | null;
+  statsJson: string | null;
+  startedAt: number | null;
+  stoppedAt: number | null;
+  lastActivityAt: number | null;
+};
+
+export type AiAgentContainerListRsp = {
+  items: Array<AiAgentContainerItem>;
+};
+
+export type AiAgentAdminRequestListReq = {
+  state: string | null;
+  suspicious: boolean | null;
+  limit: number | null;
+};
+
+export type AiAgentSecurityReviewItem = {
+  state: string;
+  suspicious: boolean | null;
+  severity: string | null;
+  categories: Array<string>;
+  summary: string | null;
+  attemptCount: number;
+  lastError: string | null;
+  alertState: string | null;
+  alertAttemptCount: number;
+  alertLastError: string | null;
+};
+
+export type AiAgentAdminRequestItem = {
+  id: string;
+  conversationId: string;
+  humanLoginId: string;
+  humanLogin: string;
+  aiEngineId: string;
+  aiEngineName: string;
+  prompt: string;
+  response: string | null;
+  state: string;
+  error: string | null;
+  queuedAt: number;
+  startedAt: number | null;
+  completedAt: number | null;
+  review: AiAgentSecurityReviewItem | null;
+};
+
+export type AiAgentAdminRequestListRsp = {
+  items: Array<AiAgentAdminRequestItem>;
+};
+
+export type AiAgentRequestEventItem = {
+  sequence: number;
+  eventType: string;
+  payloadJson: string;
+  createdAt: number;
+};
+
+export type AiAgentAdminRequestDetail = {
+  request: AiAgentAdminRequestItem;
+  conversation: AiAgentConversationDetail;
+  events: Array<AiAgentRequestEventItem>;
+};
+
+export type AiAgentAdminUserReq = {
+  loginId: string;
+};
+
+export type AiAgentAdminUserItem = {
+  humanLoginId: string;
+  humanLogin: string;
+  linkedAgentId: string | null;
+  agentLoginId: string | null;
+  agentLogin: string | null;
+  linkedLoginEnabled: boolean | null;
+  roles: Array<string>;
+  organismId: number | null;
+  organismName: string | null;
+  sigintZoneId: number | null;
+  sigintZoneName: string | null;
+  directHiddenGroups: Array<string>;
+  instanceName: string | null;
+  containerState: string | null;
+  containerLastError: string | null;
+  statsJson: string | null;
+};
+
+export type AiAgentConnectionTestRsp = {
+  ok: boolean;
+  message: string;
+};
+
+export type AiCallsignEngineItem = {
+  id: string;
+  name: string;
+  modelName: string;
+};
+
+export type AiCallsignParseResultItem = {
+  testMessageId: string;
+  aiEngineId: string;
+  callsigns: Array<string>;
+  error: string | null;
+  responseText: string;
+  updatedAt: number | null;
+};
+
+export type AiCallsignTestMessageItem = {
+  id: string;
+  message: string;
+  createdAt: number;
+  updatedAt: number;
+  results: Array<AiCallsignParseResultItem>;
+};
+
+export type AiCallsignWorkerSettingsItem = {
+  enabled: boolean;
+  aiEngineId: string | null;
+};
+
+export type AiCallsignPageRsp = {
+  prompt: string;
+  promptOverridden: boolean;
+  engines: Array<AiCallsignEngineItem>;
+  messages: Array<AiCallsignTestMessageItem>;
+  worker: AiCallsignWorkerSettingsItem;
+};
+
+export type AiCallsignPromptState = {
+  prompt: string;
+  promptOverridden: boolean;
+};
+
+export type CreateAiCallsignTestMessageReq = {
+  message: string;
+};
+
+export type UpdateAiCallsignTestMessageReq = {
+  id: string;
+  message: string;
+};
+
+export type AiCallsignTestMessageIdReq = {
+  id: string;
+};
+
+export type RunAiCallsignParsingReq = {
+  prompt: string;
+  aiEngineIds: Array<string>;
+};
+
+export type AiCallsignParsingRsp = {
+  results: Array<AiCallsignParseResultItem>;
+};
+
+export type SaveAiCallsignParsingReq = {
+  prompt: string;
+  results: Array<AiCallsignParseResultItem>;
+};
+
+export type SaveAiCallsignWorkerSettingsReq = {
+  enabled: boolean;
+  aiEngineId: string | null;
 };
 
 export type EchoMissingMessageRow = {
@@ -3529,6 +4481,7 @@ export type EventMsg = {
   id: string;
   eventType: EventType;
   createdAt: number;
+  origin: string | null;
 };
 
 export type LongPollReq = {
@@ -3624,6 +4577,16 @@ export type LinkAccountReq = {
 
 export type LinkAccountRsp = {
   account: EchoAccountF1;
+};
+
+export type SystemServiceNameAvailabilityReq = {
+  messenger: string;
+  systemServiceName: string;
+};
+
+export type SystemServiceNameAvailabilityRsp = {
+  systemServiceName: string;
+  exists: boolean;
 };
 
 export type LinkEchoOperatorReq = {
@@ -3736,5 +4699,7 @@ export type UserDutySettingsDto = {
   analysisMapInSidebar: boolean;
   dutyAudioTranscriptionCollapsed: boolean;
   analysisAudioTranscriptionCollapsed: boolean;
+  showAnalysisCallsignAddForm: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
 };
-

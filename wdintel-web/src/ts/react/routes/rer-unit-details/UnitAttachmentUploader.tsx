@@ -26,8 +26,8 @@ import { uploadUnitAttachment } from '../../services/api/units';
 const MAX_FILES_PER_BATCH = 20;
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_FILENAME_CHARS = 255;
-const MAX_SHORT_DESCRIPTION_CHARS = 500;
-const MAX_FULL_DESCRIPTION_CHARS = 20_000;
+export const MAX_SHORT_DESCRIPTION_CHARS = 500;
+export const MAX_FULL_DESCRIPTION_CHARS = 20_000;
 const MAX_AORS = 100;
 
 type PendingStatus = 'ready' | 'uploading' | 'uploaded' | 'failed';
@@ -381,7 +381,7 @@ function MetadataFields({
         renderInput={(params) => (
           <TextField
             {...params}
-            label="Смуги (AOR)"
+            label="Смуги"
             required
             placeholder="Оберіть смуги, користувачі яких бачитимуть файли"
             InputProps={{

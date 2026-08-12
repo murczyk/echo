@@ -1,4 +1,11 @@
-import { CircularProgress, Paper, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import {
+  Button,
+  CircularProgress,
+  Paper,
+  Stack,
+  ToggleButton,
+  ToggleButtonGroup,
+} from '@mui/material';
 import { createElement, useEffect, useId, useMemo, useRef } from 'react';
 
 import type { FreqDailyActivityCount } from '../../../../../Bindings';
@@ -53,12 +60,13 @@ export function AnalysisGroupsActivityCard({
     groupsActivityLoadedFreq === selectedFreq && groupsActivityLoadedPeriod === period;
   const canRenderCurrentChart = canRenderChart && matchesCurrentSelection;
   const chartStatus = useMemo(() => {
-    if (!selectedFreq) return 'needs-freq' as const;
     if (canRenderCurrentChart) return 'ready' as const;
     if (loading) return 'loading' as const;
+    if (!matchesCurrentSelection)
+      return selectedFreq ? ('empty' as const) : ('needs-load' as const);
     if (hasTimeline) return 'empty-period' as const;
     return 'empty' as const;
-  }, [canRenderCurrentChart, hasTimeline, loading, selectedFreq]);
+  }, [canRenderCurrentChart, hasTimeline, loading, matchesCurrentSelection, selectedFreq]);
 
   useEffect(() => {
     if (!selectedFreq) return;
@@ -111,7 +119,7 @@ export function AnalysisGroupsActivityCard({
       <CompactText component="div" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
         {selectedFreq
           ? `Частота для графіка: ${selectedFreq}`
-          : 'Для графіка потрібно обрати одну частоту.'}
+          : 'Усі частоти за поточними фільтрами.'}
       </CompactText>
       {chartStatus === 'ready' ? (
         createElement('dashboard-chart', {
@@ -119,10 +127,15 @@ export function AnalysisGroupsActivityCard({
           role: 'img',
           'aria-label': 'Графік активності по датах',
         })
-      ) : chartStatus === 'needs-freq' ? (
-        <CompactText color="text.secondary">
-          Оберіть частоту вище, щоб завантажити графік активності по датах.
-        </CompactText>
+      ) : chartStatus === 'needs-load' ? (
+        <Stack spacing={1} alignItems="flex-start">
+          <CompactText color="text.secondary">
+            Завантажте активність по датах для всіх частот за поточними фільтрами.
+          </CompactText>
+          <Button variant="outlined" size="small" onClick={() => onLoad()}>
+            Завантажити
+          </Button>
+        </Stack>
       ) : chartStatus === 'loading' ? (
         <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: 80 }}>
           <CircularProgress size={18} />
@@ -132,11 +145,15 @@ export function AnalysisGroupsActivityCard({
         </Stack>
       ) : chartStatus === 'empty-period' ? (
         <PowerAlert severity="info">
-          {`Для частоти ${selectedFreq} за цей інтервал активності не знайдено.`}
+          {selectedFreq
+            ? `Для частоти ${selectedFreq} за цей інтервал активності не знайдено.`
+            : 'За цей інтервал активності не знайдено.'}
         </PowerAlert>
       ) : (
         <PowerAlert severity="info">
-          {`Для частоти ${selectedFreq} немає даних для побудови графіка.`}
+          {selectedFreq
+            ? `Для частоти ${selectedFreq} немає даних для побудови графіка.`
+            : 'Немає даних для побудови графіка.'}
         </PowerAlert>
       )}
     </Paper>

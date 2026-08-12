@@ -30,6 +30,7 @@ type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 type Params = {
   centerTab: AnalysisCenterTab;
   deferInitialLoad: boolean;
+  leftPanelOpen?: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
@@ -49,7 +50,7 @@ type Params = {
     networkStatsCache?: Map<string, ReturnType<FetchAnalysisNetworks>>,
     signal?: AbortSignal,
   ) => Promise<void>;
-  invalidateCallsignGraph: () => void;
+  invalidateCallsignGraph: (options?: { clearGraph?: boolean }) => void;
   invalidateCorrelatedFreqsCache: () => void;
   invalidateRightSidebarData: () => void;
   invalidateSummaryData: (keepLoading?: boolean) => void;
@@ -90,6 +91,7 @@ type Params = {
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, import('../../../../Bindings').CallsignInfoRes>>;
   setTagsMap: Setter<Record<number, Tag>>;
+  setTagsOrder: Setter<number[]>;
   setTopCallsigns: Setter<AnalysisCountItem[]>;
   setTopFreqs: Setter<AnalysisCountItem[]>;
   setTopLocations: Setter<AnalysisCountItem[]>;
@@ -119,6 +121,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     invalidateMessagePageRequests,
     invalidateRightSidebarData,
     invalidateSummaryData,
+    leftPanelOpen = true,
     loadInitialFilterSections,
     loadMapPalitras,
     loadMessageComments,
@@ -159,6 +162,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     setProfiles,
     setSummaryCallsignsInfo,
     setTagsMap,
+    setTagsOrder,
     setTopCallsigns,
     setTopFreqs,
     setTopLocations,
@@ -194,6 +198,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           invalidateMessagePaging: preserveMessagePage
             ? invalidateMessagePageRequests
             : invalidateMessagePaging,
+          includeDefaultFilterSections: leftPanelOpen,
           messagePageCursor,
           newestFirst,
           onError,
@@ -228,6 +233,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           setProfiles,
           setSummaryCallsignsInfo,
           setTagsMap,
+          setTagsOrder,
           setTopCallsigns,
           setTopFreqs,
           setTopLocations,
@@ -266,6 +272,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       invalidateMessagePageRequests,
       invalidateRightSidebarData,
       invalidateSummaryData,
+      leftPanelOpen,
       loadInitialFilterSections,
       loadMessageComments,
       newestFirst,
@@ -301,6 +308,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       setProfiles,
       setSummaryCallsignsInfo,
       setTagsMap,
+      setTagsOrder,
       setTopCallsigns,
       setTopFreqs,
       setTopLocations,
@@ -405,7 +413,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
   useEffect(() => {
     if (deferInitialLoad) return;
     if (!rightSidebarVisible) return;
-    if (rightSidebarTab !== 'stats' && rightSidebarTab !== 'callsigns') return;
+    if (rightSidebarTab !== 'stats') return;
     void loadTopSidebarData();
   }, [deferInitialLoad, loadTopSidebarData, rightSidebarTab, rightSidebarVisible]);
 

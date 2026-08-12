@@ -14,6 +14,11 @@ SOURCE_TABLE_EXCLUDE_REPO_FILE=$BUNDLE_DIR/env/tables-exclude.txt
 SOURCE_RECONCILE_STATE_DIR=${ECHO_PEERDB_RECONCILE_STATE_DIR:-/var/lib/echo-peerdb}
 SOURCE_RECONCILE_FINGERPRINT_FILE=$SOURCE_RECONCILE_STATE_DIR/table-selection.sha256
 SOURCE_RECONCILE_LOCK_FILE=$SOURCE_RECONCILE_STATE_DIR/table-selection.lock
+SOURCE_RECONCILE_DDL_LOCK_TIMEOUT=2s
+# shellcheck disable=SC2034
+SOURCE_RECONCILE_DEPLOY_RETRY_ATTEMPTS_DEFAULT=5
+# shellcheck disable=SC2034
+SOURCE_RECONCILE_DEPLOY_RETRY_DELAY_SECONDS_DEFAULT=30
 ANALYTICS_HEARTBEAT_SOURCE_SCHEMA=echo_analytics
 ANALYTICS_HEARTBEAT_SOURCE_TABLE=heartbeat
 ANALYTICS_HEARTBEAT_TARGET_TABLE=echo_analytics__heartbeat
@@ -197,11 +202,9 @@ read_local_source_tables() {
   read_exclusions "$exclude_file"
 
   declare -ga SOURCE_TABLES=()
-  declare -gA DISCOVERED_TABLE_LOOKUP=()
   local table
   while IFS= read -r table; do
     [[ -n "$table" ]] || continue
-    DISCOVERED_TABLE_LOOKUP["$table"]=1
     [[ -z "${EXCLUDED_TABLE_LOOKUP[$table]:-}" ]] || continue
     [[ "$table" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
       || die "table requires quoted PeerDB mapping support: $table"
@@ -218,11 +221,6 @@ ORDER BY n.nspname, c.relname;
 SQL
   )
 
-  local excluded
-  for excluded in "${!EXCLUDED_TABLE_LOOKUP[@]}"; do
-    [[ -n "${DISCOVERED_TABLE_LOOKUP[$excluded]:-}" ]] \
-      || die "excluded table does not exist: $excluded"
-  done
   ((${#SOURCE_TABLES[@]} > 0)) || die "no source tables selected"
 }
 
@@ -478,6 +476,22 @@ read_exclusions() {
   done < <(read_protected_file "$exclude_file")
 }
 
+normalized_exclusions() {
+  local exclude_file=$1
+  read_exclusions "$exclude_file"
+  if ((${#EXCLUDED_TABLE_LOOKUP[@]} > 0)); then
+    printf '%s\n' "${!EXCLUDED_TABLE_LOOKUP[@]}" | LC_ALL=C sort
+  fi
+}
+
+source_exclusions_match() {
+  local first=$1 second=$2
+  diff -q \
+    <(normalized_exclusions "$first") \
+    <(normalized_exclusions "$second") \
+    >/dev/null
+}
+
 effective_source_exclude_file() {
   if protected_file_exists "$SOURCE_TABLE_EXCLUDE_FILE"; then
     printf '%s' "$SOURCE_TABLE_EXCLUDE_FILE"
@@ -557,7 +571,10 @@ reconcile_source_publication() {
     -q \
     -v ON_ERROR_STOP=1 \
     -v publication="$SOURCE_PUBLICATION" \
-    -v table_list="$table_list" <<'SQL'
+    -v table_list="$table_list" \
+    -v ddl_lock_timeout="$SOURCE_RECONCILE_DDL_LOCK_TIMEOUT" <<'SQL'
+SELECT set_config('lock_timeout', :'ddl_lock_timeout', false);
+
 SELECT CASE
   WHEN EXISTS (SELECT FROM pg_publication WHERE pubname = :'publication')
     THEN format('ALTER PUBLICATION %I SET TABLE %s', :'publication', :'table_list')
@@ -575,7 +592,14 @@ SELECT format(
   publication_table.tablename
 )
 FROM pg_publication_tables publication_table
+JOIN pg_namespace namespace
+  ON namespace.nspname = publication_table.schemaname
+JOIN pg_class relation
+  ON relation.relnamespace = namespace.oid
+  AND relation.relname = publication_table.tablename
 WHERE publication_table.pubname = :'publication'
+  AND relation.relkind IN ('r', 'p')
+  AND relation.relreplident <> 'f'
 \gexec
 SQL
 }

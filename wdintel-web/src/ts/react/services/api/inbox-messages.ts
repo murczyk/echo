@@ -35,6 +35,7 @@ function normalizeInterseptionKind(raw: Record<string, unknown>): InterseptionKi
 /** Raw API response (snake_case). */
 export type InboxMessagesRspRaw = {
   inbox_items: Array<[number, InboxMessageType & { group_master_key?: string | null }]>;
+  poll_cursor_id?: number | null;
   callsigns: InboxMessagesRsp['callsigns'];
   signal_profiles: Record<
     string,
@@ -350,6 +351,7 @@ function mapRsp(raw: InboxMessagesRspRaw): InboxMessagesRsp {
   );
   return {
     inboxItems,
+    pollCursorId: raw.poll_cursor_id ?? null,
     callsigns: raw.callsigns,
     signalProfiles,
     signalGroups,

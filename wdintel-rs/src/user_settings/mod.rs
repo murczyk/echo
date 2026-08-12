@@ -30,6 +30,9 @@ fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
             .duty_audio_transcription_collapsed,
         analysis_audio_transcription_collapsed: m
             .analysis_audio_transcription_collapsed,
+        show_analysis_callsign_add_form: m.show_analysis_callsign_add_form,
+        show_classic_duty: m.show_classic_duty,
+        show_classic_analysis: m.show_classic_analysis,
     }
 }
 
@@ -78,6 +81,11 @@ pub async fn user_settings_put(
         analysis_audio_transcription_collapsed: Set(
             dto.analysis_audio_transcription_collapsed
         ),
+        show_analysis_callsign_add_form: Set(
+            dto.show_analysis_callsign_add_form
+        ),
+        show_classic_duty: Set(dto.show_classic_duty),
+        show_classic_analysis: Set(dto.show_classic_analysis),
         updated_at: Set(now),
     })
     .on_conflict(
@@ -88,6 +96,9 @@ pub async fn user_settings_put(
                 user_settings::Column::AnalysisMapInSidebar,
                 user_settings::Column::DutyAudioTranscriptionCollapsed,
                 user_settings::Column::AnalysisAudioTranscriptionCollapsed,
+                user_settings::Column::ShowAnalysisCallsignAddForm,
+                user_settings::Column::ShowClassicDuty,
+                user_settings::Column::ShowClassicAnalysis,
                 user_settings::Column::UpdatedAt,
             ])
             .to_owned(),

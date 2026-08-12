@@ -536,7 +536,7 @@ where
         )
         .col_expr(
             goi_palitra_sync::Column::GoiSourceFailedFileSha256,
-            Expr::col(goi_palitra_sync::Column::GoiSourceFileSha256).into(),
+            Expr::col(goi_palitra_sync::Column::GoiSourceFileSha256),
         )
         .exec(dbx)
         .await

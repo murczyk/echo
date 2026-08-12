@@ -3,11 +3,16 @@ use crate::delta::bgtask_log;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
+use crate::info;
 use crate::location::utils::to_location_list;
 use crate::rer_importer::inbox::query::build_filtered_inbox_query;
+use crate::rer_importer::report_chunking::{
+    inbox_report_chunk_req, inbox_report_period_chunks, ReportPeriodEnd,
+};
 use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::types::{Env, ShortContext};
 use crate::utils::{dt_from_millis, dt_zoned_from_millis};
+use anyhow::Context;
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Utc};
 use docx_rs::{
     AlignmentType, BreakType, Docx, LineSpacing, PageMargin, Paragraph, Run,
@@ -368,6 +373,9 @@ async fn load_report(
     )
     .await
     .c(h!())?;
+    let callsigns_by_item_id =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &item_ids).await?;
+    let blacklist = crate::sigint::comments::load_blacklist(dbx).await?;
     let mut report = RerReport::default();
     for item_id in item_ids {
         if item_has_other_tag(dbx, item_id).await.c(h!())? {
@@ -390,7 +398,9 @@ async fn load_report(
         let Some(timestamp) = report_message_timestamp(&item, &message) else {
             continue;
         };
-        let comments = load_non_empty_comments(dbx, item_id).await.c(h!())?;
+        let comments = load_non_empty_comments(dbx, item_id, &blacklist)
+            .await
+            .c(h!())?;
         if comments.is_empty() {
             continue;
         }
@@ -403,15 +413,22 @@ async fn load_report(
         else {
             continue;
         };
+        let callsigns = callsigns_by_item_id
+            .get(&item_id)
+            .cloned()
+            .unwrap_or_default()
+            .effective();
         insert_report_message(
             &mut report,
             target,
             item_id,
             timestamp,
             comments.join("; "),
-            message_body_without_duplicate_comments(&message, &comments)
-                .c(h!())?,
-            parse_callsigns(&item),
+            message_body_without_duplicate_comments(
+                &message, &comments, &blacklist,
+            )
+            .c(h!())?,
+            parse_callsigns(&callsigns),
             parse_points(&item),
         );
     }
@@ -509,7 +526,7 @@ fn insert_report_message(
         .entry(item_id)
         .and_modify(|message| {
             message.points.extend(points.iter().cloned());
-            if !comment.is_empty() && !message.comment.contains(&comment) {
+            if !comment.is_empty() && message.comment.find(&comment).is_none() {
                 message.comment = [message.comment.as_str(), comment.as_str()]
                     .into_iter()
                     .filter(|value| !value.is_empty())
@@ -545,6 +562,51 @@ async fn load_candidate_item_ids(
     require_network_link: bool,
     require_non_empty_comments: bool,
 ) -> Result<Vec<i64>, AppError> {
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks =
+        inbox_report_period_chunks(&req.req, report_settings.chunking_hours)
+            .context(h!())?;
+    let mut item_ids = BTreeSet::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "RER report candidate chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let mut chunk_req = req.clone();
+        chunk_req.req = inbox_report_chunk_req(&req.req, chunk);
+        item_ids.extend(
+            load_candidate_item_ids_chunk(
+                dbx,
+                user_login,
+                env,
+                &chunk_req,
+                chunk.end,
+                require_network_link,
+                require_non_empty_comments,
+            )
+            .await
+            .context(h!())?,
+        );
+    }
+    Ok(item_ids.into_iter().collect())
+}
+
+async fn load_candidate_item_ids_chunk(
+    dbx: &DatabaseConnection,
+    user_login: &uuid::Uuid,
+    env: &Env,
+    req: &ReportPreviewReq,
+    period_end: ReportPeriodEnd,
+    require_network_link: bool,
+    require_non_empty_comments: bool,
+) -> Result<Vec<i64>, AppError> {
     let (candidate_req, since_ms, till_ms) =
         candidate_query_req_without_date_bounds(req);
     let query =
@@ -555,6 +617,7 @@ async fn load_candidate_item_ids(
         query,
         since_ms,
         till_ms,
+        period_end,
         require_network_link,
         require_non_empty_comments,
     )?;
@@ -573,16 +636,27 @@ fn apply_candidate_item_filters(
     mut query: Select<signal_message::Entity>,
     since_ms: Option<i64>,
     till_ms: Option<i64>,
+    period_end: ReportPeriodEnd,
     require_network_link: bool,
     require_non_empty_comments: bool,
 ) -> Result<Select<signal_message::Entity>, AppError> {
     let candidate_timestamp = candidate_report_timestamp_expr();
     if let Some(since_ms) = since_ms {
-        query = query
-            .filter(candidate_timestamp.clone().gte(dt_from_millis(since_ms)?));
+        query = query.filter(
+            candidate_timestamp
+                .clone()
+                .gte(dt_from_millis(since_ms).context(h!())?),
+        );
     }
     if let Some(till_ms) = till_ms {
-        query = query.filter(candidate_timestamp.lte(dt_from_millis(till_ms)?));
+        query = match period_end {
+            ReportPeriodEnd::Inclusive => query.filter(
+                candidate_timestamp.lte(dt_from_millis(till_ms).context(h!())?),
+            ),
+            ReportPeriodEnd::NonInclusive => query.filter(
+                candidate_timestamp.lt(dt_from_millis(till_ms).context(h!())?),
+            ),
+        };
     }
     if require_network_link {
         query = query.filter(item_network_link_exists());
@@ -651,16 +725,32 @@ fn non_empty_comment_exists() -> SimpleExpr {
 async fn load_non_empty_comments(
     dbx: &DatabaseConnection,
     item_id: i64,
+    blacklist: &[String],
 ) -> Result<Vec<String>, AppError> {
-    Ok(sigint_comment::Entity::find()
+    let comments = sigint_comment::Entity::find()
         .filter(sigint_comment::Column::SignalMessageId.eq(item_id))
         .all(dbx)
         .await
         .c(h!())?
         .into_iter()
-        .map(|comment| comment.comment.trim().to_string())
-        .filter(|comment| !comment.is_empty())
-        .collect())
+        .map(|comment| comment.comment)
+        .collect();
+    Ok(filter_report_comments(comments, blacklist))
+}
+
+fn filter_report_comments(
+    comments: Vec<String>,
+    blacklist: &[String],
+) -> Vec<String> {
+    comments
+        .into_iter()
+        .filter_map(|comment| {
+            crate::sigint::parser::filter_blacklisted_comment(
+                Some(comment),
+                blacklist,
+            )
+        })
+        .collect()
 }
 
 fn report_message_timestamp(
@@ -702,9 +792,10 @@ fn message_body_without_headers(
 fn message_body_without_duplicate_comments(
     message: &signal_message::Model,
     comments: &[String],
+    blacklist: &[String],
 ) -> Result<String, AppError> {
     let body = message_body_without_headers(message).c(h!())?;
-    let comments = parsed_report_comments(message, comments);
+    let comments = parsed_report_comments(message, comments, blacklist);
     if comments.is_empty() {
         return Ok(body);
     }
@@ -714,16 +805,18 @@ fn message_body_without_duplicate_comments(
 fn parsed_report_comments(
     message: &signal_message::Model,
     comments: &[String],
+    blacklist: &[String],
 ) -> Vec<String> {
     let body = message.body.as_deref().unwrap_or_default();
-    let parsed = crate::sigint::parser::parse_comments(body);
+    let parsed =
+        crate::sigint::parser::parse_comments_with_blacklist(body, blacklist);
     let comments: HashSet<String> = comments
         .iter()
         .map(|comment| normalize_report_comment_text(comment))
         .filter(|comment| !comment.is_empty())
         .collect();
     let marker_candidates: HashSet<String> =
-        crate::sigint::parser::marker_comment_strip_candidates(body)
+        crate::sigint::parser::marker_comment_strip_candidates(body, blacklist)
             .into_iter()
             .map(|comment| normalize_report_comment_text(&comment))
             .filter(|comment| !comment.is_empty())
@@ -1070,12 +1163,9 @@ fn unit_identity(unit: &sigint_unit::Model) -> Option<UnitIdentity> {
     })
 }
 
-fn parse_callsigns(item: &sigint_inbox_item::Model) -> Vec<String> {
-    item.callsigns
-        .clone()
-        .and_then(|value| serde_json::from_value::<Vec<String>>(value).ok())
-        .unwrap_or_default()
-        .into_iter()
+fn parse_callsigns(callsigns: &[String]) -> Vec<String> {
+    callsigns
+        .iter()
         .map(|callsign| callsign.trim().to_uppercase())
         .filter(|callsign| !callsign.is_empty())
         .collect::<BTreeSet<_>>()
@@ -1418,7 +1508,6 @@ fn default_run(text: &str, bold: bool, italic: bool) -> Run {
 mod tests {
     use super::*;
     use chrono::{NaiveDate, TimeZone};
-    use serde_json::json;
     use std::io::Read;
     use tempfile::NamedTempFile;
     use zip::ZipArchive;
@@ -1463,7 +1552,6 @@ mod tests {
             time: None,
             freq: None,
             coords: None,
-            callsigns: None,
             checked: None,
             reviewed: None,
             unit: None,
@@ -1475,9 +1563,8 @@ mod tests {
             nominatimres_id: None,
             location: None,
             tags: None,
-            callsigns_alg2: None,
-            callsigns_alg1: None,
             datetime,
+            datetime_neo: datetime,
             signal_tokens: None,
             body_noheader,
             parsed_unit_v2: false,
@@ -1502,6 +1589,8 @@ mod tests {
             regiment: regiment.to_string(),
             division: division.to_string(),
             army: army.to_string(),
+            army_region: String::new(),
+            military_district: String::new(),
             active: true,
             deleted: false,
             created_at: dt(0, 0),
@@ -1509,8 +1598,11 @@ mod tests {
             name: name.to_string(),
             comment: String::new(),
             battalion: battalion.to_string(),
+            search_tsv: None,
             sigint_origin_id: None,
             original_id: None,
+            is_deduplicate_candidate: None,
+            orbit_note: None,
         }
     }
 
@@ -1535,6 +1627,7 @@ mod tests {
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
             without_comments: None,
+            babak_new_callsign_min_mentions: None,
             interception_keep_full_message: None,
             interception_keep_old_colors: None,
             digest_omit_exo_id: None,
@@ -1558,6 +1651,7 @@ mod tests {
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
             without_comments: None,
+            babak_new_callsign_min_mentions: None,
             interception_keep_full_message: None,
             interception_keep_old_colors: None,
             digest_omit_exo_id: None,
@@ -1593,6 +1687,7 @@ mod tests {
             signal_message::Entity::find(),
             None,
             None,
+            ReportPeriodEnd::Inclusive,
             false,
             false,
         )
@@ -1604,6 +1699,7 @@ mod tests {
             signal_message::Entity::find(),
             None,
             None,
+            ReportPeriodEnd::Inclusive,
             true,
             false,
         )
@@ -1611,8 +1707,32 @@ mod tests {
         let sql_with_network =
             query_with_network.build(DbBackend::Postgres).to_string();
 
-        assert!(!sql_without_network.contains("sigint_inbox_item_network"));
-        assert!(sql_with_network.contains("sigint_inbox_item_network"));
+        assert!(!str::contains(
+            &sql_without_network,
+            "sigint_inbox_item_network"
+        ));
+        assert!(str::contains(
+            &sql_with_network,
+            "sigint_inbox_item_network"
+        ));
+    }
+
+    #[test]
+    fn candidate_item_filters_use_noninclusive_chunk_boundaries() {
+        let query = apply_candidate_item_filters(
+            signal_message::Entity::find(),
+            Some(1_000),
+            Some(2_000),
+            ReportPeriodEnd::NonInclusive,
+            false,
+            false,
+        )
+        .unwrap();
+        let sql = query.build(DbBackend::Postgres).to_string();
+
+        assert!(str::contains(&sql, " >= "));
+        assert!(str::contains(&sql, " < "));
+        assert!(!str::contains(&sql, " <= "));
     }
 
     #[test]
@@ -1734,7 +1854,6 @@ mod tests {
             time: None,
             freq: None,
             coords: Some("48.1, 37.2".to_string()),
-            callsigns: None,
             checked: None,
             reviewed: None,
             unit: None,
@@ -1746,9 +1865,8 @@ mod tests {
             nominatimres_id: None,
             location: None,
             tags: None,
-            callsigns_alg2: None,
-            callsigns_alg1: None,
             datetime: None,
+            datetime_neo: None,
             signal_tokens: None,
             body_noheader: None,
             parsed_unit_v2: false,
@@ -1770,38 +1888,12 @@ mod tests {
 
     #[test]
     fn parse_callsigns_uppercases_and_deduplicates_values() {
-        let item = sigint_inbox_item::Model {
-            id: 1,
-            date: None,
-            time: None,
-            freq: None,
-            coords: None,
-            callsigns: Some(json!(["барс", " БАРС ", "сова"])),
-            checked: None,
-            reviewed: None,
-            unit: None,
-            callsign_tokens: None,
-            keyword_tokens: None,
-            unit_v2: None,
-            lat: None,
-            lng: None,
-            nominatimres_id: None,
-            location: None,
-            tags: None,
-            callsigns_alg2: None,
-            callsigns_alg1: None,
-            datetime: None,
-            signal_tokens: None,
-            body_noheader: None,
-            parsed_unit_v2: false,
-            location_v2: None,
-            post_id: None,
-            device_name_id: None,
-            network: None,
-        };
-
         assert_eq!(
-            parse_callsigns(&item),
+            parse_callsigns(&[
+                "барс".to_string(),
+                " БАРС ".to_string(),
+                "сова".to_string(),
+            ]),
             vec!["БАРС".to_string(), "СОВА".to_string()]
         );
     }
@@ -1881,8 +1973,8 @@ mod tests {
             }) + prev_idx;
             prev_idx = idx;
         }
-        assert!(!xml.contains("Network"));
-        assert!(xml.contains("<w:br"));
+        assert!(!str::contains(&xml, "Network"));
+        assert!(str::contains(&xml, "<w:br"));
     }
 
     #[test]
@@ -1937,7 +2029,7 @@ mod tests {
         }
         assert_blank_paragraph_after(&xml, "Другий рядок");
         assert_blank_paragraph_after(&xml, "Наступна доба");
-        assert!(xml.contains("<w:br"));
+        assert!(str::contains(&xml, "<w:br"));
     }
 
     #[test]
@@ -1973,8 +2065,8 @@ mod tests {
             text,
             "ручний підрозділ\n2026-07-01\n06-45-00\nfoo\n\n14-47-00\nbar\n"
         );
-        assert!(!text.contains("50 обрБпС"));
-        assert!(!text.contains("33hhfg50d"));
+        assert!(!str::contains(&text, "50 обрБпС"));
+        assert!(!str::contains(&text, "33hhfg50d"));
     }
 
     #[test]
@@ -2136,12 +2228,23 @@ mod tests {
                 "верхній коментар".to_string(),
                 "нижній коментар".to_string(),
             ],
+            &[],
         )
         .unwrap();
 
-        assert!(!body.contains("верхній коментар"));
-        assert!(!body.contains("нижній коментар"));
-        assert!(body.contains("— репліка"));
+        assert!(!str::contains(&body, "верхній коментар"));
+        assert!(!str::contains(&body, "нижній коментар"));
+        assert!(str::contains(&body, "— репліка"));
+    }
+
+    #[test]
+    fn report_comments_drop_blacklisted_rows() {
+        let comments = filter_report_comments(
+            vec!["+".to_string(), "важливе уточнення".to_string()],
+            &["+".to_string()],
+        );
+
+        assert_eq!(comments, vec!["важливе уточнення"]);
     }
 
     #[test]
@@ -2153,11 +2256,64 @@ mod tests {
         let body = message_body_without_duplicate_comments(
             &message,
             &["перший рядок\nдругий рядок".to_string()],
+            &[],
         )
         .unwrap();
 
-        assert!(!body.contains("другий рядок"));
-        assert!(body.contains("— репліка"));
+        assert!(!str::contains(&body, "другий рядок"));
+        assert!(str::contains(&body, "— репліка"));
+    }
+
+    #[test]
+    fn report_body_strips_tag_after_legacy_ignored_comment() {
+        let message = signal_message(
+            1,
+            "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка\n\nКоментар: службовий радіообмін\n\nМітки перехоплення: 🚙 - Переміщення",
+        );
+        let body = message_body_without_duplicate_comments(
+            &message,
+            &["🚙 - Переміщення".to_string()],
+            &[],
+        )
+        .unwrap();
+
+        assert!(!str::contains(&body, "Переміщення"));
+        assert!(str::contains(&body, "— репліка"));
+    }
+
+    #[test]
+    fn report_body_strips_later_comment_after_blacklisted_marker() {
+        let message = signal_message(
+            1,
+            "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка\n\nКоментар: +\n\nКоментар: важливе уточнення",
+        );
+        let body = message_body_without_duplicate_comments(
+            &message,
+            &["важливе уточнення".to_string()],
+            &["+".to_string()],
+        )
+        .unwrap();
+
+        assert!(!str::contains(&body, "важливе уточнення"));
+        assert!(str::contains(&body, "— репліка"));
+    }
+
+    #[test]
+    fn report_body_strips_filtered_multiline_marker() {
+        let message = signal_message(
+            1,
+            "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка\n\nКоментар:\n+\nважливе уточнення",
+        );
+        let body = message_body_without_duplicate_comments(
+            &message,
+            &["важливе уточнення".to_string()],
+            &["+".to_string()],
+        )
+        .unwrap();
+
+        assert!(!str::contains(&body, "важливе уточнення"));
+        assert!(!body.lines().any(|line| line.trim() == "+"));
+        assert!(str::contains(&body, "— репліка"));
     }
 
     #[test]
@@ -2168,7 +2324,6 @@ mod tests {
             time: None,
             freq: None,
             coords: None,
-            callsigns: None,
             checked: None,
             reviewed: None,
             unit: None,
@@ -2180,9 +2335,8 @@ mod tests {
             nominatimres_id: None,
             location: None,
             tags: None,
-            callsigns_alg2: None,
-            callsigns_alg1: None,
             datetime: None,
+            datetime_neo: None,
             signal_tokens: None,
             body_noheader: None,
             parsed_unit_v2: false,
@@ -2218,7 +2372,6 @@ mod tests {
             time: None,
             freq: None,
             coords: None,
-            callsigns: None,
             checked: None,
             reviewed: None,
             unit: None,
@@ -2230,9 +2383,8 @@ mod tests {
             nominatimres_id: None,
             location: None,
             tags: None,
-            callsigns_alg2: None,
-            callsigns_alg1: None,
             datetime: Some(dt(5, 58)),
+            datetime_neo: Some(dt(5, 58)),
             signal_tokens: None,
             body_noheader: None,
             parsed_unit_v2: false,

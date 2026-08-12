@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { Network, Unit } from '../../../../Bindings';
 import type { AnalysisFilterSectionId } from './types';
 import { buildAnalysisReq, emptyQueryState } from './helpers';
 import {
   buildAnalysisReqForFilterSection,
   buildHydratedNetworkFilterOptions,
+  buildNetworkStatsFilterOptions,
   filterSectionsForInitialLoad,
   loadFilterSectionData,
   mergeSignalProfiles,
@@ -40,6 +42,7 @@ const mocks = vi.hoisted(() => ({
   getTagsForDisplay: vi.fn(),
   getTagsMapForDisplay: vi.fn(),
   getUnitsList: vi.fn(),
+  getUnitsByIds: vi.fn(),
 }));
 
 vi.mock('../../services/api/analysis', () => ({
@@ -69,6 +72,12 @@ vi.mock('../../services/api/analysis', () => ({
 
 vi.mock('../../services/api/units', () => ({
   getUnitsList: mocks.getUnitsList,
+  getUnitsByIds: mocks.getUnitsByIds,
+  mergeUnitsById: (...unitLists: Unit[][]) => {
+    const unitsById = new Map<number, Unit>();
+    unitLists.flat().forEach((unit) => unitsById.set(unit.id, unit));
+    return Array.from(unitsById.values());
+  },
 }));
 
 type Deferred<T> = {
@@ -109,6 +118,8 @@ beforeEach(() => {
   mocks.fetchAnalysisCallsignInfos.mockResolvedValue([]);
   mocks.fetchAnalysisUnits.mockResolvedValue({ units: [] });
   mocks.fetchAnalysisLocations.mockResolvedValue({ locations: [] });
+  mocks.getUnitsByIds.mockResolvedValue([]);
+  mocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
 });
 
 function buildBaseReq() {
@@ -252,6 +263,52 @@ describe('filterSectionsForInitialLoad', () => {
     expect(sections).toEqual(expect.arrayContaining(['tags', 'units', 'networks']));
     expect(sections).toEqual(expect.arrayContaining(['groups', 'senders']));
   });
+
+  it('loads only selected sections while the filter panel is closed', () => {
+    const sections = filterSectionsForInitialLoad(
+      {
+        ...buildQueryState(),
+        unitsSelected: ['u1'],
+        networksSelected: ['n1'],
+      },
+      false,
+    );
+
+    expect(sections).toEqual(['units', 'networks']);
+  });
+});
+
+describe('loadFilterSectionData', () => {
+  it('builds uppercase callsign labels with lowercase filter values', async () => {
+    mocks.fetchAnalysisCallsigns.mockResolvedValue({
+      callsigns: [
+        { callsign: 'НУГУШ', count: 2 },
+        { callsign: 'нугуш', count: 3 },
+      ],
+    });
+    let currentOptions = structuredClone(emptyOptions);
+
+    await loadFilterSectionData('callsigns', {
+      analysisReq: buildAnalysisReq(buildQueryState())!,
+      loadVersion: 0,
+      loadVersionRef: { current: 0 },
+      queryState: buildQueryState(),
+      setAorEntries: vi.fn(),
+      setGroupInfos: vi.fn(),
+      setNetworks: vi.fn(),
+      setOptions: (update) => {
+        currentOptions = typeof update === 'function' ? update(currentOptions) : update;
+      },
+      setProfiles: vi.fn(),
+      setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
+      unitsMap: {},
+    });
+
+    expect(currentOptions.callsigns).toEqual([
+      { value: 'нугуш', label: 'НУГУШ', count: 5, values: ['нугуш'] },
+    ]);
+  });
 });
 
 describe('reloadAnalysisData', () => {
@@ -333,6 +390,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),
@@ -463,6 +521,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),
@@ -593,6 +652,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),
@@ -633,12 +693,35 @@ describe('reloadAnalysisData', () => {
     expect(
       buildHydratedNetworkFilterOptions(
         [
-          { id: 2852, name: 'управління' },
+          { id: 2852, name: 'управління', unitIds: [23] },
           { id: 11, name: 'Network 11' },
-        ] as Array<{ id: number; name: string | null }>,
+        ] as unknown as Network[],
         [2852],
+        { 23: { id: 23, name: '23 сб' } } as unknown as Record<number, Unit>,
       ),
-    ).toEqual([{ value: '2852', label: 'управління', count: 0 }]);
+    ).toEqual([{ value: '2852', label: 'управління 23 сб', count: 0 }]);
+  });
+
+  it('builds counted network options with hydrated unit labels', () => {
+    expect(
+      buildNetworkStatsFilterOptions(
+        {
+          networks: [
+            { networkId: 5, count: 11 },
+            { networkId: 7, count: 3 },
+          ],
+          networkNames: [
+            { id: 5, name: '💻' },
+            { id: 7, name: 'Network 7' },
+          ],
+        },
+        [{ id: 5, name: '💻', unitIds: [23] }] as unknown as Network[],
+        { 23: { id: 23, name: '4 зБпС 50 обрБпС' } } as unknown as Record<number, Unit>,
+      ),
+    ).toEqual([
+      { value: '5', label: '💻 4 зБпС 50 обрБпС', count: 11 },
+      { value: '7', label: 'Network 7', count: 3 },
+    ]);
   });
 
   it('keeps stats labels when hydration provides a shorter real label', () => {
@@ -659,6 +742,22 @@ describe('reloadAnalysisData', () => {
         [{ value: '2852', label: 'управління', count: 0 }],
       ),
     ).toEqual([{ value: '2852', label: 'управління', count: 293, values: ['2852'] }]);
+  });
+
+  it('prefers a hydrated label that adds network units', () => {
+    expect(
+      mergeHydratedNetworkFilterOptions(
+        [{ value: '5', label: '💻', count: 293 }],
+        [{ value: '5', label: '💻 4 зБпС 50 обрБпС', count: 0 }],
+      ),
+    ).toEqual([
+      {
+        value: '5',
+        label: '💻 4 зБпС 50 обрБпС',
+        count: 293,
+        values: ['5'],
+      },
+    ]);
   });
 
   it('adds an absent hydrated network option', () => {
@@ -713,7 +812,7 @@ describe('reloadAnalysisData', () => {
   });
 
   it('hydrates selected network labels through reloadAnalysisData', async () => {
-    const networksDeferred = deferred<Array<{ id: number; name: string }>>();
+    const networksDeferred = deferred<Array<{ id: number; name: string; unitIds: number[] }>>();
     let currentOptions = {
       ...structuredClone(emptyOptions),
       networks: [{ value: '2852', label: 'управління 23 с6 35 омсбр 41 А', count: 293 }],
@@ -726,7 +825,7 @@ describe('reloadAnalysisData', () => {
     mocks.fetchNetworksByIds.mockImplementationOnce(() => networksDeferred.promise);
     mocks.fetchInboxMessages.mockResolvedValue({
       inboxItems: [],
-      callsigns: [],
+      callsigns: [{ callsign: 'alpha', res: [{ unitId: 8 }] }],
       pageLimit: 20,
     });
     mocks.fetchAnalysisFreqs.mockResolvedValue({
@@ -784,6 +883,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),
@@ -796,15 +896,16 @@ describe('reloadAnalysisData', () => {
     await flushPromises();
     expect(mocks.fetchNetworksByIds).toHaveBeenCalledWith([2852], undefined);
 
-    networksDeferred.resolve([{ id: 2852, name: 'управління' }]);
+    networksDeferred.resolve([{ id: 2852, name: 'управління', unitIds: [7] }]);
     await flushPromises();
 
+    expect(mocks.getUnitsByIds).toHaveBeenCalledWith([7, 8], undefined);
     expect(currentOptions.networks).toEqual([
       { value: '2852', label: 'управління 23 с6 35 омсбр 41 А', count: 293, values: ['2852'] },
     ]);
   });
 
-  it('does not load map points when the map is hidden', async () => {
+  it('does not load secondary data owned by visibility effects', async () => {
     mocks.fetchInboxMessages.mockResolvedValue({
       inboxItems: [[1, { networkIds: [] }]],
       callsigns: [{ callsign: 'alpha', res: [] }],
@@ -849,7 +950,7 @@ describe('reloadAnalysisData', () => {
       setHasLoadedInitialMessages: vi.fn(),
       setNewCallsignsLoading: vi.fn(),
       setNewCallsignsLoadedKey: vi.fn(),
-      shouldLoadNewCallsigns: false,
+      shouldLoadNewCallsigns: true,
       setNoMoreToLoad: vi.fn(),
       setNolimitShown: vi.fn(),
       setOptions: vi.fn(),
@@ -858,6 +959,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),
@@ -867,6 +969,7 @@ describe('reloadAnalysisData', () => {
     });
 
     expect(mocks.fetchAnalysisMapPoints).not.toHaveBeenCalled();
+    expect(mocks.fetchAnalysisNewCallsigns).not.toHaveBeenCalled();
   });
 
   it('loads map points when the map center tab is visible', async () => {
@@ -925,6 +1028,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),
@@ -938,6 +1042,7 @@ describe('reloadAnalysisData', () => {
 
   it('reuses networks stats between the networks section and reference data loading in one reload', async () => {
     const queryState = buildQueryState();
+    let currentOptions = structuredClone(emptyOptions);
     mocks.fetchInboxMessages.mockResolvedValue({
       inboxItems: [[1, { networkIds: [] }]],
       callsigns: [{ callsign: 'alpha', res: [] }],
@@ -973,8 +1078,12 @@ describe('reloadAnalysisData', () => {
         setOptions: vi.fn(),
         setProfiles: vi.fn(),
         setTagsMap: vi.fn(),
+        setTagsOrder: vi.fn(),
         unitsMap: {},
       });
+    });
+    const setOptions = vi.fn((update) => {
+      currentOptions = typeof update === 'function' ? update(currentOptions) : update;
     });
 
     await reloadAnalysisData({
@@ -1009,12 +1118,13 @@ describe('reloadAnalysisData', () => {
       shouldLoadNewCallsigns: false,
       setNoMoreToLoad: vi.fn(),
       setNolimitShown: vi.fn(),
-      setOptions: vi.fn(),
+      setOptions,
       setProfiles: vi.fn(),
       setSummaryCallsignsInfo: vi.fn(),
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),
@@ -1024,6 +1134,9 @@ describe('reloadAnalysisData', () => {
     });
 
     expect(mocks.fetchAnalysisNetworks).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(currentOptions.networks).toEqual([{ value: '11', label: 'Network 11', count: 2 }]);
+    });
   });
 
   it('seeds sender profiles from inbox results before the sender filter section loads', async () => {
@@ -1102,6 +1215,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),
@@ -1194,6 +1308,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),
@@ -1267,6 +1382,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs,
       setTopLocations: vi.fn(),
@@ -1343,6 +1459,7 @@ describe('reloadAnalysisData', () => {
         setSummaryLoading: vi.fn(),
         setSummaryRows: vi.fn(),
         setTagsMap: vi.fn(),
+        setTagsOrder: vi.fn(),
         setTopCallsigns: vi.fn(),
         setTopFreqs: vi.fn(),
         setTopLocations: vi.fn(),
@@ -1429,6 +1546,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),
@@ -1518,6 +1636,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),
@@ -1605,6 +1724,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),
@@ -1694,6 +1814,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),
@@ -1772,6 +1893,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows,
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns,
       setTopFreqs,
       setTopLocations,
@@ -1845,6 +1967,7 @@ describe('reloadAnalysisData', () => {
       setSummaryLoading: vi.fn(),
       setSummaryRows: vi.fn(),
       setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
       setTopCallsigns: vi.fn(),
       setTopFreqs: vi.fn(),
       setTopLocations: vi.fn(),

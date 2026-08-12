@@ -1,4 +1,5 @@
 import {
+  Button,
   CircularProgress,
   Paper,
   Stack,
@@ -17,11 +18,19 @@ import { ELLIPSIS } from '../../../utils/misc';
 
 type Props = {
   correlatedFreqs: CorrelatedFreq[];
+  loaded: boolean;
   loading: boolean;
+  onLoad: () => void;
   selectedFreq: string | null;
 };
 
-export function AnalysisCorrelatedFreqsCard({ correlatedFreqs, loading, selectedFreq }: Props) {
+export function AnalysisCorrelatedFreqsCard({
+  correlatedFreqs,
+  loaded,
+  loading,
+  onLoad,
+  selectedFreq,
+}: Props) {
   const headingId = useId().replace(/:/g, '-');
 
   return (
@@ -41,6 +50,15 @@ export function AnalysisCorrelatedFreqsCard({ correlatedFreqs, loading, selected
           <CompactText color="text.secondary">
             {`Завантажую суміжні частоти${ELLIPSIS}`}
           </CompactText>
+        </Stack>
+      ) : !loaded ? (
+        <Stack spacing={1} alignItems="flex-start">
+          <CompactText color="text.secondary">
+            Пошук суміжних частот може бути тривалим для активної частоти.
+          </CompactText>
+          <Button variant="outlined" size="small" onClick={onLoad}>
+            Завантажити
+          </Button>
         </Stack>
       ) : correlatedFreqs.length === 0 ? (
         <CompactText color="text.secondary">Немає даних</CompactText>

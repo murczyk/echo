@@ -6,12 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   save: vi.fn(),
+  replayStatus: vi.fn(),
   notify: vi.fn(),
 }));
 
 vi.mock('../../services/api/system-settings', () => ({
   listSystemSettings: mocks.list,
   createSystemSettings: mocks.save,
+  getRerDutyTestReplayStatus: mocks.replayStatus,
 }));
 vi.mock('../../components/PowerSnackbar', () => ({
   usePowerSnackbar: () => ({ notify: mocks.notify }),
@@ -42,6 +44,9 @@ vi.mock('../../components/PowerButton', () => ({
   ),
 }));
 vi.mock('../admin-control-panel-neo', () => ({ AdminControlPanelNeoSection: () => null }));
+vi.mock('./CacheBackfillSection', () => ({
+  CacheBackfillSection: () => <div>Перерахунок кешу</div>,
+}));
 
 import { AdminSystemSettingsNeoPage } from './index';
 
@@ -71,10 +76,18 @@ function audioSwitch(container: HTMLElement): HTMLInputElement | null {
 
 describe('AdminSystemSettingsNeoPage success notifications', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo');
     mocks.list.mockReset();
     mocks.save.mockReset();
     mocks.list.mockResolvedValue([]);
     mocks.save.mockResolvedValue(undefined);
+    mocks.replayStatus.mockResolvedValue({
+      status: 'disabled',
+      sourceCount: 0,
+      nextSourcePosition: null,
+      generatedCount: 0,
+      nextEmitAtMs: null,
+    });
     mocks.notify.mockReset();
   });
   afterEach(() => {
@@ -160,6 +173,49 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     mocks.list.mockResolvedValueOnce([{ id: 1, deleted: false, enableAudioTranscription: true }]);
     const { container, root } = await renderPage();
     expect(button(container, 'Транскрибування')).toBeUndefined();
+    await act(async () => root.unmount());
+  });
+
+  it('keeps classic menu toggles in their respective tabs', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
+    const { container, root } = await renderPage();
+    const tabs = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'));
+
+    expect(container.textContent).toContain('Показувати класичний оперативний');
+    expect(container.textContent).not.toContain('Показувати класичний аналіз');
+
+    await act(async () => tabs.find((tab) => tab.textContent === 'Аналіз')?.click());
+
+    expect(container.textContent).not.toContain('Показувати класичний оперативний');
+    expect(container.textContent).toContain('Показувати класичний аналіз');
+    await act(async () => root.unmount());
+  });
+
+  it('reads the active tab from the anchor and has no provider tab', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+    const pushState = vi.spyOn(window.history, 'pushState');
+    const { container, root } = await renderPage();
+    const tabs = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'));
+    const dutyTab = tabs.find((tab) => tab.textContent?.includes('Оперативний'));
+    const analysisTab = tabs.find((tab) => tab.textContent?.includes('Аналіз'));
+
+    expect(dutyTab?.getAttribute('aria-selected')).toBe('true');
+    expect(tabs.some((tab) => tab.textContent?.includes('ШІ'))).toBe(false);
+    await act(async () => analysisTab?.click());
+
+    expect(window.location.hash).toBe('#analysis');
+    expect(replaceState).toHaveBeenCalledOnce();
+    expect(pushState).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
+  it('shows cache maintenance without the settings save button', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#cache');
+    const { container, root } = await renderPage();
+
+    expect(container.textContent).toContain('Перерахунок кешу');
+    expect(button(container, 'зберегти')).toBeUndefined();
     await act(async () => root.unmount());
   });
 });

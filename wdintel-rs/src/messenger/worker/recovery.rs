@@ -2568,6 +2568,7 @@ mod tests {
             name: Set(format!("test-client-{}", Uuid::new_v4())),
             created_at: Set(Utc::now().naive_utc()),
             deleted: Set(false),
+            display_name: Set(None),
         }
         .insert(dbx)
         .await
@@ -2868,6 +2869,7 @@ mod tests {
             rer_duty_test_since_ms: Set(0),
             rer_duty_test_limit: Set(1),
             rer_duty_poll_interval_sec: Set(1),
+            rer_duty_test_replay_interval_sec: Set(1),
             rer_duty_insert_historical_interceptions: Set(false),
             short_url_enabled: Set(false),
             support_non_rer_interceptions: Set(false),
@@ -2890,6 +2892,9 @@ mod tests {
             ),
             limit_big_reports: Set(false),
             enable_audio_transcription: Set(false),
+            show_classic_duty: Set(true),
+            show_classic_analysis: Set(true),
+            hide_orbit_data: Set(false),
         }
         .insert(dbx)
         .await

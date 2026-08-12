@@ -13,6 +13,9 @@ type Props = {
   networkNameOptions: NetworkSearchResult[];
   networkNameLoading: boolean;
   setNetworkNameInput: (val: string) => void;
+  networkUnitNamesById: Record<number, string>;
+  selectedNetwork: NetworkSearchResult | null;
+  setSelectedNetwork: (val: NetworkSearchResult | null) => void;
   freqOptions: string[];
   freqLoading: boolean;
   setFreqInput: (val: string) => void;
@@ -27,6 +30,9 @@ export function NetworkSection({
   networkNameOptions,
   networkNameLoading,
   setNetworkNameInput,
+  networkUnitNamesById,
+  selectedNetwork,
+  setSelectedNetwork,
   freqOptions,
   freqLoading,
   setFreqInput,
@@ -107,30 +113,45 @@ export function NetworkSection({
               }
             });
 
-            const allOpts = [...topOpts, ...otherOpts];
+            const allOpts = [
+              ...(selectedNetwork ? [selectedNetwork] : []),
+              ...topOpts,
+              ...otherOpts,
+            ];
             const uniqueOpts = Array.from(
               new Map(allOpts.map((item) => [item.id === -1 ? item.name : item.id, item])).values(),
             );
-
+            const optionLabel = (option: string | NetworkSearchResult) => {
+              if (typeof option === 'string') return option;
+              const unitNames = (option.unit_ids ?? [])
+                .map((unitId) => networkUnitNamesById[unitId]?.trim())
+                .filter((unitName): unitName is string => Boolean(unitName));
+              return [option.name, ...unitNames].filter(Boolean).join(' — ');
+            };
             return (
               <Autocomplete
                 freeSolo
                 forcePopupIcon
                 noOptionsText="Немає варіантів"
                 options={uniqueOpts}
-                getOptionLabel={(option) => (typeof option === 'string' ? option : option.name)}
+                getOptionLabel={optionLabel}
                 isOptionEqualToValue={(option, value) => {
+                  if (typeof option !== 'string' && typeof value !== 'string') {
+                    return option.id === value.id;
+                  }
                   const optionName = typeof option === 'string' ? option : option.name;
                   const valueName = typeof value === 'string' ? value : value.name;
                   return optionName === valueName;
                 }}
-                value={field.value ?? ''}
+                value={selectedNetwork ?? field.value ?? ''}
+                inputValue={selectedNetwork ? optionLabel(selectedNetwork) : (field.value ?? '')}
                 loading={networkNameLoading}
                 disabled={busy}
                 onInputChange={(_, newValue, reason) => {
                   if (reason === 'input') {
                     setNetworkNameInput(newValue);
                     field.onChange(newValue);
+                    setSelectedNetwork(null);
                     setUnitLocked(false);
                     if (newValue) {
                       setValue('network_signal_name', 'DMR', { shouldValidate: true });
@@ -141,6 +162,7 @@ export function NetworkSection({
                   const network = typeof newValue === 'string' ? null : newValue;
                   const name = network ? network.name : newValue || '';
                   field.onChange(name);
+                  setSelectedNetwork(network);
                   if (name) {
                     setValue('network_signal_name', 'DMR', { shouldValidate: true });
                   }

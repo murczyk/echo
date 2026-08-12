@@ -16,9 +16,7 @@ use crate::rer_importer::inbox::query::build_inbox_query;
 use crate::rer_importer::signals::*;
 use crate::storage::mk_media_url;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::string::*;
-use crate::utils::*;
 use actix_web::web::Data;
 use chrono::Utc;
 use geoconvert::{LatLon, Mgrs};
@@ -42,8 +40,6 @@ pub struct InboxMessageDesc {
     pub sender: Option<String>,
     pub freq: Option<String>,
     pub coords: Option<String>,
-    pub callsigns: Option<serde_json::Value>,
-    pub callsigns_alg2: Option<serde_json::Value>,
     pub callsign_tokens: Option<serde_json::Value>,
     pub signal_tokens: Option<serde_json::Value>,
     #[allow(dead_code)]
@@ -99,7 +95,7 @@ pub async fn get_inbox_map_items(
 
     let query_res: Vec<QueryResult> = env
         .dbx
-        .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
+        .query_all_raw(Statement::from_string(DatabaseBackend::Postgres, q))
         .await
         .context(h!())?;
     let mut result = vec![];
@@ -285,6 +281,10 @@ pub async fn aggregate_to_inbox_messages(
         crate::system_settings::sigint_comment_parsing_enabled(&env.dbx)
             .await
             .c(h!())?;
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(&env.dbx, &message_ids)
+            .await
+            .c(h!())?;
 
     for message in messages {
         // for message in messages {
@@ -321,10 +321,10 @@ pub async fn aggregate_to_inbox_messages(
         };
         let freq = message.freq.clone();
         let coords = message.coords.clone();
-        let callsigns = match message.callsigns.as_ref() {
-            Some(v) => serde_json::from_value(v.clone()).context(h!())?,
-            None => vec![],
-        };
+        let normalized_callsigns =
+            normalized_callsigns.remove(&message.id).unwrap_or_default();
+        let callsigns = normalized_callsigns.primary;
+        let callsigns_alg2 = normalized_callsigns.alg2;
         let group_entry = groups_map.get(&message.id).and_then(|entries| {
             entries.iter().min_by_key(|(entry, _)| entry.id).cloned()
         });
@@ -462,7 +462,7 @@ pub async fn aggregate_to_inbox_messages(
                     .map(|dg| dg.datasource_id),
                 location,
                 tags: inbox_tag_ids,
-                callsigns_alg2: from_m_val_vec(message.callsigns_alg2.clone())?,
+                callsigns_alg2,
                 network_ids,
                 network_name: message.network,
                 device_name: message.device_name,
@@ -1035,6 +1035,7 @@ pub async fn submit_upsert_inbox_item(
     invalidate_body_derived_fields: bool,
 ) -> Result<i64, AppError> {
     let m_existing = SigintInboxItem::find_by_id(id).one(txn).await.c(h!())?;
+    let existing_message = m_existing.is_some();
     if let Some(existing) = m_existing {
         // cleanup before logging
         let mut existing = existing.clone();
@@ -1063,7 +1064,7 @@ pub async fn submit_upsert_inbox_item(
         vec![]
     };
     if let Some(c1) = &coords_s {
-        if !coords_vec.iter().any(|c| c.text.eq(&c1.text)) {
+        if !coords_vec.iter().any(|c| c.text == c1.text) {
             coords_vec.push(c1.clone())
         }
     }
@@ -1119,6 +1120,11 @@ pub async fn submit_upsert_inbox_item(
     if invalidate_body_derived_fields {
         clear_body_derived_fields(txn, id).await.c(h!())?;
     }
+    let datetime_neo = crate::inbox::datetime::from_date_time_text(
+        message.date.as_deref(),
+        message.time.as_deref(),
+    )
+    .c(h!())?;
 
     let insert_res =
         sigint_inbox_item::Entity::insert(sigint_inbox_item::ActiveModel {
@@ -1127,16 +1133,6 @@ pub async fn submit_upsert_inbox_item(
             time: Set(message.time.clone()),
             freq: Set(freq),
             coords: Set(coords_s.map(|x| x.text)),
-            callsigns: Set(Some(
-                serde_json::to_value(
-                    message
-                        .callsigns
-                        .iter()
-                        .map(|x| x.to_lowercase().trim().to_string())
-                        .collect::<Vec<String>>(),
-                )
-                .context(h!())?,
-            )),
             checked: Set(Some(message.checked)),
             reviewed: Set(Some(true)),
             unit: Set(message.unit.clone()),
@@ -1153,10 +1149,9 @@ pub async fn submit_upsert_inbox_item(
             location: Set(location),
             location_v2: Set(location_v2),
             tags: NotSet,
-            callsigns_alg1: NotSet,
-            callsigns_alg2: NotSet,
             signal_tokens: NotSet,
             datetime: NotSet,
+            datetime_neo: Set(datetime_neo),
             body_noheader: Set(Some(
                 serde_json::to_value(&body_noheader).context(h!())?,
             )),
@@ -1171,9 +1166,9 @@ pub async fn submit_upsert_inbox_item(
                 .update_columns([
                     sigint_inbox_item::Column::Date,
                     sigint_inbox_item::Column::Time,
+                    sigint_inbox_item::Column::DatetimeNeo,
                     sigint_inbox_item::Column::Freq,
                     sigint_inbox_item::Column::Coords,
-                    sigint_inbox_item::Column::Callsigns,
                     sigint_inbox_item::Column::Checked,
                     sigint_inbox_item::Column::Reviewed,
                     sigint_inbox_item::Column::Unit,
@@ -1194,6 +1189,14 @@ pub async fn submit_upsert_inbox_item(
         .await
         .c(h!())?;
     let inbox_id = insert_res.last_insert_id;
+    crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
+        txn,
+        inbox_id,
+        message.unit.as_deref(),
+        message.unit.as_deref(),
+    )
+    .await
+    .c(h!())?;
     crate::rer_importer::inbox::metadata::refresh_metadata(inbox_id, txn)
         .await
         .c(h!())?;
@@ -1207,6 +1210,7 @@ pub async fn submit_upsert_inbox_item(
         coords_vec,
         inbox_id,
         Utc::now().naive_utc(),
+        crate::rer_importer::pelengation_object::extract(&message.text),
         txn,
     )
     .await
@@ -1216,12 +1220,43 @@ pub async fn submit_upsert_inbox_item(
         .await
         .c(h!())?
         .c(h!())?;
+    let existing_alg2 = if invalidate_body_derived_fields {
+        Vec::new()
+    } else {
+        crate::inbox::callsigns::load_by_item_ids(txn, &[inbox_id])
+            .await?
+            .remove(&inbox_id)
+            .unwrap_or_default()
+            .alg2
+    };
+    let callsigns = crate::inbox::callsigns::InboxItemCallsigns {
+        primary: crate::utils::uniq_via_btreeset(
+            &message
+                .callsigns
+                .iter()
+                .map(|callsign| callsign.to_lowercase().trim().to_string())
+                .collect::<Vec<_>>(),
+        ),
+        alg2: existing_alg2,
+    };
+    crate::inbox::callsigns::sync(txn, inbox_id, callsigns, *login)
+        .await
+        .c(h!())?;
     crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
         vec![new_item],
         txn,
     )
     .await
     .c(h!())?;
+    if existing_message {
+        crate::stats::enqueue_group_stats_recalculation_for_message(
+            txn,
+            id,
+            format!("updated inbox message {id}"),
+        )
+        .await
+        .c(h!())?;
+    }
     Ok(inbox_id)
 }
 
@@ -1271,14 +1306,6 @@ async fn clear_body_derived_fields(
 ) -> Result<(), AppError> {
     sigint_inbox_item::Entity::update_many()
         .col_expr(
-            sigint_inbox_item::Column::CallsignsAlg1,
-            Expr::value(Option::<serde_json::Value>::None),
-        )
-        .col_expr(
-            sigint_inbox_item::Column::CallsignsAlg2,
-            Expr::value(Option::<serde_json::Value>::None),
-        )
-        .col_expr(
             sigint_inbox_item::Column::SignalTokens,
             Expr::value(Option::<serde_json::Value>::None),
         )
@@ -1318,6 +1345,9 @@ async fn clear_body_derived_fields(
     .exec(txn)
     .await
     .c(h!())?;
+    crate::ai_callsign::worker::enqueue_if_enabled(txn, inbox_id)
+        .await
+        .c(h!())?;
     Ok(())
 }
 

@@ -11,10 +11,13 @@ use clap::Parser;
 use redis::aio::ConnectionManager;
 use redis::ConnectionLike;
 use rustls::crypto::ring;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU8, AtomicUsize, Ordering};
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
+pub mod ai_agent;
+pub mod ai_callsign;
+pub mod ai_engine;
 mod alpine;
 pub mod api_integrations;
 pub mod atak;
@@ -23,10 +26,12 @@ pub mod backup;
 pub mod config;
 pub mod datasource;
 pub mod delta;
+pub mod devices;
 pub mod elm;
 pub mod entities;
 pub mod error;
 pub mod event_stream;
+pub mod file_registry;
 pub mod functest;
 pub mod icons;
 pub mod iggy;
@@ -45,6 +50,7 @@ pub mod ml;
 pub mod nlp;
 pub mod oneoff;
 pub mod operator;
+pub mod orbit;
 pub mod organism;
 pub mod palitra;
 pub mod report_history;
@@ -57,6 +63,7 @@ mod stats;
 pub mod storage;
 pub mod system_settings;
 pub mod tags;
+pub mod telemetry;
 pub mod terminal;
 pub mod tests;
 pub mod transcriber;
@@ -77,14 +84,62 @@ macro_rules! h {
 static RUNTIME_THREAD_INDEX: AtomicUsize = AtomicUsize::new(0);
 static PG_POOL_MAX_CONNECTIONS: AtomicU32 =
     AtomicU32::new(PG_POOL_DEFAULT_MAX_CONNECTIONS);
+static PG_RUNTIME_POOL_ROLE: AtomicU8 = AtomicU8::new(0);
 
-pub fn use_bgworker_pg_pool_limits() {
-    PG_POOL_MAX_CONNECTIONS
-        .store(PG_POOL_BGWORKER_MAX_CONNECTIONS, Ordering::Relaxed);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PgRuntimePoolRole {
+    Web,
+    Bgworker,
+    ReportWorker,
+}
+
+impl PgRuntimePoolRole {
+    fn application_name(self) -> &'static str {
+        match self {
+            Self::Web => "echo-web",
+            Self::Bgworker => "echo-bgworker",
+            Self::ReportWorker => "echo-report-worker",
+        }
+    }
+
+    fn max_connections(self) -> u32 {
+        match self {
+            Self::Web => PG_POOL_DEFAULT_MAX_CONNECTIONS,
+            Self::Bgworker | Self::ReportWorker => {
+                PG_POOL_BGWORKER_MAX_CONNECTIONS
+            }
+        }
+    }
+
+    fn as_u8(self) -> u8 {
+        match self {
+            Self::Web => 1,
+            Self::Bgworker => 2,
+            Self::ReportWorker => 3,
+        }
+    }
+
+    fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(Self::Web),
+            2 => Some(Self::Bgworker),
+            3 => Some(Self::ReportWorker),
+            _ => None,
+        }
+    }
+}
+
+pub fn use_pg_runtime_pool(role: PgRuntimePoolRole) {
+    PG_POOL_MAX_CONNECTIONS.store(role.max_connections(), Ordering::Relaxed);
+    PG_RUNTIME_POOL_ROLE.store(role.as_u8(), Ordering::Relaxed);
 }
 
 fn pg_pool_max_connections() -> u32 {
     PG_POOL_MAX_CONNECTIONS.load(Ordering::Relaxed)
+}
+
+fn pg_runtime_pool_role() -> Option<PgRuntimePoolRole> {
+    PgRuntimePoolRole::from_u8(PG_RUNTIME_POOL_ROLE.load(Ordering::Relaxed))
 }
 
 pub async fn renew_tailscale_cert(
@@ -208,11 +263,34 @@ pub struct OneoffBackfillInboxNetworksPs {
 }
 
 #[derive(clap::Parser, Debug)]
+#[command(
+    after_help = "Example:\n  wdintel-rs --mode=live oneoff-backfill-inbox-network-units-tui --start 2026-07-01"
+)]
+pub struct OneoffBackfillInboxNetworkUnitsTuiPs {
+    /// Start date (inclusive). Format: `YYYY-MM-DD`.
+    #[arg(long, value_name = "YYYY-MM-DD")]
+    pub start: String,
+    /// Page size for each DB fetch.
+    #[arg(long)]
+    pub limit: Option<u64>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffReprocessInboxMetadataPs {
     /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
     #[arg(long)]
     pub since_ts: Option<String>,
     /// End datetime (non-inclusive). Example: `2023-04-18T00:00:00`
+    #[arg(long)]
+    pub till_ts: Option<String>,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillInboxUnitLinksPs {
+    /// Start datetime in UTC (inclusive). Example: `2026-07-10T12:00:00`
+    #[arg(long)]
+    pub start_ts: Option<String>,
+    /// End datetime in UTC (non-inclusive). Example: `2026-08-10T12:00:00`
     #[arg(long)]
     pub till_ts: Option<String>,
 }
@@ -270,6 +348,27 @@ pub struct OneoffExportSigintCommentsPs {
     pub from: String,
     #[arg(long)]
     pub to: String,
+    #[arg(long)]
+    pub output: String,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OneoffExportCommentedMessagesKind {
+    EchoComments,
+    GoiAssociations,
+    MappedGoiAssociation,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffExportCommentedMessagesPs {
+    /// Start datetime in UTC (inclusive). Example: `2026-07-15T00:00:00`
+    #[arg(long)]
+    pub since_ts: String,
+    /// End datetime in UTC (non-inclusive). Example: `2026-08-05T00:00:00`
+    #[arg(long)]
+    pub till_ts: String,
+    #[arg(long, value_enum)]
+    pub kind: Option<OneoffExportCommentedMessagesKind>,
     #[arg(long)]
     pub output: String,
 }
@@ -652,6 +751,24 @@ pub struct OneoffMigrateLargeMediaToPlaintextPs {
     pub dry_run: bool,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct OneoffExportLocalAiAgentProfilePs {
+    #[arg(long)]
+    pub output: std::path::PathBuf,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct OneoffImportLocalAiAgentProfilePs {
+    #[arg(long)]
+    pub input: std::path::PathBuf,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct OneoffDiscardCopiedAiAgentRuntimePs {
+    #[arg(long)]
+    pub clear_control_plane: bool,
+}
+
 #[derive(clap::Args, Debug, Clone)]
 pub struct OneoffBackfillAudioTranscriberPs {
     #[arg(long)]
@@ -687,6 +804,12 @@ pub struct ImportTuiPs {
     pub path: String,
 }
 
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffPrepareOrbitImportPs {
+    #[arg(long)]
+    pub path: std::path::PathBuf,
+}
+
 #[derive(clap::Parser, Debug, Clone)]
 pub struct OneoffMergeDatasourceGroupPs {
     #[arg(long)]
@@ -700,11 +823,19 @@ pub struct OneoffMergeDatasourceGroupPs {
 enum Cmd {
     Server(ServerPs),
     Bgworker,
+    ReportWorker,
     GenElm,
     GenTs,
     #[command(visible_alias = "migration")]
     Migrate,
+    OneoffCreateFileRegistryDatabase,
     NetworkInvalidationTui,
+    /// Prepare a normalized ORBIT Parquet snapshot from a JSON export.
+    OneoffPrepareOrbitImport(OneoffPrepareOrbitImportPs),
+    /// Import ORBIT units from the latest snapshot in an interactive TUI.
+    TuiImportOrbitUnits,
+    /// Create inactive SIGINT units for every unlinked ORBIT unit.
+    OneoffImportUnlinkedOrbitUnits,
     TuiImportUnit(ImportTuiPs),
     TuiImportNetwork(ImportTuiPs),
     OneoffImportNetworkDetails(ImportTuiPs),
@@ -733,6 +864,7 @@ enum Cmd {
     OneoffReprocessCallsigns(OneoffReprocessCallsignsPs),
     OneoffReprocessCallsignTokens(OneoffReprocessCallsignTokensPs),
     OneoffExportSigintComments(OneoffExportSigintCommentsPs),
+    OneoffExportCommentedMessages(OneoffExportCommentedMessagesPs),
     OneoffImportSigintComments(OneoffImportSigintCommentsPs),
     OneoffReviewParsedSigintComments(OneoffReviewParsedSigintCommentsPs),
     OneoffTagMessagesReport(OneoffTagMessagesReportPs),
@@ -775,7 +907,7 @@ enum Cmd {
     OneoffFixEchoimGroups(OneoffFixEchoimGroupsPs),
     OneoffUnlinkReserveGroupDupes,
     OneoffCalculateStats(OneoffCalculateStatsPs),
-    /// Calculates all group stats for last year (no recalculation).
+    /// Refreshes Redis group statistics for the full retention window.
     OneoffCalculateHistoricStats(OneoffCalculateHistoricStatsPs),
     OneoffDisableIm,
     OneoffDisableImAndGoi,
@@ -789,6 +921,9 @@ enum Cmd {
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffBackfillSigintInboxItemDatetimeNeo,
+    OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
+    OneoffBackfillInboxNetworkUnitsTui(OneoffBackfillInboxNetworkUnitsTuiPs),
     OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
     OneoffAuditMissingEchoImMessages(OneoffAuditMissingEchoImMessagesPs),
@@ -796,6 +931,9 @@ enum Cmd {
     OneoffRestartEcho(OneoffRestartEchoPs),
     OneoffKillOldQueries(OneoffKillOldQueriesPs),
     OneoffRefreshAiModels,
+    OneoffExportLocalAiAgentProfile(OneoffExportLocalAiAgentProfilePs),
+    OneoffImportLocalAiAgentProfile(OneoffImportLocalAiAgentProfilePs),
+    OneoffDiscardCopiedAiAgentRuntime(OneoffDiscardCopiedAiAgentRuntimePs),
     OneoffMigrateModulationToEncryption(OneoffMigrateModulationToEncryptionPs),
     OneoffMigrateLargeMediaToPlaintext(OneoffMigrateLargeMediaToPlaintextPs),
     OneoffBackfillAudioTranscriber(OneoffBackfillAudioTranscriberPs),
@@ -826,7 +964,27 @@ pub async fn new_pg_pool_from_config(
     config: &Config,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
     let conn_string = mk_conn_string(config);
-    new_pg_pool_from_conn_string(conn_string).await
+    new_pg_pool_from_conn_string_with_runtime_config(
+        conn_string,
+        pg_pool_max_connections(),
+        config.postgres_runtime.as_ref(),
+        pg_runtime_pool_role(),
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(crate) async fn new_pg_runtime_pool_from_config(
+    config: &Config,
+    role: PgRuntimePoolRole,
+) -> Result<sea_orm::DatabaseConnection, AppError> {
+    new_pg_pool_from_conn_string_with_runtime_config(
+        mk_conn_string(config),
+        pg_pool_max_connections(),
+        config.postgres_runtime.as_ref(),
+        Some(role),
+    )
+    .await
 }
 
 pub async fn new_pg_pool_from_replica(
@@ -834,7 +992,13 @@ pub async fn new_pg_pool_from_replica(
     replica: &ReplicaConfig,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
     let conn_string = mk_replica_conn_string(config, replica);
-    new_pg_pool_from_conn_string(conn_string).await
+    new_pg_pool_from_conn_string_with_runtime_config(
+        conn_string,
+        pg_pool_max_connections(),
+        config.postgres_runtime.as_ref(),
+        pg_runtime_pool_role(),
+    )
+    .await
 }
 
 pub async fn new_pg_pool_from_analytics(
@@ -851,10 +1015,21 @@ pub async fn new_pg_pool_from_analytics(
     .await
 }
 
-async fn new_pg_pool_from_conn_string(
+async fn new_pg_pool_from_conn_string_with_runtime_config(
     conn_string: String,
+    max_connections: u32,
+    postgres_runtime: Option<&PostgresRuntimeConfig>,
+    role: Option<PgRuntimePoolRole>,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
-    new_pg_pool_from_conn_string_with_timeout(conn_string, None, false).await
+    Ok(new_pg_pool_from_conn_string_with_options(
+        conn_string,
+        max_connections,
+        None,
+        false,
+        pg_runtime_pool_options(postgres_runtime, role),
+    )
+    .await
+    .c(h!())?)
 }
 
 async fn new_pg_pool_from_conn_string_with_timeout(
@@ -862,8 +1037,58 @@ async fn new_pg_pool_from_conn_string_with_timeout(
     connect_timeout: Option<core::time::Duration>,
     connect_lazy: bool,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
+    Ok(new_pg_pool_from_conn_string_with_options(
+        conn_string,
+        pg_pool_max_connections(),
+        connect_timeout,
+        connect_lazy,
+        None,
+    )
+    .await
+    .c(h!())?)
+}
+
+pub(crate) async fn new_pg_pool_from_conn_string_with_max_connections(
+    conn_string: String,
+    max_connections: u32,
+) -> Result<sea_orm::DatabaseConnection, sea_orm::DbErr> {
+    new_pg_pool_from_conn_string_with_options(
+        conn_string,
+        max_connections,
+        None,
+        false,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn new_pg_runtime_pool_from_conn_string_with_max_connections(
+    conn_string: String,
+    max_connections: u32,
+    config: &Config,
+) -> Result<sea_orm::DatabaseConnection, sea_orm::DbErr> {
+    new_pg_pool_from_conn_string_with_options(
+        conn_string,
+        max_connections,
+        None,
+        false,
+        pg_runtime_pool_options(
+            config.postgres_runtime.as_ref(),
+            pg_runtime_pool_role(),
+        ),
+    )
+    .await
+}
+
+async fn new_pg_pool_from_conn_string_with_options(
+    conn_string: String,
+    max_connections: u32,
+    connect_timeout: Option<core::time::Duration>,
+    connect_lazy: bool,
+    runtime: Option<PgRuntimePoolOptions>,
+) -> Result<sea_orm::DatabaseConnection, sea_orm::DbErr> {
     let mut opt = sea_orm::ConnectOptions::new(conn_string);
-    opt.max_connections(pg_pool_max_connections())
+    opt.max_connections(max_connections)
         .min_connections(0)
         .idle_timeout(core::time::Duration::from_secs(30))
         .sqlx_logging(true)
@@ -878,8 +1103,52 @@ async fn new_pg_pool_from_conn_string_with_timeout(
     }
     opt.connect_lazy(connect_lazy);
 
-    let db = sea_orm::Database::connect(opt).await.c(h!())?;
-    Ok(db)
+    if let Some(runtime) = runtime {
+        opt.set_application_name(runtime.application_name);
+        opt.map_sqlx_postgres_opts(move |options| {
+            options.options([
+                ("statement_timeout", runtime.statement_timeout_ms),
+                ("lock_timeout", runtime.lock_timeout_ms),
+                (
+                    "idle_in_transaction_session_timeout",
+                    runtime.idle_in_transaction_session_timeout_ms,
+                ),
+            ])
+        });
+    }
+
+    sea_orm::Database::connect(opt).await
+}
+
+#[derive(Clone, Copy)]
+struct PgRuntimePoolOptions {
+    application_name: &'static str,
+    statement_timeout_ms: u64,
+    lock_timeout_ms: u64,
+    idle_in_transaction_session_timeout_ms: u64,
+}
+
+fn pg_runtime_pool_options(
+    postgres_runtime: Option<&PostgresRuntimeConfig>,
+    role: Option<PgRuntimePoolRole>,
+) -> Option<PgRuntimePoolOptions> {
+    let postgres_runtime = postgres_runtime?;
+    let role = role?;
+    let statement_timeout_ms = match role {
+        PgRuntimePoolRole::ReportWorker => {
+            postgres_runtime.report_worker_statement_timeout_ms
+        }
+        PgRuntimePoolRole::Web | PgRuntimePoolRole::Bgworker => {
+            postgres_runtime.statement_timeout_ms
+        }
+    };
+    Some(PgRuntimePoolOptions {
+        application_name: role.application_name(),
+        statement_timeout_ms,
+        lock_timeout_ms: postgres_runtime.lock_timeout_ms,
+        idle_in_transaction_session_timeout_ms: postgres_runtime
+            .idle_in_transaction_session_timeout_ms,
+    })
 }
 
 /// Connect to GreptimeDB similar to Postgresql, except that it's ok to fail, the dependency is optional
@@ -936,6 +1205,47 @@ fn mk_conn_string(config: &Config) -> String {
     conn_string
 }
 
+fn wdfile_connection_parts(
+    config: &FileRegistryConfig,
+    mode: Mode,
+) -> (String, u16, String, String, String) {
+    let pg_host = config
+        .pg_host
+        .clone()
+        .unwrap_or_else(|| DEFAULT_PG_HOST.to_string());
+    let pg_port = config.pg_port.unwrap_or(DEFAULT_PG_PORT);
+    let pg_user = config
+        .pg_user
+        .clone()
+        .unwrap_or_else(|| DEFAULT_PG_USER.to_string());
+    let pg_password = config
+        .pg_password
+        .clone()
+        .unwrap_or_else(|| DEFAULT_PG_PASSWORD.to_string());
+    let mut pg_dbname = config
+        .pg_dbname
+        .clone()
+        .unwrap_or_else(|| DEFAULT_PG_WDFILE_DBNAME.to_string());
+
+    if mode == Mode::Test {
+        if let Ok(test_db_name) = std::env::var("TEST_WDFILE_DB_NAME") {
+            if !test_db_name.is_empty() {
+                pg_dbname = test_db_name;
+            }
+        }
+    }
+
+    (pg_host, pg_port, pg_user, pg_password, pg_dbname)
+}
+
+fn mk_wdfile_conn_string(config: &FileRegistryConfig, mode: Mode) -> String {
+    let (pg_host, pg_port, pg_user, pg_password, pg_dbname) =
+        wdfile_connection_parts(config, mode);
+    format!(
+        "postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_dbname}"
+    )
+}
+
 fn mk_replica_conn_string(config: &Config, replica: &ReplicaConfig) -> String {
     let pg_host = replica
         .pg_host
@@ -986,6 +1296,13 @@ fn mk_analytics_conn_string(analytics: &AnalyticsConfig) -> String {
 }
 
 pub fn redis_conn_string(config: &Config) -> anyhow::Result<String> {
+    redis_conn_string_for_db(config, 0)
+}
+
+pub fn redis_conn_string_for_db(
+    config: &Config,
+    database: u8,
+) -> anyhow::Result<String> {
     let host = match &config.redis_host {
         Some(host) => host.clone(),
         None => REDIS_HOST.to_string(),
@@ -994,12 +1311,19 @@ pub fn redis_conn_string(config: &Config) -> anyhow::Result<String> {
         Some(port) => *port,
         None => REDIS_PORT,
     };
-    let redis_url = format!("redis://{host}:{port}/");
+    let redis_url = format!("redis://{host}:{port}/{database}");
     Ok(redis_url)
 }
 
 pub async fn new_redis(config: &Config) -> anyhow::Result<ConnectionManager> {
-    let redis_url = redis_conn_string(config).context(h!())?;
+    new_redis_for_db(config, 0).await
+}
+
+pub async fn new_redis_for_db(
+    config: &Config,
+    database: u8,
+) -> anyhow::Result<ConnectionManager> {
+    let redis_url = redis_conn_string_for_db(config, database).context(h!())?;
     let mut redis_cli = redis::Client::open(redis_url).context(h!())?;
     let is_ok = redis_cli.check_connection();
     if !is_ok {
@@ -1076,6 +1400,10 @@ async fn async_main(
         Cmd::Bgworker => {
             server::main_bgworker(mode, token, shutdown_handle.clone()).await
         }
+        Cmd::ReportWorker => {
+            server::main_report_worker(mode, token, shutdown_handle.clone())
+                .await
+        }
         Cmd::OneoffEnsureTagsOrdering => {
             tags::ordering::oneoff_ensure_tags_ordering(mode).await
         }
@@ -1103,6 +1431,9 @@ async fn async_main(
         }
         Cmd::OneoffFixKmz(ps) => kml::oneoff_fix_kml_main(mode, &ps).await,
         Cmd::Migrate => migration::run_migration_1(mode).await,
+        Cmd::OneoffCreateFileRegistryDatabase => {
+            file_registry::provisioning::oneoff_create_database(mode).await
+        }
         Cmd::RenewTailscaleCert(ps) => {
             renew_tailscale_cert(mode, ps.force).await
         }
@@ -1135,6 +1466,10 @@ async fn async_main(
         }
         Cmd::OneoffExportSigintComments(ps) => {
             sigint::comments::oneoff_export_sigint_comments(mode, &ps).await
+        }
+        Cmd::OneoffExportCommentedMessages(ps) => {
+            sigint::comments::oneoff_export_commented_messages(mode, &ps)
+                .await
         }
         Cmd::OneoffImportSigintComments(ps) => {
             sigint::comments::oneoff_import_sigint_comments(mode, &ps).await
@@ -1307,6 +1642,18 @@ async fn async_main(
             sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
                 .await
         }
+        Cmd::OneoffBackfillInboxNetworkUnitsTui(ps) => {
+            sigint::network::inbox_backfill_tui::run_inbox_network_unit_backfill_tui(
+                mode, &ps,
+            )
+            .await
+        }
+        Cmd::OneoffBackfillSigintInboxItemDatetimeNeo => {
+            inbox::datetime::oneoff_backfill(mode).await
+        }
+        Cmd::OneoffBackfillInboxUnitLinks(ps) => {
+            sigint::oneoff::oneoff_backfill_inbox_unit_links(mode, &ps).await
+        }
         Cmd::OneoffReprocessInboxMetadata(ps) => {
             rer_importer::inbox::metadata::oneoff::oneoff_reprocess_inbox_metadata(
                 mode, &ps,
@@ -1328,6 +1675,15 @@ async fn async_main(
         }
         Cmd::NetworkInvalidationTui => {
            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
+        }
+        Cmd::OneoffPrepareOrbitImport(ps) => {
+            Ok(orbit::prepare_import_snapshot(mode, ps.path)
+                .await
+                .c(h!())?)
+        }
+        Cmd::TuiImportOrbitUnits => orbit::run_import_tui(mode).await,
+        Cmd::OneoffImportUnlinkedOrbitUnits => {
+            sigint::unit::orbit::oneoff_import_unlinked_orbit_units(mode).await
         }
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await
@@ -1360,6 +1716,15 @@ async fn async_main(
             palitra::oneoff::oneoff_backup_palitras(mode).await
         }
         Cmd::OneoffRefreshAiModels => tags::worker::oneoff_refresh_models(mode).await,
+        Cmd::OneoffExportLocalAiAgentProfile(ps) => {
+            ai_agent::profile::export(mode, &ps.output).await
+        }
+        Cmd::OneoffImportLocalAiAgentProfile(ps) => {
+            ai_agent::profile::import(mode, &ps.input).await
+        }
+        Cmd::OneoffDiscardCopiedAiAgentRuntime(ps) => {
+            ai_agent::profile::discard_runtime(mode, ps.clear_control_plane).await
+        }
         Cmd::OneoffMigrateModulationToEncryption(ps) => {
             sigint::network::oneoff::oneoff_migrate_modulation_to_encryption(
                 mode, ps.dry_run,

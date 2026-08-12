@@ -1,4 +1,6 @@
 import type {
+  AnalysisCallsignFrequencyMatchesReq,
+  AnalysisCallsignFrequencyMatchesRsp,
   AnalysisStatsReq,
   EditFreqUnitNameReq,
   BatchMessageCommentsReq,
@@ -19,7 +21,6 @@ import type {
   AnalysisStatsUnit,
   AreaOfResponsibilityEntry,
   CallsignInfoRes,
-  CallsignsGraphReq,
   CountStatsRsp,
   CorrelatedFreqsRsp,
   FreqDetailedPoint,
@@ -32,7 +33,7 @@ import type {
   MessageIdsRsp,
   MapPointsRsp,
   MetadataStatsRsp,
-  NetJsonGraphAndMeta,
+  NetworkCallsignRelationsRsp,
   Network,
   NetworkUnit,
   NewCallsignsRes,
@@ -54,6 +55,7 @@ import { postJson, postVoid } from './client';
 import type { RequestOptions } from './client';
 import type { BgtaskStatusAndLogsRsp } from './bgtask';
 import { downloadReportHistory, fetchReportHistoryTaskStatus } from './report-history';
+import { normalizeCallsignFilterValues } from '../../utils/callsign-normalization';
 import {
   bookmarkAdd,
   bookmarkRemove,
@@ -145,7 +147,7 @@ function analysisStatsReqBody(req: AnalysisStatsReq) {
     selectedSenders: emptyArrToNull(req.selectedSenders),
     selectedFreqs: emptyArrToNull(req.selectedFreqs),
     selectedPosts: emptyArrToNull(req.selectedPosts),
-    selectedCallsigns: emptyArrToNull(req.selectedCallsigns),
+    selectedCallsigns: emptyArrToNull(normalizeCallsignFilterValues(req.selectedCallsigns)),
     selectedUnits: emptyArrToNull(req.selectedUnits),
     selectedLocations: emptyArrToNull(req.selectedLocations),
     selectedAors: emptyArrToNull(req.selectedAors),
@@ -321,16 +323,43 @@ export async function fetchAnalysisCorrelatedFreqs(
   return postAnalysisStats<CorrelatedFreqsRsp>('/api/rer/analysis/correlated-freqs', req, options);
 }
 
-export async function fetchAnalysisCallsignGraph(
-  req: CallsignsGraphReq,
+export async function fetchAnalysisActivityDaily(
+  req: AnalysisStatsReq,
   options?: RequestOptions,
-): Promise<NetJsonGraphAndMeta> {
-  const raw = await postJson<unknown>(
-    '/api/rer/analysis/callsigns-graph',
-    transformCamelToSnake(req),
+): Promise<FreqDailyActivityCount> {
+  return postAnalysisStats<FreqDailyActivityCount>(
+    '/api/rer/analysis/activity-daily',
+    req,
     options,
   );
-  return transformSnakeToCamel<NetJsonGraphAndMeta>(raw);
+}
+
+export async function fetchAnalysisCallsignRelations(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<NetworkCallsignRelationsRsp> {
+  return postAnalysisStats<NetworkCallsignRelationsRsp>(
+    '/api/rer/analysis/callsign-relations',
+    req,
+    options,
+  );
+}
+
+export async function fetchAnalysisCallsignFrequencyMatches(
+  req: AnalysisCallsignFrequencyMatchesReq,
+  options?: RequestOptions,
+): Promise<AnalysisCallsignFrequencyMatchesRsp> {
+  const body = {
+    req: analysisStatsReqBody(req.req),
+    callsigns: normalizeCallsignFilterValues(req.callsigns),
+    min_matches: req.minMatches,
+  };
+  const raw = await postJson<unknown>(
+    '/api/rer/analysis/callsign-frequency-matches',
+    body as JsonValue,
+    options,
+  );
+  return transformSnakeToCamel<AnalysisCallsignFrequencyMatchesRsp>(raw);
 }
 
 export async function fetchFreqActivityDaily(req: FreqStatsReq): Promise<FreqDailyActivityCount> {
@@ -357,15 +386,20 @@ export async function fetchAnalysisMapPoints(
 export async function fetchMessagesByIds(
   messageIds: number[],
   inboxReq?: Partial<InboxMessagesReq> | null,
+  options?: RequestOptions,
 ): Promise<Array<[number, InboxMessage]>> {
   const req: MessageIdsReq = {
     messageIds,
     inboxReq: inboxReq == null ? null : (inboxReq as InboxMessagesReq),
   };
-  const raw = await postJson<unknown>(
-    '/api/rer-importer/messages-by-id',
-    transformCamelToSnake(req),
-  );
+  const raw =
+    options == null
+      ? await postJson<unknown>('/api/rer-importer/messages-by-id', transformCamelToSnake(req))
+      : await postJson<unknown>(
+          '/api/rer-importer/messages-by-id',
+          transformCamelToSnake(req),
+          options,
+        );
   return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
 }
 
@@ -383,7 +417,7 @@ export async function fetchAnalysisCallsignInfos(
 ): Promise<CallsignInfoRes[]> {
   const raw = await postJson<unknown>(
     '/api/rer/callsign-info-batch',
-    transformCamelToSnake({ callsigns }),
+    transformCamelToSnake({ callsigns: normalizeCallsignFilterValues(callsigns) }),
     options,
   );
   return transformSnakeToCamel<CallsignInfoBatchRaw>(raw) ?? [];

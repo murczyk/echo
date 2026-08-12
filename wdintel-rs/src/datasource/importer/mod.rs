@@ -4,7 +4,6 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::location::SettlementsDataConfig;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use crate::{OneoffExportDataSourcePs, OneoffImportDataSourcePs};
 use chrono::Utc;
 use redis::aio::ConnectionManager;

@@ -91,11 +91,11 @@ fn placemark_to_event(
                 } else {
                     println!(
                         "warning: icon not found in style maps for style: {:?}",
-                        &style_url_stripped
+                        style_url_stripped
                     );
                 }
             } else {
-                println!("warning: placemark has no style: {:?}", &placemark);
+                println!("warning: placemark has no style: {:?}", placemark);
             }
             Ok(Some(Event {
                 version: "2.0".to_string(),
@@ -194,11 +194,11 @@ fn folder_to_data_package_zip(
             quick_xml::se::to_string(&cot).c(h!())?
         );
         std::fs::write(
-            base_path.join(&cot.uid).join(format!("{}.cot", &cot.uid)),
+            base_path.join(&cot.uid).join(format!("{}.cot", cot.uid)),
             cot_content,
         )?;
     }
-    let dst_file = tmp_dir.path().join(format!("{}.zip", &folder_name));
+    let dst_file = tmp_dir.path().join(format!("{}.zip", folder_name));
     let walkdir = WalkDir::new(&base_path);
     let it = walkdir.into_iter();
     let dst_file_opened = std::fs::File::create(&dst_file)?;

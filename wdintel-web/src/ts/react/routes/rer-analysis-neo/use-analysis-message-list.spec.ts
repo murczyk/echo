@@ -226,6 +226,27 @@ describe('useAnalysisMessageList pagination', () => {
     expect(lastCall.beforeIdNoninclusive).toBe(1);
   });
 
+  it('loadMoreMessages appends messages and increments pageIndex', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+
+    await act(async () => {
+      await h.latest.setMessages(page(1));
+    });
+
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: page(2),
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => {
+      await h.latest.loadMoreMessages();
+    });
+
+    expect(h.latest.pageIndex).toBe(1);
+    expect(h.latest.messages).toEqual([...page(1), ...page(2)]);
+  });
+
   it('updates messages and pageIndex together before message hydration finishes', async () => {
     const hydration = deferred<void>();
     const h = renderHook(

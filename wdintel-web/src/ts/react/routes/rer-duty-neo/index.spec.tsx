@@ -53,6 +53,13 @@ vi.mock('./RerDutyNeoWorkspace', () => ({
       <button type="button" aria-label="Додати стрічку" onClick={createMessageFeed}>
         Додати стрічку
       </button>
+      <button
+        type="button"
+        aria-label="Лише теги мого підрозділу"
+        onClick={() =>
+          buildFeedColumnModel(messageFeeds[0]).filterPanel.actions.onOnlyMyUnitTagsChange(true)
+        }
+      />
       {messageFeeds[0]?.items[0] ? (
         <button
           type="button"
@@ -227,6 +234,7 @@ function buildFeedsState() {
         onlyMyUnitTagsEnabled: false,
       },
     ],
+    setMessageFeeds: vi.fn(),
     createMessageFeed: vi.fn(),
     removeMessageFeed: vi.fn(),
     loadFeedInitialMessages: vi.fn(),
@@ -428,6 +436,17 @@ describe('RerDutyNeoPage creation workflow', () => {
     expect(container.querySelector('[data-testid="composer"]')).toBeNull();
     expect(notifyMock).not.toHaveBeenCalled();
     expect(state.reloadEmptyFeeds).not.toHaveBeenCalled();
+    root.unmount();
+  });
+
+  it('changes the own-unit tag display without reloading messages', async () => {
+    const { container, root, state } = await renderPage();
+
+    await click(container.querySelector('button[aria-label="Лише теги мого підрозділу"]'));
+
+    expect(state.setMessageFeeds).toHaveBeenCalledTimes(1);
+    expect(state.loadFeedInitialMessages).not.toHaveBeenCalled();
+
     root.unmount();
   });
 

@@ -43,6 +43,8 @@ export function isSameSidebarUnitFilter(
 
   if (left.kind === 'group' && right.kind === 'group') {
     return (
+      left.hierarchy.armyRegion === right.hierarchy.armyRegion &&
+      left.hierarchy.militaryDistrict === right.hierarchy.militaryDistrict &&
       left.hierarchy.army === right.hierarchy.army &&
       left.hierarchy.division === right.hierarchy.division &&
       left.hierarchy.regiment === right.hierarchy.regiment &&

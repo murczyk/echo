@@ -73,6 +73,9 @@ function buildPage(): ReturnType<typeof useRerNetworksNeoPage> {
       error: null,
       reportType: 'AccordingToTheForm',
       activeFreqsOnly: true,
+      includeFreqActiveFrom: false,
+      includeFreqCreatedAt: true,
+      includeCallsignFullNames: false,
       includeSigintSigns: true,
       includeConfirmation: true,
       includeUnitCallsigns: true,
@@ -147,6 +150,8 @@ function buildBroadReportRequest() {
   return {
     filterFreq: null,
     filterUnit: null,
+    filterUnitArmyRegion: null,
+    filterUnitMilitaryDistrict: null,
     filterUnitArmy: null,
     filterUnitDivision: null,
     filterUnitRegiment: null,

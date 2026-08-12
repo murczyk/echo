@@ -615,7 +615,7 @@ view user model shared route =
                     (model.reportTemplate == RTReport125)
                     (ReportTemplateSelect RTReport125)
                     "Звіт 1.2.5"
-                    "Таблиця пеленгів у форматі форми 1.2.5"
+                    "Таблиця пеленгів із необов’язковим зазначенням об’єктів пеленгації за формою 1.2.5"
                 , templateCard
                     (model.reportTemplate == RTReport1213)
                     (ReportTemplateSelect RTReport1213)
@@ -947,20 +947,37 @@ view user model shared route =
                             ]
                         ]
                     , HtmlX.viewIf (model.reportTemplate == RTBabak) <|
-                        div [ class "form-check mt-2" ]
-                            [ input
-                                [ class "form-check-input"
-                                , type_ "checkbox"
-                                , checked model.reportWithoutComments
-                                , id "report-without-comments"
-                                , onClick ReportWithoutCommentsToggle
+                        div [ class "mt-2" ]
+                            [ div [ class "form-check" ]
+                                [ input
+                                    [ class "form-check-input"
+                                    , type_ "checkbox"
+                                    , checked model.reportWithoutComments
+                                    , id "report-without-comments"
+                                    , onClick ReportWithoutCommentsToggle
+                                    ]
+                                    []
+                                , label
+                                    [ class "form-check-label"
+                                    , for "report-without-comments"
+                                    ]
+                                    [ text "не включати коментарі" ]
+                                ]
+                            , label
+                                [ class "form-label block mt-3"
+                                , for "report-babak-new-callsign-min-mentions"
+                                ]
+                                [ text "Мінімальна кількість згадок нового позивного" ]
+                            , input
+                                [ class "form-control w-32"
+                                , type_ "number"
+                                , Html.Attributes.min "1"
+                                , step "1"
+                                , id "report-babak-new-callsign-min-mentions"
+                                , value (String.fromInt model.reportBabakNewCallsignMinMentions)
+                                , onInput ReportBabakNewCallsignMinMentionsInput
                                 ]
                                 []
-                            , label
-                                [ class "form-check-label"
-                                , for "report-without-comments"
-                                ]
-                                [ text "не включати коментарі" ]
                             ]
                     ]
             , HtmlX.viewIf (model.reportTemplate == RTReport1213) <|
@@ -1132,7 +1149,7 @@ view user model shared route =
                                         , ( "geometry", (Maybe.withDefault Encode.null << Maybe.map B.geometryEncoder) palitra.geometry )
                                         , ( "access_aor_id", Encode.list Encode.int palitra.accessAorId )
                                         , ( "access_organism_ids", Encode.list Encode.int palitra.accessOrganismIds )
-                                        , ( "access_logins", Encode.list Encode.string palitra.accessLogins )
+                                        , ( "access_logins", Encode.list Encode.string (List.map .id palitra.accessLogins) )
                                         ]
                                   )
                                 , ( "points", Encode.list B.palitraPointEncoder palitraPoints )

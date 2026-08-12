@@ -8,7 +8,6 @@ use crate::palitra::{cancel_palitra_conversion, schedule_palitra_goi_delete};
 use crate::sigint::aor::bl::expand_aor_ids_to_descendants;
 use crate::types::*;
 use crate::users::has_role;
-use crate::utils::orm::ArrayColumnOps;
 use crate::{h, nlp};
 use actix_web::web::Data;
 use anyhow::Context;
@@ -625,7 +624,7 @@ pub async fn suggest_palitra_point_labels(
     if prefix.is_empty() {
         return Ok(vec![]);
     }
-    let limit = req.limit.unwrap_or(15).min(50);
+    let limit = std::cmp::min(req.limit.unwrap_or(15), 50);
     let normalized_prefix = prefix.to_lowercase();
     let prefix_pattern = build_label_pattern(&normalized_prefix, false);
 
@@ -805,7 +804,7 @@ pub(crate) fn palitra_suggest_cache_key(
     palitra_ids.sort_unstable();
     palitra_ids.dedup();
     let prefix = normalize_label_cache(&req.prefix).unwrap_or_default();
-    let limit = req.limit.unwrap_or(15).min(50);
+    let limit = std::cmp::min(req.limit.unwrap_or(15), 50);
     format!(
         "palitra:points:label-suggest:{login}:{}:{prefix}:{limit}",
         palitra_ids.iter().join(",")
@@ -1586,7 +1585,7 @@ where
         SET center = NULL
         WHERE id = $1;
     ";
-    dbx.execute(Statement::from_sql_and_values(
+    dbx.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         reset_query,
         [palitra_geometry_id.into()],
@@ -1612,7 +1611,7 @@ where
             p.id = $1
             AND p.id = sub.palitra_geometry_id;
     ";
-    dbx.execute(Statement::from_sql_and_values(
+    dbx.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         calculate_query,
         [palitra_geometry_id.into()],
@@ -1635,7 +1634,7 @@ where
         SET convex_hull = NULL
         WHERE id = $1;
     ";
-    dbx.execute(Statement::from_sql_and_values(
+    dbx.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         reset_query,
         [palitra_geometry_id.into()],
@@ -1662,7 +1661,7 @@ where
         WHERE
             id = $1;
     ";
-    dbx.execute(Statement::from_sql_and_values(
+    dbx.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         calculate_query,
         [palitra_geometry_id.into()],
@@ -1881,7 +1880,7 @@ pub async fn rewrite_palitra_points(
         if is_fallback_color {
             points_with_fallback_color += 1;
         }
-        if !is_fallback_color && !palitra_geometry.hex.eq(&point_color) {
+        if !is_fallback_color && palitra_geometry.hex != point_color {
             skipped_points_with_unexpected_color += 1;
             continue;
         }
@@ -1954,7 +1953,7 @@ pub async fn rewrite_palitra_line_strings(
             multi_line_string = NULL
         WHERE id = $1;
     ";
-    txn.execute(Statement::from_sql_and_values(
+    txn.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         reset_query,
         [palitra_geometry_id.into()],
@@ -1975,7 +1974,7 @@ pub async fn rewrite_palitra_line_strings(
         if is_fallback_color {
             lines_with_fallback_color += 1;
         }
-        if !is_fallback_color && !palitra_geometry.hex.eq(&line_color) {
+        if !is_fallback_color && palitra_geometry.hex != line_color {
             skipped_lines_with_unexpected_color += 1;
             continue;
         }
@@ -2034,7 +2033,7 @@ pub async fn rewrite_palitra_line_strings(
             "
         }
     };
-    txn.execute(Statement::from_sql_and_values(
+    txn.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         update_query,
         [palitra_geometry_id.into(), wkt.into()],
@@ -2052,7 +2051,7 @@ async fn insert_many_points(
     let mut point_lexeme_actives: Vec<palitra_point_lexeme::ActiveModel> =
         Vec::new();
     let inserted_points = palitra_point::Entity::insert_many(points_batch)
-        .exec_with_returning_many(txn)
+        .exec_with_returning(txn)
         .await
         .context(h!())?;
 
@@ -2289,6 +2288,10 @@ where
                 .await
                 .c(h!())?
         };
+    let access_login_names =
+        crate::users::login_names_by_ids(dbx, access_logins.clone())
+            .await
+            .c(h!())?;
     let author = match palitra_model.author_login_id {
         Some(author_login_id) => {
             crate::users::login_names_by_ids(dbx, vec![author_login_id])
@@ -2321,7 +2324,16 @@ where
         access_organism_ids,
         access_logins: access_logins
             .into_iter()
-            .map(|login_id| login_id.to_string())
+            .map(|login_id| {
+                let login = access_login_names
+                    .get(&login_id)
+                    .cloned()
+                    .unwrap_or_else(|| login_id.to_string());
+                PalitraAccessLogin {
+                    id: login_id.to_string(),
+                    login,
+                }
+            })
             .collect(),
     })
 }
@@ -2809,10 +2821,9 @@ where
             if logins.is_empty() {
                 return Ok(());
             }
-            let logins = logins
-                .into_iter()
-                .map(|login_id| Uuid::parse_str(&login_id).c(h!()))
-                .collect::<Result<Vec<_>, _>>()?
+            let logins = resolve_palitra_access_login_ids(txn, logins)
+                .await
+                .c(h!())?
                 .into_iter()
                 .map(|login| palitra_access_login::ActiveModel {
                     id: NotSet,
@@ -2888,6 +2899,28 @@ where
     .insert(txn)
     .await
     .c(h!())
+}
+
+async fn resolve_palitra_access_login_ids<'a, 'async_trait, C>(
+    txn: &'a C,
+    login_values: Vec<String>,
+) -> anyhow::Result<Vec<Uuid>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut login_ids = Vec::with_capacity(login_values.len());
+    for login_value in login_values {
+        let login_id =
+            match crate::users::login_id_by_name(txn, &login_value).await {
+                Ok(login_id) => login_id,
+                Err(crate::error::AppError::NotFound) => {
+                    Uuid::parse_str(&login_value).c(h!())?
+                }
+                Err(error) => return Err(anyhow::Error::new(error)),
+            };
+        login_ids.push(login_id);
+    }
+    Ok(login_ids)
 }
 
 #[cfg(test)]

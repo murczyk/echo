@@ -332,4 +332,26 @@ describe('NetworkEditDrawer', () => {
     ) as HTMLButtonElement | undefined;
     expect(saveButton?.disabled).toBe(true);
   });
+
+  it('preserves referenced unit ids that are absent from the active catalog', () => {
+    const view = renderDrawer(
+      buildForm({
+        id: 10,
+        name: 'управління',
+        location: 'район',
+        aorIds: [1],
+        unitIds: [99],
+        freq: '123.4567',
+      }),
+      'edit',
+    );
+    rendered.push(view);
+
+    const saveButton = [...view.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Зберегти',
+    );
+    act(() => saveButton?.click());
+
+    expect(view.saveSpy).toHaveBeenCalledWith(expect.objectContaining({ unitIds: [99] }));
+  });
 });

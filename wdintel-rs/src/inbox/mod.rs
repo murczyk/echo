@@ -5,8 +5,14 @@ use crate::event_stream::types::EventMsg;
 use crate::event_stream::types::EventType;
 use crate::types::*;
 use chrono::prelude::*;
+use chrono::Duration;
 use chrono_tz::Tz;
 use sea_orm::*;
+
+pub mod callsigns;
+pub mod datetime;
+pub mod unit_resolution;
+pub mod unresolved_units;
 
 pub struct ConstructInboxItemResult {
     pub spawned_message_ids: Vec<i64>,
@@ -61,6 +67,11 @@ where
         .await
         .c(h!())?
         .ok_or(format!("Couldn't find a message id={message_id}"))?;
+    let existing_inbox_item = sigint_inbox_item::Entity::find_by_id(message_id)
+        .one(txn)
+        .await
+        .c(h!())?
+        .is_some();
     let m_aor_ids = resolve_message_aor_ids_by_group(txn, message_id)
         .await
         .c(h!())?;
@@ -238,6 +249,9 @@ where
         None => (default_date_v, default_time_v),
         Some((d, t)) => (Some(d), Some(t)),
     };
+    let datetime_neo =
+        datetime::from_date_time_text(date_v.as_deref(), time_v.as_deref())
+            .c(h!())?;
 
     let result = sigint_inbox_item::ActiveModel {
         id: Set(message.id),
@@ -247,7 +261,6 @@ where
         coords: Set(coords.clone().map(|x| x.text)),
         lat: Set(coords.clone().map(|x| x.lat)),
         lng: Set(coords.clone().map(|x| x.lng)),
-        callsigns: Set(Some(serde_json::to_value(callsigns).c(h!())?)),
         checked: Set(Some(checked)),
         reviewed: Set(Some(reviewed)),
         unit: Set(unit.clone()),
@@ -260,13 +273,8 @@ where
         location_v2: Set(location_v2),
         body_noheader: Set(Some(serde_json::to_value(&body_noheader).c(h!())?)),
         tags: NotSet,
-        callsigns_alg1: Set(Some(
-            serde_json::to_value(callsigns_alg1).c(h!())?,
-        )),
-        callsigns_alg2: Set(Some(
-            serde_json::to_value(callsigns_alg2).c(h!())?,
-        )),
         datetime: NotSet,
+        datetime_neo: Set(datetime_neo),
         signal_tokens: Set(Some(serde_json::to_value(signal_tokens).c(h!())?)),
         post_id: Set(post_id),
         device_name_id: Set(None),
@@ -283,6 +291,26 @@ where
         .exec_with_returning(txn)
         .await
         .c(h!())?;
+    unit_resolution::resolve_and_sync_inbox_item(
+        txn,
+        result.id,
+        result.unit_v2.as_deref(),
+        result.unit.as_deref(),
+    )
+    .await
+    .c(h!())?;
+    let system_login_id = crate::users::system_login_id(txn).await.c(h!())?;
+    callsigns::sync(
+        txn,
+        result.id,
+        callsigns::InboxItemCallsigns {
+            primary: callsigns_alg1,
+            alg2: callsigns_alg2,
+        },
+        system_login_id,
+    )
+    .await
+    .c(h!())?;
 
     crate::rer_importer::inbox::metadata::refresh_metadata_for_body(
         result.id,
@@ -303,9 +331,17 @@ where
     crate::location::peleng::delete_inbox_pelengs(result.id, txn)
         .await
         .c(h!())?;
-    crate::location::peleng::insert_pelengs(coords_vec, result.id, ts, txn)
-        .await
-        .c(h!())?;
+    let pelengation_object =
+        crate::rer_importer::pelengation_object::extract(&body);
+    crate::location::peleng::insert_pelengs(
+        coords_vec,
+        result.id,
+        ts,
+        pelengation_object,
+        txn,
+    )
+    .await
+    .c(h!())?;
 
     // In case then some coords exists, change signal_group for this message grom RER Import
     // to MPORT_DIRECTION_FINDING
@@ -353,12 +389,25 @@ where
     .await
     .c(h!())?;
 
+    crate::ai_callsign::worker::enqueue_if_enabled(txn, message.id)
+        .await
+        .c(h!())?;
+
     crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
         vec![result],
         txn,
     )
     .await
     .c(h!())?;
+    if existing_inbox_item {
+        crate::stats::enqueue_group_stats_recalculation_for_message(
+            txn,
+            message_id,
+            format!("reprocessed inbox message {message_id}"),
+        )
+        .await
+        .c(h!())?;
+    }
 
     palitra_highlight_worker_job::Entity::insert(
         palitra_highlight_worker_job::ActiveModel {
@@ -373,15 +422,15 @@ where
     Ok(ConstructInboxItemResult::changed(message.id))
 }
 
-fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 23] {
+fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 21] {
     [
         sigint_inbox_item::Column::Date,
         sigint_inbox_item::Column::Time,
+        sigint_inbox_item::Column::DatetimeNeo,
         sigint_inbox_item::Column::Freq,
         sigint_inbox_item::Column::Coords,
         sigint_inbox_item::Column::Lat,
         sigint_inbox_item::Column::Lng,
-        sigint_inbox_item::Column::Callsigns,
         sigint_inbox_item::Column::Checked,
         sigint_inbox_item::Column::Reviewed,
         sigint_inbox_item::Column::Unit,
@@ -391,8 +440,6 @@ fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 23] {
         sigint_inbox_item::Column::Location,
         sigint_inbox_item::Column::LocationV2,
         sigint_inbox_item::Column::BodyNoheader,
-        sigint_inbox_item::Column::CallsignsAlg1,
-        sigint_inbox_item::Column::CallsignsAlg2,
         sigint_inbox_item::Column::SignalTokens,
         sigint_inbox_item::Column::PostId,
         sigint_inbox_item::Column::DeviceNameId,
@@ -412,21 +459,39 @@ fn extract_message_datetime(
     ),
     AppError,
 > {
-    if allow_kraken_audio {
+    let (datetime, meow_format) = if allow_kraken_audio {
         if let Some(kraken_audio) =
             crate::rer_importer::meow_format::parse_kraken_audio(body)
         {
-            return Ok((
-                Some(kraken_audio.datetime),
-                Some(kraken_audio.clone()),
-            ));
+            (Some(kraken_audio.datetime), Some(kraken_audio.clone()))
+        } else {
+            extract_regular_message_datetime(lnow, body)?
         }
     } else if crate::rer_importer::meow_format::parse_kraken_audio(body)
         .is_some()
     {
-        return Ok((None, None));
-    }
+        (None, None)
+    } else {
+        extract_regular_message_datetime(lnow, body)?
+    };
 
+    Ok((
+        datetime
+            .map(|datetime| normalize_future_message_datetime(lnow, datetime)),
+        meow_format,
+    ))
+}
+
+fn extract_regular_message_datetime(
+    lnow: DateTime<Tz>,
+    body: &str,
+) -> Result<
+    (
+        Option<DateTime<Tz>>,
+        Option<crate::rer_importer::meow_format::MeowFormat>,
+    ),
+    AppError,
+> {
     let meow_format = crate::rer_importer::meow_format::parse(lnow, body);
     if let Some(meow_format) = &meow_format {
         return Ok((Some(meow_format.datetime), Some(meow_format.clone())));
@@ -435,26 +500,95 @@ fn extract_message_datetime(
     Ok((extract_generic_body_datetime(lnow, body)?, None))
 }
 
+fn normalize_future_message_datetime(
+    lnow: DateTime<Tz>,
+    datetime: DateTime<Tz>,
+) -> DateTime<Tz> {
+    if datetime
+        <= lnow + Duration::hours(RER_INBOX_PARSED_DATETIME_MAX_FUTURE_HOURS)
+    {
+        return datetime;
+    }
+
+    let current_date_with_parsed_time =
+        lnow.date_naive().and_time(datetime.time());
+    let normalized = match lnow
+        .timezone()
+        .from_local_datetime(&current_date_with_parsed_time)
+    {
+        chrono::offset::LocalResult::Single(datetime) => datetime,
+        chrono::offset::LocalResult::Ambiguous(datetime, _) => datetime,
+        chrono::offset::LocalResult::None => lnow,
+    };
+    warn!(
+        "parsed inbox datetime {datetime} is more than {} hours in the future; using {normalized}",
+        RER_INBOX_PARSED_DATETIME_MAX_FUTURE_HOURS
+    );
+    normalized
+}
+
 fn extract_generic_body_datetime(
     lnow: DateTime<Tz>,
     body: &str,
 ) -> Result<Option<DateTime<Tz>>, AppError> {
-    let Some(dt) = crate::rer_importer::datetime::extract_datetime(lnow, body)?
+    let datetime = crate::rer_importer::datetime::extract_datetime(lnow, body)?;
+    let Some(dt) = datetime
+        .or_else(|| extract_far_future_datetime_with_current_date(lnow, body))
     else {
         return Ok(None);
     };
 
     Ok(match Kyiv.from_local_datetime(&dt) {
         chrono::offset::LocalResult::None => {
-            println!("> warning: couldn't convert datetime to Kyiv timezone: {dt:?}; body: {body}");
+            println!(
+                "> warning: couldn't convert datetime to Kyiv timezone: {dt:?}; body: {body}"
+            );
             None
         }
         chrono::offset::LocalResult::Single(v) => Some(v),
         chrono::offset::LocalResult::Ambiguous(v1, v2) => {
-            println!("> warning: couldn't convert datetime to Kyiv timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}");
+            println!(
+                "> warning: couldn't convert datetime to Kyiv timezone (ambiguous): v1: {v1:?}, v2: {v2:?}; {dt:?}; body: {body}"
+            );
             None
         }
     })
+}
+
+fn extract_far_future_datetime_with_current_date(
+    lnow: DateTime<Tz>,
+    body: &str,
+) -> Option<NaiveDateTime> {
+    lazy_static::lazy_static! {
+        static ref DATETIME_REGEX: regex::Regex = regex::Regex::new(
+            r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})[ \t]+(?P<hour>\d{1,2})[ \t]*:[ \t]*(?P<minute>\d{2})[ \t]*:[ \t]*(?P<second>\d{2})"
+        )
+        .unwrap();
+    }
+
+    let captures = DATETIME_REGEX.captures(body)?;
+    let datetime = NaiveDate::from_ymd_opt(
+        captures.name("year")?.as_str().parse().ok()?,
+        captures.name("mon")?.as_str().parse().ok()?,
+        captures.name("day")?.as_str().parse().ok()?,
+    )?
+    .and_hms_opt(
+        captures.name("hour")?.as_str().parse().ok()?,
+        captures.name("minute")?.as_str().parse().ok()?,
+        captures.name("second")?.as_str().parse().ok()?,
+    )?;
+    let parsed_datetime =
+        lnow.timezone().from_local_datetime(&datetime).earliest()?;
+    if parsed_datetime
+        <= lnow
+            + chrono::Duration::hours(
+                RER_INBOX_PARSED_DATETIME_MAX_FUTURE_HOURS,
+            )
+    {
+        return None;
+    }
+
+    Some(lnow.date_naive().and_time(datetime.time()))
 }
 
 async fn message_has_other_interseption_group<'a, 'async_trait, C>(
@@ -533,7 +667,9 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let system_login_id = crate::users::system_login_id(txn).await.c(h!())?;
-    let parsed = crate::sigint::parser::parse_comments(body);
+    let blacklist = crate::sigint::comments::load_blacklist(txn).await?;
+    let parsed =
+        crate::sigint::parser::parse_comments_with_blacklist(body, &blacklist);
     let mut texts = vec![];
     for text in [parsed.top, parsed.bottom].into_iter().flatten() {
         if !texts.contains(&text) {
@@ -720,7 +856,7 @@ where
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, find_test_datasource_group, mk_signal_message,
+        cleanup_locked, find_test_datasource_group, mk_signal_message,
     };
 
     #[test]
@@ -751,10 +887,15 @@ mod tests {
             .all(|column| {
                 !matches!(column, sigint_inbox_item::Column::Datetime)
             }));
+        assert!(reprocessed_inbox_item_update_columns()
+            .iter()
+            .any(|column| {
+                matches!(column, sigint_inbox_item::Column::DatetimeNeo)
+            }));
     }
 
     #[tokio::test]
-    async fn coordinate_extraction_keeps_standard_header_but_not_comments() {
+    async fn coordinate_extraction_keeps_standard_header_and_comments() {
         let body = "36T VS 89904 14667\n01.07.2026, 02:55:19\n155.0250\nКоординати: 36U XB 66512 50880\nУКХ р/м\n\n— репліка";
 
         assert!(!crate::rer_importer::coordinates::extract_coords(body)
@@ -772,15 +913,15 @@ mod tests {
         )
         .await;
 
-        assert_eq!(coords.len(), 1);
-        assert_eq!(coords[0].mgrs, "36UXB6651250880");
+        assert_eq!(coords.len(), 2);
+        assert!(coords.iter().any(|coord| coord.mgrs == "36TVS8990414667"));
+        assert!(coords.iter().any(|coord| coord.mgrs == "36UXB6651250880"));
     }
 
     #[test]
     fn extract_message_datetime_prefers_meow_header_over_body_time() {
         let now = Kyiv.with_ymd_and_hms(2026, 6, 28, 12, 0, 0).unwrap();
-        let body =
-            "50 обрБпС\n05.58 (МСК/Київ) +- 10хв\n\nПерехоплення о 08:30\nрядок 2";
+        let body = "50 обрБпС\n05.58 (МСК/Київ) +- 10хв\n\nПерехоплення о 08:30\nрядок 2";
 
         let (m_dt, meow_format) =
             extract_message_datetime(now, body, false).unwrap();
@@ -795,6 +936,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn extract_message_datetime_replaces_far_future_date_with_current_date() {
+        let now = Kyiv.with_ymd_and_hms(2026, 7, 29, 12, 0, 0).unwrap();
+        let body = "Дата та час: 18.08.2032 08:18:41";
+
+        let (datetime, _) = extract_message_datetime(now, body, false).unwrap();
+
+        assert_eq!(
+            datetime,
+            Some(Kyiv.with_ymd_and_hms(2026, 7, 29, 8, 18, 41).unwrap())
+        );
+    }
+
+    #[test]
+    fn extract_message_datetime_allows_up_to_24_hours_in_future() {
+        let now = Kyiv.with_ymd_and_hms(2026, 7, 29, 12, 0, 0).unwrap();
+        let body = "Дата та час: 30.07.2026 11:59:59";
+
+        let (datetime, _) = extract_message_datetime(now, body, false).unwrap();
+
+        assert_eq!(
+            datetime,
+            Some(Kyiv.with_ymd_and_hms(2026, 7, 30, 11, 59, 59).unwrap())
+        );
+    }
+
     fn report_125_sample_body(mgrs: &str) -> String {
         format!(
             "Назва: А-50 (А-50У) РЛС з РТК «Шмєль-М»;\n\
@@ -806,9 +973,132 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn auto_comments_use_database_blacklist() {
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let body = "++\nважливий коментар\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка\n\nМітка перехоплення: +";
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        insert_missing_auto_comments(&env.dbx, message.id, None, body)
+            .await
+            .unwrap();
+
+        let comments = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].comment, "важливий коментар");
+
+        let system_login_id =
+            crate::users::system_login_id(&env.dbx).await.unwrap();
+        let seeded = sigint_comment_blacklist::Entity::find()
+            .filter(sigint_comment_blacklist::Column::IsPersistent.eq(true))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(seeded.len(), 24);
+        assert!(seeded
+            .iter()
+            .all(|entry| entry.created_by_login_id == system_login_id));
+
+        let manual_text = format!("manual-{}", Uuid::new_v4());
+        let manual = sigint_comment_blacklist::ActiveModel {
+            text: Set(manual_text.clone()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        assert!(!manual.is_persistent);
+        assert_eq!(manual.created_by_login_id, system_login_id);
+        sigint_comment_blacklist::Entity::delete_by_id(manual_text)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn construct_inbox_item_imports_extended_peleng_format() {
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let body = "пост Фокстрот-Наутілус-Дракар\n446.300 TYT назва: ретранслятор\nр-н Верхній Рогачик\nx:52-41410\ny:65-99914\nУКХ радіомережа ППО смуга 49 А\nНВ\nНВ\n\n— Кольцо 22, я техас, прием.\n23:59 31.07.2026";
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.to_string())),
+                created_at: Set(Utc::now().naive_utc()),
+                timestamp: Set(None),
+                message_uid: Set(Some(format!(
+                    "extended-peleng-format-{}",
+                    Uuid::new_v4()
+                ))),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut cache = TopKCache::<String, String>::new(64);
+
+        construct_inbox_item(
+            env.settlements.clone(),
+            &env.dbx,
+            &env.rq,
+            &env.config,
+            message.id,
+            &mut cache,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let post = sigint_post::Entity::find_by_id(inbox_item.post_id.unwrap())
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let pelengs = active_pelengs(message.id, &env.dbx).await;
+
+        assert_eq!(inbox_item.freq.as_deref(), Some("446.3000"));
+        assert_eq!(
+            inbox_item.unit.as_deref(),
+            Some("УКХ радіомережа ППО смуга 49 А")
+        );
+        assert_eq!(inbox_item.location.as_deref(), Some("р-н Верхній Рогачик"));
+        assert_eq!(inbox_item.date.as_deref(), Some("2026-07-31"));
+        assert_eq!(inbox_item.time.as_deref(), Some("23:59:00"));
+        assert_eq!(post.name, "Фокстрот-Наутілус-Дракар");
+        assert_eq!(pelengs.len(), 1);
+        assert_eq!(
+            pelengs[0].pelengation_object.as_deref(),
+            Some("TYT назва: ретранслятор")
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn construct_inbox_item_imports_report_125_sample_and_replaces_pelengs(
     ) {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
         let created_at = NaiveDate::from_ymd_opt(2026, 7, 16)
@@ -866,7 +1156,12 @@ mod tests {
                     .unwrap()
             )
         );
-        assert_eq!(active_pelengs(message.id, &env.dbx).await.len(), 1);
+        let pelengs = active_pelengs(message.id, &env.dbx).await;
+        assert_eq!(pelengs.len(), 1);
+        assert_eq!(
+            pelengs[0].pelengation_object.as_deref(),
+            Some("А-50 (А-50У) РЛС з РТК «Шмєль-М»")
+        );
 
         let mut message = message.into_active_model();
         message.body = Set(Some(report_125_sample_body("37U DR 32615 05605")));
@@ -891,6 +1186,10 @@ mod tests {
             .unwrap();
         let pelengs = active_pelengs(message.id, &env.dbx).await;
         assert_eq!(pelengs.len(), 1);
+        assert_eq!(
+            pelengs[0].pelengation_object.as_deref(),
+            Some("А-50 (А-50У) РЛС з РТК «Шмєль-М»")
+        );
         assert_eq!(inbox_item.lat, Some(pelengs[0].lat));
         assert_eq!(inbox_item.lng, Some(pelengs[0].lng));
     }
@@ -946,6 +1245,23 @@ mod tests {
         assert_eq!(
             meow_format.unwrap().body_noheader.body,
             "Перехоплення о 08:30\n(Коментар: передмова)"
+        );
+    }
+
+    #[test]
+    fn extract_message_datetime_recovers_time_from_rejected_future_date() {
+        let now = Kyiv.with_ymd_and_hms(2026, 7, 29, 12, 0, 0).unwrap();
+
+        let (datetime, _) = extract_message_datetime(
+            now,
+            "Дата та час: 18.08.2032 08:18:41",
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(
+            datetime,
+            Some(Kyiv.with_ymd_and_hms(2026, 7, 29, 8, 18, 41).unwrap())
         );
     }
 }

@@ -3,6 +3,7 @@ mod automation;
 mod config;
 mod db;
 mod error;
+mod map_screenshot;
 mod messenger;
 mod ui;
 mod worker;
@@ -41,6 +42,8 @@ async fn main() -> Result<()> {
             .wrap(Logger::default())
             .service(ui::index)
             .service(ui::echo_logo)
+            .service(ui::leaflet_css)
+            .service(ui::leaflet_js)
             .configure(api::configure)
     })
     .bind(bind)

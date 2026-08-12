@@ -5,7 +5,7 @@ import type {
   FreqDailyActivityCount,
   InboxMessage,
   MessageComment,
-  NetJsonGraphAndMeta,
+  NetworkCallsignRelationsRsp,
   Network,
   SignalGroupEntry,
   SignalProfileEntry,
@@ -33,6 +33,7 @@ export type UseAnalysisDataProps = {
   authUserName: string | null;
   currentUser: User | null;
   deferInitialLoad?: boolean;
+  leftPanelOpen?: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
@@ -45,12 +46,12 @@ export type UseAnalysisDataProps = {
 };
 
 export type UseAnalysisDataResult = {
-  callsignGraph: NetJsonGraphAndMeta | null;
+  callsignGraph: NetworkCallsignRelationsRsp | null;
   callsignGraphLoading: boolean;
   callsignGraphLoadVersion: number;
   callsignGraphLoadError?: string | null;
-  callsignGraphNolimit: boolean;
   correlatedFreqs: CorrelatedFreq[];
+  correlatedFreqsLoaded: boolean;
   correlatedFreqsLoading: boolean;
   counts: CountStatsRsp | null;
   countsLoading: boolean;
@@ -79,13 +80,13 @@ export type UseAnalysisDataResult = {
     patch?: Partial<import('./types').AnalysisQueryState>,
   ) => void;
   getReloadFilterSections: () => AnalysisFilterSectionId[] | null;
-  toggleCallsignGraphNolimit: () => void;
   loadCorrelatedFreqs: () => Promise<void>;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;
   loadNewCallsigns: () => Promise<void>;
   loadFirstPage: () => Promise<void>;
   loadLastPage: () => Promise<void>;
   loadNextPage: () => Promise<void>;
+  loadMoreMessages: () => Promise<boolean>;
   loadPrevPage: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   mapAttrs: AnalysisMapAttrs;

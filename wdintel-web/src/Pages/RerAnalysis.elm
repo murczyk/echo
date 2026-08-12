@@ -21,6 +21,7 @@ import List.Extra as ListX
 import Page exposing (Page)
 import PagePorts.RerAnalysisPorts as Ports
 import Pages_.RerAnalysis.Constants exposing (..)
+import Pages_.RerAnalysis.EventRefresh as EventRefresh
 import Pages_.RerAnalysis.FiltersReloading as FiltersReloading exposing (FilterDataState(..), FilterInteraction(..), invalidateFiltersState)
 import Pages_.RerAnalysis.MainBody
 import Pages_.RerAnalysis.Model exposing (..)
@@ -210,6 +211,7 @@ init route _ =
             , reportTagsOnlyThisUnitForReport = False
             , report1213LinkedNetworksOnly = True
             , reportWithoutComments = False
+            , reportBabakNewCallsignMinMentions = Config.babakNewCallsignMinMentionsDefault
             , reportDigestOmitExoId = False
             , reportDigestForm1217 = False
             , reportAdvancedSenders = False
@@ -354,6 +356,7 @@ getInboxReq model =
             |> emptyToNothing
     , selectedCallsigns = emptyToNothing model.callsignsSelected
     , selectedUnits = emptyToNothing model.unitsSelected
+    , selectedDeviceNames = Nothing
     , deniedUnits = Nothing
     , selectedLocations = emptyToNothing model.locationsSelected
     , includePelengLocations = Just model.includePelengLocations
@@ -442,6 +445,7 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
                     |> List.filterMap String.toInt
                     |> emptyToNothing
             , selectedUnits = emptyToNothing model.unitsSelected
+            , selectedDeviceNames = Nothing
             , selectedLocations = emptyToNothing model.locationsSelected
             , includePelengLocations = Just model.includePelengLocations
             , orWithExtendedForm = Just model.orWithExtendedForm
@@ -1214,17 +1218,11 @@ update user shared route msg model =
                     ( m2, E.none )
 
         InboxEvents events ->
-            events
-                |> List.filterMap
-                    (\event ->
-                        case event.eventType of
-                            B.EtInboxChanged messageId ->
-                                Just messageId
-
-                            _ ->
-                                Nothing
-                    )
-                |> ListX.unique
+            EventRefresh.messageIdsToRefresh
+                { messagesRendered = not model.unfoldMapBlock
+                , renderedMessageIds = List.map Tuple.first model.messages
+                }
+                events
                 |> (\ids ->
                         if List.isEmpty ids then
                             ( model, E.none )
@@ -3647,6 +3645,16 @@ update user shared route msg model =
             , E.none
             )
 
+        ReportBabakNewCallsignMinMentionsInput mentions ->
+            ( case String.toInt mentions of
+                Just value_ ->
+                    { model | reportBabakNewCallsignMinMentions = Basics.max 1 value_ }
+
+                Nothing ->
+                    model
+            , E.none
+            )
+
         ReportDigestOmitExoIdToggle ->
             ( { model | reportDigestOmitExoId = not model.reportDigestOmitExoId }
             , E.none
@@ -3717,6 +3725,12 @@ update user shared route msg model =
                         , withoutComments =
                             if model.reportTemplate == RTBabak then
                                 Just model.reportWithoutComments
+
+                            else
+                                Nothing
+                        , babakNewCallsignMinMentions =
+                            if model.reportTemplate == RTBabak then
+                                Just model.reportBabakNewCallsignMinMentions
 
                             else
                                 Nothing

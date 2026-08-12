@@ -7,6 +7,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
+python3 -m unittest scripts/ci/test_check_analytics_migrations.py
+python3 scripts/ci/check_analytics_migrations.py
+bash deploy/clickhouse/tests/test-resnapshot-table.sh
+bash deploy/clickhouse/tests/test-manage-system-logs.sh
+bash deploy/clickhouse/tests/test-source-verify-deploy.sh
+
 bash "$SCRIPT_DIR/ensure_postgres_running.sh"
 
 # CI boxes may require extra time while PostgreSQL replays WAL / crash-recovery.
@@ -16,9 +22,14 @@ export POSTGRES_STARTUP_TIMEOUT_SECS="${POSTGRES_STARTUP_TIMEOUT_SECS:-600}"
 echo "Setting up test database..."
 source "$SCRIPT_DIR/setup_test_database.sh"
 
-# Export the database name for tests
+# Export the database names for tests
 export TEST_DB_NAME="$DB_NAME"
-echo "Using test database: $TEST_DB_NAME"
+export TEST_WDFILE_DB_NAME="$FILE_REGISTRY_DB_NAME"
+echo "Using test databases: $TEST_DB_NAME and $TEST_WDFILE_DB_NAME"
+
+bash "$REPO_ROOT/scripts/ci/check_analytics_migration_catalog.sh"
+echo "Migrating test databases..."
+cargo run -p wdintel-rs -- --mode=test migrate
 
 # Create storage directory and dummy files for CI
 mkdir -p ~/Downloads/storage
@@ -70,6 +81,6 @@ done
 
 # Run backend tests
 echo "Running backend tests..."
-just test-be
+TEST_DB_NAME="$TEST_DB_NAME" TEST_WDFILE_DB_NAME="$TEST_WDFILE_DB_NAME" just test-be
 
 echo "Backend tests completed successfully!"

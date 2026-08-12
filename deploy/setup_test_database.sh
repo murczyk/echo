@@ -4,7 +4,7 @@ set -euo pipefail
 # Script to set up a branch-specific test database for CI
 # Usage: ./setup_test_database.sh [branch_name]
 # Options:
-#   --cleanup: Drop all test databases matching pattern wd_test_*
+#   --cleanup: Drop all test databases matching patterns wd_test_* and wd_files_test_*
 #   --help: Show this help message
 
 wait_for_postgres() {
@@ -61,7 +61,7 @@ if [ $# -eq 1 ] && [ "$1" = "--cleanup" ]; then
     wait_for_postgres "$PG_HOST" "$PG_PORT" "$PG_USER" "$MAINTENANCE_DB"
 
     # Find and drop all test databases
-    psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$MAINTENANCE_DB" -t -c "SELECT datname FROM pg_database WHERE datname LIKE 'wd_test_%';" | while read -r db; do
+    psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$MAINTENANCE_DB" -t -c "SELECT datname FROM pg_database WHERE datname LIKE 'wd_test_%' OR datname LIKE 'wd_files_test_%';" | while read -r db; do
         db=$(echo "$db" | xargs)  # trim whitespace
         if [ -n "$db" ]; then
             echo "Dropping database: $db"
@@ -75,7 +75,7 @@ fi
 if [ $# -eq 1 ] && [ "$1" = "--help" ]; then
     echo "Usage: $0 [branch_name] [--cleanup] [--help]"
     echo "  branch_name: Name of the branch (optional, will auto-detect if not provided)"
-    echo "  --cleanup: Remove all test databases matching pattern wd_test_*"
+    echo "  --cleanup: Remove all test databases matching patterns wd_test_* and wd_files_test_*"
     echo "  --help: Show this help message"
     exit 0
 fi
@@ -100,7 +100,13 @@ if [ ${#DB_NAME} -gt 63 ]; then
     DB_NAME="${DB_NAME:0:59}_$HASH"
 fi
 
-echo "Setting up test database: $DB_NAME"
+FILE_REGISTRY_DB_NAME=$(echo "wd_files_test_${BRANCH_NAME}" | sed 's/[^a-zA-Z0-9_]/_/g' | sed 's/__*/_/g' | sed 's/_$//')
+if [ ${#FILE_REGISTRY_DB_NAME} -gt 63 ]; then
+    HASH=$(echo "$FILE_REGISTRY_DB_NAME" | shasum -a 256 | cut -c1-4)
+    FILE_REGISTRY_DB_NAME="${FILE_REGISTRY_DB_NAME:0:58}_$HASH"
+fi
+
+echo "Setting up test databases: $DB_NAME and $FILE_REGISTRY_DB_NAME"
 echo "Branch: $BRANCH_NAME"
 
 # Database connection parameters
@@ -143,18 +149,34 @@ pg_restore -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$DB_NAME" --verbose --c
     exit 1
 }
 
+echo "Checking if file registry database $FILE_REGISTRY_DB_NAME already exists..."
+FILE_REGISTRY_DB_EXISTS=$(psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$MAINTENANCE_DB" -tAc "SELECT 1 FROM pg_database WHERE datname = '${FILE_REGISTRY_DB_NAME}';")
+if [ -n "$FILE_REGISTRY_DB_EXISTS" ]; then
+    echo "File registry database $FILE_REGISTRY_DB_NAME already exists, dropping it..."
+    dropdb -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" "$FILE_REGISTRY_DB_NAME" || {
+        echo "Warning: Failed to drop existing file registry database $FILE_REGISTRY_DB_NAME"
+        exit 1
+    }
+fi
+
+export TEST_DB_NAME="$DB_NAME"
+export TEST_WDFILE_DB_NAME="$FILE_REGISTRY_DB_NAME"
+createdb -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" "$FILE_REGISTRY_DB_NAME"
+
 echo "Database setup complete!"
 
 # Export the database name for sourcing scripts
-export DB_NAME
+export DB_NAME FILE_REGISTRY_DB_NAME
 
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     # Script is being executed directly, not sourced
     echo "Set TEST_DB_NAME environment variable to: $DB_NAME"
+    echo "Set TEST_WDFILE_DB_NAME environment variable to: $FILE_REGISTRY_DB_NAME"
     echo ""
     echo "To use this database in tests, run:"
     echo "export TEST_DB_NAME=$DB_NAME"
+    echo "export TEST_WDFILE_DB_NAME=$FILE_REGISTRY_DB_NAME"
     echo ""
     echo "Or in CI:"
-    echo "TEST_DB_NAME=$DB_NAME cargo test"
+    echo "TEST_DB_NAME=$DB_NAME TEST_WDFILE_DB_NAME=$FILE_REGISTRY_DB_NAME cargo test"
 fi

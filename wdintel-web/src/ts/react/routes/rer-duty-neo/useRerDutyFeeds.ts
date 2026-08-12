@@ -105,16 +105,16 @@ function mergePostsFromMessages(
   return [...merged].sort((a, b) => a.localeCompare(b));
 }
 
-export function useRerDutyFeeds(authUserName: string | null) {
+export function useRerDutyFeeds(
+  authUserName: string | null,
+  currentUserOrganismId: number | null = null,
+) {
   const [keywordSets, setKeywordSets] = useState<OrganismKeywordSetDto[]>([]);
   const reloadKeywordSets = useCallback(async () => {
     const sets = await fetchOrganismKeywordSets();
     setKeywordSets(sets);
   }, []);
   const filterOpts = useRerDutyFilterOptions();
-  const [testEnabled, setTestEnabled] = useState(false);
-  const [testSinceMs, setTestSinceMs] = useState(0);
-  const [testLimit, setTestLimit] = useState(1);
   const [pollIntervalSec, setPollIntervalSec] = useState(1);
   const dutySettings = useDutySettings();
   const [callsignRetryVersion, setCallsignRetryVersion] = useState(0);
@@ -127,9 +127,6 @@ export function useRerDutyFeeds(authUserName: string | null) {
     freqs: filterOpts.freqs,
     setProfiles: filterOpts.setProfiles,
     setGroupInfos: filterOpts.setGroupInfos,
-    testEnabled,
-    testSinceMs,
-    testLimit,
     pollIntervalSec,
     disableAutoScroll: dutySettings.disableAutoScroll,
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
@@ -158,9 +155,6 @@ export function useRerDutyFeeds(authUserName: string | null) {
     currentSystemSettings()
       .then((settings) => {
         if (cancelled) return;
-        setTestEnabled(settings.rerDutyTestEnabled);
-        setTestSinceMs(settings.rerDutyTestSinceMs);
-        setTestLimit(settings.rerDutyTestLimit);
         setPollIntervalSec(settings.rerDutyPollIntervalSec);
       })
       .catch((error) => {
@@ -368,7 +362,9 @@ export function useRerDutyFeeds(authUserName: string | null) {
     setWatchModeByFeedId: feedState.setWatchModeByFeedId,
     setLoadingNewerFeedIds: feedState.setLoadingNewerFeedIds,
     requestValidatedInboxCount: feedState.requestValidatedInboxCount,
+    catchUpFeedUnreadToTail: feedState.catchUpFeedUnreadToTail,
     authUserName,
+    currentUserOrganismId,
     profiles: filterOpts.profiles,
     groupInfos: filterOpts.groupInfos,
     tagsMap: filterOpts.tagsMap,

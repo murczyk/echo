@@ -373,6 +373,8 @@ pub struct InboxMessagesReq {
     pub selected_units: Option<Vec<String>>,
     pub denied_units: Option<Vec<String>>,
     pub selected_locations: Option<Vec<String>>,
+    #[serde(default)]
+    pub selected_device_names: Option<Vec<String>>,
     pub nolimit: Option<bool>,
     pub or_with_extended_form: Option<bool>,
     pub load_latest: Option<bool>,
@@ -449,6 +451,7 @@ pub struct InboxItemContextRsp {
 )]
 pub struct InboxMessagesRsp {
     pub inbox_items: Vec<(i64, InboxMessage)>,
+    pub poll_cursor_id: Option<i64>,
     pub callsigns: Vec<CallsignInfoRes>,
     pub signal_profiles: BTreeMap<String, Option<SignalProfileEntry>>,
     pub signal_groups: Vec<SignalGroupEntry>,
@@ -809,6 +812,8 @@ pub struct AnalysisStatsReq {
     pub selected_callsigns: Option<Vec<String>>,
     pub selected_units: Option<Vec<String>>,
     pub selected_locations: Option<Vec<String>>,
+    #[serde(default)]
+    pub selected_device_names: Option<Vec<String>>,
     pub selected_aors: Option<Vec<i64>>,
     pub or_with_extended_form: Option<bool>,
     pub or_bookmarked: Option<bool>,
@@ -837,6 +842,31 @@ pub struct AnalysisStatsReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct AnalysisCallsignFrequencyMatchesReq {
+    pub req: AnalysisStatsReq,
+    pub callsigns: Vec<String>,
+    pub min_matches: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisCallsignFrequencyMatch {
+    pub freq: String,
+    pub callsigns: Vec<String>,
+    pub message_count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisCallsignFrequencyMatchesRsp {
+    pub frequencies: Vec<AnalysisCallsignFrequencyMatch>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct CallsignsGraphReq {
     pub since_date_inclusive_ms: i64,
     pub till_date_noninclusive_ms: i64,
@@ -847,6 +877,8 @@ pub struct CallsignsGraphReq {
     pub selected_callsigns: Option<Vec<String>>,
     pub selected_units: Option<Vec<String>>,
     pub selected_locations: Option<Vec<String>>,
+    #[serde(default)]
+    pub selected_device_names: Option<Vec<String>>,
     pub or_with_extended_form: Option<bool>,
     pub or_bookmarked: Option<bool>,
     pub or_important: Option<bool>,

@@ -16,7 +16,7 @@ import {
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { MrtRowActionButton } from '../../components/MrtRowActionButton';
+import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { PowerAlert } from '../../components/PowerAlert';
@@ -52,6 +52,7 @@ import { currentSystemSettings } from '../../services/api/system-settings';
 
 const GPU_INSTANCE_TEXT_MAX_CHARS = 255;
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
+const ROW_ACTIONS_COLUMN_SIZE = 96;
 
 const DEFAULT_COLUMNS_VISIBILITY = {
   ordering: true,
@@ -153,6 +154,13 @@ function TranscriberInstancesTable({
   onDelete: (instance: TranscriberInstance) => void;
 }) {
   const tableStateContext = useTableStateContext();
+  const columnSizing = useMemo(
+    () => ({
+      ...tableStateContext.columnSizing,
+      'mrt-row-actions': ROW_ACTIONS_COLUMN_SIZE,
+    }),
+    [tableStateContext.columnSizing],
+  );
   const columns = useMemo<MRT_ColumnDef<TranscriberInstance>[]>(
     () => [
       { header: 'Порядок', accessorKey: 'ordering', size: 90 },
@@ -192,14 +200,16 @@ function TranscriberInstancesTable({
           disabled={loading}
           opensModal
         />
-        <MrtRowActionButton
-          label="Видалити"
-          onClick={() => onDelete(row.original)}
-          icon={<DeleteIcon fontSize="small" />}
-          disabled={loading}
-          tone="danger"
-          opensModal
-        />
+        <MrtRowActions forceMenu>
+          <MrtRowActionButton
+            label="Видалити"
+            onClick={() => onDelete(row.original)}
+            icon={<DeleteIcon fontSize="small" />}
+            disabled={loading}
+            tone="danger"
+            opensModal
+          />
+        </MrtRowActions>
       </Stack>
     ),
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
@@ -221,7 +231,9 @@ function TranscriberInstancesTable({
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: 80,
+        size: ROW_ACTIONS_COLUMN_SIZE,
+        minSize: ROW_ACTIONS_COLUMN_SIZE,
+        maxSize: ROW_ACTIONS_COLUMN_SIZE,
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -252,7 +264,7 @@ function TranscriberInstancesTable({
       density: tableStateContext.density,
       sorting: tableStateContext.sorting,
       columnOrder: tableStateContext.columnOrder,
-      columnSizing: tableStateContext.columnSizing,
+      columnSizing,
     },
   });
 

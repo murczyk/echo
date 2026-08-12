@@ -14,6 +14,8 @@ import { useEffect, useState } from 'react';
 import type { Unit } from '../../../../../Bindings';
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../../components/PowerAlert';
+import { DEFAULT_LIST_UNITS_REQ, searchUnitsStrictThenRelaxed } from '../../../services/api/units';
+import { formatUnitError } from '../helpers';
 
 export function DeleteUnitDialog({
   unit,
@@ -48,24 +50,68 @@ export function DeleteUnitDialog({
 
 export function MergeUnitDialog({
   original,
-  units,
   submitting,
   error,
   onClose,
   onConfirm,
 }: {
   original: Unit | null;
-  units: Unit[];
   submitting: boolean;
   error: string | null;
   onClose: () => void;
   onConfirm: (duplicate: Unit) => void;
 }) {
   const [duplicate, setDuplicate] = useState<Unit | null>(null);
+  const [options, setOptions] = useState<Unit[]>([]);
+  const [inputValue, setInputValue] = useState('');
+  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (original !== null) setDuplicate(null);
+    if (original !== null) {
+      setDuplicate(null);
+      setInputValue('');
+    }
   }, [original]);
+
+  useEffect(() => {
+    if (original === null) return;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(
+      () => {
+        setLoadingOptions(true);
+        setOptionsError(null);
+        void searchUnitsStrictThenRelaxed(
+          {
+            ...DEFAULT_LIST_UNITS_REQ,
+            sortBy: 'UnitNameLengthAsc',
+            includeInactive: true,
+            filterName: inputValue.trim() || null,
+            limit: 50,
+            offset: 0,
+          },
+          { signal: controller.signal },
+        )
+          .then((units) => {
+            if (!controller.signal.aborted) {
+              setOptions(units.filter((unit) => unit.id !== original.id));
+            }
+          })
+          .catch((requestError) => {
+            if (!controller.signal.aborted) setOptionsError(formatUnitError(requestError));
+          })
+          .finally(() => {
+            if (!controller.signal.aborted) setLoadingOptions(false);
+          });
+      },
+      inputValue.trim() ? 300 : 0,
+    );
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [inputValue, original]);
 
   return (
     <Dialog
@@ -82,14 +128,23 @@ export function MergeUnitDialog({
             підрозділу «{original?.name}», після чого дублікат буде видалено.
           </PowerAlert>
           <Autocomplete
-            options={units.filter((unit) => unit.id !== original?.id)}
+            options={options}
+            filterOptions={(items) => items}
             value={duplicate}
             onChange={(_, value) => setDuplicate(value)}
+            inputValue={inputValue}
+            onInputChange={(_, value) => setInputValue(value)}
             getOptionLabel={(unit) => unit.name || `#${unit.id}`}
             isOptionEqualToValue={(left, right) => left.id === right.id}
             disabled={submitting}
+            loading={loadingOptions}
+            loadingText="Пошук підрозділів…"
+            noOptionsText="Підрозділів не знайдено"
             renderInput={(params) => <TextField {...params} label="Підрозділ-дублікат" required />}
           />
+          {optionsError ? (
+            <PowerAlert severity="error">Не вдалося знайти підрозділи: {optionsError}</PowerAlert>
+          ) : null}
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
         </Stack>
       </DialogContent>

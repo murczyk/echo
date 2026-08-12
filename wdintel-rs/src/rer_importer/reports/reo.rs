@@ -2,11 +2,14 @@ use super::types::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::highlight::CNCallsign;
+use crate::rer_importer::report_chunking::{
+    build_filtered_inbox_report_chunk_query, inbox_report_chunk_req,
+    inbox_report_period_chunks, ReportPeriodChunk, ReportPeriodEnd,
+};
 use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
 use crate::rer_importer::types::InboxMessagesReq;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
 use chrono::prelude::*;
 use docx_rs::*;
@@ -127,8 +130,6 @@ struct ReoInboxMessageRow {
     pub timestamp: Option<NaiveDateTime>,
     pub freq: Option<String>,
     pub coords: Option<String>,
-    pub callsigns: Option<serde_json::Value>,
-    pub callsigns_alg2: Option<serde_json::Value>,
     pub callsign_tokens: Option<serde_json::Value>,
 }
 
@@ -168,8 +169,19 @@ pub async fn report_docx_kind_reo(
         req.report_tags_only_this_unit.unwrap_or(false);
     let mut current_req = req.req.clone();
     current_req.report_tags_only_this_unit = Some(false);
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks = inbox_report_period_chunks(
+        &current_req,
+        report_settings.chunking_hours,
+    )
+    .context(h!())?;
     let analytics_req = &current_req;
     let postgres_req = &current_req;
+    let analytics_chunks = &chunks;
+    let postgres_chunks = &chunks;
     let messages = crate::rer_importer::analysis::with_analytics_read_fallback(
         env,
         "REO report interception scan",
@@ -177,10 +189,24 @@ pub async fn report_docx_kind_reo(
             &current_req,
         ),
         |db| async move {
-            load_reo_inbox_messages(&db, &login, env, analytics_req).await
+            load_reo_inbox_messages_chunks(
+                &db,
+                &login,
+                env,
+                analytics_req,
+                analytics_chunks,
+            )
+            .await
         },
         |db| async move {
-            load_reo_inbox_messages(&db, &login, env, postgres_req).await
+            load_reo_inbox_messages_chunks(
+                &db,
+                &login,
+                env,
+                postgres_req,
+                postgres_chunks,
+            )
+            .await
         },
     )
     .await
@@ -227,12 +253,12 @@ pub async fn report_docx_kind_reo(
 
     let network_summary_total =
         report.summary.identified_qty + report.summary.unidentified_qty;
-    let network_summary =
-        format!("Відмічено радіомереж (радіонапрямків): {} (визначені - {}, не визначено - {})",
-                network_summary_total,
-                report.summary.identified_qty,
-                report.summary.unidentified_qty
-        );
+    let network_summary = format!(
+        "Відмічено радіомереж (радіонапрямків): {} (визначені - {}, не визначено - {})",
+        network_summary_total,
+        report.summary.identified_qty,
+        report.summary.unidentified_qty
+    );
 
     let result = match req.report_type {
         Some(ReportType::Reo(_, ReoReportFileType::Xlsx)) => {
@@ -259,14 +285,44 @@ pub async fn report_docx_kind_reo(
     result
 }
 
+async fn load_reo_inbox_messages_chunks(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    chunks: &[ReportPeriodChunk],
+) -> Result<Vec<(i64, ReoInboxMessage)>, AppError> {
+    let mut messages = BTreeMap::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "REO report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let chunk_req = inbox_report_chunk_req(req, chunk);
+        for (id, message) in
+            load_reo_inbox_messages(dbx, login, env, &chunk_req, chunk.end)
+                .await
+                .context(h!())?
+        {
+            messages.entry(id).or_insert(message);
+        }
+    }
+    Ok(messages.into_iter().collect())
+}
+
 async fn load_reo_inbox_messages(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<(i64, ReoInboxMessage)>, AppError> {
-    let rows = crate::rer_importer::inbox::query::build_filtered_inbox_query(
-        dbx, login, env, req,
+    let rows = build_filtered_inbox_report_chunk_query(
+        dbx, login, env, req, period_end,
     )
     .await
     .context(h!())?
@@ -275,8 +331,6 @@ async fn load_reo_inbox_messages(
     .column_as(signal_message::Column::Timestamp, "timestamp")
     .column_as(sigint_inbox_item::Column::Freq, "freq")
     .column_as(sigint_inbox_item::Column::Coords, "coords")
-    .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
-    .column_as(sigint_inbox_item::Column::CallsignsAlg2, "callsigns_alg2")
     .column_as(sigint_inbox_item::Column::CallsignTokens, "callsign_tokens")
     .into_model::<ReoInboxMessageRow>()
     .all(dbx)
@@ -294,10 +348,14 @@ async fn load_reo_inbox_messages(
         load_reo_group_master_keys(dbx, login, req, &message_ids)
             .await
             .context(h!())?;
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &message_ids).await?;
 
     rows.into_iter()
         .map(|row| {
             let id = row.id;
+            let callsigns =
+                normalized_callsigns.remove(&id).unwrap_or_default();
             Ok((
                 id,
                 ReoInboxMessage {
@@ -306,10 +364,8 @@ async fn load_reo_inbox_messages(
                     }),
                     freq: row.freq,
                     coords: row.coords,
-                    callsigns: parse_optional_json_vec(row.callsigns)?,
-                    callsigns_alg2: parse_optional_json_vec(
-                        row.callsigns_alg2,
-                    )?,
+                    callsigns: callsigns.primary,
+                    callsigns_alg2: callsigns.alg2,
                     callsign_tokens: parse_optional_json_vec(
                         row.callsign_tokens,
                     )?,
@@ -922,7 +978,7 @@ async fn collect_report(
 
     info!("collect_report: loading unit_callsigns from DB");
     let start = Instant::now();
-    let sigint_network_ids = networks
+    let sigint_network_ids: Vec<i64> = networks
         .network_summaries_dictionary
         .keys()
         .cloned()
@@ -1175,8 +1231,12 @@ async fn collect_report(
             all_undefined_networks.push(row);
         }
     }
-    info!("collect_report: building network rows took: {:?}, identified: {}, undefined: {}",
-          start.elapsed(), all_hostile_networks.len(), all_undefined_networks.len());
+    info!(
+        "collect_report: building network rows took: {:?}, identified: {}, undefined: {}",
+        start.elapsed(),
+        all_hostile_networks.len(),
+        all_undefined_networks.len()
+    );
 
     info!("collect_report: sorting and filtering undefined networks");
     let start = Instant::now();

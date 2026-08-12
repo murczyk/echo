@@ -1,7 +1,7 @@
 import { createRoot, type Root } from 'react-dom/client';
 
 import { NeoMuiThemeProvider } from './mui-theme';
-import { UnitAttachmentUploader } from './routes/rer-unit-details/UnitAttachmentUploader';
+import { UnitAttachmentsAdmin } from './routes/rer-unit-details/UnitAttachmentsAdmin';
 
 function parseUnitId(element: Element): number | null {
   const unitId = Number(element.getAttribute('data-unit-id'));
@@ -24,10 +24,10 @@ class UnitAttachmentUploadElement extends HTMLElement {
     }
     this.root.render(
       <NeoMuiThemeProvider>
-        <UnitAttachmentUploader
+        <UnitAttachmentsAdmin
           key={unitId}
           unitId={unitId}
-          onUploaded={(count) => {
+          onChanged={(count) => {
             this.dispatchEvent(
               new CustomEvent('unit-attachments-uploaded', {
                 detail: { count },

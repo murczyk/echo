@@ -13,6 +13,7 @@ import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (on, onClick)
 import Json.Decode as Decode
+import Json.Encode as Encode
 import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
@@ -47,6 +48,12 @@ toLayout user _ =
 type Tab
     = Overview
     | Files
+    | ChildUnits
+
+
+type UnitEditSection
+    = UnitData
+    | OrbitData
 
 
 type alias Model =
@@ -55,7 +62,17 @@ type alias Model =
     , detailsLoading : Bool
     , detailsLoadFailed : Bool
     , activeTab : Tab
+    , childUnits : Maybe B.UnitOrbitChildrenRsp
+    , childUnitsLoading : Bool
     , downloadInProgress : Maybe Int
+    , orbitLinkDialogOpen : Bool
+    , orbitUnitUnlinking : Maybe String
+    , deviceNetworkDialogOpen : Bool
+    , unitEditDialogOpen : Maybe UnitEditSection
+    , unitUpdating : Bool
+    , unitLabelInput : String
+    , unitLabelSaving : Bool
+    , unitLabelDeleting : Maybe Int
     }
 
 
@@ -85,7 +102,17 @@ init _ route _ =
 
             else
                 Overview
+      , childUnits = Nothing
+      , childUnitsLoading = False
       , downloadInProgress = Nothing
+      , orbitLinkDialogOpen = False
+      , orbitUnitUnlinking = Nothing
+      , deviceNetworkDialogOpen = False
+      , unitEditDialogOpen = Nothing
+      , unitUpdating = False
+      , unitLabelInput = ""
+      , unitLabelSaving = False
+      , unitLabelDeleting = Nothing
       }
     , E.batch initialEffects
     )
@@ -112,9 +139,29 @@ type Msg
     = DetailsReturnedByApi (Result ApiError B.UnitDetailsRsp)
     | RetryDetails
     | ChangeTab Tab
+    | ChildUnitsReturnedByApi (Result ApiError B.UnitOrbitChildrenRsp)
     | AttachmentsUploaded
     | DownloadAttachment B.UnitAttachment
     | AttachmentDownloaded B.UnitAttachment (Result ApiError Bytes)
+    | OpenOrbitLinkDialog
+    | CloseOrbitLinkDialog
+    | OrbitUnitLinked
+    | UnlinkOrbitUnit B.OrbitUnitDetails
+    | OrbitUnitUnlinked String (Result ApiError ())
+    | OpenDeviceNetworkDialog
+    | CloseDeviceNetworkDialog
+    | DeviceNetworkCreated
+    | OpenUnitEditDialog UnitEditSection
+    | CloseUnitEditDialog
+    | SubmitUnitEdit B.CreateUnitReq
+    | UnitEditUpdated (Result ApiError B.Unit)
+    | SetUnitActive Bool
+    | UnitActiveUpdated (Result ApiError B.Unit)
+    | SetUnitLabelInput String
+    | SubmitUnitLabel
+    | UnitLabelCreated (Result ApiError B.UnitLabel)
+    | DeleteUnitLabel Int
+    | UnitLabelDeleted Int (Result ApiError ())
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -127,7 +174,10 @@ update msg model =
             retryDetails model
 
         ChangeTab tab ->
-            ( { model | activeTab = tab }, E.none )
+            changeTab tab model
+
+        ChildUnitsReturnedByApi result ->
+            updateChildUnits result model
 
         AttachmentsUploaded ->
             reloadAttachments model
@@ -137,6 +187,63 @@ update msg model =
 
         AttachmentDownloaded attachment result ->
             attachmentDownloaded attachment result model
+
+        OpenOrbitLinkDialog ->
+            ( { model | orbitLinkDialogOpen = True }, E.none )
+
+        CloseOrbitLinkDialog ->
+            ( { model | orbitLinkDialogOpen = False }, E.none )
+
+        OrbitUnitLinked ->
+            orbitUnitLinked model
+
+        UnlinkOrbitUnit orbitUnit ->
+            unlinkOrbitUnit orbitUnit model
+
+        OrbitUnitUnlinked orbitUnitId result ->
+            orbitUnitUnlinked orbitUnitId result model
+
+        OpenDeviceNetworkDialog ->
+            ( { model | deviceNetworkDialogOpen = True }, E.none )
+
+        CloseDeviceNetworkDialog ->
+            ( { model | deviceNetworkDialogOpen = False }, E.none )
+
+        DeviceNetworkCreated ->
+            deviceNetworkCreated model
+
+        OpenUnitEditDialog section ->
+            ( { model | unitEditDialogOpen = Just section }, E.none )
+
+        CloseUnitEditDialog ->
+            ( { model | unitEditDialogOpen = Nothing }, E.none )
+
+        SubmitUnitEdit req ->
+            submitUnitEdit req model
+
+        UnitEditUpdated result ->
+            unitEditUpdated result model
+
+        SetUnitActive active ->
+            setUnitActive active model
+
+        UnitActiveUpdated result ->
+            unitActiveUpdated result model
+
+        SetUnitLabelInput value ->
+            ( { model | unitLabelInput = value }, E.none )
+
+        SubmitUnitLabel ->
+            submitUnitLabel model
+
+        UnitLabelCreated result ->
+            unitLabelCreated result model
+
+        DeleteUnitLabel labelId ->
+            deleteUnitLabel labelId model
+
+        UnitLabelDeleted labelId result ->
+            unitLabelDeleted labelId result model
 
 
 updateDetails : Result ApiError B.UnitDetailsRsp -> Model -> ( Model, Effect Msg )
@@ -155,6 +262,48 @@ updateDetails result model =
                 | details = Just details
                 , detailsLoading = False
                 , detailsLoadFailed = False
+                , activeTab =
+                    if model.activeTab == ChildUnits && List.isEmpty details.orbitUnits then
+                        Overview
+
+                    else
+                        model.activeTab
+                , childUnits = Nothing
+              }
+            , E.none
+            )
+
+
+changeTab : Tab -> Model -> ( Model, Effect Msg )
+changeTab tab state =
+    if tab == ChildUnits && state.childUnits == Nothing && not state.childUnitsLoading then
+        case state.unitId of
+            Just unitId ->
+                ( { state | activeTab = tab, childUnitsLoading = True }
+                , E.sendCmd <|
+                    Api.sigint_unit_orbit_children ChildUnitsReturnedByApi
+                        { unitId = unitId }
+                )
+
+            Nothing ->
+                ( { state | activeTab = tab }, E.none )
+
+    else
+        ( { state | activeTab = tab }, E.none )
+
+
+updateChildUnits : Result ApiError B.UnitOrbitChildrenRsp -> Model -> ( Model, Effect Msg )
+updateChildUnits result state =
+    case result of
+        Err err ->
+            ( { state | childUnitsLoading = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підпорядкованих підрозділів" err
+            )
+
+        Ok childUnits ->
+            ( { state
+                | childUnits = Just childUnits
+                , childUnitsLoading = False
               }
             , E.none
             )
@@ -236,6 +385,251 @@ downloadContentType attachment =
         attachment.contentType
 
 
+orbitUnitLinked : Model -> ( Model, Effect Msg )
+orbitUnitLinked model =
+    case model.unitId of
+        Nothing ->
+            ( { model | orbitLinkDialogOpen = False }, E.none )
+
+        Just unitId ->
+            ( { model
+                | orbitLinkDialogOpen = False
+                , detailsLoading = True
+              }
+            , loadDetails unitId
+            )
+
+
+unlinkOrbitUnit : B.OrbitUnitDetails -> Model -> ( Model, Effect Msg )
+unlinkOrbitUnit orbitUnit model =
+    case model.unitId of
+        Nothing ->
+            ( model, E.none )
+
+        Just unitId ->
+            ( { model | orbitUnitUnlinking = Just orbitUnit.unitId }
+            , E.sendCmd <|
+                Api.sigint_unit_orbit_unlink
+                    (OrbitUnitUnlinked orbitUnit.unitId)
+                    { sigintUnitId = unitId
+                    , orbitUnitId = orbitUnit.unitId
+                    }
+            )
+
+
+orbitUnitUnlinked : String -> Result ApiError () -> Model -> ( Model, Effect Msg )
+orbitUnitUnlinked _ result model =
+    case result of
+        Err err ->
+            ( { model | orbitUnitUnlinking = Nothing }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення прив’язки Orbit" err
+            )
+
+        Ok () ->
+            case model.unitId of
+                Nothing ->
+                    ( { model | orbitUnitUnlinking = Nothing }, E.none )
+
+                Just unitId ->
+                    ( { model
+                        | orbitUnitUnlinking = Nothing
+                        , detailsLoading = True
+                      }
+                    , loadDetails unitId
+                    )
+
+
+deviceNetworkCreated : Model -> ( Model, Effect Msg )
+deviceNetworkCreated model =
+    case model.unitId of
+        Nothing ->
+            ( { model | deviceNetworkDialogOpen = False }, E.none )
+
+        Just unitId ->
+            ( { model
+                | deviceNetworkDialogOpen = False
+                , detailsLoading = True
+              }
+            , loadDetails unitId
+            )
+
+
+submitUnitEdit : B.CreateUnitReq -> Model -> ( Model, Effect Msg )
+submitUnitEdit req model =
+    case model.details of
+        Nothing ->
+            ( model, E.none )
+
+        Just details ->
+            let
+                unit =
+                    details.unit
+
+                updatedUnit =
+                    { unit
+                        | company = req.company
+                        , battalion = req.battalion
+                        , regiment = req.regiment
+                        , division = req.division
+                        , army = req.army
+                        , militaryDistrict = req.militaryDistrict
+                        , armyRegion = req.armyRegion
+                        , active = req.active
+                        , isDeduplicateCandidate = req.isDeduplicateCandidate
+                        , comment = req.comment
+                        , orbitNote = req.orbitNote
+                    }
+            in
+            ( { model | unitUpdating = True }
+            , E.sendCmd <| Api.sigint_unit_update UnitEditUpdated updatedUnit
+            )
+
+
+unitEditUpdated : Result ApiError B.Unit -> Model -> ( Model, Effect Msg )
+unitEditUpdated result model =
+    case result of
+        Err err ->
+            ( { model | unitUpdating = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка редагування підрозділу" err
+            )
+
+        Ok unit ->
+            case model.details of
+                Nothing ->
+                    ( { model | unitUpdating = False, unitEditDialogOpen = Nothing }, E.none )
+
+                Just details ->
+                    ( { model
+                        | details = Just { details | unit = unit }
+                        , unitUpdating = False
+                        , unitEditDialogOpen = Nothing
+                      }
+                    , E.none
+                    )
+
+
+setUnitActive : Bool -> Model -> ( Model, Effect Msg )
+setUnitActive active model =
+    case model.details of
+        Just details ->
+            if model.unitUpdating then
+                ( model, E.none )
+
+            else
+                let
+                    unit =
+                        details.unit
+                in
+                ( { model | unitUpdating = True }
+                , E.sendCmd <|
+                    Api.sigint_unit_update UnitActiveUpdated
+                        { unit | active = active }
+                )
+
+        Nothing ->
+            ( model, E.none )
+
+
+unitActiveUpdated : Result ApiError B.Unit -> Model -> ( Model, Effect Msg )
+unitActiveUpdated result model =
+    case result of
+        Err err ->
+            ( { model | unitUpdating = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка зміни статусу підрозділу" err
+            )
+
+        Ok unit ->
+            case model.details of
+                Nothing ->
+                    ( { model | unitUpdating = False }, E.none )
+
+                Just details ->
+                    ( { model
+                        | details = Just { details | unit = unit }
+                        , unitUpdating = False
+                      }
+                    , E.none
+                    )
+
+
+submitUnitLabel : Model -> ( Model, Effect Msg )
+submitUnitLabel model =
+    case model.unitId of
+        Just unitId ->
+            if String.length (String.trim model.unitLabelInput) < 2 || model.unitLabelSaving then
+                ( model, E.none )
+
+            else
+                ( { model | unitLabelSaving = True }
+                , E.sendCmd <|
+                    Api.sigint_unit_label_create UnitLabelCreated
+                        { unitId = unitId
+                        , label = model.unitLabelInput
+                        }
+                )
+
+        Nothing ->
+            ( model, E.none )
+
+
+unitLabelCreated : Result ApiError B.UnitLabel -> Model -> ( Model, Effect Msg )
+unitLabelCreated result model =
+    case result of
+        Err err ->
+            ( { model | unitLabelSaving = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка додавання тегу підрозділу" err
+            )
+
+        Ok _ ->
+            case model.unitId of
+                Just unitId ->
+                    ( { model
+                        | unitLabelSaving = False
+                        , unitLabelInput = ""
+                        , detailsLoading = True
+                      }
+                    , loadDetails unitId
+                    )
+
+                Nothing ->
+                    ( { model | unitLabelSaving = False }, E.none )
+
+
+deleteUnitLabel : Int -> Model -> ( Model, Effect Msg )
+deleteUnitLabel labelId model =
+    if model.unitLabelDeleting /= Nothing then
+        ( model, E.none )
+
+    else
+        ( { model | unitLabelDeleting = Just labelId }
+        , E.sendCmd <|
+            Api.sigint_unit_label_delete (UnitLabelDeleted labelId)
+                { labelId = labelId }
+        )
+
+
+unitLabelDeleted : Int -> Result ApiError () -> Model -> ( Model, Effect Msg )
+unitLabelDeleted _ result model =
+    case result of
+        Err err ->
+            ( { model | unitLabelDeleting = Nothing }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення тегу підрозділу" err
+            )
+
+        Ok () ->
+            case model.unitId of
+                Just unitId ->
+                    ( { model
+                        | unitLabelDeleting = Nothing
+                        , detailsLoading = True
+                      }
+                    , loadDetails unitId
+                    )
+
+                Nothing ->
+                    ( { model | unitLabelDeleting = Nothing }, E.none )
+
+
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
@@ -298,37 +692,188 @@ detailsErrorView loadFailed =
 detailsView : Auth.User -> Shared.Model -> Model -> B.UnitDetailsRsp -> Html Msg
 detailsView user shared model details =
     div [ class "flex flex-col gap-4" ]
-        [ detailsHeader details.unit
-        , tabsView model.activeTab
+        [ detailsHeader user model details
+        , deviceNetworkDialog model details
+        , unitEditDialog model details.unit
+        , orbitLinkDialog model details.unit
+        , tabsView model.activeTab (not (List.isEmpty details.orbitUnits))
         , case model.activeTab of
             Overview ->
-                overviewTab shared details.unit
+                overviewTab user shared model details
 
             Files ->
                 filesTab user shared model details.attachments
+
+            ChildUnits ->
+                childUnitsTab model
         ]
 
 
-detailsHeader : B.Unit -> Html Msg
-detailsHeader unit =
-    div [ class "d-flex align-items-center gap-3" ]
-        [ a
-            [ class "btn btn-outline-secondary btn-sm"
-            , Route.href
-                { path = Route.Path.RerUnits
-                , query = Dict.empty
-                , hash = Nothing
-                }
+orbitLinkDialog : Model -> B.Unit -> Html Msg
+orbitLinkDialog model unit =
+    case ( model.orbitLinkDialogOpen, model.unitId ) of
+        ( True, Just unitId ) ->
+            node "orbit-unit-link-dialog"
+                [ attribute "data-unit-id" (String.fromInt unitId)
+                , attribute "data-unit" (Encode.encode 0 (B.unitEncoder unit))
+                , on "orbit-unit-link-close" (Decode.succeed CloseOrbitLinkDialog)
+                , on "orbit-unit-linked" (Decode.succeed OrbitUnitLinked)
+                ]
+                []
+
+        _ ->
+            text ""
+
+
+detailsHeader : Auth.User -> Model -> B.UnitDetailsRsp -> Html Msg
+detailsHeader user model details =
+    div
+        [ class "d-flex align-items-center justify-content-between gap-3 flex-wrap" ]
+        [ div [ class "d-flex align-items-center gap-3 flex-wrap" ]
+            [ a
+                [ class "btn btn-outline-secondary btn-sm"
+                , Route.href
+                    { path = Route.Path.RerUnits
+                    , query = Dict.empty
+                    , hash = Nothing
+                    }
+                ]
+                [ i [ class "bi bi-arrow-left me-2" ] []
+                , text "До підрозділів"
+                ]
+            , h1 [ class "mb-0" ] [ text details.unit.name ]
             ]
-            [ i [ class "bi bi-arrow-left me-2" ] []
-            , text "До підрозділів"
-            ]
-        , h1 [ class "mb-0" ] [ text unit.name ]
+        , if Core.Auth.hasRole "UnitsEditor" user then
+            unitActions model details
+
+          else
+            text ""
         ]
 
 
-tabsView : Tab -> Html Msg
-tabsView activeTab =
+unitActions : Model -> B.UnitDetailsRsp -> Html Msg
+unitActions model details =
+    div [ class "dropdown" ]
+        [ button
+            [ class "btn btn-sm btn-link text-secondary p-1"
+            , type_ "button"
+            , disabled (model.unitEditDialogOpen /= Nothing || model.deviceNetworkDialogOpen || model.unitUpdating)
+            , attribute "data-bs-toggle" "dropdown"
+            , attribute "aria-expanded" "false"
+            , attribute "aria-label" "Дії з підрозділом"
+            ]
+            [ i [ class "bi bi-three-dots-vertical" ] [] ]
+        , ul [ class "dropdown-menu dropdown-menu-end" ]
+            [ li []
+                [ button
+                    [ class "dropdown-item d-flex align-items-center gap-2"
+                    , type_ "button"
+                    , onClick (SetUnitActive (not details.unit.active))
+                    ]
+                    [ i
+                        [ class
+                            (if details.unit.active then
+                                "bi bi-toggle-off"
+
+                             else
+                                "bi bi-toggle-on"
+                            )
+                        ]
+                        []
+                    , text
+                        (if details.unit.active then
+                            "Деактивувати"
+
+                         else
+                            "Активувати"
+                        )
+                    ]
+                ]
+            ]
+        ]
+
+
+unitEditDialog : Model -> B.Unit -> Html Msg
+unitEditDialog model unit =
+    case model.unitEditDialogOpen of
+        Just section ->
+            node "unit-edit-dialog"
+                [ attribute "data-unit" (Encode.encode 0 (B.unitEncoder unit))
+                , attribute "data-section"
+                    (case section of
+                        UnitData ->
+                            "unit"
+
+                        OrbitData ->
+                            "orbit"
+                    )
+                , attribute "data-submitting"
+                    (if model.unitUpdating then
+                        "true"
+
+                     else
+                        "false"
+                    )
+                , on "unit-edit-close" (Decode.succeed CloseUnitEditDialog)
+                , on "unit-edit-submit"
+                    (Decode.map SubmitUnitEdit <|
+                        Decode.at [ "detail" ] B.createUnitReqDecoder
+                    )
+                ]
+                []
+
+        Nothing ->
+            text ""
+
+
+deviceNetworkDialog : Model -> B.UnitDetailsRsp -> Html Msg
+deviceNetworkDialog model details =
+    if model.deviceNetworkDialogOpen then
+        node "device-network-create-dialog"
+            [ attribute "data-unit-id" (String.fromInt details.unit.id)
+            , attribute "data-unit-name" details.unit.name
+            , attribute "data-unit-mask"
+                (Encode.encode 0 <|
+                    Encode.list Encode.string (defaultUnitMasks details.unit)
+                )
+            , on "device-network-create-close" (Decode.succeed CloseDeviceNetworkDialog)
+            , on "device-network-created" (Decode.succeed DeviceNetworkCreated)
+            ]
+            []
+
+    else
+        text ""
+
+
+defaultUnitMasks : B.Unit -> List String
+defaultUnitMasks unit =
+    let
+        parts =
+            [ unit.company
+            , unit.battalion
+            , unit.regiment
+            , unit.division
+            , unit.army
+            , unit.militaryDistrict
+            , unit.armyRegion
+            ]
+                |> List.filter (not << String.isEmpty << String.trim)
+
+        forward =
+            String.join " " parts
+
+        backward =
+            String.join " " (List.reverse parts)
+    in
+    if forward == backward then
+        [ forward ]
+
+    else
+        [ forward, backward ]
+
+
+tabsView : Tab -> Bool -> Html Msg
+tabsView activeTab hasOrbitUnit =
     let
         tabButton tab label =
             button
@@ -356,21 +901,246 @@ tabsView activeTab =
         ]
         [ tabButton Overview "Огляд"
         , tabButton Files "Файли"
+        , if hasOrbitUnit then
+            tabButton ChildUnits "Підпорядковані підрозділи"
+
+          else
+            text ""
         ]
 
 
-overviewTab : Shared.Model -> B.Unit -> Html Msg
-overviewTab shared unit =
+childUnitsTab : Model -> Html Msg
+childUnitsTab state =
     div
         [ class "border rounded p-4 bg-card"
         , attribute "role" "tabpanel"
         ]
-        [ div [ class "row g-4" ]
+        [ case state.childUnits of
+            Just childUnits ->
+                childUnitsTable childUnits.units
+
+            Nothing ->
+                if state.childUnitsLoading then
+                    div [ class "flex justify-center py-8" ]
+                        [ Shared.Components.Spinner.loadingSpinner ]
+
+                else
+                    text ""
+        ]
+
+
+childUnitsTable : List B.OrbitChildUnit -> Html Msg
+childUnitsTable units =
+    if List.isEmpty units then
+        p [ class "text-secondary mb-0" ]
+            [ text "Немає прив’язаних підрозділів." ]
+
+    else
+        div [ class "table-responsive" ]
+            [ table [ class "table table-bordered align-middle mb-0" ]
+                [ thead []
+                    [ tr []
+                        [ th [ scope "col" ] [ text "Назва" ]
+                        , th [ scope "col", class "text-center" ]
+                            [ text "Структурне підпорядкування" ]
+                        , th [ scope "col", class "text-center" ]
+                            [ text "Оперативне підпорядкування" ]
+                        ]
+                    ]
+                , tbody [] (List.map childUnitRow units)
+                ]
+            ]
+
+
+childUnitRow : B.OrbitChildUnit -> Html Msg
+childUnitRow unit =
+    tr []
+        [ td []
+            [ div [ class "d-flex align-items-center gap-2" ]
+                ([ childUnitStatus unit.active
+                 , a
+                    [ href ("/rer-units/" ++ String.fromInt unit.sigintUnitId) ]
+                    [ text unit.name ]
+                 ]
+                    ++ List.map (childUnitOrbitLink unit.name) unit.orbitUnitIds
+                )
+            ]
+        , childUnitRelationshipCell unit.isGenerative
+        , childUnitRelationshipCell unit.isOperational
+        ]
+
+
+childUnitStatus : Bool -> Html Msg
+childUnitStatus active =
+    span
+        [ class "d-inline-block rounded-circle flex-shrink-0"
+        , class
+            (if active then
+                "bg-success"
+
+             else
+                "bg-secondary"
+            )
+        , style "width" "10px"
+        , style "height" "10px"
+        , title
+            (if active then
+                "Активний"
+
+             else
+                "Неактивний"
+            )
+        ]
+        []
+
+
+childUnitRelationshipCell : Bool -> Html Msg
+childUnitRelationshipCell isLinked =
+    td [ class "text-center" ]
+        [ if isLinked then
+            span []
+                [ i
+                    [ class "bi bi-check-circle-fill text-success fs-5"
+                    , attribute "aria-hidden" "true"
+                    ]
+                    []
+                , span [ class "visually-hidden" ] [ text "Так" ]
+                ]
+
+          else
+            text ""
+        ]
+
+
+childUnitOrbitLink : String -> String -> Html Msg
+childUnitOrbitLink unitName orbitUnitId =
+    a
+        [ class "d-inline-flex flex-shrink-0"
+        , href
+            ("https://delta.mil.gov.ua/orbit/units/"
+                ++ orbitUnitId
+                ++ "/organizational-structure"
+            )
+        , target "_blank"
+        , rel "noopener noreferrer"
+        , title "Відкрити підрозділ в Orbit"
+        , attribute "aria-label" ("Відкрити " ++ unitName ++ " в Orbit")
+        ]
+        [ img
+            [ src "/img/delta-icon.webp"
+            , alt ""
+            , style "height" "22px"
+            , style "width" "22px"
+            ]
+            []
+        ]
+
+
+overviewTab : Auth.User -> Shared.Model -> Model -> B.UnitDetailsRsp -> Html Msg
+overviewTab user shared model details =
+    let
+        hasOrbitNote =
+            details.unit.orbitNote
+                |> Maybe.map (not << String.isEmpty << String.trim)
+                |> Maybe.withDefault False
+
+        orbitCards =
+            if List.isEmpty details.orbitUnits then
+                if details.canLinkOrbitUnit || hasOrbitNote then
+                    [ emptyOrbitDataCard
+                        (Core.Auth.hasRole "UnitsEditor" user)
+                        model
+                        details.canLinkOrbitUnit
+                        details.unit.orbitNote
+                    ]
+
+                else
+                    []
+
+            else
+                List.indexedMap
+                    (\index ->
+                        orbitDataCard
+                            (Core.Auth.hasRole "UnitsEditor" user)
+                            shared
+                            model
+                            (index == 0)
+                            details.unit.orbitNote
+                    )
+                    details.orbitUnits
+    in
+    div
+        [ class "flex flex-col gap-4"
+        , attribute "role" "tabpanel"
+        ]
+        (unitOverviewCard
+            (Core.Auth.hasRole "UnitsEditor" user)
+            shared
+            model
+            details
+            :: unitLabelsCard model details
+            :: orbitCards
+        )
+
+
+emptyOrbitDataCard : Bool -> Model -> Bool -> Maybe String -> Html Msg
+emptyOrbitDataCard canManageOrbitData state canLinkOrbitUnit orbitNote =
+    div [ class "border rounded p-4 bg-card" ]
+        [ div [ class "d-flex align-items-center justify-content-between gap-3 mb-4" ]
+            [ h2 [ class "h4 mb-0" ] [ text "Дані із Orbit" ]
+            , if canManageOrbitData then
+                orbitDataActions state True Nothing
+
+              else
+                text ""
+            ]
+        , p [] [ text "Відсутні дані із системи Orbit." ]
+        , if canLinkOrbitUnit then
+            p [ class "mb-0" ]
+                [ button
+                    [ class "btn btn-outline-primary d-inline-flex align-items-center gap-2"
+                    , type_ "button"
+                    , onClick OpenOrbitLinkDialog
+                    ]
+                    [ img
+                        [ src "/img/delta-icon.webp"
+                        , alt ""
+                        , style "height" "22px"
+                        , style "width" "22px"
+                        ]
+                        []
+                    , text "Прив'язати Orbit підрозділ"
+                    ]
+                ]
+
+          else
+            text ""
+        , orbitNoteView orbitNote
+        ]
+
+
+unitOverviewCard : Bool -> Shared.Model -> Model -> B.UnitDetailsRsp -> Html Msg
+unitOverviewCard canEdit shared state details =
+    let
+        unit =
+            details.unit
+    in
+    div
+        [ class "border rounded p-4 bg-card" ]
+        [ if canEdit then
+            div [ class "d-flex justify-content-end mb-3" ]
+                [ unitOverviewActions state details.canCreateDeviceNetwork ]
+
+          else
+            text ""
+        , div [ class "row g-4" ]
             [ overviewField "Рота, взвод" unit.company
             , overviewField "Батальйон" unit.battalion
             , overviewField "Полк/Бригада" unit.regiment
             , overviewField "Дивізія" unit.division
             , overviewField "Корпус/Армія" unit.army
+            , overviewField "Група армій/Фронт/Види та роди ЗС" unit.militaryDistrict
+            , overviewField "Регіон/ТВД/Збройні Сили" unit.armyRegion
             , overviewField
                 "Статус"
                 (if unit.active then
@@ -398,31 +1168,405 @@ overviewTab shared unit =
         ]
 
 
+unitOverviewActions : Model -> Bool -> Html Msg
+unitOverviewActions state canCreateDeviceNetwork =
+    div [ class "dropdown" ]
+        [ button
+            [ class "btn btn-sm btn-link text-secondary p-1"
+            , type_ "button"
+            , disabled (state.unitEditDialogOpen /= Nothing || state.deviceNetworkDialogOpen || state.unitUpdating)
+            , attribute "data-bs-toggle" "dropdown"
+            , attribute "aria-expanded" "false"
+            , attribute "aria-label" "Дії з даними підрозділу"
+            ]
+            [ i [ class "bi bi-three-dots-vertical" ] [] ]
+        , ul [ class "dropdown-menu dropdown-menu-end" ]
+            [ li []
+                [ button
+                    [ class "dropdown-item d-flex align-items-center gap-2"
+                    , type_ "button"
+                    , onClick (OpenUnitEditDialog UnitData)
+                    ]
+                    [ i [ class "bi bi-pencil" ] []
+                    , text "Редагувати"
+                    ]
+                ]
+            , if canCreateDeviceNetwork then
+                li []
+                    [ button
+                        [ class "dropdown-item d-flex align-items-center gap-2"
+                        , type_ "button"
+                        , onClick OpenDeviceNetworkDialog
+                        ]
+                        [ i [ class "bi bi-router" ] []
+                        , text "Додати мережу пристроя"
+                        ]
+                    ]
+
+              else
+                text ""
+            ]
+        ]
+
+
+unitLabelsCard : Model -> B.UnitDetailsRsp -> Html Msg
+unitLabelsCard model details =
+    let
+        tooltip =
+            "Якщо в перехопленні зустрічається такий текст - ми прив'язуємо перехоплення до даного підрозділу"
+
+        inputTooShort =
+            String.length (String.trim model.unitLabelInput) < 2
+    in
+    div [ class "border rounded p-4 bg-card" ]
+        [ div [ class "d-flex align-items-center gap-2 mb-3" ]
+            [ h2 [ class "h4 mb-0" ] [ text "Теги підрозділу" ]
+            , i
+                [ class "bi bi-info-circle text-secondary"
+                , title tooltip
+                , attribute "aria-label" tooltip
+                ]
+                []
+            ]
+        , if List.isEmpty details.labels then
+            p [ class "text-secondary" ] [ text "Тегів немає." ]
+
+          else
+            div [ class "d-flex flex-wrap gap-2 mb-3" ]
+                (List.map (unitLabelBadge model details.canEditUnitLabels) details.labels)
+        , if details.canEditUnitLabels then
+            div []
+                [ div [ class "input-group", style "max-width" "560px" ]
+                    [ input
+                        [ class "form-control"
+                        , type_ "text"
+                        , value model.unitLabelInput
+                        , placeholder "Введіть тег підрозділу"
+                        , disabled model.unitLabelSaving
+                        , on "input" (Decode.map SetUnitLabelInput (Decode.at [ "target", "value" ] Decode.string))
+                        ]
+                        []
+                    , button
+                        [ class "btn btn-primary"
+                        , type_ "button"
+                        , disabled (inputTooShort || model.unitLabelSaving)
+                        , onClick SubmitUnitLabel
+                        ]
+                        [ text
+                            (if model.unitLabelSaving then
+                                "Додавання…"
+
+                             else
+                                "Додати"
+                            )
+                        ]
+                    ]
+                , if not (String.isEmpty model.unitLabelInput) && inputTooShort then
+                    div [ class "text-danger text-sm mt-1" ]
+                        [ text "Тег має містити щонайменше 2 символи." ]
+
+                  else
+                    text ""
+                ]
+
+          else
+            text ""
+        ]
+
+
+unitLabelBadge : Model -> Bool -> B.UnitLabel -> Html Msg
+unitLabelBadge model canEdit label =
+    span [ class "badge text-bg-light border d-inline-flex align-items-center gap-2 fs-6" ]
+        [ text label.label
+        , if canEdit then
+            button
+                [ class "btn btn-sm p-0 text-danger border-0"
+                , type_ "button"
+                , title "Видалити тег"
+                , attribute "aria-label" ("Видалити тег " ++ label.label)
+                , disabled (model.unitLabelDeleting /= Nothing)
+                , onClick (DeleteUnitLabel label.id)
+                ]
+                [ if model.unitLabelDeleting == Just label.id then
+                    span [ class "spinner-border spinner-border-sm" ] []
+
+                  else
+                    i [ class "bi bi-x-lg" ] []
+                ]
+
+          else
+            text ""
+        ]
+
+
+orbitNoteView : Maybe String -> Html Msg
+orbitNoteView orbitNote =
+    div [ class "mt-4" ]
+        [ div [ class "text-secondary text-sm mb-1" ] [ text "Примітка Orbit" ]
+        , div
+            [ class "border rounded p-3"
+            , style "min-height" "72px"
+            , style "white-space" "pre-wrap"
+            , style "overflow-wrap" "anywhere"
+            ]
+            [ text (textOrDash (Maybe.withDefault "" orbitNote)) ]
+        ]
+
+
+orbitDataCard : Bool -> Shared.Model -> Model -> Bool -> Maybe String -> B.OrbitUnitDetails -> Html Msg
+orbitDataCard canManageOrbitData shared state showOrbitNote orbitNote orbitUnit =
+    div [ class "border rounded p-4 bg-card" ]
+        [ div [ class "d-flex align-items-center justify-content-between gap-3 mb-4" ]
+            [ h2 [ class "h4 mb-0" ] [ text "Дані із Orbit" ]
+            , if canManageOrbitData then
+                orbitDataActions state showOrbitNote (Just orbitUnit)
+
+              else
+                text ""
+            ]
+        , orbitUnitDetails shared orbitUnit
+        , if showOrbitNote then
+            orbitNoteView orbitNote
+
+          else
+            text ""
+        ]
+
+
+orbitDataActions : Model -> Bool -> Maybe B.OrbitUnitDetails -> Html Msg
+orbitDataActions state canEditNote orbitUnit =
+    let
+        isUnlinking =
+            case orbitUnit of
+                Just unit ->
+                    state.orbitUnitUnlinking == Just unit.unitId
+
+                Nothing ->
+                    False
+
+        actionLabel =
+            if isUnlinking then
+                "Відв’язування Orbit підрозділу"
+
+            else
+                "Дії з даними Orbit"
+    in
+    div [ class "dropdown" ]
+        [ button
+            [ class "btn btn-sm btn-link text-secondary"
+            , type_ "button"
+            , disabled (state.orbitUnitUnlinking /= Nothing || state.unitEditDialogOpen /= Nothing || state.unitUpdating)
+            , attribute "data-bs-toggle" "dropdown"
+            , attribute "aria-expanded" "false"
+            , attribute "aria-label" actionLabel
+            , attribute "aria-busy"
+                (if isUnlinking then
+                    "true"
+
+                 else
+                    "false"
+                )
+            ]
+            [ if isUnlinking then
+                span [ class "spinner-border spinner-border-sm" ] []
+
+              else
+                i [ class "bi bi-three-dots-vertical" ] []
+            ]
+        , ul [ class "dropdown-menu dropdown-menu-end" ]
+            [ if canEditNote then
+                li []
+                    [ button
+                        [ class "dropdown-item d-flex align-items-center gap-2"
+                        , type_ "button"
+                        , onClick (OpenUnitEditDialog OrbitData)
+                        ]
+                        [ i [ class "bi bi-pencil" ] []
+                        , text "Редагувати примітку Orbit"
+                        ]
+                    ]
+
+              else
+                text ""
+            , case orbitUnit of
+                Just unit ->
+                    li []
+                        [ button
+                            [ class "dropdown-item text-danger d-flex align-items-center gap-2"
+                            , type_ "button"
+                            , disabled (state.orbitUnitUnlinking /= Nothing)
+                            , onClick (UnlinkOrbitUnit unit)
+                            ]
+                            [ i [ class "bi bi-link-45deg" ] []
+                            , text
+                                (if isUnlinking then
+                                    "Відв’язування…"
+
+                                 else
+                                    "Відв'язати Orbit підрозділ"
+                                )
+                            ]
+                        ]
+
+                Nothing ->
+                    text ""
+            ]
+        ]
+
+
+orbitUnitDetails : Shared.Model -> B.OrbitUnitDetails -> Html Msg
+orbitUnitDetails shared orbitUnit =
+    div []
+        [ div [ class "mb-4" ]
+            [ h3 [ class "h5" ] [ text (orbitUnitTitle orbitUnit) ]
+            , p [ class "mb-0" ]
+                [ a
+                    [ class "btn btn-outline-primary d-inline-flex align-items-center gap-2"
+                    , href
+                        ("https://delta.mil.gov.ua/orbit/units/"
+                            ++ orbitUnit.unitId
+                            ++ "/organizational-structure"
+                        )
+                    , target "_blank"
+                    , rel "noopener noreferrer"
+                    ]
+                    [ img
+                        [ src "/img/delta-icon.webp"
+                        , alt ""
+                        , style "height" "22px"
+                        , style "width" "22px"
+                        ]
+                        []
+                    , text "Відкрити в Orbit"
+                    ]
+                ]
+            ]
+        , div [ class "row g-4" ]
+            [ overviewField "ID підрозділу" orbitUnit.unitId
+            , overviewMaybeField "Оригінальна назва" orbitUnit.unitNameOriginal
+            , overviewParentUnits
+                "Структурне підпорядкування"
+                orbitUnit.generativeParentUnits
+            , overviewParentUnits
+                "Оперативне підпорядкування"
+                orbitUnit.operationalParentUnits
+            , overviewMaybeField "Номер підрозділу" orbitUnit.unitNumber
+            , overviewMaybeListField "Альтернативні назви" orbitUnit.unitAlternateNames
+            , overviewMaybeListField "Альтернативні номери" orbitUnit.unitAlternateNumbers
+            , overviewField "Ешелон" (orbitDictionaryValue orbitUnit.unitEchelon)
+            , overviewField "Тип бойового підрозділу" (orbitDictionaryValue orbitUnit.combatUnitType)
+            , overviewField
+                "Угруповання військ"
+                (orbitUnit.groupingOfForces
+                    |> List.map .name
+                    |> String.join "\n"
+                )
+            , overviewField
+                "Дата створення"
+                (Utils.Time.renderDateTimeF1 shared.timeZone
+                    (Time.millisToPosix orbitUnit.createdAt)
+                )
+            , overviewField
+                "Дата оновлення"
+                (Utils.Time.renderDateTimeF1 shared.timeZone
+                    (Time.millisToPosix orbitUnit.updatedAt)
+                )
+            ]
+        ]
+
+
+orbitUnitTitle : B.OrbitUnitDetails -> String
+orbitUnitTitle orbitUnit =
+    case orbitUnit.unitName of
+        Just name ->
+            name
+
+        Nothing ->
+            Maybe.withDefault orbitUnit.unitId orbitUnit.unitNameShort
+
+
+overviewMaybeField : String -> Maybe String -> Html Msg
+overviewMaybeField labelText value =
+    overviewField labelText (Maybe.withDefault "" value)
+
+
+overviewMaybeListField : String -> Maybe (List String) -> Html Msg
+overviewMaybeListField labelText values =
+    overviewField labelText
+        (values
+            |> Maybe.withDefault []
+            |> String.join "\n"
+        )
+
+
+orbitDictionaryValue : Maybe B.OrbitDictionaryValue -> String
+orbitDictionaryValue value =
+    value
+        |> Maybe.map .name
+        |> Maybe.withDefault ""
+
+
+overviewParentUnits : String -> List B.OrbitParentUnit -> Html Msg
+overviewParentUnits labelText parents =
+    div [ class "col-md-6" ]
+        [ div [ class "text-secondary text-sm mb-1" ] [ text labelText ]
+        , div
+            [ class "fw-semibold"
+            , style "overflow-wrap" "anywhere"
+            ]
+            (if List.isEmpty parents then
+                [ text "—" ]
+
+             else
+                parents
+                    |> List.map
+                        (\parent ->
+                            case parent.sigintUnitId of
+                                Just sigintUnitId ->
+                                    a [ href ("/rer-units/" ++ String.fromInt sigintUnitId) ]
+                                        [ text parent.name ]
+
+                                Nothing ->
+                                    text parent.name
+                        )
+                    |> List.intersperse (text " / ")
+            )
+        ]
+
+
 overviewField : String -> String -> Html Msg
 overviewField labelText value =
     div [ class "col-md-6" ]
         [ div [ class "text-secondary text-sm mb-1" ] [ text labelText ]
-        , div [ class "fw-semibold" ] [ text (textOrDash value) ]
+        , div
+            [ class "fw-semibold"
+            , style "white-space" "pre-wrap"
+            , style "overflow-wrap" "anywhere"
+            ]
+            [ text (textOrDash value) ]
         ]
 
 
 filesTab : Auth.User -> Shared.Model -> Model -> List B.UnitAttachment -> Html Msg
 filesTab user shared model attachments =
+    let
+        isAdmin =
+            Core.Auth.hasRole "Admin" user
+    in
     div
         [ class "flex flex-col gap-4"
         , attribute "role" "tabpanel"
         ]
-        [ if Core.Auth.hasRole "Admin" user then
-            uploadForm model
+        [ if isAdmin then
+            adminFiles model
 
           else
-            text ""
-        , attachmentsTable shared model attachments
+            attachmentsTable shared model attachments
         ]
 
 
-uploadForm : Model -> Html Msg
-uploadForm model =
+adminFiles : Model -> Html Msg
+adminFiles model =
     case model.unitId of
         Nothing ->
             text ""
@@ -449,7 +1593,6 @@ attachmentsTable shared model attachments =
                         [ th [ scope "col" ] [ text "Файл" ]
                         , th [ scope "col" ] [ text "Короткий опис" ]
                         , th [ scope "col" ] [ text "Повний опис" ]
-                        , th [ scope "col" ] [ text "Смуги (AOR)" ]
                         , th [ scope "col", class "text-nowrap" ] [ text "Дата внесення" ]
                         ]
                     ]
@@ -468,10 +1611,6 @@ attachmentRow shared model attachment =
         anyDownloadInProgress =
             model.downloadInProgress /= Nothing
 
-        aorNames =
-            attachment.aors
-                |> List.map .name
-                |> String.join "\n"
     in
     tr [ style "height" "96px" ]
         [ td tallCellAttributes
@@ -497,7 +1636,6 @@ attachmentRow shared model attachment =
             ]
         , descriptionCell attachment.shortDescription
         , descriptionCell attachment.fullDescription
-        , descriptionCell aorNames
         , td tallCellAttributes
             [ text <|
                 Utils.Time.renderDateTimeF1 shared.timeZone

@@ -2,6 +2,7 @@ import { Box, Paper, Skeleton, Stack } from '@mui/material';
 
 type Props = {
   rightPanelVisible: boolean;
+  centerVisible?: boolean;
 };
 
 const messageCardSkeletons = [
@@ -27,80 +28,87 @@ export const analysisLoadingSkeletonPaperSx = {
   width: 'auto',
 } as const;
 
-export function AnalysisLoadingSkeletons({ rightPanelVisible }: Props) {
+export function AnalysisLoadingSkeletons({ rightPanelVisible, centerVisible = true }: Props) {
   const skeletonCount = getAnalysisLoadingSkeletonCount(
     typeof window === 'undefined' ? 1024 : window.innerWidth,
   );
   return (
     <>
-      <Paper
-        variant="outlined"
-        component="section"
-        aria-label="Центральна секція"
-        aria-disabled="true"
-        sx={{
-          ...analysisLoadingSkeletonPaperSx,
-          minHeight: 0,
-          minWidth: 0,
-          height: { xs: 'auto', lg: '100%' },
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          position: 'relative',
-        }}
-      >
-        <Stack spacing={0.75} sx={{ px: 1, pt: { xs: 0.5, lg: 1 }, mb: 0.25 }}>
-          <Stack direction="row" spacing={1} flexWrap="nowrap" sx={analysisLoadingSkeletonTabsSx}>
-            <Skeleton variant="rounded" width={180} height={32} />
-            <Skeleton variant="rounded" width={108} height={32} />
-            <Skeleton variant="rounded" width={160} height={32} />
-          </Stack>
-        </Stack>
-        <Box
+      {centerVisible ? (
+        <Paper
+          variant="outlined"
+          component="section"
+          aria-label="Центральна секція"
+          aria-disabled="true"
           sx={{
-            flex: 1,
+            ...analysisLoadingSkeletonPaperSx,
             minHeight: 0,
-            px: 1,
-            pb: { xs: 1, lg: 2 },
-            pt: { xs: 0.5, lg: 1 },
+            minWidth: 0,
+            height: { xs: 'auto', lg: '100%' },
+            display: 'flex',
+            flexDirection: 'column',
             overflow: 'hidden',
+            position: 'relative',
           }}
         >
-          <Stack spacing={1.25}>
-            {messageCardSkeletons.slice(0, skeletonCount).map((card, index) => (
-              <Box
-                key={index}
-                sx={{
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderRadius: 1,
-                  p: 1.5,
-                  bgcolor: 'rgba(255, 255, 255, 0.02)',
-                }}
-              >
-                <Stack spacing={1}>
-                  <Stack spacing={0.75}>
-                    <Skeleton variant="rounded" width={card.lines[0]} height={20} />
-                    <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
-                      <Skeleton variant="rounded" width={88} height={24} />
-                      <Skeleton variant="rounded" width={72} height={24} />
-                      <Skeleton variant="rounded" width={96} height={24} />
-                    </Stack>
-                  </Stack>
-                  <Stack spacing={0.75}>
-                    <Skeleton variant="rounded" height={card.bodyHeight} />
-                    <Stack direction="row" spacing={1} flexWrap="wrap">
-                      {card.lines.slice(1).map((lineWidth, lineIndex) => (
-                        <Skeleton key={lineIndex} variant="rounded" width={lineWidth} height={16} />
-                      ))}
-                    </Stack>
-                  </Stack>
-                </Stack>
-              </Box>
-            ))}
+          <Stack spacing={0.75} sx={{ px: 1, pt: { xs: 0.5, lg: 1 }, mb: 0.25 }}>
+            <Stack direction="row" spacing={1} flexWrap="nowrap" sx={analysisLoadingSkeletonTabsSx}>
+              <Skeleton variant="rounded" width={180} height={32} />
+              <Skeleton variant="rounded" width={108} height={32} />
+              <Skeleton variant="rounded" width={160} height={32} />
+            </Stack>
           </Stack>
-        </Box>
-      </Paper>
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              px: 1,
+              pb: { xs: 1, lg: 2 },
+              pt: { xs: 0.5, lg: 1 },
+              overflow: 'hidden',
+            }}
+          >
+            <Stack spacing={1.25}>
+              {messageCardSkeletons.slice(0, skeletonCount).map((card, index) => (
+                <Box
+                  key={index}
+                  sx={{
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                    p: 1.5,
+                    bgcolor: 'rgba(255, 255, 255, 0.02)',
+                  }}
+                >
+                  <Stack spacing={1}>
+                    <Stack spacing={0.75}>
+                      <Skeleton variant="rounded" width={card.lines[0]} height={20} />
+                      <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center">
+                        <Skeleton variant="rounded" width={88} height={24} />
+                        <Skeleton variant="rounded" width={72} height={24} />
+                        <Skeleton variant="rounded" width={96} height={24} />
+                      </Stack>
+                    </Stack>
+                    <Stack spacing={0.75}>
+                      <Skeleton variant="rounded" height={card.bodyHeight} />
+                      <Stack direction="row" spacing={1} flexWrap="wrap">
+                        {card.lines.slice(1).map((lineWidth, lineIndex) => (
+                          <Skeleton
+                            key={lineIndex}
+                            variant="rounded"
+                            width={lineWidth}
+                            height={16}
+                          />
+                        ))}
+                      </Stack>
+                    </Stack>
+                  </Stack>
+                </Box>
+              ))}
+            </Stack>
+          </Box>
+        </Paper>
+      ) : null}
 
       {rightPanelVisible ? (
         <Paper

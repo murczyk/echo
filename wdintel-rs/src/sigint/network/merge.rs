@@ -215,7 +215,7 @@ pub async fn merge_two_network_freqs(
         .c(h!())?;
 
     if !freq_from.deleted {
-        let cutoff = freq_to.active_from.max(freq_from.active_from);
+        let cutoff = std::cmp::max(freq_to.active_from, freq_from.active_from);
         let final_active_to = freq_from.active_to.unwrap_or(cutoff);
         let mut freq_from_record: sigint_network_freq::ActiveModel =
             freq_from.into();
@@ -334,7 +334,9 @@ async fn reassign_freqs(
         freq_model.network_id = Set(network_id_to);
         freq_model.update(txn).await.context(h!())?;
 
-        info!("Frequency {id} ({freq_value}MHz) has been moved from network {network_id_from} to {network_id_to}");
+        info!(
+            "Frequency {id} ({freq_value}MHz) has been moved from network {network_id_from} to {network_id_to}"
+        );
 
         // Log the change of an old network in the changelog
         let json_new = sigint_network_freq::Entity::find_by_id(id)
@@ -432,7 +434,9 @@ async fn reassign_posts(
         let mut post_model = network_post.into_active_model();
         post_model.network_id = Set(network_id_to);
         post_model.update(txn).await.context(h!())?;
-        info!("Post \"{post_name}\" with id: {post_id} has been moved from network {network_id_from} to {network_id_to}");
+        info!(
+            "Post \"{post_name}\" with id: {post_id} has been moved from network {network_id_from} to {network_id_to}"
+        );
     }
 
     // Delete all remaining posts in the source network (those not reassigned)
@@ -490,7 +494,9 @@ async fn reassign_descriptions(
         let mut descr_model = description.into_active_model();
         descr_model.network_id = Set(network_id_to);
         descr_model.update(txn).await.context(h!())?;
-        info!("Network description with id: {descr_id} has been moved from network {network_id_from} to {network_id_to}");
+        info!(
+            "Network description with id: {descr_id} has been moved from network {network_id_from} to {network_id_to}"
+        );
     }
 
     // Delete all remaining descriptions in the source network (those not reassigned)
@@ -586,7 +592,9 @@ async fn reassign_callsigns(
         net_callsign_model.sigint_network_id = Set(network_id_to);
         net_callsign_model.update(txn).await.context(h!())?;
 
-        info!("Network callsign \"{callsign_val}\" has been moved from network {network_id_from} to {network_id_to}");
+        info!(
+            "Network callsign \"{callsign_val}\" has been moved from network {network_id_from} to {network_id_to}"
+        );
 
         // Log the change of an old network in the changelog
         let json_new = sigint_network_callsign::Entity::find_by_id(id)
@@ -680,7 +688,9 @@ async fn reassign_aors(
         let mut net_aor_model = network_aor.into_active_model();
         net_aor_model.network_id = Set(network_id_to);
         net_aor_model.update(txn).await.context(h!())?;
-        info!("AOR \"{aor_name}\" with id: {aor_id} has been moved from network {network_id_from} to {network_id_to}");
+        info!(
+            "AOR \"{aor_name}\" with id: {aor_id} has been moved from network {network_id_from} to {network_id_to}"
+        );
     }
 
     // Delete all remaining aors in the source network (those not reassigned)

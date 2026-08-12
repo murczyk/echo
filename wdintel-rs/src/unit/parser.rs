@@ -24,6 +24,19 @@ pub fn extract_unit_with_aor(
     m_aor_id: Option<i64>,
 ) -> Result<UnitAndLoc, AppError> {
     // trace!("> extract_unit: inp={inp}");
+    if let Some(zp_peleng) =
+        crate::rer_importer::zp_peleng_extended_format::parse(inp)
+    {
+        return Ok(UnitAndLoc {
+            unit: Some(format!(
+                "{} {}",
+                zp_peleng.signal_type, zp_peleng.unit_name
+            )),
+            locality: Some(zp_peleng.location),
+            locality_v2: None,
+        });
+    }
+
     if let Some(unit) = try_extract_report_125_unit(inp) {
         return Ok(UnitAndLoc {
             unit: Some(unit),
@@ -104,7 +117,7 @@ pub fn extract_unit_with_aor(
 
             let locality = locality
                 .map(|x| x.trim_matches(['-', ' ']).trim().to_string())
-                .and_then(|x| if !x.is_empty() { Some(x) } else { None });
+                .filter(|x| !x.is_empty());
 
             let (mut locality, mut locality_v2) =
                 extract_locality(settlements.clone(), line, locality, m_aor_id)
@@ -802,7 +815,7 @@ fn try_extract_pu_fsb_rf_unit_and_location(
     }))
 }
 
-fn try_extract_report_125_unit(inp: &str) -> Option<String> {
+pub(crate) fn try_extract_report_125_unit(inp: &str) -> Option<String> {
     if !looks_like_report_125_unit_body(inp) {
         return None;
     }
@@ -1705,7 +1718,10 @@ mod tests {
             .unwrap(),
         ));
         let res = extract_unit(settlements, body, vec![]).unwrap();
-        assert_eq!(res.unit.unwrap(), "УКХ р/м пн. сх. н.п. Веріговка 8 мсб 27 омсбр ймовірно\u{a0}арт.\u{a0}батарєя 444.550 МГц 06.09.24 50,2090 37,6695 \\ 50,2061 37,6612");
+        assert_eq!(
+            res.unit.unwrap(),
+            "УКХ р/м пн. сх. н.п. Веріговка 8 мсб 27 омсбр ймовірно\u{a0}арт.\u{a0}батарєя 444.550 МГц 06.09.24 50,2090 37,6695 \\ 50,2061 37,6612"
+        );
         assert_eq!(res.locality.unwrap(), "УКХ р/м пн. сх. н.п. Веріговка 8 мсб 27 омсбр ймовірно\u{a0}арт.\u{a0}батарєя 444.550 МГц 06.09.24 50,2090 37,6695 \\ 50,2061 37,6612".to_string());
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["ВЄРІГОВКА"]);
@@ -2629,7 +2645,10 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             vec!["114 мсп 127 мсд 5 а"],
             parse_library_unit(&String::from(body))
         );
-        assert_eq!(res.locality.unwrap(), "DMRe (йм. 114 мсп 127 мсд 5 А) (йм. р-н Новоселівка-Сміле-Гоголівка)");
+        assert_eq!(
+            res.locality.unwrap(),
+            "DMRe (йм. 114 мсп 127 мсд 5 А) (йм. р-н Новоселівка-Сміле-Гоголівка)"
+        );
         let locality_v2_txt = validate_locality_v2(res.locality_v2);
         assert_eq!(locality_v2_txt, vec!["ГОГОЛІВКА", "НОВОСЕЛІВКА", "СМІЛЕ"]);
     }
@@ -2790,8 +2809,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
 
     #[test]
     fn extract_unit_pu_fsb_rf_with_popovo_lezhachi_tetkino_location() {
-        let body =
-            "ймовірно ПУ ФСБ РФ / район ПОПОВО-ЛЕЖАЧИ (РФ) - ТЕТКИНО (РФ) (19.06)";
+        let body = "ймовірно ПУ ФСБ РФ / район ПОПОВО-ЛЕЖАЧИ (РФ) - ТЕТКИНО (РФ) (19.06)";
 
         let config = crate::config::read_config(Mode::Test).unwrap();
         let settlements = Arc::new(RwLock::new(

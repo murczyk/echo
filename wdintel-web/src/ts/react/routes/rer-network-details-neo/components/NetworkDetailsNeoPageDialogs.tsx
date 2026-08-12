@@ -122,7 +122,7 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         error={page.editError}
         referenceLoading={page.referenceLoading}
         aorOptions={page.aorOptions}
-        unitOptions={page.unitOptions}
+        unitOptions={page.editUnitOptions}
         postOptions={page.postOptions}
         encryptionOptions={page.encryptions.map((enc) => ({ id: enc.id, label: enc.name }))}
         onClose={page.closeEditDrawer}
@@ -195,6 +195,9 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         onSetProgressExpanded={page.setEtalonkaReportProgressExpanded}
         onTypeChange={page.setEtalonkaReportType}
         onActiveFreqsOnlyChange={page.setEtalonkaReportActiveFreqsOnly}
+        onIncludeFreqActiveFromChange={page.setEtalonkaReportIncludeFreqActiveFrom}
+        onIncludeFreqCreatedAtChange={page.setEtalonkaReportIncludeFreqCreatedAt}
+        onIncludeCallsignFullNamesChange={page.setEtalonkaReportIncludeCallsignFullNames}
         onIncludeSigintSignsChange={page.setEtalonkaReportIncludeSigintSigns}
         onIncludeConfirmationChange={page.setEtalonkaReportIncludeConfirmation}
         onIncludeHeadingsAndFreqsChange={page.setEtalonkaReportIncludeHeadingsAndFreqs}

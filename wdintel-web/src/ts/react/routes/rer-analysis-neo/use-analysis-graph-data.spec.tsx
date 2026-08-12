@@ -62,9 +62,9 @@ describe('useAnalysisGraphData', () => {
 
     act(() => {
       latest?.setCallsignGraph({
-        graph: { type_: 'netjson', nodes: [], links: [] },
-        linkCategories: [],
-        overallCount: 0,
+        nodes: [],
+        edges: [],
+        freqs: [],
       });
     });
 

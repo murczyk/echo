@@ -1,0 +1,22 @@
+[Unit]
+Description=echo wdintel-rs report workers
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/bin/wdintel-rs --mode=live report-worker
+Restart=always
+RestartSec=1s
+OOMPolicy=kill
+OOMScoreAdjust=750
+User=root
+Group=root
+TimeoutStopSec=15s
+MemoryHigh=12G
+MemoryMax=16G
+Environment=LD_LIBRARY_PATH=/usr/local/lib:/usr/lib
+Environment=RUST_LOG=info,wdintel_rs=debug,actix_session=warn
+Environment=MALLOC_ARENA_MAX=2
+LimitNOFILE=524288
+
+[Install]
+WantedBy=multi-user.target

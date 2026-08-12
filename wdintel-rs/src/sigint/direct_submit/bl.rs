@@ -111,7 +111,12 @@ where
             .map(|datetime| {
                 datetime.to_rfc3339_opts(SecondsFormat::Secs, true)
             });
-    let comments = crate::sigint::parser::parse_comments(body);
+    let comment_blacklist =
+        crate::sigint::comments::load_blacklist(dbx).await?;
+    let comments = crate::sigint::parser::parse_comments_with_blacklist(
+        body,
+        &comment_blacklist,
+    );
 
     Ok(DirectSubmitParseRsp {
         text: text.body,
@@ -808,11 +813,18 @@ mod tests {
                 .unwrap();
         assert_eq!(inbox_item.device_name_id, Some(device_name_id));
         assert_eq!(inbox_item.network.as_deref(), Some("original network"));
+        crate::inbox::callsigns::sync(
+            &env.dbx,
+            inbox_item.id,
+            crate::inbox::callsigns::InboxItemCallsigns {
+                primary: vec!["OLD_CALLSIGN_1".to_string()],
+                alg2: vec!["OLD_CALLSIGN_2".to_string()],
+            },
+            login_id,
+        )
+        .await
+        .unwrap();
         let mut inbox_item = inbox_item.into_active_model();
-        inbox_item.callsigns_alg1 =
-            Set(Some(serde_json::json!(["OLD_CALLSIGN_1"])));
-        inbox_item.callsigns_alg2 =
-            Set(Some(serde_json::json!(["OLD_CALLSIGN_2"])));
         inbox_item.signal_tokens = Set(Some(serde_json::json!([{
             "text": "old signal",
             "start": 0,
@@ -907,8 +919,6 @@ mod tests {
         assert_eq!(inbox_item.freq.as_deref(), Some("146.1250"));
         assert_eq!(inbox_item.device_name_id, Some(device_name_id));
         assert_eq!(inbox_item.network.as_deref(), Some("updated network"));
-        assert_eq!(inbox_item.callsigns_alg1, None);
-        assert_eq!(inbox_item.callsigns_alg2, None);
         assert_eq!(inbox_item.signal_tokens, None);
         assert_eq!(
             sigint_comment::Entity::find()

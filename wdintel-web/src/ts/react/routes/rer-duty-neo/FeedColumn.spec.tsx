@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FeedColumnProps } from './FeedColumn';
 import { minimalInboxMessage } from './inbox-message-mocks';
 import { MAX_MESSAGE_FEEDS } from './utils';
+import { beginDutyScrollDebugActivity, setDutyScrollDebugEnabled } from './duty-scroll-debug';
 
 vi.mock('./FeedFilterPanel', () => ({
   FeedFilterPanel: () => <div data-testid="feed-filter-panel" />,
@@ -80,6 +81,7 @@ function buildProps(): FeedColumnProps {
         hasReachedStart: false,
         referenceTimeMs: null,
         readIds: new Set<number>(),
+        windowedUnreadItems: new Map<number, number>(),
         unreadCount: 0,
         adjacentFreqsRange: 0,
         highlightSignalsEnabled: false,
@@ -202,9 +204,80 @@ describe('FeedColumn', () => {
 
   afterEach(() => {
     act(() => {
+      setDutyScrollDebugEnabled(false);
       root.unmount();
       container.remove();
       document.body.innerHTML = '';
+    });
+  });
+
+  it('loads newer messages before reaching the physical bottom', async () => {
+    const props = buildProps();
+    const onLoadNewer = vi.fn();
+    const onReachedBottom = vi.fn();
+    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.actions.onLoadNewer = onLoadNewer;
+    props.column.actions.onReachedBottom = onReachedBottom;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    const scroller = container.querySelector('[data-duty-feed-scroller]') as HTMLElement;
+    Object.defineProperties(scroller, {
+      scrollTop: { value: 300, writable: true, configurable: true },
+      clientHeight: { value: 500, configurable: true },
+      scrollHeight: { value: 1400, configurable: true },
+    });
+    onReachedBottom.mockClear();
+
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    });
+
+    expect(onLoadNewer).toHaveBeenCalledTimes(1);
+    expect(onReachedBottom).not.toHaveBeenCalled();
+  });
+
+  it('shows waterfall debug info after eight quick bell presses', async () => {
+    const props = buildProps();
+    props.column.view.feedCount = 4;
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    const bell = container.querySelector('button[aria-label="Сповіщення"]');
+    expect(bell).not.toBeNull();
+
+    await act(async () => {
+      for (let press = 0; press < 8; press += 1) {
+        bell?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      }
+    });
+
+    const panel = container.querySelector('[data-duty-scroll-debug-panel]');
+    expect(panel).not.toBeNull();
+    expect(panel?.textContent).toContain('counter HTTP');
+    expect(panel?.textContent).toContain('newer messages HTTP');
+    expect(panel?.querySelector('[data-duty-scroll-debug-events]')).not.toBeNull();
+
+    let finishCounter!: (result: string) => void;
+    let finishMessages!: (result: string) => void;
+    await act(async () => {
+      finishCounter = beginDutyScrollDebugActivity('feed-1', 'unreadCount', 'test counter');
+      finishMessages = beginDutyScrollDebugActivity('feed-1', 'newerMessages', 'test messages');
+    });
+    expect(panel?.querySelector('[data-duty-debug-counter-status]')?.textContent).toContain(
+      'LOADING',
+    );
+    expect(panel?.querySelector('[data-duty-debug-newer-messages-status]')?.textContent).toContain(
+      'LOADING',
+    );
+
+    await act(async () => {
+      finishCounter('ok');
+      finishMessages('ok');
     });
   });
 
@@ -553,19 +626,24 @@ describe('FeedColumn', () => {
     expect(container.querySelector('[data-duty-feed-scroll-button]')).not.toBeNull();
   });
 
-  it('shows a spinner only for explicit newer loading', async () => {
-    const background = buildProps();
-    background.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
-    background.column.view.loadingNewer = false;
-    await act(async () => root.render(<FeedColumn column={background.column} />));
+  it('shows a spinner while newer mail is loading and keeps the unread badge', async () => {
+    const idle = buildProps();
+    idle.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    idle.column.view.loadingNewer = false;
+    idle.column.view.bottomUnreadCount = 0;
+    await act(async () => root.render(<FeedColumn column={idle.column} />));
     expect(container.querySelector('[data-duty-feed-scroll-button]')).not.toBeNull();
     expect(container.querySelector('[role="progressbar"]')).toBeNull();
 
-    const explicit = buildProps();
-    explicit.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
-    explicit.column.view.loadingNewer = true;
-    await act(async () => root.render(<FeedColumn column={explicit.column} />));
+    const loading = buildProps();
+    loading.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    loading.column.view.loadingNewer = true;
+    loading.column.view.bottomUnreadCount = 12;
+    loading.column.view.isWatchMode = false;
+    loading.column.view.physicallyAtBottom = false;
+    await act(async () => root.render(<FeedColumn column={loading.column} />));
     expect(container.querySelector('[role="progressbar"]')).not.toBeNull();
+    expect(container.querySelector('[data-duty-scroll-unread-badge]')?.textContent).toContain('12');
   });
 
   it('passes the copy menu etalon action into duty message cards', async () => {
@@ -708,5 +786,55 @@ describe('FeedColumn', () => {
     });
 
     expect(container.querySelector('button[aria-label="Закрити стрічку"]')).not.toBeNull();
+  });
+
+  it('closes open settings instead of removing the feed', async () => {
+    const props = buildProps();
+    props.column.view.canRemove = true;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Фільтри"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Закрити стрічку"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.querySelector('[data-testid="feed-filter-panel"]')).toBeNull();
+    expect(props.column.actions.onRemoveColumn).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain('Ви впевнені, що хочете видалити цю стрічку?');
+  });
+
+  it('confirms before removing a feed', async () => {
+    const props = buildProps();
+    props.column.view.canRemove = true;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Закрити стрічку"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(props.column.actions.onRemoveColumn).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('Ви впевнені, що хочете видалити цю стрічку?');
+
+    const confirmButton = Array.from(document.body.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Видалити',
+    );
+    await act(async () => {
+      confirmButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(props.column.actions.onRemoveColumn).toHaveBeenCalledTimes(1);
   });
 });

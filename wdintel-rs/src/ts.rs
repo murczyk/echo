@@ -632,6 +632,17 @@ fn render_typescript(defs: &[TypeDef]) -> String {
         output.push_str("\n\n");
     }
 
+    trim_trailing_whitespace(output)
+}
+
+fn trim_trailing_whitespace(output: String) -> String {
+    let mut output = output
+        .trim_end()
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    output.push('\n');
     output
 }
 

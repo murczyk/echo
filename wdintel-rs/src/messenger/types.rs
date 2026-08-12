@@ -143,6 +143,18 @@ pub struct LinkAccountReq {
 }
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct SystemServiceNameAvailabilityReq {
+    pub messenger: String,
+    pub system_service_name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct SystemServiceNameAvailabilityRsp {
+    pub system_service_name: String,
+    pub exists: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct LinkEchoOperatorReq {
     pub api_login: String,
     pub api_endpoint: String,

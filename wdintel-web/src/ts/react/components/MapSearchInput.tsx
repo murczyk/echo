@@ -8,7 +8,9 @@ const SEARCH_WILDCARD_TOOLTIP = `Приклади пошуку:
  "*40" — пошук за суфіксом (наприклад 40, 540, 840, ...)
  "*40*" — пошук за входженням (наприклад 40, 400, 540, 840, ...)`;
 
-export type MapSearchInputProps = Omit<SearchInputProps, 'emptyEndAdornment'>;
+export type MapSearchInputProps = Omit<SearchInputProps, 'emptyEndAdornment'> & {
+  showWildcardHelp?: boolean;
+};
 
 function WildcardHelpButton() {
   return (
@@ -42,5 +44,11 @@ function WildcardHelpButton() {
 }
 
 export function MapSearchInput(props: MapSearchInputProps) {
-  return <SearchInput {...props} emptyEndAdornment={<WildcardHelpButton />} />;
+  const { showWildcardHelp = true, ...searchInputProps } = props;
+  return (
+    <SearchInput
+      {...searchInputProps}
+      emptyEndAdornment={showWildcardHelp ? <WildcardHelpButton /> : undefined}
+    />
+  );
 }

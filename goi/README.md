@@ -1,6 +1,10 @@
 # GOI
 
-deploy with `just deploy --server <server>`. 
+Deploy with `just deploy --server <server>`. Linux deploy artifacts are built
+on `goi_builder` from `~/workspace/echo`; change the variable at the top of the
+justfile or override it with `just deploy --server <server> --builder <builder>`.
+Use `--fix` to force the deploy to pause GOI, remove `node_modules`, reinstall
+dependencies, and start GOI again even when the pinned Node version is unchanged.
 
 it deploys 3 units:
 - port 4000: process goi, data a /etc/goi

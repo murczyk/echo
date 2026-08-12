@@ -16,7 +16,7 @@ export type MessageActionsDeps = {
   applyFilter: (feedId: string, f: RerDutyFeedFilterState) => void;
   loadFeedInitialMessages: (
     feedId: string,
-    overrides?: { highlightSignalsEnabled?: boolean; onlyMyUnitTagsEnabled?: boolean },
+    overrides?: { highlightSignalsEnabled?: boolean },
   ) => Promise<void>;
   loadFeedNewerMessages: (
     feedId: string,
@@ -27,7 +27,7 @@ export type MessageActionsDeps = {
       showLoading?: boolean;
       followGeneration?: number;
     },
-  ) => Promise<void>;
+  ) => Promise<{ ok: boolean; addedCount: number }>;
   showArrowResult: (feedId: string, message: string) => void;
   columnRefsRef: MutableRefObject<
     Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
@@ -41,7 +41,9 @@ export type MessageActionsDeps = {
     hasItems: boolean;
     requestSignature: string;
   } | null>;
+  catchUpFeedUnreadToTail: (feedId: string) => void;
   authUserName: string | null;
+  currentUserOrganismId: number | null;
   profiles: Record<string, SignalProfileEntry | null>;
   tagsMap: Record<number, Tag>;
   tagsOrder: number[];

@@ -5,6 +5,24 @@ use serde::Deserialize;
 use std::path::PathBuf;
 
 pub const DEFAULT_CONFIG_PATH: &str = "/etc/echo-swapp/config.toml";
+pub const AUTOMATION_SEND_LOG_RETENTION_DAYS: i64 = 30;
+pub const AUTOMATION_MAP_SCREENSHOT_WIDTH: u32 = 800;
+pub const AUTOMATION_MAP_SCREENSHOT_HEIGHT: u32 = 600;
+pub const AUTOMATION_MAP_SCREENSHOT_MAX_ZOOM: u8 = 14;
+pub const AUTOMATION_MAP_SCREENSHOT_PADDING: f64 = 20.0;
+pub const AUTOMATION_MAP_SCREENSHOT_TILE_SIZE: u32 = 256;
+pub const AUTOMATION_MAP_SCREENSHOT_MARKER_RADIUS: i32 = 13;
+pub const AUTOMATION_MAP_SCREENSHOT_MARKER_WEIGHT: i32 = 3;
+pub const AUTOMATION_MAP_SCREENSHOT_REQUEST_TIMEOUT_SECS: u64 = 15;
+pub const AUTOMATION_MAP_SCREENSHOT_LABEL_TIMEOUT_MILLIS: u64 = 2_000;
+pub const AUTOMATION_MAP_SCREENSHOT_LABEL_RETRY_SECS: u64 = 60;
+pub const AUTOMATION_MAP_SCREENSHOT_BASE_TILE_URL: &str =
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+pub const AUTOMATION_MAP_SCREENSHOT_LABEL_TILE_URL: &str =
+    "https://mt0.google.com/vt/lyrs=h&hl=uk&x={x}&y={y}&z={z}";
+pub const AUTOMATION_MAP_SCREENSHOT_MARKER_COLOR: [u8; 4] = [252, 239, 18, 255];
+pub const AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX: &str =
+    "coordinate screenshot is unavailable:";
 const DEFAULT_PG_HOST: &str = "localhost";
 const DEFAULT_PG_PORT: u16 = 5432;
 const DEFAULT_PG_USER: &str = "wd";

@@ -1,16 +1,22 @@
-use crate::config::{RER_DUTY_MAX_DAYS, TAG_MINIMUM_CONFIDENCE};
+use crate::config::{
+    INBOX_COUNT_INDEXED_MAX_DAYS, INBOX_MESSAGES_PAGE_LIMIT,
+    TAG_MINIMUM_CONFIDENCE,
+};
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
+use crate::rer_importer::analysis::analytics_unit::{
+    apply_resolved_analytics_unit_filters, resolve_analytics_unit_filters,
+};
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::types::*;
 use crate::sigint::sender::preferred_sender_expr;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::types::IntoColumnRef;
 use sea_query::{Alias, Expr, ExprTrait, Query, SelectStatement, SimpleExpr};
+use std::collections::BTreeSet;
 
 fn since_id_null_bucket_filter(
     since_id_noninclusive: i64,
@@ -21,18 +27,16 @@ fn since_id_null_bucket_filter(
 }
 
 fn inbox_items_cte_id_expr() -> SimpleExpr {
-    Expr::col((Alias::new("inbox_items_cte"), Alias::new("id"))).into()
+    Expr::col((Alias::new("inbox_items_cte"), Alias::new("id")))
 }
 
 fn inbox_items_cte_cursor_expr(req_sort_by: InboxMessagesSortBy) -> SimpleExpr {
     match req_sort_by {
         InboxMessagesSortBy::IMSDatetime => {
             Expr::col((Alias::new("inbox_items_cte"), Alias::new("datetime")))
-                .into()
         }
         InboxMessagesSortBy::IMSTimestamp => {
             Expr::col((Alias::new("inbox_items_cte"), Alias::new("timestamp")))
-                .into()
         }
     }
 }
@@ -51,6 +55,58 @@ fn message_has_media_exists() -> SimpleExpr {
         .to_owned();
 
     Expr::exists(media_query)
+}
+
+fn message_is_accessible_exists(
+    sigint_groups: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    force_nested_loop: bool,
+) -> SimpleExpr {
+    let mut access_query = Query::select();
+    access_query
+        .expr(Expr::value(1))
+        .from(signal_message_group::Entity)
+        .and_where(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .and_where(
+            signal_message_group::Column::GroupMasterKey.eq_any(sigint_groups),
+        );
+    if let Some(scope) = scope {
+        access_query.and_where(scope.condition((
+            signal_message_group::Entity,
+            signal_message_group::Column::SignalMessageId,
+        )));
+    }
+    if force_nested_loop {
+        access_query.offset(0);
+    }
+
+    Expr::exists(access_query.to_owned())
+}
+
+fn message_source_group_is_not_ignored_exists() -> SimpleExpr {
+    let query = datasource_group::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .join(
+            JoinType::InnerJoin,
+            datasource_group::Relation::SignalGroup.def(),
+        )
+        .filter(
+            Expr::col((datasource_group::Entity, datasource_group::Column::Id))
+                .equals((
+                    signal_message::Entity,
+                    signal_message::Column::DatasourceGroupId,
+                )),
+        )
+        .filter(signal_group::Column::IgnoreOperativny.eq(Some(false)))
+        .into_query();
+    Expr::exists(query)
 }
 
 fn inbox_date_gte_expr(
@@ -90,48 +146,431 @@ pub(crate) async fn build_filtered_inbox_query<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    build_filtered_inbox_query_with_scope(
+        dbx,
+        login,
+        env,
+        req,
+        None,
+        None,
+        InboxQueryPurpose::Messages,
+    )
+    .await
+}
+
+pub(crate) fn inbox_request_is_unbounded(req: &InboxMessagesReq) -> bool {
+    req.since_id_noninclusive.is_none()
+        && req.before_id_noninclusive.is_none()
+        && req.since_date_inclusive_ms.is_none()
+        && req.till_date_inclusive_ms.is_none()
+}
+
+pub(crate) fn inbox_request_is_unbounded_latest(
+    req: &InboxMessagesReq,
+) -> bool {
+    inbox_request_is_unbounded(req) && req.load_latest == Some(true)
+}
+
+pub(crate) async fn latest_inbox_poll_cursor_id<C>(
+    dbx: &C,
+    req: &InboxMessagesReq,
+) -> Result<Option<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let cursor_id =
+        match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+            InboxMessagesSortBy::IMSDatetime => SigintInboxItem::find()
+                .select_only()
+                .column(sigint_inbox_item::Column::Id)
+                .filter(sigint_inbox_item::Column::Datetime.is_not_null())
+                .order_by_desc(sigint_inbox_item::Column::Datetime)
+                .order_by_desc(sigint_inbox_item::Column::Id)
+                .into_tuple::<i64>()
+                .one(dbx)
+                .await
+                .c(h!())?,
+            InboxMessagesSortBy::IMSTimestamp => SignalMessage::find()
+                .select_only()
+                .column(signal_message::Column::Id)
+                .filter(signal_message::Column::Deleted.eq(false))
+                .filter(signal_message::Column::Timestamp.is_not_null())
+                .order_by_desc(signal_message::Column::Timestamp)
+                .order_by_desc(signal_message::Column::Id)
+                .into_tuple::<i64>()
+                .one(dbx)
+                .await
+                .c(h!())?,
+        };
+    Ok(cursor_id)
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum InboxQueryPurpose {
+    Messages,
+    Digest,
+    IndexedDigest,
+    Analytics,
+}
+
+fn inbox_query_needs_post_join(req: &InboxMessagesReq) -> bool {
+    req.selected_posts
+        .as_ref()
+        .is_some_and(|posts| !posts.is_empty())
+        || req
+            .denied_posts
+            .as_ref()
+            .is_some_and(|posts| !posts.is_empty())
+}
+
+fn build_inbox_query_base(
+    req: &InboxMessagesReq,
+    purpose: InboxQueryPurpose,
+) -> Select<signal_message::Entity> {
+    if purpose == InboxQueryPurpose::IndexedDigest {
+        let signal_message_query = SignalMessage::find()
+            .select_only()
+            .columns([
+                signal_message::Column::Id,
+                signal_message::Column::Timestamp,
+                signal_message::Column::Deleted,
+                signal_message::Column::DatasourceGroupId,
+                signal_message::Column::MessageUid,
+            ])
+            .filter(
+                Expr::col((signal_message::Entity, signal_message::Column::Id))
+                    .equals((
+                        sigint_inbox_item::Entity,
+                        sigint_inbox_item::Column::Id,
+                    )),
+            )
+            .filter(signal_message::Column::Deleted.eq(false))
+            .offset(0)
+            .into_query();
+        let mut query = SignalMessage::find();
+        QueryTrait::query(&mut query)
+            .from_clear()
+            .from(sigint_inbox_item::Entity)
+            .join_lateral(
+                JoinType::InnerJoin,
+                signal_message_query,
+                Alias::new("signal_message"),
+                Expr::value(true),
+            );
+        if inbox_query_needs_post_join(req) {
+            query = query.join(
+                JoinType::LeftJoin,
+                sigint_inbox_item::Relation::SigintPost.def(),
+            );
+        }
+        return query;
+    }
+
+    let mut query = SignalMessage::find().join(
+        JoinType::LeftJoin,
+        signal_message::Relation::SigintInboxItem.def(),
+    );
+    if purpose == InboxQueryPurpose::Messages {
+        return query
+            .join(
+                JoinType::LeftJoin,
+                signal_message::Relation::DatasourceGroup.def(),
+            )
+            .join(
+                JoinType::LeftJoin,
+                datasource_group::Relation::SignalGroup.def(),
+            )
+            .join(
+                JoinType::LeftJoin,
+                sigint_inbox_item::Relation::SigintPost.def(),
+            )
+            .join(
+                JoinType::LeftJoin,
+                sigint_inbox_item::Relation::DeviceName.def(),
+            );
+    }
+    if inbox_query_needs_post_join(req) {
+        query = query.join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        );
+    }
+    query
+}
+
+fn inbox_count_uses_indexed_query(req: &InboxMessagesReq) -> bool {
+    if req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime)
+        != InboxMessagesSortBy::IMSDatetime
+    {
+        return false;
+    }
+    let (Some(since), Some(till)) =
+        (req.since_date_inclusive_ms, req.till_date_inclusive_ms)
+    else {
+        return false;
+    };
+    till >= since
+        && till - since
+            <= Duration::days(INBOX_COUNT_INDEXED_MAX_DAYS).num_milliseconds()
+}
+
+fn inbox_count_has_unit_filter(req: &InboxMessagesReq) -> bool {
+    req.selected_units
+        .as_ref()
+        .is_some_and(|units| !units.is_empty())
+        || req
+            .denied_units
+            .as_ref()
+            .is_some_and(|units| !units.is_empty())
+}
+
+fn inbox_unit_filter_period(
+    req: &InboxMessagesReq,
+) -> Result<Option<(NaiveDateTime, NaiveDateTime)>, AppError> {
+    if req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime)
+        != InboxMessagesSortBy::IMSDatetime
+    {
+        return Ok(None);
+    }
+    let (Some(dt_since), Some(dt_till)) =
+        (req.since_date_inclusive_ms, req.till_date_inclusive_ms)
+    else {
+        return Ok(None);
+    };
+    let dt_till = dt_from_millis(dt_till)?
+        .checked_add_signed(Duration::microseconds(1))
+        .context(h!())?;
+    Ok(Some((dt_from_millis(dt_since)?, dt_till)))
+}
+
+fn inbox_period_unit_filters_supported(req: &InboxMessagesReq) -> bool {
+    [&req.selected_units, &req.denied_units]
+        .into_iter()
+        .all(|units| !expand_unit_filter_values(units).includes_undefined)
+}
+
+fn apply_flat_analytics_group_filters(
+    mut query: Select<signal_message::Entity>,
+    req: &InboxMessagesReq,
+    allowed_groups: &[String],
+    scope: &AnalyticsMessageIdScope,
+) -> Select<signal_message::Entity> {
+    let allowed = allowed_groups.iter().collect::<BTreeSet<_>>();
+    let selected_groups = req
+        .selected_groups
+        .as_ref()
+        .map(|groups| {
+            groups
+                .iter()
+                .filter(|group| allowed.contains(group))
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .filter(|groups| !groups.is_empty())
+        .unwrap_or_else(|| allowed_groups.to_vec());
+    let access_alias = Alias::new("analytics_access_group");
+    let mut access_condition = analytics_message_group_join_condition(
+        access_alias.clone(),
+        &selected_groups,
+        scope,
+    );
+    if let Some(selected_senders) = req
+        .selected_senders
+        .as_ref()
+        .filter(|senders| !senders.is_empty())
+    {
+        access_condition = access_condition.add(
+            Expr::col((
+                access_alias.clone(),
+                signal_message_group::Column::Sender,
+            ))
+            .is_in(selected_senders.clone()),
+        );
+    }
+    QueryTrait::query(&mut query).join_as(
+        JoinType::InnerJoin,
+        signal_message_group::Entity,
+        access_alias,
+        access_condition,
+    );
+
+    let denied_groups = req
+        .denied_groups
+        .as_ref()
+        .map(|groups| {
+            groups
+                .iter()
+                .filter(|group| allowed.contains(group))
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if !denied_groups.is_empty() {
+        query = left_join_denied_analytics_message_groups(
+            query,
+            "analytics_denied_group",
+            signal_message_group::Column::GroupMasterKey,
+            denied_groups,
+            scope,
+        );
+    }
+    if let Some(denied_senders) = req
+        .denied_senders
+        .as_ref()
+        .filter(|senders| !senders.is_empty())
+    {
+        query = left_join_denied_analytics_message_groups(
+            query,
+            "analytics_denied_sender",
+            signal_message_group::Column::Sender,
+            denied_senders.clone(),
+            scope,
+        );
+    }
+    query
+}
+
+fn apply_flat_analytics_imported_coords_filter(
+    query: Select<signal_message::Entity>,
+) -> Select<signal_message::Entity> {
+    query
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            datasource_group::Relation::SignalGroup.def(),
+        )
+        .filter(signal_group::Column::IgnoreOperativny.eq(Some(false)))
+}
+
+fn analytics_message_group_join_condition(
+    alias: Alias,
+    groups: &[String],
+    scope: &AnalyticsMessageIdScope,
+) -> Condition {
+    let group_condition = if groups.is_empty() {
+        Expr::value(false)
+    } else {
+        Expr::col((alias.clone(), signal_message_group::Column::GroupMasterKey))
+            .is_in(groups.to_vec())
+    };
+    Condition::all()
+        .add(
+            Expr::col((
+                alias.clone(),
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .add(group_condition)
+        .add(
+            scope.condition((
+                alias,
+                signal_message_group::Column::SignalMessageId,
+            )),
+        )
+}
+
+fn left_join_denied_analytics_message_groups(
+    mut query: Select<signal_message::Entity>,
+    alias: &str,
+    column: signal_message_group::Column,
+    values: Vec<String>,
+    scope: &AnalyticsMessageIdScope,
+) -> Select<signal_message::Entity> {
+    let alias = Alias::new(alias);
+    let condition = Condition::all()
+        .add(
+            Expr::col((
+                alias.clone(),
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .add(Expr::col((alias.clone(), column)).is_in(values))
+        .add(scope.condition((
+            alias.clone(),
+            signal_message_group::Column::SignalMessageId,
+        )));
+    QueryTrait::query(&mut query).join_as(
+        JoinType::LeftJoin,
+        signal_message_group::Entity,
+        alias.clone(),
+        condition,
+    );
+    query.filter(
+        Expr::col((alias, signal_message_group::Column::SignalMessageId))
+            .is_null(),
+    )
+}
+
+async fn build_filtered_inbox_query_with_scope<'a, 'async_trait, C>(
+    dbx: &'a C,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    scope: Option<&AnalyticsMessageIdScope>,
+    internal_lower_bound: Option<NaiveDateTime>,
+    purpose: InboxQueryPurpose,
+) -> Result<Select<signal_message::Entity>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut q = build_inbox_query_base(req, purpose);
+    if inbox_request_is_unbounded(req) && req.load_latest != Some(true) {
+        error!(
+            "rejecting unbounded inbox query without load_latest; page_id={:?}",
+            req.page_id
+        );
+        return Ok(q.filter(Expr::cust("FALSE")));
+    }
+
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(dbx, login)
             .await
             .c(h!())?;
 
-    let mut q = SignalMessage::find()
-        .join(
-            JoinType::LeftJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            datasource_group::Relation::SignalGroup.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::DeviceName.def(),
+    q = q.filter(signal_message::Column::Deleted.eq(false));
+    if purpose == InboxQueryPurpose::Analytics {
+        q = apply_flat_analytics_group_filters(
+            q,
+            req,
+            &sigint_groups,
+            scope.context(h!())?,
         );
-
-    let access_subquery = Query::select()
-        .column(signal_message_group::Column::SignalMessageId)
-        .from(signal_message_group::Entity)
-        .and_where(
-            signal_message_group::Column::GroupMasterKey
-                .eq_any(sigint_groups.clone()),
-        )
-        .to_owned();
-
-    q = q
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::Id.in_subquery(access_subquery));
+    } else {
+        q = q.filter(message_is_accessible_exists(
+            sigint_groups.clone(),
+            scope,
+            purpose == InboxQueryPurpose::IndexedDigest,
+        ));
+    }
+    if let Some(scope) = scope {
+        q = q
+            .filter(scope.condition((
+                signal_message::Entity,
+                signal_message::Column::Id,
+            )))
+            .filter(scope.condition((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Id,
+            )));
+    }
 
     if req.ignore_imported_coords.unwrap_or(false) {
-        q = q.filter(signal_group::Column::IgnoreOperativny.eq(Some(false)));
+        q = match purpose {
+            InboxQueryPurpose::Messages => {
+                q.filter(signal_group::Column::IgnoreOperativny.eq(Some(false)))
+            }
+            InboxQueryPurpose::Analytics => {
+                apply_flat_analytics_imported_coords_filter(q)
+            }
+            InboxQueryPurpose::Digest | InboxQueryPurpose::IndexedDigest => {
+                q.filter(message_source_group_is_not_ignored_exists())
+            }
+        };
     }
 
     if req.only_show_unprocessed == Some(true) {
@@ -140,24 +579,31 @@ where
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
-    let q = filter_selected_groups_and_senders_with_access(
-        q,
-        &req.selected_groups,
-        &req.selected_senders,
-        &sigint_groups,
-    )?;
-    let q = filter_denied_groups_with_access(
-        q,
-        &req.denied_groups,
-        &sigint_groups,
-    )?;
-    let q = filter_denied_senders(q, &req.denied_senders)?;
+    let q = if purpose == InboxQueryPurpose::Analytics {
+        q
+    } else {
+        let q = filter_selected_groups_and_senders_with_access_and_scope(
+            q,
+            &req.selected_groups,
+            &req.selected_senders,
+            &sigint_groups,
+            scope,
+        )?;
+        let q = filter_denied_groups_with_access_and_scope(
+            q,
+            &req.denied_groups,
+            &sigint_groups,
+            scope,
+        )?;
+        filter_denied_senders_with_scope(q, &req.denied_senders, scope)?
+    };
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_denied_freqs(q, &req.denied_freqs)?;
     let q = filter_selected_posts(q, &req.selected_posts)?;
     let q = filter_denied_posts(q, &req.denied_posts)?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
     let q = filter_search(q, &req.search)?;
+    let q = filter_selected_device_names(q, &req.selected_device_names)?;
     let q = filter_selected_units(
         q,
         &req.selected_units,
@@ -198,15 +644,11 @@ where
     if req.only_with_media == Some(true) {
         q = q.filter(message_has_media_exists());
     }
-
-    if req.since_id_noninclusive.is_none()
-        && req.since_date_inclusive_ms.is_none()
-    {
-        // TODO FIXME filter by 1 days
-        q =
-            q.filter(signal_message::Column::Timestamp.gte(
-                Utc::now().naive_utc() - Duration::days(RER_DUTY_MAX_DAYS),
-            ));
+    if let Some(internal_lower_bound) = internal_lower_bound {
+        q = q.filter(inbox_date_gte_expr(
+            req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime),
+            to_ts_expr(internal_lower_bound),
+        ));
     }
 
     q = get_pagination_filters_with_conn(dbx, env, req, q)
@@ -215,22 +657,609 @@ where
     Ok(q)
 }
 
+fn build_period_unit_filtered_inbox_digest(
+    req: &InboxMessagesReq,
+    query: Select<signal_message::Entity>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> Result<String, AppError> {
+    let query = filter_selected_units_for_period(
+        query,
+        &req.selected_units,
+        &req.units_exact_match_only,
+        dt_since,
+        dt_till,
+    )?;
+    let query = filter_denied_units_for_period(
+        query,
+        &req.denied_units,
+        &req.units_exact_match_only,
+        dt_since,
+        dt_till,
+    )?
+    .select_only()
+    .column_as(Expr::cust("COUNT(*)"), "count")
+    .column_as(
+        Expr::cust(r#"MIN("signal_message"."timestamp")"#),
+        "first_element_ts",
+    );
+    Ok(render_inbox_digest_query(query))
+}
+
+fn render_inbox_digest_query(query: Select<signal_message::Entity>) -> String {
+    query.into_query().to_string(PostgresQueryBuilder)
+}
+
+async fn build_unit_filtered_inbox_digest_query(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<String, AppError> {
+    let purpose = if inbox_count_uses_indexed_query(req) {
+        InboxQueryPurpose::IndexedDigest
+    } else {
+        InboxQueryPurpose::Digest
+    };
+    if inbox_period_unit_filters_supported(req) {
+        if let Some((dt_since, dt_till)) = inbox_unit_filter_period(req)? {
+            let mut candidate_req = req.clone();
+            candidate_req.selected_units = None;
+            candidate_req.denied_units = None;
+            let candidates = build_filtered_inbox_query_with_scope(
+                &env.dbx,
+                login,
+                env,
+                &candidate_req,
+                None,
+                None,
+                purpose,
+            )
+            .await
+            .context(h!())?;
+            return build_period_unit_filtered_inbox_digest(
+                req, candidates, dt_since, dt_till,
+            );
+        }
+    }
+    let query = build_filtered_inbox_query_with_scope(
+        &env.dbx, login, env, req, None, None, purpose,
+    )
+    .await
+    .context(h!())?
+    .select_only()
+    .column_as(Expr::cust("COUNT(*)"), "count")
+    .column_as(
+        Expr::cust(r#"MIN("signal_message"."timestamp")"#),
+        "first_element_ts",
+    );
+    Ok(render_inbox_digest_query(query))
+}
+
 pub(crate) async fn build_inbox_digest_query(
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<String, AppError> {
-    let q = build_filtered_inbox_query(&env.dbx, login, env, req)
-        .await
-        .context(h!())?
+    if inbox_count_has_unit_filter(req) {
+        return build_unit_filtered_inbox_digest_query(login, env, req).await;
+    }
+    let purpose = if inbox_count_uses_indexed_query(req) {
+        InboxQueryPurpose::IndexedDigest
+    } else {
+        InboxQueryPurpose::Digest
+    };
+    let q = build_filtered_inbox_query_with_scope(
+        &env.dbx, login, env, req, None, None, purpose,
+    )
+    .await
+    .context(h!())?
+    .select_only()
+    .column_as(Expr::cust("COUNT(*)"), "count")
+    .column_as(
+        Expr::cust(r#"MIN("signal_message"."timestamp")"#),
+        "first_element_ts",
+    );
+
+    Ok(render_inbox_digest_query(q))
+}
+
+pub(crate) async fn build_analytics_inbox_digest_query(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+) -> Result<Option<String>, AppError> {
+    let Some((q, _)) = build_analytics_filtered_inbox_query(
+        login,
+        env,
+        req,
+        db,
+        freshness_max_age_ms,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    let q = q
         .select_only()
-        .column_as(Expr::cust("COUNT(*)"), "count")
+        .column_as(
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+            "count",
+        )
         .column_as(
             Expr::cust(r#"MIN("signal_message"."timestamp")"#),
             "first_element_ts",
         );
 
-    Ok(q.build(DatabaseBackend::Postgres).to_string())
+    Ok(Some(render_inbox_digest_query(q)))
+}
+
+pub(crate) async fn build_analytics_inbox_candidates_query(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+) -> Result<Option<String>, AppError> {
+    let Some((query, _)) = build_analytics_filtered_inbox_query(
+        login,
+        env,
+        req,
+        db,
+        freshness_max_age_ms,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(render_inbox_digest_query(
+        finish_inbox_candidates_query(query, req),
+    )))
+}
+
+fn finish_inbox_candidates_query(
+    query: Select<signal_message::Entity>,
+    req: &InboxMessagesReq,
+) -> Select<signal_message::Entity> {
+    let ordering = analytics_inbox_ordering_expr(req);
+    let descending = analytics_inbox_order_is_descending(req);
+    let mut query = query
+        .select_only()
+        .column_as(
+            Expr::col((signal_message::Entity, signal_message::Column::Id)),
+            "id",
+        )
+        .column_as(ordering.clone(), "ordering_value")
+        .group_by(Expr::col((
+            signal_message::Entity,
+            signal_message::Column::Id,
+        )))
+        .group_by(ordering);
+    query = if descending {
+        query
+            .order_by_desc(Expr::col(Alias::new("ordering_value")))
+            .order_by_desc(Expr::col((
+                signal_message::Entity,
+                signal_message::Column::Id,
+            )))
+    } else {
+        query
+            .order_by_asc(Expr::col(Alias::new("ordering_value")))
+            .order_by_asc(Expr::col((
+                signal_message::Entity,
+                signal_message::Column::Id,
+            )))
+    };
+    query.limit(INBOX_MESSAGES_PAGE_LIMIT as u64)
+}
+
+fn analytics_inbox_ordering_expr(req: &InboxMessagesReq) -> SimpleExpr {
+    if inbox_request_is_unbounded_latest(req) {
+        return Expr::col((
+            signal_message::Entity,
+            signal_message::Column::CreatedAt,
+        ));
+    }
+    match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+        InboxMessagesSortBy::IMSDatetime => Expr::col((
+            sigint_inbox_item::Entity,
+            sigint_inbox_item::Column::Datetime,
+        )),
+        InboxMessagesSortBy::IMSTimestamp => Expr::col((
+            signal_message::Entity,
+            signal_message::Column::Timestamp,
+        )),
+    }
+}
+
+fn analytics_inbox_order_is_descending(req: &InboxMessagesReq) -> bool {
+    req.load_latest == Some(true)
+        || req.newest_first == Some(true)
+        || req.before_id_noninclusive.is_some()
+}
+
+#[derive(Debug, Default)]
+struct ResolvedAnalyticsAorFilter {
+    group_keys: Vec<String>,
+    network_ids: Vec<i64>,
+    present: bool,
+}
+
+async fn build_analytics_filtered_inbox_query(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    analytics_db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+) -> Result<Option<(Select<signal_message::Entity>, bool)>, AppError> {
+    let Some(scope) = resolve_analytics_inbox_message_id_scope(
+        req,
+        &env.dbx,
+        analytics_db,
+        freshness_max_age_ms,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    let resolved_units = resolve_analytics_unit_filters(
+        &env.dbx,
+        &req.selected_units,
+        &req.denied_units,
+        req.units_exact_match_only,
+    )
+    .await
+    .context(h!())?;
+    let resolved_aors = resolve_analytics_aor_filter(&env.dbx, req).await?;
+    let mut analytics_req = req.clone();
+    analytics_req.selected_units = None;
+    analytics_req.denied_units = None;
+    analytics_req.selected_aors = None;
+    let query = build_filtered_inbox_query_with_scope(
+        &env.dbx,
+        login,
+        env,
+        &analytics_req,
+        Some(&scope),
+        None,
+        InboxQueryPurpose::Analytics,
+    )
+    .await
+    .context(h!())?;
+    let has_unit_filters = resolved_units.has_filters();
+    let query = apply_resolved_analytics_unit_filters(
+        query,
+        &resolved_units,
+        &scope,
+        req.units_exact_match_only.unwrap_or(false),
+    );
+    let query =
+        apply_resolved_analytics_aor_filter(query, &resolved_aors, &scope);
+    Ok(Some((query, has_unit_filters)))
+}
+
+async fn resolve_analytics_aor_filter(
+    source_db: &DatabaseConnection,
+    req: &InboxMessagesReq,
+) -> Result<ResolvedAnalyticsAorFilter, AppError> {
+    let Some(selected_ids) =
+        req.selected_aors.as_ref().filter(|aors| !aors.is_empty())
+    else {
+        return Ok(ResolvedAnalyticsAorFilter::default());
+    };
+    let selected_ids = selected_ids.iter().copied().collect::<BTreeSet<_>>();
+    let aors = AreaOfResponsibility::find()
+        .all(source_db)
+        .await
+        .context(h!())?;
+    let selected_bounds = aors
+        .iter()
+        .filter(|aor| selected_ids.contains(&aor.id))
+        .map(|aor| (aor.left_bound, aor.right_bound))
+        .collect::<Vec<_>>();
+    let linked_aor_ids = aors
+        .iter()
+        .filter(|aor| {
+            selected_bounds.iter().any(|selected| {
+                analytics_aor_bounds_overlap(
+                    (aor.left_bound, aor.right_bound),
+                    *selected,
+                )
+            })
+        })
+        .map(|aor| aor.id)
+        .collect::<Vec<_>>();
+    if linked_aor_ids.is_empty() {
+        return Ok(ResolvedAnalyticsAorFilter {
+            present: true,
+            ..Default::default()
+        });
+    }
+    let group_keys = SignalGroupAor::find()
+        .select_only()
+        .column(signal_group_aor::Column::MasterKey)
+        .filter(signal_group_aor::Column::AorId.is_in(linked_aor_ids.clone()))
+        .distinct()
+        .into_tuple::<String>()
+        .all(source_db)
+        .await
+        .context(h!())?;
+    let network_ids = SigintNetworkAor::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_aor::Relation::SigintNetwork.def(),
+        )
+        .select_only()
+        .column(sigint_network_aor::Column::NetworkId)
+        .filter(sigint_network_aor::Column::AorId.is_in(linked_aor_ids))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .distinct()
+        .into_tuple::<i64>()
+        .all(source_db)
+        .await
+        .context(h!())?;
+    Ok(ResolvedAnalyticsAorFilter {
+        group_keys,
+        network_ids,
+        present: true,
+    })
+}
+
+fn analytics_aor_bounds_overlap(lhs: (f64, f64), rhs: (f64, f64)) -> bool {
+    lhs.0 <= rhs.1 && lhs.1 >= rhs.0
+}
+
+fn apply_resolved_analytics_aor_filter(
+    mut query: Select<signal_message::Entity>,
+    resolved: &ResolvedAnalyticsAorFilter,
+    scope: &AnalyticsMessageIdScope,
+) -> Select<signal_message::Entity> {
+    if !resolved.present {
+        return query;
+    }
+    let mut matches = Condition::any();
+    if !resolved.group_keys.is_empty() {
+        let alias = Alias::new("analytics_selected_aor_group");
+        QueryTrait::query(&mut query).join_as(
+            JoinType::LeftJoin,
+            signal_message_group::Entity,
+            alias.clone(),
+            Condition::all()
+                .add(
+                    Expr::col((
+                        alias.clone(),
+                        signal_message_group::Column::SignalMessageId,
+                    ))
+                    .equals((
+                        signal_message::Entity,
+                        signal_message::Column::Id,
+                    )),
+                )
+                .add(
+                    Expr::col((
+                        alias.clone(),
+                        signal_message_group::Column::GroupMasterKey,
+                    ))
+                    .is_in(resolved.group_keys.clone()),
+                )
+                .add(scope.condition((
+                    alias.clone(),
+                    signal_message_group::Column::SignalMessageId,
+                ))),
+        );
+        matches = matches.add(
+            Expr::col((alias, signal_message_group::Column::SignalMessageId))
+                .is_not_null(),
+        );
+    }
+    if !resolved.network_ids.is_empty() {
+        let alias = Alias::new("analytics_selected_aor_network");
+        QueryTrait::query(&mut query).join_as(
+            JoinType::LeftJoin,
+            sigint_inbox_item_network::Entity,
+            alias.clone(),
+            Condition::all()
+                .add(
+                    Expr::col((
+                        alias.clone(),
+                        sigint_inbox_item_network::Column::SigintInboxItemId,
+                    ))
+                    .equals((
+                        sigint_inbox_item::Entity,
+                        sigint_inbox_item::Column::Id,
+                    )),
+                )
+                .add(
+                    Expr::col((
+                        alias.clone(),
+                        sigint_inbox_item_network::Column::SigintNetworkId,
+                    ))
+                    .is_in(resolved.network_ids.clone()),
+                )
+                .add(scope.condition((
+                    alias.clone(),
+                    sigint_inbox_item_network::Column::SigintInboxItemId,
+                ))),
+        );
+        matches = matches.add(
+            Expr::col((
+                alias,
+                sigint_inbox_item_network::Column::SigintInboxItemId,
+            ))
+            .is_not_null(),
+        );
+    }
+    if resolved.group_keys.is_empty() && resolved.network_ids.is_empty() {
+        return query.filter(Expr::value(false));
+    }
+    query.filter(matches)
+}
+
+async fn resolve_analytics_inbox_message_id_scope(
+    req: &InboxMessagesReq,
+    source_db: &DatabaseConnection,
+    analytics_db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+) -> Result<Option<AnalyticsMessageIdScope>, AppError> {
+    #[derive(FromQueryResult)]
+    struct MessageIdBounds {
+        min_id: Option<i64>,
+        max_id: Option<i64>,
+    }
+
+    let mut since_date = req
+        .since_date_inclusive_ms
+        .map(dt_from_millis)
+        .transpose()
+        .context(h!())?;
+    let mut till_date = req
+        .till_date_inclusive_ms
+        .map(dt_from_millis)
+        .transpose()
+        .context(h!())?;
+
+    match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+        InboxMessagesSortBy::IMSDatetime => {
+            if let Some(cursor_id) = req.since_id_noninclusive {
+                let cursor_date =
+                    sigint_inbox_item::Entity::find_by_id(cursor_id)
+                        .select_only()
+                        .column(sigint_inbox_item::Column::Datetime)
+                        .into_tuple::<Option<NaiveDateTime>>()
+                        .one(source_db)
+                        .await
+                        .context(h!())?
+                        .flatten()
+                        .context(h!())?;
+                since_date =
+                    Some(since_date.map_or(cursor_date, |since_date| {
+                        std::cmp::max(since_date, cursor_date)
+                    }));
+            }
+            if let Some(cursor_id) = req.before_id_noninclusive {
+                let cursor_date =
+                    sigint_inbox_item::Entity::find_by_id(cursor_id)
+                        .select_only()
+                        .column(sigint_inbox_item::Column::Datetime)
+                        .into_tuple::<Option<NaiveDateTime>>()
+                        .one(source_db)
+                        .await
+                        .context(h!())?
+                        .flatten()
+                        .context(h!())?;
+                till_date = Some(till_date.map_or(cursor_date, |till_date| {
+                    std::cmp::min(till_date, cursor_date)
+                }));
+            }
+        }
+        InboxMessagesSortBy::IMSTimestamp => {
+            if let Some(cursor_id) = req.since_id_noninclusive {
+                let cursor_date = signal_message::Entity::find_by_id(cursor_id)
+                    .select_only()
+                    .column(signal_message::Column::Timestamp)
+                    .into_tuple::<Option<NaiveDateTime>>()
+                    .one(source_db)
+                    .await
+                    .context(h!())?
+                    .flatten()
+                    .context(h!())?;
+                since_date =
+                    Some(since_date.map_or(cursor_date, |since_date| {
+                        std::cmp::max(since_date, cursor_date)
+                    }));
+            }
+            if let Some(cursor_id) = req.before_id_noninclusive {
+                let cursor_date = signal_message::Entity::find_by_id(cursor_id)
+                    .select_only()
+                    .column(signal_message::Column::Timestamp)
+                    .into_tuple::<Option<NaiveDateTime>>()
+                    .one(source_db)
+                    .await
+                    .context(h!())?
+                    .flatten()
+                    .context(h!())?;
+                till_date = Some(till_date.map_or(cursor_date, |till_date| {
+                    std::cmp::min(till_date, cursor_date)
+                }));
+            }
+        }
+    }
+
+    let bounds =
+        match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+            InboxMessagesSortBy::IMSDatetime => {
+                let query = sigint_inbox_item::Entity::find()
+                    .select_only()
+                    .column_as(sigint_inbox_item::Column::Id.min(), "min_id")
+                    .column_as(sigint_inbox_item::Column::Id.max(), "max_id")
+                    .apply_if(since_date, |query, since_date| {
+                        query.filter(
+                            sigint_inbox_item::Column::Datetime.gte(since_date),
+                        )
+                    })
+                    .apply_if(till_date, |query, till_date| {
+                        query.filter(
+                            sigint_inbox_item::Column::Datetime.lte(till_date),
+                        )
+                    });
+                query
+                    .into_model::<MessageIdBounds>()
+                    .one(analytics_db)
+                    .await
+                    .context(h!())?
+            }
+            InboxMessagesSortBy::IMSTimestamp => {
+                let query = signal_message::Entity::find()
+                    .select_only()
+                    .column_as(signal_message::Column::Id.min(), "min_id")
+                    .column_as(signal_message::Column::Id.max(), "max_id")
+                    .apply_if(since_date, |query, since_date| {
+                        query.filter(
+                            signal_message::Column::Timestamp.gte(since_date),
+                        )
+                    })
+                    .apply_if(till_date, |query, till_date| {
+                        query.filter(
+                            signal_message::Column::Timestamp.lte(till_date),
+                        )
+                    });
+                query
+                    .into_model::<MessageIdBounds>()
+                    .one(analytics_db)
+                    .await
+                    .context(h!())?
+            }
+        }
+        .unwrap_or(MessageIdBounds {
+            min_id: None,
+            max_id: None,
+        });
+    let (Some(min_id), Some(max_id)) = (bounds.min_id, bounds.max_id) else {
+        return Ok(None);
+    };
+    if min_id <= 0 || max_id <= 0 {
+        return Ok(None);
+    }
+
+    let freshness_max_age_ms =
+        i64::try_from(freshness_max_age_ms).context(h!())?;
+    let closed_range_cutoff =
+        Utc::now().naive_utc() - Duration::milliseconds(freshness_max_age_ms);
+    if analytics_inbox_scope_is_closed(req, till_date, closed_range_cutoff) {
+        Ok(Some(AnalyticsMessageIdScope::Inclusive { min_id, max_id }))
+    } else {
+        Ok(Some(AnalyticsMessageIdScope::From(min_id)))
+    }
+}
+
+fn analytics_inbox_scope_is_closed(
+    req: &InboxMessagesReq,
+    till_date: Option<NaiveDateTime>,
+    closed_range_cutoff: NaiveDateTime,
+) -> bool {
+    inbox_request_is_unbounded_latest(req)
+        || till_date.is_some_and(|till_date| till_date <= closed_range_cutoff)
 }
 
 pub(crate) async fn build_inbox_query(
@@ -238,22 +1267,96 @@ pub(crate) async fn build_inbox_query(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<String, AppError> {
-    build_inbox_query_with_conn(&env.dbx, login, env, req).await
+    build_inbox_query_with_internal_lower_bound(&env.dbx, login, env, req, None)
+        .await
 }
 
-pub(crate) async fn build_inbox_query_with_conn<'a, 'async_trait, C>(
+pub(crate) async fn build_inbox_query_with_internal_lower_bound<
+    'a,
+    'async_trait,
+    C,
+>(
     dbx: &'a C,
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
+    internal_lower_bound: Option<NaiveDateTime>,
 ) -> Result<String, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let q = build_filtered_inbox_query(dbx, login, env, req)
-        .await
-        .context(h!())?;
-    let q = add_inbox_message_columns(q);
+    let q = build_filtered_inbox_query_with_scope(
+        dbx,
+        login,
+        env,
+        req,
+        None,
+        internal_lower_bound,
+        InboxQueryPurpose::Messages,
+    )
+    .await
+    .context(h!())?;
+    finish_inbox_query(dbx, login, req, q, true).await
+}
+
+pub(crate) async fn build_postgres_fresh_tail_inbox_candidates_query(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    created_at_lower_bound: NaiveDateTime,
+) -> Result<String, AppError> {
+    let query = build_filtered_inbox_query_with_scope(
+        dbx,
+        login,
+        env,
+        req,
+        None,
+        None,
+        InboxQueryPurpose::Messages,
+    )
+    .await
+    .context(h!())?
+    .filter(signal_message::Column::CreatedAt.gte(created_at_lower_bound));
+    Ok(render_inbox_digest_query(finish_inbox_candidates_query(
+        query, req,
+    )))
+}
+
+pub(crate) async fn build_inbox_query_for_candidate_ids(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    candidate_ids: &[i64],
+    apply_page_limit: bool,
+) -> Result<String, AppError> {
+    let query = build_filtered_inbox_query_with_scope(
+        dbx,
+        login,
+        env,
+        req,
+        None,
+        None,
+        InboxQueryPurpose::Messages,
+    )
+    .await
+    .context(h!())?
+    .filter(signal_message::Column::Id.eq_any(candidate_ids.to_vec()));
+    finish_inbox_query(dbx, login, req, query, apply_page_limit).await
+}
+
+async fn finish_inbox_query<'a, 'async_trait, C>(
+    dbx: &'a C,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    query: Select<signal_message::Entity>,
+    apply_page_limit: bool,
+) -> Result<String, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let q = add_inbox_message_columns(query);
     let q = get_bl_ordering_select(req, q).await.c(h!())?;
     let owner_organism_id =
         crate::tags::query::current_user_organism_id(dbx, login)
@@ -307,11 +1410,8 @@ where
                         sigint_inbox_item_tag::Column::Confidence,
                     ))
                     .into_simple_expr(),
-                    Expr::col((
-                        sigint_inbox_item_tag::Entity,
-                        sigint_inbox_item_tag::Column::LoginId,
-                    ))
-                    .into_simple_expr(),
+                    Expr::col((login::Entity, login::Column::Login))
+                        .into_simple_expr(),
                     Expr::col((
                         sigint_inbox_item_tag::Entity,
                         sigint_inbox_item_tag::Column::Model,
@@ -334,13 +1434,7 @@ where
             owner_organism_id,
         ))
         .apply_if(
-            req.without_model_tags.and_then(|flag| {
-                if flag {
-                    Some(flag)
-                } else {
-                    None
-                }
-            }),
+            req.without_model_tags.filter(|&flag| flag),
             |q, _| q.filter(sigint_inbox_item_tag::Column::Model.is_null()),
         )
         .group_by(sigint_inbox_item_tag::Column::SigintInboxItemId)
@@ -348,8 +1442,8 @@ where
     let query_metadata = build_inbox_metadata_lateral_query();
 
     let mut query = q.into_query();
-    if req.nolimit != Some(true) {
-        query.limit(20);
+    if apply_page_limit && req.nolimit != Some(true) {
+        query.limit(INBOX_MESSAGES_PAGE_LIMIT as u64);
     }
 
     let q_tags = "q_tags";
@@ -693,7 +1787,12 @@ where
 
     let req_sort_by = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
     let mut m_order_asc: Option<bool> = None;
-    if let Some(true) = req.load_latest {
+    if inbox_request_is_unbounded_latest(req) {
+        m_order_asc = Some(false);
+        q = q
+            .order_by_desc(signal_message::Column::CreatedAt)
+            .order_by_desc(signal_message::Column::Id);
+    } else if let Some(true) = req.load_latest {
         m_order_asc = Some(false);
         match req_sort_by {
             InboxMessagesSortBy::IMSDatetime => {
@@ -755,7 +1854,11 @@ pub async fn get_bl_ordering_stmt(
 
     let req_sort_by = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
     let mut m_order_asc: Option<bool> = None;
-    if let Some(true) = req.load_latest {
+    if inbox_request_is_unbounded_latest(req) {
+        m_order_asc = Some(false);
+        q.order_by(signal_message::Column::CreatedAt, Order::Desc)
+            .order_by(signal_message::Column::Id, Order::Desc);
+    } else if let Some(true) = req.load_latest {
         m_order_asc = Some(false);
         match req_sort_by {
             InboxMessagesSortBy::IMSDatetime => {
@@ -824,8 +1927,6 @@ where
         .column_as(preferred_sender_expr(None), "sender")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .column_as(sigint_inbox_item::Column::Coords, "coords")
-        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
-        .column_as(sigint_inbox_item::Column::CallsignsAlg2, "callsigns_alg2")
         .column_as(sigint_inbox_item::Column::CallsignTokens, "callsign_tokens")
         .column_as(sigint_inbox_item::Column::SignalTokens, "signal_tokens")
         .column_as(sigint_inbox_item::Column::KeywordTokens, "keyword_tokens")
@@ -957,46 +2058,4 @@ pub fn build_inbox_metadata_lateral_query() -> SelectStatement {
         )
         .group_by(sigint_inbox_item_metadata::Column::SigintInboxItemId)
         .into_query()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use sea_orm::sea_query::PostgresQueryBuilder;
-
-    const TEST_CURSOR_ID: i64 = 4_101_055;
-
-    #[test]
-    fn null_bucket_filter_renders_expected_sql() {
-        let expr = since_id_null_bucket_filter(
-            TEST_CURSOR_ID,
-            Expr::col((Alias::new("inbox_items_cte"), Alias::new("timestamp")))
-                .into(),
-            Expr::col((Alias::new("inbox_items_cte"), Alias::new("id"))).into(),
-        );
-
-        let sql = Query::select().expr(expr).to_string(PostgresQueryBuilder);
-        let expected = format!(
-            r#"SELECT "inbox_items_cte"."timestamp" IS NULL AND "inbox_items_cte"."id" > {TEST_CURSOR_ID}"#
-        );
-
-        assert_eq!(sql, expected);
-    }
-
-    #[test]
-    fn timestamp_sort_upper_date_bound_uses_signal_timestamp() {
-        let dt = chrono::NaiveDate::from_ymd_opt(2026, 6, 27)
-            .unwrap()
-            .and_hms_opt(9, 30, 0)
-            .unwrap();
-        let expr = inbox_date_lte_expr(
-            InboxMessagesSortBy::IMSTimestamp,
-            to_ts_expr(dt),
-        );
-
-        let sql = Query::select().expr(expr).to_string(PostgresQueryBuilder);
-
-        assert!(sql.contains(r#"SELECT "timestamp" <= "#), "{sql}");
-        assert!(!sql.contains(r#""datetime" <= "#), "{sql}");
-    }
 }

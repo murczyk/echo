@@ -9,10 +9,8 @@ use crate::storage;
 use crate::storage::S3Config;
 use crate::types::*;
 use crate::types::{info, warn};
-use crate::utils::orm::ArrayColumnOps;
 use crate::utils::worker_watch;
 use chrono::{DateTime, Utc};
-use echo_migration::OnConflict;
 use futures_util::StreamExt;
 use lazy_static::lazy_static;
 use opendal::{EntryMode, ErrorKind};
@@ -182,8 +180,8 @@ pub async fn process_messages<C: ConnectionTrait>(
         .filter(sigint_inbox_item::Column::Id.eq_any(message_ids))
         .filter(sigint_inbox_item::Column::BodyNoheader.is_not_null())
         .select_only()
-        .select_column(sigint_inbox_item::Column::Id)
-        .select_column(sigint_inbox_item::Column::BodyNoheader)
+        .column(sigint_inbox_item::Column::Id)
+        .column(sigint_inbox_item::Column::BodyNoheader)
         .into_model::<SigintInboxItemText>()
         .all(dbx)
         .await
@@ -205,7 +203,7 @@ pub async fn process_messages<C: ConnectionTrait>(
     let mut message_tags: Vec<sigint_inbox_item_tag::ActiveModel> = vec![];
     let mut message_ids_for_events: BTreeSet<i64> = BTreeSet::new();
 
-    for (_tag_label, &tag_id) in tags_to_predict.iter() {
+    for &tag_id in tags_to_predict.values() {
         let cache_item =
             get_regex_sets_for_tag(tag_id, dbx, tag_keyword_regex_cache)
                 .await
@@ -250,7 +248,7 @@ pub async fn process_messages<C: ConnectionTrait>(
                 let confidence: f64 = res.probability;
                 let login = Some(system_login_id);
                 let model =
-                    format!("{}{}", NLP_MODEL_NAME_PREFIX, &res.model_version);
+                    format!("{}{}", NLP_MODEL_NAME_PREFIX, res.model_version);
                 let model = sigint_inbox_item_tag::ActiveModel {
                     tag_id: Set(tag_id),
                     sigint_inbox_item_id: Set(message_id),
@@ -270,17 +268,12 @@ pub async fn process_messages<C: ConnectionTrait>(
     } else {
         let suggestions_count = message_tags.len();
         let result = sigint_inbox_item_tag::Entity::insert_many(message_tags)
-            .on_conflict(
-                OnConflict::columns([
-                    sigint_inbox_item_tag::Column::SigintInboxItemId,
-                    sigint_inbox_item_tag::Column::TagId,
-                    sigint_inbox_item_tag::Column::LoginId,
-                    sigint_inbox_item_tag::Column::Model,
-                ])
-                .do_nothing()
-                .to_owned(),
-            )
-            .do_nothing()
+            .on_conflict_do_nothing_on([
+                sigint_inbox_item_tag::Column::SigintInboxItemId,
+                sigint_inbox_item_tag::Column::TagId,
+                sigint_inbox_item_tag::Column::LoginId,
+                sigint_inbox_item_tag::Column::Model,
+            ])
             .exec_without_returning(dbx)
             .await
             .c(h!())?;
@@ -289,7 +282,9 @@ pub async fn process_messages<C: ConnectionTrait>(
 
         match result {
             TryInsertResult::Conflicted => {
-                warn!("ignored {suggestions_count} conflicting tag suggestions for {message_count} messages");
+                warn!(
+                    "ignored {suggestions_count} conflicting tag suggestions for {message_count} messages"
+                );
                 Ok(ProcessMessagesResult::default())
             }
             TryInsertResult::Inserted(count) => Ok(ProcessMessagesResult {
@@ -364,7 +359,9 @@ async fn get_regex_sets_for_tag<C: ConnectionTrait>(
 
     let num_positive_patterns = item.regex_set_positive.len();
     let num_negative_patterns = item.regex_set_negative.len();
-    info!("created regex sets for tag_id {tag_id}, num_positive_patterns {num_positive_patterns}, num_negative_patterns {num_negative_patterns}");
+    info!(
+        "created regex sets for tag_id {tag_id}, num_positive_patterns {num_positive_patterns}, num_negative_patterns {num_negative_patterns}"
+    );
     Ok(item)
 }
 

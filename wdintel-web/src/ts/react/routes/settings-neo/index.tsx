@@ -96,6 +96,9 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       analysisMapInSidebar: dutySettings.analysisMapInSidebar,
       dutyAudioTranscriptionCollapsed: dutySettings.dutyAudioTranscriptionCollapsed,
       analysisAudioTranscriptionCollapsed: dutySettings.analysisAudioTranscriptionCollapsed,
+      showAnalysisCallsignAddForm: dutySettings.showAnalysisCallsignAddForm,
+      showClassicDuty: dutySettings.showClassicDuty,
+      showClassicAnalysis: dutySettings.showClassicAnalysis,
       ...overrides,
     });
   };
@@ -270,6 +273,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               }}
               audioTranscriptionCollapsed={dutySettings.dutyAudioTranscriptionCollapsed}
               showAudioTranscriptionSettings={globalSettings.audioTranscriptionEnabled}
+              showClassicDutySetting={!globalSettings.showClassicDuty}
+              showClassicDuty={dutySettings.showClassicDuty}
+              onShowClassicDutyChange={(value) => {
+                dutySettings.setShowClassicDuty(value);
+                scheduleDutySettingsSave({ showClassicDuty: value });
+              }}
               onAudioTranscriptionCollapsedChange={(value) => {
                 dutySettings.setDutyAudioTranscriptionCollapsed(value);
                 scheduleDutySettingsSave({ dutyAudioTranscriptionCollapsed: value });
@@ -300,6 +309,32 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     }}
                     loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
                   />
+                  {!globalSettings.showClassicAnalysis ? (
+                    <Box
+                      sx={{
+                        border: 1,
+                        borderColor: 'divider',
+                        borderRadius: 2,
+                        bgcolor: 'background.paper',
+                        p: { xs: 2, sm: 2.5 },
+                      }}
+                    >
+                      <FormControlLabel
+                        sx={{ m: 0 }}
+                        control={
+                          <Switch
+                            checked={dutySettings.showClassicAnalysis}
+                            onChange={(_, checked) => {
+                              dutySettings.setShowClassicAnalysis(checked);
+                              scheduleDutySettingsSave({ showClassicAnalysis: checked });
+                            }}
+                            disabled={globalSettings.loadInProgress || dutySettings.loadInProgress}
+                          />
+                        }
+                        label="Показувати класичний аналіз"
+                      />
+                    </Box>
+                  ) : null}
                   {globalSettings.audioTranscriptionEnabled ? (
                     <SettingsAudioTranscriptionCard
                       collapsedByDefault={dutySettings.analysisAudioTranscriptionCollapsed}
@@ -310,6 +345,49 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                       }}
                     />
                   ) : null}
+                  <Box
+                    sx={{
+                      border: 1,
+                      borderColor: 'divider',
+                      borderRadius: 2,
+                      bgcolor: 'background.paper',
+                      p: { xs: 2, sm: 2.5 },
+                    }}
+                  >
+                    <Stack spacing={1.5}>
+                      <Typography
+                        variant="overline"
+                        sx={{ color: 'text.secondary', letterSpacing: 0.8 }}
+                      >
+                        Позивні
+                      </Typography>
+                      <FormControlLabel
+                        sx={{
+                          alignItems: 'flex-start',
+                          m: 0,
+                          gap: 1.5,
+                          '& .MuiFormControlLabel-label': { width: '100%' },
+                        }}
+                        control={
+                          <Switch
+                            checked={dutySettings.showAnalysisCallsignAddForm}
+                            onChange={(_, checked) => {
+                              dutySettings.setShowAnalysisCallsignAddForm(checked);
+                              scheduleDutySettingsSave({
+                                showAnalysisCallsignAddForm: checked,
+                              });
+                            }}
+                            disabled={globalSettings.loadInProgress || dutySettings.loadInProgress}
+                          />
+                        }
+                        label={
+                          <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+                            Відображати форму додавання позивного
+                          </Typography>
+                        }
+                      />
+                    </Stack>
+                  </Box>
                   <Box
                     sx={{
                       border: 1,

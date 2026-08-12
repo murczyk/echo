@@ -21,16 +21,23 @@ createUnit id army division regiment battalion company =
                 |> String.join " "
     in
     { id = id
+    , armyRegion = ""
+    , militaryDistrict = ""
     , army = army
     , division = division
     , regiment = regiment
     , battalion = battalion
     , company = company
     , comment = ""
+    , orbitNote = Nothing
     , name = name
     , active = True
+    , isDeduplicateCandidate = Nothing
     , createdAt = 0
     , createdByLoginId = ""
+    , hasOrbit = False
+    , orbitUnitIds = []
+    , orbitUnitGenerativeNames = []
     }
 
 

@@ -424,6 +424,7 @@ pub fn match_known_callsigns(
                 callsign: kc.callsign,
                 position: kc.position,
                 comment: kc.comment,
+                full_name: kc.full_name,
                 unit_id: kc.unit_id,
                 unit_name: kc.unit_name,
                 source_name: kc.source_name.unwrap_or_default(),

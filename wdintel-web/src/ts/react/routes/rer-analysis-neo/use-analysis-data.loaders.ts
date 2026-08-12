@@ -7,7 +7,7 @@ import type {
   FreqDailyActivityCount,
   FreqDetailedPoint,
   InboxMessage,
-  NetJsonGraphAndMeta,
+  NetworkCallsignRelationsRsp,
   NetworkUnit,
   PalitraReadV2,
   SummaryTableFreqRow,
@@ -16,8 +16,9 @@ import {
   downloadAnalysisGeojson,
   downloadAnalysisKmz,
   downloadAnalysisSummaryTableXlsx,
+  fetchAnalysisActivityDaily,
   fetchAnalysisCallsignInfos,
-  fetchAnalysisCallsignGraph,
+  fetchAnalysisCallsignRelations,
   fetchAnalysisCorrelatedFreqs,
   fetchAnalysisCallsigns,
   fetchAnalysisLocations,
@@ -56,7 +57,6 @@ export function shouldClearMapOpenMessages(messageIds: readonly unknown[]): bool
 }
 
 type Params = {
-  callsignGraphNolimit: boolean;
   callsignGraphRequestRef: React.MutableRefObject<number>;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
   mapDateRangeLoadVersionRef: React.MutableRefObject<number>;
@@ -67,10 +67,9 @@ type Params = {
   onUnauthorized: (error: unknown) => boolean;
   optionsFreqs: string[];
   queryState: AnalysisQueryState;
-  setCallsignGraph: Setter<NetJsonGraphAndMeta | null>;
+  setCallsignGraph: Setter<NetworkCallsignRelationsRsp | null>;
   setCallsignGraphLoading: Setter<boolean>;
   setCallsignGraphLoadVersion: Setter<number>;
-  setCallsignGraphNolimit: Setter<boolean>;
   setCorrelatedFreqs: Setter<CorrelatedFreq[]>;
   setCorrelatedFreqsLoading: Setter<boolean>;
   setGroupsActivity: Setter<FreqDailyActivityCount | null>;
@@ -101,7 +100,6 @@ type Params = {
 
 export function useAnalysisDataLoaders(params: Params) {
   const {
-    callsignGraphNolimit,
     callsignGraphRequestRef,
     groupsActivityPeriod,
     mapDateRangeLoadVersionRef,
@@ -115,7 +113,6 @@ export function useAnalysisDataLoaders(params: Params) {
     setCallsignGraph,
     setCallsignGraphLoading,
     setCallsignGraphLoadVersion,
-    setCallsignGraphNolimit,
     setCorrelatedFreqs,
     setCorrelatedFreqsLoading,
     setGroupsActivity,
@@ -378,10 +375,7 @@ export function useAnalysisDataLoaders(params: Params) {
     callsignGraphRequestRef.current = requestId;
     setCallsignGraphLoading(true);
     try {
-      const rsp = await fetchAnalysisCallsignGraph({
-        ...analysisReq,
-        nolimit: callsignGraphNolimit,
-      });
+      const rsp = await fetchAnalysisCallsignRelations(analysisReq);
       if (requestId !== callsignGraphRequestRef.current) return;
       setCallsignGraph(rsp);
     } catch (loadError) {
@@ -392,7 +386,6 @@ export function useAnalysisDataLoaders(params: Params) {
       setCallsignGraphLoading(false);
     }
   }, [
-    callsignGraphNolimit,
     callsignGraphRequestRef,
     onError,
     onUnauthorized,
@@ -402,16 +395,11 @@ export function useAnalysisDataLoaders(params: Params) {
     setCallsignGraphLoading,
   ]);
 
-  const toggleCallsignGraphNolimit = useCallback(() => {
-    invalidateCallsignGraph();
-    setCallsignGraphNolimit((current) => !current);
-  }, [invalidateCallsignGraph, setCallsignGraphNolimit]);
-
   const loadGroupsActivity = useCallback(
     async (period?: AnalysisGroupsActivityPeriod) => {
       const analysisReq = buildAnalysisReq(queryState, optionsFreqs);
       const firstFreq = queryState.freqsSelected[0];
-      if (isNullOrUndefined(analysisReq) || !firstFreq) {
+      if (isNullOrUndefined(analysisReq)) {
         setGroupsActivity(null);
         setGroupsActivityLoadedFreq(null);
         setGroupsActivityLoadedPeriod(null);
@@ -433,13 +421,19 @@ export function useAnalysisDataLoaders(params: Params) {
       setGroupsActivityLoading(true);
       setGroupsActivityPeriod(nextPeriod);
       try {
-        const rsp = await fetchFreqActivityDaily({
-          freq: firstFreq,
-          sinceDateInclusiveMs,
-          tillDateInclusiveMs,
-        });
+        const rsp = firstFreq
+          ? await fetchFreqActivityDaily({
+              freq: firstFreq,
+              sinceDateInclusiveMs,
+              tillDateInclusiveMs,
+            })
+          : await fetchAnalysisActivityDaily({
+              ...analysisReq,
+              sinceDateInclusiveMs,
+              tillDateNoninclusiveMs: tillDateInclusiveMs,
+            });
         setGroupsActivity(rsp);
-        setGroupsActivityLoadedFreq(firstFreq);
+        setGroupsActivityLoadedFreq(firstFreq ?? null);
         setGroupsActivityLoadedPeriod(nextPeriod);
       } catch (loadError) {
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
@@ -660,7 +654,6 @@ export function useAnalysisDataLoaders(params: Params) {
     loadMapPalitras,
     loadMessagesForMap,
     refreshMapDateRange,
-    toggleCallsignGraphNolimit,
     invalidateSummaryData,
     invalidateRightSidebarData,
   };

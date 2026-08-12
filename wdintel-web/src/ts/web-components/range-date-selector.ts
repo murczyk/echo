@@ -7,27 +7,28 @@ const styles = `
     flex-direction: column;
     align-items: center;
     margin: 0 auto;
-    gap: 6px;
+    gap: 4px;
     font-family: var(--bs-body-font-family, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
     color: var(--bs-body-color);
   }
 
   .top-row {
-    background: var(--bs-card-bg, var(--bs-body-bg));
-    border: 1px solid var(--bs-border-color);
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    background: color-mix(in srgb, var(--bs-card-bg, var(--bs-body-bg)) 86%, transparent);
+    backdrop-filter: blur(6px);
+    border: 1px solid color-mix(in srgb, var(--bs-body-color) 16%, transparent);
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     box-sizing: border-box;
-    padding: 7px 8px;
+    padding: 2px 4px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
   }
 
   .date-display {
-    min-width: 158px;
+    min-width: 140px;
     text-align: center;
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 600;
     line-height: 1.2;
     letter-spacing: 0.01em;
@@ -40,22 +41,22 @@ const styles = `
     background: none;
     border: none;
     cursor: pointer;
-    padding: 8px;
+    padding: 4px;
     color: var(--bs-body-color);
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 4px;
     transition: background-color 0.2s, color 0.2s;
-    font-size: 18px;
-    width: 32px;
-    height: 32px;
+    font-size: 16px;
+    width: 28px;
+    height: 28px;
     line-height: 1;
   }
 
   .icon-symbol {
     display: inline-block;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 700;
     line-height: 1;
     transform: translateY(-1px);
@@ -80,8 +81,8 @@ const styles = `
     background: var(--bs-card-bg, var(--bs-body-bg));
     border: 1px solid var(--bs-border-color);
     border-radius: 6px;
-    min-height: 30px;
-    padding: 4px 10px;
+    min-height: 26px;
+    padding: 2px 8px;
     cursor: pointer;
     color: var(--bs-body-color);
     font-family: inherit;

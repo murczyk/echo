@@ -1,19 +1,23 @@
 use super::super::types::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::rer_importer::report_chunking::{
+    build_filtered_inbox_report_chunk_query, inbox_report_chunk_req,
+    inbox_report_period_chunks, ReportPeriodChunk, ReportPeriodEnd,
+};
 use crate::rer_importer::reports::inbox_light::{
     blank_inbox_message, load_message_group_info, parse_optional_json_vec,
 };
 use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
 use chrono::prelude::*;
 use docx_rs::*;
 use sea_orm::prelude::Json;
 use sea_orm::*;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 const DOC_NAME: &str = "Форма №1.2.17/ОСУВ";
@@ -89,8 +93,6 @@ struct DigestMessageRow {
     timestamp: Option<NaiveDateTime>,
     freq: Option<String>,
     coords: Option<String>,
-    callsigns: Option<serde_json::Value>,
-    callsigns_alg2: Option<serde_json::Value>,
     callsign_tokens: Option<serde_json::Value>,
     location: Option<String>,
     location_v2: Option<String>,
@@ -126,8 +128,18 @@ pub async fn report_docx_kind_digest(
     let mut request = req.req.clone();
     request.report_tags_only_this_unit = Some(false);
     request.or_with_extended_form = Some(true); // with comments only
+    request.till_date_inclusive_ms = Some(report_till.timestamp_millis());
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks =
+        inbox_report_period_chunks(&request, report_settings.chunking_hours)
+            .context(h!())?;
     let analytics_req = &request;
     let postgres_req = &request;
+    let analytics_chunks = &chunks;
+    let postgres_chunks = &chunks;
     let messages = crate::rer_importer::analysis::with_analytics_read_fallback(
         env,
         "digest report interception scan",
@@ -135,10 +147,24 @@ pub async fn report_docx_kind_digest(
             &request,
         ),
         |db| async move {
-            load_digest_messages(&db, &login, env, analytics_req).await
+            load_digest_messages_chunks(
+                &db,
+                &login,
+                env,
+                analytics_req,
+                analytics_chunks,
+            )
+            .await
         },
         |db| async move {
-            load_digest_messages(&db, &login, env, postgres_req).await
+            load_digest_messages_chunks(
+                &db,
+                &login,
+                env,
+                postgres_req,
+                postgres_chunks,
+            )
+            .await
         },
     )
     .await
@@ -296,11 +322,40 @@ pub async fn report_docx_kind_digest(
         .add_paragraph(Paragraph::new())
         .add_table(table_amrp);
     info!("report_docx_kind_digest done, saving to file...");
-    let file = std::fs::File::create(outpath)?;
+    let file = std::fs::File::create(outpath).context(h!())?;
     docx.build().pack(file).context(h!())?;
 
     info!("report_docx_kind_digest completed");
     Ok(())
+}
+
+async fn load_digest_messages_chunks(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    chunks: &[ReportPeriodChunk],
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let mut messages = BTreeMap::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "Digest report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let chunk_req = inbox_report_chunk_req(req, chunk);
+        for (id, message) in
+            load_digest_messages(dbx, login, env, &chunk_req, chunk.end)
+                .await
+                .context(h!())?
+        {
+            messages.entry(id).or_insert(message);
+        }
+    }
+    Ok(messages.into_iter().collect())
 }
 
 async fn load_digest_messages(
@@ -308,9 +363,10 @@ async fn load_digest_messages(
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let rows = crate::rer_importer::inbox::query::build_filtered_inbox_query(
-        dbx, login, env, req,
+    let rows = build_filtered_inbox_report_chunk_query(
+        dbx, login, env, req, period_end,
     )
     .await
     .context(h!())?
@@ -321,8 +377,6 @@ async fn load_digest_messages(
     .column_as(signal_message::Column::Timestamp, "timestamp")
     .column_as(sigint_inbox_item::Column::Freq, "freq")
     .column_as(sigint_inbox_item::Column::Coords, "coords")
-    .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
-    .column_as(sigint_inbox_item::Column::CallsignsAlg2, "callsigns_alg2")
     .column_as(sigint_inbox_item::Column::CallsignTokens, "callsign_tokens")
     .column_as(sigint_inbox_item::Column::Location, "location")
     .column_as(sigint_inbox_item::Column::LocationV2, "location_v2")
@@ -338,9 +392,13 @@ async fn load_digest_messages(
         load_message_group_info(dbx, login, req, &message_ids)
             .await
             .context(h!())?;
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &message_ids).await?;
 
     rows.into_iter()
         .map(|row| {
+            let callsigns =
+                normalized_callsigns.remove(&row.id).unwrap_or_default();
             let group_info = groups_by_message.remove(&row.id);
             let mut message = blank_inbox_message();
             message.message_uid = row.message_uid;
@@ -350,9 +408,8 @@ async fn load_digest_messages(
                 .map(|timestamp| timestamp.and_utc().timestamp_millis());
             message.freq = row.freq;
             message.coords = row.coords;
-            message.callsigns = parse_optional_json_vec(row.callsigns)?;
-            message.callsigns_alg2 =
-                parse_optional_json_vec(row.callsigns_alg2)?;
+            message.callsigns = callsigns.primary;
+            message.callsigns_alg2 = callsigns.alg2;
             message.callsign_tokens =
                 Some(parse_optional_json_vec(row.callsign_tokens)?);
             message.location =

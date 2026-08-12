@@ -3,6 +3,7 @@ use crate::config::{
     SYNC_LOCK_LIVE_TTL_SECS,
 };
 use crate::http_api::{require_basic_auth, AppState};
+use crate::xlsx_sync::replace_xlsx_file;
 use actix_web::error::{
     ErrorBadRequest, ErrorConflict, ErrorInternalServerError, ErrorNotFound,
 };
@@ -203,7 +204,7 @@ pub async fn upload_knowledge_workbook(
     require_basic_auth(&http_req, &state.config)?;
     validate_xlsx(body.as_ref())?;
     let path = state.config.preferred_knowledge_xlsx_path();
-    replace_file(&path, body.as_ref())
+    replace_xlsx_file(&path, body.as_ref())
         .await
         .with_context(|| format!("replacing {}", path.display()))
         .map_err(ErrorInternalServerError)?;
@@ -250,7 +251,7 @@ pub async fn acquire_sync_lock(
 ) -> Result<HttpResponse, Error> {
     require_basic_auth(&http_req, &state.config)?;
     let tx = state.db.begin().await.map_err(ErrorInternalServerError)?;
-    tx.execute(Statement::from_sql_and_values(
+    tx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "select pg_advisory_xact_lock($1)",
         [SYNC_LOCK_ADVISORY_KEY.into()],
@@ -258,7 +259,7 @@ pub async fn acquire_sync_lock(
     .await
     .map_err(ErrorInternalServerError)?;
     let row = tx
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "select exists (select 1 from sync_lock where released_at is null and updated_at >= now() - make_interval(secs => $1::double precision)) as is_locked",
             [SYNC_LOCK_LIVE_TTL_SECS.into()],
@@ -273,7 +274,7 @@ pub async fn acquire_sync_lock(
         None
     } else {
         let lock_id = uuid::Uuid::new_v4().to_string();
-        tx.execute(Statement::from_sql_and_values(
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "insert into sync_lock (id, created_at, updated_at) values ($1::uuid, now(), now())",
             [lock_id.clone().into()],
@@ -376,7 +377,7 @@ async fn update_sync_lock(
     };
     let result = state
         .db
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
             values,

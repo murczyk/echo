@@ -264,6 +264,155 @@ async fn test_bl_szd_group_update_01() {
 
 #[serial]
 #[tokio::test]
+async fn test_secret_group_update_preserves_ai_managed_logins() {
+    let env = cleanup().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    let human = mk_login(
+        &txn,
+        login::ActiveModel {
+            id: NotSet,
+            login: Set("Mikasa".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let agent = mk_login(
+        &txn,
+        login::ActiveModel {
+            id: NotSet,
+            login: Set("admin-krab-ai-agent".to_string()),
+            deleted: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    ai_agent_user_link::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        human_login_id: Set(human.id),
+        agent_login_id: Set(agent.id),
+        created_at: Set(Utc::now().naive_utc()),
+        updated_at: Set(Utc::now().naive_utc()),
+    }
+    .insert(&txn)
+    .await
+    .unwrap();
+
+    let szd = mk_sigint_zone_datasource(
+        &txn,
+        sigint_zone_datasource::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let master_key = szd.group_master_key.clone();
+    mk_secret_group_user(
+        &txn,
+        secret_group_user::ActiveModel {
+            master_key: Set(master_key.clone()),
+            login_id: Set(agent.id),
+            secret_group_organism_id: Set(None),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    signal_group_admin::ActiveModel {
+        signal_group_id: Set(master_key.clone()),
+        login_id: Set(agent.id),
+        deleted: Set(false),
+        created_at: Set(Utc::now().naive_utc()),
+    }
+    .insert(&txn)
+    .await
+    .unwrap();
+
+    let req = ZoneDatasourceGroupUpdateReq {
+        id: szd.id,
+        is_secret: true,
+        interseption_kind: None,
+        disable_network_assignment: None,
+        user_logins: vec![human.id.to_string()],
+        organism_ids: vec![],
+        admin_logins: vec![],
+        short_note: None,
+        long_note: None,
+        area_of_responsibility_id: None,
+        area_of_responsibility_ids: None,
+    };
+    let res = bl_szd_group_update(&req, &szd, &txn).await.unwrap();
+
+    let direct_logins = secret_group_user::Entity::find()
+        .filter(secret_group_user::Column::MasterKey.eq(master_key.clone()))
+        .filter(secret_group_user::Column::SecretGroupOrganismId.is_null())
+        .select_only()
+        .column(secret_group_user::Column::LoginId)
+        .into_tuple::<Uuid>()
+        .all(&txn)
+        .await
+        .unwrap();
+    assert!(direct_logins.contains(&human.id));
+    assert!(direct_logins.contains(&agent.id));
+    let agent_details = res
+        .allowed_user_details
+        .iter()
+        .find(|login| login.login_id == agent.id.to_string())
+        .unwrap();
+    assert_eq!(agent_details.login, "admin-krab-ai-agent");
+    assert!(agent_details.is_ai_managed);
+    assert!(res
+        .admin_login_details
+        .iter()
+        .any(|login| login.login_id == agent.id.to_string()
+            && login.is_ai_managed));
+
+    let new_human = mk_login(
+        &txn,
+        login::ActiveModel {
+            id: NotSet,
+            login: Set("Mikasa-2".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let new_agent = mk_login(
+        &txn,
+        login::ActiveModel {
+            id: NotSet,
+            login: Set("new-ai-agent".to_string()),
+            deleted: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    ai_agent_user_link::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        human_login_id: Set(new_human.id),
+        agent_login_id: Set(new_agent.id),
+        created_at: Set(Utc::now().naive_utc()),
+        updated_at: Set(Utc::now().naive_utc()),
+    }
+    .insert(&txn)
+    .await
+    .unwrap();
+    let rejected_req = ZoneDatasourceGroupUpdateReq {
+        user_logins: vec![new_agent.id.to_string()],
+        ..req
+    };
+    assert!(matches!(
+        bl_szd_group_update(&rejected_req, &szd, &txn).await,
+        Err(AppError::Forbidden(_))
+    ));
+
+    txn.rollback().await.unwrap();
+}
+
+#[serial]
+#[tokio::test]
 async fn test_secret_group_organism_invite_materializes_direct_and_derived_users(
 ) {
     let env = cleanup().await.unwrap();

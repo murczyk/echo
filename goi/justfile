@@ -2,62 +2,76 @@ set positional-arguments := false
 
 goi_dir := justfile_directory()
 repo_dir := goi_dir + "/.."
+goi_builder := "echo-build-main"
+goi_builder_repo_dir := "workspace/echo"
 goi_app_dir := "/etc/goi"
 goi_timezone := "Europe/Kyiv"
 goi_b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
 swapp_alt_app_dir := "/etc/swapp-alt"
-goi_version := "1.5.4"
-goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 goi-prod-05 goi-prod-06 goi-prod-07 goi-prod-08 goi-prod-10 goi-tsur goi-prod-210oshp goi-prod-225oshp goi-159ombr"
+goi_version := "1.5.8"
+goi_node_version := "24.19.0"
+goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 goi-prod-05 goi-prod-06 goi-prod-07 goi-prod-08 goi-prod-10 goi-tsur goi-prod-210oshp goi-prod-225oshp goi-159ombr goi-129ovmbr goi-22ombr goi-prod-gorilla goi-25opdbr goi-istar goi-32ombr goi-80odshbr goi-144ombr goi-475oshb goi-152orub goi-154ombr goi-65ombr goi-1kngu goi-41ombr goi-41pbps goi-71center-pep"
 
 default:
     @just --list
 
-_require-linux-goi-deploy-host:
+[arg('builder', long='builder')]
+checkout-messenger-debs builder=goi_builder:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    if [[ "$(uname -s)" == "Linux" ]]; then
-      exit 0
-    fi
+    BUILDER="{{ builder }}"
 
-    {
-      echo "============================================================"
-      echo "ERROR: GOI deploy must be run from Linux."
-      echo
-      echo "This recipe downloads Debian packages with apt-get and builds/uploads"
-      echo "a fresh echo-swapp .deb. Running it on macOS is blocked because it"
-      echo "would otherwise skip the freshly built echo-swapp artifact."
-      echo
-      echo "Run this command from a Linux builder/workstation."
-      echo "============================================================"
-    } >&2
-    exit 1
-
-checkout-messenger-debs:
-    #!/usr/bin/env bash
+    echo "Downloading messenger deb packages on ${BUILDER}..."
+    ssh "$BUILDER" bash -se <<'REMOTE'
     set -euo pipefail
 
-    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
+    DEB_DIR="$HOME/{{ goi_builder_repo_dir }}/goi/.deb"
 
     sudo apt-get update
-    mkdir -p "{{ goi_dir }}/.deb"
-    cd "{{ goi_dir }}/.deb" && apt-get download echo-im-signal echo-im-whatsapp
+    mkdir -p "${DEB_DIR}"
+    rm -f "${DEB_DIR}"/echo-im-signal_*_amd64.deb "${DEB_DIR}"/echo-im-whatsapp_*_amd64.deb
+    cd "${DEB_DIR}"
+    apt-get download echo-im-signal echo-im-whatsapp
+    REMOTE
 
-build-echo-swapp:
+[arg('builder', long='builder')]
+build-echo-swapp builder=goi_builder:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
-
+    BUILDER="{{ builder }}"
     BRANCH="main"
 
-    echo "Switching {{ repo_dir }} to ${BRANCH}..."
-    (cd "{{ repo_dir }}" && git fetch origin "${BRANCH}" && git clean -df && git checkout "${BRANCH}" && git pull --ff-only origin "${BRANCH}")
+    echo "Building echo-swapp deb package on ${BUILDER}..."
+    ssh "$BUILDER" bash -se -- "$BRANCH" <<'REMOTE'
+    set -euo pipefail
 
-    echo "Building echo-swapp deb package..."
-    (cd "{{ repo_dir }}" && cargo deb -p echo-swapp)
+    BRANCH="$1"
+    REPO_DIR="$HOME/{{ goi_builder_repo_dir }}"
+    GIT_CONFIG=(-c url.ssh://git@github.com/.insteadOf=https://github.com/)
+
+    echo "Switching ${REPO_DIR} to ${BRANCH}..."
+    cd "${REPO_DIR}"
+    git "${GIT_CONFIG[@]}" fetch origin "${BRANCH}"
+    git clean -df
+    git checkout "${BRANCH}"
+    git "${GIT_CONFIG[@]}" pull --ff-only origin "${BRANCH}"
+
+    mkdir -p "${REPO_DIR}/target/debian"
+    rm -f "${REPO_DIR}"/target/debian/echo-swapp_*_*.deb
+    "$HOME/.cargo/bin/cargo" deb -p echo-swapp --output "${REPO_DIR}/target/debian"
+
+    DEB_PATH="$(ls -1t "${REPO_DIR}"/target/debian/echo-swapp_*_*.deb 2>/dev/null | head -n 1 || true)"
+    if [[ -z "${DEB_PATH}" ]]; then
+      echo "Failed to build echo-swapp .deb under ${REPO_DIR}/target/debian" >&2
+      find "${REPO_DIR}" -maxdepth 6 -path "*/target/debian/*.deb" -type f -print >&2 || true
+      exit 1
+    fi
+    echo "Built $(basename "${DEB_PATH}")"
+    REMOTE
 
 _require-goi-cloud-access:
     #!/usr/bin/env bash
@@ -95,6 +109,182 @@ goi-sync-from-cloud:
 
     echo "Syncing GOI {{ goi_version }} from Backblaze into ${SRC_DIR}..."
     s5cmd --endpoint-url "$ENDPOINT_URL" sync "$REMOTE_GLOB" "$SRC_DIR"
+
+_verify-goi-node-version-pin:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    PACKAGE_JSON="{{ goi_dir }}/goi/goi-{{ goi_version }}/package.json"
+    PINNED_NODE_VERSION="{{ goi_node_version }}"
+
+    if [[ ! -f "${PACKAGE_JSON}" ]]; then
+      echo "GOI package.json not found: ${PACKAGE_JSON}" >&2
+      echo "Please fetch the GOI release first, then update goi_node_version in justfile, commit, and deploy carefully to test env first." >&2
+      exit 1
+    fi
+
+    python3 - "${PACKAGE_JSON}" "${PINNED_NODE_VERSION}" <<'PYVERIFY'
+    import json
+    import re
+    import sys
+
+    package_json = sys.argv[1]
+    pinned = sys.argv[2]
+
+    with open(package_json, encoding="utf-8") as package_file:
+        package = json.load(package_file)
+
+    engine = package.get("engines", {}).get("node")
+
+
+    def parse_version(version):
+        match = re.fullmatch(r"v?(\d+)(?:\.(\d+))?(?:\.(\d+))?", version)
+        if not match:
+            raise ValueError(f"unsupported version {version!r}")
+        return tuple(int(part or 0) for part in match.groups())
+
+
+    def compare(left, right):
+        return (left > right) - (left < right)
+
+
+    def satisfies_comparator(version, comparator):
+        match = re.fullmatch(r"(>=|<=|>|<|=)?v?(\d+(?:\.\d+){0,2})", comparator)
+        if not match:
+            raise ValueError(f"unsupported comparator {comparator!r}")
+        operator = match.group(1) or "="
+        required = parse_version(match.group(2))
+        compared = compare(version, required)
+        return {
+            ">=": compared >= 0,
+            ">": compared > 0,
+            "<=": compared <= 0,
+            "<": compared < 0,
+            "=": compared == 0,
+        }[operator]
+
+
+    def satisfies_range(version, range_expr):
+        for branch in range_expr.split("||"):
+            comparators = branch.split()
+            if comparators and all(satisfies_comparator(version, comparator) for comparator in comparators):
+                return True
+        return False
+
+
+    def fail(reason):
+        print("GOI Node version preflight failed.", file=sys.stderr)
+        print(f"package.json: {package_json}", file=sys.stderr)
+        print(f"engines.node: {engine!r}", file=sys.stderr)
+        print(f"justfile goi_node_version: {pinned!r}", file=sys.stderr)
+        print(reason, file=sys.stderr)
+        print("Please update goi_node_version in justfile, commit, and deploy carefully to test env first.", file=sys.stderr)
+        sys.exit(1)
+
+
+    if not engine:
+        fail("package.json does not declare engines.node, so the deploy Node pin cannot be validated.")
+
+    try:
+        pinned_version = parse_version(pinned)
+        is_valid = satisfies_range(pinned_version, engine)
+    except ValueError as err:
+        fail(str(err))
+
+    if not is_valid:
+        fail("Pinned Node does not satisfy package.json engines.node.")
+
+    print(f"GOI package engines.node {engine!r} accepts pinned Node {pinned}.")
+    PYVERIFY
+
+[arg('server', long='server')]
+_ensure-goi-node-version server app_dir service fix:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+    APP_DIR="{{ app_dir }}"
+    SERVICE="{{ service }}"
+    FIX="{{ fix }}"
+    PINNED_NODE_VERSION="{{ goi_node_version }}"
+
+    echo "Smoke-testing pinned Node ${PINNED_NODE_VERSION} on ${SERVER}..."
+    ssh "$SERVER" SERVER="$SERVER" APP_DIR="$APP_DIR" SERVICE="$SERVICE" FIX="$FIX" PINNED_NODE_VERSION="$PINNED_NODE_VERSION" bash -se <<'REMOTE'
+    set -euo pipefail
+
+    service_exists() {
+      sudo systemctl list-unit-files "${SERVICE}" --no-legend 2>/dev/null | awk '{ print $1 }' | grep -Fxq "${SERVICE}"
+    }
+
+    current="$(sudo -u echo bash -lc '
+      set -eo pipefail
+      export TERM=dumb
+      export NVM_DIR="$HOME/.nvm"
+      [[ -s "$NVM_DIR/nvm.sh" ]] || exit 2
+      . "$NVM_DIR/nvm.sh"
+      nvm use --silent default >/dev/null
+      printf "%s %s" "$(node -v)" "$(npm -v)"
+    ' 2>/dev/null || true)"
+    current_node="${current%% *}"
+    current_npm="${current#* }"
+
+    if [[ "${current_node}" == "v${PINNED_NODE_VERSION}" && -n "${current_npm}" && "${current_npm}" != "${current_node}" && "${FIX}" != "true" ]]; then
+      echo "${SERVER} already uses Node ${current_node} with npm ${current_npm}."
+      exit 0
+    fi
+
+    if [[ "${FIX}" == "true" ]]; then
+      echo "--fix requested; forcing a clean npm dependency rebuild on ${SERVER}."
+    else
+      echo "${SERVER} has Node ${current_node:-missing}; pinned Node v${PINNED_NODE_VERSION} is required."
+    fi
+    echo "Pausing ${SERVICE}, upgrading Node, rebuilding npm dependencies, and starting ${SERVICE} again."
+
+    if service_exists; then
+      sudo systemctl stop "${SERVICE}" || true
+    else
+      echo "${SERVICE} is not installed yet; skipping service stop."
+    fi
+
+    if [[ -d "${APP_DIR}" ]]; then
+      sudo rm -rf "${APP_DIR}/node_modules" "${APP_DIR}/.next/node_modules"
+      sudo chown echo:echo "${APP_DIR}"
+    fi
+
+    sudo -u echo env APP_DIR="${APP_DIR}" PINNED_NODE_VERSION="${PINNED_NODE_VERSION}" bash -lc '
+      set -eo pipefail
+      export TERM=dumb
+      if [[ ! -s "$HOME/.nvm/nvm.sh" ]]; then
+        curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
+      fi
+      export NVM_DIR="$HOME/.nvm"
+      . "$NVM_DIR/nvm.sh"
+      nvm install "$PINNED_NODE_VERSION"
+      nvm alias default "$PINNED_NODE_VERSION"
+      nvm use --silent default >/dev/null
+      node -v
+      npm -v
+
+      if [[ ! -f "$APP_DIR/package.json" ]]; then
+        echo "$APP_DIR/package.json is absent; skipping dependency rebuild before deploy."
+        exit 0
+      fi
+
+      cd "$APP_DIR"
+      if [[ -f package-lock.json ]]; then
+        npm ci --no-audit --no-fund
+      else
+        npm install --no-audit --no-fund
+      fi
+    '
+
+    if service_exists; then
+      sudo systemctl start "${SERVICE}"
+      sudo systemctl status "${SERVICE}" --no-pager
+    else
+      echo "${SERVICE} is not installed yet; skipping service start."
+    fi
+    REMOTE
 
 release:
     #!/usr/bin/env bash
@@ -190,7 +380,7 @@ setup server:
       command -v nginx >/dev/null 2>&1 && nginx -v || true
     '
 
-    echo "Installing nvm for user echo (if needed) and setting default Node..."
+    echo "Installing nvm for user echo (if needed) and setting pinned Node {{ goi_node_version }}..."
     ssh "$SERVER" 'set -euo pipefail
       if ! id -u echo >/dev/null 2>&1; then
         echo "user '\''echo'\'' not found" >&2
@@ -204,9 +394,9 @@ setup server:
         fi
         export NVM_DIR="$HOME/.nvm"
         . "$NVM_DIR/nvm.sh"
-        nvm install --lts
-        nvm alias default "lts/*"
-        nvm use --silent default >/dev/null
+        nvm install "{{ goi_node_version }}"
+        nvm alias default "{{ goi_node_version }}"
+        nvm use --silent "{{ goi_node_version }}" >/dev/null
         node -v
         npm -v
       '"'"'
@@ -391,33 +581,55 @@ deploy-goi-xlsx server:
     sudo systemctl status goi.service --no-pager
     sudo systemctl status goi-echo-worker.service --no-pager
     REMOTE
+
+[arg('builder', long='builder')]
 [arg('server', long='server')]
-deploy-echo-swapp server:
+deploy-echo-swapp server builder=goi_builder:
     #!/usr/bin/env bash
     set -euo pipefail
 
     SERVER="{{ server }}"
+    BUILDER="{{ builder }}"
+    BUILDER_HOME=""
+    BUILDER_REPO_DIR=""
+    ARTIFACT_DIR="$(mktemp -d)"
     DEB_PATH=""
     DEB_NAME=""
-    MESSENGER_DEB_DIR="{{ goi_dir }}/.deb"
+    REMOTE_DEB_PATH=""
     SIGNAL_DEB_PATH=""
     SIGNAL_DEB_NAME=""
     WHATSAPP_DEB_PATH=""
     WHATSAPP_DEB_NAME=""
 
-    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
-    just --justfile "{{ goi_dir }}/justfile" checkout-messenger-debs
+    trap 'rm -rf -- "${ARTIFACT_DIR}"' EXIT
 
-    SIGNAL_DEB_PATH="$(ls -1t "${MESSENGER_DEB_DIR}"/echo-im-signal_*_amd64.deb 2>/dev/null | head -n 1 || true)"
+    just --justfile "{{ goi_dir }}/justfile" build-echo-swapp --builder "$BUILDER"
+    just --justfile "{{ goi_dir }}/justfile" checkout-messenger-debs --builder "$BUILDER"
+
+    BUILDER_HOME="$(ssh "$BUILDER" 'printf %s "$HOME"')"
+    BUILDER_REPO_DIR="${BUILDER_HOME}/{{ goi_builder_repo_dir }}"
+
+    echo "Downloading deploy artifacts from ${BUILDER}..."
+    scp "${BUILDER}:${BUILDER_REPO_DIR}/goi/.deb/echo-im-signal_*_amd64.deb" "${ARTIFACT_DIR}/"
+    scp "${BUILDER}:${BUILDER_REPO_DIR}/goi/.deb/echo-im-whatsapp_*_amd64.deb" "${ARTIFACT_DIR}/"
+
+    REMOTE_DEB_PATH="$(ssh "$BUILDER" "ls -1t ${BUILDER_REPO_DIR}/target/debian/echo-swapp_*_*.deb 2>/dev/null | head -n 1 || true")"
+    if [[ -z "${REMOTE_DEB_PATH}" ]]; then
+      echo "Failed to find built echo-swapp .deb on ${BUILDER}:${BUILDER_REPO_DIR}/target/debian" >&2
+      exit 1
+    fi
+    scp "${BUILDER}:${REMOTE_DEB_PATH}" "${ARTIFACT_DIR}/"
+
+    SIGNAL_DEB_PATH="$(ls -1t "${ARTIFACT_DIR}"/echo-im-signal_*_amd64.deb 2>/dev/null | head -n 1 || true)"
     if [[ -z "${SIGNAL_DEB_PATH}" ]]; then
-      echo "Failed to find echo-im-signal .deb in ${MESSENGER_DEB_DIR}" >&2
+      echo "Failed to download echo-im-signal .deb from ${BUILDER}" >&2
       exit 1
     fi
     SIGNAL_DEB_NAME="$(basename "${SIGNAL_DEB_PATH}")"
 
-    WHATSAPP_DEB_PATH="$(ls -1t "${MESSENGER_DEB_DIR}"/echo-im-whatsapp_*_amd64.deb 2>/dev/null | head -n 1 || true)"
+    WHATSAPP_DEB_PATH="$(ls -1t "${ARTIFACT_DIR}"/echo-im-whatsapp_*_amd64.deb 2>/dev/null | head -n 1 || true)"
     if [[ -z "${WHATSAPP_DEB_PATH}" ]]; then
-      echo "Failed to find echo-im-whatsapp .deb in ${MESSENGER_DEB_DIR}" >&2
+      echo "Failed to download echo-im-whatsapp .deb from ${BUILDER}" >&2
       exit 1
     fi
     WHATSAPP_DEB_NAME="$(basename "${WHATSAPP_DEB_PATH}")"
@@ -436,11 +648,9 @@ deploy-echo-swapp server:
       rm -f \"./${SIGNAL_DEB_NAME}\" \"./${WHATSAPP_DEB_NAME}\"
     "
 
-    just --justfile "{{ goi_dir }}/justfile" build-echo-swapp
-
-    DEB_PATH="$(ls -1t "{{ repo_dir }}"/target/debian/echo-swapp_*_*.deb | head -n 1)"
+    DEB_PATH="$(ls -1t "${ARTIFACT_DIR}"/echo-swapp_*_*.deb 2>/dev/null | head -n 1 || true)"
     if [[ -z "${DEB_PATH}" ]]; then
-      echo "Failed to find built echo-swapp .deb in target/debian" >&2
+      echo "Failed to download built echo-swapp .deb from ${BUILDER}" >&2
       exit 1
     fi
     DEB_NAME="$(basename "${DEB_PATH}")"
@@ -539,20 +749,26 @@ _backup-app-data server app_dir:
     echo "Backed up ${APP_DIR}/data to ${BACKUP_DIR}"
     REMOTE
 
+[arg('builder', long='builder')]
+[arg('fix', long='fix', value='true')]
 [arg('server', long='server')]
-deploy server:
+deploy server builder=goi_builder fix="false":
     #!/usr/bin/env bash
     set -euo pipefail
 
-    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
-
     SERVER="{{ server }}"
+    BUILDER="{{ builder }}"
     APP_DIR="{{ goi_app_dir }}"
     SRC_DIR="{{ goi_dir }}/goi/goi-{{ goi_version }}/"
+
+    if [[ "{{ fix }}" != "true" ]]; then
+      echo "WARNING: A clean npm dependency rebuild is not forced. Use --fix to pause goi.service, remove node_modules, reinstall dependencies, and start the service again." >&2
+    fi
 
     echo "Deploy uses 'just goi-sync-from-cloud' to fetch GOI {{ goi_version }} into ${SRC_DIR} before syncing to ${SERVER}."
     echo "If Backblaze does not have GOI {{ goi_version }} yet, unpack it under ${SRC_DIR}, update goi_version in justfile, and run 'just release' first."
     just goi-sync-from-cloud
+    just --justfile "{{ goi_dir }}/justfile" _verify-goi-node-version-pin
 
     echo "Ensuring ${APP_DIR} exists on ${SERVER}..."
     ssh "$SERVER" APP_DIR="$APP_DIR" bash -se <<'REMOTE'
@@ -562,6 +778,7 @@ deploy server:
     sudo chown echo:echo "${APP_DIR}" "${APP_DIR}/data"
     REMOTE
 
+    just --justfile "{{ goi_dir }}/justfile" _ensure-goi-node-version --server "$SERVER" "$APP_DIR" goi.service "{{ fix }}"
     just --justfile "{{ goi_dir }}/justfile" _backup-app-data --server "$SERVER" "$APP_DIR"
 
     echo "Cleaning stale prebuilt externals in ${APP_DIR}..."
@@ -591,8 +808,13 @@ deploy server:
     REMOTE
 
     echo "Syncing GOI source into ${SERVER}:${APP_DIR}..."
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      RSYNC_INFO_ARGS=(--progress --stats)
+    else
+      RSYNC_INFO_ARGS=(--info=flist2,progress2,stats2,name1)
+    fi
     rsync -az --human-readable \
-      --info=flist2,progress2,stats2,name1 \
+      "${RSYNC_INFO_ARGS[@]}" \
       --delete-after \
       --force \
       --exclude '.git/' \
@@ -627,7 +849,7 @@ deploy server:
       set -euo pipefail
       export NVM_DIR=\"\$HOME/.nvm\"
       . \"\$NVM_DIR/nvm.sh\"
-      nvm use --silent default >/dev/null
+      nvm use --silent {{ goi_node_version }} >/dev/null
       cd \"${APP_DIR}\"
       if [[ ! -d .next ]]; then
         echo \"missing .next in ${APP_DIR}; this deploy expects prebuilt Next.js artifacts\" >&2
@@ -648,18 +870,20 @@ deploy server:
     "
 
     just deploy-goi-echo-worker --server "$SERVER"
-    just deploy-echo-swapp --server "$SERVER"
+    just deploy-echo-swapp --server "$SERVER" --builder "$BUILDER"
 
+[arg('builder', long='builder')]
 [arg('server', long='server')]
-deploy-first server:
+deploy-first server builder=goi_builder:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    just --justfile "{{ goi_dir }}/justfile" _require-linux-goi-deploy-host
-
     SERVER="{{ server }}"
+    BUILDER="{{ builder }}"
     APP_DIR="{{ goi_app_dir }}"
     SRC_DIR="{{ goi_dir }}/goi/goi-{{ goi_version }}/"
+
+    just --justfile "{{ goi_dir }}/justfile" _verify-goi-node-version-pin
 
     echo "Ensuring ${APP_DIR} exists on ${SERVER}..."
     ssh "$SERVER" "set -euo pipefail
@@ -668,6 +892,7 @@ deploy-first server:
       sudo chown -R echo:echo '${APP_DIR}'
     "
 
+    just --justfile "{{ goi_dir }}/justfile" _ensure-goi-node-version --server "$SERVER" "$APP_DIR" goi.service false
     just --justfile "{{ goi_dir }}/justfile" _backup-app-data --server "$SERVER" "$APP_DIR"
 
     echo "Cleaning stale prebuilt externals in ${APP_DIR}..."
@@ -718,7 +943,7 @@ deploy-first server:
       set -euo pipefail
       export NVM_DIR=\"\$HOME/.nvm\"
       . \"\$NVM_DIR/nvm.sh\"
-      nvm use --silent default >/dev/null
+      nvm use --silent {{ goi_node_version }} >/dev/null
       cd \"${APP_DIR}\"
       if [[ ! -d .next ]]; then
         echo \"missing .next in ${APP_DIR}; this deploy expects prebuilt Next.js artifacts\" >&2
@@ -739,7 +964,7 @@ deploy-first server:
     "
 
     just deploy-goi-echo-worker --server "$SERVER"
-    just deploy-echo-swapp --server "$SERVER"
+    just deploy-echo-swapp --server "$SERVER" --builder "$BUILDER"
 
 [arg('server', long='server')]
 deploy-swapp server:
@@ -1002,3 +1227,17 @@ deploy-many-all:
 
 deploy-all:
     just deploy-many-all
+
+knowledge-tables-all:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if ! command -v echo-install-utils >/dev/null 2>&1; then
+      echo "missing echo-install-utils in PATH (install it or deploy it first)" >&2
+      exit 1
+    fi
+
+    echo-install-utils run-many \
+      --values "{{ goi_servers }}" \
+      --cwd "{{ goi_dir }}" \
+      -- ssh {} "sudo -u postgres psql goi -c '\dt+' | grep knowledge"

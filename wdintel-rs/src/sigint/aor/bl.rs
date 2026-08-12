@@ -2,7 +2,6 @@ use crate::entities::*;
 use crate::sigint::aor::render_aor;
 use crate::sigint::aor::types::AreaOfResponsibility;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, JoinType, QueryFilter,
     QuerySelect, RelationTrait,

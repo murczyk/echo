@@ -5,10 +5,13 @@ use crate::location::peleng::{
     collect_inbox_pelengs, inbox_item_has_active_peleng_exists,
 };
 use crate::rer_importer::analysis::*;
+use crate::rer_importer::report_chunking::{
+    inbox_report_chunk_req, inbox_report_period_chunks, ReportPeriodEnd,
+};
 use crate::sigint::sender::preferred_sender_sql_snippet;
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
-use anyhow::bail;
+use crate::utils::dt_from_millis;
+use anyhow::{bail, Context};
 use chrono::prelude::*;
 use echo_migration::IntoCondition;
 use itertools::Itertools;
@@ -27,7 +30,6 @@ struct Message {
     pub date: Option<String>,
     pub time: Option<String>,
     pub freq: Option<String>,
-    pub callsigns: Option<serde_json::Value>,
     pub checked: Option<bool>,
     pub unit: Option<String>,
     pub location: Option<String>,
@@ -37,6 +39,55 @@ pub async fn get_inbox_messages_report(
     user_login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
+) -> Result<Vec<(i64, Option<(f64, f64)>, InboxMessage)>, AppError> {
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let mut chunks =
+        inbox_report_period_chunks(req, report_settings.chunking_hours)
+            .context(h!())?;
+    if req.load_latest == Some(true)
+        || req.newest_first == Some(true)
+        || req.before_id_noninclusive.is_some()
+    {
+        chunks.reverse();
+    }
+    let mut messages = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "Pelengs report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let chunk_req = inbox_report_chunk_req(req, chunk);
+        for message in get_inbox_messages_report_chunk(
+            user_login, env, &chunk_req, chunk.end,
+        )
+        .await
+        .context(h!())?
+        {
+            let key = (
+                message.0,
+                message.1.map(|(lat, lng)| (lat.to_bits(), lng.to_bits())),
+            );
+            if seen.insert(key) {
+                messages.push(message);
+            }
+        }
+    }
+    Ok(messages)
+}
+
+async fn get_inbox_messages_report_chunk(
+    user_login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<(i64, Option<(f64, f64)>, InboxMessage)>, AppError> {
     let login = *user_login;
     let include_peleng_locations =
@@ -61,7 +112,6 @@ pub async fn get_inbox_messages_report(
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
         .column(sigint_inbox_item::Column::Freq)
-        .column(sigint_inbox_item::Column::Callsigns)
         .column(sigint_inbox_item::Column::Checked)
         .column_as(sigint_inbox_item::Column::LocationV2, "location")
         .column_as(
@@ -92,7 +142,7 @@ pub async fn get_inbox_messages_report(
                     ),
                     sigint_inbox_item.unit_v2
                 )
-            "#.to_string()),
+            "#.into()),
             "unit",
         )
         .filter(signal_message::Column::Deleted.eq(false))
@@ -100,7 +150,7 @@ pub async fn get_inbox_messages_report(
         .filter(inbox_item_has_active_peleng_exists())
         .join(
             JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintNetworkFreq.def()
+            crate::sigint::freq::util::inbox_item_network_freq_relation()
                 .on_condition(|_left, right| {
                     Expr::col((right, sigint_network_freq::Column::Deleted))
                         .eq(false)
@@ -150,13 +200,34 @@ pub async fn get_inbox_messages_report(
                 .eq_any(sigint_groups.clone()),
         );
 
+    let mut pagination_req = req.clone();
+    if period_end == ReportPeriodEnd::NonInclusive {
+        pagination_req.till_date_inclusive_ms = None;
+    }
     q = crate::rer_importer::inbox::query::get_pagination_filters(
         env,
-        req,
+        &pagination_req,
         q.clone(),
     )
     .await
     .c(h!())?;
+    if period_end == ReportPeriodEnd::NonInclusive {
+        let till = req
+            .till_date_inclusive_ms
+            .ok_or_else(|| AppError::BL {
+                msg: "Until date must be specified".to_string(),
+            })
+            .context(h!())?;
+        let till = dt_from_millis(till).context(h!())?;
+        q = match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+            InboxMessagesSortBy::IMSDatetime => {
+                q.filter(sigint_inbox_item::Column::Datetime.lt(till))
+            }
+            InboxMessagesSortBy::IMSTimestamp => {
+                q.filter(signal_message::Column::Timestamp.lt(till))
+            }
+        };
+    }
     q = crate::rer_importer::inbox::query::get_bl_ordering_select(
         req,
         q.clone(),
@@ -259,9 +330,15 @@ pub async fn get_inbox_messages_report(
         "[get_inbox_messages_report] {}: query completed",
         Utc::now()
     );
+    let callsign_item_ids = items_map.keys().copied().collect_vec();
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(&read_db, &callsign_item_ids)
+            .await?;
 
     let mut res: Vec<(i64, Option<(f64, f64)>, InboxMessage)> = vec![];
     for (id, m) in items_map {
+        let callsigns =
+            normalized_callsigns.remove(&id).unwrap_or_default().primary;
         let locations_w_coords = match pelengs_map.get(&id) {
             None => vec![(m.location.clone(), None, None)],
             Some(pelengs) => {
@@ -289,10 +366,7 @@ pub async fn get_inbox_messages_report(
                     date: m.date.clone(),
                     time: m.time.clone(),
                     freq: m.freq.clone(),
-                    callsigns: serde_json::from_value(
-                        m.callsigns.clone().unwrap_or_default(),
-                    )
-                    .unwrap_or_else(|_| vec![]),
+                    callsigns: callsigns.clone(),
                     checked: m.checked.unwrap_or(false),
                     important: false,
                     bookmarked: false,
@@ -498,7 +572,7 @@ pub async fn report_xlsx_kind_pelengs1(
             .write_string(
                 i,
                 3,
-                format!("{}, {}", &time, &date.format("%d.%m.%y")),
+                format!("{}, {}", time, date.format("%d.%m.%y")),
             )
             .context(h!())?;
         // Resolve human-readable sender name (written as the last column)
@@ -623,7 +697,6 @@ mod tests {
                 date: None,
                 time: None,
                 freq: None,
-                callsigns: None,
                 checked: None,
                 unit: None,
                 location: None,
@@ -636,7 +709,6 @@ mod tests {
                 date: None,
                 time: None,
                 freq: None,
-                callsigns: None,
                 checked: None,
                 unit: None,
                 location: None,
@@ -724,6 +796,16 @@ mod tests {
             &login.id,
             &env,
             &InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    (dt - chrono::Duration::days(1))
+                        .and_utc()
+                        .timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    (dt + chrono::Duration::days(1))
+                        .and_utc()
+                        .timestamp_millis(),
+                ),
                 nolimit: Some(true),
                 ..Default::default()
             },

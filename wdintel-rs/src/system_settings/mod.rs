@@ -7,7 +7,8 @@ use crate::error::AppError;
 use crate::h;
 use crate::system_settings::types::{
     ActivateSystemSettingsReq, CreateSystemSettingsReq,
-    SystemSettingsCurrentRsp, SystemSettingsItem, SystemSettingsListRsp,
+    RerDutyTestReplayStatusRsp, SystemSettingsCurrentRsp, SystemSettingsItem,
+    SystemSettingsListRsp,
 };
 use crate::types::Env;
 use crate::types::ShortContext;
@@ -75,6 +76,8 @@ fn map_system_settings_item(
         rer_duty_test_since_ms: settings.rer_duty_test_since_ms,
         rer_duty_test_limit: settings.rer_duty_test_limit,
         rer_duty_poll_interval_sec: settings.rer_duty_poll_interval_sec,
+        rer_duty_test_replay_interval_sec: settings
+            .rer_duty_test_replay_interval_sec,
         created_at: settings.created_at.and_utc().timestamp_millis(),
         updated_at: settings.updated_at.and_utc().timestamp_millis(),
         updated_by_login_id: settings
@@ -102,6 +105,8 @@ fn map_system_settings_item(
         report_chunking_hours: i64::from(settings.report_chunking_hours),
         limit_big_reports: settings.limit_big_reports,
         enable_audio_transcription: settings.enable_audio_transcription,
+        show_classic_duty: settings.show_classic_duty,
+        show_classic_analysis: settings.show_classic_analysis,
     })
 }
 
@@ -349,6 +354,16 @@ where
         .unwrap_or(false))
 }
 
+pub async fn orbit_data_hidden<C>(dbx: &C) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let settings = get_active_system_settings(dbx).await.c(h!())?;
+    Ok(settings
+        .map(|settings| settings.hide_orbit_data)
+        .unwrap_or(false))
+}
+
 pub async fn sigint_comment_parsing_enabled<C>(
     dbx: &C,
 ) -> Result<bool, AppError>
@@ -489,10 +504,43 @@ fn validate_report_generation_settings(
     Ok(())
 }
 
+fn validate_rer_duty_test_replay_settings(
+    req: &CreateSystemSettingsReq,
+) -> Result<(), AppError> {
+    if !req.rer_duty_test_enabled {
+        return Ok(());
+    }
+    if req.rer_duty_test_since_ms <= 0 {
+        return Err(AppError::BL {
+            msg: "Вкажіть дату старту тестових повідомлень".to_string(),
+        });
+    }
+    if !(1..=crate::config::RER_DUTY_TEST_REPLAY_SOURCE_MAX)
+        .contains(&req.rer_duty_test_limit)
+    {
+        return Err(AppError::BL {
+            msg: format!(
+                "Кількість тестових повідомлень має бути від 1 до {}",
+                crate::config::RER_DUTY_TEST_REPLAY_SOURCE_MAX
+            ),
+        });
+    }
+    if !(1..=crate::config::RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX)
+        .contains(&req.rer_duty_test_replay_interval_sec)
+    {
+        return Err(AppError::BL {
+            msg: "Інтервал тестових повідомлень має бути від однієї секунди до одного року"
+                .to_string(),
+        });
+    }
+    Ok(())
+}
+
 fn system_settings_active_model(
     login: &uuid::Uuid,
     req: &CreateSystemSettingsReq,
     echo_im_sync_cursor: EchoImSyncCursor,
+    hide_orbit_data: bool,
 ) -> Result<system_settings::ActiveModel, AppError> {
     Ok(system_settings::ActiveModel {
         id: sea_orm::ActiveValue::NotSet,
@@ -500,12 +548,13 @@ fn system_settings_active_model(
             req.rer_analysis_units_exact_match_only_default
         ),
         rer_duty_test_enabled: Set(req.rer_duty_test_enabled),
-        rer_duty_insert_historical_interceptions: Set(
-            req.rer_duty_insert_historical_interceptions
-        ),
+        rer_duty_insert_historical_interceptions: Set(req.rer_duty_test_enabled),
         rer_duty_test_since_ms: Set(req.rer_duty_test_since_ms),
         rer_duty_test_limit: Set(req.rer_duty_test_limit),
         rer_duty_poll_interval_sec: Set(req.rer_duty_poll_interval_sec.max(1)),
+        rer_duty_test_replay_interval_sec: Set(
+            req.rer_duty_test_replay_interval_sec
+        ),
         created_at: sea_orm::ActiveValue::NotSet,
         updated_at: sea_orm::ActiveValue::NotSet,
         echo_im_sync_since: Set(echo_im_sync_cursor.created_at),
@@ -517,6 +566,8 @@ fn system_settings_active_model(
         short_url_enabled: Set(req.short_url_enabled),
         support_non_rer_interceptions: Set(req.support_non_rer_interceptions),
         default_neo_analysis: Set(req.default_neo_analysis),
+        show_classic_duty: Set(req.show_classic_duty),
+        show_classic_analysis: Set(req.show_classic_analysis),
         autofix_echoim_missing_messages: Set(
             req.autofix_echoim_missing_messages
         ),
@@ -544,6 +595,7 @@ fn system_settings_active_model(
             .c(h!())?),
         limit_big_reports: Set(req.limit_big_reports),
         enable_audio_transcription: Set(req.enable_audio_transcription),
+        hide_orbit_data: Set(hide_orbit_data),
     })
 }
 
@@ -582,14 +634,24 @@ async fn create_system_settings_for_login(
 ) -> Result<system_settings::Model, AppError> {
     validate_peleng_bounds(req)?;
     validate_report_generation_settings(req)?;
+    validate_rer_duty_test_replay_settings(req)?;
     let txn = dbx.begin().await.c(h!())?;
     let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
+    let hide_orbit_data = get_active_system_settings(&txn)
+        .await
+        .c(h!())?
+        .map(|settings| settings.hide_orbit_data)
+        .unwrap_or(false);
     deactivate_active_settings(&txn, login).await.c(h!())?;
-    let created =
-        system_settings_active_model(login, req, echo_im_sync_cursor)?
-            .insert(&txn)
-            .await
-            .c(h!())?;
+    let created = system_settings_active_model(
+        login,
+        req,
+        echo_im_sync_cursor,
+        hide_orbit_data,
+    )?
+    .insert(&txn)
+    .await
+    .c(h!())?;
     if created.do_not_store_duplicate_echoim_failures {
         crate::messenger::missing_message::delete_duplicate_missing_messages(
             &txn,
@@ -609,6 +671,11 @@ async fn activate_system_settings_for_login(
 ) -> Result<system_settings::Model, AppError> {
     let txn = dbx.begin().await.c(h!())?;
     let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
+    let hide_orbit_data = get_active_system_settings(&txn)
+        .await
+        .c(h!())?
+        .map(|settings| settings.hide_orbit_data)
+        .unwrap_or(false);
     deactivate_active_settings(&txn, login).await.c(h!())?;
 
     let settings = system_settings::Entity::find_by_id(id)
@@ -624,6 +691,7 @@ async fn activate_system_settings_for_login(
     settings.echo_im_sync_since = Set(echo_im_sync_cursor.created_at);
     settings.echo_im_sync_since_inbox_message_id =
         Set(echo_im_sync_cursor.inbox_message_id);
+    settings.hide_orbit_data = Set(hide_orbit_data);
     let settings = settings.update(&txn).await.c(h!())?;
     if settings.do_not_store_duplicate_echoim_failures {
         crate::messenger::missing_message::delete_duplicate_missing_messages(
@@ -655,6 +723,8 @@ pub async fn current_system_settings(
             rer_duty_test_since_ms: settings.rer_duty_test_since_ms,
             rer_duty_test_limit: settings.rer_duty_test_limit,
             rer_duty_poll_interval_sec: settings.rer_duty_poll_interval_sec,
+            rer_duty_test_replay_interval_sec: settings
+                .rer_duty_test_replay_interval_sec,
             short_url_enabled: settings.short_url_enabled,
             support_non_rer_interceptions: settings
                 .support_non_rer_interceptions,
@@ -678,6 +748,9 @@ pub async fn current_system_settings(
             report_chunking_hours: i64::from(settings.report_chunking_hours),
             limit_big_reports: settings.limit_big_reports,
             enable_audio_transcription: settings.enable_audio_transcription,
+            show_classic_duty: settings.show_classic_duty,
+            show_classic_analysis: settings.show_classic_analysis,
+            hide_orbit_data: settings.hide_orbit_data,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -687,6 +760,7 @@ pub async fn current_system_settings(
             rer_duty_test_since_ms: 0,
             rer_duty_test_limit: 1,
             rer_duty_poll_interval_sec: 1,
+            rer_duty_test_replay_interval_sec: 1,
             short_url_enabled: false,
             support_non_rer_interceptions: false,
             default_neo_analysis: false,
@@ -704,8 +778,20 @@ pub async fn current_system_settings(
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT,
             limit_big_reports: false,
             enable_audio_transcription: false,
+            show_classic_duty: true,
+            show_classic_analysis: true,
+            hide_orbit_data: false,
         },
     }))
+}
+
+#[post("/api/admin/system-settings/rer-duty-test-replay/status")]
+pub async fn rer_duty_test_replay_status(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<RerDutyTestReplayStatusRsp>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    Ok(Json(worker::rer_duty_test_replay_status(&env.dbx).await?))
 }
 
 #[post("/api/admin/system-settings/list")]
@@ -861,7 +947,7 @@ mod tests {
         let active_cursor = old_ts();
         let active_cursor_id = 42;
         let stale_cursor = active_cursor - chrono::TimeDelta::hours(1);
-        insert_settings_with_cursor(
+        let active = insert_settings_with_cursor(
             &env.dbx,
             EchoImSyncCursor {
                 created_at: active_cursor,
@@ -870,6 +956,9 @@ mod tests {
             false,
         )
         .await;
+        let mut active = active.into_active_model();
+        active.hide_orbit_data = Set(true);
+        active.update(&env.dbx).await.unwrap();
         let inactive = insert_settings(&env.dbx, stale_cursor, true).await;
         let login_id = test_login_id(&env).await;
 
@@ -881,6 +970,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(created.echo_im_sync_since, active_cursor);
+        assert!(created.hide_orbit_data);
         assert_eq!(
             created.echo_im_sync_since_inbox_message_id,
             active_cursor_id
@@ -905,6 +995,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(activated.echo_im_sync_since, current_cursor.created_at);
+        assert!(activated.hide_orbit_data);
         assert_eq!(
             activated.echo_im_sync_since_inbox_message_id,
             current_cursor.inbox_message_id
@@ -987,6 +1078,21 @@ mod tests {
         assert!(validate_report_generation_settings(&req).is_err());
     }
 
+    #[test]
+    fn rer_duty_test_replay_settings_require_a_valid_source_and_interval() {
+        let mut req = settings_req(false);
+        req.rer_duty_test_enabled = true;
+
+        assert!(validate_rer_duty_test_replay_settings(&req).is_err());
+
+        req.rer_duty_test_since_ms = 1;
+        req.rer_duty_test_replay_interval_sec = 0;
+        assert!(validate_rer_duty_test_replay_settings(&req).is_err());
+
+        req.rer_duty_test_replay_interval_sec = 1;
+        assert!(validate_rer_duty_test_replay_settings(&req).is_ok());
+    }
+
     fn old_ts() -> chrono::NaiveDateTime {
         chrono::DateTime::<chrono::Utc>::from_timestamp_micros(
             Utc::now().timestamp_micros(),
@@ -1004,6 +1110,7 @@ mod tests {
             rer_duty_test_since_ms: 0,
             rer_duty_test_limit: 1,
             rer_duty_poll_interval_sec: 1,
+            rer_duty_test_replay_interval_sec: 1,
             short_url_enabled,
             support_non_rer_interceptions: false,
             default_neo_analysis: false,
@@ -1022,6 +1129,8 @@ mod tests {
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT,
             limit_big_reports: false,
             enable_audio_transcription: false,
+            show_classic_duty: true,
+            show_classic_analysis: true,
         }
     }
 
@@ -1061,6 +1170,7 @@ mod tests {
             rer_duty_test_since_ms: Set(0),
             rer_duty_test_limit: Set(1),
             rer_duty_poll_interval_sec: Set(1),
+            rer_duty_test_replay_interval_sec: Set(1),
             rer_duty_insert_historical_interceptions: Set(false),
             short_url_enabled: Set(false),
             support_non_rer_interceptions: Set(false),
@@ -1081,6 +1191,9 @@ mod tests {
             ),
             limit_big_reports: Set(false),
             enable_audio_transcription: Set(false),
+            show_classic_duty: Set(true),
+            show_classic_analysis: Set(true),
+            hide_orbit_data: Set(false),
         }
         .insert(dbx)
         .await

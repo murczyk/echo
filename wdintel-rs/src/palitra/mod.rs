@@ -1936,6 +1936,10 @@ async fn render_created_palitra_response(
                 .await
                 .c(h!())?
         };
+    let access_login_names =
+        crate::users::login_names_by_ids(dbx, access_logins.clone())
+            .await
+            .c(h!())?;
     let author = match palitra.author_login_id {
         Some(author_login_id) => {
             crate::users::login_names_by_ids(dbx, vec![author_login_id])
@@ -1975,7 +1979,16 @@ async fn render_created_palitra_response(
         access_organism_ids,
         access_logins: access_logins
             .into_iter()
-            .map(|login_id| login_id.to_string())
+            .map(|login_id| {
+                let login = access_login_names
+                    .get(&login_id)
+                    .cloned()
+                    .unwrap_or_else(|| login_id.to_string());
+                PalitraAccessLogin {
+                    id: login_id.to_string(),
+                    login,
+                }
+            })
             .collect(),
     })
 }
@@ -1997,6 +2010,14 @@ async fn ensure_palitra_permissions(
 
     let is_admin = is_palitra_admin(env, login).await.c(h!())?;
     let is_rer = has_role_or_false(env, login, "Rer").await.c(h!())?;
+    let caller_login_name = if is_rer {
+        crate::users::login_names_by_ids(&env.dbx, vec![*login])
+            .await
+            .c(h!())?
+            .remove(login)
+    } else {
+        None
+    };
 
     match access {
         PalitraAccess::ByLogins { logins } => {
@@ -2008,6 +2029,7 @@ async fn ensure_palitra_permissions(
             }
             let all_self = logins.iter().all(|login_id| {
                 Uuid::parse_str(login_id).ok().as_ref() == Some(login)
+                    || caller_login_name.as_deref() == Some(login_id.as_str())
             });
             if !all_self {
                 bail!("Rer may only manage palitra scoped to own login");

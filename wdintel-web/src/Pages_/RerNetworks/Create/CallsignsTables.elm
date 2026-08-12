@@ -1908,7 +1908,7 @@ callsignCreateSidebarContent shared model _ =
                                 unitMenu =
                                     case shared.masterUnits of
                                         Success units ->
-                                            Dict.values units |> List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
+                                            Dict.values units |> List.filter .active |> List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
 
                                         _ ->
                                             []
@@ -2245,7 +2245,7 @@ editCallsignSidebarContent shared model _ =
                                 unitMenu =
                                     case shared.masterUnits of
                                         Success units ->
-                                            Dict.values units |> List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
+                                            Dict.values units |> List.filter .active |> List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
 
                                         _ ->
                                             []

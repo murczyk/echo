@@ -1,5 +1,5 @@
 [Unit]
-Description=wdintel-rs background workers
+Description=echo wdintel-rs background workers
 
 [Service]
 ExecStart=/usr/bin/wdintel-rs --mode=live bgworker

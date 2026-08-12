@@ -283,6 +283,7 @@ function buildProps(
         metadata: 'idle',
       },
       aorEntries: [],
+      cyberEchoEnabled: false,
       includeOnlyNewFreqs: false,
       loadedSavedFilter: null,
       messagesOverallCount: null,
@@ -302,6 +303,7 @@ function buildProps(
       savedFilters: [],
       tagsMap: {},
       tagsOrder: [],
+      unitsMap: {},
       applySavedFilter: vi.fn(),
       deleteLoadedSavedFilter: vi.fn(),
       renameExistingSavedFilter: vi.fn(),
@@ -388,6 +390,15 @@ describe('AnalysisFiltersPanel', () => {
 
     const counter = view.container.querySelector('[role="status"]');
     expect(counter?.textContent).toBe('— з —');
+  });
+
+  it('shows the device filter only when Cyber Echo is enabled', async () => {
+    const disabled = await renderComponent(buildProps());
+    const enabled = await renderComponent(buildProps({ cyberEchoEnabled: true }));
+    rendered.push(disabled, enabled);
+
+    expect(disabled.container.textContent).not.toContain('Пристрої');
+    expect(enabled.container.textContent).toContain('Пристрої');
   });
 
   it('passes Elm-parity disabled states into the frequency and network filters', async () => {
@@ -981,12 +992,12 @@ describe('AnalysisFiltersPanel', () => {
       .find((callProps) => callProps.label === 'Позивні');
 
     expect(callsignsField?.options).toEqual([
-      { value: 'ALPHA', label: 'ALPHA', count: 2, values: ['alpha', 'Alpha', 'ALPHA'] },
+      { value: 'alpha', label: 'ALPHA', count: 2, values: ['alpha'] },
     ]);
     expect(callsignsField?.value).toEqual(['Bravo']);
 
     callsignsField?.onChange(['alpha', 'ALPHA']);
-    expect(updateQueryState).toHaveBeenCalledWith({ callsignsSelected: ['alpha', 'ALPHA'] });
+    expect(updateQueryState).toHaveBeenCalledWith({ callsignsSelected: ['alpha'] });
   });
 
   it('wires checkbox and switch changes into the analysis callbacks', async () => {

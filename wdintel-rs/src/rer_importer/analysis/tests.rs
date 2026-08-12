@@ -3,10 +3,11 @@ use crate::functest::tests::*;
 use crate::h;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::*;
+use crate::{new_pg_runtime_pool_from_config, PgRuntimePoolRole};
 use actix_web::web::{Data, Json};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
-    FromQueryResult, QueryFilter,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
+    EntityTrait, FromQueryResult, QueryFilter,
 };
 use serial_test::serial;
 
@@ -113,6 +114,7 @@ fn mk_analysis_stats_req(
         selected_callsigns: None,
         selected_units: None,
         selected_locations: None,
+        selected_device_names: None,
         selected_aors: None,
         or_with_extended_form: None,
         or_bookmarked: None,
@@ -904,6 +906,39 @@ async fn fetch_analytics_aor_counts_for_req(
         count: i64,
     }
 
+    env.dbx
+        .execute_unprepared(
+            r#"
+CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived;
+CREATE OR REPLACE VIEW echo_clickhouse_derived.message_aor_link AS
+SELECT
+  message_group.signal_message_id AS sigint_inbox_item_id,
+  group_aor.aor_id,
+  aor.left_bound,
+  aor.right_bound
+FROM signal_message_group AS message_group
+INNER JOIN signal_group_aor AS group_aor
+  ON group_aor.master_key = message_group.group_master_key
+INNER JOIN area_of_responsibility AS aor
+  ON aor.id = group_aor.aor_id
+UNION ALL
+SELECT
+  inbox_network.sigint_inbox_item_id,
+  network_aor.aor_id,
+  aor.left_bound,
+  aor.right_bound
+FROM sigint_inbox_item_network AS inbox_network
+INNER JOIN sigint_network AS network
+  ON network.id = inbox_network.sigint_network_id
+INNER JOIN sigint_network_aor AS network_aor
+  ON network_aor.network_id = network.id
+INNER JOIN area_of_responsibility AS aor
+  ON aor.id = network_aor.aor_id
+WHERE NOT network.deleted
+"#,
+        )
+        .await
+        .context(h!())?;
     let (login, master_keys) = analysis_login_and_master_keys(env).await?;
     let statement = stats::build_aors_analytics_query(
         req,
@@ -947,12 +982,12 @@ async fn fetch_analytics_network_count_for_req(
         crate::utils::dt_from_millis(req.till_date_noninclusive_ms)?,
         master_keys,
     )?;
-    assert!(statement.sql.contains("UNION ALL"));
-    assert!(statement.sql.contains("COUNT(DISTINCT network_id)"));
-    assert!(!statement.sql.contains("SELECT DISTINCT"));
-    assert!(!statement.sql.contains("WITH "));
-    assert!(!statement.sql.contains("FROM \"login\""));
-    assert!(!statement.sql.contains("JOIN \"login\""));
+    assert!(statement.sql.find("UNION ALL").is_some());
+    assert!(statement.sql.find("COUNT(DISTINCT network_id)").is_some());
+    assert!(statement.sql.find("SELECT DISTINCT").is_none());
+    assert!(statement.sql.find("WITH ").is_none());
+    assert!(statement.sql.find("FROM \"login\"").is_none());
+    assert!(statement.sql.find("JOIN \"login\"").is_none());
     Ok(AnalyticsCountQueryResult::find_by_statement(statement)
         .one(&env.dbx)
         .await
@@ -1018,10 +1053,10 @@ async fn fetch_analytics_tag_count_for_req(
         master_keys,
     )?;
     let statement = query.build(DbBackend::Postgres);
-    assert!(statement.sql.contains("COUNT(DISTINCT"));
-    assert!(!statement.sql.contains("owner_organism_id"));
-    assert!(!statement.sql.contains("FROM \"login\""));
-    assert!(!statement.sql.contains("JOIN \"login\""));
+    assert!(statement.sql.find("COUNT(DISTINCT").is_some());
+    assert!(statement.sql.find("owner_organism_id").is_none());
+    assert!(statement.sql.find("FROM \"login\"").is_none());
+    assert!(statement.sql.find("JOIN \"login\"").is_none());
     Ok(query
         .into_model::<AnalyticsCountQueryResult>()
         .one(&env.dbx)
@@ -1123,9 +1158,20 @@ async fn set_message_callsigns(
         .await
         .context(h!())?
         .context(h!())?;
-    let mut inbox_item = inbox_item.into_active_model();
-    inbox_item.callsigns = Set(Some(callsigns));
-    inbox_item.update(db).await.context(h!())?;
+    let callsigns =
+        serde_json::from_value::<Vec<String>>(callsigns).context(h!())?;
+    let actor_id = crate::users::system_login_id(db).await.context(h!())?;
+    crate::inbox::callsigns::sync(
+        db,
+        inbox_item.id,
+        crate::inbox::callsigns::InboxItemCallsigns {
+            primary: callsigns,
+            alg2: Vec::new(),
+        },
+        actor_id,
+    )
+    .await
+    .context(h!())?;
     Ok(())
 }
 
@@ -1200,9 +1246,505 @@ fn filter_selected_metadata_without_metadata_ignores_concrete_filters() {
 
     let sql = q.build(DbBackend::Postgres).to_string();
 
-    assert!(sql.contains("NOT EXISTS"));
-    assert!(!sql.contains("sender_id"));
-    assert!(!sql.contains("sender_name"));
+    assert!(str::contains(&sql, "NOT EXISTS"));
+    assert!(!str::contains(&sql, "sender_id"));
+    assert!(!str::contains(&sql, "sender_name"));
+}
+
+#[test]
+fn postgres_tags_query_filters_inbox_ids_before_joining_result_tags() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_units = Some(vec!["unit".to_string()]);
+    req.without_model_tags = Some(true);
+    let login_id = uuid::Uuid::nil();
+    let query = stats::build_tags_query(
+        &req,
+        &login_id,
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+    )
+    .unwrap();
+    let sql = DbBackend::Postgres.build(&query).sql;
+    assert!(
+        sql.starts_with("WITH \"matching_unit_network_ids\""),
+        "{sql}"
+    );
+    assert!(
+        str::contains(&sql, ", \"matching_unit_inbox_item_ids\" AS"),
+        "{sql}"
+    );
+    assert_eq!(str::matches(&sql, "MATERIALIZED").count(), 3, "{sql}");
+    assert!(str::contains(&sql, " UNION ALL "), "{sql}");
+    assert!(
+        str::contains(&sql, ", \"filtered_inbox_items\" AS"),
+        "{sql}"
+    );
+    assert!(str::contains(&sql, "MATERIALIZED ("));
+    let filtered_ids_start = sql
+        .find("IN (SELECT \"filtered_inbox_items\".\"id\"")
+        .expect("missing materialized inbox-ID reference");
+    let filtered_ids_sql = &sql[filtered_ids_start..];
+
+    assert!(str::contains(
+        &sql,
+        "FROM \"sigint_inbox_item_tag\" INNER JOIN \"tag\""
+    ));
+    assert!(!str::contains(
+        filtered_ids_sql,
+        "JOIN \"sigint_inbox_item_tag\""
+    ));
+    assert!(
+        !str::contains(filtered_ids_sql, "\"selected_unit_inbox_network\""),
+        "{filtered_ids_sql}"
+    );
+    assert_eq!(
+        str::matches(&sql, "\"sigint_inbox_item_tag\".\"model\" IS NULL")
+            .count(),
+        0
+    );
+}
+
+#[test]
+fn analytics_tags_query_keeps_flat_result_tag_join() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_units = Some(vec!["unit".to_string()]);
+    let login_id = uuid::Uuid::nil();
+    let query = stats::build_tags_analytics_filtered_query(
+        &req,
+        &login_id,
+        &[1],
+        &[],
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(str::contains(&sql, "INNER JOIN \"sigint_inbox_item_tag\""));
+    assert!(!str::contains(&sql, "WITH \"filtered_inbox_items\""));
+    assert!(!str::contains(&sql, "WITH \"matching_unit_network_ids\""));
+    assert!(!str::contains(
+        &sql,
+        "WITH \"matching_unit_inbox_item_ids\""
+    ));
+    assert!(
+        str::contains(&sql, "\"selected_unit_inbox_network\""),
+        "{sql}"
+    );
+}
+
+#[test]
+fn analytics_tags_selected_networks_use_flat_joins() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let query = stats::build_tags_analytics_filtered_query(
+        &req,
+        &uuid::Uuid::nil(),
+        &[1],
+        &[],
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(
+        str::contains(
+            &sql,
+            "INNER JOIN \"sigint_inbox_item_network\" AS \
+             \"analytics_network_filter_link\""
+        ),
+        "{sql}"
+    );
+    assert!(
+        str::contains(
+            &sql,
+            "INNER JOIN \"sigint_network\" AS \"analytics_network_filter\""
+        ),
+        "{sql}"
+    );
+    assert!(
+        str::contains(
+            &sql,
+            "\"analytics_network_filter_link\".\"sigint_network_id\" IN (1, 2)"
+        ),
+        "{sql}"
+    );
+    assert!(!str::contains(&sql, "\"iin_network_filter\""), "{sql}");
+}
+
+#[test]
+fn postgres_tags_selected_networks_keep_correlated_filter() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let query = stats::build_tags_query(
+        &req,
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+    )
+    .unwrap();
+    let sql = query.to_string(PostgresQueryBuilder);
+
+    assert!(str::contains(&sql, "\"iin_network_filter\""), "{sql}");
+    assert!(
+        !str::contains(&sql, "\"analytics_network_filter_link\""),
+        "{sql}"
+    );
+}
+
+#[test]
+fn analytics_freqs_selected_networks_use_scoped_flat_joins() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let scope = AnalyticsMessageIdScope::Inclusive {
+        min_id: 10,
+        max_id: 20,
+    };
+    let query = stats::build_freqs_query(
+        &req,
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        Some(&scope),
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(
+        str::contains(
+            &sql,
+            "INNER JOIN \"sigint_inbox_item_network\" AS \
+             \"analytics_network_filter_link\""
+        ),
+        "{sql}"
+    );
+    assert!(
+        str::contains(
+            &sql,
+            "\"analytics_network_filter_link\".\"sigint_network_id\" IN (1, 2)"
+        ),
+        "{sql}"
+    );
+    assert!(str::contains(
+        &sql,
+        "\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20"
+    ));
+    assert!(str::contains(
+        &sql,
+        "\"signal_message\".\"id\" BETWEEN 10 AND 20"
+    ));
+    assert!(str::contains(
+        &sql,
+        "\"analytics_message_access\".\"signal_message_id\" BETWEEN 10 AND 20"
+    ));
+    assert!(!str::contains(&sql, "\"iin_network_filter\""), "{sql}");
+}
+
+#[test]
+fn postgres_freqs_selected_networks_keep_correlated_filter() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let query = stats::build_freqs_query(
+        &req,
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        None,
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(str::contains(&sql, "\"iin_network_filter\""), "{sql}");
+    assert!(
+        !str::contains(&sql, "\"analytics_network_filter_link\""),
+        "{sql}"
+    );
+}
+
+#[test]
+fn analytics_groups_selected_networks_use_scoped_flat_joins() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let scope = AnalyticsMessageIdScope::Inclusive {
+        min_id: 10,
+        max_id: 20,
+    };
+    let query = stats::build_groups_query(
+        &req,
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        Some(&scope),
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(str::contains(
+        &sql,
+        "INNER JOIN \"sigint_inbox_item_network\" AS \
+         \"analytics_network_filter_link\""
+    ));
+    assert!(str::contains(
+        &sql,
+        "\"analytics_network_filter_link\".\"sigint_network_id\" IN (1, 2)"
+    ));
+    assert!(str::contains(
+        &sql,
+        "\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20"
+    ));
+    assert!(str::contains(
+        &sql,
+        "\"signal_message\".\"id\" BETWEEN 10 AND 20"
+    ));
+    assert!(str::contains(
+        &sql,
+        "\"signal_message_group\".\"signal_message_id\" BETWEEN 10 AND 20"
+    ));
+    assert!(!str::contains(&sql, "\"iin_network_filter\""), "{sql}");
+}
+
+#[test]
+fn postgres_groups_selected_networks_keep_correlated_filter() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let query = stats::build_groups_query(
+        &req,
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        None,
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(str::contains(&sql, "\"iin_network_filter\""), "{sql}");
+    assert!(
+        !str::contains(&sql, "\"analytics_network_filter_link\""),
+        "{sql}"
+    );
+}
+
+#[test]
+fn analytics_networks_query_scopes_both_union_arms() {
+    let req = mk_analysis_stats_req(0, 1);
+    let scope = AnalyticsMessageIdScope::Inclusive {
+        min_id: 10,
+        max_id: 20,
+    };
+    let statement = stats::build_networks_analytics_query_with_scope(
+        &req,
+        &uuid::Uuid::nil(),
+        &[],
+        &[],
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        false,
+        Some(&scope),
+    )
+    .unwrap();
+    let sql = statement.sql;
+
+    assert!(str::contains(&sql, "UNION ALL"), "{sql}");
+    assert!(
+        str::matches(&sql, "\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20")
+            .count()
+            >= 2,
+        "{sql}"
+    );
+    assert!(
+        str::matches(&sql, "\"signal_message\".\"id\" BETWEEN 10 AND 20")
+            .count()
+            >= 2,
+        "{sql}"
+    );
+    assert!(
+        str::matches(
+            &sql,
+            "\"signal_message_group\".\"signal_message_id\" BETWEEN 10 AND 20"
+        )
+        .count()
+            >= 2,
+        "{sql}"
+    );
+    assert!(str::contains(
+        &sql,
+        "\"analytics_linked_network_link\".\"sigint_inbox_item_id\" \
+         BETWEEN 10 AND 20"
+    ));
+    assert!(
+        str::contains(
+            &sql,
+            "\"echo_clickhouse_derived\".\"message_network_link\" \
+             AS \"analytics_linked_network_link\""
+        ),
+        "{sql}"
+    );
+    assert!(
+        str::contains(
+            &sql,
+            "JOIN \"signal_group\" AS \"analytics_frequency_group\""
+        ),
+        "{sql}"
+    );
+    assert!(
+        str::contains(
+            &sql,
+            "JOIN \"signal_group\" AS \"analytics_linked_group\""
+        ),
+        "{sql}"
+    );
+    assert!(
+        !str::contains(&sql, "JOIN (SELECT \"signal_group\""),
+        "{sql}"
+    );
+}
+
+#[test]
+fn analytics_group_activity_query_is_bounded_and_aggregated() {
+    let scope = AnalyticsMessageIdScope::From(10);
+    let query = stats::build_group_activity_stats_query(
+        vec!["group".to_string()],
+        test_dt(2026, 1, 7, 0, 0),
+        test_dt(2026, 1, 1, 0, 0),
+        &scope,
+    );
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(str::contains(&sql, "COUNT(*) FILTER (WHERE"), "{sql}");
+    assert!(
+        str::contains(&sql, "\"sigint_inbox_item\".\"id\" >= 10"),
+        "{sql}"
+    );
+    assert!(
+        str::contains(&sql, "\"signal_message\".\"id\" >= 10"),
+        "{sql}"
+    );
+    assert!(
+        str::contains(
+            &sql,
+            "\"signal_message_group\".\"signal_message_id\" >= 10"
+        ),
+        "{sql}"
+    );
+}
+
+#[test]
+fn analytics_senders_selected_networks_use_scoped_flat_joins() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let scope = AnalyticsMessageIdScope::Inclusive {
+        min_id: 10,
+        max_id: 20,
+    };
+    let query = stats::build_sender_breakdown_query(
+        &Json(req),
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        Some(&scope),
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(str::contains(
+        &sql,
+        "INNER JOIN \"sigint_inbox_item_network\" AS \
+         \"analytics_network_filter_link\""
+    ));
+    assert!(str::contains(
+        &sql,
+        "\"analytics_network_filter_link\".\"sigint_network_id\" IN (1, 2)"
+    ));
+    assert!(str::contains(
+        &sql,
+        "\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20"
+    ));
+    assert!(str::contains(
+        &sql,
+        "\"signal_message\".\"id\" BETWEEN 10 AND 20"
+    ));
+    assert!(str::contains(
+        &sql,
+        "\"signal_message_group\".\"signal_message_id\" BETWEEN 10 AND 20"
+    ));
+    assert!(!str::contains(&sql, "\"iin_network_filter\""), "{sql}");
+    assert!(
+        !str::contains(&sql, "FROM \"signal_message_group\""),
+        "{sql}"
+    );
+}
+
+#[test]
+fn postgres_senders_selected_networks_keep_correlated_filter() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let query = stats::build_sender_breakdown_query(
+        &Json(req),
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        None,
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(str::contains(&sql, "\"iin_network_filter\""), "{sql}");
+    assert!(
+        !str::contains(&sql, "\"analytics_network_filter_link\""),
+        "{sql}"
+    );
+    assert!(
+        !str::contains(&sql, "FROM \"signal_message_group\""),
+        "{sql}"
+    );
+}
+
+#[test]
+fn postgres_tags_exact_unit_query_only_uses_linked_candidates() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_units = Some(vec!["unit".to_string()]);
+    req.units_exact_match_only = Some(true);
+    let query = stats::build_tags_query(
+        &req,
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+    )
+    .unwrap();
+    let sql = DbBackend::Postgres.build(&query).sql;
+    let matching_ids_start = sql
+        .find("\"matching_unit_inbox_item_ids\" AS")
+        .expect("missing matching inbox-ID CTE");
+    let filtered_ids_start = sql
+        .find(", \"filtered_inbox_items\" AS")
+        .expect("missing filtered inbox-ID CTE");
+    let matching_ids_sql = &sql[matching_ids_start..filtered_ids_start];
+
+    assert!(
+        str::contains(matching_ids_sql, "\"selected_linked_unit_inbox_item\""),
+        "{matching_ids_sql}"
+    );
+    assert!(
+        !str::contains(matching_ids_sql, "\"selected_header_unit_inbox_item\""),
+        "{matching_ids_sql}"
+    );
+    assert!(
+        !str::contains(matching_ids_sql, "UNION ALL"),
+        "{matching_ids_sql}"
+    );
 }
 
 #[tokio::test]
@@ -1331,6 +1873,53 @@ async fn rer_analysis_group_stats_hide_unrelated_and_secret_groups() {
 
 #[tokio::test]
 #[serial]
+async fn rer_analysis_facets_ignore_their_own_selected_values() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let req = analysis_stats_req0(&fixture);
+
+    let groups = fetch_group_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap();
+    let mut selected_req = req.clone();
+    selected_req.selected_groups =
+        groups.keys().next().cloned().map(|group| vec![group]);
+    assert_eq!(
+        fetch_group_counts_for_req(&fixture.env, &selected_req)
+            .await
+            .unwrap(),
+        groups
+    );
+
+    let sender_values = fetch_sender_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap();
+    let mut selected_req = req.clone();
+    selected_req.selected_senders = sender_values
+        .keys()
+        .next()
+        .cloned()
+        .map(|sender| vec![sender]);
+    assert_eq!(
+        fetch_sender_counts_for_req(&fixture.env, &selected_req)
+            .await
+            .unwrap(),
+        sender_values
+    );
+
+    let freqs = fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap();
+    let mut selected_req = req;
+    selected_req.selected_freqs =
+        freqs.keys().next().cloned().map(|freq| vec![freq]);
+    assert_eq!(
+        fetch_freq_counts_for_req(&fixture.env, &selected_req)
+            .await
+            .unwrap(),
+        freqs
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn collect_group_names_prefers_signal_group_over_whatsapp_name() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let alpha_key = fixture.alpha.signal_group.master_key.clone();
@@ -1384,9 +1973,10 @@ async fn collect_group_names_prefers_signal_group_over_whatsapp_name() {
             count: 1,
         },
     ];
-    let group_names = collect_group_names(&groups, &fixture.env.dbx, false)
-        .await
-        .unwrap();
+    let group_names =
+        collect_group_names(&groups, &fixture.env.dbx, false, None)
+            .await
+            .unwrap();
 
     let alpha_names = group_names
         .iter()
@@ -1792,7 +2382,7 @@ async fn rer_analysis_network_aor_match_does_not_show_group_option() {
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_without_network_filters_remove_networked_values() {
+async fn rer_analysis_without_network_filters_messages_but_not_network_facet() {
     let fixture = mk_aor_filter_fixture().await.unwrap();
     let db = &fixture.env.dbx;
 
@@ -1846,6 +2436,14 @@ async fn rer_analysis_without_network_filters_remove_networked_values() {
 
     let mut req = analysis_stats_req_for_aor_fixture(&fixture);
     req.selected_aors = Some(vec![fixture.aor_a.id]);
+    let network_counts = fetch_network_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap();
+    assert_eq!(
+        network_counts,
+        BTreeMap::from([(fixture.network_k.network.id, 1)])
+    );
+
     req.without_network = Some(true);
 
     assert_eq!(
@@ -1858,10 +2456,12 @@ async fn rer_analysis_without_network_filters_remove_networked_values() {
         fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
         BTreeMap::from([("906.1".to_string(), 1)])
     );
-    assert!(fetch_network_counts_for_req(&fixture.env, &req)
-        .await
-        .unwrap()
-        .is_empty());
+    assert_eq!(
+        fetch_network_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        network_counts
+    );
 
     req.selected_networks = Some(vec![fixture.network_k.network.id]);
     assert_eq!(
@@ -1878,10 +2478,12 @@ async fn rer_analysis_without_network_filters_remove_networked_values() {
         .await
         .unwrap()
         .is_empty());
-    assert!(fetch_network_counts_for_req(&fixture.env, &req)
-        .await
-        .unwrap()
-        .is_empty());
+    assert_eq!(
+        fetch_network_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        network_counts
+    );
 }
 
 #[tokio::test]
@@ -2092,8 +2694,7 @@ async fn rer_analysis_aor_dropdown_includes_group_and_network_aors() {
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_peleng_locations_filter_does_not_leak_unrelated_locations(
-) {
+async fn rer_analysis_peleng_location_filter_does_not_narrow_location_facet() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let db = &fixture.env.dbx;
 
@@ -2122,6 +2723,11 @@ async fn rer_analysis_peleng_locations_filter_does_not_leak_unrelated_locations(
     .unwrap();
 
     let mut req = analysis_stats_req0(&fixture);
+    let location_counts = fetch_location_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap();
+    assert!(location_counts.contains_key("Unrelated Town"));
+
     req.selected_locations = Some(vec!["Peleng Town".to_string()]);
     assert_eq!(
         fetch_selected_count_for_req(&fixture.env, &req)
@@ -2129,10 +2735,12 @@ async fn rer_analysis_peleng_locations_filter_does_not_leak_unrelated_locations(
             .unwrap(),
         0
     );
-    assert!(fetch_location_counts_for_req(&fixture.env, &req)
-        .await
-        .unwrap()
-        .is_empty());
+    assert_eq!(
+        fetch_location_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        location_counts
+    );
 
     req.include_peleng_locations = Some(true);
 
@@ -2142,15 +2750,17 @@ async fn rer_analysis_peleng_locations_filter_does_not_leak_unrelated_locations(
             .unwrap(),
         1
     );
-    let location_counts = fetch_location_counts_for_req(&fixture.env, &req)
-        .await
-        .unwrap();
-    assert!(!location_counts.contains_key("Unrelated Town"));
+    assert_eq!(
+        fetch_location_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        location_counts
+    );
 }
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_location_filter_recalculates_values() {
+async fn rer_analysis_location_filter_does_not_narrow_location_facet() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let db = &fixture.env.dbx;
     let location_a = crate::location::utils::format_location("Location A");
@@ -2182,6 +2792,10 @@ async fn rer_analysis_location_filter_recalculates_values() {
     .unwrap();
 
     let mut req = analysis_stats_req0(&fixture);
+    let location_counts = fetch_location_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap();
+
     req.selected_locations = Some(vec!["Location A".to_string()]);
 
     assert_eq!(
@@ -2198,7 +2812,7 @@ async fn rer_analysis_location_filter_recalculates_values() {
         fetch_location_counts_for_req(&fixture.env, &req)
             .await
             .unwrap(),
-        BTreeMap::from([("LOCATION A".to_string(), 1)])
+        location_counts
     );
 }
 
@@ -3746,7 +4360,7 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         .await
         .unwrap();
 
-    mk_analysis_message(
+    let msg_unknown = mk_analysis_message(
         db,
         "msg-unit-unknown",
         "944.3",
@@ -3757,6 +4371,28 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
     )
     .await
     .unwrap();
+    let unit_tag = mk_tag(
+        db,
+        tag::ActiveModel {
+            label: Set("Unit filter tag".to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    for message_id in [msg_etalon.id, msg_header_only.id, msg_unknown.id] {
+        mk_sigint_inbox_item_tag(
+            db,
+            sigint_inbox_item_tag::ActiveModel {
+                sigint_inbox_item_id: Set(message_id),
+                tag_id: Set(unit_tag.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
 
     let mut req = analysis_stats_req_for_aor_fixture(&fixture);
     req.selected_units = Some(vec!["Header Unit".to_string()]);
@@ -3771,6 +4407,10 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
         BTreeMap::from([("944.2".to_string(), 1)])
     );
+    assert_eq!(
+        fetch_tag_counts_for_req(&fixture.env, &req).await.unwrap(),
+        BTreeMap::from([(unit_tag.id, 1)])
+    );
 
     req.units_exact_match_only = Some(true);
     assert_eq!(
@@ -3780,6 +4420,10 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         0
     );
     assert!(fetch_freq_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(fetch_tag_counts_for_req(&fixture.env, &req)
         .await
         .unwrap()
         .is_empty());
@@ -3797,6 +4441,10 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
         BTreeMap::from([("944.1".to_string(), 1)])
     );
+    assert_eq!(
+        fetch_tag_counts_for_req(&fixture.env, &req).await.unwrap(),
+        BTreeMap::from([(unit_tag.id, 1)])
+    );
 
     let mut req = analysis_stats_req_for_aor_fixture(&fixture);
     req.selected_units = Some(vec!["Не визначено".to_string()]);
@@ -3809,6 +4457,10 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
     assert_eq!(
         fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
         BTreeMap::from([("944.3".to_string(), 1)])
+    );
+    assert_eq!(
+        fetch_tag_counts_for_req(&fixture.env, &req).await.unwrap(),
+        BTreeMap::from([(unit_tag.id, 1)])
     );
 }
 
@@ -4251,8 +4903,7 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_mode(
-) {
+async fn rer_analysis_unit_filter_does_not_match_child_unit_name_suffix() {
     let fixture = mk_aor_filter_fixture().await.unwrap();
     let db = &fixture.env.dbx;
     let _parent_unit = mk_sigint_unit(
@@ -4383,10 +5034,7 @@ async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_m
     )
     .await
     .unwrap();
-    assert_eq!(
-        items.iter().map(|item| item.id).collect_vec(),
-        vec![msg_child.id]
-    );
+    assert!(items.is_empty());
 
     let req = crate::rer_importer::types::InboxMessagesReq {
         units_exact_match_only: Some(true),
@@ -4414,10 +5062,9 @@ async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_m
     )
     .await
     .unwrap();
-    assert_eq!(
-        items.iter().map(|item| item.id).collect_vec(),
-        vec![msg_other.id]
-    );
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().any(|item| item.id == msg_child.id));
+    assert!(items.iter().any(|item| item.id == msg_other.id));
 }
 
 #[tokio::test]
@@ -4580,6 +5227,127 @@ fn summary_table_analytics_rows_build_expected_response() {
     assert_eq!(summary.rows[0].units, vec!["unit"]);
     assert_eq!(summary.rows[0].locations, vec!["one", "two"]);
     assert_eq!(summary.rows[0].callsigns, vec!["callsign"]);
+}
+
+#[test]
+fn summary_table_postgres_unit_filter_is_period_bounded() {
+    let mut req = mk_analysis_stats_req(0, 86_400_000);
+    req.selected_units = Some(vec!["100 pbr".to_string()]);
+
+    let sql = build_summary_table_filtered_messages_query(
+        &uuid::Uuid::nil(),
+        &req,
+        &["group".to_string()],
+    )
+    .unwrap()
+    .build(DbBackend::Postgres)
+    .to_string();
+
+    assert_eq!(sql.matches("MATERIALIZED").count(), 2, "{sql}");
+    assert!(sql.contains("matching_unit_network_ids"), "{sql}");
+    assert!(sql.contains("matching_unit_inbox_item_ids"), "{sql}");
+    assert!(sql.contains("1970-01-01 00:00:00"), "{sql}");
+    assert!(sql.contains("1970-01-02 00:00:00"), "{sql}");
+}
+
+#[test]
+fn summary_table_analytics_unit_filter_uses_bounded_flat_joins() {
+    let mut req = mk_analysis_stats_req(0, 86_400_000);
+    req.selected_callsigns = Some(vec!["CALLSIGN".to_string()]);
+    req.selected_tags = Some(vec![3]);
+    req.selected_aors = Some(vec![5]);
+    req.selected_networks = Some(vec![7]);
+    let scope = AnalyticsMessageIdScope::Inclusive {
+        min_id: 10,
+        max_id: 20,
+    };
+    let tag_access = stats::AnalyticsTagAccess {
+        accessible_tag_ids: vec![3],
+        unit_login_ids: Vec::new(),
+    };
+    let filtered_messages =
+        build_summary_table_filtered_messages_query_with_access(
+            &uuid::Uuid::nil(),
+            &req,
+            &["group".to_string()],
+            Some(&tag_access),
+            Some(&scope),
+        )
+        .unwrap();
+    let mut selected =
+        analytics_unit::split_analytics_unit_filter(&Some(vec![
+            "58 А".to_string(),
+            "Не визначено".to_string(),
+        ]));
+    selected.linked_network_ids = vec![11];
+    let filtered_messages =
+        analytics_unit::apply_resolved_analytics_unit_filters(
+            filtered_messages,
+            &analytics_unit::ResolvedAnalyticsUnitFilters {
+                selected,
+                all_unit_network_ids: vec![11, 12],
+                ..Default::default()
+            },
+            &scope,
+            false,
+        );
+    let sql =
+        summary_table_freq_callsigns_query(filtered_messages, Some(&scope))
+            .build(DbBackend::Postgres)
+            .to_string();
+
+    for bounded_column in [
+        r#""sigint_inbox_item"."id" BETWEEN 10 AND 20"#,
+        r#""signal_message"."id" BETWEEN 10 AND 20"#,
+        r#""analytics_message_access"."signal_message_id" BETWEEN 10 AND 20"#,
+        r#""sigint_inbox_item_tag"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+        r#""analytics_message_aor_link"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+        r#""analytics_network_filter_link"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+        r#""analytics_selected_unit_link"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+        r#""analytics_any_unit_link"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+        r#""new_callsign_filter"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+        r#""summary_table_callsign"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+    ] {
+        assert!(sql.contains(bounded_column), "{bounded_column}: {sql}");
+    }
+    assert!(sql.contains(r#""unit_v2" IN"#), "{sql}");
+    for alias in ["58 А", "58 а", "58 ЗА", "58 за", "58 ЗВА", "58 зва"]
+    {
+        assert!(sql.contains(&format!("'{alias}'")), "{sql}");
+    }
+    assert!(sql.contains(r#""unit_v2" IS NULL"#), "{sql}");
+    assert!(sql.contains(r#""active_from" <= "datetime""#), "{sql}");
+    assert!(sql.contains(r#""active_to" >= "datetime""#), "{sql}");
+    assert!(!sql.contains(r#"JOIN "sigint_unit""#), "{sql}");
+    assert!(!sql.contains(r#"JOIN "sigint_network_unit""#), "{sql}");
+}
+
+#[test]
+fn summary_table_analytics_exact_unit_filter_ignores_header_units() {
+    let scope = AnalyticsMessageIdScope::From(10);
+    let mut selected =
+        analytics_unit::split_analytics_unit_filter(&Some(vec![
+            "58 А".to_string()
+        ]));
+    selected.linked_network_ids = vec![11];
+    let sql = analytics_unit::apply_resolved_analytics_unit_filters(
+        signal_message::Entity::find().join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        ),
+        &analytics_unit::ResolvedAnalyticsUnitFilters {
+            selected,
+            ..Default::default()
+        },
+        &scope,
+        true,
+    )
+    .build(DbBackend::Postgres)
+    .to_string();
+
+    assert!(sql.contains("analytics_selected_unit_link"), "{sql}");
+    assert!(!sql.contains(r#""unit_v2" IN"#), "{sql}");
+    assert!(!sql.contains(r#"JOIN "sigint_unit""#), "{sql}");
 }
 
 #[test]
@@ -4751,14 +5519,22 @@ async fn summary_table_chunked_collection_matches_single_window() {
             sigint_inbox_item::Column::NominatimresId,
             Expr::value(nominatimres.id),
         )
-        .col_expr(
-            sigint_inbox_item::Column::Callsigns,
-            Expr::value(serde_json::json!(["Geo"])),
-        )
         .filter(sigint_inbox_item::Column::Id.eq(geocoded_message.id))
         .exec(db)
         .await
         .unwrap();
+    let actor_id = crate::users::system_login_id(db).await.unwrap();
+    crate::inbox::callsigns::sync(
+        db,
+        geocoded_message.id,
+        crate::inbox::callsigns::InboxItemCallsigns {
+            primary: vec!["Geo".to_string()],
+            alg2: Vec::new(),
+        },
+        actor_id,
+    )
+    .await
+    .unwrap();
     let mut req = analysis_stats_req0(&fixture);
     req.since_date_inclusive_ms =
         test_dt(2026, 3, 1, 7, 30).and_utc().timestamp_millis();
@@ -5215,19 +5991,37 @@ async fn rer_analysis_count_uses_aggregated_count_for_open_filters() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let test_identity = mk_test_identity().await.unwrap();
     let mut req = analysis_stats_req0(&fixture);
+    let date = crate::stats::get_local_date(test_dt(2026, 3, 1, 10, 0));
+    req.since_date_inclusive_ms = crate::stats::start_of_day(date)
+        .unwrap()
+        .and_utc()
+        .timestamp_millis();
     req.till_date_noninclusive_ms =
-        req.since_date_inclusive_ms + 30 * 60 * 1000;
+        crate::stats::start_of_day(date + chrono::Duration::days(2))
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).unwrap();
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms).unwrap();
+    let stats_redis = crate::stats::redis::GroupStatsRedis::new(
+        fixture.env.stats_redis.clone(),
+    );
     crate::stats::recalculate_group_stats(
         &fixture.env.dbx,
+        &stats_redis,
         dt_since,
         dt_till,
-        false,
+        true,
         true,
     )
     .await
     .unwrap();
+    assert!(crate::stats::should_read_stats_aggregated_for_config(
+        &req,
+        &fixture.env.config,
+        dt_since,
+        dt_till,
+    ));
     mk_analysis_message(
         &fixture.env.dbx,
         "msg-after-stats",
@@ -5365,6 +6159,17 @@ async fn rer_analysis_aor_and_network_stats_render_only_relevant_values() {
         BTreeMap::from([(fixture.north_aor.id, 1), (fixture.wide_aor.id, 1),])
     );
 
+    let req = analysis_stats_req0(&fixture);
+    let expected = fetch_aor_counts_for_req(&fixture.env, &req).await.unwrap();
+    let mut selected_req = req;
+    selected_req.selected_aors = Some(vec![fixture.south_aor.id]);
+    assert_eq!(
+        fetch_aor_counts_for_req(&fixture.env, &selected_req)
+            .await
+            .unwrap(),
+        expected
+    );
+
     let test_identity = mk_test_identity().await.unwrap();
     let mut req = analysis_stats_req0(&fixture);
     req.selected_aors = Some(vec![fixture.south_aor.id]);
@@ -5390,6 +6195,20 @@ async fn rer_analysis_aor_and_network_stats_render_only_relevant_values() {
             (fixture.network_south.network.id, 1),
             (fixture.network_wide.network.id, 1),
         ])
+    );
+
+    let req = analysis_stats_req0(&fixture);
+    let expected = fetch_network_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap();
+    let mut selected_req = req;
+    selected_req.selected_networks =
+        Some(vec![fixture.network_south.network.id]);
+    assert_eq!(
+        fetch_network_counts_for_req(&fixture.env, &selected_req)
+            .await
+            .unwrap(),
+        expected
     );
 }
 
@@ -5756,42 +6575,66 @@ async fn rer_analysis_analytics_tag_access_matches_source_authorization() {
     let access = stats::resolve_analytics_tag_access(db, &login.id, true)
         .await
         .unwrap();
-    assert!(access.accessible_tag_ids.contains(&public_tag.id));
-    assert!(access.accessible_tag_ids.contains(&owner_tag.id));
-    assert!(!access.accessible_tag_ids.contains(&other_tag.id));
-    assert!(access.unit_login_ids.contains(&login.id));
-    assert!(access.unit_login_ids.contains(&same_organism_login.id));
-    assert!(access.unit_login_ids.contains(&deleted_login.id));
-    assert!(!access.unit_login_ids.contains(&other_organism_login.id));
-    assert!(!access.unit_login_ids.contains(&no_organism_login.id));
+    assert!(access
+        .accessible_tag_ids
+        .as_slice()
+        .contains(&public_tag.id));
+    assert!(access.accessible_tag_ids.as_slice().contains(&owner_tag.id));
+    assert!(!access.accessible_tag_ids.as_slice().contains(&other_tag.id));
+    assert!(access.unit_login_ids.as_slice().contains(&login.id));
+    assert!(access
+        .unit_login_ids
+        .as_slice()
+        .contains(&same_organism_login.id));
+    assert!(access.unit_login_ids.as_slice().contains(&deleted_login.id));
+    assert!(!access
+        .unit_login_ids
+        .as_slice()
+        .contains(&other_organism_login.id));
+    assert!(!access
+        .unit_login_ids
+        .as_slice()
+        .contains(&no_organism_login.id));
 
     let access =
         stats::resolve_analytics_tag_access(db, &other_organism_login.id, true)
             .await
             .unwrap();
-    assert!(access.accessible_tag_ids.contains(&public_tag.id));
-    assert!(!access.accessible_tag_ids.contains(&owner_tag.id));
-    assert!(access.accessible_tag_ids.contains(&other_tag.id));
-    assert!(access.unit_login_ids.contains(&other_organism_login.id));
-    assert!(!access.unit_login_ids.contains(&login.id));
+    assert!(access
+        .accessible_tag_ids
+        .as_slice()
+        .contains(&public_tag.id));
+    assert!(!access.accessible_tag_ids.as_slice().contains(&owner_tag.id));
+    assert!(access.accessible_tag_ids.as_slice().contains(&other_tag.id));
+    assert!(access
+        .unit_login_ids
+        .as_slice()
+        .contains(&other_organism_login.id));
+    assert!(!access.unit_login_ids.as_slice().contains(&login.id));
 
     let access =
         stats::resolve_analytics_tag_access(db, &no_organism_login.id, true)
             .await
             .unwrap();
-    assert!(access.accessible_tag_ids.contains(&public_tag.id));
-    assert!(!access.accessible_tag_ids.contains(&owner_tag.id));
-    assert!(!access.accessible_tag_ids.contains(&other_tag.id));
+    assert!(access
+        .accessible_tag_ids
+        .as_slice()
+        .contains(&public_tag.id));
+    assert!(!access.accessible_tag_ids.as_slice().contains(&owner_tag.id));
+    assert!(!access.accessible_tag_ids.as_slice().contains(&other_tag.id));
     assert!(access.unit_login_ids.is_empty());
 
     let access =
         stats::resolve_analytics_tag_access(db, &deleted_login.id, true)
             .await
             .unwrap();
-    assert!(access.accessible_tag_ids.contains(&public_tag.id));
-    assert!(!access.accessible_tag_ids.contains(&owner_tag.id));
-    assert!(!access.accessible_tag_ids.contains(&other_tag.id));
-    assert!(access.unit_login_ids.contains(&login.id));
+    assert!(access
+        .accessible_tag_ids
+        .as_slice()
+        .contains(&public_tag.id));
+    assert!(!access.accessible_tag_ids.as_slice().contains(&owner_tag.id));
+    assert!(!access.accessible_tag_ids.as_slice().contains(&other_tag.id));
+    assert!(access.unit_login_ids.as_slice().contains(&login.id));
 
     let mut owner_tag = owner_tag.into_active_model();
     owner_tag.owner_organism_id = Set(Some(other_organism.id));
@@ -5799,7 +6642,7 @@ async fn rer_analysis_analytics_tag_access_matches_source_authorization() {
     let access = stats::resolve_analytics_tag_access(db, &login.id, false)
         .await
         .unwrap();
-    assert!(!access.accessible_tag_ids.contains(&owner_tag.id));
+    assert!(!access.accessible_tag_ids.as_slice().contains(&owner_tag.id));
 }
 
 #[tokio::test]
@@ -6138,8 +6981,35 @@ fn count_stats_analytics_supports_callsign_filters_but_rejects_search() {
 }
 
 #[test]
+fn count_stats_analytics_rejects_unit_filters() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_units = Some(vec!["unit".to_string()]);
+
+    assert!(!analytics_count_request_supported(&req));
+}
+
+#[test]
+fn summary_table_analytics_supports_unit_filters_but_rejects_search() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_units = Some(vec!["unit".to_string()]);
+
+    assert!(analytics_summary_table_request_supported(&req));
+    assert!(!analytics_count_request_supported(&req));
+
+    req.search = Some("message".to_string());
+    assert!(!analytics_summary_table_request_supported(&req));
+}
+
+#[test]
 fn analytical_inbox_reads_support_callsign_filters_but_reject_search() {
     let mut req = InboxMessagesReq::default();
+    assert!(!analytics_inbox_request_supported(&req));
+
+    req.since_date_inclusive_ms = Some(1);
+    assert!(analytics_inbox_request_supported(&req));
+
+    req.since_date_inclusive_ms = None;
+    req.since_id_noninclusive = Some(1);
     assert!(analytics_inbox_request_supported(&req));
 
     req.search = Some("callsign".to_string());
@@ -6148,6 +7018,72 @@ fn analytical_inbox_reads_support_callsign_filters_but_reject_search() {
     req.search = None;
     req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
     assert!(analytics_inbox_request_supported(&req));
+
+    req.only_with_media = Some(true);
+    assert!(!analytics_inbox_request_supported(&req));
+}
+
+#[test]
+fn analytical_inbox_reads_support_unit_filters() {
+    let mut req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(1),
+        ..Default::default()
+    };
+    req.selected_units = Some(vec!["unit".to_string()]);
+    assert!(analytics_inbox_request_supported(&req));
+
+    req.selected_units = None;
+    req.denied_units = Some(vec!["unit".to_string()]);
+    assert!(analytics_inbox_request_supported(&req));
+}
+
+#[test]
+fn analytical_inbox_candidates_reject_unbounded_media_search_and_nolimit() {
+    let mut req = InboxMessagesReq::default();
+    assert!(!analytics_inbox_candidates_supported(&req));
+
+    req.since_date_inclusive_ms = Some(1);
+    assert!(analytics_inbox_candidates_supported(&req));
+
+    req.only_with_media = Some(true);
+    assert!(!analytics_inbox_candidates_supported(&req));
+
+    req.only_with_media = None;
+    req.search = Some("message".to_string());
+    assert!(!analytics_inbox_candidates_supported(&req));
+
+    req.search = None;
+    req.nolimit = Some(true);
+    assert!(!analytics_inbox_candidates_supported(&req));
+}
+
+#[test]
+fn analytical_inbox_candidates_support_initial_rer_duty_unit_filters() {
+    let mut req = InboxMessagesReq {
+        page_id: Some("rer-duty-neo".to_string()),
+        load_latest: Some(true),
+        selected_units: Some(vec!["unit".to_string()]),
+        ..Default::default()
+    };
+    assert!(analytics_inbox_initial_unit_candidates_supported(&req));
+    assert!(analytics_inbox_candidates_supported(&req));
+
+    req.selected_units = None;
+    req.denied_units = Some(vec!["unit".to_string()]);
+    assert!(analytics_inbox_candidates_supported(&req));
+
+    req.only_with_media = Some(true);
+    assert!(!analytics_inbox_candidates_supported(&req));
+    req.only_with_media = None;
+    req.search = Some("message".to_string());
+    assert!(!analytics_inbox_candidates_supported(&req));
+    req.search = None;
+    req.nolimit = Some(true);
+    assert!(!analytics_inbox_candidates_supported(&req));
+
+    req.nolimit = None;
+    req.page_id = Some("rer-analysis".to_string());
+    assert!(!analytics_inbox_candidates_supported(&req));
 }
 
 #[tokio::test]
@@ -6185,6 +7121,59 @@ async fn count_stats_analytics_timeout_retries_postgres() {
     .unwrap();
 
     assert_eq!(result, "postgres");
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_fallback_maps_capped_postgres_query_to_one_timeout_error() {
+    let mut config =
+        crate::config::read_config(crate::types::Mode::Test).unwrap();
+    config.postgres_runtime = Some(crate::config::PostgresRuntimeConfig {
+        statement_timeout_ms: 25,
+        report_worker_statement_timeout_ms: 25,
+        lock_timeout_ms: 15,
+        idle_in_transaction_session_timeout_ms: 50,
+    });
+    let db = new_pg_runtime_pool_from_config(&config, PgRuntimePoolRole::Web)
+        .await
+        .unwrap();
+    let postgres_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let postgres_attempts_query = postgres_attempts.clone();
+
+    let error = with_count_stats_analytics_fallback(
+        Some(async {
+            Err::<&str, AppError>(
+                anyhow::anyhow!("analytics unavailable").into(),
+            )
+        }),
+        core::time::Duration::from_secs(1),
+        async move {
+            postgres_attempts_query
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            db.execute_unprepared("select pg_sleep(0.1)")
+                .await
+                .c(h!())?;
+            Ok::<_, AppError>("postgres")
+        },
+        None,
+        core::time::Duration::from_secs(30),
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        postgres_attempts.load(std::sync::atomic::Ordering::SeqCst),
+        1
+    );
+    let AppError::ServiceUnavailable {
+        msg,
+        retry_after_secs,
+    } = error
+    else {
+        panic!("expected PostgreSQL timeout error");
+    };
+    assert_eq!(retry_after_secs, 1);
+    assert!(msg.contains("перевищив допустимий час"));
 }
 
 #[test]
@@ -6299,4 +7288,144 @@ async fn count_stats_analytics_half_open_failure_reopens_circuit() {
     let retry_deadline = retry_state.load(std::sync::atomic::Ordering::Acquire);
     assert_ne!(retry_deadline, u64::MAX);
     assert!(retry_deadline > analytics_unix_ms());
+}
+
+fn callsign_aggregate_test_query(
+    selected_freqs: &[String],
+) -> Select<signal_message::Entity> {
+    signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Id, "id")
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
+        .expr_as(
+            correlated_freq_is_selected_expr(selected_freqs),
+            "selected_freq",
+        )
+}
+
+#[test]
+fn correlated_frequency_query_is_aggregated_for_both_databases() {
+    let statement = correlated_freq_callsign_pairs_statement(
+        callsign_aggregate_test_query(&["100".to_string()]),
+        &["ALPHA".to_string(), "BRAVO".to_string()],
+    );
+    assert!(statement.sql.contains("SELECT DISTINCT"));
+    assert!(statement
+        .sql
+        .contains("all_callsigns.callsign IN ('ALPHA', 'BRAVO')"));
+    assert!(!statement.sql.contains("jsonb_agg"));
+
+    let (analytics_query, callsign_alias) = join_analytics_message_callsign(
+        callsign_aggregate_test_query(&["100".to_string()]),
+        "test_correlated_callsign",
+        None,
+    );
+    let sql = analytics_query
+        .select_only()
+        .expr(Expr::col((callsign_alias, Alias::new("callsign"))))
+        .distinct()
+        .build(DbBackend::Postgres)
+        .to_string();
+    assert!(
+        sql.contains(r#""echo_clickhouse_derived"."message_callsign""#),
+        "{sql}"
+    );
+    assert!(sql.starts_with("SELECT DISTINCT"), "{sql}");
+}
+
+#[test]
+fn new_callsign_queries_return_only_aggregates() {
+    let query = callsign_aggregate_test_query(&["100".to_string()]);
+    let current = effective_callsign_values_statement(query.clone());
+    let lookback = new_callsign_last_seen_statement(query.clone());
+
+    assert!(current
+        .sql
+        .contains("SELECT DISTINCT all_callsigns.callsign"));
+    assert!(lookback
+        .sql
+        .contains("MAX(filtered_items.timestamp) AS last_seen"));
+    assert!(!current.sql.contains("jsonb_agg(all_callsigns.callsign"));
+
+    let (analytics_query, callsign_alias) =
+        join_analytics_message_callsign(query, "test_new_callsign", None);
+    let sql = analytics_query
+        .select_only()
+        .expr(Expr::col((callsign_alias.clone(), Alias::new("callsign"))))
+        .expr_as(Expr::cust("MAX(sigint_inbox_item.datetime)"), "last_seen")
+        .group_by(Expr::col((callsign_alias, Alias::new("callsign"))))
+        .build(DbBackend::Postgres)
+        .to_string();
+    assert!(
+        sql.contains(r#""echo_clickhouse_derived"."message_callsign""#),
+        "{sql}"
+    );
+    assert!(sql.contains("MAX(sigint_inbox_item.datetime)"), "{sql}");
+
+    let selected_callsign_query = filter_selected_callsigns_for_source(
+        callsign_aggregate_test_query(&["100".to_string()]),
+        &Some(vec!["ALPHA".to_string()]),
+        crate::inbox::callsigns::EffectiveCallsignSqlSource::Analytics,
+        None,
+    )
+    .unwrap();
+    let (selected_callsign_query, _) = join_analytics_message_callsign(
+        selected_callsign_query,
+        "test_new_callsign_output",
+        None,
+    );
+    let sql = selected_callsign_query
+        .build(DbBackend::Postgres)
+        .to_string();
+    assert_eq!(
+        sql.matches(r#""echo_clickhouse_derived"."message_callsign""#)
+            .count(),
+        2,
+        "{sql}"
+    );
+    assert!(!sql.contains("EXISTS"), "{sql}");
+}
+
+#[test]
+fn new_callsign_thresholds_keep_existing_boundary_semantics() {
+    let report_since = test_dt(2026, 2, 1, 0, 0);
+    let callsigns = ["exact-24h", "exact-30d", "exact-7d", "never", "recent"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    let last_seen = BTreeMap::from([
+        (
+            "exact-24h".to_string(),
+            report_since - chrono::Duration::hours(24),
+        ),
+        (
+            "exact-7d".to_string(),
+            report_since - chrono::Duration::days(7),
+        ),
+        (
+            "exact-30d".to_string(),
+            report_since - chrono::Duration::days(30),
+        ),
+        (
+            "recent".to_string(),
+            report_since - chrono::Duration::hours(1),
+        ),
+    ]);
+
+    let result = classify_new_callsigns(callsigns, &last_seen, report_since);
+
+    assert_eq!(
+        result.not_seen_24h,
+        vec!["exact-24h", "exact-30d", "exact-7d", "never"]
+    );
+    assert_eq!(
+        result.not_seen_7days,
+        vec!["exact-30d", "exact-7d", "never"]
+    );
+    assert_eq!(result.not_seen_30days, vec!["exact-30d", "never"]);
 }

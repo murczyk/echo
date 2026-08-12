@@ -5,12 +5,10 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::location::peleng::reset_inbox_pelengs;
 use crate::location::utils;
-use crate::sigint::sender::preferred_sender_expr;
 use crate::types::*;
 use crate::users::{
     ensure_rer_role, has_any_role, has_role, login_id_from_identity,
 };
-use crate::utils::orm::ArrayColumnOps;
 use actix_web::http::header;
 use actix_web::http::StatusCode;
 use actix_web::web::{Bytes, Json};
@@ -18,12 +16,11 @@ use actix_web::{get, post, HttpRequest, HttpResponse};
 use chrono::prelude::*;
 use futures_util::TryStreamExt;
 use indicatif::ProgressBar;
-use itertools::Itertools;
 use rand::prelude::IndexedRandom;
 use sea_orm::sea_query::{Expr, Func};
 use sea_orm::*;
 use sqlx::Row;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::io::{BufWriter, Seek, Write};
 use time::{Duration as TimeDuration, OffsetDateTime, PrimitiveDateTime};
 use tokio_util::io::ReaderStream;
@@ -46,6 +43,7 @@ pub mod inbox;
 pub mod location;
 pub mod meow_format;
 pub mod multimessage;
+pub mod pelengation_object;
 pub mod points;
 pub mod post;
 pub mod report_chunking;
@@ -55,6 +53,7 @@ pub mod signals;
 pub mod types;
 pub mod unit;
 pub mod zp_digital_post_alt_format;
+pub mod zp_peleng_extended_format;
 pub mod zp_peleng_vorony_odina_format;
 
 fn media_inline_content_disposition(
@@ -111,7 +110,7 @@ fn parse_byte_range_spec(
         if suffix_len == 0 || total == 0 {
             return Some(ParsedByteRangeSpec::Unsatisfiable);
         }
-        let suffix_len = suffix_len.min(total);
+        let suffix_len = std::cmp::min(suffix_len, total);
         let start = total - suffix_len;
         return Some(ParsedByteRangeSpec::Satisfiable(start, total - 1));
     }
@@ -130,7 +129,7 @@ fn parse_byte_range_spec(
     if start >= total {
         return Some(ParsedByteRangeSpec::Unsatisfiable);
     }
-    let end = requested_end.unwrap_or(total - 1).min(total - 1);
+    let end = std::cmp::min(requested_end.unwrap_or(total - 1), total - 1);
     Some(ParsedByteRangeSpec::Satisfiable(start, end))
 }
 
@@ -679,47 +678,115 @@ async fn rer_importer_callsigns(
         sixty_days_ago_offset.date(),
         sixty_days_ago_offset.time(),
     );
-    let res1_rows = sqlx::query(
-        r#"
-select
-  jsonb_array_elements_text(sii.callsigns) as callsign,
-  array_agg(distinct coalesce(sii.freq, '')) as freqs
-from sigint_inbox_item sii
-inner join signal_message sm on sm.id = sii.id
-inner join datasource d on d.id=sm.datasource_id
-inner join sigint_zone_datasource szd on szd.datasource_id = d.id
-inner join sigint_zone sz on sz.id=szd.sigint_zone_id
-inner join login l on l.sigint_zone_id = sz.id
-where sm.created_at >= $1 and sii.checked and l.id=$2
- group by 1"#,
+    let callsigns = load_rer_importer_callsigns(
+        &env.dbx,
+        sixty_days_ago_primitive,
+        login_id_from_identity(&user)?,
+        req.filter.as_ref(),
     )
-    .bind(sixty_days_ago_primitive)
-    .bind(login_id_from_identity(&user)?)
-    .fetch_all(env.dbx.get_postgres_connection_pool())
-    .await
-    .c(h!())?;
+    .await?;
+    Ok(Json(callsigns))
+}
 
-    let mut res = vec![];
-    for row in res1_rows.iter() {
-        let callsign: Option<String> = row.try_get("callsign").ok();
-        let freqs: Option<Vec<String>> = row.try_get("freqs").ok();
-        if req.filter.is_none() || (callsign == req.filter.clone()) {
-            if let Some(callsign) = callsign.clone() {
-                if let Some(freqs) = freqs.clone() {
-                    res.push(CallsignWithFrequencies {
-                        callsign,
-                        frequencies: freqs
-                            .iter()
-                            .filter(|x| !x.is_empty())
-                            .cloned()
-                            .collect(),
-                    })
-                }
-            }
-        }
-    }
+#[derive(FromQueryResult)]
+struct RerImporterCallsignFrequency {
+    callsign: String,
+    frequencies: Option<Vec<String>>,
+}
 
-    Ok(Json(res))
+async fn load_rer_importer_callsigns(
+    dbx: &DatabaseConnection,
+    since: PrimitiveDateTime,
+    login_id: uuid::Uuid,
+    filter: Option<&String>,
+) -> Result<Vec<CallsignWithFrequencies>, AppError> {
+    let datasource_ids = datasource::Entity::find()
+        .select_only()
+        .column(datasource::Column::Id)
+        .join(
+            JoinType::InnerJoin,
+            datasource::Relation::SigintZoneDatasource.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_zone_datasource::Relation::SigintZone.def(),
+        )
+        .join(JoinType::InnerJoin, sigint_zone::Relation::Login.def())
+        .filter(login::Column::Id.eq(login_id))
+        .into_query();
+    let filtered_items = sigint_inbox_item::Entity::find()
+        .select_only()
+        .columns([
+            sigint_inbox_item::Column::Id,
+            sigint_inbox_item::Column::Freq,
+        ])
+        .inner_join(signal_message::Entity)
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .filter(signal_message::Column::CreatedAt.gte(since))
+        .filter(sigint_inbox_item::Column::Checked.eq(true))
+        .filter(
+            datasource_group::Column::DatasourceId.in_subquery(datasource_ids),
+        );
+    let filtered_items = filtered_items.build(DbBackend::Postgres);
+    let values = filtered_items
+        .values
+        .map(|values| values.0)
+        .unwrap_or_default();
+    let sql = format!(
+        r#"
+        WITH filtered_items AS ({})
+        , normalized_callsigns AS (
+            SELECT DISTINCT
+                siic.sigint_inbox_item_id AS inbox_item_id,
+                siic.callsign
+            FROM sigint_inbox_item_callsign AS siic
+            INNER JOIN filtered_items
+                ON filtered_items.id = siic.sigint_inbox_item_id
+            WHERE siic.source = 'primary'::sigint_inbox_item_callsign_source
+              AND NOT siic.deleted
+        )
+        , all_callsigns AS (
+            SELECT inbox_item_id, callsign FROM normalized_callsigns
+        )
+        SELECT
+            all_callsigns.callsign,
+            array_agg(DISTINCT filtered_items.freq ORDER BY filtered_items.freq)
+                FILTER (
+                    WHERE filtered_items.freq IS NOT NULL
+                      AND filtered_items.freq <> ''
+                ) AS frequencies
+        FROM all_callsigns
+        INNER JOIN filtered_items
+            ON filtered_items.id = all_callsigns.inbox_item_id
+        GROUP BY all_callsigns.callsign
+        ORDER BY all_callsigns.callsign
+        "#,
+        filtered_items.sql,
+    );
+    let rows = dbx
+        .query_all_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            sql,
+            values,
+        ))
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|row| RerImporterCallsignFrequency::from_query_result(&row, ""))
+        .collect::<Result<Vec<_>, DbErr>>()
+        .c(h!())?;
+    let callsigns = rows
+        .into_iter()
+        .filter(|row| !filter.is_some_and(|filter| filter != &row.callsign))
+        .map(|row| CallsignWithFrequencies {
+            callsign: row.callsign,
+            frequencies: row.frequencies.unwrap_or_default(),
+        })
+        .collect();
+    Ok(callsigns)
 }
 
 #[get("/api/rer-importer/grafana/messages")]
@@ -1116,9 +1183,29 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
 
     // println!("Query: {}", q);
 
-    let res = dbx.execute(q).await.c(h!())?;
+    let res = dbx.execute_raw(q).await.c(h!())?;
 
     println!("> rounded {} freqs", res.rows_affected());
+    if res.rows_affected() > 0 {
+        let master_keys = signal_group::Entity::find()
+            .filter(signal_group::Column::Name.eq(group))
+            .filter(signal_group::Column::Deleted.eq(false))
+            .select_only()
+            .column(signal_group::Column::MasterKey)
+            .into_tuple::<String>()
+            .all(&dbx)
+            .await
+            .c(h!())?;
+        for master_key in master_keys {
+            crate::stats::enqueue_group_stats_recalculation_for_group_history(
+                &dbx,
+                &master_key,
+                "rounded frequencies".to_string(),
+            )
+            .await
+            .c(h!())?;
+        }
+    }
 
     Ok(())
 }
@@ -1142,9 +1229,17 @@ pub async fn oneoff_nominalize_freq(mode: Mode) -> Result<(), AppError> {
         if let Some(freq) = item.freq.as_ref() {
             let freq2 = self::frequency::etalon(freq);
             if &freq2 != freq {
+                let item_id = item.id;
                 let mut item: sigint_inbox_item::ActiveModel = item.into();
                 item.freq = Set(Some(freq2));
                 item.update(&dbx).await.c(h!())?;
+                crate::stats::enqueue_group_stats_recalculation_for_message(
+                    &dbx,
+                    item_id,
+                    "nominalized frequency".to_string(),
+                )
+                .await
+                .c(h!())?;
             }
         }
     }
@@ -1213,6 +1308,13 @@ pub async fn oneoff_reprocess_inbox_posts(
             crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
                 vec![inbox_item],
                 &dbx,
+            )
+            .await
+            .c(h!())?;
+            crate::stats::enqueue_group_stats_recalculation_for_message(
+                &dbx,
+                row.id,
+                format!("reprocessed post for inbox message {}", row.id),
             )
             .await
             .c(h!())?;
@@ -1307,66 +1409,96 @@ pub async fn oneoff_reprocess_unit_names(
             .filter(signal_group::Column::MasterKey.eq(master_key));
     }
     // let count = q.clone().count(&dbx).await
-    let mut inbox_items = q.stream(&dbx).await.c(h!())?;
+    let mut inbox_items = q.stream(&dbx).await.c(h!())?.try_chunks(500);
     // let pb = ProgressBar::new(count);
-    while let Some(item) = inbox_items.try_next().await.c(h!())? {
-        // pb.inc(1);
-        let id = item.id;
-        let inbox_message = signal_message::Entity::find_by_id(id)
-            .filter(signal_message::Column::Deleted.eq(false))
-            .one(&dbx)
-            .await
-            .c(h!())?
-            .ok_or("error 17263")?;
-        let m_aor_id = resolve_message_aor_id(&dbx, id).await.c(h!())?;
+    while let Some(inbox_items) = inbox_items.try_next().await.c(h!())? {
+        let inbox_item_ids =
+            inbox_items.iter().map(|item| item.id).collect::<Vec<_>>();
+        let callsigns_by_item_id =
+            crate::inbox::callsigns::load_by_item_ids(&dbx, &inbox_item_ids)
+                .await?;
+        for item in inbox_items {
+            // pb.inc(1);
+            let id = item.id;
+            let inbox_message = signal_message::Entity::find_by_id(id)
+                .filter(signal_message::Column::Deleted.eq(false))
+                .one(&dbx)
+                .await
+                .c(h!())?
+                .ok_or("error 17263")?;
+            let m_aor_id = resolve_message_aor_id(&dbx, id).await.c(h!())?;
 
-        let unit_old = item.unit.clone();
-        if let Some(body) = inbox_message.body {
-            let callsigns: Vec<String> = match item.callsigns.as_ref() {
-                Some(v) => serde_json::from_value(v.clone()).c(h!())?,
-                None => vec![],
-            };
-            let callsigns = callsigns
-                .into_iter()
-                .map(|x| x.to_uppercase())
-                .collect_vec();
-            let result = crate::unit::parser::extract_unit_with_aor(
-                settlements.clone(),
-                &body,
-                callsigns,
-                m_aor_id,
-            )?;
-            let unit_new = result.unit.clone();
-            if unit_new.is_none() && unit_old.is_some() {
-                continue;
+            let unit_old = item.unit.clone();
+            if let Some(body) = inbox_message.body {
+                let callsigns = callsigns_by_item_id
+                    .get(&item.id)
+                    .cloned()
+                    .unwrap_or_default()
+                    .effective();
+                let callsigns = callsigns
+                    .into_iter()
+                    .map(|x| x.to_uppercase())
+                    .collect_vec();
+                let result = crate::unit::parser::extract_unit_with_aor(
+                    settlements.clone(),
+                    &body,
+                    callsigns,
+                    m_aor_id,
+                )?;
+                let unit_new = result.unit.clone();
+                if unit_new.is_none() && unit_old.is_some() {
+                    continue;
+                }
+                println!("{unit_old:?} -> {unit_new:?}");
+                let mut item: sigint_inbox_item::ActiveModel = item.into();
+                let location_v2 =
+                    match (result.locality.clone(), result.locality_v2.clone())
+                    {
+                        (_, Some(locations)) => {
+                            Some(utils::format_settlements_list(locations))
+                        }
+                        (Some(location), None) => {
+                            let locations =
+                                crate::location::parse_location_with_aor(
+                                    settlements.clone(),
+                                    location,
+                                    m_aor_id,
+                                )
+                                .c(h!())?;
+                            Some(utils::format_settlements_list(locations))
+                        }
+                        _ => None,
+                    };
+                item.unit = Set(unit_new);
+                item.unit_v2 = Set(None);
+                item.location = Set(result.locality);
+                item.location_v2 = Set(location_v2);
+                item.parsed_unit_v2 = Set(false);
+                let item = item.update(&dbx).await.c(h!())?;
+                crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
+                    &dbx,
+                    item.id,
+                    item.unit_v2.as_deref(),
+                    item.unit.as_deref(),
+                )
+                .await
+                .c(h!())?;
+                crate::stats::enqueue_group_stats_recalculation_for_message(
+                    &dbx,
+                    id,
+                    format!("reprocessed unit for inbox message {id}"),
+                )
+                .await
+                .c(h!())?;
+                reset_inbox_pelengs(id, &dbx).await.c(h!())?;
             }
-            println!("{unit_old:?} -> {unit_new:?}");
-            let mut item: sigint_inbox_item::ActiveModel = item.into();
-            let location_v2 =
-                match (result.locality.clone(), result.locality_v2.clone()) {
-                    (_, Some(locations)) => {
-                        Some(utils::format_settlements_list(locations))
-                    }
-                    (Some(location), None) => {
-                        let locations =
-                            crate::location::parse_location_with_aor(
-                                settlements.clone(),
-                                location,
-                                m_aor_id,
-                            )
-                            .c(h!())?;
-                        Some(utils::format_settlements_list(locations))
-                    }
-                    _ => None,
-                };
-            item.unit = Set(unit_new);
-            item.unit_v2 = Set(None);
-            item.location = Set(result.locality);
-            item.location_v2 = Set(location_v2);
-            item.parsed_unit_v2 = Set(false);
-            item.update(&dbx).await.c(h!())?;
-            reset_inbox_pelengs(id, &dbx).await.c(h!())?;
         }
+        crate::inbox::unit_resolution::sync_network_unit_links(
+            &dbx,
+            &inbox_item_ids,
+        )
+        .await
+        .c(h!())?;
     }
     Ok(())
 }
@@ -1427,39 +1559,30 @@ pub async fn latest_senders(
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let now = Utc::now();
-    #[derive(FromQueryResult)]
-    struct Res {
-        sender: Option<String>,
-    }
-    let txn = env.dbx.begin().await.c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&txn, &login)
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
-    let sender_expr = preferred_sender_expr(None);
-    let sender_uuids: Vec<String> = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .select_only()
-        .column_as(sender_expr.clone(), "sender")
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.eq_any(master_keys))
-        .filter(
-            signal_message::Column::CreatedAt
-                .gt(now - chrono::Duration::days(2)),
-        )
-        .group_by(sender_expr)
-        .into_model::<Res>()
-        .all(&txn)
+    let since = crate::stats::round_up_to_5min(
+        (now - chrono::Duration::days(2)).naive_utc(),
+    )
+    .c(h!())?;
+    let till = crate::stats::round_up_to_5min(now.naive_utc()).c(h!())?;
+    let sender_uuids = crate::stats::read_sender_stats_aggregated(
+        &env,
+        master_keys,
+        since,
+        till,
+    )
+    .await
+    .c(h!())?
+    .into_iter()
+    .map(|sender| sender.uuid)
+    .filter(|sender| !sender.is_empty())
+    .collect();
+    let data = collect_profiles_data(&env.dbx, sender_uuids)
         .await
-        .c(h!())?
-        .iter()
-        .filter_map(|x| x.sender.clone())
-        .collect();
-    let data = collect_profiles_data(&txn, sender_uuids).await.c(h!())?;
-    txn.commit().await.c(h!())?;
+        .c(h!())?;
     Ok(Json(SignalProfilesRsp { data }))
 }
 

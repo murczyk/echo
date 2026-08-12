@@ -88,10 +88,11 @@ export type MessageCardProps = {
   /** Tag chips section visual density mode. */
   tagsLayout?: TagsLayoutVariant;
   tagsLoading?: boolean;
-  /** Baseline "now" when the card is off-screen; while visible, relative time updates every minute. */
+  /** Baseline "now" when the card is off-screen; while visible, relative time updates every second. */
   referenceTimeMs: number | null;
   /** Auth user display name for background watermark */
   authUserName: string | null;
+  tagContributionsOrganismId?: number;
   groupName: string | null;
   senderName: string | null;
   copiedFeedbackId: string | null;
@@ -129,6 +130,7 @@ export type MessageCardProps = {
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
   rightHeaderInsetPx?: number;
   analysisCallsignActions?: AnalysisCallsignActions;
+  showCallsignAddForm?: boolean;
 };
 
 // Performance boundary: this component is repeated throughout Duty feeds.
@@ -144,6 +146,7 @@ function MessageCardComponent({
   tagsLoading = false,
   referenceTimeMs,
   authUserName,
+  tagContributionsOrganismId,
   groupName,
   senderName,
   copiedFeedbackId,
@@ -179,6 +182,7 @@ function MessageCardComponent({
   onMarkBotTagWrong,
   rightHeaderInsetPx = 0,
   analysisCallsignActions,
+  showCallsignAddForm = false,
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
   const compactLayout = feedCount >= 3;
@@ -330,6 +334,7 @@ function MessageCardComponent({
           msg={msg}
           tagsMap={tagsMap}
           tagsOrder={tagsOrder}
+          tagContributionsOrganismId={tagContributionsOrganismId}
           tagsLoading={tagsLoading}
           onToggleTag={onToggleTag}
           readOnly={readOnly}
@@ -338,6 +343,7 @@ function MessageCardComponent({
           onCancelBotTagAction={onCancelBotTagAction}
           onMarkBotTagWrong={onMarkBotTagWrong}
           analysisCallsignActions={analysisCallsignActions}
+          showCallsignAddForm={showCallsignAddForm}
           callsignInfoMap={callsignInfoMap}
           networks={networks}
           unitsMap={unitsMap}

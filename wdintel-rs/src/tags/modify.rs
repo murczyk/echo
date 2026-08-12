@@ -136,7 +136,9 @@ async fn remove_tag(
     if let Some(model) = &tag_to_remove.model {
         let tag_id = tag_to_remove.tag_id;
         let confidence = tag_to_remove.confidence;
-        info!("suggested tag_id={tag_id} is being removed by user={login} (sigint_inbox_item={message_id}, model={model}, confidence={confidence:.2})");
+        info!(
+            "suggested tag_id={tag_id} is being removed by user={login} (sigint_inbox_item={message_id}, model={model}, confidence={confidence:.2})"
+        );
     }
     tag_to_remove.delete(txn).await.c(h!())?;
     Ok(())

@@ -6,7 +6,6 @@ use crate::sigint::aor::bl::collect_group_aors;
 use crate::sigint::aor::render_aor;
 use crate::types::*;
 use crate::users::{ensure_admin, has_any_role, login_id_from_identity};
-use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
@@ -132,8 +131,10 @@ pub async fn zones_datasources_group_update(
             .aor
             .map(|aors| aors.into_iter().map(render_aor).collect()),
         allowed_users: rsp.allowed_users,
+        allowed_user_details: rsp.allowed_user_details,
         allowed_organism_ids: rsp.allowed_organism_ids,
         admin_logins: rsp.admin_logins,
+        admin_login_details: rsp.admin_login_details,
         short_note: rsp.short_note,
         long_note: rsp.long_note,
     }))
@@ -181,7 +182,6 @@ pub async fn zones_datasources_group_add(
     )
     .await
     .c(h!())?;
-
     let allowed_users = bl::collect_direct_secret_group_users(
         vec![szd.group_master_key.clone()],
         &txn,
@@ -206,6 +206,16 @@ pub async fn zones_datasources_group_add(
     .c(h!())?
     .remove(&szd.group_master_key)
     .unwrap_or_default();
+    let login_details = bl::collect_group_login_details(
+        allowed_users
+            .iter()
+            .chain(admin_logins.iter())
+            .cloned()
+            .collect(),
+        &txn,
+    )
+    .await
+    .c(h!())?;
 
     let group_master_key = szd.group_master_key.clone();
 
@@ -278,8 +288,16 @@ pub async fn zones_datasources_group_add(
             disable_network_assignment,
             areas_of_responsibility,
             group_master_key,
+            allowed_user_details: bl::render_group_logins(
+                allowed_users.clone(),
+                &login_details,
+            ),
             allowed_users,
             allowed_organism_ids,
+            admin_login_details: bl::render_group_logins(
+                admin_logins.clone(),
+                &login_details,
+            ),
             admin_logins,
             short_note,
             long_note,
@@ -375,7 +393,7 @@ pub async fn my_admin_groups(
     let datasource_map = collect_datasources(datasource_ids, &env.dbx)
         .await
         .c(h!())?;
-    let group_login_map = collect_group_logins(
+    let group_login_map = collect_group_login_details(
         group_admins
             .values()
             .chain(allowed_users.values())
@@ -465,9 +483,10 @@ pub async fn my_admin_group_edit_reference(
     let login_ids = collect_active_organism_login_ids(&env.dbx, &login)
         .await
         .c(h!())?;
-    let group_login_map = collect_group_logins(login_ids.clone(), &env.dbx)
-        .await
-        .c(h!())?;
+    let group_login_map =
+        collect_group_login_details(login_ids.clone(), &env.dbx)
+            .await
+            .c(h!())?;
     let logins = render_group_logins(login_ids, &group_login_map);
     let organisms = collect_active_user_organisms(&env.dbx, &login)
         .await
@@ -649,6 +668,7 @@ where
     let mut query = login::Entity::find()
         .filter(login::Column::Deleted.eq(false))
         .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(crate::ai_agent::unmanaged_login_condition())
         .select_only()
         .column(login::Column::Id)
         .order_by_asc(login::Column::Id);
@@ -822,74 +842,6 @@ where
     Ok(())
 }
 
-fn render_group_logins(
-    logins: Vec<String>,
-    group_login_map: &HashMap<String, SignalGroupLogin>,
-) -> Vec<SignalGroupLogin> {
-    logins
-        .into_iter()
-        .map(|login_id| {
-            group_login_map.get(&login_id).cloned().unwrap_or_else(|| {
-                SignalGroupLogin {
-                    login: login_id.clone(),
-                    login_id,
-                    delta_login: None,
-                }
-            })
-        })
-        .collect()
-}
-
-async fn collect_group_logins<'a, 'async_trait, C>(
-    logins: Vec<String>,
-    dbx: &'a C,
-) -> Result<HashMap<String, SignalGroupLogin>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    if logins.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    let login_ids = logins
-        .into_iter()
-        .map(|login| {
-            uuid::Uuid::parse_str(&login)
-                .map_err(anyhow::Error::from)
-                .map_err(AppError::from)
-        })
-        .collect::<Result<HashSet<_>, AppError>>()?
-        .into_iter()
-        .collect::<Vec<_>>();
-
-    let rows = login::Entity::find()
-        .join(JoinType::LeftJoin, login::Relation::DeltaLogin.def())
-        .filter(login::Column::Id.eq_any(login_ids))
-        .select_only()
-        .column(login::Column::Id)
-        .column(login::Column::Login)
-        .column_as(delta_login::Column::Login, "delta_login")
-        .into_tuple::<(uuid::Uuid, String, Option<String>)>()
-        .all(dbx)
-        .await
-        .c(h!())?;
-
-    Ok(rows
-        .into_iter()
-        .map(|(login_id, login, delta_login)| {
-            let login_id = login_id.to_string();
-            (
-                login_id.clone(),
-                SignalGroupLogin {
-                    login_id,
-                    login,
-                    delta_login,
-                },
-            )
-        })
-        .collect())
-}
-
 async fn collect_datasources<'a, 'async_trait, C>(
     datasource_ids: Vec<i64>,
     dbx: &'a C,
@@ -922,7 +874,9 @@ fn log_sigint_zone_datasource_event(
     let key = &szd.group_master_key;
     let datasource_id = &szd.datasource_id;
     let sigint_zone_id = &szd.sigint_zone_id;
-    info!("{event_name} login={user_login} master_key={key} datasource_id={datasource_id} sigint_zone_id={sigint_zone_id}");
+    info!(
+        "{event_name} login={user_login} master_key={key} datasource_id={datasource_id} sigint_zone_id={sigint_zone_id}"
+    );
 }
 
 pub fn filter_out_ineligible_secret_chats<E: EntityTrait>(

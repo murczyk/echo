@@ -1,50 +1,57 @@
+import type { AnalysisCallsignFrequencyMatchesRsp } from '../../../../../Bindings';
+import type { AnalysisCountItem, AnalysisFilterOption } from '../types';
+import { AnalysisCountBlock } from './AnalysisCountBlock';
+import { AnalysisCallsignFrequencySearch } from './AnalysisCallsignFrequencySearch';
 import { Box, Stack } from '@mui/material';
 
-import type { AnalysisCountItem } from '../types';
-import { AnalysisCallsignGraphCard } from './AnalysisCallsignGraphCard';
-import { AnalysisCallsignsCloudCard } from './AnalysisCallsignsCloudCard';
-import type { NetJsonGraphAndMeta } from '../../../../../Bindings';
-
 type Props = {
-  callsignGraph: NetJsonGraphAndMeta | null;
-  callsignGraphLoading: boolean;
-  callsignGraphLoadVersion: number;
-  callsignGraphLoadError?: string | null;
-  callsignGraphNolimit: boolean;
-  visible: boolean;
-  onLoadCallsignGraph: () => void;
-  onToggleNolimit: () => void;
-  rightSidebarLoading: boolean;
+  callsignOptions: AnalysisFilterOption[];
+  loading: boolean;
+  onClearCallsign: () => void;
+  onAddFreq: (freq: string) => void;
+  selectedCallsigns: readonly string[];
+  selectedFreqs: readonly string[];
   topCallsigns: AnalysisCountItem[];
+  onAddCallsign: (callsign: string) => void;
+  onSearchFrequencyMatches: (
+    callsigns: string[],
+    minMatches: number,
+  ) => Promise<AnalysisCallsignFrequencyMatchesRsp | null>;
+  onToggleCallsign: (callsign: string) => void;
+  onToggleFreq: (freq: string) => void;
 };
 
 export function AnalysisCallsignsPane({
-  callsignGraph,
-  callsignGraphLoading,
-  callsignGraphLoadVersion,
-  callsignGraphLoadError,
-  callsignGraphNolimit,
-  visible,
-  onLoadCallsignGraph,
-  onToggleNolimit,
-  rightSidebarLoading,
+  callsignOptions,
+  loading,
+  onClearCallsign,
+  onAddFreq,
+  selectedCallsigns,
+  selectedFreqs,
   topCallsigns,
+  onAddCallsign,
+  onSearchFrequencyMatches,
+  onToggleCallsign,
+  onToggleFreq,
 }: Props) {
   return (
     <Stack spacing={0}>
-      <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCallsignsCloudCard items={topCallsigns} loading={rightSidebarLoading} />
-      </Box>
-      <Box>
-        <AnalysisCallsignGraphCard
-          graph={callsignGraph}
-          loading={callsignGraphLoading}
-          loadVersion={callsignGraphLoadVersion}
-          loadError={callsignGraphLoadError ?? null}
-          nolimit={callsignGraphNolimit}
-          visible={visible}
-          onLoad={onLoadCallsignGraph}
-          onToggleNolimit={onToggleNolimit}
+      <AnalysisCountBlock
+        title="Позивні"
+        items={topCallsigns}
+        loading={loading}
+        onClearSelection={onClearCallsign}
+        onItemAdd={onAddCallsign}
+        onItemToggle={onToggleCallsign}
+        selectedItemKeys={selectedCallsigns}
+      />
+      <Box sx={{ borderTop: '1px solid', borderColor: 'divider' }}>
+        <AnalysisCallsignFrequencySearch
+          callsignOptions={callsignOptions}
+          onAddFreq={onAddFreq}
+          onSearch={onSearchFrequencyMatches}
+          onToggleFreq={onToggleFreq}
+          selectedFreqs={selectedFreqs}
         />
       </Box>
     </Stack>

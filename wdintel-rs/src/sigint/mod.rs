@@ -213,6 +213,7 @@ pub async fn oneoff_reprocess_coords(
             coords_vec.clone(),
             item_id,
             ts,
+            crate::rer_importer::pelengation_object::extract(body),
             &dbx,
         )
         .await
@@ -513,7 +514,9 @@ pub async fn find_duplicate_of(
                 break;
             }
             if retry_count < 1 {
-                error!("unexpected error: {db_message_id} is duplicate of {original_id}, but {original_id} is missing in db");
+                error!(
+                    "unexpected error: {db_message_id} is duplicate of {original_id}, but {original_id} is missing in db"
+                );
                 break;
             }
             let sleep_time_ms = 100 + 1000 * (3 - retry_count); // 0.1s 1st time, 1.1s 2nd time, 2.1s 3rd time

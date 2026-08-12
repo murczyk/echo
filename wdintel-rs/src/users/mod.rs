@@ -7,8 +7,8 @@ use crate::messenger::group::get_identity_sigint_groups;
 use crate::messenger::group::types::SignalGroupEntryF2;
 use crate::session::{record_new_session, record_page_visit};
 use crate::types::*;
-use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
+use actix_session::SessionExt;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpMessage, HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
@@ -22,6 +22,36 @@ pub mod types;
 pub fn login_id_from_identity(user: &Identity) -> Result<Uuid, AppError> {
     let identity = user.id().map_err(|_| AppError::Unauthenticated)?;
     Uuid::parse_str(&identity).map_err(|_| AppError::Unauthenticated)
+}
+
+pub(crate) async fn start_user_session(
+    env: &actix_web::web::Data<Env>,
+    http_req: &HttpRequest,
+    login_id: Uuid,
+) -> Result<(), AppError> {
+    let session_id = Uuid::now_v7();
+    crate::session::add_session(&mut env.redis.clone(), session_id, &login_id)
+        .await
+        .c(h!())?;
+    crate::event_stream::create_redis_stream(
+        &mut env.redis.clone(),
+        session_id,
+    )
+    .await
+    .c(h!())?;
+
+    update_last_active_at(&env.dbx, &login_id).await?;
+    record_new_session(&login_id, session_id, env)
+        .await
+        .c(h!())?;
+
+    http_req
+        .get_session()
+        .insert("id", session_id.to_string())
+        .c(h!())?;
+    Identity::login(&http_req.extensions(), login_id.to_string()).c(h!())?;
+
+    Ok(())
 }
 
 pub async fn login_id_by_name<C>(
@@ -152,60 +182,7 @@ where
     let roles: Vec<String> = serde_json::from_value(login_obj.roles).c(h!())?;
     let mut is_any_good = false;
     for role in roles_list.clone() {
-        let is_good = match role {
-            "Admin" => roles.contains(&"Admin".to_string()),
-            "Api" => roles.contains(&"Api".to_string()),
-            "ApiAgent" => roles.contains(&"ApiAgent".to_string()),
-            "Full" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-            }
-            "DeleteMsg" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-                    || roles.contains(&"DeleteMsg".to_string())
-            }
-            "Rer" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-                    || roles.contains(&"Rer".to_string())
-            }
-            "Bpla" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-                    || roles.contains(&"Bpla".to_string())
-            }
-            "Basic" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"Full".to_string())
-                    || roles.contains(&"Bpla".to_string())
-                    || roles.contains(&"Rer".to_string())
-                    || roles.contains(&"Basic".to_string())
-            }
-            "UnitsEditor" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"UnitsEditor".to_string())
-            }
-            "NetworkEditor" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"NetworkEditor".to_string())
-            }
-            "CallsignsEditor" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"CallsignsEditor".to_string())
-            }
-            "AdvancedReports" => {
-                roles.contains(&"Admin".to_string())
-                    || roles.contains(&"AdvancedReports".to_string())
-            }
-            "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
-            role => {
-                return Err(AppError::BL {
-                    msg: format!("impossible! unknown role {role}"),
-                })
-            }
-        };
-        is_any_good |= is_good;
+        is_any_good |= role_matches(&roles, role)?;
     }
     if !is_any_good {
         return Err(AppError::Forbidden(format!(
@@ -215,6 +192,73 @@ where
         )));
     }
     Ok(())
+}
+
+pub(crate) fn role_matches(
+    roles: &[String],
+    role: &str,
+) -> Result<bool, AppError> {
+    Ok(match role {
+        "Admin" => roles.contains(&"Admin".to_string()),
+        "Api" => roles.contains(&"Api".to_string()),
+        "ApiAgent" => roles.contains(&"ApiAgent".to_string()),
+        "Full" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+        }
+        "DeleteMsg" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+                || roles.contains(&"DeleteMsg".to_string())
+        }
+        "Rer" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+                || roles.contains(&"Rer".to_string())
+        }
+        "Bpla" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+                || roles.contains(&"Bpla".to_string())
+        }
+        "Basic" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Full".to_string())
+                || roles.contains(&"Bpla".to_string())
+                || roles.contains(&"Rer".to_string())
+                || roles.contains(&"Basic".to_string())
+        }
+        "UnitsEditor" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"UnitsEditor".to_string())
+        }
+        "NetworkEditor" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"NetworkEditor".to_string())
+        }
+        "CallsignsEditor" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"CallsignsEditor".to_string())
+        }
+        "Cyber" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"Cyber".to_string())
+        }
+        "DeviceSource" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"DeviceSource".to_string())
+        }
+        "AdvancedReports" => {
+            roles.contains(&"Admin".to_string())
+                || roles.contains(&"AdvancedReports".to_string())
+        }
+        "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
+        role => {
+            return Err(AppError::BL {
+                msg: format!("impossible! unknown role {role}"),
+            });
+        }
+    })
 }
 
 #[post("/api/user/keep-alive")]
@@ -249,10 +293,10 @@ pub async fn update_login(
     let req = req.into_inner();
     let update_description = has_update_login_description(&req);
     let req: UpdateLoginReq = serde_json::from_value(req).c(h!())?;
-
     let txn = env.dbx.begin().await.c(h!())?;
 
     let login_id = Uuid::parse_str(&req.id).c(h!())?;
+    crate::ai_agent::ensure_unmanaged_login(&txn, login_id).await?;
     let login_obj = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Id.eq(login_id))
@@ -393,6 +437,7 @@ pub async fn delete_login(
 
     let txn = env.dbx.begin().await.c(h!())?;
     let login_id = Uuid::parse_str(req.as_str()).c(h!())?;
+    crate::ai_agent::ensure_unmanaged_login(&txn, login_id).await?;
     let login_obj = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::Id.eq(login_id))
@@ -417,7 +462,6 @@ pub async fn create_login(
     req: Json<CreateLoginReq>,
 ) -> Result<Json<Login>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-
     let salt_s =
         format!("{}{}", crate::config::IDENTITY_SALT, req.login.clone());
     let salt = salt_s.as_bytes();
@@ -505,7 +549,6 @@ pub async fn create_delta_login(
     has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
         .c(h!())?;
-
     let login = req.login.clone();
     let roles = req.roles.clone();
     let sigint_zone = req.sigint_zone_id;
@@ -556,8 +599,13 @@ pub async fn list_logins(
         .join(JoinType::LeftJoin, login::Relation::SigintZone.def())
         .join(JoinType::LeftJoin, login::Relation::Organism.def())
         .join(JoinType::LeftJoin, login::Relation::DeltaLogin.def())
-        .filter(organism::Column::DeletedPermanently.eq(false))
+        .filter(
+            Condition::any()
+                .add(organism::Column::DeletedPermanently.eq(false))
+                .add(login::Column::OrganismId.is_null()),
+        )
         .filter(login::Column::DeletedPermanently.eq(false))
+        .filter(crate::ai_agent::unmanaged_login_condition())
         .select_only()
         .columns([
             login::Column::Id,
@@ -859,7 +907,6 @@ pub async fn user_test_api_login(
 #[post("/api/user/login")]
 pub async fn user_login(
     env: actix_web::web::Data<Env>,
-    session: actix_session::Session,
     http_req: HttpRequest,
     req: Json<LoginReq>,
 ) -> Result<Json<()>, AppError> {
@@ -922,30 +969,7 @@ pub async fn user_login(
         return Err(AppError::Form(errors));
     };
 
-    Identity::login(&http_req.extensions(), login_obj.id.to_string())
-        .c(h!())?;
-
-    let session_id = Uuid::now_v7();
-    session.insert("id", session_id.to_string()).c(h!())?;
-
-    let account_id = login_obj.id;
-    crate::session::add_session(
-        &mut env.redis.clone(),
-        session_id,
-        &account_id,
-    )
-    .await
-    .c(h!())?;
-    crate::event_stream::create_redis_stream(
-        &mut env.redis.clone(),
-        session_id,
-    )
-    .await
-    .c(h!())?;
-
-    update_last_active_at(&env.dbx, &account_id).await?;
-
-    record_new_session(&account_id, session_id, &env)
+    start_user_session(&env, &http_req, login_obj.id)
         .await
         .c(h!())?;
 
@@ -1026,22 +1050,84 @@ pub async fn user_sigint_groups(
         return Ok(Json(all_groups));
     };
     let ts = crate::utils::dt_from_millis(*since_ts).c(h!())?;
-    let recent_keys = signal_message_group::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message_group::Relation::SignalMessage.def(),
+    {
+        let since = crate::stats::round_up_to_5min(ts).c(h!())?;
+        let till =
+            crate::stats::round_up_to_5min(Utc::now().naive_utc()).c(h!())?;
+        if crate::stats::can_read_stats_aggregated(&env.config, since, till) {
+            let recent_keys =
+                crate::stats::read_group_stats_aggregated_for_env(
+                    &env, all_groups, since, till,
+                )
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|group| group.master_key)
+                .collect();
+            return Ok(Json(recent_keys));
+        }
+    }
+    let analytics_groups = all_groups.clone();
+    let recent_keys =
+        crate::rer_importer::analysis::with_analytics_read_fallback(
+            env.get_ref(),
+            "user sigint groups",
+            true,
+            |db| async move {
+                read_active_sigint_groups_since(&db, analytics_groups, ts).await
+            },
+            |db| async move {
+                read_active_sigint_groups_since(&db, all_groups, ts).await
+            },
         )
-        .select_only()
-        .column(signal_message_group::Column::GroupMasterKey)
-        .filter(signal_message::Column::Timestamp.gt(ts))
-        .filter(signal_message_group::Column::GroupMasterKey.eq_any(all_groups))
-        .group_by(signal_message_group::Column::GroupMasterKey)
-        .into_tuple::<Option<String>>()
-        .all(&env.dbx)
         .await
         .c(h!())?;
-    let res = recent_keys.into_iter().flatten().collect::<Vec<String>>();
-    Ok(Json(res))
+    Ok(Json(recent_keys))
+}
+
+async fn read_active_sigint_groups_since(
+    db: &DatabaseConnection,
+    groups: Vec<String>,
+    ts: chrono::NaiveDateTime,
+) -> Result<Vec<String>, AppError> {
+    #[derive(FromQueryResult)]
+    struct ActiveSigintGroup {
+        group_master_key: String,
+    }
+
+    let sql = r#"
+        with recent_messages as materialized (
+            select id
+            from signal_message
+            where "timestamp" > $1
+        )
+        select smg.group_master_key
+        from recent_messages sm
+        inner join signal_message_group smg
+            on smg.signal_message_id = sm.id
+        -- This exact lower bound lets PostgreSQL use the leading index column
+        -- without assuming that message IDs and timestamps are correlated.
+        where smg.signal_message_id >= (
+            select min(id)
+            from recent_messages
+        )
+          and smg.group_master_key = any($2::text[])
+        group by smg.group_master_key
+    "#;
+    let active_groups =
+        ActiveSigintGroup::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            vec![ts.into(), groups.into()],
+        ))
+        .all(db)
+        .await
+        .c(h!())?;
+
+    Ok(active_groups
+        .into_iter()
+        .map(|group| group.group_master_key)
+        .collect())
 }
 
 #[post("/api/user/sigint-groups-detailed")]
@@ -1305,7 +1391,10 @@ pub async fn validate_login(
     };
     if let Some(organism) = organisms.into_iter().next() {
         if !organism.enabled {
-            println!("user {} not authorized, reason: organism {} (id {}) was disabled", login, organism.name, organism.id);
+            println!(
+                "user {} not authorized, reason: organism {} (id {}) was disabled",
+                login, organism.name, organism.id
+            );
             return Ok(UserValidationResult {
                 login_model: None,
                 is_valid: true,
@@ -1318,7 +1407,9 @@ pub async fn validate_login(
     if login_obj.deleted {
         let (msg, reason) = match login_obj.deactivation_reason {
             Some(DeactivationReasonEnum::Inactive) => {
-                let message = format!("Користувача \"{login}\" було заблоковано як не активного більше {INACTIVE_USERS_DEACTIVATE_AFTER_DAYS} днів. Зверніться до адміністратора");
+                let message = format!(
+                    "Користувача \"{login}\" було заблоковано як не активного більше {INACTIVE_USERS_DEACTIVATE_AFTER_DAYS} днів. Зверніться до адміністратора"
+                );
                 (message, Some(DeactivationReasonEnum::Inactive))
             }
             Some(DeactivationReasonEnum::Admin) => {
@@ -1766,8 +1857,15 @@ pub async fn update_last_active_at(
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, mk_login, mk_organism, mk_signal_group,
+        cleanup, find_test_login, mk_login, mk_organism, mk_signal_group,
+        mk_signal_message, mk_signal_message_group,
     };
+    use actix_identity::IdentityMiddleware;
+    use actix_session::{
+        storage::RedisSessionStore, Session, SessionMiddleware,
+    };
+    use actix_web::{cookie::Key, test as actix_test, web, App};
+    use redis::AsyncCommands;
     use serial_test::serial;
 
     static TEST_LOCK: tokio::sync::Mutex<()> =
@@ -1782,6 +1880,230 @@ mod tests {
         assert!(has_update_login_description(&serde_json::json!({
             "description": "note"
         })));
+    }
+
+    async fn create_grouped_message(
+        dbx: &DatabaseConnection,
+        group_master_key: &str,
+        timestamp: chrono::NaiveDateTime,
+    ) {
+        let message = mk_signal_message(
+            dbx,
+            signal_message::ActiveModel {
+                created_at: Set(timestamp),
+                timestamp: Set(Some(timestamp)),
+                datasource_group_id: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(group_master_key.to_string())),
+                datasource_group_id: Set(None),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn active_sigint_groups_use_exact_message_timestamp() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let cutoff = Utc::now().naive_utc() - Duration::days(1);
+        let group_keys = [
+            "active-groups-old",
+            "active-groups-recent-a",
+            "active-groups-recent-b",
+            "active-groups-denied",
+        ];
+        for group_master_key in group_keys {
+            mk_signal_group(
+                &env.dbx,
+                signal_group::ActiveModel {
+                    master_key: Set(group_master_key.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        create_grouped_message(
+            &env.dbx,
+            "active-groups-old",
+            cutoff - Duration::hours(1),
+        )
+        .await;
+        create_grouped_message(
+            &env.dbx,
+            "active-groups-recent-a",
+            cutoff + Duration::hours(1),
+        )
+        .await;
+        create_grouped_message(
+            &env.dbx,
+            "active-groups-old",
+            cutoff - Duration::hours(2),
+        )
+        .await;
+        create_grouped_message(
+            &env.dbx,
+            "active-groups-recent-b",
+            cutoff + Duration::hours(2),
+        )
+        .await;
+        create_grouped_message(
+            &env.dbx,
+            "active-groups-recent-a",
+            cutoff + Duration::hours(3),
+        )
+        .await;
+        create_grouped_message(
+            &env.dbx,
+            "active-groups-denied",
+            cutoff + Duration::hours(4),
+        )
+        .await;
+
+        let mut active_groups = read_active_sigint_groups_since(
+            &env.dbx,
+            vec![
+                "active-groups-old".to_string(),
+                "active-groups-recent-a".to_string(),
+                "active-groups-recent-b".to_string(),
+            ],
+            cutoff,
+        )
+        .await
+        .unwrap();
+        active_groups.sort();
+
+        assert_eq!(
+            active_groups,
+            vec![
+                "active-groups-recent-a".to_string(),
+                "active-groups-recent-b".to_string(),
+            ]
+        );
+    }
+
+    async fn start_test_user_session(
+        env: web::Data<Env>,
+        req: HttpRequest,
+    ) -> Result<HttpResponse, AppError> {
+        let login = find_test_login(&env.dbx).await.c(h!())?;
+        start_user_session(&env, &req, login.id).await.c(h!())?;
+        Ok(HttpResponse::Ok().finish())
+    }
+
+    async fn get_test_user_session(
+        env: web::Data<Env>,
+        user: Identity,
+        session: Session,
+    ) -> Result<Json<(String, Uuid, String, bool)>, AppError> {
+        let identity = user.id().c(h!())?;
+        let session_id = crate::event_stream::get_session_id(&session)
+            .c(h!())?
+            .c(h!())?;
+        let redis_session = crate::session::get_session_by_id(
+            &mut env.redis.clone(),
+            session_id,
+        )
+        .await
+        .c(h!())?
+        .c(h!())?;
+        let stream_exists = env
+            .redis
+            .clone()
+            .exists(crate::event_stream::session_stream_id(session_id))
+            .await
+            .c(h!())?;
+        user.logout();
+        Ok(Json((
+            identity,
+            session_id,
+            redis_session.account_id,
+            stream_exists,
+        )))
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn start_user_session_initializes_identity_and_event_stream() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let session_store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(session_store, Key::generate()))
+                .app_data(web::Data::from(env.clone()))
+                .route(
+                    "/test/start-user-session",
+                    web::post().to(start_test_user_session),
+                )
+                .route(
+                    "/test/get-user-session",
+                    web::get().to(get_test_user_session),
+                ),
+        )
+        .await;
+
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/test/start-user-session")
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let cookie = response.response().cookies().next().unwrap().into_owned();
+
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::get()
+                .uri("/test/get-user-session")
+                .cookie(cookie)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let (identity, session_id, account_id, stream_exists): (
+            String,
+            Uuid,
+            String,
+            bool,
+        ) = actix_test::read_body_json(response).await;
+
+        assert_eq!(identity, login.id.to_string());
+        assert_eq!(account_id, login.id.to_string());
+        assert!(stream_exists);
+
+        let mut redis = env.redis.clone();
+        redis
+            .del::<_, ()>(crate::event_stream::session_stream_id(session_id))
+            .await
+            .unwrap();
+        redis
+            .del::<_, ()>(crate::event_stream::get_sess_key(session_id))
+            .await
+            .unwrap();
+        redis
+            .srem::<_, _, ()>(REDIS_SESSIONS_KEY, session_id.to_string())
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -2170,5 +2492,24 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(derived_count, 0);
+    }
+    fn roles(roles: &[&str]) -> Vec<String> {
+        roles.iter().map(|role| (*role).to_owned()).collect()
+    }
+
+    #[test]
+    fn devices_roles_preserve_boundaries() {
+        assert!(role_matches(&roles(&["Cyber"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["DeviceSource"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["Cyber"]), "DeviceSource").unwrap());
+        assert!(
+            role_matches(&roles(&["DeviceSource"]), "DeviceSource").unwrap()
+        );
+        assert!(role_matches(&roles(&["Admin"]), "Cyber").unwrap());
+        assert!(role_matches(&roles(&["Admin"]), "DeviceSource").unwrap());
+        assert!(!role_matches(&roles(&["Api"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["Full"]), "Cyber").unwrap());
+        assert!(!role_matches(&roles(&["Api"]), "DeviceSource").unwrap());
+        assert!(!role_matches(&roles(&["Full"]), "DeviceSource").unwrap());
     }
 }

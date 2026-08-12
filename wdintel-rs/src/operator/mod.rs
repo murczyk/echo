@@ -1,5 +1,5 @@
 use crate::entities::{
-    datasource, datasource_group, signal_group, signal_message_metadata,
+    datasource, datasource_group, login, signal_group, signal_message_metadata,
     signal_profile,
 };
 use crate::error::AppError;
@@ -8,12 +8,13 @@ use crate::messenger::types::Message;
 use crate::types::Env;
 use crate::types::ShortContext;
 use crate::users::{has_role, login_id_from_identity};
-use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::Utc;
 use echo_im::types::MessageAttachmentF1;
 use sea_orm::*;
+
+const ECHO_OPERATOR_LABEL_PREFIX: &str = "EХО Оператор ";
 
 pub mod oneoff;
 mod types;
@@ -28,10 +29,10 @@ async fn message_submit(
     has_role(&env.dbx, &login_id_from_identity(&user)?, "Api")
         .await
         .c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login_id = login_id_from_identity(&user)?;
 
     let txn = env.dbx.begin().await.c(h!())?;
-    let datasource = ensure_api_datasource(&login, &txn).await.c(h!())?;
+    let datasource = ensure_api_datasource(&login_id, &txn).await.c(h!())?;
     let mut changed_inbox_item_ids = vec![];
     let message_uid = if datasource.enabled.unwrap_or(false) {
         let sender_id =
@@ -123,36 +124,64 @@ async fn enqueue_message_dmr_metadata(
 }
 
 async fn ensure_api_datasource(
-    login: &uuid::Uuid,
+    login_id: &uuid::Uuid,
     txn: &DatabaseTransaction,
 ) -> Result<datasource::Model, AppError> {
     let now = chrono::Utc::now().naive_utc();
+    let login_name = login::Entity::find_by_id(*login_id)
+        .select_only()
+        .column(login::Column::Login)
+        .into_tuple::<String>()
+        .one(txn)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    let display_name = format!("{ECHO_OPERATOR_LABEL_PREFIX}{login_name}");
+
     let maybe_datasource = datasource::Entity::find()
-        .filter(datasource::Column::ApiLoginId.eq(*login))
+        .filter(datasource::Column::ApiLoginId.eq(*login_id))
         .filter(datasource::Column::Kind.eq("echo_operator"))
         .one(txn)
         .await
         .c(h!())?;
     if let Some(mut datasource) = maybe_datasource {
-        let is_deleted = datasource.deleted;
-        let mut updated_datasource = datasource.into_active_model();
-        if is_deleted {
+        let mut needs_update = false;
+        let mut updated_datasource = datasource.clone().into_active_model();
+
+        if datasource.display_name != display_name {
+            updated_datasource.display_name = Set(display_name);
+            needs_update = true;
+        }
+        if datasource.deleted {
             // ressurect but not re-enable datasource
             updated_datasource.deleted = Set(false);
-            updated_datasource.updated_by_login_id = Set(Some(*login));
-            updated_datasource.enabled = Set(Some(false));
-        } else {
-            updated_datasource.last_sync_at = Set(Some(now));
+            needs_update = true;
+            if datasource.enabled != Some(false) {
+                updated_datasource.enabled = Set(Some(false));
+                needs_update = true;
+            }
+            if datasource.updated_by_login_id != Some(*login_id) {
+                updated_datasource.updated_by_login_id = Set(Some(*login_id));
+                needs_update = true;
+            }
         }
-        datasource = updated_datasource.update(txn).await.c(h!())?;
+
+        if datasource.last_sync_at != Some(now) {
+            updated_datasource.last_sync_at = Set(Some(now));
+            needs_update = true;
+        }
+
+        if needs_update {
+            datasource = updated_datasource.update(txn).await.c(h!())?;
+        }
         Ok(datasource)
     } else {
         let new_datasource = datasource::ActiveModel {
             kind: Set("echo_operator".to_string()),
-            display_name: Set(format!("EХО Оператор {login}")),
+            display_name: Set(display_name),
             enabled: Set(Some(true)),
-            api_login_id: Set(Some(*login)),
-            updated_by_login_id: Set(Some(*login)),
+            api_login_id: Set(Some(*login_id)),
+            updated_by_login_id: Set(Some(*login_id)),
             last_sync_at: Set(Some(now)),
             deleted: Set(false),
             ..Default::default()
@@ -177,7 +206,7 @@ async fn ensure_profile(
     let already_exists = old_name.is_some();
     let up_to_date = match &old_name {
         None => false,
-        Some(nm) => profile.name.eq(nm),
+        Some(nm) => profile.name == *nm,
     };
     if already_exists && up_to_date {
         return Ok(echo_id);

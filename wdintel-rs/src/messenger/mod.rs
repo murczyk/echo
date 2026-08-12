@@ -9,7 +9,6 @@ use crate::messenger::types::*;
 use crate::sigint::aor::{load_default_aor, render_aor};
 use crate::types::{AppError, Env, ShortContext};
 use crate::users::{ensure_admin, has_any_role, login_id_from_identity};
-use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::{Duration, Utc};
@@ -99,6 +98,7 @@ pub async fn accounts_stats_timeline(
         .into_iter()
         .collect::<Vec<_>>();
     let analytics_master_keys = master_keys.clone();
+    let postgres_env = env.clone();
     let timelines =
         crate::rer_importer::analysis::with_analytics_read_fallback(
             env.get_ref(),
@@ -113,9 +113,9 @@ pub async fn accounts_stats_timeline(
                 )
                 .await?)
             },
-            |db| async move {
+            |_db| async move {
                 Ok(crate::stats::read_group_stats_timeline_cached(
-                    &db,
+                    &postgres_env,
                     master_keys,
                     dt_since,
                     dt_till,
@@ -291,7 +291,7 @@ pub async fn link(
         .await?;
     let login = login_id_from_identity(&user)?;
     let txn = env.dbx.begin().await.cae(h!())?;
-    only_alphanumeric_and_hyphen(&req.system_service_name)?;
+    bl::validate_system_service_name(&req.system_service_name)?;
     valid_phone_number(&req.phone)?;
     let signal_cli_mode = if req.messenger.eq_ignore_ascii_case("signal") {
         parse_signal_cli_mode(req.signal_cli_mode.as_deref())?
@@ -311,10 +311,30 @@ pub async fn link(
         &txn,
         &login,
     )
-    .await
-    .cae(h!())?;
+    .await?;
     txn.commit().await.cae(h!())?;
     Ok(Json(LinkAccountRsp { account }))
+}
+
+#[post("/api/messenger/system-service-name-availability")]
+pub async fn system_service_name_availability(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<SystemServiceNameAvailabilityReq>,
+) -> Result<Json<SystemServiceNameAvailabilityRsp>, AppError> {
+    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Admin"])
+        .await?;
+    bl::validate_system_service_name(&req.system_service_name)?;
+    let system_service_name = bl::available_system_service_name(
+        &req.system_service_name,
+        &req.messenger,
+        &env.dbx,
+    )
+    .await?;
+    Ok(Json(SystemServiceNameAvailabilityRsp {
+        exists: system_service_name != req.system_service_name,
+        system_service_name,
+    }))
 }
 
 #[post("/api/messenger/link-operator")]
@@ -356,19 +376,6 @@ pub async fn link_operator(
     let account = load_echo_account(new_datasource_id, &txn).await.c(h!())?;
     txn.commit().await.cae(h!())?;
     Ok(Json(LinkAccountRsp { account }))
-}
-
-fn only_alphanumeric_and_hyphen(x: &str) -> Result<(), AppError> {
-    lazy_static! {
-        static ref RE: Regex = Regex::new(r"^[A-Za-z0-9-]+$").unwrap();
-    }
-    if !RE.is_match(x) {
-        let msg = format!(
-            "Назва може містити тільки латинські літери, цифри та дефіс: {x}",
-        );
-        return Err(AppError::BL { msg });
-    };
-    Ok(())
 }
 
 fn valid_phone_number(x: &str) -> Result<(), AppError> {

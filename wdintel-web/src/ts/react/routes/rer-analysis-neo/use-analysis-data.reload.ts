@@ -20,7 +20,6 @@ import {
   fetchAnalysisLocations,
   fetchAnalysisMetadata,
   fetchAnalysisNetworks,
-  fetchAnalysisNewCallsigns,
   fetchAnalysisPosts,
   fetchAnalysisSenders,
   fetchAnalysisTags,
@@ -31,7 +30,11 @@ import {
   getTagsForDisplay,
 } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
-import { getUnitsList } from '../../services/api/units';
+import { getUnitsByIds, getUnitsList, mergeUnitsById } from '../../services/api/units';
+import {
+  normalizeCallsignFilterValues,
+  normalizeCallsignLookupValue,
+} from '../../utils/callsign-normalization';
 import { isNullOrUndefined, isPresent, sortFrequenciesNumerically } from '../../utils/misc';
 import {
   ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
@@ -39,6 +42,7 @@ import {
   buildInboxReq,
   shouldRebuildAnalysisRequests,
 } from './helpers';
+import { createMasterUnitText } from '../rer-duty-neo/utils';
 import { buildSummaryCallsignsInfo } from './use-analysis-data.callsigns';
 import {
   emptyNewCallsigns,
@@ -103,6 +107,37 @@ function isFallbackNetworkLabel(option: AnalysisFilterOption): boolean {
   return option.label === `Network ${option.value}`;
 }
 
+function networkLabelWithUnits(network: Network, unitsMap: Record<number, Unit>): string {
+  return createMasterUnitText(network, unitsMap).replace(/^р\/м\s*/, '');
+}
+
+function preferCompleteNetworkLabel(
+  current: AnalysisFilterOption,
+  next: AnalysisFilterOption,
+): string {
+  const currentIsFallback = isFallbackNetworkLabel(current);
+  const nextIsFallback = isFallbackNetworkLabel(next);
+  if (currentIsFallback && !nextIsFallback) return next.label;
+  if (!currentIsFallback && nextIsFallback) return current.label;
+  const currentLabel = normalizeFilterLabel(current.label);
+  const nextLabel = normalizeFilterLabel(next.label);
+  return nextLabel.length > currentLabel.length && nextLabel.includes(currentLabel)
+    ? next.label
+    : current.label;
+}
+
+function preferFreshNetworkLabel(
+  current: AnalysisFilterOption,
+  next: AnalysisFilterOption,
+): string {
+  if (isFallbackNetworkLabel(next) && !isFallbackNetworkLabel(current)) return current.label;
+  const currentLabel = normalizeFilterLabel(current.label);
+  const nextLabel = normalizeFilterLabel(next.label);
+  return currentLabel.length > nextLabel.length && currentLabel.includes(nextLabel)
+    ? current.label
+    : next.label;
+}
+
 function mergeNetworkOptionValues(
   existing: AnalysisFilterOption,
   next: AnalysisFilterOption,
@@ -130,13 +165,9 @@ export function mergeHydratedNetworkFilterOptions(
       continue;
     }
 
-    const currentIsFallback = isFallbackNetworkLabel(current);
-    const nextIsFallback = isFallbackNetworkLabel(option);
-    const label = currentIsFallback && !nextIsFallback ? option.label : current.label;
-
     merged.set(option.value, {
       value: option.value,
-      label,
+      label: preferCompleteNetworkLabel(current, option),
       count: Math.max(current.count, option.count),
       values: mergeNetworkOptionValues(current, option),
     });
@@ -162,18 +193,9 @@ export function replaceNetworkFilterOptionsPreservingSelectedLabels(
       return option;
     }
 
-    const currentIsFallback = isFallbackNetworkLabel(currentOption);
-    const nextIsFallback = isFallbackNetworkLabel(option);
-    const label =
-      currentIsFallback && !nextIsFallback
-        ? option.label
-        : !currentIsFallback && nextIsFallback
-          ? currentOption.label
-          : option.label;
-
     return {
       value: option.value,
-      label,
+      label: preferFreshNetworkLabel(currentOption, option),
       count: option.count,
       values: mergeNetworkOptionValues(currentOption, option),
     };
@@ -195,15 +217,49 @@ export function replaceNetworkFilterOptionsPreservingSelectedLabels(
 export function buildHydratedNetworkFilterOptions(
   networks: Network[],
   selectedNetworkIds: number[],
+  unitsMap: Record<number, Unit>,
 ): AnalysisFilterOption[] {
   const selectedNetworkIdSet = new Set(selectedNetworkIds);
   return networks
     .filter((network) => selectedNetworkIdSet.has(network.id))
     .map((network) => ({
       value: String(network.id),
-      label: normalizeFilterLabel(network.name ?? `Network ${network.id}`),
+      label: normalizeFilterLabel(networkLabelWithUnits(network, unitsMap)),
       count: 0,
     }));
+}
+
+export function buildNetworkStatsFilterOptions(
+  networkStats: Awaited<ReturnType<typeof fetchAnalysisNetworks>>,
+  networks: Network[],
+  unitsMap: Record<number, Unit>,
+): AnalysisFilterOption[] {
+  const networkNamesById = new Map(
+    networkStats.networkNames.map((network) => [network.id, network.name]),
+  );
+  const networksById = new Map(networks.map((network) => [network.id, network]));
+
+  return networkStats.networks.map((networkStat) => {
+    const value = String(networkStat.networkId);
+    const statsOption = {
+      value,
+      label: normalizeFilterLabel(
+        networkNamesById.get(networkStat.networkId) ?? `Network ${networkStat.networkId}`,
+      ),
+      count: networkStat.count,
+    };
+    const network = networksById.get(networkStat.networkId);
+    if (network == null) return statsOption;
+
+    const hydratedOption = {
+      ...statsOption,
+      label: normalizeFilterLabel(networkLabelWithUnits(network, unitsMap)),
+    };
+    return {
+      ...statsOption,
+      label: preferCompleteNetworkLabel(statsOption, hydratedOption),
+    };
+  });
 }
 
 export function mergeSignalProfiles(
@@ -266,11 +322,16 @@ export function filterSectionsForQueryState(
 
 export function filterSectionsForInitialLoad(
   queryState: AnalysisQueryState,
+  includeDefaultSections = true,
+  additionalSections: AnalysisFilterSectionId[] = [],
 ): AnalysisFilterSectionId[] {
-  const sections = new Set<AnalysisFilterSectionId>(['tags', 'groups', 'senders']);
+  const sections = new Set<AnalysisFilterSectionId>(
+    includeDefaultSections ? ['tags', 'groups', 'senders'] : [],
+  );
   filterSectionsForQueryState(queryState).forEach((section) => {
     sections.add(section);
   });
+  additionalSections.forEach((section) => sections.add(section));
   return Array.from(sections);
 }
 
@@ -411,18 +472,23 @@ export async function loadFilterSectionData(
       if (isStale() || isAborted()) return;
       const groupedByLabel = new Map<string, AnalysisFilterOption>();
       callsignsRsp.callsigns.forEach((item) => {
-        const label = item.callsign.toUpperCase();
+        const value = normalizeCallsignLookupValue(item.callsign);
+        if (value === '') return;
+        const label = value.toLocaleUpperCase('uk-UA');
         const existing = groupedByLabel.get(label);
         if (isPresent(existing)) {
           existing.count += item.count;
-          existing.values = [...(existing.values ?? [existing.value]), item.callsign];
+          existing.values = normalizeCallsignFilterValues([
+            ...(existing.values ?? [existing.value]),
+            value,
+          ]);
           return;
         }
         groupedByLabel.set(label, {
-          value: label,
+          value,
           label,
           count: item.count,
-          values: [item.callsign],
+          values: [value],
         });
       });
       context.setOptions((current) => ({
@@ -487,6 +553,7 @@ export async function loadFilterSectionData(
       const networkNamesById = Object.fromEntries(
         networksStatsRsp.networkNames.map((network) => [network.id, network.name]),
       );
+      const hydratedNetworksById = new Map(networksById.map((network) => [network.id, network]));
       context.setNetworks((current) => mergeNetworks(current, networksById));
       context.setOptions((current) => ({
         ...current,
@@ -495,8 +562,14 @@ export async function loadFilterSectionData(
           toFilterOptions(
             networksStatsRsp.networks,
             (item) => String(item.networkId),
-            (item) =>
-              normalizeFilterLabel(networkNamesById[item.networkId] ?? `Network ${item.networkId}`),
+            (item) => {
+              const network = hydratedNetworksById.get(item.networkId);
+              return normalizeFilterLabel(
+                network
+                  ? networkLabelWithUnits(network, context.unitsMap)
+                  : (networkNamesById[item.networkId] ?? `Network ${item.networkId}`),
+              );
+            },
             (item) => item.count,
           ),
           context.queryState.networksSelected,
@@ -557,8 +630,9 @@ export function transformMessagePageResponse<
 type ReloadParams = {
   clearAnalysisResults: () => void;
   invalidateCorrelatedFreqsCache: () => void;
-  invalidateCallsignGraph: () => void;
+  invalidateCallsignGraph: (options?: { clearGraph?: boolean }) => void;
   invalidateMessagePaging: () => void;
+  includeDefaultFilterSections?: boolean;
   messagePageCursor?: AnalysisMessagePageCursor;
   centerTab?: import('./types').AnalysisCenterTab;
   rightSidebarVisible?: boolean;
@@ -597,6 +671,7 @@ type ReloadParams = {
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, CallsignInfoRes>>;
   setTagsMap: Setter<Record<number, Tag>>;
+  setTagsOrder: Setter<number[]>;
   setTopCallsigns: Setter<AnalysisCountItem[]>;
   setTopFreqs: Setter<AnalysisCountItem[]>;
   setTopLocations: Setter<AnalysisCountItem[]>;
@@ -639,8 +714,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   params.setCountsLoading(true);
   params.setMessagesLoading(true);
   params.setFiltersLoading(true);
-  params.setNewCallsignsLoading(true);
-  params.setNewCallsignsLoadedKey(null);
   params.setMapLoading(shouldLoadMap);
   params.setNoMoreToLoad(false);
   params.setNolimitShown(false);
@@ -850,8 +923,19 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         targetedReloadSections == null
           ? {
               mode: 'full' as const,
-              sectionsToReload: filterSectionsForInitialLoad(params.queryState),
-              loadedSections: params.getLoadedFilterSections?.() ?? [],
+              sectionsToReload: filterSectionsForInitialLoad(
+                params.queryState,
+                params.includeDefaultFilterSections !== false,
+                params.rightSidebarVisible && params.rightSidebarTab === 'stats'
+                  ? ['groups']
+                  : params.rightSidebarVisible && params.rightSidebarTab === 'callsigns'
+                    ? ['callsigns']
+                    : [],
+              ),
+              loadedSections:
+                params.includeDefaultFilterSections !== false
+                  ? (params.getLoadedFilterSections?.() ?? [])
+                  : [],
               selectedSections: filterSectionsForQueryState(params.queryState),
             }
           : {
@@ -875,7 +959,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         startDate: resolvedInboxReq.sinceDateInclusiveMs ?? 0,
         endDate: resolvedInboxReq.tillDateInclusiveMs ?? 0,
       });
-      params.invalidateCallsignGraph();
+      params.invalidateCallsignGraph({ clearGraph: true });
       return {
         originalAnalysisReq: analysisReq,
         countsPromise,
@@ -929,8 +1013,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
           loadAnalysisNetworksWithCache(networksAnalysisReq, networkStatsCache, params.signal),
         ]);
         if (isStaleReload() || params.signal?.aborted) return;
-        const unitsMap = Object.fromEntries(units.map((unit) => [unit.id, unit]));
-        params.setUnitsMap(unitsMap);
         const selectedNetworkIds = params.queryState.networksSelected
           .map((value) => Number(value))
           .filter(Number.isFinite);
@@ -951,19 +1033,50 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
               )
             : [];
         if (isStaleReload() || params.signal?.aborted) return;
+        const referencedUnitIds = Array.from(
+          new Set([
+            ...networksByAnalysisIds.flatMap((network) => network.unitIds ?? []),
+            ...criticalData.inboxRsp.callsigns.flatMap((callsign) =>
+              callsign.res.flatMap((info) => (info.unitId == null ? [] : [info.unitId])),
+            ),
+          ]),
+        );
+        const referencedUnits = await getUnitsByIds(
+          referencedUnitIds,
+          params.signal ? { signal: params.signal } : undefined,
+        );
+        if (isStaleReload() || params.signal?.aborted) return;
+        const unitsMap = Object.fromEntries(
+          mergeUnitsById(units, referencedUnits).map((unit) => [unit.id, unit]),
+        );
+        params.setUnitsMap(unitsMap);
         params.setNetworks((current) => {
           return mergeNetworks(current, networksByAnalysisIds);
         });
-        const hydratedNetworkOptions = buildHydratedNetworkFilterOptions(
+        const hydratedSelectedNetworkOptions = buildHydratedNetworkFilterOptions(
           networksByAnalysisIds,
           selectedNetworkIds,
+          unitsMap,
         );
-        if (hydratedNetworkOptions.length > 0) {
-          params.setOptions((current) => ({
+        const networkStatsOptions = buildNetworkStatsFilterOptions(
+          networksStatsRsp,
+          networksByAnalysisIds,
+          unitsMap,
+        );
+        params.setOptions((current) => {
+          const hydratedOptions = mergeHydratedNetworkFilterOptions(
+            current.networks,
+            hydratedSelectedNetworkOptions,
+          );
+          return {
             ...current,
-            networks: mergeHydratedNetworkFilterOptions(current.networks, hydratedNetworkOptions),
-          }));
-        }
+            networks: replaceNetworkFilterOptionsPreservingSelectedLabels(
+              hydratedOptions,
+              networkStatsOptions,
+              params.queryState.networksSelected,
+            ),
+          };
+        });
       } catch (loadError) {
         if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return;
         if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
@@ -992,33 +1105,28 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       }
     };
 
+    const loadCardTagData = async () => {
+      try {
+        const tagsDisplay = await getTagsForDisplay(
+          params.signal ? { signal: params.signal } : undefined,
+        );
+        if (isStaleReload() || params.signal?.aborted) return;
+        params.setTagsMap(tagsDisplay.tagsMap);
+        params.setTagsOrder(tagsDisplay.tagsOrder);
+      } catch (loadError) {
+        if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return;
+        if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+      }
+    };
+
     startedSecondaryLoads = true;
     params.invalidateSummaryLoads?.();
     params.invalidateTopSidebarLoads?.();
-    const secondaryLoads = [loadCountsData(), loadReferenceData()];
+    const secondaryLoads = [loadCountsData(), loadReferenceData(), loadCardTagData()];
     if (shouldLoadMap) {
       secondaryLoads.push(loadMapData());
     }
-    if (params.shouldLoadNewCallsigns) {
-      secondaryLoads.push(
-        (async () => {
-          try {
-            const newCallsignsRsp = await fetchAnalysisNewCallsigns(
-              criticalData.resolvedAnalysisReq,
-              params.signal ? { signal: params.signal } : undefined,
-            );
-            if (isStaleReload() || params.signal?.aborted) return;
-            params.setNewCallsigns(newCallsignsRsp);
-            params.setNewCallsignsLoadedKey(JSON.stringify(criticalData.resolvedAnalysisReq));
-          } catch (loadError) {
-            if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return;
-            if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
-          } finally {
-            if (!isStaleReload() && !params.signal?.aborted) params.setNewCallsignsLoading(false);
-          }
-        })(),
-      );
-    } else {
+    if (!params.shouldLoadNewCallsigns) {
       params.setNewCallsigns(emptyNewCallsigns);
       params.setNewCallsignsLoading(false);
       params.setNewCallsignsLoadedKey(null);

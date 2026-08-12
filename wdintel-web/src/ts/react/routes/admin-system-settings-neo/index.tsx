@@ -14,31 +14,43 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import dayjs from 'dayjs';
+import type { Dayjs } from 'dayjs';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
+import { PowerDateTimePicker } from '../../components/PowerDateTimePicker';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import {
   createSystemSettings,
+  getRerDutyTestReplayStatus,
   listSystemSettings,
+  type RerDutyTestReplayStatus,
   type SystemSettingsItem,
 } from '../../services/api/system-settings';
+import { APP_TIME_ZONE } from '../../utils/misc';
 import { AdminControlPanelNeoSection } from '../admin-control-panel-neo';
-
-type SystemSettingsTab = 'main' | 'duty' | 'control' | 'pelengs' | 'notifications';
+import { CacheBackfillSection } from './CacheBackfillSection';
+import {
+  readSystemSettingsTab,
+  replaceSystemSettingsTabUrl,
+  type SystemSettingsTab,
+} from './url-state';
 
 type SystemSettingsForm = {
   exactMatchOnlyDefault: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
   dutyTestEnabled: boolean;
-  dutyInsertHistoricalInterceptions: boolean;
   dutyTestSinceMs: number;
   dutyTestLimit: number;
   dutyPollIntervalSec: number;
+  dutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
@@ -62,11 +74,13 @@ type SystemSettingsPayload = {
   exactMatchOnlyDefault: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
   dutyTestEnabled: boolean;
-  dutyInsertHistoricalInterceptions: boolean;
   dutyTestSinceMs: number;
   dutyTestLimit: number;
   dutyPollIntervalSec: number;
+  dutyTestReplayIntervalSec: number;
   shortUrlEnabled: boolean;
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
@@ -88,11 +102,13 @@ const EMPTY_FORM: SystemSettingsForm = {
   exactMatchOnlyDefault: true,
   supportNonRerInterceptions: false,
   defaultNeoAnalysis: false,
+  showClassicDuty: true,
+  showClassicAnalysis: true,
   dutyTestEnabled: false,
-  dutyInsertHistoricalInterceptions: false,
   dutyTestSinceMs: 0,
   dutyTestLimit: 1,
   dutyPollIntervalSec: 1,
+  dutyTestReplayIntervalSec: 1,
   shortUrlEnabled: false,
   autofixEchoimMissingMessages: false,
   devicesSectionEnabled: false,
@@ -115,6 +131,38 @@ const SUPPORT_NON_RER_TOOLTIP =
 const REPORT_CHUNKING_TOOLTIP =
   'якщо звіт охоплює більший період - ми розбиваємо цей період на вікна вказаного розміру, обраховуємо їх окремо і агрегуємо в цілий звіт';
 const REPORT_CHUNKING_HOURS_MAX = 2_147_483_647;
+const DUTY_TEST_SOURCE_MAX = 10_000;
+const DUTY_TEST_REPLAY_INTERVAL_SEC_MAX = 31_536_000;
+const DUTY_TEST_ENABLED_TOOLTIP =
+  'Фоновий процес по одному відтворює вибрані історичні повідомлення як нові. Після вимкнення або зміни параметрів створені ним копії автоматично прибираються.';
+const DUTY_TEST_SINCE_TOOLTIP =
+  'Початок історії, з якого буде вибрано наступні повідомлення. Дата й час указуються за київським часом.';
+const DUTY_TEST_LIMIT_TOOLTIP = 'Кількість послідовних історичних повідомлень у циклі відтворення.';
+const DUTY_POLL_INTERVAL_TOOLTIP =
+  'Пауза між перевірками справжніх нових повідомлень в Оперативному.';
+const DUTY_TEST_REPLAY_INTERVAL_TOOLTIP =
+  'Пауза між тестовими повідомленнями. Перше повідомлення надходить одразу, після останнього цикл починається знову.';
+
+function dutyTestSinceDateTime(value: number) {
+  return value > 0 ? dayjs(value).tz(APP_TIME_ZONE) : null;
+}
+
+function dutyTestSinceMs(value: Dayjs | null): number {
+  return value ? value.tz(APP_TIME_ZONE, true).valueOf() : 0;
+}
+
+function dutyTestReplayStatusLabel(status: string): string {
+  return (
+    {
+      disabled: 'вимкнено',
+      preparing: 'підготовка',
+      running: 'працює',
+      empty: 'немає повідомлень після вказаної дати',
+      cleaning: 'прибирання тестових повідомлень',
+      error: 'помилка',
+    }[status] ?? status
+  );
+}
 
 function InfoLabel({ label, tooltip }: { label: string; tooltip: string }) {
   return (
@@ -132,11 +180,13 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     exactMatchOnlyDefault: item?.rerAnalysisUnitsExactMatchOnlyDefault ?? true,
     supportNonRerInterceptions: item?.supportNonRerInterceptions ?? false,
     defaultNeoAnalysis: item?.defaultNeoAnalysis ?? false,
+    showClassicDuty: item?.showClassicDuty ?? true,
+    showClassicAnalysis: item?.showClassicAnalysis ?? true,
     dutyTestEnabled: item?.rerDutyTestEnabled ?? false,
-    dutyInsertHistoricalInterceptions: item?.rerDutyInsertHistoricalInterceptions ?? false,
     dutyTestSinceMs: item?.rerDutyTestSinceMs ?? 0,
     dutyTestLimit: item?.rerDutyTestLimit ?? 1,
     dutyPollIntervalSec: item?.rerDutyPollIntervalSec ?? 1,
+    dutyTestReplayIntervalSec: item?.rerDutyTestReplayIntervalSec ?? 1,
     shortUrlEnabled: item?.rerShortUrlEnabled ?? false,
     autofixEchoimMissingMessages: item?.autofixEchoimMissingMessages ?? false,
     devicesSectionEnabled: item?.devicesSectionEnabled ?? false,
@@ -160,11 +210,13 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.exactMatchOnlyDefault === b.exactMatchOnlyDefault &&
     a.supportNonRerInterceptions === b.supportNonRerInterceptions &&
     a.defaultNeoAnalysis === b.defaultNeoAnalysis &&
+    a.showClassicDuty === b.showClassicDuty &&
+    a.showClassicAnalysis === b.showClassicAnalysis &&
     a.dutyTestEnabled === b.dutyTestEnabled &&
-    a.dutyInsertHistoricalInterceptions === b.dutyInsertHistoricalInterceptions &&
     a.dutyTestSinceMs === b.dutyTestSinceMs &&
     a.dutyTestLimit === b.dutyTestLimit &&
     a.dutyPollIntervalSec === b.dutyPollIntervalSec &&
+    a.dutyTestReplayIntervalSec === b.dutyTestReplayIntervalSec &&
     a.shortUrlEnabled === b.shortUrlEnabled &&
     a.autofixEchoimMissingMessages === b.autofixEchoimMissingMessages &&
     a.devicesSectionEnabled === b.devicesSectionEnabled &&
@@ -221,8 +273,12 @@ function normalizeForm(form: SystemSettingsForm): SystemSettingsForm {
   return {
     ...form,
     dutyTestSinceMs: Math.max(0, Math.floor(form.dutyTestSinceMs) || 0),
-    dutyTestLimit: Math.max(1, Math.floor(form.dutyTestLimit) || 1),
+    dutyTestLimit: Math.max(1, Math.min(DUTY_TEST_SOURCE_MAX, Math.floor(form.dutyTestLimit) || 1)),
     dutyPollIntervalSec: Math.max(1, Math.floor(form.dutyPollIntervalSec) || 1),
+    dutyTestReplayIntervalSec: Math.max(
+      1,
+      Math.min(DUTY_TEST_REPLAY_INTERVAL_SEC_MAX, Math.floor(form.dutyTestReplayIntervalSec) || 1),
+    ),
     reportChunkingHours: Math.min(
       REPORT_CHUNKING_HOURS_MAX,
       Math.max(1, Math.floor(form.reportChunkingHours) || 24),
@@ -240,11 +296,13 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     exactMatchOnlyDefault: form.exactMatchOnlyDefault,
     supportNonRerInterceptions: form.supportNonRerInterceptions,
     defaultNeoAnalysis: form.defaultNeoAnalysis,
+    showClassicDuty: form.showClassicDuty,
+    showClassicAnalysis: form.showClassicAnalysis,
     dutyTestEnabled: form.dutyTestEnabled,
-    dutyInsertHistoricalInterceptions: form.dutyInsertHistoricalInterceptions,
     dutyTestSinceMs: form.dutyTestSinceMs,
     dutyTestLimit: form.dutyTestLimit,
     dutyPollIntervalSec: form.dutyPollIntervalSec,
+    dutyTestReplayIntervalSec: form.dutyTestReplayIntervalSec,
     shortUrlEnabled: form.shortUrlEnabled,
     autofixEchoimMissingMessages: form.autofixEchoimMissingMessages,
     devicesSectionEnabled: form.devicesSectionEnabled,
@@ -484,12 +542,31 @@ function MainSettingsSection({
 function DutySettingsSection({
   form,
   patchForm,
+  replayStatus,
+  replayStatusError,
 }: {
   form: SystemSettingsForm;
   patchForm: PatchSystemSettingsForm;
+  replayStatus: RerDutyTestReplayStatus | null;
+  replayStatusError: string | null;
 }) {
   return (
     <>
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        Меню
+      </Typography>
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.showClassicDuty}
+            onChange={(_, checked) => {
+              patchForm({ showClassicDuty: checked });
+            }}
+          />
+        }
+        label="Показувати класичний оперативний"
+      />
+
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
         Тестові повідомлення
       </Typography>
@@ -502,43 +579,73 @@ function DutySettingsSection({
             }}
           />
         }
-        label="Увімкнути тестову вибірку повідомлень"
-      />
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.dutyInsertHistoricalInterceptions}
-            onChange={(_, checked) => {
-              patchForm({ dutyInsertHistoricalInterceptions: checked });
-            }}
+        label={
+          <InfoLabel
+            label="Увімкнути тестове надходження повідомлень"
+            tooltip={DUTY_TEST_ENABLED_TOOLTIP}
           />
         }
-        label="Вставляти історичні перехоплення"
       />
-      <TextField
-        label="Дата старту (timestamp ms)"
-        type="number"
-        value={form.dutyTestSinceMs}
-        onChange={(event) => {
-          const next = Number(event.target.value);
-          patchForm({ dutyTestSinceMs: Number.isFinite(next) ? next : 0 });
+      <PowerDateTimePicker
+        label={<InfoLabel label="Дата старту" tooltip={DUTY_TEST_SINCE_TOOLTIP} />}
+        value={dutyTestSinceDateTime(form.dutyTestSinceMs)}
+        onChange={(value) => {
+          patchForm({ dutyTestSinceMs: dutyTestSinceMs(value) });
         }}
-        inputProps={{ min: 0, step: 1000 }}
-        helperText="Використовується як sinceDateInclusiveMs"
+        allowEmpty
       />
       <TextField
-        label="Ліміт повідомлень"
+        label={<InfoLabel label="Ліміт повідомлень" tooltip={DUTY_TEST_LIMIT_TOOLTIP} />}
         type="number"
         value={form.dutyTestLimit}
         onChange={(event) => {
           const next = Number(event.target.value);
           patchForm({ dutyTestLimit: Number.isFinite(next) ? next : 1 });
         }}
-        inputProps={{ min: 1, step: 1 }}
+        inputProps={{ min: 1, max: DUTY_TEST_SOURCE_MAX, step: 1 }}
         helperText="Мінімум 1"
       />
       <TextField
-        label="Інтервал запиту нових повідомлень (сек)"
+        label={
+          <InfoLabel
+            label="Інтервал тестових повідомлень (сек)"
+            tooltip={DUTY_TEST_REPLAY_INTERVAL_TOOLTIP}
+          />
+        }
+        type="number"
+        value={form.dutyTestReplayIntervalSec}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          patchForm({ dutyTestReplayIntervalSec: Number.isFinite(next) ? next : 1 });
+        }}
+        inputProps={{ min: 1, max: DUTY_TEST_REPLAY_INTERVAL_SEC_MAX, step: 1 }}
+        helperText="Пауза між тестовими повідомленнями"
+      />
+      {replayStatusError ? <PowerAlert severity="error">{replayStatusError}</PowerAlert> : null}
+      {replayStatus ? (
+        <Box>
+          <Typography variant="body2">
+            Стан: {dutyTestReplayStatusLabel(replayStatus.status)}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Джерело: {replayStatus.nextSourcePosition ?? 0}/{replayStatus.sourceCount}; створено:{' '}
+            {replayStatus.generatedCount}
+          </Typography>
+          {replayStatus.nextEmitAtMs ? (
+            <Typography variant="body2" color="text.secondary">
+              Наступне повідомлення:{' '}
+              {dayjs(replayStatus.nextEmitAtMs).tz(APP_TIME_ZONE).format('DD.MM.YYYY HH:mm:ss')}
+            </Typography>
+          ) : null}
+        </Box>
+      ) : null}
+      <TextField
+        label={
+          <InfoLabel
+            label="Інтервал запиту нових повідомлень (сек)"
+            tooltip={DUTY_POLL_INTERVAL_TOOLTIP}
+          />
+        }
         type="number"
         value={form.dutyPollIntervalSec}
         onChange={(event) => {
@@ -579,6 +686,33 @@ function DutySettingsSection({
           />
         }
         label="Увімкнути которкий URL для оперативного"
+      />
+    </>
+  );
+}
+
+function AnalysisSettingsSection({
+  form,
+  patchForm,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+}) {
+  return (
+    <>
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        Меню
+      </Typography>
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.showClassicAnalysis}
+            onChange={(_, checked) => {
+              patchForm({ showClassicAnalysis: checked });
+            }}
+          />
+        }
+        label="Показувати класичний аналіз"
       />
     </>
   );
@@ -699,14 +833,61 @@ function NotificationsSettingsSection({
 }
 
 export function AdminSystemSettingsNeoPage() {
-  const [activeTab, setActiveTab] = useState<SystemSettingsTab>('main');
+  const [activeTab, setActiveTab] = useState<SystemSettingsTab>(readSystemSettingsTab);
   const [saved, setSaved] = useState<SystemSettingsForm>(EMPTY_FORM);
   const [form, setForm] = useState<SystemSettingsForm>(EMPTY_FORM);
   const [loadInProgress, setLoadInProgress] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
+  const [replayStatus, setReplayStatus] = useState<RerDutyTestReplayStatus | null>(null);
+  const [replayStatusError, setReplayStatusError] = useState<string | null>(null);
   const { notify } = usePowerSnackbar();
+
+  useEffect(() => {
+    if (!window.location.hash) {
+      replaceSystemSettingsTabUrl(readSystemSettingsTab());
+    }
+
+    const syncTabFromUrl = () => {
+      setActiveTab(readSystemSettingsTab());
+    };
+    window.addEventListener('popstate', syncTabFromUrl);
+    window.addEventListener('hashchange', syncTabFromUrl);
+
+    return () => {
+      window.removeEventListener('popstate', syncTabFromUrl);
+      window.removeEventListener('hashchange', syncTabFromUrl);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'duty') return;
+    let cancelled = false;
+    let timeout: number | undefined;
+    const loadReplayStatus = async () => {
+      try {
+        const status = await getRerDutyTestReplayStatus();
+        if (cancelled) return;
+        setReplayStatus(status);
+        setReplayStatusError(null);
+      } catch (error) {
+        if (cancelled) return;
+        setReplayStatusError(`Не вдалося завантажити стан: ${formatErrorMessage(error)}`);
+      } finally {
+        if (!cancelled) {
+          timeout = window.setTimeout(() => {
+            void loadReplayStatus();
+          }, 2_000);
+        }
+      }
+    };
+    void loadReplayStatus();
+    return () => {
+      cancelled = true;
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
+  }, [activeTab]);
 
   useEffect(() => {
     async function loadSystemSettings() {
@@ -756,13 +937,16 @@ export function AdminSystemSettingsNeoPage() {
       await createSystemSettings({
         rerAnalysisUnitsExactMatchOnlyDefault: payload.exactMatchOnlyDefault,
         rerDutyTestEnabled: payload.dutyTestEnabled,
-        rerDutyInsertHistoricalInterceptions: payload.dutyInsertHistoricalInterceptions,
+        rerDutyInsertHistoricalInterceptions: payload.dutyTestEnabled,
         rerDutyTestSinceMs: payload.dutyTestSinceMs,
         rerDutyTestLimit: payload.dutyTestLimit,
         rerDutyPollIntervalSec: payload.dutyPollIntervalSec,
+        rerDutyTestReplayIntervalSec: payload.dutyTestReplayIntervalSec,
         rerDutyShortUrl: payload.shortUrlEnabled,
         supportNonRerInterceptions: payload.supportNonRerInterceptions,
         defaultNeoAnalysis: payload.defaultNeoAnalysis,
+        showClassicDuty: payload.showClassicDuty,
+        showClassicAnalysis: payload.showClassicAnalysis,
         autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
         devicesSectionEnabled: payload.devicesSectionEnabled,
         sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,
@@ -793,7 +977,7 @@ export function AdminSystemSettingsNeoPage() {
   }
 
   return (
-    <Box className="w-full" sx={{ maxWidth: 980, mx: 'auto' }}>
+    <Box className="w-full">
       <Stack spacing={2} useFlexGap>
         <PageHeader title="Налаштування системи" />
 
@@ -802,7 +986,9 @@ export function AdminSystemSettingsNeoPage() {
             <Tabs
               value={activeTab}
               onChange={(_, value: SystemSettingsTab) => {
+                if (value === activeTab) return;
                 setActiveTab(value);
+                replaceSystemSettingsTabUrl(value);
               }}
               variant="scrollable"
               allowScrollButtonsMobile
@@ -830,6 +1016,12 @@ export function AdminSystemSettingsNeoPage() {
                 aria-controls="system-settings-neo-panel-duty"
               />
               <Tab
+                value="analysis"
+                label="Аналіз"
+                id="system-settings-neo-tab-analysis"
+                aria-controls="system-settings-neo-panel-analysis"
+              />
+              <Tab
                 value="control"
                 label="Керування"
                 id="system-settings-neo-tab-control"
@@ -847,87 +1039,134 @@ export function AdminSystemSettingsNeoPage() {
                 id="system-settings-neo-tab-notifications"
                 aria-controls="system-settings-neo-panel-notifications"
               />
+              <Tab
+                value="cache"
+                label="КЕШ"
+                id="system-settings-neo-tab-cache"
+                aria-controls="system-settings-neo-panel-cache"
+              />
             </Tabs>
 
             <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
               <Stack spacing={3} sx={{ width: '100%' }}>
-                {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
-                {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
-                <Box
-                  id="system-settings-neo-panel-main"
-                  role="tabpanel"
-                  hidden={activeTab !== 'main'}
-                  aria-labelledby="system-settings-neo-tab-main"
-                >
-                  {activeTab === 'main' ? (
-                    <Stack spacing={3}>
-                      <MainSettingsSection
-                        form={form}
-                        patchForm={patchForm}
-                        audioTranscriptionSaved={saved.enableAudioTranscription}
-                      />
-                    </Stack>
-                  ) : null}
-                </Box>
-
-                <Box
-                  id="system-settings-neo-panel-duty"
-                  role="tabpanel"
-                  hidden={activeTab !== 'duty'}
-                  aria-labelledby="system-settings-neo-tab-duty"
-                >
-                  {activeTab === 'duty' ? (
-                    <Stack spacing={3}>
-                      <DutySettingsSection form={form} patchForm={patchForm} />
-                    </Stack>
-                  ) : null}
-                </Box>
-
-                <Box
-                  id="system-settings-neo-panel-control"
-                  role="tabpanel"
-                  hidden={activeTab !== 'control'}
-                  aria-labelledby="system-settings-neo-tab-control"
-                >
-                  {activeTab === 'control' ? <AdminControlPanelNeoSection /> : null}
-                </Box>
-
-                <Box
-                  id="system-settings-neo-panel-pelengs"
-                  role="tabpanel"
-                  hidden={activeTab !== 'pelengs'}
-                  aria-labelledby="system-settings-neo-tab-pelengs"
-                >
-                  {activeTab === 'pelengs' ? (
-                    <Stack spacing={3}>
-                      <PelengSettingsSection form={form} patchForm={patchForm} />
-                    </Stack>
-                  ) : null}
-                </Box>
-
-                <Box
-                  id="system-settings-neo-panel-notifications"
-                  role="tabpanel"
-                  hidden={activeTab !== 'notifications'}
-                  aria-labelledby="system-settings-neo-tab-notifications"
-                >
-                  {activeTab === 'notifications' ? (
-                    <Stack spacing={3}>
-                      <NotificationsSettingsSection form={form} patchForm={patchForm} />
-                    </Stack>
-                  ) : null}
-                </Box>
-
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>
-                  <PowerButton
-                    variant="contained"
-                    type="submit"
-                    disabled={saveInProgress || loadInProgress || !isDirty}
-                    startIcon={saveInProgress ? <CircularProgress size={18} /> : undefined}
+                {loadError || saveError ? (
+                  <Stack spacing={1}>
+                    {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
+                    {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
+                  </Stack>
+                ) : null}
+                <Box>
+                  <Box
+                    id="system-settings-neo-panel-main"
+                    role="tabpanel"
+                    hidden={activeTab !== 'main'}
+                    aria-labelledby="system-settings-neo-tab-main"
                   >
-                    зберегти
-                  </PowerButton>
+                    {activeTab === 'main' ? (
+                      <Stack spacing={3}>
+                        <MainSettingsSection
+                          form={form}
+                          patchForm={patchForm}
+                          audioTranscriptionSaved={saved.enableAudioTranscription}
+                        />
+                      </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-cache"
+                    role="tabpanel"
+                    hidden={activeTab !== 'cache'}
+                    aria-labelledby="system-settings-neo-tab-cache"
+                  >
+                    {activeTab === 'cache' ? <CacheBackfillSection /> : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-duty"
+                    role="tabpanel"
+                    hidden={activeTab !== 'duty'}
+                    aria-labelledby="system-settings-neo-tab-duty"
+                  >
+                    {activeTab === 'duty' ? (
+                      <Stack spacing={3}>
+                        <DutySettingsSection
+                          form={form}
+                          patchForm={patchForm}
+                          replayStatus={replayStatus}
+                          replayStatusError={replayStatusError}
+                        />
+                      </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-analysis"
+                    role="tabpanel"
+                    hidden={activeTab !== 'analysis'}
+                    aria-labelledby="system-settings-neo-tab-analysis"
+                  >
+                    {activeTab === 'analysis' ? (
+                      <Stack spacing={3}>
+                        <AnalysisSettingsSection form={form} patchForm={patchForm} />
+                      </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-control"
+                    role="tabpanel"
+                    hidden={activeTab !== 'control'}
+                    aria-labelledby="system-settings-neo-tab-control"
+                  >
+                    {activeTab === 'control' ? <AdminControlPanelNeoSection /> : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-pelengs"
+                    role="tabpanel"
+                    hidden={activeTab !== 'pelengs'}
+                    aria-labelledby="system-settings-neo-tab-pelengs"
+                  >
+                    {activeTab === 'pelengs' ? (
+                      <Stack spacing={3}>
+                        <PelengSettingsSection form={form} patchForm={patchForm} />
+                      </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-notifications"
+                    role="tabpanel"
+                    hidden={activeTab !== 'notifications'}
+                    aria-labelledby="system-settings-neo-tab-notifications"
+                  >
+                    {activeTab === 'notifications' ? (
+                      <Stack spacing={3}>
+                        <NotificationsSettingsSection form={form} patchForm={patchForm} />
+                      </Stack>
+                    ) : null}
+                  </Box>
                 </Box>
+
+                {activeTab !== 'cache' ? (
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'flex-end',
+                      pt: 1,
+                    }}
+                  >
+                    <PowerButton
+                      variant="contained"
+                      type="submit"
+                      disabled={saveInProgress || loadInProgress || !isDirty}
+                      startIcon={saveInProgress ? <CircularProgress size={18} /> : undefined}
+                    >
+                      зберегти
+                    </PowerButton>
+                  </Box>
+                ) : null}
               </Stack>
             </CardContent>
           </Box>

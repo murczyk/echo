@@ -34,11 +34,16 @@ export const analysisFiltersPaperSx = {
   flexDirection: 'column',
 } as const;
 
-export function AnalysisFiltersPanel({ page, isCompactLayout = false }: AnalysisFiltersPanelProps) {
+export function AnalysisFiltersPanel({
+  page,
+  isCompactLayout = false,
+  fullHeight = false,
+}: AnalysisFiltersPanelProps) {
   const {
     isDirty,
     counts,
     canResetFilters,
+    cyberEchoEnabled,
     aorEntries,
     countsLoading,
     filtersLoading,
@@ -59,6 +64,7 @@ export function AnalysisFiltersPanel({ page, isCompactLayout = false }: Analysis
     savedFilters,
     tagsMap,
     tagsOrder,
+    unitsMap,
     applySavedFilter,
     deleteLoadedSavedFilter,
     renameExistingSavedFilter,
@@ -82,8 +88,9 @@ export function AnalysisFiltersPanel({ page, isCompactLayout = false }: Analysis
         queryState,
         tagsMap,
         tagsOrder,
+        unitsMap,
       }),
-    [aorEntries, counts, groupInfos, options, queryState, tagsMap, tagsOrder],
+    [aorEntries, counts, groupInfos, options, queryState, tagsMap, tagsOrder, unitsMap],
   );
 
   const toggleSection = (section: FilterSectionId) => {
@@ -106,6 +113,7 @@ export function AnalysisFiltersPanel({ page, isCompactLayout = false }: Analysis
         borderRadius: 0,
         boxShadow: 'none',
         backgroundColor: 'transparent',
+        ...(fullHeight ? { height: '100%', overflow: 'auto' } : {}),
       }}
       data-analysis-filters-scroll-container
     >
@@ -147,7 +155,7 @@ export function AnalysisFiltersPanel({ page, isCompactLayout = false }: Analysis
             >
               Фільтри
             </Button>
-          ) : (
+          ) : fullHeight ? null : (
             <Typography variant="subtitle1" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
               Фільтри
             </Typography>
@@ -187,6 +195,7 @@ export function AnalysisFiltersPanel({ page, isCompactLayout = false }: Analysis
                 <AnalysisFiltersPanelSections
                   counts={counts}
                   countsLoading={countsLoading}
+                  cyberEchoEnabled={cyberEchoEnabled}
                   derived={derived}
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
@@ -247,6 +256,7 @@ export function AnalysisFiltersPanel({ page, isCompactLayout = false }: Analysis
                 <AnalysisFiltersPanelSections
                   counts={counts}
                   countsLoading={countsLoading}
+                  cyberEchoEnabled={cyberEchoEnabled}
                   derived={derived}
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}

@@ -37,6 +37,9 @@ function renderDialog(overrides: Partial<Parameters<typeof NetworkEtalonkaReport
   const onDownload = vi.fn();
   const onTypeChange = vi.fn();
   const onActiveFreqsOnlyChange = vi.fn();
+  const onIncludeFreqActiveFromChange = vi.fn();
+  const onIncludeFreqCreatedAtChange = vi.fn();
+  const onIncludeCallsignFullNamesChange = vi.fn();
   const onIncludeSigintSignsChange = vi.fn();
   const onIncludeConfirmationChange = vi.fn();
   const onIncludeUnitCallsignsChange = vi.fn();
@@ -56,6 +59,9 @@ function renderDialog(overrides: Partial<Parameters<typeof NetworkEtalonkaReport
       logs: [],
       reportType: 'ExtendedReport',
       activeFreqsOnly: true,
+      includeFreqActiveFrom: false,
+      includeFreqCreatedAt: true,
+      includeCallsignFullNames: false,
       includeSigintSigns: true,
       includeConfirmation: true,
       includeUnitCallsigns: false,
@@ -73,6 +79,9 @@ function renderDialog(overrides: Partial<Parameters<typeof NetworkEtalonkaReport
     onSetProgressExpanded: vi.fn(),
     onTypeChange,
     onActiveFreqsOnlyChange,
+    onIncludeFreqActiveFromChange,
+    onIncludeFreqCreatedAtChange,
+    onIncludeCallsignFullNamesChange,
     onIncludeSigintSignsChange,
     onIncludeConfirmationChange,
     onIncludeUnitCallsignsChange,
@@ -94,6 +103,9 @@ function renderDialog(overrides: Partial<Parameters<typeof NetworkEtalonkaReport
     onDownload,
     onTypeChange,
     onActiveFreqsOnlyChange,
+    onIncludeFreqActiveFromChange,
+    onIncludeFreqCreatedAtChange,
+    onIncludeCallsignFullNamesChange,
     onIncludeSigintSignsChange,
     onIncludeConfirmationChange,
     onIncludeUnitCallsignsChange,
@@ -108,6 +120,37 @@ describe('NetworkEtalonkaReportDialog', () => {
     powerDateTimePickerMock.mockClear();
     document.body.innerHTML = '';
     vi.clearAllMocks();
+  });
+
+  it('forwards the full-name option change', () => {
+    const view = renderDialog();
+    const label = Array.from(document.querySelectorAll('label')).find((element) =>
+      element.textContent?.includes('Включити ПІБ у позивні'),
+    );
+    const checkbox = label?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+
+    act(() => checkbox?.click());
+
+    expect(view.onIncludeCallsignFullNamesChange).toHaveBeenCalledWith(true);
+    act(() => view.root.unmount());
+  });
+
+  it('forwards both frequency date column options independently', () => {
+    const view = renderDialog();
+    const labels = Array.from(document.querySelectorAll('label'));
+    const activeFromCheckbox = labels
+      .find((element) => element.textContent?.includes('Активна з'))
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const createdAtCheckbox = labels
+      .find((element) => element.textContent?.includes("Дата прив'язки"))
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+
+    act(() => activeFromCheckbox?.click());
+    act(() => createdAtCheckbox?.click());
+
+    expect(view.onIncludeFreqActiveFromChange).toHaveBeenCalledWith(true);
+    expect(view.onIncludeFreqCreatedAtChange).toHaveBeenCalledWith(false);
+    act(() => view.root.unmount());
   });
 
   it('keeps extended report edits local until accept and resets on close', () => {
@@ -247,6 +290,9 @@ describe('NetworkEtalonkaReportDialog', () => {
           logs: ['[1/4] Підготовка даних'],
           reportType: 'ExtendedReport',
           activeFreqsOnly: true,
+          includeFreqActiveFrom: false,
+          includeFreqCreatedAt: true,
+          includeCallsignFullNames: false,
           includeSigintSigns: true,
           includeConfirmation: true,
           includeUnitCallsigns: false,
@@ -308,6 +354,9 @@ describe('NetworkEtalonkaReportDialog', () => {
         logs: [],
         reportType: 'ExtendedReport',
         activeFreqsOnly: true,
+        includeFreqActiveFrom: false,
+        includeFreqCreatedAt: true,
+        includeCallsignFullNames: false,
         includeSigintSigns: true,
         includeConfirmation: true,
         includeUnitCallsigns: false,
@@ -425,6 +474,9 @@ describe('NetworkEtalonkaReportDialog', () => {
         logs: ['backend note'],
         reportType: 'ExtendedReport',
         activeFreqsOnly: true,
+        includeFreqActiveFrom: false,
+        includeFreqCreatedAt: true,
+        includeCallsignFullNames: false,
         includeSigintSigns: true,
         includeConfirmation: true,
         includeUnitCallsigns: false,

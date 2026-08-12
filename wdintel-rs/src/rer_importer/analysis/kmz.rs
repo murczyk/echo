@@ -4,101 +4,61 @@ use crate::types::ShortContext;
 use crate::users::get_organism_login_ids_by_id;
 use tempfile::TempDir;
 
+#[derive(FromQueryResult)]
+struct KmzReportItem {
+    id: i64,
+    freq: Option<String>,
+    lat: Option<f64>,
+    lng: Option<f64>,
+    body: Option<String>,
+}
+
 pub(crate) async fn rer_analysis_kmz_bytes(
     login: &uuid::Uuid,
     env: &Env,
     req: super::AnalysisStatsReq,
 ) -> Result<Vec<u8>, AppError> {
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
-    let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
-
-    #[derive(FromQueryResult)]
-    struct Res {
-        id: i64,
-        freq: Option<String>,
-        lat: Option<f64>,
-        lng: Option<f64>,
-        body: Option<String>,
-    }
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
-    let items = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .select_only()
-        .column_as(sigint_inbox_item::Column::Id, "id")
-        .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .column_as(Expr::col(signal_message::Column::Body), "body")
-        .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
-        .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
-        .filter(
-            datasource_group::Column::GroupMasterKey
-                .eq_any(sigint_groups.clone()),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .filter(sigint_inbox_item::Column::Lat.is_not_null())
-        .filter(sigint_inbox_item::Column::Lng.is_not_null());
-    let items = filter_selected_freqs(items, &req.selected_freqs)?;
-    let items = filter_selected_posts(items, &req.selected_posts)?;
-    let items = filter_selected_groups_and_senders_with_access(
-        items,
-        &req.selected_groups,
-        &req.selected_senders,
-        &sigint_groups,
-    )?;
-    let items = filter_selected_units(
-        items,
-        &req.selected_units,
-        &req.units_exact_match_only,
-    )?;
-    let items = filter_selected_callsigns(items, &req.selected_callsigns)?;
-    let items = filter_selected_tags(
-        items,
-        &req.selected_tags,
-        &req.denied_tags,
-        &req.tag_presence,
-        &req.or_bookmarked,
-        &req.or_important,
-        &req.or_with_coords,
-        &req.or_without_coords,
-        &req.or_with_extended_form,
-        &req.filter_tags_option,
-        &req.without_model_tags,
-        login,
-        req.report_tags_only_this_unit.unwrap_or(false),
-    )?;
-    let items =
-        filter_selected_aors(items, &req.selected_aors).context(h!())?;
-    let items = filter_selected_networks(
-        items,
-        &req.selected_networks,
-        &req.without_network,
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks = report_period_chunks(
+        req.since_date_inclusive_ms,
+        req.till_date_noninclusive_ms,
+        report_settings.chunking_hours,
+        ReportPeriodEnd::NonInclusive,
     )
     .context(h!())?;
-    let items = filter_selected_metadata_for_analysis_stats(items, &req)?;
-    let items = filter_search(items, &req.search)?;
-    let items = items.group_by(Expr::cust("1, 2, 3"));
-    // println!(
-    //     "> download kmz items query: {}",
-    //     items.build(DbBackend::Postgres).to_string()
-    // );
-    let items = items.into_model::<Res>().all(&env.dbx).await.c(h!())?;
+    let mut items = BTreeMap::new();
+    for (index, chunk) in chunks.iter().copied().enumerate() {
+        info!(
+            "KMZ report chunk {}/{}: {}..{}",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms
+        );
+        for item in load_kmz_report_items(
+            login,
+            env,
+            &req,
+            &sigint_groups,
+            dt_from_millis(chunk.since_ms).context(h!())?,
+            dt_from_millis(chunk.till_ms).context(h!())?,
+        )
+        .await
+        .context(h!())?
+        {
+            items.entry(item.id).or_insert(item);
+        }
+    }
+    let items = items.into_values().collect::<Vec<_>>();
 
-    let tmp_dir = TempDir::new()?;
+    let tmp_dir = TempDir::new().context(h!())?;
     // let outpath = tmp_dir.path().join("summary-table.kmz");
 
     let sidc = "10061000001110010000".to_string();
@@ -195,4 +155,100 @@ pub(crate) async fn rer_analysis_kmz_bytes(
         crate::importer::package_up_kmz2(&env.config, &tmp_dir, &kml)?;
     let bytes = tokio::fs::read(&outpath).await.c(h!())?;
     Ok(bytes)
+}
+
+async fn load_kmz_report_items(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &AnalysisStatsReq,
+    sigint_groups: &[String],
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> Result<Vec<KmzReportItem>, AppError> {
+    let items = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Id, "id")
+        .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
+        .column_as(Expr::col(signal_message::Column::Body), "body")
+        .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
+        .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .eq_any(sigint_groups.to_vec()),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .filter(sigint_inbox_item::Column::Lat.is_not_null())
+        .filter(sigint_inbox_item::Column::Lng.is_not_null());
+    let items =
+        filter_selected_freqs(items, &req.selected_freqs).context(h!())?;
+    let items =
+        filter_selected_posts(items, &req.selected_posts).context(h!())?;
+    let items = filter_selected_groups_and_senders_with_access(
+        items,
+        &req.selected_groups,
+        &req.selected_senders,
+        sigint_groups,
+    )
+    .context(h!())?;
+    let items = filter_selected_units(
+        items,
+        &req.selected_units,
+        &req.units_exact_match_only,
+    )
+    .context(h!())?;
+    let items = filter_selected_callsigns(items, &req.selected_callsigns)
+        .context(h!())?;
+    let items = filter_selected_tags(
+        items,
+        &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
+        &req.or_bookmarked,
+        &req.or_important,
+        &req.or_with_coords,
+        &req.or_without_coords,
+        &req.or_with_extended_form,
+        &req.filter_tags_option,
+        &req.without_model_tags,
+        login,
+        req.report_tags_only_this_unit.unwrap_or(false),
+    )
+    .context(h!())?;
+    let items =
+        filter_selected_aors(items, &req.selected_aors).context(h!())?;
+    let items = filter_selected_networks(
+        items,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .context(h!())?;
+    let items = filter_selected_metadata_for_analysis_stats(items, req)
+        .context(h!())?;
+    let items = filter_search(items, &req.search).context(h!())?;
+    let items = filter_selected_device_names(items, &req.selected_device_names)
+        .context(h!())?;
+    let items = items.group_by(Expr::cust("1, 2, 3"));
+    // println!(
+    //     "> download kmz items query: {}",
+    //     items.build(DbBackend::Postgres).to_string()
+    // );
+    Ok(items
+        .into_model::<KmzReportItem>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?)
 }

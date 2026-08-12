@@ -10,19 +10,11 @@ pub trait ArrayColumnOps
 where
     Self: ColumnTrait,
 {
-    fn eq_any<V>(&self, v: Vec<V>) -> SimpleExpr
-    where
-        Vec<V>: Into<Value>;
-
     fn ne_any<V>(&self, v: Vec<V>) -> SimpleExpr
     where
         Vec<V>: Into<Value>;
 
     fn eq_all<V>(&self, v: Vec<V>) -> SimpleExpr
-    where
-        Vec<V>: Into<Value>;
-
-    fn ne_all<V>(&self, v: Vec<V>) -> SimpleExpr
     where
         Vec<V>: Into<Value>;
 }
@@ -31,13 +23,6 @@ impl<T> ArrayColumnOps for T
 where
     T: ColumnTrait,
 {
-    fn eq_any<V>(&self, v: Vec<V>) -> SimpleExpr
-    where
-        Vec<V>: Into<Value>,
-    {
-        any_all_impl(self, "=", "ANY", v)
-    }
-
     fn ne_any<V>(&self, v: Vec<V>) -> SimpleExpr
     where
         Vec<V>: Into<Value>,
@@ -50,13 +35,6 @@ where
         Vec<V>: Into<Value>,
     {
         any_all_impl(self, "=", "ALL", v)
-    }
-
-    fn ne_all<V>(&self, v: Vec<V>) -> SimpleExpr
-    where
-        Vec<V>: Into<Value>,
-    {
-        any_all_impl(self, "<>", "ALL", v)
     }
 }
 

@@ -1,4 +1,5 @@
 import type {
+  AnalysisCallsignFrequencyMatchesRsp,
   CallsignInfoRes,
   CorrelatedFreq,
   CountStatsRsp,
@@ -6,7 +7,7 @@ import type {
   InboxMessage,
   MessageComment,
   InboxMessagesReq,
-  NetJsonGraphAndMeta,
+  NetworkCallsignRelationsRsp,
   Network,
   NewCallsignsRes,
   RerAnalysisQueryState,
@@ -44,6 +45,7 @@ export type AnalysisReportTaskRun = {
 export type AnalysisCountItem = {
   key: string;
   count: number;
+  value?: string;
 };
 
 export type AnalysisFilterOption = {
@@ -72,6 +74,7 @@ export type AnalysisQueryState = Omit<
   includeOnlyNewFreqs: boolean;
   onlyWithMedia: boolean;
   reportTagsOnlyThisUnit: boolean;
+  deviceNamesSelected: string[];
 };
 
 export type AnalysisFilterOptions = {
@@ -133,7 +136,8 @@ export type AnalysisReloadOptions = {
   preserveMessagePage?: boolean;
   refreshMessageCounts?: boolean;
 };
-export type AnalysisSidebarTab = 'map' | 'stats' | 'callsigns' | 'newCallsigns';
+export type AnalysisSidebarTab =
+  'map' | 'stats' | 'frequencies' | 'callsigns' | 'graph' | 'newCallsigns';
 
 export function getAnalysisCenterTabs(analysisMapInSidebar: boolean): AnalysisCenterTab[] {
   return analysisMapInSidebar ? ['messages', 'summary'] : ['messages', 'map', 'summary'];
@@ -141,8 +145,8 @@ export function getAnalysisCenterTabs(analysisMapInSidebar: boolean): AnalysisCe
 
 export function getAnalysisSidebarTabs(analysisMapInSidebar: boolean): AnalysisSidebarTab[] {
   return analysisMapInSidebar
-    ? ['map', 'stats', 'callsigns', 'newCallsigns']
-    : ['stats', 'callsigns', 'newCallsigns'];
+    ? ['map', 'stats', 'frequencies', 'callsigns', 'graph', 'newCallsigns']
+    : ['stats', 'frequencies', 'callsigns', 'graph', 'newCallsigns'];
 }
 
 export type AnalysisPageState = {
@@ -150,6 +154,7 @@ export type AnalysisPageState = {
   aorEntries: AnalysisAorEntry[];
   canResetFilters: boolean;
   analysisMapInSidebar: boolean;
+  showAnalysisCallsignAddForm: boolean;
   centerTab: AnalysisCenterTab;
   centerTabPending: boolean;
   counts: CountStatsRsp | null;
@@ -171,12 +176,12 @@ export type AnalysisPageState = {
   loadedSavedFilter: SavedFilter | null;
   countsLoading: boolean;
   leftPanelOpen: boolean;
-  callsignGraph: NetJsonGraphAndMeta | null;
+  callsignGraph: NetworkCallsignRelationsRsp | null;
   callsignGraphLoading: boolean;
   callsignGraphLoadVersion: number;
   callsignGraphLoadError?: string | null;
-  callsignGraphNolimit: boolean;
   correlatedFreqs: CorrelatedFreq[];
+  correlatedFreqsLoaded: boolean;
   correlatedFreqsLoading: boolean;
   groupsActivity: FreqDailyActivityCount | null;
   groupsActivityLoadedFreq: string | null;
@@ -239,8 +244,11 @@ export type AnalysisPageActions = {
   applySavedFilter: (savedFilter: SavedFilter | null) => void;
   deleteLoadedSavedFilter: () => void;
   renameExistingSavedFilter: (name: string) => Promise<boolean>;
+  findCallsignFrequencyMatches: (
+    callsigns: string[],
+    minMatches: number,
+  ) => Promise<AnalysisCallsignFrequencyMatchesRsp | null>;
   loadCallsignGraph: () => void;
-  toggleCallsignGraphNolimit: () => void;
   loadCorrelatedFreqs: () => void;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => void;
   loadAllMessages: () => Promise<void>;
@@ -248,6 +256,7 @@ export type AnalysisPageActions = {
   loadFirstPage: () => Promise<void>;
   loadLastPage: () => Promise<void>;
   loadNextPage: () => Promise<void>;
+  loadMoreMessages: () => Promise<boolean>;
   loadPrevPage: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   loadNewCallsigns: () => Promise<void>;

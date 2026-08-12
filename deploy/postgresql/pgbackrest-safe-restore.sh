@@ -142,6 +142,7 @@ restore_into_next() {
     --log-level-console="${PGBACKREST_LOG_LEVEL}" \
     restore || return
   sed -i "s|${PGDATA_NEXT}|${PGDATA}|" "${PGDATA_NEXT}/postgresql.auto.conf"
+  sed -i '/^listen_addresses/d' "${PGDATA_NEXT}/postgresql.auto.conf"
   "${PG_CONTROLDATA_BIN}" "${PGDATA_NEXT}" >/dev/null || return
 }
 

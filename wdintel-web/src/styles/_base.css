@@ -94,9 +94,9 @@ a {
 }
 
 .audio-transcription {
-  color: var(--text-color);
-  background-color: color-mix(in srgb, var(--card-color) 90%, var(--action-color));
-  border-left: 3px solid var(--action-color);
+  color: var(--color-text-muted);
+  background-color: var(--color-bg-muted);
+  border-left: 3px solid var(--color-border-muted);
   border-radius: 0 0.25rem 0.25rem 0;
 }
 

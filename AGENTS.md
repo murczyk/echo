@@ -48,6 +48,8 @@
 
 ## Migrations
 
+- Before writing a migration, review comparable existing migrations and follow
+  their established SQL structure and code conventions
 - When you want to change the database schema -- create new file in
   `echo-migration/src` and use the style of one of existing files
 - make pure sql migrations, see
@@ -58,7 +60,21 @@
   delete it from the table like this `delete from seaql_migrations
   where
   version='m20250615_135039_battle_unit_is_flight_journal_enabled';`
-- NEVER edit old and existing migrations (unless not committed yet)
+- NEVER edit migrations already merged into the base branch or deployed.
+  Branch-only migrations may be edited, even across multiple commits, to
+  reconcile their cumulative schema with the base branch. Remove transient DDL
+  that is added by one branch migration and undone by another, and remove its
+  stale analytics impact declarations.
+- After changing migrations, run the catalog-aware analytics check with a
+  dedicated test database restored from the standard test dump (an empty
+  database is not a valid migration baseline):
+  `source deploy/setup_test_database.sh <branch-safe-name>`, then
+  `GITHUB_BASE_REF=<base-branch> TEST_DB_NAME="$DB_NAME" scripts/ci/check_analytics_migration_catalog.sh`.
+  Always set
+  `GITHUB_BASE_REF` locally: the script otherwise defaults to `HEAD^`, which is
+  insufficient for branches containing multiple migration commits.
+  Running `scripts/ci/check_analytics_migrations.py` without catalog snapshots
+  is not sufficient because it cannot detect cumulative no-op schema changes.
 - run `just gen-seaorm` after you've made some schema changes in the database to regenerate sea-orm models
 - migration names contain the datetime of when the migration was created, use current datetime when creating one if you create it manually (for example, `m20250615_135039_battle_unit_is_flight_journal_enabled` means it's created in 15 JUN 2025, at 13:50:39 local time)
 
@@ -75,8 +91,10 @@
 ## Fail fast
 
 - Don't overly-obsess yourself with failing via AppError::BL with clear error messages. Most of the time, fail fast via `.c(h!())?`, let the developer see the line where the error happened
+- Prefer `anyhow::Result<T>` for fallible internal functions. Keep `AppError` or other typed errors at external boundaries instead of carrying them through application code
+- Convert concrete library and infrastructure errors immediately with `.c(h!())?`, then propagate `anyhow::Error`
 - add context with data value when needed but only in rare cases
-- when writing function that must not fail (like infinite loop workers), move out inner loop body in regular AppError-Result function, and call it from the no-fail one, use `.c(h!())?` in AppError one for errors, don't fill the code with too many `match ... Err ...` blocks
+- when writing function that must not fail (like infinite loop workers), move out inner loop body into a regular `anyhow::Result` function, and call it from the no-fail one; use `.c(h!())?` for errors and don't fill the code with too many `match ... Err ...` blocks
 
 ## Frontend (Elm)
 
@@ -163,3 +181,7 @@ Solve tasks correctly with strong reasoning, but minimize visible output tokens.
 - Start markers such as `**A.**` and `**B.**` in new paragraphs.
 - Separate them from preceding text with a blank line.
 - Never rely on a single source newline to create a visible line break.
+
+## Notifications
+
+- When done planning, implementing a plan, a feature, finishing a review or any other work, and .env contains a MATTERMOST_NOTIFICATION_HOOK, notify once you're done with the work

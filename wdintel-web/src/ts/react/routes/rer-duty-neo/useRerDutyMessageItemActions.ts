@@ -64,13 +64,22 @@ type Params = {
   messageFeeds: MessageFeedState[];
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>;
   authUserName: string | null;
+  currentUserOrganismId: number | null;
   profiles: Record<string, SignalProfileEntry | null>;
   groupInfos: Record<string, SignalGroupEntry>;
   setError: (value: string) => void;
 };
 
 export function useRerDutyMessageItemActions(params: Params) {
-  const { messageFeeds, setMessageFeeds, authUserName, profiles, groupInfos, setError } = params;
+  const {
+    messageFeeds,
+    setMessageFeeds,
+    authUserName,
+    currentUserOrganismId,
+    profiles,
+    groupInfos,
+    setError,
+  } = params;
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deleteConfirmFeedId, setDeleteConfirmFeedId] = useState<string | null>(null);
   const [commentMessageId, setCommentMessageId] = useState<number | null>(null);
@@ -221,7 +230,6 @@ export function useRerDutyMessageItemActions(params: Params) {
       if (sourceMessage == null) return;
 
       const currentUserName = authUserName ?? null;
-      const currentUserOrganismId = null;
       const userHasTag = hasUserTag(sourceMessage, tagId, currentUserName);
       const botHasTag = hasBotTag(sourceMessage, tagId);
 
@@ -241,7 +249,7 @@ export function useRerDutyMessageItemActions(params: Params) {
         setError(e instanceof Error ? e.message : String(e));
       }
     },
-    [authUserName, messageFeeds, setMessageFeeds, setError],
+    [authUserName, currentUserOrganismId, messageFeeds, setMessageFeeds, setError],
   );
 
   const onMarkBotTagWrong = useCallback(

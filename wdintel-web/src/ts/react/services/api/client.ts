@@ -7,6 +7,7 @@ export type JsonBody = JsonValue | JsonObject | JsonRequestObject;
 
 type HttpMethod = 'POST' | 'PUT' | 'DELETE' | 'GET';
 export type RequestOptions = {
+  headers?: Record<string, string>;
   signal?: AbortSignal;
 };
 
@@ -22,6 +23,9 @@ export class HttpRequestError extends Error {
 
 export function isUnauthorizedError(error: unknown): boolean {
   return error instanceof HttpRequestError && error.status === 401;
+}
+export function isNetworkRequestError(error: unknown): boolean {
+  return error instanceof HttpRequestError && error.status === 0;
 }
 
 export function isAbortError(error: unknown): boolean {
@@ -82,6 +86,7 @@ async function requestJson<T>(
     method,
     headers: {
       'Content-Type': 'application/json',
+      ...options?.headers,
     },
     credentials: 'include',
     signal: options?.signal,
@@ -131,6 +136,7 @@ async function requestBytes(
     method,
     headers: {
       'Content-Type': 'application/json',
+      ...options?.headers,
     },
     credentials: 'include',
     signal: options?.signal,

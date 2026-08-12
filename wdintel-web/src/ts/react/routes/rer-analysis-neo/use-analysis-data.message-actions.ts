@@ -41,6 +41,10 @@ type Params = {
   onUnauthorized: (error: unknown) => boolean;
   patchMessages: (updater: (messageId: number, message: InboxMessage) => InboxMessage) => void;
   queryState: AnalysisQueryState;
+  completeLocalInboxChangeOrigin: (origin: string) => void;
+  failLocalInboxChangeOrigin: (origin: string) => boolean;
+  reconcileTagMutation: (messageId: number) => Promise<void>;
+  registerLocalInboxChangeOrigin: () => string;
   refreshTagFacet: () => Promise<void>;
   reload: (options?: AnalysisReloadOptions) => Promise<void>;
   setMapOpenMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
@@ -183,24 +187,28 @@ export function useAnalysisDataMessageActions(params: Params) {
       const userHasTag = hasUserTag(sourceMessage, tagId, currentUserName);
       const botHasTag = hasBotTag(sourceMessage, tagId);
       const nextBotTagAction = userHasTag && botHasTag ? { messageId, tagId } : null;
+      const eventOrigin = params.registerLocalInboxChangeOrigin();
 
       setMessageActionCount((current) => current + 1);
       setBotTagAction(nextBotTagAction);
       try {
         try {
           if (userHasTag) {
-            await inboxMessageTagsRm({ messageId, tagId });
+            await inboxMessageTagsRm({ messageId, tagId }, { eventOrigin });
           } else {
-            await inboxMessageTagsAdd({ messageId, tagId });
+            await inboxMessageTagsAdd({ messageId, tagId }, { eventOrigin });
           }
         } catch (mutationError) {
-          if (!params.onUnauthorized(mutationError)) {
-            params.patchMessages((id, message) => (id === messageId ? sourceMessage : message));
+          const eventReceived = params.failLocalInboxChangeOrigin(eventOrigin);
+          const unauthorized = params.onUnauthorized(mutationError);
+          if (!unauthorized) {
             params.onError(params.toErrorMessage(mutationError));
           }
+          if (eventReceived) await params.reconcileTagMutation(messageId);
           return;
         }
 
+        params.completeLocalInboxChangeOrigin(eventOrigin);
         params.patchMessages((id, message) => {
           if (id !== messageId) return message;
           return toggleHumanTag(message, tagId, currentUserName, currentUserOrganismId);
@@ -219,17 +227,26 @@ export function useAnalysisDataMessageActions(params: Params) {
 
   const onMarkBotTagWrong = useCallback(
     async (messageId: number, tagId: number) => {
+      const eventOrigin = params.registerLocalInboxChangeOrigin();
       setMessageActionCount((current) => current + 1);
       try {
-        await inboxMessageTagsModelError({ messageId, tagId });
+        try {
+          await inboxMessageTagsModelError({ messageId, tagId }, { eventOrigin });
+        } catch (mutationError) {
+          const eventReceived = params.failLocalInboxChangeOrigin(eventOrigin);
+          const unauthorized = params.onUnauthorized(mutationError);
+          if (!unauthorized) {
+            params.onError(params.toErrorMessage(mutationError));
+          }
+          if (eventReceived) await params.reconcileTagMutation(messageId);
+          return;
+        }
+
+        params.completeLocalInboxChangeOrigin(eventOrigin);
         setBotTagAction(null);
         params.patchMessages((id, message) =>
           id === messageId ? removeBotTags(message, tagId) : message,
         );
-      } catch (loadError) {
-        if (!params.onUnauthorized(loadError)) {
-          params.onError(params.toErrorMessage(loadError));
-        }
       } finally {
         setMessageActionCount((current) => Math.max(0, current - 1));
       }

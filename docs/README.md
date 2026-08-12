@@ -1,9 +1,12 @@
 # Echo architecture
 
 Echo is a SIGINT analytical web application deployed as one application
-container per installation. PostgreSQL 18 is the system of record. An
-installation may also have one paired analytics container that maintains a
-derived ClickHouse copy for expensive counters and reports.
+container per installation. PostgreSQL 18 stores authoritative data in two
+required databases: the main `wd` database and the independent `wd_files`
+device file registry. They use separate connections and may share one
+PostgreSQL instance. An installation may also have one paired analytics
+container that maintains a derived ClickHouse copy for expensive counters and
+reports.
 
 The analytics container is optional: omitting the `[analytics]` section from
 Echo configuration leaves the application on its existing PostgreSQL path.
@@ -33,13 +36,15 @@ flowchart LR
     echo_operator["echo-operator<br/>optional external message source"]
     goi["GOI instance<br/>optional external system<br/>goi-echo-worker API + shared files"]
     echo_gpu["Echo GPU cluster<br/>optional audio transcription"]
+    openai_engine["External OpenAI API<br/>optional"]
 
     subgraph echo_lxc["LXC 1 · Echo application · required"]
         direction LR
         web["Web application<br/>wdintel-web + nginx"]
         api["Echo API<br/>wdintel-rs"]
         bg["Background workers<br/>wdintel-rs-bgworker"]
-        postgres[("PostgreSQL 18<br/>system of record")]
+        postgres[("PostgreSQL 18 · wd<br/>main system of record")]
+        file_registry[("wd_files<br/>optional device file registry")]
         redis[("Redis<br/>sessions + transient state")]
         nlp["wdintel-py<br/>optional NLP API"]
         iggy["Iggy<br/>optional event streaming"]
@@ -50,6 +55,7 @@ flowchart LR
 
         web --> api
         api -->|transactions and queries| postgres
+        api -.->|device file metadata| file_registry
         bg -->|queues and message state| postgres
         api --> redis
         bg --> redis
@@ -73,6 +79,13 @@ flowchart LR
         signoz["SigNoz<br/>central logs + dashboards"]
     end
 
+    subgraph vllm_router_lxc["echo-vllm-router · Optional AI routing · Debian 13"]
+        direction TB
+        vllm_router["vLLM Router<br/>native systemd · :8000<br/>cache_aware"]
+        vllm_otel["SigNoz OTel collector<br/>native systemd"]
+        vllm_router -.->|router metrics<br/>loopback :29000| vllm_otel
+    end
+
     subgraph analytics_lxc["LXC 2 · Secondary analytics · OPTIONAL · Debian 13"]
         direction LR
         replication["Replication pipeline<br/>PeerDB + Temporal"]
@@ -84,6 +97,16 @@ flowchart LR
         gateway -->|analytical SQL| clickhouse
     end
 
+    subgraph vllm_spark["echo-gpu-spark · Optional AI inference"]
+        direction TB
+        hf_cache[("Hugging Face cache<br/>Gemma 4 26B A4B")]
+        vllm["vLLM OpenAI API<br/>Docker · :8000"]
+        gb10["NVIDIA GB10"]
+
+        hf_cache -->|model weights| vllm
+        vllm -->|inference| gb10
+    end
+
     browser -->|HTTPS| web
     vault -.->|runtime secrets| api
     vault -.->|runtime secrets| bg
@@ -92,6 +115,7 @@ flowchart LR
     api -.->|activity events<br/>PostgreSQL protocol| greptime
     bg -.->|activity batches<br/>PostgreSQL protocol| greptime
     vector -.->|HTTP JSON logs| signoz
+    vllm_otel -.->|router + worker metrics<br/>OTLP gRPC · Tailscale| signoz
     iggy <-->|consume + produce events| promin
     api <-->|uploads + downloads| backblaze
     bg <-->|media + generated reports| backblaze
@@ -100,23 +124,215 @@ flowchart LR
     bg <-->|palitra + folder sync| goi
     echo_im <-->|messenger bot integration| goi
     bg <-->|health · audio upload · transcription| echo_gpu
+    api -.->|Chat Completions HTTPS| openai_engine
+    api <-->|Chat Completions HTTP<br/>Tailscale| vllm_router
+    vllm_router -->|OpenAI-compatible HTTP<br/>Tailscale| vllm
+    vllm -.->|Prometheus metrics<br/>Tailscale| vllm_otel
 
     style echo_lxc stroke-width:2px
     style analytics_lxc stroke-width:2px,stroke-dasharray:8 5
     style greptime_lxc stroke-width:2px,stroke-dasharray:8 5
     style signoz_lxc stroke-width:2px,stroke-dasharray:8 5
+    style vllm_router_lxc stroke-width:2px,stroke-dasharray:8 5
+    style vllm_spark stroke-width:2px,stroke-dasharray:8 5
     classDef canonical stroke-width:3px
     classDef optional stroke-dasharray:6 4
     class postgres canonical
-    class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu optional
+    class file_registry,nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm_router,vllm_otel,vllm,hf_cache,gb10 optional
 ```
 
 The diagram focuses on the core web, worker, messenger, storage, observability,
 and analytics paths. Other instance-specific integrations are configured
 independently.
 
+The `wd_files` database is optional and configured independently under
+`[file_registry]`. Without that section, the backend skips its connection and
+migrations and continues running; device file operations are
+unavailable. When configured, operators must
+provision the database before restart, and startup applies its schema migrations
+automatically. See [File registry database](../deploy/README.md#file-registry-database)
+for configuration and provisioning.
+
 See [Echo GPU audio transcription](ECHO_GPU_TRANSCRIPTION.md) for its
 configuration, network requirements, queue, cache, retry, and REST API flow.
+Completed queue rows remain in PostgreSQL as the durable transcript store;
+only rows orphaned from their source message or attachment are removed.
+
+## AI architecture
+
+Admins configure OpenAI-compatible engines in `/admin/system-settings-neo`.
+`/admin/ai-callsigns` provides prompt testing and an optional sequential
+bgworker that replaces regular parsed callsigns with the AI result.
+Tracked AI evaluation prompts, tools, and notes live under `ai-eval/`. Raw
+production-derived corpora stay in dated, gitignored `ai-eval/*/raw/`
+directories and are synchronized separately to Backblaze B2; see
+[`ai-eval/README.md`](../ai-eval/README.md).
+See [Echo vLLM](../echo-vllm/README.md) for the `echo-gpu-spark` worker and
+[Echo vLLM Router](../echo-vllm-router/README.md) for routing, observability,
+deployment, verification, and rollback commands. Echo uses the router as its
+normal OpenAI-compatible endpoint; direct Spark access is retained only as a
+fallback.
+
+### vLLM inference architecture
+
+```mermaid
+flowchart LR
+    subgraph echo_lxc["Echo application LXC"]
+        api["Echo API"]
+        ai_workers["AI workers"]
+        ai_client["OpenAI-compatible client"]
+
+        api --> ai_client
+        ai_workers --> ai_client
+    end
+
+    subgraph router_lxc["echo-vllm-router LXC · Debian 13"]
+        router["vLLM Router · :8000<br/>cache_aware"]
+        router_metrics["Router metrics<br/>127.0.0.1:29000"]
+        collector["SigNoz OTel collector"]
+
+        router -.-> router_metrics --> collector
+    end
+
+    subgraph spark["echo-gpu-spark · AI inference"]
+        hf_cache[("Hugging Face cache<br/>Gemma 4 26B A4B")]
+        vllm["vLLM OpenAI API<br/>Docker · :8000"]
+        gpu["NVIDIA GB10"]
+
+        hf_cache -->|model weights| vllm
+        vllm -->|inference| gpu
+    end
+
+    signoz["SigNoz<br/>central metrics"]
+
+    ai_client -->|OpenAI-compatible HTTP<br/>Tailscale| router
+    router -->|OpenAI-compatible HTTP<br/>Tailscale| vllm
+    ai_client -.->|fallback only| vllm
+    vllm -.->|Prometheus metrics<br/>Tailscale| collector
+    collector -->|OTLP gRPC<br/>Tailscale| signoz
+
+    classDef optional stroke-dasharray:6 4
+    class ai_workers,router,router_metrics,collector,hf_cache,vllm,gpu,signoz optional
+```
+
+### Per-user AI agent harness
+
+The optional agent harness runs outside the Echo LXC on
+`echo-ai-agent-vm`. Echo stores linked identities, conversations, ordered audit
+events, lifecycle state, and security reviews in PostgreSQL. Redis stores only
+single-use bootstrap credentials and other transient request state. Each
+effective `Rer` user receives a disabled, passwordless linked `ApiAgent`
+identity and an isolated Incus container cloned from a fixed template.
+
+```mermaid
+flowchart LR
+    analyst["Analyst browser"] -->|HTTPS| api
+
+    subgraph echo_lxc["Echo application LXC"]
+        api["Echo API"]
+        agent_worker["AI agent worker"]
+        postgres[("PostgreSQL<br/>identity · conversation · audit · lifecycle")]
+        redis[("Redis<br/>single-use bootstrap credentials")]
+
+        api --> postgres
+        agent_worker --> postgres
+        api --> redis
+        agent_worker --> redis
+    end
+
+    subgraph harness_vm["echo-ai-agent-vm · shared Incus host"]
+        sshd["Dedicated sshd · :22031<br/>key-only forced command"]
+        dispatcher["Namespaced dispatcher<br/>JSON/JSONL allowlist"]
+        template["Fixed stopped template"]
+
+        subgraph agents["Isolated per-user Incus LXC containers · max 6 running"]
+            agent_a["User A<br/>Pi runner"]
+            agent_b["User B<br/>Pi runner"]
+            agent_n["…"]
+        end
+
+        echo_proxy["Instance-bound Echo TLS proxy<br/>:443 → loopback :18443"]
+        vllm_proxy["Instance-bound vLLM proxy<br/>loopback :18000"]
+
+        sshd --> dispatcher
+        dispatcher <-->|clone · lifecycle · exec| agent_a
+        dispatcher <-->|clone · lifecycle · exec| agent_b
+        dispatcher <-->|clone · lifecycle · exec| agent_n
+        template -.->|clone| agent_a
+        template -.->|clone| agent_b
+        template -.->|clone| agent_n
+        agent_a --> echo_proxy
+        agent_b --> echo_proxy
+        agent_n --> echo_proxy
+        agent_a -.-> vllm_proxy
+        agent_b -.-> vllm_proxy
+        agent_n -.-> vllm_proxy
+    end
+
+    router["vLLM Router<br/>internal engine"]
+    openai["External OpenAI API"]
+    internet["Public IPv4 internet"]
+
+    agent_worker <-->|per-deployment SSH identity<br/>namespaced JSONL| sshd
+    echo_proxy -->|hostname-validated HTTPS| api
+    vllm_proxy -.->|direct_http transport| router
+    api -.->|echo_gateway transport<br/>token injected by Echo| openai
+    agent_a -.-> internet
+    agent_b -.-> internet
+    agent_n -.-> internet
+
+    classDef optional stroke-dasharray:6 4
+    class agent_worker,redis,router,openai,internet optional
+```
+
+Multiple Echo deployments share the VM. Each reaches the host through its own
+SSH key, Unix identity, namespace mapping, and isolated runtime home; the
+server-side forced command accepts only the namespaced JSON/JSONL operation
+allowlist. The six-container capacity is enforced globally across namespaces.
+Agent containers have no route to Echo, vLLM, Tailscale, private, link-local,
+or host networks. Their only service access uses Incus instance-bound proxy
+devices:
+TLS for the configured Echo public hostname, backed by an HTTPS upstream whose
+certificate matches that hostname, and loopback port `18000` for a selected
+internal OpenAI-compatible engine. Echo validates the TLS/SNI route with
+`/api/ping` before it is used. An exact `https://api.openai.com/v1` engine uses
+the same Echo TLS route as a capability gateway: only the capability enters the
+container, while Echo injects the stored OpenAI token and streams the fixed Chat
+Completions route. Internet egress remains available.
+
+Requests use one-time, hashed Redis bootstrap tokens to obtain a short-lived
+agent session inside the container. Every agent API call carries its request
+correlation header and is checked against the centrally maintained read-only
+route registry. Mutating or unknown routes and recursive calls to harness APIs
+are rejected and audited. Credentials are revoked on every terminal path.
+Raw hidden reasoning is neither accepted into the event stream nor persisted.
+
+The bgworker serializes requests per human user, resumes queued work after a
+restart, interrupts orphaned running work without replaying it, stops idle
+containers after five minutes, and destroys stopped instances after seven
+days while retaining canonical Echo history. Completed requests are reviewed
+asynchronously; review failures remain explicit and retryable. Suspicious
+reviews send only redacted metadata to Mattermost.
+
+Reusable host operations and security boundaries are documented in
+[AI agent harness](../echo-ai-agent/README.md). The initial deployment record
+is [2026-08-03 AI agent harness](../archive/2026-08-03-ai-agent-harness/README.md).
+
+## Inbox callsign storage
+
+Parsed inbox callsigns are stored as ordered, source-specific rows in
+`sigint_inbox_item_callsign`. Active `primary` and `alg2` rows are the sole
+authoritative representation. Callsign replacement,
+soft deletion, reactivation, ordering, and login attribution are committed in
+the same PostgreSQL transaction as the inbox-item change.
+
+Before applying the cleanup migration that removes the legacy JSONB columns,
+verify that the historical backfill has completed and that normalized row
+counts match the source data.
+
+On ClickHouse-enabled instances, run derived-schema reconciliation after
+PeerDB has mirrored `sigint_inbox_item_callsign`; the callsign relation reads
+only normalized rows.
 
 ## Echo LXC systemd graph
 
@@ -127,6 +343,7 @@ flowchart LR
     socket["wdintel-rs.socket<br/>optional socket activation"] -.-> api
     api --> postgres["postgresql@18-main.service"]
     bg["wdintel-rs-bgworker.service"] --> postgres
+    reports["wdintel-rs-report-worker.service"] --> postgres
     api --> redis["redis-server.service"]
     bg --> redis
     api -.-> nlp["wdintel-py.service<br/>127.0.0.1:5000"]
@@ -159,7 +376,8 @@ flowchart LR
     whatsapp --> whatsapp_data[("WhatsApp client state<br/>/etc/echo/whatsapp-cli-data/%i/client_data/")]
     api --> app_storage[("Echo application storage<br/>configured storage_dir<br/>media cache · uploads · generated assets")]
     bg --> app_storage
-    bg -.->|optional durable media upload| s3[("S3-compatible object storage<br/>optional")]
+    reports --> app_storage
+    reports -.->|encrypted generated reports| s3[("S3-compatible object storage<br/>optional")]
 
     classDef optional stroke-dasharray:6 4
     class socket,nlp,iggy,promin,signal,whatsapp,vector,signoz,greptime,s3,wal_timer,wal_check,table_timer,table_reconcile,analytics optional
@@ -168,37 +386,68 @@ flowchart LR
 ## Bgworkers
 
 In a packaged live deployment, the API process owns only request-adjacent
-workers and the optional Vault secret worker. Long-running application, GOI,
-and report workers belong to the dedicated bgworker process. Solid arrows show
-tasks that are always spawned in that process; dotted arrows show tasks gated
-by configuration or used only during startup. Each process also starts its own
-`worker_metrics_logger`.
+workers and the optional Vault secret worker. Long-running application and GOI
+workers belong to the bgworker process; report-history workers run in the
+separately memory-capped report-worker process. Solid arrows show tasks that
+are always spawned; dotted arrows show tasks gated by configuration or used
+only during startup. Each process also starts its own `worker_metrics_logger`.
 
 ```mermaid
 flowchart TB
     api["wdintel-rs.service"]
     bg["wdintel-rs-bgworker.service"]
+    reports["wdintel-rs-report-worker.service"]
 
     api --> api_workers["Request-adjacent workers<br/>session_activity_worker<br/>messenger_media_cache_cleanup_worker<br/>messenger_media_thumbnail_worker"]
     api -.-> api_vault_worker["secret_worker<br/>when Vault is configured"]
     bg -.-> bg_vault_worker["secret_worker<br/>when Vault is configured"]
 
-    bg --> core_workers["Core workers<br/>healthcheck_worker<br/>worker_calculate_group_stats<br/>iggy_integration_worker<br/>aor_assignments_worker<br/>operator_inbox_worker<br/>rer_duty_historical_interceptions_worker<br/>unit_tag_queue_worker"]
+    bg --> core_workers["Core workers<br/>healthcheck_worker<br/>worker_calculate_group_stats<br/>iggy_integration_worker<br/>aor_assignments_worker<br/>operator_inbox_worker<br/>rer_duty_historical_interceptions_worker<br/>unit_tag_queue_worker<br/>failed_inbox_unit_worker"]
     bg --> messenger_workers["Messenger workers<br/>messenger_receive_worker<br/>process_queue_nofail<br/>echo_im_cleanup"]
     bg --> network_workers["Network workers<br/>recent_inbox_network_worker<br/>old_inbox_network_worker<br/>inbox_network_daily_consistency_worker"]
     bg --> palitra_workers["Palitra worker<br/>palitra_highlight_worker"]
     bg --> goi_workers["GOI workers<br/>goi_sync_worker_0..N<br/>goi_association_message_uid_worker<br/>palitra_conversion_worker"]
 
-    bg -.-> configured_workers["Configuration-gated workers<br/>activity_details_worker · GreptimeDB<br/>cleanup_networks_worker<br/>fill_comp_freq_worker<br/>inactive_users_worker<br/>location_v2_worker<br/>suggest_message_tags_worker<br/>refresh_models_worker · AI models<br/>cleanup_tmp_worker · in-memory tmp"]
+    bg -.-> configured_workers["Configuration-gated workers<br/>analytics_health_log_worker · analytics gateway<br/>activity_details_worker · GreptimeDB<br/>cleanup_networks_worker<br/>fill_comp_freq_worker<br/>inactive_users_worker<br/>location_v2_worker<br/>suggest_message_tags_worker<br/>refresh_models_worker · AI models<br/>cleanup_tmp_worker · in-memory tmp"]
     bg -.-> startup_workers["Startup task<br/>signal_cli_verbose_logger"]
 
-    bg --> report_workers_a["Report-history workers<br/>report_history_worker_tags<br/>report_history_worker_interception<br/>report_history_worker_babak<br/>report_history_worker_mouse<br/>report_history_worker_pelengs<br/>report_history_worker_senders<br/>report_history_worker_posts<br/>report_history_worker_naushnom<br/>report_history_worker_reo<br/>report_history_worker_digest"]
-    bg --> report_workers_b["Report-history workers<br/>report_history_worker_rer_report<br/>report_history_worker_sposob<br/>report_history_worker_posts_docx<br/>report_history_worker_active_networks<br/>report_history_worker_network_frequencies<br/>report_history_worker_report_125<br/>report_history_worker_report_1213<br/>report_history_worker_summary_table"]
-    bg --> report_workers_c["Report-history workers<br/>report_history_worker_kmz<br/>report_history_worker_geojson<br/>report_history_worker_etalonka<br/>report_history_worker_etalonka_1<br/>report_history_worker_goi<br/>report_history_worker_unknown<br/>report_history_timeout_worker"]
+    reports --> report_workers_a["Report-history workers<br/>report_history_worker_tags<br/>report_history_worker_interception<br/>report_history_worker_babak<br/>report_history_worker_mouse<br/>report_history_worker_pelengs<br/>report_history_worker_senders<br/>report_history_worker_posts<br/>report_history_worker_naushnom<br/>report_history_worker_reo<br/>report_history_worker_digest"]
+    reports --> report_workers_b["Report-history workers<br/>report_history_worker_rer_report<br/>report_history_worker_sposob<br/>report_history_worker_posts_docx<br/>report_history_worker_active_networks<br/>report_history_worker_network_frequencies<br/>report_history_worker_report_125<br/>report_history_worker_report_1213<br/>report_history_worker_summary_table"]
+    reports --> report_workers_c["Report-history workers<br/>report_history_worker_kmz<br/>report_history_worker_geojson<br/>report_history_worker_etalonka<br/>report_history_worker_etalonka_1<br/>report_history_worker_goi<br/>report_history_worker_unknown<br/>report_history_timeout_worker"]
 
     classDef optional stroke-dasharray:6 4
     class api_vault_worker,bg_vault_worker,configured_workers,startup_workers optional
 ```
+
+`worker_calculate_group_stats` also owns historical group-stat recalculation.
+
+`failed_inbox_unit_worker` owns verification of unresolved-unit rows marked
+pending by label changes or admin resolution. Every 10 seconds it claims a
+bounded batch with `FOR UPDATE SKIP LOCKED`, reruns the canonical inbox-unit
+resolver against each item's current `unit_v2` or raw `unit`, and either
+persists a parsed `sigint_inbox_item_unit` link and hard-deletes the failure or
+reactivates the failure for admin review. Network-derived links use the same
+table with `network` kind and are rebuilt as the distinct unit union during
+the existing inbox-network recalculation flow. Errors are logged and retried
+without stopping the worker; deleted rows older than 30 days are removed
+before each verification batch.
+
+Report generation is isolated in `wdintel-rs-report-worker.service`. At most
+four reports run concurrently across the per-kind queues. The unit has a fixed
+12 GiB memory-high threshold and 16 GiB hard limit; an OOM kills and immediately
+restarts only report processing, leaving ingestion and other background work
+running in `wdintel-rs-bgworker.service`.
+
+Changes to a group's AOR assignments enqueue the affected activity window in
+the PostgreSQL `group_stats_recalculation_task` table. Pending windows are
+coalesced globally because each recalculation rebuilds global statistics. The
+worker claims one task at a time, rebuilds at most one day, and requeues any
+remaining window. Changes arriving after a task starts are stored in a
+follow-up task; failed work is requeued, stale tasks can be reclaimed, and
+completed rows are removed on the next pass. The regular recent-stat refresh
+still runs after each historical chunk in the same worker iteration.
+
+See the [Redis group-statistics note](../archive/2026-07-29-redis-group-stats/README.md) for derived-statistics storage and retention.
 
 ## GOI integration
 
@@ -214,22 +463,21 @@ flowchart LR
         direction TB
         api["wdintel-rs.service"]
         bg["wdintel-rs-bgworker.service"]
+        reports["wdintel-rs-report-worker.service"]
 
         routes["GOI API routes<br/>setup · configuration · pause controls"]
         sync["goi_sync_worker_0..N<br/>associations + knowledge<br/>signed-frequency reports<br/>callsign workbooks<br/>palette reconcile + transfer"]
         message_uid["goi_association_message_uid_worker<br/>backfill message links when enabled"]
         conversion["palitra_conversion_worker<br/>convert imported palette sources"]
         report["report_history_worker_goi<br/>generate requested GOI reports"]
-        echo_im["Echo IM<br/>Signal + WhatsApp bot integration"]
-
-        echo_pg[("PostgreSQL 18 · wd<br/>goi_integration · goi_association · goi_knowledge<br/>goi_palitra_sync · source blobs · converted geometry<br/>palitra sync/conversion queues")]
+        echo_pg[("PostgreSQL 18 · wd<br/>goi_integration · goi_association · goi_knowledge<br/>goi_palitra_sync · source blobs · converted geometry<br/>palitra sync/conversion queues · automation send log")]
         report_store[("Backblaze B2 / S3<br/>generated GOI reports · optional")]
 
         api --> routes
         bg --> sync
         bg --> message_uid
         bg --> conversion
-        bg --> report
+        reports --> report
 
         routes --> echo_pg
         sync --> echo_pg
@@ -237,19 +485,22 @@ flowchart LR
         conversion --> echo_pg
         report --> echo_pg
         report -.-> report_store
-        echo_im --> echo_pg
     end
 
     subgraph goi_lxc["GOI LXC · external"]
         direction TB
         goi_app["GOI application"]
         goi_worker["goi-echo-worker.service<br/>HTTP API · :8088"]
+        echo_swapp["echo-swapp.service<br/>GOI-side Echo Messengers · :4010<br/>messenger_worker · cleanup_worker<br/>cleanup_tmp_worker_nofail"]
+        messenger_clients["echo-signal-bot@.service<br/>echo-whatsapp-bot@.service"]
         goi_watchers["Internal workers<br/>associations_worker_nofail<br/>knowledge_worker_nofail"]
         goi_postgres["postgresql.service"]
         goi_pg[("PostgreSQL · goi<br/>association · knowledge · sync_lock")]
         goi_files[("GOI filesystem<br/>/etc/goi/data/xlsx/<br/>associations · knowledge · frequencies<br/>/etc/goi/data/palettes/")]
 
         goi_app <--> goi_files
+        goi_app <-->|messenger bot integration| echo_swapp
+        echo_swapp <-->|manage clients| messenger_clients
         goi_worker --> goi_watchers
         goi_worker --> goi_postgres
         goi_postgres --> goi_pg
@@ -258,10 +509,13 @@ flowchart LR
         goi_worker -->|write signed frequencies| goi_files
     end
 
+    map_tiles["Esri World Imagery + Google labels<br/>coordinate screenshot tiles"]
+    echo_swapp -->|coordinate screenshots| map_tiles
+
     sync <-->|Basic-auth HTTP<br/>associations · knowledge · signed frequencies| goi_worker
     sync <-->|SSH · knowledge workbook + palette files| goi_files
     sync -.->|SSH · remote sync lock| goi_pg
-    goi_app <-->|messenger bot integration| echo_im
+    echo_swapp -->|Echo IM + automation tables| echo_pg
 
     style echo_lxc stroke-width:2px
     style goi_lxc stroke-width:2px,stroke-dasharray:8 5
@@ -274,6 +528,78 @@ conversion workers run beside it. `wdintel-rs.service` exposes GOI request
 routes but does not start GOI background workers in live mode. Debug/test
 server mode can still run the general worker set for local development, with
 the GOI pool disabled.
+
+`echo-swapp.service` always starts `messenger_worker`, `cleanup_worker` (Echo IM
+and automation cleanup), and `cleanup_tmp_worker_nofail` on the GOI LXC; none
+is configuration-gated. The service uses the Echo PostgreSQL database as its
+system of record. At startup it reconciles the automation columns it requires,
+so GOI-only deployments do not depend on the central Echo migrator. Automations
+can render extracted coordinates over Esri World Imagery with Google labels and
+attach the PNG to the forwarded text in the same outbound message.
+Cross-automation send reservations, outbound queue rows, and delivery records
+commit atomically. `echo_automation_send_log` retains route-level
+deduplication state for 30 days; the cleanup worker hard-deletes older rows.
+
+Each full GOI integration is scoped to its owner organism. Signed-frequency
+reports and worker-managed callsign rows include only live networks whose
+non-deleted AOR overlaps a non-deleted AOR selected for that organism; an
+organism without selected AORs receives no networks through these exports.
+Association and knowledge sync attempts are limited to once per minute.
+Knowledge failures delay the next attempt for ten minutes, while
+signed-frequency and callsign-workbook exports run at ten-minute intervals.
+Knowledge and signed-frequency XLSX uploads are written to
+`_sync_<original_filename>` beside the live workbook, then atomically renamed
+over it so GOI readers cannot observe a partially written file. Byte-identical
+uploads are skipped. Worker-managed callsigns use their stable Echo ID for
+upserts, while workbook row positions are ignored when detecting content
+changes.
+
+The GOI knowledge table is an active snapshot of the knowledge workbook.
+`knowledge_worker_nofail` hard-deletes rows missing from the current snapshot,
+and the API returns only the remaining rows. On the next successful snapshot
+pull, Echo marks missing `goi_knowledge` rows deleted and retains them until
+the configured cleanup period expires.
+
+## ORBIT unit import
+
+See [Working with ORBIT data](ORBIT.md) for the complete operator and developer
+guide.
+
+ORBIT ingestion is split into normalization, database synchronization, and
+database-only linking. The `oneoff-prepare-orbit-import --path <export.json>`
+command validates the source, normalizes dictionary references to stable UUIDs,
+writes one Apache Parquet file per dictionary plus `orbit_units.parquet`, and
+packages them as a timestamped ZIP. Live mode keeps snapshots under
+`orbit-import/` in the
+`ai_models_config.s3_config` bucket; debug and test modes keep them under
+`<storage_dir>/orbit-import/`. A new snapshot reuses dictionary UUIDs from the
+latest previous snapshot and retains old dictionary entries.
+
+`wdintel-rs --mode=live tui-import-orbit-units` downloads and unpacks the latest
+snapshot, synchronizes every root and ancestor to PostgreSQL parent-first, and
+then matches using only rows from the latest recorded database sync. The
+`orbit_sync` table records the archive MD5 and sync timestamp; an unchanged MD5
+skips data synchronization after explicit operator confirmation. Stale deletion
+decisions remain interactive. After an operator types `REIMPORT`, the third
+main-menu action atomically erases all seven ORBIT tables and imports the latest
+snapshot as a first synchronization; failures roll back the full reimport.
+Manual lookup by exact SIGINT full name also reads ORBIT roots and parent chains
+only from PostgreSQL.
+After synchronization, matched ORBIT roots are linked to their active Echo
+SIGINT units for access-controlled display in the RER unit list and details
+page. Missing operational and generative ancestors imported as SIGINT units are
+active. `orbit_unit_sigint_unit` permits multiple ORBIT links per SIGINT unit.
+Matching requires root identity plus parent evidence for hierarchical SIGINT
+units, compares both operational and generative ORBIT paths, ignores configured
+SIGINT-only name fragments, selects the shortest equally close hierarchy
+extension unless a deeper parent is evidenced, normalizes numbered army
+abbreviations by army number, and skips divergent parent-path ties. Retained
+ORBIT roots are rendered as separate cards.
+
+The seven ORBIT tables are authoritative operational data in PostgreSQL and are
+excluded from PeerDB replication. See the
+[ORBIT import runbook](../deploy/2026-07-29-orbit-dictionaries/README.md) for
+snapshot preparation, matching, review, quit, and stale-row semantics.
 
 ## Optional analytics LXC systemd graph
 
@@ -299,7 +625,7 @@ flowchart LR
     health["echo-analytics-health.service"]
 
     postgres_store[("PostgreSQL 18<br/>peerdb_catalog · temporal · temporal_visibility<br/>echo_analytics_gateway + pg_clickhouse")]
-    clickhouse_store[("ClickHouse<br/>echo_cdc raw tables · echo_analytics current views<br/>derived callsign expansion")]
+    clickhouse_store[("ClickHouse<br/>echo_cdc raw tables · echo_analytics current views<br/>derived callsign and message-ordered network/AOR relations")]
     minio_store[("MinIO<br/>echo-peerdb-stage transient bucket")]
 
     target -.-> postgres
@@ -375,10 +701,33 @@ environment files by deployment commands. Each participating Echo instance
 receives its own analytics container, credentials, publication, replication
 slot, ClickHouse data, and recovery lifecycle.
 
+ClickHouse's local diagnostic tables are operational metadata rather than part
+of the raw, current-state, or derived application datasets. Provisioning and
+the day-two maintenance command keep server and `text_log` verbosity at
+`information`, retain `text_log` for 3 days, `query_log` for 7 days, and
+`trace_log` plus `processors_profile_log` for 1 day. The maintenance boundary
+permits a ClickHouse-only restart and truncation of those four system tables;
+it does not mutate CDC data, application storage, or ZFS snapshots.
+
+GOI deployments build the `echo-swapp` and messenger Debian artifacts on the
+builder configured by `goi_builder` in `goi/justfile`, using its
+`~/workspace/echo` checkout. The operator workstation only transfers the
+artifacts to the target GOI instance, so deployments can be started from macOS.
+
 When configured and fresh, ClickHouse serves the expensive analysis count,
-group, sender, and frequency facets plus the replicated-data scans used by the
-interception, sender, posts, REO, digest, RER, Sposob, 1.2.5, and 1.2.13
-reports. PostgreSQL remains responsible for transactions, authoritative
-catalog and comment lookups, mutable caches, PostGIS processing, and
-repeatable-read report snapshots. Each analytical operation falls back as a
-whole, preventing mixed partial results.
+facet lists and dedicated facet counts plus the replicated-data scans used by
+the interception, sender, posts, REO, digest, RER, Sposob, 1.2.5, and 1.2.13
+reports. Every analytical facet resolves one message-ID scope from its
+authoritative time range. The same lower/upper bounds must constrain every
+large message and message-link relation. Group/sender access must be one
+bounded, flat message-group join unless the joined group relation itself
+supplies the facet dimension. Open ranges retain only the safe lower bound,
+and an empty scope returns an empty result without querying the large
+relations. Time and access predicates remain authoritative; ID bounds are
+only ClickHouse pruning hints.
+
+PostgreSQL remains responsible for transactions, authoritative catalog and
+comment lookups, mutable caches, PostGIS processing, repeatable-read report
+snapshots, and analysis filters whose ClickHouse shape is not a single flat
+query. Each analytical operation falls back as a whole, preventing mixed
+partial results.

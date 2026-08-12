@@ -777,7 +777,10 @@ update shared msg model =
                         items =
                             case shared.masterUnits of
                                 Success units ->
-                                    List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name }) (Dict.values units)
+                                    units
+                                        |> Dict.values
+                                        |> List.filter (\unit -> unit.active || List.member unit.id updatedNetworkUnits)
+                                        |> List.map (\unit -> Select.basicMenuItem { item = unit.id, label = unit.name })
 
                                 _ ->
                                     []
@@ -909,6 +912,13 @@ update shared msg model =
             in
             ( { model | report = newReport }, E.none )
 
+        ReportIncludeCallsignFullNamesChanged checked ->
+            let
+                newReport =
+                    ReportUpdate.updateCommonSetting "includeCallsignFullNames" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
         ReportIncludeSigintSignsChanged checked ->
             let
                 newReport =
@@ -927,6 +937,20 @@ update shared msg model =
             let
                 newReport =
                     ReportUpdate.updateCommonSetting "includeHeadingsAndFreqs" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
+        ReportIncludeFreqActiveFromChanged checked ->
+            let
+                newReport =
+                    ReportUpdate.updateExtendedSetting "includeFreqActiveFrom" checked model.report
+            in
+            ( { model | report = newReport }, E.none )
+
+        ReportIncludeFreqCreatedAtChanged checked ->
+            let
+                newReport =
+                    ReportUpdate.updateExtendedSetting "includeFreqCreatedAt" checked model.report
             in
             ( { model | report = newReport }, E.none )
 
@@ -1269,9 +1293,12 @@ view user shared route model =
                         reportFormConfig =
                             { onReportTypeChanged = ReportTypeChanged
                             , onActiveFreqsOnlyChanged = ReportActiveFreqsOnlyChanged
+                            , onIncludeCallsignFullNamesChanged = ReportIncludeCallsignFullNamesChanged
                             , onIncludeSigintSignsChanged = ReportIncludeSigintSignsChanged
                             , onIncludeConfirmationChanged = ReportIncludeConfirmationChanged
                             , onIncludeHeadingsAndFreqsChanged = ReportIncludeHeadingsAndFreqsChanged
+                            , onIncludeFreqActiveFromChanged = ReportIncludeFreqActiveFromChanged
+                            , onIncludeFreqCreatedAtChanged = ReportIncludeFreqCreatedAtChanged
                             , onIncludeUnitCallsignsChanged = ReportIncludeUnitCallsignsChanged
                             , onIncludePelengsMapChanged = ReportIncludePelengsMapChanged
                             , reportFromDate = Just model.reportFromDate

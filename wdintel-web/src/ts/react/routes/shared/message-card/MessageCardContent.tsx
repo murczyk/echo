@@ -1,8 +1,10 @@
 import type {
   CallsignInfoRes,
+  ContentNode,
   InboxMessage,
   MessageComment,
   Network,
+  Palitra,
   Tag,
   Unit,
 } from '../../../../../Bindings';
@@ -19,6 +21,8 @@ import {
   Typography,
 } from '@mui/material';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isPresent } from '../../../utils/misc';
 import {
@@ -31,8 +35,11 @@ import { renderLinkifiedText } from './message-card-linkify';
 import { MessageCardBotTagPrompt } from './MessageCardBotTagPrompt';
 import { MessageCardComments } from './MessageCardComments';
 import { MessageCardCallsignsSection } from './MessageCardCallsignsSection';
-import { MessageCardCoordinatePreview } from './MessageCardCoordinatePreview';
-import { hasCoordinatePreviewCandidate } from './message-coordinate-preview';
+import { MessageCardCoordinateAttachment } from './MessageCardCoordinateAttachment';
+import {
+  hasCoordinatePreviewCandidate,
+  type CoordinatePreviewPoint,
+} from './message-coordinate-preview';
 import {
   isAudioMediaAttachment,
   canDownloadAllMessageAttachments,
@@ -44,25 +51,52 @@ import {
   MessageMediaDownloadLink,
   MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS,
 } from './MessageCardMedia';
-import { MessageImagePreviewDialog } from './MessageCardImagePreviewDialog';
-import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
 import { collectMessageImages } from './message-card-image-utils';
 import { MessageCardImageList } from './MessageCardImageList';
 import { MessageCardTags } from './MessageCardTags';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import { MessageMediaDocumentLink } from './MessageMediaDocumentLink';
-import { MessageCardDocumentPreviewDialog } from './MessageCardDocumentPreviewDialog';
 import { collectMessageDocuments } from './message-card-document-utils';
 import { blurActiveElement } from '../../../utils/focus';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import { listPalitras } from '../../../services/api/palitra';
-import type { Palitra } from '../../../../../Bindings';
+import {
+  MessageCardAttachmentPreviewProvider,
+  type MessageCardPreviewAttachment,
+} from './attachment-preview/MessageCardAttachmentPreviewProvider';
 import {
   pointBlacklistLabelKey,
   type AddPointHighlightBlacklistRequest,
   type PointBlacklistRequestSource,
 } from './point-highlight-blacklist';
+
+export type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
+
+const MESSAGE_TEXT_PREVIEW_LINE_LIMIT = 20;
+
+function hasMoreThanPreviewLineLimit(messageText: string): boolean {
+  return messageText.split(/\r?\n/).length > MESSAGE_TEXT_PREVIEW_LINE_LIMIT;
+}
+
+function previewTextRows(messageText: string): string {
+  return messageText.split(/\r?\n/).slice(0, MESSAGE_TEXT_PREVIEW_LINE_LIMIT).join('\n');
+}
+
+function previewMarkedTextRows(nodes: ContentNode[]): ContentNode[] {
+  const previewNodes: ContentNode[] = [];
+  let renderedLineBreaks = 0;
+
+  for (const node of nodes) {
+    if (node === 'CNNewlineC') {
+      if (renderedLineBreaks === MESSAGE_TEXT_PREVIEW_LINE_LIMIT - 1) break;
+      renderedLineBreaks += 1;
+    }
+    previewNodes.push(node);
+  }
+
+  return previewNodes;
+}
 
 type PointBlacklistDialogState = {
   request: AddPointHighlightBlacklistRequest;
@@ -91,7 +125,7 @@ function PointBlacklistPaletteDialog({
   onClose: () => void;
 }) {
   return (
-    <Dialog open={true} onClose={onClose} disableRestoreFocus>
+    <Dialog open onClose={onClose} disableRestoreFocus>
       <DialogTitle>Додати до чорного списку</DialogTitle>
       <DialogContent>
         <Typography variant="body2" sx={{ mb: 1.5 }}>
@@ -110,25 +144,20 @@ function PointBlacklistPaletteDialog({
         <List disablePadding>
           {state.palitraIds.map((palitraId) => {
             const palitra = palitras.find((entry) => entry.id === palitraId);
+            const pending = pendingPalitraIds.has(palitraId);
             return (
               <ListItemButton
                 key={palitraId}
-                disabled={palitraId <= 0 || pendingPalitraIds.has(palitraId)}
+                disabled={palitraId <= 0 || pending}
                 onClick={() => onChoose(palitraId)}
               >
-                {pendingPalitraIds.has(palitraId) ? (
-                  <CircularProgress size={18} sx={{ mr: 1 }} />
-                ) : null}
+                {pending ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
                 <ListItemText primary={palitra?.name?.trim() || `Палітра #${palitraId}`} />
               </ListItemButton>
             );
           })}
         </List>
-        {mutationError ? (
-          <PowerAlert severity="error" autoHideDuration={null}>
-            {mutationError}
-          </PowerAlert>
-        ) : null}
+        {mutationError ? <PowerAlert severity="error">{mutationError}</PowerAlert> : null}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Закрити</Button>
@@ -137,14 +166,13 @@ function PointBlacklistPaletteDialog({
   );
 }
 
-export type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
-
 export function MessageCardMessageBody({
   compact = false,
   messageId,
   msg,
   tagsMap,
   tagsOrder,
+  tagContributionsOrganismId,
   tagsLoading = false,
   onToggleTag,
   readOnly = false,
@@ -153,6 +181,7 @@ export function MessageCardMessageBody({
   onCancelBotTagAction,
   onMarkBotTagWrong,
   analysisCallsignActions,
+  showCallsignAddForm = false,
   callsignInfoMap,
   networks,
   unitsMap,
@@ -167,6 +196,7 @@ export function MessageCardMessageBody({
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
   tagsOrder?: number[];
+  tagContributionsOrganismId?: number;
   tagsLoading?: boolean;
   readOnly?: boolean;
   onToggleTag?: (tagId: number) => void;
@@ -175,6 +205,7 @@ export function MessageCardMessageBody({
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
   analysisCallsignActions?: AnalysisCallsignActions;
+  showCallsignAddForm?: boolean;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
@@ -186,6 +217,9 @@ export function MessageCardMessageBody({
 }) {
   const { notify } = useOptionalPowerSnackbar();
   const images = collectMessageImages(msg);
+  const messageText = msg.text ?? '';
+  const hasMessageTextOverflow = hasMoreThanPreviewLineLimit(messageText);
+  const [isMessageTextExpanded, setIsMessageTextExpanded] = useState(false);
   const [activeDownloadKeys, setActiveDownloadKeys] = useState<Set<string>>(() => new Set());
   const activeDownloadKeysRef = useRef<Set<string>>(new Set());
   const downloadCooldownTimersRef = useRef<Map<string, number>>(new Map());
@@ -218,8 +252,13 @@ export function MessageCardMessageBody({
       downloadCooldownTimersRef.current.clear();
     };
   }, []);
-  const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
-  const [videoPreviewIndex, setVideoPreviewIndex] = useState<number | null>(null);
+  useEffect(() => {
+    setIsMessageTextExpanded(false);
+  }, [messageText]);
+  const [attachmentPreviewIndex, setAttachmentPreviewIndex] = useState<number | null>(null);
+  const [coordinatePreviewPoints, setCoordinatePreviewPoints] = useState<CoordinatePreviewPoint[]>(
+    [],
+  );
   const [pointBlacklistDialog, setPointBlacklistDialog] =
     useState<PointBlacklistDialogState | null>(null);
   const [pointBlacklistPalitras, setPointBlacklistPalitras] = useState<Palitra[]>([]);
@@ -252,17 +291,58 @@ export function MessageCardMessageBody({
     pointBlacklistPalitrasPromiseRef.current = promise;
     promise
       .then((palitras) => {
-        if (!mountedRef.current) return;
-        setPointBlacklistPalitras(palitras);
+        if (mountedRef.current) setPointBlacklistPalitras(palitras);
       })
-      .catch((error: unknown) => {
-        if (!mountedRef.current) return;
-        setPointBlacklistLoadError(error instanceof Error ? error.message : String(error));
+      .catch((loadError: unknown) => {
+        if (mountedRef.current) {
+          setPointBlacklistLoadError(
+            loadError instanceof Error ? loadError.message : String(loadError),
+          );
+        }
       })
       .finally(() => {
         if (mountedRef.current) setPointBlacklistLoading(false);
       });
   }, []);
+
+  const submitPointBlacklist = useCallback(
+    async (request: AddPointHighlightBlacklistRequest, onSuccess?: () => void) => {
+      if (!onAddPointHighlightBlacklist) return;
+      const key = `${request.messageId}:${pointBlacklistLabelKey(request.etalon)}:${request.palitraId}`;
+      if (pointBlacklistPendingKeysRef.current.has(key)) return;
+
+      pointBlacklistPendingKeysRef.current.add(key);
+      setPointBlacklistPendingKeys((current) => new Set(current).add(key));
+      setPointBlacklistMutationError(null);
+      try {
+        await onAddPointHighlightBlacklist(request);
+        if (mountedRef.current) {
+          onSuccess?.();
+          notify({ severity: 'success', message: 'Точку додано до чорного списку.' });
+        }
+      } catch (mutationError: unknown) {
+        const message =
+          mutationError instanceof Error ? mutationError.message : String(mutationError);
+        if (mountedRef.current) {
+          setPointBlacklistMutationError(`Не вдалося додати точку до чорного списку: ${message}`);
+          notify({
+            severity: 'error',
+            message: `Не вдалося додати точку до чорного списку: ${message}`,
+          });
+        }
+      } finally {
+        pointBlacklistPendingKeysRef.current.delete(key);
+        if (mountedRef.current) {
+          setPointBlacklistPendingKeys((current) => {
+            const next = new Set(current);
+            next.delete(key);
+            return next;
+          });
+        }
+      }
+    },
+    [notify, onAddPointHighlightBlacklist],
+  );
 
   const requestPointBlacklist = useCallback(
     (source: PointBlacklistRequestSource) => {
@@ -277,67 +357,22 @@ export function MessageCardMessageBody({
         loadPointBlacklistPalitras();
         return;
       }
-
-      const request = {
+      void submitPointBlacklist({
         messageId: source.messageId,
         etalon: source.etalon,
         palitraId: palitraIds[0],
-      };
-      const key = `${request.messageId}:${pointBlacklistLabelKey(request.etalon)}:${request.palitraId}`;
-      if (pointBlacklistPendingKeysRef.current.has(key)) return;
-      pointBlacklistPendingKeysRef.current.add(key);
-      setPointBlacklistPendingKeys((current) => new Set(current).add(key));
-      setPointBlacklistMutationError(null);
-      void onAddPointHighlightBlacklist(request)
-        .then(() => {
-          notify({ severity: 'success', message: 'Точку додано до чорного списку.' });
-        })
-        .catch((error: unknown) => {
-          notify({
-            severity: 'error',
-            message: `Не вдалося додати точку до чорного списку: ${error instanceof Error ? error.message : String(error)}`,
-          });
-        })
-        .finally(() => {
-          pointBlacklistPendingKeysRef.current.delete(key);
-          if (mountedRef.current) {
-            setPointBlacklistPendingKeys((current) => {
-              const next = new Set(current);
-              next.delete(key);
-              return next;
-            });
-          }
-        });
+      });
     },
-    [loadPointBlacklistPalitras, notify, onAddPointHighlightBlacklist],
+    [loadPointBlacklistPalitras, onAddPointHighlightBlacklist, submitPointBlacklist],
   );
 
   const choosePointBlacklistPalitra = useCallback(
-    async (palitraId: number) => {
-      if (!pointBlacklistDialog || !onAddPointHighlightBlacklist || palitraId <= 0) return;
-      const request = { ...pointBlacklistDialog.request, palitraId };
-      const key = `${request.messageId}:${pointBlacklistLabelKey(request.etalon)}:${request.palitraId}`;
-      if (pointBlacklistPendingKeysRef.current.has(key)) return;
-      pointBlacklistPendingKeysRef.current.add(key);
+    (palitraId: number) => {
+      if (!pointBlacklistDialog || palitraId <= 0) return;
       setPointBlacklistPendingPalitraIds((current) => new Set(current).add(palitraId));
-      setPointBlacklistMutationError(null);
-      try {
-        await onAddPointHighlightBlacklist(request);
-        if (mountedRef.current) {
-          setPointBlacklistDialog(null);
-          notify({ severity: 'success', message: 'Точку додано до чорного списку.' });
-        }
-      } catch (error: unknown) {
-        if (mountedRef.current) {
-          const message = error instanceof Error ? error.message : String(error);
-          setPointBlacklistMutationError(`Не вдалося додати точку до чорного списку: ${message}`);
-          notify({
-            severity: 'error',
-            message: `Не вдалося додати точку до чорного списку: ${message}`,
-          });
-        }
-      } finally {
-        pointBlacklistPendingKeysRef.current.delete(key);
+      void submitPointBlacklist({ ...pointBlacklistDialog.request, palitraId }, () =>
+        setPointBlacklistDialog(null),
+      ).finally(() => {
         if (mountedRef.current) {
           setPointBlacklistPendingPalitraIds((current) => {
             const next = new Set(current);
@@ -345,9 +380,9 @@ export function MessageCardMessageBody({
             return next;
           });
         }
-      }
+      });
     },
-    [notify, onAddPointHighlightBlacklist, pointBlacklistDialog],
+    [pointBlacklistDialog, submitPointBlacklist],
   );
 
   const retryPointBlacklistPalitras = useCallback(() => {
@@ -358,7 +393,6 @@ export function MessageCardMessageBody({
   const imageHrefSet = useMemo(() => new Set(images.map((image) => image.href)), [images]);
   const documents = collectMessageDocuments(msg);
   const previewableDocuments = documents.filter((document) => document.kind !== 'unsupported');
-  const [documentPreviewIndex, setDocumentPreviewIndex] = useState<number | null>(null);
   const documentHrefSet = new Set(documents.map((document) => document.href));
   const attachmentMedia = (msg.media ?? []).filter((attachment) => {
     const href = String(attachment.href ?? '');
@@ -391,6 +425,22 @@ export function MessageCardMessageBody({
       };
     });
   }, [videoAttachments]);
+  const previewAttachments = useMemo<MessageCardPreviewAttachment[]>(
+    () => [
+      ...images.map((image) => ({ type: 'image' as const, value: image })),
+      ...videoPreviewSources.map((video) => ({ type: 'video' as const, value: video })),
+      ...previewableDocuments.map((document) => ({
+        type: 'document' as const,
+        value: document,
+      })),
+      ...(coordinatePreviewPoints.length > 0
+        ? [{ type: 'coordinate' as const, points: coordinatePreviewPoints }]
+        : []),
+    ],
+    [coordinatePreviewPoints, images, previewableDocuments, videoPreviewSources],
+  );
+  const coordinatePreviewStartIndex =
+    images.length + videoPreviewSources.length + previewableDocuments.length;
 
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
   const hasTags = tagsLayout !== 'hidden' && Object.keys(tagsMap).length > 0;
@@ -406,6 +456,7 @@ export function MessageCardMessageBody({
     onOpenPointsOnMap,
     requestPointBlacklist,
     pointBlacklistPendingKeys,
+    hasMessageTextOverflow && !isMessageTextExpanded,
   );
   const hasTextPrimary = Array.isArray(textPrimary)
     ? textPrimary.some((node) => isPresent(node))
@@ -436,31 +487,19 @@ export function MessageCardMessageBody({
           videos={videoAttachments}
           onOpen={(index) => {
             blurActiveElement();
-            setImagePreviewIndex(index);
+            setAttachmentPreviewIndex(index);
           }}
-          onOpenVideo={(index) => setVideoPreviewIndex(index)}
+          onOpenVideo={(index) => {
+            blurActiveElement();
+            setAttachmentPreviewIndex(images.length + index);
+          }}
         />
       ) : null}
-      {imagePreviewIndex != null && images.length > 0 ? (
-        <MessageImagePreviewDialog
-          imageHrefs={images}
-          initialIndex={imagePreviewIndex ?? 0}
-          currentIndex={imagePreviewIndex ?? 0}
-          open={true}
-          onClose={() => setImagePreviewIndex(null)}
-          onIndexChange={(index) => setImagePreviewIndex(index)}
-          isDownloadStarting={isDownloadStarting}
-          onDownloadStart={onDownloadStart}
-        />
-      ) : null}
-      {documentPreviewIndex != null && previewableDocuments.length > 0 ? (
-        <MessageCardDocumentPreviewDialog
-          documents={previewableDocuments}
-          initialIndex={documentPreviewIndex ?? 0}
-          currentIndex={documentPreviewIndex ?? 0}
-          open={true}
-          onClose={() => setDocumentPreviewIndex(null)}
-          onIndexChange={(index) => setDocumentPreviewIndex(index)}
+      {attachmentPreviewIndex != null && previewAttachments.length > 0 ? (
+        <MessageCardAttachmentPreviewProvider
+          attachments={previewAttachments}
+          initialIndex={attachmentPreviewIndex}
+          onClose={() => setAttachmentPreviewIndex(null)}
           isDownloadStarting={isDownloadStarting}
           onDownloadStart={onDownloadStart}
         />
@@ -487,7 +526,9 @@ export function MessageCardMessageBody({
                   previewIndex >= 0
                     ? () => {
                         blurActiveElement();
-                        setDocumentPreviewIndex(previewIndex);
+                        setAttachmentPreviewIndex(
+                          images.length + videoAttachments.length + previewIndex,
+                        );
                       }
                     : undefined
                 }
@@ -515,18 +556,7 @@ export function MessageCardMessageBody({
           />
         </div>
       ) : null}
-      {videoPreviewIndex !== null ? (
-        <MessageCardVideoPreviewDialog
-          open={true}
-          onClose={() => setVideoPreviewIndex(null)}
-          videos={videoPreviewSources}
-          currentIndex={videoPreviewIndex ?? 0}
-          onIndexChange={(idx) => setVideoPreviewIndex(idx)}
-          isDownloadStarting={isDownloadStarting}
-          onDownloadStart={onDownloadStart}
-        />
-      ) : null}
-      {hasTextPrimary ? (
+      {hasTextPrimary || hasMessageTextOverflow ? (
         <div
           className={
             msg.textMarked && msg.textMarked.length > 0
@@ -539,10 +569,56 @@ export function MessageCardMessageBody({
           }}
         >
           {textPrimary}
+          {hasMessageTextOverflow ? (
+            <Button
+              size="small"
+              color="inherit"
+              variant="text"
+              onClick={() => setIsMessageTextExpanded((value) => !value)}
+              aria-expanded={isMessageTextExpanded}
+              aria-label={
+                isMessageTextExpanded
+                  ? 'Згорнути текст повідомлення'
+                  : 'Показати текст повідомлення'
+              }
+              endIcon={
+                isMessageTextExpanded ? (
+                  <ExpandLessIcon fontSize="inherit" aria-hidden />
+                ) : (
+                  <ExpandMoreIcon fontSize="inherit" aria-hidden />
+                )
+              }
+              sx={{
+                display: 'flex',
+                width: 'fit-content',
+                flexShrink: 0,
+                minHeight: 27,
+                py: 0,
+                px: 0.5,
+                mt: 0.5,
+                fontSize: '0.875rem',
+                fontWeight: 400,
+                textTransform: 'none',
+                color: 'var(--color-action)',
+                '& .MuiButton-endIcon': { ml: 1, mr: 0, '& i': { fontSize: '0.875rem' } },
+                alignSelf: 'flex-start',
+              }}
+            >
+              {isMessageTextExpanded ? 'Згорнути' : 'Показати більше'}
+            </Button>
+          ) : null}
         </div>
       ) : null}
       {hasCoordinatePreviewCandidate(msg, tagsMap) ? (
-        <MessageCardCoordinatePreview msg={msg} tagsMap={tagsMap} />
+        <MessageCardCoordinateAttachment
+          msg={msg}
+          tagsMap={tagsMap}
+          onPointsChange={setCoordinatePreviewPoints}
+          onOpen={() => {
+            blurActiveElement();
+            setAttachmentPreviewIndex(coordinatePreviewStartIndex);
+          }}
+        />
       ) : null}
       {isPresent(msg.extendedForm) && msg.extendedForm.trim() !== '' ? (
         <div className="flex flex-row items-center gap-[6px] min-w-0">
@@ -572,6 +648,7 @@ export function MessageCardMessageBody({
               msg={msg}
               tagsMap={tagsMap}
               tagsOrder={tagsOrder}
+              tagContributionsOrganismId={tagContributionsOrganismId}
               onToggleTag={onToggleTag}
               tagsLayout={tagsLayout}
               interactive={!readOnly && onToggleTag != null}
@@ -594,6 +671,7 @@ export function MessageCardMessageBody({
           msg={msg}
           actions={analysisCallsignActions}
           callsignInfoMap={callsignInfoMap}
+          showAddForm={showCallsignAddForm}
         />
       ) : null}
     </div>
@@ -612,26 +690,34 @@ function useMemoText(
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void,
   onRequestPointBlacklist?: (source: PointBlacklistRequestSource) => void,
   pendingBlacklistKeys?: Set<string>,
+  showTextPreview = false,
 ) {
+  const messageText = msg.text ?? '';
+  const visibleText = showTextPreview ? previewTextRows(messageText) : messageText;
   return msg.textMarked && msg.textMarked.length > 0
-    ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg, tagsMap), {
-        showPointLinks,
-        message: msg,
-        onOpenPointsOnMap,
-        messageId,
-        onRequestPointBlacklist,
-        pendingBlacklistKeys,
-        callsignInfoMap,
-        networks,
-        unitsMap,
-        freq: msg.freq ?? null,
-        networkIds: msg.networkIds ?? null,
-        searchText,
-      })
+    ? renderMarkedText(
+        showTextPreview ? previewMarkedTextRows(msg.textMarked) : msg.textMarked,
+        visibleText,
+        getPointEtalonsFromMessage(msg, tagsMap),
+        {
+          showPointLinks,
+          message: msg,
+          messageId,
+          onOpenPointsOnMap,
+          onRequestPointBlacklist,
+          pendingBlacklistKeys,
+          callsignInfoMap,
+          networks,
+          unitsMap,
+          freq: msg.freq ?? null,
+          networkIds: msg.networkIds ?? null,
+          searchText,
+        },
+      )
     : (() => {
-        const text = msg.text?.trim() ?? '';
+        const text = visibleText.trim();
         if (text === '' || text === '—' || text === '-') return null;
-        return renderLinkifiedText(msg.text);
+        return renderLinkifiedText(visibleText);
       })();
 }
 

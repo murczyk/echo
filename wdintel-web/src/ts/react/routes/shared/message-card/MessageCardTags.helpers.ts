@@ -62,13 +62,18 @@ export function buildMessageCardTagRows(
   msg: InboxMessage,
   tagsMap: Record<number, Tag>,
   tagsOrder?: number[],
+  tagContributionsOrganismId?: number,
 ): MessageCardTagRow[] {
+  const inboxTagList = (msg.inboxTags ?? []).filter(
+    (tagEntry) =>
+      tagContributionsOrganismId == null ||
+      (tagEntry.organismId === tagContributionsOrganismId && tagEntry.model == null),
+  );
   return resolveTagDisplayOrder(tagsMap, tagsOrder).map((numericTagId) => {
     const tag = tagsMap[numericTagId];
     const label = tag?.label ?? `#${numericTagId}`;
-    const inboxTagList = msg.inboxTags ?? [];
     const isSet =
-      inboxTagList.length > 0
+      tagContributionsOrganismId != null || inboxTagList.length > 0
         ? inboxTagList.some((tagEntry) => tagEntry.tagId === numericTagId)
         : (msg.tags ?? []).includes(numericTagId);
     const contribs = inboxTagList.filter((tagEntry) => tagEntry.tagId === numericTagId);

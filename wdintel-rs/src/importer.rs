@@ -188,7 +188,7 @@ pub async fn package_up_kmz(
             base_path.join("doc.kml"),
             crate::kml::views::render_kml(&kml)?,
         )?;
-        for (icon, _style_id) in style_ids.iter() {
+        for icon in style_ids.keys() {
             // println!(
             //     "> copy {} into {}",
             //     // &get_icon_path(mode)?.join(icon).display(),

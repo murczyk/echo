@@ -270,13 +270,15 @@ impl TusHandler {
                     return Ok(builder.finish());
                 }
                 Ok(_) => {
-                    return Ok(self.build_status_response(StatusCode::NOT_FOUND))
+                    return Ok(
+                        self.build_status_response(StatusCode::NOT_FOUND)
+                    );
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(_) => {
                     return Ok(self.build_status_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
-                    ))
+                    ));
                 }
             }
         }
@@ -328,11 +330,11 @@ impl TusHandler {
         {
             Ok(file) => file,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(self.build_status_response(StatusCode::NOT_FOUND))
+                return Ok(self.build_status_response(StatusCode::NOT_FOUND));
             }
             Err(_) => {
                 return Ok(self
-                    .build_status_response(StatusCode::INTERNAL_SERVER_ERROR))
+                    .build_status_response(StatusCode::INTERNAL_SERVER_ERROR));
             }
         };
 
@@ -345,11 +347,11 @@ impl TusHandler {
                 .await?
             {
                 WriteResult::Conflict => {
-                    return Ok(self.build_status_response(StatusCode::CONFLICT))
+                    return Ok(self.build_status_response(StatusCode::CONFLICT));
                 }
                 WriteResult::TooLarge => {
                     return Ok(self
-                        .build_status_response(StatusCode::PAYLOAD_TOO_LARGE))
+                        .build_status_response(StatusCode::PAYLOAD_TOO_LARGE));
                 }
                 WriteResult::Written(new_pos) => new_pos,
             };
@@ -499,7 +501,7 @@ impl TusHandler {
         self.add_expires_header(&metadata, &mut builder)?;
         builder.insert_header((
             header::LOCATION,
-            format!("{}{}", &self.prefix, &file_name),
+            format!("{}{}", self.prefix, file_name),
         ));
         Ok(builder.finish())
     }

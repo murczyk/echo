@@ -45,9 +45,9 @@ pub async fn oneoff_merge_datasource_group(
         let source_signal_group = signal_group.unwrap();
         println!(
             "will merge {} into '{}' {}",
-            &datasource_group.group_master_key,
-            &group_name,
-            &target_signal_group.master_key
+            datasource_group.group_master_key,
+            group_name,
+            target_signal_group.master_key
         );
         merge_group_into(
             &txn,
@@ -87,7 +87,7 @@ async fn print_datasource_group_size(
     label: &str,
 ) -> Result<(), AppError> {
     let row = dbx
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             r#"
             select

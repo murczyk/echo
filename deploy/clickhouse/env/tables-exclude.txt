@@ -1,32 +1,10 @@
-# PostgreSQL aggregates replaced by raw ClickHouse queries.
-public.stats_group_5min
-public.stats_group_day
-public.stats_group_aor_id_5min
-public.stats_group_aor_id_day
-public.stats_group_callsign_5min
-public.stats_group_callsign_day
-public.stats_group_freq_5min
-public.stats_group_freq_day
-public.stats_group_location_5min
-public.stats_group_location_day
-public.stats_group_network_callsign_day
-public.stats_group_network_day
-public.stats_group_network_freq_day
-public.stats_group_post_id_5min
-public.stats_group_post_id_day
-public.stats_group_sender_5min
-public.stats_group_sender_day
-public.stats_group_tag_5min
-public.stats_group_tag_day
-public.stats_group_unit_5min
-public.stats_group_unit_day
-
 # Large, highly mutable GOI dataset; unused by the RER counter.
 public.goi_knowledge
 
 # Transient operational state.
 public.bgtask
 public.bgtask_res
+public.group_stats_recalculation_task
 public.network_invalidation_task
 public.network_invalidation_worker
 public.palitra_highlight_worker_job
@@ -38,6 +16,43 @@ public.gpu_config
 public.seaql_echo_gpu_migrations
 public.echo_whatsapp_queue
 public.echo_whatsapp_queue_attachment
+public.echo_automation_send_log
 public.palitra_goi_sync_job
 public.palitra_conversion_job
 public.goi_palitra_sync
+
+# PostgreSQL-only parsing configuration.
+public.sigint_comment_blacklist
+public.failed_inbox_unit
+public.sigint_unit_label
+
+# ORBIT unit catalog remains PostgreSQL-only.
+public.orbit_grouping_of_forces
+public.orbit_combat_unit_type
+public.orbit_unit_echelon
+public.orbit_unit
+public.orbit_unit_grouping_of_forces
+public.orbit_unit_sigint_unit
+public.orbit_sync
+
+# AI engine secrets, admin-only history, callsign tests, and worker queue.
+public.ai_engine
+public.ai_chat
+public.ai_chat_message
+public.ai_callsign_settings
+public.ai_callsign_test_message
+public.ai_callsign_parse_result
+public.ai_callsign_worker_job
+
+# Per-user AI agent control plane, audit history, and operational state.
+public.ai_agent_settings
+public.ai_agent_allowed_engine
+public.ai_agent_dispatcher
+public.ai_agent_echo_proxy
+public.ai_agent_user_link
+public.ai_agent_container
+public.ai_agent_conversation
+public.ai_agent_request
+public.ai_agent_request_event
+public.ai_agent_security_review
+public.ai_agent_chat_mattermost_notification

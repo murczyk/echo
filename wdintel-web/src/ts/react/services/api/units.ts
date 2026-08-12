@@ -2,32 +2,134 @@ import type {
   CreateUnitReq,
   CreateUnitWithAutoNetworkReq,
   CreateUnitWithAutoNetworkRsp,
+  CreateDeviceNetworkReq,
+  CreateDeviceNetworkRsp,
+  DeleteUnitAttachmentReq,
+  DeleteUnitAttachmentRsp,
   DeleteUnitDuplicateReq,
+  ImportOrbitUnitReq,
+  LinkOrbitUnitReq,
+  ListUnitDuplicatesRsp,
   ListUnitsByIdRsp,
   ListUnitsReq,
   ListUnitsRsp,
+  OrbitUnitLinkCandidate,
+  OrbitUnitLinkCandidatesReq,
+  OrbitUnitLinkCandidatesRsp,
+  OrbitUnitSearchReq,
   Unit,
   UnitAttachment,
+  UnitDuplicate,
   UnitAttachmentUnitIdsRsp,
+  UnitDetailsRsp,
+  UnitStatusCountsRsp,
+  UpdateUnitAttachmentReq,
 } from '../../../../Bindings';
 import { emitUnauthorizedEvent } from '../../auth-redirect';
-import { HttpRequestError, postJson } from './client';
+import { HttpRequestError, postBytes, postJson, postVoid } from './client';
 import type { RequestOptions } from './client';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 
-/** Fetch all units (for network display text). Single request, backend limit is 100k. */
-export async function getUnitsList(options?: RequestOptions): Promise<Unit[]> {
+type GetUnitsListOptions = RequestOptions & {
+  includeInactive?: boolean;
+};
+
+type GetUnitsPageOptions = GetUnitsListOptions & {
+  afterUnitId?: number | null;
+};
+
+export const DEFAULT_LIST_UNITS_REQ: ListUnitsReq = {
+  sortBy: null,
+  afterUnitId: null,
+  beforeUnitId: null,
+  includeInactive: false,
+  filterActive: null,
+  filterText: null,
+  filterName: null,
+  filterCompany: null,
+  filterBattalion: null,
+  filterRegiment: null,
+  filterDivision: null,
+  filterArmy: null,
+  filterMilitaryDistrict: null,
+  filterArmyRegion: null,
+  filterComment: null,
+  filterOrbitNote: null,
+  filterIsDeduplicateCandidate: null,
+  filterHasOrbit: null,
+  filterHasOrbitNote: null,
+  searchMode: null,
+  limit: null,
+  offset: null,
+};
+
+export function mergeUnitsById(...unitLists: readonly Unit[][]): Unit[] {
+  const unitsById = new Map<number, Unit>();
+  for (const units of unitLists) {
+    for (const unit of units) unitsById.set(unit.id, unit);
+  }
+  return Array.from(unitsById.values());
+}
+
+export async function searchUnitsStrictThenRelaxed(
+  req: ListUnitsReq,
+  options?: RequestOptions,
+): Promise<Unit[]> {
+  const requests = [getUnitsPage({ ...req, searchMode: 'Strict' }, options)];
+  if (req.filterText?.trim() || req.filterName?.trim()) {
+    requests.push(getUnitsPage({ ...req, searchMode: 'Relaxed' }, options));
+  }
+  const pages = await Promise.all(requests);
+  return mergeUnitsById(...pages.map((page) => page.units));
+}
+
+export async function getUnitsPage(
+  req: ListUnitsReq,
+  options?: RequestOptions,
+): Promise<ListUnitsRsp> {
+  const raw = await postJson<unknown>('/api/sigint/units', transformCamelToSnake(req), options);
+  return transformSnakeToCamel<ListUnitsRsp>(raw);
+}
+
+async function getUnitsCursorPage(options?: GetUnitsPageOptions): Promise<ListUnitsRsp> {
+  const { afterUnitId = null, includeInactive = false, ...requestOptions } = options ?? {};
   const req: ListUnitsReq = {
-    sortBy: null,
-    afterUnitId: null,
-    beforeUnitId: null,
+    ...DEFAULT_LIST_UNITS_REQ,
+    afterUnitId,
+    includeInactive,
   };
+  return getUnitsPage(req, requestOptions);
+}
+
+/** Fetch active units by default. Single request, backend limit is 100k. */
+export async function getUnitsList(options?: GetUnitsListOptions): Promise<Unit[]> {
+  return (await getUnitsCursorPage(options)).units ?? [];
+}
+
+/** Fetch the complete unit catalog across every backend cursor page. */
+export async function getAllUnitsList(options?: GetUnitsListOptions): Promise<Unit[]> {
+  const unitsById = new Map<number, Unit>();
+  let afterUnitId: number | null = null;
+
+  while (true) {
+    const page = await getUnitsCursorPage({ ...options, afterUnitId });
+    for (const unit of page.units ?? []) unitsById.set(unit.id, unit);
+    if (!page.showLoadMore) return Array.from(unitsById.values());
+
+    const nextAfterUnitId = page.units?.at(-1)?.id;
+    if (nextAfterUnitId === undefined || nextAfterUnitId === afterUnitId) {
+      throw new Error('Unit pagination did not advance');
+    }
+    afterUnitId = nextAfterUnitId;
+  }
+}
+
+export async function getUnitStatusCounts(options?: RequestOptions): Promise<UnitStatusCountsRsp> {
   const raw =
     options == null
-      ? await postJson<unknown>('/api/sigint/units', transformCamelToSnake(req))
-      : await postJson<unknown>('/api/sigint/units', transformCamelToSnake(req), options);
-  const data = transformSnakeToCamel<ListUnitsRsp>(raw);
-  return data?.units ?? [];
+      ? await postJson<unknown>('/api/sigint/units/status-counts', null)
+      : await postJson<unknown>('/api/sigint/units/status-counts', null, options);
+  return transformSnakeToCamel<UnitStatusCountsRsp>(raw);
 }
 
 /** Fetch units by IDs (legacy batch; prefer getUnitsList for duty page). */
@@ -41,9 +143,22 @@ export async function getUnitsByIds(ids: number[], options?: RequestOptions): Pr
   return data?.units ?? [];
 }
 
+export async function getUnitDuplicates(options?: RequestOptions): Promise<UnitDuplicate[]> {
+  const raw = await postJson<unknown>('/api/admin/unit-duplicates', null, options);
+  return transformSnakeToCamel<ListUnitDuplicatesRsp>(raw).units;
+}
+
 export async function createUnit(unit: CreateUnitReq): Promise<Unit> {
   const raw = await postJson<unknown>('/api/sigint/unit/create', transformCamelToSnake(unit));
   return transformSnakeToCamel<Unit>(raw);
+}
+
+export async function getCreateUnitDuplicateCandidates(unit: CreateUnitReq): Promise<Unit[]> {
+  const raw = await postJson<unknown>(
+    '/api/sigint/unit/create-duplicate-candidates',
+    transformCamelToSnake(unit),
+  );
+  return transformSnakeToCamel<ListUnitsByIdRsp>(raw).units ?? [];
 }
 
 export async function createUnitWithAutoNetwork(
@@ -54,6 +169,16 @@ export async function createUnitWithAutoNetwork(
     transformCamelToSnake(req),
   );
   return transformSnakeToCamel<CreateUnitWithAutoNetworkRsp>(raw);
+}
+
+export async function createDeviceNetwork(
+  req: CreateDeviceNetworkReq,
+): Promise<CreateDeviceNetworkRsp> {
+  const raw = await postJson<unknown>(
+    '/api/sigint/unit/create-device-network',
+    transformCamelToSnake(req),
+  );
+  return transformSnakeToCamel<CreateDeviceNetworkRsp>(raw);
 }
 
 export async function updateUnit(unit: Unit): Promise<Unit> {
@@ -74,9 +199,86 @@ export async function mergeDuplicateUnit(req: DeleteUnitDuplicateReq): Promise<U
   return transformSnakeToCamel<Unit>(raw);
 }
 
-export async function getUnitIdsWithVisibleAttachments(): Promise<number[]> {
-  const raw = await postJson<unknown>('/api/sigint/unit/attachment-unit-ids');
+export async function getUnitIdsWithVisibleAttachments(
+  unitIds: number[],
+  options?: RequestOptions,
+): Promise<number[]> {
+  const raw = await postJson<unknown>('/api/sigint/unit/attachment-unit-ids', unitIds, options);
   return transformSnakeToCamel<UnitAttachmentUnitIdsRsp>(raw).unitIds;
+}
+
+export async function getUnitDetails(unitId: number): Promise<UnitDetailsRsp> {
+  const raw = await postJson<unknown>('/api/sigint/unit/details', { unit_id: unitId });
+  return transformSnakeToCamel<UnitDetailsRsp>(raw);
+}
+
+export async function getOrbitUnitLinkCandidates(
+  req: OrbitUnitLinkCandidatesReq,
+  options?: RequestOptions,
+): Promise<OrbitUnitLinkCandidate[]> {
+  const raw =
+    options == null
+      ? await postJson<unknown>(
+          '/api/sigint/unit/orbit-link-candidates',
+          transformCamelToSnake(req),
+        )
+      : await postJson<unknown>(
+          '/api/sigint/unit/orbit-link-candidates',
+          transformCamelToSnake(req),
+          options,
+        );
+  return transformSnakeToCamel<OrbitUnitLinkCandidatesRsp>(raw).units ?? [];
+}
+
+export async function searchOrbitUnits(
+  req: OrbitUnitSearchReq,
+  options?: RequestOptions,
+): Promise<OrbitUnitLinkCandidate[]> {
+  const raw =
+    options == null
+      ? await postJson<unknown>('/api/sigint/unit/orbit-search', transformCamelToSnake(req))
+      : await postJson<unknown>(
+          '/api/sigint/unit/orbit-search',
+          transformCamelToSnake(req),
+          options,
+        );
+  return transformSnakeToCamel<OrbitUnitLinkCandidatesRsp>(raw).units ?? [];
+}
+
+export async function importOrbitUnit(
+  req: ImportOrbitUnitReq,
+): Promise<CreateUnitWithAutoNetworkRsp> {
+  const raw = await postJson<unknown>('/api/sigint/unit/orbit-import', transformCamelToSnake(req));
+  return transformSnakeToCamel<CreateUnitWithAutoNetworkRsp>(raw);
+}
+
+export async function linkOrbitUnit(req: LinkOrbitUnitReq): Promise<void> {
+  await postVoid('/api/sigint/unit/orbit-link', transformCamelToSnake(req));
+}
+
+export async function unlinkOrbitUnit(req: LinkOrbitUnitReq): Promise<void> {
+  await postVoid('/api/sigint/unit/orbit-unlink', transformCamelToSnake(req));
+}
+
+export async function updateUnitAttachment(req: UpdateUnitAttachmentReq): Promise<UnitAttachment> {
+  const raw = await postJson<unknown>(
+    '/api/sigint/unit/attachment/update',
+    transformCamelToSnake(req),
+  );
+  return transformSnakeToCamel<UnitAttachment>(raw);
+}
+
+export async function deleteUnitAttachment(attachmentId: number): Promise<number> {
+  const req: DeleteUnitAttachmentReq = { attachmentId };
+  const raw = await postJson<unknown>(
+    '/api/sigint/unit/attachment/delete',
+    transformCamelToSnake(req),
+  );
+  return transformSnakeToCamel<DeleteUnitAttachmentRsp>(raw).attachmentId;
+}
+
+export async function downloadUnitAttachment(attachmentId: number): Promise<Blob> {
+  return postBytes('/api/sigint/unit/attachment/download', { attachment_id: attachmentId });
 }
 
 export type UploadUnitAttachmentParams = {

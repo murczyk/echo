@@ -13,20 +13,27 @@ function TestScroller(props: {
   ids: number[];
   onLoadOlder?: () => void;
   onLoadNewer?: () => void;
+  loadingOlder?: boolean;
   loadingNewer?: boolean;
+  hasReachedStart?: boolean;
   onNearBottomChange?: (near: boolean) => void;
   onAtBottomChange?: (atBottom: boolean) => void;
   onPhysicalBottomChange?: (atBottom: boolean) => void;
-  onReachedBottom?: () => void;
+  onReachedBottom?: (context: { hasSeenNotAtBottom: boolean }) => boolean | void;
   onLeftBottom?: () => void;
   onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
   enabled?: boolean;
+  isWatchMode?: boolean;
+  unreadPrefetchNeeded?: boolean;
+  unreadPrefetchMin?: number;
+  itemHeightPx?: number;
+  bottomLoadBufferPx?: number;
 }) {
   const scroll = useWindowedFeedScroll({
     itemIds: props.ids,
-    loadingOlder: false,
+    loadingOlder: props.loadingOlder ?? false,
     loadingNewer: props.loadingNewer ?? false,
-    hasReachedStart: false,
+    hasReachedStart: props.hasReachedStart ?? false,
     onLoadOlder: props.onLoadOlder ?? vi.fn(),
     onLoadNewer: props.onLoadNewer,
     onNearBottomChange: props.onNearBottomChange,
@@ -36,11 +43,15 @@ function TestScroller(props: {
     onLeftBottom: props.onLeftBottom,
     onVisibleMessageIds: props.onVisibleMessageIds,
     enabled: props.enabled ?? true,
+    isWatchMode: props.isWatchMode ?? true,
+    unreadPrefetchNeeded: props.unreadPrefetchNeeded,
+    unreadPrefetchMin: props.unreadPrefetchMin,
     topLoadBufferPx: 80,
-    bottomLoadBufferPx: 80,
+    bottomLoadBufferPx: props.bottomLoadBufferPx ?? 80,
     atBottomThresholdPx: 10,
   });
   latestScrollHandle = scroll;
+  const itemHeightPx = props.itemHeightPx ?? 50;
 
   return (
     <div
@@ -49,15 +60,18 @@ function TestScroller(props: {
       onScroll={scroll.handleScroll}
       style={{ height: 100, overflowY: 'auto' }}
     >
-      {props.ids.map((id) => {
-        const itemRef = scroll.setItemRef(id);
-        renderedItemRefs.set(id, itemRef);
-        return (
-          <div key={id} ref={itemRef} data-testid={`item-${id}`} style={{ height: 50 }}>
-            item {id}
-          </div>
-        );
-      })}
+      {props.loadingOlder ? <div data-testid="top-status">loading</div> : null}
+      <div ref={scroll.listRef} data-testid="list">
+        {props.ids.map((id) => {
+          const itemRef = scroll.setItemRef(id);
+          renderedItemRefs.set(id, itemRef);
+          return (
+            <div key={id} ref={itemRef} data-testid={`item-${id}`} style={{ height: itemHeightPx }}>
+              item {id}
+            </div>
+          );
+        })}
+      </div>
       <button type="button" data-testid="scroll-bottom" onClick={() => scroll.scrollToBottom()}>
         bottom
       </button>
@@ -104,6 +118,82 @@ async function waitForAnimationFrame(): Promise<void> {
   });
 }
 
+type ItemLayout = { top: number; height: number };
+
+function rect(top: number, height: number): DOMRect {
+  return {
+    bottom: top + height,
+    height,
+    left: 0,
+    right: 100,
+    top,
+    width: 100,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
+function mockVerticalLayout(
+  scroller: HTMLElement,
+  layout: { items: Map<number, ItemLayout> },
+): void {
+  const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+    if (this === scroller) return rect(0, scroller.clientHeight);
+    const id = Number.parseInt(
+      (this as HTMLElement).dataset.testid?.replace('item-', '') ?? '',
+      10,
+    );
+    const item = layout.items.get(id);
+    if (item) return rect(item.top - scroller.scrollTop, item.height);
+    return originalGetBoundingClientRect.call(this);
+  });
+}
+
+function installResizeObserverMock() {
+  const observers: Array<{
+    callback: ResizeObserverCallback;
+    disconnected: boolean;
+    observed: Set<Element>;
+    observer: ResizeObserver;
+  }> = [];
+
+  class ResizeObserverMock {
+    private readonly record;
+
+    constructor(callback: ResizeObserverCallback) {
+      this.record = {
+        callback,
+        disconnected: false,
+        observed: new Set<Element>(),
+        observer: this as unknown as ResizeObserver,
+      };
+      observers.push(this.record);
+    }
+
+    observe = (target: Element) => this.record.observed.add(target);
+    unobserve = (target: Element) => this.record.observed.delete(target);
+    disconnect = () => {
+      this.record.disconnected = true;
+      this.record.observed.clear();
+    };
+  }
+
+  vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+  return (target: Element) => {
+    observers.forEach((entry) => {
+      if (!entry.disconnected && entry.observed.has(target)) {
+        entry.callback([], entry.observer);
+      }
+    });
+  };
+}
+
+function createItemLayouts(ids: number[], startTop = 0, height = 50): Map<number, ItemLayout> {
+  return new Map(ids.map((id, index) => [id, { top: startTop + index * height, height }]));
+}
+
 describe('useWindowedFeedScroll', () => {
   let container: HTMLElement;
   let root: Root;
@@ -125,6 +215,8 @@ describe('useWindowedFeedScroll', () => {
       container.remove();
       document.body.innerHTML = '';
     });
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('keeps a disabled zero-sized scroller from reporting visible ids or bottom state', async () => {
@@ -731,6 +823,72 @@ describe('useWindowedFeedScroll', () => {
     expect(onLoadNewer).toHaveBeenCalledTimes(1);
   });
 
+  it('does not call onLoadNewer near bottom when unread prefetch runway is already full', async () => {
+    const onLoadNewer = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller ids={[1, 2, 3, 4]} onLoadNewer={onLoadNewer} unreadPrefetchNeeded={false} />,
+      );
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 130, clientHeight: 100, scrollHeight: 300 });
+
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+
+    expect(onLoadNewer).not.toHaveBeenCalled();
+  });
+
+  it('calls onLoadNewer in the trailing prefetch zone even when pixel distance exceeds the buffer', async () => {
+    const onLoadNewer = vi.fn();
+    const onNearBottomChange = vi.fn();
+    const ids = Array.from({ length: 20 }, (_, index) => index + 1);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    // Tall rows: last few messages alone exceed the 80px bottom buffer.
+    const itemHeight = 400;
+    const metrics = {
+      scrollTop: 18 * itemHeight,
+      clientHeight: 100,
+      scrollHeight: 20 * itemHeight,
+    };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = {
+      items: new Map(ids.map((id, index) => [id, { top: index * itemHeight, height: itemHeight }])),
+    };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={ids}
+          onLoadNewer={onLoadNewer}
+          onNearBottomChange={onNearBottomChange}
+          unreadPrefetchNeeded
+          unreadPrefetchMin={10}
+          bottomLoadBufferPx={80}
+        />,
+      );
+    });
+
+    onLoadNewer.mockClear();
+    onNearBottomChange.mockClear();
+
+    // bottomDistance = 8000 - 100 - 7200 = 700 > 80, but viewport intersects last-10 zone.
+    expect(metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop).toBe(700);
+
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+
+    expect(onLoadNewer).toHaveBeenCalled();
+  });
+
   it('does not repeatedly call onLoadNewer while already loading newer items', async () => {
     const onLoadNewer = vi.fn();
     await act(async () => {
@@ -782,6 +940,381 @@ describe('useWindowedFeedScroll', () => {
     });
 
     expect(scroller.scrollTop).toBe(290);
+  });
+
+  it('uses the latest scroll position when a newer window commits before the next frame', async () => {
+    const initialIds = [1, 2, 3, 4, 5, 6];
+    const nextIds = [3, 4, 5, 6, 7, 8];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 300 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={initialIds} />);
+    });
+    expect(scroller.scrollTop).toBe(200);
+
+    scroller.scrollTop = 100;
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+    scroller.scrollTop = 125;
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} />);
+    });
+
+    expect(scroller.scrollTop).toBe(25);
+    expect(
+      (container.querySelector('[data-testid="item-3"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(-25);
+  });
+
+  it('preserves the old bottom anchor when pending newer messages finish loading', async () => {
+    const initialIds = [1, 2, 3, 4];
+    const nextIds = [1, 2, 3, 4, 5, 6];
+    const onReachedBottom = vi.fn(() => false);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} onReachedBottom={onReachedBottom} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={initialIds} onReachedBottom={onReachedBottom} />);
+    });
+    scroller.scrollTop = 50;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    scroller.scrollTop = 100;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+
+    metrics.scrollHeight = 300;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} onReachedBottom={onReachedBottom} />);
+    });
+
+    expect(onReachedBottom).toHaveBeenLastCalledWith({ hasSeenNotAtBottom: true });
+    expect(scroller.scrollTop).toBe(100);
+  });
+
+  it('preserves the visible anchor when the top loading status changes', async () => {
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} />);
+    });
+    scroller.scrollTop = 50;
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+
+    metrics.scrollHeight = 240;
+    layout.items = createItemLayouts(ids, 40);
+    await act(async () => {
+      root.render(<TestScroller ids={ids} loadingOlder />);
+    });
+
+    expect(scroller.scrollTop).toBe(90);
+    expect(
+      (container.querySelector('[data-testid="item-2"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(0);
+  });
+
+  it('preserves a pending top status change when a hidden feed is re-enabled', async () => {
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} loadingOlder />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 240 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(ids, 40) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} loadingOlder />);
+    });
+    scroller.scrollTop = 91;
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} loadingOlder enabled={false} />);
+    });
+    metrics.scrollHeight = 200;
+    layout.items = createItemLayouts(ids);
+    await act(async () => {
+      root.render(<TestScroller ids={ids} enabled={false} />);
+    });
+    await act(async () => {
+      root.render(<TestScroller ids={ids} />);
+    });
+
+    expect(scroller.scrollTop).toBe(51);
+    expect(
+      (container.querySelector('[data-testid="item-2"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(-1);
+  });
+
+  it('preserves the visible anchor when a rendered card changes height later', async () => {
+    const triggerResize = installResizeObserverMock();
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} />);
+    });
+    scroller.scrollTop = 51;
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+
+    metrics.scrollHeight = 230;
+    layout.items = new Map([
+      [1, { top: 0, height: 80 }],
+      [2, { top: 80, height: 50 }],
+      [3, { top: 130, height: 50 }],
+      [4, { top: 180, height: 50 }],
+    ]);
+    act(() => triggerResize(container.querySelector('[data-testid="list"]')!));
+
+    expect(scroller.scrollTop).toBe(81);
+    expect(
+      (container.querySelector('[data-testid="item-2"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(-1);
+  });
+
+  it('keeps live follow pinned to the bottom after a later card resize', async () => {
+    const triggerResize = installResizeObserverMock();
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} />);
+    });
+    scroller.scrollTop = 50;
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+    scroller.scrollTop = 100;
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+
+    metrics.scrollHeight = 230;
+    layout.items = new Map([
+      [1, { top: 0, height: 80 }],
+      [2, { top: 80, height: 50 }],
+      [3, { top: 130, height: 50 }],
+      [4, { top: 180, height: 50 }],
+    ]);
+    act(() => triggerResize(container.querySelector('[data-testid="list"]')!));
+
+    expect(scroller.scrollTop).toBe(130);
+  });
+
+  it('reports leaving the bottom when a non-watch list grows without moving its anchor', async () => {
+    const triggerResize = installResizeObserverMock();
+    const onAtBottomChange = vi.fn();
+    const onPhysicalBottomChange = vi.fn();
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={ids}
+          isWatchMode={false}
+          onAtBottomChange={onAtBottomChange}
+          onPhysicalBottomChange={onPhysicalBottomChange}
+        />,
+      );
+    });
+    scroller.scrollTop = 50;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    scroller.scrollTop = 100;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    onAtBottomChange.mockClear();
+    onPhysicalBottomChange.mockClear();
+
+    metrics.scrollHeight = 230;
+    layout.items = new Map([
+      [1, { top: 0, height: 50 }],
+      [2, { top: 50, height: 50 }],
+      [3, { top: 100, height: 50 }],
+      [4, { top: 150, height: 80 }],
+    ]);
+    act(() => triggerResize(container.querySelector('[data-testid="list"]')!));
+
+    expect(scroller.scrollTop).toBe(100);
+    expect(onAtBottomChange).toHaveBeenCalledWith(false);
+    expect(onPhysicalBottomChange).toHaveBeenCalledWith(false);
+  });
+
+  it('keeps near-bottom non-watch position when a newer window start-trims', async () => {
+    const onLeftBottom = vi.fn();
+    const initialIds = Array.from({ length: 40 }, (_, index) => index + 1);
+    const nextIds = Array.from({ length: 40 }, (_, index) => index + 21);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} onLeftBottom={onLeftBottom} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 2000 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(
+        <TestScroller ids={initialIds} isWatchMode={false} onLeftBottom={onLeftBottom} />,
+      );
+    });
+    // Leave bottom into the near-bottom load buffer (distance 50 with buffer 80).
+    scroller.scrollTop = 1850;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    onLeftBottom.mockClear();
+
+    metrics.scrollHeight = 2000;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} isWatchMode={false} onLeftBottom={onLeftBottom} />);
+    });
+
+    // Trimmed 20×50px from the start; viewing around former id 38 should stay put.
+    expect(scroller.scrollTop).toBe(850);
+    expect(
+      (container.querySelector('[data-testid="item-38"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(0);
+    expect(onLeftBottom).not.toHaveBeenCalled();
+  });
+
+  it('restores via first common id when a newer window removes every previously visible id', async () => {
+    const initialIds = Array.from({ length: 40 }, (_, index) => index + 1);
+    // Slide far enough that prior viewport ids 5-6 are gone; first common is 21.
+    const nextIds = Array.from({ length: 40 }, (_, index) => index + 21);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 2000 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={initialIds} isWatchMode={false} />);
+    });
+    // Viewport shows ids 5-6 only; those are removed by the slide.
+    scroller.scrollTop = 200;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+
+    metrics.scrollHeight = 2000;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} isWatchMode={false} />);
+    });
+
+    expect(scroller.scrollTop).toBe(0);
+    expect(
+      (container.querySelector('[data-testid="item-21"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(0);
+  });
+
+  it('preserves position when start-trim also clears the reached-start banner', async () => {
+    const initialIds = Array.from({ length: 40 }, (_, index) => index + 1);
+    const nextIds = Array.from({ length: 40 }, (_, index) => index + 21);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} hasReachedStart />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 2040 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds, 40) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={initialIds} isWatchMode={false} hasReachedStart />);
+    });
+    scroller.scrollTop = 1890;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+
+    metrics.scrollHeight = 2000;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} isWatchMode={false} hasReachedStart={false} />);
+    });
+
+    expect(scroller.scrollTop).toBe(850);
+    expect(
+      (container.querySelector('[data-testid="item-38"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(0);
   });
 
   it('reuses callbacks for active ids and recreates callbacks after an id leaves the window', async () => {

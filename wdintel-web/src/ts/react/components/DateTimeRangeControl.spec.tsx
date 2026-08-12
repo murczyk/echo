@@ -82,7 +82,11 @@ vi.mock('./PowerDateTimePicker', () => ({
   ),
 }));
 
-import { DateTimeRangeControl, getDateTimeRangeControlTextFieldSx } from './DateTimeRangeControl';
+import {
+  DateTimeRangeControl,
+  formatDateTimeRangeDisplayValue,
+  getDateTimeRangeControlTextFieldSx,
+} from './DateTimeRangeControl';
 import { APP_DATETIME_INPUT_MAX, APP_DATETIME_INPUT_MIN, APP_TIME_ZONE } from '../utils/misc';
 
 const fixedNow = new Date('2026-05-01T12:00:00Z');
@@ -95,6 +99,55 @@ describe('DateTimeRangeControl', () => {
     powerDateTimePickerMock.mockClear();
     powerDateTimePickerInstances.length = 0;
     vi.clearAllMocks();
+  });
+
+  it('omits only current-year endpoint years from the interval label', () => {
+    expect(
+      formatDateTimeRangeDisplayValue(
+        { fromDateTimeStr: '2026-05-05T10:00', toDateTimeStr: '2026-05-06T10:00' },
+        fixedNow,
+      ),
+    ).toBe('05.05 10:00 — 06.05 10:00');
+    expect(
+      formatDateTimeRangeDisplayValue(
+        { fromDateTimeStr: '2025-12-31T23:00', toDateTimeStr: '2026-01-01T01:00' },
+        fixedNow,
+      ),
+    ).toBe('31.12.2025 23:00 — 01.01 01:00');
+    expect(
+      formatDateTimeRangeDisplayValue(
+        { fromDateTimeStr: '2027-01-01T00:00', toDateTimeStr: '2027-01-02T00:00' },
+        fixedNow,
+      ),
+    ).toBe('01.01.2027 00:00 — 02.01.2027 00:00');
+  });
+
+  it('renders an icon-only trigger with the full interval as its accessible label', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <DateTimeRangeControl
+          value={{ fromDateTimeStr: '2026-05-05T10:00', toDateTimeStr: '2026-05-06T10:00' }}
+          onChange={vi.fn()}
+          now={fixedNow}
+          displayMode="icon"
+        />,
+      );
+    });
+
+    expect(container.querySelector('input')).toBeNull();
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Інтервал: 05.05 10:00 — 06.05 10:00"]',
+    );
+    expect(trigger).not.toBeNull();
+
+    act(() => trigger?.click());
+    expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+
+    act(() => root.unmount());
   });
 
   it('propagates valid picker changes immediately', () => {

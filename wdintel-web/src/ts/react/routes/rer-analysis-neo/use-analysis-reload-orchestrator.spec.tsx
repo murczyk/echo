@@ -117,6 +117,7 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
       SetStateAction<Record<string, import('../../../../Bindings').CallsignInfoRes>>
     >,
     setTagsMap: noopSetter as Dispatch<SetStateAction<Record<number, Tag>>>,
+    setTagsOrder: noopSetter as Dispatch<SetStateAction<number[]>>,
     setTopCallsigns: noopSetter as Dispatch<SetStateAction<AnalysisCountItem[]>>,
     setTopFreqs: noopSetter as Dispatch<SetStateAction<AnalysisCountItem[]>>,
     setTopLocations: noopSetter as Dispatch<SetStateAction<AnalysisCountItem[]>>,
@@ -207,6 +208,32 @@ describe('useAnalysisReloadOrchestrator', () => {
     await renderHook(params);
 
     expect(params.loadMapPalitras).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads all top sidebar facets only for the summary tab', async () => {
+    const loadTopSidebarData = vi.fn().mockResolvedValue(undefined);
+    const params = buildParams({
+      loadTopSidebarData,
+      rightSidebarVisible: true,
+      rightSidebarTab: 'stats',
+    });
+
+    await renderHook(params);
+
+    expect(loadTopSidebarData).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not load unrelated top facets for the callsigns tab', async () => {
+    const loadTopSidebarData = vi.fn().mockResolvedValue(undefined);
+    const params = buildParams({
+      loadTopSidebarData,
+      rightSidebarVisible: true,
+      rightSidebarTab: 'callsigns',
+    });
+
+    await renderHook(params);
+
+    expect(loadTopSidebarData).not.toHaveBeenCalled();
   });
 
   it('does not reload map palitras when only the search query changes', async () => {

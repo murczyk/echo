@@ -108,6 +108,14 @@ describe('NetworkCallsignRelationsGraphDetails', () => {
     expect(view.container.textContent).toContain('BRAVO');
   });
 
+  it('keeps the empty panel concise', () => {
+    const view = renderDetails({ selectedNode: null, selectedNodeEdges: [] });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain("Виберіть вузол або зв'язок");
+    expect(view.container.textContent).not.toContain("Підсвітка сусідів з'явиться тут");
+  });
+
   it('shows a loading state for message fetches', () => {
     const view = renderDetails({ selectedMessages: [], selectedMessagesLoading: true });
     rendered.push(view);

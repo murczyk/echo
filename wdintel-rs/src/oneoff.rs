@@ -14,7 +14,7 @@ pub async fn oneoff_kill_old_queries(
 ) -> Result<(), AppError> {
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
     let rows = db
-        .query_all(Statement::from_sql_and_values(
+        .query_all_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
             r#"
 SELECT pid,
