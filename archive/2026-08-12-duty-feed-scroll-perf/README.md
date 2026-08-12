@@ -2,7 +2,7 @@
 
 Issue context: [#3059](https://github.com/echoua/echo/issues/3059).
 
-Related live summary: [`docs/ai-spec/duty_scroll_behavior.md`](../../docs/ai-spec/duty_scroll_behavior.md).
+Related live summary: [`docs/duty/README.md`](../../docs/duty/README.md).
 
 Route rules: [`wdintel-web/src/ts/react/routes/rer-duty-neo/AGENTS.md`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/AGENTS.md).
 

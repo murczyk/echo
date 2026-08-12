@@ -2,7 +2,7 @@
 
 Status: **implemented** (windowed scroll + local-authoritative unread / near-bottom residual fix).
 
-Short summary: [`docs/ai-spec/duty_scroll_behavior.md`](../../docs/ai-spec/duty_scroll_behavior.md).
+Short summary: [`docs/duty/README.md`](../../docs/duty/README.md).
 
 This document describes how Duty Neo feed scrolling works **now**, and how the unread badge is owned relative to that scroll model.
 
