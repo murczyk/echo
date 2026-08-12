@@ -58,27 +58,40 @@ struct UnitTextCandidate {
     source: UnitTextSource,
 }
 
+fn resolution_texts(value: &str) -> Vec<String> {
+    let mut parsed = crate::unit::parse_library_unit(&value.to_string());
+    let original = value.trim().to_string();
+    if parsed.is_empty() {
+        return vec![original];
+    }
+    if !parsed.iter().any(|value| {
+        normalize_unit_label(value) == normalize_unit_label(&original)
+    }) {
+        parsed.push(original);
+    }
+    parsed
+}
+
 fn unit_text_candidates(
     unit_v2: Option<&str>,
     unit: Option<&str>,
 ) -> Vec<UnitTextCandidate> {
-    let (source, texts): (UnitTextSource, Vec<&str>) =
+    let (source, texts): (UnitTextSource, Vec<String>) =
         if let Some(unit_v2) = nonempty(unit_v2) {
-            (UnitTextSource::UnitV2, unit_v2.split(',').collect_vec())
+            (
+                UnitTextSource::UnitV2,
+                unit_v2.split(',').flat_map(resolution_texts).collect_vec(),
+            )
         } else if let Some(unit) = nonempty(unit) {
-            (UnitTextSource::Unit, vec![unit])
+            (UnitTextSource::Unit, vec![unit.to_string()])
         } else {
             return Vec::new();
         };
 
     texts
         .into_iter()
-        .map(str::trim)
         .filter(|text| !text.is_empty())
-        .map(|text| UnitTextCandidate {
-            text: text.to_string(),
-            source,
-        })
+        .map(|text| UnitTextCandidate { text, source })
         .unique_by(|candidate| normalize_unit_label(&candidate.text))
         .collect_vec()
 }
@@ -965,6 +978,15 @@ mod tests {
                 .collect_vec(),
             vec!["raw"]
         );
+    }
+
+    #[test]
+    fn resolution_texts_keeps_original_label_as_fallback() {
+        assert_eq!(
+            resolution_texts("  власний тег 123 омсбр  "),
+            vec!["123 омсбр", "власний тег 123 омсбр"]
+        );
+        assert_eq!(resolution_texts("123 ОМСБР"), vec!["123 омсбр"]);
     }
 
     #[tokio::test]
