@@ -236,20 +236,24 @@ async fn insert_association_rows(
         return Ok(());
     }
     let dedupe_targets = association_dedupe_targets(&rows)
-        .context("building association dedupe targets")?;
+        .context("building association dedupe targets")
+        .context(h!())?;
     let tx = db
         .begin()
         .await
-        .context("beginning association insert tx")?;
+        .context("beginning association insert tx")
+        .context(h!())?;
     rekey_existing_association_rows(&tx, &dedupe_targets)
         .await
-        .context("rekeying existing associations")?;
+        .context("rekeying existing associations")
+        .context(h!())?;
 
     let mut models_batch = Vec::new();
     for association_row in rows {
         models_batch.push(
             association_row_to_active_model(association_row)
-                .context("building association model")?,
+                .context("building association model")
+                .context(h!())?,
         );
         if models_batch.len()
             >= crate::config::GOI_ASSOCIATIONS_INSERT_BATCH_SIZE
@@ -259,17 +263,20 @@ async fn insert_association_rows(
                 std::mem::take(&mut models_batch),
             )
             .await
-            .context("inserting association batch")?;
+            .context("inserting association batch")
+            .context(h!())?;
         }
     }
     if !models_batch.is_empty() {
         insert_association_model_batch(&tx, models_batch)
             .await
-            .context("inserting final association batch")?;
+            .context("inserting final association batch")
+            .context(h!())?;
     }
     tx.commit()
         .await
-        .context("committing association insert tx")?;
+        .context("committing association insert tx")
+        .context(h!())?;
     Ok(())
 }
 
@@ -279,7 +286,8 @@ fn association_dedupe_targets(
     rows.iter()
         .map(|association_row| {
             let cells = serde_json::to_string(&association_row.cells)
-                .context("serializing association cells")?;
+                .context("serializing association cells")
+                .context(h!())?;
             Ok((cells, association_row.dedupe_key()))
         })
         .collect()
@@ -299,7 +307,8 @@ where
         )
         .count(db)
         .await
-        .context("counting legacy association dedupe keys")?;
+        .context("counting legacy association dedupe keys")
+        .context(h!())?;
     if legacy_key_count == 0 {
         return Ok(());
     }
@@ -307,9 +316,11 @@ where
     let existing_rows = association::Entity::find()
         .all(db)
         .await
-        .context("loading existing association dedupe keys")?;
+        .context("loading existing association dedupe keys")
+        .context(h!())?;
     let key_updates = plan_association_rekey(existing_rows, dedupe_targets)
-        .context("planning association dedupe rekey")?;
+        .context("planning association dedupe rekey")
+        .context(h!())?;
     let update_count = key_updates.len();
     for (association, dedupe_key) in key_updates {
         let association_id = association.id;
@@ -317,9 +328,13 @@ where
         association.dedupe_key = Set(dedupe_key);
         association.dedupe_key_version =
             Set(crate::config::GOI_ASSOCIATION_DEDUPE_KEY_VERSION);
-        association.update(db).await.with_context(|| {
-            format!("rekeying association row {association_id}")
-        })?;
+        association
+            .update(db)
+            .await
+            .with_context(|| {
+                format!("rekeying association row {association_id}")
+            })
+            .context(h!())?;
     }
     if update_count > 0 {
         log::info!(
@@ -349,11 +364,12 @@ fn plan_association_rekey(
         let association_row =
             serde_json::from_value::<AssociationRow>(association.row.clone())
                 .with_context(|| {
-                format!(
-                    "deserializing stored association row {}",
-                    association.id
-                )
-            })?;
+                    format!(
+                        "deserializing stored association row {}",
+                        association.id
+                    )
+                })
+                .context(h!())?;
         let cells =
             serde_json::to_string(&association_row.excel_unescaped_cells())
                 .with_context(|| {
@@ -361,7 +377,8 @@ fn plan_association_rekey(
                         "serializing stored association row {}",
                         association.id
                     )
-                })?;
+                })
+                .context(h!())?;
         let Some(dedupe_key) = dedupe_targets.get(&cells) else {
             continue;
         };
@@ -382,7 +399,8 @@ fn association_row_to_active_model(
 ) -> Result<association::ActiveModel> {
     let dedupe_key = association_row.dedupe_key();
     let association_row = serde_json::to_value(association_row)
-        .context("serializing association row")?;
+        .context("serializing association row")
+        .context(h!())?;
     Ok(association::ActiveModel {
         id: NotSet,
         row: Set(association_row),
@@ -406,7 +424,8 @@ where
         .on_conflict_do_nothing_on([association::Column::DedupeKey])
         .exec(db)
         .await
-        .context("inserting association rows")?;
+        .context("inserting association rows")
+        .context(h!())?;
     log_insert_result(result);
     Ok(())
 }

@@ -2,12 +2,6 @@ use anyhow::Result;
 use sea_orm::DatabaseConnection;
 use sea_orm_migration::prelude::*;
 
-macro_rules! h {
-    () => {
-        concat!("at ", file!(), " line ", line!(), " column ", column!())
-    };
-}
-
 trait MigrationContext<T> {
     fn c(self, context: &'static str) -> std::result::Result<T, DbErr>;
 }
