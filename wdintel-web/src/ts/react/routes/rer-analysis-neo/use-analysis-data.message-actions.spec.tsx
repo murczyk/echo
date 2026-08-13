@@ -554,9 +554,15 @@ describe('useAnalysisDataMessageActions', () => {
       textMarked: [{ CNPointC: { etalon: '  Альфа ', text: 'A', palitraIds: [7, 12] } }],
       pointTokens: [{ etalon: 'АЛЬФА', text: 'A', palitraIds: [7, 12] }],
     });
+    const secondMatching = buildMessage({
+      textMarked: [{ CNPointC: { etalon: ' Альфа ', text: 'A', palitraIds: [7, 12] } }],
+      pointTokens: [{ etalon: 'АЛЬФА', text: 'A', palitraIds: [7, 12] }],
+    });
+    const unrelated = buildMessage();
     const apiRef = await renderHarness([
       [42, message],
-      [99, buildMessage()],
+      [99, secondMatching],
+      [100, unrelated],
     ]);
     const first = apiRef.current!.onAddPointHighlightBlacklist({
       messageId: 42,
@@ -581,7 +587,14 @@ describe('useAnalysisDataMessageActions', () => {
     expect(apiRef.current!.mapOpenMessages[0]?.[1].pointTokens).toEqual([
       { etalon: 'АЛЬФА', text: 'A', palitraIds: [12] },
     ]);
-    expect(apiRef.current!.messages[1]?.[1]).toBe(apiRef.current!.mapOpenMessages[1]?.[1]);
+    expect(apiRef.current!.messages[1]?.[1].pointTokens).toEqual([
+      { etalon: 'АЛЬФА', text: 'A', palitraIds: [12] },
+    ]);
+    expect(apiRef.current!.mapOpenMessages[1]?.[1].pointTokens).toEqual([
+      { etalon: 'АЛЬФА', text: 'A', palitraIds: [12] },
+    ]);
+    expect(apiRef.current!.messages[2]?.[1]).toBe(unrelated);
+    expect(apiRef.current!.mapOpenMessages[2]?.[1]).toBe(unrelated);
   });
 
   it('reports blacklist failure and leaves both collections unchanged', async () => {

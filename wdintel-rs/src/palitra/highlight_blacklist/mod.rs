@@ -151,7 +151,7 @@ mod tests {
     use crate::config::PALITRA_RESOLVE_NAMES_MAX_IDS;
     use crate::entities::{login, palitra, palitra_access_login};
     use crate::functest::tests::{
-        cleanup, find_test_login, mk_login, mk_palitra,
+        cleanup, cleanup_locked, find_test_login, mk_login, mk_palitra,
     };
     use actix_identity::{Identity, IdentityMiddleware};
     use actix_session::storage::RedisSessionStore;
@@ -209,7 +209,7 @@ mod tests {
     #[serial]
     #[tokio::test]
     async fn resolve_accessible_names_omits_inaccessible_and_deleted_palitra() {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let first =
             create_palitra(&env.dbx, "Resolver first", Some(login.id), false)
@@ -259,7 +259,7 @@ mod tests {
     #[serial]
     #[actix_web::test]
     async fn resolver_requires_rer_role() {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         let login = mk_login(
             &env.dbx,
             login::ActiveModel {

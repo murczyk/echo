@@ -311,11 +311,10 @@ export function useRerDutyMessageItemActions(params: Params) {
           setMessageFeeds((prev) =>
             prev.map((feed) => ({
               ...feed,
-              items: feed.items.map(([id, message]) =>
-                id === request.messageId
-                  ? [id, removePointHighlightSourceFromMessage(message, request)]
-                  : [id, message],
-              ),
+              items: feed.items.map(([id, message]) => [
+                id,
+                removePointHighlightSourceFromMessage(message, request),
+              ]),
             })),
           );
         } catch (error) {

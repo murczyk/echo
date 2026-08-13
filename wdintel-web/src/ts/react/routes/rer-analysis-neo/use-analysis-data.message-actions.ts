@@ -87,10 +87,8 @@ export function useAnalysisDataMessageActions(params: Params) {
       promise = (async () => {
         try {
           await addPalitraHighlightBlacklistEntry(request.palitraId, request.etalon);
-          params.patchMessages((messageId, message) =>
-            messageId === request.messageId
-              ? removePointHighlightSourceFromMessage(message, request)
-              : message,
+          params.patchMessages((_messageId, message) =>
+            removePointHighlightSourceFromMessage(message, request),
           );
         } catch (error) {
           if (!params.onUnauthorized(error)) params.onError(params.toErrorMessage(error));
