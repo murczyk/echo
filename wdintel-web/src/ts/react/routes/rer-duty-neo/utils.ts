@@ -860,6 +860,24 @@ export function feedNeedsUnreadPrefetch(feed: MessageFeedState): boolean {
 }
 
 /**
+ * Poll/badge metadata (`unreadCount`, `readIds`, `windowedUnreadItems`) must not invalidate the
+ * message-list render path — those fields change on every counter tick while `items` stay put.
+ */
+export function feedListRenderStateEqual(prev: MessageFeedState, next: MessageFeedState): boolean {
+  return (
+    prev === next ||
+    (prev.id === next.id &&
+      prev.items === next.items &&
+      prev.loading === next.loading &&
+      prev.loadingOlder === next.loadingOlder &&
+      prev.hasReachedStart === next.hasReachedStart &&
+      prev.referenceTimeMs === next.referenceTimeMs &&
+      prev.filter === next.filter &&
+      prev.onlyMyUnitTagsEnabled === next.onlyMyUnitTagsEnabled)
+  );
+}
+
+/**
  * Badge = loadedUnread + trimmedUnread + beyondTailPending.
  * Matching tail preview is the beyond-tail term.
  * Residual `unreadCount` above local loaded+trimmed is only used when

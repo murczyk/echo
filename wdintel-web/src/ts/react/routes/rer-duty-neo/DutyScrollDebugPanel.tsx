@@ -12,6 +12,9 @@ import {
   useDutyScrollDebugFeed,
 } from './duty-scroll-debug';
 
+/** Keep the event list cheap to paint; full buffer remains available via copy snapshot. */
+const DEBUG_EVENTS_VISIBLE_LIMIT = 60;
+
 type DutyScrollDebugPanelProps = {
   feed: MessageFeedState;
   view: FeedColumnModel['view'];
@@ -33,7 +36,11 @@ export function DutyScrollDebugPanel({ feed, view }: DutyScrollDebugPanelProps) 
   const debugEnabled = useDutyScrollDebugEnabled();
   const debug = useDutyScrollDebugFeed(feed.id);
   const metrics = debug.metrics;
-  const events = useMemo(() => [...debug.events].reverse(), [debug.events]);
+  const events = useMemo(
+    () => [...debug.events].reverse().slice(0, DEBUG_EVENTS_VISIBLE_LIMIT),
+    [debug.events],
+  );
+  const lastTiming = debug.timings.at(-1) ?? null;
 
   if (!debugEnabled) return null;
 
@@ -162,12 +169,19 @@ export function DutyScrollDebugPanel({ feed, view }: DutyScrollDebugPanelProps) 
         <strong>{`${metrics?.firstVisibleId ?? '—'}→${metrics?.lastVisibleId ?? '—'} (${metrics?.visibleAnchorCount ?? 0}) / ${anchor}`}</strong>
         <span>overflow anchor / behavior</span>
         <strong>{`${metrics?.overflowAnchor ?? '—'} / ${metrics?.scrollBehavior ?? '—'}`}</strong>
+        <span>last render / commit</span>
+        <strong data-duty-debug-timing>
+          {lastTiming == null
+            ? '—'
+            : `${lastTiming.phase} ${lastTiming.durationMs.toFixed(1)}ms${lastTiming.reason ? ` (${lastTiming.reason})` : ''}`}
+        </strong>
         <span>page / viewport / DPR</span>
         <strong>{`${document.visibilityState} / ${window.innerWidth}x${window.innerHeight} / ${window.devicePixelRatio}`}</strong>
       </div>
 
       <div className="border-t border-solid border-[var(--color-divider)] px-2 py-1 font-semibold">
-        events ({debug.events.length})
+        events ({events.length}
+        {debug.events.length > events.length ? `/${debug.events.length}` : ''})
       </div>
       <div
         data-duty-scroll-debug-events
