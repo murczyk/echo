@@ -256,7 +256,7 @@ async fn migrate_large_media_item(
     progress: &ProgressBar,
 ) -> Result<(), AppError> {
     let expected_size = u64::try_from(media.size_bytes).c(h!())?;
-    let encrypted_key = storage::nested_object_key(&media.id);
+    let encrypted_key = crate::messenger::media::media_object_key(media);
     let plaintext_key = storage::plaintext_media_object_key(&media.id);
     let plaintext_is_ready = object_has_size(
         migration.s3,
@@ -525,6 +525,10 @@ async fn restore_media_encryption_after_invalid_plaintext(
 
     let updated = signal_message_media::Entity::update_many()
         .col_expr(signal_message_media::Column::IsEncrypted, Expr::value(true))
+        .col_expr(
+            signal_message_media::Column::StorageKey,
+            Expr::value(storage::nested_object_key(&media_id)),
+        )
         .filter(signal_message_media::Column::Id.eq(media_id))
         .filter(signal_message_media::Column::IsEncrypted.eq(false))
         .exec(migration.dbx)
@@ -666,6 +670,10 @@ async fn mark_media_plaintext(
         .col_expr(
             signal_message_media::Column::IsEncrypted,
             Expr::value(false),
+        )
+        .col_expr(
+            signal_message_media::Column::StorageKey,
+            Expr::value(storage::plaintext_media_object_key(&media_id)),
         )
         .filter(signal_message_media::Column::Id.eq(media_id))
         .filter(signal_message_media::Column::IsEncrypted.eq(true))

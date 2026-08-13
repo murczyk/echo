@@ -515,6 +515,7 @@ pub async fn delete_stored_media_files(
     };
     for media in media {
         let object_keys = [
+            media_object_key(media),
             storage::nested_object_key(&media.id),
             storage::plaintext_media_object_key(&media.id),
             storage::plaintext_media_migration_marker_object_key(&media.id),
