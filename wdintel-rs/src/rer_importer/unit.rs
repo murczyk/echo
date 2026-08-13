@@ -28,11 +28,20 @@ pub struct JsonSignal {
 pub struct JsonUnit {
     pub id: i64,
     pub name: String,
+    pub other: Option<String>,
+    pub team_or_crew: Option<String>,
+    pub section: Option<String>,
+    pub squad: Option<String>,
+    pub platoon: Option<String>,
     pub company: Option<String>,
-    pub regiment: Option<String>,
-    pub division: Option<String>,
-    pub army: Option<String>,
     pub battalion: Option<String>,
+    pub regiment: Option<String>,
+    pub brigade: Option<String>,
+    pub division: Option<String>,
+    pub corps: Option<String>,
+    pub army: Option<String>,
+    pub military_district: Option<String>,
+    pub army_region: Option<String>,
     pub comment: Option<String>,
     pub callsigns: Vec<JsonCallsign>,
     pub signals: Vec<JsonSignal>,
@@ -75,11 +84,20 @@ pub async fn export_unit(
             JsonUnit {
                 id: u.id,
                 name: u.name.clone(),
+                other: Some(u.other.clone()).filter(|x| !x.is_empty()),
+                team_or_crew: Some(u.team_or_crew.clone()).filter(|x| !x.is_empty()),
+                section: Some(u.section.clone()).filter(|x| !x.is_empty()),
+                squad: Some(u.squad.clone()).filter(|x| !x.is_empty()),
+                platoon: Some(u.platoon.clone()).filter(|x| !x.is_empty()),
                 company: Some(u.company.clone()).filter(|x| !x.is_empty()),
-                regiment: Some(u.regiment.clone()).filter(|x| !x.is_empty()),
-                division: Some(u.division.clone()).filter(|x| !x.is_empty()),
-                army: Some(u.army.clone()).filter(|x| !x.is_empty()),
                 battalion: Some(u.battalion.clone()).filter(|x| !x.is_empty()),
+                regiment: Some(u.regiment.clone()).filter(|x| !x.is_empty()),
+                brigade: Some(u.brigade.clone()).filter(|x| !x.is_empty()),
+                division: Some(u.division.clone()).filter(|x| !x.is_empty()),
+                corps: Some(u.corps.clone()).filter(|x| !x.is_empty()),
+                army: Some(u.army.clone()).filter(|x| !x.is_empty()),
+                military_district: Some(u.military_district.clone()).filter(|x| !x.is_empty()),
+                army_region: Some(u.army_region.clone()).filter(|x| !x.is_empty()),
                 comment: Some(u.comment.clone()).filter(|x| !x.is_empty()),
                 callsigns: cs
                     .into_iter()
@@ -176,20 +194,47 @@ pub async fn import_unit(
             unit_id = unit.id;
             let mut unit: sigint_unit::ActiveModel = unit.into();
             if ps.upsert {
+                if let Some(other) = &json_unit.other {
+                    unit.other = Set(other.clone());
+                }
+                if let Some(team_or_crew) = &json_unit.team_or_crew {
+                    unit.team_or_crew = Set(team_or_crew.clone());
+                }
+                if let Some(section) = &json_unit.section {
+                    unit.section = Set(section.clone());
+                }
+                if let Some(squad) = &json_unit.squad {
+                    unit.squad = Set(squad.clone());
+                }
+                if let Some(platoon) = &json_unit.platoon {
+                    unit.platoon = Set(platoon.clone());
+                }
                 if let Some(company) = &json_unit.company {
                     unit.company = Set(company.clone());
+                }
+                if let Some(battalion) = &json_unit.battalion {
+                    unit.battalion = Set(battalion.clone());
                 }
                 if let Some(regiment) = &json_unit.regiment {
                     unit.regiment = Set(regiment.clone());
                 }
+                if let Some(brigade) = &json_unit.brigade {
+                    unit.brigade = Set(brigade.clone());
+                }
                 if let Some(division) = &json_unit.division {
                     unit.division = Set(division.clone());
+                }
+                if let Some(corps) = &json_unit.corps {
+                    unit.corps = Set(corps.clone());
                 }
                 if let Some(army) = &json_unit.army {
                     unit.army = Set(army.clone());
                 }
-                if let Some(battalion) = &json_unit.battalion {
-                    unit.battalion = Set(battalion.clone());
+                if let Some(military_district) = &json_unit.military_district {
+                    unit.military_district = Set(military_district.clone());
+                }
+                if let Some(army_region) = &json_unit.army_region {
+                    unit.army_region = Set(army_region.clone());
                 }
                 if let Some(comment) = &json_unit.comment {
                     unit.comment = Set(comment.clone());
@@ -203,18 +248,36 @@ pub async fn import_unit(
                     id: NotSet,
                     original_id: Set(Some(json_unit.id)),
                     name: Set(json_unit.name.clone()),
+                    other: Set(json_unit.other.clone().unwrap_or_default()),
+                    team_or_crew: Set(json_unit
+                        .team_or_crew
+                        .clone()
+                        .unwrap_or_default()),
+                    section: Set(json_unit.section.clone().unwrap_or_default()),
+                    squad: Set(json_unit.squad.clone().unwrap_or_default()),
+                    platoon: Set(json_unit.platoon.clone().unwrap_or_default()),
                     company: Set(json_unit.company.clone().unwrap_or_default()),
+                    battalion: Set(json_unit
+                        .battalion
+                        .clone()
+                        .unwrap_or_default()),
                     regiment: Set(json_unit
                         .regiment
                         .clone()
                         .unwrap_or_default()),
+                    brigade: Set(json_unit.brigade.clone().unwrap_or_default()),
                     division: Set(json_unit
                         .division
                         .clone()
                         .unwrap_or_default()),
+                    corps: Set(json_unit.corps.clone().unwrap_or_default()),
                     army: Set(json_unit.army.clone().unwrap_or_default()),
-                    battalion: Set(json_unit
-                        .battalion
+                    military_district: Set(json_unit
+                        .military_district
+                        .clone()
+                        .unwrap_or_default()),
+                    army_region: Set(json_unit
+                        .army_region
                         .clone()
                         .unwrap_or_default()),
                     comment: Set(json_unit.comment.clone().unwrap_or_default()),

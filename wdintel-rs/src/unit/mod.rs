@@ -65,8 +65,8 @@ fn deepest_shared_hierarchy_level(
 }
 
 fn has_known_parent_conflict(
-    hierarchy1: &[&str; 7],
-    hierarchy2: &[&str; 7],
+    hierarchy1: &[&str; 14],
+    hierarchy2: &[&str; 14],
     shared_level: usize,
 ) -> bool {
     hierarchy1
@@ -78,15 +78,22 @@ fn has_known_parent_conflict(
         })
 }
 
-fn unit_hierarchy(unit: &sigint_unit::Model) -> [&str; 7] {
+fn unit_hierarchy(unit: &sigint_unit::Model) -> [&str; 14] {
     [
         unit.army_region.trim(),
         unit.military_district.trim(),
         unit.army.trim(),
+        unit.corps.trim(),
         unit.division.trim(),
+        unit.brigade.trim(),
         unit.regiment.trim(),
         unit.battalion.trim(),
         unit.company.trim(),
+        unit.platoon.trim(),
+        unit.squad.trim(),
+        unit.section.trim(),
+        unit.team_or_crew.trim(),
+        unit.other.trim(),
     ]
 }
 
@@ -636,9 +643,16 @@ mod tests {
     ) -> sigint_unit::Model {
         sigint_unit::Model {
             id,
+            other: String::new(),
+            team_or_crew: String::new(),
+            section: String::new(),
+            squad: String::new(),
+            platoon: String::new(),
             company: company.to_string(),
             regiment: regiment.to_string(),
+            brigade: String::new(),
             division: division.to_string(),
+            corps: String::new(),
             army: army.to_string(),
             army_region: String::new(),
             military_district: String::new(),

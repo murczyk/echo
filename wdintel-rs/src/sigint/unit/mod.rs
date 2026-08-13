@@ -26,10 +26,17 @@ pub mod types;
 
 pub fn unit_name(unit: &Unit) -> String {
     unit_name_from_hierarchy([
+        &unit.other,
+        &unit.team_or_crew,
+        &unit.section,
+        &unit.squad,
+        &unit.platoon,
         &unit.company,
         &unit.battalion,
         &unit.regiment,
+        &unit.brigade,
         &unit.division,
+        &unit.corps,
         &unit.army,
         &unit.military_district,
         &unit.army_region,
@@ -38,17 +45,24 @@ pub fn unit_name(unit: &Unit) -> String {
 
 pub fn unit_name_req(req: &CreateUnitReq) -> String {
     unit_name_from_hierarchy([
+        &req.other,
+        &req.team_or_crew,
+        &req.section,
+        &req.squad,
+        &req.platoon,
         &req.company,
         &req.battalion,
         &req.regiment,
+        &req.brigade,
         &req.division,
+        &req.corps,
         &req.army,
         &req.military_district,
         &req.army_region,
     ])
 }
 
-fn unit_name_from_hierarchy(hierarchy: [&str; 7]) -> String {
+fn unit_name_from_hierarchy(hierarchy: [&str; 14]) -> String {
     hierarchy
         .into_iter()
         .filter(|part| !part.is_empty())
@@ -228,9 +242,11 @@ async fn read_units_with_orbit_visibility(
                                 .into_column_ref()
                                 .into(),
                             sigint_unit::Column::Army.into_column_ref().into(),
+                            sigint_unit::Column::Corps.into_column_ref().into(),
                             sigint_unit::Column::Division
                                 .into_column_ref()
                                 .into(),
+                            sigint_unit::Column::Brigade.into_column_ref().into(),
                             sigint_unit::Column::Regiment
                                 .into_column_ref()
                                 .into(),
@@ -240,16 +256,34 @@ async fn read_units_with_orbit_visibility(
                             sigint_unit::Column::Company
                                 .into_column_ref()
                                 .into(),
+                            sigint_unit::Column::Platoon
+                                .into_column_ref()
+                                .into(),
+                            sigint_unit::Column::Squad.into_column_ref().into(),
+                            sigint_unit::Column::Section
+                                .into_column_ref()
+                                .into(),
+                            sigint_unit::Column::TeamOrCrew
+                                .into_column_ref()
+                                .into(),
+                            sigint_unit::Column::Other.into_column_ref().into(),
                             sigint_unit::Column::Id.into_column_ref().into(),
                         ])
                         .gt(SimpleExpr::Tuple(vec![
                             after_unit.army_region.into(),
                             after_unit.military_district.into(),
                             after_unit.army.into(),
+                            after_unit.corps.into(),
                             after_unit.division.into(),
+                            after_unit.brigade.into(),
                             after_unit.regiment.into(),
                             after_unit.battalion.into(),
                             after_unit.company.into(),
+                            after_unit.platoon.into(),
+                            after_unit.squad.into(),
+                            after_unit.section.into(),
+                            after_unit.team_or_crew.into(),
+                            after_unit.other.into(),
                             after_unit.id.into(),
                         ])),
                     );
@@ -258,10 +292,17 @@ async fn read_units_with_orbit_visibility(
                 units =
                     units.order_by_asc(sigint_unit::Column::MilitaryDistrict);
                 units = units.order_by_asc(sigint_unit::Column::Army);
+                units = units.order_by_asc(sigint_unit::Column::Corps);
                 units = units.order_by_asc(sigint_unit::Column::Division);
+                units = units.order_by_asc(sigint_unit::Column::Brigade);
                 units = units.order_by_asc(sigint_unit::Column::Regiment);
                 units = units.order_by_asc(sigint_unit::Column::Battalion);
                 units = units.order_by_asc(sigint_unit::Column::Company);
+                units = units.order_by_asc(sigint_unit::Column::Platoon);
+                units = units.order_by_asc(sigint_unit::Column::Squad);
+                units = units.order_by_asc(sigint_unit::Column::Section);
+                units = units.order_by_asc(sigint_unit::Column::TeamOrCrew);
+                units = units.order_by_asc(sigint_unit::Column::Other);
                 units = units.order_by_asc(sigint_unit::Column::Id);
             }
             ListUnitsSortBy::UnitNameLengthAsc => {
@@ -353,14 +394,28 @@ fn simple_unit_list_sort(
     Some(match sort_by {
         UnitNameAsc => (sigint_unit::Column::Name, Order::Asc),
         UnitNameDesc => (sigint_unit::Column::Name, Order::Desc),
+        UnitOtherAsc => (sigint_unit::Column::Other, Order::Asc),
+        UnitOtherDesc => (sigint_unit::Column::Other, Order::Desc),
+        UnitTeamOrCrewAsc => (sigint_unit::Column::TeamOrCrew, Order::Asc),
+        UnitTeamOrCrewDesc => (sigint_unit::Column::TeamOrCrew, Order::Desc),
+        UnitSectionAsc => (sigint_unit::Column::Section, Order::Asc),
+        UnitSectionDesc => (sigint_unit::Column::Section, Order::Desc),
+        UnitSquadAsc => (sigint_unit::Column::Squad, Order::Asc),
+        UnitSquadDesc => (sigint_unit::Column::Squad, Order::Desc),
+        UnitPlatoonAsc => (sigint_unit::Column::Platoon, Order::Asc),
+        UnitPlatoonDesc => (sigint_unit::Column::Platoon, Order::Desc),
         UnitCompanyAsc => (sigint_unit::Column::Company, Order::Asc),
         UnitCompanyDesc => (sigint_unit::Column::Company, Order::Desc),
         UnitBattalionAsc => (sigint_unit::Column::Battalion, Order::Asc),
         UnitBattalionDesc => (sigint_unit::Column::Battalion, Order::Desc),
         UnitRegimentAsc => (sigint_unit::Column::Regiment, Order::Asc),
         UnitRegimentDesc => (sigint_unit::Column::Regiment, Order::Desc),
+        UnitBrigadeAsc => (sigint_unit::Column::Brigade, Order::Asc),
+        UnitBrigadeDesc => (sigint_unit::Column::Brigade, Order::Desc),
         UnitDivisionAsc => (sigint_unit::Column::Division, Order::Asc),
         UnitDivisionDesc => (sigint_unit::Column::Division, Order::Desc),
+        UnitCorpsAsc => (sigint_unit::Column::Corps, Order::Asc),
+        UnitCorpsDesc => (sigint_unit::Column::Corps, Order::Desc),
         UnitArmyAsc => (sigint_unit::Column::Army, Order::Asc),
         UnitArmyDesc => (sigint_unit::Column::Army, Order::Desc),
         UnitMilitaryDistrictAsc => {
@@ -442,9 +497,9 @@ fn apply_unit_list_filters(
         .as_ref()
         .unwrap_or(&ListUnitsSearchMode::Strict);
     let global_filter_columns = if can_view_orbit {
-        "concat_ws(' ', \"sigint_unit\".\"name\", \"sigint_unit\".\"company\", \"sigint_unit\".\"battalion\", \"sigint_unit\".\"regiment\", \"sigint_unit\".\"division\", \"sigint_unit\".\"army\", \"sigint_unit\".\"military_district\", \"sigint_unit\".\"army_region\", \"sigint_unit\".\"comment\", \"sigint_unit\".\"orbit_note\")"
+        r#"concat_ws(' ', "sigint_unit"."name", "sigint_unit"."other", "sigint_unit"."team_or_crew", "sigint_unit"."section", "sigint_unit"."squad", "sigint_unit"."platoon", "sigint_unit"."company", "sigint_unit"."battalion", "sigint_unit"."regiment", "sigint_unit"."brigade", "sigint_unit"."division", "sigint_unit"."corps", "sigint_unit"."army", "sigint_unit"."military_district", "sigint_unit"."army_region", "sigint_unit"."comment", "sigint_unit"."orbit_note")"#
     } else {
-        "concat_ws(' ', \"sigint_unit\".\"name\", \"sigint_unit\".\"company\", \"sigint_unit\".\"battalion\", \"sigint_unit\".\"regiment\", \"sigint_unit\".\"division\", \"sigint_unit\".\"army\", \"sigint_unit\".\"military_district\", \"sigint_unit\".\"army_region\", \"sigint_unit\".\"comment\")"
+        r#"concat_ws(' ', "sigint_unit"."name", "sigint_unit"."other", "sigint_unit"."team_or_crew", "sigint_unit"."section", "sigint_unit"."squad", "sigint_unit"."platoon", "sigint_unit"."company", "sigint_unit"."battalion", "sigint_unit"."regiment", "sigint_unit"."brigade", "sigint_unit"."division", "sigint_unit"."corps", "sigint_unit"."army", "sigint_unit"."military_district", "sigint_unit"."army_region", "sigint_unit"."comment")"#
     };
     let orbit_note_filter = if can_view_orbit {
         req.filter_orbit_note.as_deref()
@@ -453,34 +508,41 @@ fn apply_unit_list_filters(
     };
     let filters = [
         (global_filter_columns, req.filter_text.as_deref()),
-        ("\"sigint_unit\".\"name\"", req.filter_name.as_deref()),
-        ("\"sigint_unit\".\"company\"", req.filter_company.as_deref()),
+        (r#""sigint_unit"."name""#, req.filter_name.as_deref()),
+        (r#""sigint_unit"."other""#, req.filter_other.as_deref()),
         (
-            "\"sigint_unit\".\"battalion\"",
+            r#""sigint_unit"."team_or_crew""#,
+            req.filter_team_or_crew.as_deref(),
+        ),
+        (r#""sigint_unit"."section""#, req.filter_section.as_deref()),
+        (r#""sigint_unit"."squad""#, req.filter_squad.as_deref()),
+        (r#""sigint_unit"."platoon""#, req.filter_platoon.as_deref()),
+        (r#""sigint_unit"."company""#, req.filter_company.as_deref()),
+        (
+            r#""sigint_unit"."battalion""#,
             req.filter_battalion.as_deref(),
         ),
         (
-            "\"sigint_unit\".\"regiment\"",
+            r#""sigint_unit"."regiment""#,
             req.filter_regiment.as_deref(),
         ),
+        (r#""sigint_unit"."brigade""#, req.filter_brigade.as_deref()),
         (
-            "\"sigint_unit\".\"division\"",
+            r#""sigint_unit"."division""#,
             req.filter_division.as_deref(),
         ),
-        ("\"sigint_unit\".\"army\"", req.filter_army.as_deref()),
+        (r#""sigint_unit"."corps""#, req.filter_corps.as_deref()),
+        (r#""sigint_unit"."army""#, req.filter_army.as_deref()),
         (
-            "\"sigint_unit\".\"military_district\"",
+            r#""sigint_unit"."military_district""#,
             req.filter_military_district.as_deref(),
         ),
         (
-            "\"sigint_unit\".\"army_region\"",
+            r#""sigint_unit"."army_region""#,
             req.filter_army_region.as_deref(),
         ),
-        ("\"sigint_unit\".\"comment\"", req.filter_comment.as_deref()),
-        (
-            "coalesce(\"sigint_unit\".\"orbit_note\", '')",
-            orbit_note_filter,
-        ),
+        (r#""sigint_unit"."comment""#, req.filter_comment.as_deref()),
+        (r#"coalesce("sigint_unit"."orbit_note", '')"#, orbit_note_filter),
     ];
 
     for (column_sql, value) in filters {
@@ -906,10 +968,17 @@ where
 {
     let unit = sigint_unit::ActiveModel {
         id: NotSet,
+        other: Set(req.other.clone()),
+        team_or_crew: Set(req.team_or_crew.clone()),
+        section: Set(req.section.clone()),
+        squad: Set(req.squad.clone()),
+        platoon: Set(req.platoon.clone()),
         company: Set(req.company.clone()),
         battalion: Set(req.battalion.clone()),
         regiment: Set(req.regiment.clone()),
+        brigade: Set(req.brigade.clone()),
         division: Set(req.division.clone()),
+        corps: Set(req.corps.clone()),
         army: Set(req.army.clone()),
         military_district: Set(req.military_district.clone()),
         army_region: Set(req.army_region.clone()),
@@ -1170,6 +1239,16 @@ async fn update_unit_for_login(
         .await
         .context(h!())?
         .ok_or(AppError::NotFound)?;
+    let other = req.other.clone().unwrap_or_else(|| unit.other.clone());
+    let team_or_crew = req
+        .team_or_crew
+        .clone()
+        .unwrap_or_else(|| unit.team_or_crew.clone());
+    let section = req.section.clone().unwrap_or_else(|| unit.section.clone());
+    let squad = req.squad.clone().unwrap_or_else(|| unit.squad.clone());
+    let platoon = req.platoon.clone().unwrap_or_else(|| unit.platoon.clone());
+    let brigade = req.brigade.clone().unwrap_or_else(|| unit.brigade.clone());
+    let corps = req.corps.clone().unwrap_or_else(|| unit.corps.clone());
     let military_district = req
         .military_district
         .clone()
@@ -1182,29 +1261,50 @@ async fn update_unit_for_login(
     let hierarchy_or_activity_changed = unit.active != req.active
         || unit_hierarchy(&unit)
             != [
+                other.as_str(),
+                team_or_crew.as_str(),
+                section.as_str(),
+                squad.as_str(),
+                platoon.as_str(),
                 req.company.as_str(),
                 req.battalion.as_str(),
                 req.regiment.as_str(),
+                brigade.as_str(),
                 req.division.as_str(),
+                corps.as_str(),
                 req.army.as_str(),
                 military_district.as_str(),
                 army_region.as_str(),
             ];
     let unit_json_old = unit_json(&transaction, req.id).await?;
     let mut unit = unit.into_active_model();
+    unit.other = Set(other.clone());
+    unit.team_or_crew = Set(team_or_crew.clone());
+    unit.section = Set(section.clone());
+    unit.squad = Set(squad.clone());
+    unit.platoon = Set(platoon.clone());
     unit.company = Set(req.company.clone());
     unit.battalion = Set(req.battalion.clone());
     unit.regiment = Set(req.regiment.clone());
+    unit.brigade = Set(brigade.clone());
     unit.division = Set(req.division.clone());
+    unit.corps = Set(corps.clone());
     unit.army = Set(req.army.clone());
     unit.military_district = Set(military_district.clone());
     unit.army_region = Set(army_region.clone());
     unit.active = Set(req.active);
     unit.name = Set(unit_name_from_hierarchy([
+        &other,
+        &team_or_crew,
+        &section,
+        &squad,
+        &platoon,
         &req.company,
         &req.battalion,
         &req.regiment,
+        &brigade,
         &req.division,
+        &corps,
         &req.army,
         &military_district,
         &army_region,
@@ -1394,12 +1494,19 @@ fn is_parent_unit(
         })
 }
 
-fn unit_hierarchy(unit: &sigint_unit::Model) -> [&str; 7] {
+fn unit_hierarchy(unit: &sigint_unit::Model) -> [&str; 14] {
     [
+        unit.other.as_str(),
+        unit.team_or_crew.as_str(),
+        unit.section.as_str(),
+        unit.squad.as_str(),
+        unit.platoon.as_str(),
         unit.company.as_str(),
         unit.battalion.as_str(),
         unit.regiment.as_str(),
+        unit.brigade.as_str(),
         unit.division.as_str(),
+        unit.corps.as_str(),
         unit.army.as_str(),
         unit.military_district.as_str(),
         unit.army_region.as_str(),
@@ -1631,10 +1738,17 @@ where
 pub fn render_unit(unit: &sigint_unit::Model) -> Result<Unit, AppError> {
     Ok(Unit {
         id: unit.id,
+        other: unit.other.clone(),
+        team_or_crew: unit.team_or_crew.clone(),
+        section: unit.section.clone(),
+        squad: unit.squad.clone(),
+        platoon: unit.platoon.clone(),
         company: unit.company.clone(),
         battalion: unit.battalion.clone(),
         regiment: unit.regiment.clone(),
+        brigade: unit.brigade.clone(),
         division: unit.division.clone(),
+        corps: unit.corps.clone(),
         army: unit.army.clone(),
         military_district: unit.military_district.clone(),
         army_region: unit.army_region.clone(),
@@ -1981,10 +2095,20 @@ where
 {
     let mut unit = unit_original.clone().into_active_model();
     unit.name = Set(unit_name_from_hierarchy([
+        merged_unit_value(&unit_original.other, &unit_to_merge.other),
+        merged_unit_value(
+            &unit_original.team_or_crew,
+            &unit_to_merge.team_or_crew,
+        ),
+        merged_unit_value(&unit_original.section, &unit_to_merge.section),
+        merged_unit_value(&unit_original.squad, &unit_to_merge.squad),
+        merged_unit_value(&unit_original.platoon, &unit_to_merge.platoon),
         merged_unit_value(&unit_original.company, &unit_to_merge.company),
         merged_unit_value(&unit_original.battalion, &unit_to_merge.battalion),
         merged_unit_value(&unit_original.regiment, &unit_to_merge.regiment),
+        merged_unit_value(&unit_original.brigade, &unit_to_merge.brigade),
         merged_unit_value(&unit_original.division, &unit_to_merge.division),
+        merged_unit_value(&unit_original.corps, &unit_to_merge.corps),
         merged_unit_value(&unit_original.army, &unit_to_merge.army),
         merged_unit_value(
             &unit_original.military_district,
@@ -1996,6 +2120,23 @@ where
         ),
     ]));
 
+    if unit_original.other.is_empty() && !unit_to_merge.other.is_empty() {
+        unit.other = Set(unit_to_merge.other.clone());
+    }
+    if unit_original.team_or_crew.is_empty()
+        && !unit_to_merge.team_or_crew.is_empty()
+    {
+        unit.team_or_crew = Set(unit_to_merge.team_or_crew.clone());
+    }
+    if unit_original.section.is_empty() && !unit_to_merge.section.is_empty() {
+        unit.section = Set(unit_to_merge.section.clone());
+    }
+    if unit_original.squad.is_empty() && !unit_to_merge.squad.is_empty() {
+        unit.squad = Set(unit_to_merge.squad.clone());
+    }
+    if unit_original.platoon.is_empty() && !unit_to_merge.platoon.is_empty() {
+        unit.platoon = Set(unit_to_merge.platoon.clone());
+    }
     if unit_original.company.is_empty() && !unit_to_merge.company.is_empty() {
         unit.company = Set(unit_to_merge.company.clone());
     }
@@ -2006,8 +2147,14 @@ where
     {
         unit.battalion = Set(unit_to_merge.battalion.clone());
     }
+    if unit_original.brigade.is_empty() && !unit_to_merge.brigade.is_empty() {
+        unit.brigade = Set(unit_to_merge.brigade.clone());
+    }
     if unit_original.division.is_empty() && !unit_to_merge.division.is_empty() {
         unit.division = Set(unit_to_merge.division.clone());
+    }
+    if unit_original.corps.is_empty() && !unit_to_merge.corps.is_empty() {
+        unit.corps = Set(unit_to_merge.corps.clone());
     }
     if unit_original.army.is_empty() && !unit_to_merge.army.is_empty() {
         unit.army = Set(unit_to_merge.army.clone());
@@ -2192,10 +2339,17 @@ mod tests {
 
     fn unit_req() -> CreateUnitReq {
         CreateUnitReq {
+            other: String::new(),
+            team_or_crew: String::new(),
+            section: String::new(),
+            squad: String::new(),
+            platoon: String::new(),
             company: "2 шр".to_string(),
             battalion: "3 ошб".to_string(),
             regiment: "44 осбр".to_string(),
+            brigade: String::new(),
             division: String::new(),
+            corps: String::new(),
             army: String::new(),
             military_district: String::new(),
             army_region: String::new(),
@@ -2496,10 +2650,17 @@ mod tests {
                 filter_active: None,
                 filter_text: None,
                 filter_name: None,
+                filter_other: None,
+                filter_team_or_crew: None,
+                filter_section: None,
+                filter_squad: None,
+                filter_platoon: None,
                 filter_company: None,
                 filter_battalion: None,
                 filter_regiment: None,
+                filter_brigade: None,
                 filter_division: None,
+                filter_corps: None,
                 filter_army: None,
                 filter_military_district: None,
                 filter_army_region: None,
@@ -2542,10 +2703,17 @@ mod tests {
                 filter_active: None,
                 filter_text: None,
                 filter_name: None,
+                filter_other: None,
+                filter_team_or_crew: None,
+                filter_section: None,
+                filter_squad: None,
+                filter_platoon: None,
                 filter_company: None,
                 filter_battalion: None,
                 filter_regiment: None,
+                filter_brigade: None,
                 filter_division: None,
+                filter_corps: None,
                 filter_army: None,
                 filter_military_district: None,
                 filter_army_region: None,

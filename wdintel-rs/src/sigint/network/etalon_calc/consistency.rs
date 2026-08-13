@@ -1235,9 +1235,16 @@ mod tests {
     fn mk_unit(id: i64, name: &str, regiment: &str) -> sigint_unit::Model {
         sigint_unit::Model {
             id,
+            other: String::new(),
+            team_or_crew: String::new(),
+            section: String::new(),
+            squad: String::new(),
+            platoon: String::new(),
             company: String::new(),
             regiment: regiment.to_string(),
+            brigade: String::new(),
             division: String::new(),
+            corps: String::new(),
             army: String::new(),
             army_region: String::new(),
             military_district: String::new(),

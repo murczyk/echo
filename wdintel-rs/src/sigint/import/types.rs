@@ -75,9 +75,16 @@ mod tests {
     fn legacy_etalon_units_default_extended_hierarchy_fields() {
         let unit = sigint_unit::Model {
             id: 1,
+            other: String::new(),
+            team_or_crew: String::new(),
+            section: String::new(),
+            squad: String::new(),
+            platoon: String::new(),
             company: String::new(),
             regiment: String::new(),
+            brigade: String::new(),
             division: String::new(),
+            corps: String::new(),
             army: "20 ЗВА".to_string(),
             active: true,
             deleted: false,
