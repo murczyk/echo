@@ -1,8 +1,10 @@
 use super::query;
 use crate::entities::palitra_highlight_blacklist;
 use crate::error::AppError;
+use crate::h;
 use crate::palitra::types::PalitraHighlightBlacklistEntry;
 use crate::rer_importer::highlight::CNPoint;
+use crate::types::ShortContext;
 use sea_orm::ConnectionTrait;
 use std::collections::{HashMap, HashSet};
 
@@ -21,7 +23,7 @@ where
         return Ok(HashMap::new());
     }
 
-    let rows = query::load_labels(dbx, palitra_ids).await?;
+    let rows = query::load_labels(dbx, palitra_ids).await.c(h!())?;
     let mut labels_by_palitra = HashMap::new();
     for (palitra_id, label) in rows {
         labels_by_palitra
@@ -60,7 +62,8 @@ where
     C: ConnectionTrait,
 {
     query::list_entries(dbx, palitra_id)
-        .await?
+        .await
+        .c(h!())?
         .into_iter()
         .map(|(entry, login)| {
             login
@@ -87,7 +90,8 @@ where
     }
 
     let label = query::find_current_label(dbx, palitra_id, &normalized_label)
-        .await?
+        .await
+        .c(h!())?
         .ok_or_else(|| AppError::BL {
             msg: "Palitra highlight blacklist label does not exist".into(),
         })?;
@@ -98,8 +102,11 @@ where
         label.trim().to_string(),
         normalized_label,
     )
-    .await?;
-    let login = query::login_name(dbx, entry.created_by_login_id).await?;
+    .await
+    .c(h!())?;
+    let login = query::login_name(dbx, entry.created_by_login_id)
+        .await
+        .c(h!())?;
     Ok(map_entry(entry, login))
 }
 
@@ -111,7 +118,11 @@ pub async fn delete_entry<C>(
 where
     C: ConnectionTrait,
 {
-    if query::delete_entry(dbx, palitra_id, blacklist_entry_id).await? == 0 {
+    if query::delete_entry(dbx, palitra_id, blacklist_entry_id)
+        .await
+        .c(h!())?
+        == 0
+    {
         return Err(AppError::NotFound);
     }
     Ok(())
