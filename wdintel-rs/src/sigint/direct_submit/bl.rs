@@ -391,7 +391,8 @@ async fn save_signal_message(
     let existing_device_name_id = match signal_message_id {
         Some(signal_message_id) => {
             query::find_inbox_item_device_name_id(&txn, signal_message_id)
-                .await?
+                .await
+                .c(h!())?
         }
         None => None,
     };
@@ -407,9 +408,9 @@ async fn save_signal_message(
         .c(h!())?;
     let previous_timestamp =
         signal_message.and_then(|signal_message| signal_message.timestamp);
-    let keep_timestamp_missing = signal_message_id.is_some()
-        && payload.timestamp.is_none()
-        && previous_timestamp.is_none();
+    let keep_timestamp_missing = payload.timestamp.is_none()
+        && ((signal_message_id.is_some() && previous_timestamp.is_none())
+            || copy_source.is_some());
     let submit_item =
         direct_submit_payload_to_item(&payload, sender, previous_timestamp)
             .c(h!())?;
@@ -687,6 +688,7 @@ async fn persist_direct_submit_item(
                 logins,
                 submit_item,
                 allow_empty_content,
+                keep_timestamp_missing,
                 crate::rer_importer::inbox::bl::InboxLocationSubmitMode::PreserveTyped,
             )
             .await
