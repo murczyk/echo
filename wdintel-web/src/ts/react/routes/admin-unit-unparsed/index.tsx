@@ -32,7 +32,11 @@ import { PowerChip } from '../../components/PowerChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { HttpRequestError } from '../../services/api/client';
-import { DEFAULT_LIST_UNITS_REQ, searchUnitsStrictThenRelaxed } from '../../services/api/units';
+import {
+  DEFAULT_LIST_UNITS_REQ,
+  searchUnitsByMatchTier,
+  type UnitSearchMatches,
+} from '../../services/api/units';
 import {
   archiveUnresolvedUnitLabel,
   listUnresolvedUnitLabels,
@@ -85,6 +89,34 @@ function unitTitle(unit: Unit): string {
   return segments ? `${unit.name} — ${segments}` : unit.name;
 }
 
+function unitEchelon(unit: Unit): number {
+  return [
+    unit.company,
+    unit.battalion,
+    unit.regiment,
+    unit.division,
+    unit.army,
+    unit.militaryDistrict,
+    unit.armyRegion,
+  ].findIndex((segment) => segment.trim().length > 0);
+}
+
+type UnitOption = {
+  unit: Unit;
+  strict: boolean;
+};
+
+function sortUnitsByDescendingEchelon(units: Unit[]): Unit[] {
+  return [...units].sort((left, right) => unitEchelon(right) - unitEchelon(left));
+}
+
+function sortUnitMatches(matches: UnitSearchMatches): UnitOption[] {
+  return [
+    ...sortUnitsByDescendingEchelon(matches.strict).map((unit) => ({ unit, strict: true })),
+    ...sortUnitsByDescendingEchelon(matches.relaxed).map((unit) => ({ unit, strict: false })),
+  ];
+}
+
 function ArchiveFilterChips({
   value,
   onChange,
@@ -121,11 +153,13 @@ function ArchiveFilterChips({
 
 function UnitCandidateButton({
   unit,
+  strict,
   selected,
   disabled,
   onClick,
 }: {
   unit: Unit;
+  strict: boolean;
   selected: boolean;
   disabled: boolean;
   onClick: () => void;
@@ -138,23 +172,35 @@ function UnitCandidateButton({
       onClick={onClick}
       sx={{ justifyContent: 'flex-start', textAlign: 'left', py: 1 }}
     >
-      <Stack spacing={0.5} sx={{ minWidth: 0, width: '100%' }}>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
-          <Typography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
-            {unit.name || `#${unit.id}`}
-          </Typography>
-          <Chip
-            size="small"
-            label={unit.active ? 'Активний' : 'Неактивний'}
-            color={unit.active ? 'success' : 'warning'}
-            variant={selected ? 'filled' : 'outlined'}
-          />
-        </Stack>
-        {unitSegments(unit) ? (
-          <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-            {unitSegments(unit)}
-          </Typography>
+      <Stack
+        direction="row"
+        spacing={1}
+        alignItems="flex-start"
+        sx={{ minWidth: 0, width: '100%' }}
+      >
+        {strict ? (
+          <Box component="span" aria-label="Точний збіг" sx={{ lineHeight: 1.5 }}>
+            ⭐
+          </Box>
         ) : null}
+        <Stack spacing={0.5} sx={{ minWidth: 0, width: '100%' }}>
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
+              {unit.name || `#${unit.id}`}
+            </Typography>
+            <Chip
+              size="small"
+              label={unit.active ? 'Активний' : 'Неактивний'}
+              color={unit.active ? 'success' : 'warning'}
+              variant={selected ? 'filled' : 'outlined'}
+            />
+          </Stack>
+          {unitSegments(unit) ? (
+            <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+              {unitSegments(unit)}
+            </Typography>
+          ) : null}
+        </Stack>
       </Stack>
     </Button>
   );
@@ -221,7 +267,7 @@ export function AdminUnitUnparsedPage({
   const [status, setStatus] = useState<string | null>(null);
   const [resolveState, setResolveState] = useState<ResolveState | null>(null);
   const [unitSearch, setUnitSearch] = useState('');
-  const [unitOptions, setUnitOptions] = useState<Unit[]>([]);
+  const [unitOptions, setUnitOptions] = useState<UnitOption[]>([]);
   const [unitLoading, setUnitLoading] = useState(false);
   const [unitSearchError, setUnitSearchError] = useState<string | null>(null);
   const canResolve =
@@ -272,7 +318,7 @@ export function AdminUnitUnparsedPage({
     setUnitSearchError(null);
     setUnitOptions([]);
     const timeout = window.setTimeout(() => {
-      void searchUnitsStrictThenRelaxed(
+      void searchUnitsByMatchTier(
         {
           ...DEFAULT_LIST_UNITS_REQ,
           sortBy: 'UnitNameLengthAsc',
@@ -283,8 +329,10 @@ export function AdminUnitUnparsedPage({
         },
         { signal: controller.signal },
       )
-        .then((units) => {
-          if (!controller.signal.aborted) setUnitOptions(units);
+        .then((matches) => {
+          if (!controller.signal.aborted) {
+            setUnitOptions(sortUnitMatches(matches));
+          }
         })
         .catch((error) => {
           if (!controller.signal.aborted) setUnitSearchError(formatError(error));
@@ -532,10 +580,11 @@ export function AdminUnitUnparsedPage({
               {unitOptions.length > 0 ? (
                 <Stack spacing={1}>
                   <Typography variant="subtitle2">Топ кандидатів</Typography>
-                  {unitOptions.slice(0, 3).map((unit) => (
+                  {unitOptions.slice(0, 3).map(({ unit, strict }) => (
                     <UnitCandidateButton
                       key={unit.id}
                       unit={unit}
+                      strict={strict}
                       selected={resolveState.sigintUnit?.id === unit.id}
                       disabled={processing}
                       onClick={() =>
@@ -570,10 +619,11 @@ export function AdminUnitUnparsedPage({
                     Підрозділів не знайдено.
                   </Typography>
                 ) : null}
-                {unitOptions.slice(3).map((unit) => (
+                {unitOptions.slice(3).map(({ unit, strict }) => (
                   <UnitCandidateButton
                     key={unit.id}
                     unit={unit}
+                    strict={strict}
                     selected={resolveState.sigintUnit?.id === unit.id}
                     disabled={processing}
                     onClick={() =>

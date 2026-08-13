@@ -71,16 +71,36 @@ export function mergeUnitsById(...unitLists: readonly Unit[][]): Unit[] {
   return Array.from(unitsById.values());
 }
 
+export type UnitSearchMatches = {
+  strict: Unit[];
+  relaxed: Unit[];
+};
+
+export async function searchUnitsByMatchTier(
+  req: ListUnitsReq,
+  options?: RequestOptions,
+): Promise<UnitSearchMatches> {
+  const strictPage = getUnitsPage({ ...req, searchMode: 'Strict' }, options);
+  if (!req.filterText?.trim() && !req.filterName?.trim()) {
+    return { strict: (await strictPage).units, relaxed: [] };
+  }
+  const [strict, relaxed] = await Promise.all([
+    strictPage,
+    getUnitsPage({ ...req, searchMode: 'Relaxed' }, options),
+  ]);
+  const strictIds = new Set(strict.units.map((unit) => unit.id));
+  return {
+    strict: strict.units,
+    relaxed: relaxed.units.filter((unit) => !strictIds.has(unit.id)),
+  };
+}
+
 export async function searchUnitsStrictThenRelaxed(
   req: ListUnitsReq,
   options?: RequestOptions,
 ): Promise<Unit[]> {
-  const requests = [getUnitsPage({ ...req, searchMode: 'Strict' }, options)];
-  if (req.filterText?.trim() || req.filterName?.trim()) {
-    requests.push(getUnitsPage({ ...req, searchMode: 'Relaxed' }, options));
-  }
-  const pages = await Promise.all(requests);
-  return mergeUnitsById(...pages.map((page) => page.units));
+  const matches = await searchUnitsByMatchTier(req, options);
+  return [...matches.strict, ...matches.relaxed];
 }
 
 export async function getUnitsPage(
