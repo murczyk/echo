@@ -506,7 +506,7 @@ function CoordinateMapPreview({
         flex: 1,
         minHeight: 0,
         overflow: 'hidden',
-        borderRadius: isFullscreen ? 0 : 1.5,
+        borderRadius: 0,
         backgroundColor: 'background.paper',
         ...getAttachmentPreviewStageSx(theme, isFullscreen),
       }}
