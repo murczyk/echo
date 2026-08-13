@@ -1352,6 +1352,7 @@ export type PalitraHighlightBlacklistEntry = {
 
 export type PalitraHighlightBlacklistAddReq = {
   label: string;
+  sourceMessageId: number;
 };
 
 export type PalitraResolveNamesReq = {

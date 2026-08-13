@@ -394,6 +394,12 @@ async fn list_palitras_v2_by_ids(
         read_palitra_goi_sync_summaries(dbx, palitra_ids.clone(), false)
             .await
             .c(h!())?;
+    let highlight_blacklist_counts =
+        counts_by_palitra_ids(dbx, palitra_ids.clone())
+            .await
+            .c(h!())?
+            .into_iter()
+            .collect::<HashMap<_, _>>();
     let mut result = Vec::with_capacity(palitra_ids.len());
     for palitra_id in palitra_ids {
         let goi_sync_summary =
@@ -403,6 +409,10 @@ async fn list_palitras_v2_by_ids(
                 Either::Right(palitra_id),
                 dbx,
                 goi_sync_summary,
+                highlight_blacklist_counts
+                    .get(&palitra_id)
+                    .copied()
+                    .unwrap_or_default(),
             )
             .await
             .c(h!())?,
@@ -947,7 +957,7 @@ pub async fn list_all_palitras(
     for id in palitra_ids {
         let goi_sync_summary =
             goi_sync_summaries.remove(&id).unwrap_or_default();
-        let palitra = render_palitra_with_summary(
+        let palitra = render_palitra_with_summary_and_count(
             Either::Right(id),
             dbx,
             goi_sync_summary,
@@ -1415,7 +1425,7 @@ pub async fn collect_downloadable_palitra_files(
         return Ok(vec![]);
     }
     let palitras = palitra::Entity::find()
-        .filter(palitra::Column::Id.is_in(palitra_ids))
+        .filter(palitra::Column::Id.is_in(palitra_ids.clone()))
         .filter(palitra::Column::Deleted.eq(false))
         .all(dbx)
         .await
@@ -1448,14 +1458,30 @@ pub async fn collect_downloadable_palitra_details(
         return Ok(vec![]);
     }
     let palitras = palitra::Entity::find()
-        .filter(palitra::Column::Id.is_in(palitra_ids))
+        .filter(palitra::Column::Id.is_in(palitra_ids.clone()))
         .filter(palitra::Column::Deleted.eq(false))
         .all(dbx)
         .await
         .c(h!())?;
+    let highlight_blacklist_counts = counts_by_palitra_ids(dbx, palitra_ids)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
     let mut result = Vec::with_capacity(palitras.len());
     for palitra in palitras {
-        result.push(render_palitra_v2(Either::Left(palitra), dbx).await?);
+        let palitra_id = palitra.id;
+        result.push(
+            render_palitra_v2_with_count(
+                Either::Left(palitra),
+                dbx,
+                highlight_blacklist_counts
+                    .get(&palitra_id)
+                    .copied()
+                    .unwrap_or_default(),
+            )
+            .await?,
+        );
     }
     Ok(result)
 }
@@ -1491,6 +1517,12 @@ async fn render_palitra_details<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    let highlight_blacklist_counts =
+        counts_by_palitra_ids(txn, palitra_ids.clone())
+            .await
+            .c(h!())?
+            .into_iter()
+            .collect::<HashMap<_, _>>();
     let palitra_geometries = palitra_geometry::Entity::find()
         .filter(palitra_geometry::Column::PalitraId.is_in(palitra_ids.clone()))
         .filter(palitra_geometry::Column::Deleted.eq(false))
@@ -1561,9 +1593,16 @@ where
     for palitra_id in palitra_ids {
         let points =
             points_by_palitra_id.remove(&palitra_id).unwrap_or_default();
-        let palitra = render_palitra(Either::Right(palitra_id), txn)
-            .await
-            .c(h!())?;
+        let palitra = render_palitra_with_count(
+            Either::Right(palitra_id),
+            txn,
+            highlight_blacklist_counts
+                .get(&palitra_id)
+                .copied()
+                .unwrap_or_default(),
+        )
+        .await
+        .c(h!())?;
         result.push(PalitraDetails { palitra, points });
     }
     Ok(result)
@@ -2196,12 +2235,66 @@ where
     let goi_sync_summary = read_palitra_goi_sync_summary(dbx, palitra_id)
         .await
         .c(h!())?;
-    render_palitra_model(palitra_model, dbx, goi_sync_summary, 0)
-        .await
-        .c(h!())
+    let highlight_blacklist_count =
+        highlight_blacklist_count(dbx, palitra_id).await.c(h!())?;
+    render_palitra_model(
+        palitra_model,
+        dbx,
+        goi_sync_summary,
+        highlight_blacklist_count,
+    )
+    .await
+    .c(h!())
 }
 
 async fn render_palitra_with_summary<'a, 'async_trait, C>(
+    e_palitra_model: Either<palitra::Model, i64>,
+    dbx: &'a C,
+    goi_sync_summary: PalitraGoiSyncSummary,
+) -> anyhow::Result<Palitra>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let palitra_id = match &e_palitra_model {
+        Either::Left(model) => model.id,
+        Either::Right(id) => *id,
+    };
+    let highlight_blacklist_count =
+        highlight_blacklist_count(dbx, palitra_id).await.c(h!())?;
+    render_palitra_with_summary_and_count(
+        e_palitra_model,
+        dbx,
+        goi_sync_summary,
+        highlight_blacklist_count,
+    )
+    .await
+}
+
+async fn render_palitra_with_count<'a, 'async_trait, C>(
+    e_palitra_model: Either<palitra::Model, i64>,
+    dbx: &'a C,
+    highlight_blacklist_count: i64,
+) -> anyhow::Result<Palitra>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let palitra_id = match &e_palitra_model {
+        Either::Left(model) => model.id,
+        Either::Right(id) => *id,
+    };
+    let goi_sync_summary = read_palitra_goi_sync_summary(dbx, palitra_id)
+        .await
+        .c(h!())?;
+    render_palitra_with_summary_and_count(
+        e_palitra_model,
+        dbx,
+        goi_sync_summary,
+        highlight_blacklist_count,
+    )
+    .await
+}
+
+async fn render_palitra_with_summary_and_count<'a, 'async_trait, C>(
     e_palitra_model: Either<palitra::Model, i64>,
     dbx: &'a C,
     goi_sync_summary: PalitraGoiSyncSummary,
@@ -2226,6 +2319,22 @@ where
     )
     .await
     .c(h!())
+}
+
+async fn highlight_blacklist_count<C>(
+    dbx: &C,
+    palitra_id: i64,
+) -> anyhow::Result<i64>
+where
+    C: ConnectionTrait,
+{
+    Ok(counts_by_palitra_ids(dbx, vec![palitra_id])
+        .await
+        .c(h!())?
+        .into_iter()
+        .next()
+        .map(|(_, count)| count)
+        .unwrap_or_default())
 }
 
 async fn render_palitra_model<'a, 'async_trait, C>(
@@ -2364,9 +2473,28 @@ pub(super) async fn render_palitra_v2<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    render_palitra_v2_inner(e_palitra_model, dbx, true, None)
+    render_palitra_v2_inner(e_palitra_model, dbx, true, None, None)
         .await
         .c(h!())
+}
+
+async fn render_palitra_v2_with_count<'a, 'async_trait, C>(
+    e_palitra_model: Either<palitra::Model, i64>,
+    dbx: &'a C,
+    highlight_blacklist_count: i64,
+) -> anyhow::Result<PalitraReadV2>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    render_palitra_v2_inner(
+        e_palitra_model,
+        dbx,
+        true,
+        None,
+        Some(highlight_blacklist_count),
+    )
+    .await
+    .c(h!())
 }
 
 async fn render_palitra_v2_without_points<'a, 'async_trait, C>(
@@ -2376,7 +2504,7 @@ async fn render_palitra_v2_without_points<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    render_palitra_v2_inner(e_palitra_model, dbx, false, None)
+    render_palitra_v2_inner(e_palitra_model, dbx, false, None, None)
         .await
         .c(h!())
 }
@@ -2385,13 +2513,20 @@ async fn render_palitra_v2_without_points_with_summary<'a, 'async_trait, C>(
     e_palitra_model: Either<palitra::Model, i64>,
     dbx: &'a C,
     goi_sync_summary: PalitraGoiSyncSummary,
+    highlight_blacklist_count: i64,
 ) -> anyhow::Result<PalitraReadV2>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    render_palitra_v2_inner(e_palitra_model, dbx, false, Some(goi_sync_summary))
-        .await
-        .c(h!())
+    render_palitra_v2_inner(
+        e_palitra_model,
+        dbx,
+        false,
+        Some(goi_sync_summary),
+        Some(highlight_blacklist_count),
+    )
+    .await
+    .c(h!())
 }
 
 async fn render_palitra_v2_inner<'a, 'async_trait, C>(
@@ -2399,20 +2534,37 @@ async fn render_palitra_v2_inner<'a, 'async_trait, C>(
     dbx: &'a C,
     include_points: bool,
     goi_sync_summary: Option<PalitraGoiSyncSummary>,
+    highlight_blacklist_count: Option<i64>,
 ) -> anyhow::Result<PalitraReadV2>
 where
     C: ConnectionTrait + 'async_trait,
 {
     let palitra = match goi_sync_summary {
-        Some(goi_sync_summary) => render_palitra_with_summary(
-            e_palitra_model,
-            dbx,
-            goi_sync_summary,
-            0,
-        )
-        .await
-        .c(h!())?,
-        None => render_palitra(e_palitra_model, dbx).await.c(h!())?,
+        Some(goi_sync_summary) => match highlight_blacklist_count {
+            Some(count) => render_palitra_with_summary_and_count(
+                e_palitra_model,
+                dbx,
+                goi_sync_summary,
+                count,
+            )
+            .await
+            .c(h!())?,
+            None => render_palitra_with_summary(
+                e_palitra_model,
+                dbx,
+                goi_sync_summary,
+            )
+            .await
+            .c(h!())?,
+        },
+        None => match highlight_blacklist_count {
+            Some(count) => {
+                render_palitra_with_count(e_palitra_model, dbx, count)
+                    .await
+                    .c(h!())?
+            }
+            None => render_palitra(e_palitra_model, dbx).await.c(h!())?,
+        },
     };
     let palitra_geometry_models =
         order_by_primary_geometry(palitra_geometry::Entity::find())
@@ -2967,8 +3119,10 @@ mod tests {
         is_goi_owned_convertible_palitra, list_all_palitras_v2,
         list_map_palitras_v2, normalize_palitra_folder,
         normalize_palitra_folder_from_db, normalize_palitra_folder_lookup,
-        read_palitra_goi_sync_summary, rename_accessible_palitra_folder,
-        replace_folder_exact, search_palitra_points_by_labels, update_palitra,
+        read_palitra_goi_sync_summary, read_palitra_v2,
+        rename_accessible_palitra_folder, replace_folder_exact,
+        search_palitra_points_by_labels,
+        update_accessible_palitra_archive_flag, update_palitra,
         update_palitra_v2,
     };
     use crate::palitra::types::{
@@ -2981,6 +3135,93 @@ mod tests {
         QueryFilter, Set, TransactionTrait,
     };
     use serial_test::serial;
+
+    #[serial]
+    #[tokio::test]
+    async fn test_palette_responses_preserve_highlight_blacklist_count() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        mk_palitra_point("Пункт Альфа".to_string(), palitra.id, &env.dbx)
+            .await
+            .unwrap();
+        crate::palitra::highlight_blacklist::bl::add_entry(
+            &env.dbx,
+            palitra.id,
+            login.id,
+            "Пункт Альфа",
+            1,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            read_palitra_v2(login.id, palitra.id, &env.dbx)
+                .await
+                .unwrap()
+                .palitra
+                .highlight_blacklist_count,
+            1
+        );
+        assert_eq!(
+            list_all_palitras_v2(login.id, &env.dbx)
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|item| item.palitra.id == palitra.id)
+                .unwrap()
+                .palitra
+                .highlight_blacklist_count,
+            1
+        );
+
+        let geometry = palitra_geometry::Entity::find()
+            .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
+            .filter(palitra_geometry::Column::Deleted.eq(false))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let req = UpdatePalitraV2Req {
+            geometry_id: geometry.id,
+            name: palitra.name.clone(),
+            color_hex: geometry.hex.clone(),
+            access: PalitraAccess::ByLogins {
+                logins: vec![login.id.to_string()],
+            },
+            source_file_name: geometry.source_file_name.clone(),
+            last_uploaded_at_ts: None,
+        };
+        let txn = env.dbx.begin().await.unwrap();
+        assert_eq!(
+            update_palitra_v2(palitra.id, req, &txn)
+                .await
+                .unwrap()
+                .palitra
+                .highlight_blacklist_count,
+            1
+        );
+        txn.commit().await.unwrap();
+
+        for is_archived in [true, false] {
+            let txn = env.dbx.begin().await.unwrap();
+            assert_eq!(
+                update_accessible_palitra_archive_flag(
+                    login.id,
+                    palitra.id,
+                    is_archived,
+                    &env.dbx,
+                    &txn,
+                )
+                .await
+                .unwrap()
+                .unwrap()
+                .highlight_blacklist_count,
+                1
+            );
+            txn.commit().await.unwrap();
+        }
+    }
 
     #[serial]
     #[tokio::test]

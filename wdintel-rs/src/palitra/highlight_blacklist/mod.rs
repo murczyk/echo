@@ -104,9 +104,15 @@ pub async fn add_palitra_highlight_blacklist_entry(
     let login_id = ensure_access(&user, &env, palitra_id).await.c(h!())?;
 
     Ok(Json(
-        bl::add_entry(&env.dbx, palitra_id, login_id, &req.label)
-            .await
-            .c(h!())?,
+        bl::add_entry(
+            &env.dbx,
+            palitra_id,
+            login_id,
+            &req.label,
+            req.source_message_id,
+        )
+        .await
+        .c(h!())?,
     ))
 }
 
@@ -260,10 +266,12 @@ mod tests {
     #[actix_web::test]
     async fn resolver_requires_rer_role() {
         let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
+        let test_login = find_test_login(&env.dbx).await.unwrap();
         let login = mk_login(
             &env.dbx,
             login::ActiveModel {
                 roles: Set(serde_json::json!([])),
+                organism_id: Set(test_login.organism_id),
                 ..Default::default()
             },
         )

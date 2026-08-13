@@ -3518,6 +3518,7 @@ palitraHighlightBlacklistEntryEncoder struct =
 
 type alias PalitraHighlightBlacklistAddReq =
     { label : String
+    , sourceMessageId : Int
     }
 
 
@@ -3525,6 +3526,7 @@ palitraHighlightBlacklistAddReqEncoder : PalitraHighlightBlacklistAddReq -> Json
 palitraHighlightBlacklistAddReqEncoder struct =
     Json.Encode.object
         [ ( "label", (Json.Encode.string) struct.label )
+        , ( "source_message_id", (Json.Encode.int) struct.sourceMessageId )
         ]
 
 
@@ -14403,6 +14405,7 @@ palitraHighlightBlacklistAddReqDecoder : Json.Decode.Decoder PalitraHighlightBla
 palitraHighlightBlacklistAddReqDecoder =
     Json.Decode.succeed PalitraHighlightBlacklistAddReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_message_id" (Json.Decode.int)))
 
 
 palitraResolveNamesReqDecoder : Json.Decode.Decoder PalitraResolveNamesReq

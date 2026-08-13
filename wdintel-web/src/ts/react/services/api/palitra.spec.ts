@@ -206,14 +206,14 @@ describe('palitra highlight blacklist', () => {
       }),
     );
 
-    await addPalitraHighlightBlacklistEntry(42, 'Точка');
+    await addPalitraHighlightBlacklistEntry(42, 'Точка', 99);
     await deletePalitraHighlightBlacklistEntry(42, 8);
 
     expect(requested).toEqual([
       {
         url: '/api/palitra/42/highlight-blacklist',
         method: 'POST',
-        body: JSON.stringify({ label: 'Точка' }),
+        body: JSON.stringify({ label: 'Точка', source_message_id: 99 }),
       },
       {
         url: '/api/palitra/42/highlight-blacklist/8',
@@ -240,7 +240,7 @@ describe('palitra highlight blacklist', () => {
       ),
     );
 
-    await expect(addPalitraHighlightBlacklistEntry(42, 'Точка')).resolves.toEqual({
+    await expect(addPalitraHighlightBlacklistEntry(42, 'Точка', 99)).resolves.toEqual({
       id: 8,
       palitraId: 42,
       label: 'Точка',

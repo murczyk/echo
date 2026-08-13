@@ -282,6 +282,7 @@ pub struct PalitraHighlightBlacklistEntry {
 )]
 pub struct PalitraHighlightBlacklistAddReq {
     pub label: String,
+    pub source_message_id: i64,
 }
 
 impl Coords {

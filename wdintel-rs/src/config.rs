@@ -582,6 +582,7 @@ pub const FUNCTEST_CLEANUP_SQL: &str = r#"
 DELETE FROM echo_gpu_transcription_queue;
 DELETE FROM gpu_config;
 DELETE FROM secret_group_user;
+DELETE FROM palitra_highlight_blacklist;
 DELETE FROM sigint_callsign_changelog;
 DELETE FROM sigint_network_aor;
 DELETE FROM sigint_network_callsign_changelog;

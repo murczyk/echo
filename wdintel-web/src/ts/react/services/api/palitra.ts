@@ -587,8 +587,12 @@ export async function getPalitraHighlightBlacklist(
 export async function addPalitraHighlightBlacklistEntry(
   palitraId: number,
   label: string,
+  sourceMessageId: number,
 ): Promise<PalitraHighlightBlacklistEntry> {
-  const data = await postJson<unknown>(`/api/palitra/${palitraId}/highlight-blacklist`, { label });
+  const data = await postJson<unknown>(`/api/palitra/${palitraId}/highlight-blacklist`, {
+    label,
+    source_message_id: sourceMessageId,
+  });
   const entry = normalizeHighlightBlacklistEntry(data as PalitraHighlightBlacklistEntryLike);
   if (!entry) throw new Error('Сервер не повернув доданий запис чорного списку.');
   return entry;

@@ -78,6 +78,7 @@ pub async fn add_entry<C>(
     palitra_id: i64,
     created_by_login_id: uuid::Uuid,
     requested_label: &str,
+    source_message_id: i64,
 ) -> Result<PalitraHighlightBlacklistEntry, AppError>
 where
     C: ConnectionTrait,
@@ -89,12 +90,25 @@ where
         });
     }
 
-    let label = query::find_current_label(dbx, palitra_id, &normalized_label)
-        .await
-        .c(h!())?
-        .ok_or_else(|| AppError::BL {
-            msg: "Palitra highlight blacklist label does not exist".into(),
-        })?;
+    let label =
+        match query::find_current_label(dbx, palitra_id, &normalized_label)
+            .await
+            .c(h!())?
+        {
+            Some(label) => label,
+            None => query::find_historical_label(
+                dbx,
+                created_by_login_id,
+                source_message_id,
+                palitra_id,
+                &normalized_label,
+            )
+            .await
+            .c(h!())?
+            .ok_or_else(|| AppError::BL {
+                msg: "Palitra highlight blacklist label does not exist".into(),
+            })?,
+        };
     let entry = query::upsert_entry(
         dbx,
         palitra_id,
@@ -147,10 +161,19 @@ mod tests {
         add_entry, filter_blacklisted_points, is_label_blacklisted,
         load_blacklisted_labels, normalize_label,
     };
-    use crate::functest::tests::{
-        cleanup, find_test_palitra, mk_palitra_point,
+    use crate::entities::{
+        sigint_inbox_item, sigint_inbox_item_point_token, signal_message,
     };
-    use crate::rer_importer::highlight::CNPoint;
+    use crate::functest::tests::{
+        cleanup, find_test_datasource_group, find_test_login,
+        find_test_palitra, mk_palitra_point, mk_sigint_inbox_item,
+        mk_signal_message,
+    };
+    use crate::rer_importer::{
+        highlight::CNPoint, inbox::messages_by_id_bl, types::InboxMessagesReq,
+    };
+    use sea_orm::{ActiveModelTrait, Set};
+    use serde_json::json;
     use serial_test::serial;
     use std::collections::{HashMap, HashSet};
 
@@ -204,15 +227,16 @@ mod tests {
             .await
             .unwrap();
 
-        let first = add_entry(&env.dbx, palitra.id, login_id, "  ПУНКТ АЛЬФА ")
-            .await
-            .unwrap();
+        let first =
+            add_entry(&env.dbx, palitra.id, login_id, "  ПУНКТ АЛЬФА ", 1)
+                .await
+                .unwrap();
         assert_eq!(first.label, "Пункт Альфа");
         assert_eq!(first.created_by_login_id, login_id.to_string());
         assert_eq!(first.created_by_login, "system");
 
         let duplicate =
-            add_entry(&env.dbx, palitra.id, login_id, "ПУНКТ АЛЬФА")
+            add_entry(&env.dbx, palitra.id, login_id, "ПУНКТ АЛЬФА", 1)
                 .await
                 .unwrap();
         assert_eq!(duplicate.id, first.id);
@@ -224,8 +248,164 @@ mod tests {
             labels.get(&palitra.id),
             Some(&HashSet::from(["пункт альфа".to_string()]))
         );
-        assert!(add_entry(&env.dbx, palitra.id, login_id, "Невідома точка")
-            .await
-            .is_err());
+        assert!(
+            add_entry(&env.dbx, palitra.id, login_id, "Невідома точка", 1)
+                .await
+                .is_err()
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn blacklists_visible_historical_label_only_from_source_message() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let source_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("Stale point".to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(source_message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item_point_token::ActiveModel {
+            sigint_inbox_item_id: Set(source_message.id),
+            palitra_id: Set(palitra.id),
+            point_tokens: Set(json!([{
+                "begin": 0,
+                "end": 11,
+                "etalon": "Stale point",
+                "text": "Stale point"
+            }])),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let logins =
+            crate::users::get_organism_login_ids_by_id(&env.dbx, &login.id)
+                .await
+                .unwrap();
+        let request = InboxMessagesReq {
+            highlight_points: Some(true),
+            ..Default::default()
+        };
+        let messages = messages_by_id_bl(
+            &login.id,
+            &logins,
+            &env,
+            &[source_message.id],
+            &request,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            messages[0].1.point_tokens.as_deref().unwrap(),
+            [CNPoint {
+                begin: 0,
+                end: 11,
+                etalon: "Stale point".to_string(),
+                text: "Stale point".to_string(),
+                palitra_ids: vec![palitra.id],
+            }]
+        );
+
+        assert!(add_entry(
+            &env.dbx,
+            palitra.id,
+            login.id,
+            "Stale point",
+            source_message.id + 1,
+        )
+        .await
+        .is_err());
+        assert!(add_entry(
+            &env.dbx,
+            palitra.id + 1,
+            login.id,
+            "Stale point",
+            source_message.id,
+        )
+        .await
+        .is_err());
+
+        let inaccessible_message =
+            mk_sigint_inbox_item(&env.dbx, Default::default())
+                .await
+                .unwrap();
+        sigint_inbox_item_point_token::ActiveModel {
+            sigint_inbox_item_id: Set(inaccessible_message.id),
+            palitra_id: Set(palitra.id),
+            point_tokens: Set(json!([{
+                "begin": 0,
+                "end": 11,
+                "etalon": "Hidden point",
+                "text": "Hidden point"
+            }])),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        assert!(add_entry(
+            &env.dbx,
+            palitra.id,
+            login.id,
+            "Hidden point",
+            inaccessible_message.id,
+        )
+        .await
+        .is_err());
+
+        let entry = add_entry(
+            &env.dbx,
+            palitra.id,
+            login.id,
+            "  STALE POINT ",
+            source_message.id,
+        )
+        .await
+        .unwrap();
+        let duplicate = add_entry(
+            &env.dbx,
+            palitra.id,
+            login.id,
+            "stale point",
+            source_message.id,
+        )
+        .await
+        .unwrap();
+        assert_eq!(duplicate.id, entry.id);
+
+        let messages = messages_by_id_bl(
+            &login.id,
+            &logins,
+            &env,
+            &[source_message.id],
+            &request,
+        )
+        .await
+        .unwrap();
+        assert!(messages[0]
+            .1
+            .point_tokens
+            .as_deref()
+            .unwrap_or_default()
+            .is_empty());
     }
 }

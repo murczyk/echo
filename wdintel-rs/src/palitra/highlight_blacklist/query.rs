@@ -1,6 +1,7 @@
 use crate::entities::{
-    login, palitra, palitra_geometry, palitra_highlight_blacklist,
-    palitra_point,
+    datasource_group, login, palitra, palitra_geometry,
+    palitra_highlight_blacklist, palitra_point, sigint_inbox_item_point_token,
+    signal_message,
 };
 use crate::error::AppError;
 use crate::h;
@@ -127,6 +128,60 @@ where
         .await
         .c(h!())?
         .flatten())
+}
+
+pub async fn find_historical_label<C>(
+    dbx: &C,
+    login_id: uuid::Uuid,
+    source_message_id: i64,
+    palitra_id: i64,
+    normalized_label: &str,
+) -> Result<Option<String>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let visible_groups =
+        crate::messenger::group::get_identity_sigint_groups(dbx, &login_id)
+            .await
+            .c(h!())?;
+    let source_is_visible = signal_message::Entity::find()
+        .join(
+            sea_orm::JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .filter(signal_message::Column::Id.eq(source_message_id))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(visible_groups))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if !source_is_visible {
+        return Ok(None);
+    }
+
+    let rows = sigint_inbox_item_point_token::Entity::find()
+        .filter(
+            sigint_inbox_item_point_token::Column::SigintInboxItemId
+                .eq(source_message_id),
+        )
+        .filter(sigint_inbox_item_point_token::Column::PalitraId.eq(palitra_id))
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    for row in rows {
+        let points = serde_json::from_value::<
+            Vec<crate::rer_importer::highlight::CNPoint>,
+        >(row.point_tokens)
+        .c(h!())?;
+        if let Some(point) = points.into_iter().find(|point| {
+            point.etalon.trim().to_lowercase() == normalized_label
+        }) {
+            return Ok(Some(point.etalon.trim().to_string()));
+        }
+    }
+    Ok(None)
 }
 
 pub async fn upsert_entry<C>(

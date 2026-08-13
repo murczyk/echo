@@ -307,7 +307,11 @@ export function useRerDutyMessageItemActions(params: Params) {
       let promise!: Promise<void>;
       promise = (async () => {
         try {
-          await addPalitraHighlightBlacklistEntry(request.palitraId, request.etalon);
+          await addPalitraHighlightBlacklistEntry(
+            request.palitraId,
+            request.etalon,
+            request.messageId,
+          );
           setMessageFeeds((prev) =>
             prev.map((feed) => ({
               ...feed,
