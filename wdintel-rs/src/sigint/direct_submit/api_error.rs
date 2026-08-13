@@ -7,6 +7,7 @@ use std::fmt;
 pub(super) enum DirectSubmitAction {
     Save,
     Edit,
+    Copy,
     Parse,
 }
 
@@ -43,6 +44,9 @@ impl DirectSubmitApiError {
                     DirectSubmitAction::Edit => {
                         "Повідомлення, групу або вкладення не знайдено. Оновіть сторінку та спробуйте ще раз."
                     }
+                    DirectSubmitAction::Copy => {
+                        "Повідомлення або групу не знайдено. Оновіть сторінку та спробуйте ще раз."
+                    }
                     DirectSubmitAction::Parse => {
                         "Обрану групу не знайдено або вона більше недоступна."
                     }
@@ -62,6 +66,7 @@ impl DirectSubmitApiError {
                 match self.action {
                     DirectSubmitAction::Save => "Не вдалося зберегти повідомлення.",
                     DirectSubmitAction::Edit => "Не вдалося оновити повідомлення.",
+                    DirectSubmitAction::Copy => "Не вдалося підготувати копію повідомлення.",
                     DirectSubmitAction::Parse => "Не вдалося розпізнати повідомлення.",
                 }
                 .to_string(),

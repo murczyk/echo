@@ -1,12 +1,22 @@
+use super::types::DirectSubmitPayload;
 use crate::entities::{
     datasource_group, device_name, login, sigint_inbox_item, signal_group,
     signal_message, signal_message_group, signal_message_media, signal_profile,
+    tag,
 };
 use crate::error::AppError;
 use crate::types::*;
+use chrono::Utc;
 use sea_orm::sea_query::Expr;
 use sea_orm::*;
+use std::collections::HashSet;
 use uuid::Uuid;
+
+pub struct CopySignalMessageInputs {
+    pub inbox_item: sigint_inbox_item::Model,
+    pub tag_labels: Vec<String>,
+    pub media: Vec<signal_message_media::Model>,
+}
 
 pub async fn find_available_signal_group<C>(
     dbx: &C,
@@ -56,6 +66,710 @@ where
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)
+}
+
+pub async fn find_copyable_signal_message<C>(
+    dbx: &C,
+    signal_message_id: i64,
+    allowed_groups: &[String],
+) -> Result<signal_message::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    signal_message::Entity::find_by_id(signal_message_id)
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(allowed_groups.to_vec()),
+        )
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+}
+
+pub async fn find_copy_signal_message_inputs<C>(
+    dbx: &C,
+    signal_message_id: i64,
+    tag_ids: &[i64],
+) -> Result<CopySignalMessageInputs, AppError>
+where
+    C: ConnectionTrait,
+{
+    let inbox_item = sigint_inbox_item::Entity::find_by_id(signal_message_id)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    let tag_labels = tag::Entity::find()
+        .filter(tag::Column::Id.is_in(tag_ids.to_vec()))
+        .select_only()
+        .column(tag::Column::Label)
+        .into_tuple::<String>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let media = signal_message_media::Entity::find()
+        .filter(
+            signal_message_media::Column::SignalMessageId.eq(signal_message_id),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(CopySignalMessageInputs {
+        inbox_item,
+        tag_labels,
+        media,
+    })
+}
+
+pub async fn find_signal_message_media<C>(
+    dbx: &C,
+    signal_message_id: i64,
+) -> Result<Vec<signal_message_media::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(signal_message_media::Entity::find()
+        .filter(
+            signal_message_media::Column::SignalMessageId.eq(signal_message_id),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?)
+}
+
+pub async fn find_inbox_item_device_name_id<C>(
+    dbx: &C,
+    inbox_item_id: i64,
+) -> Result<Option<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(sigint_inbox_item::Entity::find_by_id(inbox_item_id)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .and_then(|item| item.device_name_id))
+}
+
+pub async fn find_unreferenced_media<C>(
+    dbx: &C,
+    media: &[signal_message_media::Model],
+) -> Result<Vec<signal_message_media::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut unreferenced = Vec::new();
+    for media in media {
+        let Some(storage_key) = media.storage_key.as_deref() else {
+            unreferenced.push(media.clone());
+            continue;
+        };
+        let references = signal_message_media::Entity::find()
+            .filter(signal_message_media::Column::StorageKey.eq(storage_key))
+            .count(dbx)
+            .await
+            .c(h!())?;
+        if references == 0 {
+            unreferenced.push(media.clone());
+        }
+    }
+    Ok(unreferenced)
+}
+
+pub async fn copy_signal_message_media<C>(
+    dbx: &C,
+    signal_message_id: i64,
+    source_media: &[signal_message_media::Model],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let media_models = source_media
+        .iter()
+        .map(|media| {
+            let storage_key = media.storage_key.clone().unwrap_or_else(|| {
+                crate::messenger::media::media_object_key(media)
+            });
+            signal_message_media::ActiveModel {
+                id: Set(Uuid::now_v7()),
+                signal_message_id: Set(signal_message_id),
+                content_type: Set(media.content_type.clone()),
+                file_ext: Set(media.file_ext.clone()),
+                file_name: Set(media.file_name.clone()),
+                size_bytes: Set(media.size_bytes),
+                created_at: NotSet,
+                is_encrypted: Set(media.is_encrypted),
+                storage_key: Set(Some(storage_key)),
+            }
+        })
+        .collect::<Vec<_>>();
+    if !media_models.is_empty() {
+        signal_message_media::Entity::insert_many(media_models)
+            .exec(dbx)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+pub async fn copy_signal_message_comments<C>(
+    dbx: &C,
+    source_signal_message_id: i64,
+    signal_message_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+    comment: Option<&str>,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let comments = crate::entities::sigint_comment::Entity::find()
+        .filter(
+            crate::entities::sigint_comment::Column::SignalMessageId
+                .eq(source_signal_message_id),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let comment_models = comments
+        .into_iter()
+        .map(
+            |comment_model| crate::entities::sigint_comment::ActiveModel {
+                id: NotSet,
+                login_id: Set(comment_model.login_id),
+                signal_message_id: Set(signal_message_id),
+                comment: Set(comment_model.comment),
+                created_at: NotSet,
+                sigint_post_id: Set(comment_model.sigint_post_id),
+            },
+        )
+        .collect::<Vec<_>>();
+    if !comment_models.is_empty() {
+        crate::entities::sigint_comment::Entity::insert_many(comment_models)
+            .exec(dbx)
+            .await
+            .c(h!())?;
+    }
+    crate::rer_importer::inbox::bl::delete_editable_sigint_comments(
+        dbx,
+        signal_message_id,
+        login,
+        logins,
+    )
+    .await
+    .c(h!())?;
+    if let Some(comment) = comment.filter(|comment| !comment.trim().is_empty())
+    {
+        crate::rer_importer::inbox::bl::upsert_editable_sigint_comment(
+            dbx,
+            signal_message_id,
+            login,
+            logins,
+            comment,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+pub async fn copy_signal_message_relations<C>(
+    dbx: &C,
+    source_signal_message_id: i64,
+    target_inbox_item_id: i64,
+    actor_id: &uuid::Uuid,
+    payload: &DirectSubmitPayload,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    copy_matching_tags(dbx, source_signal_message_id, target_inbox_item_id)
+        .await?;
+    copy_matching_callsigns(
+        dbx,
+        source_signal_message_id,
+        target_inbox_item_id,
+        actor_id,
+    )
+    .await?;
+    let source_inbox_item =
+        sigint_inbox_item::Entity::find_by_id(source_signal_message_id)
+            .one(dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+    let target_inbox_item =
+        sigint_inbox_item::Entity::find_by_id(target_inbox_item_id)
+            .one(dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+    let source_message =
+        signal_message::Entity::find_by_id(source_signal_message_id)
+            .one(dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+    if payload.unit.as_deref() == source_inbox_item.unit_v2.as_deref() {
+        copy_inbox_units(dbx, source_signal_message_id, target_inbox_item_id)
+            .await?;
+    }
+    if payload.full_body.as_deref() == source_message.body.as_deref()
+        && source_inbox_item.lat == target_inbox_item.lat
+        && source_inbox_item.lng == target_inbox_item.lng
+    {
+        copy_pelengs(dbx, source_signal_message_id, target_inbox_item_id)
+            .await?;
+        if payload
+            .network
+            .as_ref()
+            .and_then(|network| network.name.as_deref())
+            == source_inbox_item.network.as_deref()
+        {
+            copy_inbox_networks(
+                dbx,
+                source_signal_message_id,
+                target_inbox_item_id,
+            )
+            .await?;
+        }
+    }
+    if payload.dmr.is_empty()
+        && payload.full_body.as_deref() == source_message.body.as_deref()
+    {
+        copy_metadata(dbx, source_signal_message_id, target_inbox_item_id)
+            .await?;
+    }
+    Ok(())
+}
+
+pub async fn set_signal_message_parent<C>(
+    dbx: &C,
+    signal_message_id: i64,
+    parent_signal_message_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    signal_message::Entity::update_many()
+        .col_expr(
+            signal_message::Column::ParentSignalMessageId,
+            Expr::value(parent_signal_message_id),
+        )
+        .filter(signal_message::Column::Id.eq(signal_message_id))
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn copy_matching_tags<C>(
+    dbx: &C,
+    source_signal_message_id: i64,
+    target_inbox_item_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let target_tags = crate::entities::sigint_inbox_item_tag::Entity::find()
+        .filter(
+            crate::entities::sigint_inbox_item_tag::Column::SigintInboxItemId
+                .eq(target_inbox_item_id),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let target_tag_ids = target_tags
+        .iter()
+        .map(|tag| tag.tag_id)
+        .collect::<HashSet<_>>();
+    if target_tag_ids.is_empty() {
+        return Ok(());
+    }
+    let source_tags = crate::entities::sigint_inbox_item_tag::Entity::find()
+        .filter(
+            crate::entities::sigint_inbox_item_tag::Column::SigintInboxItemId
+                .eq(source_signal_message_id),
+        )
+        .filter(
+            crate::entities::sigint_inbox_item_tag::Column::TagId
+                .is_in(target_tag_ids),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let source_tag_ids = source_tags
+        .iter()
+        .map(|tag| tag.tag_id)
+        .collect::<HashSet<_>>();
+    if source_tag_ids.is_empty() {
+        return Ok(());
+    }
+    crate::entities::sigint_inbox_item_tag::Entity::delete_many()
+        .filter(
+            crate::entities::sigint_inbox_item_tag::Column::SigintInboxItemId
+                .eq(target_inbox_item_id),
+        )
+        .filter(
+            crate::entities::sigint_inbox_item_tag::Column::TagId
+                .is_in(source_tag_ids),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    let tag_models = source_tags
+        .into_iter()
+        .map(|tag| crate::entities::sigint_inbox_item_tag::ActiveModel {
+            id: NotSet,
+            sigint_inbox_item_id: Set(target_inbox_item_id),
+            tag_id: Set(tag.tag_id),
+            confidence: Set(tag.confidence),
+            login_id: Set(tag.login_id),
+            model: Set(tag.model),
+        })
+        .collect::<Vec<_>>();
+    if !tag_models.is_empty() {
+        crate::entities::sigint_inbox_item_tag::Entity::insert_many(tag_models)
+            .exec(dbx)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn copy_matching_callsigns<C>(
+    dbx: &C,
+    source_signal_message_id: i64,
+    target_inbox_item_id: i64,
+    actor_id: &uuid::Uuid,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let source = crate::entities::sigint_inbox_item_callsign::Entity::find()
+        .filter(
+            crate::entities::sigint_inbox_item_callsign::Column::SigintInboxItemId
+                .eq(source_signal_message_id),
+        )
+        .filter(
+            crate::entities::sigint_inbox_item_callsign::Column::Deleted
+                .eq(false),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let target = crate::entities::sigint_inbox_item_callsign::Entity::find()
+        .filter(
+            crate::entities::sigint_inbox_item_callsign::Column::SigintInboxItemId
+                .eq(target_inbox_item_id),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let source_names = source
+        .iter()
+        .map(|callsign| callsign.callsign.to_lowercase())
+        .collect::<Vec<_>>();
+    let target_names = target
+        .iter()
+        .filter(|callsign| !callsign.deleted)
+        .map(|callsign| callsign.callsign.to_lowercase())
+        .collect::<Vec<_>>();
+    if source_names != target_names {
+        return Ok(());
+    }
+    let deleted_ids = target
+        .iter()
+        .filter(|target| {
+            !target.deleted
+                && !source.iter().any(|source| {
+                    source.source == target.source
+                        && source.callsign == target.callsign
+                })
+        })
+        .map(|target| target.id)
+        .collect::<Vec<_>>();
+    if !deleted_ids.is_empty() {
+        crate::entities::sigint_inbox_item_callsign::Entity::update_many()
+            .col_expr(
+                crate::entities::sigint_inbox_item_callsign::Column::Deleted,
+                Expr::value(true),
+            )
+            .col_expr(
+                crate::entities::sigint_inbox_item_callsign::Column::DeletedAt,
+                Expr::value(Utc::now().naive_utc()),
+            )
+            .col_expr(
+                crate::entities::sigint_inbox_item_callsign::Column::DeletedById,
+                Expr::value(*actor_id),
+            )
+            .filter(
+                crate::entities::sigint_inbox_item_callsign::Column::Id
+                    .is_in(deleted_ids),
+            )
+            .exec(dbx)
+            .await
+            .c(h!())?;
+    }
+    let mut new_callsigns = Vec::new();
+    for callsign in source {
+        let Some(existing) = target.iter().find(|target| {
+            target.source == callsign.source
+                && target.callsign == callsign.callsign
+        }) else {
+            new_callsigns.push(
+                crate::entities::sigint_inbox_item_callsign::ActiveModel {
+                    id: NotSet,
+                    sigint_inbox_item_id: Set(target_inbox_item_id),
+                    callsign: Set(callsign.callsign),
+                    source: Set(callsign.source),
+                    ordering: Set(callsign.ordering),
+                    created_at: NotSet,
+                    deleted_at: Set(None),
+                    deleted: Set(false),
+                    created_by_id: Set(callsign.created_by_id),
+                    deleted_by_id: Set(None),
+                },
+            );
+            continue;
+        };
+        if existing.deleted || existing.ordering != callsign.ordering {
+            let mut existing = existing.clone().into_active_model();
+            existing.ordering = Set(callsign.ordering);
+            existing.deleted = Set(false);
+            existing.deleted_at = Set(None);
+            existing.deleted_by_id = Set(None);
+            existing.update(dbx).await.c(h!())?;
+        }
+    }
+    if !new_callsigns.is_empty() {
+        crate::entities::sigint_inbox_item_callsign::Entity::insert_many(
+            new_callsigns,
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn copy_inbox_units<C>(
+    dbx: &C,
+    source_inbox_item_id: i64,
+    target_inbox_item_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let source = crate::entities::sigint_inbox_item_unit::Entity::find()
+        .filter(
+            crate::entities::sigint_inbox_item_unit::Column::ItemId
+                .eq(source_inbox_item_id),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    crate::entities::sigint_inbox_item_unit::Entity::delete_many()
+        .filter(
+            crate::entities::sigint_inbox_item_unit::Column::ItemId
+                .eq(target_inbox_item_id),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    let unit_models = source
+        .into_iter()
+        .map(
+            |unit| crate::entities::sigint_inbox_item_unit::ActiveModel {
+                id: NotSet,
+                created_at: NotSet,
+                item_id: Set(target_inbox_item_id),
+                unit_id: Set(unit.unit_id),
+                kind: Set(unit.kind),
+            },
+        )
+        .collect::<Vec<_>>();
+    if !unit_models.is_empty() {
+        crate::entities::sigint_inbox_item_unit::Entity::insert_many(
+            unit_models,
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn copy_pelengs<C>(
+    dbx: &C,
+    source_inbox_item_id: i64,
+    target_inbox_item_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let source = crate::entities::sigint_peleng::Entity::find()
+        .filter(
+            crate::entities::sigint_peleng::Column::SourceInboxItemId
+                .eq(source_inbox_item_id),
+        )
+        .filter(crate::entities::sigint_peleng::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    crate::entities::sigint_peleng::Entity::delete_many()
+        .filter(
+            crate::entities::sigint_peleng::Column::SourceInboxItemId
+                .eq(target_inbox_item_id),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    let peleng_models = source
+        .into_iter()
+        .map(|peleng| crate::entities::sigint_peleng::ActiveModel {
+            id: NotSet,
+            source_inbox_item_id: Set(target_inbox_item_id),
+            lat: Set(peleng.lat),
+            lng: Set(peleng.lng),
+            settlement: Set(peleng.settlement),
+            locality_direction: Set(peleng.locality_direction),
+            distance_m: Set(peleng.distance_m),
+            country_code: Set(peleng.country_code),
+            deleted: Set(false),
+            created_at: NotSet,
+            updated_at: Set(peleng.updated_at),
+            pelengation_object: Set(peleng.pelengation_object),
+        })
+        .collect::<Vec<_>>();
+    if !peleng_models.is_empty() {
+        crate::entities::sigint_peleng::Entity::insert_many(peleng_models)
+            .exec(dbx)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn copy_inbox_networks<C>(
+    dbx: &C,
+    source_inbox_item_id: i64,
+    target_inbox_item_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let source = crate::entities::sigint_inbox_item_network::Entity::find()
+        .filter(
+            crate::entities::sigint_inbox_item_network::Column::SigintInboxItemId
+                .eq(source_inbox_item_id),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    crate::entities::sigint_inbox_item_network::Entity::delete_many()
+        .filter(
+            crate::entities::sigint_inbox_item_network::Column::SigintInboxItemId
+                .eq(target_inbox_item_id),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    let network_models = source
+        .into_iter()
+        .map(|network| {
+            crate::entities::sigint_inbox_item_network::ActiveModel {
+                id: NotSet,
+                sigint_inbox_item_id: Set(target_inbox_item_id),
+                sigint_network_id: Set(network.sigint_network_id),
+                created_at: NotSet,
+            }
+        })
+        .collect::<Vec<_>>();
+    if !network_models.is_empty() {
+        crate::entities::sigint_inbox_item_network::Entity::insert_many(
+            network_models,
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn copy_metadata<C>(
+    dbx: &C,
+    source_inbox_item_id: i64,
+    target_inbox_item_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let source = crate::entities::sigint_inbox_item_metadata::Entity::find()
+        .filter(
+            crate::entities::sigint_inbox_item_metadata::Column::SigintInboxItemId
+                .eq(source_inbox_item_id),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    crate::entities::sigint_inbox_item_metadata::Entity::delete_many()
+        .filter(
+            crate::entities::sigint_inbox_item_metadata::Column::SigintInboxItemId
+                .eq(target_inbox_item_id),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    let metadata_models = source
+        .into_iter()
+        .map(|metadata| {
+            crate::entities::sigint_inbox_item_metadata::ActiveModel {
+                id: NotSet,
+                sigint_inbox_item_id: Set(target_inbox_item_id),
+                color_code: Set(metadata.color_code),
+                sender_id: Set(metadata.sender_id),
+                sender_name: Set(metadata.sender_name),
+                call_group_id: Set(metadata.call_group_id),
+                call_group_name: Set(metadata.call_group_name),
+                hash_id: Set(metadata.hash_id),
+                created_at: NotSet,
+                color_code_start_index: Set(metadata.color_code_start_index),
+                color_code_end_index: Set(metadata.color_code_end_index),
+                call_group_id_start_index: Set(
+                    metadata.call_group_id_start_index
+                ),
+                call_group_id_end_index: Set(metadata.call_group_id_end_index),
+                call_group_name_start_index: Set(
+                    metadata.call_group_name_start_index
+                ),
+                call_group_name_end_index: Set(
+                    metadata.call_group_name_end_index
+                ),
+                sender_id_start_index: Set(metadata.sender_id_start_index),
+                sender_id_end_index: Set(metadata.sender_id_end_index),
+                sender_name_start_index: Set(metadata.sender_name_start_index),
+                sender_name_end_index: Set(metadata.sender_name_end_index),
+                hash_id_start_index: Set(metadata.hash_id_start_index),
+                hash_id_end_index: Set(metadata.hash_id_end_index),
+            }
+        })
+        .collect::<Vec<_>>();
+    if !metadata_models.is_empty() {
+        crate::entities::sigint_inbox_item_metadata::Entity::insert_many(
+            metadata_models,
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    }
+    Ok(())
 }
 
 pub async fn ensure_current_user_sender<C>(
