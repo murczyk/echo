@@ -760,6 +760,8 @@ sets differ; use `source-sync-exclusions-if-needed.sh --yes` first.
 Post-migration verification recognizes transient PostgreSQL deadlocks, tuple
 update conflicts, reconciliation-lock contention, and DDL lock timeouts. It
 makes up to five attempts at 30-second intervals before failing the deployment.
+Gateway and derived-schema catalog writes share a PostgreSQL transaction lock,
+so health probes wait for an in-progress deployment reconciliation.
 An unrecognized failure stops immediately. If all transient
 attempts fail, the deployment prints a prominent banner, the latest service
 log, and asks for one retry after two minutes; a further failure requires

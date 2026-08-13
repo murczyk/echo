@@ -19,6 +19,8 @@ SOURCE_RECONCILE_DDL_LOCK_TIMEOUT=2s
 SOURCE_RECONCILE_DEPLOY_RETRY_ATTEMPTS_DEFAULT=5
 # shellcheck disable=SC2034
 SOURCE_RECONCILE_DEPLOY_RETRY_DELAY_SECONDS_DEFAULT=30
+# shellcheck disable=SC2034
+ANALYTICS_SCHEMA_RECONCILE_LOCK_NAME=echo_analytics_schema_reconciliation
 ANALYTICS_HEARTBEAT_SOURCE_SCHEMA=echo_analytics
 ANALYTICS_HEARTBEAT_SOURCE_TABLE=heartbeat
 ANALYTICS_HEARTBEAT_TARGET_TABLE=echo_analytics__heartbeat
@@ -361,6 +363,15 @@ postgres_psql() {
       --port "${ANALYTICS_GATEWAY_PORT:-5432}" \
       "$@"
   fi
+}
+
+print_analytics_schema_reconcile_lock_sql() {
+  cat <<'SQL'
+SELECT pg_catalog.pg_advisory_xact_lock(
+  pg_catalog.hashtextextended(:'schema_reconcile_lock_name', 0)
+) AS schema_reconcile_lock_acquired
+\gset
+SQL
 }
 
 catalog_psql() {
