@@ -773,7 +773,7 @@ pub async fn fill_callsigns(
     Ok(())
 }
 
-async fn get_palitra_points_by_message(
+pub(crate) async fn get_palitra_points_by_message(
     dbx: &DatabaseConnection,
     login: uuid::Uuid,
     message_ids: Vec<i64>,

@@ -1,7 +1,7 @@
 use crate::entities::{
-    datasource_group, login, palitra, palitra_geometry,
-    palitra_highlight_blacklist, palitra_point, sigint_inbox_item_point_token,
-    signal_message,
+    login, palitra, palitra_geometry, palitra_highlight_blacklist,
+    palitra_point, sigint_inbox_item_point_token, signal_message,
+    signal_message_group,
 };
 use crate::error::AppError;
 use crate::h;
@@ -147,11 +147,13 @@ where
     let source_is_visible = signal_message::Entity::find()
         .join(
             sea_orm::JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
+            signal_message::Relation::SignalMessageGroup.def(),
         )
         .filter(signal_message::Column::Id.eq(source_message_id))
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.eq_any(visible_groups))
+        .filter(
+            signal_message_group::Column::GroupMasterKey.eq_any(visible_groups),
+        )
         .one(dbx)
         .await
         .c(h!())?

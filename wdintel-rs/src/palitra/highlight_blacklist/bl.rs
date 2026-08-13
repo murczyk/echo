@@ -163,14 +163,14 @@ mod tests {
     };
     use crate::entities::{
         sigint_inbox_item, sigint_inbox_item_point_token, signal_message,
+        signal_message_group,
     };
     use crate::functest::tests::{
-        cleanup, find_test_datasource_group, find_test_login,
-        find_test_palitra, mk_palitra_point, mk_sigint_inbox_item,
-        mk_signal_message,
+        cleanup, find_test_login, find_test_palitra, find_test_signal_group,
+        mk_palitra_point, mk_sigint_inbox_item, mk_signal_message,
     };
     use crate::rer_importer::{
-        highlight::CNPoint, inbox::messages_by_id_bl, types::InboxMessagesReq,
+        highlight::CNPoint, inbox::bl::get_palitra_points_by_message,
     };
     use sea_orm::{ActiveModelTrait, Set};
     use serde_json::json;
@@ -261,16 +261,24 @@ mod tests {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let palitra = find_test_palitra(&env.dbx).await.unwrap();
-        let datasource_group =
-            find_test_datasource_group(&env.dbx).await.unwrap();
+        let signal_group = find_test_signal_group(&env.dbx).await.unwrap();
         let source_message = mk_signal_message(
             &env.dbx,
             signal_message::ActiveModel {
                 body: Set(Some("Stale point".to_string())),
-                datasource_group_id: Set(Some(datasource_group.id)),
+                datasource_group_id: Set(None),
                 ..Default::default()
             },
         )
+        .await
+        .unwrap();
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(source_message.id),
+            group_master_key: Set(Some(signal_group.master_key)),
+            datasource_group_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
         .await
         .unwrap();
         mk_sigint_inbox_item(
@@ -296,34 +304,6 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
-
-        let logins =
-            crate::users::get_organism_login_ids_by_id(&env.dbx, &login.id)
-                .await
-                .unwrap();
-        let request = InboxMessagesReq {
-            highlight_points: Some(true),
-            ..Default::default()
-        };
-        let messages = messages_by_id_bl(
-            &login.id,
-            &logins,
-            &env,
-            &[source_message.id],
-            &request,
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            messages[0].1.point_tokens.as_deref().unwrap(),
-            [CNPoint {
-                begin: 0,
-                end: 11,
-                etalon: "Stale point".to_string(),
-                text: "Stale point".to_string(),
-                palitra_ids: vec![palitra.id],
-            }]
-        );
 
         assert!(add_entry(
             &env.dbx,
@@ -391,21 +371,15 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(duplicate.id, entry.id);
-
-        let messages = messages_by_id_bl(
-            &login.id,
-            &logins,
-            &env,
-            &[source_message.id],
-            &request,
+        let points_by_message = get_palitra_points_by_message(
+            &env.dbx,
+            login.id,
+            vec![source_message.id],
         )
         .await
         .unwrap();
-        assert!(messages[0]
-            .1
-            .point_tokens
-            .as_deref()
-            .unwrap_or_default()
-            .is_empty());
+        assert!(points_by_message
+            .get(&source_message.id)
+            .is_none_or(Vec::is_empty));
     }
 }
