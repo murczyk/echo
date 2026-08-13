@@ -49,6 +49,7 @@ pub struct EtalonkaSettings {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct EtalonkaExtendedSettings {
+    #[serde(default)]
     pub since_date_inclusive_ms: i64,
     pub till_date_inclusive_ms: Option<i64>,
     pub active_freqs_only: bool,
