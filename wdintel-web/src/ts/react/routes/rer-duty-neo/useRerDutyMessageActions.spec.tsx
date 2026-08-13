@@ -40,6 +40,7 @@ const hoisted = vi.hoisted(() => ({
   setWatchModeByFeedId: vi.fn(),
   setLoadingNewerFeedIds: vi.fn(),
   beginFollowTail: vi.fn(() => 17),
+  addPalitraHighlightBlacklistEntry: vi.fn(),
 }));
 
 vi.mock('../../services/api/inbox', () => ({
@@ -56,6 +57,10 @@ vi.mock('../../services/api/inbox', () => ({
   savedFilterDelete: hoisted.savedFilterDelete,
   savedFilterRename: hoisted.savedFilterRename,
   savedFilterUpsert: hoisted.savedFilterUpsert,
+}));
+
+vi.mock('../../services/api/palitra', () => ({
+  addPalitraHighlightBlacklistEntry: hoisted.addPalitraHighlightBlacklistEntry,
 }));
 
 vi.mock('../../../copy-to-clipboard', () => ({
@@ -158,6 +163,7 @@ function TestHarness(props: {
   initialFeeds?: MessageFeedState[];
   initialSavedFilters?: SavedFilterDuty[];
   authUserName?: string | null;
+  errorRef?: MutableRefObject<ReturnType<typeof vi.fn> | null>;
   currentUserOrganismId?: number | null;
   columnRefsRef?: MutableRefObject<
     Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
@@ -1110,5 +1116,45 @@ describe('useRerDutyMessageActions', () => {
     expect(apiRef.current!.botTagAction).toBeNull();
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].inboxTags).toEqual([]);
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].tags).toEqual([4]);
+  });
+
+  it('removes a blacklisted source from matching messages in every loaded feed', async () => {
+    hoisted.addPalitraHighlightBlacklistEntry.mockResolvedValueOnce(undefined);
+    const sharedPoint = { etalon: 'Альфа', text: 'Альфа', palitraIds: [7, 12] };
+    const first = buildMessage({ pointTokens: [sharedPoint] });
+    const second = buildMessage({ pointTokens: [sharedPoint] });
+    const unrelated = buildMessage({ pointTokens: [{ ...sharedPoint, palitraIds: [12] }] });
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[
+            buildFeed({ id: 'mf-0', items: [[1, first]] }),
+            buildFeed({
+              id: 'mf-1',
+              items: [
+                [2, second],
+                [3, unrelated],
+              ],
+            }),
+          ]}
+        />,
+      );
+    });
+    await act(async () => {
+      await apiRef.current!.onAddPointHighlightBlacklist({
+        messageId: 1,
+        etalon: ' Альфа ',
+        palitraId: 7,
+      });
+    });
+    expect(apiRef.current!.messageFeeds[0].items[0][1].pointTokens).toEqual([
+      { etalon: 'Альфа', text: 'Альфа', palitraIds: [12] },
+    ]);
+    expect(apiRef.current!.messageFeeds[1].items[0][1].pointTokens).toEqual([
+      { etalon: 'Альфа', text: 'Альфа', palitraIds: [12] },
+    ]);
+    expect(apiRef.current!.messageFeeds[1].items[1][1]).toBe(unrelated);
   });
 });

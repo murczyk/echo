@@ -11,9 +11,15 @@ import { createDefaultReportState } from '../report-helpers';
 import { createResetQueryState } from '../helpers';
 import {
   AnalysisReportDialog,
+  analysisReportCheckboxLabelTypographySx,
+  analysisReportTagsCheckboxSx,
+  analysisReportTagsControlsSx,
   analysisReportDialogHintSx,
+  analysisReportModeTabsSx,
+  analysisReportTagSortSx,
   analysisReportTemplateGridSx,
 } from './AnalysisReportDialog';
+import { analysisCompactTabsSx } from '../analysis-tab-styles';
 
 const dialogProps: Array<Record<string, unknown>> = [];
 
@@ -92,6 +98,146 @@ describe('AnalysisReportDialog', () => {
   it('keeps the mobile applied-filters hint from reserving a vertical flex basis', () => {
     expect(analysisReportDialogHintSx.flex).toEqual({ xs: '0 1 auto', sm: '1 1 320px' });
     expect(analysisReportDialogHintSx.width).toEqual({ xs: '100%', sm: 'auto' });
+  });
+
+  it('keeps page tabs readable and dialog tabs compact and theme-aligned', () => {
+    expect(analysisCompactTabsSx['& .MuiTab-root'].fontSize).toBe('0.875rem');
+    expect(analysisReportModeTabsSx.minHeight).toBe(40);
+    expect(analysisReportModeTabsSx.width).toBe('fit-content');
+    expect(analysisReportModeTabsSx['& .MuiTab-root'].fontSize).toBe('0.875rem');
+    expect(analysisReportModeTabsSx['& .MuiTab-root'].textTransform).toBe('uppercase');
+    expect(analysisReportModeTabsSx['& .MuiTab-root']['&.Mui-selected'].color).toBe('primary.main');
+    expect(analysisReportModeTabsSx['& .MuiTabs-indicator']).toEqual({
+      height: 2,
+      bgcolor: 'primary.main',
+    });
+    expect(analysisReportModeTabsSx).not.toHaveProperty('bgcolor');
+    expect(analysisReportModeTabsSx).not.toBe(analysisCompactTabsSx);
+  });
+
+  it('exposes report modes as accessible tabs and preserves template transitions', () => {
+    const view = renderDialog();
+    const modeTabList = view.container.querySelector('[role="tablist"]');
+    const modeTabs = view.container.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+
+    expect(modeTabList).not.toBeNull();
+    expect(modeTabs).toHaveLength(2);
+    expect(modeTabs[0].textContent).toBe('СТВОРЕННЯ');
+    expect(modeTabs[1].textContent).toBe('ЕКСПОРТ');
+    expect(modeTabs[0].getAttribute('aria-selected')).toBe('true');
+    expect(modeTabs[1].getAttribute('aria-selected')).toBe('false');
+
+    act(() => modeTabs[1].click());
+    expect(view.onUpdate).toHaveBeenCalledWith({ template: 'summary_table' });
+
+    act(() => {
+      view.root.render(
+        createElement(AnalysisReportDialog, {
+          ...view.props,
+          report: buildReport({ template: 'summary_table' }),
+        }),
+      );
+    });
+    const rerenderedModeTabs = view.container.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    expect(rerenderedModeTabs[0].getAttribute('aria-selected')).toBe('false');
+    expect(rerenderedModeTabs[1].getAttribute('aria-selected')).toBe('true');
+
+    act(() => rerenderedModeTabs[0].click());
+    expect(view.onUpdate).toHaveBeenCalledWith({ template: 'tags' });
+
+    act(() => view.root.unmount());
+  });
+
+  it('keeps tag sorting responsive', () => {
+    expect(analysisReportTagSortSx).toEqual({ width: '100%', maxWidth: 320 });
+    expect(analysisReportTagSortSx).not.toHaveProperty('flex');
+    expect(analysisReportTagSortSx).not.toHaveProperty('minWidth');
+    expect(analysisReportTagsControlsSx.alignItems).toEqual({ sm: 'center' });
+    expect(analysisReportTagsCheckboxSx).toEqual({
+      minHeight: 40,
+      m: 0,
+      display: 'flex',
+      alignItems: 'center',
+    });
+    expect(analysisReportTagsCheckboxSx).not.toHaveProperty('pt');
+  });
+
+  it('uses dialog body typography for all report checkbox labels', () => {
+    expect(analysisReportCheckboxLabelTypographySx).toMatchObject({
+      fontSize: '1rem',
+      lineHeight: 1.2,
+      fontWeight: 400,
+    });
+    expect(analysisReportCheckboxLabelTypographySx.fontSize).not.toBe('16px');
+  });
+
+  it('labels the report surface and dialog accessibly', () => {
+    const view = renderDialog();
+    const title = view.container.querySelector('[id]');
+    const dialog = dialogProps.at(-1);
+
+    expect(title?.textContent).toBe('Звіти');
+    expect(dialog?.['aria-labelledby']).toBe(title?.id);
+
+    act(() => view.root.unmount());
+  });
+
+  it('disables automatic focus restoration and restores after exit', () => {
+    vi.useFakeTimers();
+    const target = document.createElement('button');
+    const fallback = document.createElement('div');
+    fallback.tabIndex = -1;
+    document.body.append(target, fallback);
+    const view = renderDialog({
+      focusReturnTargetRef: { current: target },
+      fallbackFocusTargetRef: { current: fallback },
+    });
+    const dialog = dialogProps.at(-1);
+
+    expect(dialog?.disableRestoreFocus).toBe(true);
+
+    act(() => {
+      (dialog?.TransitionProps as { onExited?: () => void } | undefined)?.onExited?.();
+      vi.runAllTimers();
+    });
+    expect(document.activeElement).toBe(target);
+
+    act(() => view.root.unmount());
+    vi.useRealTimers();
+  });
+
+  it('falls back when the original focus target is detached', () => {
+    vi.useFakeTimers();
+    const target = document.createElement('button');
+    const fallback = document.createElement('div');
+    fallback.tabIndex = -1;
+    document.body.append(target, fallback);
+    const view = renderDialog({
+      focusReturnTargetRef: { current: target },
+      fallbackFocusTargetRef: { current: fallback },
+    });
+    target.remove();
+    const dialog = dialogProps.at(-1);
+
+    act(() => {
+      (dialog?.TransitionProps as { onExited?: () => void } | undefined)?.onExited?.();
+      vi.runAllTimers();
+    });
+    expect(document.activeElement).toBe(fallback);
+
+    act(() => view.root.unmount());
+    vi.useRealTimers();
+  });
+
+  it('keeps tag sorting and the unit-only filter in one responsive group', () => {
+    const view = renderDialog({ report: buildReport({ template: 'tags' }) });
+    const sortControl = view.container.querySelector('#analysis-report-tag-sort-label');
+    const controlsGroup = sortControl?.closest('div')?.parentElement;
+
+    expect(controlsGroup?.textContent).toContain('Сортування');
+    expect(controlsGroup?.textContent).toContain('Лише теги/коментарі мого підрозділу');
+
+    act(() => view.root.unmount());
   });
 
   it('lays out report choices in three equal-width desktop columns', () => {

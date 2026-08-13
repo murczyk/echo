@@ -3,7 +3,16 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { analyzePalitraKmz, downloadPalitras, fetchPalitraReferenceData } from './palitra';
+import {
+  addPalitraHighlightBlacklistEntry,
+  analyzePalitraKmz,
+  deletePalitraHighlightBlacklistEntry,
+  downloadPalitras,
+  fetchPalitraReferenceData,
+  getPalitraHighlightBlacklist,
+  listPalitras,
+  resolvePalitraNames,
+} from './palitra';
 
 describe('palitra API 401 handling', () => {
   beforeEach(() => {
@@ -95,6 +104,24 @@ describe('palitra reference loading', () => {
   });
 });
 
+describe('palitra list normalization', () => {
+  it('accepts the generated blacklist count and defaults older responses to zero', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify([{ id: 7, name: 'Палітра', highlight_blacklist_count: '3' }]), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+
+    await expect(listPalitras()).resolves.toEqual([
+      expect.objectContaining({ id: 7, highlightBlacklistCount: 3 }),
+    ]);
+  });
+});
+
 describe('palitra downloads', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -113,5 +140,142 @@ describe('palitra downloads', () => {
     await downloadPalitras([42], { splitForDelta: true });
 
     expect(requestedUrls).toEqual(['/api/palitra/download-delta-split']);
+  });
+});
+
+describe('palitra highlight blacklist', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('normalizes and deduplicates blacklist entries', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify([
+            {
+              id: '4',
+              palitra_id: '42',
+              label: ' Точка ',
+              created_by_login_id: 'a',
+              created_by_login: 'b',
+            },
+            {
+              id: 5,
+              palitra_id: 42,
+              label: 'точка',
+              created_by_login_id: 'c',
+              created_by_login: 'd',
+            },
+          ]),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await expect(getPalitraHighlightBlacklist(42)).resolves.toEqual([
+      {
+        id: 4,
+        palitraId: 42,
+        label: 'Точка',
+        createdByLoginId: 'a',
+        createdByLogin: 'b',
+      },
+    ]);
+  });
+
+  it('uses the atomic add and delete endpoints', async () => {
+    const requested: Array<{ url: string; method: string; body?: string }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        requested.push({
+          url: String(input),
+          method: init?.method ?? 'GET',
+          body: init?.body as string,
+        });
+        return new Response(
+          JSON.stringify({
+            id: 8,
+            palitra_id: 42,
+            label: 'Точка',
+            created_by_login_id: 'a',
+            created_by_login: 'b',
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    await addPalitraHighlightBlacklistEntry(42, 'Точка', 99);
+    await deletePalitraHighlightBlacklistEntry(42, 8);
+
+    expect(requested).toEqual([
+      {
+        url: '/api/palitra/42/highlight-blacklist',
+        method: 'POST',
+        body: JSON.stringify({ label: 'Точка', source_message_id: 99 }),
+      },
+      {
+        url: '/api/palitra/42/highlight-blacklist/8',
+        method: 'DELETE',
+        body: undefined,
+      },
+    ]);
+  });
+
+  it('accepts the generated camel-case blacklist response shape', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            id: 8,
+            palitraId: 42,
+            label: 'Точка',
+            createdByLoginId: 'a',
+            createdByLogin: 'b',
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await expect(addPalitraHighlightBlacklistEntry(42, 'Точка', 99)).resolves.toEqual({
+      id: 8,
+      palitraId: 42,
+      label: 'Точка',
+      createdByLoginId: 'a',
+      createdByLogin: 'b',
+    });
+  });
+});
+
+describe('palitra name resolution', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('deduplicates IDs and preserves valid response items', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify([{ id: 7, name: ' Палітра сім ' }]), { status: 200 }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(resolvePalitraNames([7, 7, 12])).resolves.toEqual([
+      { id: 7, name: 'Палітра сім' },
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ palitra_ids: [7, 12] });
+  });
+
+  it('does not request empty IDs and rejects malformed items', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(resolvePalitraNames([])).resolves.toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify([{ id: '7', name: 'bad' }]), { status: 200 }),
+    );
+    await expect(resolvePalitraNames([7])).rejects.toThrow('некоректну назву');
   });
 });

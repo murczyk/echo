@@ -12,7 +12,6 @@ import {
   Typography,
 } from '@mui/material';
 import { PowerAlert } from '../../../components/PowerAlert';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { createMapWindowControl, type MapWindowControl } from '../../../../maps/control-modules';
 import { PalitraCacheManager } from '../../../../maps/palitra-cache-manager';
 import { PalitraPointClusterRenderer } from '../../../../maps/palitra-point-cluster-renderer';
@@ -343,7 +342,7 @@ export function PalitraPreviewDialog({
           ) : null}
         </Box>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <Button onClick={onClose}>Закрити</Button>
       </DialogActions>
     </Dialog>

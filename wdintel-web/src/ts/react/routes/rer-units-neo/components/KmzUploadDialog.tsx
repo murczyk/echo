@@ -12,7 +12,6 @@ import {
 import { useEffect, useState } from 'react';
 
 import { PowerAlert } from '../../../components/PowerAlert';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 
 export function KmzUploadDialog({
   open,
@@ -72,7 +71,7 @@ export function KmzUploadDialog({
           </Stack>
         </Stack>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <Button onClick={onClose} disabled={uploading}>
           Скасувати
         </Button>

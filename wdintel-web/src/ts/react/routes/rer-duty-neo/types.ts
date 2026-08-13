@@ -12,6 +12,7 @@ import type {
 import type { MessageEntityFilterKind, TagsLayoutVariant, MessageFeedState } from './utils';
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
+import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/point-highlight-blacklist';
 import type { DutyWorkspaceFabAvoidance } from './duty-scroll-fab-position';
 
 export type TailAvailability = 'unknown' | 'checking' | 'loading' | 'available' | 'exhausted';
@@ -63,6 +64,7 @@ export type FeedColumnModel = {
     onCancelBotTagAction: () => void;
     onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;
     onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
+    onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   };
   actions: {
     onLoadOlder: () => void;

@@ -1,6 +1,17 @@
-import { Box, IconButton, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import PlaceIcon from '@mui/icons-material/Place';
+import ScatterPlotIcon from '@mui/icons-material/ScatterPlot';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import {
+  Box,
+  IconButton,
+  ListItemIcon,
+  ListItemText,
+  MenuItem,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import { useId, useState } from 'react';
 import type { CSSProperties, ReactNode, SyntheticEvent } from 'react';
 import type { Theme } from '@mui/material/styles';
@@ -23,6 +34,11 @@ import {
   getCallsignHintResult,
 } from '../../rer-analysis-neo/callsign-hints';
 import { renderLinkifiedText } from './message-card-linkify';
+import {
+  pointBlacklistLabelKey,
+  type PointBlacklistRequestSource,
+} from './point-highlight-blacklist';
+import { PowerMenu } from '../../../components/PowerMenu';
 
 const ORANGE_TOKEN_BG = '#fd884f';
 const ORANGE_TOKEN_FG = '#000';
@@ -217,6 +233,10 @@ function PointToken({
   message,
   etalonsAll,
   etalonSingle,
+  palitraIds,
+  messageId,
+  onRequestPointBlacklist,
+  pendingBlacklistKeys,
 }: {
   text: string;
   hrefAll: string;
@@ -227,9 +247,16 @@ function PointToken({
   message?: InboxMessage;
   etalonsAll: string[];
   etalonSingle: string;
+  palitraIds: number[];
+  messageId: number;
+  onRequestPointBlacklist?: (source: PointBlacklistRequestSource) => void;
+  pendingBlacklistKeys: Set<string>;
 }) {
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
   const menuId = useId();
+  const sourcePalitraIds = Array.from(new Set(palitraIds));
+  const blacklistLabel = etalonSingle.trim();
+  const directBlacklistKey = `${messageId}:${pointBlacklistLabelKey(blacklistLabel)}:${sourcePalitraIds[0] ?? ''}`;
 
   function openMenu(event: SyntheticEvent<HTMLElement>) {
     event.preventDefault();
@@ -255,12 +282,12 @@ function PointToken({
       >
         <span className="content-token--point-link">{text}</span>
       </Box>
-      <Menu
+      <PowerMenu
         id={menuId}
         anchorEl={menuAnchorEl}
-        open={isPresent(menuAnchorEl)}
+        open={menuAnchorEl !== null}
         onClose={() => setMenuAnchorEl(null)}
-        MenuListProps={{ 'aria-label': 'Дії з точкою' }}
+        slotProps={{ list: { 'aria-label': 'Дії з точкою' } }}
       >
         {hasMultiplePoints ? (
           onOpenPointsOnMap && message ? (
@@ -268,31 +295,28 @@ function PointToken({
               <MenuItem
                 onClick={() => {
                   setMenuAnchorEl(null);
-                  onOpenPointsOnMap(etalonsAll, message);
+                  onOpenPointsOnMap([etalonSingle], message);
                 }}
               >
-                Показати на мапі всі точки
+                <ListItemIcon>
+                  <PlaceIcon />
+                </ListItemIcon>
+                Показати на мапі цю точку
               </MenuItem>
               <MenuItem
                 onClick={() => {
                   setMenuAnchorEl(null);
-                  onOpenPointsOnMap([etalonSingle], message);
+                  onOpenPointsOnMap(etalonsAll, message);
                 }}
               >
-                Показати на мапі цю точку
+                <ListItemIcon>
+                  <ScatterPlotIcon />
+                </ListItemIcon>
+                Показати на мапі всі точки
               </MenuItem>
             </>
           ) : (
             <>
-              <MenuItem
-                component="a"
-                href={hrefAll}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => setMenuAnchorEl(null)}
-              >
-                Показати на мапі всі точки
-              </MenuItem>
               <MenuItem
                 component="a"
                 href={hrefSingle}
@@ -300,7 +324,22 @@ function PointToken({
                 rel="noopener noreferrer"
                 onClick={() => setMenuAnchorEl(null)}
               >
+                <ListItemIcon>
+                  <PlaceIcon />
+                </ListItemIcon>
                 Показати на мапі цю точку
+              </MenuItem>
+              <MenuItem
+                component="a"
+                href={hrefAll}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMenuAnchorEl(null)}
+              >
+                <ListItemIcon>
+                  <ScatterPlotIcon />
+                </ListItemIcon>
+                Показати на мапі всі точки
               </MenuItem>
             </>
           )
@@ -311,7 +350,10 @@ function PointToken({
               onOpenPointsOnMap([etalonSingle], message);
             }}
           >
-            Показати на мапі
+            <ListItemIcon>
+              <PlaceIcon />
+            </ListItemIcon>
+            Показати на мапі цю точку
           </MenuItem>
         ) : (
           <MenuItem
@@ -321,10 +363,65 @@ function PointToken({
             rel="noopener noreferrer"
             onClick={() => setMenuAnchorEl(null)}
           >
-            Показати на мапі
+            <ListItemIcon>
+              <PlaceIcon />
+            </ListItemIcon>
+            Показати на мапі цю точку
           </MenuItem>
         )}
-      </Menu>
+        {onRequestPointBlacklist ? (
+          sourcePalitraIds.length === 0 ? (
+            <MenuItem disabled>
+              <ListItemIcon>
+                <VisibilityOffIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary="Додати до чорного списку"
+                secondary="Неможливо визначити палітру-джерело"
+              />
+            </MenuItem>
+          ) : sourcePalitraIds.length === 1 ? (
+            <MenuItem
+              onClick={() => {
+                setMenuAnchorEl(null);
+                onRequestPointBlacklist({
+                  messageId,
+                  etalon: blacklistLabel,
+                  palitraIds: sourcePalitraIds,
+                });
+              }}
+              disabled={pendingBlacklistKeys.has(directBlacklistKey)}
+            >
+              <ListItemIcon>
+                <VisibilityOffIcon />
+              </ListItemIcon>
+              {pendingBlacklistKeys.has(directBlacklistKey)
+                ? 'Додавання…'
+                : 'Додати до чорного списку'}
+            </MenuItem>
+          ) : (
+            <MenuItem
+              onClick={() => {
+                setMenuAnchorEl(null);
+                const activeElement = document.activeElement;
+                if (activeElement instanceof HTMLElement) activeElement.blur();
+                window.setTimeout(() => {
+                  onRequestPointBlacklist({
+                    messageId,
+                    etalon: blacklistLabel,
+                    palitraIds: sourcePalitraIds,
+                  });
+                }, 0);
+              }}
+            >
+              <ListItemIcon>
+                <VisibilityOffIcon />
+              </ListItemIcon>
+              Додати до чорного списку
+            </MenuItem>
+          )
+        ) : null}
+      </PowerMenu>
     </>
   );
 }
@@ -548,7 +645,10 @@ export function renderMarkedText(
     showPointLinks?: boolean;
     linkCallsigns?: boolean;
     message?: InboxMessage;
+    messageId?: number;
     onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
+    onRequestPointBlacklist?: (source: PointBlacklistRequestSource) => void;
+    pendingBlacklistKeys?: Set<string>;
     callsignInfoMap?: Record<string, CallsignInfoRes>;
     networks?: Network[];
     unitsMap?: Record<number, Unit>;
@@ -654,6 +754,10 @@ export function renderMarkedText(
           message={messageForMap}
           etalonsAll={etalonsForUrl}
           etalonSingle={cleanEtalon}
+          palitraIds={node.CNPointC.palitraIds}
+          messageId={options?.messageId ?? 0}
+          onRequestPointBlacklist={options?.onRequestPointBlacklist}
+          pendingBlacklistKeys={options?.pendingBlacklistKeys ?? new Set()}
         />,
       );
     }

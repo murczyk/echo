@@ -26,6 +26,7 @@ import { currentSystemSettings } from '../../services/api/system-settings';
 import type { InboxMessage, User } from '../../../../Bindings';
 import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
+import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 
 export type RerDutyNeoPageProps = {
   /** Auth user display name from the host page (avoids duplicate /api/user request). */
@@ -384,6 +385,7 @@ export function RerDutyNeoPage({
       onCancelBotTagAction,
       onMarkBotTagWrong,
       onOpenPointsOnMap: handleOpenPointsOnMap,
+      onAddPointHighlightBlacklist,
     },
     actions: getStableFeedActions(feed),
   });
@@ -417,6 +419,7 @@ export function RerDutyNeoPage({
     handleMessageBookmark,
     handleMessageImportant,
     handleOpenPointsOnMap,
+    onAddPointHighlightBlacklist,
     addFrequencyToFilter,
     handleMessageCopy,
     handleEditedMessage,
@@ -577,23 +580,25 @@ export function RerDutyNeoPage({
         </PowerAlert>
       ) : null}
 
-      <AudioTranscriptionPreferencesProvider
-        collapsedByDefault={audioTranscriptionCollapsed}
-        enabled={audioTranscriptionEnabled}
-      >
-        <RerDutyNeoWorkspace
-          activeFeedId={activeFeedIdSafe}
-          buildFeedColumnModel={buildFeedColumnModel}
-          columnRefsRef={columnRefsRef}
-          createMessageFeed={createMessageFeed}
-          openCreateMessageComposer={openCreateMessageComposer}
-          isInitialLoading={isInitialLoading}
-          messageFeeds={messageFeeds}
-          narrowScreen={narrowScreen}
-          onSelectFeed={setActiveFeedId}
-          showLoadingBackdrop={showLoadingBackdrop}
-        />
-      </AudioTranscriptionPreferencesProvider>
+      <PointBlacklistPaletteNamesCacheProvider>
+        <AudioTranscriptionPreferencesProvider
+          collapsedByDefault={audioTranscriptionCollapsed}
+          enabled={audioTranscriptionEnabled}
+        >
+          <RerDutyNeoWorkspace
+            activeFeedId={activeFeedIdSafe}
+            buildFeedColumnModel={buildFeedColumnModel}
+            columnRefsRef={columnRefsRef}
+            createMessageFeed={createMessageFeed}
+            openCreateMessageComposer={openCreateMessageComposer}
+            isInitialLoading={isInitialLoading}
+            messageFeeds={messageFeeds}
+            narrowScreen={narrowScreen}
+            onSelectFeed={setActiveFeedId}
+            showLoadingBackdrop={showLoadingBackdrop}
+          />
+        </AudioTranscriptionPreferencesProvider>
+      </PointBlacklistPaletteNamesCacheProvider>
 
       <ManageMessageDrawer
         open={createMessageOpen || isPresent(editTarget)}

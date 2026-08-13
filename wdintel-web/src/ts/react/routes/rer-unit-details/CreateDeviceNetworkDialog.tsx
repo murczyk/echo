@@ -10,7 +10,6 @@ import {
 import { useState } from 'react';
 
 import { PowerAlert } from '../../components/PowerAlert';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { createDeviceNetwork } from '../../services/api/units';
 import { AutoNetworkFields } from '../rer-units-neo/components/AutoNetworkFields';
 import { formatUnitError, uniqueTrimmed } from '../rer-units-neo/helpers';
@@ -70,7 +69,7 @@ export function CreateDeviceNetworkDialog({
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
         </Stack>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <Button onClick={onClose} disabled={submitting}>
           Скасувати
         </Button>

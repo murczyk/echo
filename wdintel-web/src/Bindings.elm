@@ -3208,6 +3208,7 @@ palitraAccessLoginEncoder struct =
 
 type alias Palitra =
     { id : Int
+    , highlightBlacklistCount : Int
     , name : String
     , folder : Maybe (String)
     , isArchived : Bool
@@ -3235,6 +3236,7 @@ palitraEncoder : Palitra -> Json.Encode.Value
 palitraEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
+        , ( "highlight_blacklist_count", (Json.Encode.int) struct.highlightBlacklistCount )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "folder", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.folder )
         , ( "is_archived", (Json.Encode.bool) struct.isArchived )
@@ -3494,6 +3496,66 @@ palitraBulkActionRspEncoder struct =
         ]
 
 
+type alias PalitraHighlightBlacklistEntry =
+    { id : Int
+    , palitraId : Int
+    , label : String
+    , createdByLoginId : String
+    , createdByLogin : String
+    }
+
+
+palitraHighlightBlacklistEntryEncoder : PalitraHighlightBlacklistEntry -> Json.Encode.Value
+palitraHighlightBlacklistEntryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "palitra_id", (Json.Encode.int) struct.palitraId )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "created_by_login_id", (Json.Encode.string) struct.createdByLoginId )
+        , ( "created_by_login", (Json.Encode.string) struct.createdByLogin )
+        ]
+
+
+type alias PalitraHighlightBlacklistAddReq =
+    { label : String
+    , sourceMessageId : Int
+    }
+
+
+palitraHighlightBlacklistAddReqEncoder : PalitraHighlightBlacklistAddReq -> Json.Encode.Value
+palitraHighlightBlacklistAddReqEncoder struct =
+    Json.Encode.object
+        [ ( "label", (Json.Encode.string) struct.label )
+        , ( "source_message_id", (Json.Encode.int) struct.sourceMessageId )
+        ]
+
+
+type alias PalitraResolveNamesReq =
+    { palitraIds : List (Int)
+    }
+
+
+palitraResolveNamesReqEncoder : PalitraResolveNamesReq -> Json.Encode.Value
+palitraResolveNamesReqEncoder struct =
+    Json.Encode.object
+        [ ( "palitra_ids", (Json.Encode.list (Json.Encode.int)) struct.palitraIds )
+        ]
+
+
+type alias PalitraName =
+    { id : Int
+    , name : String
+    }
+
+
+palitraNameEncoder : PalitraName -> Json.Encode.Value
+palitraNameEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
 type alias NoHeadersBody =
     { body : String
     , start : Int
@@ -3641,6 +3703,7 @@ type alias CnPoint =
     , end : Int
     , etalon : String
     , text : String
+    , palitraIds : List (Int)
     }
 
 
@@ -3651,6 +3714,7 @@ cnPointEncoder struct =
         , ( "end", (Json.Encode.int) struct.end )
         , ( "etalon", (Json.Encode.string) struct.etalon )
         , ( "text", (Json.Encode.string) struct.text )
+        , ( "palitra_ids", (Json.Encode.list (Json.Encode.int)) struct.palitraIds )
         ]
 
 
@@ -14186,6 +14250,7 @@ palitraDecoder : Json.Decode.Decoder Palitra
 palitraDecoder =
     Json.Decode.succeed Palitra
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_blacklist_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "folder" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
@@ -14326,6 +14391,36 @@ palitraBulkActionRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list (Json.Decode.int))))
 
 
+palitraHighlightBlacklistEntryDecoder : Json.Decode.Decoder PalitraHighlightBlacklistEntry
+palitraHighlightBlacklistEntryDecoder =
+    Json.Decode.succeed PalitraHighlightBlacklistEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by_login_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by_login" (Json.Decode.string)))
+
+
+palitraHighlightBlacklistAddReqDecoder : Json.Decode.Decoder PalitraHighlightBlacklistAddReq
+palitraHighlightBlacklistAddReqDecoder =
+    Json.Decode.succeed PalitraHighlightBlacklistAddReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_message_id" (Json.Decode.int)))
+
+
+palitraResolveNamesReqDecoder : Json.Decode.Decoder PalitraResolveNamesReq
+palitraResolveNamesReqDecoder =
+    Json.Decode.succeed PalitraResolveNamesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+palitraNameDecoder : Json.Decode.Decoder PalitraName
+palitraNameDecoder =
+    Json.Decode.succeed PalitraName
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
 noHeadersBodyDecoder : Json.Decode.Decoder NoHeadersBody
 noHeadersBodyDecoder =
     Json.Decode.succeed NoHeadersBody
@@ -14412,6 +14507,7 @@ cnPointDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "end" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "etalon" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list (Json.Decode.int))))
 
 
 contentNodeDecoder : Json.Decode.Decoder ContentNode

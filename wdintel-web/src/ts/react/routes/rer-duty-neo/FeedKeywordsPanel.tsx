@@ -33,7 +33,6 @@ import { CompactText } from '../../components/CompactTypography';
 import { KeywordFormsEditor } from '../../components/KeywordFormsEditor';
 import { PowerAlert } from '../../components/PowerAlert';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import {
   keywordSetDisplayName,
   resolveKeywordSetId,
@@ -426,7 +425,7 @@ export function FeedKeywordsPanel({
                   disabled={saving}
                 />
               </DialogContent>
-              <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+              <DialogActions>
                 <Button {...panelCancelButtonProps} onClick={closeRenameDialog} disabled={saving}>
                   Скасувати
                 </Button>

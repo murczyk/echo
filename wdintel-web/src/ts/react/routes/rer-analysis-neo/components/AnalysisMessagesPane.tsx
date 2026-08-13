@@ -27,6 +27,7 @@ import { blurActiveElement } from '../../../utils/focus';
 import { copyMessageValue } from '../message-utils';
 import { PowerAlert } from '../../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
+import type { AddPointHighlightBlacklistRequest } from '../../shared/message-card/point-highlight-blacklist';
 
 type BotTagAction = {
   messageId: number;
@@ -143,6 +144,7 @@ type Props = {
   onOpenEditor: (messageId: number) => void;
   onLoadMoreMessages: () => Promise<boolean>;
   onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
+  onAddPointHighlightBlacklist: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   onSaveMessageUpdate: (
     messageId: number,
     updater: (message: InboxMessage) => InboxMessage,
@@ -178,6 +180,7 @@ type AnalysisMessageCardItemProps = {
   onCopyFeedback: (value: string) => void;
   onDeleteOpen: (messageId: number) => void;
   onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
+  onAddPointHighlightBlacklist: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
   onOpenEditor: (messageId: number) => void;
@@ -216,6 +219,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   onCopyFeedback,
   onDeleteOpen,
   onOpenPointsOnMap,
+  onAddPointHighlightBlacklist,
   onCancelBotTagAction,
   onMarkBotTagWrong,
   onOpenEditor,
@@ -264,6 +268,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       tagsLayout={tagsLayout}
       searchText={searchText}
       onOpenPointsOnMap={onOpenPointsOnMap}
+      onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
       callsignInfoMap={callsignInfoMap}
       networks={networks}
       unitsMap={unitsMap}
@@ -382,6 +387,7 @@ function AnalysisMessagesPaneComponent({
   onOpenEditor,
   onLoadMoreMessages,
   onOpenPointsOnMap,
+  onAddPointHighlightBlacklist,
   onSaveMessageUpdate,
   onSaveMessageComment,
   onToggleMessageBookmark,
@@ -552,6 +558,7 @@ function AnalysisMessagesPaneComponent({
               onCopyFeedback={showCopiedFeedback}
               onDeleteOpen={handleDeleteOpen}
               onOpenPointsOnMap={onOpenPointsOnMap}
+              onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
               onCancelBotTagAction={onCancelBotTagAction}
               onMarkBotTagWrong={onMarkBotTagWrong}
               onOpenEditor={handleOpenEditor}

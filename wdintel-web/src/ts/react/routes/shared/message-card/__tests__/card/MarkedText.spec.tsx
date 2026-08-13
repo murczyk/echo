@@ -41,6 +41,13 @@ function TestHost(props: {
   linkCallsigns?: boolean;
   message?: InboxMessage;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
+  messageId?: number;
+  onRequestPointBlacklist?: (source: {
+    messageId: number;
+    etalon: string;
+    palitraIds: number[];
+  }) => void;
+  pendingBlacklistKeys?: Set<string>;
   searchText?: string | null;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
@@ -53,6 +60,9 @@ function TestHost(props: {
         linkCallsigns: props.linkCallsigns,
         message: props.message,
         onOpenPointsOnMap: props.onOpenPointsOnMap,
+        messageId: props.messageId,
+        onRequestPointBlacklist: props.onRequestPointBlacklist,
+        pendingBlacklistKeys: props.pendingBlacklistKeys,
         callsignInfoMap: props.callsignInfoMap,
         networks: props.networks,
         unitsMap: props.unitsMap,
@@ -374,6 +384,113 @@ describe('MarkedText', () => {
     expect(fallbackMenuItem?.tagName.toLowerCase()).toBe('a');
     expect(fallbackMenuItem?.getAttribute('target')).toBe('_blank');
     expect(fallbackMenuItem?.getAttribute('href')).toContain('search=');
+  });
+
+  it('requests a single source blacklist entry and shows its pending state', async () => {
+    const onRequestPointBlacklist = vi.fn();
+    const nodes: ContentNode[] = [
+      { CNPointC: { text: 'Альфа', begin: 0, end: 5, etalon: '  Альфа  ', palitraIds: [7] } },
+    ];
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={nodes}
+          bodyText="Альфа"
+          messageId={42}
+          onRequestPointBlacklist={onRequestPointBlacklist}
+        />,
+      );
+    });
+    await act(async () => {
+      container
+        .querySelector('.content-token--point')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    const action = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find((item) =>
+      item.textContent?.includes('Додати до чорного списку'),
+    ) as HTMLElement;
+    expect(action).not.toBeNull();
+    expect(action.getAttribute('aria-disabled')).not.toBe('true');
+    await act(async () => {
+      action.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(onRequestPointBlacklist).toHaveBeenCalledOnce();
+    expect(onRequestPointBlacklist).toHaveBeenCalledWith({
+      messageId: 42,
+      etalon: 'Альфа',
+      palitraIds: [7],
+    });
+
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={nodes}
+          bodyText="Альфа"
+          messageId={42}
+          onRequestPointBlacklist={onRequestPointBlacklist}
+          pendingBlacklistKeys={new Set(['42:альфа:7'])}
+        />,
+      );
+      container
+        .querySelector('.content-token--point')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    const pendingAction = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
+      (item) => item.textContent?.includes('Додавання…'),
+    ) as HTMLButtonElement;
+    expect(pendingAction).not.toBeNull();
+    expect(pendingAction.disabled || pendingAction.getAttribute('aria-disabled') === 'true').toBe(
+      true,
+    );
+  });
+
+  it('explains unknown sources and deduplicates multi-source requests', async () => {
+    const onRequestPointBlacklist = vi.fn();
+    const renderPoint = async (palitraIds: number[]) => {
+      await act(async () => {
+        root.render(
+          <TestHost
+            nodes={[{ CNPointC: { text: 'Альфа', begin: 0, end: 5, etalon: 'Альфа', palitraIds } }]}
+            bodyText="Альфа"
+            messageId={42}
+            onRequestPointBlacklist={onRequestPointBlacklist}
+          />,
+        );
+      });
+      await act(async () => {
+        container
+          .querySelector('.content-token--point')
+          ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await Promise.resolve();
+      });
+    };
+
+    await renderPoint([]);
+    const unknownAction = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
+      (item) => item.textContent?.includes('Неможливо визначити палітру-джерело'),
+    ) as HTMLButtonElement;
+    expect(unknownAction).not.toBeNull();
+    expect(unknownAction.disabled || unknownAction.getAttribute('aria-disabled') === 'true').toBe(
+      true,
+    );
+    unknownAction.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(onRequestPointBlacklist).not.toHaveBeenCalled();
+
+    await renderPoint([7, 12, 7]);
+    const multiAction = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
+      (item) => item.textContent?.includes('Додати до чорного списку'),
+    ) as HTMLElement;
+    multiAction.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+    expect(onRequestPointBlacklist).toHaveBeenCalledWith({
+      messageId: 42,
+      etalon: 'Альфа',
+      palitraIds: [7, 12],
+    });
   });
 
   it('renders the filled-badge network state without linking when callsign links are disabled', async () => {
@@ -862,14 +979,14 @@ describe('MarkedText', () => {
 
     const menuItems = Array.from(document.body.querySelectorAll('[role="menuitem"]'));
     expect(menuItems).toHaveLength(2);
-    expect(menuItems[0]?.textContent).toContain('Показати на мапі всі точки');
+    expect(menuItems[0]?.textContent).toContain('Показати на мапі цю точку');
     expect(decodeMapHrefState(menuItems[0]?.getAttribute('href') ?? null)).toMatchObject({
-      search: 'P-1,P-2',
+      search: 'P-1',
       freqs_selected: ['100.125'],
     });
-    expect(menuItems[1]?.textContent).toContain('Показати на мапі цю точку');
+    expect(menuItems[1]?.textContent).toContain('Показати на мапі всі точки');
     expect(decodeMapHrefState(menuItems[1]?.getAttribute('href') ?? null)).toMatchObject({
-      search: 'P-1',
+      search: 'P-1,P-2',
       freqs_selected: ['100.125'],
     });
   });
@@ -912,7 +1029,7 @@ describe('MarkedText', () => {
 
     const menuItems = Array.from(document.body.querySelectorAll('[role="menuitem"]'));
     expect(menuItems).toHaveLength(1);
-    expect(menuItems[0]?.textContent).toContain('Показати на мапі');
+    expect(menuItems[0]?.textContent).toContain('Показати на мапі цю точку');
     expect(decodeMapHrefState(menuItems[0]?.getAttribute('href') ?? null)).toMatchObject({
       search: 'P-1',
       freqs_selected: ['200'],

@@ -5252,6 +5252,17 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(messages[0].1.point_tokens.as_ref().unwrap().len(), 1);
+        assert_eq!(
+            messages[0].1.point_tokens.as_ref().unwrap()[0].palitra_ids,
+            vec![palitra.id]
+        );
+        assert!(messages[0].1.text_marked.as_ref().unwrap().iter().any(
+            |node| matches!(
+                node,
+                crate::rer_importer::highlight::ContentNode::CNPointC(point)
+                    if point.palitra_ids == vec![palitra.id]
+            )
+        ));
 
         let mut palitra = palitra.into_active_model();
         palitra.is_archived = Set(true);

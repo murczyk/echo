@@ -1233,6 +1233,7 @@ export type PalitraAccessLogin = {
 
 export type Palitra = {
   id: number;
+  highlightBlacklistCount: number;
   name: string;
   folder: string | null;
   isArchived: boolean;
@@ -1341,6 +1342,28 @@ export type PalitraBulkActionRsp = {
   palitraIds: Array<number>;
 };
 
+export type PalitraHighlightBlacklistEntry = {
+  id: number;
+  palitraId: number;
+  label: string;
+  createdByLoginId: string;
+  createdByLogin: string;
+};
+
+export type PalitraHighlightBlacklistAddReq = {
+  label: string;
+  sourceMessageId: number;
+};
+
+export type PalitraResolveNamesReq = {
+  palitraIds: Array<number>;
+};
+
+export type PalitraName = {
+  id: number;
+  name: string;
+};
+
 export type NoHeadersBody = {
   body: string;
   start: number;
@@ -1395,6 +1418,7 @@ export type CnPoint = {
   end: number;
   etalon: string;
   text: string;
+  palitraIds: Array<number>;
 };
 
 export type CnHighlight = {

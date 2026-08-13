@@ -10,6 +10,7 @@
 
 ## NEXT
 
+- [#2818](https://github.com/echoua/echo/issues/2818) ✅👷 Палітри: додано можливість керування чорним списком точок палітр; стандартні `just deploy` і `just deploy-from-local` синхронізують виключення автоматично, а при ручному застосуванні міграцій на інстансах з ClickHouse перед ними виконати `/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes`, щоб виключити `palitra_highlight_blacklist` із дзеркала.
 - [#3098](https://github.com/echoua/echo/issues/3098) ✅ Аналіз, Оперативний: додано повернення локалітету для координат пеленга в повідомленнях.
 - [#3015](https://github.com/echoua/echo/issues/3015) ✅ Логін: при увімкненому вході через Delta поля логіна та пароля згорнуто під окремим блоком.
 - [#3129](https://github.com/echoua/echo/issues/3129) 🐞👷🚨 Аналітика: обмежено рівень і термін зберігання діагностичних логів ClickHouse; після встановлення оновлених analytics-скриптів спочатку виконати `sudo /opt/echo-analytics/bin/manage-system-logs.sh --apply --truncate --yes` на `echo-kharkiv2-clickhouse`, перевірити аналітику протягом 15 хвилин, а потім по одному на `echo-pivnich-clickhouse`, `echo-zp2-clickhouse`, `echo-skhid-clickhouse` і `echo-siversk-clickhouse`; команда безповоротно очищає лише чотири системні таблиці логів.

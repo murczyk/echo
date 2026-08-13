@@ -10,7 +10,6 @@ import {
 import { useEffect, useState } from 'react';
 
 import type { AiEngineItem } from '../../../../Bindings';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
@@ -224,7 +223,7 @@ export function AiEnginesSection({
             Движок «{deleteTarget?.name}» і вся історія його чатів будуть видалені.
           </DialogContentText>
         </DialogContent>
-        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <DialogActions>
           <PowerButton type="button" variant="outlined" onClick={() => setDeleteTarget(null)}>
             Скасувати
           </PowerButton>

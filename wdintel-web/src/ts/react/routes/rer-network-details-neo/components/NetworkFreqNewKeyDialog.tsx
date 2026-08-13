@@ -177,7 +177,7 @@ export function NetworkFreqNewKeyDialog({
           </PowerAlert>
         </Stack>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 3 }}>
+      <DialogActions>
         <Button onClick={onClose} disabled={saving}>
           Скасувати
         </Button>

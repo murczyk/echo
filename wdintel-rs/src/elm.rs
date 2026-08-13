@@ -192,6 +192,10 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::palitra::types::PalitraFolderReq,
             crate::palitra::types::PalitraDownloadReq,
             crate::palitra::types::PalitraBulkActionRsp,
+            crate::palitra::types::PalitraHighlightBlacklistEntry,
+            crate::palitra::types::PalitraHighlightBlacklistAddReq,
+            crate::palitra::types::PalitraResolveNamesReq,
+            crate::palitra::types::PalitraName,
 
             crate::rer_importer::body_noheader::NoHeadersBody,
             crate::rer_importer::bookmark::BookmarkAddReq,
@@ -836,6 +840,10 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::palitra::types::PalitraFolderReq,
             crate::palitra::types::PalitraDownloadReq,
             crate::palitra::types::PalitraBulkActionRsp,
+            crate::palitra::types::PalitraHighlightBlacklistEntry,
+            crate::palitra::types::PalitraHighlightBlacklistAddReq,
+            crate::palitra::types::PalitraResolveNamesReq,
+            crate::palitra::types::PalitraName,
 
             crate::rer_importer::body_noheader::NoHeadersBody,
             crate::rer_importer::bookmark::BookmarkAddReq,

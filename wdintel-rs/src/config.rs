@@ -559,6 +559,7 @@ pub const PALITRA_POINTS_INSERT_BATCH_SIZE: usize = 10_000;
 pub const PALITRA_POINT_LEXEME_BACKFILL_BATCH_SIZE: usize = 5_000;
 pub const PALITRA_POINT_FALLBACK_COLOR_HEX: &str = "#060606";
 pub const PALITRA_DOWNLOAD_MAX_FILES: usize = 50;
+pub const PALITRA_RESOLVE_NAMES_MAX_IDS: usize = 500;
 pub const PALITRA_DOWNLOAD_MAX_FILE_BYTES: u64 = 50 * 1024 * 1024;
 pub const PALITRA_DOWNLOAD_MAX_TOTAL_BYTES: u64 = 200 * 1024 * 1024;
 pub const PALITRA_DELTA_DOWNLOAD_MAX_POINTS_PER_FILE: usize = 6_500;
@@ -581,6 +582,7 @@ pub const FUNCTEST_CLEANUP_SQL: &str = r#"
 DELETE FROM echo_gpu_transcription_queue;
 DELETE FROM gpu_config;
 DELETE FROM secret_group_user;
+DELETE FROM palitra_highlight_blacklist;
 DELETE FROM sigint_callsign_changelog;
 DELETE FROM sigint_network_aor;
 DELETE FROM sigint_network_callsign_changelog;

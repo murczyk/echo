@@ -1,5 +1,13 @@
 {
   "migrations": {
+    "echo:m20260723_125003_palitra_highlight_blacklist": {
+      "changes": [
+        {
+          "table": "public.palitra_highlight_blacklist",
+          "strategy": "excluded"
+        }
+      ]
+    },
     "echo:m20260810_062938_echo_automation_coordinates_screenshot": {
       "changes": [
         {

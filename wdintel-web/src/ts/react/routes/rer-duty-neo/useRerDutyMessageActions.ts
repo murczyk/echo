@@ -140,5 +140,6 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     tagIdsList,
     copiedFeedbackId: messageItemActions.copiedFeedbackId,
     handleOpenPointsOnMap: openPointsOnMap ?? messageItemActions.handleOpenPointsOnMap,
+    onAddPointHighlightBlacklist: messageItemActions.onAddPointHighlightBlacklist,
   };
 }

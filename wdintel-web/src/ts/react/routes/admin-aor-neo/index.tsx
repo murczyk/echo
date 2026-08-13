@@ -25,7 +25,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
 import { AorCoordinates, AreaOfResponsibility } from '../../../../Bindings';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
 import {
@@ -584,7 +583,7 @@ function AdminAorNeoPageBody() {
               </Stack>
             ) : null}
           </DialogContent>
-          <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+          <DialogActions>
             <PowerButton
               onClick={closeLocationConfigDialog}
               disabled={locationConfigDialog?.isSaving}
