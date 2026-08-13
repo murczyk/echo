@@ -235,6 +235,86 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.summaryCallsignsInfo).toEqual({ alpha, wolf });
   });
 
+  it('does not let scoped data suppress unscoped callsign enrichment', async () => {
+    const scoped = {
+      callsign: 'WOLF',
+      res: [],
+      networkHints: [{ id: 10, networkId: 10, position: 'scoped', formation: '' }],
+    } satisfies CallsignInfoRes;
+    const unscoped = {
+      callsign: 'wolf',
+      res: [
+        {
+          id: 7,
+          callsign: 'wolf',
+          position: 'ТЮМЕНЬ',
+          comment: '',
+          unit1: '',
+          unit2: '',
+          unitId: null,
+          networkIdsReportedIn: [20],
+        },
+      ],
+      networkHints: [
+        { id: 10, networkId: 10, position: 'scoped', formation: '' },
+        { id: 20, networkId: 20, position: 'other', formation: '' },
+      ],
+    } satisfies CallsignInfoRes;
+    const h = renderHook(buildQueryState(), undefined, true, false, { wolf: scoped });
+    harnesses.push(h);
+    fetchAnalysisCallsignInfosMock.mockResolvedValueOnce([unscoped]);
+
+    act(() => {
+      h.latest.setMessages([
+        [
+          1,
+          buildMessage({
+            networkIds: [10],
+            textMarked: [
+              { CNCallsignC: { text: 'WOLF', begin: 0, end: 4, etalon: 'wolf' } },
+            ] as never,
+          }),
+        ],
+      ]);
+    });
+    await act(async () => Promise.resolve());
+
+    expect(fetchAnalysisCallsignInfosMock).toHaveBeenCalledTimes(1);
+    expect(fetchAnalysisCallsignInfosMock).toHaveBeenCalledWith(['wolf']);
+    expect(Object.keys(h.summaryCallsignsInfo)).toEqual(['wolf']);
+    expect(h.summaryCallsignsInfo.wolf.networkHints).toHaveLength(2);
+    expect(h.summaryCallsignsInfo.wolf.res).toHaveLength(1);
+    expect(h.summaryCallsignsInfo.wolf.networkHints.map(({ id }) => id)).toEqual([10, 20]);
+    expect(h.summaryCallsignsInfo.wolf.res.map(({ id }) => id)).toEqual([7]);
+  });
+
+  it('releases failed enrichment ownership for a later legitimate list update', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    const response = {
+      callsign: 'wolf',
+      res: [],
+      networkHints: [{ id: 20, networkId: 20, position: 'other', formation: '' }],
+    } satisfies CallsignInfoRes;
+    h.onError.mockReset();
+    h.onUnauthorized.mockReset();
+    h.onUnauthorized.mockReturnValue(false);
+    fetchAnalysisCallsignInfosMock.mockRejectedValueOnce(new Error('temporary failure'));
+
+    act(() => h.latest.setMessages([[1, buildMessage({ callsigns: [' WOLF '] })]]));
+    await act(async () => Promise.resolve());
+    expect(fetchAnalysisCallsignInfosMock).toHaveBeenCalledTimes(1);
+    expect(h.onError).toHaveBeenCalledWith('temporary failure');
+
+    fetchAnalysisCallsignInfosMock.mockResolvedValueOnce([response]);
+    act(() => h.latest.setMessages([[2, buildMessage({ callsigns: ['wolf'] })]]));
+    await act(async () => Promise.resolve());
+
+    expect(fetchAnalysisCallsignInfosMock).toHaveBeenCalledTimes(2);
+    expect(fetchAnalysisCallsignInfosMock).toHaveBeenLastCalledWith(['wolf']);
+    expect(h.summaryCallsignsInfo.wolf).toEqual(response);
+  });
+
   it('reports unauthorized and ordinary enrichment failures through existing handlers', async () => {
     const unauthorized = renderHook();
     harnesses.push(unauthorized);
