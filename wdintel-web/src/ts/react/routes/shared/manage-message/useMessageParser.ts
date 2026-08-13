@@ -45,9 +45,9 @@ export function useMessageParser(
       fillText('freq', parsed.freq ?? '');
       fillText(
         'coords',
-        parsed.coords && parsed.coords[0]
-          ? `${Number(parsed.coords[0].lat.toFixed(5))}, ${Number(parsed.coords[0].lon.toFixed(5))}`
-          : '',
+        parsed.coords
+          ?.map(({ lat, lon }) => `${Number(lat.toFixed(5))}, ${Number(lon.toFixed(5))}`)
+          .join('\n') ?? '',
       );
       fillText('comment', parsed.comment ?? '');
       fillText('post', parsed.post ?? '');

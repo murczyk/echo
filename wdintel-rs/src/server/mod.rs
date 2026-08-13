@@ -812,6 +812,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::report_history::report_history_retry)
             .service(crate::report_history::report_history_cancel)
             .service(crate::location::find_locations)
+            .service(crate::location::map_coordinates)
             .service(crate::location::find_locations_prefix)
             .service(crate::location::fetch_regions)
             .service(crate::location::aor_config::list_aor_location_configs)

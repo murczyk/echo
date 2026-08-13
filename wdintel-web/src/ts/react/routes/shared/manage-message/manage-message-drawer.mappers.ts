@@ -42,6 +42,14 @@ function splitLocations(value: string | null): string[] {
     .filter(Boolean);
 }
 
+function messageCoordinates(message: InboxMessage): string {
+  const coordsWithLocality = message.coordsWithLocality ?? [];
+  if (coordsWithLocality.length === 0) return message.coords ?? '';
+  return coordsWithLocality
+    .map(({ coords }) => `${Number(coords.lat.toFixed(6))}, ${Number(coords.lon.toFixed(6))}`)
+    .join('\n');
+}
+
 export function mapInboxMessageToForm(
   message: InboxMessage,
   tagsMap: Record<number, Tag>,
@@ -55,7 +63,7 @@ export function mapInboxMessageToForm(
     date,
     time,
     freq: message.freq ?? '',
-    coords: message.coords ?? '',
+    coords: messageCoordinates(message),
     callsigns: message.callsigns ?? [],
     post: message.post ?? '',
     unit: message.unit ?? '',

@@ -1086,6 +1086,33 @@ describe('MessageCard', () => {
     },
   );
 
+  it('shows the WGS coordinates in the header without locality', async () => {
+    const view = await renderHeader({
+      displayMode: 'duty',
+      msg: buildMessage({
+        coords: '49.1, 37.2',
+        coordsWithLocality: [
+          {
+            coords: { lat: 49.1, lon: 37.2 },
+            locality: {
+              settlementName: 'Степногірськ',
+              direction: 'SW',
+              region: null,
+              country: null,
+              distanceM: 5400,
+              isRf: false,
+            },
+          },
+        ],
+      }),
+    });
+    rendered.push(view);
+
+    const text = view.container.querySelector('[data-message-header-grid="true"]')?.textContent;
+    expect(text).toContain('49.1, 37.2');
+    expect(text).not.toContain('Степногірськ');
+  });
+
   it.each(['duty', 'analysis'] as const)(
     'hides an empty device name in %s mode',
     async (displayMode) => {

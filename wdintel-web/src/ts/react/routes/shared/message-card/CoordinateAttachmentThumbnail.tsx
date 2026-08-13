@@ -17,18 +17,48 @@ const PREVIEW_ZOOM = 11;
 const PREVIEW_MAX_ZOOM = 13;
 const PREVIEW_BOUNDS_PADDING: [number, number] = [20, 20];
 
+function fitMap(map: L.Map, points: CoordinatePreviewPoint[]): void {
+  const latLngs = points.map(({ lat, lng }): [number, number] => [lat, lng]);
+  if (latLngs.length === 1) {
+    map.setView(latLngs[0], PREVIEW_ZOOM, { animate: false });
+  } else if (latLngs.length > 1) {
+    map.fitBounds(L.latLngBounds(latLngs), {
+      animate: false,
+      maxZoom: PREVIEW_MAX_ZOOM,
+      padding: PREVIEW_BOUNDS_PADDING,
+    });
+  }
+}
+
+function createMarkers(map: L.Map, points: CoordinatePreviewPoint[]): L.CircleMarker[] {
+  return points.map(({ lat, lng }) =>
+    L.circleMarker([lat, lng], {
+      radius: 8,
+      color: '#ffffff',
+      weight: 3,
+      fillColor: '#ff4d2d',
+      fillOpacity: 1,
+    }).addTo(map),
+  );
+}
+
 export function CoordinateAttachmentThumbnail({
   points,
   onOpen,
+  fullWidth = false,
 }: {
   points: CoordinatePreviewPoint[];
   onOpen: () => void;
+  fullWidth?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRefs = useRef<L.CircleMarker[]>([]);
+  const pointsRef = useRef(points);
   const [isNearViewport, setIsNearViewport] = useState(false);
+
+  pointsRef.current = points;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -59,19 +89,6 @@ export function CoordinateAttachmentThumbnail({
     let frameId = 0;
     let resizeObserver: ResizeObserver | null = null;
 
-    const fitMap = (map: L.Map) => {
-      const latLngs = points.map(({ lat, lng }): [number, number] => [lat, lng]);
-      if (latLngs.length === 1) {
-        map.setView(latLngs[0], PREVIEW_ZOOM, { animate: false });
-      } else {
-        map.fitBounds(L.latLngBounds(latLngs), {
-          animate: false,
-          maxZoom: PREVIEW_MAX_ZOOM,
-          padding: PREVIEW_BOUNDS_PADDING,
-        });
-      }
-    };
-
     const initMap = () => {
       if (cancelled || mapRef.current || mapContainerRef.current !== container) {
         return;
@@ -92,34 +109,23 @@ export function CoordinateAttachmentThumbnail({
         touchZoom: false,
         boxZoom: false,
         keyboard: false,
-        preferCanvas: true,
+        preferCanvas: false,
         minZoom: 2,
         maxZoom: 17,
       });
 
-      fitMap(map);
-
       const tileLayers = getTileLayers();
       tileLayers.googleHybrid.addTo(map);
 
-      const markers = points.map(({ lat, lng }) =>
-        L.circleMarker([lat, lng], {
-          radius: 8,
-          color: '#ffffff',
-          weight: 3,
-          fillColor: '#ff4d2d',
-          fillOpacity: 1,
-        }).addTo(map),
-      );
-
       map.getContainer().style.pointerEvents = 'none';
       mapRef.current = map;
-      markerRefs.current = markers;
+      markerRefs.current = createMarkers(map, pointsRef.current);
+      fitMap(map, pointsRef.current);
 
       window.requestAnimationFrame(() => {
         if (!cancelled) {
           map.invalidateSize();
-          fitMap(map);
+          fitMap(map, pointsRef.current);
         }
       });
 
@@ -129,7 +135,7 @@ export function CoordinateAttachmentThumbnail({
           : new ResizeObserver(() => {
               if (!cancelled) {
                 map.invalidateSize({ animate: false, pan: false });
-                fitMap(map);
+                fitMap(map, pointsRef.current);
               }
             });
       resizeObserver?.observe(container);
@@ -146,32 +152,58 @@ export function CoordinateAttachmentThumbnail({
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [isNearViewport, points]);
+  }, [isNearViewport]);
+
+  useLayoutEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    markerRefs.current.forEach((marker) => marker.remove());
+    markerRefs.current = createMarkers(map, points);
+    fitMap(map, points);
+  }, [points]);
 
   const point = points[0];
   if (point == null) {
     return null;
   }
 
+  const widthStyle = fullWidth ? '100%' : '180px';
+  const heightStyle = fullWidth ? '100%' : '120px';
+  const flexStyle = fullWidth ? '1 1 auto' : '0 0 120px';
+  const maxWidthStyle = fullWidth ? '100%' : 'none';
+
   return (
     <Box
       ref={hostRef}
       data-coordinate-preview-tile="true"
-      style={{ flex: '0 0 auto', width: '180px', height: '120px', maxWidth: 'none' }}
+      style={{
+        flex: flexStyle,
+        width: widthStyle,
+        height: heightStyle,
+        aspectRatio: fullWidth ? '1 / 1' : undefined,
+        maxWidth: maxWidthStyle,
+      }}
       sx={{
-        flex: '0 0 auto',
-        width: 180,
-        height: PREVIEW_HEIGHT_PX,
-        maxWidth: 'none',
+        flex: flexStyle,
+        width: fullWidth ? '100%' : 180,
+        height: fullWidth ? '100%' : PREVIEW_HEIGHT_PX,
+        aspectRatio: fullWidth ? '1 / 1' : undefined,
+        maxWidth: maxWidthStyle,
         alignSelf: 'flex-start',
       }}
     >
       {!isNearViewport ? (
         <Skeleton
           variant="rounded"
-          height={PREVIEW_HEIGHT_PX}
+          height={fullWidth ? '100%' : PREVIEW_HEIGHT_PX}
           animation="wave"
-          sx={{ width: '100%', maxWidth: `${PREVIEW_MAX_WIDTH_PX}px` }}
+          sx={{
+            width: '100%',
+            height: fullWidth ? '100%' : PREVIEW_HEIGHT_PX,
+            maxWidth: fullWidth ? '100%' : `${PREVIEW_MAX_WIDTH_PX}px`,
+            aspectRatio: fullWidth ? '1 / 1' : undefined,
+          }}
         />
       ) : (
         <Tooltip title="Відкрити на мапі" placement="top" enterDelay={0} enterNextDelay={0}>
@@ -179,13 +211,20 @@ export function CoordinateAttachmentThumbnail({
             type="button"
             onClick={onOpen}
             aria-label={`Open ${point.label} on map`}
-            style={{ flex: '0 0 180px', width: '180px', height: '120px', maxWidth: 'none' }}
+            style={{
+              flex: flexStyle,
+              width: widthStyle,
+              height: heightStyle,
+              aspectRatio: fullWidth ? '1 / 1' : undefined,
+              maxWidth: maxWidthStyle,
+            }}
             sx={{
               position: 'relative',
-              flex: '0 0 180px',
-              width: 180,
-              maxWidth: 'none',
-              height: PREVIEW_HEIGHT_PX,
+              flex: flexStyle,
+              width: fullWidth ? '100%' : 180,
+              maxWidth: maxWidthStyle,
+              height: fullWidth ? '100%' : PREVIEW_HEIGHT_PX,
+              aspectRatio: fullWidth ? '1 / 1' : undefined,
               overflow: 'hidden',
               borderRadius: 2,
               border: '1px solid',
