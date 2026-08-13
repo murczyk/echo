@@ -235,9 +235,29 @@ describe('FeedColumn', () => {
       scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     });
+    // Near-bottom (not physical bottom) defers onLoadNewer until scroll idle (~140ms).
+    expect(onLoadNewer).not.toHaveBeenCalled();
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 160));
+    });
 
     expect(onLoadNewer).toHaveBeenCalledTimes(1);
     expect(onReachedBottom).not.toHaveBeenCalled();
+  });
+
+  it('mounts the full message window in the duty feed list', async () => {
+    const props = buildProps();
+    props.column.feed.items = [
+      [1, minimalInboxMessage({ timestamp: 100 })],
+      [2, minimalInboxMessage({ timestamp: 200 })],
+    ];
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    expect(container.querySelector('[data-duty-feed-list]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-duty-message-id]')).toHaveLength(2);
   });
 
   it('shows waterfall debug info after eight quick bell presses', async () => {

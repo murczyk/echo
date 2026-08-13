@@ -433,7 +433,7 @@ body _ deltaLoginFlag sharedToasts model =
                        )
                 )
                 [ div
-                    [ class "login-creds-panel__inner w-100 d-flex flex-column align-items-center pt-3"
+                    [ class "login-creds-panel__inner w-100 d-flex flex-column align-items-center pt-3 px-1"
                     , style "border-top" "1px solid var(--bs-border-color)"
                     ]
                     (credsFields model.showCredsLogin)
