@@ -1,4 +1,5 @@
 use crate::config::{
+    FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS,
     FAILED_INBOX_UNIT_BACKFILL_BATCH_PAUSE_MS,
     FAILED_INBOX_UNIT_BACKFILL_BATCH_SIZE, FAILED_INBOX_UNIT_RETENTION_DAYS,
     FAILED_INBOX_UNIT_WORKER_BATCH_SIZE,
@@ -66,6 +67,29 @@ struct UnitTextResolution {
     source_text: String,
     sigint_unit_id: Option<i64>,
     is_fallback: bool,
+    archive_failure: bool,
+}
+
+fn contains_word(value: &str, word: &str) -> bool {
+    value.match_indices(word).any(|(start, matched)| {
+        let end = start + matched.len();
+        let has_alphanumeric_before = value[..start]
+            .chars()
+            .next_back()
+            .is_some_and(|character| character.is_alphanumeric());
+        let has_alphanumeric_after = value[end..]
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_alphanumeric());
+        !has_alphanumeric_before && !has_alphanumeric_after
+    })
+}
+
+fn should_auto_archive_failed_unit_v2(value: &str) -> bool {
+    let value = value.to_lowercase();
+    FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS
+        .iter()
+        .any(|word| contains_word(&value, word))
 }
 
 fn resolution_texts(value: &str) -> Vec<(String, bool)> {
@@ -426,11 +450,15 @@ where
                 }
             }
         };
+        let archive_failure =
+            matches!(candidate.source, UnitTextSource::UnitV2)
+                && should_auto_archive_failed_unit_v2(&candidate.source_text);
         resolved.push(UnitTextResolution {
             text: candidate.text,
             source_text: candidate.source_text,
             sigint_unit_id,
             is_fallback: candidate.is_fallback,
+            archive_failure,
         });
     }
     let resolved_fallbacks = resolved
@@ -472,6 +500,7 @@ async fn upsert_failure<C>(
     db: &C,
     inbox_item_id: i64,
     unit_txt: &str,
+    archive: bool,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
@@ -503,6 +532,7 @@ where
         .or(existing.as_ref())
         .map(|failure| (failure.is_bad_data, failure.note.clone()))
         .unwrap_or_default();
+    let is_bad_data = is_bad_data || archive;
     let Some(existing) = existing else {
         failed_inbox_unit::ActiveModel {
             id: NotSet,
@@ -678,9 +708,14 @@ where
             .context(h!())?;
         for resolution in resolved_unit_texts {
             if resolution.sigint_unit_id.is_none() && !resolution.is_fallback {
-                upsert_failure(db, inbox_item_id, &resolution.text)
-                    .await
-                    .context(h!())?;
+                upsert_failure(
+                    db,
+                    inbox_item_id,
+                    &resolution.text,
+                    resolution.archive_failure,
+                )
+                .await
+                .context(h!())?;
             }
         }
     }
@@ -1068,6 +1103,17 @@ mod tests {
     fn structural_segments_match_only_complete_words() {
         assert!(contains_structural_segment("1 омсбр / 20 ЗВА", "1 ОМСБР"));
         assert!(!contains_structural_segment("11 омсбр", "1 омсбр"));
+    }
+
+    #[test]
+    fn detects_unit_v2_auto_archive_words() {
+        for label in ["НВ", "підрозділ н/В резерв", "123 Н.В."]
+        {
+            assert!(should_auto_archive_failed_unit_v2(label), "{label}");
+        }
+        for label in ["НВО", "анв", "н/ва", "н.в.о"] {
+            assert!(!should_auto_archive_failed_unit_v2(label), "{label}");
+        }
     }
 
     #[test]
