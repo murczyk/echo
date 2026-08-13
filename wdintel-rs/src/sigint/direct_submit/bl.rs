@@ -124,7 +124,7 @@ where
             .map(|freq| crate::rer_importer::frequency::etalon(&freq)),
         coords: coords
             .into_iter()
-            .map(|coords| crate::rer_importer::types::SubmitCoordinates {
+            .map(|coords| crate::rer_importer::types::GeoCoordinates {
                 lat: coords.lat,
                 lon: coords.lng,
             })

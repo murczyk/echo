@@ -20,6 +20,7 @@ messageStub =
     , important = False
     , bookmarked = False
     , coords = Nothing
+    , coordsWithLocality = []
     , datasourceId = Just 1
     , date = Just "2024-09-19"
     , extendedForm = Nothing

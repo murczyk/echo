@@ -1,4 +1,4 @@
-import type { InboxMessage, PalitraReadV2, Tag } from '../../../../../Bindings';
+import type { InboxMessage, LocalityDetails, PalitraReadV2, Tag } from '../../../../../Bindings';
 
 import {
   renderWgsFloat,
@@ -17,6 +17,7 @@ export type CoordinatePreviewPoint = {
   lat: number;
   lng: number;
   label: string;
+  locality?: LocalityDetails | null;
 };
 
 export function formatCoordinatePreviewPointCount(count: number): string {
@@ -242,12 +243,17 @@ function coordinatePointKey(point: { lat: number; lng: number }): string {
   return `${renderWgsFloat(point.lat)}:${renderWgsFloat(point.lng)}`;
 }
 
-function createDirectCoordinatePoint(lat: number, lng: number): CoordinatePreviewPoint {
+function createDirectCoordinatePoint(
+  lat: number,
+  lng: number,
+  locality?: LocalityDetails | null,
+): CoordinatePreviewPoint {
   return {
     source: 'direct',
     lat,
     lng,
     label: formatDirectCoordinateLabel(lat, lng),
+    locality,
   };
 }
 
@@ -364,6 +370,12 @@ function formatDirectCoordinateLabel(lat: number, lng: number): string {
 }
 
 function resolveDirectCoordinatesFromMessage(message: InboxMessage): CoordinatePreviewPoint[] {
+  if ((message.coordsWithLocality?.length ?? 0) > 0) {
+    return message.coordsWithLocality.map(({ coords, locality }) =>
+      createDirectCoordinatePoint(coords.lat, coords.lon, locality),
+    );
+  }
+
   const textPoints = resolveDirectCoordinatesFromCoordinateText(message.text ?? '');
   if (textPoints.length > 0) {
     return textPoints;
@@ -376,6 +388,10 @@ export function hasCoordinatePreviewCandidate(
   message: InboxMessage,
   tagsMap: Record<number, Tag> = {},
 ): boolean {
+  if ((message.coordsWithLocality?.length ?? 0) > 0) {
+    return true;
+  }
+
   if (resolveDirectCoordinatesFromCoordinateText(message.text ?? '').length > 0) {
     return true;
   }

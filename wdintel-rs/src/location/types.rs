@@ -1,4 +1,5 @@
 use crate::location::SettlementsData;
+use crate::rer_importer::types::GeoCoordinates;
 use crate::types::Mode;
 use crate::types::{Deserialize, Serialize};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
@@ -63,6 +64,29 @@ pub struct SettlementFileRow {
     pub name: String,
     pub coords: Option<(f64, f64)>,
     pub language_details: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MapCoordinatesReq {
+    pub coords: Vec<GeoCoordinates>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CoordinateWithLocality {
+    pub coords: GeoCoordinates,
+    pub locality: Option<LocalityDetails>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct LocalityDetails {
+    pub settlement_name: String,
+    pub direction: String,
+    pub distance_m: f64,
+    pub is_rf: bool,
 }
 
 #[derive(Clone)]

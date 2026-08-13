@@ -10,7 +10,7 @@ import {
   type DirectSubmitResponse,
 } from '../../../services/api/direct-submit';
 import type { RecentValues } from './useRecentValues';
-import { parseCoordLine, type MessageFormData } from './manage-message-drawer.schema';
+import { parseCoords, type MessageFormData } from './manage-message-drawer.schema';
 import { combineDateTimeToMs, formatDateInputValueInTimeZone } from '../../../utils/misc';
 import { MAX_MESSAGE_ATTACHMENTS } from './useMessageUppy';
 
@@ -102,11 +102,7 @@ export function useMessageSubmit({
         }
       }
 
-      const coordsResult: { lat: number; lon: number }[] = [];
-      if (data.coords && data.coords.trim()) {
-        const coord = parseCoordLine(data.coords);
-        if (coord) coordsResult.push(coord);
-      }
+      const coordsResult = parseCoords(data.coords ?? '');
 
       const dateValue = data.date as Dayjs | null;
       const timeValue = data.time as Dayjs | null;
@@ -169,18 +165,22 @@ export function useMessageSubmit({
       if (isEditMode && editTarget) {
         const res = await editDirectSubmit(editTarget.id, payload);
         addValues(recentValues);
+        let editAppliedLocally = false;
         if (onSubmitEdit && res.message) {
           try {
             await onSubmitEdit(editTarget.id, res.message);
+            editAppliedLocally = true;
           } catch (error) {
             console.error('Error handling edited message', error);
           }
         }
         handleDrawerCloseAfterSubmit();
-        try {
-          await onEditSuccess?.(res);
-        } catch (error) {
-          console.error('Error handling edit success', error);
+        if (!editAppliedLocally) {
+          try {
+            await onEditSuccess?.(res);
+          } catch (error) {
+            console.error('Error handling edit success', error);
+          }
         }
       } else {
         const result = await submitDirect(payload);

@@ -10,6 +10,7 @@
 
 ## NEXT
 
+- [#3098](https://github.com/echoua/echo/issues/3098) ✅ Аналіз, Оперативний: додано повернення локалітету для координат пеленга в повідомленнях.
 - [#3015](https://github.com/echoua/echo/issues/3015) ✅ Логін: при увімкненому вході через Delta поля логіна та пароля згорнуто під окремим блоком.
 - [#3129](https://github.com/echoua/echo/issues/3129) 🐞👷🚨 Аналітика: обмежено рівень і термін зберігання діагностичних логів ClickHouse; після встановлення оновлених analytics-скриптів спочатку виконати `sudo /opt/echo-analytics/bin/manage-system-logs.sh --apply --truncate --yes` на `echo-kharkiv2-clickhouse`, перевірити аналітику протягом 15 хвилин, а потім по одному на `echo-pivnich-clickhouse`, `echo-zp2-clickhouse`, `echo-skhid-clickhouse` і `echo-siversk-clickhouse`; команда безповоротно очищає лише чотири системні таблиці логів.
 - [#3108](https://github.com/echoua/echo/issues/3108) ✅🛡️👷 Адмін, ШІ-парсинг позивних: додано вбудований промпт і кнопку скидання тимчасового перевизначення; після деплою скинути перевизначення на `echo-siversk`, `echo-zp2`, `echo-pivnich` і `echo-skhid`.

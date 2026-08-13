@@ -1,5 +1,5 @@
 use crate::rer_importer::types::{
-    SubmitCoordinates, SubmitDmrMetadata, SubmitNetwork,
+    GeoCoordinates, SubmitDmrMetadata, SubmitNetwork,
 };
 use crate::types::{Deserialize, Serialize};
 use serde::Deserializer;
@@ -25,7 +25,7 @@ pub struct DirectSubmitPayload {
     #[serde(default)]
     pub freq: Option<String>,
     #[serde(default)]
-    pub coords: Vec<SubmitCoordinates>,
+    pub coords: Vec<GeoCoordinates>,
     #[serde(default)]
     #[serde(rename = "from")]
     pub from_callsign: Option<String>,
@@ -72,7 +72,7 @@ pub struct DirectSubmitParsePayload {
 pub struct DirectSubmitParseRsp {
     pub text: String,
     pub freq: Option<String>,
-    pub coords: Vec<SubmitCoordinates>,
+    pub coords: Vec<GeoCoordinates>,
     pub to: Vec<String>,
     pub timestamp: Option<String>,
     pub comment: Option<String>,

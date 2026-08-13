@@ -21,6 +21,8 @@ pub struct InboxMessage {
     pub time: Option<String>,
     pub freq: Option<String>,
     pub coords: Option<String>,
+    #[serde(default)]
+    pub coords_with_locality: Vec<crate::location::CoordinateWithLocality>,
     pub callsigns: Vec<String>,
     pub callsigns_alg2: Vec<String>,
     pub checked: bool,
@@ -144,6 +146,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             time: payload.time,
             freq: payload.freq,
             coords: payload.coords,
+            coords_with_locality: vec![],
             callsigns: payload.callsigns,
             callsigns_alg2: payload.callsigns_alg2,
             checked: payload.checked,
@@ -514,7 +517,7 @@ pub struct InboxSubmitItem {
     #[serde(default)]
     pub freq: Option<String>,
     #[serde(default)]
-    pub coords: Vec<SubmitCoordinates>,
+    pub coords: Vec<GeoCoordinates>,
     #[serde(default, rename = "from")]
     pub from_callsign: Option<String>,
     #[serde(default)]
@@ -569,9 +572,11 @@ impl Default for InboxSubmitItem {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 #[serde(deny_unknown_fields)]
-pub struct SubmitCoordinates {
+pub struct GeoCoordinates {
     pub lat: f64,
     pub lon: f64,
 }
@@ -1685,6 +1690,7 @@ mod tests {
             .collect::<BTreeSet<_>>();
         let expected_omitted_keys = BTreeSet::from([
             "callsign_tokens".to_string(),
+            "coords_with_locality".to_string(),
             "device_name".to_string(),
             "keyword_tokens".to_string(),
             "message_comments".to_string(),
@@ -1744,7 +1750,7 @@ mod tests {
         assert_eq!(item.to, vec!["светлый".to_string()]);
         assert_eq!(
             item.coords,
-            vec![SubmitCoordinates {
+            vec![GeoCoordinates {
                 lat: 49.12345,
                 lon: 37.12345,
             }]

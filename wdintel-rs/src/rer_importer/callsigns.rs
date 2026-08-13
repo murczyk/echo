@@ -1927,6 +1927,7 @@ mod tests {
             time: None,
             freq: None,
             coords: None,
+            coords_with_locality: vec![],
             callsigns: callsigns
                 .into_iter()
                 .map(|callsign| callsign.to_string())

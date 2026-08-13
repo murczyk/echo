@@ -12,7 +12,7 @@ import {
 import { useCallback, useMemo, useState } from 'react';
 
 import { copyTextToClipboard } from '../copy-to-clipboard';
-import { CoordFormat, getCoordinateText } from '../maps/coordinate-format';
+import { COORD_FORMAT_OPTIONS, CoordFormat, getCoordinateText } from '../maps/coordinate-format';
 import { useNeoMuiTheme } from './mui-theme';
 
 type AnalysisMapCoordMenuProps = {
@@ -133,8 +133,11 @@ function AnalysisMapCoordMenuInner(props: AnalysisMapCoordMenuProps) {
             },
           }}
         >
-          <MenuItem value="mgrs">MGRS</MenuItem>
-          <MenuItem value="wgs">WGS</MenuItem>
+          {COORD_FORMAT_OPTIONS.map((option) => (
+            <MenuItem key={option.value} value={option.value}>
+              {option.label}
+            </MenuItem>
+          ))}
         </Select>
 
         <IconButton

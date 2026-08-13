@@ -102,6 +102,38 @@ describe('message coordinate preview resolver', () => {
     expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
 
+  it('prefers every persisted coordinate with locality over legacy text fields', async () => {
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: '50.45044, 30.52355',
+        coords: '49.1, 37.2',
+        coordsWithLocality: [
+          {
+            coords: { lat: 47.1, lon: 33.2 },
+            locality: {
+              settlementName: 'Степногірськ',
+              direction: 'SW',
+              region: null,
+              country: null,
+              distanceM: 5400,
+              isRf: false,
+            },
+          },
+          {
+            coords: { lat: 48.2, lon: 34.3 },
+            locality: null,
+          },
+        ],
+      }),
+    });
+
+    expect(result?.points).toEqual([
+      expect.objectContaining({ lat: 47.1, lng: 33.2, locality: expect.any(Object) }),
+      expect.objectContaining({ lat: 48.2, lng: 34.3, locality: null }),
+    ]);
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+  });
+
   it('resolves direct WGS84 coordinates from message text before palitra lookup', async () => {
     const result = await resolveMessageCoordinatePreview({
       message: createMessage({ text: '50.45044, 30.52355' }),

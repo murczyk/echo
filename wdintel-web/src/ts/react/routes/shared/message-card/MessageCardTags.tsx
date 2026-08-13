@@ -12,12 +12,14 @@ import { buildMessageCardTagRows } from './MessageCardTags.helpers';
 import type { MessageCardTagRow } from './MessageCardTags.helpers';
 
 const TAG_CHIP_GAP_PX = 4;
-const COMPACT_EXPAND_BTN_RESERVE_PX = 92;
+const COMPACT_EXPAND_BTN_RESERVE_PX = 116;
 const COMPACT_LAST_CHIP_BADGE_OVERFLOW_PX = 44;
 const TAG_CHIP_BADGE_TOP_PADDING_THEME = 1.75;
 
-function estimateTagChipWidthPx(label: string): number {
-  return Math.min(180, Math.max(28, Math.round(label.length * 6.5 + 26)));
+function estimateTagChipWidthPx(label: string, showBadge?: boolean): number {
+  const base = Math.round(label.length * 8.5 + 28);
+  const withBadge = showBadge ? base + 22 : base;
+  return Math.min(240, Math.max(36, withBadge));
 }
 
 export function buildSelectedFirstTagOrder(rows: MessageCardTagRow[]): number[] {
@@ -78,7 +80,7 @@ function MessageCardTagsComponent({
   const [firstRowCount, setFirstRowCount] = useState(() => compactOrderedRows.length);
 
   useLayoutEffect(() => {
-    if (tagsLayout !== 'compact' || showCompactRest) return;
+    if (tagsLayout === 'hidden') return;
     const el = compactMeasureRef.current;
     if (!el) return;
     const packing = compactOrderedRows;
@@ -89,34 +91,58 @@ function MessageCardTagsComponent({
       }
       const w = el.getBoundingClientRect().width;
       if (w <= 0) return;
-      let totalNoBtn = 0;
-      for (let i = 0; i < packing.length; i++) {
-        const add = (i > 0 ? TAG_CHIP_GAP_PX : 0) + estimateTagChipWidthPx(packing[i].label);
-        if (totalNoBtn + add > w) {
-          totalNoBtn = Infinity;
-          break;
+
+      const chipNodes = Array.from(el.querySelectorAll<HTMLElement>('[data-message-card-tag-id]'));
+
+      let domWraps = false;
+      if (chipNodes.length > 1) {
+        const firstTop = chipNodes[0].getBoundingClientRect().top;
+        const lastTop = chipNodes[chipNodes.length - 1].getBoundingClientRect().top;
+        if (lastTop > firstTop + 6) {
+          domWraps = true;
         }
-        totalNoBtn += add;
       }
-      if (totalNoBtn <= w) {
-        setFirstRowCount((c) => (c === packing.length ? c : packing.length));
+
+      if (!domWraps && chipNodes.length === packing.length && chipNodes.length > 0) {
+        setFirstRowCount(packing.length);
         return;
       }
-      const btn = COMPACT_EXPAND_BTN_RESERVE_PX;
-      const widthFirstKChips = (k: number) => {
-        if (k <= 0) return 0;
-        let u = 0;
-        for (let j = 0; j < k; j++) {
-          u += (j > 0 ? TAG_CHIP_GAP_PX : 0) + estimateTagChipWidthPx(packing[j].label);
+
+      const nodeWidthMap = new Map<number, number>();
+      chipNodes.forEach((node) => {
+        const idStr = node.getAttribute('data-message-card-tag-id');
+        if (idStr) {
+          const rect = node.getBoundingClientRect();
+          if (rect.width > 0) {
+            nodeWidthMap.set(Number(idStr), rect.width);
+          }
         }
-        if (packing[k - 1].showBadge) u += COMPACT_LAST_CHIP_BADGE_OVERFLOW_PX;
-        return u;
+      });
+
+      const getWidth = (row: MessageCardTagRow) => {
+        return (
+          nodeWidthMap.get(Number(row.tagId)) ?? estimateTagChipWidthPx(row.label, row.showBadge)
+        );
       };
+
+      const btnNode = el.querySelector<HTMLElement>('button');
+      const btnReserve = Math.max(
+        COMPACT_EXPAND_BTN_RESERVE_PX,
+        btnNode ? Math.ceil(btnNode.getBoundingClientRect().width) + 20 : 0,
+      );
+      const availableWidthForRow1 = Math.max(0, w - btnReserve);
       let count = 0;
+      let usedWidth = 0;
       for (let i = 0; i < packing.length; i++) {
-        if (widthFirstKChips(i + 1) + btn > w) break;
+        const chipW = getWidth(packing[i]);
+        const gap = i > 0 ? TAG_CHIP_GAP_PX : 0;
+        if (usedWidth + gap + chipW > availableWidthForRow1) {
+          break;
+        }
+        usedWidth += gap + chipW;
         count = i + 1;
       }
+
       const atLeastOne = count === 0 && packing.length > 0 ? 1 : count;
       const next = atLeastOne >= packing.length ? packing.length : atLeastOne;
       setFirstRowCount((c) => (c === next ? c : next));
@@ -127,7 +153,7 @@ function MessageCardTagsComponent({
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [tagsLayout, compactOrderedRows, showCompactRest]);
+  }, [tagsLayout, compactOrderedRows]);
 
   const row1Chips = useMemo(
     () => compactOrderedRows.slice(0, firstRowCount),
@@ -154,7 +180,7 @@ function MessageCardTagsComponent({
           alignItems: 'flex-start',
           maxWidth: '100%',
           verticalAlign: 'top',
-          ...(tagsLayout === 'compact' ? { pt: TAG_CHIP_BADGE_TOP_PADDING_THEME } : {}),
+          pt: TAG_CHIP_BADGE_TOP_PADDING_THEME,
         }}
       >
         <Box component="span" className="relative inline-flex shrink-0 max-w-full">
@@ -196,14 +222,6 @@ function MessageCardTagsComponent({
     </Tooltip>
   );
 
-  if (tagsLayout !== 'compact') {
-    return (
-      <Box className="flex flex-wrap items-start gap-1">
-        {rows.map((row) => renderOneChip(row))}
-      </Box>
-    );
-  }
-
   const expandToggleButton = hasRest ? (
     <Button
       size="small"
@@ -235,32 +253,19 @@ function MessageCardTagsComponent({
     </Button>
   ) : null;
 
-  if (showCompactRest && hasRest) {
+  if (!hasRest) {
     return (
       <Box
         ref={compactMeasureRef}
-        className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-1"
+        className="flex w-full min-w-0 flex-wrap items-start gap-x-1 gap-y-2.5"
       >
-        <Box className="flex w-full min-w-0 flex-wrap items-start gap-1">
-          {compactOrderedRows.map((row) => renderOneChip(row))}
-        </Box>
-        <Box sx={{ flexShrink: 0, justifySelf: 'end', pt: TAG_CHIP_BADGE_TOP_PADDING_THEME }}>
-          {expandToggleButton}
-        </Box>
-      </Box>
-    );
-  }
-
-  if (!hasRest) {
-    return (
-      <Box ref={compactMeasureRef} className="flex w-full min-w-0 flex-wrap items-start gap-1">
         {compactOrderedRows.map((row) => renderOneChip(row))}
       </Box>
     );
   }
 
   return (
-    <Box ref={compactMeasureRef} className="w-full min-w-0">
+    <Box ref={compactMeasureRef} className="flex w-full min-w-0 flex-col gap-y-1.5">
       <Box className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-1">
         <Box className="flex min-h-[27px] min-w-0 flex-1 items-center gap-1 overflow-x-hidden">
           {row1Chips.map((row) => renderOneChip(row))}
@@ -269,6 +274,11 @@ function MessageCardTagsComponent({
           {expandToggleButton}
         </Box>
       </Box>
+      {showCompactRest && (
+        <Box className="flex w-full min-w-0 flex-wrap items-start gap-x-1 gap-y-2.5">
+          {restRows.map((row) => renderOneChip(row))}
+        </Box>
+      )}
     </Box>
   );
 }

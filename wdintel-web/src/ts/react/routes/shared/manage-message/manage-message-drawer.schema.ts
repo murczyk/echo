@@ -1,5 +1,5 @@
 import * as z from 'zod';
-import { parseCoordinateInput } from '../../../../maps/coordinate-search';
+import { parseCoordinateBlock } from '../../../../maps/coordinate-parser';
 
 export {
   attachmentIcon,
@@ -11,12 +11,14 @@ export {
 
 export const FREQ_FORMAT_REGEX = /^\d+([.,]\d+)?$/;
 
-// Accepts either WGS84 decimal degrees ("lat, lon") or an MGRS grid reference
-// ("37U DR 05997 22279") on a single line, returning backend {lat, lon}.
 export function parseCoordLine(line: string): { lat: number; lon: number } | null {
-  const parsed = parseCoordinateInput(line);
+  const parsed = parseCoordinateBlock(line)[0];
   if (!parsed) return null;
   return { lat: parsed.lat, lon: parsed.lng };
+}
+
+export function parseCoords(value: string): { lat: number; lon: number }[] {
+  return parseCoordinateBlock(value).map(({ lat, lng }) => ({ lat, lon: lng }));
 }
 
 export function normalizeMultiValue(values: string[]): string[] {
@@ -87,7 +89,7 @@ export function makeMessageSchema(isEditMode: boolean) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['coords'],
-          message: 'Невірний формат координат (очікується "lat, lon" або MGRS)',
+          message: 'Невірний формат координат (WGS-84, MGRS, UTM, СК-42 або УСК-2000)',
         });
       }
     });

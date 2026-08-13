@@ -40,6 +40,9 @@ vi.mock('./useSettlementAutocomplete', () => ({
   })),
 }));
 
+vi.mock('./CoordinateInputPreview', () => ({ CoordinateInputPreview: () => null }));
+vi.mock('./CoordinateListInput', () => ({ CoordinateListInput: () => null }));
+
 const settlements: SettlementDetails[] = [
   {
     id: 1,
