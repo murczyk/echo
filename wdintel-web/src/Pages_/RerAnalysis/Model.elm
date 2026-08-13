@@ -4,6 +4,7 @@ import Bindings as B
 import Core.Types exposing (ApiError)
 import Dict exposing (Dict)
 import Select
+import Set exposing (Set)
 import Shared.Components.DateRangePicker
 import Shared.Components.DateTime
 import Shared.Components.RerMessage
@@ -166,6 +167,8 @@ type alias Model =
     , newCallsignsLoading : Bool
     , newCallsignsRsp : Maybe B.NewCallsignsRes
     , callsignsInfo : Dict String (List B.CallsignInfo)
+    , messageCallsignsInfo : Dict String B.CallsignInfoRes
+    , messageCallsignsRequested : Set String
     , callsignsInfoSumTable : Dict String (List B.CallsignInfo)
     , messageComments : Dict Int (List B.MessageComment)
     , users : Dict String (Maybe B.User)

@@ -17,6 +17,7 @@ import Bindings as B
 import Browser.Dom exposing (Element)
 import Config
 import Core.Callsign
+import Core.Callsigns.MessageHint as MessageHint
 import Core.Types exposing (..)
 import Debounce exposing (Debounce)
 import Dict exposing (Dict)
@@ -70,7 +71,7 @@ type Msg
       -- API CALLS
     | GotSignals (Result ApiError B.ListSignalsRsp)
     | GotLatestFrequencies (Result ApiError (List String))
-    | GotCallsignsInfo (Result ApiError (List B.CallsignInfoRes))
+    | GotCallsignsInfo (List String) (Result ApiError (List B.CallsignInfoRes))
     | GotNetworksInfo (Result ApiError (List B.Network))
     | GotGroupKeys (Result ApiError (List String))
     | GotTags (Result ApiError (List ( Int, B.Tag )))
@@ -193,6 +194,8 @@ type alias Model =
     , tags : List ( Int, B.Tag )
     , edited : Dict Int Shared.Components.RerMessage.Edited
     , callsignsInfo : Dict String (List B.CallsignInfo)
+    , messageCallsignsInfo : Dict String B.CallsignInfoRes
+    , messageCallsignsRequested : Set String
     , savedFilters : List ( Int, B.SavedFilterDuty )
     , saveFilterInp : String
     , deleteFilterConfirmationId : Maybe Int
@@ -292,6 +295,8 @@ init id_ ms =
       , tags = []
       , edited = Dict.empty
       , callsignsInfo = Dict.empty
+      , messageCallsignsInfo = Dict.empty
+      , messageCallsignsRequested = Set.empty
       , savedFilters = []
       , saveFilterInp = ""
       , deleteFilterConfirmationId = Nothing
@@ -635,6 +640,8 @@ updateFreqsAndCallsigns :
             , freqsSelect : LeSelect.SelectType String
             , freqsDeniedSelect : LeSelect.SelectType String
             , callsignsInfo : Dict String (List B.CallsignInfo)
+            , messageCallsignsInfo : Dict String B.CallsignInfoRes
+            , messageCallsignsRequested : Set String
         }
     ->
         ( { a
@@ -642,6 +649,8 @@ updateFreqsAndCallsigns :
             , freqsSelect : LeSelect.SelectType String
             , freqsDeniedSelect : LeSelect.SelectType String
             , callsignsInfo : Dict String (List B.CallsignInfo)
+            , messageCallsignsInfo : Dict String B.CallsignInfoRes
+            , messageCallsignsRequested : Set String
           }
         , Effect Msg
         )
@@ -664,17 +673,33 @@ updateFreqsAndCallsigns messages model =
         fd =
             LeSelect.updateSelectItems (\_ -> freqMenu) model.freqsDeniedSelect
 
-        newCallsigns =
+        savedCallsigns =
             Core.Callsign.extractCallsignsInfo messages model.callsignsInfo
+                |> List.filter (\callsign -> not (Set.member callsign model.messageCallsignsRequested))
+                |> Set.fromList
+
+        markedCallsigns =
+            messages
+                |> List.concatMap (Tuple.second >> MessageHint.callsignsFromMessage)
+                |> Set.fromList
+                |> Set.filter
+                    (\callsign ->
+                        not (Dict.member callsign model.messageCallsignsInfo)
+                            && not (Set.member callsign model.messageCallsignsRequested)
+                    )
+
+        newCallsigns =
+            Set.union savedCallsigns markedCallsigns |> Set.toList
     in
     ( { model
         | freqs = freqs
         , freqsSelect = fs
         , freqsDeniedSelect = fd
+        , messageCallsignsRequested = Set.union model.messageCallsignsRequested (Set.fromList newCallsigns)
       }
     , E.batch
         [ if List.length newCallsigns > 0 then
-            E.getCallsignsInfo GotCallsignsInfo { callsigns = newCallsigns }
+            E.getCallsignsInfo (GotCallsignsInfo newCallsigns) { callsigns = newCallsigns }
 
           else
             E.none
@@ -687,10 +712,12 @@ mergeCallsignsInfo :
     ->
         { a
             | callsignsInfo : Dict String (List B.CallsignInfo)
+            , messageCallsignsInfo : Dict String B.CallsignInfoRes
         }
     ->
         { a
             | callsignsInfo : Dict String (List B.CallsignInfo)
+            , messageCallsignsInfo : Dict String B.CallsignInfoRes
         }
 mergeCallsignsInfo callsigns model =
     List.foldl
@@ -700,6 +727,7 @@ mergeCallsignsInfo callsigns model =
                     Dict.insert (String.toLower callsign.callsign)
                         callsign.res
                         m.callsignsInfo
+                , messageCallsignsInfo = MessageHint.mergeResponses [ callsign ] m.messageCallsignsInfo
             }
         )
         model
@@ -2109,11 +2137,13 @@ update shared user msg model =
         ReloadLatestFrequencies ->
             ( model, E.sendCmd <| Api.sigint_latest_frequencies GotLatestFrequencies )
 
-        GotCallsignsInfo (Err e) ->
-            ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації про позивні" e )
+        GotCallsignsInfo requested (Err e) ->
+            ( { model | messageCallsignsRequested = List.foldl Set.remove model.messageCallsignsRequested requested }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації про позивні" e
+            )
 
-        GotCallsignsInfo (Ok callsigns) ->
-            ( mergeCallsignsInfo callsigns model, E.none )
+        GotCallsignsInfo requested (Ok callsigns) ->
+            ( mergeCallsignsInfo callsigns { model | messageCallsignsRequested = List.foldl Set.remove model.messageCallsignsRequested requested }, E.none )
 
         GotNetworksInfo (Err e) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e )
@@ -2179,6 +2209,7 @@ update shared user msg model =
                                         Dict.empty
                             , networkDetailsViewPreference = shared.rerNetworkDetailsPreferredView
                             , callsignsInfo = model.callsignsInfo
+                            , messageCallsignsInfo = model.messageCallsignsInfo
                             , networks = networksDict
                             , zone = shared.timeZone
                             , time = model.time
@@ -2532,6 +2563,7 @@ waterfallDiv user isDarkMode duplicates datasources serverInfo masterUnits model
                                             , masterUnits = masterUnits
                                             , networkDetailsViewPreference = shared.rerNetworkDetailsPreferredView
                                             , callsignsInfo = model.callsignsInfo
+                                            , messageCallsignsInfo = model.messageCallsignsInfo
                                             , networks = networksDict
                                             , zone = shared.timeZone
                                             , time = model.time

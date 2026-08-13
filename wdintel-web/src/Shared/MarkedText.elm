@@ -1,7 +1,8 @@
-module Shared.MarkedText exposing (MetadataLink, Model, fromPlainText, new, viewWithHintResults)
+module Shared.MarkedText exposing (MetadataLink, Model, fromPlainText, new, viewWithHintResults, viewWithMessageHintResults)
 
 import Bindings as B
 import Core.Callsigns.HintStrategy as HintStrategy
+import Core.Callsigns.MessageHint as MessageHint
 import Dict exposing (Dict)
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -43,6 +44,40 @@ pointTokenClickUrl: when Just, point tokens are links to the analysis map; when 
 -}
 viewWithHintResults : Dict String HintStrategy.HintResult -> Maybe (List B.Signal) -> List B.Network -> Maybe String -> String -> Maybe (String -> String) -> List MetadataLink -> Model msg -> List (Html msg)
 viewWithHintResults hintResultsDict signals networks mFreq bodyText pointTokenClickUrl metadataLinks (Model config) =
+    viewWithResults
+        (\callsign ->
+            Dict.get (String.toLower callsign) hintResultsDict
+                |> Maybe.map (Shared.Callsign.viewWithHintResult callsign)
+                |> Maybe.withDefault (text callsign)
+        )
+        signals
+        networks
+        mFreq
+        bodyText
+        pointTokenClickUrl
+        metadataLinks
+        config
+
+
+viewWithMessageHintResults : Dict String MessageHint.MessageHintResult -> Maybe (List B.Signal) -> List B.Network -> Maybe String -> String -> Maybe (String -> String) -> List MetadataLink -> Model msg -> List (Html msg)
+viewWithMessageHintResults hintResultsDict signals networks mFreq bodyText pointTokenClickUrl metadataLinks (Model config) =
+    viewWithResults
+        (\callsign ->
+            Dict.get (callsign |> String.trim |> String.toLower) hintResultsDict
+                |> Maybe.map (Shared.Callsign.viewWithMessageHintResult callsign)
+                |> Maybe.withDefault (text callsign)
+        )
+        signals
+        networks
+        mFreq
+        bodyText
+        pointTokenClickUrl
+        metadataLinks
+        config
+
+
+viewWithResults : (String -> Html msg) -> Maybe (List B.Signal) -> List B.Network -> Maybe String -> String -> Maybe (String -> String) -> List MetadataLink -> { contentNodes : List B.ContentNode } -> List (Html msg)
+viewWithResults renderCallsign signals networks mFreq bodyText pointTokenClickUrl metadataLinks config =
     let
         sortedMetadataLinks =
             List.sortBy .startIndex metadataLinks
@@ -134,13 +169,7 @@ viewWithHintResults hintResultsDict signals networks mFreq bodyText pointTokenCl
                                     a2
                     in
                     a [ class "content-token--ADP hover:cursor-pointer", Route.href { path = Route.Path.RerCallsignsNeo, query = a3, hash = Nothing }, target "_blank" ]
-                        [ case Dict.get (String.toLower obj.text) hintResultsDict of
-                            Just hintResult ->
-                                Shared.Callsign.viewWithHintResult obj.text hintResult
-
-                            Nothing ->
-                                text obj.text
-                        ]
+                        [ renderCallsign obj.text ]
 
                 B.CnSignalC obj ->
                     let
