@@ -6,12 +6,14 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAnalysisMessageList } from './use-analysis-message-list';
 import { emptyQueryState } from './helpers';
-import type { InboxMessage } from '../../../../Bindings';
+import type { CallsignInfoRes, InboxMessage } from '../../../../Bindings';
 
+const fetchAnalysisCallsignInfosMock = vi.hoisted(() => vi.fn());
 const fetchInboxMessagesMock = vi.hoisted(() => vi.fn());
 const fetchInboxCountMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/api/analysis', () => ({
+  fetchAnalysisCallsignInfos: fetchAnalysisCallsignInfosMock,
   fetchInboxCount: fetchInboxCountMock,
   fetchInboxMessages: fetchInboxMessagesMock,
 }));
@@ -51,6 +53,9 @@ type Harness = {
   latest: ReturnType<typeof useAnalysisMessageList>;
   setDeferInitialLoad: React.Dispatch<React.SetStateAction<boolean>>;
   setQueryState: React.Dispatch<React.SetStateAction<ReturnType<typeof buildQueryState>>>;
+  summaryCallsignsInfo: Record<string, CallsignInfoRes>;
+  onError: ReturnType<typeof vi.fn>;
+  onUnauthorized: ReturnType<typeof vi.fn>;
 };
 
 type Deferred<T> = {
@@ -71,6 +76,7 @@ function renderHook(
   loadMissingNetworksForMessages = vi.fn().mockResolvedValue(undefined),
   newestFirst = true,
   initialDeferInitialLoad = false,
+  initialSummaryCallsignsInfo: Record<string, CallsignInfoRes> = {},
 ): Harness {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -82,15 +88,21 @@ function renderHook(
     const [currentQueryState, setCurrentQueryState] = useState(queryState);
     harness.setDeferInitialLoad = setDeferInitialLoad;
     harness.setQueryState = setCurrentQueryState;
+    harness.onError ??= vi.fn();
+    harness.onUnauthorized ??= vi.fn().mockReturnValue(false);
+    const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<
+      Record<string, CallsignInfoRes>
+    >(initialSummaryCallsignsInfo);
+    harness.summaryCallsignsInfo = summaryCallsignsInfo;
     harness.latest = useAnalysisMessageList({
       deferInitialLoad,
       loadMissingNetworksForMessages,
       newestFirst,
-      onError: vi.fn(),
-      onUnauthorized: vi.fn().mockReturnValue(false),
+      onError: harness.onError,
+      onUnauthorized: harness.onUnauthorized,
       optionsFreqValues: [],
       queryState: currentQueryState,
-      setSummaryCallsignsInfo: vi.fn(),
+      setSummaryCallsignsInfo,
     });
     return null;
   }
@@ -107,8 +119,144 @@ describe('useAnalysisMessageList pagination', () => {
 
   beforeEach(() => {
     fetchInboxMessagesMock.mockReset();
+    fetchAnalysisCallsignInfosMock.mockReset();
+    fetchAnalysisCallsignInfosMock.mockResolvedValue([]);
     fetchInboxCountMock.mockReset();
     fetchInboxCountMock.mockResolvedValue({ quantity: 42, firstElementTs: null });
+  });
+
+  it('enriches visible callsigns from marked content without blocking messages', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    const response = {
+      callsign: 'Wolf',
+      res: [],
+      networkHints: [],
+    } satisfies CallsignInfoRes;
+    fetchAnalysisCallsignInfosMock.mockResolvedValueOnce([response]);
+
+    act(() => {
+      h.latest.setMessages([
+        [
+          1,
+          buildMessage({
+            callsigns: ['fallback'],
+            textMarked: [
+              { CNHighlightC: { text: 'ignored', begin: 0, end: 7 } },
+              { CNCallsignC: { text: '  WOLF ', begin: 0, end: 7, etalon: 'WOLF' } },
+              { CNCallsignC: { text: 'wolf', begin: 8, end: 12, etalon: 'wolf' } },
+            ] as never,
+          }),
+        ],
+      ]);
+    });
+
+    expect(h.latest.messages).toHaveLength(1);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fetchAnalysisCallsignInfosMock).toHaveBeenCalledWith(['wolf']);
+    expect(h.summaryCallsignsInfo.wolf).toEqual(response);
+  });
+
+  it('falls back to message callsigns when marked content has no callsign nodes', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    act(() => {
+      h.latest.setMessages([
+        [1, buildMessage({ callsigns: ['  Alpha ', 'alpha'], textMarked: [] as never })],
+      ]);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fetchAnalysisCallsignInfosMock).toHaveBeenCalledWith(['alpha']);
+  });
+
+  it('does not merge a stale enrichment response or remove a newer owner', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    const oldRequest = deferred<CallsignInfoRes[]>();
+    const newRequest = deferred<CallsignInfoRes[]>();
+    fetchAnalysisCallsignInfosMock
+      .mockReturnValueOnce(oldRequest.promise)
+      .mockReturnValueOnce(newRequest.promise);
+
+    act(() => {
+      h.latest.setMessages([[1, buildMessage({ callsigns: ['old'] })]]);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => {
+      h.latest.invalidateMessagePaging();
+      h.latest.setMessages([[2, buildMessage({ callsigns: ['old'] })]]);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    oldRequest.resolve([{ callsign: 'old', res: [], networkHints: [] }]);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.summaryCallsignsInfo).toEqual({});
+    newRequest.resolve([{ callsign: 'old', res: [], networkHints: [] }]);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.summaryCallsignsInfo.old).toBeDefined();
+  });
+
+  it('deduplicates completed and in-flight enrichment requests', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    const pending = deferred<CallsignInfoRes[]>();
+    fetchAnalysisCallsignInfosMock.mockReturnValueOnce(pending.promise).mockResolvedValue([]);
+    act(() => h.latest.setMessages([[1, buildMessage({ callsigns: [' Wolf '] })]]));
+    await act(async () => Promise.resolve());
+    act(() => h.latest.setMessages([[2, buildMessage({ callsigns: ['wolf'] })]]));
+    await act(async () => Promise.resolve());
+    expect(fetchAnalysisCallsignInfosMock).toHaveBeenCalledTimes(1);
+    pending.resolve([{ callsign: 'wolf', res: [], networkHints: [] }]);
+    await act(async () => Promise.resolve());
+    act(() => h.latest.setMessages([[3, buildMessage({ callsigns: ['WOLF'] })]]));
+    await act(async () => Promise.resolve());
+    expect(fetchAnalysisCallsignInfosMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves unrelated callsign entries when merging enrichment results', async () => {
+    const alpha = { callsign: 'alpha', res: [], networkHints: [] } satisfies CallsignInfoRes;
+    const h = renderHook(buildQueryState(), undefined, true, false, { alpha });
+    harnesses.push(h);
+    const wolf = { callsign: 'wolf', res: [], networkHints: [] } satisfies CallsignInfoRes;
+    fetchAnalysisCallsignInfosMock.mockResolvedValueOnce([wolf]);
+    act(() => h.latest.setMessages([[1, buildMessage({ callsigns: ['wolf'] })]]));
+    await act(async () => Promise.resolve());
+    expect(h.summaryCallsignsInfo).toEqual({ alpha, wolf });
+  });
+
+  it('reports unauthorized and ordinary enrichment failures through existing handlers', async () => {
+    const unauthorized = renderHook();
+    harnesses.push(unauthorized);
+    unauthorized.onError.mockReset();
+    unauthorized.onUnauthorized.mockReset();
+    unauthorized.onUnauthorized.mockReturnValue(true);
+    fetchAnalysisCallsignInfosMock.mockRejectedValueOnce(new Error('unauthorized'));
+    act(() => unauthorized.latest.setMessages([[1, buildMessage({ callsigns: ['wolf'] })]]));
+    await act(async () => Promise.resolve());
+    expect(unauthorized.onUnauthorized).toHaveBeenCalled();
+    expect(unauthorized.onError).not.toHaveBeenCalled();
+
+    const ordinary = renderHook();
+    harnesses.push(ordinary);
+    ordinary.onError.mockReset();
+    ordinary.onUnauthorized.mockReset();
+    ordinary.onUnauthorized.mockReturnValue(false);
+    fetchAnalysisCallsignInfosMock.mockRejectedValueOnce(new Error('failed'));
+    act(() => ordinary.latest.setMessages([[2, buildMessage({ callsigns: ['fox'] })]]));
+    await act(async () => Promise.resolve());
+    expect(ordinary.onUnauthorized).toHaveBeenCalled();
+    expect(ordinary.onError).toHaveBeenCalledWith('failed');
   });
 
   afterEach(() => {
