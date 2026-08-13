@@ -732,6 +732,19 @@ describe('rer-duty utils', () => {
     expect(feedIndicatorUnreadCount(feed, undefined, { includeBeyondTailResidual: false })).toBe(1);
   });
 
+  it('lets a matching loaded-tail preview cover buffered pending without double counting', () => {
+    const feed = indicatorFeed({
+      items: [[1, {} as InboxMessage]],
+      readIds: new Set([1]),
+      pendingNewerItems: [
+        [2, {} as InboxMessage],
+        [3, {} as InboxMessage],
+      ],
+    });
+    // keepLoadedTail buffering must leave preview.count as the full beyond-tail term.
+    expect(feedIndicatorUnreadCount(feed, { tailId: 1, count: 5 })).toBe(5);
+  });
+
   it('does not expose raw server unread count when all loaded messages are read', () => {
     const feed = {
       id: 'mf-1',

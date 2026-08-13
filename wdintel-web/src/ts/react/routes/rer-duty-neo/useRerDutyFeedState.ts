@@ -370,15 +370,19 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       const nearBottom = nearBottomByFeedIdRef.current[feedId] === true;
       const current = confirmedTailPreviewByFeedIdRef.current[feedId];
       if (nearBottom && current?.tailId === previousTailId && addedCount > 0) {
+        // Buffered pending stays beyond the loaded tail — keep preview count/tail as-is so
+        // feedIndicatorUnreadCount's matching-preview branch (which already covers pending)
+        // does not dip by the buffered page size.
+        if (options?.keepLoadedTail === true) {
+          return;
+        }
         const remaining = Math.max(0, current.count - addedCount);
-        // Buffered pending stays off the loaded window — preview must keep the loaded tail id.
-        const nextTailId = options?.keepLoadedTail === true ? previousTailId : newTailId;
-        if (nextTailId == null) {
+        if (newTailId == null) {
           invalidateTailPreview(feedId);
           return;
         }
         setConfirmedTailPreview(feedId, {
-          tailId: nextTailId,
+          tailId: newTailId,
           count: remaining,
           generation: current.generation,
         });

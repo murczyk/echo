@@ -495,6 +495,58 @@ describe('useRerDutyFeedState — loading', () => {
     ).toBe(21);
   });
 
+  it('preserves confirmed preview count while buffering a near-bottom newer page', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({ ...feed, readIds: new Set([...feed.readIds, 1]) })),
+      );
+    });
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = false;
+    apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = false;
+    apiRef.current!.cancelFollowTail('mf-0');
+    hoisted.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 21, firstElementTs: null });
+    await startPoll();
+    await act(async () => {
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.confirmedTailPreviewByFeedId['mf-0']).toMatchObject({
+      tailId: 1,
+      count: 21,
+    });
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([
+        [2, minimalInboxMessage({ timestamp: 200 })],
+        [3, minimalInboxMessage({ timestamp: 300 })],
+        [4, minimalInboxMessage({ timestamp: 400 })],
+        [5, minimalInboxMessage({ timestamp: 500 })],
+        [6, minimalInboxMessage({ timestamp: 600 })],
+      ]),
+    );
+    await act(async () => {
+      apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+      apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = false;
+      apiRef.current!.cancelFollowTail('mf-0');
+      await apiRef.current!.loadFeedNewerMessages('mf-0', { showLoading: false });
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.items.map(([id]) => id)).toEqual([1]);
+    expect(feed.pendingNewerItems?.map(([id]) => id)).toEqual([2, 3, 4, 5, 6]);
+    expect(apiRef.current!.confirmedTailPreviewByFeedId['mf-0']).toMatchObject({
+      tailId: 1,
+      count: 21,
+    });
+    expect(
+      feedIndicatorUnreadCount(feed, apiRef.current!.confirmedTailPreviewByFeedId['mf-0'], {
+        includeBeyondTailResidual: false,
+      }),
+    ).toBe(21);
+  });
+
   it('ignores a preview resolved after an accepted empty newer load', async () => {
     const { apiRef, scrollToEnd } = await mountLoadedFeed();
     const preview = deferred<number>();

@@ -377,6 +377,7 @@ const DutyMessageList = memo(
                   onMessageToggleTag={onMessageToggleTag}
                   onMessageEdit={onMessageEdit}
                   onOpenPointsOnMap={onOpenPointsOnMap}
+                  onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
                 />
               ) : (
                 <div
