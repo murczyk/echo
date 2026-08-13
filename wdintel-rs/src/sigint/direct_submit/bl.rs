@@ -111,7 +111,7 @@ pub async fn copy_signal_message(
         .inbox_item
         .lat
         .zip(copy_inputs.inbox_item.lng)
-        .map(|(lat, lon)| crate::rer_importer::types::SubmitCoordinates {
+        .map(|(lat, lon)| crate::rer_importer::types::GeoCoordinates {
             lat,
             lon,
         })
