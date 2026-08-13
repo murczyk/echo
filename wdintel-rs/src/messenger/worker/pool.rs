@@ -445,6 +445,7 @@ async fn process_item_once(
     crate::messenger::reconcile::delete_media_objects_best_effort(
         &context.config,
         &context.s3,
+        &context.dbx,
         superseded_media_ids,
     )
     .await;

@@ -1135,6 +1135,7 @@ pub async fn reconcile_active_message(
 pub async fn delete_media_objects_best_effort(
     app_config: &crate::config::Config,
     s3: &Option<opendal::Operator>,
+    dbx: &sea_orm::DatabaseConnection,
     media_ids: Vec<Uuid>,
 ) {
     if media_ids.is_empty() {
@@ -1167,9 +1168,30 @@ pub async fn delete_media_objects_best_effort(
     };
     let s3_config = crate::storage::S3Config::from(s3_config);
     for media_id in media_ids {
+        let encrypted_key = crate::storage::nested_object_key(&media_id);
+        let plaintext_key =
+            crate::storage::plaintext_media_object_key(&media_id);
+        let referenced_storage_keys = signal_message_media::Entity::find()
+            .filter(
+                signal_message_media::Column::StorageKey
+                    .is_in([encrypted_key.clone(), plaintext_key.clone()]),
+            )
+            .count(dbx)
+            .await;
+        match referenced_storage_keys {
+            Ok(count) if count > 0 => continue,
+            Ok(_) => {}
+            Err(err) => {
+                error!(
+                    "failed to check shared media storage reference for {}: {:?}",
+                    media_id, err
+                );
+                continue;
+            }
+        }
         let object_keys = [
-            crate::storage::nested_object_key(&media_id),
-            crate::storage::plaintext_media_object_key(&media_id),
+            encrypted_key,
+            plaintext_key,
             crate::storage::plaintext_media_migration_marker_object_key(
                 &media_id,
             ),
@@ -2645,6 +2667,7 @@ mod tests {
             file_name: Set(Some("original.txt".to_string())),
             size_bytes: Set(8),
             is_encrypted: Set(true),
+            storage_key: NotSet,
             created_at: NotSet,
         }
         .insert(&txn)
@@ -3866,6 +3889,7 @@ mod tests {
             file_name: Set(Some("old.txt".to_string())),
             size_bytes: Set(3),
             is_encrypted: Set(true),
+            storage_key: NotSet,
             created_at: NotSet,
         }
         .insert(&txn)
@@ -3979,6 +4003,7 @@ mod tests {
             file_name: Set(Some("a.jpg".to_string())),
             size_bytes: Set(3),
             is_encrypted: Set(true),
+            storage_key: NotSet,
             created_at: NotSet,
         }
         .insert(&txn)
@@ -4728,6 +4753,7 @@ mod tests {
             file_name: Set(Some("old.txt".to_string())),
             size_bytes: Set(3),
             is_encrypted: Set(true),
+            storage_key: NotSet,
             created_at: NotSet,
         }
         .insert(&txn)
@@ -4941,6 +4967,7 @@ mod tests {
             file_name: Set(Some("old.txt".to_string())),
             size_bytes: Set(3),
             is_encrypted: Set(true),
+            storage_key: NotSet,
             created_at: NotSet,
         }
         .insert(&txn)
@@ -5071,6 +5098,7 @@ mod tests {
             file_name: Set(Some("old.txt".to_string())),
             size_bytes: Set(3),
             is_encrypted: Set(true),
+            storage_key: NotSet,
             created_at: NotSet,
         }
         .insert(&txn)

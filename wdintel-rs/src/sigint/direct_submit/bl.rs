@@ -1,7 +1,7 @@
 use super::query;
 use super::types::{
-    DirectSubmitParsePayload, DirectSubmitParseRsp, DirectSubmitPayload,
-    DirectSubmitRsp,
+    DirectSubmitCopyRsp, DirectSubmitParsePayload, DirectSubmitParseRsp,
+    DirectSubmitPayload, DirectSubmitRsp,
 };
 use crate::config::{
     FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT, SIGINT_MESSAGE_MAX_ATTACHMENTS,
@@ -47,6 +47,114 @@ pub async fn parse_signal_message(
     };
 
     parse_signal_message_body(env, &env.dbx, &body, aor_id).await
+}
+
+pub async fn copy_signal_message(
+    login: &uuid::Uuid,
+    env: &Env,
+    signal_message_id: i64,
+) -> Result<DirectSubmitCopyRsp, AppError> {
+    let allowed_groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
+            .await
+            .c(h!())?;
+    let source = query::find_copyable_signal_message(
+        &env.dbx,
+        signal_message_id,
+        &allowed_groups,
+    )
+    .await?;
+    let logins = crate::users::get_organism_login_ids_by_id(&env.dbx, login)
+        .await
+        .c(h!())?;
+    let request = crate::rer_importer::types::InboxMessagesReq {
+        highlight_points: Some(true),
+        ..Default::default()
+    };
+    let message = crate::rer_importer::inbox::messages_by_id_bl(
+        login,
+        &logins,
+        env,
+        &[signal_message_id],
+        &request,
+    )
+    .await?
+    .into_iter()
+    .next()
+    .map(|(_, message)| message)
+    .ok_or(AppError::NotFound)?;
+    let group_master_key =
+        message.group_master_key.clone().ok_or(AppError::NotFound)?;
+    let tag_ids = message.tags.clone().unwrap_or_default();
+    let copy_inputs = query::find_copy_signal_message_inputs(
+        &env.dbx,
+        signal_message_id,
+        &tag_ids,
+    )
+    .await?;
+    let coordinates = copy_inputs
+        .inbox_item
+        .lat
+        .zip(copy_inputs.inbox_item.lng)
+        .map(|(lat, lon)| crate::rer_importer::types::SubmitCoordinates {
+            lat,
+            lon,
+        })
+        .into_iter()
+        .collect();
+    let payload = DirectSubmitPayload {
+        full_body: source.body.clone().or_else(|| Some(message.text.clone())),
+        text: message
+            .no_headers_body
+            .as_ref()
+            .map(|body| body.body.clone()),
+        comment: message.extended_form.clone(),
+        freq: message.freq.clone(),
+        coords: coordinates,
+        from_callsign: None,
+        to: message.callsigns.clone(),
+        tags: Some(copy_inputs.tag_labels),
+        timestamp: source.timestamp.map(|timestamp| {
+            timestamp
+                .and_utc()
+                .to_rfc3339_opts(SecondsFormat::Millis, true)
+        }),
+        post: message.post.clone(),
+        unit: message.unit.clone(),
+        locations: message
+            .location
+            .as_deref()
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|location| !location.is_empty())
+            .map(str::to_string)
+            .collect(),
+        network: copy_inputs.inbox_item.network.clone().map(|name| {
+            crate::rer_importer::types::SubmitNetwork {
+                signal_name: None,
+                cc: None,
+                name: Some(name),
+            }
+        }),
+        dmr: vec![],
+        signal_group_master_key: group_master_key,
+        device_name_id: Some(copy_inputs.inbox_item.device_name_id),
+        upload_urls: None,
+        deleted_media_ids: None,
+        retained_media_ids: Some(
+            copy_inputs
+                .media
+                .into_iter()
+                .map(|media| media.id.to_string())
+                .collect(),
+        ),
+        parent_signal_message_id: Some(signal_message_id),
+    };
+    Ok(DirectSubmitCopyRsp {
+        source_signal_message_id: signal_message_id,
+        payload,
+    })
 }
 
 async fn parse_signal_message_body<C>(
@@ -171,6 +279,13 @@ async fn save_signal_message(
     payload: DirectSubmitPayload,
 ) -> Result<DirectSubmitRsp, AppError> {
     validate_direct_submit_payload(env, &payload)?;
+    if signal_message_id.is_some() && payload.parent_signal_message_id.is_some()
+    {
+        return Err(AppError::BL {
+            msg: "Посилання на батьківське повідомлення доступне лише для нової копії."
+                .to_string(),
+        });
+    }
     let upload_urls = payload.upload_urls.clone().unwrap_or_default();
     let uploads =
         resolve_direct_submit_uploads(env, login, &upload_urls).await?;
@@ -185,6 +300,25 @@ async fn save_signal_message(
         &payload.signal_group_master_key,
     )
     .await?;
+    let copy_source = match payload.parent_signal_message_id {
+        Some(parent_signal_message_id) => {
+            let allowed_groups =
+                crate::messenger::group::get_identity_sigint_groups(
+                    &txn, login,
+                )
+                .await
+                .c(h!())?;
+            Some(
+                query::find_copyable_signal_message(
+                    &txn,
+                    parent_signal_message_id,
+                    &allowed_groups,
+                )
+                .await?,
+            )
+        }
+        None => None,
+    };
     let signal_message = match signal_message_id {
         Some(signal_message_id) => Some(
             query::find_editable_signal_message(
@@ -211,7 +345,15 @@ async fn save_signal_message(
         Some(signal_message_id) => {
             load_edit_media(&txn, signal_message_id, &deleted_media_ids).await?
         }
-        None => (0, vec![]),
+        None => {
+            let media = load_copy_media(
+                &txn,
+                copy_source.as_ref().map(|source| source.id),
+                &payload,
+            )
+            .await?;
+            (media.len(), vec![])
+        }
     };
     validate_direct_submit_content(&payload, retained_media_count)?;
     validate_direct_submit_attachment_count(
@@ -229,13 +371,8 @@ async fn save_signal_message(
     };
     let existing_device_name_id = match signal_message_id {
         Some(signal_message_id) => {
-            crate::entities::sigint_inbox_item::Entity::find_by_id(
-                signal_message_id,
-            )
-            .one(&txn)
-            .await
-            .c(h!())?
-            .and_then(|item| item.device_name_id)
+            query::find_inbox_item_device_name_id(&txn, signal_message_id)
+                .await?
         }
         None => None,
     };
@@ -283,10 +420,14 @@ async fn save_signal_message(
         env,
         txn,
         submitted,
+        login,
+        &logins,
         device_name_id,
         &uploads,
         &media_to_delete,
         delete_uploaded_attachments,
+        copy_source.as_ref().map(|source| source.id),
+        &payload,
     )
     .await?;
 
@@ -404,6 +545,58 @@ async fn load_edit_media(
     Ok((retained_media.len(), media_to_delete))
 }
 
+async fn load_copy_media(
+    txn: &DatabaseTransaction,
+    source_signal_message_id: Option<i64>,
+    payload: &DirectSubmitPayload,
+) -> Result<Vec<crate::entities::signal_message_media::Model>, AppError> {
+    let Some(source_signal_message_id) = source_signal_message_id else {
+        if payload.retained_media_ids.is_some() {
+            return Err(AppError::BL {
+                msg: "Медіафайли можна зберегти лише для копії повідомлення."
+                    .to_string(),
+            });
+        }
+        return Ok(vec![]);
+    };
+    let source_media =
+        query::find_signal_message_media(txn, source_signal_message_id).await?;
+    let deleted_media_ids = parse_media_ids(
+        payload.deleted_media_ids.as_deref().unwrap_or_default(),
+    )?;
+    let retained_media_ids = match payload.retained_media_ids.as_deref() {
+        Some(ids) => parse_media_ids(ids)?,
+        None => source_media.iter().map(|media| media.id).collect(),
+    };
+    let retained_media_ids = retained_media_ids
+        .into_iter()
+        .filter(|id| !deleted_media_ids.contains(id))
+        .collect::<HashSet<_>>();
+    let mut source_media_by_id = source_media
+        .into_iter()
+        .map(|media| (media.id, media))
+        .collect::<BTreeMap<_, _>>();
+    retained_media_ids
+        .into_iter()
+        .map(|media_id| {
+            source_media_by_id
+                .remove(&media_id)
+                .ok_or(AppError::NotFound)
+        })
+        .collect()
+}
+
+fn parse_media_ids(media_ids: &[String]) -> Result<Vec<Uuid>, AppError> {
+    media_ids
+        .iter()
+        .map(|media_id| {
+            Uuid::parse_str(media_id)
+                .map_err(anyhow::Error::from)
+                .map_err(AppError::from)
+        })
+        .collect()
+}
+
 async fn resolve_direct_submit_uploads(
     env: &Env,
     login: &uuid::Uuid,
@@ -484,10 +677,14 @@ async fn finish_direct_submit(
     env: &Env,
     txn: DatabaseTransaction,
     submitted: SubmittedInboxItem,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
     device_name_id: Option<i64>,
     uploads: &[MediaUploadInput],
     media_to_delete: &[crate::entities::signal_message_media::Model],
     delete_uploaded_attachments: bool,
+    copy_source_signal_message_id: Option<i64>,
+    payload: &DirectSubmitPayload,
 ) -> Result<DirectSubmitRsp, AppError> {
     let signal_message_id = submitted.signal_message_id;
     let inbox_item_id = submitted.inbox_id;
@@ -526,6 +723,43 @@ async fn finish_direct_submit(
             .await
             .c(h!())?;
     }
+    let media_to_delete_after_commit =
+        query::find_unreferenced_media(&txn, media_to_delete).await?;
+
+    if let Some(copy_source_signal_message_id) = copy_source_signal_message_id {
+        let source_media =
+            load_copy_media(&txn, Some(copy_source_signal_message_id), payload)
+                .await?;
+        query::copy_signal_message_media(
+            &txn,
+            signal_message_id,
+            &source_media,
+        )
+        .await?;
+        query::copy_signal_message_comments(
+            &txn,
+            copy_source_signal_message_id,
+            signal_message_id,
+            login,
+            logins,
+            payload.comment.as_deref(),
+        )
+        .await?;
+        query::copy_signal_message_relations(
+            &txn,
+            copy_source_signal_message_id,
+            inbox_item_id,
+            login,
+            payload,
+        )
+        .await?;
+        query::set_signal_message_parent(
+            &txn,
+            signal_message_id,
+            copy_source_signal_message_id,
+        )
+        .await?;
+    }
 
     crate::transcriber::media_queue::reconcile_message(
         &txn,
@@ -555,7 +789,7 @@ async fn finish_direct_submit(
     }
     if !media_to_delete.is_empty() {
         crate::messenger::media::delete_stored_media_files(
-            media_to_delete,
+            &media_to_delete_after_commit,
             &env.config,
             &env.s3,
         )
@@ -619,7 +853,7 @@ mod tests {
     };
     use crate::functest::tests::cleanup;
     use sea_orm::{
-        ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel,
+        ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, NotSet,
         PaginatorTrait, QueryFilter, Set,
     };
     use serial_test::serial;
@@ -647,6 +881,8 @@ mod tests {
             device_name_id: None,
             upload_urls: None,
             deleted_media_ids: None,
+            retained_media_ids: None,
+            parent_signal_message_id: None,
         }
     }
 
@@ -1087,6 +1323,7 @@ mod tests {
             file_name: Set(Some("recording.ogg".into())),
             size_bytes: Set(1),
             is_encrypted: Set(false),
+            storage_key: NotSet,
             created_at: Set(chrono::Utc::now().naive_utc()),
         }
         .insert(&env.dbx)
