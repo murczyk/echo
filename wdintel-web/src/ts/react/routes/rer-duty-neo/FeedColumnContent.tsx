@@ -90,6 +90,7 @@ type DutyMessageCardItemProps = {
   feedId: string;
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
+  collapseMediaPreviews?: boolean;
   botTagAction: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
@@ -126,6 +127,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   feedId,
   feedCount,
   tagsLayout,
+  collapseMediaPreviews = false,
   botTagAction,
   onCancelBotTagAction,
   onMarkBotTagWrong,
@@ -175,6 +177,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       analysisDestination="neo"
       feedCount={feedCount}
       tagsLayout={tagsLayout}
+      collapseMediaPreviews={collapseMediaPreviews}
       botTagAction={botTagAction?.messageId === id ? botTagAction : null}
       onCancelBotTagAction={onCancelBotTagAction}
       onMarkBotTagWrong={onMarkBotTagWrong}
@@ -257,6 +260,7 @@ type DutyMessageListProps = {
   feedId: string;
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
+  collapseMediaPreviews?: boolean;
   botTagAction: MessageCardBotTagAction | null;
   onCancelBotTagAction: () => void;
   onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;
@@ -298,6 +302,7 @@ const DutyMessageList = memo(
     feedId,
     feedCount,
     tagsLayout,
+    collapseMediaPreviews = false,
     botTagAction,
     onCancelBotTagAction,
     onMarkBotTagWrong,
@@ -350,6 +355,7 @@ const DutyMessageList = memo(
                   feedId={feedId}
                   feedCount={feedCount}
                   tagsLayout={tagsLayout}
+                  collapseMediaPreviews={collapseMediaPreviews}
                   botTagAction={botTagAction}
                   onCancelBotTagAction={onCancelBotTagAction}
                   onMarkBotTagWrong={onMarkBotTagWrong}
@@ -397,6 +403,7 @@ const DutyMessageList = memo(
     prev.feedId === next.feedId &&
     prev.feedCount === next.feedCount &&
     prev.tagsLayout === next.tagsLayout &&
+    prev.collapseMediaPreviews === next.collapseMediaPreviews &&
     prev.botTagAction === next.botTagAction &&
     prev.onCancelBotTagAction === next.onCancelBotTagAction &&
     prev.onMarkBotTagWrong === next.onMarkBotTagWrong &&
@@ -590,6 +597,7 @@ export const FeedColumnContent = memo(
       profiles,
       featureStrictNetworks,
       tagsLayout,
+      collapseMediaPreviews = false,
       tagsMap,
       tagsOrder,
       botTagAction,
@@ -703,6 +711,7 @@ export const FeedColumnContent = memo(
           feedId={feed.id}
           feedCount={feedCount}
           tagsLayout={tagsLayout}
+          collapseMediaPreviews={collapseMediaPreviews}
           botTagAction={botTagAction}
           onCancelBotTagAction={stableOnCancelBotTagAction}
           onMarkBotTagWrong={stableOnMarkBotTagWrong}
@@ -849,6 +858,7 @@ export const FeedColumnContent = memo(
       prevCard.profiles !== nextCard.profiles ||
       prevCard.featureStrictNetworks !== nextCard.featureStrictNetworks ||
       prevCard.tagsLayout !== nextCard.tagsLayout ||
+      prevCard.collapseMediaPreviews !== nextCard.collapseMediaPreviews ||
       prevCard.tagsMap !== nextCard.tagsMap ||
       prevCard.tagsOrder !== nextCard.tagsOrder ||
       prevCard.botTagAction !== nextCard.botTagAction ||

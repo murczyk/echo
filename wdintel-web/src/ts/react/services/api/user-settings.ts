@@ -15,6 +15,7 @@ export type UserDutySettings = {
   showAnalysisCallsignAddForm: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  dutyCollapseMediaPreviews: boolean;
 };
 
 type DutyTagsLayoutWire = DutyTagsLayout | 'full' | 'compact' | 'hidden';
@@ -27,6 +28,7 @@ type UserDutySettingsWire = Omit<
   | 'showAnalysisCallsignAddForm'
   | 'showClassicDuty'
   | 'showClassicAnalysis'
+  | 'dutyCollapseMediaPreviews'
 > & {
   tagsLayout: DutyTagsLayoutWire;
   analysisMapInSidebar?: boolean | null;
@@ -35,6 +37,7 @@ type UserDutySettingsWire = Omit<
   showAnalysisCallsignAddForm?: boolean | null;
   showClassicDuty?: boolean | null;
   showClassicAnalysis?: boolean | null;
+  dutyCollapseMediaPreviews?: boolean | null;
 };
 
 function normalizeTagsLayout(tagsLayout: DutyTagsLayoutWire | null | undefined): TagsLayoutVariant {
@@ -76,6 +79,7 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     showAnalysisCallsignAddForm: raw.showAnalysisCallsignAddForm ?? false,
     showClassicDuty: raw.showClassicDuty ?? false,
     showClassicAnalysis: raw.showClassicAnalysis ?? false,
+    dutyCollapseMediaPreviews: raw.dutyCollapseMediaPreviews ?? true,
   };
 }
 
@@ -99,6 +103,7 @@ export async function saveUserSettings(
       showAnalysisCallsignAddForm: body.showAnalysisCallsignAddForm,
       showClassicDuty: body.showClassicDuty,
       showClassicAnalysis: body.showClassicAnalysis,
+      dutyCollapseMediaPreviews: body.dutyCollapseMediaPreviews,
     },
     { signal },
   );

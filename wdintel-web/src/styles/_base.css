@@ -262,6 +262,49 @@ a {
   cursor: default;
 }
 
+.message-card-media-reveal {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--color-divider);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-action) 8%, transparent);
+  color: var(--mui-palette-text-primary, inherit);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.43;
+  cursor: pointer;
+  text-align: left;
+}
+
+.message-card-media-reveal:hover {
+  background: color-mix(in srgb, var(--color-action) 14%, transparent);
+}
+
+.message-card-media-reveal:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+.message-card-media-reveal__icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-action);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.message-card-media-reveal__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .audio-transcription-beside-player .audio-transcription-layout {
   display: flex;
   align-items: flex-start;

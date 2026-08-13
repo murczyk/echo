@@ -60,6 +60,7 @@ export function RerDutyNeoPage({
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [audioTranscriptionCollapsed, setAudioTranscriptionCollapsed] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
+  const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(true);
   useEffect(() => {
     let cancelled = false;
     const loadLayout = async () => {
@@ -68,10 +69,12 @@ export function RerDutyNeoPage({
         if (cancelled) return;
         setTagsLayout(prefs.tagsLayout);
         setAudioTranscriptionCollapsed(prefs.dutyAudioTranscriptionCollapsed ?? false);
+        setCollapseMediaPreviews(prefs.dutyCollapseMediaPreviews ?? true);
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
         setAudioTranscriptionCollapsed(false);
+        setCollapseMediaPreviews(true);
       }
     };
     loadLayout();
@@ -85,6 +88,7 @@ export function RerDutyNeoPage({
         event as CustomEvent<{
           tagsLayout?: TagsLayoutVariant;
           dutyAudioTranscriptionCollapsed?: boolean;
+          dutyCollapseMediaPreviews?: boolean;
         }>
       ).detail;
       if (detail?.tagsLayout) {
@@ -92,6 +96,9 @@ export function RerDutyNeoPage({
       }
       if (typeof detail?.dutyAudioTranscriptionCollapsed === 'boolean') {
         setAudioTranscriptionCollapsed(detail.dutyAudioTranscriptionCollapsed);
+      }
+      if (typeof detail?.dutyCollapseMediaPreviews === 'boolean') {
+        setCollapseMediaPreviews(detail.dutyCollapseMediaPreviews);
       }
     };
 
@@ -385,6 +392,7 @@ export function RerDutyNeoPage({
       profiles,
       featureStrictNetworks,
       tagsLayout,
+      collapseMediaPreviews,
       tagsMap,
       tagsOrder,
       botTagAction,

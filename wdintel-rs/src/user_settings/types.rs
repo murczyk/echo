@@ -48,6 +48,12 @@ pub struct UserDutySettingsDto {
     pub show_classic_duty: bool,
     #[serde(default)]
     pub show_classic_analysis: bool,
+    #[serde(default = "default_duty_collapse_media_previews")]
+    pub duty_collapse_media_previews: bool,
+}
+
+fn default_duty_collapse_media_previews() -> bool {
+    true
 }
 
 impl Default for UserDutySettingsDto {
@@ -61,6 +67,7 @@ impl Default for UserDutySettingsDto {
             show_analysis_callsign_add_form: false,
             show_classic_duty: false,
             show_classic_analysis: false,
+            duty_collapse_media_previews: true,
         }
     }
 }

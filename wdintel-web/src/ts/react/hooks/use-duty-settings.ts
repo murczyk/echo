@@ -25,6 +25,7 @@ export type DutySettingsHook = DutySettingsValue & {
   setShowAnalysisCallsignAddForm: (value: boolean) => void;
   setShowClassicDuty: (value: boolean) => void;
   setShowClassicAnalysis: (value: boolean) => void;
+  setDutyCollapseMediaPreviews: (value: boolean) => void;
   scheduleSave: (nextSettings: DutySettingsSaveRequest) => void;
 };
 
@@ -40,6 +41,7 @@ function normalizeDutySettings(
     showAnalysisCallsignAddForm: settings?.showAnalysisCallsignAddForm ?? false,
     showClassicDuty: settings?.showClassicDuty ?? false,
     showClassicAnalysis: settings?.showClassicAnalysis ?? false,
+    dutyCollapseMediaPreviews: settings?.dutyCollapseMediaPreviews ?? true,
   };
 }
 
@@ -157,6 +159,8 @@ export function useDutySettings(): DutySettingsHook {
       setSettings((current) => ({ ...current, showClassicDuty: value })),
     setShowClassicAnalysis: (value) =>
       setSettings((current) => ({ ...current, showClassicAnalysis: value })),
+    setDutyCollapseMediaPreviews: (value) =>
+      setSettings((current) => ({ ...current, dutyCollapseMediaPreviews: value })),
     scheduleSave,
   };
 }

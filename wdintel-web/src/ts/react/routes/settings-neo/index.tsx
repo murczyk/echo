@@ -99,6 +99,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       showAnalysisCallsignAddForm: dutySettings.showAnalysisCallsignAddForm,
       showClassicDuty: dutySettings.showClassicDuty,
       showClassicAnalysis: dutySettings.showClassicAnalysis,
+      dutyCollapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
       ...overrides,
     });
   };
@@ -282,6 +283,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               onAudioTranscriptionCollapsedChange={(value) => {
                 dutySettings.setDutyAudioTranscriptionCollapsed(value);
                 scheduleDutySettingsSave({ dutyAudioTranscriptionCollapsed: value });
+              }}
+              collapseMediaPreviews={dutySettings.dutyCollapseMediaPreviews}
+              onCollapseMediaPreviewsChange={(value) => {
+                dutySettings.setDutyCollapseMediaPreviews(value);
+                scheduleDutySettingsSave({ dutyCollapseMediaPreviews: value });
               }}
             />
           ) : null}

@@ -130,6 +130,11 @@ export type MessageCardProps = {
   rightHeaderInsetPx?: number;
   analysisCallsignActions?: AnalysisCallsignActions;
   showCallsignAddForm?: boolean;
+  /**
+   * When true, Duty-style cards hide heavy media behind reveal banners until clicked.
+   * Defaults to true for `displayMode="duty"`.
+   */
+  collapseMediaPreviews?: boolean;
 };
 
 // Performance boundary: this component is repeated throughout Duty feeds.
@@ -182,6 +187,7 @@ function MessageCardComponent({
   rightHeaderInsetPx = 0,
   analysisCallsignActions,
   showCallsignAddForm = false,
+  collapseMediaPreviews,
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
   const compactLayout = feedCount >= 3;
@@ -343,6 +349,7 @@ function MessageCardComponent({
           searchText={searchText}
           onOpenPointsOnMap={onOpenPointsOnMap}
           onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
+          collapseMediaPreviews={collapseMediaPreviews ?? false}
         />
       </MessageCardRoot>
     </li>
