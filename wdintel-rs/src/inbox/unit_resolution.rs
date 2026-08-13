@@ -67,7 +67,6 @@ struct UnitTextResolution {
     source_text: String,
     sigint_unit_id: Option<i64>,
     is_fallback: bool,
-    archive_failure: bool,
 }
 
 fn contains_word(value: &str, word: &str) -> bool {
@@ -85,7 +84,7 @@ fn contains_word(value: &str, word: &str) -> bool {
     })
 }
 
-fn should_auto_archive_failed_unit_v2(value: &str) -> bool {
+fn should_auto_archive_failed_unit(value: &str) -> bool {
     let value = value.to_lowercase();
     FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS
         .iter()
@@ -450,15 +449,11 @@ where
                 }
             }
         };
-        let archive_failure =
-            matches!(candidate.source, UnitTextSource::UnitV2)
-                && should_auto_archive_failed_unit_v2(&candidate.source_text);
         resolved.push(UnitTextResolution {
             text: candidate.text,
             source_text: candidate.source_text,
             sigint_unit_id,
             is_fallback: candidate.is_fallback,
-            archive_failure,
         });
     }
     let resolved_fallbacks = resolved
@@ -500,7 +495,6 @@ async fn upsert_failure<C>(
     db: &C,
     inbox_item_id: i64,
     unit_txt: &str,
-    archive: bool,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
@@ -532,7 +526,7 @@ where
         .or(existing.as_ref())
         .map(|failure| (failure.is_bad_data, failure.note.clone()))
         .unwrap_or_default();
-    let is_bad_data = is_bad_data || archive;
+    let is_bad_data = is_bad_data || should_auto_archive_failed_unit(unit_txt);
     let Some(existing) = existing else {
         failed_inbox_unit::ActiveModel {
             id: NotSet,
@@ -708,14 +702,9 @@ where
             .context(h!())?;
         for resolution in resolved_unit_texts {
             if resolution.sigint_unit_id.is_none() && !resolution.is_fallback {
-                upsert_failure(
-                    db,
-                    inbox_item_id,
-                    &resolution.text,
-                    resolution.archive_failure,
-                )
-                .await
-                .context(h!())?;
+                upsert_failure(db, inbox_item_id, &resolution.text)
+                    .await
+                    .context(h!())?;
             }
         }
     }
@@ -1106,13 +1095,13 @@ mod tests {
     }
 
     #[test]
-    fn detects_unit_v2_auto_archive_words() {
+    fn detects_failed_unit_auto_archive_words() {
         for label in ["НВ", "підрозділ н/В резерв", "123 Н.В."]
         {
-            assert!(should_auto_archive_failed_unit_v2(label), "{label}");
+            assert!(should_auto_archive_failed_unit(label), "{label}");
         }
         for label in ["НВО", "анв", "н/ва", "н.в.о"] {
-            assert!(!should_auto_archive_failed_unit_v2(label), "{label}");
+            assert!(!should_auto_archive_failed_unit(label), "{label}");
         }
     }
 
@@ -1741,6 +1730,54 @@ mod tests {
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].unit_txt, "невідомий   сирий підрозділ");
         assert!(!failures[0].deleted);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn auto_archive_uses_stored_failure_text_for_both_sources() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let raw_marker =
+            insert_inbox_item(&env.dbx, None, Some("НВ"), None).await;
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            raw_marker.id,
+            None,
+            raw_marker.unit.as_deref(),
+        )
+        .await
+        .unwrap();
+
+        let raw_failure = failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(raw_marker.id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(raw_failure.unit_txt, "НВ");
+        assert!(raw_failure.is_bad_data);
+
+        let parsed_label = unique_unit_label();
+        let unit_v2 = format!("н/в {parsed_label}");
+        let parsed_unit =
+            insert_inbox_item(&env.dbx, Some(&unit_v2), None, None).await;
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            parsed_unit.id,
+            parsed_unit.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let parsed_failure = failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(parsed_unit.id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(parsed_failure.unit_txt, parsed_label);
+        assert!(!parsed_failure.is_bad_data);
     }
 
     #[tokio::test]
