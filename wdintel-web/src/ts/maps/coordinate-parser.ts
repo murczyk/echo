@@ -4,7 +4,7 @@ import {
   renderCoordinate,
   type ImporterCoordinate,
 } from '../react/routes/importer-beta/coordinates';
-import { td_sk42_to_wgs84 } from '../utils';
+import { tdSk42ToWgs84 } from '../utils';
 import { parseCoordinateInput } from './coordinate-search';
 
 export type CoordinateInputFormat = 'wgs84' | 'dms' | 'mgrs' | 'utm' | 'sk42' | 'usk2000';
@@ -90,7 +90,7 @@ export function parseCoordinateBlock(value: string): ParsedCoordinate[] {
     const x = parseGridValue(match.groups?.x ?? '');
     const y = parseGridValue(match.groups?.y ?? '');
     if (x == null || y == null) return text;
-    const converted = td_sk42_to_wgs84({ x, y });
+    const converted = tdSk42ToWgs84({ x, y });
     if (converted) {
       add(
         {

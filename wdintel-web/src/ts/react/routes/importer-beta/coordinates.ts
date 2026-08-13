@@ -1,6 +1,6 @@
 import { inverse } from 'mgrs';
 
-import { td_usk2000_to_wgs84 } from '../../../utils';
+import { tdUsk2000ToWgs84 } from '../../../utils';
 
 export type Dms = {
   deg: number;
@@ -284,7 +284,7 @@ export function coordinateToLatLng(coord: ImporterCoordinate, converted?: LatLng
 export function convertCoordinateToWgs84(coord: ImporterCoordinate): LatLng | null {
   try {
     if (coord.kind === 'usk2000') {
-      const result = td_usk2000_to_wgs84({ x: coord.x, y: coord.y });
+      const result = tdUsk2000ToWgs84({ x: coord.x, y: coord.y });
       if (!result) return null;
       return coordinateToLatLng({ kind: 'wgs84', lat: result.x, lng: result.y });
     }

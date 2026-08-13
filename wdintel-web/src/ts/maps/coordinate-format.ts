@@ -1,5 +1,5 @@
 import { forward } from 'mgrs';
-import { td_wgs84_to_sk42, td_wgs84_to_usk2000, wgs84ToUtm } from '../utils';
+import { tdWgs84ToSk42, tdWgs84ToUsk2000, wgs84ToUtm } from '../utils';
 
 export type CoordFormat = 'mgrs' | 'wgs' | 'dms' | 'sk42' | 'usk2000' | 'utm';
 
@@ -31,12 +31,12 @@ export function getCoordinateText(
   }
 
   if (format === 'sk42') {
-    const converted = td_wgs84_to_sk42({ x: coords.lng, y: coords.lat });
+    const converted = tdWgs84ToSk42({ x: coords.lng, y: coords.lat });
     return converted ? formatGrid('СК-42', converted.y, converted.x) : formatWgs84(coords);
   }
 
   if (format === 'usk2000') {
-    const converted = td_wgs84_to_usk2000({ x: coords.lng, y: coords.lat });
+    const converted = tdWgs84ToUsk2000({ x: coords.lng, y: coords.lat });
     return converted ? formatGrid('УСК-2000', converted.y, converted.x) : formatWgs84(coords);
   }
 

@@ -80,7 +80,7 @@ function usk2000EpsgForLongitude(longitude: number): string | null {
   return zone >= 4 && zone <= 7 ? `EPSG:${5558 + zone}` : null;
 }
 
-export function td_sk42_to_wgs84(p: GridPoint): GridPoint | null {
+export function tdSk42ToWgs84(p: GridPoint): GridPoint | null {
   const epsg = sk42EpsgForEasting(p.y);
   if (!epsg) return null;
   const res = proj4(epsg).inverse({ x: p.y, y: p.x });
@@ -88,7 +88,7 @@ export function td_sk42_to_wgs84(p: GridPoint): GridPoint | null {
   return { x: res.y, y: res.x };
 }
 
-export function td_wgs84_to_sk42(p: GridPoint): GridPoint | null {
+export function tdWgs84ToSk42(p: GridPoint): GridPoint | null {
   const epsg = sk42EpsgForLongitude(p.x);
   if (!epsg) return null;
   const res = proj4(epsg).forward(p);
@@ -96,7 +96,7 @@ export function td_wgs84_to_sk42(p: GridPoint): GridPoint | null {
   return res;
 }
 
-export function td_usk2000_to_wgs84(p: GridPoint): GridPoint | null {
+export function tdUsk2000ToWgs84(p: GridPoint): GridPoint | null {
   const epsg = usk2000EpsgForEasting(p.y);
   if (!epsg) return null;
   const res = proj4(epsg).inverse({ x: p.y, y: p.x });
@@ -104,7 +104,7 @@ export function td_usk2000_to_wgs84(p: GridPoint): GridPoint | null {
   return { x: res.y, y: res.x };
 }
 
-export function td_wgs84_to_usk2000(p: GridPoint): GridPoint | null {
+export function tdWgs84ToUsk2000(p: GridPoint): GridPoint | null {
   const epsg = usk2000EpsgForLongitude(p.x);
   if (!epsg) return null;
   const res = proj4(epsg).forward(p);

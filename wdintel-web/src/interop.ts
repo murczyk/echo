@@ -11,7 +11,7 @@ import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 import 'bootstrap/dist/css/bootstrap.css';
 import { inverse, forward } from 'mgrs';
 import { copyTextToClipboard } from './ts/copy-to-clipboard';
-import { td_usk2000_to_wgs84, td_wgs84_to_usk2000 } from './ts/utils';
+import { tdUsk2000ToWgs84, tdWgs84ToUsk2000 } from './ts/utils';
 import './ts/web-components/bar-chart';
 import './ts/web-components/freq-activity-chart';
 import './ts/web-components/freq-detail-chart';
@@ -443,7 +443,7 @@ export const onReady = ({ app, env }) => {
 
   if (app.ports && app.ports.home_usk2000ToWgs84 && app.ports.home_usk2000ToWgs84Res) {
     app.ports.home_usk2000ToWgs84.subscribe(({ coords }) => {
-      let res = td_usk2000_to_wgs84(coords);
+      let res = tdUsk2000ToWgs84(coords);
       if (!res) return;
       let res_latlng = { lat: res.x, lng: res.y };
       let arg = { coords: res_latlng };
@@ -475,7 +475,7 @@ export const onReady = ({ app, env }) => {
 
   if (app.ports && app.ports.home_wgs84ToUsk2000 && app.ports.home_wgs84ToUsk2000Res) {
     app.ports.home_wgs84ToUsk2000.subscribe(({ coords }) => {
-      let res = td_wgs84_to_usk2000({ y: coords.lat, x: coords.lng });
+      let res = tdWgs84ToUsk2000({ y: coords.lat, x: coords.lng });
       if (!res) return;
       let res_xy = { x: Math.round(res.y), y: Math.round(res.x) };
       let arg = { coords: res_xy };
@@ -493,7 +493,7 @@ export const onReady = ({ app, env }) => {
 
   if (app.ports && app.ports.importer_usk2000ToWgs84 && app.ports.importer_usk2000ToWgs84Res) {
     app.ports.importer_usk2000ToWgs84.subscribe(({ rowId, coordId, coords }) => {
-      let res = td_usk2000_to_wgs84(coords);
+      let res = tdUsk2000ToWgs84(coords);
       if (!res) return;
       let res_latlng = { lat: res.x, lng: res.y };
       let arg = {
