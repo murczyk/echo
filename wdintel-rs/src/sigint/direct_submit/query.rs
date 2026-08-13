@@ -9,7 +9,7 @@ use crate::types::*;
 use chrono::Utc;
 use sea_orm::sea_query::Expr;
 use sea_orm::*;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use uuid::Uuid;
 
 pub struct CopySignalMessageInputs {
@@ -104,7 +104,8 @@ where
         .one(dbx)
         .await
         .c(h!())?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
     let tag_labels = tag::Entity::find()
         .filter(tag::Column::Id.is_in(tag_ids.to_vec()))
         .select_only()
@@ -290,42 +291,49 @@ where
     C: ConnectionTrait,
 {
     copy_matching_tags(dbx, source_signal_message_id, target_inbox_item_id)
-        .await?;
+        .await
+        .c(h!())?;
     copy_matching_callsigns(
         dbx,
         source_signal_message_id,
         target_inbox_item_id,
         actor_id,
     )
-    .await?;
+    .await
+    .c(h!())?;
     let source_inbox_item =
         sigint_inbox_item::Entity::find_by_id(source_signal_message_id)
             .one(dbx)
             .await
             .c(h!())?
-            .ok_or(AppError::NotFound)?;
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
     let target_inbox_item =
         sigint_inbox_item::Entity::find_by_id(target_inbox_item_id)
             .one(dbx)
             .await
             .c(h!())?
-            .ok_or(AppError::NotFound)?;
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
     let source_message =
         signal_message::Entity::find_by_id(source_signal_message_id)
             .one(dbx)
             .await
             .c(h!())?
-            .ok_or(AppError::NotFound)?;
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
     if payload.unit.as_deref() == source_inbox_item.unit_v2.as_deref() {
         copy_inbox_units(dbx, source_signal_message_id, target_inbox_item_id)
-            .await?;
+            .await
+            .c(h!())?;
     }
     if payload.full_body.as_deref() == source_message.body.as_deref()
         && source_inbox_item.lat == target_inbox_item.lat
         && source_inbox_item.lng == target_inbox_item.lng
     {
         copy_pelengs(dbx, source_signal_message_id, target_inbox_item_id)
-            .await?;
+            .await
+            .c(h!())?;
         if payload
             .network
             .as_ref()
@@ -337,14 +345,24 @@ where
                 source_signal_message_id,
                 target_inbox_item_id,
             )
-            .await?;
+            .await
+            .c(h!())?;
         }
     }
+    let network_is_unchanged = payload.network.as_ref().is_none_or(|network| {
+        network.signal_name.is_none() && network.cc.is_none()
+    }) && payload
+        .network
+        .as_ref()
+        .and_then(|network| network.name.as_deref())
+        == source_inbox_item.network.as_deref();
     if payload.dmr.is_empty()
         && payload.full_body.as_deref() == source_message.body.as_deref()
+        && network_is_unchanged
     {
         copy_metadata(dbx, source_signal_message_id, target_inbox_item_id)
-            .await?;
+            .await
+            .c(h!())?;
     }
     Ok(())
 }
@@ -475,12 +493,12 @@ where
     let source_names = source
         .iter()
         .map(|callsign| callsign.callsign.to_lowercase())
-        .collect::<Vec<_>>();
+        .collect::<BTreeSet<_>>();
     let target_names = target
         .iter()
         .filter(|callsign| !callsign.deleted)
         .map(|callsign| callsign.callsign.to_lowercase())
-        .collect::<Vec<_>>();
+        .collect::<BTreeSet<_>>();
     if source_names != target_names {
         return Ok(());
     }

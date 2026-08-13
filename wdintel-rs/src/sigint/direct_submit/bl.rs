@@ -63,7 +63,8 @@ pub async fn copy_signal_message(
         signal_message_id,
         &allowed_groups,
     )
-    .await?;
+    .await
+    .c(h!())?;
     let logins = crate::users::get_organism_login_ids_by_id(&env.dbx, login)
         .await
         .c(h!())?;
@@ -78,20 +79,34 @@ pub async fn copy_signal_message(
         &[signal_message_id],
         &request,
     )
-    .await?
+    .await
+    .c(h!())?
     .into_iter()
     .next()
     .map(|(_, message)| message)
-    .ok_or(AppError::NotFound)?;
-    let group_master_key =
-        message.group_master_key.clone().ok_or(AppError::NotFound)?;
+    .ok_or(AppError::NotFound)
+    .c(h!())?;
+    let group_master_key = message
+        .group_master_key
+        .clone()
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
     let tag_ids = message.tags.clone().unwrap_or_default();
     let copy_inputs = query::find_copy_signal_message_inputs(
         &env.dbx,
         signal_message_id,
         &tag_ids,
     )
-    .await?;
+    .await
+    .c(h!())?;
+    let to = crate::rer_importer::inbox::metadata::
+        dedupe_text_callsigns_case_insensitive(
+            message
+                .callsigns
+                .iter()
+                .chain(message.callsigns_alg2.iter())
+                .cloned(),
+        );
     let coordinates = copy_inputs
         .inbox_item
         .lat
@@ -112,7 +127,7 @@ pub async fn copy_signal_message(
         freq: message.freq.clone(),
         coords: coordinates,
         from_callsign: None,
-        to: message.callsigns.clone(),
+        to,
         tags: Some(copy_inputs.tag_labels),
         timestamp: source.timestamp.map(|timestamp| {
             timestamp
@@ -299,7 +314,8 @@ async fn save_signal_message(
         login,
         &payload.signal_group_master_key,
     )
-    .await?;
+    .await
+    .c(h!())?;
     let copy_source = match payload.parent_signal_message_id {
         Some(parent_signal_message_id) => {
             let allowed_groups =
@@ -314,7 +330,8 @@ async fn save_signal_message(
                     parent_signal_message_id,
                     &allowed_groups,
                 )
-                .await?,
+                .await
+                .c(h!())?,
             )
         }
         None => None,
@@ -326,7 +343,8 @@ async fn save_signal_message(
                 signal_message_id,
                 &signal_group.master_key,
             )
-            .await?,
+            .await
+            .c(h!())?,
         ),
         None => None,
     };
@@ -351,7 +369,8 @@ async fn save_signal_message(
                 copy_source.as_ref().map(|source| source.id),
                 &payload,
             )
-            .await?;
+            .await
+            .c(h!())?;
             (media.len(), vec![])
         }
     };
@@ -560,12 +579,15 @@ async fn load_copy_media(
         return Ok(vec![]);
     };
     let source_media =
-        query::find_signal_message_media(txn, source_signal_message_id).await?;
+        query::find_signal_message_media(txn, source_signal_message_id)
+            .await
+            .c(h!())?;
     let deleted_media_ids = parse_media_ids(
         payload.deleted_media_ids.as_deref().unwrap_or_default(),
-    )?;
+    )
+    .c(h!())?;
     let retained_media_ids = match payload.retained_media_ids.as_deref() {
-        Some(ids) => parse_media_ids(ids)?,
+        Some(ids) => parse_media_ids(ids).c(h!())?,
         None => source_media.iter().map(|media| media.id).collect(),
     };
     let retained_media_ids = retained_media_ids
@@ -724,18 +746,22 @@ async fn finish_direct_submit(
             .c(h!())?;
     }
     let media_to_delete_after_commit =
-        query::find_unreferenced_media(&txn, media_to_delete).await?;
+        query::find_unreferenced_media(&txn, media_to_delete)
+            .await
+            .c(h!())?;
 
     if let Some(copy_source_signal_message_id) = copy_source_signal_message_id {
         let source_media =
             load_copy_media(&txn, Some(copy_source_signal_message_id), payload)
-                .await?;
+                .await
+                .c(h!())?;
         query::copy_signal_message_media(
             &txn,
             signal_message_id,
             &source_media,
         )
-        .await?;
+        .await
+        .c(h!())?;
         query::copy_signal_message_comments(
             &txn,
             copy_source_signal_message_id,
@@ -744,7 +770,8 @@ async fn finish_direct_submit(
             logins,
             payload.comment.as_deref(),
         )
-        .await?;
+        .await
+        .c(h!())?;
         query::copy_signal_message_relations(
             &txn,
             copy_source_signal_message_id,
@@ -752,13 +779,15 @@ async fn finish_direct_submit(
             login,
             payload,
         )
-        .await?;
+        .await
+        .c(h!())?;
         query::set_signal_message_parent(
             &txn,
             signal_message_id,
             copy_source_signal_message_id,
         )
-        .await?;
+        .await
+        .c(h!())?;
     }
 
     crate::transcriber::media_queue::reconcile_message(
