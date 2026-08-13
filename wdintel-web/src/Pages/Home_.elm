@@ -114,7 +114,7 @@ view shared user model =
 
 shouldShowAiChat : Shared.Model -> Auth.User -> Model -> Bool
 shouldShowAiChat shared user model =
-    not shared.userLoaded || (canShowAiChat user && model.aiChatState /= Disabled)
+    shared.userLoaded && canShowAiChat user && model.aiChatState /= Disabled
 
 
 aiChatStateDecoder : Decode.Decoder AiChatState
