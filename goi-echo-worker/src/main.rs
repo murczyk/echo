@@ -1,3 +1,9 @@
+macro_rules! h {
+    () => {
+        concat!("at ", file!(), " line ", line!(), " column ", column!())
+    };
+}
+
 mod config;
 mod db;
 mod entities;

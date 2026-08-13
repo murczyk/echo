@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::Path;
 
+pub const ASSOCIATION_EXCEL_TEXT_UNESCAPED_FIELD: &str = "excel_text_unescaped";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AssociationCell {
     pub kind: String,
@@ -17,6 +19,8 @@ pub struct AssociationRow {
     pub sheet_name: String,
     pub row_num: u32,
     pub cells: Vec<AssociationCell>,
+    #[serde(default)]
+    pub excel_text_unescaped: bool,
     pub association_type: Option<String>,
     pub frequency: Option<String>,
     pub coordinates: Option<String>,
@@ -79,6 +83,27 @@ impl AssociationRow {
     pub fn source_date(&self) -> Option<DateTime<Utc>> {
         parse_goi_datetime(self.source_date_raw.as_deref()?)
     }
+
+    pub fn excel_unescaped_cells(&self) -> Vec<AssociationCell> {
+        self.cells
+            .iter()
+            .cloned()
+            .map(|mut cell| {
+                if cell.kind == "string" {
+                    if let Value::String(value) = &mut cell.value {
+                        *value = unescape_excel_text(value);
+                    }
+                }
+                cell
+            })
+            .collect()
+    }
+}
+
+pub fn association_excel_text_is_unescaped(row: &Value) -> bool {
+    row.get(ASSOCIATION_EXCEL_TEXT_UNESCAPED_FIELD)
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
 }
 
 pub fn parse_goi_datetime(raw: &str) -> Option<DateTime<Utc>> {
@@ -122,6 +147,7 @@ fn parse_association_row(
         sheet_name: sheet_name.to_string(),
         row_num: (row_idx + 1) as u32,
         cells,
+        excel_text_unescaped: true,
         association_type: normalize_text(cell_string(row.first())),
         frequency: normalize_text(cell_string(row.get(1))),
         coordinates: normalize_text(cell_string(row.get(2 + column_offset))),
@@ -241,6 +267,49 @@ fn split_list(value: Option<String>) -> Vec<String> {
         .collect()
 }
 
+pub fn unescape_excel_text(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut idx = 0;
+    while idx < value.len() {
+        if let Some(ch) = excel_escape_char_at(value, idx) {
+            out.push(ch);
+            idx += 7;
+            continue;
+        }
+        let ch = value[idx..]
+            .chars()
+            .next()
+            .expect("idx is always on a char boundary");
+        out.push(ch);
+        idx += ch.len_utf8();
+    }
+    out.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+fn excel_escape_char_at(value: &str, idx: usize) -> Option<char> {
+    let bytes = value.as_bytes();
+    let token = bytes.get(idx..idx + 7)?;
+    if token[0] != b'_'
+        || !token[1].eq_ignore_ascii_case(&b'x')
+        || token[6] != b'_'
+    {
+        return None;
+    }
+    let code = token[2..6].iter().try_fold(0_u32, |code, byte| {
+        Some(code * 16 + u32::from(hex_digit(*byte)?))
+    })?;
+    char::from_u32(code)
+}
+
+fn hex_digit(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
 fn normalize_text(value: Option<String>) -> Option<String> {
     let value = value?;
     let trimmed = value.trim();
@@ -263,7 +332,7 @@ fn cell_string(cell: Option<&Data>) -> Option<String> {
     match cell {
         Data::Int(value) => Some(value.to_string()),
         Data::Float(value) => Some(value.to_string()),
-        Data::String(value) => Some(value.clone()),
+        Data::String(value) => Some(unescape_excel_text(value)),
         Data::Bool(value) => Some(value.to_string()),
         Data::DateTime(value) => value
             .as_datetime()
@@ -306,7 +375,7 @@ impl From<&Data> for AssociationCell {
             },
             Data::String(value) => Self {
                 kind: "string".to_string(),
-                value: json!(value),
+                value: json!(unescape_excel_text(value)),
             },
             Data::Bool(value) => Self {
                 kind: "bool".to_string(),
@@ -385,6 +454,7 @@ mod tests {
             sheet_name: "Sheet1".to_string(),
             row_num: 1,
             cells: Vec::new(),
+            excel_text_unescaped: true,
             association_type: None,
             frequency: Some("145.1000".to_string()),
             coordinates: Some("37UDR0682401768".to_string()),
@@ -411,6 +481,7 @@ mod tests {
             sheet_name: "Sheet1".to_string(),
             row_num: 4,
             cells: Vec::new(),
+            excel_text_unescaped: true,
             association_type: None,
             frequency: Some("162.6375".to_string()),
             coordinates: None,
@@ -437,6 +508,7 @@ mod tests {
             sheet_name: "Sheet1".to_string(),
             row_num: 19,
             cells: Vec::new(),
+            excel_text_unescaped: true,
             association_type: None,
             frequency: Some("173.6750".to_string()),
             coordinates: Some("37UBR9821185404".to_string()),
@@ -455,5 +527,22 @@ mod tests {
 
         assert!(key.contains("\"v\":2"));
         assert!(key.contains("\"source_date_raw\":\"18.03.2026 14:55:21\""));
+    }
+
+    #[test]
+    fn unescapes_excel_control_sequences() {
+        assert_eq!(
+            unescape_excel_text("first_x000d_\nsecond_x000A_third"),
+            "first\nsecond\nthird"
+        );
+        assert_eq!(unescape_excel_text("first_x000D_second"), "first\nsecond");
+    }
+
+    #[test]
+    fn unescapes_excel_escaped_literal_tokens() {
+        assert_eq!(
+            unescape_excel_text("literal _x005F_x000D_ token"),
+            "literal _x000D_ token"
+        );
     }
 }

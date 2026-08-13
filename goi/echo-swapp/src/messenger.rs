@@ -146,7 +146,7 @@ pub async fn create(
         process_name,
         port,
         &txn,
-        SignalCliMode::Native,
+        SignalCliMode::Normal,
     )
     .await
     .map_err(|err| anyhow::anyhow!("{err}"))
@@ -817,7 +817,7 @@ async fn start_client(
                 config.signal_client_dir(),
                 config.signal_unit_name(),
                 config.client_data_dir_name(),
-                &SignalCliMode::Native,
+                &SignalCliMode::Normal,
             )
             .await
             .c(h!())?;

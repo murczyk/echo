@@ -2,7 +2,7 @@
 
 Status: **implemented** (windowed scroll + local-authoritative unread / near-bottom residual fix).
 
-Short summary: [`docs/ai-spec/duty_scroll_behavior.md`](../../docs/ai-spec/duty_scroll_behavior.md).
+Short summary: [`docs/duty/README.md`](../../docs/duty/README.md).
 
 This document describes how Duty Neo feed scrolling works **now**, and how the unread badge is owned relative to that scroll model.
 
@@ -34,7 +34,7 @@ Primary code:
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | **Physical bottom** | `distance ≤ 0.5px`                                                                                                                                                                                         | Pixel-flush with the live end; required for auto-follow scroll after newer load          |
 | **At bottom**       | `distance ≤ 25px` (`DUTY_FEED_AT_BOTTOM_THRESHOLD_PX`)                                                                                                                                                     | Tight “settled at end” for read marking / at-bottom callbacks                            |
-| **Near bottom**     | `distance ≤ 640px` (`LOAD_NEWER_BUFFER_PX`) **or** (unread prefetch still needed **and** viewport has reached the last **`DUTY_FEED_UNREAD_PREFETCH_MIN` (10)** mounted rows in a window longer than that) | Prefetch newer; badge treats this as “at the live tail” for residual/preview suppression |
+| **Near bottom**     | `distance ≤ 640px` (`LOAD_NEWER_BUFFER_PX`); when unread prefetch is still needed, expands up to `min(2×viewport, 2×buffer)` (≤ ~1280px with Duty buffers) — **not** “last N tall messages” | Prefetch newer; badge treats this as “at the live tail” for residual/preview suppression |
 | **Near top**        | `scrollTop ≤ 160px` (`LOAD_OLDER_BUFFER_PX`)                                                                                                                                                               | Prefetch older                                                                           |
 
 Default hook buffers differ (`320` / `160`); Duty Neo overrides via `FeedColumnContent`.
