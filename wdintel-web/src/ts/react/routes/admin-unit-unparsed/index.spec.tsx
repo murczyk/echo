@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../services/api/units', () => ({
   DEFAULT_LIST_UNITS_REQ: {},
-  searchUnitsStrictThenRelaxed: mocks.searchUnits,
+  searchUnitsByMatchTier: mocks.searchUnits,
 }));
 
 vi.mock('../../services/api/unresolved-unit-labels', () => ({
@@ -167,7 +167,7 @@ beforeEach(() => {
   mocks.archive.mockReset().mockResolvedValue({ affectedCount: 1 });
   mocks.list.mockReset().mockResolvedValue(firstPage);
   mocks.resolve.mockReset().mockResolvedValue({ affectedCount: 1 });
-  mocks.searchUnits.mockReset().mockResolvedValue([sigintUnit]);
+  mocks.searchUnits.mockReset().mockResolvedValue({ strict: [sigintUnit], relaxed: [] });
   mocks.updateNote.mockReset().mockResolvedValue({ affectedCount: 1 });
 });
 
@@ -261,7 +261,7 @@ describe('AdminUnitUnparsedPage', () => {
     act(() => root.unmount());
   });
 
-  it('sorts unit candidates by descending echelon', async () => {
+  it('preserves strict matches and sorts within each tier by descending echelon', async () => {
     const companyUnit: Unit = {
       ...sigintUnit,
       id: 1,
@@ -285,15 +285,32 @@ describe('AdminUnitUnparsedPage', () => {
       regiment: '',
       division: '',
     };
-    mocks.searchUnits.mockResolvedValueOnce([companyUnit, battalionUnit, armyUnit]);
+    const regionUnit: Unit = {
+      ...armyUnit,
+      id: 4,
+      name: 'Region candidate',
+      army: '',
+      militaryDistrict: '',
+    };
+    mocks.searchUnits.mockResolvedValueOnce({
+      strict: [companyUnit, battalionUnit],
+      relaxed: [armyUnit, regionUnit],
+    });
     const root = await renderPage();
 
     act(() => button("Прив'язати до підрозділу").click());
     await act(async () => vi.advanceTimersByTimeAsync(300));
 
     const text = document.body.textContent ?? '';
-    expect(text.indexOf('Army candidate')).toBeLessThan(text.indexOf('Battalion candidate'));
     expect(text.indexOf('Battalion candidate')).toBeLessThan(text.indexOf('Company candidate'));
+    expect(text.indexOf('Company candidate')).toBeLessThan(text.indexOf('Region candidate'));
+    expect(text.indexOf('Region candidate')).toBeLessThan(text.indexOf('Army candidate'));
+    expect(
+      buttonContaining('Battalion candidate').querySelector('[aria-label="Точний збіг"]'),
+    ).not.toBeNull();
+    expect(
+      buttonContaining('Army candidate').querySelector('[aria-label="Точний збіг"]'),
+    ).toBeNull();
 
     act(() => root.unmount());
   });

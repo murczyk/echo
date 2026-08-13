@@ -308,6 +308,38 @@ where
     Ok(sigint_unit_ids.into_iter().next())
 }
 
+async fn resolve_by_exact_sigint_unit_name<C>(
+    db: &C,
+    value: &str,
+) -> anyhow::Result<Option<i64>>
+where
+    C: ConnectionTrait,
+{
+    let normalized = normalize_unit_label(value);
+    if normalized.is_empty() {
+        return Ok(None);
+    }
+    let sigint_unit_ids = sigint_unit::Entity::find()
+        .filter(Expr::cust_with_values(
+            "lower(regexp_replace(btrim(sigint_unit.name), '[[:space:]]+', ' ', 'g')) = $1",
+            vec![normalized],
+        ))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .select_only()
+        .column(sigint_unit::Column::Id)
+        .distinct()
+        .limit(2)
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .context(h!())?;
+    if sigint_unit_ids.len() > 1 {
+        warn!("Multiple SIGINT unit names match value={value:?}");
+        return Ok(None);
+    }
+    Ok(sigint_unit_ids.into_iter().next())
+}
+
 pub(crate) async fn resolve_sigint_unit_id<C>(
     db: &C,
     unit_v2: Option<&str>,
@@ -317,6 +349,13 @@ where
     C: ConnectionTrait,
 {
     if let Some(unit_v2) = nonempty(unit_v2) {
+        if let Some(sigint_unit_id) =
+            resolve_by_exact_sigint_unit_name(db, unit_v2)
+                .await
+                .context(h!())?
+        {
+            return Ok(Some(sigint_unit_id));
+        }
         match resolve_structurally(db, unit_v2).await.context(h!())? {
             StructuralResolution::Resolved(sigint_unit_id) => {
                 return Ok(Some(sigint_unit_id));
@@ -339,7 +378,16 @@ where
         }
     }
     match nonempty(unit) {
-        Some(unit) => resolve_by_label(db, unit).await.context(h!()),
+        Some(unit) => {
+            if let Some(sigint_unit_id) =
+                resolve_by_exact_sigint_unit_name(db, unit)
+                    .await
+                    .context(h!())?
+            {
+                return Ok(Some(sigint_unit_id));
+            }
+            resolve_by_label(db, unit).await.context(h!())
+        }
         None => Ok(None),
     }
 }
@@ -1084,6 +1132,66 @@ mod tests {
         );
         assert_eq!(
             resolve_sigint_unit_id(&env.dbx, Some("333 мсб власний тег"), None)
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn exact_sigint_unit_name_matches_unit_v2_and_unit() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let name = unique_unit_label();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                regiment: Set(name.clone()),
+                name: Set(name.clone()),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let search = format!("  {}\n", name.to_uppercase());
+
+        assert_eq!(
+            resolve_sigint_unit_id(&env.dbx, Some(&search), None)
+                .await
+                .unwrap(),
+            Some(unit.id)
+        );
+        assert_eq!(
+            resolve_sigint_unit_id(&env.dbx, None, Some(&search))
+                .await
+                .unwrap(),
+            Some(unit.id)
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn duplicate_exact_sigint_unit_names_are_not_linked() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let name = unique_unit_label();
+        for _ in 0..2 {
+            crate::functest::tests::mk_sigint_unit(
+                &env.dbx,
+                sigint_unit::ActiveModel {
+                    regiment: Set(name.clone()),
+                    name: Set(name.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        assert_eq!(
+            resolve_sigint_unit_id(&env.dbx, None, Some(&name))
                 .await
                 .unwrap(),
             None
