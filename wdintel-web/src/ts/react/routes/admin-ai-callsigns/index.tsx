@@ -22,7 +22,6 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import {
   deleteAiCallsignTestMessage,
   getAiCallsignPage,
@@ -366,7 +365,7 @@ export function AdminAiCallsignsPage() {
             Повідомлення і всі збережені результати його парсингу будуть видалені.
           </DialogContentText>
         </DialogContent>
-        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <DialogActions>
           <PowerButton type="button" variant="outlined" onClick={() => setDeleteTarget(null)}>
             Скасувати
           </PowerButton>

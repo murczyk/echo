@@ -94,6 +94,21 @@ describe('mapInboxMessageToForm', () => {
     expect(values.comment).toBe('');
   });
 
+  it('maps every persisted coordinate into the editable field', () => {
+    const values = mapInboxMessageToForm(
+      buildMessage({
+        coords: '49.1, 37.2',
+        coordsWithLocality: [
+          { coords: { lat: 49.1234567, lon: 37.2345678 }, locality: null },
+          { coords: { lat: 50.1, lon: 38.2 }, locality: null },
+        ],
+      }),
+      tagsMap,
+    );
+
+    expect(values.coords).toBe('49.123457, 37.234568\n50.1, 38.2');
+  });
+
   it('drops tag ids missing from the tags map', () => {
     const values = mapInboxMessageToForm(buildMessage({ tags: [7, 99] }), tagsMap);
     expect(values.tags).toEqual(['арта']);

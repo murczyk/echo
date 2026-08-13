@@ -16,7 +16,6 @@ import {
 import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageLoadingState } from '../../components/PageLoadingState';
@@ -372,7 +371,7 @@ function InstanceEditorDialog({
           ) : null}
         </Stack>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         {!isCreateMode ? (
           <PowerButton type="button" variant="outlined" disabled={loading} onClick={onCheck}>
             Перевірити
@@ -407,7 +406,7 @@ function MutationConfirmDialog({
           транскрибування матиме час завершитися.
         </DialogContentText>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <PowerButton type="button" onClick={onCancel}>
           Скасувати
         </PowerButton>

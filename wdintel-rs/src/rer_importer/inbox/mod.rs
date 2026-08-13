@@ -1206,7 +1206,8 @@ fn generic_submit_item_to_inbox_message(
         date: Some(date),
         time: Some(time),
         freq: item.freq.clone(),
-        coords: format_submit_coordinates(&item.coords),
+        coords: format_geo_coordinates(&item.coords),
+        coords_with_locality: vec![],
         callsigns: submit_item_callsigns(item),
         callsigns_alg2: vec![],
         checked: true,
@@ -1367,10 +1368,13 @@ async fn replace_submit_tags(
     add_submit_tags(txn, inbox_id, login, Some(tag_ids)).await
 }
 
-fn format_submit_coordinates(coords: &[SubmitCoordinates]) -> Option<String> {
-    coords
-        .first()
-        .map(|coords| format!("{}, {}", coords.lat, coords.lon))
+fn format_geo_coordinates(coords: &[GeoCoordinates]) -> Option<String> {
+    (!coords.is_empty()).then(|| {
+        coords
+            .iter()
+            .map(|coords| format!("{}, {}", coords.lat, coords.lon))
+            .join("\n")
+    })
 }
 
 fn format_submit_locations(locations: &[String]) -> Option<String> {
@@ -3667,11 +3671,11 @@ mod tests {
             comment: Some("Коментар".to_string()),
             timestamp: "2026-06-25T12:34:56Z".to_string(),
             coords: vec![
-                SubmitCoordinates {
+                GeoCoordinates {
                     lat: 49.12345,
                     lon: 37.12345,
                 },
-                SubmitCoordinates {
+                GeoCoordinates {
                     lat: 50.0,
                     lon: 38.0,
                 },
@@ -3705,7 +3709,10 @@ mod tests {
                 .and_hms_opt(12, 34, 56)
                 .unwrap()
         );
-        assert_eq!(message.coords.as_deref(), Some("49.12345, 37.12345"));
+        assert_eq!(
+            message.coords.as_deref(),
+            Some("49.12345, 37.12345\n50, 38")
+        );
         assert_eq!(message.text, "Повне повідомлення");
         assert_eq!(message.extended_form.as_deref(), Some("Коментар"));
         assert_eq!(
@@ -4316,10 +4323,16 @@ mod tests {
             text: Some("рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string()),
             comment: Some("Сигнали: dmr".to_string()),
             freq: Some("145.02678".to_string()),
-            coords: vec![SubmitCoordinates {
-                lat: 49.12345,
-                lon: 37.12345,
-            }],
+            coords: vec![
+                GeoCoordinates {
+                    lat: 49.12345,
+                    lon: 37.12345,
+                },
+                GeoCoordinates {
+                    lat: 49.22345,
+                    lon: 37.22345,
+                },
+            ],
             from_callsign: Some("ЯРУС".to_string()),
             to: vec!["СВЕТЛЫЙ".to_string()],
             timestamp: submit_timestamp(now),
@@ -4392,6 +4405,17 @@ mod tests {
         assert_eq!(inbox_item.lat, Some(49.12345));
         assert_eq!(inbox_item.lng, Some(37.12345));
         assert_eq!(inbox_item.checked, Some(true));
+        let pelengs = sigint_peleng::Entity::find()
+            .filter(
+                sigint_peleng::Column::SourceInboxItemId.eq(submitted.inbox_id),
+            )
+            .order_by_asc(sigint_peleng::Column::Id)
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(pelengs.len(), 2);
+        assert_eq!((pelengs[0].lat, pelengs[0].lng), (49.12345, 37.12345));
+        assert_eq!((pelengs[1].lat, pelengs[1].lng), (49.22345, 37.22345));
         let comment = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
             .one(&env.dbx)
@@ -5228,6 +5252,17 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(messages[0].1.point_tokens.as_ref().unwrap().len(), 1);
+        assert_eq!(
+            messages[0].1.point_tokens.as_ref().unwrap()[0].palitra_ids,
+            vec![palitra.id]
+        );
+        assert!(messages[0].1.text_marked.as_ref().unwrap().iter().any(
+            |node| matches!(
+                node,
+                crate::rer_importer::highlight::ContentNode::CNPointC(point)
+                    if point.palitra_ids == vec![palitra.id]
+            )
+        ));
 
         let mut palitra = palitra.into_active_model();
         palitra.is_archived = Set(true);

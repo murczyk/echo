@@ -40,7 +40,7 @@ describe('AiAgentChat feature flag', () => {
     await act(async () => root.render(<AiAgentChat onAvailabilityChange={onAvailabilityChange} />));
     await act(async () => Promise.resolve());
 
-    expect(onAvailabilityChange).toHaveBeenCalledWith(false);
+    expect(onAvailabilityChange).toHaveBeenCalledWith('disabled');
     expect(mocks.conversations).not.toHaveBeenCalled();
     expect(mocks.notify).not.toHaveBeenCalled();
     expect(container.textContent).toBe('');

@@ -1,29 +1,47 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { forward } from 'mgrs';
 
-const forward = vi.hoisted(() => vi.fn());
+vi.mock('mgrs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('mgrs')>();
+  return { ...actual, forward: vi.fn(actual.forward) };
+});
 
-vi.mock('mgrs', () => ({
-  forward,
-}));
+import { getCoordinateMgrsText, getCoordinateText } from './coordinate-format';
+import { parseCoordinateInput } from './coordinate-search';
 
-import { getCoordinateMgrsText } from './coordinate-format';
+const COORDS = { lat: 47.068996, lng: 33.639173 };
 
-describe('coordinate-format', () => {
+describe('getCoordinateText', () => {
   beforeEach(() => {
-    vi.resetAllMocks();
+    vi.mocked(forward).mockClear();
   });
 
-  it('formats MGRS coordinates with spaced groups', () => {
-    forward.mockReturnValue('36TXX1234567890');
-
-    expect(getCoordinateMgrsText({ lat: 50.45044, lng: 30.52355 })).toBe('36T XX 12345 67890');
+  it('formats supplied MGRS coordinates with spaced groups', () => {
+    expect(getCoordinateMgrsText(COORDS, '36TXX1234567890')).toBe('36T XX 12345 67890');
   });
 
   it('returns null when MGRS conversion fails', () => {
-    forward.mockImplementationOnce(() => {
+    vi.mocked(forward).mockImplementationOnce(() => {
       throw new Error('conversion failed');
     });
 
-    expect(getCoordinateMgrsText({ lat: 50.45044, lng: 30.52355 })).toBeNull();
+    expect(getCoordinateMgrsText(COORDS)).toBeNull();
+  });
+
+  it('formats every supported coordinate representation', () => {
+    expect(getCoordinateText('wgs', COORDS)).toBe('47.06900, 33.63917');
+    expect(getCoordinateText('dms', COORDS)).toContain("47°4'");
+    expect(getCoordinateText('mgrs', COORDS)).toMatch(/^36T /);
+    expect(getCoordinateText('sk42', COORDS)).toBe('СК-42: X=5215227, Y=6548669');
+    expect(getCoordinateText('usk2000', COORDS)).toMatch(/^УСК-2000: X=\d{7}, Y=\d{7}$/);
+    expect(getCoordinateText('utm', COORDS)).toMatch(/^36T \d{6} \d{7}$/);
+  });
+
+  it('produces UTM output accepted by the shared parser', () => {
+    const formatted = getCoordinateText('utm', COORDS);
+    const parsed = parseCoordinateInput(formatted);
+
+    expect(parsed?.lat).toBeCloseTo(COORDS.lat, 4);
+    expect(parsed?.lng).toBeCloseTo(COORDS.lng, 4);
   });
 });

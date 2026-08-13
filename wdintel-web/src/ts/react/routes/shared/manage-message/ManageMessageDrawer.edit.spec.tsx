@@ -139,7 +139,9 @@ vi.mock('@uppy/core', () => {
   return { default: FakeUppy };
 });
 vi.mock('@uppy/tus', () => ({ default: class {} }));
+vi.mock('@mui/icons-material/Add', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/DeleteOutline', () => ({ default: () => <span /> }));
+vi.mock('./drawer-sections/CoordinateInputPreview', () => ({ CoordinateInputPreview: () => null }));
 
 vi.mock('../../../components/PowerDateTimePicker', () => ({
   PowerDatePicker: ({ label, value }: { label?: string; value?: unknown }) => {
@@ -168,10 +170,13 @@ type TextFieldMockProps = {
   label?: ReactNode;
   multiline?: boolean;
   onChange?: (event: { target: { value: string } }) => void;
+  onBlur?: () => void;
   onKeyDown?: (event: KeyboardEvent) => void;
   placeholder?: string;
   value?: string;
   disabled?: boolean;
+  error?: boolean;
+  helperText?: ReactNode;
 };
 
 const textFieldPropsByLabel = new Map<string | undefined, TextFieldMockProps>();
@@ -180,6 +185,7 @@ const autocompleteValuesByLabel = new Map<string, unknown>();
 const autocompleteInputValuesByLabel = new Map<string, string>();
 const autocompleteOptionLabelsByLabel = new Map<string, string[]>();
 const pickerValuesByLabel = new Map<string, unknown>();
+let drawerModalProps: { closeAfterTransition?: boolean } | undefined;
 
 function setRecentValues(values: Record<string, unknown>) {
   Object.defineProperty(globalThis, 'localStorage', {
@@ -224,8 +230,18 @@ vi.mock('@mui/material', () => ({
     const Component = component as keyof HTMLElementTagNameMap;
     return <Component>{children}</Component>;
   },
-  Drawer: ({ children, open }: { children?: ReactNode; open?: boolean }) =>
-    open ? <div role="dialog">{children}</div> : null,
+  Drawer: ({
+    children,
+    open,
+    ModalProps,
+  }: {
+    children?: ReactNode;
+    open?: boolean;
+    ModalProps?: { closeAfterTransition?: boolean };
+  }) => {
+    drawerModalProps = ModalProps;
+    return open ? <div role="dialog">{children}</div> : null;
+  },
   Button: ({
     children,
     type = 'button',
@@ -282,45 +298,59 @@ vi.mock('@mui/material', () => ({
       )}
     </span>
   ),
+  InputAdornment: ({ children }: { children?: ReactNode }) => <>{children}</>,
   Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
   TextField: ({
     label,
     multiline,
     onChange,
+    onBlur,
     onKeyDown,
     placeholder,
     value,
     disabled,
+    error,
+    helperText,
   }: TextFieldMockProps) => {
     const labelKey = typeof label === 'string' ? label : undefined;
     textFieldPropsByLabel.set(labelKey, {
       label: labelKey,
       multiline,
       onChange,
+      onBlur,
       onKeyDown,
       placeholder,
       value,
       disabled,
+      error,
+      helperText,
     });
 
-    return multiline ? (
-      <textarea
-        aria-label={labelKey}
-        placeholder={placeholder}
-        value={value ?? ''}
-        disabled={disabled}
-        onChange={(event) => onChange?.(event as never)}
-        onKeyDown={onKeyDown as never}
-      />
-    ) : (
-      <input
-        aria-label={labelKey}
-        placeholder={placeholder}
-        value={value ?? ''}
-        disabled={disabled}
-        onChange={(event) => onChange?.(event as never)}
-        onKeyDown={onKeyDown as never}
-      />
+    return (
+      <>
+        {multiline ? (
+          <textarea
+            aria-label={labelKey}
+            placeholder={placeholder}
+            value={value ?? ''}
+            disabled={disabled}
+            onChange={(event) => onChange?.(event as never)}
+            onBlur={onBlur}
+            onKeyDown={onKeyDown as never}
+          />
+        ) : (
+          <input
+            aria-label={labelKey}
+            placeholder={placeholder}
+            value={value ?? ''}
+            disabled={disabled}
+            onChange={(event) => onChange?.(event as never)}
+            onBlur={onBlur}
+            onKeyDown={onKeyDown as never}
+          />
+        )}
+        {helperText ? <span>{helperText}</span> : null}
+      </>
     );
   },
   Autocomplete: ({
@@ -411,6 +441,7 @@ describe('ManageMessageDrawer edit mode', () => {
     autocompleteInputValuesByLabel.clear();
     autocompleteOptionLabelsByLabel.clear();
     pickerValuesByLabel.clear();
+    drawerModalProps = undefined;
     directSubmitMocks.submitDirect.mockReset();
     directSubmitMocks.submitDirect.mockResolvedValue({ signal_message_id: 1 });
     directSubmitMocks.editDirectSubmit.mockReset();
@@ -431,6 +462,22 @@ describe('ManageMessageDrawer edit mode', () => {
     referenceDataMocks.getGroupInfosBatch.mockResolvedValue([]);
     setRecentValues({});
     uppyMocks.latest = null;
+  });
+
+  it('restores focus before hiding the drawer from assistive technology', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+      );
+    });
+
+    expect(drawerModalProps?.closeAfterTransition).toBe(true);
+
+    root.unmount();
   });
 
   it('initializes shared create fields from recent values without applying suggestions as defaults', async () => {
@@ -607,19 +654,66 @@ describe('ManageMessageDrawer edit mode', () => {
 
     await act(async () => {
       textFieldPropsByLabel
-        .get('Координати (lat, lon або MGRS)')
+        .get('Додати координату')
         ?.onChange?.({ target: { value: 'not-a-coordinate' } });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      textFieldPropsByLabel.get('Додати координату')?.onBlur?.();
       await Promise.resolve();
     });
     expect(submitButton.disabled).toBe(true);
 
     await act(async () => {
       textFieldPropsByLabel
-        .get('Координати (lat, lon або MGRS)')
+        .get('Додати координату')
         ?.onChange?.({ target: { value: '49.1, 37.2' } });
       await Promise.resolve();
     });
+    await act(async () => {
+      textFieldPropsByLabel.get('Додати координату')?.onBlur?.();
+      await Promise.resolve();
+    });
     expect(submitButton.disabled).toBe(false);
+    root.unmount();
+  });
+
+  it('shows an existing coordinate as a neutral hint without blocking submission', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{
+            id: 42,
+            message: buildMessage({ coords: '49.123457, 37.234568' }),
+          }}
+        />,
+      );
+    });
+
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Додати координату')
+        ?.onChange?.({ target: { value: '49.12346, 37.23457' } });
+    });
+    await act(async () => {
+      textFieldPropsByLabel.get('Додати координату')?.onBlur?.();
+    });
+
+    const coordinateField = textFieldPropsByLabel.get('Додати координату');
+    const submitButton = container.querySelector<HTMLButtonElement>('button[type="submit"]');
+    expect(coordinateField?.value).toBe('49.12346, 37.23457');
+    expect(coordinateField?.error).toBe(false);
+    expect(container.textContent).toContain('Координата вже є у списку');
+    expect(submitButton?.disabled).toBe(false);
+
     root.unmount();
   });
 
@@ -1633,6 +1727,52 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(container.textContent).not.toContain('editor failed');
     expect(container.textContent).not.toContain('Помилка');
     expect(onCreated).not.toHaveBeenCalled();
+
+    root.unmount();
+  });
+
+  it('applies a coordinate deletion locally without requesting a fallback reload', async () => {
+    const editedMessage = buildMessage({ coords: null, coordsWithLocality: [] });
+    const onSubmitEdit = vi.fn();
+    const onEditSuccess = vi.fn();
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({
+      signal_message_id: 124,
+      message: editedMessage,
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{ id: 124, message: buildMessage() }}
+          onSubmitEdit={onSubmitEdit}
+          onEditSuccess={onEditSuccess}
+        />,
+      );
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Видалити координату 1"]')
+        ?.click();
+    });
+    await act(async () => {
+      (container.querySelector('form') as HTMLFormElement).dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      124,
+      expect.objectContaining({ coords: [] }),
+    );
+    expect(onSubmitEdit).toHaveBeenCalledWith(124, editedMessage);
+    expect(onEditSuccess).not.toHaveBeenCalled();
 
     root.unmount();
   });

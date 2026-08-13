@@ -163,4 +163,9 @@ export function usePowerSnackbar(): PowerSnackbarContextValue {
   return context;
 }
 
+export function useOptionalPowerSnackbar(): PowerSnackbarContextValue {
+  const context = useContext(PowerSnackbarContext);
+  return context ?? { notify: () => 0 };
+}
+
 export const POWER_SNACKBAR_DEFAULT_DURATION_MS = DEFAULT_DURATION_MS;

@@ -1031,6 +1031,20 @@ areaOfResponsibilityStatsRspEncoder struct =
         ]
 
 
+type alias GeoCoordinates =
+    { lat : Float
+    , lon : Float
+    }
+
+
+geoCoordinatesEncoder : GeoCoordinates -> Json.Encode.Value
+geoCoordinatesEncoder struct =
+    Json.Encode.object
+        [ ( "lat", (Json.Encode.float) struct.lat )
+        , ( "lon", (Json.Encode.float) struct.lon )
+        ]
+
+
 type alias InboxMessage =
     { messageUid : Maybe (String)
     , text : String
@@ -1041,6 +1055,7 @@ type alias InboxMessage =
     , time : Maybe (String)
     , freq : Maybe (String)
     , coords : Maybe (String)
+    , coordsWithLocality : List (CoordinateWithLocality)
     , callsigns : List (String)
     , callsignsAlg2 : List (String)
     , checked : Bool
@@ -1083,6 +1098,7 @@ inboxMessageEncoder struct =
         , ( "time", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.time )
         , ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.freq )
         , ( "coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.coords )
+        , ( "coords_with_locality", (Json.Encode.list (coordinateWithLocalityEncoder)) struct.coordsWithLocality )
         , ( "callsigns", (Json.Encode.list (Json.Encode.string)) struct.callsigns )
         , ( "callsigns_alg2", (Json.Encode.list (Json.Encode.string)) struct.callsignsAlg2 )
         , ( "checked", (Json.Encode.bool) struct.checked )
@@ -3192,6 +3208,7 @@ palitraAccessLoginEncoder struct =
 
 type alias Palitra =
     { id : Int
+    , highlightBlacklistCount : Int
     , name : String
     , folder : Maybe (String)
     , isArchived : Bool
@@ -3219,6 +3236,7 @@ palitraEncoder : Palitra -> Json.Encode.Value
 palitraEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
+        , ( "highlight_blacklist_count", (Json.Encode.int) struct.highlightBlacklistCount )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "folder", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.folder )
         , ( "is_archived", (Json.Encode.bool) struct.isArchived )
@@ -3478,6 +3496,66 @@ palitraBulkActionRspEncoder struct =
         ]
 
 
+type alias PalitraHighlightBlacklistEntry =
+    { id : Int
+    , palitraId : Int
+    , label : String
+    , createdByLoginId : String
+    , createdByLogin : String
+    }
+
+
+palitraHighlightBlacklistEntryEncoder : PalitraHighlightBlacklistEntry -> Json.Encode.Value
+palitraHighlightBlacklistEntryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "palitra_id", (Json.Encode.int) struct.palitraId )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "created_by_login_id", (Json.Encode.string) struct.createdByLoginId )
+        , ( "created_by_login", (Json.Encode.string) struct.createdByLogin )
+        ]
+
+
+type alias PalitraHighlightBlacklistAddReq =
+    { label : String
+    , sourceMessageId : Int
+    }
+
+
+palitraHighlightBlacklistAddReqEncoder : PalitraHighlightBlacklistAddReq -> Json.Encode.Value
+palitraHighlightBlacklistAddReqEncoder struct =
+    Json.Encode.object
+        [ ( "label", (Json.Encode.string) struct.label )
+        , ( "source_message_id", (Json.Encode.int) struct.sourceMessageId )
+        ]
+
+
+type alias PalitraResolveNamesReq =
+    { palitraIds : List (Int)
+    }
+
+
+palitraResolveNamesReqEncoder : PalitraResolveNamesReq -> Json.Encode.Value
+palitraResolveNamesReqEncoder struct =
+    Json.Encode.object
+        [ ( "palitra_ids", (Json.Encode.list (Json.Encode.int)) struct.palitraIds )
+        ]
+
+
+type alias PalitraName =
+    { id : Int
+    , name : String
+    }
+
+
+palitraNameEncoder : PalitraName -> Json.Encode.Value
+palitraNameEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
 type alias NoHeadersBody =
     { body : String
     , start : Int
@@ -3625,6 +3703,7 @@ type alias CnPoint =
     , end : Int
     , etalon : String
     , text : String
+    , palitraIds : List (Int)
     }
 
 
@@ -3635,6 +3714,7 @@ cnPointEncoder struct =
         , ( "end", (Json.Encode.int) struct.end )
         , ( "etalon", (Json.Encode.string) struct.etalon )
         , ( "text", (Json.Encode.string) struct.text )
+        , ( "palitra_ids", (Json.Encode.list (Json.Encode.int)) struct.palitraIds )
         ]
 
 
@@ -12558,6 +12638,38 @@ sigintKeySharePolicyEncoder struct =
         ]
 
 
+type alias CoordinateWithLocality =
+    { coords : GeoCoordinates
+    , locality : Maybe (LocalityDetails)
+    }
+
+
+coordinateWithLocalityEncoder : CoordinateWithLocality -> Json.Encode.Value
+coordinateWithLocalityEncoder struct =
+    Json.Encode.object
+        [ ( "coords", (geoCoordinatesEncoder) struct.coords )
+        , ( "locality", (Maybe.withDefault Json.Encode.null << Maybe.map (localityDetailsEncoder)) struct.locality )
+        ]
+
+
+type alias LocalityDetails =
+    { settlementName : String
+    , direction : String
+    , distanceM : Float
+    , isRf : Bool
+    }
+
+
+localityDetailsEncoder : LocalityDetails -> Json.Encode.Value
+localityDetailsEncoder struct =
+    Json.Encode.object
+        [ ( "settlement_name", (Json.Encode.string) struct.settlementName )
+        , ( "direction", (Json.Encode.string) struct.direction )
+        , ( "distance_m", (Json.Encode.float) struct.distanceM )
+        , ( "is_rf", (Json.Encode.bool) struct.isRf )
+        ]
+
+
 nameDecoder : Json.Decode.Decoder Name
 nameDecoder =
     Json.Decode.succeed Name
@@ -13034,6 +13146,13 @@ areaOfResponsibilityStatsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_names" (Json.Decode.list (areaOfResponsibilityEntryDecoder))))
 
 
+geoCoordinatesDecoder : Json.Decode.Decoder GeoCoordinates
+geoCoordinatesDecoder =
+    Json.Decode.succeed GeoCoordinates
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lon" (Json.Decode.float)))
+
+
 inboxMessageDecoder : Json.Decode.Decoder InboxMessage
 inboxMessageDecoder =
     Json.Decode.succeed InboxMessage
@@ -13046,6 +13165,7 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "time" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords_with_locality" (Json.Decode.list (coordinateWithLocalityDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns_alg2" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "checked" (Json.Decode.bool)))
@@ -14130,6 +14250,7 @@ palitraDecoder : Json.Decode.Decoder Palitra
 palitraDecoder =
     Json.Decode.succeed Palitra
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_blacklist_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "folder" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
@@ -14270,6 +14391,36 @@ palitraBulkActionRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list (Json.Decode.int))))
 
 
+palitraHighlightBlacklistEntryDecoder : Json.Decode.Decoder PalitraHighlightBlacklistEntry
+palitraHighlightBlacklistEntryDecoder =
+    Json.Decode.succeed PalitraHighlightBlacklistEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by_login_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by_login" (Json.Decode.string)))
+
+
+palitraHighlightBlacklistAddReqDecoder : Json.Decode.Decoder PalitraHighlightBlacklistAddReq
+palitraHighlightBlacklistAddReqDecoder =
+    Json.Decode.succeed PalitraHighlightBlacklistAddReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_message_id" (Json.Decode.int)))
+
+
+palitraResolveNamesReqDecoder : Json.Decode.Decoder PalitraResolveNamesReq
+palitraResolveNamesReqDecoder =
+    Json.Decode.succeed PalitraResolveNamesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+palitraNameDecoder : Json.Decode.Decoder PalitraName
+palitraNameDecoder =
+    Json.Decode.succeed PalitraName
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
 noHeadersBodyDecoder : Json.Decode.Decoder NoHeadersBody
 noHeadersBodyDecoder =
     Json.Decode.succeed NoHeadersBody
@@ -14356,6 +14507,7 @@ cnPointDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "end" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "etalon" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list (Json.Decode.int))))
 
 
 contentNodeDecoder : Json.Decode.Decoder ContentNode
@@ -19769,6 +19921,22 @@ sigintKeySharePolicyDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grant_to" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+
+
+coordinateWithLocalityDecoder : Json.Decode.Decoder CoordinateWithLocality
+coordinateWithLocalityDecoder =
+    Json.Decode.succeed CoordinateWithLocality
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (geoCoordinatesDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locality" (Json.Decode.nullable (localityDetailsDecoder))))
+
+
+localityDetailsDecoder : Json.Decode.Decoder LocalityDetails
+localityDetailsDecoder =
+    Json.Decode.succeed LocalityDetails
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "direction" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "distance_m" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_rf" (Json.Decode.bool)))
 
 
 deltaLoginUrlDecoder : Json.Decode.Decoder DeltaLoginUrl

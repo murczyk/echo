@@ -359,6 +359,7 @@ async fn get_inbox_messages_report_chunk(
                     message_uid: None,
                     location,
                     coords,
+                    coords_with_locality: vec![],
                     text: m.body.clone(),
                     media: vec![],
                     images: vec![],

@@ -344,10 +344,14 @@ fn analytics_message_id_scope_statement(
     Statement::from_sql_and_values(
         DbBackend::Postgres,
         r#"
+WITH scoped AS MATERIALIZED (
+    SELECT id
+    FROM public.sigint_inbox_item
+    WHERE datetime >= $1
+      AND datetime < $2
+)
 SELECT min(id) AS min_id, max(id) AS max_id
-FROM public.sigint_inbox_item
-WHERE datetime >= $1
-  AND datetime < $2
+FROM scoped
 "#,
         [dt_since.into(), dt_till.into()],
     )
@@ -6792,7 +6796,7 @@ mod tests {
     }
 
     #[test]
-    fn analytics_message_id_scope_uses_one_remote_aggregate() {
+    fn analytics_message_id_scope_materializes_datetime_range() {
         let dt_since = NaiveDate::from_ymd_opt(2026, 1, 1)
             .unwrap()
             .and_hms_opt(0, 0, 0)
@@ -6803,10 +6807,12 @@ mod tests {
             .unwrap();
         let statement = analytics_message_id_scope_statement(dt_since, dt_till);
 
+        assert!(statement.sql.contains("WITH scoped AS MATERIALIZED"));
+        assert!(statement.sql.contains("WHERE datetime >= $1"));
+        assert!(statement.sql.contains("AND datetime < $2"));
         assert!(statement
             .sql
             .contains("SELECT min(id) AS min_id, max(id) AS max_id"));
-        assert!(!statement.sql.contains("SELECT id"));
     }
 
     #[tokio::test]

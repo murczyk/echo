@@ -46,6 +46,7 @@ import {
   type MessageCardEtalonDisplayModel,
   type MessageCardNavigationMenuItem,
 } from './message-card.utils';
+import { formatCoordinatePreviewPointCount } from './message-coordinate-preview';
 
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
@@ -876,8 +877,21 @@ function MessageCardHeaderComponent({
   const locationDisplayValue = etalonDisplayModel.locationDisplayValue;
   const showTopGridLocation =
     etalonDisplayModel.primaryKind !== 'location' && locationDisplayValue != null;
+  const persistedCoordinates = msg.coordsWithLocality ?? [];
+  const firstCoord = persistedCoordinates[0]?.coords;
+  const primaryWgs = firstCoord
+    ? `${Number(firstCoord.lat.toFixed(5))}, ${Number(firstCoord.lon.toFixed(5))}`
+    : null;
+
   let coordsDisplayValue: string | null = null;
-  if (isPresent(msg.coords) && msg.coords.trim() !== '') {
+  if (primaryWgs != null) {
+    coordsDisplayValue =
+      persistedCoordinates.length > 1
+        ? `${primaryWgs} · ще ${persistedCoordinates.length - 1}`
+        : primaryWgs;
+  } else if (persistedCoordinates.length > 1) {
+    coordsDisplayValue = formatCoordinatePreviewPointCount(persistedCoordinates.length);
+  } else if (isPresent(msg.coords) && msg.coords.trim() !== '') {
     coordsDisplayValue = msg.coords.trim();
     const match = coordsDisplayValue.match(/^([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)$/);
     if (match) {

@@ -57,27 +57,58 @@ const systems: [string, string][] = [
 
 proj4.defs(systems);
 
-export function td_usk2000_to_wgs84(p) {
-  let proj = proj4('EPSG:5564');
-  if (p.y >= 7200000) {
-    // if (p.y >= 7274000) {
-    proj = proj4('EPSG:5565');
-  }
-  let swapped = { x: p.y, y: p.x };
-  // console.log("swapped", swapped);
-  let res = proj.inverse(swapped);
-  let res_swapped = { x: res.y, y: res.x };
-  return res_swapped;
+type GridPoint = { x: number; y: number };
+type UtmPoint = { zone: number; band: string; easting: number; northing: number };
+
+function sk42EpsgForEasting(easting: number): string | null {
+  const zone = Math.trunc(easting / 1000000);
+  return zone >= 2 && zone <= 8 ? `EPSG:2840${zone}` : null;
 }
 
-export function td_wgs84_to_usk2000(p) {
-  let proj = proj4('EPSG:5564');
-  let res = proj.forward(p);
-  // if (res.x >= 6700000) {
-  if (res.x >= 6726000) {
-    proj = proj4('EPSG:5565');
-    res = proj.forward(p);
-  }
+function sk42EpsgForLongitude(longitude: number): string | null {
+  const zone = Math.floor((longitude + 3) / 6);
+  return zone >= 2 && zone <= 8 ? `EPSG:2840${zone}` : null;
+}
+
+function usk2000EpsgForEasting(easting: number): string | null {
+  const zone = Math.trunc(easting / 1000000);
+  return zone >= 4 && zone <= 7 ? `EPSG:${5558 + zone}` : null;
+}
+
+function usk2000EpsgForLongitude(longitude: number): string | null {
+  const zone = Math.floor((longitude + 3) / 6);
+  return zone >= 4 && zone <= 7 ? `EPSG:${5558 + zone}` : null;
+}
+
+export function tdSk42ToWgs84(p: GridPoint): GridPoint | null {
+  const epsg = sk42EpsgForEasting(p.y);
+  if (!epsg) return null;
+  const res = proj4(epsg).inverse({ x: p.y, y: p.x });
+  if (!Number.isFinite(res?.x) || !Number.isFinite(res?.y)) return null;
+  return { x: res.y, y: res.x };
+}
+
+export function tdWgs84ToSk42(p: GridPoint): GridPoint | null {
+  const epsg = sk42EpsgForLongitude(p.x);
+  if (!epsg) return null;
+  const res = proj4(epsg).forward(p);
+  if (!Number.isFinite(res?.x) || !Number.isFinite(res?.y)) return null;
+  return res;
+}
+
+export function tdUsk2000ToWgs84(p: GridPoint): GridPoint | null {
+  const epsg = usk2000EpsgForEasting(p.y);
+  if (!epsg) return null;
+  const res = proj4(epsg).inverse({ x: p.y, y: p.x });
+  if (!Number.isFinite(res?.x) || !Number.isFinite(res?.y)) return null;
+  return { x: res.y, y: res.x };
+}
+
+export function tdWgs84ToUsk2000(p: GridPoint): GridPoint | null {
+  const epsg = usk2000EpsgForLongitude(p.x);
+  if (!epsg) return null;
+  const res = proj4(epsg).forward(p);
+  if (!Number.isFinite(res?.x) || !Number.isFinite(res?.y)) return null;
   return res;
 }
 
@@ -87,7 +118,7 @@ function isSouthernUtmBand(band: string): boolean {
   return UTM_LATITUDE_BANDS.indexOf(band.toUpperCase()) < UTM_LATITUDE_BANDS.indexOf('N');
 }
 
-export function utmToWgs84(p: { zone: number; band: string; easting: number; northing: number }) {
+export function utmToWgs84(p: UtmPoint) {
   const zone = Math.trunc(p.zone);
   if (!Number.isInteger(zone) || zone < 1 || zone > 60) {
     return null;
@@ -108,4 +139,23 @@ export function utmToWgs84(p: { zone: number; band: string; easting: number; nor
     return null;
   }
   return { lat: res.y, lng: res.x };
+}
+
+function latitudeToUtmBand(latitude: number): string | null {
+  if (!Number.isFinite(latitude) || latitude < -80 || latitude > 84) return null;
+  if (latitude === 84) return 'X';
+  const index = Math.floor((latitude + 80) / 8);
+  return UTM_LATITUDE_BANDS[index] ?? null;
+}
+
+export function wgs84ToUtm(coords: { lat: number; lng: number }): UtmPoint | null {
+  const band = latitudeToUtmBand(coords.lat);
+  if (!band || !Number.isFinite(coords.lng) || coords.lng < -180 || coords.lng > 180) return null;
+  const zone = Math.min(60, Math.floor((coords.lng + 180) / 6) + 1);
+  const proj = proj4(
+    `+proj=utm +zone=${zone}${coords.lat < 0 ? ' +south' : ''} +datum=WGS84 +units=m +no_defs`,
+  );
+  const res = proj.forward({ x: coords.lng, y: coords.lat });
+  if (!Number.isFinite(res?.x) || !Number.isFinite(res?.y)) return null;
+  return { zone, band, easting: res.x, northing: res.y };
 }

@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   Button,
+  DialogActions,
   IconButton,
   Slider,
   Table,
@@ -57,6 +58,10 @@ function Harness() {
     <NeoMuiThemeProvider>
       <div>
         <ThemeProbe />
+        <DialogActions data-testid="dialog-actions-sample">
+          <Button data-testid="dialog-action-first">First</Button>
+          <Button data-testid="dialog-action-second">Second</Button>
+        </DialogActions>
         <Typography data-testid="body2-sample" variant="body2">
           Body 2 sample
         </Typography>
@@ -184,6 +189,25 @@ describe('mui-theme', () => {
     expect(messageCardFontSize).toBe('14px');
     expect(Number.parseFloat(captionFontSize)).toBeLessThan(Number.parseFloat(body2FontSize));
     expect(tableCellFontSize).toBe(body2FontSize);
+  });
+
+  it('provides the standard dialog footer spacing globally', async () => {
+    await act(async () => {
+      root.render(<Harness />);
+    });
+
+    const dialogActions = container.querySelector('[data-testid="dialog-actions-sample"]');
+    const secondAction = container.querySelector('[data-testid="dialog-action-second"]');
+    expect(dialogActions).not.toBeNull();
+    expect(secondAction).not.toBeNull();
+    if (!(dialogActions instanceof HTMLElement) || !(secondAction instanceof HTMLElement)) {
+      throw new Error('Expected dialog action fixture nodes');
+    }
+
+    const styles = window.getComputedStyle(dialogActions);
+    expect(styles.padding).toBe('24px');
+    expect(styles.gap).toBe('12px');
+    expect(window.getComputedStyle(secondAction).marginLeft).toBe('0px');
   });
 
   it('keeps native disabled controls visible with a forbidden cursor', async () => {

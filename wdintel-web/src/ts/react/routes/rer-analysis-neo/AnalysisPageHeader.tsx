@@ -13,7 +13,7 @@ import {
   Switch,
   Tooltip,
 } from '@mui/material';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
@@ -29,27 +29,41 @@ type Props = {
   isNarrowLayout: boolean;
   leftPanelVisible: boolean;
   rightPanelVisible: boolean;
+  onOpenReport?: (focusTarget: HTMLElement) => void;
 };
 
 type SettingsMenuProps = {
   page: AnalysisPageViewModel;
   loading: boolean;
+  onOpenReport?: (focusTarget: HTMLElement) => void;
 };
 
-function AnalysisSettingsMenu({ page, loading }: SettingsMenuProps) {
+function AnalysisSettingsMenu({ page, loading, onOpenReport }: SettingsMenuProps) {
   const [anchorElement, setAnchorElement] = useState<HTMLElement | null>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const menuOpen = Boolean(anchorElement);
   const closeMenu = () => setAnchorElement(null);
+  const openReport = (focusTarget: HTMLElement | null) => {
+    if (onOpenReport && focusTarget) {
+      onOpenReport(focusTarget);
+    } else {
+      page.openReport();
+    }
+  };
 
   return (
     <>
       <Tooltip title="Налаштування аналізу" arrow>
         <IconButton
+          ref={settingsButtonRef}
           aria-label="Налаштування аналізу"
           aria-controls={menuOpen ? 'compact-analysis-settings-menu' : undefined}
           aria-haspopup="menu"
           aria-expanded={menuOpen ? 'true' : undefined}
-          onClick={(event) => setAnchorElement(event.currentTarget)}
+          onClick={(event) => {
+            settingsButtonRef.current = event.currentTarget;
+            setAnchorElement(event.currentTarget);
+          }}
           sx={{
             width: 40,
             height: 40,
@@ -106,7 +120,11 @@ function AnalysisSettingsMenu({ page, loading }: SettingsMenuProps) {
         <MenuItem
           onClick={() => {
             closeMenu();
-            page.openReport();
+            if (onOpenReport) {
+              window.requestAnimationFrame(() => openReport(settingsButtonRef.current));
+            } else {
+              page.openReport();
+            }
           }}
         >
           <ListItemIcon>
@@ -126,7 +144,15 @@ export function AnalysisPageHeader({
   isNarrowLayout,
   leftPanelVisible,
   rightPanelVisible,
+  onOpenReport,
 }: Props) {
+  const openReport = (focusTarget: HTMLElement) => {
+    if (onOpenReport) {
+      onOpenReport(focusTarget);
+    } else {
+      page.openReport();
+    }
+  };
   const loading = page.countsLoading || page.messagesLoading || page.summaryLoading;
   const dateRangeLoading = page.mapAttrs?.daterangeLoading === 'true';
   const showPagination = !isNarrowLayout;
@@ -164,7 +190,7 @@ export function AnalysisPageHeader({
       titleActions={
         isNarrowLayout ? (
           <Stack direction="row" spacing={0.5} alignItems="center">
-            <AnalysisSettingsMenu page={page} loading={loading} />
+            <AnalysisSettingsMenu page={page} loading={loading} onOpenReport={onOpenReport} />
             <SidePanelToggleButton
               side="right"
               active={rightPanelVisible}
@@ -237,8 +263,8 @@ export function AnalysisPageHeader({
               <Button
                 variant="outlined"
                 color="inherit"
-                onClick={page.openReport}
-                title="Відкрити конструктор звітів"
+                onClick={(event) => openReport(event.currentTarget)}
+                title="Відкрити звіти"
                 sx={{
                   height: 40,
                   px: 2,
@@ -248,7 +274,7 @@ export function AnalysisPageHeader({
                   '&:hover': { borderColor: 'text.secondary' },
                 }}
               >
-                ЗВІТИ
+                Звіти
               </Button>
               <SidePanelToggleButton
                 side="right"

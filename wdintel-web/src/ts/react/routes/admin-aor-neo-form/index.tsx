@@ -20,7 +20,6 @@ import {
   DeleteAreaOfResponsibilityReq,
   UpdateAreaOfResponsibilityReq,
 } from '../../../../Bindings';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { FormPageHeader } from '../../components/FormPageHeader';
 import { FormPageLayout } from '../../components/FormPageLayout';
 import { PageErrorState } from '../../components/PageErrorState';
@@ -306,7 +305,7 @@ function DeleteDialog(props: {
           Ви впевнені, що хочете видалити цю смугу?
         </Typography>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <PowerButton onClick={props.onClose}>Скасувати</PowerButton>
         <PowerButton
           variant="contained"

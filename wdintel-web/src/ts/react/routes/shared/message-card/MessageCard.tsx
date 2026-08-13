@@ -37,6 +37,7 @@ import {
   type TagsLayoutVariant,
 } from '../../rer-duty-neo/utils';
 import { resolveMessageCardEtalonDisplayModel } from './message-card.utils';
+import type { AddPointHighlightBlacklistRequest } from './point-highlight-blacklist';
 
 dayjs.extend(customParseFormat);
 
@@ -122,6 +123,7 @@ export type MessageCardProps = {
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
   onToggleTag?: (tagId: number) => void;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
+  onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   botTagAction?: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
@@ -173,6 +175,7 @@ function MessageCardComponent({
   onExcludeMessageEntity,
   onToggleTag,
   onOpenPointsOnMap,
+  onAddPointHighlightBlacklist,
   botTagAction = null,
   onCancelBotTagAction,
   onMarkBotTagWrong,
@@ -339,6 +342,7 @@ function MessageCardComponent({
           signalMessageSenderLabel={senderName?.trim() ? senderName : msg.sender}
           searchText={searchText}
           onOpenPointsOnMap={onOpenPointsOnMap}
+          onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
         />
       </MessageCardRoot>
     </li>

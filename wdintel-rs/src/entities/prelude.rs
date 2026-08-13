@@ -110,6 +110,7 @@ pub use super::palitra_access_organism::Entity as PalitraAccessOrganism;
 pub use super::palitra_conversion_job::Entity as PalitraConversionJob;
 pub use super::palitra_geometry::Entity as PalitraGeometry;
 pub use super::palitra_goi_sync_job::Entity as PalitraGoiSyncJob;
+pub use super::palitra_highlight_blacklist::Entity as PalitraHighlightBlacklist;
 pub use super::palitra_highlight_worker_job::Entity as PalitraHighlightWorkerJob;
 pub use super::palitra_point::Entity as PalitraPoint;
 pub use super::palitra_point_lexeme::Entity as PalitraPointLexeme;

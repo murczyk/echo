@@ -30,11 +30,11 @@ import { useState } from 'react';
 
 import { BulkDeleteConfirmDialog } from '../../components/BulkDeleteConfirmDialog';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { CreatePalitraDrawer } from './components/CreatePalitraDrawer';
 import { EditPalitraDrawer } from './components/EditPalitraDrawer';
 import { PalitraFolderActionDialog } from './components/PalitraFolderActionDialog';
+import { PalitraHighlightBlacklistDialog } from './components/PalitraHighlightBlacklistDialog';
 import { PalitraPreviewDialog } from './components/PalitraPreviewDialog';
 import {
   DEFAULT_PALITRA_COLUMN_ORDER,
@@ -206,7 +206,7 @@ function PalitraHistoryDialog({
           )}
         </Stack>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <Button onClick={onClose}>Закрити</Button>
       </DialogActions>
     </Dialog>
@@ -331,6 +331,7 @@ function RerPalitraNeoPageBody() {
             onRetryConversion={page.handleRetryConversion}
             onRetryGoiSourceConversion={page.handleRetryGoiSourceConversion}
             onOpenHistory={page.openHistory}
+            onOpenHighlightBlacklist={page.openHighlightBlacklist}
             onDelete={page.requestDelete}
             onSetSelectedPalitraIds={page.setSelectedPalitraIds}
             onToggleFolderExpanded={page.toggleFolderExpanded}
@@ -366,6 +367,21 @@ function RerPalitraNeoPageBody() {
         error={page.historyError}
         onClose={page.closeHistory}
       />
+
+      {page.highlightBlacklistPalitra ? (
+        <PalitraHighlightBlacklistDialog
+          palitra={page.highlightBlacklistPalitra}
+          entries={page.highlightBlacklistEntries}
+          loading={page.highlightBlacklistLoading}
+          error={page.highlightBlacklistError}
+          mutationError={page.highlightBlacklistMutationError}
+          mutationBlocked={page.highlightBlacklistMutationBlocked}
+          pendingEntryIds={page.highlightBlacklistPendingIds}
+          onRetry={page.loadHighlightBlacklist}
+          onDelete={page.deleteHighlightBlacklistEntry}
+          onClose={page.closeHighlightBlacklist}
+        />
+      ) : null}
 
       <Dialog
         open={page.archiveDialogOpen}
@@ -406,7 +422,7 @@ function RerPalitraNeoPageBody() {
             </Typography>
           </Box>
         </DialogContent>
-        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <DialogActions>
           <Button onClick={page.cancelArchive} disabled={page.inFlightArchiveId !== null}>
             Скасувати
           </Button>
@@ -450,7 +466,7 @@ function RerPalitraNeoPageBody() {
             label="Розбити по 6500 точок (для Дельти)"
           />
         </DialogContent>
-        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <DialogActions>
           <Button onClick={page.cancelDownload} disabled={page.inFlightDownloadId !== null}>
             Скасувати
           </Button>
@@ -481,7 +497,7 @@ function RerPalitraNeoPageBody() {
             {'Видалити палітру «' + (page.deleteDialogPalitra?.name ?? '') + '»?'}
           </DialogContentText>
         </DialogContent>
-        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <DialogActions>
           <Button onClick={page.cancelDelete} disabled={page.inFlightDeleteId !== null}>
             Скасувати
           </Button>

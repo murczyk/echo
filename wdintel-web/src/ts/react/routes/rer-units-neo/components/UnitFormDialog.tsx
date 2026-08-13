@@ -27,7 +27,6 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { CreateUnitReq, OrbitUnitDetails, Unit } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import {
   DEFAULT_LIST_UNITS_REQ,
   getCreateUnitDuplicateCandidates,
@@ -676,7 +675,7 @@ export function UnitFormDialog({
           ) : null}
         </Stack>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         {networkStep || duplicateStep ? (
           <Button
             onClick={goBack}

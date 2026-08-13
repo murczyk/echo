@@ -555,6 +555,7 @@ mod tests {
     fn test_palitra(name: &str) -> Palitra {
         Palitra {
             id: 42,
+            highlight_blacklist_count: 0,
             name: name.to_string(),
             folder: None,
             is_archived: false,

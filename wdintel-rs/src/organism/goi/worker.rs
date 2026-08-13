@@ -865,6 +865,7 @@ fn goi_association_active_model(
         sheet_name: _,
         row_num: _,
         cells: _,
+        excel_text_unescaped: _,
         association_type,
         frequency,
         coordinates,

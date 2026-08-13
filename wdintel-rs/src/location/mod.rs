@@ -2,7 +2,8 @@ use crate::location::trie::Trie;
 use crate::location::types::Language;
 pub use crate::location::types::SettlementsDataConfig;
 pub(crate) use crate::location::types::{
-    FindSettlementReq, SettlementDetails, SettlementFileRow,
+    CoordinateWithLocality, FindSettlementReq, LocalityDetails,
+    MapCoordinatesReq, SettlementDetails, SettlementFileRow,
 };
 use crate::types::*;
 use crate::users::ensure_rer_role;
@@ -12,7 +13,7 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::ConnectionTrait;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
 pub mod aor_config;
@@ -29,6 +30,62 @@ pub type SettlementsData = (
     BTreeMap<i32, SettlementDetails>,
     BTreeMap<String, Vec<SettlementDetails>>,
 );
+
+#[post("/api/location/map-coordinates")]
+async fn map_coordinates(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<MapCoordinatesReq>,
+) -> Result<Json<Vec<CoordinateWithLocality>>, AppError> {
+    let login = crate::users::login_id_from_identity(&user).c(h!())?;
+    crate::users::ensure_rer_role_by_id(&env.dbx, &login)
+        .await
+        .c(h!())?;
+
+    let coords = req.into_inner().coords;
+    let localities =
+        futures::future::try_join_all(coords.iter().map(|coord| {
+            map_coordinate_to_locality(coord, env.mil_geo.clone())
+        }))
+        .await
+        .c(h!())?;
+
+    let result = coords
+        .into_iter()
+        .zip(localities)
+        .map(|(coords, locality)| CoordinateWithLocality { coords, locality })
+        .collect();
+
+    Ok(Json(result))
+}
+
+async fn map_coordinate_to_locality(
+    coord: &crate::rer_importer::types::GeoCoordinates,
+    mil_geo: milgeo_rs::MilGeo,
+) -> anyhow::Result<Option<LocalityDetails>> {
+    let mapped_coords = milgeo_rs::coord_util::map_coords(
+        BTreeMap::from([(
+            0,
+            milgeo_rs::coord_util::LatLng {
+                lat: coord.lat,
+                lng: coord.lon,
+            },
+        )]),
+        mil_geo,
+        1,
+    )
+    .await
+    .c(h!())?;
+    Ok(mapped_coords
+        .get(&0)
+        .and_then(|localities| localities.first())
+        .map(|locality| LocalityDetails {
+            settlement_name: locality.settlement_name.clone(),
+            direction: locality.direction.clone(),
+            distance_m: locality.distance_m,
+            is_rf: locality.is_rf,
+        }))
+}
 
 #[post("/api/settlement/find")]
 async fn find_locations(

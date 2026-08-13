@@ -374,6 +374,11 @@ export type AreaOfResponsibilityStatsRsp = {
   aorNames: Array<AreaOfResponsibilityEntry>;
 };
 
+export type GeoCoordinates = {
+  lat: number;
+  lon: number;
+};
+
 export type InboxMessage = {
   messageUid: string | null;
   text: string;
@@ -384,6 +389,7 @@ export type InboxMessage = {
   time: string | null;
   freq: string | null;
   coords: string | null;
+  coordsWithLocality: Array<CoordinateWithLocality>;
   callsigns: Array<string>;
   callsignsAlg2: Array<string>;
   checked: boolean;
@@ -1227,6 +1233,7 @@ export type PalitraAccessLogin = {
 
 export type Palitra = {
   id: number;
+  highlightBlacklistCount: number;
   name: string;
   folder: string | null;
   isArchived: boolean;
@@ -1335,6 +1342,28 @@ export type PalitraBulkActionRsp = {
   palitraIds: Array<number>;
 };
 
+export type PalitraHighlightBlacklistEntry = {
+  id: number;
+  palitraId: number;
+  label: string;
+  createdByLoginId: string;
+  createdByLogin: string;
+};
+
+export type PalitraHighlightBlacklistAddReq = {
+  label: string;
+  sourceMessageId: number;
+};
+
+export type PalitraResolveNamesReq = {
+  palitraIds: Array<number>;
+};
+
+export type PalitraName = {
+  id: number;
+  name: string;
+};
+
 export type NoHeadersBody = {
   body: string;
   start: number;
@@ -1389,6 +1418,7 @@ export type CnPoint = {
   end: number;
   etalon: string;
   text: string;
+  palitraIds: Array<number>;
 };
 
 export type CnHighlight = {
@@ -4845,6 +4875,18 @@ export type SigintKeySharePolicy = {
   grantTo: number;
   author: string;
   createdAt: number;
+};
+
+export type CoordinateWithLocality = {
+  coords: GeoCoordinates;
+  locality: LocalityDetails | null;
+};
+
+export type LocalityDetails = {
+  settlementName: string;
+  direction: string;
+  distanceM: number;
+  isRf: boolean;
 };
 
 export type DutyTagsLayout =

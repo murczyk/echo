@@ -7,7 +7,7 @@ import { AnalysisMessagesPane } from './components/AnalysisMessagesPane';
 import { AnalysisPaginationControl } from './components/AnalysisPaginationControl';
 import { AnalysisSummaryTableCard } from './components/AnalysisSummaryTableCard';
 import { ANALYSIS_CENTER_TAB_META } from './analysis-center-tabs';
-import { analysisCompactTabsSx } from './analysis-tab-styles';
+import { analysisCompactTabsSx, analysisNewestFirstLabelSx } from './analysis-tab-styles';
 import { ANALYSIS_MESSAGES_PAGE_SIZE } from './helpers';
 import type { AnalysisCenterTab, AnalysisPageViewModel } from './types';
 
@@ -185,19 +185,9 @@ export function AnalysisCenterPanel({
             }
             label="спочатку нові"
             sx={{
-              width: 110,
-              height: 34,
-              m: 0,
-              flexShrink: 0,
-              justifyContent: 'flex-end',
-              whiteSpace: 'nowrap',
+              ...analysisNewestFirstLabelSx,
               visibility: centerTab === 'messages' ? 'visible' : 'hidden',
               pointerEvents: centerTab === 'messages' ? 'auto' : 'none',
-              '& .MuiFormControlLabel-label': {
-                fontSize: 11.5,
-                fontWeight: 500,
-                lineHeight: 1.2,
-              },
             }}
           />
         ) : null}
@@ -255,6 +245,7 @@ export function AnalysisCenterPanel({
             onOpenEditor={page.openEditor}
             onLoadMoreMessages={page.loadMoreMessages}
             onOpenPointsOnMap={page.openPointsOnMap}
+            onAddPointHighlightBlacklist={page.onAddPointHighlightBlacklist}
             onSaveMessageUpdate={page.saveMessageUpdate}
             onSaveMessageComment={page.onSaveMessageComment}
             onToggleMessageBookmark={page.onToggleMessageBookmark}

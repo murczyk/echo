@@ -450,6 +450,7 @@ export function useRerDutyFeeds(
     handleMessageImportant: actions.handleMessageImportant,
     handleMessageCopy: actions.handleMessageCopy,
     handleOpenPointsOnMap: actions.handleOpenPointsOnMap,
+    onAddPointHighlightBlacklist: actions.onAddPointHighlightBlacklist,
     handleDeleteConfirm: actions.handleDeleteConfirm,
     setDeleteConfirmId: actions.setDeleteConfirmId,
     setDeleteConfirmFeedId: actions.setDeleteConfirmFeedId,

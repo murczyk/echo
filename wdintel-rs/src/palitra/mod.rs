@@ -15,6 +15,7 @@ use crate::palitra::bl::{
     palitra_search_cache_key, palitra_suggest_cache_key, read_cached_json,
     write_cached_json,
 };
+use crate::palitra::highlight_blacklist::counts_by_palitra_ids;
 use crate::palitra::types::*;
 use crate::types::*;
 use crate::users::{ensure_rer_role, has_role, login_id_from_identity};
@@ -41,6 +42,7 @@ pub mod conversion_worker;
 mod download;
 pub(crate) mod goi_changelog;
 pub mod goi_sync_worker;
+pub mod highlight_blacklist;
 mod kmz;
 pub mod oneoff;
 pub mod types;
@@ -1950,8 +1952,17 @@ async fn render_created_palitra_response(
     let goi_sync_summary = bl::read_palitra_goi_sync_summary(dbx, palitra_id)
         .await
         .c(h!())?;
+    let highlight_blacklist_count =
+        counts_by_palitra_ids(dbx, vec![palitra_id])
+            .await
+            .c(h!())?
+            .into_iter()
+            .find(|(id, _)| *id == palitra_id)
+            .map(|(_, count)| count)
+            .unwrap_or_default();
     Ok(Palitra {
         id: palitra.id,
+        highlight_blacklist_count,
         name: palitra.name,
         folder: bl::normalize_palitra_folder_from_db(palitra.folder),
         is_archived: palitra.is_archived,
@@ -3192,6 +3203,40 @@ fn ensure_unique_zip_entry_name(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[serial_test::serial]
+    #[tokio::test]
+    async fn render_created_palitra_response_preserves_blacklist_count() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let palitra = crate::functest::tests::find_test_palitra(&env.dbx)
+            .await
+            .unwrap();
+        crate::functest::tests::mk_palitra_point(
+            "Пункт Альфа".to_string(),
+            palitra.id,
+            &env.dbx,
+        )
+        .await
+        .unwrap();
+        let login_id = crate::users::system_login_id(&env.dbx).await.unwrap();
+        crate::palitra::highlight_blacklist::bl::add_entry(
+            &env.dbx,
+            palitra.id,
+            login_id,
+            "Пункт Альфа",
+            1,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            render_created_palitra_response(&env.dbx, palitra.id)
+                .await
+                .unwrap()
+                .highlight_blacklist_count,
+            1
+        );
+    }
 
     fn goi_source_retry_row_for_test(
         id: i64,

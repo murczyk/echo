@@ -55,17 +55,7 @@ export function PowerPickerActionBar({
   }
 
   return (
-    <DialogActions
-      className={className}
-      sx={{
-        px: 1.5,
-        py: 1.5,
-        justifyContent: 'flex-end',
-        gap: 1.5,
-        borderTop: 1,
-        borderColor: 'divider',
-      }}
-    >
+    <DialogActions className={className}>
       {powerActions.map((actionType) => {
         switch (actionType) {
           case 'clear':

@@ -113,23 +113,26 @@ pub async fn run_process_coords_locations_worker(
                 model.update(dbx).await.c(h!())?;
                 for (peleng, localities) in peleng_locations.clone() {
                     let mut model = peleng.into_active_model();
-                    if let Some(locality) = localities.into_iter().next() {
-                        model.country_code = Set(Some(String::from(
-                            locality.get_country_code(),
-                        )));
-                        model.settlement =
-                            Set(Some(locality.settlement_name.clone()));
-                        model.distance_m = Set(Some(locality.distance_m));
-                        model.locality_direction =
-                            Set(Some(locality.direction));
-                    } else {
-                        model.settlement = Set(Some(String::from("")));
-                    }
+                    set_peleng_locality(&mut model, localities.first());
                     model.update(dbx).await.c(h!())?;
                 }
             }
         }
     }
+}
+
+fn set_peleng_locality(
+    model: &mut sigint_peleng::ActiveModel,
+    locality: Option<&Locality>,
+) {
+    let Some(locality) = locality else {
+        model.settlement = Set(Some(String::from("")));
+        return;
+    };
+    model.country_code = Set(Some(String::from(locality.get_country_code())));
+    model.settlement = Set(Some(locality.settlement_name.clone()));
+    model.distance_m = Set(Some(locality.distance_m));
+    model.locality_direction = Set(Some(locality.direction.clone()));
 }
 
 async fn push_frequency_locations<'a, 'async_trait, C>(
@@ -201,12 +204,10 @@ async fn collect_peleng_locations(
         milgeo_rs::coord_util::map_coords(coords.clone(), mil_geo.clone(), 3)
             .await
             .c(h!())?;
-    let mut data = vec![];
-    for (id, locality) in matches {
-        if let Some(peleng) = pelengs_map.get(&id) {
-            data.push((peleng.clone(), locality));
-        }
-    }
-
-    Ok(data)
+    Ok(pelengs_map
+        .into_iter()
+        .map(|(id, peleng)| {
+            (peleng, matches.get(&id).cloned().unwrap_or_default())
+        })
+        .collect())
 }

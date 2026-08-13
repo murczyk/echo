@@ -3,13 +3,16 @@ import { useTheme } from '@mui/material/styles';
 import CheckIcon from '@mui/icons-material/Check';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import * as L from 'leaflet';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { copyTextToClipboard } from '../../../../../copy-to-clipboard';
 import { renderWgsFloat } from '../../../importer-beta/coordinates';
 import { getTileLayers } from '../../../../../web-components/analysis-map/tile-layers';
-import { getCoordinateMgrsText } from '../../../../../maps/coordinate-format';
+import { getCoordinateMgrsText, getCoordinateText } from '../../../../../maps/coordinate-format';
+import { formatCoordinateLocality } from '../../../../../maps/coordinate-locality';
 import { CoordinateMapPreviewControls } from '../CoordinateMapPreviewControls';
 import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
@@ -28,7 +31,8 @@ const MAP_INIT_TIMEOUT_MS = 2000;
 const MAP_HOST_MIN_SIZE_PX = 48;
 const COORDINATE_ROW_HEIGHT = 24;
 const COORDINATE_ROW_GAP = 6;
-const COORDINATE_LABEL_WIDTH = 56;
+const COORDINATE_LABEL_WIDTH = 80;
+const COORDINATE_PANEL_WIDTH = 300;
 const COORDINATE_COPY_SIZE = 20;
 const COORDINATE_COPY_GAP = 4;
 
@@ -83,6 +87,7 @@ export function CoordinateAttachmentPreviewRenderer({
         <CoordinateMapPreview
           points={points}
           activeIndex={activeIndex}
+          onActiveIndexChange={changeActiveIndex}
           baseLayerId={baseLayerId}
           isFullscreen={dialogIsFullscreen}
         />
@@ -110,11 +115,13 @@ export function CoordinateAttachmentPreviewRenderer({
 function CoordinateMapPreview({
   points,
   activeIndex,
+  onActiveIndexChange,
   baseLayerId,
   isFullscreen,
 }: {
   points: CoordinatePreviewPoint[];
   activeIndex: number;
+  onActiveIndexChange: (index: number) => void;
   baseLayerId: BaseLayerId;
   isFullscreen: boolean;
 }) {
@@ -127,6 +134,7 @@ function CoordinateMapPreview({
   const baseLayerIdRef = useRef<BaseLayerId>('googleHybrid');
   const pointsRef = useRef(points);
   const activeIndexRef = useRef(activeIndex);
+  const onActiveIndexChangeRef = useRef(onActiveIndexChange);
   const initFrameRef = useRef<number | null>(null);
   const invalidateFrameRef = useRef<number | null>(null);
   const initTimeoutRef = useRef<number | null>(null);
@@ -134,6 +142,7 @@ function CoordinateMapPreview({
   const [mapInitState, setMapInitState] = useState<MapInitState>('loading');
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
   const [retryToken, setRetryToken] = useState(0);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     baseLayerIdRef.current = baseLayerId;
@@ -146,6 +155,10 @@ function CoordinateMapPreview({
   useEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
+
+  useEffect(() => {
+    onActiveIndexChangeRef.current = onActiveIndexChange;
+  }, [onActiveIndexChange]);
 
   useEffect(() => {
     setCopyStatus('idle');
@@ -177,7 +190,7 @@ function CoordinateMapPreview({
       return;
     }
 
-    const activePoint = points[activeIndex];
+    const activePoint = pointsRef.current[activeIndex];
     if (activePoint == null) {
       return;
     }
@@ -200,7 +213,7 @@ function CoordinateMapPreview({
       invalidateFrameRef.current = null;
       mapRef.current?.invalidateSize();
     });
-  }, [activeIndex, points]);
+  }, [activeIndex]);
 
   useEffect(() => {
     if (invalidateFrameRef.current !== null) {
@@ -314,16 +327,22 @@ function CoordinateMapPreview({
           : tileLayers.openStreetMap;
       baseLayer.addTo(map);
 
-      const markers = visiblePoints.map(({ lat, lng }, index) =>
-        L.circleMarker([lat, lng], {
+      const markers = visiblePoints.map(({ lat, lng }, index) => {
+        const marker = L.circleMarker([lat, lng], {
           radius: index === activeIndexRef.current ? 10 : 8,
           color: '#ffffff',
           weight: 3,
           fillColor: index === activeIndexRef.current ? '#1976d2' : '#ff4d2d',
           fillOpacity: 1,
-          interactive: false,
-        }).addTo(map),
-      );
+          interactive: true,
+          bubblingMouseEvents: false,
+        }).addTo(map);
+        marker.on('click', () => {
+          map.setView([lat, lng], map.getZoom());
+          onActiveIndexChangeRef.current(index);
+        });
+        return marker;
+      });
 
       mapRef.current = map;
       markerRefs.current = markers;
@@ -390,6 +409,11 @@ function CoordinateMapPreview({
   }
   const mgrsText = getCoordinateMgrsText({ lat: point.lat, lng: point.lng });
   const wgs84Text = `${renderWgsFloat(point.lat)}, ${renderWgsFloat(point.lng)}`;
+  const dmsText = getCoordinateText('dms', point);
+  const sk42Text = getCoordinateText('sk42', point);
+  const usk2000Text = getCoordinateText('usk2000', point);
+  const utmText = getCoordinateText('utm', point);
+  const localityText = formatCoordinateLocality(point.locality ?? null);
   const handleCopyMgrs = useCallback(() => {
     if (mgrsText == null) {
       return;
@@ -471,6 +495,10 @@ function CoordinateMapPreview({
       <ContentCopyIcon sx={{ fontSize: 13 }} />
     );
 
+  const stopDragPropagation = (event: React.SyntheticEvent) => {
+    event.stopPropagation();
+  };
+
   return (
     <Box
       sx={{
@@ -478,7 +506,7 @@ function CoordinateMapPreview({
         flex: 1,
         minHeight: 0,
         overflow: 'hidden',
-        borderRadius: isFullscreen ? 0 : 1.5,
+        borderRadius: 0,
         backgroundColor: 'background.paper',
         ...getAttachmentPreviewStageSx(theme, isFullscreen),
       }}
@@ -590,7 +618,7 @@ function CoordinateMapPreview({
             gap: `${COORDINATE_ROW_GAP}px`,
             px: '12px',
             py: '12px',
-            width: 'fit-content',
+            width: COORDINATE_PANEL_WIDTH,
             maxWidth: 'min(100%, calc(100vw - 120px))',
             borderRadius: 2.5,
             bgcolor: panelBackground,
@@ -599,6 +627,7 @@ function CoordinateMapPreview({
             borderColor: panelBorder,
             boxShadow: '0 14px 32px rgba(0, 0, 0, 0.36)',
             backdropFilter: 'blur(8px)',
+            pointerEvents: 'auto',
           }}
           style={{
             display: 'inline-flex',
@@ -606,10 +635,19 @@ function CoordinateMapPreview({
             alignItems: 'flex-start',
             gap: `${COORDINATE_ROW_GAP}px`,
             padding: '12px',
-            width: 'fit-content',
+            width: `${COORDINATE_PANEL_WIDTH}px`,
             maxWidth: 'min(100%, calc(100vw - 120px))',
+            pointerEvents: 'auto',
           }}
           data-coordinate-panel="true"
+          onMouseDown={stopDragPropagation}
+          onMouseUp={stopDragPropagation}
+          onPointerDown={stopDragPropagation}
+          onPointerUp={stopDragPropagation}
+          onTouchStart={stopDragPropagation}
+          onTouchEnd={stopDragPropagation}
+          onClick={stopDragPropagation}
+          onDoubleClick={stopDragPropagation}
         >
           <Box
             sx={{
@@ -750,8 +788,135 @@ function CoordinateMapPreview({
               </IconButton>
             </Box>
           </Box>
+
+          {isExpanded ? (
+            <>
+              <CoordinateValueRow
+                label="DMS"
+                value={dmsText}
+                labelSx={coordinateLabelSx}
+                valueSx={coordinateValueSx}
+              />
+              <CoordinateValueRow
+                label="СК-42"
+                value={sk42Text}
+                labelSx={coordinateLabelSx}
+                valueSx={coordinateValueSx}
+              />
+              <CoordinateValueRow
+                label="УСК-2000"
+                value={usk2000Text}
+                labelSx={coordinateLabelSx}
+                valueSx={coordinateValueSx}
+              />
+              <CoordinateValueRow
+                label="UTM"
+                value={utmText}
+                labelSx={coordinateLabelSx}
+                valueSx={coordinateValueSx}
+              />
+            </>
+          ) : null}
+
+          <Button
+            size="small"
+            onClick={() => setIsExpanded((prev) => !prev)}
+            aria-label={isExpanded ? 'Сховати інші формати' : 'Показати інші формати'}
+            data-coordinate-expand-button="true"
+            startIcon={
+              isExpanded ? (
+                <ExpandLessIcon sx={{ fontSize: '14px !important' }} />
+              ) : (
+                <ExpandMoreIcon sx={{ fontSize: '14px !important' }} />
+              )
+            }
+            sx={{
+              pointerEvents: 'auto',
+              alignSelf: 'flex-start',
+              fontSize: 11,
+              fontWeight: 600,
+              minWidth: 0,
+              p: 0,
+              minHeight: 20,
+              color: isDark ? 'rgba(255, 255, 255, 0.7)' : 'text.secondary',
+              textTransform: 'none',
+              '&:hover': {
+                bgcolor: 'transparent',
+                color: isDark ? 'common.white' : 'text.primary',
+              },
+            }}
+          >
+            {isExpanded ? 'Сховати' : 'Інші формати'}
+          </Button>
+
+          {localityText ? (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ maxWidth: 420, lineHeight: 1.3 }}
+              data-coordinate-locality="true"
+            >
+              {localityText}
+            </Typography>
+          ) : null}
         </Box>
       </Box>
+    </Box>
+  );
+}
+
+function CoordinateValueRow({
+  label,
+  value,
+  labelSx,
+  valueSx,
+}: {
+  label: string;
+  value: string;
+  labelSx?: object;
+  valueSx?: object;
+}) {
+  const displayValue = value.replace(new RegExp(`^${label}:\\s*`), '');
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        height: COORDINATE_ROW_HEIGHT,
+        minHeight: COORDINATE_ROW_HEIGHT,
+        maxWidth: '100%',
+      }}
+      data-coordinate-row={label.toLowerCase()}
+    >
+      <Typography
+        variant="caption"
+        sx={{
+          flex: `0 0 ${COORDINATE_LABEL_WIDTH}px`,
+          width: COORDINATE_LABEL_WIDTH,
+          ...labelSx,
+        }}
+        style={{
+          flex: `0 0 ${COORDINATE_LABEL_WIDTH}px`,
+          width: `${COORDINATE_LABEL_WIDTH}px`,
+        }}
+        data-coordinate-label={label.toLowerCase()}
+      >
+        {label}
+      </Typography>
+      <Typography
+        variant="caption"
+        sx={{
+          minWidth: 0,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          fontVariantNumeric: 'tabular-nums',
+          ...valueSx,
+        }}
+        title={displayValue}
+      >
+        {displayValue}
+      </Typography>
     </Box>
   );
 }

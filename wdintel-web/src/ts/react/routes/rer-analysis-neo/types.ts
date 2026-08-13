@@ -268,6 +268,9 @@ export type AnalysisPageActions = {
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
+  onAddPointHighlightBlacklist: (
+    request: import('../shared/message-card/point-highlight-blacklist').AddPointHighlightBlacklistRequest,
+  ) => Promise<void>;
   onUpdateLocalMessage: (
     messageId: number,
     updater: (message: InboxMessage) => InboxMessage,

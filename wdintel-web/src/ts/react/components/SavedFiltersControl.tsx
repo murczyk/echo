@@ -23,7 +23,6 @@ import {
 import type { FormEvent, ReactNode } from 'react';
 import { useMemo, useState } from 'react';
 import { CompactText } from './CompactTypography';
-import { STANDARD_DIALOG_ACTIONS_SX } from './dialogStyles';
 
 type SavedFilterIdentity = {
   id: number;
@@ -293,7 +292,7 @@ export function SavedFiltersControl<TSavedFilter extends SavedFilterIdentity>({
                 disabled={saveInFlight}
               />
             </DialogContent>
-            <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+            <DialogActions>
               <Button onClick={closeActionDialog} disabled={saveInFlight}>
                 Скасувати
               </Button>

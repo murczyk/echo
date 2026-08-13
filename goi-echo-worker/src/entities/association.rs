@@ -14,6 +14,7 @@ pub struct Model {
     pub deleted: bool,
     #[sea_orm(column_type = "Text")]
     pub dedupe_key: String,
+    pub dedupe_key_version: i16,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

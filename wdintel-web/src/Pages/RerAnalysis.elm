@@ -219,8 +219,8 @@ init route _ =
             , reportTagSortBySelect =
                 { state = Select.initState (Select.selectIdentifier "selectReportTagSortBy")
                 , items =
-                    [ Select.basicMenuItem { item = B.ByTime, label = "За Часом" }
-                    , Select.basicMenuItem { item = B.ByFreqThenTime, label = "За Частотою Та Часом" }
+                    [ Select.basicMenuItem { item = B.ByTime, label = "За часом" }
+                    , Select.basicMenuItem { item = B.ByFreqThenTime, label = "За частотою та часом" }
                     ]
                 , selected = B.ByTime
                 }

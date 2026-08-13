@@ -30,6 +30,7 @@ import { resolveDutyScrollFabPosition } from './duty-scroll-fab-position';
 import { PowerChip } from '../../components/PowerChip';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
+import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/point-highlight-blacklist';
 import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
 import {
   buildCopyTextWithNetworkAndNote,
@@ -116,6 +117,7 @@ type DutyMessageCardItemProps = {
   onMessageToggleTag: (msgId: number, tagId: number) => void;
   onMessageEdit: (messageId: number, message: InboxMessage) => void;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
+  onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
 };
 
 const DutyMessageCardItem = memo(function DutyMessageCardItem({
@@ -151,6 +153,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   onMessageToggleTag,
   onMessageEdit,
   onOpenPointsOnMap,
+  onAddPointHighlightBlacklist,
 }: DutyMessageCardItemProps) {
   const labels = buildMessageCardDisplayLabels(msg, { groupInfos, profiles });
   const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
@@ -240,6 +243,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
       onEditDetails={() => onMessageEdit(id, msg)}
       onOpenPointsOnMap={onOpenPointsOnMap}
+      onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
       rightHeaderInsetPx={0}
       filterState={filterState}
     />
@@ -280,6 +284,7 @@ type DutyMessageListProps = {
   onMessageToggleTag: (msgId: number, tagId: number) => void;
   onMessageEdit: (messageId: number, message: InboxMessage) => void;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
+  onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
   listRef: RefObject<HTMLDivElement>;
   /** When non-null, only these ids mount MessageCards; others use height placeholders. */
@@ -320,6 +325,7 @@ const DutyMessageList = memo(
     onMessageToggleTag,
     onMessageEdit,
     onOpenPointsOnMap,
+    onAddPointHighlightBlacklist,
     setItemRef,
     listRef,
     mountedItemIds,
@@ -417,6 +423,7 @@ const DutyMessageList = memo(
     prev.onMessageToggleTag === next.onMessageToggleTag &&
     prev.onMessageEdit === next.onMessageEdit &&
     prev.onOpenPointsOnMap === next.onOpenPointsOnMap &&
+    prev.onAddPointHighlightBlacklist === next.onAddPointHighlightBlacklist &&
     prev.setItemRef === next.setItemRef &&
     prev.listRef === next.listRef &&
     prev.mountedItemIds === next.mountedItemIds &&
@@ -452,7 +459,6 @@ const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
   ) {
     return null;
   }
-
   return (
     <Box
       data-duty-feed-scroll-button
@@ -589,6 +595,7 @@ export const FeedColumnContent = memo(
       onCancelBotTagAction,
       onMarkBotTagWrong,
       onOpenPointsOnMap,
+      onAddPointHighlightBlacklist,
     } = messageCard;
     const {
       onLoadOlder,
@@ -666,6 +673,7 @@ export const FeedColumnContent = memo(
     const stableOnMessageToggleTag = useStableCallback(onMessageToggleTag);
     const stableOnMessageEdit = useStableCallback(onMessageEdit);
     const stableOnOpenPointsOnMap = useStableCallback(onOpenPointsOnMap);
+    const stableOnAddPointHighlightBlacklist = useStableCallback(onAddPointHighlightBlacklist);
     const scrollFabPosition = resolveDutyScrollFabPosition({
       narrowScreen,
       workspaceFabAvoidance,
@@ -721,6 +729,9 @@ export const FeedColumnContent = memo(
           onMessageToggleTag={stableOnMessageToggleTag}
           onMessageEdit={stableOnMessageEdit}
           onOpenPointsOnMap={onOpenPointsOnMap ? stableOnOpenPointsOnMap : undefined}
+          onAddPointHighlightBlacklist={
+            onAddPointHighlightBlacklist ? stableOnAddPointHighlightBlacklist : undefined
+          }
           setItemRef={scroll.setItemRef}
           listRef={scroll.listRef}
           mountedItemIds={idleOffload.mountedItemIds}
@@ -841,6 +852,7 @@ export const FeedColumnContent = memo(
       prevCard.tagsOrder !== nextCard.tagsOrder ||
       prevCard.botTagAction !== nextCard.botTagAction ||
       prevCard.onOpenPointsOnMap !== nextCard.onOpenPointsOnMap ||
+      prevCard.onAddPointHighlightBlacklist !== nextCard.onAddPointHighlightBlacklist ||
       prevCard.tagContributionsOrganismId !== nextCard.tagContributionsOrganismId
     ) {
       return false;

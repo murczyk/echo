@@ -1,4 +1,5 @@
 use crate::config::{
+    FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS,
     FAILED_INBOX_UNIT_BACKFILL_BATCH_PAUSE_MS,
     FAILED_INBOX_UNIT_BACKFILL_BATCH_SIZE, FAILED_INBOX_UNIT_RETENTION_DAYS,
     FAILED_INBOX_UNIT_WORKER_BATCH_SIZE,
@@ -66,6 +67,28 @@ struct UnitTextResolution {
     source_text: String,
     sigint_unit_id: Option<i64>,
     is_fallback: bool,
+}
+
+fn contains_word(value: &str, word: &str) -> bool {
+    value.match_indices(word).any(|(start, matched)| {
+        let end = start + matched.len();
+        let has_alphanumeric_before = value[..start]
+            .chars()
+            .next_back()
+            .is_some_and(|character| character.is_alphanumeric());
+        let has_alphanumeric_after = value[end..]
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_alphanumeric());
+        !has_alphanumeric_before && !has_alphanumeric_after
+    })
+}
+
+fn should_auto_archive_failed_unit(value: &str) -> bool {
+    let value = value.to_lowercase();
+    FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS
+        .iter()
+        .any(|word| contains_word(&value, word))
 }
 
 fn resolution_texts(value: &str) -> Vec<(String, bool)> {
@@ -308,6 +331,38 @@ where
     Ok(sigint_unit_ids.into_iter().next())
 }
 
+async fn resolve_by_exact_sigint_unit_name<C>(
+    db: &C,
+    value: &str,
+) -> anyhow::Result<Option<i64>>
+where
+    C: ConnectionTrait,
+{
+    let normalized = normalize_unit_label(value);
+    if normalized.is_empty() {
+        return Ok(None);
+    }
+    let sigint_unit_ids = sigint_unit::Entity::find()
+        .filter(Expr::cust_with_values(
+            "lower(regexp_replace(btrim(sigint_unit.name), '[[:space:]]+', ' ', 'g')) = $1",
+            vec![normalized],
+        ))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .select_only()
+        .column(sigint_unit::Column::Id)
+        .distinct()
+        .limit(2)
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .context(h!())?;
+    if sigint_unit_ids.len() > 1 {
+        warn!("Multiple SIGINT unit names match value={value:?}");
+        return Ok(None);
+    }
+    Ok(sigint_unit_ids.into_iter().next())
+}
+
 pub(crate) async fn resolve_sigint_unit_id<C>(
     db: &C,
     unit_v2: Option<&str>,
@@ -317,6 +372,13 @@ where
     C: ConnectionTrait,
 {
     if let Some(unit_v2) = nonempty(unit_v2) {
+        if let Some(sigint_unit_id) =
+            resolve_by_exact_sigint_unit_name(db, unit_v2)
+                .await
+                .context(h!())?
+        {
+            return Ok(Some(sigint_unit_id));
+        }
         match resolve_structurally(db, unit_v2).await.context(h!())? {
             StructuralResolution::Resolved(sigint_unit_id) => {
                 return Ok(Some(sigint_unit_id));
@@ -339,7 +401,16 @@ where
         }
     }
     match nonempty(unit) {
-        Some(unit) => resolve_by_label(db, unit).await.context(h!()),
+        Some(unit) => {
+            if let Some(sigint_unit_id) =
+                resolve_by_exact_sigint_unit_name(db, unit)
+                    .await
+                    .context(h!())?
+            {
+                return Ok(Some(sigint_unit_id));
+            }
+            resolve_by_label(db, unit).await.context(h!())
+        }
         None => Ok(None),
     }
 }
@@ -355,7 +426,15 @@ where
     let mut resolved = Vec::new();
     for candidate in unit_text_candidates(unit_v2, unit) {
         let sigint_unit_id = if candidate.is_fallback {
-            resolve_by_label(db, &candidate.text).await.context(h!())?
+            match resolve_by_exact_sigint_unit_name(db, &candidate.text)
+                .await
+                .context(h!())?
+            {
+                Some(sigint_unit_id) => Some(sigint_unit_id),
+                None => {
+                    resolve_by_label(db, &candidate.text).await.context(h!())?
+                }
+            }
         } else {
             match candidate.source {
                 UnitTextSource::UnitV2 => {
@@ -447,6 +526,7 @@ where
         .or(existing.as_ref())
         .map(|failure| (failure.is_bad_data, failure.note.clone()))
         .unwrap_or_default();
+    let is_bad_data = is_bad_data || should_auto_archive_failed_unit(unit_txt);
     let Some(existing) = existing else {
         failed_inbox_unit::ActiveModel {
             id: NotSet,
@@ -1015,6 +1095,17 @@ mod tests {
     }
 
     #[test]
+    fn detects_failed_unit_auto_archive_words() {
+        for label in ["НВ", "підрозділ н/В резерв", "123 Н.В."]
+        {
+            assert!(should_auto_archive_failed_unit(label), "{label}");
+        }
+        for label in ["НВО", "анв", "н/ва", "н.в.о"] {
+            assert!(!should_auto_archive_failed_unit(label), "{label}");
+        }
+    }
+
+    #[test]
     fn unit_text_candidates_split_unit_v2_and_prefer_it_over_unit() {
         assert_eq!(
             unit_text_candidates(Some(" 1 мсб, 2 мсб, 1 мсб "), Some("raw"))
@@ -1084,6 +1175,66 @@ mod tests {
         );
         assert_eq!(
             resolve_sigint_unit_id(&env.dbx, Some("333 мсб власний тег"), None)
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn exact_sigint_unit_name_matches_unit_v2_and_unit() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let name = unique_unit_label();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                regiment: Set(name.clone()),
+                name: Set(name.clone()),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let search = format!("  {}\n", name.to_uppercase());
+
+        assert_eq!(
+            resolve_sigint_unit_id(&env.dbx, Some(&search), None)
+                .await
+                .unwrap(),
+            Some(unit.id)
+        );
+        assert_eq!(
+            resolve_sigint_unit_id(&env.dbx, None, Some(&search))
+                .await
+                .unwrap(),
+            Some(unit.id)
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn duplicate_exact_sigint_unit_names_are_not_linked() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let name = unique_unit_label();
+        for _ in 0..2 {
+            crate::functest::tests::mk_sigint_unit(
+                &env.dbx,
+                sigint_unit::ActiveModel {
+                    regiment: Set(name.clone()),
+                    name: Set(name.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        assert_eq!(
+            resolve_sigint_unit_id(&env.dbx, None, Some(&name))
                 .await
                 .unwrap(),
             None
@@ -1239,6 +1390,51 @@ mod tests {
             ..Default::default()
         }
         .insert(&env.dbx)
+        .await
+        .unwrap();
+        let item =
+            insert_inbox_item(&env.dbx, Some(&unit_v2), None, None).await;
+
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            item.id,
+            item.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                item.id,
+                SigintInboxItemUnitKind::Parsed,
+            )
+            .await,
+            vec![unit.id]
+        );
+        assert!(failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(item.id))
+            .filter(failed_inbox_unit::Column::Deleted.eq(false))
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn exact_name_fallback_suppresses_parsed_failure() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let unit_v2 = format!("власний тег {}", unique_unit_label());
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set(unit_v2.clone()),
+                ..Default::default()
+            },
+        )
         .await
         .unwrap();
         let item =
@@ -1534,6 +1730,54 @@ mod tests {
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].unit_txt, "невідомий   сирий підрозділ");
         assert!(!failures[0].deleted);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn auto_archive_uses_stored_failure_text_for_both_sources() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let raw_marker =
+            insert_inbox_item(&env.dbx, None, Some("НВ"), None).await;
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            raw_marker.id,
+            None,
+            raw_marker.unit.as_deref(),
+        )
+        .await
+        .unwrap();
+
+        let raw_failure = failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(raw_marker.id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(raw_failure.unit_txt, "НВ");
+        assert!(raw_failure.is_bad_data);
+
+        let parsed_label = unique_unit_label();
+        let unit_v2 = format!("н/в {parsed_label}");
+        let parsed_unit =
+            insert_inbox_item(&env.dbx, Some(&unit_v2), None, None).await;
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            parsed_unit.id,
+            parsed_unit.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let parsed_failure = failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(parsed_unit.id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(parsed_failure.unit_txt, parsed_label);
+        assert!(!parsed_failure.is_bad_data);
     }
 
     #[tokio::test]

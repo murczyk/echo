@@ -14,7 +14,6 @@ import { useEffect, useState } from 'react';
 import type { Unit } from '../../../../../Bindings';
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../../components/PowerAlert';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { DEFAULT_LIST_UNITS_REQ, searchUnitsStrictThenRelaxed } from '../../../services/api/units';
 import { formatUnitError } from '../helpers';
 
@@ -149,7 +148,7 @@ export function MergeUnitDialog({
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
         </Stack>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <Button onClick={onClose} disabled={submitting}>
           Скасувати
         </Button>

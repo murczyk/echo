@@ -16,6 +16,7 @@ import type {
 } from '../../../../Bindings';
 import { buildInboxReq } from './helpers';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
+import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/point-highlight-blacklist';
 import type {
   AnalysisAorEntry,
   AnalysisCountItem,
@@ -116,6 +117,7 @@ export type UseAnalysisDataResult = {
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => Promise<void>;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => Promise<void>;
   onToggleMessageTag: (messageId: number, tagId: number) => Promise<void>;
+  onAddPointHighlightBlacklist: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   options: AnalysisFilterOptions;
   profiles: Record<string, SignalProfileEntry | null>;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => Promise<void>;
