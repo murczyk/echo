@@ -403,7 +403,15 @@ where
     let mut resolved = Vec::new();
     for candidate in unit_text_candidates(unit_v2, unit) {
         let sigint_unit_id = if candidate.is_fallback {
-            resolve_by_label(db, &candidate.text).await.context(h!())?
+            match resolve_by_exact_sigint_unit_name(db, &candidate.text)
+                .await
+                .context(h!())?
+            {
+                Some(sigint_unit_id) => Some(sigint_unit_id),
+                None => {
+                    resolve_by_label(db, &candidate.text).await.context(h!())?
+                }
+            }
         } else {
             match candidate.source {
                 UnitTextSource::UnitV2 => {
@@ -1347,6 +1355,51 @@ mod tests {
             ..Default::default()
         }
         .insert(&env.dbx)
+        .await
+        .unwrap();
+        let item =
+            insert_inbox_item(&env.dbx, Some(&unit_v2), None, None).await;
+
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            item.id,
+            item.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                item.id,
+                SigintInboxItemUnitKind::Parsed,
+            )
+            .await,
+            vec![unit.id]
+        );
+        assert!(failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::InboxItemId.eq(item.id))
+            .filter(failed_inbox_unit::Column::Deleted.eq(false))
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn exact_name_fallback_suppresses_parsed_failure() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let unit_v2 = format!("власний тег {}", unique_unit_label());
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set(unit_v2.clone()),
+                ..Default::default()
+            },
+        )
         .await
         .unwrap();
         let item =
