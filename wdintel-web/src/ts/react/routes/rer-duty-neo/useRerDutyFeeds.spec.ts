@@ -194,6 +194,7 @@ vi.mock('./useRerDutyFeedState', () => ({
       toggleGroup: vi.fn(),
       selectAllGroups: vi.fn(),
       loadFeedNewerMessages: vi.fn(),
+      flushPendingNewerMessages: vi.fn(),
       getFeedLoadGeneration: (feedId: string) => hoisted.feedLoadGenerations[feedId] ?? 0,
       buildReqForFeed: vi.fn(
         (

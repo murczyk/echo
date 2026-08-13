@@ -29,9 +29,9 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import SettingsInputAntennaIcon from '@mui/icons-material/SettingsInputAntenna';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
-import { Button, ButtonGroup, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
+import { Menu, MenuItem, Typography } from '@mui/material';
 import { memo, useId, useLayoutEffect, useRef, useState } from 'react';
-import type { ComponentProps, MouseEvent, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, CSSProperties, MouseEvent, ReactNode } from 'react';
 import { ELLIPSIS, isPresent } from '../../../utils/misc';
 import { blurActiveElement } from '../../../utils/focus';
 
@@ -94,37 +94,23 @@ function ActionIconButton({
   icon: JSX.Element;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   selected?: boolean;
-  buttonProps?: Omit<
-    ComponentProps<typeof Button>,
-    'children' | 'onClick' | 'startIcon' | 'endIcon'
-  >;
+  buttonProps?: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children' | 'onClick' | 'type'>;
 }) {
   return (
-    <Tooltip title={title}>
-      <Button
-        aria-label={title}
-        data-selected={selected}
-        onClick={(event) => {
-          blurActiveElement();
-          onClick(event);
-        }}
-        {...buttonProps}
-        sx={{
-          width: 30,
-          minWidth: 30,
-          height: 30,
-          p: 0,
-          color: selected ? 'primary.main' : MESSAGE_CARD_ACTION_COLOR,
-          backgroundColor: selected ? 'action.selected' : 'transparent',
-          '& .MuiSvgIcon-root': { fontSize: 18 },
-          '&:hover': {
-            backgroundColor: selected ? 'action.selected' : 'action.hover',
-          },
-        }}
-      >
-        {icon}
-      </Button>
-    </Tooltip>
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      data-selected={selected ? 'true' : undefined}
+      className="message-card-action-btn"
+      onClick={(event) => {
+        blurActiveElement();
+        onClick(event);
+      }}
+      {...buttonProps}
+    >
+      {icon}
+    </button>
   );
 }
 
@@ -380,12 +366,6 @@ function ActionIconsRow({
   ].filter((button): button is JSX.Element => button != null);
 
   const actionGridColumns = displayMode === 'duty' ? 4 : 3;
-  const lastRowButtonCount =
-    buttons.length === 0
-      ? 0
-      : buttons.length % actionGridColumns === 0
-        ? actionGridColumns
-        : buttons.length % actionGridColumns;
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -432,64 +412,6 @@ function ActionIconsRow({
       }
     };
   }, [buttons.length, compact]);
-
-  const buttonGroupSx = stackedLayout
-    ? {
-        display: 'grid',
-        gridTemplateColumns: `repeat(${actionGridColumns}, 30px)`,
-        gridAutoRows: '30px',
-        width: 'fit-content',
-        marginInline: 'auto',
-        border: '1px solid',
-        borderColor: 'var(--color-divider)',
-        borderRadius: 1,
-        color: 'var(--color-action)',
-        overflow: 'hidden',
-        '& .MuiButton-root': {
-          color: 'var(--color-action)',
-          borderColor: 'var(--color-divider)',
-          borderRadius: 0,
-          borderRight: '1px solid',
-          borderBottom: '1px solid',
-          borderRightColor: 'divider',
-          borderBottomColor: 'divider',
-        },
-        [`& .MuiButton-root:nth-of-type(${actionGridColumns}n)`]: {
-          borderRight: 'none',
-        },
-        ...(lastRowButtonCount > 0
-          ? {
-              [`& .MuiButton-root:nth-last-of-type(-n+${lastRowButtonCount})`]: {
-                borderBottom: 'none',
-              },
-            }
-          : {}),
-        '& .MuiButton-root:hover': {
-          borderColor: 'var(--color-divider)',
-          backgroundColor: 'action.hover',
-        },
-      }
-    : {
-        flexWrap: 'nowrap',
-        alignItems: 'center',
-        borderRadius: 1,
-        '& .MuiButton-root': {
-          borderColor: 'var(--color-divider)',
-          borderRadius: 0,
-        },
-        '& .MuiButton-root:first-of-type': {
-          borderTopLeftRadius: 4,
-          borderBottomLeftRadius: 4,
-        },
-        '& .MuiButton-root:last-of-type': {
-          borderTopRightRadius: 4,
-          borderBottomRightRadius: 4,
-        },
-        '& .MuiButton-root:hover': {
-          borderColor: 'var(--color-divider)',
-          backgroundColor: 'action.hover',
-        },
-      };
 
   const overflowMenu =
     isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu ? (
@@ -679,16 +601,25 @@ function ActionIconsRow({
   return (
     <>
       <div ref={rootRef} style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-        <ButtonGroup
-          size="small"
-          variant="outlined"
-          aria-label="Дії повідомлення"
+        <div
           role={stackedLayout ? 'group' : undefined}
+          aria-label="Дії повідомлення"
+          className={
+            stackedLayout
+              ? 'message-card-action-group message-card-action-group--stacked'
+              : 'message-card-action-group'
+          }
           data-action-grid-columns={stackedLayout ? actionGridColumns : undefined}
-          sx={buttonGroupSx}
+          style={
+            stackedLayout
+              ? ({
+                  ['--message-card-action-cols' as string]: actionGridColumns,
+                } as CSSProperties)
+              : undefined
+          }
         >
           {buttons}
-        </ButtonGroup>
+        </div>
       </div>
       {overflowMenu}
       {copyMenu}
@@ -732,27 +663,26 @@ function NetworkEtalonSection({
 
   const geoButton =
     !showTopGridLocation && showInlineLocationTooltip && locationDisplayValue != null ? (
-      <Tooltip title={locationDisplayValue} placement="top">
-        <span
-          aria-label={`Локація: ${locationDisplayValue}`}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxSizing: 'border-box',
-            width: 24,
-            height: 24,
-            padding: 0,
-            border: '1px solid transparent',
-            borderRadius: '50%',
-            color: MESSAGE_CARD_ACTION_COLOR,
-            flexShrink: 0,
-            alignSelf: 'center',
-          }}
-        >
-          <PlaceOutlinedIcon aria-hidden sx={{ fontSize: 16, lineHeight: 1 }} />
-        </span>
-      </Tooltip>
+      <span
+        title={locationDisplayValue}
+        aria-label={`Локація: ${locationDisplayValue}`}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxSizing: 'border-box',
+          width: 24,
+          height: 24,
+          padding: 0,
+          border: '1px solid transparent',
+          borderRadius: '50%',
+          color: MESSAGE_CARD_ACTION_COLOR,
+          flexShrink: 0,
+          alignSelf: 'center',
+        }}
+      >
+        <PlaceOutlinedIcon aria-hidden sx={{ fontSize: 16, lineHeight: 1 }} />
+      </span>
     ) : null;
 
   const networkContent =

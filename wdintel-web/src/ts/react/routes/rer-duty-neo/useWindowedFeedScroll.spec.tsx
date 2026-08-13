@@ -13,6 +13,7 @@ function TestScroller(props: {
   ids: number[];
   onLoadOlder?: () => void;
   onLoadNewer?: () => void;
+  onFlushPendingNewer?: () => void;
   loadingOlder?: boolean;
   loadingNewer?: boolean;
   hasReachedStart?: boolean;
@@ -25,6 +26,7 @@ function TestScroller(props: {
   enabled?: boolean;
   isWatchMode?: boolean;
   unreadPrefetchNeeded?: boolean;
+  pendingNewerFlushNeeded?: boolean;
   itemHeightPx?: number;
   bottomLoadBufferPx?: number;
 }) {
@@ -35,6 +37,7 @@ function TestScroller(props: {
     hasReachedStart: props.hasReachedStart ?? false,
     onLoadOlder: props.onLoadOlder ?? vi.fn(),
     onLoadNewer: props.onLoadNewer,
+    onFlushPendingNewer: props.onFlushPendingNewer,
     onNearBottomChange: props.onNearBottomChange,
     onAtBottomChange: props.onAtBottomChange,
     onPhysicalBottomChange: props.onPhysicalBottomChange,
@@ -44,6 +47,7 @@ function TestScroller(props: {
     enabled: props.enabled ?? true,
     isWatchMode: props.isWatchMode ?? true,
     unreadPrefetchNeeded: props.unreadPrefetchNeeded,
+    pendingNewerFlushNeeded: props.pendingNewerFlushNeeded,
     topLoadBufferPx: 80,
     bottomLoadBufferPx: props.bottomLoadBufferPx ?? 80,
     atBottomThresholdPx: 10,
@@ -860,6 +864,84 @@ describe('useWindowedFeedScroll', () => {
     expect(onLoadNewer).toHaveBeenCalledTimes(1);
   });
 
+  it('flushes pending newer pages only after scroll idle near bottom', async () => {
+    const onFlushPendingNewer = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          unreadPrefetchNeeded={false}
+          onFlushPendingNewer={onFlushPendingNewer}
+        />,
+      );
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    // Near-bottom zone, not physical bottom (distance ~70 with buffer 80).
+    setScrollMetrics(scroller, { scrollTop: 130, clientHeight: 100, scrollHeight: 300 });
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    onFlushPendingNewer.mockClear();
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          pendingNewerFlushNeeded
+          unreadPrefetchNeeded={false}
+          onFlushPendingNewer={onFlushPendingNewer}
+        />,
+      );
+    });
+    expect(onFlushPendingNewer).not.toHaveBeenCalled();
+
+    setScrollMetrics(scroller, { scrollTop: 140, clientHeight: 100, scrollHeight: 300 });
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+      await new Promise<void>((resolve) => setTimeout(resolve, 80));
+    });
+    expect(onFlushPendingNewer).not.toHaveBeenCalled();
+
+    await flushLoadNewerIdle();
+    expect(onFlushPendingNewer).toHaveBeenCalledTimes(1);
+  });
+
+  it('flushes pending newer pages immediately at physical bottom', async () => {
+    const onFlushPendingNewer = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          unreadPrefetchNeeded={false}
+          onFlushPendingNewer={onFlushPendingNewer}
+        />,
+      );
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    onFlushPendingNewer.mockClear();
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          pendingNewerFlushNeeded
+          unreadPrefetchNeeded={false}
+          onFlushPendingNewer={onFlushPendingNewer}
+        />,
+      );
+    });
+
+    expect(onFlushPendingNewer).toHaveBeenCalled();
+  });
   it('cancels a pending idle newer load when the scroller unmounts', async () => {
     const onLoadNewer = vi.fn();
     await act(async () => {

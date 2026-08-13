@@ -40,6 +40,7 @@ import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
 import { feedListRenderStateEqual } from './utils';
 import { dutyTopScrollButtonSx } from './top-action-styles';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
+import { useFeedIdleViewportOffload } from './useFeedIdleViewportOffload';
 import { recordDutyScrollDebugTiming, useDutyScrollDebugEnabled } from './duty-scroll-debug';
 import { useFeedColumnFab } from './feedColumnFab';
 
@@ -281,6 +282,9 @@ type DutyMessageListProps = {
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
   listRef: RefObject<HTMLDivElement>;
+  /** When non-null, only these ids mount MessageCards; others use height placeholders. */
+  mountedItemIds: Set<number> | null;
+  placeholderHeightPx: (id: number) => number;
 };
 
 const DutyMessageList = memo(
@@ -318,52 +322,66 @@ const DutyMessageList = memo(
     onOpenPointsOnMap,
     setItemRef,
     listRef,
+    mountedItemIds,
+    placeholderHeightPx,
   }: DutyMessageListProps) {
     return (
       <div
         ref={listRef}
         data-duty-feed-list="true"
+        data-duty-idle-offload={mountedItemIds != null ? 'true' : undefined}
         className="m-0 list-none rer-duty pt-2"
         style={{ boxSizing: 'border-box' }}
       >
-        {items.map(([id, msg]) => (
-          <div key={id} ref={setItemRef(id)} data-duty-message-id={id}>
-            <DutyMessageCardItem
-              id={id}
-              msg={msg}
-              feedId={feedId}
-              feedCount={feedCount}
-              tagsLayout={tagsLayout}
-              botTagAction={botTagAction}
-              onCancelBotTagAction={onCancelBotTagAction}
-              onMarkBotTagWrong={onMarkBotTagWrong}
-              referenceTimeMs={referenceTimeMs}
-              authUserName={authUserName}
-              tagContributionsOrganismId={tagContributionsOrganismId}
-              groupInfos={groupInfos}
-              profiles={profiles}
-              copiedFeedbackId={copiedFeedbackId}
-              networkDisplayMap={networkDisplayMap}
-              networkMap={networkMap}
-              unitsMap={unitsMap}
-              callsignInfoMap={callsignInfoMap}
-              networks={networks}
-              featureStrictNetworks={featureStrictNetworks}
-              tagsMap={tagsMap}
-              tagsOrder={tagsOrder}
-              filterState={filterState}
-              onMessageBookmark={onMessageBookmark}
-              onMessageImportant={onMessageImportant}
-              onMessageCopy={onMessageCopy}
-              onMessageAddFrequencyToFilter={onMessageAddFrequencyToFilter}
-              onMessageComment={onMessageComment}
-              onMessageExcludeEntity={onMessageExcludeEntity}
-              onMessageToggleTag={onMessageToggleTag}
-              onMessageEdit={onMessageEdit}
-              onOpenPointsOnMap={onOpenPointsOnMap}
-            />
-          </div>
-        ))}
+        {items.map(([id, msg]) => {
+          const mountCard = mountedItemIds == null || mountedItemIds.has(id);
+          return (
+            <div key={id} ref={setItemRef(id)} data-duty-message-id={id}>
+              {mountCard ? (
+                <DutyMessageCardItem
+                  id={id}
+                  msg={msg}
+                  feedId={feedId}
+                  feedCount={feedCount}
+                  tagsLayout={tagsLayout}
+                  botTagAction={botTagAction}
+                  onCancelBotTagAction={onCancelBotTagAction}
+                  onMarkBotTagWrong={onMarkBotTagWrong}
+                  referenceTimeMs={referenceTimeMs}
+                  authUserName={authUserName}
+                  tagContributionsOrganismId={tagContributionsOrganismId}
+                  groupInfos={groupInfos}
+                  profiles={profiles}
+                  copiedFeedbackId={copiedFeedbackId}
+                  networkDisplayMap={networkDisplayMap}
+                  networkMap={networkMap}
+                  unitsMap={unitsMap}
+                  callsignInfoMap={callsignInfoMap}
+                  networks={networks}
+                  featureStrictNetworks={featureStrictNetworks}
+                  tagsMap={tagsMap}
+                  tagsOrder={tagsOrder}
+                  filterState={filterState}
+                  onMessageBookmark={onMessageBookmark}
+                  onMessageImportant={onMessageImportant}
+                  onMessageCopy={onMessageCopy}
+                  onMessageAddFrequencyToFilter={onMessageAddFrequencyToFilter}
+                  onMessageComment={onMessageComment}
+                  onMessageExcludeEntity={onMessageExcludeEntity}
+                  onMessageToggleTag={onMessageToggleTag}
+                  onMessageEdit={onMessageEdit}
+                  onOpenPointsOnMap={onOpenPointsOnMap}
+                />
+              ) : (
+                <div
+                  aria-hidden
+                  data-duty-message-placeholder="true"
+                  style={{ height: placeholderHeightPx(id) }}
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
     );
   },
@@ -400,7 +418,9 @@ const DutyMessageList = memo(
     prev.onMessageEdit === next.onMessageEdit &&
     prev.onOpenPointsOnMap === next.onOpenPointsOnMap &&
     prev.setItemRef === next.setItemRef &&
-    prev.listRef === next.listRef,
+    prev.listRef === next.listRef &&
+    prev.mountedItemIds === next.mountedItemIds &&
+    prev.placeholderHeightPx === next.placeholderHeightPx,
 );
 
 type FeedColumnScrollFabProps = {
@@ -548,6 +568,7 @@ export const FeedColumnContent = memo(
       physicallyAtBottom = true,
       isWatchMode = false,
       unreadPrefetchNeeded = true,
+      pendingNewerFlushNeeded = false,
       workspaceFabAvoidance = 'none',
     } = view;
     const {
@@ -572,6 +593,7 @@ export const FeedColumnContent = memo(
     const {
       onLoadOlder,
       onLoadNewer,
+      onFlushPendingNewer,
       onMessageBookmark,
       onMessageImportant,
       onMessageAddFrequencyToFilter,
@@ -608,6 +630,7 @@ export const FeedColumnContent = memo(
       hasReachedStart: feed.hasReachedStart,
       onLoadOlder,
       onLoadNewer,
+      onFlushPendingNewer,
       onScrollToTop,
       onReachedBottom,
       onLeftBottom,
@@ -623,6 +646,13 @@ export const FeedColumnContent = memo(
       atBottomThresholdPx: DUTY_FEED_AT_BOTTOM_THRESHOLD_PX,
       resetKey: feed.referenceTimeMs ?? feed.id,
       unreadPrefetchNeeded,
+      pendingNewerFlushNeeded,
+    });
+    const idleOffload = useFeedIdleViewportOffload({
+      // Multi-feed only: single-column Duty already fits; idle offload is for sibling columns.
+      enabled: scrollTrackingEnabled && (feedCount ?? 1) >= 2,
+      scrollerRef: scroll.scrollerRef,
+      itemIds,
     });
 
     const stableOnCancelBotTagAction = useStableCallback(onCancelBotTagAction);
@@ -693,6 +723,8 @@ export const FeedColumnContent = memo(
           onOpenPointsOnMap={onOpenPointsOnMap ? stableOnOpenPointsOnMap : undefined}
           setItemRef={scroll.setItemRef}
           listRef={scroll.listRef}
+          mountedItemIds={idleOffload.mountedItemIds}
+          placeholderHeightPx={idleOffload.placeholderHeightPx}
         />
       );
     const profiledMessageList =
@@ -786,6 +818,7 @@ export const FeedColumnContent = memo(
       prevView.scrollTrackingEnabled !== nextView.scrollTrackingEnabled ||
       prevView.loadingNewer !== nextView.loadingNewer ||
       prevView.unreadPrefetchNeeded !== nextView.unreadPrefetchNeeded ||
+      prevView.pendingNewerFlushNeeded !== nextView.pendingNewerFlushNeeded ||
       prevView.workspaceFabAvoidance !== nextView.workspaceFabAvoidance
     ) {
       return false;
@@ -818,6 +851,7 @@ export const FeedColumnContent = memo(
     if (
       prevActions.onLoadOlder !== nextActions.onLoadOlder ||
       prevActions.onLoadNewer !== nextActions.onLoadNewer ||
+      prevActions.onFlushPendingNewer !== nextActions.onFlushPendingNewer ||
       prevActions.onRemoveColumn !== nextActions.onRemoveColumn ||
       prevActions.onMessageBookmark !== nextActions.onMessageBookmark ||
       prevActions.onMessageImportant !== nextActions.onMessageImportant ||

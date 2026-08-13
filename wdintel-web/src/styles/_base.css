@@ -180,6 +180,88 @@ a {
   container-type: inline-size;
 }
 
+.message-card-action-group {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--color-divider);
+  color: var(--color-action);
+}
+
+.message-card-action-group--stacked {
+  display: grid;
+  grid-template-columns: repeat(var(--message-card-action-cols, 4), 30px);
+  grid-auto-rows: 30px;
+  width: fit-content;
+  margin-inline: auto;
+}
+
+.message-card-action-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-right: 1px solid var(--color-divider);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-action);
+  cursor: pointer;
+  line-height: 0;
+}
+
+.message-card-action-group:not(.message-card-action-group--stacked)
+  > .message-card-action-btn:first-of-type {
+  border-top-left-radius: 4px;
+  border-bottom-left-radius: 4px;
+}
+
+.message-card-action-group:not(.message-card-action-group--stacked)
+  > .message-card-action-btn:last-of-type {
+  border-right: 0;
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+
+.message-card-action-group--stacked > .message-card-action-btn {
+  border-right: 1px solid var(--color-divider);
+  border-bottom: 1px solid var(--color-divider);
+  margin-right: -1px;
+  margin-bottom: -1px;
+}
+
+.message-card-action-btn[data-selected='true'] {
+  color: var(--color-action);
+  background-color: color-mix(in srgb, var(--color-action) 18%, transparent);
+}
+
+.message-card-action-btn:hover {
+  background-color: color-mix(in srgb, var(--color-action) 8%, transparent);
+}
+
+.message-card-action-btn[data-selected='true']:hover {
+  background-color: color-mix(in srgb, var(--color-action) 18%, transparent);
+}
+
+.message-card-action-btn .MuiSvgIcon-root {
+  font-size: 18px;
+}
+
+.message-card-relative-time {
+  color: var(--mui-palette-text-secondary, rgba(0, 0, 0, 0.6));
+  font-size: 0.875rem;
+  line-height: 1.43;
+  white-space: nowrap;
+  cursor: default;
+}
+
 .audio-transcription-beside-player .audio-transcription-layout {
   display: flex;
   align-items: flex-start;

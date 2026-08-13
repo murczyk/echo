@@ -685,6 +685,12 @@ export const DUTY_FEED_MESSAGE_PAGE_SIZE = 20;
 export const DUTY_FEED_MESSAGE_WINDOW_LIMIT = 40;
 /** Keep at least this many loaded-unread messages (after last-seen) when near the live tail. */
 export const DUTY_FEED_UNREAD_PREFETCH_MIN = 10;
+/** Multi-feed: after this idle time, off-viewport MessageCards become height placeholders. */
+export const DUTY_FEED_IDLE_OFFLOAD_MS = 10_000;
+/** Extra viewport margin kept live while idle-offload is active. */
+export const DUTY_FEED_IDLE_OFFLOAD_OVERSCAN_PX = 240;
+/** Fallback row height when an idle placeholder has no measured size yet. */
+export const DUTY_FEED_IDLE_PLACEHOLDER_HEIGHT_PX = 120;
 
 export type WindowedMessageItemsResult = {
   items: MessageItem[];
@@ -833,6 +839,11 @@ export type MessageFeedState = {
   readIds: Set<number>;
   windowedUnreadItems: Map<number, number>;
   unreadCount: number;
+  /**
+   * Newer pages held off the DOM while not following (Elm `notRenderedMessagesYet`).
+   * Flushed into `items` on follow / arrow / reach-bottom.
+   */
+  pendingNewerItems?: MessageItem[];
   /** Auto-add freqs in range (MHz); 0 = off. */
   adjacentFreqsRange: number;
   /** Підсвічувати сигнали (додатково). */
@@ -854,14 +865,147 @@ export function feedLoadedUnreadCount(feed: MessageFeedState): number {
   return count;
 }
 
-/** True when the window still needs newer pages to refill the unread runway after last-seen. */
-export function feedNeedsUnreadPrefetch(feed: MessageFeedState): boolean {
-  return feedLoadedUnreadCount(feed) < DUTY_FEED_UNREAD_PREFETCH_MIN;
+export function feedPendingNewerItems(feed: MessageFeedState): MessageItem[] {
+  return feed.pendingNewerItems ?? [];
+}
+
+export function feedPendingNewerUnreadCount(feed: MessageFeedState): number {
+  let count = 0;
+  for (const [id] of feedPendingNewerItems(feed)) {
+    if (!feed.readIds.has(id)) count += 1;
+  }
+  return count;
+}
+
+/** Merge fetched newer rows into the off-DOM pending buffer (deduped vs window + pending). */
+export function mergePendingNewerItems(
+  feed: MessageFeedState,
+  incomingNewer: MessageItem[],
+): MessageItem[] {
+  const existingIds = itemIds(feed.items);
+  const pending = feedPendingNewerItems(feed);
+  const pendingIds = itemIds(pending);
+  const added = dedupeMessageItems(incomingNewer).filter(
+    ([id]) => !existingIds.has(id) && !pendingIds.has(id),
+  );
+  if (added.length === 0) return pending;
+  return sortMessageItemsByTime(dedupeMessageItems([...pending, ...added]));
+}
+
+/** Effective since-id for newer fetches: pending tail when buffering, else window tail. */
+export function feedNewerSinceId(feed: MessageFeedState): number | null {
+  const pendingTail = feedPendingNewerItems(feed).at(-1)?.[0];
+  if (pendingTail != null) return pendingTail;
+  return feed.items.at(-1)?.[0] ?? null;
 }
 
 /**
- * Poll/badge metadata (`unreadCount`, `readIds`, `windowedUnreadItems`) must not invalidate the
- * message-list render path — those fields change on every counter tick while `items` stay put.
+ * True when a newer page should stay off the DOM (near-bottom ManualScroll / not following).
+ * Follow / mark-all-read apply immediately. Physical bottom also applies immediately —
+ * the user is already on the live edge and expects pending pages to mount.
+ */
+export function shouldBufferNewerMessages(options: {
+  nearBottom: boolean;
+  physicallyAtBottom: boolean;
+  followTail: boolean;
+  markAllRead: boolean;
+}): boolean {
+  return (
+    options.nearBottom && !options.physicallyAtBottom && !options.followTail && !options.markAllRead
+  );
+}
+
+function reconcileWindowedUnreadIdsForAppend(
+  feed: MessageFeedState,
+  windowed: WindowedMessageItemsResult,
+): Map<number, number> {
+  const windowedUnreadItems = new Map(feed.windowedUnreadItems);
+  windowed.removedItems.forEach(([id, message]) => {
+    if (!feed.readIds.has(id)) windowedUnreadItems.set(id, message.timestamp ?? 0);
+  });
+  windowed.items.forEach(([id]) => windowedUnreadItems.delete(id));
+  return windowedUnreadItems;
+}
+
+/**
+ * Append newer rows into the 40-window and clear pending.
+ * Shared by live newer commits and pending flush.
+ */
+export function appendNewerItemsToFeed(
+  feed: MessageFeedState,
+  incomingNewer: MessageItem[],
+  options?: { markAllRead?: boolean },
+): MessageFeedState {
+  const markAllRead = options?.markAllRead === true;
+  const windowed = appendWindowedMessageItems(feed.items, incomingNewer);
+  if (windowed.addedItems.length === 0) {
+    if (markAllRead) {
+      return {
+        ...feed,
+        readIds: new Set<number>([...feed.readIds, ...feed.items.map(([id]) => id)]),
+        windowedUnreadItems: new Map<number, number>(),
+        unreadCount: 0,
+        pendingNewerItems: [],
+      };
+    }
+    if ((feed.pendingNewerItems?.length ?? 0) === 0) return feed;
+    return { ...feed, pendingNewerItems: [] };
+  }
+  const previousIds = new Set(feed.items.map(([id]) => id));
+  const trimmedPreviousUnreadIds = windowed.removedItems
+    .filter(([id]) => previousIds.has(id) && !feed.readIds.has(id))
+    .map(([id]) => id);
+  const readIds =
+    markAllRead || trimmedPreviousUnreadIds.length > 0
+      ? new Set<number>([
+          ...feed.readIds,
+          ...(markAllRead ? windowed.items.map(([id]) => id) : []),
+          ...trimmedPreviousUnreadIds,
+        ])
+      : feed.readIds;
+  const unreadAddedCount = windowed.addedItems.filter(([id]) => !readIds.has(id)).length;
+  const windowedUnreadItems = reconcileWindowedUnreadIdsForAppend({ ...feed, readIds }, windowed);
+  return {
+    ...feed,
+    items: windowed.items,
+    readIds: markAllRead
+      ? new Set<number>([...readIds, ...windowed.items.map(([id]) => id)])
+      : readIds,
+    unreadCount: markAllRead
+      ? 0
+      : Math.max(0, Math.max(feed.unreadCount, unreadAddedCount) - trimmedPreviousUnreadIds.length),
+    windowedUnreadItems: markAllRead ? new Map<number, number>() : windowedUnreadItems,
+    hasReachedStart: windowed.removedItems.length > 0 ? false : feed.hasReachedStart,
+    pendingNewerItems: [],
+  };
+}
+
+/** Flush off-DOM pending newer rows into the visible window. */
+export function flushPendingNewerItems(
+  feed: MessageFeedState,
+  options?: { markAllRead?: boolean },
+): MessageFeedState {
+  const pending = feedPendingNewerItems(feed);
+  if (pending.length === 0) {
+    if (options?.markAllRead === true) {
+      return appendNewerItemsToFeed(feed, [], { markAllRead: true });
+    }
+    return feed;
+  }
+  return appendNewerItemsToFeed(feed, pending, options);
+}
+
+/** True when the window still needs newer pages to refill the unread runway after last-seen. */
+export function feedNeedsUnreadPrefetch(feed: MessageFeedState): boolean {
+  return (
+    feedLoadedUnreadCount(feed) + feedPendingNewerUnreadCount(feed) < DUTY_FEED_UNREAD_PREFETCH_MIN
+  );
+}
+
+/**
+ * Poll/badge metadata (`unreadCount`, `readIds`, `windowedUnreadItems`, `pendingNewerItems`)
+ * must not invalidate the message-list render path — those fields change on every counter tick
+ * while `items` stay put.
  */
 export function feedListRenderStateEqual(prev: MessageFeedState, next: MessageFeedState): boolean {
   return (
@@ -878,9 +1022,9 @@ export function feedListRenderStateEqual(prev: MessageFeedState, next: MessageFe
 }
 
 /**
- * Badge = loadedUnread + trimmedUnread + beyondTailPending.
- * Matching tail preview is the beyond-tail term.
- * Residual `unreadCount` above local loaded+trimmed is only used when
+ * Badge = loadedUnread + pendingUnread + trimmedUnread + beyondTailPending.
+ * Matching tail preview is the beyond-tail term (covers pending while tail id unchanged).
+ * Residual `unreadCount` above local loaded+pending+trimmed is only used when
  * `includeBeyondTailResidual` is true (scrolled up). Near the live tail it
  * must stay off — otherwise a stale poll stock sticks as a phantom badge.
  */
@@ -890,6 +1034,7 @@ export function feedIndicatorUnreadCount(
   options?: { includeBeyondTailResidual?: boolean },
 ): number {
   const loadedUnread = feedLoadedUnreadCount(feed);
+  const pendingUnread = feedPendingNewerUnreadCount(feed);
   const windowedUnreadItems = feed.windowedUnreadItems ?? new Map<number, number>();
   const currentTailId = feed.items.at(-1)?.[0];
   const hasMatchingPreview = currentTailId != null && preview?.tailId === currentTailId;
@@ -902,15 +1047,16 @@ export function feedIndicatorUnreadCount(
           { timestamp: tail?.[1].timestamp, id: currentTailId },
         ) <= 0,
     ).length;
+    // Preview already counts beyond the loaded tail (includes buffered pending).
     return loadedUnread + windowedUnreadBeforeOrAtTail + Math.max(0, preview.count);
   }
 
   const trimmedUnread = windowedUnreadItems.size;
   const includeResidual = options?.includeBeyondTailResidual !== false;
   const beyondTailPending = includeResidual
-    ? Math.max(0, feed.unreadCount - loadedUnread - trimmedUnread)
+    ? Math.max(0, feed.unreadCount - loadedUnread - pendingUnread - trimmedUnread)
     : 0;
-  return loadedUnread + trimmedUnread + beyondTailPending;
+  return loadedUnread + pendingUnread + trimmedUnread + beyondTailPending;
 }
 
 /** Sum of {@link feedUnreadDisplayCount} across all feeds. */

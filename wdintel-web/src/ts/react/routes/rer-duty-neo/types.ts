@@ -35,6 +35,8 @@ export type FeedColumnModel = {
     unreadCount?: number;
     /** When true, near-bottom should keep loading newer until the unread runway is filled. */
     unreadPrefetchNeeded?: boolean;
+    /** When true, flush `pendingNewerItems` into the window after scroll idle. */
+    pendingNewerFlushNeeded?: boolean;
     workspaceFabAvoidance?: DutyWorkspaceFabAvoidance;
   };
   filterPanel: FeedFilterPanelModel;
@@ -67,6 +69,8 @@ export type FeedColumnModel = {
   actions: {
     onLoadOlder: () => void;
     onLoadNewer?: () => void;
+    /** Push buffered newer pages into the visible window (scroll-idle / follow). */
+    onFlushPendingNewer?: () => void;
     onRemoveColumn: () => void;
     onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
     onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;

@@ -62,6 +62,9 @@ export type UseWindowedFeedScrollOptions = {
    * last-seen is already full enough). Defaults to true.
    */
   unreadPrefetchNeeded?: boolean;
+  /** When true, flush buffered newer pages into the window after scroll idle. */
+  pendingNewerFlushNeeded?: boolean;
+  onFlushPendingNewer?: () => void;
 };
 
 export type WindowedFeedScrollHandle = {
@@ -79,6 +82,8 @@ const INITIAL_BOTTOM_SETTLE_FRAMES = 12;
 const INITIAL_BOTTOM_SETTLE_TIMEOUT_MS = 2000;
 /** Wait for scroll to settle before prefetching newer — avoids mid-fling window commits. */
 const LOAD_NEWER_SCROLL_IDLE_MS = 140;
+/** Same idle gate: push buffered newer pages into the DOM only when the finger stops. */
+const FLUSH_PENDING_SCROLL_IDLE_MS = LOAD_NEWER_SCROLL_IDLE_MS;
 
 function distanceToBottom(el: HTMLElement): number {
   return Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
@@ -122,11 +127,14 @@ export function useWindowedFeedScroll({
   enabled = true,
   debugFeedId,
   unreadPrefetchNeeded = true,
+  pendingNewerFlushNeeded = false,
+  onFlushPendingNewer,
 }: UseWindowedFeedScrollOptions): WindowedFeedScrollHandle {
   const debugEnabled = useDutyScrollDebugEnabled();
   const callbacksRef = useRef({
     onLoadOlder,
     onLoadNewer,
+    onFlushPendingNewer,
     onScrollToTop,
     onReachedBottom,
     onLeftBottom,
@@ -139,6 +147,7 @@ export function useWindowedFeedScroll({
     callbacksRef.current = {
       onLoadOlder,
       onLoadNewer,
+      onFlushPendingNewer,
       onScrollToTop,
       onReachedBottom,
       onLeftBottom,
@@ -154,6 +163,7 @@ export function useWindowedFeedScroll({
   const loadOlderTriggeredRef = useRef(false);
   const loadNewerTriggeredRef = useRef(false);
   const loadNewerIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushPendingIdleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasSeenNotAtBottomRef = useRef(false);
   const atBottomRef = useRef<boolean | null>(null);
   const physicallyAtBottomRef = useRef<boolean | null>(null);
@@ -183,6 +193,9 @@ export function useWindowedFeedScroll({
   const unreadPrefetchNeededRef = useRef(unreadPrefetchNeeded);
   unreadPrefetchNeededRef.current = unreadPrefetchNeeded;
   const prevUnreadPrefetchNeededRef = useRef(unreadPrefetchNeeded);
+  const pendingNewerFlushNeededRef = useRef(pendingNewerFlushNeeded);
+  pendingNewerFlushNeededRef.current = pendingNewerFlushNeeded;
+  const prevPendingNewerFlushNeededRef = useRef(pendingNewerFlushNeeded);
   // Narrow-screen feeds remain mounted while hidden. Disabled tracking must not
   // report visibility, bottom state, loads, or read-state side effects.
   const enabledRef = useRef<boolean>(enabled);
@@ -496,12 +509,23 @@ export function useWindowedFeedScroll({
       clearTimeout(loadNewerIdleTimeoutRef.current);
       loadNewerIdleTimeoutRef.current = null;
     }
+    if (flushPendingIdleTimeoutRef.current !== null) {
+      clearTimeout(flushPendingIdleTimeoutRef.current);
+      flushPendingIdleTimeoutRef.current = null;
+    }
   }, []);
 
   const cancelLoadNewerIdle = useCallback(() => {
     if (loadNewerIdleTimeoutRef.current !== null) {
       clearTimeout(loadNewerIdleTimeoutRef.current);
       loadNewerIdleTimeoutRef.current = null;
+    }
+  }, []);
+
+  const cancelFlushPendingIdle = useCallback(() => {
+    if (flushPendingIdleTimeoutRef.current !== null) {
+      clearTimeout(flushPendingIdleTimeoutRef.current);
+      flushPendingIdleTimeoutRef.current = null;
     }
   }, []);
 
@@ -531,6 +555,25 @@ export function useWindowedFeedScroll({
     },
     [cancelLoadNewerIdle, captureAnchorSnapshot, debugFeedId],
   );
+
+  const scheduleFlushPendingIdle = useCallback(() => {
+    cancelFlushPendingIdle();
+    flushPendingIdleTimeoutRef.current = setTimeout(() => {
+      flushPendingIdleTimeoutRef.current = null;
+      if (!enabledRef.current) return;
+      if (!pendingNewerFlushNeededRef.current) return;
+      if (nearBottomRef.current !== true) return;
+      const onFlushPendingNewer = callbacksRef.current.onFlushPendingNewer;
+      if (typeof onFlushPendingNewer !== 'function') return;
+      captureAnchorSnapshot();
+      recordDutyScrollDebugEvent(
+        debugFeedId,
+        'pending-newer:idle-flush',
+        `idleMs=${FLUSH_PENDING_SCROLL_IDLE_MS}`,
+      );
+      onFlushPendingNewer();
+    }, FLUSH_PENDING_SCROLL_IDLE_MS);
+  }, [cancelFlushPendingIdle, captureAnchorSnapshot, debugFeedId]);
 
   useLayoutEffect(() => {
     enabledRef.current = enabled;
@@ -695,19 +738,42 @@ export function useWindowedFeedScroll({
           loadNewerTriggeredRef.current = false;
         }
       }
+
+      // Push buffered newer pages into the window after scroll settles near the live edge.
+      // At the physical bottom, flush immediately — idle deferral left pending stuck off-DOM.
+      const shouldFlushPending =
+        nearBottom &&
+        pendingNewerFlushNeeded &&
+        typeof callbacksRef.current.onFlushPendingNewer === 'function';
+      if (shouldFlushPending) {
+        if (physicallyAtBottom) {
+          cancelFlushPendingIdle();
+          captureAnchorSnapshot();
+          recordDutyScrollDebugEvent(debugFeedId, 'pending-newer:physical-flush', '');
+          callbacksRef.current.onFlushPendingNewer?.();
+        } else {
+          scheduleFlushPendingIdle();
+        }
+      } else {
+        cancelFlushPendingIdle();
+      }
+
       publishDebugMetrics(scroller, prevScrollTop);
     },
     [
       atBottomThresholdPx,
       bottomLoadBufferPx,
       captureAnchorSnapshot,
+      cancelFlushPendingIdle,
       cancelLoadNewerIdle,
       debugFeedId,
       hasReachedStart,
       loadingNewer,
       loadingOlder,
+      pendingNewerFlushNeeded,
       reportVisibleMessageIds,
       publishDebugMetrics,
+      scheduleFlushPendingIdle,
       scheduleLoadNewerIdle,
       stopBottomSettle,
       topLoadBufferPx,
@@ -734,8 +800,26 @@ export function useWindowedFeedScroll({
     }
   }, [cancelLoadNewerIdle, unreadPrefetchNeeded, updateScrollState]);
 
+  useEffect(() => {
+    const wasNeeded = prevPendingNewerFlushNeededRef.current;
+    prevPendingNewerFlushNeededRef.current = pendingNewerFlushNeeded;
+    if (!pendingNewerFlushNeeded) {
+      cancelFlushPendingIdle();
+      return;
+    }
+    if (!enabledRef.current) return;
+    // Pending arrived while already near-bottom / idle — arm the flush timer.
+    if (!wasNeeded) {
+      updateScrollState({ allowLoadOlder: false, allowLoadNewer: false, allowTopReached: false });
+    }
+  }, [cancelFlushPendingIdle, pendingNewerFlushNeeded, updateScrollState]);
+
   const scrollToBottom = useCallback(
-    (behavior: ScrollBehavior = 'auto', debugReason = 'imperative') => {
+    (
+      behavior: ScrollBehavior = 'auto',
+      debugReason = 'imperative',
+      options?: { enableFollow?: boolean },
+    ) => {
       if (!enabledRef.current) return;
       const scroller = scrollerRef.current;
       if (!scroller) return;
@@ -745,7 +829,9 @@ export function useWindowedFeedScroll({
         scroller.scrollTop = scroller.scrollHeight;
       }
       previousScrollTopRef.current = scroller.scrollTop;
-      liveBottomFollowRef.current = true;
+      if (options?.enableFollow !== false) {
+        liveBottomFollowRef.current = true;
+      }
       const canScroll =
         scroller.scrollHeight > scroller.clientHeight || scroller.scrollHeight === 0;
       updateScrollState({
@@ -933,12 +1019,16 @@ export function useWindowedFeedScroll({
         startBottomSettle();
       } else if (physicallyAtBottomRef.current === true && isWatchModeRef.current === false) {
         // Pending catch-up (watch off): stay on the live edge so newer pages keep loading.
+        // Do not re-enable liveBottomFollow — scroll jitter during mount would immediately
+        // fire follow:disable / onLeftBottom and abort catch-up.
         recordDutyScrollDebugEvent(
           debugFeedId,
           'items:stick-bottom',
           `${previousItemIdsRef.current.length}→${currentItemIds.length}; watch=false`,
         );
-        scrollToBottom('auto', 'items changed while catching up at bottom');
+        scrollToBottom('auto', 'items changed while catching up at bottom', {
+          enableFollow: false,
+        });
         startBottomSettle();
       } else {
         recordDutyScrollDebugEvent(
@@ -1027,15 +1117,25 @@ export function useWindowedFeedScroll({
     const scroller = scrollerRef.current;
     if (scroller && scroller.scrollTop < previousScrollTopRef.current - 1) {
       previousScrollTopRef.current = scroller.scrollTop;
-      stopBottomSettle();
-      if (liveBottomFollowRef.current) {
-        liveBottomFollowRef.current = false;
-        recordDutyScrollDebugEvent(
-          debugFeedId,
-          'follow:disable',
-          `immediate upward scroll to ${scroller.scrollTop.toFixed(1)}`,
-        );
-        callbacksRef.current.onLeftBottom?.();
+      const leftPhysicalBottom = distanceToBottom(scroller) > 1;
+      // Ignore tiny settle jitter while still on the live edge; a real scroll-away cancels follow.
+      if (bottomSettleActiveRef.current && !leftPhysicalBottom) {
+        // no-op
+      } else {
+        stopBottomSettle();
+        if (liveBottomFollowRef.current) {
+          liveBottomFollowRef.current = false;
+          recordDutyScrollDebugEvent(
+            debugFeedId,
+            'follow:disable',
+            `immediate upward scroll to ${scroller.scrollTop.toFixed(1)}`,
+          );
+          callbacksRef.current.onLeftBottom?.();
+        }
+        if (leftPhysicalBottom && physicallyAtBottomRef.current !== false) {
+          physicallyAtBottomRef.current = false;
+          callbacksRef.current.onPhysicalBottomChange?.(false);
+        }
       }
     } else if (scroller && distanceToBottom(scroller) <= 0.5) {
       liveBottomFollowRef.current = true;

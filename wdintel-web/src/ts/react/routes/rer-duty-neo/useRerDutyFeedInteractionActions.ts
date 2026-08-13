@@ -22,6 +22,10 @@ type Params = {
       followGeneration?: number;
     },
   ) => Promise<{ ok: boolean; addedCount: number }>;
+  flushPendingNewerMessages: (
+    feedId: string,
+    opts?: { markAllRead?: boolean; urgent?: boolean },
+  ) => void;
   requestValidatedInboxCount: (feedId: string) => Promise<{
     feedId: string;
     quantity: number;
@@ -43,6 +47,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
     setLoadingNewerFeedIds,
     loadFeedInitialMessages,
     loadFeedNewerMessages,
+    flushPendingNewerMessages,
     requestValidatedInboxCount,
     catchUpFeedUnreadToTail,
     dutyDisableAutoScroll,
@@ -58,6 +63,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed) return;
       const followGeneration = beginFollowTail?.(feedId) ?? -1;
+      flushPendingNewerMessages(feedId, { urgent: true });
       if (feed.items.length > 0) {
         const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
         columnRefsRef.current[feedId]?.scrollToEnd(reducedMotion ? 'auto' : 'smooth');
@@ -116,6 +122,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       messageFeeds,
       loadFeedNewerMessages,
       loadFeedInitialMessages,
+      flushPendingNewerMessages,
       showArrowResult,
       columnRefsRef,
       setWatchModeByFeedId,
