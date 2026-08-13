@@ -20,6 +20,7 @@ export function useRerPalitraNeoPageHighlightBlacklist(
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const requestIdRef = useRef(0);
   const openPalitraIdRef = useRef<number | null>(null);
+  const entriesRef = useRef<PalitraHighlightBlacklistEntry[]>([]);
 
   const load = useCallback(async (nextPalitra: Palitra) => {
     const requestId = ++requestIdRef.current;
@@ -27,11 +28,15 @@ export function useRerPalitraNeoPageHighlightBlacklist(
     setError(null);
     setMutationError(null);
     setMutationBlocked(false);
+    entriesRef.current = [];
     setEntries([]);
     setPendingIds(new Set());
     try {
       const nextEntries = await getPalitraHighlightBlacklist(nextPalitra.id);
-      if (requestIdRef.current === requestId) setEntries(nextEntries);
+      if (requestIdRef.current === requestId) {
+        entriesRef.current = nextEntries;
+        setEntries(nextEntries);
+      }
     } catch (loadError) {
       if (requestIdRef.current === requestId) setError(formatErrorMessage(loadError));
     } finally {
@@ -53,6 +58,7 @@ export function useRerPalitraNeoPageHighlightBlacklist(
     requestIdRef.current += 1;
     openPalitraIdRef.current = null;
     setPalitra(null);
+    entriesRef.current = [];
     setLoading(false);
     setError(null);
     setMutationError(null);
@@ -72,7 +78,8 @@ export function useRerPalitraNeoPageHighlightBlacklist(
       try {
         await deletePalitraHighlightBlacklistEntry(palitraId, entry.id);
         if (!isCurrent()) return;
-        const nextEntries = entries.filter((item) => item.id !== entry.id);
+        const nextEntries = entriesRef.current.filter((item) => item.id !== entry.id);
+        entriesRef.current = nextEntries;
         setEntries(nextEntries);
         setPalitraBlacklistCount(palitraId, nextEntries.length);
         if (nextEntries.length === 0) {
@@ -94,7 +101,7 @@ export function useRerPalitraNeoPageHighlightBlacklist(
         }
       }
     },
-    [close, entries, mutationBlocked, notify, palitra, pendingIds, setPalitraBlacklistCount],
+    [close, mutationBlocked, notify, palitra, pendingIds, setPalitraBlacklistCount],
   );
 
   return {

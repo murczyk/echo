@@ -147,6 +147,7 @@ async fn ensure_access(
 #[cfg(test)]
 mod tests {
     use super::resolve_accessible_names;
+    use crate::config::IDENTITY_DURATION_HOURS;
     use crate::config::PALITRA_RESOLVE_NAMES_MAX_IDS;
     use crate::entities::{login, palitra, palitra_access_login};
     use crate::functest::tests::{
@@ -277,7 +278,13 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::from(env.clone()))
-                .wrap(IdentityMiddleware::default())
+                .wrap(
+                    IdentityMiddleware::builder()
+                        .visit_deadline(Some(std::time::Duration::from_secs(
+                            IDENTITY_DURATION_HOURS * 60 * 60,
+                        )))
+                        .build(),
+                )
                 .wrap(SessionMiddleware::new(
                     redis_session_store,
                     Key::generate(),
@@ -293,6 +300,7 @@ mod tests {
                 .to_request(),
         )
         .await;
+        assert!(login_response.status().is_success());
         let session_cookie = login_response
             .response()
             .cookies()

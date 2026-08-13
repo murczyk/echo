@@ -20,6 +20,11 @@ const entry: PalitraHighlightBlacklistEntry = {
   createdByLoginId: 'login-a',
   createdByLogin: 'operator',
 };
+const secondEntry: PalitraHighlightBlacklistEntry = {
+  ...entry,
+  id: 12,
+  label: 'Точка Б',
+};
 function palitra(id: number): Palitra {
   return { id, name: `Палітра ${id}`, highlightBlacklistCount: 1 } as Palitra;
 }
@@ -27,10 +32,15 @@ function palitra(id: number): Palitra {
 let root: Root | null = null;
 let latest: ReturnType<typeof useRerPalitraNeoPageHighlightBlacklist> | null = null;
 let setCount: ((id: number, count: number) => void) | null = null;
+let counts: number[] = [];
+const notifyMock = vi.fn();
 function Harness() {
   const [, setVersion] = useState(0);
-  setCount = () => setVersion((value) => value + 1);
-  latest = useRerPalitraNeoPageHighlightBlacklist(setCount, vi.fn());
+  setCount = (_id, count) => {
+    counts.push(count);
+    setVersion((value) => value + 1);
+  };
+  latest = useRerPalitraNeoPageHighlightBlacklist(setCount, notifyMock);
   return null;
 }
 function renderHook() {
@@ -44,6 +54,8 @@ afterEach(() => {
   root = null;
   latest = null;
   setCount = null;
+  counts = [];
+  notifyMock.mockClear();
   document.body.innerHTML = '';
   vi.clearAllMocks();
 });
@@ -80,5 +92,35 @@ describe('highlight blacklist removal hook', () => {
     expect(latest?.highlightBlacklistPalitra?.id).toBe(2);
     expect(latest?.highlightBlacklistEntries).toEqual([]);
     expect(latest?.highlightBlacklistPendingIds).toEqual(new Set());
+  });
+
+  it('keeps concurrent deletions removed when requests complete in reverse order', async () => {
+    let resolveFirst!: () => void;
+    let resolveSecond!: () => void;
+    mocks.list.mockResolvedValue([entry, secondEntry]);
+    mocks.remove.mockImplementation((_palitraId: number, entryId: number) => {
+      return new Promise<void>((resolve) => {
+        if (entryId === entry.id) resolveFirst = resolve;
+        else resolveSecond = resolve;
+      });
+    });
+    renderHook();
+    await act(async () => latest?.openHighlightBlacklist(palitra(1)));
+    const loadedEntries = latest?.highlightBlacklistEntries ?? [];
+    await act(async () => {
+      void latest?.deleteHighlightBlacklistEntry(loadedEntries[0]);
+      void latest?.deleteHighlightBlacklistEntry(loadedEntries[1]);
+      await Promise.resolve();
+    });
+
+    await act(async () => resolveSecond());
+    expect(latest?.highlightBlacklistEntries).toEqual([entry]);
+    expect(counts).toEqual([1]);
+
+    await act(async () => resolveFirst());
+    expect(latest?.highlightBlacklistEntries).toEqual([]);
+    expect(counts).toEqual([1, 0]);
+    expect(latest?.highlightBlacklistPalitra).toBeNull();
+    expect(notifyMock).toHaveBeenCalledOnce();
   });
 });
