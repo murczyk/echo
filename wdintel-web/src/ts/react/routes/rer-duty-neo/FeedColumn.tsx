@@ -1,5 +1,14 @@
 import { Box } from '@mui/material';
-import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { MouseEvent } from 'react';
 import {
   getStoredDutyNotificationSettingsForFeed,
@@ -14,6 +23,7 @@ import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import type { FeedColumnModel } from './types';
 import { DutyScrollDebugPanel } from './DutyScrollDebugPanel';
 import { registerDutyScrollDebugBellPress } from './duty-scroll-debug';
+import { clearFeedColumnFab, publishFeedColumnFab } from './feedColumnFab';
 
 export type FeedColumnProps = {
   column: FeedColumnModel;
@@ -157,6 +167,18 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     }),
     [feed.items.length],
   );
+
+  // FAB badge/arrow state bypasses FeedColumnContent memo so poll/unread ticks don't rebuild the list.
+  // Publish after render — sync emit during render updates FeedColumnScrollFab mid-tree.
+  useLayoutEffect(() => {
+    publishFeedColumnFab(feed.id, {
+      bottomUnreadCount: view.bottomUnreadCount ?? 0,
+      arrowResultMessage: view.arrowResultMessage ?? null,
+      tailAvailability: view.tailAvailability ?? 'unknown',
+    });
+  }, [feed.id, view.arrowResultMessage, view.bottomUnreadCount, view.tailAvailability]);
+
+  useEffect(() => () => clearFeedColumnFab(feed.id), [feed.id]);
 
   return (
     <Box

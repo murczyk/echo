@@ -12,7 +12,6 @@ import {
   feedIndicatorUnreadCount,
   feedNeedsUnreadPrefetch,
   excludeMessageEntityFromFilters,
-  type MessageEntityFilterKind,
   type MessageFeedState,
   type TagsLayoutVariant,
 } from './utils';
@@ -21,6 +20,7 @@ import { USER_SETTINGS_UPDATED_EVENT, fetchUserSettings } from '../../services/a
 import { PowerAlert } from '../../components/PowerAlert';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
+import type { FeedColumnModel } from './types';
 import { fetchCurrentUser } from '../../services/api/user';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import type { InboxMessage, User } from '../../../../Bindings';
@@ -135,6 +135,126 @@ export function RerDutyNeoPage({
       abortController.abort();
     };
   }, []);
+  // Per-feed action identities must stay stable across renders so the memoized
+  // FeedColumnContent can bail out when only *other* feeds change. Fresh arrow
+  // props would defeat its comparator and re-render every column on any update.
+  const feedActionImplsRef = useRef<Record<string, FeedColumnModel['actions']>>({});
+  const feedStableActionsRef = useRef<Record<string, FeedColumnModel['actions']>>({});
+  const getStableFeedActions = (feed: MessageFeedState): FeedColumnModel['actions'] => {
+    const feedId = feed.id;
+    // Refresh the latest closures (capturing current feed/state) every render.
+    feedActionImplsRef.current[feedId] = {
+      onLoadOlder: () => loadFeedOlderMessages(feedId),
+      onLoadNewer: () =>
+        loadFeedNewerMessages(feedId, { skipIfNewestExhausted: true, showLoading: false }),
+      onRemoveColumn: () => removeMessageFeed(feedId),
+      onMessageBookmark: (msgId, currentlyBookmarked) =>
+        handleMessageBookmark(feedId, msgId, currentlyBookmarked),
+      onMessageImportant: (msgId, currentlyImportant) =>
+        handleMessageImportant(feedId, msgId, currentlyImportant),
+      onMessageAddFrequencyToFilter: (_feedId, freq) => addFrequencyToFilter(feedId, freq),
+      onMessageCopy: handleMessageCopy,
+      onMessageComment: (msgId, currentComment) => openCommentDialog(msgId, feedId, currentComment),
+      onMessageExcludeEntity: (entity, value) =>
+        applyFilter(feedId, excludeMessageEntityFromFilters(feed.filter, entity, value)),
+      onMessageToggleTag: (msgId, tagId) => handleToggleTag(feedId, msgId, tagId),
+      onMessageEdit: (messageId, message) => {
+        setCreateMessageOpen(false);
+        setEditTarget({ id: messageId, message });
+      },
+      onScrollToTop: () => {
+        cancelFollowTail(feedId);
+        setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: false }));
+      },
+      onReachedBottom: ({ hasSeenNotAtBottom }) => {
+        const tailAvailability = tailAvailabilityByFeedId[feedId] ?? 'unknown';
+        const hasPendingTail =
+          feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feedId], {
+            // Residual poll stock must not block watch-mode catch-up at the bottom.
+            includeBeyondTailResidual: false,
+          }) > 0 ||
+          tailAvailability === 'available' ||
+          tailAvailability === 'checking' ||
+          tailAvailability === 'loading';
+        const preservePendingTail = hasSeenNotAtBottom && hasPendingTail;
+        if (preservePendingTail) {
+          cancelFollowTail(feedId);
+          setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: false }));
+          // Still fetch newer messages without auto-following so the badge can clear.
+          void loadFeedNewerMessages(feedId, {
+            skipIfNewestExhausted: true,
+            showLoading: false,
+          });
+        } else {
+          ensureFollowTail(feedId);
+          if (!dutyDisableAutoScroll) {
+            setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: true }));
+          }
+        }
+        if (feed.items.length > 0) {
+          handleVisibleMessageIds(feedId)(feed.items[feed.items.length - 1][0], {
+            atBottom: true,
+          });
+        }
+        return !preservePendingTail;
+      },
+      onLeftBottom: () => {
+        cancelFollowTail(feedId);
+        setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: false }));
+      },
+      onNearBottomChange: (near) => {
+        nearBottomByFeedIdRef.current = {
+          ...nearBottomByFeedIdRef.current,
+          [feedId]: near,
+        };
+      },
+      onAtBottomChange: (atBottom) => {
+        atBottomByFeedIdRef.current = {
+          ...atBottomByFeedIdRef.current,
+          [feedId]: atBottom,
+        };
+      },
+      onPhysicalBottomChange: (atBottom) => {
+        physicallyAtBottomByFeedIdRef.current = {
+          ...physicallyAtBottomByFeedIdRef.current,
+          [feedId]: atBottom,
+        };
+      },
+      onArrowClick: () => handleArrowClick(feedId),
+      onVisibleMessageIds: handleVisibleMessageIds(feedId),
+    };
+    // Create the stable wrapper set once per feed; it delegates to the latest impls.
+    const existing = feedStableActionsRef.current[feedId];
+    if (existing) return existing;
+    const latest = () => feedActionImplsRef.current[feedId];
+    const stable: FeedColumnModel['actions'] = {
+      onLoadOlder: () => latest().onLoadOlder(),
+      onLoadNewer: () => latest().onLoadNewer?.(),
+      onRemoveColumn: () => latest().onRemoveColumn(),
+      onMessageBookmark: (msgId, currentlyBookmarked) =>
+        latest().onMessageBookmark(msgId, currentlyBookmarked),
+      onMessageImportant: (msgId, currentlyImportant) =>
+        latest().onMessageImportant(msgId, currentlyImportant),
+      onMessageAddFrequencyToFilter: (fId, freq) =>
+        latest().onMessageAddFrequencyToFilter(fId, freq),
+      onMessageCopy: (text, feedbackId) => latest().onMessageCopy(text, feedbackId),
+      onMessageComment: (msgId, currentComment) => latest().onMessageComment(msgId, currentComment),
+      onMessageExcludeEntity: (entity, value) => latest().onMessageExcludeEntity(entity, value),
+      onMessageToggleTag: (msgId, tagId) => latest().onMessageToggleTag(msgId, tagId),
+      onMessageEdit: (messageId, message) => latest().onMessageEdit(messageId, message),
+      onScrollToTop: () => latest().onScrollToTop?.(),
+      onReachedBottom: (context) => latest().onReachedBottom?.(context),
+      onLeftBottom: () => latest().onLeftBottom?.(),
+      onNearBottomChange: (near) => latest().onNearBottomChange?.(near),
+      onAtBottomChange: (atBottom) => latest().onAtBottomChange?.(atBottom),
+      onPhysicalBottomChange: (atBottom) => latest().onPhysicalBottomChange?.(atBottom),
+      onArrowClick: () => latest().onArrowClick?.(),
+      onVisibleMessageIds: (lastVisibleId, opts) =>
+        latest().onVisibleMessageIds?.(lastVisibleId, opts),
+    };
+    feedStableActionsRef.current[feedId] = stable;
+    return stable;
+  };
   const buildFeedColumnModel = (feed: MessageFeedState) => ({
     feed,
     view: {
@@ -265,87 +385,7 @@ export function RerDutyNeoPage({
       onMarkBotTagWrong,
       onOpenPointsOnMap: handleOpenPointsOnMap,
     },
-    actions: {
-      onLoadOlder: () => loadFeedOlderMessages(feed.id),
-      onLoadNewer: () =>
-        loadFeedNewerMessages(feed.id, { skipIfNewestExhausted: true, showLoading: false }),
-      onRemoveColumn: () => removeMessageFeed(feed.id),
-      onMessageBookmark: (msgId, currentlyBookmarked) =>
-        handleMessageBookmark(feed.id, msgId, currentlyBookmarked),
-      onMessageImportant: (msgId, currentlyImportant) =>
-        handleMessageImportant(feed.id, msgId, currentlyImportant),
-      onMessageAddFrequencyToFilter: (_feedId, freq) => addFrequencyToFilter(feed.id, freq),
-      onMessageCopy: handleMessageCopy,
-      onMessageComment: (msgId, currentComment) =>
-        openCommentDialog(msgId, feed.id, currentComment),
-      onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) =>
-        applyFilter(feed.id, excludeMessageEntityFromFilters(feed.filter, entity, value)),
-      onMessageToggleTag: (msgId, tagId) => handleToggleTag(feed.id, msgId, tagId),
-      onMessageEdit: (messageId, message) => {
-        setCreateMessageOpen(false);
-        setEditTarget({ id: messageId, message });
-      },
-      onScrollToTop: () => {
-        cancelFollowTail(feed.id);
-        setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false }));
-      },
-      onReachedBottom: ({ hasSeenNotAtBottom }) => {
-        const tailAvailability = tailAvailabilityByFeedId[feed.id] ?? 'unknown';
-        const hasPendingTail =
-          feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id], {
-            // Residual poll stock must not block watch-mode catch-up at the bottom.
-            includeBeyondTailResidual: false,
-          }) > 0 ||
-          tailAvailability === 'available' ||
-          tailAvailability === 'checking' ||
-          tailAvailability === 'loading';
-        const preservePendingTail = hasSeenNotAtBottom && hasPendingTail;
-        if (preservePendingTail) {
-          cancelFollowTail(feed.id);
-          setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false }));
-          // Still fetch newer messages without auto-following so the badge can clear.
-          void loadFeedNewerMessages(feed.id, {
-            skipIfNewestExhausted: true,
-            showLoading: false,
-          });
-        } else {
-          ensureFollowTail(feed.id);
-          if (!dutyDisableAutoScroll) {
-            setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: true }));
-          }
-        }
-        if (feed.items.length > 0) {
-          handleVisibleMessageIds(feed.id)(feed.items[feed.items.length - 1][0], {
-            atBottom: true,
-          });
-        }
-        return !preservePendingTail;
-      },
-      onLeftBottom: () => {
-        cancelFollowTail(feed.id);
-        setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false }));
-      },
-      onNearBottomChange: (near) => {
-        nearBottomByFeedIdRef.current = {
-          ...nearBottomByFeedIdRef.current,
-          [feed.id]: near,
-        };
-      },
-      onAtBottomChange: (atBottom) => {
-        atBottomByFeedIdRef.current = {
-          ...atBottomByFeedIdRef.current,
-          [feed.id]: atBottom,
-        };
-      },
-      onPhysicalBottomChange: (atBottom) => {
-        physicallyAtBottomByFeedIdRef.current = {
-          ...physicallyAtBottomByFeedIdRef.current,
-          [feed.id]: atBottom,
-        };
-      },
-      onArrowClick: () => handleArrowClick(feed.id),
-      onVisibleMessageIds: handleVisibleMessageIds(feed.id),
-    },
+    actions: getStableFeedActions(feed),
   });
   const {
     messageFeeds,
@@ -432,6 +472,14 @@ export function RerDutyNeoPage({
   const activeFeedIdSafe = messageFeeds.some((feed) => feed.id === activeFeedId)
     ? activeFeedId
     : (messageFeeds[0]?.id ?? null);
+  useEffect(() => {
+    const liveIds = new Set(messageFeeds.map((feed) => feed.id));
+    for (const feedId of Object.keys(feedStableActionsRef.current)) {
+      if (liveIds.has(feedId)) continue;
+      delete feedStableActionsRef.current[feedId];
+      delete feedActionImplsRef.current[feedId];
+    }
+  }, [messageFeeds]);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
   const openCreateMessageComposer = useCallback(() => {
     setEditTarget(null);

@@ -141,7 +141,7 @@ fn cell_string(cell: Option<&Data>) -> Option<String> {
     match cell {
         Data::Int(value) => Some(value.to_string()),
         Data::Float(value) => Some(value.to_string()),
-        Data::String(value) => Some(value.clone()),
+        Data::String(value) => Some(crate::row::unescape_excel_text(value)),
         Data::Bool(value) => Some(value.to_string()),
         Data::DateTime(value) => value
             .as_datetime()
@@ -160,7 +160,9 @@ impl From<&Data> for KnowledgeCell {
         let (kind, value) = match cell {
             Data::Int(value) => ("int", json!(value)),
             Data::Float(value) => ("float", json!(value)),
-            Data::String(value) => ("string", json!(value)),
+            Data::String(value) => {
+                ("string", json!(crate::row::unescape_excel_text(value)))
+            }
             Data::Bool(value) => ("bool", json!(value)),
             Data::DateTime(value) => (
                 "datetime",

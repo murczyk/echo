@@ -3,13 +3,16 @@ import { Box, CircularProgress, Fab, Paper, Typography } from '@mui/material';
 import {
   forwardRef,
   memo,
+  Profiler,
   useCallback,
   useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type RefObject,
 } from 'react';
+import type { ProfilerOnRenderCallback } from 'react';
 import type {
   CallsignInfoRes,
   InboxMessage,
@@ -34,8 +37,11 @@ import {
   resolveMessageCardEtalonDisplayModel,
 } from '../shared/message-card/message-card.utils';
 import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
+import { feedListRenderStateEqual } from './utils';
 import { dutyTopScrollButtonSx } from './top-action-styles';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
+import { recordDutyScrollDebugTiming, useDutyScrollDebugEnabled } from './duty-scroll-debug';
+import { useFeedColumnFab } from './feedColumnFab';
 
 /** Start loading older messages when the user scrolls close to the top of the DOM list. */
 const LOAD_OLDER_BUFFER_PX = 160;
@@ -274,90 +280,246 @@ type DutyMessageListProps = {
   onMessageEdit: (messageId: number, message: InboxMessage) => void;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
-  listRef: React.RefObject<HTMLDivElement>;
+  listRef: RefObject<HTMLDivElement>;
 };
 
-const DutyMessageList = memo(function DutyMessageList({
-  items,
+const DutyMessageList = memo(
+  function DutyMessageList({
+    items,
+    feedId,
+    feedCount,
+    tagsLayout,
+    botTagAction,
+    onCancelBotTagAction,
+    onMarkBotTagWrong,
+    referenceTimeMs,
+    authUserName,
+    tagContributionsOrganismId,
+    groupInfos,
+    profiles,
+    copiedFeedbackId,
+    networkDisplayMap,
+    networkMap,
+    unitsMap,
+    callsignInfoMap,
+    networks,
+    featureStrictNetworks,
+    tagsMap,
+    tagsOrder,
+    filterState,
+    onMessageBookmark,
+    onMessageImportant,
+    onMessageCopy,
+    onMessageAddFrequencyToFilter,
+    onMessageComment,
+    onMessageExcludeEntity,
+    onMessageToggleTag,
+    onMessageEdit,
+    onOpenPointsOnMap,
+    setItemRef,
+    listRef,
+  }: DutyMessageListProps) {
+    return (
+      <div
+        ref={listRef}
+        data-duty-feed-list="true"
+        className="m-0 list-none rer-duty pt-2"
+        style={{ boxSizing: 'border-box' }}
+      >
+        {items.map(([id, msg]) => (
+          <div key={id} ref={setItemRef(id)} data-duty-message-id={id}>
+            <DutyMessageCardItem
+              id={id}
+              msg={msg}
+              feedId={feedId}
+              feedCount={feedCount}
+              tagsLayout={tagsLayout}
+              botTagAction={botTagAction}
+              onCancelBotTagAction={onCancelBotTagAction}
+              onMarkBotTagWrong={onMarkBotTagWrong}
+              referenceTimeMs={referenceTimeMs}
+              authUserName={authUserName}
+              tagContributionsOrganismId={tagContributionsOrganismId}
+              groupInfos={groupInfos}
+              profiles={profiles}
+              copiedFeedbackId={copiedFeedbackId}
+              networkDisplayMap={networkDisplayMap}
+              networkMap={networkMap}
+              unitsMap={unitsMap}
+              callsignInfoMap={callsignInfoMap}
+              networks={networks}
+              featureStrictNetworks={featureStrictNetworks}
+              tagsMap={tagsMap}
+              tagsOrder={tagsOrder}
+              filterState={filterState}
+              onMessageBookmark={onMessageBookmark}
+              onMessageImportant={onMessageImportant}
+              onMessageCopy={onMessageCopy}
+              onMessageAddFrequencyToFilter={onMessageAddFrequencyToFilter}
+              onMessageComment={onMessageComment}
+              onMessageExcludeEntity={onMessageExcludeEntity}
+              onMessageToggleTag={onMessageToggleTag}
+              onMessageEdit={onMessageEdit}
+              onOpenPointsOnMap={onOpenPointsOnMap}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  },
+  (prev, next) =>
+    prev.items === next.items &&
+    prev.feedId === next.feedId &&
+    prev.feedCount === next.feedCount &&
+    prev.tagsLayout === next.tagsLayout &&
+    prev.botTagAction === next.botTagAction &&
+    prev.onCancelBotTagAction === next.onCancelBotTagAction &&
+    prev.onMarkBotTagWrong === next.onMarkBotTagWrong &&
+    prev.referenceTimeMs === next.referenceTimeMs &&
+    prev.authUserName === next.authUserName &&
+    prev.tagContributionsOrganismId === next.tagContributionsOrganismId &&
+    prev.groupInfos === next.groupInfos &&
+    prev.profiles === next.profiles &&
+    prev.copiedFeedbackId === next.copiedFeedbackId &&
+    prev.networkDisplayMap === next.networkDisplayMap &&
+    prev.networkMap === next.networkMap &&
+    prev.unitsMap === next.unitsMap &&
+    prev.callsignInfoMap === next.callsignInfoMap &&
+    prev.networks === next.networks &&
+    prev.featureStrictNetworks === next.featureStrictNetworks &&
+    prev.tagsMap === next.tagsMap &&
+    prev.tagsOrder === next.tagsOrder &&
+    prev.filterState === next.filterState &&
+    prev.onMessageBookmark === next.onMessageBookmark &&
+    prev.onMessageImportant === next.onMessageImportant &&
+    prev.onMessageCopy === next.onMessageCopy &&
+    prev.onMessageAddFrequencyToFilter === next.onMessageAddFrequencyToFilter &&
+    prev.onMessageComment === next.onMessageComment &&
+    prev.onMessageExcludeEntity === next.onMessageExcludeEntity &&
+    prev.onMessageToggleTag === next.onMessageToggleTag &&
+    prev.onMessageEdit === next.onMessageEdit &&
+    prev.onOpenPointsOnMap === next.onOpenPointsOnMap &&
+    prev.setItemRef === next.setItemRef &&
+    prev.listRef === next.listRef,
+);
+
+type FeedColumnScrollFabProps = {
+  feedId: string;
+  loadingNewer: boolean;
+  isWatchMode: boolean;
+  isPhysicallyAtBottom: boolean;
+  hasItems: boolean;
+  bottom: number | string;
+  right: number | string;
+  onArrowClick?: () => void;
+};
+
+const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
   feedId,
-  feedCount,
-  tagsLayout,
-  botTagAction,
-  onCancelBotTagAction,
-  onMarkBotTagWrong,
-  referenceTimeMs,
-  authUserName,
-  tagContributionsOrganismId,
-  groupInfos,
-  profiles,
-  copiedFeedbackId,
-  networkDisplayMap,
-  networkMap,
-  unitsMap,
-  callsignInfoMap,
-  networks,
-  featureStrictNetworks,
-  tagsMap,
-  tagsOrder,
-  filterState,
-  onMessageBookmark,
-  onMessageImportant,
-  onMessageCopy,
-  onMessageAddFrequencyToFilter,
-  onMessageComment,
-  onMessageExcludeEntity,
-  onMessageToggleTag,
-  onMessageEdit,
-  onOpenPointsOnMap,
-  setItemRef,
-  listRef,
-}: DutyMessageListProps) {
+  loadingNewer,
+  isWatchMode,
+  isPhysicallyAtBottom,
+  hasItems,
+  bottom,
+  right,
+  onArrowClick,
+}: FeedColumnScrollFabProps) {
+  const { bottomUnreadCount, arrowResultMessage, tailAvailability } = useFeedColumnFab(feedId);
+  if (
+    !hasItems ||
+    !isPresent(onArrowClick) ||
+    !(loadingNewer || !isPhysicallyAtBottom || tailAvailability === 'available')
+  ) {
+    return null;
+  }
+
   return (
-    <div
-      ref={listRef}
-      data-duty-feed-list="true"
-      className="m-0 list-none rer-duty pt-2"
-      style={{ boxSizing: 'border-box' }}
+    <Box
+      data-duty-feed-scroll-button
+      data-duty-bottom-offset={String(bottom)}
+      data-duty-right-offset={String(right)}
+      style={{
+        position: 'absolute',
+        bottom,
+        right,
+      }}
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        zIndex: 1,
+      }}
     >
-      {items.map(([id, msg]) => (
-        <div key={id} ref={setItemRef(id)} data-duty-message-id={id}>
-          <DutyMessageCardItem
-            id={id}
-            msg={msg}
-            feedId={feedId}
-            feedCount={feedCount}
-            tagsLayout={tagsLayout}
-            botTagAction={botTagAction}
-            onCancelBotTagAction={onCancelBotTagAction}
-            onMarkBotTagWrong={onMarkBotTagWrong}
-            referenceTimeMs={referenceTimeMs}
-            authUserName={authUserName}
-            tagContributionsOrganismId={tagContributionsOrganismId}
-            groupInfos={groupInfos}
-            profiles={profiles}
-            copiedFeedbackId={copiedFeedbackId}
-            networkDisplayMap={networkDisplayMap}
-            networkMap={networkMap}
-            unitsMap={unitsMap}
-            callsignInfoMap={callsignInfoMap}
-            networks={networks}
-            featureStrictNetworks={featureStrictNetworks}
-            tagsMap={tagsMap}
-            tagsOrder={tagsOrder}
-            filterState={filterState}
-            onMessageBookmark={onMessageBookmark}
-            onMessageImportant={onMessageImportant}
-            onMessageCopy={onMessageCopy}
-            onMessageAddFrequencyToFilter={onMessageAddFrequencyToFilter}
-            onMessageComment={onMessageComment}
-            onMessageExcludeEntity={onMessageExcludeEntity}
-            onMessageToggleTag={onMessageToggleTag}
-            onMessageEdit={onMessageEdit}
-            onOpenPointsOnMap={onOpenPointsOnMap}
+      {!loadingNewer && isPresent(arrowResultMessage) && (
+        <PowerChip
+          size="small"
+          label={arrowResultMessage}
+          interactive={false}
+          unselectedOpacity={1}
+          color="default"
+          sx={{ fontWeight: 500 }}
+        />
+      )}
+      <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+        <Fab
+          color={bottomUnreadCount > 0 ? 'primary' : 'default'}
+          size="small"
+          sx={{
+            ...dutyTopScrollButtonSx,
+            position: 'relative',
+            zIndex: 0,
+            borderColor: bottomUnreadCount > 0 ? 'primary.main' : 'grey.400',
+            color: bottomUnreadCount > 0 ? 'primary.main' : 'grey.400',
+            '&:hover': {
+              backgroundColor: 'background.paper',
+              borderColor: 'primary.main',
+              color: 'primary.main',
+              boxShadow: 'none',
+            },
+          }}
+          aria-label={isWatchMode ? 'Режим перегляду нових' : 'Завантажити нові та перейти вниз'}
+          onClick={onArrowClick}
+          disabled={loadingNewer}
+        >
+          {loadingNewer ? (
+            <CircularProgress
+              size={20}
+              sx={{ color: 'primary.main' }}
+              aria-label="Завантаження нових повідомлень"
+            />
+          ) : (
+            <ArrowDownwardIcon sx={{ fontSize: 20 }} />
+          )}
+        </Fab>
+        {bottomUnreadCount > 0 && !isWatchMode && isNullOrUndefined(arrowResultMessage) && (
+          <PowerChip
+            size="small"
+            data-duty-scroll-unread-badge
+            label={bottomUnreadCount}
+            selected
+            interactive={false}
+            unselectedOpacity={1}
+            labelPaddingX={bottomUnreadCount < 10 ? 0 : undefined}
+            sx={{
+              position: 'absolute',
+              top: -6,
+              right: -6,
+              fontWeight: 600,
+              zIndex: 2,
+              pointerEvents: 'none',
+              ...(bottomUnreadCount < 10 && {
+                width: 20,
+                minWidth: 20,
+                height: 20,
+                minHeight: 20,
+                boxSizing: 'border-box',
+                borderRadius: '50%',
+              }),
+            }}
           />
-        </div>
-      ))}
-    </div>
+        )}
+      </Box>
+    </Box>
   );
 });
 
@@ -367,15 +529,23 @@ export const FeedColumnContent = memo(
     ref,
   ) {
     const { feed, view, messageCard, actions } = column;
+    const debugEnabled = useDutyScrollDebugEnabled();
+    const onDebugRender = useCallback<ProfilerOnRenderCallback>(
+      (_id, phase, actualDuration) => {
+        recordDutyScrollDebugTiming(feed.id, {
+          phase: 'render',
+          durationMs: actualDuration,
+          reason: phase,
+        });
+      },
+      [feed.id],
+    );
     const {
       narrowScreen = false,
       feedCount,
       scrollTrackingEnabled = true,
       loadingNewer = false,
-      arrowResultMessage = null,
-      bottomUnreadCount = 0,
       physicallyAtBottom = true,
-      tailAvailability = 'unknown',
       isWatchMode = false,
       unreadPrefetchNeeded = true,
       workspaceFabAvoidance = 'none',
@@ -483,6 +653,57 @@ export const FeedColumnContent = memo(
       );
     }
 
+    const messageList =
+      feed.items.length === 0 ? (
+        <Typography color="text.secondary" className="p-4">
+          Немає повідомлень
+        </Typography>
+      ) : (
+        <DutyMessageList
+          items={feed.items}
+          feedId={feed.id}
+          feedCount={feedCount}
+          tagsLayout={tagsLayout}
+          botTagAction={botTagAction}
+          onCancelBotTagAction={stableOnCancelBotTagAction}
+          onMarkBotTagWrong={stableOnMarkBotTagWrong}
+          referenceTimeMs={feed.referenceTimeMs}
+          authUserName={authUserName}
+          tagContributionsOrganismId={tagContributionsOrganismId}
+          groupInfos={groupInfos}
+          profiles={profiles}
+          copiedFeedbackId={copiedFeedbackId}
+          networkDisplayMap={networkDisplayMap}
+          networkMap={networkMap}
+          unitsMap={unitsMap}
+          callsignInfoMap={callsignInfoMap}
+          networks={networks}
+          featureStrictNetworks={featureStrictNetworks}
+          tagsMap={tagsMap}
+          tagsOrder={tagsOrder}
+          filterState={feed.filter}
+          onMessageBookmark={stableOnMessageBookmark}
+          onMessageImportant={stableOnMessageImportant}
+          onMessageCopy={stableOnMessageCopy}
+          onMessageAddFrequencyToFilter={stableOnMessageAddFrequencyToFilter}
+          onMessageComment={stableOnMessageComment}
+          onMessageExcludeEntity={stableOnMessageExcludeEntity}
+          onMessageToggleTag={stableOnMessageToggleTag}
+          onMessageEdit={stableOnMessageEdit}
+          onOpenPointsOnMap={onOpenPointsOnMap ? stableOnOpenPointsOnMap : undefined}
+          setItemRef={scroll.setItemRef}
+          listRef={scroll.listRef}
+        />
+      );
+    const profiledMessageList =
+      debugEnabled && feed.items.length > 0 ? (
+        <Profiler id={`duty-feed-list-${feed.id}`} onRender={onDebugRender}>
+          {messageList}
+        </Profiler>
+      ) : (
+        messageList
+      );
+
     return (
       <Paper
         data-duty-feed-content-root
@@ -534,145 +755,23 @@ export const FeedColumnContent = memo(
               Немає старіших повідомлень
             </Typography>
           ) : null}
-          {feed.items.length === 0 ? (
-            <Typography color="text.secondary" className="p-4">
-              Немає повідомлень
-            </Typography>
-          ) : (
-            <DutyMessageList
-              items={feed.items}
-              feedId={feed.id}
-              feedCount={feedCount}
-              tagsLayout={tagsLayout}
-              botTagAction={botTagAction}
-              onCancelBotTagAction={stableOnCancelBotTagAction}
-              onMarkBotTagWrong={stableOnMarkBotTagWrong}
-              referenceTimeMs={feed.referenceTimeMs}
-              authUserName={authUserName}
-              tagContributionsOrganismId={tagContributionsOrganismId}
-              groupInfos={groupInfos}
-              profiles={profiles}
-              copiedFeedbackId={copiedFeedbackId}
-              networkDisplayMap={networkDisplayMap}
-              networkMap={networkMap}
-              unitsMap={unitsMap}
-              callsignInfoMap={callsignInfoMap}
-              networks={networks}
-              featureStrictNetworks={featureStrictNetworks}
-              tagsMap={tagsMap}
-              tagsOrder={tagsOrder}
-              filterState={feed.filter}
-              onMessageBookmark={stableOnMessageBookmark}
-              onMessageImportant={stableOnMessageImportant}
-              onMessageCopy={stableOnMessageCopy}
-              onMessageAddFrequencyToFilter={stableOnMessageAddFrequencyToFilter}
-              onMessageComment={stableOnMessageComment}
-              onMessageExcludeEntity={stableOnMessageExcludeEntity}
-              onMessageToggleTag={stableOnMessageToggleTag}
-              onMessageEdit={stableOnMessageEdit}
-              onOpenPointsOnMap={onOpenPointsOnMap ? stableOnOpenPointsOnMap : undefined}
-              setItemRef={scroll.setItemRef}
-              listRef={scroll.listRef}
-            />
-          )}
+          {profiledMessageList}
         </Box>
-        {feed.items.length > 0 &&
-          isPresent(actions.onArrowClick) &&
-          (loadingNewer || !isPhysicallyAtBottom || tailAvailability === 'available') && (
-            <Box
-              data-duty-feed-scroll-button
-              data-duty-bottom-offset={String(scrollFabPosition.bottom)}
-              data-duty-right-offset={String(scrollFabPosition.right)}
-              style={{
-                position: 'absolute',
-                bottom: scrollFabPosition.bottom,
-                right: scrollFabPosition.right,
-              }}
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                zIndex: 1,
-              }}
-            >
-              {!loadingNewer && isPresent(arrowResultMessage) && (
-                <PowerChip
-                  size="small"
-                  label={arrowResultMessage}
-                  interactive={false}
-                  unselectedOpacity={1}
-                  color="default"
-                  sx={{ fontWeight: 500 }}
-                />
-              )}
-              <Box sx={{ position: 'relative', display: 'inline-flex' }}>
-                <Fab
-                  color={bottomUnreadCount > 0 ? 'primary' : 'default'}
-                  size="small"
-                  sx={{
-                    ...dutyTopScrollButtonSx,
-                    position: 'relative',
-                    zIndex: 0,
-                    borderColor: bottomUnreadCount > 0 ? 'primary.main' : 'grey.400',
-                    color: bottomUnreadCount > 0 ? 'primary.main' : 'grey.400',
-                    '&:hover': {
-                      backgroundColor: 'background.paper',
-                      borderColor: 'primary.main',
-                      color: 'primary.main',
-                      boxShadow: 'none',
-                    },
-                  }}
-                  aria-label={
-                    isWatchMode ? 'Режим перегляду нових' : 'Завантажити нові та перейти вниз'
-                  }
-                  onClick={onArrowClick}
-                  disabled={loadingNewer}
-                >
-                  {loadingNewer ? (
-                    <CircularProgress
-                      size={20}
-                      sx={{ color: 'primary.main' }}
-                      aria-label="Завантаження нових повідомлень"
-                    />
-                  ) : (
-                    <ArrowDownwardIcon sx={{ fontSize: 20 }} />
-                  )}
-                </Fab>
-                {bottomUnreadCount > 0 && !isWatchMode && isNullOrUndefined(arrowResultMessage) && (
-                  <PowerChip
-                    size="small"
-                    data-duty-scroll-unread-badge
-                    label={bottomUnreadCount}
-                    selected
-                    interactive={false}
-                    unselectedOpacity={1}
-                    labelPaddingX={bottomUnreadCount < 10 ? 0 : undefined}
-                    sx={{
-                      position: 'absolute',
-                      top: -6,
-                      right: -6,
-                      fontWeight: 600,
-                      zIndex: 2,
-                      pointerEvents: 'none',
-                      ...(bottomUnreadCount < 10 && {
-                        width: 20,
-                        minWidth: 20,
-                        height: 20,
-                        minHeight: 20,
-                        boxSizing: 'border-box',
-                        borderRadius: '50%',
-                      }),
-                    }}
-                  />
-                )}
-              </Box>
-            </Box>
-          )}
+        <FeedColumnScrollFab
+          feedId={feed.id}
+          loadingNewer={loadingNewer}
+          isWatchMode={isWatchMode}
+          isPhysicallyAtBottom={isPhysicallyAtBottom}
+          hasItems={feed.items.length > 0}
+          bottom={scrollFabPosition.bottom}
+          right={scrollFabPosition.right}
+          onArrowClick={onArrowClick}
+        />
       </Paper>
     );
   }),
   (prevProps, nextProps) => {
-    if (prevProps.column.feed !== nextProps.column.feed) {
+    if (!feedListRenderStateEqual(prevProps.column.feed, nextProps.column.feed)) {
       return false;
     }
 
@@ -686,10 +785,7 @@ export const FeedColumnContent = memo(
       prevView.isWatchMode !== nextView.isWatchMode ||
       prevView.scrollTrackingEnabled !== nextView.scrollTrackingEnabled ||
       prevView.loadingNewer !== nextView.loadingNewer ||
-      prevView.arrowResultMessage !== nextView.arrowResultMessage ||
-      prevView.bottomUnreadCount !== nextView.bottomUnreadCount ||
-      prevView.physicallyAtBottom !== nextView.physicallyAtBottom ||
-      prevView.tailAvailability !== nextView.tailAvailability ||
+      prevView.unreadPrefetchNeeded !== nextView.unreadPrefetchNeeded ||
       prevView.workspaceFabAvoidance !== nextView.workspaceFabAvoidance
     ) {
       return false;
@@ -711,7 +807,8 @@ export const FeedColumnContent = memo(
       prevCard.tagsMap !== nextCard.tagsMap ||
       prevCard.tagsOrder !== nextCard.tagsOrder ||
       prevCard.botTagAction !== nextCard.botTagAction ||
-      prevCard.onOpenPointsOnMap !== nextCard.onOpenPointsOnMap
+      prevCard.onOpenPointsOnMap !== nextCard.onOpenPointsOnMap ||
+      prevCard.tagContributionsOrganismId !== nextCard.tagContributionsOrganismId
     ) {
       return false;
     }

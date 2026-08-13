@@ -1,9 +1,169 @@
-# SIGNOZ MONITORING
+# SigNoz monitoring
 
-- [DASHBOARD](http://signoz-echo.eagle-atria.ts.net:8080/dashboard/019c946a-b5dc-7d14-83b1-0fc7f29290a2?relativeTime=1h): помилки, ворнінги, OPS
-- [Errors](http://signoz-echo.eagle-atria.ts.net:8080/logs/logs-explorer?compositeQuery=%257B%2522queryType%2522%253A%2522builder%2522%252C%2522builder%2522%253A%257B%2522queryData%2522%253A%255B%257B%2522dataSource%2522%253A%2522logs%2522%252C%2522queryName%2522%253A%2522A%2522%252C%2522aggregateOperator%2522%253A%2522count%2522%252C%2522aggregateAttribute%2522%253A%257B%2522id%2522%253A%2522----%2522%252C%2522dataType%2522%253A%2522%2522%252C%2522key%2522%253A%2522%2522%252C%2522type%2522%253A%2522%2522%257D%252C%2522timeAggregation%2522%253A%2522rate%2522%252C%2522spaceAggregation%2522%253A%2522sum%2522%252C%2522filter%2522%253A%257B%2522expression%2522%253A%2522%28%255Cn%2520%2520%28body%2520ILIKE%2520%27%2525error%2525%27%29%255Cn%2520%2520AND%2520body%2520NOT%2520ILIKE%2520%27%2525warn%2525%27%255Cn%2520%2520AND%2520body%2520NOT%2520ILIKE%2520%27%2525Missing%2520Whastapp%2520phone%2520number%2520in%2520DB%2520for%2520client%2525%27%255Cn%2520%2520AND%2520body%2520NOT%2520ILIKE%2520%27%2525%255C%2522number%255C%2522%253Anull%252C%255C%2522uuid%255C%2522%253A%2525%27%255Cn%2520%2520AND%2520body%2520NOT%2520ILIKE%2520%27%2525sea_orm%253A%253Adatabase%253A%253Atransaction%2525%27%2520AND%2520body%2520NOT%2520ILIKE%2520%27%2525AOR%2525Check%2525%27%255Cn%29%2522%257D%252C%2522aggregations%2522%253A%255B%257B%2522metricName%2522%253A%2522%2522%252C%2522temporality%2522%253A%2522%2522%252C%2522timeAggregation%2522%253A%2522count%2522%252C%2522spaceAggregation%2522%253A%2522sum%2522%252C%2522reduceTo%2522%253A%2522avg%2522%257D%255D%252C%2522functions%2522%253A%255B%255D%252C%2522filters%2522%253A%257B%2522items%2522%253A%255B%257B%2522id%2522%253A%25222d291336-1fa8-4c45-a23c-a2ade824e078%2522%252C%2522op%2522%253A%2522ilike%2522%252C%2522key%2522%253A%257B%2522id%2522%253A%2522body%2522%252C%2522key%2522%253A%2522body%2522%252C%2522type%2522%253A%2522%2522%257D%252C%2522value%2522%253A%2522%2525error%2525%2522%257D%252C%257B%2522id%2522%253A%25229b6a4e58-2dcb-4c0a-a8ae-6ef0d4209159%2522%252C%2522op%2522%253A%2522not%2520ilike%2522%252C%2522key%2522%253A%257B%2522id%2522%253A%2522body%2522%252C%2522key%2522%253A%2522body%2522%252C%2522type%2522%253A%2522%2522%257D%252C%2522value%2522%253A%2522%2525AOR%2525Check%2525%2522%257D%252C%257B%2522id%2522%253A%25226f5c80ca-8f6f-4efd-826f-fc8e1ccfcf38%2522%252C%2522op%2522%253A%2522in%2522%252C%2522key%2522%253A%257B%2522id%2522%253A%2522host.name%2522%252C%2522key%2522%253A%2522host.name%2522%252C%2522dataType%2522%253A%2522string%2522%252C%2522type%2522%253A%2522resource%2522%257D%252C%2522value%2522%253A%2522ct-echo-volyn2%2522%257D%255D%252C%2522op%2522%253A%2522AND%2522%257D%252C%2522expression%2522%253A%2522A%2522%252C%2522disabled%2522%253Afalse%252C%2522stepInterval%2522%253A0%252C%2522having%2522%253A%257B%2522expression%2522%253A%2522%2522%257D%252C%2522limit%2522%253Anull%252C%2522orderBy%2522%253A%255B%255D%252C%2522groupBy%2522%253A%255B%255D%252C%2522legend%2522%253A%2522%2522%252C%2522reduceTo%2522%253A%2522avg%2522%252C%2522source%2522%253A%2522%2522%252C%2522name%2522%253A%2522A%2522%252C%2522signal%2522%253A%2522logs%2522%257D%255D%252C%2522queryFormulas%2522%253A%255B%255D%252C%2522queryTraceOperator%2522%253A%255B%255D%257D%252C%2522promql%2522%253A%255B%257B%2522name%2522%253A%2522A%2522%252C%2522query%2522%253A%2522%2522%252C%2522legend%2522%253A%2522%2522%252C%2522disabled%2522%253Afalse%257D%255D%252C%2522clickhouse_sql%2522%253A%255B%257B%2522name%2522%253A%2522A%2522%252C%2522legend%2522%253A%2522%2522%252C%2522disabled%2522%253Afalse%252C%2522query%2522%253A%2522%2522%257D%255D%252C%2522id%2522%253A%25223e1efc66-4354-463d-8d34-57fabca0cf76%2522%252C%2522unit%2522%253A%2522%2522%257D&options=%7B%22selectColumns%22%3A%5B%7B%22name%22%3A%22timestamp%22%2C%22signal%22%3A%22logs%22%2C%22fieldContext%22%3A%22log%22%2C%22fieldDataType%22%3A%22%22%2C%22isIndexed%22%3Afalse%7D%2C%7B%22name%22%3A%22body%22%2C%22signal%22%3A%22logs%22%2C%22fieldContext%22%3A%22log%22%2C%22fieldDataType%22%3A%22%22%2C%22isIndexed%22%3Afalse%7D%5D%2C%22format%22%3A%22raw%22%2C%22maxLines%22%3A1%2C%22fontSize%22%3A%22small%22%7D&panelTypes=%22list%22&viewName=%22ERROR%22&viewKey=%22019c946a-68fe-78e6-a08f-6aff613002df%22&relativeTime=12h) (зберігається під назваою `ERROR`)
-- [Warnings](http://signoz-echo.eagle-atria.ts.net:8080/logs/logs-explorer?compositeQuery=%257B%2522queryType%2522%253A%2522builder%2522%252C%2522builder%2522%253A%257B%2522queryData%2522%253A%255B%257B%2522dataSource%2522%253A%2522logs%2522%252C%2522queryName%2522%253A%2522A%2522%252C%2522aggregateOperator%2522%253A%2522count%2522%252C%2522aggregateAttribute%2522%253A%257B%2522id%2522%253A%2522----%2522%252C%2522dataType%2522%253A%2522%2522%252C%2522key%2522%253A%2522%2522%252C%2522type%2522%253A%2522%2522%257D%252C%2522timeAggregation%2522%253A%2522rate%2522%252C%2522spaceAggregation%2522%253A%2522sum%2522%252C%2522filter%2522%253A%257B%2522expression%2522%253A%2522%28%255Cnbody%2520LIKE%2520%27%2525WARN%2525%27%255Cn%29%2520OR%2520body%2520ILIKE%2520%27%2525warning%2525%27%2522%257D%252C%2522aggregations%2522%253A%255B%257B%2522metricName%2522%253A%2522%2522%252C%2522temporality%2522%253A%2522%2522%252C%2522timeAggregation%2522%253A%2522avg%2522%252C%2522spaceAggregation%2522%253A%2522sum%2522%252C%2522reduceTo%2522%253A%2522avg%2522%257D%255D%252C%2522functions%2522%253A%255B%255D%252C%2522filters%2522%253A%257B%2522items%2522%253A%255B%255D%252C%2522op%2522%253A%2522AND%2522%257D%252C%2522expression%2522%253A%2522A%2522%252C%2522disabled%2522%253Afalse%252C%2522stepInterval%2522%253A0%252C%2522having%2522%253A%257B%2522expression%2522%253A%2522%2522%257D%252C%2522limit%2522%253Anull%252C%2522orderBy%2522%253A%255B%255D%252C%2522groupBy%2522%253A%255B%255D%252C%2522reduceTo%2522%253A%2522avg%2522%252C%2522source%2522%253A%2522%2522%252C%2522name%2522%253A%2522A%2522%252C%2522signal%2522%253A%2522logs%2522%257D%255D%252C%2522queryFormulas%2522%253A%255B%255D%252C%2522queryTraceOperator%2522%253A%255B%255D%257D%252C%2522promql%2522%253A%255B%257B%2522name%2522%253A%2522A%2522%252C%2522query%2522%253A%2522%2522%252C%2522legend%2522%253A%2522%2522%252C%2522disabled%2522%253Afalse%257D%255D%252C%2522clickhouse_sql%2522%253A%255B%257B%2522name%2522%253A%2522A%2522%252C%2522legend%2522%253A%2522%2522%252C%2522disabled%2522%253Afalse%252C%2522query%2522%253A%2522%2522%257D%255D%252C%2522id%2522%253A%252282340fee-c0ee-4c7c-8e04-aac1b10242f2%2522%252C%2522unit%2522%253A%2522%2522%257D&options=%7B%22selectColumns%22%3A%5B%7B%22name%22%3A%22timestamp%22%2C%22signal%22%3A%22logs%22%2C%22fieldContext%22%3A%22log%22%2C%22fieldDataType%22%3A%22%22%2C%22isIndexed%22%3Afalse%7D%2C%7B%22name%22%3A%22body%22%2C%22signal%22%3A%22logs%22%2C%22fieldContext%22%3A%22log%22%2C%22fieldDataType%22%3A%22%22%2C%22isIndexed%22%3Afalse%7D%5D%2C%22format%22%3A%22raw%22%2C%22maxLines%22%3A1%2C%22fontSize%22%3A%22small%22%7D&panelTypes=%22list%22&viewName=%22WARN%22&viewKey=%22019ca32b-9f9b-7e9f-be68-6412ba419ffd%22&relativeTime=1h) (назва `WARN`)
-- [OPS](http://signoz-echo.eagle-atria.ts.net:8080/logs/logs-explorer?compositeQuery=%257B%2522queryType%2522%253A%2522builder%2522%252C%2522builder%2522%253A%257B%2522queryData%2522%253A%255B%257B%2522dataSource%2522%253A%2522logs%2522%252C%2522queryName%2522%253A%2522A%2522%252C%2522aggregateOperator%2522%253A%2522count%2522%252C%2522aggregateAttribute%2522%253A%257B%2522id%2522%253A%2522----%2522%252C%2522dataType%2522%253A%2522%2522%252C%2522key%2522%253A%2522%2522%252C%2522type%2522%253A%2522%2522%257D%252C%2522timeAggregation%2522%253A%2522rate%2522%252C%2522spaceAggregation%2522%253A%2522sum%2522%252C%2522filter%2522%253A%257B%2522expression%2522%253A%2522%28%255Cnbody%2520ILIKE%2520%27%2525AOR%2520Check%2525%27%255Cn%29%2522%257D%252C%2522aggregations%2522%253A%255B%257B%2522expression%2522%253A%2522count%28%29%2522%257D%255D%252C%2522functions%2522%253A%255B%255D%252C%2522filters%2522%253A%257B%2522items%2522%253A%255B%255D%252C%2522op%2522%253A%2522AND%2522%257D%252C%2522expression%2522%253A%2522A%2522%252C%2522disabled%2522%253Afalse%252C%2522stepInterval%2522%253Anull%252C%2522having%2522%253A%257B%2522expression%2522%253A%2522%2522%257D%252C%2522limit%2522%253Anull%252C%2522orderBy%2522%253A%255B%255D%252C%2522groupBy%2522%253A%255B%255D%252C%2522legend%2522%253A%2522%2522%252C%2522reduceTo%2522%253A%2522avg%2522%252C%2522source%2522%253A%2522%2522%252C%2522name%2522%253A%2522A%2522%252C%2522signal%2522%253A%2522logs%2522%257D%255D%252C%2522queryFormulas%2522%253A%255B%255D%252C%2522queryTraceOperator%2522%253A%255B%255D%257D%252C%2522promql%2522%253A%255B%257B%2522name%2522%253A%2522A%2522%252C%2522query%2522%253A%2522%2522%252C%2522legend%2522%253A%2522%2522%252C%2522disabled%2522%253Afalse%257D%255D%252C%2522clickhouse_sql%2522%253A%255B%257B%2522name%2522%253A%2522A%2522%252C%2522legend%2522%253A%2522%2522%252C%2522disabled%2522%253Afalse%252C%2522query%2522%253A%2522%2522%257D%255D%252C%2522id%2522%253A%25222264c633-e66f-4fca-974b-9768bc15f17b%2522%252C%2522unit%2522%253A%2522%2522%257D&options=%7B%22selectColumns%22%3A%5B%7B%22name%22%3A%22timestamp%22%2C%22signal%22%3A%22logs%22%2C%22fieldContext%22%3A%22log%22%2C%22fieldDataType%22%3A%22%22%2C%22isIndexed%22%3Afalse%7D%2C%7B%22name%22%3A%22body%22%2C%22signal%22%3A%22logs%22%2C%22fieldContext%22%3A%22log%22%2C%22fieldDataType%22%3A%22%22%2C%22isIndexed%22%3Afalse%7D%5D%2C%22format%22%3A%22raw%22%2C%22maxLines%22%3A1%2C%22fontSize%22%3A%22small%22%7D&panelTypes=%22list%22&viewName=%22OPS%22&viewKey=%22019ca2f0-0de7-74c9-8d20-dd9db96f804f%22&relativeTime=1h) (назва `OPS`)
+SigNoz is available only from the Eagle Atria Tailscale network.
+
+## For humans
+
+- [Errors dashboard](http://signoz-echo.eagle-atria.ts.net:8080/dashboard/019fcb8d-cc4f-7e13-869d-2d6029b687d2?relativeTime=1h)
+- [All dashboards](http://signoz-echo.eagle-atria.ts.net:8080/dashboard)
+- [Logs Explorer](http://signoz-echo.eagle-atria.ts.net:8080/logs/logs-explorer?relativeTime=1h)
+
+In Logs Explorer, load the saved `ERROR`, `WARN`, or `OPS` view. To inspect one
+installation, add the resource filter `host.name IN <host-name>`. For example,
+the SSH host `echo-skhid` sends application logs as `ct-echo-skhid`. Its paired
+analytics container uses `ct-echo-skhid-clickhouse`.
+
+Use a personal SigNoz account. SSH access does not reveal the browser password:
+SigNoz stores password factors, not recoverable plaintext passwords, in
+`/var/lib/signoz/signoz.db`. Ask a SigNoz administrator to invite the user or
+reset access when necessary.
+
+Dashboard IDs change when a dashboard is recreated. If a direct link stops
+working, open **All dashboards**, find the errors dashboard, and update this
+document with its new link.
+
+## For agents over SSH
+
+The central logs are in the `signoz_logs.logs_v2` ClickHouse table on
+`signoz-echo`. Useful fields are:
+
+- `timestamp` and `severity_text` for event time and severity;
+- `body` for the log message;
+- `resources_string['host.name']` for the machine;
+- `resources_string['service.name']` for the systemd service.
+
+The ClickHouse password is the `password` query parameter of
+`SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN` in
+`/opt/signoz/conf/systemd.env`. Do not print or copy it. The commands below
+parse it directly into the temporary remote process environment and remove it
+when the process exits.
+
+The credential is not a read-only account. Agent inspection must use only
+`SELECT`, `SHOW`, and `DESCRIBE`; never run DDL or data-changing queries.
+
+### Discover host names
+
+Host resource names are usually `ct-echo-<site>`, but some older and special
+hosts use different names. Discover the exact value before querying:
+
+```bash
+ssh signoz-echo 'sudo bash -s' <<'SIGNOZ_QUERY'
+set -euo pipefail
+
+hours=24
+
+set -a
+. /opt/signoz/conf/systemd.env
+set +a
+CLICKHOUSE_PASSWORD="$(
+    python3 - <<'PY'
+import os
+import urllib.parse
+
+dsn = urllib.parse.urlparse(os.environ["SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN"])
+print(urllib.parse.parse_qs(dsn.query)["password"][0])
+PY
+)"
+export CLICKHOUSE_PASSWORD
+trap 'unset CLICKHOUSE_PASSWORD SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN' EXIT
+
+clickhouse-client \
+    --param_hours="$hours" \
+    --query "
+SELECT
+    resources_string['host.name'] AS host_name,
+    count() AS log_rows,
+    fromUnixTimestamp64Nano(toInt64(max(timestamp))) AS latest
+FROM signoz_logs.logs_v2
+WHERE timestamp >=
+    (toUInt64(toUnixTimestamp(now())) - {hours:UInt32} * 3600) * 1000000000
+GROUP BY host_name
+HAVING host_name != ''
+ORDER BY host_name
+FORMAT PrettyCompactMonoBlock"
+SIGNOZ_QUERY
+```
+
+### Read recent errors for one host
+
+Change `host_name`, `hours`, or `row_limit` at the top. The timestamp predicate
+and row limit are mandatory because the table receives a high volume of logs.
+
+```bash
+ssh signoz-echo 'sudo bash -s' <<'SIGNOZ_QUERY'
+set -euo pipefail
+
+host_name=ct-echo-skhid
+hours=1
+row_limit=100
+
+set -a
+. /opt/signoz/conf/systemd.env
+set +a
+CLICKHOUSE_PASSWORD="$(
+    python3 - <<'PY'
+import os
+import urllib.parse
+
+dsn = urllib.parse.urlparse(os.environ["SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN"])
+print(urllib.parse.parse_qs(dsn.query)["password"][0])
+PY
+)"
+export CLICKHOUSE_PASSWORD
+trap 'unset CLICKHOUSE_PASSWORD SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN' EXIT
+
+clickhouse-client \
+    --param_host_name="$host_name" \
+    --param_hours="$hours" \
+    --param_row_limit="$row_limit" \
+    --query "
+SELECT
+    fromUnixTimestamp64Nano(toInt64(timestamp)) AS event_time,
+    resources_string['host.name'] AS host_name,
+    resources_string['service.name'] AS service_name,
+    severity_text,
+    body
+FROM signoz_logs.logs_v2
+WHERE timestamp >=
+    (toUInt64(toUnixTimestamp(now())) - {hours:UInt32} * 3600) * 1000000000
+  AND resources_string['host.name'] = {host_name:String}
+  AND (severity_text ILIKE '%error%' OR body ILIKE '%error%')
+ORDER BY timestamp DESC
+LIMIT {row_limit:UInt32}
+FORMAT Vertical"
+SIGNOZ_QUERY
+```
+
+This SSH query deliberately returns a broad set of error-like messages. The UI
+saved `ERROR` view owns the current noise exclusions and may show fewer rows.
+
+To restrict the SSH query to one service, add a parameter to
+`clickhouse-client`:
+
+```bash
+--param_service_name=wdintel-rs
+```
+
+and add this predicate before `ORDER BY`:
+
+```sql
+AND resources_string['service.name'] = {service_name:String}
+```
+
+Common Echo services include `wdintel-rs`, `wdintel-rs-bgworker`,
+`wdintel-rs-report-worker`, `postgresql`, `echo-signal-bot`, and
+`echo-whatsapp-bot`.
+
+### Troubleshooting
+
+- No expected host: increase the discovery window, then check
+  `sudo systemctl status echo-vector` on the source Echo host.
+- No recent logs from any host: run
+  `ssh signoz-echo 'systemctl is-active signoz signoz-otel-collector clickhouse-server'`.
+- UI and SSH results differ: confirm the same time range and `host.name`; the
+  saved UI views also contain noise exclusions.
+- Too much output: shorten `hours`, lower `row_limit`, or filter by
+  `service.name`. Do not remove the timestamp predicate or limit.
 
 ## Metrics
 
