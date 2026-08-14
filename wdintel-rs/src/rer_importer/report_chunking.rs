@@ -4,7 +4,9 @@ use crate::rer_importer::types::{InboxMessagesReq, InboxMessagesSortBy};
 use crate::types::Env;
 use crate::utils::dt_from_millis;
 use anyhow::Context;
+use chrono::NaiveDateTime;
 use sea_orm::{ColumnTrait, ConnectionTrait, QueryFilter, Select};
+use std::cmp::Ordering;
 
 use crate::entities::{sigint_inbox_item, signal_message};
 
@@ -113,6 +115,54 @@ pub fn inbox_report_chunk_req(
     chunk_req.since_date_inclusive_ms = Some(chunk.since_ms);
     chunk_req.till_date_inclusive_ms = Some(chunk.till_ms);
     chunk_req
+}
+
+pub fn inbox_report_newest_first(req: &InboxMessagesReq) -> bool {
+    req.load_latest == Some(true)
+        || req.newest_first == Some(true)
+        || req.before_id_noninclusive.is_some()
+}
+
+pub fn compare_inbox_report_message_order(
+    req: &InboxMessagesReq,
+    left_datetime: Option<NaiveDateTime>,
+    left_timestamp: Option<NaiveDateTime>,
+    left_id: i64,
+    right_datetime: Option<NaiveDateTime>,
+    right_timestamp: Option<NaiveDateTime>,
+    right_id: i64,
+) -> Ordering {
+    let newest_first = inbox_report_newest_first(req);
+    let (left, right) = match req
+        .sort_by
+        .unwrap_or(InboxMessagesSortBy::IMSDatetime)
+    {
+        InboxMessagesSortBy::IMSDatetime => (left_datetime, right_datetime),
+        InboxMessagesSortBy::IMSTimestamp => (left_timestamp, right_timestamp),
+    };
+    compare_optional_datetime(left, right, newest_first).then_with(|| {
+        if newest_first {
+            right_id.cmp(&left_id)
+        } else {
+            left_id.cmp(&right_id)
+        }
+    })
+}
+
+fn compare_optional_datetime(
+    left: Option<NaiveDateTime>,
+    right: Option<NaiveDateTime>,
+    newest_first: bool,
+) -> Ordering {
+    match (left, right) {
+        (Some(left), Some(right)) if newest_first => right.cmp(&left),
+        (Some(left), Some(right)) => left.cmp(&right),
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) if newest_first => Ordering::Less,
+        (Some(_), None) if newest_first => Ordering::Greater,
+        (None, Some(_)) => Ordering::Greater,
+        (Some(_), None) => Ordering::Less,
+    }
 }
 
 pub async fn build_filtered_inbox_report_chunk_query<'a, 'async_trait, C>(
@@ -285,5 +335,44 @@ mod tests {
             ReportPeriodEnd::NonInclusive,
         )
         .is_err());
+    }
+
+    #[test]
+    fn compares_collected_messages_by_requested_order() {
+        let older_datetime =
+            NaiveDateTime::parse_from_str("2026-08-14 10:00:00", "%F %T")
+                .unwrap();
+        let newer_datetime =
+            NaiveDateTime::parse_from_str("2026-08-14 11:00:00", "%F %T")
+                .unwrap();
+
+        assert_eq!(
+            compare_inbox_report_message_order(
+                &InboxMessagesReq::default(),
+                Some(older_datetime),
+                Some(newer_datetime),
+                1,
+                Some(newer_datetime),
+                Some(older_datetime),
+                2,
+            ),
+            Ordering::Less,
+        );
+        assert_eq!(
+            compare_inbox_report_message_order(
+                &InboxMessagesReq {
+                    sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+                    newest_first: Some(true),
+                    ..Default::default()
+                },
+                Some(older_datetime),
+                Some(newer_datetime),
+                1,
+                Some(newer_datetime),
+                Some(older_datetime),
+                2,
+            ),
+            Ordering::Less,
+        );
     }
 }

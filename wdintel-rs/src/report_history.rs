@@ -304,7 +304,8 @@ async fn build_report_history_rows(
             .map(|report_history| report_history.requested_by_login_id)
             .collect(),
     )
-    .await?;
+    .await
+    .c(h!())?;
 
     Ok(report_histories
         .into_iter()
@@ -1299,7 +1300,8 @@ pub async fn enqueue_report(
         report_kind,
         &request,
     )
-    .await?
+    .await
+    .c(h!())?
     {
         let message = duplicate_report_log_message(&report_history);
         let report_log = append_log_entry(
@@ -1481,6 +1483,96 @@ where
     report_history.last_error = Set(None);
     report_history.log = Set(report_log);
     Ok(report_history.update(dbx).await.c(h!())?)
+}
+
+fn completed_report_rerun(
+    report_history: &report_history::Model,
+    rerun_by_login_id: &uuid::Uuid,
+) -> report_history::ActiveModel {
+    report_history::ActiveModel {
+        id: NotSet,
+        report_kind: Set(report_history.report_kind.clone()),
+        requested_by_login_id: Set(report_history.requested_by_login_id),
+        request: Set(report_history.request.clone()),
+        created_at: Set(Utc::now().naive_utc()),
+        status: Set(STATUS_PLANNED.to_string()),
+        retry_count: Set(0),
+        planned_for_ts: Set(None),
+        started_at: Set(None),
+        completed_at: Set(None),
+        s3_id: Set(None),
+        bgtask_id: Set(None),
+        file_name: Set(report_history.file_name.clone()),
+        content_type: Set(report_history.content_type.clone()),
+        last_error: Set(None),
+        log: Set(append_log_entry(
+            json!([]),
+            &rerun_by_login_id.to_string(),
+            &format!(
+                "admin requested rerun of successful report #{}",
+                report_history.id
+            ),
+        )),
+        legacy_log_id: Set(None),
+        legacy_report_path: Set(None),
+    }
+}
+
+async fn rerun_completed_report(
+    dbx: &DatabaseConnection,
+    report_history_id: i64,
+    rerun_by_login_id: &uuid::Uuid,
+) -> Result<report_history::Model, AppError> {
+    let report_history = ReportHistory::find_by_id(report_history_id)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    if report_history.status != STATUS_DONE {
+        return Err(AppError::BL {
+            msg: "Only successful reports can be rerun by an admin".to_string(),
+        });
+    }
+
+    let txn = dbx.begin().await.c(h!())?;
+    lock_report_request(
+        &txn,
+        &report_history.requested_by_login_id,
+        &report_history.report_kind,
+        &report_history.request,
+    )
+    .await?;
+    let report_history = ReportHistory::find_by_id(report_history_id)
+        .lock_exclusive()
+        .one(&txn)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    if report_history.status != STATUS_DONE {
+        return Err(AppError::BL {
+            msg: "Only successful reports can be rerun by an admin".to_string(),
+        });
+    }
+
+    if let Some(active_report) = find_active_duplicate_report(
+        &txn,
+        &report_history.requested_by_login_id,
+        &report_history.report_kind,
+        &report_history.request,
+    )
+    .await?
+    {
+        txn.commit().await.c(h!())?;
+        return Ok(active_report);
+    }
+
+    let report_history =
+        completed_report_rerun(&report_history, rerun_by_login_id)
+            .insert(&txn)
+            .await
+            .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(report_history)
 }
 
 pub async fn record_completed_report_nofail(
@@ -1902,6 +1994,25 @@ pub async fn report_history_admin_list(
             },
         )
         .await?,
+    ))
+}
+
+#[post("/api/admin/report-history/rerun")]
+pub async fn report_history_admin_rerun(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<ReportHistoryIdReq>,
+) -> Result<Json<ReportHistoryRow>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let rerun_by_login_id = login_id_from_identity(&user).c(h!())?;
+    let report_history =
+        rerun_completed_report(&env.dbx, req.id, &rerun_by_login_id)
+            .await
+            .c(h!())?;
+    Ok(Json(
+        build_report_history_row(&env.dbx, report_history, true)
+            .await
+            .c(h!())?,
     ))
 }
 
@@ -3570,6 +3681,99 @@ mod tests {
         assert_eq!(repeated.status, STATUS_PLANNED);
         assert_eq!(
             report_history_count_for_login(&env.dbx, login.id).await?,
+            2
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn admin_rerun_copies_success_into_new_planned_row(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        let owner = create_report_history_test_login(
+            &env.dbx,
+            "report-history-admin-rerun-owner",
+        )
+        .await?;
+        let admin = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                id: NotSet,
+                login: Set("report-history-admin-rerun-admin".to_string()),
+                roles: Set(json!(["Admin"])),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let created_at = Utc::now().naive_utc();
+        let report = insert_report_history(
+            &env.dbx,
+            &owner.login,
+            KIND_GOI,
+            STATUS_DONE,
+            created_at,
+            Some(created_at),
+            None,
+        )
+        .await?;
+        let mut report = report.into_active_model();
+        report.completed_at = Set(Some(created_at));
+        report.s3_id = Set(Some("reports/original.xlsx".to_string()));
+        report.file_name = Set(Some("original.xlsx".to_string()));
+        report.content_type = Set(Some("application/octet-stream".to_string()));
+        let report = report.update(&env.dbx).await.c(h!())?;
+
+        let rerun =
+            rerun_completed_report(&env.dbx, report.id, &admin.id).await?;
+
+        assert_ne!(rerun.id, report.id);
+        assert_eq!(rerun.report_kind, report.report_kind);
+        assert_eq!(rerun.requested_by_login_id, report.requested_by_login_id);
+        assert_eq!(rerun.request, report.request);
+        assert_eq!(rerun.status, STATUS_PLANNED);
+        assert_eq!(rerun.retry_count, 0);
+        assert_eq!(rerun.planned_for_ts, None);
+        assert_eq!(rerun.started_at, None);
+        assert_eq!(rerun.completed_at, None);
+        assert_eq!(rerun.s3_id, None);
+        assert_eq!(rerun.bgtask_id, None);
+        assert_eq!(rerun.file_name, report.file_name);
+        assert_eq!(rerun.content_type, report.content_type);
+        assert_eq!(rerun.last_error, None);
+        assert!(rerun
+            .log
+            .as_array()
+            .and_then(|entries| entries.last())
+            .is_some_and(|entry| {
+                entry.get("login").and_then(serde_json::Value::as_str)
+                    == Some(admin.id.to_string().as_str())
+                    && entry
+                        .get("message")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|message| {
+                            message.contains(&format!("report #{}", report.id))
+                        })
+            }));
+
+        let preserved = ReportHistory::find_by_id(report.id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+        assert_eq!(preserved.status, STATUS_DONE);
+        assert_eq!(preserved.s3_id, report.s3_id);
+
+        let duplicate =
+            rerun_completed_report(&env.dbx, report.id, &admin.id).await?;
+        assert_eq!(duplicate.id, rerun.id);
+        assert_eq!(
+            report_history_count_for_login(&env.dbx, owner.id).await?,
             2
         );
         Ok(())
