@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { act, forwardRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -177,6 +177,8 @@ type TextFieldMockProps = {
   placeholder?: string;
   value?: string;
   disabled?: boolean;
+  autoFocus?: boolean;
+  inputRef?: Ref<HTMLInputElement | HTMLTextAreaElement>;
   error?: boolean;
   helperText?: ReactNode;
 };
@@ -316,6 +318,8 @@ vi.mock('@mui/material', () => ({
     placeholder,
     value,
     disabled,
+    autoFocus,
+    inputRef,
     error,
     helperText,
   }: TextFieldMockProps) => {
@@ -329,6 +333,7 @@ vi.mock('@mui/material', () => ({
       placeholder,
       value,
       disabled,
+      autoFocus,
       error,
       helperText,
     });
@@ -341,6 +346,8 @@ vi.mock('@mui/material', () => ({
             placeholder={placeholder}
             value={value ?? ''}
             disabled={disabled}
+            autoFocus={autoFocus}
+            ref={inputRef as Ref<HTMLTextAreaElement>}
             onChange={(event) => onChange?.(event as never)}
             onBlur={onBlur}
             onKeyDown={onKeyDown as never}
@@ -351,6 +358,8 @@ vi.mock('@mui/material', () => ({
             placeholder={placeholder}
             value={value ?? ''}
             disabled={disabled}
+            autoFocus={autoFocus}
+            ref={inputRef as Ref<HTMLInputElement>}
             onChange={(event) => onChange?.(event as never)}
             onBlur={onBlur}
             onKeyDown={onKeyDown as never}
@@ -520,6 +529,13 @@ describe('ManageMessageDrawer edit mode', () => {
       'original copied body',
     );
     expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('');
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.autoFocus).toBe(true);
+    await act(async () => {
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    });
+    expect(document.activeElement).toBe(
+      container.querySelector('textarea[aria-label="Текст розвіддонесення"]'),
+    );
     const reportTextRow = container.querySelector('[data-testid="report-text-row"]');
     expect(reportTextRow?.textContent).toContain('Оригінальний текст');
     expect(reportTextRow?.textContent).toContain('Розвіддонесення');

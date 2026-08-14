@@ -48,6 +48,13 @@ export type Props = {
 
 function ReportTextRow({ originalText, busy }: { originalText: string; busy: boolean }) {
   const { control } = useFormContext<MessageFormData>();
+  const reportTextRef = React.useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+
+  React.useEffect(() => {
+    if (busy) return;
+    const frameId = window.requestAnimationFrame(() => reportTextRef.current?.focus());
+    return () => window.cancelAnimationFrame(frameId);
+  }, [busy]);
 
   return (
     <Box
@@ -82,6 +89,8 @@ function ReportTextRow({ originalText, busy }: { originalText: string; busy: boo
               multiline
               rows={12}
               required
+              autoFocus
+              inputRef={reportTextRef}
               disabled={busy}
             />
           )}
