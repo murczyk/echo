@@ -2761,50 +2761,90 @@ pub async fn fetch_metadata_stats_for_login(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<MetadataStatsRsp, AppError> {
+    fetch_metadata_stats_with_db(req, login_str, &env.dbx, master_keys, None)
+        .await
+}
+
+pub(super) async fn fetch_metadata_stats_raw_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    scope: &AnalyticsMessageIdScope,
+) -> Result<MetadataStatsRsp, AppError> {
+    if scope.is_empty() {
+        return Ok(empty_metadata_stats());
+    }
+    let login = login_id_from_identity(user)?;
+    fetch_metadata_stats_with_db(&req.0, &login, db, master_keys, Some(scope))
+        .await
+}
+
+fn empty_metadata_stats() -> MetadataStatsRsp {
+    MetadataStatsRsp {
+        ccs: Vec::new(),
+        senders: Vec::new(),
+        receivers: Vec::new(),
+        hashes: Vec::new(),
+    }
+}
+
+pub(super) async fn fetch_metadata_stats_with_db(
+    req: &AnalysisStatsReq,
+    login: &uuid::Uuid,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<MetadataStatsRsp, AppError> {
     let req = Json(req.clone());
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let messages_q = build_metadata_messages_query(
         &req,
-        login_str,
+        login,
         dt_since,
         dt_till,
         master_keys,
+        scope,
     )
     .context(h!())?;
 
     let ccs = fetch_metadata_single_value_stats(
-        &env.dbx,
+        db,
         messages_q.clone(),
         sigint_inbox_item_metadata::Column::ColorCode,
+        scope,
     )
     .await
     .context(h!())?;
     let hashes = fetch_metadata_single_value_stats(
-        &env.dbx,
+        db,
         messages_q.clone(),
         sigint_inbox_item_metadata::Column::HashId,
+        scope,
     )
     .await
     .context(h!())?;
     let senders = fetch_metadata_multi_value_stats(
-        &env.dbx,
+        db,
         messages_q.clone(),
         &[
             sigint_inbox_item_metadata::Column::SenderId,
             sigint_inbox_item_metadata::Column::SenderName,
         ],
+        scope,
     )
     .await
     .context(h!())?;
     let receivers = fetch_metadata_multi_value_stats(
-        &env.dbx,
+        db,
         messages_q.clone(),
         &[
             sigint_inbox_item_metadata::Column::CallGroupId,
             sigint_inbox_item_metadata::Column::CallGroupName,
         ],
+        scope,
     )
     .await
     .context(h!())?;
@@ -2823,11 +2863,13 @@ fn build_metadata_messages_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let messages_q = build_join_for_sigint_inbox_item()
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let messages_q = apply_analytics_message_id_scope(messages_q, scope);
     apply_sender_filters_for_login(
         messages_q,
         req,
@@ -2835,7 +2877,7 @@ fn build_metadata_messages_query(
         dt_till,
         login_str,
         master_keys,
-        None,
+        scope,
         false,
     )
 }
@@ -2850,14 +2892,17 @@ async fn fetch_metadata_single_value_stats(
     db: &DatabaseConnection,
     messages_q: Select<sigint_inbox_item::Entity>,
     column: sigint_inbox_item_metadata::Column,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Vec<AnalysisStatsMetadataValue>, AppError> {
     let messages_subquery = messages_q
         .select_only()
         .column(sigint_inbox_item::Column::Id)
         .to_owned()
         .into_query();
-    let metadata_res: Vec<MetadataValueRes> =
-        sigint_inbox_item_metadata::Entity::find()
+    let metadata_res: Vec<MetadataValueRes> = apply_metadata_message_id_scope(
+        sigint_inbox_item_metadata::Entity::find(),
+        scope,
+    )
             .select_only()
             .column_as(
                 Expr::col((sigint_inbox_item_metadata::Entity, column))
@@ -2912,8 +2957,10 @@ async fn fetch_metadata_multi_value_stats(
     db: &DatabaseConnection,
     messages_q: Select<sigint_inbox_item::Entity>,
     columns: &[sigint_inbox_item_metadata::Column],
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Vec<AnalysisStatsMetadataValue>, AppError> {
-    let Some(values_q) = build_metadata_values_union_query(messages_q, columns)
+    let Some(values_q) =
+        build_metadata_values_union_query(messages_q, columns, scope)
     else {
         return Ok(vec![]);
     };
@@ -2969,14 +3016,22 @@ async fn fetch_metadata_multi_value_stats(
 fn build_metadata_values_union_query(
     messages_q: Select<sigint_inbox_item::Entity>,
     columns: &[sigint_inbox_item_metadata::Column],
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Option<SelectStatement> {
     let (first_column, rest_columns) = columns.split_first()?;
-    let mut values_q =
-        build_metadata_value_column_query(messages_q.clone(), *first_column);
+    let mut values_q = build_metadata_value_column_query(
+        messages_q.clone(),
+        *first_column,
+        scope,
+    );
     for column in rest_columns {
         values_q.union(
             UnionType::All,
-            build_metadata_value_column_query(messages_q.clone(), *column),
+            build_metadata_value_column_query(
+                messages_q.clone(),
+                *column,
+                scope,
+            ),
         );
     }
     Some(values_q)
@@ -2985,6 +3040,7 @@ fn build_metadata_values_union_query(
 fn build_metadata_value_column_query(
     messages_q: Select<sigint_inbox_item::Entity>,
     column: sigint_inbox_item_metadata::Column,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> SelectStatement {
     let messages_subquery = messages_q
         .select_only()
@@ -3004,7 +3060,26 @@ fn build_metadata_value_column_query(
             Expr::col((sigint_inbox_item_metadata::Entity, column))
                 .is_not_null(),
         );
+    if let Some(scope) = scope {
+        value_q.and_where(scope.condition((
+            sigint_inbox_item_metadata::Entity,
+            sigint_inbox_item_metadata::Column::SigintInboxItemId,
+        )));
+    }
     value_q
+}
+
+fn apply_metadata_message_id_scope(
+    query: Select<sigint_inbox_item_metadata::Entity>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Select<sigint_inbox_item_metadata::Entity> {
+    match scope {
+        Some(scope) => query.filter(scope.condition((
+            sigint_inbox_item_metadata::Entity,
+            sigint_inbox_item_metadata::Column::SigintInboxItemId,
+        ))),
+        None => query,
+    }
 }
 
 fn metadata_value_expr(
@@ -7011,6 +7086,20 @@ mod tests {
                 .to_string(),
             ),
             (
+                "metadata",
+                build_metadata_messages_query(
+                    req_ref,
+                    &login_id,
+                    dt_since,
+                    dt_till,
+                    master_keys.clone(),
+                    Some(&scope),
+                )
+                .unwrap()
+                .build(DbBackend::Postgres)
+                .to_string(),
+            ),
+            (
                 "locations",
                 build_locations_query_for_login(
                     &req,
@@ -7037,6 +7126,35 @@ mod tests {
                 );
             }
         }
+
+        let metadata_messages = build_metadata_messages_query(
+            req_ref,
+            &login_id,
+            dt_since,
+            dt_till,
+            vec!["group".to_string()],
+            Some(&scope),
+        )
+        .unwrap();
+        let metadata_values = build_metadata_values_union_query(
+            metadata_messages,
+            &[
+                sigint_inbox_item_metadata::Column::SenderId,
+                sigint_inbox_item_metadata::Column::SenderName,
+            ],
+            Some(&scope),
+        )
+        .unwrap()
+        .to_string(PostgresQueryBuilder);
+        assert_eq!(
+            metadata_values
+                .matches(
+                    r#""sigint_inbox_item_metadata"."sigint_inbox_item_id" BETWEEN 10 AND 20"#,
+                )
+                .count(),
+            2,
+            "{metadata_values}"
+        );
     }
 
     #[test]
