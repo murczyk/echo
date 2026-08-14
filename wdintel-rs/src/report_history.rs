@@ -2002,11 +2002,15 @@ pub async fn report_history_admin_rerun(
     req: Json<ReportHistoryIdReq>,
 ) -> Result<Json<ReportHistoryRow>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-    let rerun_by_login_id = login_id_from_identity(&user)?;
+    let rerun_by_login_id = login_id_from_identity(&user).c(h!())?;
     let report_history =
-        rerun_completed_report(&env.dbx, req.id, &rerun_by_login_id).await?;
+        rerun_completed_report(&env.dbx, req.id, &rerun_by_login_id)
+            .await
+            .c(h!())?;
     Ok(Json(
-        build_report_history_row(&env.dbx, report_history, true).await?,
+        build_report_history_row(&env.dbx, report_history, true)
+            .await
+            .c(h!())?,
     ))
 }
 
