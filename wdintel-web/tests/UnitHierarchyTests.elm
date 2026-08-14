@@ -1,8 +1,39 @@
 module UnitHierarchyTests exposing (suite)
 
+import Bindings as B
 import Core.UnitHierarchy
 import Expect
 import Test exposing (Test, describe, test)
+
+
+createUnit : Int -> String -> String -> String -> String -> Bool -> B.Unit
+createUnit id army militaryDistrict armyRegion name active =
+    { id = id
+    , other = ""
+    , teamOrCrew = ""
+    , section = ""
+    , squad = ""
+    , platoon = ""
+    , company = ""
+    , battalion = ""
+    , regiment = ""
+    , brigade = ""
+    , division = ""
+    , corps = ""
+    , army = army
+    , militaryDistrict = militaryDistrict
+    , armyRegion = armyRegion
+    , comment = ""
+    , orbitNote = Nothing
+    , name = name
+    , active = active
+    , isDeduplicateCandidate = Nothing
+    , createdAt = 0
+    , createdByLoginId = ""
+    , hasOrbit = False
+    , orbitUnitIds = []
+    , orbitUnitGenerativeNames = []
+    }
 
 
 suite : Test
@@ -35,8 +66,8 @@ suite =
                 \_ ->
                     let
                         units =
-                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "Unit 1", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [], orbitUnitGenerativeNames = [] }
-                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "Unit 2", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [], orbitUnitGenerativeNames = [] }
+                            [ createUnit 1 "" "" "" "Unit 1" True
+                            , createUnit 2 "" "" "" "Unit 2" True
                             ]
 
                         unitStats =
@@ -52,9 +83,9 @@ suite =
                 \_ ->
                     let
                         units =
-                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "Army A", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "Unit 1", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [], orbitUnitGenerativeNames = [] }
-                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "Army B", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "Unit 2", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [], orbitUnitGenerativeNames = [] }
-                            , { id = 3, company = "", battalion = "", regiment = "", division = "", army = "Army A", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "Unit 3", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [], orbitUnitGenerativeNames = [] }
+                            [ createUnit 1 "Army A" "" "" "Unit 1" True
+                            , createUnit 2 "Army B" "" "" "Unit 2" True
+                            , createUnit 3 "Army A" "" "" "Unit 3" True
                             ]
                     in
                     Core.UnitHierarchy.buildHierarchy units
@@ -65,8 +96,8 @@ suite =
                 \_ ->
                     let
                         units =
-                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "Army A", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "Unit 1", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [], orbitUnitGenerativeNames = [] }
-                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "Army B", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "Unit 2", active = False, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [], orbitUnitGenerativeNames = [] }
+                            [ createUnit 1 "Army A" "" "" "Unit 1" True
+                            , createUnit 2 "Army B" "" "" "Unit 2" False
                             ]
                     in
                     Core.UnitHierarchy.buildHierarchy units
@@ -77,7 +108,7 @@ suite =
                 \_ ->
                     let
                         units =
-                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "управління авіацією ПКС зс рф", militaryDistrict = "", armyRegion = "", comment = "", orbitNote = Nothing, name = "управління авіацією ПКС зс рф", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [], orbitUnitGenerativeNames = [] }
+                            [ createUnit 1 "управління авіацією ПКС зс рф" "" "" "управління авіацією ПКС зс рф" True
                             ]
                     in
                     Core.UnitHierarchy.buildHierarchy units
@@ -88,8 +119,8 @@ suite =
                 \_ ->
                     let
                         units =
-                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "", militaryDistrict = "Західний ВО", armyRegion = "ЗС РФ", comment = "", orbitNote = Nothing, name = "Західний ВО ЗС РФ", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [], orbitUnitGenerativeNames = [] }
-                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "", militaryDistrict = "", armyRegion = "ЗС РФ", comment = "", orbitNote = Nothing, name = "ЗС РФ", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [], orbitUnitGenerativeNames = [] }
+                            [ createUnit 1 "" "Західний ВО" "ЗС РФ" "Західний ВО ЗС РФ" True
+                            , createUnit 2 "" "" "ЗС РФ" "ЗС РФ" True
                             ]
                     in
                     Core.UnitHierarchy.buildHierarchy units
@@ -100,9 +131,9 @@ suite =
                 \_ ->
                     let
                         units =
-                            [ { id = 1, company = "", battalion = "", regiment = "", division = "", army = "1 А", militaryDistrict = "Західний ВО", armyRegion = "ЗС РФ", comment = "", orbitNote = Nothing, name = "1 А Західний ВО ЗС РФ", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [], orbitUnitGenerativeNames = [] }
-                            , { id = 2, company = "", battalion = "", regiment = "", division = "", army = "1 А", militaryDistrict = "Східний ВО", armyRegion = "ЗС РФ", comment = "", orbitNote = Nothing, name = "1 А Східний ВО ЗС РФ", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [], orbitUnitGenerativeNames = [] }
-                            , { id = 3, company = "", battalion = "", regiment = "", division = "", army = "1 А", militaryDistrict = "Західний ВО", armyRegion = "Інший регіон", comment = "", orbitNote = Nothing, name = "1 А Західний ВО Інший регіон", active = True, isDeduplicateCandidate = Nothing, createdAt = 0, createdByLoginId = "", hasOrbit = False, orbitUnitIds = [], orbitUnitGenerativeNames = [] }
+                            [ createUnit 1 "1 А" "Західний ВО" "ЗС РФ" "1 А Західний ВО ЗС РФ" True
+                            , createUnit 2 "1 А" "Східний ВО" "ЗС РФ" "1 А Східний ВО ЗС РФ" True
+                            , createUnit 3 "1 А" "Західний ВО" "Інший регіон" "1 А Західний ВО Інший регіон" True
                             ]
                     in
                     Core.UnitHierarchy.buildHierarchy units
