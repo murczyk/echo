@@ -7,7 +7,10 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ReportHistoryTableSection, SettingsMyReportsSection } from './SettingsMyReportsSection';
-import { isCancelledReportHistory } from '../../services/api/report-history';
+import {
+  isCancelledReportHistory,
+  rerunSuccessfulReportHistory,
+} from '../../services/api/report-history';
 
 const sampleRunningRow = {
   id: 1501,
@@ -34,6 +37,8 @@ const sampleRunningRow = {
   blockedByBgtaskId: null,
 };
 
+let sampleActionRow = sampleRunningRow;
+
 let capturedTableStateProviderProps: Record<string, unknown> | null = null;
 let capturedSettingsNeoTableProps: Record<string, unknown> | null = null;
 let capturedDangerDialogProps: Record<string, unknown> | null = null;
@@ -42,6 +47,7 @@ vi.mock('../../services/api/report-history', () => ({
   listReportHistory: vi.fn(async () => []),
   downloadReportHistory: vi.fn(),
   retryReportHistory: vi.fn(),
+  rerunSuccessfulReportHistory: vi.fn(),
   cancelReportHistory: vi.fn(),
   isCancelledReportHistory: (row: {
     status: string;
@@ -68,6 +74,16 @@ vi.mock('../rer-network-details-neo/use-rer-network-details-neo-page.helpers', (
 
 vi.mock('../../components/PowerAlert', () => ({
   PowerAlert: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+}));
+
+vi.mock('../../components/MrtRowActionButton', () => ({
+  MrtRowActionButton: ({ label, onClick }: { label: string; onClick: () => void }) => (
+    <button type="button" aria-label={label} onClick={onClick}>
+      {label}
+    </button>
+  ),
+  MrtRowActions: ({ children }: { children?: ReactNode }) => <div aria-label="Дії">{children}</div>,
+  mrtRowActionsColumnSize: () => 64,
 }));
 
 vi.mock('../../components/ConfirmDangerDialog', () => ({
@@ -100,7 +116,7 @@ vi.mock('./SettingsNeoTable', () => ({
     const actionsColumn = columns.find((column) => column.id === 'actions');
     const cell =
       typeof actionsColumn?.Cell === 'function'
-        ? actionsColumn.Cell({ row: { original: sampleRunningRow } } as never)
+        ? actionsColumn.Cell({ row: { original: sampleActionRow } } as never)
         : null;
     return <div data-testid="settings-neo-table">{cell}</div>;
   },
@@ -111,6 +127,8 @@ afterEach(() => {
   capturedTableStateProviderProps = null;
   capturedSettingsNeoTableProps = null;
   capturedDangerDialogProps = null;
+  sampleActionRow = sampleRunningRow;
+  vi.mocked(rerunSuccessfulReportHistory).mockReset();
 });
 
 describe('SettingsMyReportsSection', () => {
@@ -310,6 +328,71 @@ describe('SettingsMyReportsSection', () => {
       undefined,
     );
     expect(container.textContent).toContain('201-201 з 401');
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it('reruns successful reports only when the table opts into the admin action', async () => {
+    const completedRow = {
+      ...sampleRunningRow,
+      status: 'done',
+      completedAt: '2026-06-26 17:01:21',
+      hasFile: true,
+      progress: 100,
+    };
+    const rerunRow = {
+      ...completedRow,
+      id: 1502,
+      status: 'planned',
+      completedAt: null,
+      hasFile: false,
+      progress: 0,
+    };
+    sampleActionRow = completedRow;
+    vi.mocked(rerunSuccessfulReportHistory).mockResolvedValue(rerunRow);
+    const loadReportHistoryBatch = vi.fn(async () => ({
+      rows: [completedRow],
+      total: 1,
+      hasMore: false,
+      nextOffset: 1,
+    }));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ReportHistoryTableSection
+          active
+          title="Всі звіти"
+          tableId="admin-all-reports-v2"
+          fullHeight
+          loadReportHistoryBatch={loadReportHistoryBatch}
+          allowSuccessfulRerun
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    const rerunAction = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Сформувати повторно"]',
+    );
+    expect(rerunAction).toBeTruthy();
+
+    await act(async () => {
+      rerunAction?.click();
+      await Promise.resolve();
+    });
+
+    expect(rerunSuccessfulReportHistory).toHaveBeenCalledWith(completedRow.id);
+    expect(loadReportHistoryBatch).toHaveBeenCalledTimes(2);
+    expect(loadReportHistoryBatch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 0, limit: 200 }),
+      undefined,
+    );
 
     act(() => {
       root.unmount();

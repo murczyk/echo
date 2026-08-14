@@ -6,7 +6,8 @@ use crate::location::peleng::{
 };
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::report_chunking::{
-    inbox_report_chunk_req, inbox_report_period_chunks, ReportPeriodEnd,
+    compare_inbox_report_message_order, inbox_report_chunk_req,
+    inbox_report_period_chunks, ReportPeriodEnd,
 };
 use crate::sigint::sender::preferred_sender_sql_snippet;
 use crate::types::*;
@@ -25,6 +26,7 @@ use std::path::PathBuf;
 struct Message {
     pub id: i64,
     pub body: String,
+    pub datetime: Option<chrono::NaiveDateTime>,
     pub timestamp: Option<chrono::NaiveDateTime>,
     pub sender: Option<String>,
     pub date: Option<String>,
@@ -33,6 +35,14 @@ struct Message {
     pub checked: Option<bool>,
     pub unit: Option<String>,
     pub location: Option<String>,
+}
+
+struct CollectedPelengReportMessage {
+    message_id: i64,
+    coords: Option<(f64, f64)>,
+    message: InboxMessage,
+    datetime: Option<NaiveDateTime>,
+    timestamp: Option<NaiveDateTime>,
 }
 
 pub async fn get_inbox_messages_report(
@@ -72,15 +82,38 @@ pub async fn get_inbox_messages_report(
         .context(h!())?
         {
             let key = (
-                message.0,
-                message.1.map(|(lat, lng)| (lat.to_bits(), lng.to_bits())),
+                message.message_id,
+                message
+                    .coords
+                    .map(|(lat, lng)| (lat.to_bits(), lng.to_bits())),
             );
             if seen.insert(key) {
                 messages.push(message);
             }
         }
     }
-    Ok(messages)
+    sort_collected_peleng_report_messages(&mut messages, req);
+    Ok(messages
+        .into_iter()
+        .map(|message| (message.message_id, message.coords, message.message))
+        .collect())
+}
+
+fn sort_collected_peleng_report_messages(
+    messages: &mut [CollectedPelengReportMessage],
+    req: &InboxMessagesReq,
+) {
+    messages.sort_by(|left, right| {
+        compare_inbox_report_message_order(
+            req,
+            left.datetime,
+            left.timestamp,
+            left.message_id,
+            right.datetime,
+            right.timestamp,
+            right.message_id,
+        )
+    });
 }
 
 async fn get_inbox_messages_report_chunk(
@@ -88,7 +121,7 @@ async fn get_inbox_messages_report_chunk(
     env: &Env,
     req: &InboxMessagesReq,
     period_end: ReportPeriodEnd,
-) -> Result<Vec<(i64, Option<(f64, f64)>, InboxMessage)>, AppError> {
+) -> Result<Vec<CollectedPelengReportMessage>, AppError> {
     let login = *user_login;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
@@ -104,6 +137,7 @@ async fn get_inbox_messages_report_chunk(
         .select_only()
         .column(signal_message::Column::Id)
         .column(signal_message::Column::Body)
+        .column(sigint_inbox_item::Column::Datetime)
         .column(signal_message::Column::Timestamp)
         .expr(Expr::cust(format!(
             "{} AS sender",
@@ -335,7 +369,7 @@ async fn get_inbox_messages_report_chunk(
         crate::inbox::callsigns::load_by_item_ids(&read_db, &callsign_item_ids)
             .await?;
 
-    let mut res: Vec<(i64, Option<(f64, f64)>, InboxMessage)> = vec![];
+    let mut res = vec![];
     for (id, m) in items_map {
         let callsigns =
             normalized_callsigns.remove(&id).unwrap_or_default().primary;
@@ -352,10 +386,12 @@ async fn get_inbox_messages_report_chunk(
             }
         };
         for (location, coords, coords_tuple) in locations_w_coords {
-            res.push((
-                m.id,
-                coords_tuple,
-                InboxMessage {
+            res.push(CollectedPelengReportMessage {
+                message_id: m.id,
+                coords: coords_tuple,
+                datetime: m.datetime,
+                timestamp: m.timestamp,
+                message: InboxMessage {
                     message_uid: None,
                     location,
                     coords,
@@ -396,7 +432,7 @@ async fn get_inbox_messages_report_chunk(
                     inbox_tags: None,
                     metadata: vec![],
                 },
-            ));
+            });
         }
     }
 
@@ -684,6 +720,7 @@ fn translate_direction(dir: String) -> anyhow::Result<String> {
 mod tests {
     use super::*;
     use crate::functest::tests::*;
+    use crate::rer_importer::reports::inbox_light::blank_inbox_message;
     use sea_orm::ActiveValue::Set;
     use serial_test::serial;
 
@@ -693,6 +730,7 @@ mod tests {
             Message {
                 id: 1,
                 body: "same body".to_string(),
+                datetime: None,
                 timestamp: None,
                 sender: None,
                 date: None,
@@ -705,6 +743,7 @@ mod tests {
             Message {
                 id: 2,
                 body: "same body".to_string(),
+                datetime: None,
                 timestamp: None,
                 sender: None,
                 date: None,
@@ -721,6 +760,53 @@ mod tests {
         assert_eq!(actual.len(), 2);
         assert_eq!(actual[0].id, 1);
         assert_eq!(actual[1].id, 2);
+    }
+
+    #[test]
+    fn peleng_report_resorts_after_collecting_chunks() {
+        let datetime = |hour| {
+            NaiveDate::from_ymd_opt(2026, 8, 14)
+                .unwrap()
+                .and_hms_opt(hour, 0, 0)
+                .unwrap()
+        };
+        let mut messages = [11, 10, 13, 12]
+            .into_iter()
+            .map(|hour| CollectedPelengReportMessage {
+                message_id: i64::from(hour),
+                coords: None,
+                message: blank_inbox_message(),
+                datetime: Some(datetime(hour)),
+                timestamp: Some(datetime(23 - hour)),
+            })
+            .collect::<Vec<_>>();
+
+        sort_collected_peleng_report_messages(
+            &mut messages,
+            &InboxMessagesReq::default(),
+        );
+        assert_eq!(
+            messages
+                .iter()
+                .map(|message| message.message_id)
+                .collect::<Vec<_>>(),
+            vec![10, 11, 12, 13],
+        );
+
+        sort_collected_peleng_report_messages(
+            &mut messages,
+            &InboxMessagesReq {
+                sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            messages
+                .iter()
+                .map(|message| message.message_id)
+                .collect::<Vec<_>>(),
+            vec![13, 12, 11, 10],
+        );
     }
 
     #[tokio::test]

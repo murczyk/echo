@@ -8,7 +8,8 @@ use crate::error::AppError;
 use crate::rer_importer;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::report_chunking::{
-    report_period_chunks, ReportPeriodChunk, ReportPeriodEnd,
+    compare_inbox_report_message_order, report_period_chunks,
+    ReportPeriodChunk, ReportPeriodEnd,
 };
 use crate::types::*;
 use crate::utils::dt_from_millis;
@@ -29,6 +30,9 @@ mod palette;
 
 #[derive(FromQueryResult)]
 struct InboxMessage {
+    message_id: i64,
+    datetime: Option<NaiveDateTime>,
+    timestamp: Option<NaiveDateTime>,
     date: Option<String>,
     time: Option<String>,
     freq: Option<String>,
@@ -153,6 +157,7 @@ async fn collect_interception_report_messages(
         );
         ensure_interception_report_row_limit(user_login, messages.len())?;
     }
+    sort_interception_report_messages(&mut messages, req);
     Ok(messages)
 }
 
@@ -197,6 +202,23 @@ fn merge_interception_report_chunk(
             messages.push(message);
         }
     }
+}
+
+fn sort_interception_report_messages(
+    messages: &mut [InboxMessage],
+    req: &InboxMessagesReq,
+) {
+    messages.sort_by(|left, right| {
+        compare_inbox_report_message_order(
+            req,
+            left.datetime,
+            left.timestamp,
+            left.message_id,
+            right.datetime,
+            right.timestamp,
+            right.message_id,
+        )
+    });
 }
 
 fn get_worksheet(workbook: &mut Workbook) -> Result<&mut Worksheet, AppError> {
@@ -520,6 +542,7 @@ async fn build_inbox_messages_report_sql(
     let mut q = SignalMessage::find()
         .inner_join(sigint_inbox_item::Entity)
         .column(sigint_inbox_item::Column::Datetime)
+        .column(signal_message::Column::Timestamp)
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
         .column(sigint_inbox_item::Column::Freq)
@@ -531,6 +554,7 @@ async fn build_inbox_messages_report_sql(
             "inbox_tags",
         )
         .column_as(sigint_inbox_item::Column::Id, "inbox_item_id")
+        .column_as(signal_message::Column::Id, "message_id")
         .column_as(
             Expr::col((
                 signal_message::Entity,
@@ -1136,11 +1160,12 @@ mod tests {
         eject_body_from_message, ensure_interception_report_row_limit,
         interception_report_chunks, interception_report_newest_first,
         merge_interception_report_chunk, select_report_message_body,
-        InboxMessage,
+        sort_interception_report_messages, InboxMessage,
     };
     use crate::config::XLSX_WORKSHEET_ROW_MAX;
     use crate::rer_importer::report_chunking::ReportPeriodEnd;
     use crate::rer_importer::types::InboxMessagesReq;
+    use chrono::NaiveDateTime;
     use std::collections::HashSet;
 
     const HOUR_MS: i64 = 60 * 60 * 1_000;
@@ -1150,7 +1175,15 @@ mod tests {
         time: &str,
         body: &str,
     ) -> InboxMessage {
+        let datetime = NaiveDateTime::parse_from_str(
+            &format!("{date} {time}"),
+            "%Y-%m-%d %H:%M:%S",
+        )
+        .unwrap();
         InboxMessage {
+            message_id: datetime.and_utc().timestamp(),
+            datetime: Some(datetime),
+            timestamp: Some(datetime),
             date: Some(date.to_string()),
             time: Some(time.to_string()),
             freq: None,
@@ -1225,6 +1258,43 @@ mod tests {
         assert_eq!(messages[0].body.as_deref(), Some("newest"));
         assert_eq!(messages[1].body.as_deref(), Some("same message"));
         assert_eq!(messages[2].body.as_deref(), Some("oldest"));
+    }
+
+    #[test]
+    fn interception_report_resorts_after_collecting_chunks() {
+        let mut messages = vec![
+            interception_message("2026-08-06", "11:00:00", "second"),
+            interception_message("2026-08-06", "10:00:00", "first"),
+            interception_message("2026-08-06", "13:00:00", "fourth"),
+            interception_message("2026-08-06", "12:00:00", "third"),
+        ];
+
+        sort_interception_report_messages(
+            &mut messages,
+            &InboxMessagesReq::default(),
+        );
+        assert_eq!(
+            messages
+                .iter()
+                .filter_map(|message| message.body.as_deref())
+                .collect::<Vec<_>>(),
+            vec!["first", "second", "third", "fourth"],
+        );
+
+        sort_interception_report_messages(
+            &mut messages,
+            &InboxMessagesReq {
+                newest_first: Some(true),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            messages
+                .iter()
+                .filter_map(|message| message.body.as_deref())
+                .collect::<Vec<_>>(),
+            vec!["fourth", "third", "second", "first"],
+        );
     }
 
     #[test]
