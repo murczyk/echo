@@ -304,7 +304,8 @@ async fn build_report_history_rows(
             .map(|report_history| report_history.requested_by_login_id)
             .collect(),
     )
-    .await?;
+    .await
+    .c(h!())?;
 
     Ok(report_histories
         .into_iter()
@@ -1299,7 +1300,8 @@ pub async fn enqueue_report(
         report_kind,
         &request,
     )
-    .await?
+    .await
+    .c(h!())?
     {
         let message = duplicate_report_log_message(&report_history);
         let report_log = append_log_entry(
