@@ -481,6 +481,32 @@ describe('ManageMessageDrawer edit mode', () => {
     uppyMocks.latest = null;
   });
 
+  it('keeps report text empty while copied fields are loading', async () => {
+    directSubmitMocks.copyDirectSubmit.mockReturnValue(new Promise(() => {}));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: buildMessage({ text: 'original card body' }) }}
+        />,
+      );
+    });
+
+    expect(textFieldPropsByLabel.get('Текст оригінального повідомлення')?.value).toBe(
+      'original card body',
+    );
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('');
+
+    root.unmount();
+  });
+
   it('creates a report from copied fields with optional group and retained media', async () => {
     directSubmitMocks.copyDirectSubmit.mockResolvedValue({
       source_signal_message_id: 42,

@@ -445,8 +445,6 @@ export function useManageMessageDrawer({
         ...EMPTY_FORM_VALUES,
         date: dayjs(),
         time: dayjs(),
-        full_body: reportSource.message.text ?? '',
-        text: reportSource.message.noHeadersBody?.body ?? reportSource.message.text ?? '',
         deviceName: reportSource.message.deviceName ?? '',
       });
     } else {

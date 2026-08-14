@@ -51,7 +51,7 @@ import {
   MessageCardAttachmentPreviewProvider,
   type MessageCardPreviewAttachment,
 } from './attachment-preview/MessageCardAttachmentPreviewProvider';
-import { getIntelligenceReports } from '../intelligence-reports';
+import { getIntelligenceReports, getParentSignalMessageId } from '../intelligence-reports';
 import { MessageCardIntelligenceReports } from './MessageCardIntelligenceReports';
 
 export type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
@@ -399,6 +399,7 @@ export function MessageCardMessageBody({
       ) : null}
       <MessageCardIntelligenceReports
         reports={getIntelligenceReports(msg)}
+        parentMessageId={getParentSignalMessageId(msg)}
         groupInfos={reportGroupInfos}
         onEdit={readOnly ? undefined : onEditReport}
       />

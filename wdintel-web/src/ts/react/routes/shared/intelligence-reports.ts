@@ -9,6 +9,20 @@ export type IntelligenceReportSummary = {
   groupMasterKey: string | null;
 };
 
+export function summarizeIntelligenceMessage(
+  id: number,
+  message: InboxMessage,
+): IntelligenceReportSummary {
+  return {
+    id,
+    text: message.text,
+    timestamp: message.timestamp,
+    date: message.date,
+    time: message.time,
+    groupMasterKey: message.groupMasterKey,
+  };
+}
+
 type InboxMessageReportFields = {
   parentSignalMessageId?: number | null;
   intelligenceReports?: unknown;

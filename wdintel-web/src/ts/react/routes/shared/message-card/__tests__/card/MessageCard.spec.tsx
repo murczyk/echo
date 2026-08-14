@@ -37,6 +37,14 @@ import {
   resolveMessageCardEtalonDisplayModel,
 } from '../../message-card.utils';
 
+const inboxMessagesApiMocks = vi.hoisted(() => ({
+  fetchMessagesByIds: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('../../../../../services/api/inbox-messages', () => ({
+  fetchMessagesByIds: inboxMessagesApiMocks.fetchMessagesByIds,
+}));
+
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
 const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
@@ -790,6 +798,8 @@ describe('MessageCard', () => {
   const rendered: Rendered[] = [];
 
   beforeEach(() => {
+    inboxMessagesApiMocks.fetchMessagesByIds.mockReset();
+    inboxMessagesApiMocks.fetchMessagesByIds.mockResolvedValue([]);
     const storage = new Map<string, string>();
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
@@ -1163,22 +1173,40 @@ describe('MessageCard', () => {
 
     expect(view.container.textContent).toContain('Короткий текст розвіддонесення');
     expect(view.container.textContent).toContain('Група донесення');
-    const editReport = Array.from(view.container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'Редагувати розвіддонесення',
+    const comment = getMuiTypographyElementByText(view.container, 'Коментар');
+    const editReport = view.container.querySelector(
+      'button[aria-label="Редагувати розвіддонесення"]',
     );
     if (!(editReport instanceof HTMLButtonElement)) throw new Error('report edit button not found');
+    expect(comment.compareDocumentPosition(editReport) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
+      0,
+    );
     await click(editReport);
     expect(onEditReport).toHaveBeenCalledWith(91);
   });
 
   it('does not offer nested report creation for a standalone report card', async () => {
+    inboxMessagesApiMocks.fetchMessagesByIds.mockResolvedValue([
+      [
+        42,
+        buildMessage({
+          text: 'Короткий текст оригінального повідомлення',
+          groupMasterKey: 'original-group',
+        }),
+      ],
+    ]);
     const msg = { ...buildMessage(), parentSignalMessageId: 42 } as InboxMessage;
     const view = await renderCard({ msg });
     rendered.push(view);
 
+    await act(async () => {});
+
     expect(
       view.container.querySelector('button[aria-label="Створити розвіддонесення"]'),
     ).toBeNull();
+    expect(inboxMessagesApiMocks.fetchMessagesByIds).toHaveBeenCalledWith([42]);
+    expect(view.container.textContent).toContain('Оригінальне повідомлення');
+    expect(view.container.textContent).toContain('Короткий текст оригінального повідомлення');
   });
 
   it('linkifies plain message text URLs in the body', async () => {
