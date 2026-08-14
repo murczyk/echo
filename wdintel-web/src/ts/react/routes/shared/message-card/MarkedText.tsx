@@ -469,7 +469,7 @@ function CallsignWithHint({
   searchHighlighted?: boolean;
 }) {
   const displayText = text.toUpperCase();
-  const href = `/rer-callsigns-neo?callsign=${encodeURIComponent(displayText)}`;
+  const href = `/rer-callsigns-neo?callsign=${encodeURIComponent(displayText)}&developing=All`;
   const wrapSearchHighlighted = (node: ReactNode) =>
     searchHighlighted ? <SearchHighlightedCallsign>{node}</SearchHighlightedCallsign> : node;
 
