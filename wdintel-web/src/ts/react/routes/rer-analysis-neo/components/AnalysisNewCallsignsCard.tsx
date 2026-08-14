@@ -38,7 +38,7 @@ function CallsignPeriod({ callsigns, label }: { callsigns: string[]; label: stri
             <CompactLinkText
               key={callsign}
               component="a"
-              href={`/rer-callsigns-neo?callsign=${encodeURIComponent(callsign)}`}
+              href={`/rer-callsigns-neo?callsign=${encodeURIComponent(callsign)}&developing=All`}
               color="primary"
             >
               {callsign.toUpperCase()}
