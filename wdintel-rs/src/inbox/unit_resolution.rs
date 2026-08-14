@@ -28,7 +28,7 @@ use sea_orm::{
     JoinType, ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
     QueryTrait, RelationTrait, TransactionTrait,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::time::Duration as StdDuration;
 use uuid::Uuid;
 
@@ -624,6 +624,100 @@ where
         .context(h!())
 }
 
+async fn calculated_network_unit_links<C>(
+    db: &C,
+    inbox_item_ids: &[i64],
+    network_ids_by_item: &HashMap<i64, Vec<i64>>,
+) -> anyhow::Result<Vec<(i64, i64)>>
+where
+    C: ConnectionTrait,
+{
+    let network_ids = inbox_item_ids
+        .iter()
+        .filter_map(|item_id| network_ids_by_item.get(item_id))
+        .flatten()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    if network_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let unit_ids_by_network = sigint_network_unit::Entity::find()
+        .filter(sigint_network_unit::Column::NetworkId.is_in(network_ids))
+        .select_only()
+        .column(sigint_network_unit::Column::NetworkId)
+        .column(sigint_network_unit::Column::UnitId)
+        .distinct()
+        .into_tuple::<(i64, i64)>()
+        .all(db)
+        .await
+        .context(h!())?
+        .into_iter()
+        .into_group_map();
+    Ok(inbox_item_ids
+        .iter()
+        .flat_map(|item_id| {
+            network_ids_by_item
+                .get(item_id)
+                .into_iter()
+                .flatten()
+                .filter_map(|network_id| unit_ids_by_network.get(network_id))
+                .flatten()
+                .map(|unit_id| (*item_id, *unit_id))
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect())
+}
+
+async fn delete_network_unit_links<C>(
+    db: &C,
+    inbox_item_ids: &[i64],
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    sigint_inbox_item_unit::Entity::delete_many()
+        .filter(
+            sigint_inbox_item_unit::Column::ItemId
+                .is_in(inbox_item_ids.to_vec()),
+        )
+        .filter(
+            sigint_inbox_item_unit::Column::Kind
+                .eq(SigintInboxItemUnitKind::Network),
+        )
+        .exec(db)
+        .await
+        .context(h!())?;
+    Ok(())
+}
+
+async fn insert_network_unit_links<C>(
+    db: &C,
+    unit_links: Vec<(i64, i64)>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let unit_links = unit_links
+        .into_iter()
+        .map(|(item_id, unit_id)| sigint_inbox_item_unit::ActiveModel {
+            id: NotSet,
+            created_at: NotSet,
+            item_id: Set(item_id),
+            unit_id: Set(unit_id),
+            kind: Set(SigintInboxItemUnitKind::Network),
+        })
+        .collect_vec();
+    for unit_links in unit_links.chunks(INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE)
+    {
+        sigint_inbox_item_unit::Entity::insert_many(unit_links.to_vec())
+            .exec_without_returning(db)
+            .await
+            .context(h!())?;
+    }
+    Ok(())
+}
+
 pub(crate) async fn sync_network_unit_links<C>(
     db: &C,
     inbox_item_ids: &[i64],
@@ -634,38 +728,42 @@ where
     for inbox_item_ids in
         inbox_item_ids.chunks(INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE)
     {
-        sigint_inbox_item_unit::Entity::delete_many()
-            .filter(
-                sigint_inbox_item_unit::Column::ItemId
-                    .is_in(inbox_item_ids.to_vec()),
-            )
-            .filter(
-                sigint_inbox_item_unit::Column::Kind
-                    .eq(SigintInboxItemUnitKind::Network),
-            )
-            .exec(db)
+        delete_network_unit_links(db, inbox_item_ids)
             .await
             .context(h!())?;
-        let unit_links = network_unit_links(db, inbox_item_ids)
+        let unit_links =
+            network_unit_links(db, inbox_item_ids).await.context(h!())?;
+        insert_network_unit_links(db, unit_links)
             .await
-            .context(h!())?
-            .into_iter()
-            .map(|(item_id, unit_id)| sigint_inbox_item_unit::ActiveModel {
-                id: NotSet,
-                created_at: NotSet,
-                item_id: Set(item_id),
-                unit_id: Set(unit_id),
-                kind: Set(SigintInboxItemUnitKind::Network),
-            })
-            .collect_vec();
-        for unit_links in
-            unit_links.chunks(INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE)
-        {
-            sigint_inbox_item_unit::Entity::insert_many(unit_links.to_vec())
-                .exec_without_returning(db)
-                .await
-                .context(h!())?;
-        }
+            .context(h!())?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn sync_calculated_network_unit_links<C>(
+    db: &C,
+    inbox_item_ids: &[i64],
+    network_ids_by_item: &HashMap<i64, Vec<i64>>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    for inbox_item_ids in
+        inbox_item_ids.chunks(INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE)
+    {
+        delete_network_unit_links(db, inbox_item_ids)
+            .await
+            .context(h!())?;
+        let unit_links = calculated_network_unit_links(
+            db,
+            inbox_item_ids,
+            network_ids_by_item,
+        )
+        .await
+        .context(h!())?;
+        insert_network_unit_links(db, unit_links)
+            .await
+            .context(h!())?;
     }
     Ok(())
 }
@@ -1920,6 +2018,70 @@ mod tests {
             .await,
             vec![second_unit.id]
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn calculated_network_sync_uses_calculation_result() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let network = crate::functest::tests::mk_sigint_network(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        crate::functest::tests::mk_sigint_network_unit(
+            &env.dbx,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(network.id),
+                unit_id: Set(unit.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_item = insert_inbox_item(&env.dbx, None, None, None).await;
+
+        sync_calculated_network_unit_links(
+            &env.dbx,
+            &[inbox_item.id],
+            &HashMap::from([(inbox_item.id, vec![network.id])]),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                inbox_item.id,
+                SigintInboxItemUnitKind::Network,
+            )
+            .await,
+            vec![unit.id]
+        );
+
+        sync_calculated_network_unit_links(
+            &env.dbx,
+            &[inbox_item.id],
+            &HashMap::new(),
+        )
+        .await
+        .unwrap();
+
+        assert!(unit_ids_for_kind(
+            &env.dbx,
+            inbox_item.id,
+            SigintInboxItemUnitKind::Network,
+        )
+        .await
+        .is_empty());
     }
 
     #[tokio::test]
