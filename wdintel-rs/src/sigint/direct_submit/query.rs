@@ -79,11 +79,11 @@ where
     signal_message::Entity::find_by_id(signal_message_id)
         .join(
             JoinType::InnerJoin,
-            signal_message::Relation::SignalMessageGroup.def(),
+            signal_message::Relation::DatasourceGroup.def(),
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
-            signal_message_group::Column::GroupMasterKey
+            datasource_group::Column::GroupMasterKey
                 .eq_any(allowed_groups.to_vec()),
         )
         .one(dbx)
@@ -106,12 +106,12 @@ where
     let sources = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
-            signal_message::Relation::SignalMessageGroup.def(),
+            signal_message::Relation::DatasourceGroup.def(),
         )
         .filter(signal_message::Column::Id.is_in(signal_message_ids.to_vec()))
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
-            signal_message_group::Column::GroupMasterKey
+            datasource_group::Column::GroupMasterKey
                 .is_in(allowed_groups.to_vec()),
         )
         .all(dbx)

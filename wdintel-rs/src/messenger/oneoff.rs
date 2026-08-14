@@ -299,7 +299,8 @@ async fn migrate_large_media_item(
 
     progress.set_message(format!("{}: updating database", media.id));
     write_plaintext_migration_marker(migration, media.id).await?;
-    let mark_result = mark_media_plaintext(migration.dbx, media.id).await?;
+    let mark_result =
+        mark_media_plaintext(migration.dbx, media.id, &plaintext_key).await?;
     if mark_result == MarkMediaPlaintext::Missing {
         delete_plaintext_orphan(
             migration.s3,
@@ -378,7 +379,10 @@ fn cleanup_failure_result(failures: &[uuid::Uuid]) -> Result<(), AppError> {
 
 fn plaintext_media_object_key(media: &signal_message_media::Model) -> String {
     if media.is_encrypted {
-        storage::plaintext_media_object_key(&media.id)
+        format!(
+            "{}.plaintext",
+            crate::messenger::media::media_object_key(media)
+        )
     } else {
         crate::messenger::media::media_object_key(media)
     }
@@ -430,8 +434,6 @@ async fn cleanup_migrated_media_item(
         .c(h!())?
         > 0
     {
-        delete_plaintext_migration_marker_best_effort(migration, media.id)
-            .await;
         remove_local_cache_best_effort(migration.config, media.id).await;
         return Ok(());
     }
@@ -701,6 +703,7 @@ enum MarkMediaPlaintext {
 async fn mark_media_plaintext(
     dbx: &DatabaseConnection,
     media_id: uuid::Uuid,
+    plaintext_key: &str,
 ) -> Result<MarkMediaPlaintext, AppError> {
     let updated = signal_message_media::Entity::update_many()
         .col_expr(
@@ -709,7 +712,7 @@ async fn mark_media_plaintext(
         )
         .col_expr(
             signal_message_media::Column::StorageKey,
-            Expr::value(storage::plaintext_media_object_key(&media_id)),
+            Expr::value(plaintext_key),
         )
         .filter(signal_message_media::Column::Id.eq(media_id))
         .filter(signal_message_media::Column::IsEncrypted.eq(true))
