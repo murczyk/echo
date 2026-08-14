@@ -101,4 +101,35 @@ describe('FeedFilterSelectionSection', () => {
       root.unmount();
     });
   });
+
+  it('keeps the groups menu open and clears its query after each selection', () => {
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    const onValueChange = vi.fn();
+    act(() => {
+      root.render(
+        <FeedFilterSelectionSection
+          title="Групи"
+          mode="include"
+          onModeChange={vi.fn()}
+          value={[]}
+          onValueChange={onValueChange}
+          options={['A', 'B', 'C']}
+          getOptionLabel={(option) => option}
+          keepOpenOnSelect
+        />,
+      );
+    });
+
+    act(() => {
+      const props = latestAutocompleteProps();
+      props.onInputChange(null, 'A', 'input');
+      props.onChange(null, ['A'], 'selectOption');
+    });
+
+    expect(onValueChange).toHaveBeenCalledWith(['A']);
+    expect(latestAutocompleteProps().disableCloseOnSelect).toBe(true);
+    expect(latestAutocompleteProps().inputValue).toBe('');
+    act(() => root.unmount());
+  });
 });

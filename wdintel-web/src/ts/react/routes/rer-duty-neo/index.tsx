@@ -304,6 +304,8 @@ export function RerDutyNeoPage({
         onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled,
         unitsExactMatchOnly: feed.filter.unitsExactMatchOnly ?? undefined,
         reloadFreqsLoading,
+        groupCatalogLoading,
+        groupCatalogError,
       },
       savedFilters: {
         savedFilters,
@@ -349,6 +351,7 @@ export function RerDutyNeoPage({
           );
         },
         onReloadFreqs: reloadLatestFrequencies,
+        onReloadGroupCatalog: reloadGroupCatalog,
         onSavedFilterSelect: (id) =>
           setSelectedSavedIdByFeedId((prev) => ({ ...prev, [feed.id]: id === '' ? null : id })),
         onSaveFilterNameChange: (value) =>
@@ -457,6 +460,9 @@ export function RerDutyNeoPage({
     setSaveFilterNameByFeedId,
     reloadFreqsLoading,
     reloadLatestFrequencies,
+    groupCatalogLoading,
+    groupCatalogError,
+    reloadGroupCatalog,
     networkDisplayMap,
     networkMap,
     unitsMap,
