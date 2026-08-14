@@ -10,10 +10,17 @@ function isNumericToken(token: string): boolean {
 export function buildUnitSearchText(unit: Unit): string {
   return [
     unit.name,
+    unit.other,
+    unit.teamOrCrew,
+    unit.section,
+    unit.squad,
+    unit.platoon,
     unit.company,
     unit.battalion,
     unit.regiment,
+    unit.brigade,
     unit.division,
+    unit.corps,
     unit.army,
     unit.militaryDistrict,
     unit.armyRegion,

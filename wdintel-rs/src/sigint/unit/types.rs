@@ -17,10 +17,24 @@ where
 )]
 pub struct Unit {
     pub id: i64,
+    #[serde(default)]
+    pub other: String,
+    #[serde(default)]
+    pub team_or_crew: String,
+    #[serde(default)]
+    pub section: String,
+    #[serde(default)]
+    pub squad: String,
+    #[serde(default)]
+    pub platoon: String,
     pub company: String,
     pub battalion: String,
     pub regiment: String,
+    #[serde(default)]
+    pub brigade: String,
     pub division: String,
+    #[serde(default)]
+    pub corps: String,
     pub army: String,
     #[serde(default)]
     pub military_district: String,
@@ -49,10 +63,17 @@ mod tests {
     fn unit_without_has_orbit_deserializes() {
         let unit: Unit = serde_json::from_value(serde_json::json!({
             "id": 1,
+            "other": "",
+            "team_or_crew": "",
+            "section": "",
+            "squad": "",
+            "platoon": "",
             "company": "",
             "battalion": "",
             "regiment": "",
+            "brigade": "",
             "division": "",
+            "corps": "",
             "army": "",
             "comment": "",
             "name": "unit",
@@ -92,14 +113,28 @@ pub enum ListUnitsSortBy {
     UnitNameLengthAsc,
     UnitNameAsc,
     UnitNameDesc,
+    UnitOtherAsc,
+    UnitOtherDesc,
+    UnitTeamOrCrewAsc,
+    UnitTeamOrCrewDesc,
+    UnitSectionAsc,
+    UnitSectionDesc,
+    UnitSquadAsc,
+    UnitSquadDesc,
+    UnitPlatoonAsc,
+    UnitPlatoonDesc,
     UnitCompanyAsc,
     UnitCompanyDesc,
     UnitBattalionAsc,
     UnitBattalionDesc,
     UnitRegimentAsc,
     UnitRegimentDesc,
+    UnitBrigadeAsc,
+    UnitBrigadeDesc,
     UnitDivisionAsc,
     UnitDivisionDesc,
+    UnitCorpsAsc,
+    UnitCorpsDesc,
     UnitArmyAsc,
     UnitArmyDesc,
     UnitMilitaryDistrictAsc,
@@ -142,10 +177,17 @@ pub struct ListUnitsReq {
     pub filter_active: Option<bool>,
     pub filter_text: Option<String>,
     pub filter_name: Option<String>,
+    pub filter_other: Option<String>,
+    pub filter_team_or_crew: Option<String>,
+    pub filter_section: Option<String>,
+    pub filter_squad: Option<String>,
+    pub filter_platoon: Option<String>,
     pub filter_company: Option<String>,
     pub filter_battalion: Option<String>,
     pub filter_regiment: Option<String>,
+    pub filter_brigade: Option<String>,
     pub filter_division: Option<String>,
+    pub filter_corps: Option<String>,
     pub filter_army: Option<String>,
     pub filter_military_district: Option<String>,
     pub filter_army_region: Option<String>,
@@ -211,10 +253,24 @@ pub struct ListUnitDuplicatesRsp {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct CreateUnitReq {
+    #[serde(default)]
+    pub other: String,
+    #[serde(default)]
+    pub team_or_crew: String,
+    #[serde(default)]
+    pub section: String,
+    #[serde(default)]
+    pub squad: String,
+    #[serde(default)]
+    pub platoon: String,
     pub company: String,
     pub battalion: String,
     pub regiment: String,
+    #[serde(default)]
+    pub brigade: String,
     pub division: String,
+    #[serde(default)]
+    pub corps: String,
     pub army: String,
     #[serde(default)]
     pub military_district: String,
@@ -231,10 +287,24 @@ pub struct CreateUnitReq {
 #[derive(Debug, Deserialize)]
 pub struct UpdateUnitReq {
     pub id: i64,
+    #[serde(default)]
+    pub other: Option<String>,
+    #[serde(default)]
+    pub team_or_crew: Option<String>,
+    #[serde(default)]
+    pub section: Option<String>,
+    #[serde(default)]
+    pub squad: Option<String>,
+    #[serde(default)]
+    pub platoon: Option<String>,
     pub company: String,
     pub battalion: String,
     pub regiment: String,
+    #[serde(default)]
+    pub brigade: Option<String>,
     pub division: String,
+    #[serde(default)]
+    pub corps: Option<String>,
     pub army: String,
     #[serde(default)]
     pub military_district: Option<String>,
@@ -250,10 +320,17 @@ impl From<Unit> for UpdateUnitReq {
     fn from(unit: Unit) -> Self {
         Self {
             id: unit.id,
+            other: Some(unit.other),
+            team_or_crew: Some(unit.team_or_crew),
+            section: Some(unit.section),
+            squad: Some(unit.squad),
+            platoon: Some(unit.platoon),
             company: unit.company,
             battalion: unit.battalion,
             regiment: unit.regiment,
+            brigade: Some(unit.brigade),
             division: unit.division,
+            corps: Some(unit.corps),
             army: unit.army,
             military_district: Some(unit.military_district),
             army_region: Some(unit.army_region),

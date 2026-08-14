@@ -53,10 +53,17 @@ const candidate: OrbitUnitLinkCandidate = {
 
 const sigintUnit: Unit = {
   id: 7,
+  other: '',
+  teamOrCrew: '',
+  section: '',
+  squad: '',
+  platoon: '',
   company: '1 рота',
   battalion: '2 батальйон',
   regiment: '3 бригада',
+  brigade: '',
   division: '',
+  corps: '',
   army: '',
   militaryDistrict: '',
   armyRegion: '',

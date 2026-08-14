@@ -17,6 +17,28 @@ struct ComparablePath {
     root_echelon: Option<EchoEchelon>,
 }
 
+fn sigint_hierarchy(unit: &sigint_unit::Model) -> [(EchoEchelon, &str); 14] {
+    [
+        (EchoEchelon::Other, unit.other.as_str()),
+        (EchoEchelon::TeamOrCrew, unit.team_or_crew.as_str()),
+        (EchoEchelon::Section, unit.section.as_str()),
+        (EchoEchelon::Squad, unit.squad.as_str()),
+        (EchoEchelon::Platoon, unit.platoon.as_str()),
+        (EchoEchelon::Company, unit.company.as_str()),
+        (EchoEchelon::Battalion, unit.battalion.as_str()),
+        (EchoEchelon::Regiment, unit.regiment.as_str()),
+        (EchoEchelon::Brigade, unit.brigade.as_str()),
+        (EchoEchelon::Division, unit.division.as_str()),
+        (EchoEchelon::Corps, unit.corps.as_str()),
+        (EchoEchelon::Army, unit.army.as_str()),
+        (
+            EchoEchelon::MilitaryDistrict,
+            unit.military_district.as_str(),
+        ),
+        (EchoEchelon::ArmyRegion, unit.army_region.as_str()),
+    ]
+}
+
 pub fn validate_source(units: &[SourceUnit]) -> anyhow::Result<()> {
     if units.is_empty() {
         anyhow::bail!("ORBIT export contains no units");
@@ -68,32 +90,22 @@ fn match_score(
         return None;
     }
     let mut matched_names = 0;
-    let matches = [
-        (EchoEchelon::Company, sigint_unit.company.as_str()),
-        (EchoEchelon::Battalion, sigint_unit.battalion.as_str()),
-        (EchoEchelon::Regiment, sigint_unit.regiment.as_str()),
-        (EchoEchelon::Division, sigint_unit.division.as_str()),
-        (EchoEchelon::Army, sigint_unit.army.as_str()),
-        (
-            EchoEchelon::MilitaryDistrict,
-            sigint_unit.military_district.as_str(),
-        ),
-        (EchoEchelon::ArmyRegion, sigint_unit.army_region.as_str()),
-    ]
-    .into_iter()
-    .all(|(echelon, echo_name)| {
-        let echo_name = normalize_sigint_name_for_echelon(echelon, echo_name);
-        if echo_name.is_empty() {
-            return true;
-        }
-        if names_match(echelon, &path.all_names, &echo_name) {
-            matched_names += 1;
-            return true;
-        }
-        path.names_by_echelon
-            .get(&echelon)
-            .is_none_or(HashSet::is_empty)
-    });
+    let matches = sigint_hierarchy(sigint_unit).into_iter().all(
+        |(echelon, echo_name)| {
+            let echo_name =
+                normalize_sigint_name_for_echelon(echelon, echo_name);
+            if echo_name.is_empty() {
+                return true;
+            }
+            if names_match(echelon, &path.all_names, &echo_name) {
+                matched_names += 1;
+                return true;
+            }
+            path.names_by_echelon
+                .get(&echelon)
+                .is_none_or(HashSet::is_empty)
+        },
+    );
     let required_matches = if parent_signature(sigint_unit).is_empty() {
         1
     } else {
@@ -195,24 +207,13 @@ fn search_score(
     sigint_echelon: EchoEchelon,
 ) -> Option<MatchScore> {
     let path = comparable_path(orbit_unit).ok()?;
-    let matched_names = [
-        (EchoEchelon::Company, sigint_unit.company.as_str()),
-        (EchoEchelon::Battalion, sigint_unit.battalion.as_str()),
-        (EchoEchelon::Regiment, sigint_unit.regiment.as_str()),
-        (EchoEchelon::Division, sigint_unit.division.as_str()),
-        (EchoEchelon::Army, sigint_unit.army.as_str()),
-        (
-            EchoEchelon::MilitaryDistrict,
-            sigint_unit.military_district.as_str(),
-        ),
-        (EchoEchelon::ArmyRegion, sigint_unit.army_region.as_str()),
-    ]
-    .into_iter()
-    .filter(|(echelon, name)| {
-        let name = normalize_sigint_name_for_echelon(*echelon, name);
-        !name.is_empty() && names_match(*echelon, &path.all_names, &name)
-    })
-    .count();
+    let matched_names = sigint_hierarchy(sigint_unit)
+        .into_iter()
+        .filter(|(echelon, name)| {
+            let name = normalize_sigint_name_for_echelon(*echelon, name);
+            !name.is_empty() && names_match(*echelon, &path.all_names, &name)
+        })
+        .count();
     (matched_names > 0).then_some(MatchScore {
         echelon_distance: path
             .root_echelon
@@ -476,50 +477,29 @@ fn sigint_unit_echelon(unit: &sigint_unit::Model) -> Option<EchoEchelon> {
 fn sigint_unit_identity(
     unit: &sigint_unit::Model,
 ) -> Option<(EchoEchelon, String)> {
-    [
-        (EchoEchelon::Company, unit.company.as_str()),
-        (EchoEchelon::Battalion, unit.battalion.as_str()),
-        (EchoEchelon::Regiment, unit.regiment.as_str()),
-        (EchoEchelon::Division, unit.division.as_str()),
-        (EchoEchelon::Army, unit.army.as_str()),
-        (
-            EchoEchelon::MilitaryDistrict,
-            unit.military_district.as_str(),
-        ),
-        (EchoEchelon::ArmyRegion, unit.army_region.as_str()),
-    ]
-    .into_iter()
-    .find_map(|(echelon, name)| {
-        let name = normalize_sigint_name_for_echelon(echelon, name);
-        (!name.is_empty()).then_some((echelon, name))
-    })
+    sigint_hierarchy(unit)
+        .into_iter()
+        .find_map(|(echelon, name)| {
+            let name = normalize_sigint_name_for_echelon(echelon, name);
+            (!name.is_empty()).then_some((echelon, name))
+        })
 }
 
 fn parent_signature(unit: &sigint_unit::Model) -> Vec<(EchoEchelon, String)> {
     let unit_echelon = sigint_unit_echelon(unit);
-    [
-        (EchoEchelon::Company, unit.company.as_str()),
-        (EchoEchelon::Battalion, unit.battalion.as_str()),
-        (EchoEchelon::Regiment, unit.regiment.as_str()),
-        (EchoEchelon::Division, unit.division.as_str()),
-        (EchoEchelon::Army, unit.army.as_str()),
-        (
-            EchoEchelon::MilitaryDistrict,
-            unit.military_district.as_str(),
-        ),
-        (EchoEchelon::ArmyRegion, unit.army_region.as_str()),
-    ]
-    .into_iter()
-    .filter(|(echelon, name)| {
-        unit_echelon.is_some_and(|unit_echelon| {
-            echelon.index() > unit_echelon.index()
-                && !normalize_sigint_name_for_echelon(*echelon, name).is_empty()
+    sigint_hierarchy(unit)
+        .into_iter()
+        .filter(|(echelon, name)| {
+            unit_echelon.is_some_and(|unit_echelon| {
+                echelon.index() > unit_echelon.index()
+                    && !normalize_sigint_name_for_echelon(*echelon, name)
+                        .is_empty()
+            })
         })
-    })
-    .map(|(echelon, name)| {
-        (echelon, normalize_sigint_name_for_echelon(echelon, name))
-    })
-    .collect()
+        .map(|(echelon, name)| {
+            (echelon, normalize_sigint_name_for_echelon(echelon, name))
+        })
+        .collect()
 }
 
 fn split_path(value: &str) -> Vec<String> {
@@ -651,6 +631,24 @@ mod tests {
         validate_source(&units).unwrap();
         let sigint_unit = echo_unit("", "батрурлр", "53 зрбр", "", "20 ЗВА");
         assert!(matches_sigint_unit(&units[0], &sigint_unit));
+
+        let platoon = source_unit("1 взвод", vec![("platoon", "1 взвод", 0)]);
+        assert!(matches_sigint_unit(
+            &platoon,
+            &echo_unit("1 взвод", "", "", "", "")
+        ));
+
+        let brigade = source_unit("53 зрбр", vec![("brigade", "53 зрбр", 0)]);
+        assert!(matches_sigint_unit(
+            &brigade,
+            &echo_unit("", "", "53 зрбр", "", "")
+        ));
+
+        let corps = source_unit("11 АК", vec![("corps", "11 АК", 0)]);
+        assert!(matches_sigint_unit(
+            &corps,
+            &echo_unit("", "", "", "", "11 АК")
+        ));
     }
 
     #[test]
@@ -1166,10 +1164,17 @@ mod tests {
     ) -> sigint_unit::Model {
         sigint_unit::Model {
             id: 1,
+            other: String::new(),
+            team_or_crew: String::new(),
+            section: String::new(),
+            squad: String::new(),
+            platoon: String::new(),
             company: company.to_string(),
             battalion: battalion.to_string(),
             regiment: regiment.to_string(),
+            brigade: String::new(),
             division: division.to_string(),
+            corps: String::new(),
             army: army.to_string(),
             army_region: String::new(),
             military_district: String::new(),

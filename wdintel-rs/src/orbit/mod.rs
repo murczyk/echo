@@ -25,10 +25,17 @@ mod types;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum EchoEchelon {
+    Other,
+    TeamOrCrew,
+    Section,
+    Squad,
+    Platoon,
     Company,
     Battalion,
     Regiment,
+    Brigade,
     Division,
+    Corps,
     Army,
     MilitaryDistrict,
     ArmyRegion,
@@ -37,26 +44,38 @@ pub(crate) enum EchoEchelon {
 impl EchoEchelon {
     pub(crate) fn index(self) -> usize {
         match self {
-            Self::Company => 0,
-            Self::Battalion => 1,
-            Self::Regiment => 2,
-            Self::Division => 3,
-            Self::Army => 4,
-            Self::MilitaryDistrict => 5,
-            Self::ArmyRegion => 6,
+            Self::Other => 0,
+            Self::TeamOrCrew => 1,
+            Self::Section => 2,
+            Self::Squad => 3,
+            Self::Platoon => 4,
+            Self::Company => 5,
+            Self::Battalion => 6,
+            Self::Regiment => 7,
+            Self::Brigade => 8,
+            Self::Division => 9,
+            Self::Corps => 10,
+            Self::Army => 11,
+            Self::MilitaryDistrict => 12,
+            Self::ArmyRegion => 13,
         }
     }
 }
 
 pub(crate) fn echo_echelon(key: &str) -> Option<EchoEchelon> {
     match key {
-        "teamOrCrew" | "section" | "squad" | "platoon" | "company" => {
-            Some(EchoEchelon::Company)
-        }
+        "other" => Some(EchoEchelon::Other),
+        "teamOrCrew" => Some(EchoEchelon::TeamOrCrew),
+        "section" => Some(EchoEchelon::Section),
+        "squad" => Some(EchoEchelon::Squad),
+        "platoon" => Some(EchoEchelon::Platoon),
+        "company" => Some(EchoEchelon::Company),
         "battalion" => Some(EchoEchelon::Battalion),
-        "regiment" | "brigade" => Some(EchoEchelon::Regiment),
+        "regiment" => Some(EchoEchelon::Regiment),
+        "brigade" => Some(EchoEchelon::Brigade),
         "division" => Some(EchoEchelon::Division),
-        "corps" | "fieldArmy" => Some(EchoEchelon::Army),
+        "corps" => Some(EchoEchelon::Corps),
+        "fieldArmy" => Some(EchoEchelon::Army),
         "militaryDistrict" => Some(EchoEchelon::MilitaryDistrict),
         "armyRegion" => Some(EchoEchelon::ArmyRegion),
         _ => None,
@@ -655,10 +674,17 @@ fn find_sigint_unit_by_full_name(
 
 fn sigint_unit_full_name(unit: &sigint_unit::Model) -> String {
     [
+        unit.other.as_str(),
+        unit.team_or_crew.as_str(),
+        unit.section.as_str(),
+        unit.squad.as_str(),
+        unit.platoon.as_str(),
         unit.company.as_str(),
         unit.battalion.as_str(),
         unit.regiment.as_str(),
+        unit.brigade.as_str(),
         unit.division.as_str(),
+        unit.corps.as_str(),
         unit.army.as_str(),
         unit.military_district.as_str(),
         unit.army_region.as_str(),
@@ -746,16 +772,17 @@ mod tests {
 
     #[test]
     fn maps_all_orbit_echelons_to_sigint_hierarchy() {
-        assert_eq!(echo_echelon("teamOrCrew"), Some(EchoEchelon::Company));
-        assert_eq!(echo_echelon("section"), Some(EchoEchelon::Company));
-        assert_eq!(echo_echelon("squad"), Some(EchoEchelon::Company));
-        assert_eq!(echo_echelon("platoon"), Some(EchoEchelon::Company));
+        assert_eq!(echo_echelon("other"), Some(EchoEchelon::Other));
+        assert_eq!(echo_echelon("teamOrCrew"), Some(EchoEchelon::TeamOrCrew));
+        assert_eq!(echo_echelon("section"), Some(EchoEchelon::Section));
+        assert_eq!(echo_echelon("squad"), Some(EchoEchelon::Squad));
+        assert_eq!(echo_echelon("platoon"), Some(EchoEchelon::Platoon));
         assert_eq!(echo_echelon("company"), Some(EchoEchelon::Company));
         assert_eq!(echo_echelon("battalion"), Some(EchoEchelon::Battalion));
         assert_eq!(echo_echelon("regiment"), Some(EchoEchelon::Regiment));
-        assert_eq!(echo_echelon("brigade"), Some(EchoEchelon::Regiment));
+        assert_eq!(echo_echelon("brigade"), Some(EchoEchelon::Brigade));
         assert_eq!(echo_echelon("division"), Some(EchoEchelon::Division));
-        assert_eq!(echo_echelon("corps"), Some(EchoEchelon::Army));
+        assert_eq!(echo_echelon("corps"), Some(EchoEchelon::Corps));
         assert_eq!(echo_echelon("fieldArmy"), Some(EchoEchelon::Army));
         assert_eq!(
             echo_echelon("militaryDistrict"),
@@ -857,10 +884,17 @@ mod tests {
     fn sigint_unit() -> sigint_unit::Model {
         sigint_unit::Model {
             id: 1,
+            other: String::new(),
+            team_or_crew: String::new(),
+            section: String::new(),
+            squad: String::new(),
+            platoon: String::new(),
             company: String::new(),
             battalion: "1 мсб ТрО".to_string(),
             regiment: "4 омсбр".to_string(),
+            brigade: String::new(),
             division: String::new(),
+            corps: String::new(),
             army: "3 ЗВА".to_string(),
             army_region: String::new(),
             military_district: String::new(),
