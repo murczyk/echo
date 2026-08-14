@@ -158,7 +158,6 @@ pub async fn oneoff_rer_csv_import_1(
             datasource_group_id: Set(Some(datasource_group_id)),
             operator_tags: NotSet,
             attachments_hash: NotSet,
-            parent_signal_message_id: NotSet,
         }
         .insert(&dbx)
         .await
@@ -459,7 +458,6 @@ pub async fn rer_delta_csv_import_go(
             datasource_group_id: Set(Some(datasource_group_id)),
             operator_tags: NotSet,
             attachments_hash: NotSet,
-            parent_signal_message_id: NotSet,
         }
         .insert(dbx)
         .await
