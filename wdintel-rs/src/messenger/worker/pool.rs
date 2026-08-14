@@ -330,6 +330,7 @@ async fn process_item_once(
     let txn = context.dbx.begin().await.c(h!())?;
     let mut changed_inbox_item_ids = vec![];
     let mut superseded_media_ids = vec![];
+    let mut superseded_media_storage_keys = vec![];
     let mut pending_dedupe_updates = vec![];
     let mut uploaded_files_ready_for_deletion = vec![];
     let mut redis = context.redis.clone();
@@ -381,6 +382,8 @@ async fn process_item_once(
             .c(h!())?;
             changed_inbox_item_ids.extend(result.changed_inbox_item_ids);
             superseded_media_ids.extend(result.superseded_media_ids);
+            superseded_media_storage_keys
+                .extend(result.superseded_media_storage_keys);
             pending_dedupe_updates.extend(result.pending_dedupe_updates);
             uploaded_files_ready_for_deletion
                 .extend(result.uploaded_files_ready_for_deletion);
@@ -447,6 +450,7 @@ async fn process_item_once(
         &context.s3,
         &context.dbx,
         superseded_media_ids,
+        superseded_media_storage_keys,
     )
     .await;
     Ok(())

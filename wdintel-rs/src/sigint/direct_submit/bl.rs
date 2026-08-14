@@ -686,10 +686,19 @@ async fn load_copy_media(
             .c(h!())?;
     let deleted_media_ids = parse_media_ids(
         payload.deleted_media_ids.as_deref().unwrap_or_default(),
-    )
-    .c(h!())?;
+    )?;
+    let source_media_ids = source_media
+        .iter()
+        .map(|media| media.id)
+        .collect::<HashSet<_>>();
+    if deleted_media_ids
+        .iter()
+        .any(|media_id| !source_media_ids.contains(media_id))
+    {
+        return Err(AppError::NotFound);
+    }
     let retained_media_ids = match payload.retained_media_ids.as_deref() {
-        Some(ids) => parse_media_ids(ids).c(h!())?,
+        Some(ids) => parse_media_ids(ids)?,
         None => source_media.iter().map(|media| media.id).collect(),
     };
     let retained_media_ids = retained_media_ids
@@ -714,9 +723,11 @@ fn parse_media_ids(media_ids: &[String]) -> Result<Vec<Uuid>, AppError> {
     media_ids
         .iter()
         .map(|media_id| {
-            Uuid::parse_str(media_id)
-                .map_err(anyhow::Error::from)
-                .map_err(AppError::from)
+            Uuid::parse_str(media_id).map_err(|_| AppError::BL {
+                msg: format!(
+                    "Некоректний ідентифікатор медіафайлу: {media_id}"
+                ),
+            })
         })
         .collect()
 }
@@ -947,6 +958,11 @@ async fn finish_direct_submit(
         .await;
     }
     if !media_to_delete.is_empty() {
+        crate::messenger::media::delete_local_media_files(
+            media_to_delete,
+            &env.config,
+        )
+        .await;
         crate::messenger::media::delete_stored_media_files(
             &media_to_delete_after_commit,
             &env.config,

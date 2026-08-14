@@ -257,7 +257,7 @@ async fn migrate_large_media_item(
 ) -> Result<(), AppError> {
     let expected_size = u64::try_from(media.size_bytes).c(h!())?;
     let encrypted_key = crate::messenger::media::media_object_key(media);
-    let plaintext_key = storage::plaintext_media_object_key(&media.id);
+    let plaintext_key = plaintext_media_object_key(media);
     let plaintext_is_ready = object_has_size(
         migration.s3,
         migration.s3_config,
@@ -299,7 +299,8 @@ async fn migrate_large_media_item(
 
     progress.set_message(format!("{}: updating database", media.id));
     write_plaintext_migration_marker(migration, media.id).await?;
-    let mark_result = mark_media_plaintext(migration.dbx, media.id).await?;
+    let mark_result =
+        mark_media_plaintext(migration.dbx, media.id, &plaintext_key).await?;
     if mark_result == MarkMediaPlaintext::Missing {
         delete_plaintext_orphan(
             migration.s3,
@@ -376,31 +377,63 @@ fn cleanup_failure_result(failures: &[uuid::Uuid]) -> Result<(), AppError> {
     })
 }
 
+fn plaintext_media_object_key(media: &signal_message_media::Model) -> String {
+    if media.is_encrypted {
+        format!(
+            "{}.plaintext",
+            crate::messenger::media::media_object_key(media)
+        )
+    } else {
+        crate::messenger::media::media_object_key(media)
+    }
+}
+
+fn encrypted_media_object_key(media: &signal_message_media::Model) -> String {
+    if media.is_encrypted {
+        crate::messenger::media::media_object_key(media)
+    } else {
+        crate::messenger::media::media_object_key(media)
+            .strip_suffix(".plaintext")
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| storage::nested_object_key(&media.id))
+    }
+}
+
 async fn cleanup_migrated_media_item(
     migration: &LargeMediaMigration<'_>,
     media: &signal_message_media::Model,
 ) -> Result<(), AppError> {
     let expected_size = u64::try_from(media.size_bytes).c(h!())?;
-    let plaintext_key = storage::plaintext_media_object_key(&media.id);
+    let plaintext_key = plaintext_media_object_key(media);
     let Some(plaintext) =
         object_state(migration.s3, migration.s3_config, &plaintext_key).await?
     else {
         return restore_media_encryption_after_invalid_plaintext(
-            migration, media.id,
+            migration, media,
         )
         .await;
     };
     if plaintext.size != expected_size {
         return restore_media_encryption_after_invalid_plaintext(
-            migration, media.id,
+            migration, media,
         )
         .await;
     }
-    let encrypted_key = storage::nested_object_key(&media.id);
+    let encrypted_key = encrypted_media_object_key(media);
     if !object_exists(migration.s3, migration.s3_config, &encrypted_key).await?
     {
         delete_plaintext_migration_marker_best_effort(migration, media.id)
             .await;
+        remove_local_cache_best_effort(migration.config, media.id).await;
+        return Ok(());
+    }
+    if signal_message_media::Entity::find()
+        .filter(signal_message_media::Column::StorageKey.eq(&encrypted_key))
+        .count(migration.dbx)
+        .await
+        .c(h!())?
+        > 0
+    {
         remove_local_cache_best_effort(migration.config, media.id).await;
         return Ok(());
     }
@@ -501,24 +534,27 @@ async fn migrate_media_object(
 
 async fn restore_media_encryption_after_invalid_plaintext(
     migration: &LargeMediaMigration<'_>,
-    media_id: uuid::Uuid,
+    media: &signal_message_media::Model,
 ) -> Result<(), AppError> {
-    let encrypted_key = storage::nested_object_key(&media_id);
+    let current_media = signal_message_media::Entity::find_by_id(media.id)
+        .one(migration.dbx)
+        .await
+        .c(h!())?;
+    let encrypted_key = current_media
+        .as_ref()
+        .map(encrypted_media_object_key)
+        .unwrap_or_else(|| encrypted_media_object_key(media));
     if !object_exists(migration.s3, migration.s3_config, &encrypted_key).await?
     {
-        if signal_message_media::Entity::find_by_id(media_id)
-            .one(migration.dbx)
-            .await
-            .c(h!())?
-            .is_none()
-        {
-            delete_plaintext_migration_marker_best_effort(migration, media_id)
+        if current_media.is_none() {
+            delete_plaintext_migration_marker_best_effort(migration, media.id)
                 .await;
             return Ok(());
         }
         return Err(AppError::BL {
             msg: format!(
-                "plaintext media {media_id} has no valid plaintext or encrypted object"
+                "plaintext media {} has no valid plaintext or encrypted object",
+                media.id
             ),
         });
     }
@@ -527,41 +563,43 @@ async fn restore_media_encryption_after_invalid_plaintext(
         .col_expr(signal_message_media::Column::IsEncrypted, Expr::value(true))
         .col_expr(
             signal_message_media::Column::StorageKey,
-            Expr::value(storage::nested_object_key(&media_id)),
+            Expr::value(encrypted_key.clone()),
         )
-        .filter(signal_message_media::Column::Id.eq(media_id))
+        .filter(signal_message_media::Column::Id.eq(media.id))
         .filter(signal_message_media::Column::IsEncrypted.eq(false))
         .exec(migration.dbx)
         .await
         .c(h!())?;
     if updated.rows_affected == 1 {
-        delete_plaintext_migration_marker_best_effort(migration, media_id)
+        delete_plaintext_migration_marker_best_effort(migration, media.id)
             .await;
         warn!(
-            "restored encrypted storage for media {media_id} because its plaintext object is missing or has the wrong size"
+            "restored encrypted storage for media {} because its plaintext object is missing or has the wrong size",
+            media.id
         );
         return Ok(());
     }
 
-    match signal_message_media::Entity::find_by_id(media_id)
+    match signal_message_media::Entity::find_by_id(media.id)
         .one(migration.dbx)
         .await
         .c(h!())?
     {
         None => {
-            delete_plaintext_migration_marker_best_effort(migration, media_id)
+            delete_plaintext_migration_marker_best_effort(migration, media.id)
                 .await;
             Ok(())
         }
         Some(media) if media.is_encrypted => {
-            delete_plaintext_migration_marker_best_effort(migration, media_id)
+            delete_plaintext_migration_marker_best_effort(migration, media.id)
                 .await;
             Ok(())
         }
         Some(_) => Err(AppError::BL {
             msg: format!(
-                "expected to restore encrypted storage for media {media_id}, updated {} rows",
-                updated.rows_affected
+                "expected to restore encrypted storage for media {}, updated {} rows",
+                media.id,
+                updated.rows_affected,
             ),
         }),
     }
@@ -665,6 +703,7 @@ enum MarkMediaPlaintext {
 async fn mark_media_plaintext(
     dbx: &DatabaseConnection,
     media_id: uuid::Uuid,
+    plaintext_key: &str,
 ) -> Result<MarkMediaPlaintext, AppError> {
     let updated = signal_message_media::Entity::update_many()
         .col_expr(
@@ -673,7 +712,7 @@ async fn mark_media_plaintext(
         )
         .col_expr(
             signal_message_media::Column::StorageKey,
-            Expr::value(storage::plaintext_media_object_key(&media_id)),
+            Expr::value(plaintext_key),
         )
         .filter(signal_message_media::Column::Id.eq(media_id))
         .filter(signal_message_media::Column::IsEncrypted.eq(true))
