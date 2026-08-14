@@ -8,8 +8,8 @@ use crate::error::AppError;
 use crate::rer_importer;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::report_chunking::{
-    compare_inbox_report_message_order, report_period_chunks,
-    ReportPeriodChunk, ReportPeriodEnd,
+    compare_inbox_report_message_oldest_first, oldest_first_inbox_report_req,
+    report_period_chunks, ReportPeriodChunk, ReportPeriodEnd,
 };
 use crate::types::*;
 use crate::utils::dt_from_millis;
@@ -94,6 +94,8 @@ async fn collect_interception_report_messages(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<InboxMessage>, AppError> {
+    let req = oldest_first_inbox_report_req(req);
+    let req = &req;
     let report_settings =
         crate::system_settings::get_report_generation_settings(&env.dbx)
             .await
@@ -209,7 +211,7 @@ fn sort_interception_report_messages(
     req: &InboxMessagesReq,
 ) {
     messages.sort_by(|left, right| {
-        compare_inbox_report_message_order(
+        compare_inbox_report_message_oldest_first(
             req,
             left.datetime,
             left.timestamp,
@@ -1261,7 +1263,7 @@ mod tests {
     }
 
     #[test]
-    fn interception_report_resorts_after_collecting_chunks() {
+    fn interception_report_resorts_oldest_first_after_collecting_chunks() {
         let mut messages = vec![
             interception_message("2026-08-06", "11:00:00", "second"),
             interception_message("2026-08-06", "10:00:00", "first"),
@@ -1293,7 +1295,7 @@ mod tests {
                 .iter()
                 .filter_map(|message| message.body.as_deref())
                 .collect::<Vec<_>>(),
-            vec!["fourth", "third", "second", "first"],
+            vec!["first", "second", "third", "fourth"],
         );
     }
 

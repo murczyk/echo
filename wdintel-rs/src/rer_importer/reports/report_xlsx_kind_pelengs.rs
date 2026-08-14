@@ -6,8 +6,8 @@ use crate::location::peleng::{
 };
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::report_chunking::{
-    compare_inbox_report_message_order, inbox_report_chunk_req,
-    inbox_report_period_chunks, ReportPeriodEnd,
+    compare_inbox_report_message_oldest_first, inbox_report_chunk_req,
+    inbox_report_period_chunks, oldest_first_inbox_report_req, ReportPeriodEnd,
 };
 use crate::sigint::sender::preferred_sender_sql_snippet;
 use crate::types::*;
@@ -50,6 +50,8 @@ pub async fn get_inbox_messages_report(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, Option<(f64, f64)>, InboxMessage)>, AppError> {
+    let req = oldest_first_inbox_report_req(req);
+    let req = &req;
     let report_settings =
         crate::system_settings::get_report_generation_settings(&env.dbx)
             .await
@@ -104,7 +106,7 @@ fn sort_collected_peleng_report_messages(
     req: &InboxMessagesReq,
 ) {
     messages.sort_by(|left, right| {
-        compare_inbox_report_message_order(
+        compare_inbox_report_message_oldest_first(
             req,
             left.datetime,
             left.timestamp,
@@ -763,7 +765,7 @@ mod tests {
     }
 
     #[test]
-    fn peleng_report_resorts_after_collecting_chunks() {
+    fn peleng_report_resorts_oldest_first_after_collecting_chunks() {
         let datetime = |hour| {
             NaiveDate::from_ymd_opt(2026, 8, 14)
                 .unwrap()
@@ -797,6 +799,8 @@ mod tests {
             &mut messages,
             &InboxMessagesReq {
                 sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+                load_latest: Some(true),
+                newest_first: Some(true),
                 ..Default::default()
             },
         );
