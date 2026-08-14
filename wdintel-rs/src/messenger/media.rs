@@ -494,16 +494,6 @@ pub async fn delete_stored_media_files(
     if media.is_empty() {
         return;
     }
-    for media in media {
-        crate::messenger::media_cache::remove_cached_media_file_best_effort(
-            config, media.id,
-        )
-        .await;
-        crate::messenger::media_thumbnail::remove_media_thumbnail_files_best_effort(
-            config, media.id,
-        )
-        .await;
-    }
     let Some(config) = config.s3_config.as_ref() else {
         warn!("S3 is not configured, cannot delete attachment files!");
         return;
@@ -529,6 +519,25 @@ pub async fn delete_stored_media_files(
                 );
             }
         }
+    }
+}
+
+pub async fn delete_local_media_files(
+    media: &[signal_message_media::Model],
+    config: &Config,
+) {
+    if media.is_empty() {
+        return;
+    }
+    for media in media {
+        crate::messenger::media_cache::remove_cached_media_file_best_effort(
+            config, media.id,
+        )
+        .await;
+        crate::messenger::media_thumbnail::remove_media_thumbnail_files_best_effort(
+            config, media.id,
+        )
+        .await;
     }
 }
 

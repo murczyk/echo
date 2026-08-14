@@ -885,6 +885,11 @@ async fn finish_direct_submit(
         .await;
     }
     if !media_to_delete.is_empty() {
+        crate::messenger::media::delete_local_media_files(
+            media_to_delete,
+            &env.config,
+        )
+        .await;
         crate::messenger::media::delete_stored_media_files(
             &media_to_delete_after_commit,
             &env.config,
