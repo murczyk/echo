@@ -246,7 +246,9 @@ async fn read_units_with_orbit_visibility(
                             sigint_unit::Column::Division
                                 .into_column_ref()
                                 .into(),
-                            sigint_unit::Column::Brigade.into_column_ref().into(),
+                            sigint_unit::Column::Brigade
+                                .into_column_ref()
+                                .into(),
                             sigint_unit::Column::Regiment
                                 .into_column_ref()
                                 .into(),
@@ -542,7 +544,10 @@ fn apply_unit_list_filters(
             req.filter_army_region.as_deref(),
         ),
         (r#""sigint_unit"."comment""#, req.filter_comment.as_deref()),
-        (r#"coalesce("sigint_unit"."orbit_note", '')"#, orbit_note_filter),
+        (
+            r#"coalesce("sigint_unit"."orbit_note", '')"#,
+            orbit_note_filter,
+        ),
     ];
 
     for (column_sql, value) in filters {
@@ -4666,10 +4671,17 @@ mod tests {
     fn redact_unit_orbit_data_hides_orbit_fields() {
         let mut unit = Unit {
             id: 1,
+            other: String::new(),
+            team_or_crew: String::new(),
+            section: String::new(),
+            squad: String::new(),
+            platoon: String::new(),
             company: String::new(),
             battalion: String::new(),
             regiment: String::new(),
+            brigade: String::new(),
             division: String::new(),
+            corps: String::new(),
             army: String::new(),
             military_district: String::new(),
             army_region: String::new(),

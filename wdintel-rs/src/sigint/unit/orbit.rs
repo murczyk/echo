@@ -915,10 +915,17 @@ where
     C: ConnectionTrait,
 {
     let hierarchy = [
+        (sigint_unit::Column::Other, unit.other.as_str()),
+        (sigint_unit::Column::TeamOrCrew, unit.team_or_crew.as_str()),
+        (sigint_unit::Column::Section, unit.section.as_str()),
+        (sigint_unit::Column::Squad, unit.squad.as_str()),
+        (sigint_unit::Column::Platoon, unit.platoon.as_str()),
         (sigint_unit::Column::Company, unit.company.as_str()),
         (sigint_unit::Column::Battalion, unit.battalion.as_str()),
         (sigint_unit::Column::Regiment, unit.regiment.as_str()),
+        (sigint_unit::Column::Brigade, unit.brigade.as_str()),
         (sigint_unit::Column::Division, unit.division.as_str()),
+        (sigint_unit::Column::Corps, unit.corps.as_str()),
         (sigint_unit::Column::Army, unit.army.as_str()),
         (
             sigint_unit::Column::MilitaryDistrict,
@@ -1368,22 +1375,8 @@ where
             msg: "ORBIT unit has no supported hierarchy levels".to_string(),
         });
     }
-    let [
-        other,
-        team_or_crew,
-        section,
-        squad,
-        platoon,
-        company,
-        battalion,
-        regiment,
-        brigade,
-        division,
-        corps,
-        army,
-        military_district,
-        army_region,
-    ] = hierarchy;
+    let [other, team_or_crew, section, squad, platoon, company, battalion, regiment, brigade, division, corps, army, military_district, army_region] =
+        hierarchy;
     Ok(CreateUnitReq {
         other,
         team_or_crew,
@@ -1746,6 +1739,54 @@ mod tests {
                 "53", "зрбр", "20", "ЗВА", "МВО", "extra", "words", "ignored"
             ]
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn existing_ancestor_lookup_distinguishes_extended_echelons() {
+        // Regression: https://github.com/echoua/echo/issues/3113
+        let env = cleanup().await.unwrap();
+        for brigade in ["1 бригада", "2 бригада"] {
+            mk_sigint_unit(
+                &env.dbx,
+                sigint_unit::ActiveModel {
+                    name: Set(format!("{brigade} 20 дивізія")),
+                    brigade: Set(brigade.to_string()),
+                    division: Set("20 дивізія".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let unit_req = CreateUnitReq {
+            other: String::new(),
+            team_or_crew: String::new(),
+            section: String::new(),
+            squad: String::new(),
+            platoon: String::new(),
+            company: String::new(),
+            battalion: String::new(),
+            regiment: String::new(),
+            brigade: "2 бригада".to_string(),
+            division: "20 дивізія".to_string(),
+            corps: String::new(),
+            army: String::new(),
+            military_district: String::new(),
+            army_region: String::new(),
+            active: true,
+            is_deduplicate_candidate: None,
+            comment: String::new(),
+            orbit_note: None,
+            duplicate_unit_ids: Vec::new(),
+        };
+
+        let found = find_existing_sigint_unit(&env.dbx, &unit_req)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(found.brigade, "2 бригада");
     }
 
     #[tokio::test]

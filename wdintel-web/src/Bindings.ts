@@ -2571,14 +2571,28 @@ export type ListUnitsSortBy =
   | 'UnitNameLengthAsc'
   | 'UnitNameAsc'
   | 'UnitNameDesc'
+  | 'UnitOtherAsc'
+  | 'UnitOtherDesc'
+  | 'UnitTeamOrCrewAsc'
+  | 'UnitTeamOrCrewDesc'
+  | 'UnitSectionAsc'
+  | 'UnitSectionDesc'
+  | 'UnitSquadAsc'
+  | 'UnitSquadDesc'
+  | 'UnitPlatoonAsc'
+  | 'UnitPlatoonDesc'
   | 'UnitCompanyAsc'
   | 'UnitCompanyDesc'
   | 'UnitBattalionAsc'
   | 'UnitBattalionDesc'
   | 'UnitRegimentAsc'
   | 'UnitRegimentDesc'
+  | 'UnitBrigadeAsc'
+  | 'UnitBrigadeDesc'
   | 'UnitDivisionAsc'
   | 'UnitDivisionDesc'
+  | 'UnitCorpsAsc'
+  | 'UnitCorpsDesc'
   | 'UnitArmyAsc'
   | 'UnitArmyDesc'
   | 'UnitMilitaryDistrictAsc'
@@ -2600,10 +2614,17 @@ export type ListUnitsSearchMode =
 
 export type Unit = {
   id: number;
+  other: string;
+  teamOrCrew: string;
+  section: string;
+  squad: string;
+  platoon: string;
   company: string;
   battalion: string;
   regiment: string;
+  brigade: string;
   division: string;
+  corps: string;
   army: string;
   militaryDistrict: string;
   armyRegion: string;
@@ -2627,10 +2648,17 @@ export type ListUnitsReq = {
   filterActive: boolean | null;
   filterText: string | null;
   filterName: string | null;
+  filterOther: string | null;
+  filterTeamOrCrew: string | null;
+  filterSection: string | null;
+  filterSquad: string | null;
+  filterPlatoon: string | null;
   filterCompany: string | null;
   filterBattalion: string | null;
   filterRegiment: string | null;
+  filterBrigade: string | null;
   filterDivision: string | null;
+  filterCorps: string | null;
   filterArmy: string | null;
   filterMilitaryDistrict: string | null;
   filterArmyRegion: string | null;
@@ -2675,10 +2703,17 @@ export type ListUnitDuplicatesRsp = {
 };
 
 export type CreateUnitReq = {
+  other: string;
+  teamOrCrew: string;
+  section: string;
+  squad: string;
+  platoon: string;
   company: string;
   battalion: string;
   regiment: string;
+  brigade: string;
   division: string;
+  corps: string;
   army: string;
   militaryDistrict: string;
   armyRegion: string;

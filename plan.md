@@ -21,6 +21,11 @@ Implemented so far:
       - /admin/unit-duplicates move merge action into actions column.
 
   - Run frontend formatting and just build-front.
+  - After the pending frontend work, address review follow-ups:
+      - Declare `echo:m20260813_183642_sigint_unit_orbit_echelons` in `deploy/clickhouse/migration-impact.json` with a reviewed analytics synchronization strategy.
+      - Restore legacy etalon JSON compatibility by defaulting hierarchy fields missing from older exports.
+      - Preserve ORBIT matching compatibility for hierarchy values previously stored in collapsed parent columns, or migrate those values safely.
+      - Include all hierarchy fields when finding existing SIGINT units during ORBIT ancestor import.
   - Migration verification still has a blocker: local just migrate-up failed because the DB has an applied migration whose file is missing:
     m20260811_174133_drop_echo_automation_coordinates_screenshot. That needs resolving before a clean migration run.
 
@@ -192,4 +197,3 @@ Double-check addendum:
 - Practical next step from this exact workspace:
   - Start with cargo check to discover whether current backend branch state compiles.
   - Then implement the frontend tasks listed above, regenerate bindings, format, and run checks.
-

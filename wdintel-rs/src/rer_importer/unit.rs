@@ -85,7 +85,8 @@ pub async fn export_unit(
                 id: u.id,
                 name: u.name.clone(),
                 other: Some(u.other.clone()).filter(|x| !x.is_empty()),
-                team_or_crew: Some(u.team_or_crew.clone()).filter(|x| !x.is_empty()),
+                team_or_crew: Some(u.team_or_crew.clone())
+                    .filter(|x| !x.is_empty()),
                 section: Some(u.section.clone()).filter(|x| !x.is_empty()),
                 squad: Some(u.squad.clone()).filter(|x| !x.is_empty()),
                 platoon: Some(u.platoon.clone()).filter(|x| !x.is_empty()),
@@ -96,8 +97,10 @@ pub async fn export_unit(
                 division: Some(u.division.clone()).filter(|x| !x.is_empty()),
                 corps: Some(u.corps.clone()).filter(|x| !x.is_empty()),
                 army: Some(u.army.clone()).filter(|x| !x.is_empty()),
-                military_district: Some(u.military_district.clone()).filter(|x| !x.is_empty()),
-                army_region: Some(u.army_region.clone()).filter(|x| !x.is_empty()),
+                military_district: Some(u.military_district.clone())
+                    .filter(|x| !x.is_empty()),
+                army_region: Some(u.army_region.clone())
+                    .filter(|x| !x.is_empty()),
                 comment: Some(u.comment.clone()).filter(|x| !x.is_empty()),
                 callsigns: cs
                     .into_iter()

@@ -126,12 +126,30 @@ mod tests {
         };
         let mut value = serde_json::to_value(etalon).unwrap();
         let unit = value["sigint_unit"][0].as_object_mut().unwrap();
-        unit.remove("army_region");
-        unit.remove("military_district");
+        for field in [
+            "army_region",
+            "military_district",
+            "other",
+            "team_or_crew",
+            "section",
+            "squad",
+            "platoon",
+            "brigade",
+            "corps",
+        ] {
+            unit.remove(field);
+        }
 
         let imported: EtalonData = serde_json::from_value(value).unwrap();
 
         assert_eq!(imported.sigint_unit[0].army_region, "");
         assert_eq!(imported.sigint_unit[0].military_district, "");
+        assert_eq!(imported.sigint_unit[0].other, "");
+        assert_eq!(imported.sigint_unit[0].team_or_crew, "");
+        assert_eq!(imported.sigint_unit[0].section, "");
+        assert_eq!(imported.sigint_unit[0].squad, "");
+        assert_eq!(imported.sigint_unit[0].platoon, "");
+        assert_eq!(imported.sigint_unit[0].brigade, "");
+        assert_eq!(imported.sigint_unit[0].corps, "");
     }
 }

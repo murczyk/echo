@@ -1,6 +1,7 @@
 import { Box, Stack, Tab, Tabs } from '@mui/material';
 import { useEffect, useState } from 'react';
 
+import { PageHeader } from '../../components/PageHeader';
 import { AdminUnitDuplicatesPage } from '../admin-unit-duplicates';
 import { AdminUnitUnparsedPage } from '../admin-unit-unparsed';
 
@@ -30,14 +31,20 @@ export function AdminUnitsPage({ authUserRoles, initialTab }: AdminUnitsPageProp
 
   return (
     <Stack spacing={1.5} sx={{ height: '100%', minHeight: 0, p: 2 }}>
-      <Tabs
-        value={tab}
-        onChange={(_, value) => selectTab(value as AdminUnitsTab)}
-        aria-label="Розділи адміністрування підрозділів"
-      >
-        <Tab value="duplicates" label="Дублікати Підрозділів" />
-        <Tab value="unparsed" label="Нерозпізнані підрозділи" />
-      </Tabs>
+      <PageHeader
+        title="Підрозділи"
+        titleActions={
+          <Tabs
+            value={tab}
+            onChange={(_, value) => selectTab(value as AdminUnitsTab)}
+            aria-label="Розділи адміністрування підрозділів"
+          >
+            <Tab value="duplicates" label="Дублікати Підрозділів" />
+            <Tab value="unparsed" label="Нерозпізнані підрозділи" />
+          </Tabs>
+        }
+        titleActionsGap={2}
+      />
       <Box sx={{ flex: 1, minHeight: 0 }}>
         {tab === 'duplicates' ? (
           <AdminUnitDuplicatesPage authUserRoles={authUserRoles} embedded />

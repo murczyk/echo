@@ -17,9 +17,7 @@ struct ComparablePath {
     root_echelon: Option<EchoEchelon>,
 }
 
-fn sigint_hierarchy(
-    unit: &sigint_unit::Model,
-) -> [(EchoEchelon, &str); 14] {
+fn sigint_hierarchy(unit: &sigint_unit::Model) -> [(EchoEchelon, &str); 14] {
     [
         (EchoEchelon::Other, unit.other.as_str()),
         (EchoEchelon::TeamOrCrew, unit.team_or_crew.as_str()),
@@ -92,21 +90,22 @@ fn match_score(
         return None;
     }
     let mut matched_names = 0;
-    let matches = sigint_hierarchy(sigint_unit)
-    .into_iter()
-    .all(|(echelon, echo_name)| {
-        let echo_name = normalize_sigint_name_for_echelon(echelon, echo_name);
-        if echo_name.is_empty() {
-            return true;
-        }
-        if names_match(echelon, &path.all_names, &echo_name) {
-            matched_names += 1;
-            return true;
-        }
-        path.names_by_echelon
-            .get(&echelon)
-            .is_none_or(HashSet::is_empty)
-    });
+    let matches = sigint_hierarchy(sigint_unit).into_iter().all(
+        |(echelon, echo_name)| {
+            let echo_name =
+                normalize_sigint_name_for_echelon(echelon, echo_name);
+            if echo_name.is_empty() {
+                return true;
+            }
+            if names_match(echelon, &path.all_names, &echo_name) {
+                matched_names += 1;
+                return true;
+            }
+            path.names_by_echelon
+                .get(&echelon)
+                .is_none_or(HashSet::is_empty)
+        },
+    );
     let required_matches = if parent_signature(sigint_unit).is_empty() {
         1
     } else {
@@ -209,12 +208,12 @@ fn search_score(
 ) -> Option<MatchScore> {
     let path = comparable_path(orbit_unit).ok()?;
     let matched_names = sigint_hierarchy(sigint_unit)
-    .into_iter()
-    .filter(|(echelon, name)| {
-        let name = normalize_sigint_name_for_echelon(*echelon, name);
-        !name.is_empty() && names_match(*echelon, &path.all_names, &name)
-    })
-    .count();
+        .into_iter()
+        .filter(|(echelon, name)| {
+            let name = normalize_sigint_name_for_echelon(*echelon, name);
+            !name.is_empty() && names_match(*echelon, &path.all_names, &name)
+        })
+        .count();
     (matched_names > 0).then_some(MatchScore {
         echelon_distance: path
             .root_echelon
@@ -479,27 +478,28 @@ fn sigint_unit_identity(
     unit: &sigint_unit::Model,
 ) -> Option<(EchoEchelon, String)> {
     sigint_hierarchy(unit)
-    .into_iter()
-    .find_map(|(echelon, name)| {
-        let name = normalize_sigint_name_for_echelon(echelon, name);
-        (!name.is_empty()).then_some((echelon, name))
-    })
+        .into_iter()
+        .find_map(|(echelon, name)| {
+            let name = normalize_sigint_name_for_echelon(echelon, name);
+            (!name.is_empty()).then_some((echelon, name))
+        })
 }
 
 fn parent_signature(unit: &sigint_unit::Model) -> Vec<(EchoEchelon, String)> {
     let unit_echelon = sigint_unit_echelon(unit);
     sigint_hierarchy(unit)
-    .into_iter()
-    .filter(|(echelon, name)| {
-        unit_echelon.is_some_and(|unit_echelon| {
-            echelon.index() > unit_echelon.index()
-                && !normalize_sigint_name_for_echelon(*echelon, name).is_empty()
+        .into_iter()
+        .filter(|(echelon, name)| {
+            unit_echelon.is_some_and(|unit_echelon| {
+                echelon.index() > unit_echelon.index()
+                    && !normalize_sigint_name_for_echelon(*echelon, name)
+                        .is_empty()
+            })
         })
-    })
-    .map(|(echelon, name)| {
-        (echelon, normalize_sigint_name_for_echelon(echelon, name))
-    })
-    .collect()
+        .map(|(echelon, name)| {
+            (echelon, normalize_sigint_name_for_echelon(echelon, name))
+        })
+        .collect()
 }
 
 fn split_path(value: &str) -> Vec<String> {
@@ -631,6 +631,24 @@ mod tests {
         validate_source(&units).unwrap();
         let sigint_unit = echo_unit("", "батрурлр", "53 зрбр", "", "20 ЗВА");
         assert!(matches_sigint_unit(&units[0], &sigint_unit));
+
+        let platoon = source_unit("1 взвод", vec![("platoon", "1 взвод", 0)]);
+        assert!(matches_sigint_unit(
+            &platoon,
+            &echo_unit("1 взвод", "", "", "", "")
+        ));
+
+        let brigade = source_unit("53 зрбр", vec![("brigade", "53 зрбр", 0)]);
+        assert!(matches_sigint_unit(
+            &brigade,
+            &echo_unit("", "", "53 зрбр", "", "")
+        ));
+
+        let corps = source_unit("11 АК", vec![("corps", "11 АК", 0)]);
+        assert!(matches_sigint_unit(
+            &corps,
+            &echo_unit("", "", "", "", "11 АК")
+        ));
     }
 
     #[test]
