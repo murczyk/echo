@@ -475,7 +475,7 @@ async fn save_signal_message(
     query::set_inbox_item_network(&txn, submitted.inbox_id, network)
         .await
         .c(h!())?;
-    
+
     let mut rsp = finish_direct_submit(
         env,
         txn,

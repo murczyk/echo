@@ -117,7 +117,17 @@ where
         .all(dbx)
         .await
         .c(h!())?;
-    if sources.len() != signal_message_ids.len() {
+    let sources = sources.into_iter().fold(Vec::new(), |mut unique, source| {
+        if !unique
+            .iter()
+            .any(|item: &signal_message::Model| item.id == source.id)
+        {
+            unique.push(source);
+        }
+        unique
+    });
+    let requested_ids = signal_message_ids.iter().collect::<HashSet<_>>();
+    if sources.len() != requested_ids.len() {
         return Err(AppError::NotFound);
     }
     Ok(signal_message_ids
@@ -129,7 +139,8 @@ where
                 .cloned()
                 .ok_or(AppError::NotFound)
         })
-        .collect::<Result<Vec<_>, _>>()?)
+        .collect::<Result<Vec<_>, _>>()
+        .c(h!())?)
 }
 
 pub async fn find_copy_signal_message_inputs<C>(
