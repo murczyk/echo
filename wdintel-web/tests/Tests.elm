@@ -5,6 +5,7 @@ import Le.Block.UnitTests
 import Le.Callsign.HintStrategyTests
 import Le.Callsign.MessageHintTests
 import RerAnalysisMapRegressionTests
+import RerDutyRefreshRegressionTests
 import Test exposing (..)
 import UnitHierarchyTests
 
@@ -18,4 +19,5 @@ suite =
         , UnitHierarchyTests.suite
         , CoordinatesTests.suite
         , RerAnalysisMapRegressionTests.suite
+        , RerDutyRefreshRegressionTests.suite
         ]

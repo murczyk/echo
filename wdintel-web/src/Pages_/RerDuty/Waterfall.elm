@@ -5,6 +5,7 @@ module Pages_.RerDuty.Waterfall exposing
     , MessageTabPs
     , Model
     , Msg(..)
+    , applyRefreshedMessages
     , init
     , messageTab
     , subscriptions
@@ -703,6 +704,20 @@ updateFreqsAndCallsigns messages model =
 
           else
             E.none
+        ]
+    )
+
+
+applyRefreshedMessages : Shared.Model -> List ( Int, B.InboxMessage ) -> Model -> ( Model, Effect Msg )
+applyRefreshedMessages shared messages model =
+    let
+        ( updatedModel, callsignEffect ) =
+            updateFreqsAndCallsigns messages model
+    in
+    ( updatedModel
+    , E.batch
+        [ callsignEffect
+        , loadNetworksForMessages shared updatedModel messages
         ]
     )
 

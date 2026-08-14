@@ -1284,8 +1284,19 @@ update user shared route msg model =
                         )
                         model.messages
                         rsp.messages
+
+                updatedModel =
+                    { model | messages = messages2 }
+
+                ( enrichedModel, callsignEffect ) =
+                    requestMessageCallsigns rsp.messages updatedModel
             in
-            ( { model | messages = messages2 }, E.none )
+            ( enrichedModel
+            , E.batch
+                [ callsignEffect
+                , loadNetworksForMessages shared updatedModel rsp.messages
+                ]
+            )
 
         GotInbox (Err e) ->
             ( { model | loadingInboxMessages = False }
