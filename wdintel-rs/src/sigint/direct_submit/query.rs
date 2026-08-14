@@ -7,7 +7,7 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::types::*;
 use chrono::Utc;
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Expr, LockType};
 use sea_orm::*;
 use std::collections::{BTreeSet, HashSet};
 use uuid::Uuid;
@@ -213,6 +213,7 @@ where
             signal_message_media::Column::SignalMessageId
                 .is_in(signal_message_ids.to_vec()),
         )
+        .lock(LockType::Update)
         .all(dbx)
         .await
         .c(h!())?)
@@ -246,10 +247,14 @@ where
             continue;
         };
         let references = signal_message_media::Entity::find()
+            .select_only()
+            .column(signal_message_media::Column::Id)
             .filter(signal_message_media::Column::StorageKey.eq(storage_key))
-            .count(dbx)
+            .lock(LockType::Update)
+            .all(dbx)
             .await
-            .c(h!())?;
+            .c(h!())?
+            .len();
         if references == 0 {
             unreferenced.push(media.clone());
         }
@@ -364,15 +369,9 @@ pub async fn copy_signal_message_relations<C>(
 where
     C: ConnectionTrait,
 {
-    for source_signal_message_id in source_signal_message_ids {
-        copy_matching_tags(
-            dbx,
-            *source_signal_message_id,
-            target_inbox_item_id,
-        )
+    copy_matching_tags(dbx, source_signal_message_ids, target_inbox_item_id)
         .await
         .c(h!())?;
-    }
     copy_matching_callsigns(
         dbx,
         source_signal_message_ids,
@@ -491,7 +490,7 @@ where
 
 async fn copy_matching_tags<C>(
     dbx: &C,
-    source_signal_message_id: i64,
+    source_signal_message_ids: &[i64],
     target_inbox_item_id: i64,
 ) -> Result<(), AppError>
 where
@@ -515,7 +514,7 @@ where
     let source_tags = crate::entities::sigint_inbox_item_tag::Entity::find()
         .filter(
             crate::entities::sigint_inbox_item_tag::Column::SigintInboxItemId
-                .eq(source_signal_message_id),
+                .is_in(source_signal_message_ids.to_vec()),
         )
         .filter(
             crate::entities::sigint_inbox_item_tag::Column::TagId
@@ -524,6 +523,23 @@ where
         .all(dbx)
         .await
         .c(h!())?;
+    let source_tags = source_tags.into_iter().fold(
+        Vec::new(),
+        |mut unique: Vec<crate::entities::sigint_inbox_item_tag::Model>,
+         source_tag| {
+            if let Some(existing) = unique.iter_mut().find(|existing| {
+                existing.tag_id == source_tag.tag_id
+                    && existing.login_id == source_tag.login_id
+                    && existing.model == source_tag.model
+            }) {
+                existing.confidence =
+                    existing.confidence.max(source_tag.confidence);
+            } else {
+                unique.push(source_tag);
+            }
+            unique
+        },
+    );
     let source_tag_ids = source_tags
         .iter()
         .map(|tag| tag.tag_id)
@@ -772,6 +788,23 @@ where
         .exec(dbx)
         .await
         .c(h!())?;
+    let source = source.into_iter().fold(
+        Vec::new(),
+        |mut unique: Vec<crate::entities::sigint_peleng::Model>, peleng| {
+            if !unique.iter().any(|existing| {
+                existing.lat == peleng.lat
+                    && existing.lng == peleng.lng
+                    && existing.settlement == peleng.settlement
+                    && existing.locality_direction == peleng.locality_direction
+                    && existing.distance_m == peleng.distance_m
+                    && existing.country_code == peleng.country_code
+                    && existing.pelengation_object == peleng.pelengation_object
+            }) {
+                unique.push(peleng);
+            }
+            unique
+        },
+    );
     let peleng_models = source
         .into_iter()
         .map(|peleng| crate::entities::sigint_peleng::ActiveModel {
@@ -878,6 +911,48 @@ where
         .exec(dbx)
         .await
         .c(h!())?;
+    let source = source.into_iter().fold(
+        Vec::new(),
+        |mut unique: Vec<
+            crate::entities::sigint_inbox_item_metadata::Model,
+        >,
+         metadata| {
+            if !unique.iter().any(|existing| {
+                existing.color_code == metadata.color_code
+                    && existing.sender_id == metadata.sender_id
+                    && existing.sender_name == metadata.sender_name
+                    && existing.call_group_id == metadata.call_group_id
+                    && existing.call_group_name == metadata.call_group_name
+                    && existing.hash_id == metadata.hash_id
+                    && existing.color_code_start_index
+                        == metadata.color_code_start_index
+                    && existing.color_code_end_index
+                        == metadata.color_code_end_index
+                    && existing.call_group_id_start_index
+                        == metadata.call_group_id_start_index
+                    && existing.call_group_id_end_index
+                        == metadata.call_group_id_end_index
+                    && existing.call_group_name_start_index
+                        == metadata.call_group_name_start_index
+                    && existing.call_group_name_end_index
+                        == metadata.call_group_name_end_index
+                    && existing.sender_id_start_index
+                        == metadata.sender_id_start_index
+                    && existing.sender_id_end_index
+                        == metadata.sender_id_end_index
+                    && existing.sender_name_start_index
+                        == metadata.sender_name_start_index
+                    && existing.sender_name_end_index
+                        == metadata.sender_name_end_index
+                    && existing.hash_id_start_index
+                        == metadata.hash_id_start_index
+                    && existing.hash_id_end_index == metadata.hash_id_end_index
+            }) {
+                unique.push(metadata);
+            }
+            unique
+        },
+    );
     let metadata_models = source
         .into_iter()
         .map(|metadata| {

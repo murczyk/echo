@@ -17,6 +17,7 @@ use uuid::Uuid;
 pub struct ReconcileResult {
     pub changed_inbox_item_ids: Vec<i64>,
     pub superseded_media_ids: Vec<Uuid>,
+    pub superseded_media_storage_keys: Vec<(Uuid, String)>,
     pub pending_dedupe_updates: Vec<DedupeRedisUpdate>,
     pub uploaded_files_ready_for_deletion: Vec<MediaUploadInput>,
 }
@@ -200,6 +201,7 @@ pub async fn reconcile_deleted_message(
     Ok(ReconcileResult {
         changed_inbox_item_ids,
         superseded_media_ids: vec![],
+        superseded_media_storage_keys: vec![],
         pending_dedupe_updates,
         uploaded_files_ready_for_deletion: vec![],
     })
@@ -971,10 +973,11 @@ pub async fn reconcile_active_message(
             )
             .await
             .c(h!())?;
-            let superseded_media_ids =
+            let deleted_media =
                 delete_media_for_message(txn, source_message_id)
                     .await
                     .c(h!())?;
+            let superseded_media_ids = deleted_media.ids.clone();
             crate::transcriber::media_queue::reconcile_message(
                 txn,
                 source_message_id,
@@ -998,7 +1001,8 @@ pub async fn reconcile_active_message(
             );
             return Ok(ReconcileResult {
                 changed_inbox_item_ids: retired_inbox_item_ids,
-                superseded_media_ids,
+                superseded_media_storage_keys: deleted_media.storage_keys,
+                superseded_media_ids: deleted_media.ids,
                 pending_dedupe_updates: vec![],
                 uploaded_files_ready_for_deletion: vec![],
             });
@@ -1035,6 +1039,8 @@ pub async fn reconcile_active_message(
             .c(h!())?;
         }
         let superseded_media_ids = media_replacement.superseded_media_ids;
+        let superseded_media_storage_keys =
+            media_replacement.superseded_media_storage_keys;
         let uploaded_files_ready_for_deletion =
             media_replacement.uploaded_files_ready_for_deletion;
         crate::transcriber::media_queue::reconcile_message(
@@ -1101,6 +1107,7 @@ pub async fn reconcile_active_message(
         Ok(ReconcileResult {
             changed_inbox_item_ids,
             superseded_media_ids,
+            superseded_media_storage_keys,
             pending_dedupe_updates: vec![],
             uploaded_files_ready_for_deletion,
         })
@@ -1137,6 +1144,7 @@ pub async fn delete_media_objects_best_effort(
     s3: &Option<opendal::Operator>,
     dbx: &sea_orm::DatabaseConnection,
     media_ids: Vec<Uuid>,
+    media_storage_keys: Vec<(Uuid, String)>,
 ) {
     if media_ids.is_empty() {
         return;
@@ -1168,35 +1176,37 @@ pub async fn delete_media_objects_best_effort(
     };
     let s3_config = crate::storage::S3Config::from(s3_config);
     for media_id in media_ids {
-        let encrypted_key = crate::storage::nested_object_key(&media_id);
-        let plaintext_key =
-            crate::storage::plaintext_media_object_key(&media_id);
-        let referenced_storage_keys = signal_message_media::Entity::find()
-            .filter(
-                signal_message_media::Column::StorageKey
-                    .is_in([encrypted_key.clone(), plaintext_key.clone()]),
-            )
-            .count(dbx)
-            .await;
-        match referenced_storage_keys {
-            Ok(count) if count > 0 => continue,
-            Ok(_) => {}
-            Err(err) => {
-                error!(
-                    "failed to check shared media storage reference for {}: {:?}",
-                    media_id, err
-                );
-                continue;
-            }
-        }
+        let effective_key = media_storage_keys
+            .iter()
+            .find(|(id, _)| *id == media_id)
+            .map(|(_, key)| key.clone())
+            .unwrap_or_else(|| crate::storage::nested_object_key(&media_id));
         let object_keys = [
-            encrypted_key,
-            plaintext_key,
+            effective_key,
+            crate::storage::nested_object_key(&media_id),
+            crate::storage::plaintext_media_object_key(&media_id),
             crate::storage::plaintext_media_migration_marker_object_key(
                 &media_id,
             ),
         ];
         for object_key in object_keys {
+            let references = signal_message_media::Entity::find()
+                .filter(
+                    signal_message_media::Column::StorageKey.eq(&object_key),
+                )
+                .count(dbx)
+                .await;
+            match references {
+                Ok(count) if count > 0 => continue,
+                Ok(_) => {}
+                Err(err) => {
+                    error!(
+                        "failed to check shared media storage reference for {}: {:?}",
+                        media_id, err
+                    );
+                    continue;
+                }
+            }
             let remote_key = s3_config.prefixed_key(&object_key);
             if let Err(err) = s3.delete(&remote_key).await {
                 error!(
@@ -1725,8 +1735,15 @@ fn dedupe_redis_key(body_for_dedupe: &str) -> String {
 
 struct MediaReplacementResult {
     superseded_media_ids: Vec<Uuid>,
+    superseded_media_storage_keys: Vec<(Uuid, String)>,
     preserved_previous: bool,
     uploaded_files_ready_for_deletion: Vec<MediaUploadInput>,
+}
+
+#[derive(Default)]
+struct DeletedMedia {
+    ids: Vec<Uuid>,
+    storage_keys: Vec<(Uuid, String)>,
 }
 
 async fn replace_media_if_changed(
@@ -1750,6 +1767,7 @@ async fn replace_media_if_changed(
     if previous_attachments_hash == attachments_hash {
         return Ok(MediaReplacementResult {
             superseded_media_ids: vec![],
+            superseded_media_storage_keys: vec![],
             preserved_previous: false,
             uploaded_files_ready_for_deletion: vec![],
         });
@@ -1758,6 +1776,7 @@ async fn replace_media_if_changed(
     if attachments.is_empty() {
         return Ok(MediaReplacementResult {
             superseded_media_ids: vec![],
+            superseded_media_storage_keys: vec![],
             preserved_previous: false,
             uploaded_files_ready_for_deletion: vec![],
         });
@@ -1773,6 +1792,7 @@ async fn replace_media_if_changed(
         .c(h!())?;
         return Ok(MediaReplacementResult {
             superseded_media_ids: vec![],
+            superseded_media_storage_keys: vec![],
             preserved_previous: true,
             uploaded_files_ready_for_deletion: vec![],
         });
@@ -1807,7 +1827,8 @@ async fn replace_media_if_changed(
             .into_iter()
             .map(|media| media.id)
             .collect_vec();
-        delete_old_media(txn, uploaded_media_ids.clone()).await?;
+        let deleted_media =
+            delete_old_media(txn, uploaded_media_ids.clone()).await?;
         update_attachments_hash(
             txn,
             signal_message.id,
@@ -1815,7 +1836,8 @@ async fn replace_media_if_changed(
         )
         .await?;
         return Ok(MediaReplacementResult {
-            superseded_media_ids: uploaded_media_ids,
+            superseded_media_ids: deleted_media.ids,
+            superseded_media_storage_keys: deleted_media.storage_keys,
             preserved_previous: true,
             uploaded_files_ready_for_deletion: if delete_uploaded {
                 upload_result.uploaded_files_ready_for_deletion
@@ -1824,8 +1846,10 @@ async fn replace_media_if_changed(
             },
         });
     }
+    let deleted_media = delete_old_media(txn, old_media_ids).await?;
     Ok(MediaReplacementResult {
-        superseded_media_ids: delete_old_media(txn, old_media_ids).await?,
+        superseded_media_ids: deleted_media.ids,
+        superseded_media_storage_keys: deleted_media.storage_keys,
         preserved_previous: false,
         uploaded_files_ready_for_deletion: if delete_uploaded {
             upload_result.uploaded_files_ready_for_deletion
@@ -1878,22 +1902,35 @@ async fn update_attachments_hash(
 async fn delete_old_media(
     txn: &DatabaseTransaction,
     old_media_ids: Vec<Uuid>,
-) -> anyhow::Result<Vec<Uuid>> {
+) -> anyhow::Result<DeletedMedia> {
     if old_media_ids.is_empty() {
-        return Ok(old_media_ids);
+        return Ok(DeletedMedia::default());
     }
+    let old_media = signal_message_media::Entity::find()
+        .filter(signal_message_media::Column::Id.is_in(old_media_ids.clone()))
+        .all(txn)
+        .await
+        .c(h!())?;
     signal_message_media::Entity::delete_many()
         .filter(signal_message_media::Column::Id.is_in(old_media_ids.clone()))
         .exec(txn)
         .await
         .c(h!())?;
-    Ok(old_media_ids)
+    Ok(DeletedMedia {
+        ids: old_media_ids,
+        storage_keys: old_media
+            .iter()
+            .map(|media| {
+                (media.id, crate::messenger::media::media_object_key(media))
+            })
+            .collect(),
+    })
 }
 
 async fn delete_media_for_message(
     txn: &DatabaseTransaction,
     signal_message_id: i64,
-) -> anyhow::Result<Vec<Uuid>> {
+) -> anyhow::Result<DeletedMedia> {
     let old_media_ids = signal_message_media::Entity::find()
         .select_only()
         .column(signal_message_media::Column::Id)
