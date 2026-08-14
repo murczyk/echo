@@ -1,6 +1,5 @@
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle } from '@mui/material';
 import type { ReactNode } from 'react';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 
 type DeleteConfirmDialogProps = {
   open: boolean;
@@ -28,7 +27,7 @@ export function DeleteConfirmDialog({
     <Dialog open={open} onClose={confirmDisabled ? undefined : onClose} disableRestoreFocus>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>{content}</DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <Button
           size={actionSize}
           variant={cancelVariant}

@@ -238,28 +238,21 @@ it's useful for resetting local db or preparing fresh `wd-init.pgrestore`
 
 The same message card is used in both the new duty page and the analysis page.
 
-It can show four visual kinds of content:
+It can show these visual kinds of content:
 
 - Keywords are shown as orange text highlights.
 - Map points are shown as orange clickable labels with a map menu.
-- Callsigns are shown as blue links when they are recognized in the catalog.
-- Unrecognized but relevant callsigns are shown as plain white text.
+Callsigns use three message-card states:
 
-Callsigns have four product states:
+| State | Condition | Link | Icon | Tooltip |
+| --- | --- | --- | --- | --- |
+| Message network | An exact callsign has a network hint whose network belongs to the message | Blue link | Filled info | Exact message-network hints only |
+| Known elsewhere | The exact callsign has catalog rows and/or hints from other networks | Blue link | Outlined info | Catalog and/or other-network sections |
+| Unresolved | The exact callsign has neither catalog rows nor network hints | Blue link | None | None |
 
-1. The callsign is in the radio-network catalog and matches the current message network.
-   - Blue link
-   - Filled info hint
-2. The callsign is in the general callsign catalog, but has no radio-network affiliation.
-   - Blue link
-   - Outlined info hint
-3. The callsign is in the radio-network catalog, but does not belong to the current message network.
-   - Blue link
-   - No hint
-4. The callsign does not fit the catalog rules above, but should still be noticed.
-   - White text
-   - No link
-   - No hint
+Other-network knowledge uses the outlined icon. Missing position or formation text does not change the message-network state; the tooltip shows a fallback explanation. Matching is exact after trimming and case-folding only. Unresolved `CNCallsignC` tokens remain clickable.
+
+`CNHighlightC` keyword highlights do not participate in callsign hint resolution. Search highlighting is only a visual overlay and does not change the callsign link, icon, or tooltip state.
 
 Search results are highlighted separately from the callsign state:
 

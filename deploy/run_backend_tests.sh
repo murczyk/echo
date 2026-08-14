@@ -14,6 +14,7 @@ bash deploy/clickhouse/tests/test-manage-system-logs.sh
 bash deploy/clickhouse/tests/test-source-verify-deploy.sh
 
 bash "$SCRIPT_DIR/ensure_postgres_running.sh"
+bash deploy/clickhouse/tests/test-analytics-schema-reconcile-lock.sh
 
 # CI boxes may require extra time while PostgreSQL replays WAL / crash-recovery.
 export POSTGRES_STARTUP_TIMEOUT_SECS="${POSTGRES_STARTUP_TIMEOUT_SECS:-600}"

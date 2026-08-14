@@ -112,6 +112,7 @@ pub(crate) async fn submit_inbox_item_with_groups(
         logins,
         item,
         allow_empty_content,
+        false,
         super::InboxLocationSubmitMode::Parse,
     )
     .await
@@ -126,6 +127,7 @@ pub(crate) async fn submit_inbox_item_with_groups_location_mode(
     logins: &Vec<uuid::Uuid>,
     item: InboxSubmitItem,
     allow_empty_content: bool,
+    keep_timestamp_missing: bool,
     location_mode: super::InboxLocationSubmitMode,
 ) -> Result<SubmittedInboxItem, AppError> {
     submit_inbox_item_with_groups_inner(
@@ -138,7 +140,7 @@ pub(crate) async fn submit_inbox_item_with_groups_location_mode(
         item,
         None,
         allow_empty_content,
-        false,
+        keep_timestamp_missing,
         location_mode,
     )
     .await
@@ -318,6 +320,7 @@ async fn prepare_inbox_submit_item(
     let timestamp = if keep_timestamp_missing {
         message.date = None;
         message.time = None;
+        message.timestamp = None;
         None
     } else {
         Some(timestamp)

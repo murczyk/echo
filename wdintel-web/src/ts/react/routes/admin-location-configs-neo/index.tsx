@@ -27,7 +27,6 @@ import { PageLoadingState } from '../../components/PageLoadingState';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
@@ -292,7 +291,7 @@ function AdminLocationConfigsNeoPageBody() {
             </FormControl>
           </Stack>
         </DialogContent>
-        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <DialogActions>
           <PowerButton variant="outlined" onClick={() => setEditingRow(null)} disabled={saving}>
             Скасувати
           </PowerButton>

@@ -27,6 +27,7 @@ const hoisted = vi.hoisted(() => ({
   inboxMessageTagsAdd: vi.fn(),
   inboxMessageTagsModelError: vi.fn(),
   inboxMessageTagsRm: vi.fn(),
+  addPalitraHighlightBlacklistEntry: vi.fn(),
 }));
 
 vi.mock('../../services/api/analysis', () => ({
@@ -41,6 +42,10 @@ vi.mock('../../services/api/analysis', () => ({
   inboxMessageTagsModelError: hoisted.inboxMessageTagsModelError,
   inboxMessageTagsRm: hoisted.inboxMessageTagsRm,
   fetchInboxMessages: hoisted.fetchInboxMessages,
+}));
+
+vi.mock('../../services/api/palitra', () => ({
+  addPalitraHighlightBlacklistEntry: hoisted.addPalitraHighlightBlacklistEntry,
 }));
 
 type HarnessApi = ReturnType<typeof useAnalysisDataMessageActions> & {
@@ -97,6 +102,20 @@ function patchItems(
   );
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 20; i += 1) await Promise.resolve();
+}
+
 function TestHarness(props: {
   apiRef: MutableRefObject<HarnessApi | null>;
   initialMessages?: Array<[number, InboxMessage]>;
@@ -110,6 +129,7 @@ function TestHarness(props: {
   reconcileTagMutation?: ReturnType<typeof vi.fn>;
   registerLocalInboxChangeOrigin?: ReturnType<typeof vi.fn>;
   queryState?: ReturnType<typeof emptyQueryState>;
+  unauthorizedRef?: MutableRefObject<ReturnType<typeof vi.fn> | null>;
 }) {
   const [messages, setMessages] = useState<Array<[number, InboxMessage]>>(
     props.initialMessages ?? [[1, buildMessage()]],
@@ -119,7 +139,7 @@ function TestHarness(props: {
   );
   const [onError] = useState(() => props.onError ?? vi.fn());
   const [refreshTagFacet] = useState(() => props.refreshTagFacet ?? vi.fn(() => Promise.resolve()));
-  const onUnauthorized = vi.fn(() => false);
+  const onUnauthorized = props.unauthorizedRef?.current ?? vi.fn(() => false);
   const currentUser = props.currentUser ?? buildUser();
   const patchMessages = useCallback(
     (updater: (messageId: number, message: InboxMessage) => InboxMessage) => {
@@ -161,6 +181,7 @@ function TestHarness(props: {
     reconcileTagMutation,
     registerLocalInboxChangeOrigin,
     refreshTagFacet,
+    onUnauthorized,
     reload,
     setMapOpenMessages,
     setMessages,
@@ -216,6 +237,7 @@ describe('useAnalysisDataMessageActions', () => {
       reconcileTagMutation?: ReturnType<typeof vi.fn>;
       registerLocalInboxChangeOrigin?: ReturnType<typeof vi.fn>;
       queryState?: ReturnType<typeof emptyQueryState>;
+      unauthorizedRef?: MutableRefObject<ReturnType<typeof vi.fn> | null>;
     } = {},
   ) {
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
@@ -233,6 +255,7 @@ describe('useAnalysisDataMessageActions', () => {
           reconcileTagMutation={options.reconcileTagMutation}
           registerLocalInboxChangeOrigin={options.registerLocalInboxChangeOrigin}
           queryState={options.queryState}
+          unauthorizedRef={options.unauthorizedRef}
         />,
       );
     });
@@ -522,5 +545,94 @@ describe('useAnalysisDataMessageActions', () => {
     );
     expect(fallbackRef.current!.botTagAction).toEqual({ messageId: 1, tagId: 3 });
     expect(fallbackRef.current!.messages[0]?.[1].tags).toEqual([3, 4]);
+  });
+
+  it('deduplicates blacklist requests and patches both analysis collections', async () => {
+    const deferredRequest = deferred<void>();
+    hoisted.addPalitraHighlightBlacklistEntry.mockReturnValueOnce(deferredRequest.promise);
+    const message = buildMessage({
+      textMarked: [{ CNPointC: { etalon: '  Альфа ', text: 'A', palitraIds: [7, 12] } }],
+      pointTokens: [{ etalon: 'АЛЬФА', text: 'A', palitraIds: [7, 12] }],
+    });
+    const secondMatching = buildMessage({
+      textMarked: [{ CNPointC: { etalon: ' Альфа ', text: 'A', palitraIds: [7, 12] } }],
+      pointTokens: [{ etalon: 'АЛЬФА', text: 'A', palitraIds: [7, 12] }],
+    });
+    const unrelated = buildMessage();
+    const apiRef = await renderHarness([
+      [42, message],
+      [99, secondMatching],
+      [100, unrelated],
+    ]);
+    const first = apiRef.current!.onAddPointHighlightBlacklist({
+      messageId: 42,
+      etalon: 'Альфа',
+      palitraId: 7,
+    });
+    const second = apiRef.current!.onAddPointHighlightBlacklist({
+      messageId: 42,
+      etalon: ' альфа ',
+      palitraId: 7,
+    });
+    expect(second).toBe(first);
+    expect(hoisted.addPalitraHighlightBlacklistEntry).toHaveBeenCalledTimes(1);
+    deferredRequest.resolve();
+    await act(async () => {
+      await first;
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.messages[0]?.[1].pointTokens).toEqual([
+      { etalon: 'АЛЬФА', text: 'A', palitraIds: [12] },
+    ]);
+    expect(apiRef.current!.mapOpenMessages[0]?.[1].pointTokens).toEqual([
+      { etalon: 'АЛЬФА', text: 'A', palitraIds: [12] },
+    ]);
+    expect(apiRef.current!.messages[1]?.[1].pointTokens).toEqual([
+      { etalon: 'АЛЬФА', text: 'A', palitraIds: [12] },
+    ]);
+    expect(apiRef.current!.mapOpenMessages[1]?.[1].pointTokens).toEqual([
+      { etalon: 'АЛЬФА', text: 'A', palitraIds: [12] },
+    ]);
+    expect(apiRef.current!.messages[2]?.[1]).toBe(unrelated);
+    expect(apiRef.current!.mapOpenMessages[2]?.[1]).toBe(unrelated);
+  });
+
+  it('reports blacklist failure and leaves both collections unchanged', async () => {
+    const message = buildMessage({
+      pointTokens: [{ etalon: 'АЛЬФА', text: 'A', palitraIds: [7] }],
+    });
+    const apiRef = await renderHarness([[42, message]]);
+    // The harness owns its error callback; exercise the rejection contract and state identity.
+    hoisted.addPalitraHighlightBlacklistEntry.mockRejectedValueOnce(new Error('boom'));
+    const originalMessages = apiRef.current!.messages[0]?.[1];
+    const originalMapMessages = apiRef.current!.mapOpenMessages[0]?.[1];
+    await expect(
+      apiRef.current!.onAddPointHighlightBlacklist({
+        messageId: 42,
+        etalon: ' альфа ',
+        palitraId: 7,
+      }),
+    ).rejects.toThrow('boom');
+    expect(apiRef.current!.messages[0]?.[1]).toBe(originalMessages);
+    expect(apiRef.current!.mapOpenMessages[0]?.[1]).toBe(originalMapMessages);
+    expect(apiRef.current!.onError).toHaveBeenCalledWith('boom');
+  });
+
+  it('routes blacklist 401 failures through unauthorized handling', async () => {
+    const unauthorizedRef: MutableRefObject<ReturnType<typeof vi.fn> | null> = {
+      current: vi.fn(() => true),
+    };
+    const apiRef = await renderHarness([[42, buildMessage()]], { unauthorizedRef });
+    hoisted.addPalitraHighlightBlacklistEntry.mockRejectedValueOnce({ status: 401 });
+    await expect(
+      apiRef.current!.onAddPointHighlightBlacklist({
+        messageId: 42,
+        etalon: 'Альфа',
+        palitraId: 7,
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(unauthorizedRef.current).toHaveBeenCalledOnce();
+    expect(apiRef.current!.onError).not.toHaveBeenCalled();
+    expect(apiRef.current!.messages[0]?.[1]).toBe(apiRef.current!.mapOpenMessages[0]?.[1]);
   });
 });

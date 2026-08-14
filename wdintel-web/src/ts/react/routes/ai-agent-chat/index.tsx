@@ -81,6 +81,61 @@ const GENERIC_STREAM_FAILURE = 'Не вдалося відновити з’єд
 const ACTIVE_CONVERSATION_STORAGE_KEY = 'echo.ai-agent.active-conversation-id';
 
 export const AI_AGENT_CHAT_CARD_HEIGHT = '100%';
+export type AiAgentAvailabilityState = 'enabled' | 'disabled' | 'unavailable';
+
+export const AI_AGENT_CHAT_INITIAL_LOADING_SX = {
+  width: '100%',
+  height: AI_AGENT_CHAT_CARD_HEIGHT,
+  minHeight: 0,
+  display: 'grid',
+  placeItems: 'center',
+} as const;
+
+export const AI_AGENT_CHAT_PANEL_HEADER_SX = {
+  p: 2,
+} as const;
+
+export const AI_AGENT_CHAT_PANEL_LIST_SX = {
+  px: 0,
+  py: 0,
+} as const;
+
+export const AI_AGENT_CHAT_PANEL_LIST_ITEM_SX = {
+  borderRadius: 0,
+  mb: 0,
+} as const;
+
+export const AI_AGENT_CHAT_COLLAPSED_CONTROLS_SX = {
+  top: 16,
+  left: 16,
+} as const;
+
+export function AiAgentChatInitialLoading() {
+  return (
+    <Box sx={AI_AGENT_CHAT_INITIAL_LOADING_SX}>
+      <CircularProgress aria-label="Завантаження ШІ чату" />
+    </Box>
+  );
+}
+
+function AiAgentChatUnavailable({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <Box
+      sx={{
+        width: '100%',
+        height: AI_AGENT_CHAT_CARD_HEIGHT,
+        display: 'grid',
+        placeItems: 'center',
+        px: 2,
+      }}
+    >
+      <Stack spacing={1.5} sx={{ width: '100%', maxWidth: 480 }}>
+        <PowerAlert severity="error">{message}</PowerAlert>
+        <PowerButton onClick={onRetry}>Спробувати ще раз</PowerButton>
+      </Stack>
+    </Box>
+  );
+}
 
 export function historyPaneMotionStyles(open: boolean) {
   return {
@@ -468,7 +523,7 @@ function LiveRequestView({
 export function AiAgentChat({
   onAvailabilityChange,
 }: {
-  onAvailabilityChange?: (enabled: boolean) => void;
+  onAvailabilityChange?: (state: AiAgentAvailabilityState) => void;
 } = {}) {
   const [configuration, setConfiguration] = useState<AiAgentConfiguration | null>(null);
   const [conversations, setConversations] = useState<AiAgentConversation[]>([]);
@@ -484,6 +539,7 @@ export function AiAgentChat({
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
   const liveRequestsRef = useRef<LiveRequest[]>([]);
   const streamAbortRefs = useRef(new Map<string, AbortController>());
   const cancellingIdsRef = useRef(new Set<string>());
@@ -493,6 +549,7 @@ export function AiAgentChat({
   const mountedRef = useRef(true);
   const followOutputRef = useRef(false);
   const outputAnchorRef = useRef<HTMLDivElement | null>(null);
+  const collapsedHistoryToggleRef = useRef<HTMLButtonElement | null>(null);
   const { notify } = usePowerSnackbar();
 
   useEffect(() => {
@@ -530,14 +587,23 @@ export function AiAgentChat({
     replaceLiveRequests([]);
   }
 
+  function closeHistoryPanel() {
+    const focusedElement = document.activeElement;
+    if (focusedElement instanceof HTMLElement && focusedElement.closest('aside')) {
+      focusedElement.blur();
+    }
+    setHistoryOpen(false);
+    window.requestAnimationFrame(() => collapsedHistoryToggleRef.current?.focus());
+  }
+
   async function loadPage() {
     setLoading(true);
+    setUnavailable(false);
     setError(null);
     try {
       const nextConfiguration = await getAiAgentConfiguration();
       if (!mountedRef.current) return;
       setConfiguration(nextConfiguration);
-      onAvailabilityChange?.(nextConfiguration.enabled);
       setProviderId(
         nextConfiguration.defaultProviderId ?? nextConfiguration.providers[0]?.id ?? '',
       );
@@ -546,11 +612,16 @@ export function AiAgentChat({
         if (!mountedRef.current) return;
         setConversations(nextConversations);
         await restoreStoredConversation();
+        if (!mountedRef.current) return;
+        onAvailabilityChange?.('enabled');
+      } else {
+        onAvailabilityChange?.('disabled');
       }
     } catch (loadError) {
       const message = `Не вдалося завантажити ШІ чат: ${errorMessage(loadError)}`;
       if (!mountedRef.current) return;
-      onAvailabilityChange?.(false);
+      onAvailabilityChange?.('unavailable');
+      setUnavailable(true);
       setError(message);
       notify({ severity: 'error', message });
     } finally {
@@ -626,7 +697,7 @@ export function AiAgentChat({
       const conversation = await getAiAgentConversation(id);
       if (!mountedRef.current || refreshSequence !== refreshSequenceRef.current) return;
       activateConversation(conversation);
-      setHistoryOpen(false);
+      closeHistoryPanel();
     } catch (loadError) {
       const message = `Не вдалося відкрити розмову: ${errorMessage(loadError)}`;
       if (!mountedRef.current) return;
@@ -849,20 +920,10 @@ export function AiAgentChat({
   const visibleMessages = messages.filter((message) => !liveRequestIds.has(message.requestId));
   const interactionLocked = submitting || activeRequestExists;
 
-  if (!configuration) {
-    return (
-      <Box sx={{ height: '100%', display: 'grid', placeItems: 'center' }}>
-        <CircularProgress aria-label="Завантаження ШІ чату" />
-      </Box>
-    );
+  if (unavailable && error) {
+    return <AiAgentChatUnavailable message={error} onRetry={() => void loadPage()} />;
   }
-  if (loading && configuration.enabled) {
-    return (
-      <Box sx={{ py: 6, display: 'flex', justifyContent: 'center' }}>
-        <CircularProgress aria-label="Завантаження ШІ чату" />
-      </Box>
-    );
-  }
+  if (!configuration || loading) return <AiAgentChatInitialLoading />;
   if (!configuration.enabled) return null;
 
   return (
@@ -886,12 +947,12 @@ export function AiAgentChat({
           borderColor: 'divider',
           bgcolor: 'var(--color-card)',
           zIndex: 2,
-          inset: { xs: '0 auto 0 0', sm: 'auto' },
+          inset: { xs: 0, sm: 'auto' },
           boxShadow: { xs: historyOpen ? 4 : 0, sm: 0 },
           overflowY: 'auto',
         }}
       >
-        <Stack direction="row" alignItems="center" sx={{ minHeight: 40, px: 1.5 }}>
+        <Stack direction="row" alignItems="center" sx={AI_AGENT_CHAT_PANEL_HEADER_SX}>
           <Typography variant="h6" fontWeight={600} sx={{ flex: 1 }}>
             Розмови
           </Typography>
@@ -899,18 +960,18 @@ export function AiAgentChat({
             side="left"
             active
             label="Згорнути ліву панель"
-            onClick={() => setHistoryOpen(false)}
+            onClick={closeHistoryPanel}
           />
         </Stack>
         <Divider />
-        <List sx={{ px: 1, py: 1 }}>
+        <List sx={AI_AGENT_CHAT_PANEL_LIST_SX}>
           <ListItemButton
             disabled={interactionLocked}
             onClick={() => {
               startNewConversation();
-              setHistoryOpen(false);
+              closeHistoryPanel();
             }}
-            sx={{ borderRadius: 1, mb: 0.5 }}
+            sx={AI_AGENT_CHAT_PANEL_LIST_ITEM_SX}
           >
             <AddCommentOutlinedIcon fontSize="small" sx={{ mr: 1.5 }} />
             <ListItemText primary="Нова розмова" />
@@ -921,7 +982,7 @@ export function AiAgentChat({
               selected={conversation.id === activeConversationId}
               disabled={interactionLocked || loadingConversation}
               onClick={() => void openConversation(conversation.id)}
-              sx={{ borderRadius: 1, mb: 0.5 }}
+              sx={AI_AGENT_CHAT_PANEL_LIST_ITEM_SX}
             >
               <ListItemText
                 primary={conversation.title}
@@ -934,11 +995,15 @@ export function AiAgentChat({
       </Box>
       <Stack sx={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
         {!historyOpen ? (
-          <Stack spacing={0.5} sx={{ position: 'absolute', top: 0, left: 0, zIndex: 1 }}>
+          <Stack
+            spacing={0.5}
+            sx={{ position: 'absolute', ...AI_AGENT_CHAT_COLLAPSED_CONTROLS_SX, zIndex: 1 }}
+          >
             <SidePanelToggleButton
               side="left"
               active={false}
               label="Розгорнути ліву панель"
+              ref={collapsedHistoryToggleRef}
               onClick={() => setHistoryOpen(true)}
             />
             <Tooltip title="Нова розмова">

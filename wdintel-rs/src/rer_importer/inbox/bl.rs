@@ -773,7 +773,7 @@ pub async fn fill_callsigns(
     Ok(())
 }
 
-async fn get_palitra_points_by_message(
+pub(crate) async fn get_palitra_points_by_message(
     dbx: &DatabaseConnection,
     login: uuid::Uuid,
     message_ids: Vec<i64>,
@@ -798,26 +798,72 @@ async fn get_palitra_points_by_message(
         .filter(palitra::Column::Id.eq_any(palitra_ids))
         .select_only()
         .column(sigint_inbox_item_point_token::Column::SigintInboxItemId)
+        .column(sigint_inbox_item_point_token::Column::PalitraId)
         .column(sigint_inbox_item_point_token::Column::PointTokens)
-        .into_tuple::<(i64, serde_json::Value)>()
+        .into_tuple::<(i64, i64, serde_json::Value)>()
         .all(dbx)
         .await
         .context(h!())?;
+    let point_palitra_ids = palitra_points
+        .iter()
+        .map(|(_, palitra_id, _)| *palitra_id)
+        .unique()
+        .collect();
+    let blacklisted_labels =
+        crate::palitra::highlight_blacklist::load_blacklisted_labels(
+            dbx,
+            point_palitra_ids,
+        )
+        .await
+        .c(h!())?;
     let mut palitra_points_by_message: HashMap<i64, Vec<CNPoint>> =
         HashMap::new();
-    for (sigint_inbox_item_id, points) in palitra_points {
+    for (sigint_inbox_item_id, palitra_id, points) in palitra_points {
         let mut points: Vec<CNPoint> = serde_json::from_value(points)
             .map_err(|e| anyhow::anyhow!("json convert error: {e}"))?;
+        for point in &mut points {
+            point.palitra_ids = vec![palitra_id];
+        }
+        crate::palitra::highlight_blacklist::filter_blacklisted_points(
+            &blacklisted_labels,
+            palitra_id,
+            &mut points,
+        );
         palitra_points_by_message
             .entry(sigint_inbox_item_id)
             .or_default()
             .append(&mut points);
     }
     for points in palitra_points_by_message.values_mut() {
-        points.sort();
-        points.dedup();
+        merge_point_palitra_ids(points);
     }
     Ok(palitra_points_by_message)
+}
+
+fn merge_point_palitra_ids(points: &mut Vec<CNPoint>) {
+    points.sort_by(|a, b| {
+        (&a.begin, &a.end, &a.etalon, &a.text)
+            .cmp(&(&b.begin, &b.end, &b.etalon, &b.text))
+    });
+
+    let mut merged: Vec<CNPoint> = Vec::with_capacity(points.len());
+    for mut point in points.drain(..) {
+        if let Some(previous) = merged.last_mut().filter(|previous| {
+            previous.begin == point.begin
+                && previous.end == point.end
+                && previous.etalon == point.etalon
+                && previous.text == point.text
+        }) {
+            previous.palitra_ids.append(&mut point.palitra_ids);
+        } else {
+            merged.push(point);
+        }
+    }
+    for point in &mut merged {
+        point.palitra_ids.sort_unstable();
+        point.palitra_ids.dedup();
+    }
+    *points = merged;
 }
 
 pub async fn load_messages_networks(
@@ -1506,6 +1552,31 @@ fn split_manual_locations(location: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_point_palitra_ids_keeps_all_source_palitras() {
+        let mut points = vec![
+            CNPoint {
+                begin: 1,
+                end: 4,
+                etalon: "Альфа".to_string(),
+                text: "альфа".to_string(),
+                palitra_ids: vec![9],
+            },
+            CNPoint {
+                begin: 1,
+                end: 4,
+                etalon: "Альфа".to_string(),
+                text: "альфа".to_string(),
+                palitra_ids: vec![7, 9],
+            },
+        ];
+
+        merge_point_palitra_ids(&mut points);
+
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].palitra_ids, vec![7, 9]);
+    }
 
     #[test]
     fn format_manual_location_v2_keeps_unmatched_manual_location() {

@@ -17,6 +17,22 @@ Those requests include RER result/facet counts and lists, long-range messenger
 activity timelines, report-history list scans, and replicated-data report
 queries; operational writes and live queue/progress state remain on PostgreSQL.
 
+## Shared signal media and copy relationships
+
+Signal message media rows contain a logical `storage_key` identifying the
+physical object in the configured S3-compatible storage. Copying a message
+creates a new media row that reuses this key, so unchanged attachments are not
+uploaded again. Cleanup must delete an object only after no
+`signal_message_media` row references its key; code that derives an object key
+from the media-row UUID can orphan shared objects or delete the wrong object.
+
+Copy lineage is stored in PostgreSQL in the `intel_prod` table. Each row links
+the saved copy's `signal_message_id` to one source message, allowing one copy
+to be based on several messages. On analytics-enabled installations,
+`intel_prod` is a replicated snapshot table and `signal_message_media` schema
+changes require the documented PeerDB mirror-resync procedure before
+analytics is considered healthy.
+
 ## Deployment topology
 
 The operator creates and sizes the LXC containers in Proxmox or Incus. Echo's

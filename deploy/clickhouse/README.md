@@ -760,12 +760,32 @@ sets differ; use `source-sync-exclusions-if-needed.sh --yes` first.
 Post-migration verification recognizes transient PostgreSQL deadlocks, tuple
 update conflicts, reconciliation-lock contention, and DDL lock timeouts. It
 makes up to five attempts at 30-second intervals before failing the deployment.
+Gateway and derived-schema catalog writes share a PostgreSQL transaction lock,
+so health probes wait for an in-progress deployment reconciliation.
 An unrecognized failure stops immediately. If all transient
 attempts fail, the deployment prints a prominent banner, the latest service
 log, and asks for one retry after two minutes; a further failure requires
 investigation rather than repeated deployment attempts. Override the bounded
 retry only through `ANALYTICS_RECONCILE_DEPLOY_RETRY_ATTEMPTS` and
 `ANALYTICS_RECONCILE_DEPLOY_RETRY_DELAY_SECONDS` in `source.env`.
+
+### Shared signal media and copy lineage
+
+`signal_message_media.storage_key` is the physical-object identity for
+signal-message attachments. A copied message has a new media-row UUID but can
+point to the source row's `storage_key`; unchanged attachments therefore do
+not require another S3 upload. Media cleanup must count references by
+`storage_key` and delete the physical object only after the final reference is
+removed.
+
+Message-copy lineage is stored in the PostgreSQL `intel_prod` table. Its
+composite rows link one saved copy to each source message, and the table is
+declared as `replicated_snapshot` in `migration-impact.json`. The
+`signal_message_media` schema change is declared `mirror_resync`; after
+applying that migration on a ClickHouse instance, run the full PeerDB mirror
+resync and completion waiter, then verify the `intel_prod` snapshot, current
+views, gateway views, and end-to-end analytics health before continuing the
+deployment. The copy operation itself never uploads unchanged S3 objects.
 
 Migration pull requests are checked against
 `migration-impact.json`. New tables declare `excluded` or

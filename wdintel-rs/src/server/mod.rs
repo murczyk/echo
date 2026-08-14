@@ -1151,12 +1151,22 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::group_update)
             .service(crate::operator::message_submit)
             .service(crate::palitra::list_all_palitras)
+            .service(crate::palitra::highlight_blacklist::resolve_palitra_names)
             .service(crate::palitra::list_all_palitras_v2)
             .service(crate::palitra::list_map_palitras_v2)
             .service(crate::palitra::list_all_palitras_detailed)
             .service(crate::palitra::read_palitra_goi_sync_history)
             .service(crate::palitra::read_palitra_v2)
             .service(crate::palitra::read_palitra_preview_v2)
+            .service(
+                crate::palitra::highlight_blacklist::list_palitra_highlight_blacklist,
+            )
+            .service(
+                crate::palitra::highlight_blacklist::add_palitra_highlight_blacklist_entry,
+            )
+            .service(
+                crate::palitra::highlight_blacklist::delete_palitra_highlight_blacklist_entry,
+            )
             .service(crate::palitra::list_palitra_points)
             .service(crate::palitra::suggest_palitra_point_labels)
             .service(crate::palitra::search_palitra_points)
@@ -1566,30 +1576,7 @@ mod tests {
 
         let req = test::TestRequest::post()
             .uri("/api/sigint/units")
-            .set_json(crate::sigint::unit::types::ListUnitsReq {
-                sort_by: None,
-                after_unit_id: None,
-                before_unit_id: None,
-                include_inactive: false,
-                filter_active: None,
-                filter_text: None,
-                filter_name: None,
-                filter_company: None,
-                filter_battalion: None,
-                filter_regiment: None,
-                filter_division: None,
-                filter_army: None,
-                filter_military_district: None,
-                filter_army_region: None,
-                filter_comment: None,
-                filter_orbit_note: None,
-                filter_is_deduplicate_candidate: None,
-                filter_has_orbit: None,
-                filter_has_orbit_note: None,
-                search_mode: None,
-                limit: None,
-                offset: None,
-            })
+            .set_json(crate::sigint::unit::types::ListUnitsReq::default())
             .to_request();
         let res = test::call_service(&app, req).await;
 

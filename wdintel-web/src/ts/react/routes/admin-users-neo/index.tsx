@@ -28,7 +28,6 @@ import {
   SigintZone,
   UpdateLoginReq,
 } from '../../../../Bindings';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
@@ -840,7 +839,7 @@ function AddUserDialog(props: {
           />
         </div>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <PowerButton onClick={handleClose} disabled={isSubmitting}>
           Скасувати
         </PowerButton>
@@ -1166,7 +1165,7 @@ function EditUserDialog(props: {
           </div>
         ) : null}
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <PowerButton onClick={handleClose} disabled={isSubmitting}>
           Скасувати
         </PowerButton>

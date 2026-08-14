@@ -6,7 +6,9 @@ import type {
   InboxMessage,
   MessageComment,
 } from '../../../../Bindings';
-import { fetchInboxMessages } from '../../services/api/analysis';
+import { fetchAnalysisCallsignInfos, fetchInboxMessages } from '../../services/api/analysis';
+import { isAbortError } from '../../services/api/client';
+import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 import { ANALYSIS_MESSAGES_PAGE_SIZE, buildInboxReq } from './helpers';
 import { loadMissingMessageCommentsForMessages } from './use-analysis-data.comments';
 import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
@@ -63,6 +65,9 @@ export function useAnalysisMessageList({
   const messageCommentsLoadVersionRef = useRef(0);
   const loadMoreMessagesRequestRef = useRef(0);
   const pageCursorsRef = useRef<AnalysisMessagePageCursor[]>([FIRST_PAGE_CURSOR]);
+  const callsignEnrichmentGenerationRef = useRef(0);
+  const unscopedCallsignsRef = useRef(new Set<string>());
+  const callsignEnrichmentInFlightRef = useRef(new Map<string, number>());
   const { messagesOverallCount, messagesTotalCount, messagesTotalLoading, refreshMessageCounts } =
     useAnalysisMessageCounts({
       deferInitialLoad,
@@ -77,16 +82,66 @@ export function useAnalysisMessageList({
     messageCommentsRef.current = messageComments;
   }, [messageComments]);
 
+  const invalidateCallsignEnrichment = useCallback(() => {
+    callsignEnrichmentGenerationRef.current += 1;
+    unscopedCallsignsRef.current.clear();
+    callsignEnrichmentInFlightRef.current.clear();
+  }, []);
+
   const invalidateMessagePageRequests = useCallback(() => {
+    invalidateCallsignEnrichment();
     loadMoreMessagesRequestRef.current += 1;
     setMessagesPaging(false);
-  }, []);
+  }, [invalidateCallsignEnrichment]);
 
   const invalidateMessagePaging = useCallback(() => {
     invalidateMessagePageRequests();
     pageCursorsRef.current = [FIRST_PAGE_CURSOR];
     setPageIndex(0);
   }, [invalidateMessagePageRequests]);
+
+  const enrichCallsignsForMessages = useCallback(
+    async (messageItems: Array<[number, InboxMessage]>) => {
+      const callsigns = messageItems.flatMap(([, message]) => {
+        const markedCallsigns = (message.textMarked ?? []).flatMap((node) =>
+          typeof node !== 'string' && 'CNCallsignC' in node ? [node.CNCallsignC.text] : [],
+        );
+        return (markedCallsigns.length > 0 ? markedCallsigns : message.callsigns).map((callsign) =>
+          callsign.trim(),
+        );
+      });
+      const keys = Array.from(
+        new Set(callsigns.map(normalizeCallsignLookupValue).filter((key) => key !== '')),
+      ).filter(
+        (key) =>
+          !unscopedCallsignsRef.current.has(key) && !callsignEnrichmentInFlightRef.current.has(key),
+      );
+      if (keys.length === 0) return;
+      const generation = callsignEnrichmentGenerationRef.current;
+      keys.forEach((key) => callsignEnrichmentInFlightRef.current.set(key, generation));
+      try {
+        const infos = await fetchAnalysisCallsignInfos(keys);
+        if (generation !== callsignEnrichmentGenerationRef.current) return;
+        setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, infos));
+        keys.forEach((key) => unscopedCallsignsRef.current.add(key));
+      } catch (error) {
+        if (!isAbortError(error)) {
+          if (!onUnauthorized(error)) onError(toErrorMessage(error));
+        }
+      } finally {
+        keys.forEach((key) => {
+          if (callsignEnrichmentInFlightRef.current.get(key) === generation) {
+            callsignEnrichmentInFlightRef.current.delete(key);
+          }
+        });
+      }
+    },
+    [onError, onUnauthorized, setSummaryCallsignsInfo],
+  );
+
+  useEffect(() => {
+    void enrichCallsignsForMessages(messages);
+  }, [enrichCallsignsForMessages, messages]);
 
   const getCurrentMessagePageCursor = useCallback(
     () => pageCursorsRef.current[pageIndex] ?? FIRST_PAGE_CURSOR,

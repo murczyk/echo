@@ -1586,9 +1586,16 @@ mod tests {
     ) -> sigint_unit::Model {
         sigint_unit::Model {
             id: 1,
+            other: String::new(),
+            team_or_crew: String::new(),
+            section: String::new(),
+            squad: String::new(),
+            platoon: String::new(),
             company: company.to_string(),
             regiment: regiment.to_string(),
+            brigade: String::new(),
             division: division.to_string(),
+            corps: String::new(),
             army: army.to_string(),
             army_region: String::new(),
             military_district: String::new(),

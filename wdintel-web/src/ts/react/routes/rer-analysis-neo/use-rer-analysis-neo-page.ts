@@ -560,6 +560,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     onToggleMessageBookmark: data.onToggleMessageBookmark,
     onToggleMessageImportant: data.onToggleMessageImportant,
     onToggleMessageTag: data.onToggleMessageTag,
+    onAddPointHighlightBlacklist: data.onAddPointHighlightBlacklist,
     onPrependLocalMessage: data.onPrependLocalMessage,
     onUpdateLocalMessage: data.onUpdateLocalMessage,
     openEditor: editor.openEditor,

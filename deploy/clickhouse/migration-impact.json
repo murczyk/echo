@@ -1,9 +1,17 @@
 {
   "migrations": {
+    "echo:m20260723_125003_palitra_highlight_blacklist": {
+      "changes": [
+        {
+          "table": "public.palitra_highlight_blacklist",
+          "strategy": "excluded"
+        }
+      ]
+    },
     "echo:m20260812_113859_signal_message_copy": {
       "changes": [
-        { "table": "public.signal_message", "strategy": "mirror_resync" },
-        { "table": "public.signal_message_media", "strategy": "mirror_resync" }
+        { "table": "public.signal_message_media", "strategy": "mirror_resync" },
+        { "table": "public.intel_prod", "strategy": "replicated_snapshot" }
       ]
     },
     "echo:m20260810_062938_echo_automation_coordinates_screenshot": {
@@ -45,6 +53,11 @@
     },
     "echo:m20260812_115511_sigint_inbox_item_datetime_neo_indexes": {
       "changes": []
+    },
+    "echo:m20260813_183642_sigint_unit_orbit_echelons": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "mirror_resync" }
+      ]
     },
     "echo:m20260806_120000_drop_legacy_inbox_callsigns": {
       "changes": [

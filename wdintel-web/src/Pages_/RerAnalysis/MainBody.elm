@@ -112,6 +112,7 @@ mainBody user model shared route =
                         , messages = model.messages
                         , tags = model.tags
                         , callsignsInfo = model.callsignsInfo
+                        , messageCallsignsInfo = model.messageCallsignsInfo
                         , messageComments = model.messageComments
                         , user = user
                         , users = model.users
@@ -631,10 +632,10 @@ view user model shared route =
                     sortLabel sortBy =
                         case sortBy of
                             B.ByTime ->
-                                "За Часом"
+                                "За часом"
 
                             B.ByFreqThenTime ->
-                                "За Частотою Та Часом"
+                                "За частотою та часом"
 
                     selDescription =
                         p

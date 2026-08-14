@@ -100,13 +100,18 @@ pub async fn run_old_inbox_network_worker_nofail(mode: Mode) {
     loop {
         let _loop_guard =
             worker_watch::loop_guard("run_old_inbox_network_worker_nofail");
-        if let Err(e) = run_old_inbox_network_worker_inner(mode).await {
-            error!("run_old_inbox_network_worker_nofail failed: {:#?}", e);
-        }
-        tokio::time::sleep(Duration::from_secs(
-            NETWORK_INBOX_WORKER_DEFAULT_SLEEP,
-        ))
-        .await;
+        let sleep_secs = match run_old_inbox_network_worker_inner(mode).await {
+            Ok(()) => NETWORK_INBOX_WORKER_DEFAULT_SLEEP,
+            Err(e) => {
+                error!(
+                    "run_old_inbox_network_worker_nofail failed; retrying after {} seconds: {:#?}",
+                    NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC,
+                    e
+                );
+                NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC
+            }
+        };
+        tokio::time::sleep(Duration::from_secs(sleep_secs)).await;
     }
 }
 
@@ -127,9 +132,8 @@ async fn run_old_inbox_network_worker_inner(mode: Mode) -> anyhow::Result<()> {
     wait_until_worker_shift_start(&config).await;
     try_cleanup(&db).await.c(h!())?;
     info!("run_old_inbox_network_worker_once started");
-    if let Err(e) = run_inbox_network_worker_once(&db, true, &config).await {
-        error!("run_old_inbox_network_worker_once failed: {:#?}", e);
-    } else {
+    let result = run_inbox_network_worker_once(&db, true, &config).await;
+    if result.is_ok() {
         info!("run_old_inbox_network_worker_once completed");
     }
     update_worker_status(
@@ -139,7 +143,7 @@ async fn run_old_inbox_network_worker_inner(mode: Mode) -> anyhow::Result<()> {
     )
     .await
     .c(h!())?;
-    Ok(())
+    result.c(h!())
 }
 
 // Emergency reset for a catastrophically large queue.
@@ -276,18 +280,17 @@ async fn run_inbox_network_worker_once(
         .await
         .c(h!())?;
     let cutoff = Utc::now().naive_utc() - chrono::Duration::days(cutoff_days);
-    let max_pending_task_id = load_max_pending_task_id(db, is_for_old_worker)
-        .await
-        .c(h!())?;
-    let mut task_list = load_and_triage_tasks_batch(
-        db,
-        is_for_old_worker,
-        cutoff,
-        tag,
-        max_pending_task_id,
-    )
-    .await
-    .c(h!())?;
+    let mut task_list = if is_for_old_worker {
+        load_and_triage_old_tasks_batch(db, cutoff, tag)
+            .await
+            .c(h!())?
+    } else {
+        let max_pending_task_id =
+            load_max_pending_task_id(db, false).await.c(h!())?;
+        load_and_triage_tasks_batch(db, false, cutoff, tag, max_pending_task_id)
+            .await
+            .c(h!())?
+    };
     if task_list.is_empty() {
         info!("[{tag} worker] task_list is empty after triage, skipping...");
         return Ok(());
@@ -391,6 +394,7 @@ async fn load_and_triage_tasks_batch(
     max_pending_task_id: Option<i64>,
 ) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
     let mut result = vec![];
+    delete_completed_tasks(db, tag).await.c(h!())?;
     loop {
         let pending_tasks = load_pending_tasks_batch(
             db,
@@ -408,7 +412,6 @@ async fn load_and_triage_tasks_batch(
             pending_tasks,
             is_for_old_worker,
             cutoff,
-            tag,
         )
         .await
         .c(h!())?;
@@ -421,6 +424,36 @@ async fn load_and_triage_tasks_batch(
     Ok(result)
 }
 
+async fn load_and_triage_old_tasks_batch(
+    db: &DatabaseConnection,
+    cutoff: NaiveDateTime,
+    tag: &str,
+) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
+    delete_completed_tasks(db, tag).await.c(h!())?;
+    let pending_tasks = load_pending_tasks_batch(db, true, tag, None)
+        .await
+        .c(h!())?;
+    if pending_tasks.is_empty() {
+        return Ok(vec![]);
+    }
+    triage_pending_tasks_batch(db, pending_tasks, true, cutoff)
+        .await
+        .c(h!())
+}
+
+async fn delete_completed_tasks(
+    db: &DatabaseConnection,
+    tag: &str,
+) -> anyhow::Result<()> {
+    network_invalidation_task::Entity::delete_many()
+        .filter(network_invalidation_task::Column::CompletedAt.is_not_null())
+        .filter(network_invalidation_task::Column::Tag.eq(tag))
+        .exec(db)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
 async fn load_pending_tasks_batch(
     db: &DatabaseConnection,
     is_for_old_worker: bool,
@@ -429,8 +462,12 @@ async fn load_pending_tasks_batch(
 ) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
     let mut pending_tasks_query = network_invalidation_task::Entity::find()
         .filter(network_invalidation_task::Column::CompletedAt.is_null())
-        .order_by_desc(network_invalidation_task::Column::Id)
         .limit(NETWORK_INVALIDATION_TASK_FETCH_BATCH_SIZE);
+    pending_tasks_query = if is_for_old_worker {
+        pending_tasks_query.order_by_asc(network_invalidation_task::Column::Id)
+    } else {
+        pending_tasks_query.order_by_desc(network_invalidation_task::Column::Id)
+    };
     if let Some(max_id) = max_pending_task_id {
         pending_tasks_query = pending_tasks_query
             .filter(network_invalidation_task::Column::Id.lte(max_id));
@@ -494,15 +531,8 @@ async fn triage_pending_tasks_batch(
     pending_tasks: Vec<network_invalidation_task::Model>,
     is_for_old_worker: bool,
     cutoff: NaiveDateTime,
-    tag: &str,
 ) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
     let txn = db.begin().await.c(h!())?;
-    network_invalidation_task::Entity::delete_many() // delete completed tasks before triage
-        .filter(network_invalidation_task::Column::CompletedAt.is_not_null())
-        .filter(network_invalidation_task::Column::Tag.eq(tag))
-        .exec(&txn)
-        .await
-        .c(h!())?;
     let task_list = if is_for_old_worker {
         triage_tasks_for_old_worker(pending_tasks, &txn)
             .await
@@ -648,20 +678,72 @@ async fn triage_tasks_for_old_worker(
     existing_tasks: Vec<network_invalidation_task::Model>,
     db: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
-    let all_tasks = existing_tasks
+    let (preserved_tasks, tasks_to_split): (Vec<_>, Vec<_>) = existing_tasks
+        .into_iter()
+        .partition(|task| !old_task_needs_split(task));
+    let mut seen_tasks = HashSet::new();
+    let (mut preserved_tasks, mut tasks_to_delete) =
+        partition_duplicate_tasks(preserved_tasks, &mut seen_tasks);
+
+    let all_tasks = tasks_to_split
         .iter()
         .cloned()
         .flat_map(split_task)
         .collect::<Vec<_>>();
-    let mut triaged_old_tasks =
-        insert_triaged_tasks(all_tasks, true, db).await.c(h!())?;
-    delete_original_tasks(&existing_tasks, &BTreeSet::new(), db)
+    let (all_tasks, _) = partition_duplicate_tasks(all_tasks, &mut seen_tasks);
+    let triaged_old_tasks = if all_tasks.is_empty() {
+        vec![]
+    } else {
+        insert_triaged_tasks(all_tasks, true, db).await.c(h!())?
+    };
+    tasks_to_delete.extend(tasks_to_split);
+    delete_original_tasks(&tasks_to_delete, &BTreeSet::new(), db)
         .await
         .c(h!())?;
-    triaged_old_tasks.sort_by(|a, b| {
+    preserved_tasks.extend(triaged_old_tasks);
+    preserved_tasks.sort_by(|a, b| {
         b.till_ts.cmp(&a.till_ts).then_with(|| b.id.cmp(&a.id))
     });
-    Ok(triaged_old_tasks)
+    Ok(preserved_tasks)
+}
+
+fn old_task_needs_split(task: &network_invalidation_task::Model) -> bool {
+    task.till_ts > next_hour_boundary(task.since_ts)
+}
+
+type NetworkInvalidationTaskKey = (
+    Option<String>,
+    NaiveDateTime,
+    NaiveDateTime,
+    Option<i64>,
+    Option<i64>,
+    Option<String>,
+);
+
+fn network_invalidation_task_key(
+    task: &network_invalidation_task::Model,
+) -> NetworkInvalidationTaskKey {
+    (
+        task.frequency.clone(),
+        task.since_ts,
+        task.till_ts,
+        task.sigint_network_id,
+        task.aor_id,
+        task.group_master_key.clone(),
+    )
+}
+
+fn partition_duplicate_tasks(
+    mut tasks: Vec<network_invalidation_task::Model>,
+    seen_tasks: &mut HashSet<NetworkInvalidationTaskKey>,
+) -> (
+    Vec<network_invalidation_task::Model>,
+    Vec<network_invalidation_task::Model>,
+) {
+    tasks.sort_by_key(|task| task.id);
+    tasks.into_iter().partition(|task| {
+        seen_tasks.insert(network_invalidation_task_key(task))
+    })
 }
 
 // Split a task into hour-aligned windows to limit per-task processing size.
@@ -708,14 +790,7 @@ async fn insert_triaged_tasks(
         NETWORK_INVALIDATION_TASK_TAG_RECENT
     };
     for task in tasks {
-        let task_key = (
-            task.frequency.clone(),
-            task.since_ts,
-            task.till_ts,
-            task.sigint_network_id,
-            task.aor_id,
-            task.group_master_key.clone(),
-        );
+        let task_key = network_invalidation_task_key(&task);
         if !seen_tasks.insert(task_key) {
             continue;
         }
@@ -1023,14 +1098,74 @@ async fn process_task_filter_chunk(
     processed_items: &mut HashSet<i64>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<()> {
+    let mut pending_chunks = vec![filters];
+    while let Some(mut filters) = pending_chunks.pop() {
+        let main_filter = combine_task_filters(&filters);
+        match process_invalidation_filter(main_filter, processed_items, dbx)
+            .await
+        {
+            Ok(()) => {}
+            Err(error)
+                if filters.len() > 1
+                    && is_postgres_statement_timeout(&error) =>
+            {
+                let right = filters.split_off(filters.len() / 2);
+                warn!(
+                    "network invalidation query timed out; splitting {} filters into {} and {}",
+                    filters.len() + right.len(),
+                    filters.len(),
+                    right.len()
+                );
+                pending_chunks.push(right);
+                pending_chunks.push(filters);
+            }
+            Err(error) => {
+                if is_postgres_statement_timeout(&error) {
+                    warn!(
+                        "network invalidation query timed out with {} filter; cannot split further",
+                        filters.len()
+                    );
+                }
+                return Err(error).c(h!());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn combine_task_filters(filters: &[Condition]) -> Condition {
     let mut main_filter = Condition::any();
     for task_filter in filters {
-        main_filter = main_filter.add(task_filter);
+        main_filter = main_filter.add(task_filter.clone());
     }
-    process_invalidation_filter(main_filter, processed_items, dbx)
-        .await
-        .c(h!())?;
-    Ok(())
+    main_filter
+}
+
+fn is_postgres_statement_timeout(error: &anyhow::Error) -> bool {
+    error.chain().any(|error| {
+        let sea_orm_timeout = match error.downcast_ref::<DbErr>() {
+            Some(
+                DbErr::Conn(RuntimeErr::SqlxError(error))
+                | DbErr::Exec(RuntimeErr::SqlxError(error))
+                | DbErr::Query(RuntimeErr::SqlxError(error)),
+            ) => sqlx_error_is_statement_timeout(error),
+            _ => false,
+        };
+        sea_orm_timeout
+            || error
+                .downcast_ref::<sqlx::Error>()
+                .is_some_and(sqlx_error_is_statement_timeout)
+    })
+}
+
+fn sqlx_error_is_statement_timeout(error: &sqlx::Error) -> bool {
+    let sqlx::Error::Database(error) = error else {
+        return false;
+    };
+    error.code().as_deref() == Some("57014")
+        && error
+            .message()
+            .contains("canceling statement due to statement timeout")
 }
 
 async fn process_invalidation_filter(
@@ -1112,6 +1247,8 @@ async fn mark_tasks_completed(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::borrow::Cow;
+    use std::fmt;
 
     fn task(
         since_ts: NaiveDateTime,
@@ -1200,5 +1337,128 @@ mod tests {
         invalidation.add_task(&task).unwrap();
 
         assert!(invalidation.scopes_by_date.is_empty());
+    }
+
+    #[test]
+    fn old_task_split_only_when_it_crosses_hour_boundary() {
+        let hour = NaiveDate::from_ymd_opt(2026, 8, 13)
+            .unwrap()
+            .and_hms_opt(10, 0, 0)
+            .unwrap();
+        let within_hour = task(
+            hour + chrono::Duration::minutes(15),
+            hour + chrono::Duration::hours(1),
+            None,
+        );
+        let crossing_hour = task(
+            hour + chrono::Duration::minutes(15),
+            hour + chrono::Duration::hours(1) + chrono::Duration::seconds(1),
+            None,
+        );
+
+        assert!(!old_task_needs_split(&within_hour));
+        assert!(old_task_needs_split(&crossing_hour));
+    }
+
+    #[test]
+    fn duplicate_old_tasks_keep_lowest_id_and_seed_split_deduplication() {
+        let since_ts = NaiveDate::from_ymd_opt(2026, 8, 13)
+            .unwrap()
+            .and_hms_opt(10, 0, 0)
+            .unwrap();
+        let first =
+            task(since_ts, since_ts + chrono::Duration::hours(1), Some(10));
+        let mut duplicate = first.clone();
+        duplicate.id = 2;
+        let mut seen_tasks = HashSet::new();
+
+        let (preserved, duplicates) = partition_duplicate_tasks(
+            vec![duplicate.clone(), first.clone()],
+            &mut seen_tasks,
+        );
+        let (split_candidates, duplicate_candidates) =
+            partition_duplicate_tasks(vec![duplicate], &mut seen_tasks);
+
+        assert_eq!(preserved, vec![first]);
+        assert_eq!(duplicates.len(), 1);
+        assert!(split_candidates.is_empty());
+        assert_eq!(duplicate_candidates.len(), 1);
+    }
+
+    #[test]
+    fn statement_timeout_requires_matching_sqlstate_and_message() {
+        let timeout = synthetic_database_error(
+            "57014",
+            "canceling statement due to statement timeout",
+        );
+        let canceled = synthetic_database_error(
+            "57014",
+            "canceling statement due to user request",
+        );
+        let other = synthetic_database_error(
+            "23505",
+            "canceling statement due to statement timeout",
+        );
+
+        assert!(is_postgres_statement_timeout(&timeout));
+        assert!(!is_postgres_statement_timeout(&canceled));
+        assert!(!is_postgres_statement_timeout(&other));
+    }
+
+    #[derive(Debug)]
+    struct SyntheticDatabaseError {
+        code: &'static str,
+        message: &'static str,
+    }
+
+    impl fmt::Display for SyntheticDatabaseError {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str(self.message)
+        }
+    }
+
+    impl std::error::Error for SyntheticDatabaseError {}
+
+    impl sqlx::error::DatabaseError for SyntheticDatabaseError {
+        fn message(&self) -> &str {
+            self.message
+        }
+
+        fn code(&self) -> Option<Cow<'_, str>> {
+            Some(Cow::Borrowed(self.code))
+        }
+
+        fn as_error(&self) -> &(dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+
+        fn as_error_mut(
+            &mut self,
+        ) -> &mut (dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+
+        fn into_error(
+            self: Box<Self>,
+        ) -> Box<dyn std::error::Error + Send + Sync + 'static> {
+            self
+        }
+
+        fn kind(&self) -> sqlx::error::ErrorKind {
+            sqlx::error::ErrorKind::Other
+        }
+    }
+
+    fn synthetic_database_error(
+        code: &'static str,
+        message: &'static str,
+    ) -> anyhow::Error {
+        let error = sqlx::Error::Database(Box::new(SyntheticDatabaseError {
+            code,
+            message,
+        }));
+        let error =
+            DbErr::Query(RuntimeErr::SqlxError(std::sync::Arc::new(error)));
+        anyhow::Error::new(error).context("synthetic database context")
     }
 }

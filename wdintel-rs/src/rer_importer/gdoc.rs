@@ -950,6 +950,116 @@ mod tests {
     }
 
     #[test]
+    fn scoped_requests_include_only_requested_network_hints() {
+        let network_callsigns = NetworkCallsignLookup::new(vec![
+            network_callsign(10, 10, "ВЕТЕР", None, Some("current")),
+            network_callsign(20, 20, "ВЕТЕР", None, Some("other")),
+        ]);
+        let response = build_callsign_response(
+            request("ветер", vec![10]),
+            &CatalogLookup {
+                info_by_callsign: HashMap::new(),
+                hint_by_id: HashMap::new(),
+                ids_by_callsign: HashMap::new(),
+            },
+            &network_callsigns,
+            &HashMap::new(),
+        );
+
+        assert_eq!(
+            response
+                .network_hints
+                .iter()
+                .map(|hint| hint.network_id)
+                .collect_vec(),
+            vec![10]
+        );
+    }
+
+    #[test]
+    fn unscoped_requests_include_all_exact_network_hints() {
+        let network_callsigns = NetworkCallsignLookup::new(vec![
+            network_callsign(10, 10, "ВЕТЕР", None, Some("current")),
+            network_callsign(20, 20, "ВЕТЕР", None, Some("other")),
+        ]);
+        let response = build_callsign_response(
+            request("ветер", vec![]),
+            &CatalogLookup {
+                info_by_callsign: HashMap::new(),
+                hint_by_id: HashMap::new(),
+                ids_by_callsign: HashMap::new(),
+            },
+            &network_callsigns,
+            &HashMap::new(),
+        );
+
+        assert_eq!(
+            response
+                .network_hints
+                .iter()
+                .map(|hint| hint.network_id)
+                .collect_vec(),
+            vec![10, 20]
+        );
+    }
+
+    #[test]
+    fn blank_network_fields_still_produce_a_hint() {
+        let network_callsigns =
+            NetworkCallsignLookup::new(vec![network_callsign(
+                10,
+                10,
+                "ВЕТЕР",
+                None,
+                Some("  "),
+            )]);
+        let response = build_callsign_response(
+            request("ветер", vec![10]),
+            &CatalogLookup {
+                info_by_callsign: HashMap::new(),
+                hint_by_id: HashMap::new(),
+                ids_by_callsign: HashMap::new(),
+            },
+            &network_callsigns,
+            &HashMap::new(),
+        );
+
+        assert_eq!(response.network_hints.len(), 1);
+        assert_eq!(response.network_hints[0].position, "");
+        assert_eq!(response.network_hints[0].formation, "");
+    }
+
+    #[test]
+    fn catalog_rows_follow_the_normalized_requested_callsign() {
+        let catalog = CatalogLookup {
+            info_by_callsign: HashMap::from([(
+                "ветер".to_string(),
+                vec![CallsignInfo {
+                    id: 7,
+                    callsign: "ВЕТЕР".to_string(),
+                    position: "position".to_string(),
+                    comment: String::new(),
+                    unit_1: "unit".to_string(),
+                    unit_2: String::new(),
+                    unit_id: Some(1),
+                    network_ids_reported_in: vec![],
+                }],
+            )]),
+            hint_by_id: HashMap::new(),
+            ids_by_callsign: HashMap::new(),
+        };
+        let response = build_callsign_response(
+            request("ВЕТЕР", vec![]),
+            &catalog,
+            &NetworkCallsignLookup::new(vec![]),
+            &HashMap::new(),
+        );
+
+        assert_eq!(response.res.len(), 1);
+        assert_eq!(response.res[0].callsign, "ВЕТЕР");
+    }
+
+    #[test]
     fn matches_a_different_network_text_through_catalog_id() {
         let network_callsigns =
             NetworkCallsignLookup::new(vec![network_callsign(

@@ -21,10 +21,17 @@ createUnit id army division regiment battalion company =
                 |> String.join " "
     in
     { id = id
+    , other = ""
+    , teamOrCrew = ""
+    , section = ""
+    , squad = ""
+    , platoon = ""
     , armyRegion = ""
     , militaryDistrict = ""
     , army = army
+    , corps = ""
     , division = division
+    , brigade = ""
     , regiment = regiment
     , battalion = battalion
     , company = company

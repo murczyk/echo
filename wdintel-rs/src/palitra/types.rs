@@ -45,6 +45,21 @@ impl PalitraAccess {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct PalitraResolveNamesReq {
+    pub palitra_ids: Vec<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraName {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct PalitraChangelogEntry {
     pub is_ok: bool,
     pub timestamp: String,
@@ -65,6 +80,7 @@ pub struct PalitraAccessLogin {
 )]
 pub struct Palitra {
     pub id: i64,
+    pub highlight_blacklist_count: i64,
     pub name: String,
     pub folder: Option<String>,
     pub is_archived: bool,
@@ -248,6 +264,25 @@ pub struct PalitraDownloadReq {
 )]
 pub struct PalitraBulkActionRsp {
     pub palitra_ids: Vec<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraHighlightBlacklistEntry {
+    pub id: i64,
+    pub palitra_id: i64,
+    pub label: String,
+    pub created_by_login_id: String,
+    pub created_by_login: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraHighlightBlacklistAddReq {
+    pub label: String,
+    pub source_message_id: i64,
 }
 
 impl Coords {

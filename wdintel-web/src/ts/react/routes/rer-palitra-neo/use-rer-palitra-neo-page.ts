@@ -16,6 +16,7 @@ import {
   fetchPalitraGoiSyncHistory,
   fetchPalitraReferenceData,
   listPalitras,
+  readPalitraV2,
   readPalitraPreviewV2,
   renamePalitraFolder,
 } from '../../services/api/palitra';
@@ -47,6 +48,8 @@ import {
   readInitialArchiveViewFromUrl,
   updateArchiveViewInUrl,
 } from './use-rer-palitra-neo-page.shared';
+import { useRerPalitraNeoPageHighlightBlacklist } from './use-rer-palitra-neo-page.highlight-blacklist';
+import { useOptionalPowerSnackbar } from '../../components/PowerSnackbar';
 
 export function useRerPalitraNeoPage() {
   const [archiveView, setArchiveView] = useState<ArchiveView>(() =>
@@ -112,6 +115,20 @@ export function useRerPalitraNeoPage() {
   const pendingUploadPalitraIdRef = useRef<number | null>(null);
   const previewRequestIdRef = useRef(0);
   const historyRequestIdRef = useRef(0);
+  const { notify } = useOptionalPowerSnackbar();
+  const setPalitraBlacklistCount = useCallback((palitraId: number, count: number) => {
+    setPalitras((previous) =>
+      previous.map((palitra) =>
+        palitra.id === palitraId
+          ? { ...palitra, highlightBlacklistCount: Math.max(0, count) }
+          : palitra,
+      ),
+    );
+  }, []);
+  const highlightBlacklist = useRerPalitraNeoPageHighlightBlacklist(
+    setPalitraBlacklistCount,
+    (message) => notify({ message, severity: 'success' }),
+  );
 
   const availableAccessTypes = useMemo(
     () => getAvailableAccessTypes(user, myScope),
@@ -668,6 +685,7 @@ export function useRerPalitraNeoPage() {
     closePreview,
     openHistory,
     closeHistory,
+    ...highlightBlacklist,
     requestAssignFolder,
     requestAssignFolderForPalitra,
     requestRenameFolder,

@@ -260,6 +260,8 @@ pub const RER_REPORT_CHUNKING_HOURS_DEFAULT: i64 = 24;
 pub const RER_REPORT_CHUNKING_HOURS_MIN: i64 = 1;
 pub const RER_REPORT_CHUNKING_HOURS_MAX: i64 = i32::MAX as i64;
 pub const RER_REPORT_CHUNKS_MAX: usize = 10_000;
+pub const RER_ETALONKA_REPORT_SINCE_DEFAULT_DAYS: i64 = 365;
+pub const RER_ETALONKA_REPORT_SINCE_MIN_MS: i64 = 1_640_995_200_000;
 pub const RER_CALLSIGN_QUERY_PARAM_CHUNK_SIZE: usize = 30_000;
 pub const RER_REPORT_ENRICHMENT_ID_BATCH_SIZE: usize = 20_000;
 pub const RER_BABAK_CANDIDATE_PAGE_SIZE: u64 = 5_000;
@@ -458,7 +460,7 @@ pub const MESSENGER_MEDIA_THUMBNAIL_FFMPEG_FILTER: &str =
 pub const LONG_POLL_SLEEP_MS: u64 = 5000;
 pub const NETWORK_INVALIDATION_BATCH_SIZE: u64 = 100; // actual limit in pg is around 25k, but it's better to do it in smaller batches
 pub const NETWORK_INVALIDATION_TASK_FETCH_BATCH_SIZE: u64 = 1000;
-pub const NETWORK_INVALIDATION_TASKS_FILTER_CHUNK: usize = 200;
+pub const NETWORK_INVALIDATION_TASKS_FILTER_CHUNK: usize = 25;
 pub const NETWORK_INVALIDATION_QUERY_MAX_PARAMS: usize = 60_000; // keep under PG 65_535 parameter cap
 pub const NETWORK_INVALIDATION_DELETE_MAX_IDS: usize = 60_000; // keep under PG 65_535 parameter cap
 pub const ONEOFF_CALCULATE_SIGNAL_MESSAGE_GROUPS_SLEEP_SEC: u64 = 10;
@@ -559,6 +561,7 @@ pub const PALITRA_POINTS_INSERT_BATCH_SIZE: usize = 10_000;
 pub const PALITRA_POINT_LEXEME_BACKFILL_BATCH_SIZE: usize = 5_000;
 pub const PALITRA_POINT_FALLBACK_COLOR_HEX: &str = "#060606";
 pub const PALITRA_DOWNLOAD_MAX_FILES: usize = 50;
+pub const PALITRA_RESOLVE_NAMES_MAX_IDS: usize = 500;
 pub const PALITRA_DOWNLOAD_MAX_FILE_BYTES: u64 = 50 * 1024 * 1024;
 pub const PALITRA_DOWNLOAD_MAX_TOTAL_BYTES: u64 = 200 * 1024 * 1024;
 pub const PALITRA_DELTA_DOWNLOAD_MAX_POINTS_PER_FILE: usize = 6_500;
@@ -581,6 +584,7 @@ pub const FUNCTEST_CLEANUP_SQL: &str = r#"
 DELETE FROM echo_gpu_transcription_queue;
 DELETE FROM gpu_config;
 DELETE FROM secret_group_user;
+DELETE FROM palitra_highlight_blacklist;
 DELETE FROM sigint_callsign_changelog;
 DELETE FROM sigint_network_aor;
 DELETE FROM sigint_network_callsign_changelog;
@@ -742,6 +746,8 @@ pub const FAILED_INBOX_UNIT_WORKER_BATCH_SIZE: u64 = 100;
 pub const FAILED_INBOX_UNIT_RETENTION_DAYS: i64 = 30;
 pub const FAILED_INBOX_UNIT_BACKFILL_BATCH_SIZE: u64 = 500;
 pub const FAILED_INBOX_UNIT_BACKFILL_BATCH_PAUSE_MS: u64 = 50;
+pub const FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS: [&str; 3] =
+    ["нв", "н/в", "н.в."];
 pub const INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE: usize = 20_000;
 pub const INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE: usize = 5_000;
 pub const INBOX_ITEM_UNIT_REPROCESS_BATCH_SIZE: u64 = 500;

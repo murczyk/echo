@@ -1,5 +1,5 @@
 import { Box } from '@mui/material';
-import { useId, useState } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
@@ -20,6 +20,7 @@ import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
 import { getParentSignalMessageId } from '../shared/intelligence-reports';
+import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 
 export type RerAnalysisNeoPageProps = {
   authUserName?: string | null;
@@ -29,6 +30,8 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const page = useRerAnalysisNeoPage(authUserName);
   const theme = useTheme();
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  const reportFocusTargetRef = useRef<HTMLElement | null>(null);
+  const reportFallbackFocusRef = useRef<HTMLDivElement | null>(null);
   const { notify } = usePowerSnackbar();
   const isAnalysisCompactLayout = useMediaQuery(theme.breakpoints.down('md'));
   const isNarrowLayout = useMediaQuery(theme.breakpoints.down('lg'));
@@ -52,6 +55,13 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
     centerTab === 'map' ||
     (page.analysisMapInSidebar && rightPanelVisible && page.rightSidebarTab === 'map');
   const messagesPaneLoading = useMinDurationBusy(page.messagesLoading, 450);
+  const openReport = useCallback(
+    (focusTarget: HTMLElement) => {
+      reportFocusTargetRef.current = focusTarget;
+      page.openReport();
+    },
+    [page.openReport],
+  );
 
   return (
     <Box
@@ -65,7 +75,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         overflow: 'hidden',
       }}
     >
-      <Box sx={{ px: { xs: 1, lg: 2 }, pt: 0.5 }}>
+      <Box ref={reportFallbackFocusRef} tabIndex={-1} sx={{ px: { xs: 1, lg: 2 }, pt: 0.5 }}>
         <AnalysisPageHeader
           page={page}
           centerTab={centerTab}
@@ -73,6 +83,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
           isNarrowLayout={isNarrowLayout}
           leftPanelVisible={leftPanelVisible}
           rightPanelVisible={rightPanelVisible}
+          onOpenReport={openReport}
         />
       </Box>
 
@@ -131,30 +142,32 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
               isCompactLayout={isAnalysisCompactLayout}
             />
           ) : null}
-          {showLoadingSkeletons ? (
-            <AnalysisLoadingSkeletons rightPanelVisible={inlineRightPanelVisible} />
-          ) : (
-            <AudioTranscriptionPreferencesProvider
-              collapsedByDefault={page.audioTranscriptionCollapsed}
-              enabled={page.audioTranscriptionEnabled}
-            >
-              <AnalysisCenterPanel
-                page={page}
-                centerTab={centerTab}
-                centerTabs={centerTabs}
-                isCompactLayout={isAnalysisCompactLayout}
-                isNarrowLayout={isNarrowLayout}
-                rightPanelVisible={inlineRightPanelVisible}
-                messagesPaneLoading={messagesPaneLoading}
-                messagesPanelId={messagesPanelId}
-                messagesTabId={messagesTabId}
-                summaryPanelId={summaryPanelId}
-                summaryTabId={summaryTabId}
-                mapPanelId={mapPanelId}
-                mapTabId={mapTabId}
-              />
-            </AudioTranscriptionPreferencesProvider>
-          )}
+          <PointBlacklistPaletteNamesCacheProvider>
+            {showLoadingSkeletons ? (
+              <AnalysisLoadingSkeletons rightPanelVisible={inlineRightPanelVisible} />
+            ) : (
+              <AudioTranscriptionPreferencesProvider
+                collapsedByDefault={page.audioTranscriptionCollapsed}
+                enabled={page.audioTranscriptionEnabled}
+              >
+                <AnalysisCenterPanel
+                  page={page}
+                  centerTab={centerTab}
+                  centerTabs={centerTabs}
+                  isCompactLayout={isAnalysisCompactLayout}
+                  isNarrowLayout={isNarrowLayout}
+                  rightPanelVisible={inlineRightPanelVisible}
+                  messagesPaneLoading={messagesPaneLoading}
+                  messagesPanelId={messagesPanelId}
+                  messagesTabId={messagesTabId}
+                  summaryPanelId={summaryPanelId}
+                  summaryTabId={summaryTabId}
+                  mapPanelId={mapPanelId}
+                  mapTabId={mapTabId}
+                />
+              </AudioTranscriptionPreferencesProvider>
+            )}
+          </PointBlacklistPaletteNamesCacheProvider>
           {!showLoadingSkeletons && inlineRightPanelVisible ? (
             <AnalysisRightPanel
               page={page}
@@ -204,6 +217,8 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         report={page.report}
         queryState={page.queryState}
         onClose={page.closeReport}
+        focusReturnTargetRef={reportFocusTargetRef}
+        fallbackFocusTargetRef={reportFallbackFocusRef}
         onDownload={page.downloadReport}
         onRepeatTaskRun={page.repeatReportTaskRun}
         onSetProgressExpanded={page.setReportProgressExpanded}

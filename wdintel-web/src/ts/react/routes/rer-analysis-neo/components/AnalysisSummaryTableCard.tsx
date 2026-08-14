@@ -22,10 +22,7 @@ import { MaterialReactTable, useMaterialReactTable } from 'material-react-table'
 import { memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
 
 import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../../../../Bindings';
-import {
-  STANDARD_DIALOG_ACTIONS_SX,
-  STANDARD_DIALOG_FORM_STACK_SX,
-} from '../../../components/dialogStyles';
+import { STANDARD_DIALOG_FORM_STACK_SX } from '../../../components/dialogStyles';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -496,7 +493,7 @@ function AnalysisSummaryTableCardInner({
             />
           </Stack>
         </DialogContent>
-        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <DialogActions>
           <Button onClick={closeRenameDialog} disabled={renameSaving}>
             Скасувати
           </Button>

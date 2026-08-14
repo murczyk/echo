@@ -125,6 +125,17 @@ export function useNeoMuiTheme() {
               },
             },
           },
+          MuiDialogActions: {
+            styleOverrides: {
+              root: ({ theme }) => ({
+                padding: theme.spacing(3),
+                gap: theme.spacing(1.5),
+                '& > :not(style) ~ :not(style)': {
+                  marginLeft: 0,
+                },
+              }),
+            },
+          },
           MuiTableCell: {
             styleOverrides: {
               root: {

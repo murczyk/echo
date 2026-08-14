@@ -1,4 +1,4 @@
-module Pages.RerDuty exposing (Model, Msg, page)
+module Pages.RerDuty exposing (Model, Msg(..), page, update)
 
 import Api
 import Auth
@@ -281,7 +281,7 @@ update shared user msg model =
 
         InboxMessagesUpdated (Ok rsp) ->
             let
-                waterfalls2 =
+                waterfallsAndEffects =
                     List.map
                         (\( wfId, wf ) ->
                             let
@@ -302,15 +302,35 @@ update shared user msg model =
                                         )
                                         wf.messages
                                         rsp.messages
+
+                                refreshedMessages =
+                                    rsp.messages
+                                        |> List.filter (\( msgId, _ ) -> Set.member msgId wfMessageIds)
+
+                                ( updatedWaterfall, waterfallEffect ) =
+                                    if List.isEmpty refreshedMessages then
+                                        ( { wf | messages = updatedMessages }, E.none )
+
+                                    else
+                                        Pages_.RerDuty.Waterfall.applyRefreshedMessages
+                                            shared
+                                            refreshedMessages
+                                            { wf | messages = updatedMessages }
                             in
-                            ( wfId, { wf | messages = updatedMessages } )
+                            ( ( wfId, updatedWaterfall ), E.map (WaterfallMsg wfId) waterfallEffect )
                         )
                         model.waterfalls
+
+                waterfalls2 =
+                    List.map Tuple.first waterfallsAndEffects
+
+                refreshEffects =
+                    waterfallsAndEffects |> List.map Tuple.second
 
                 m2 =
                     { model | waterfalls = waterfalls2 }
             in
-            ( { m2 | duplicates = recalcDuplicates m2 }, E.none )
+            ( { m2 | duplicates = recalcDuplicates m2 }, E.batch refreshEffects )
 
         WaterfallMsg id_ imsg ->
             case findK id_ model.waterfalls of

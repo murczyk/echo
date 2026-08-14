@@ -28,7 +28,6 @@ import {
   MrtRowActions,
   mrtRowActionsColumnSize,
 } from '../../components/MrtRowActionButton';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { PowerChip } from '../../components/PowerChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
@@ -642,7 +641,7 @@ function DeleteOrganismDialog(props: {
           </PowerAlert>
         ) : null}
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <PowerButton onClick={props.onClose} disabled={isSubmitting}>
           Скасувати
         </PowerButton>

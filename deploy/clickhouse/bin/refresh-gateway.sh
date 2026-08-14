@@ -67,6 +67,9 @@ SQL
   printf '\\set clickhouse_password_b64 %s\n' "$clickhouse_password_b64"
   cat <<'SQL'
 BEGIN;
+SQL
+  print_analytics_schema_reconcile_lock_sql
+  cat <<'SQL'
 SET LOCAL client_min_messages = warning;
 CREATE TEMP TABLE source_column_metadata (
   source_schema text NOT NULL,
@@ -286,6 +289,7 @@ SQL
 } | postgres_psql --dbname "$GATEWAY_DB" \
   -q \
   -v ON_ERROR_STOP=1 \
+  -v schema_reconcile_lock_name="$ANALYTICS_SCHEMA_RECONCILE_LOCK_NAME" \
   -v expected_count="$view_count" \
   -v gateway_user="$GATEWAY_USER" \
   -v clickhouse_user="$CLICKHOUSE_GATEWAY_USER" \

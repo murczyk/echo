@@ -67,6 +67,8 @@ pub struct CNPoint {
     pub end: usize,
     pub etalon: String,
     pub text: String,
+    #[serde(default)]
+    pub palitra_ids: Vec<i64>,
 }
 
 #[derive(
@@ -1208,6 +1210,7 @@ mod tests {
             end: 16,
             etalon: "точка".to_string(),
             text: "точке".to_string(),
+            palitra_ids: vec![],
         }];
         let res = highlight(
             body,
@@ -1237,6 +1240,7 @@ mod tests {
                     end: 16,
                     etalon: "точка".to_string(),
                     text: "точке".to_string(),
+                    palitra_ids: vec![],
                 }),
                 ContentNode::CNTextC(CNText {
                     text: " Альфа".to_string(),

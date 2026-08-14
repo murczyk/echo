@@ -314,6 +314,7 @@ mod m20260721_191340_goi_association_message_uid;
 mod m20260721_200001_goi_message_uid_worker_setting;
 mod m20260721_200002_goi_message_uid_lookup_indexes;
 mod m20260721_203106_add_audio_transcription_setting;
+mod m20260723_125003_palitra_highlight_blacklist;
 mod m20260723_134939_goi_knowledge_prune_index;
 mod m20260723_151016_add_full_name_to_sigint_network_callsign;
 mod m20260723_185734_sigint_unit_attachments;
@@ -368,6 +369,7 @@ mod m20260811_142447_failed_inbox_unit_note;
 mod m20260811_161634_failed_inbox_unit_multi_text;
 mod m20260812_113859_signal_message_copy;
 mod m20260812_115511_sigint_inbox_item_datetime_neo_indexes;
+mod m20260813_183642_sigint_unit_orbit_echelons;
 
 pub struct Migrator;
 
@@ -721,6 +723,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260721_203106_add_audio_transcription_setting::Migration,
             ),
+            Box::new(m20260723_125003_palitra_highlight_blacklist::Migration),
             Box::new(
                 m20260723_134939_goi_knowledge_prune_index::Migration,
             ),
@@ -842,6 +845,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260812_113859_signal_message_copy::Migration),
             Box::new(
                 m20260812_115511_sigint_inbox_item_datetime_neo_indexes::Migration,
+            ),
+            Box::new(
+                m20260813_183642_sigint_unit_orbit_echelons::Migration,
             ),
         ]
     }

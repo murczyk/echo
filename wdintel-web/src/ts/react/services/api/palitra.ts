@@ -11,6 +11,8 @@ import {
   PalitraChangelogEntry,
   PalitraDetails,
   PalitraGeometryDetails,
+  PalitraHighlightBlacklistEntry,
+  PalitraName,
   PalitraReadV2,
   PalitraPoints,
   User,
@@ -20,6 +22,8 @@ import { transformSnakeToCamel } from '../../../snake-to-camel';
 import { listAors } from './aor';
 import {
   HttpRequestError,
+  deleteVoid,
+  getJson,
   postBytes,
   postJson,
   postVoid,
@@ -31,6 +35,9 @@ import { hasRole } from '../../utils/roles';
 import { listLogins } from './logins';
 import { listOrganisms } from './organisms';
 import { fetchCurrentUser } from './user';
+import { pointBlacklistLabelKey } from '../../routes/shared/message-card/point-highlight-blacklist';
+
+export { pointBlacklistLabelKey as highlightBlacklistLabelKey } from '../../routes/shared/message-card/point-highlight-blacklist';
 
 type CreatePalitraReqBody = {
   name: string;
@@ -73,6 +80,8 @@ type PalitraBulkActionRspBody = {
 
 type PalitraLike = {
   id?: number | string;
+  highlightBlacklistCount?: number | string | null;
+  highlight_blacklist_count?: number | string | null;
   name?: string;
   folder?: string | null;
   colorHex?: string;
@@ -148,6 +157,19 @@ type PalitraReadWithGeometriesLike = {
 type PalitraReadV2Like = {
   palitra?: PalitraLike;
   geometries?: PalitraGeometryDetailsLike[] | null;
+};
+
+type PalitraHighlightBlacklistEntryLike = {
+  id?: number | string;
+  palitraId?: number | string;
+  palitra_id?: number | string;
+  entryId?: number | string;
+  entry_id?: number | string;
+  label?: string;
+  createdByLoginId?: string;
+  created_by_login_id?: string;
+  createdByLogin?: string;
+  created_by_login?: string;
 };
 
 type CoordsLike = {
@@ -264,6 +286,9 @@ function normalizePalitra(raw: PalitraLike | null | undefined): Palitra {
   const changelog = (raw?.changelog ?? []).map(normalizePalitraChangelogEntry);
   return {
     id: normalizeNumber(raw?.id),
+    highlightBlacklistCount: normalizeNumber(
+      raw?.highlightBlacklistCount ?? raw?.highlight_blacklist_count,
+    ),
     name: raw?.name ?? '',
     folder: folder.length > 0 ? folder : null,
     isArchived: raw?.isArchived ?? raw?.is_archived ?? false,
@@ -361,6 +386,45 @@ function normalizePalitraReadV2(raw: PalitraReadV2Like | null | undefined): Pali
     palitra: normalizePalitra(raw?.palitra),
     geometries: (raw?.geometries ?? []).map(normalizePalitraGeometryDetails),
   };
+}
+
+function normalizeHighlightBlacklistEntry(
+  raw: PalitraHighlightBlacklistEntryLike | null | undefined,
+): PalitraHighlightBlacklistEntry | null {
+  const id = normalizeOptionalNumber(raw?.id ?? raw?.entryId ?? raw?.entry_id);
+  const palitraId = normalizeOptionalNumber(raw?.palitraId ?? raw?.palitra_id);
+  const label = raw?.label?.trim() ?? '';
+  return id !== null && palitraId !== null && label !== ''
+    ? {
+        id,
+        palitraId,
+        label,
+        createdByLoginId: raw?.createdByLoginId ?? raw?.created_by_login_id ?? '',
+        createdByLogin: raw?.createdByLogin ?? raw?.created_by_login ?? '',
+      }
+    : null;
+}
+
+function normalizeHighlightBlacklist(raw: unknown): PalitraHighlightBlacklistEntry[] {
+  const values = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object' && Array.isArray((raw as { entries?: unknown }).entries)
+      ? (raw as { entries: unknown[] }).entries
+      : [];
+  const entries = values
+    .map((value) =>
+      typeof value === 'string'
+        ? normalizeHighlightBlacklistEntry({ id: undefined, palitraId: undefined, label: value })
+        : normalizeHighlightBlacklistEntry(value as PalitraHighlightBlacklistEntryLike),
+    )
+    .filter(isPresent);
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    const key = pointBlacklistLabelKey(entry.label);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function normalizeKmzColor(raw: KmzColorInfoLike | null | undefined): KmzColorInfo {
@@ -468,6 +532,30 @@ export async function listMapPalitrasV2(): Promise<PalitraReadV2[]> {
   return (data ?? []).map((entry) => normalizePalitraReadV2(entry));
 }
 
+export async function resolvePalitraNames(palitraIds: number[]): Promise<PalitraName[]> {
+  const uniqueIds = Array.from(new Set(palitraIds.filter((id) => Number.isInteger(id))));
+  if (uniqueIds.length === 0) return [];
+
+  const data = await postJson<unknown>('/api/palitra/resolve-names', {
+    palitra_ids: uniqueIds,
+  });
+  if (!Array.isArray(data)) throw new Error('Сервер повернув некоректні назви палітр.');
+
+  return data.map((item) => {
+    if (
+      !item ||
+      typeof item !== 'object' ||
+      !Number.isInteger((item as { id?: unknown }).id) ||
+      typeof (item as { name?: unknown }).name !== 'string' ||
+      !(item as { name: string }).name.trim()
+    ) {
+      throw new Error('Сервер повернув некоректну назву палітри.');
+    }
+    const value = item as { id: number; name: string };
+    return { id: value.id, name: value.name.trim() };
+  });
+}
+
 export async function searchPalitraPoints(
   palitraIds: number[],
   pointLabels: string[],
@@ -487,6 +575,34 @@ export async function readPalitraV2(palitraId: number): Promise<PalitraReadV2> {
 export async function readPalitraPreviewV2(palitraId: number): Promise<PalitraReadV2> {
   const data = await postJson<PalitraReadV2Like>(`/api/palitra/v2/read-preview/${palitraId}`);
   return normalizePalitraReadV2(data);
+}
+
+export async function getPalitraHighlightBlacklist(
+  palitraId: number,
+): Promise<PalitraHighlightBlacklistEntry[]> {
+  const data = await getJson<unknown>(`/api/palitra/${palitraId}/highlight-blacklist`);
+  return normalizeHighlightBlacklist(data);
+}
+
+export async function addPalitraHighlightBlacklistEntry(
+  palitraId: number,
+  label: string,
+  sourceMessageId: number,
+): Promise<PalitraHighlightBlacklistEntry> {
+  const data = await postJson<unknown>(`/api/palitra/${palitraId}/highlight-blacklist`, {
+    label,
+    source_message_id: sourceMessageId,
+  });
+  const entry = normalizeHighlightBlacklistEntry(data as PalitraHighlightBlacklistEntryLike);
+  if (!entry) throw new Error('Сервер не повернув доданий запис чорного списку.');
+  return entry;
+}
+
+export async function deletePalitraHighlightBlacklistEntry(
+  palitraId: number,
+  entryId: number,
+): Promise<void> {
+  await deleteVoid(`/api/palitra/${palitraId}/highlight-blacklist/${entryId}`);
 }
 
 export async function fetchPalitraGoiSyncHistory(

@@ -27,7 +27,6 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { CreateUnitReq, OrbitUnitDetails, Unit } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import {
   DEFAULT_LIST_UNITS_REQ,
   getCreateUnitDuplicateCandidates,
@@ -79,16 +78,36 @@ type Props = {
 const HIERARCHY_FIELDS: Array<{
   key: keyof Pick<
     UnitForm,
-    'company' | 'battalion' | 'regiment' | 'division' | 'army' | 'militaryDistrict' | 'armyRegion'
+    | 'other'
+    | 'teamOrCrew'
+    | 'section'
+    | 'squad'
+    | 'platoon'
+    | 'company'
+    | 'battalion'
+    | 'regiment'
+    | 'brigade'
+    | 'division'
+    | 'corps'
+    | 'army'
+    | 'militaryDistrict'
+    | 'armyRegion'
   >;
   label: string;
   placeholder: string;
 }> = [
-  { key: 'company', label: 'Рота, взвод', placeholder: 'Наприклад, 1 рота' },
+  { key: 'other', label: 'Інше', placeholder: 'Інший рівень підпорядкування' },
+  { key: 'teamOrCrew', label: 'Команда/Екіпаж', placeholder: 'Назва команди або екіпажу' },
+  { key: 'section', label: 'Секція', placeholder: 'Назва секції' },
+  { key: 'squad', label: 'Відділення', placeholder: 'Назва відділення' },
+  { key: 'platoon', label: 'Взвод', placeholder: 'Наприклад, 1 взвод' },
+  { key: 'company', label: 'Рота', placeholder: 'Наприклад, 1 рота' },
   { key: 'battalion', label: 'Батальйон', placeholder: 'Наприклад, 2 батальйон' },
-  { key: 'regiment', label: 'Полк/Бригада', placeholder: 'Наприклад, 123 бригада' },
+  { key: 'regiment', label: 'Полк', placeholder: 'Наприклад, 123 полк' },
+  { key: 'brigade', label: 'Бригада', placeholder: 'Наприклад, 123 бригада' },
   { key: 'division', label: 'Дивізія', placeholder: 'Назва дивізії' },
-  { key: 'army', label: 'Корпус/Армія', placeholder: 'Назва корпусу або армії' },
+  { key: 'corps', label: 'Корпус', placeholder: 'Назва корпусу' },
+  { key: 'army', label: 'Армія', placeholder: 'Назва армії' },
   {
     key: 'militaryDistrict',
     label: 'Група армій/Фронт/Види та роди ЗС',
@@ -108,10 +127,17 @@ function DuplicateHint({ form, unitId }: { form: UnitForm; unitId?: number }) {
   const [error, setError] = useState<string | null>(null);
   const hierarchyFilters = useMemo(
     () => ({
+      filterOther: form.other.trim() || null,
+      filterTeamOrCrew: form.teamOrCrew.trim() || null,
+      filterSection: form.section.trim() || null,
+      filterSquad: form.squad.trim() || null,
+      filterPlatoon: form.platoon.trim() || null,
       filterCompany: form.company.trim() || null,
       filterBattalion: form.battalion.trim() || null,
       filterRegiment: form.regiment.trim() || null,
+      filterBrigade: form.brigade.trim() || null,
       filterDivision: form.division.trim() || null,
+      filterCorps: form.corps.trim() || null,
       filterArmy: form.army.trim() || null,
       filterMilitaryDistrict: form.militaryDistrict.trim() || null,
       filterArmyRegion: form.armyRegion.trim() || null,
@@ -120,10 +146,17 @@ function DuplicateHint({ form, unitId }: { form: UnitForm; unitId?: number }) {
       form.army,
       form.armyRegion,
       form.battalion,
+      form.brigade,
       form.company,
+      form.corps,
       form.division,
       form.militaryDistrict,
+      form.other,
+      form.platoon,
       form.regiment,
+      form.section,
+      form.squad,
+      form.teamOrCrew,
     ],
   );
 
@@ -187,11 +220,18 @@ function DuplicateHint({ form, unitId }: { form: UnitForm; unitId?: number }) {
             <TableHead>
               <TableRow>
                 <TableCell>Назва</TableCell>
-                <TableCell>Рота/Взвод</TableCell>
+                <TableCell>Інше</TableCell>
+                <TableCell>Команда/Екіпаж</TableCell>
+                <TableCell>Секція</TableCell>
+                <TableCell>Відділення</TableCell>
+                <TableCell>Взвод</TableCell>
+                <TableCell>Рота</TableCell>
                 <TableCell>Батальйон</TableCell>
-                <TableCell>Полк/Бригада</TableCell>
+                <TableCell>Полк</TableCell>
+                <TableCell>Бригада</TableCell>
                 <TableCell>Дивізія</TableCell>
-                <TableCell>Корпус/Армія</TableCell>
+                <TableCell>Корпус</TableCell>
+                <TableCell>Армія</TableCell>
                 <TableCell>Група армій/Фронт/Види та роди ЗС</TableCell>
                 <TableCell>Регіон/ТВД/Збройні Сили</TableCell>
                 <TableCell>Статус</TableCell>
@@ -210,10 +250,17 @@ function DuplicateHint({ form, unitId }: { form: UnitForm; unitId?: number }) {
                         {unit.name}
                       </Link>
                     </TableCell>
+                    <TableCell>{unit.other}</TableCell>
+                    <TableCell>{unit.teamOrCrew}</TableCell>
+                    <TableCell>{unit.section}</TableCell>
+                    <TableCell>{unit.squad}</TableCell>
+                    <TableCell>{unit.platoon}</TableCell>
                     <TableCell>{unit.company}</TableCell>
                     <TableCell>{unit.battalion}</TableCell>
                     <TableCell>{unit.regiment}</TableCell>
+                    <TableCell>{unit.brigade}</TableCell>
                     <TableCell>{unit.division}</TableCell>
+                    <TableCell>{unit.corps}</TableCell>
                     <TableCell>{unit.army}</TableCell>
                     <TableCell>{unit.militaryDistrict}</TableCell>
                     <TableCell>{unit.armyRegion}</TableCell>
@@ -676,7 +723,7 @@ export function UnitFormDialog({
           ) : null}
         </Stack>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         {networkStep || duplicateStep ? (
           <Button
             onClick={goBack}

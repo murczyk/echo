@@ -314,9 +314,10 @@ where
         .await
         .c(h!())?;
     }
-    crate::inbox::unit_resolution::sync_network_unit_links(
+    crate::inbox::unit_resolution::sync_calculated_network_unit_links(
         dbx,
         &sigint_inbox_item_ids,
+        &result,
     )
     .await
     .c(h!())?;

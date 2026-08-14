@@ -16,7 +16,6 @@ import {
   Typography,
 } from '@mui/material';
 
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { formatFolderActionPreviewLines, validateFolderPath } from '../helpers';
 import type { FolderActionDialogState, FolderActionKind } from '../types';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -280,7 +279,7 @@ export function PalitraFolderActionDialog({
           ) : null}
         </Stack>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <Button onClick={onClose} disabled={submitting}>
           Скасувати
         </Button>

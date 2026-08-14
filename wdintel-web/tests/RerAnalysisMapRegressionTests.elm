@@ -7,7 +7,10 @@ import Pages.RerAnalysis as RerAnalysis
 import Pages_.RerAnalysis.EventRefresh as EventRefresh
 import Pages_.RerAnalysis.Msg exposing (Msg(..))
 import Pages_.RerAnalysis.Query as Query
+import Pages_.RerDuty.Waterfall as Waterfall
+import Pages_.RerDuty.Waterfall.Messages as WaterfallMessages
 import Route
+import Set
 import Shared
 import Test exposing (Test, describe, test)
 import Url
@@ -144,7 +147,151 @@ suite =
                     }
                     [ inboxChangedEvent 7 ]
                     |> Expect.equal []
+        , test "refresh replacement requests new marked callsigns without duplicating requested keys" <|
+            \_ ->
+                case Url.fromString "http://localhost/rer-analysis" of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            route =
+                                Route.fromUrl () url
+
+                            ( shared, _ ) =
+                                Shared.init (Ok { isDark = False, now = 0 }) route
+
+                            user =
+                                Maybe.withDefault anonymousUser shared.user
+
+                            ( model, _ ) =
+                                RerAnalysis.init route ()
+
+                            refreshedMessage =
+                                { messageStub
+                                    | textMarked = Just [ B.CnCallsignC { begin = 0, end = 6, etalon = "wolf", text = " WOLF " } ]
+                                    , networkIds = Just [ 10 ]
+                                }
+
+                            seededModel =
+                                { model
+                                    | messages = [ ( 1, messageStub ) ]
+                                    , messageCallsignsRequested = Set.singleton "already-requested"
+                                }
+
+                            ( updatedModel, _ ) =
+                                RerAnalysis.update
+                                    user
+                                    shared
+                                    route
+                                    (InboxMessagesUpdated (Ok { messages = [ ( 1, refreshedMessage ) ] }))
+                                    seededModel
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal [ ( 1, refreshedMessage ) ] updatedModel.messages
+                            , \_ -> Expect.equal True (Set.member "wolf" updatedModel.messageCallsignsRequested)
+                            , \_ -> Expect.equal True (Set.member "already-requested" updatedModel.messageCallsignsRequested)
+                            ]
+                            ()
+        , test "refreshes ignore keyword-only highlights and empty responses" <|
+            \_ ->
+                case Url.fromString "http://localhost/rer-analysis" of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            route =
+                                Route.fromUrl () url
+
+                            ( shared, _ ) =
+                                Shared.init (Ok { isDark = False, now = 0 }) route
+
+                            user =
+                                Maybe.withDefault anonymousUser shared.user
+
+                            ( model, _ ) =
+                                RerAnalysis.init route ()
+
+                            highlighted =
+                                { messageStub
+                                    | textMarked = Just [ B.CnHighlightC { begin = 0, end = 5, text = "wolf" } ]
+                                }
+
+                            ( highlightedModel, _ ) =
+                                RerAnalysis.update
+                                    user
+                                    shared
+                                    route
+                                    (InboxMessagesUpdated (Ok { messages = [ ( 1, highlighted ) ] }))
+                                    model
+
+                            ( emptyModel, _ ) =
+                                RerAnalysis.update
+                                    user
+                                    shared
+                                    route
+                                    (InboxMessagesUpdated (Ok { messages = [] }))
+                                    highlightedModel
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal False (Set.member "wolf" highlightedModel.messageCallsignsRequested)
+                            , \_ -> Expect.equal highlightedModel.messageCallsignsRequested emptyModel.messageCallsignsRequested
+                            ]
+                            ()
+        , test "waterfall refresh enrichment uses only the supplied refreshed messages" <|
+            \_ ->
+                case Url.fromString "http://localhost/rer-duty" of
+                    Nothing ->
+                        Expect.fail "invalid test url"
+
+                    Just url ->
+                        let
+                            route =
+                                Route.fromUrl () url
+
+                            ( shared, _ ) =
+                                Shared.init (Ok { isDark = False, now = 0 }) route
+
+                            ( waterfall, _ ) =
+                                Waterfall.init "wf-a" Nothing
+
+                            refreshedMessage =
+                                { messageStub
+                                    | textMarked = Just [ B.CnCallsignC { begin = 0, end = 6, etalon = "wolf", text = " WOLF " } ]
+                                }
+
+                            seededWaterfall =
+                                { waterfall
+                                    | messages = WaterfallMessages.fromList [ ( 1, messageStub ) ]
+                                    , messageCallsignsRequested = Set.singleton "already-requested"
+                                }
+
+                            ( updatedWaterfall, _ ) =
+                                Waterfall.applyRefreshedMessages shared [ ( 1, refreshedMessage ) ] { seededWaterfall | messages = WaterfallMessages.updateMessage 1 ( 1, refreshedMessage ) seededWaterfall.messages }
+                        in
+                        Expect.all
+                            [ \_ -> Expect.equal True (Set.member "wolf" updatedWaterfall.messageCallsignsRequested)
+                            , \_ -> Expect.equal True (Set.member "already-requested" updatedWaterfall.messageCallsignsRequested)
+                            ]
+                            ()
         ]
+
+
+anonymousUser : B.User
+anonymousUser =
+    { id = ""
+    , name = "anonymous"
+    , roles = []
+    , sigintZoneId = Nothing
+    , organismId = Nothing
+    , deltaLogin = Nothing
+    , goiConfiguredForOrganism = False
+    , goiFullAccessForOrganism = False
+    , goiHost = Nothing
+    , goiIntegrations = []
+    , lastReleaseSeen = Nothing
+    }
 
 
 inboxChangedEvent : Int -> B.EventMsg

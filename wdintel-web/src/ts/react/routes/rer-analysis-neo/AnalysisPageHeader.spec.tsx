@@ -14,12 +14,14 @@ vi.mock('@mui/material', () => ({
     color,
     onClick,
     sx,
+    title,
     variant,
   }: {
     children: ReactNode;
     color?: string;
     onClick?: () => void;
     sx?: { borderColor?: string };
+    title?: string;
     variant?: string;
   }) => (
     <button
@@ -27,6 +29,7 @@ vi.mock('@mui/material', () => ({
       data-border-color={sx?.borderColor}
       data-color={color}
       data-variant={variant}
+      title={title}
       onClick={onClick}
     >
       {children}
@@ -190,6 +193,7 @@ function renderHeader(
   rightPanelVisible: boolean,
   centerTab: 'messages' | 'summary' | 'map' = 'messages',
   isNarrowLayout = isCompactLayout,
+  onOpenReport?: (focusTarget: HTMLElement) => void,
 ) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -203,6 +207,7 @@ function renderHeader(
         isNarrowLayout={isNarrowLayout}
         leftPanelVisible
         rightPanelVisible={rightPanelVisible}
+        onOpenReport={onOpenReport}
       />,
     );
   });
@@ -329,6 +334,43 @@ describe('AnalysisPageHeader', () => {
     expect(page.openReport).toHaveBeenCalledTimes(1);
   });
 
+  it('captures the desktop launcher and narrow settings trigger for report focus return', () => {
+    const desktopTarget = vi.fn();
+    const desktopView = renderHeader(buildPage(), false, false, 'messages', false, desktopTarget);
+    rendered.push(desktopView);
+    const desktopButton = Array.from(
+      desktopView.container.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="header-actions"] button',
+      ),
+    ).find((button) => button.textContent?.trim() === 'Звіти');
+
+    act(() => desktopButton?.click());
+    expect(desktopTarget).toHaveBeenCalledWith(desktopButton);
+
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    window.requestAnimationFrame = (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    };
+    try {
+      const narrowTarget = vi.fn();
+      const narrowView = renderHeader(buildPage(), false, false, 'messages', true, narrowTarget);
+      rendered.push(narrowView);
+      const settingsButton = narrowView.container.querySelector<HTMLButtonElement>(
+        '[data-testid="title-actions"] button[aria-label="Налаштування аналізу"]',
+      );
+      act(() => settingsButton?.click());
+      const reportButton = Array.from(
+        narrowView.container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+      ).find((button) => button.textContent?.includes('Звіти'));
+      act(() => reportButton?.click());
+
+      expect(narrowTarget).toHaveBeenCalledWith(settingsButton);
+    } finally {
+      window.requestAnimationFrame = originalRequestAnimationFrame;
+    }
+  });
+
   it('does not duplicate the map date-range loading indicator in the desktop header', () => {
     const page = buildPage();
     page.messagesLoading = true;
@@ -367,11 +409,12 @@ describe('AnalysisPageHeader', () => {
 
     const reportButton = Array.from(
       view.container.querySelectorAll<HTMLButtonElement>('[data-testid="header-actions"] button'),
-    ).find((button) => button.textContent?.trim() === 'ЗВІТИ');
+    ).find((button) => button.textContent?.trim() === 'Звіти');
 
     expect(reportButton?.dataset.variant).toBe('outlined');
     expect(reportButton?.dataset.color).toBe('inherit');
     expect(reportButton?.dataset.borderColor).toBe('divider');
+    expect(reportButton?.title).toBe('Відкрити звіти');
   });
 
   it('keeps the narrow right-panel toggle in the title row', () => {

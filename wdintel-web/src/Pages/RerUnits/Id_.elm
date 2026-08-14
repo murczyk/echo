@@ -475,10 +475,17 @@ submitUnitEdit req model =
 
                 updatedUnit =
                     { unit
-                        | company = req.company
+                        | other = req.other
+                        , teamOrCrew = req.teamOrCrew
+                        , section = req.section
+                        , squad = req.squad
+                        , platoon = req.platoon
+                        , company = req.company
                         , battalion = req.battalion
                         , regiment = req.regiment
+                        , brigade = req.brigade
                         , division = req.division
+                        , corps = req.corps
                         , army = req.army
                         , militaryDistrict = req.militaryDistrict
                         , armyRegion = req.armyRegion

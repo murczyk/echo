@@ -3208,6 +3208,7 @@ palitraAccessLoginEncoder struct =
 
 type alias Palitra =
     { id : Int
+    , highlightBlacklistCount : Int
     , name : String
     , folder : Maybe (String)
     , isArchived : Bool
@@ -3235,6 +3236,7 @@ palitraEncoder : Palitra -> Json.Encode.Value
 palitraEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
+        , ( "highlight_blacklist_count", (Json.Encode.int) struct.highlightBlacklistCount )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "folder", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.folder )
         , ( "is_archived", (Json.Encode.bool) struct.isArchived )
@@ -3494,6 +3496,66 @@ palitraBulkActionRspEncoder struct =
         ]
 
 
+type alias PalitraHighlightBlacklistEntry =
+    { id : Int
+    , palitraId : Int
+    , label : String
+    , createdByLoginId : String
+    , createdByLogin : String
+    }
+
+
+palitraHighlightBlacklistEntryEncoder : PalitraHighlightBlacklistEntry -> Json.Encode.Value
+palitraHighlightBlacklistEntryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "palitra_id", (Json.Encode.int) struct.palitraId )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "created_by_login_id", (Json.Encode.string) struct.createdByLoginId )
+        , ( "created_by_login", (Json.Encode.string) struct.createdByLogin )
+        ]
+
+
+type alias PalitraHighlightBlacklistAddReq =
+    { label : String
+    , sourceMessageId : Int
+    }
+
+
+palitraHighlightBlacklistAddReqEncoder : PalitraHighlightBlacklistAddReq -> Json.Encode.Value
+palitraHighlightBlacklistAddReqEncoder struct =
+    Json.Encode.object
+        [ ( "label", (Json.Encode.string) struct.label )
+        , ( "source_message_id", (Json.Encode.int) struct.sourceMessageId )
+        ]
+
+
+type alias PalitraResolveNamesReq =
+    { palitraIds : List (Int)
+    }
+
+
+palitraResolveNamesReqEncoder : PalitraResolveNamesReq -> Json.Encode.Value
+palitraResolveNamesReqEncoder struct =
+    Json.Encode.object
+        [ ( "palitra_ids", (Json.Encode.list (Json.Encode.int)) struct.palitraIds )
+        ]
+
+
+type alias PalitraName =
+    { id : Int
+    , name : String
+    }
+
+
+palitraNameEncoder : PalitraName -> Json.Encode.Value
+palitraNameEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
 type alias NoHeadersBody =
     { body : String
     , start : Int
@@ -3641,6 +3703,7 @@ type alias CnPoint =
     , end : Int
     , etalon : String
     , text : String
+    , palitraIds : List (Int)
     }
 
 
@@ -3651,6 +3714,7 @@ cnPointEncoder struct =
         , ( "end", (Json.Encode.int) struct.end )
         , ( "etalon", (Json.Encode.string) struct.etalon )
         , ( "text", (Json.Encode.string) struct.text )
+        , ( "palitra_ids", (Json.Encode.list (Json.Encode.int)) struct.palitraIds )
         ]
 
 
@@ -6610,14 +6674,28 @@ type ListUnitsSortBy
     | UnitNameLengthAsc
     | UnitNameAsc
     | UnitNameDesc
+    | UnitOtherAsc
+    | UnitOtherDesc
+    | UnitTeamOrCrewAsc
+    | UnitTeamOrCrewDesc
+    | UnitSectionAsc
+    | UnitSectionDesc
+    | UnitSquadAsc
+    | UnitSquadDesc
+    | UnitPlatoonAsc
+    | UnitPlatoonDesc
     | UnitCompanyAsc
     | UnitCompanyDesc
     | UnitBattalionAsc
     | UnitBattalionDesc
     | UnitRegimentAsc
     | UnitRegimentDesc
+    | UnitBrigadeAsc
+    | UnitBrigadeDesc
     | UnitDivisionAsc
     | UnitDivisionDesc
+    | UnitCorpsAsc
+    | UnitCorpsDesc
     | UnitArmyAsc
     | UnitArmyDesc
     | UnitMilitaryDistrictAsc
@@ -6647,6 +6725,26 @@ listUnitsSortByEncoder enum =
             Json.Encode.string "UnitNameAsc"
         UnitNameDesc ->
             Json.Encode.string "UnitNameDesc"
+        UnitOtherAsc ->
+            Json.Encode.string "UnitOtherAsc"
+        UnitOtherDesc ->
+            Json.Encode.string "UnitOtherDesc"
+        UnitTeamOrCrewAsc ->
+            Json.Encode.string "UnitTeamOrCrewAsc"
+        UnitTeamOrCrewDesc ->
+            Json.Encode.string "UnitTeamOrCrewDesc"
+        UnitSectionAsc ->
+            Json.Encode.string "UnitSectionAsc"
+        UnitSectionDesc ->
+            Json.Encode.string "UnitSectionDesc"
+        UnitSquadAsc ->
+            Json.Encode.string "UnitSquadAsc"
+        UnitSquadDesc ->
+            Json.Encode.string "UnitSquadDesc"
+        UnitPlatoonAsc ->
+            Json.Encode.string "UnitPlatoonAsc"
+        UnitPlatoonDesc ->
+            Json.Encode.string "UnitPlatoonDesc"
         UnitCompanyAsc ->
             Json.Encode.string "UnitCompanyAsc"
         UnitCompanyDesc ->
@@ -6659,10 +6757,18 @@ listUnitsSortByEncoder enum =
             Json.Encode.string "UnitRegimentAsc"
         UnitRegimentDesc ->
             Json.Encode.string "UnitRegimentDesc"
+        UnitBrigadeAsc ->
+            Json.Encode.string "UnitBrigadeAsc"
+        UnitBrigadeDesc ->
+            Json.Encode.string "UnitBrigadeDesc"
         UnitDivisionAsc ->
             Json.Encode.string "UnitDivisionAsc"
         UnitDivisionDesc ->
             Json.Encode.string "UnitDivisionDesc"
+        UnitCorpsAsc ->
+            Json.Encode.string "UnitCorpsAsc"
+        UnitCorpsDesc ->
+            Json.Encode.string "UnitCorpsDesc"
         UnitArmyAsc ->
             Json.Encode.string "UnitArmyAsc"
         UnitArmyDesc ->
@@ -6703,10 +6809,17 @@ listUnitsSearchModeEncoder enum =
 
 type alias Unit =
     { id : Int
+    , other : String
+    , teamOrCrew : String
+    , section : String
+    , squad : String
+    , platoon : String
     , company : String
     , battalion : String
     , regiment : String
+    , brigade : String
     , division : String
+    , corps : String
     , army : String
     , militaryDistrict : String
     , armyRegion : String
@@ -6727,10 +6840,17 @@ unitEncoder : Unit -> Json.Encode.Value
 unitEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
+        , ( "other", (Json.Encode.string) struct.other )
+        , ( "team_or_crew", (Json.Encode.string) struct.teamOrCrew )
+        , ( "section", (Json.Encode.string) struct.section )
+        , ( "squad", (Json.Encode.string) struct.squad )
+        , ( "platoon", (Json.Encode.string) struct.platoon )
         , ( "company", (Json.Encode.string) struct.company )
         , ( "battalion", (Json.Encode.string) struct.battalion )
         , ( "regiment", (Json.Encode.string) struct.regiment )
+        , ( "brigade", (Json.Encode.string) struct.brigade )
         , ( "division", (Json.Encode.string) struct.division )
+        , ( "corps", (Json.Encode.string) struct.corps )
         , ( "army", (Json.Encode.string) struct.army )
         , ( "military_district", (Json.Encode.string) struct.militaryDistrict )
         , ( "army_region", (Json.Encode.string) struct.armyRegion )
@@ -6755,10 +6875,17 @@ type alias ListUnitsReq =
     , filterActive : Maybe (Bool)
     , filterText : Maybe (String)
     , filterName : Maybe (String)
+    , filterOther : Maybe (String)
+    , filterTeamOrCrew : Maybe (String)
+    , filterSection : Maybe (String)
+    , filterSquad : Maybe (String)
+    , filterPlatoon : Maybe (String)
     , filterCompany : Maybe (String)
     , filterBattalion : Maybe (String)
     , filterRegiment : Maybe (String)
+    , filterBrigade : Maybe (String)
     , filterDivision : Maybe (String)
+    , filterCorps : Maybe (String)
     , filterArmy : Maybe (String)
     , filterMilitaryDistrict : Maybe (String)
     , filterArmyRegion : Maybe (String)
@@ -6783,10 +6910,17 @@ listUnitsReqEncoder struct =
         , ( "filter_active", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.filterActive )
         , ( "filter_text", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterText )
         , ( "filter_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterName )
+        , ( "filter_other", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterOther )
+        , ( "filter_team_or_crew", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterTeamOrCrew )
+        , ( "filter_section", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterSection )
+        , ( "filter_squad", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterSquad )
+        , ( "filter_platoon", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterPlatoon )
         , ( "filter_company", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterCompany )
         , ( "filter_battalion", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterBattalion )
         , ( "filter_regiment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterRegiment )
+        , ( "filter_brigade", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterBrigade )
         , ( "filter_division", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterDivision )
+        , ( "filter_corps", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterCorps )
         , ( "filter_army", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterArmy )
         , ( "filter_military_district", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterMilitaryDistrict )
         , ( "filter_army_region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterArmyRegion )
@@ -6886,10 +7020,17 @@ listUnitDuplicatesRspEncoder struct =
 
 
 type alias CreateUnitReq =
-    { company : String
+    { other : String
+    , teamOrCrew : String
+    , section : String
+    , squad : String
+    , platoon : String
+    , company : String
     , battalion : String
     , regiment : String
+    , brigade : String
     , division : String
+    , corps : String
     , army : String
     , militaryDistrict : String
     , armyRegion : String
@@ -6904,10 +7045,17 @@ type alias CreateUnitReq =
 createUnitReqEncoder : CreateUnitReq -> Json.Encode.Value
 createUnitReqEncoder struct =
     Json.Encode.object
-        [ ( "company", (Json.Encode.string) struct.company )
+        [ ( "other", (Json.Encode.string) struct.other )
+        , ( "team_or_crew", (Json.Encode.string) struct.teamOrCrew )
+        , ( "section", (Json.Encode.string) struct.section )
+        , ( "squad", (Json.Encode.string) struct.squad )
+        , ( "platoon", (Json.Encode.string) struct.platoon )
+        , ( "company", (Json.Encode.string) struct.company )
         , ( "battalion", (Json.Encode.string) struct.battalion )
         , ( "regiment", (Json.Encode.string) struct.regiment )
+        , ( "brigade", (Json.Encode.string) struct.brigade )
         , ( "division", (Json.Encode.string) struct.division )
+        , ( "corps", (Json.Encode.string) struct.corps )
         , ( "army", (Json.Encode.string) struct.army )
         , ( "military_district", (Json.Encode.string) struct.militaryDistrict )
         , ( "army_region", (Json.Encode.string) struct.armyRegion )
@@ -14186,6 +14334,7 @@ palitraDecoder : Json.Decode.Decoder Palitra
 palitraDecoder =
     Json.Decode.succeed Palitra
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "highlight_blacklist_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "folder" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
@@ -14326,6 +14475,36 @@ palitraBulkActionRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list (Json.Decode.int))))
 
 
+palitraHighlightBlacklistEntryDecoder : Json.Decode.Decoder PalitraHighlightBlacklistEntry
+palitraHighlightBlacklistEntryDecoder =
+    Json.Decode.succeed PalitraHighlightBlacklistEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by_login_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by_login" (Json.Decode.string)))
+
+
+palitraHighlightBlacklistAddReqDecoder : Json.Decode.Decoder PalitraHighlightBlacklistAddReq
+palitraHighlightBlacklistAddReqDecoder =
+    Json.Decode.succeed PalitraHighlightBlacklistAddReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_message_id" (Json.Decode.int)))
+
+
+palitraResolveNamesReqDecoder : Json.Decode.Decoder PalitraResolveNamesReq
+palitraResolveNamesReqDecoder =
+    Json.Decode.succeed PalitraResolveNamesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+palitraNameDecoder : Json.Decode.Decoder PalitraName
+palitraNameDecoder =
+    Json.Decode.succeed PalitraName
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
 noHeadersBodyDecoder : Json.Decode.Decoder NoHeadersBody
 noHeadersBodyDecoder =
     Json.Decode.succeed NoHeadersBody
@@ -14412,6 +14591,7 @@ cnPointDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "end" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "etalon" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list (Json.Decode.int))))
 
 
 contentNodeDecoder : Json.Decode.Decoder ContentNode
@@ -16510,6 +16690,96 @@ listUnitsSortByDecoder =
             |> Json.Decode.andThen
                 (\x ->
                     case x of
+                        "UnitOtherAsc" ->
+                            Json.Decode.succeed UnitOtherAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitOtherDesc" ->
+                            Json.Decode.succeed UnitOtherDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitTeamOrCrewAsc" ->
+                            Json.Decode.succeed UnitTeamOrCrewAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitTeamOrCrewDesc" ->
+                            Json.Decode.succeed UnitTeamOrCrewDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitSectionAsc" ->
+                            Json.Decode.succeed UnitSectionAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitSectionDesc" ->
+                            Json.Decode.succeed UnitSectionDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitSquadAsc" ->
+                            Json.Decode.succeed UnitSquadAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitSquadDesc" ->
+                            Json.Decode.succeed UnitSquadDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitPlatoonAsc" ->
+                            Json.Decode.succeed UnitPlatoonAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitPlatoonDesc" ->
+                            Json.Decode.succeed UnitPlatoonDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
                         "UnitCompanyAsc" ->
                             Json.Decode.succeed UnitCompanyAsc
                         unexpected ->
@@ -16564,6 +16834,24 @@ listUnitsSortByDecoder =
             |> Json.Decode.andThen
                 (\x ->
                     case x of
+                        "UnitBrigadeAsc" ->
+                            Json.Decode.succeed UnitBrigadeAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitBrigadeDesc" ->
+                            Json.Decode.succeed UnitBrigadeDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
                         "UnitDivisionAsc" ->
                             Json.Decode.succeed UnitDivisionAsc
                         unexpected ->
@@ -16575,6 +16863,24 @@ listUnitsSortByDecoder =
                     case x of
                         "UnitDivisionDesc" ->
                             Json.Decode.succeed UnitDivisionDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitCorpsAsc" ->
+                            Json.Decode.succeed UnitCorpsAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitCorpsDesc" ->
+                            Json.Decode.succeed UnitCorpsDesc
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
@@ -16715,10 +17021,17 @@ unitDecoder : Json.Decode.Decoder Unit
 unitDecoder =
     Json.Decode.succeed Unit
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "other" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "team_or_crew" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "section" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "squad" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "platoon" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "company" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "battalion" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "regiment" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "brigade" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "division" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "corps" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "military_district" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army_region" (Json.Decode.string)))
@@ -16744,10 +17057,17 @@ listUnitsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_active" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_text" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_other" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_team_or_crew" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_section" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_squad" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_platoon" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_company" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_battalion" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_regiment" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_brigade" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_division" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_corps" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_army" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_military_district" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_army_region" (Json.Decode.nullable (Json.Decode.string))))
@@ -16806,10 +17126,17 @@ listUnitDuplicatesRspDecoder =
 createUnitReqDecoder : Json.Decode.Decoder CreateUnitReq
 createUnitReqDecoder =
     Json.Decode.succeed CreateUnitReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "other" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "team_or_crew" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "section" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "squad" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "platoon" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "company" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "battalion" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "regiment" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "brigade" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "division" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "corps" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "military_district" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army_region" (Json.Decode.string)))

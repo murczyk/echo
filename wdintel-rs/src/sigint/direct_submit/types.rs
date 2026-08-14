@@ -55,7 +55,7 @@ pub struct DirectSubmitPayload {
     #[serde(default)]
     pub retained_media_ids: Option<Vec<String>>,
     #[serde(default)]
-    pub parent_signal_message_id: Option<i64>,
+    pub parent_signal_message_ids: Vec<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -67,8 +67,12 @@ pub struct DirectSubmitRsp {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct DirectSubmitCopyRsp {
-    pub source_signal_message_id: i64,
-    pub payload: DirectSubmitPayload,
+    pub payloads: Vec<DirectSubmitPayload>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct DirectSubmitCopyReq {
+    pub message_ids: Vec<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -126,7 +130,7 @@ mod tests {
         let payload: DirectSubmitPayload = serde_json::from_value(json!({
             "signal_group_master_key": "group",
             "retained_media_ids": ["media-id"],
-            "parent_signal_message_id": 42,
+            "parent_signal_message_ids": [42],
         }))
         .unwrap();
 
@@ -134,6 +138,6 @@ mod tests {
             payload.retained_media_ids,
             Some(vec!["media-id".to_string()])
         );
-        assert_eq!(payload.parent_signal_message_id, Some(42));
+        assert_eq!(payload.parent_signal_message_ids, vec![42]);
     }
 }

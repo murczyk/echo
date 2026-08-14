@@ -12,10 +12,17 @@ import Test exposing (Test, describe, test)
 createUnit : Int -> String -> String -> String -> String -> String -> String -> B.Unit
 createUnit id army division regiment battalion company name =
     { id = id
+    , other = ""
+    , teamOrCrew = ""
+    , section = ""
+    , squad = ""
+    , platoon = ""
     , armyRegion = ""
     , militaryDistrict = ""
     , army = army
+    , corps = ""
     , division = division
+    , brigade = ""
     , regiment = regiment
     , battalion = battalion
     , company = company

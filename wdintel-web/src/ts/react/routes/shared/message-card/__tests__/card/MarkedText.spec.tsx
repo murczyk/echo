@@ -41,6 +41,13 @@ function TestHost(props: {
   linkCallsigns?: boolean;
   message?: InboxMessage;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
+  messageId?: number;
+  onRequestPointBlacklist?: (source: {
+    messageId: number;
+    etalon: string;
+    palitraIds: number[];
+  }) => void;
+  pendingBlacklistKeys?: Set<string>;
   searchText?: string | null;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
@@ -53,6 +60,9 @@ function TestHost(props: {
         linkCallsigns: props.linkCallsigns,
         message: props.message,
         onOpenPointsOnMap: props.onOpenPointsOnMap,
+        messageId: props.messageId,
+        onRequestPointBlacklist: props.onRequestPointBlacklist,
+        pendingBlacklistKeys: props.pendingBlacklistKeys,
         callsignInfoMap: props.callsignInfoMap,
         networks: props.networks,
         unitsMap: props.unitsMap,
@@ -298,7 +308,7 @@ describe('MarkedText', () => {
 
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('GHOST');
     expect(container.querySelector('[data-testid="callsign-hint-plain-missing"]')).toBeNull();
-    expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).not.toBeNull();
   });
 
   it('uses the in-app map action when provided and falls back to a normal map link otherwise', async () => {
@@ -376,6 +386,113 @@ describe('MarkedText', () => {
     expect(fallbackMenuItem?.getAttribute('href')).toContain('search=');
   });
 
+  it('requests a single source blacklist entry and shows its pending state', async () => {
+    const onRequestPointBlacklist = vi.fn();
+    const nodes: ContentNode[] = [
+      { CNPointC: { text: 'Альфа', begin: 0, end: 5, etalon: '  Альфа  ', palitraIds: [7] } },
+    ];
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={nodes}
+          bodyText="Альфа"
+          messageId={42}
+          onRequestPointBlacklist={onRequestPointBlacklist}
+        />,
+      );
+    });
+    await act(async () => {
+      container
+        .querySelector('.content-token--point')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    const action = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find((item) =>
+      item.textContent?.includes('Додати до чорного списку'),
+    ) as HTMLElement;
+    expect(action).not.toBeNull();
+    expect(action.getAttribute('aria-disabled')).not.toBe('true');
+    await act(async () => {
+      action.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(onRequestPointBlacklist).toHaveBeenCalledOnce();
+    expect(onRequestPointBlacklist).toHaveBeenCalledWith({
+      messageId: 42,
+      etalon: 'Альфа',
+      palitraIds: [7],
+    });
+
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={nodes}
+          bodyText="Альфа"
+          messageId={42}
+          onRequestPointBlacklist={onRequestPointBlacklist}
+          pendingBlacklistKeys={new Set(['42:альфа:7'])}
+        />,
+      );
+      container
+        .querySelector('.content-token--point')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+    const pendingAction = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
+      (item) => item.textContent?.includes('Додавання…'),
+    ) as HTMLButtonElement;
+    expect(pendingAction).not.toBeNull();
+    expect(pendingAction.disabled || pendingAction.getAttribute('aria-disabled') === 'true').toBe(
+      true,
+    );
+  });
+
+  it('explains unknown sources and deduplicates multi-source requests', async () => {
+    const onRequestPointBlacklist = vi.fn();
+    const renderPoint = async (palitraIds: number[]) => {
+      await act(async () => {
+        root.render(
+          <TestHost
+            nodes={[{ CNPointC: { text: 'Альфа', begin: 0, end: 5, etalon: 'Альфа', palitraIds } }]}
+            bodyText="Альфа"
+            messageId={42}
+            onRequestPointBlacklist={onRequestPointBlacklist}
+          />,
+        );
+      });
+      await act(async () => {
+        container
+          .querySelector('.content-token--point')
+          ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await Promise.resolve();
+      });
+    };
+
+    await renderPoint([]);
+    const unknownAction = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
+      (item) => item.textContent?.includes('Неможливо визначити палітру-джерело'),
+    ) as HTMLButtonElement;
+    expect(unknownAction).not.toBeNull();
+    expect(unknownAction.disabled || unknownAction.getAttribute('aria-disabled') === 'true').toBe(
+      true,
+    );
+    unknownAction.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(onRequestPointBlacklist).not.toHaveBeenCalled();
+
+    await renderPoint([7, 12, 7]);
+    const multiAction = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
+      (item) => item.textContent?.includes('Додати до чорного списку'),
+    ) as HTMLElement;
+    multiAction.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+    expect(onRequestPointBlacklist).toHaveBeenCalledWith({
+      messageId: 42,
+      etalon: 'Альфа',
+      palitraIds: [7, 12],
+    });
+  });
+
   it('renders the filled-badge network state without linking when callsign links are disabled', async () => {
     await act(async () => {
       root.render(
@@ -448,7 +565,7 @@ describe('MarkedText', () => {
       '/rer-callsigns-neo?callsign=WOLF',
     );
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
-    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
   });
 
   it('renders duplicate callsigns verbatim', async () => {
@@ -556,7 +673,7 @@ describe('MarkedText', () => {
     });
 
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('FOX');
-    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
   });
 
@@ -645,10 +762,8 @@ describe('MarkedText', () => {
     });
 
     const muted = container.querySelector('[data-testid="callsign-hint-plain-missing"]');
-    expect(muted).not.toBeNull();
-    expect(muted?.textContent).toBe('GHOST');
-    expect(muted?.getAttribute('title')).toBeNull();
-    expect(container.querySelector('a.content-token--ADP')).toBeNull();
+    expect(muted).toBeNull();
+    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('GHOST');
     expect(container.querySelector('span.content-token--ADP')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
@@ -726,10 +841,10 @@ describe('MarkedText', () => {
 
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('ЛУНА');
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
-    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
   });
 
-  it('keeps search-highlighted non-catalog callsigns as plain text', async () => {
+  it('keeps search-highlighted unresolved callsigns linked', async () => {
     await act(async () => {
       root.render(
         <TestHost
@@ -744,10 +859,8 @@ describe('MarkedText', () => {
       );
     });
 
-    expect(container.querySelector('a.content-token--ADP')).toBeNull();
-    expect(
-      container.querySelector('[data-testid="callsign-hint-plain-missing"]')?.textContent,
-    ).toBe('ГЛОБУС');
+    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('ГЛОБУС');
+    expect(container.querySelector('[data-testid="callsign-hint-plain-missing"]')).toBeNull();
   });
 
   it('uses multiline wrapping styles for long tooltip rows', async () => {
@@ -785,6 +898,136 @@ describe('MarkedText', () => {
     expect(CALLSIGN_TOOLTIP_ITEM_SX.whiteSpace).toBe('normal');
     expect(CALLSIGN_TOOLTIP_ITEM_SX.overflowWrap).toBe('anywhere');
     expect(CALLSIGN_TOOLTIP_ITEM_SX.wordBreak).toBe('break-word');
+  });
+
+  it('opens structured message-call-sign tooltips with the correct sections', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'wolf', begin: 0, end: 4, etalon: 'wolf' } }]}
+          bodyText="wolf"
+          message={{ freq: null, networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{
+            wolf: {
+              callsign: 'wolf',
+              res: [
+                {
+                  id: 1,
+                  callsign: 'wolf',
+                  position: 'ТЮМЕНЬ',
+                  comment: '',
+                  unit1: '',
+                  unit2: '',
+                  unitId: null,
+                  networkIdsReportedIn: [],
+                },
+              ],
+              networkHints: [{ id: 2, networkId: 20, position: '', formation: '' }],
+            },
+          }}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+    const button = container.querySelector('button[data-testid="callsign-hint-badge-system"]');
+    expect(button?.getAttribute('aria-label')).toBe('Підказка з каталогу');
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      button?.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+    const tooltip = document.querySelector('[role="tooltip"]');
+    expect(tooltip?.textContent).toContain('Позивні з каталогу:');
+    expect(tooltip?.textContent).toContain('Позивний присутній в інших мережах:');
+    const sections = tooltip?.querySelectorAll('section') ?? [];
+    expect(sections.length).toBe(2);
+    sections.forEach((section) => {
+      section.querySelectorAll('ul').forEach((list) => {
+        expect(Array.from(list.children).every((child) => child.tagName === 'LI')).toBe(true);
+      });
+      expect(section.querySelector('ul')?.previousElementSibling?.tagName).toBe('DIV');
+    });
+  });
+
+  it.each([
+    { position: 'cmd', formation: 'u1', expected: 'cmd u1' },
+    { position: '', formation: '', expected: 'Додатковий опис відсутній' },
+  ])('renders exact-network tooltip data without unrelated catalog data', async (hint) => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'wolf', begin: 0, end: 4, etalon: 'wolf' } }]}
+          bodyText="wolf"
+          message={{ networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{
+            wolf: {
+              callsign: 'wolf',
+              res: [
+                {
+                  id: 1,
+                  callsign: 'wolf',
+                  position: 'ТЮМЕНЬ',
+                  comment: '',
+                  unit1: '',
+                  unit2: '',
+                  unitId: null,
+                  networkIdsReportedIn: [],
+                },
+              ],
+              networkHints: [
+                { id: 2, networkId: 10, position: hint.position, formation: hint.formation },
+              ],
+            },
+          }}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+    const button = container.querySelector('button[data-testid="callsign-hint-badge-network"]');
+    expect(button).not.toBeNull();
+    expect(container.querySelector('button[data-testid="callsign-hint-badge-system"]')).toBeNull();
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+    const tooltip = document.querySelector('[role="tooltip"]');
+    expect(tooltip?.textContent).toContain('Позивні підрозділів мережі:');
+    expect(tooltip?.textContent).toContain(hint.expected);
+    expect(tooltip?.textContent).not.toContain('ТЮМЕНЬ');
+    expect(tooltip?.querySelectorAll('section')).toHaveLength(1);
+  });
+
+  it('labels other-network-only tooltip information neutrally', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'wolf', begin: 0, end: 4, etalon: 'wolf' } }]}
+          bodyText="wolf"
+          message={{ networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{
+            wolf: {
+              callsign: 'wolf',
+              res: [],
+              networkHints: [{ id: 2, networkId: 20, position: 'p', formation: 'f' }],
+            },
+          }}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+    const button = container.querySelector('button[data-testid="callsign-hint-badge-system"]');
+    expect(button?.getAttribute('aria-label')).toBe('Інформація про позивний');
+    expect(container.querySelector('button[data-testid="callsign-hint-badge-network"]')).toBeNull();
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+    const tooltip = document.querySelector('[role="tooltip"]');
+    expect(tooltip?.textContent).toContain('Позивний присутній в інших мережах:');
+    expect(tooltip?.textContent).not.toContain('Позивні з каталогу:');
   });
 
   it('keeps callsign contrast above WCAG AA in light and dark themes', () => {
@@ -862,14 +1105,14 @@ describe('MarkedText', () => {
 
     const menuItems = Array.from(document.body.querySelectorAll('[role="menuitem"]'));
     expect(menuItems).toHaveLength(2);
-    expect(menuItems[0]?.textContent).toContain('Показати на мапі всі точки');
+    expect(menuItems[0]?.textContent).toContain('Показати на мапі цю точку');
     expect(decodeMapHrefState(menuItems[0]?.getAttribute('href') ?? null)).toMatchObject({
-      search: 'P-1,P-2',
+      search: 'P-1',
       freqs_selected: ['100.125'],
     });
-    expect(menuItems[1]?.textContent).toContain('Показати на мапі цю точку');
+    expect(menuItems[1]?.textContent).toContain('Показати на мапі всі точки');
     expect(decodeMapHrefState(menuItems[1]?.getAttribute('href') ?? null)).toMatchObject({
-      search: 'P-1',
+      search: 'P-1,P-2',
       freqs_selected: ['100.125'],
     });
   });
@@ -912,7 +1155,7 @@ describe('MarkedText', () => {
 
     const menuItems = Array.from(document.body.querySelectorAll('[role="menuitem"]'));
     expect(menuItems).toHaveLength(1);
-    expect(menuItems[0]?.textContent).toContain('Показати на мапі');
+    expect(menuItems[0]?.textContent).toContain('Показати на мапі цю точку');
     expect(decodeMapHrefState(menuItems[0]?.getAttribute('href') ?? null)).toMatchObject({
       search: 'P-1',
       freqs_selected: ['200'],

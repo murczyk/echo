@@ -22,7 +22,6 @@ import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'materi
 import React from 'react';
 
 import { Login, Organism } from '../../../../Bindings';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageLoadingState } from '../../components/PageLoadingState';
@@ -934,7 +933,7 @@ function AdminGoiIntegrationsNeoPageBody() {
               />
             </Stack>
           </DialogContent>
-          <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+          <DialogActions>
             <PowerButton
               variant="outlined"
               onClick={() => setEditorOpen(false)}
@@ -978,7 +977,7 @@ function AdminGoiIntegrationsNeoPageBody() {
                 : ''}
             </DialogContentText>
           </DialogContent>
-          <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+          <DialogActions>
             <PowerButton variant="outlined" onClick={() => setDeleteTarget(null)} disabled={saving}>
               Скасувати
             </PowerButton>

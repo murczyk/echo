@@ -509,7 +509,62 @@ function useUnitColumns(
         },
       },
       {
-        header: 'Рота/Взвод',
+        header: 'Інше',
+        accessorKey: 'other',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'other',
+        }),
+        size: 160,
+      },
+      {
+        header: 'Команда/Екіпаж',
+        accessorKey: 'teamOrCrew',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'team-or-crew',
+        }),
+        size: 180,
+      },
+      {
+        header: 'Секція',
+        accessorKey: 'section',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'section',
+        }),
+        size: 160,
+      },
+      {
+        header: 'Відділення',
+        accessorKey: 'squad',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'squad',
+        }),
+        size: 160,
+      },
+      {
+        header: 'Взвод',
+        accessorKey: 'platoon',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'platoon',
+        }),
+        size: 160,
+      },
+      {
+        header: 'Рота',
         accessorKey: 'company',
         Filter: buildTextColumnFilter({
           searchMode,
@@ -531,13 +586,24 @@ function useUnitColumns(
         size: 160,
       },
       {
-        header: 'Полк/Бригада',
+        header: 'Полк',
         accessorKey: 'regiment',
         Filter: buildTextColumnFilter({
           searchMode,
           onSearchModeChange,
           compactSearchMode,
           menuIdPrefix: 'regiment',
+        }),
+        size: 180,
+      },
+      {
+        header: 'Бригада',
+        accessorKey: 'brigade',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'brigade',
         }),
         size: 180,
       },
@@ -553,7 +619,18 @@ function useUnitColumns(
         size: 160,
       },
       {
-        header: 'Корпус/Армія',
+        header: 'Корпус',
+        accessorKey: 'corps',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'corps',
+        }),
+        size: 180,
+      },
+      {
+        header: 'Армія',
         accessorKey: 'army',
         Filter: buildTextColumnFilter({
           searchMode,
