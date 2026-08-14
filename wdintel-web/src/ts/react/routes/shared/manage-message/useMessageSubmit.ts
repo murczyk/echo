@@ -176,7 +176,7 @@ export function useMessageSubmit({
         dmr: dmrArr,
         deleted_media_ids: isEditMode ? (data.deleted_media_ids ?? []) : [],
         retained_media_ids: isReportCreateMode ? retainedMediaIds : undefined,
-        parent_signal_message_id: isReportCreateMode ? reportSource?.id : undefined,
+        parent_signal_message_ids: isReportCreateMode ? [reportSource!.id] : undefined,
       };
 
       if (isEditMode && editTarget) {

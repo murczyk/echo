@@ -27,6 +27,7 @@ use echo_migration::{Expr, Order, PostgresQueryBuilder};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use sea_orm::*;
+use sea_query::Query;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::future::Future;
 use std::time::Instant;
@@ -362,9 +363,35 @@ pub(crate) async fn messages_by_id_bl(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
+    let parent_access_query = Query::select()
+        .expr(Expr::value(1))
+        .from(intel_prod::Entity)
+        .inner_join(
+            signal_message_group::Entity,
+            Expr::col((
+                intel_prod::Entity,
+                intel_prod::Column::ParentSignalMessageId,
+            ))
+            .equals((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            )),
+        )
+        .and_where(
+            Expr::col((
+                intel_prod::Entity,
+                intel_prod::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .and_where(
+            signal_message_group::Column::GroupMasterKey
+                .is_in(sigint_groups.clone()),
+        )
+        .to_owned();
     let mut messages = SignalMessage::find()
         .join(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             signal_message::Relation::DatasourceGroup.def(),
         )
         .join(
@@ -388,7 +415,14 @@ pub(crate) async fn messages_by_id_bl(
 
     messages = messages
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.eq_any(sigint_groups))
+        .filter(
+            Condition::any()
+                .add(
+                    datasource_group::Column::GroupMasterKey
+                        .eq_any(sigint_groups),
+                )
+                .add(Expr::exists(parent_access_query)),
+        )
         .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()));
     let owner_organism_id =
         crate::tags::query::current_user_organism_id(&env.dbx, login)
@@ -1198,6 +1232,8 @@ fn generic_submit_item_to_inbox_message(
             }
         });
     let message = InboxMessage {
+        parent_messages: vec![],
+        intelligence_reports: vec![],
         message_uid: None,
         text: full_body,
         media: vec![],
@@ -1584,8 +1620,7 @@ async fn update_submit_signal_message(
     operator_tags: Option<serde_json::Value>,
     groups: &[(String, i64)],
 ) -> Result<signal_message::Model, AppError> {
-    let (_group_master_key, datasource_group_id) =
-        groups.first().cloned().c(h!())?;
+    let datasource_group_id = groups.first().map(|(_, id)| *id);
     let signal_message = SignalMessage::find_by_id(signal_message_id)
         .filter(signal_message::Column::Deleted.eq(false))
         .one(txn)
@@ -1594,7 +1629,7 @@ async fn update_submit_signal_message(
         .ok_or(AppError::NotFound)?;
     let mut signal_message = signal_message.into_active_model();
     signal_message.body = Set(Some(message.text.clone()));
-    signal_message.datasource_group_id = Set(Some(datasource_group_id));
+    signal_message.datasource_group_id = Set(datasource_group_id);
     signal_message.timestamp = Set(timestamp);
     signal_message.sender = Set(message.sender.clone());
     if operator_tags.is_some() {
@@ -1620,8 +1655,7 @@ async fn upsert_submit_signal_message_inner(
     groups: &[(String, i64)],
     create_missing_uid: bool,
 ) -> Result<signal_message::Model, AppError> {
-    let (_group_master_key, datasource_group_id) =
-        groups.first().cloned().c(h!())?;
+    let datasource_group_id = groups.first().map(|(_, id)| *id);
     let group_master_keys = groups
         .iter()
         .map(|(group_master_key, _)| group_master_key.clone())
@@ -1654,7 +1688,7 @@ async fn upsert_submit_signal_message_inner(
                     let mut signal_message = signal_message.into_active_model();
                     signal_message.body = Set(Some(message.text.clone()));
                     signal_message.datasource_group_id =
-                        Set(Some(datasource_group_id));
+                        Set(datasource_group_id);
                     signal_message.timestamp = Set(timestamp);
                     signal_message.sender = Set(message.sender.clone());
                     signal_message.operator_tags = Set(operator_tags);
@@ -1664,7 +1698,7 @@ async fn upsert_submit_signal_message_inner(
                 None if create_missing_uid => signal_message::ActiveModel {
                     id: NotSet,
                     body: Set(Some(message.text.clone())),
-                    datasource_group_id: Set(Some(datasource_group_id)),
+                    datasource_group_id: Set(datasource_group_id),
                     created_at: NotSet,
                     timestamp: Set(timestamp),
                     sender: Set(message.sender.clone()),
@@ -1675,7 +1709,6 @@ async fn upsert_submit_signal_message_inner(
                     message_uid: Set(Some(message_uid)),
                     operator_tags: Set(operator_tags),
                     attachments_hash: Set(None),
-                    parent_signal_message_id: Set(None),
                 }
                 .insert(txn)
                 .await
@@ -1686,7 +1719,7 @@ async fn upsert_submit_signal_message_inner(
         None => signal_message::ActiveModel {
             id: NotSet,
             body: Set(Some(message.text.clone())),
-            datasource_group_id: Set(Some(datasource_group_id)),
+            datasource_group_id: Set(datasource_group_id),
             created_at: NotSet,
             timestamp: Set(timestamp),
             sender: Set(message.sender.clone()),
@@ -1697,7 +1730,6 @@ async fn upsert_submit_signal_message_inner(
             message_uid: NotSet,
             operator_tags: Set(operator_tags),
             attachments_hash: Set(None),
-            parent_signal_message_id: Set(None),
         }
         .insert(txn)
         .await

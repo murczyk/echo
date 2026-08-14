@@ -417,6 +417,17 @@ export type InboxMessage = {
   deviceName: string | null;
   inboxTags: Array<InboxMessageTag> | null;
   metadata: Array<InboxMessageMetadata>;
+  parentMessages: Array<InboxMessageSummary>;
+  intelligenceReports: Array<InboxMessageSummary>;
+};
+
+export type InboxMessageSummary = {
+  id: number;
+  text: string;
+  timestamp: number | null;
+  date: string | null;
+  time: string | null;
+  groupMasterKey: string | null;
 };
 
 export type InboxMessageMetadata = {

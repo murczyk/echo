@@ -48,7 +48,7 @@ import {
   type MessageCardNavigationMenuItem,
 } from './message-card.utils';
 import { formatCoordinatePreviewPointCount } from './message-coordinate-preview';
-import { getParentSignalMessageId } from '../intelligence-reports';
+import { isIntelligenceReport } from '../intelligence-reports';
 
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
@@ -294,7 +294,7 @@ function ActionIconsRow({
   }
 
   const buttons = [
-    isPresent(onCreateReport) && getParentSignalMessageId(msg) == null ? (
+    isPresent(onCreateReport) && !isIntelligenceReport(msg) ? (
       <ActionIconButton
         key="report"
         title="Створити розвіддонесення"

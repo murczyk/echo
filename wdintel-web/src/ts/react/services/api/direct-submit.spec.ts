@@ -60,20 +60,21 @@ const rawMessage = {
 describe('direct-submit response normalization', () => {
   it('loads the report-copy payload from the message endpoint', async () => {
     const response = {
-      source_signal_message_id: 42,
-      payload: {
-        full_body: 'original',
-        signal_group_master_key: null,
-        retained_media_ids: ['media-1'],
-        parent_signal_message_id: 42,
-      },
+      payloads: [
+        {
+          full_body: 'original',
+          signal_group_master_key: null,
+          retained_media_ids: ['media-1'],
+          parent_signal_message_ids: [42],
+        },
+      ],
     };
     apiMocks.postJson.mockResolvedValueOnce(response);
 
-    await expect(copyDirectSubmit(42)).resolves.toEqual(response);
+    await expect(copyDirectSubmit([42])).resolves.toEqual(response);
     expect(apiMocks.postJson).toHaveBeenCalledWith(
-      '/api/1.1/message/42/copy',
-      undefined,
+      '/api/1.1/messages/copy',
+      { message_ids: [42] },
       undefined,
     );
   });

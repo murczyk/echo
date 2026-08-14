@@ -45,7 +45,8 @@ pub struct DirectSubmitPayload {
     pub network: Option<SubmitNetwork>,
     #[serde(default)]
     pub dmr: Vec<SubmitDmrMetadata>,
-    pub signal_group_master_key: String,
+    #[serde(default)]
+    pub signal_group_master_key: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_update")]
     pub device_name_id: Option<Option<i64>>,
     #[serde(default)]

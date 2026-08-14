@@ -38,34 +38,30 @@ Endpoint доступний користувачам із роллю `Rer`.
 {
   "payloads": [
     {
-    "full_body": "12.345 МГц\nКонтакт з позивним ALPHA",
-    "text": "Контакт з позивним ALPHA",
-    "comment": "Початковий коментар",
-    "freq": "12.345",
-    "coords": [
-      { "lat": 50.4501, "lon": 30.5234 }
-    ],
-    "from": null,
-    "to": ["ALPHA"],
-    "tags": ["важливе", "радіо"],
-    "timestamp": "2026-08-13T10:15:30.123Z",
-    "post": "Пост 1",
-    "unit": "Підрозділ 1",
-    "locations": ["Київ"],
-    "network": {
-      "signal_name": null,
-      "cc": null,
-      "name": "мережа 1"
-    },
-    "dmr": [],
-    "signal_group_master_key": "source-group-master-key",
-    "device_name_id": 17,
-    "upload_urls": null,
-    "deleted_media_ids": null,
-    "retained_media_ids": [
-      "0190f2b7-7e2a-7c2b-a8e3-5f2b1e8a1111"
-    ],
-    "parent_signal_message_ids": [801]
+      "full_body": "12.345 МГц\nКонтакт з позивним ALPHA",
+      "text": "Контакт з позивним ALPHA",
+      "comment": "Початковий коментар",
+      "freq": "12.345",
+      "coords": [{ "lat": 50.4501, "lon": 30.5234 }],
+      "from": null,
+      "to": ["ALPHA"],
+      "tags": ["важливе", "радіо"],
+      "timestamp": "2026-08-13T10:15:30.123Z",
+      "post": "Пост 1",
+      "unit": "Підрозділ 1",
+      "locations": ["Київ"],
+      "network": {
+        "signal_name": null,
+        "cc": null,
+        "name": "мережа 1"
+      },
+      "dmr": [],
+      "signal_group_master_key": "source-group-master-key",
+      "device_name_id": 17,
+      "upload_urls": null,
+      "deleted_media_ids": null,
+      "retained_media_ids": ["0190f2b7-7e2a-7c2b-a8e3-5f2b1e8a1111"],
+      "parent_signal_message_ids": [801]
     }
   ]
 }
@@ -98,20 +94,34 @@ Content-Type: application/json
 ```json
 {
   "messages": [
-    [801, {
-      "message_uid": "...",
-      "text": "...",
-      "media": [],
-      "callsigns": ["ALPHA"],
-      "timestamp": 1780000000000,
-      "message_comments": [],
-      "metadata": []
-    }]
+    [
+      801,
+      {
+        "message_uid": "...",
+        "text": "...",
+        "media": [],
+        "callsigns": ["ALPHA"],
+        "timestamp": 1780000000000,
+        "message_comments": [],
+        "metadata": [],
+        "parent_messages": [],
+        "intelligence_reports": [
+          {
+            "id": 912,
+            "text": "Короткий текст розвіддонесення",
+            "timestamp": 1780000300000,
+            "date": "2026-08-13",
+            "time": "10:20",
+            "group_master_key": null
+          }
+        ]
+      }
+    ]
   ]
 }
 ```
 
-Фактична модель `InboxMessage` має багато додаткових полів. На frontend для декодування потрібно використовувати наявні `messageIdsReqEncoder` і `messageIdsRspDecoder`.
+`parent_messages` містить короткі дані оригіналів для розвіддонесення, а `intelligence_reports` — короткі дані розвіддонесень для оригіналу. Обидва масиви навмисно нерекурсивні. Фактична модель `InboxMessage` має багато додаткових полів. На frontend для декодування потрібно використовувати наявні `messageIdsReqEncoder` і `messageIdsRspDecoder`.
 
 Endpoint доступний користувачам із роллю `Rer` або `ApiAgent`.
 
@@ -143,9 +153,7 @@ Content-Type: application/json
   "signal_group_master_key": "target-group-master-key",
   "device_name_id": null,
   "upload_urls": ["<completed-upload-url>"],
-  "deleted_media_ids": [
-    "0190f2b7-7e2a-7c2b-a8e3-5f2b1e8a1111"
-  ],
+  "deleted_media_ids": ["0190f2b7-7e2a-7c2b-a8e3-5f2b1e8a1111"],
   "retained_media_ids": [],
   "parent_signal_message_ids": [801, 802]
 }
@@ -170,30 +178,30 @@ Content-Type: application/json
 
 ## Поля `DirectSubmitPayload`
 
-| Поле | Тип | Поведінка під час копіювання |
-| --- | --- | --- |
-| `full_body` | `string \| null` | Повний текст повідомлення. Саме це поле використовується для побудови нового body. |
-| `text` | `string \| null` | Текст без заголовків. |
-| `comment` | `string \| null` | Поточний редагований коментар користувача. Старі коментарі копіюються сервером, а значення цього поля замінює коментар поточного користувача. |
-| `freq` | `string \| null` | Частота. |
-| `coords` | `Array<{lat: number, lon: number}>` | Координати повідомлення. |
-| `from` | `string \| null` | Позивний відправника. У Rust-коді поле називається `from_callsign`, але JSON-ключ — саме `from`. |
-| `to` | `string[]` | Позивні адресатів. |
-| `tags` | `string[] \| null` | Теги за назвами/label, не за числовими ID. |
-| `timestamp` | `string \| null` | Час у форматі RFC 3339, зазвичай із мілісекундами та суфіксом `Z`. |
-| `post` | `string \| null` | Пост. |
-| `unit` | `string \| null` | Підрозділ. |
-| `locations` | `string[]` | Локації. |
-| `network` | `SubmitNetwork \| null` | Об’єкт `{signal_name, cc, name}`. |
-| `dmr` | `SubmitDmrMetadata[]` | DMR metadata для submit. Для звичайної копії endpoint повертає `[]`. |
-| `signal_group_master_key` | `string` | Обов’язкова цільова група. Користувач повинен мати до неї доступ. |
-| `device_name_id` | `number \| null` | ID пристрою або `null`, щоб очистити пристрій. Особливість nullable semantics описана нижче. |
-| `upload_urls` | `string[] \| null` | URL нових завершених upload-ів. Нові файли зберігаються у S3 під час submit. |
-| `deleted_media_ids` | `string[] \| null` | UUID media, які потрібно виключити з копії. Для копії це UUID media батьківського повідомлення. |
-| `retained_media_ids` | `string[] \| null` | UUID media батьківського повідомлення, які потрібно залишити в копії. |
-| `parent_signal_message_ids` | `number[]` | ID усіх `signal_message`, на яких базується нова копія. Для звичайного submit передається порожній масив; під час edit поле ігнорується. |
+| Поле                        | Тип                                 | Поведінка під час копіювання                                                                                                                                         |
+| --------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `full_body`                 | `string \| null`                    | Повний текст повідомлення. Саме це поле використовується для побудови нового body.                                                                                   |
+| `text`                      | `string \| null`                    | Текст без заголовків.                                                                                                                                                |
+| `comment`                   | `string \| null`                    | Поточний редагований коментар користувача. Старі коментарі копіюються сервером, а значення цього поля замінює коментар поточного користувача.                        |
+| `freq`                      | `string \| null`                    | Частота.                                                                                                                                                             |
+| `coords`                    | `Array<{lat: number, lon: number}>` | Координати повідомлення.                                                                                                                                             |
+| `from`                      | `string \| null`                    | Позивний відправника. У Rust-коді поле називається `from_callsign`, але JSON-ключ — саме `from`.                                                                     |
+| `to`                        | `string[]`                          | Позивні адресатів.                                                                                                                                                   |
+| `tags`                      | `string[] \| null`                  | Теги за назвами/label, не за числовими ID.                                                                                                                           |
+| `timestamp`                 | `string \| null`                    | Час у форматі RFC 3339, зазвичай із мілісекундами та суфіксом `Z`.                                                                                                   |
+| `post`                      | `string \| null`                    | Пост.                                                                                                                                                                |
+| `unit`                      | `string \| null`                    | Підрозділ.                                                                                                                                                           |
+| `locations`                 | `string[]`                          | Локації.                                                                                                                                                             |
+| `network`                   | `SubmitNetwork \| null`             | Об’єкт `{signal_name, cc, name}`.                                                                                                                                    |
+| `dmr`                       | `SubmitDmrMetadata[]`               | DMR metadata для submit. Для звичайної копії endpoint повертає `[]`.                                                                                                 |
+| `signal_group_master_key`   | `string \| null`                    | Обов’язкова для звичайного повідомлення. Для розвіддонесення з `parent_signal_message_ids` може бути `null`; тоді воно доступне лише через оригінальне повідомлення. |
+| `device_name_id`            | `number \| null`                    | ID пристрою або `null`, щоб очистити пристрій. Особливість nullable semantics описана нижче.                                                                         |
+| `upload_urls`               | `string[] \| null`                  | URL нових завершених upload-ів. Нові файли зберігаються у S3 під час submit.                                                                                         |
+| `deleted_media_ids`         | `string[] \| null`                  | UUID media, які потрібно виключити з копії. Для копії це UUID media батьківського повідомлення.                                                                      |
+| `retained_media_ids`        | `string[] \| null`                  | UUID media батьківського повідомлення, які потрібно залишити в копії.                                                                                                |
+| `parent_signal_message_ids` | `number[]`                          | ID усіх `signal_message`, на яких базується нова копія. Для звичайного submit передається порожній масив; під час edit поле ігнорується.                             |
 
-Усі поля, крім `signal_group_master_key`, мають default/optional поведінку на рівні JSON. Для copy flow рекомендується передавати весь payload, який повернув endpoint підготовки копії, і змінювати лише поля форми.
+Усі поля мають default/optional поведінку на рівні JSON, але звичайний submit без `parent_signal_message_ids` все одно вимагає непорожній `signal_group_master_key`. Для copy flow рекомендується передавати весь payload, який повернув endpoint підготовки копії, і змінювати лише поля форми.
 
 ### `device_name_id`: три стани
 
@@ -270,20 +278,20 @@ Frontend не повинен обнуляти або видаляти `parent_si
 
 Основні HTTP-коди:
 
-| HTTP | `code` | Приклад ситуації |
-| --- | --- | --- |
-| `400` | `validation_error` | Не вказана група, немає тексту та media, некоректний UUID або несумісний payload. |
-| `401` | `unauthenticated` | Сесія завершилася. |
-| `403` | `forbidden` | Недостатньо прав. |
-| `404` | `not_found` | Початкове повідомлення, цільова група або media не знайдені/недоступні. |
-| `500` | `internal_error` | Внутрішня помилка збереження або storage. |
+| HTTP  | `code`             | Приклад ситуації                                                                                              |
+| ----- | ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `400` | `validation_error` | Не вказана група для звичайного повідомлення, немає тексту та media, некоректний UUID або несумісний payload. |
+| `401` | `unauthenticated`  | Сесія завершилася.                                                                                            |
+| `403` | `forbidden`        | Недостатньо прав.                                                                                             |
+| `404` | `not_found`        | Початкове повідомлення, цільова група або media не знайдені/недоступні.                                       |
+| `500` | `internal_error`   | Внутрішня помилка збереження або storage.                                                                     |
 
 Помилки потрібно показувати користувачу через стандартну frontend-обробку API-помилок; їх не слід мовчки ігнорувати.
 
 ## Рекомендована поведінка UI
 
 1. Показати loading state під час підготовки копії.
-2. Вважати `payload` чернеткою та дати користувачу вибрати `signal_group_master_key`.
+2. Вважати `payloads` чернетками та дати користувачу вибрати або очистити `signal_group_master_key` для розвіддонесення.
 3. При зміні media підтримувати окремо старі UUID (`retained_media_ids`) і нові upload URL (`upload_urls`).
 4. Заборонити повторне натискання Save під час submit.
 5. Після успішного submit перейти до нового `signal_message_id` і оновити дані повідомлення з відповіді або через `messages-by-id`.

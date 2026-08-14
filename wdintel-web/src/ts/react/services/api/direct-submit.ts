@@ -209,12 +209,11 @@ export type DirectSubmitRequest = {
   upload_urls?: string[] | null;
   deleted_media_ids?: string[];
   retained_media_ids?: string[];
-  parent_signal_message_id?: number;
+  parent_signal_message_ids?: number[];
 };
 
 export type DirectSubmitCopyResponse = {
-  source_signal_message_id: number;
-  payload: DirectSubmitRequest;
+  payloads: DirectSubmitRequest[];
 };
 
 export type DirectSubmitResponse = {
@@ -270,12 +269,12 @@ export function formatDirectSubmitError(error: unknown, action: 'copy' | 'parse'
 }
 
 export async function copyDirectSubmit(
-  id: number,
+  ids: number[],
   options?: RequestOptions,
 ): Promise<DirectSubmitCopyResponse> {
   return await postJson<DirectSubmitCopyResponse>(
-    `/api/1.1/message/${id}/copy`,
-    undefined,
+    '/api/1.1/messages/copy',
+    { message_ids: ids },
     options,
   );
 }

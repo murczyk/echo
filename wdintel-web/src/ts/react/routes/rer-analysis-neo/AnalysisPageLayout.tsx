@@ -19,7 +19,7 @@ import { getAnalysisCenterTabs } from './types';
 import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
-import { getParentSignalMessageId } from '../shared/intelligence-reports';
+import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 
 export type RerAnalysisNeoPageProps = {
@@ -242,7 +242,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
           }
         }}
         onSubmitEdit={
-          page.editorMessage && getParentSignalMessageId(page.editorMessage.message) == null
+          page.editorMessage && !isIntelligenceReport(page.editorMessage.message)
             ? async (_id, message) => {
                 await Promise.resolve(page.saveEditor(message));
               }

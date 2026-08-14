@@ -35,7 +35,7 @@ import { MAX_MESSAGE_ATTACHMENTS, useMessageUppy } from './useMessageUppy';
 import { useMessageParser } from './useMessageParser';
 import { useMessageSubmit } from './useMessageSubmit';
 import { isManageMessageSubmitEligible } from './manage-message-submit-eligibility';
-import { getParentSignalMessageId } from '../intelligence-reports';
+import { getParentMessages, summarizeIntelligenceMessage } from '../intelligence-reports';
 
 export type UseManageMessageDrawerProps = {
   open: boolean;
@@ -66,13 +66,15 @@ export function useManageMessageDrawer({
   onSubmitEdit,
 }: UseManageMessageDrawerProps) {
   const isEditMode = isPresent(editTarget);
-  const reportParentId = isPresent(reportSource)
-    ? reportSource.id
+  const reportParents = isPresent(reportSource)
+    ? [summarizeIntelligenceMessage(reportSource.id, reportSource.message)]
     : isPresent(editTarget)
-      ? getParentSignalMessageId(editTarget.message)
-      : null;
+      ? getParentMessages(editTarget.message)
+      : [];
+  const reportParentIds = reportParents.map(({ id }) => id);
+  const reportParentIdsKey = reportParentIds.join(',');
   const isReportCreateMode = isPresent(reportSource) && !isEditMode;
-  const isReportMode = isPresent(reportParentId);
+  const isReportMode = reportParentIds.length > 0;
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [signalGroups, setSignalGroups] = useState<SignalGroupEntry[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
@@ -418,7 +420,7 @@ export function useManageMessageDrawer({
     setSelectedNetwork(null);
     setUnitLocked(false);
     setReportCopyLoaded(false);
-    setOriginalReportText(reportSource?.message.text ?? '');
+    setOriginalReportText(reportParents.map(({ text }) => text).join('\n\n'));
     if (isEditMode && editTarget) {
       const metadata = editTarget.message.metadata ?? [];
       reset({
@@ -465,16 +467,22 @@ export function useManageMessageDrawer({
   }, [open, isEditMode, isReportCreateMode, editTarget?.id, reportSource?.id, recentValues]);
 
   useEffect(() => {
-    if (!open || !isReportMode || reportParentId == null) return;
+    if (!open || !isReportMode) return;
     let active = true;
     setCopyLoading(true);
-    copyDirectSubmit(reportParentId)
-      .then(({ payload }) => {
+    copyDirectSubmit(reportParentIds)
+      .then(({ payloads }) => {
         if (!active) return;
         setOriginalReportText(
-          payload.full_body ?? payload.text ?? reportSource?.message.text ?? '',
+          payloads
+            .map(
+              (payload, index) =>
+                payload.full_body ?? payload.text ?? reportParents[index]?.text ?? '',
+            )
+            .join('\n\n'),
         );
-        if (isReportCreateMode) {
+        const payload = payloads[0];
+        if (isReportCreateMode && payload) {
           reset({
             ...mapDirectSubmitCopyToForm(payload),
             full_body: '',
@@ -496,7 +504,7 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [open, isReportCreateMode, isReportMode, reportParentId, reportSource?.id, reset]);
+  }, [open, isReportCreateMode, isReportMode, reportParentIdsKey, reportSource?.id, reset]);
 
   useEffect(() => {
     if (!open || !isEditMode || !editTarget) return;

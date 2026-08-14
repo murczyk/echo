@@ -882,7 +882,7 @@ describe('RerAnalysisNeoPage', () => {
     const page = buildPage();
     page.editorMessage = {
       id: 91,
-      message: { messageUid: 'report-91', parentSignalMessageId: 42 } as never,
+      message: { messageUid: 'report-91', parentMessages: [{ id: 42 }] } as never,
     };
     useRerAnalysisNeoPageMock.mockReturnValueOnce(page);
 

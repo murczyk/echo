@@ -1,8 +1,8 @@
 use super::types::DirectSubmitPayload;
 use crate::entities::{
-    datasource_group, device_name, login, sigint_inbox_item, signal_group,
-    signal_message, signal_message_group, signal_message_media, signal_profile,
-    tag,
+    datasource_group, device_name, intel_prod, login, sigint_inbox_item,
+    signal_group, signal_message, signal_message_group, signal_message_media,
+    signal_profile, tag,
 };
 use crate::error::AppError;
 use crate::types::*;
@@ -32,7 +32,8 @@ where
         .one(dbx)
         .await
         .c(h!())?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
 
     crate::messenger::group::ensure_identity_group_available(
         dbx,
@@ -47,25 +48,128 @@ where
 pub async fn find_editable_signal_message<C>(
     dbx: &C,
     signal_message_id: i64,
-    signal_group_master_key: &str,
+    allowed_groups: &[String],
 ) -> Result<signal_message::Model, AppError>
 where
     C: ConnectionTrait,
 {
-    signal_message::Entity::find_by_id(signal_message_id)
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SignalMessageGroup.def(),
-        )
+    let signal_message = signal_message::Entity::find_by_id(signal_message_id)
         .filter(signal_message::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    let groups = signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId.eq(signal_message_id),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    if groups.iter().any(|group| {
+        group
+            .group_master_key
+            .as_ref()
+            .is_some_and(|key| allowed_groups.contains(key))
+    }) {
+        return Ok(signal_message);
+    }
+    if !groups.is_empty() {
+        return Err(AppError::NotFound);
+    }
+    let parent_ids = find_intel_prod_parent_ids(dbx, signal_message_id)
+        .await
+        .c(h!())?;
+    let has_parent_access = signal_message_group::Entity::find()
+        .filter(signal_message_group::Column::SignalMessageId.is_in(parent_ids))
         .filter(
             signal_message_group::Column::GroupMasterKey
-                .eq(signal_group_master_key),
+                .is_in(allowed_groups.to_vec()),
+        )
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if has_parent_access {
+        Ok(signal_message)
+    } else {
+        Err(AppError::NotFound)
+    }
+}
+
+pub async fn find_intel_prod_parent_ids<C>(
+    dbx: &C,
+    signal_message_id: i64,
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(intel_prod::Entity::find()
+        .filter(intel_prod::Column::SignalMessageId.eq(signal_message_id))
+        .order_by_asc(intel_prod::Column::CreatedAt)
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|link| link.parent_signal_message_id)
+        .collect())
+}
+
+pub async fn resolve_parent_datasource_id<C>(
+    dbx: &C,
+    parent_signal_message_ids: &[i64],
+    allowed_groups: &[String],
+) -> Result<i64, AppError>
+where
+    C: ConnectionTrait,
+{
+    let parent_group = signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId
+                .is_in(parent_signal_message_ids.to_vec()),
+        )
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .is_in(allowed_groups.to_vec()),
         )
         .one(dbx)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)
+        .c(h!())?;
+    if let Some(datasource_group_id) = parent_group.datasource_group_id {
+        if let Some(datasource_group) =
+            datasource_group::Entity::find_by_id(datasource_group_id)
+                .one(dbx)
+                .await
+                .c(h!())?
+        {
+            return Ok(datasource_group.datasource_id);
+        }
+    }
+    match parent_group.group_master_key.as_deref() {
+        Some(group_master_key) => {
+            resolve_datasource_id_for_group(dbx, group_master_key).await
+        }
+        None => Err(AppError::NotFound),
+    }
+}
+
+pub async fn delete_signal_message_groups<C>(
+    dbx: &C,
+    signal_message_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    signal_message_group::Entity::delete_many()
+        .filter(
+            signal_message_group::Column::SignalMessageId.eq(signal_message_id),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
 }
 
 pub async fn find_copyable_signal_message<C>(

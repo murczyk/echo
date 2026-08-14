@@ -200,7 +200,7 @@ where
             }
         }),
         dmr: vec![],
-        signal_group_master_key: group_master_key,
+        signal_group_master_key: Some(group_master_key),
         device_name_id: Some(copy_inputs.inbox_item.device_name_id),
         upload_urls: None,
         deleted_media_ids: None,
@@ -336,41 +336,69 @@ async fn save_signal_message(
     signal_message_id: Option<i64>,
     payload: DirectSubmitPayload,
 ) -> Result<DirectSubmitRsp, AppError> {
-    validate_direct_submit_payload(env, &payload, signal_message_id.is_none())?;
-
-    let parent_signal_message_ids: &[i64] = if signal_message_id.is_some() {
-        &[]
-    } else {
-        &payload.parent_signal_message_ids
-    };
-
     let upload_urls = payload.upload_urls.clone().unwrap_or_default();
-    let uploads =
-        resolve_direct_submit_uploads(env, login, &upload_urls).await?;
     let delete_uploaded_attachments = env
         .config
         .feature_delete_uploaded_attachment
         .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT);
 
     let txn = env.dbx.begin().await.c(h!())?;
-    let signal_group = query::find_available_signal_group(
-        &txn,
-        login,
-        &payload.signal_group_master_key,
+    let allowed_groups =
+        crate::messenger::group::get_identity_sigint_groups(&txn, login)
+            .await
+            .c(h!())?;
+    let stored_parent_signal_message_ids = match signal_message_id {
+        Some(signal_message_id) => {
+            query::find_intel_prod_parent_ids(&txn, signal_message_id)
+                .await
+                .c(h!())?
+        }
+        None => vec![],
+    };
+    let parent_signal_message_ids = match signal_message_id {
+        Some(_) => stored_parent_signal_message_ids.as_slice(),
+        None => payload.parent_signal_message_ids.as_slice(),
+    };
+    let copy_parent_signal_message_ids = match signal_message_id {
+        Some(_) => &[][..],
+        None => parent_signal_message_ids,
+    };
+    let is_intelligence_report = !parent_signal_message_ids.is_empty();
+    validate_direct_submit_payload(
+        env,
+        &payload,
+        signal_message_id.is_none(),
+        is_intelligence_report,
     )
-    .await
     .c(h!())?;
+    let uploads = resolve_direct_submit_uploads(env, login, &upload_urls)
+        .await
+        .c(h!())?;
 
-    let copy_sources = if parent_signal_message_ids.is_empty() {
+    let signal_group_master_key = payload
+        .signal_group_master_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|key| !key.is_empty());
+    let signal_group = match signal_group_master_key {
+        Some(signal_group_master_key) => Some(
+            query::find_available_signal_group(
+                &txn,
+                login,
+                signal_group_master_key,
+            )
+            .await
+            .c(h!())?,
+        ),
+        None => None,
+    };
+
+    let copy_sources = if copy_parent_signal_message_ids.is_empty() {
         vec![]
     } else {
-        let allowed_groups =
-            crate::messenger::group::get_identity_sigint_groups(&txn, login)
-                .await
-                .c(h!())?;
         query::find_copyable_signal_messages(
             &txn,
-            parent_signal_message_ids,
+            copy_parent_signal_message_ids,
             &allowed_groups,
         )
         .await
@@ -381,7 +409,7 @@ async fn save_signal_message(
             query::find_editable_signal_message(
                 &txn,
                 signal_message_id,
-                &signal_group.master_key,
+                &allowed_groups,
             )
             .await
             .c(h!())?,
@@ -399,25 +427,29 @@ async fn save_signal_message(
                 .map_err(anyhow::Error::from)
                 .map_err(AppError::from)
         })
-        .collect::<Result<Vec<_>, AppError>>()?;
+        .collect::<Result<Vec<_>, AppError>>()
+        .c(h!())?;
     let (retained_media_count, media_to_delete) = match signal_message_id {
         Some(signal_message_id) => {
-            load_edit_media(&txn, signal_message_id, &deleted_media_ids).await?
+            load_edit_media(&txn, signal_message_id, &deleted_media_ids)
+                .await
+                .c(h!())?
         }
         None => {
             let media =
-                load_copy_media(&txn, parent_signal_message_ids, &payload)
+                load_copy_media(&txn, copy_parent_signal_message_ids, &payload)
                     .await
                     .c(h!())?;
             (media.len(), vec![])
         }
     };
 
-    validate_direct_submit_content(&payload, retained_media_count)?;
+    validate_direct_submit_content(&payload, retained_media_count).c(h!())?;
     validate_direct_submit_attachment_count(
         retained_media_count,
         uploads.len(),
-    )?;
+    )
+    .c(h!())?;
     let sender = match signal_message
         .as_ref()
         .and_then(|signal_message| signal_message.sender.clone())
@@ -440,7 +472,9 @@ async fn save_signal_message(
         None => existing_device_name_id,
     };
     if let Some(device_name_id) = device_name_id {
-        query::validate_device_name_id(&txn, device_name_id).await?;
+        query::validate_device_name_id(&txn, device_name_id)
+            .await
+            .c(h!())?;
     }
     let logins = crate::users::get_organism_login_ids_by_id(&txn, login)
         .await
@@ -458,13 +492,16 @@ async fn save_signal_message(
         &txn,
         signal_message_id,
         signal_group,
+        parent_signal_message_ids,
+        &allowed_groups,
         login,
         &logins,
         submit_item,
         !uploads.is_empty() || retained_media_count > 0,
         keep_timestamp_missing,
     )
-    .await?;
+    .await
+    .c(h!())?;
     let network = payload
         .network
         .as_ref()
@@ -486,10 +523,11 @@ async fn save_signal_message(
         &uploads,
         &media_to_delete,
         delete_uploaded_attachments,
-        parent_signal_message_ids,
+        copy_parent_signal_message_ids,
         &payload,
     )
-    .await?;
+    .await
+    .c(h!())?;
 
     let req = crate::rer_importer::types::InboxMessagesReq {
         highlight_points: Some(true),
@@ -502,7 +540,8 @@ async fn save_signal_message(
         &[rsp.signal_message_id],
         &req,
     )
-    .await?;
+    .await
+    .c(h!())?;
     if let Some((_, message)) = messages.into_iter().next() {
         rsp.message = Some(message);
     }
@@ -514,9 +553,13 @@ fn validate_direct_submit_payload(
     env: &Env,
     payload: &DirectSubmitPayload,
     validate_parent_ids: bool,
+    is_intelligence_report: bool,
 ) -> Result<(), AppError> {
     let upload_urls = payload.upload_urls.as_deref().unwrap_or_default();
-    validate_signal_group_master_key(&payload.signal_group_master_key)?;
+    validate_signal_group_master_key(
+        payload.signal_group_master_key.as_deref(),
+        is_intelligence_report,
+    )?;
     if !upload_urls.is_empty()
         && (env.config.s3_config.is_none() || env.s3.is_none())
     {
@@ -543,9 +586,12 @@ fn validate_direct_submit_payload(
 }
 
 fn validate_signal_group_master_key(
-    signal_group_master_key: &str,
+    signal_group_master_key: Option<&str>,
+    is_intelligence_report: bool,
 ) -> Result<(), AppError> {
-    if signal_group_master_key.trim().is_empty() {
+    if !is_intelligence_report
+        && signal_group_master_key.is_none_or(|key| key.trim().is_empty())
+    {
         return Err(AppError::Form(BTreeMap::from([(
             "signal_group_master_key".to_string(),
             "Оберіть групу.".to_string(),
@@ -694,27 +740,54 @@ async fn persist_direct_submit_item(
     env: &Env,
     txn: &DatabaseTransaction,
     signal_message_id: Option<i64>,
-    signal_group: crate::entities::signal_group::Model,
+    signal_group: Option<crate::entities::signal_group::Model>,
+    parent_signal_message_ids: &[i64],
+    allowed_groups: &[String],
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
     submit_item: InboxSubmitItem,
     allow_empty_content: bool,
     keep_timestamp_missing: bool,
 ) -> Result<SubmittedInboxItem, AppError> {
-    let datasource_id = signal_group.datasource_id.unwrap_or(
-        query::resolve_datasource_id_for_group(txn, &signal_group.master_key)
+    let (datasource_id, groups) = match signal_group {
+        Some(signal_group) => {
+            let datasource_id = signal_group.datasource_id.unwrap_or(
+                query::resolve_datasource_id_for_group(
+                    txn,
+                    &signal_group.master_key,
+                )
+                .await
+                .c(h!())?,
+            );
+            let datasource_group_id =
+                crate::messenger::group::ensure_datasource_group_id(
+                    txn,
+                    signal_group.master_key.clone(),
+                    datasource_id,
+                )
+                .await
+                .c(h!())?;
+            (
+                datasource_id,
+                vec![(signal_group.master_key, datasource_group_id)],
+            )
+        }
+        None => (
+            query::resolve_parent_datasource_id(
+                txn,
+                parent_signal_message_ids,
+                allowed_groups,
+            )
             .await
             .c(h!())?,
-    );
-    let datasource_group_id =
-        crate::messenger::group::ensure_datasource_group_id(
-            txn,
-            signal_group.master_key.clone(),
-            datasource_id,
-        )
-        .await
-        .c(h!())?;
-    let groups = [(signal_group.master_key.clone(), datasource_group_id)];
+            vec![],
+        ),
+    };
+    if let Some(signal_message_id) = signal_message_id {
+        query::delete_signal_message_groups(txn, signal_message_id)
+            .await
+            .c(h!())?;
+    }
     Ok(match signal_message_id {
         Some(signal_message_id) => {
             crate::rer_importer::inbox::submit_bl::edit_inbox_item_with_groups_location_mode(
@@ -932,10 +1005,10 @@ fn direct_submit_payload_to_item(
 mod tests {
     use super::*;
     use crate::entities::{
-        device_name, palitra, palitra_highlight_worker_job, sigint_comment,
-        sigint_inbox_item, sigint_inbox_item_point_token,
-        sigint_inbox_item_tag, signal_message, signal_message_media, tag,
-        tag_suggestion_worker_queue,
+        device_name, intel_prod, palitra, palitra_highlight_worker_job,
+        sigint_comment, sigint_inbox_item, sigint_inbox_item_point_token,
+        sigint_inbox_item_tag, signal_message, signal_message_group,
+        signal_message_media, tag, tag_suggestion_worker_queue,
     };
     use crate::functest::tests::cleanup;
     use sea_orm::{
@@ -963,7 +1036,7 @@ mod tests {
             locations: vec![],
             network: None,
             dmr: vec![],
-            signal_group_master_key: TEST_SIGNAL_GROUP_KEY.to_string(),
+            signal_group_master_key: Some(TEST_SIGNAL_GROUP_KEY.to_string()),
             device_name_id: None,
             upload_urls: None,
             deleted_media_ids: None,
@@ -1023,9 +1096,10 @@ mod tests {
     #[test]
     fn direct_submit_requires_signal_group() {
         assert!(matches!(
-            validate_signal_group_master_key(" "),
+            validate_signal_group_master_key(Some(" "), false),
             Err(AppError::Form(_))
         ));
+        assert!(validate_signal_group_master_key(None, true).is_ok());
     }
 
     #[tokio::test]
@@ -1324,6 +1398,97 @@ mod tests {
                 .unwrap()
                 .device_name_id,
             None
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn ungrouped_report_returns_reciprocal_summaries_and_can_be_edited() {
+        let env = cleanup().await.unwrap();
+        let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
+        let original = submit_signal_message(
+            &login_id,
+            &env,
+            direct_submit_payload("original body"),
+        )
+        .await
+        .unwrap();
+
+        let mut report_payload = direct_submit_payload("report body");
+        report_payload.signal_group_master_key = None;
+        report_payload.parent_signal_message_ids =
+            vec![original.signal_message_id];
+        let report = submit_signal_message(&login_id, &env, report_payload)
+            .await
+            .unwrap();
+
+        let report_message = report.message.as_ref().unwrap();
+        assert_eq!(report_message.parent_messages.len(), 1);
+        assert_eq!(
+            report_message.parent_messages[0].id,
+            original.signal_message_id
+        );
+        assert_eq!(report_message.parent_messages[0].text, "original body");
+        assert_eq!(report_message.group_master_key, None);
+
+        let logins =
+            crate::users::get_organism_login_ids_by_id(&env.dbx, &login_id)
+                .await
+                .unwrap();
+        let messages = crate::rer_importer::inbox::messages_by_id_bl(
+            &login_id,
+            &logins,
+            &env,
+            &[original.signal_message_id],
+            &crate::rer_importer::types::InboxMessagesReq::default(),
+        )
+        .await
+        .unwrap();
+        let original_message = &messages[0].1;
+        assert_eq!(original_message.intelligence_reports.len(), 1);
+        assert_eq!(
+            original_message.intelligence_reports[0].id,
+            report.signal_message_id
+        );
+        assert_eq!(
+            original_message.intelligence_reports[0].text,
+            "report body"
+        );
+
+        let mut edit_payload = direct_submit_payload("updated report body");
+        edit_payload.signal_group_master_key = None;
+        let edited = edit_signal_message(
+            &login_id,
+            &env,
+            report.signal_message_id,
+            edit_payload,
+        )
+        .await
+        .unwrap();
+        assert_eq!(edited.message.unwrap().text, "updated report body");
+        assert_eq!(
+            signal_message_group::Entity::find()
+                .filter(
+                    signal_message_group::Column::SignalMessageId
+                        .eq(report.signal_message_id)
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            intel_prod::Entity::find()
+                .filter(
+                    intel_prod::Column::SignalMessageId
+                        .eq(report.signal_message_id)
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
         );
     }
 

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fetchMessagesByIds } from './inbox-messages';
 import {
   getIntelligenceReports,
-  getParentSignalMessageId,
+  getParentMessages,
 } from '../../routes/shared/intelligence-reports';
 
 const apiMocks = vi.hoisted(() => ({
@@ -116,12 +116,23 @@ describe('fetchMessagesByIds', () => {
           7,
           {
             text: 'report',
-            parent_signal_message_id: 4,
+            parent_messages: [
+              {
+                id: 4,
+                text: 'original',
+                timestamp: null,
+                date: null,
+                time: null,
+                group_master_key: 'original-group',
+              },
+            ],
             intelligence_reports: [
               {
                 id: 9,
                 text: 'summary',
                 timestamp: 100,
+                date: null,
+                time: null,
                 group_master_key: null,
               },
             ],
@@ -132,7 +143,16 @@ describe('fetchMessagesByIds', () => {
 
     const [[, message]] = await fetchMessagesByIds([7]);
 
-    expect(getParentSignalMessageId(message)).toBe(4);
+    expect(getParentMessages(message)).toEqual([
+      {
+        id: 4,
+        text: 'original',
+        timestamp: null,
+        date: null,
+        time: null,
+        groupMasterKey: 'original-group',
+      },
+    ]);
     expect(getIntelligenceReports(message)).toEqual([
       {
         id: 9,

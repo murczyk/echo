@@ -64,6 +64,153 @@ pub struct InboxMessageDesc {
     pub metadata: Option<serde_json::Value>,
 }
 
+#[derive(Default)]
+struct IntelligenceReportSummaries {
+    parents_by_message: HashMap<i64, Vec<InboxMessageSummary>>,
+    reports_by_message: HashMap<i64, Vec<InboxMessageSummary>>,
+}
+
+fn inbox_message_summary(
+    message_id: i64,
+    messages: &HashMap<i64, signal_message::Model>,
+    inbox_items: &HashMap<i64, sigint_inbox_item::Model>,
+    group_master_keys: &HashMap<i64, String>,
+) -> Option<InboxMessageSummary> {
+    let message = messages.get(&message_id)?;
+    let inbox_item = inbox_items.get(&message_id);
+    Some(InboxMessageSummary {
+        id: message_id,
+        text: message.body.clone().unwrap_or_default(),
+        timestamp: message
+            .timestamp
+            .map(|timestamp| timestamp.and_utc().timestamp_millis()),
+        date: inbox_item.and_then(|item| item.date.clone()),
+        time: inbox_item.and_then(|item| item.time.clone()),
+        group_master_key: group_master_keys.get(&message_id).cloned(),
+    })
+}
+
+async fn load_intelligence_report_summaries(
+    message_ids: &[i64],
+    allowed_groups: &[String],
+    dbx: &DatabaseConnection,
+) -> Result<IntelligenceReportSummaries, AppError> {
+    if message_ids.is_empty() {
+        return Ok(IntelligenceReportSummaries::default());
+    }
+    let links = intel_prod::Entity::find()
+        .filter(
+            Condition::any()
+                .add(
+                    intel_prod::Column::SignalMessageId
+                        .is_in(message_ids.to_vec()),
+                )
+                .add(
+                    intel_prod::Column::ParentSignalMessageId
+                        .is_in(message_ids.to_vec()),
+                ),
+        )
+        .order_by_asc(intel_prod::Column::CreatedAt)
+        .order_by_asc(intel_prod::Column::SignalMessageId)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    if links.is_empty() {
+        return Ok(IntelligenceReportSummaries::default());
+    }
+
+    let related_ids = links
+        .iter()
+        .flat_map(|link| {
+            [link.signal_message_id, link.parent_signal_message_id]
+        })
+        .collect::<HashSet<_>>();
+    let messages = signal_message::Entity::find()
+        .filter(signal_message::Column::Id.is_in(related_ids.iter().copied()))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|message| (message.id, message))
+        .collect::<HashMap<_, _>>();
+    let inbox_items = sigint_inbox_item::Entity::find()
+        .filter(
+            sigint_inbox_item::Column::Id.is_in(related_ids.iter().copied()),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|item| (item.id, item))
+        .collect::<HashMap<_, _>>();
+    let group_rows = signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId
+                .is_in(related_ids.iter().copied()),
+        )
+        .order_by_asc(signal_message_group::Column::Id)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let allowed_groups = allowed_groups.iter().collect::<HashSet<_>>();
+    let mut grouped_message_ids = HashSet::new();
+    let mut accessible_group_master_keys = HashMap::new();
+    for group in group_rows {
+        grouped_message_ids.insert(group.signal_message_id);
+        if let Some(group_master_key) = group
+            .group_master_key
+            .filter(|key| allowed_groups.contains(key))
+        {
+            accessible_group_master_keys
+                .entry(group.signal_message_id)
+                .or_insert(group_master_key);
+        }
+    }
+
+    let requested_ids = message_ids.iter().copied().collect::<HashSet<_>>();
+    let mut summaries = IntelligenceReportSummaries::default();
+    for link in links {
+        if requested_ids.contains(&link.signal_message_id)
+            && accessible_group_master_keys
+                .contains_key(&link.parent_signal_message_id)
+        {
+            if let Some(parent) = inbox_message_summary(
+                link.parent_signal_message_id,
+                &messages,
+                &inbox_items,
+                &accessible_group_master_keys,
+            ) {
+                summaries
+                    .parents_by_message
+                    .entry(link.signal_message_id)
+                    .or_default()
+                    .push(parent);
+            }
+        }
+        let report_is_accessible = accessible_group_master_keys
+            .contains_key(&link.signal_message_id)
+            || !grouped_message_ids.contains(&link.signal_message_id);
+        if requested_ids.contains(&link.parent_signal_message_id)
+            && report_is_accessible
+        {
+            if let Some(report) = inbox_message_summary(
+                link.signal_message_id,
+                &messages,
+                &inbox_items,
+                &accessible_group_master_keys,
+            ) {
+                summaries
+                    .reports_by_message
+                    .entry(link.parent_signal_message_id)
+                    .or_default()
+                    .push(report);
+            }
+        }
+    }
+    Ok(summaries)
+}
+
 async fn load_coords_with_locality(
     message_ids: &[i64],
     env: &Env,
@@ -265,6 +412,13 @@ pub async fn aggregate_to_inbox_messages(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
+    let mut intelligence_report_summaries = load_intelligence_report_summaries(
+        &message_ids,
+        &sigint_groups,
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
     let mut group_query = signal_message_group::Entity::find()
         .filter(
             signal_message_group::Column::SignalMessageId
@@ -566,6 +720,14 @@ pub async fn aggregate_to_inbox_messages(
                 device_name: message.device_name,
                 inbox_tags: m_inbox_tags,
                 metadata,
+                parent_messages: intelligence_report_summaries
+                    .parents_by_message
+                    .remove(&message.id)
+                    .unwrap_or_default(),
+                intelligence_reports: intelligence_report_summaries
+                    .reports_by_message
+                    .remove(&message.id)
+                    .unwrap_or_default(),
             },
         ));
     }

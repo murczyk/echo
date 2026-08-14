@@ -11,6 +11,18 @@ use std::sync::Arc;
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct InboxMessageSummary {
+    pub id: i64,
+    pub text: String,
+    pub timestamp: Option<i64>,
+    pub date: Option<String>,
+    pub time: Option<String>,
+    pub group_master_key: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct InboxMessage {
     pub message_uid: Option<String>,
     pub text: String,
@@ -58,6 +70,10 @@ pub struct InboxMessage {
     pub device_name: Option<String>,
     pub inbox_tags: Option<Vec<InboxMessageTag>>,
     pub metadata: Vec<InboxMessageMetadata>,
+    #[serde(default)]
+    pub parent_messages: Vec<InboxMessageSummary>,
+    #[serde(default)]
+    pub intelligence_reports: Vec<InboxMessageSummary>,
 }
 
 #[derive(
@@ -174,6 +190,8 @@ impl From<InboxInsertPayload> for InboxMessage {
             device_name: None,
             inbox_tags: payload.inbox_tags,
             metadata: payload.metadata,
+            parent_messages: vec![],
+            intelligence_reports: vec![],
         }
     }
 }

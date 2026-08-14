@@ -37,14 +37,6 @@ import {
   resolveMessageCardEtalonDisplayModel,
 } from '../../message-card.utils';
 
-const inboxMessagesApiMocks = vi.hoisted(() => ({
-  fetchMessagesByIds: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock('../../../../../services/api/inbox-messages', () => ({
-  fetchMessagesByIds: inboxMessagesApiMocks.fetchMessagesByIds,
-}));
-
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
 const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
@@ -798,8 +790,6 @@ describe('MessageCard', () => {
   const rendered: Rendered[] = [];
 
   beforeEach(() => {
-    inboxMessagesApiMocks.fetchMessagesByIds.mockReset();
-    inboxMessagesApiMocks.fetchMessagesByIds.mockResolvedValue([]);
     const storage = new Map<string, string>();
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
@@ -1172,6 +1162,11 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('Короткий текст розвіддонесення');
+    const reportPreview = Array.from(view.container.querySelectorAll('span')).find(
+      (element) => element.textContent === 'Короткий текст розвіддонесення',
+    );
+    expect(reportPreview?.classList.contains('line-clamp-2')).toBe(true);
+    expect(reportPreview?.classList.contains('font-bold')).toBe(false);
     expect(view.container.textContent).toContain('Група донесення');
     const comment = getMuiTypographyElementByText(view.container, 'Коментар');
     const editReport = view.container.querySelector(
@@ -1186,25 +1181,24 @@ describe('MessageCard', () => {
   });
 
   it('does not offer nested report creation for a standalone report card', async () => {
-    inboxMessagesApiMocks.fetchMessagesByIds.mockResolvedValue([
-      [
-        42,
-        buildMessage({
+    const msg = buildMessage({
+      parentMessages: [
+        {
+          id: 42,
           text: 'Короткий текст оригінального повідомлення',
+          timestamp: null,
+          date: null,
+          time: null,
           groupMasterKey: 'original-group',
-        }),
+        },
       ],
-    ]);
-    const msg = { ...buildMessage(), parentSignalMessageId: 42 } as InboxMessage;
+    });
     const view = await renderCard({ msg });
     rendered.push(view);
-
-    await act(async () => {});
 
     expect(
       view.container.querySelector('button[aria-label="Створити розвіддонесення"]'),
     ).toBeNull();
-    expect(inboxMessagesApiMocks.fetchMessagesByIds).toHaveBeenCalledWith([42]);
     expect(view.container.textContent).toContain('Оригінальне повідомлення');
     expect(view.container.textContent).toContain('Короткий текст оригінального повідомлення');
   });

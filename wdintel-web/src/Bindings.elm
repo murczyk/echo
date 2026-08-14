@@ -1083,6 +1083,8 @@ type alias InboxMessage =
     , deviceName : Maybe (String)
     , inboxTags : Maybe (List (InboxMessageTag))
     , metadata : List (InboxMessageMetadata)
+    , parentMessages : List (InboxMessageSummary)
+    , intelligenceReports : List (InboxMessageSummary)
     }
 
 
@@ -1126,6 +1128,30 @@ inboxMessageEncoder struct =
         , ( "device_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deviceName )
         , ( "inbox_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (inboxMessageTagEncoder))) struct.inboxTags )
         , ( "metadata", (Json.Encode.list (inboxMessageMetadataEncoder)) struct.metadata )
+        , ( "parent_messages", (Json.Encode.list (inboxMessageSummaryEncoder)) struct.parentMessages )
+        , ( "intelligence_reports", (Json.Encode.list (inboxMessageSummaryEncoder)) struct.intelligenceReports )
+        ]
+
+
+type alias InboxMessageSummary =
+    { id : Int
+    , text : String
+    , timestamp : Maybe (Int)
+    , date : Maybe (String)
+    , time : Maybe (String)
+    , groupMasterKey : Maybe (String)
+    }
+
+
+inboxMessageSummaryEncoder : InboxMessageSummary -> Json.Encode.Value
+inboxMessageSummaryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "text", (Json.Encode.string) struct.text )
+        , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.timestamp )
+        , ( "date", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.date )
+        , ( "time", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.time )
+        , ( "group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupMasterKey )
         ]
 
 
@@ -13277,6 +13303,19 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_tags" (Json.Decode.nullable (Json.Decode.list (inboxMessageTagDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata" (Json.Decode.list (inboxMessageMetadataDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_messages" (Json.Decode.list (inboxMessageSummaryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "intelligence_reports" (Json.Decode.list (inboxMessageSummaryDecoder))))
+
+
+inboxMessageSummaryDecoder : Json.Decode.Decoder InboxMessageSummary
+inboxMessageSummaryDecoder =
+    Json.Decode.succeed InboxMessageSummary
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "date" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "time" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.nullable (Json.Decode.string))))
 
 
 inboxMessageMetadataDecoder : Json.Decode.Decoder InboxMessageMetadata

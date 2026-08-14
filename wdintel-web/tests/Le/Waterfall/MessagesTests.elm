@@ -48,6 +48,8 @@ messageStub =
     , inboxTags = Nothing
     , messageUid = Nothing
     , metadata = []
+    , parentMessages = []
+    , intelligenceReports = []
     , networkName = Nothing
     , deviceName = Nothing
     }

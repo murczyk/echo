@@ -509,15 +509,16 @@ describe('ManageMessageDrawer edit mode', () => {
 
   it('creates a report from copied fields with optional group and retained media', async () => {
     directSubmitMocks.copyDirectSubmit.mockResolvedValue({
-      source_signal_message_id: 42,
-      payload: {
-        full_body: 'original copied body',
-        text: 'original copied body',
-        comment: 'existing comment',
-        signal_group_master_key: null,
-        retained_media_ids: ['media-1'],
-        parent_signal_message_id: 42,
-      },
+      payloads: [
+        {
+          full_body: 'original copied body',
+          text: 'original copied body',
+          comment: 'existing comment',
+          signal_group_master_key: null,
+          retained_media_ids: ['media-1'],
+          parent_signal_message_ids: [42],
+        },
+      ],
     });
     directSubmitMocks.submitDirect.mockResolvedValue({ signal_message_id: 91 });
     const source = buildMessage({
@@ -549,7 +550,7 @@ describe('ManageMessageDrawer edit mode', () => {
       );
     });
 
-    expect(directSubmitMocks.copyDirectSubmit).toHaveBeenCalledWith(42);
+    expect(directSubmitMocks.copyDirectSubmit).toHaveBeenCalledWith([42]);
     expect(container.textContent).toContain('Створити розвіддонесення');
     expect(textFieldPropsByLabel.get('Текст оригінального повідомлення')?.value).toBe(
       'original copied body',
@@ -591,10 +592,77 @@ describe('ManageMessageDrawer edit mode', () => {
         full_body: 'new report body',
         signal_group_master_key: null,
         retained_media_ids: ['media-1'],
-        parent_signal_message_id: 42,
+        parent_signal_message_ids: [42],
         comment: undefined,
       }),
     );
+
+    root.unmount();
+  });
+
+  it('edits a standalone report using its backend parent summaries', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [
+        {
+          full_body: 'original copied body',
+          signal_group_master_key: 'g-1',
+          parent_signal_message_ids: [42],
+        },
+      ],
+    });
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 91 });
+    const report = buildMessage({
+      text: 'existing report body',
+      groupMasterKey: null,
+      parentMessages: [
+        {
+          id: 42,
+          text: 'original summary body',
+          timestamp: null,
+          date: null,
+          time: null,
+          groupMasterKey: 'g-1',
+        },
+      ],
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{ id: 91, message: report }}
+        />,
+      );
+    });
+
+    expect(directSubmitMocks.copyDirectSubmit).toHaveBeenCalledWith([42]);
+    expect(container.textContent).toContain('Редагувати розвіддонесення');
+    expect(textFieldPropsByLabel.get('Текст оригінального повідомлення')?.value).toBe(
+      'original copied body',
+    );
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('existing report body');
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      91,
+      expect.objectContaining({
+        full_body: 'existing report body',
+        signal_group_master_key: null,
+      }),
+    );
+    expect(
+      directSubmitMocks.editDirectSubmit.mock.calls[0][1].parent_signal_message_ids,
+    ).toBeUndefined();
 
     root.unmount();
   });

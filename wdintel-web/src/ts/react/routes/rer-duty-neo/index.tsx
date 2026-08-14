@@ -27,7 +27,7 @@ import type { InboxMessage, User } from '../../../../Bindings';
 import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
 import { fetchMessagesByIds } from '../../services/api/inbox-messages';
-import { getParentSignalMessageId } from '../shared/intelligence-reports';
+import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 
 export type RerDutyNeoPageProps = {
@@ -639,14 +639,14 @@ export function RerDutyNeoPage({
         reportSource={reportSource}
         onClose={closeMessageEditor}
         onSubmitEdit={
-          editTarget && getParentSignalMessageId(editTarget.message) == null
+          editTarget && !isIntelligenceReport(editTarget.message)
             ? async (messageId, message) => {
                 handleEditedMessage(messageId, message);
               }
             : undefined
         }
         onEditSuccess={() => {
-          if (editTarget && getParentSignalMessageId(editTarget.message) != null) {
+          if (editTarget && isIntelligenceReport(editTarget.message)) {
             reloadFeeds();
           } else {
             reloadEditedFeeds();

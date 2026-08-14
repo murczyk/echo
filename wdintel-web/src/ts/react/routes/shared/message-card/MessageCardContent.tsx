@@ -69,7 +69,7 @@ import {
   MessageCardAttachmentPreviewProvider,
   type MessageCardPreviewAttachment,
 } from './attachment-preview/MessageCardAttachmentPreviewProvider';
-import { getIntelligenceReports, getParentSignalMessageId } from '../intelligence-reports';
+import { getIntelligenceReports, getParentMessages } from '../intelligence-reports';
 import { MessageCardIntelligenceReports } from './MessageCardIntelligenceReports';
 import {
   pointBlacklistLabelKey,
@@ -726,7 +726,7 @@ export function MessageCardMessageBody({
       ) : null}
       <MessageCardIntelligenceReports
         reports={getIntelligenceReports(msg)}
-        parentMessageId={getParentSignalMessageId(msg)}
+        parents={getParentMessages(msg)}
         groupInfos={reportGroupInfos}
         onEdit={readOnly ? undefined : onEditReport}
       />

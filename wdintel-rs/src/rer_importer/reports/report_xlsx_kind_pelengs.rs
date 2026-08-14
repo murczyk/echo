@@ -356,6 +356,8 @@ async fn get_inbox_messages_report_chunk(
                 m.id,
                 coords_tuple,
                 InboxMessage {
+                    parent_messages: vec![],
+                    intelligence_reports: vec![],
                     message_uid: None,
                     location,
                     coords,
