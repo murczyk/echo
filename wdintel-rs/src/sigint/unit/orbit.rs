@@ -620,10 +620,17 @@ where
 fn sigint_unit_for_orbit_matching(req: &CreateUnitReq) -> sigint_unit::Model {
     sigint_unit::Model {
         id: i64::MAX,
+        other: req.other.clone(),
+        team_or_crew: req.team_or_crew.clone(),
+        section: req.section.clone(),
+        squad: req.squad.clone(),
+        platoon: req.platoon.clone(),
         company: req.company.clone(),
         battalion: req.battalion.clone(),
         regiment: req.regiment.clone(),
+        brigade: req.brigade.clone(),
         division: req.division.clone(),
+        corps: req.corps.clone(),
         army: req.army.clone(),
         military_district: req.military_district.clone(),
         army_region: req.army_region.clone(),
@@ -908,10 +915,17 @@ where
     C: ConnectionTrait,
 {
     let hierarchy = [
+        (sigint_unit::Column::Other, unit.other.as_str()),
+        (sigint_unit::Column::TeamOrCrew, unit.team_or_crew.as_str()),
+        (sigint_unit::Column::Section, unit.section.as_str()),
+        (sigint_unit::Column::Squad, unit.squad.as_str()),
+        (sigint_unit::Column::Platoon, unit.platoon.as_str()),
         (sigint_unit::Column::Company, unit.company.as_str()),
         (sigint_unit::Column::Battalion, unit.battalion.as_str()),
         (sigint_unit::Column::Regiment, unit.regiment.as_str()),
+        (sigint_unit::Column::Brigade, unit.brigade.as_str()),
         (sigint_unit::Column::Division, unit.division.as_str()),
+        (sigint_unit::Column::Corps, unit.corps.as_str()),
         (sigint_unit::Column::Army, unit.army.as_str()),
         (
             sigint_unit::Column::MilitaryDistrict,
@@ -1304,10 +1318,17 @@ where
 
 fn imported_unit_masks(unit: &CreateUnitReq) -> Result<Vec<String>, AppError> {
     let parts = [
+        unit.other.as_str(),
+        unit.team_or_crew.as_str(),
+        unit.section.as_str(),
+        unit.squad.as_str(),
+        unit.platoon.as_str(),
         unit.company.as_str(),
         unit.battalion.as_str(),
         unit.regiment.as_str(),
+        unit.brigade.as_str(),
         unit.division.as_str(),
+        unit.corps.as_str(),
         unit.army.as_str(),
         unit.military_district.as_str(),
         unit.army_region.as_str(),
@@ -1354,13 +1375,20 @@ where
             msg: "ORBIT unit has no supported hierarchy levels".to_string(),
         });
     }
-    let [company, battalion, regiment, division, army, military_district, army_region] =
+    let [other, team_or_crew, section, squad, platoon, company, battalion, regiment, brigade, division, corps, army, military_district, army_region] =
         hierarchy;
     Ok(CreateUnitReq {
+        other,
+        team_or_crew,
+        section,
+        squad,
+        platoon,
         company,
         battalion,
         regiment,
+        brigade,
         division,
+        corps,
         army,
         military_district,
         army_region,
@@ -1391,7 +1419,7 @@ async fn fill_orbit_parent_chain<C>(
     dbx: &C,
     root: &orbit_unit::Model,
     parent_kind: OrbitParentKind,
-    hierarchy: &mut [String; 7],
+    hierarchy: &mut [String; 14],
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -1414,7 +1442,7 @@ where
 async fn fill_orbit_hierarchy_level<C>(
     dbx: &C,
     unit: &orbit_unit::Model,
-    hierarchy: &mut [String; 7],
+    hierarchy: &mut [String; 14],
 ) -> Result<bool, AppError>
 where
     C: ConnectionTrait,
@@ -1711,6 +1739,54 @@ mod tests {
                 "53", "зрбр", "20", "ЗВА", "МВО", "extra", "words", "ignored"
             ]
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn existing_ancestor_lookup_distinguishes_extended_echelons() {
+        // Regression: https://github.com/echoua/echo/issues/3113
+        let env = cleanup().await.unwrap();
+        for brigade in ["1 бригада", "2 бригада"] {
+            mk_sigint_unit(
+                &env.dbx,
+                sigint_unit::ActiveModel {
+                    name: Set(format!("{brigade} 20 дивізія")),
+                    brigade: Set(brigade.to_string()),
+                    division: Set("20 дивізія".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let unit_req = CreateUnitReq {
+            other: String::new(),
+            team_or_crew: String::new(),
+            section: String::new(),
+            squad: String::new(),
+            platoon: String::new(),
+            company: String::new(),
+            battalion: String::new(),
+            regiment: String::new(),
+            brigade: "2 бригада".to_string(),
+            division: "20 дивізія".to_string(),
+            corps: String::new(),
+            army: String::new(),
+            military_district: String::new(),
+            army_region: String::new(),
+            active: true,
+            is_deduplicate_candidate: None,
+            comment: String::new(),
+            orbit_note: None,
+            duplicate_unit_ids: Vec::new(),
+        };
+
+        let found = find_existing_sigint_unit(&env.dbx, &unit_req)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(found.brigade, "2 бригада");
     }
 
     #[tokio::test]

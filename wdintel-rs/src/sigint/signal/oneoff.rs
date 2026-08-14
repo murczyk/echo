@@ -293,9 +293,16 @@ mod tests {
     fn parse_callsigns_works() {
         let units = vec![sigint_unit::Model {
             id: 1,
+            other: Default::default(),
+            team_or_crew: Default::default(),
+            section: Default::default(),
+            squad: Default::default(),
+            platoon: Default::default(),
             company: Default::default(),
             regiment: Default::default(),
+            brigade: Default::default(),
             division: Default::default(),
+            corps: Default::default(),
             army: Default::default(),
             army_region: Default::default(),
             military_district: Default::default(),
@@ -334,9 +341,16 @@ mod tests {
     fn parse_signals_works() {
         let units = vec![sigint_unit::Model {
             id: 1,
+            other: Default::default(),
+            team_or_crew: Default::default(),
+            section: Default::default(),
+            squad: Default::default(),
+            platoon: Default::default(),
             company: Default::default(),
             regiment: Default::default(),
+            brigade: Default::default(),
             division: Default::default(),
+            corps: Default::default(),
             army: Default::default(),
             army_region: Default::default(),
             military_district: Default::default(),

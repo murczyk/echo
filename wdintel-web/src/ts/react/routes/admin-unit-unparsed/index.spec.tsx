@@ -94,10 +94,17 @@ import { AdminUnitUnparsedPage } from './index';
 
 const sigintUnit: Unit = {
   id: 35729,
+  other: '',
+  teamOrCrew: '',
+  section: '',
+  squad: '',
+  platoon: '',
   company: '',
   battalion: '',
   regiment: '68 мсд',
+  brigade: '',
   division: '',
+  corps: '',
   army: '6 а',
   militaryDistrict: 'ЛВО',
   armyRegion: 'ЗВА',
@@ -136,18 +143,18 @@ function buttonContaining(text: string): HTMLButtonElement {
   return found;
 }
 
-function inputByLabel(labelText: string): HTMLInputElement {
+function textareaByLabel(labelText: string): HTMLTextAreaElement {
   const label = Array.from(document.body.querySelectorAll('label')).find((candidate) =>
     candidate.textContent?.includes(labelText),
   );
   const id = label?.getAttribute('for');
   const input = id ? document.getElementById(id) : null;
-  if (!(input instanceof HTMLInputElement)) throw new Error(`Missing input ${labelText}`);
+  if (!(input instanceof HTMLTextAreaElement)) throw new Error(`Missing textarea ${labelText}`);
   return input;
 }
 
-function setInputValue(input: HTMLInputElement, value: string) {
-  const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+function setTextareaValue(input: HTMLTextAreaElement, value: string) {
+  const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
   valueSetter?.call(input, value);
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
@@ -214,17 +221,14 @@ describe('AdminUnitUnparsedPage', () => {
     act(() => root.unmount());
   });
 
-  it('saves the group note on blur', async () => {
+  it('edits the group note from row actions', async () => {
     const root = await renderPage();
-    const input = document.body.querySelector(
-      'input[aria-label="Нотатка для 123 омсбр"]',
-    ) as HTMLInputElement | null;
-    expect(input).not.toBeNull();
 
+    act(() => button('Редагувати нотатку').click());
     await act(async () => {
-      setInputValue(input as HTMLInputElement, 'перевірити вручну');
-      input?.dispatchEvent(new Event('focusout', { bubbles: true }));
+      setTextareaValue(textareaByLabel('Нотатка'), 'перевірити вручну');
     });
+    await act(async () => button('Зберегти').click());
 
     expect(mocks.updateNote).toHaveBeenCalledWith({
       unitTxt: '123 омсбр',
@@ -236,7 +240,7 @@ describe('AdminUnitUnparsedPage', () => {
     act(() => root.unmount());
   });
 
-  it('submits the original group with an edited label and selected inactive SIGINT unit', async () => {
+  it('submits the immutable group label with the selected inactive SIGINT unit', async () => {
     const root = await renderPage();
 
     act(() => button("Прив'язати до підрозділу").click());
@@ -246,15 +250,14 @@ describe('AdminUnitUnparsedPage', () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
 
-    await act(async () => {
-      setInputValue(inputByLabel('Синонім підрозділу'), 'Відредагований синонім');
-    });
+    expect(document.body.textContent).toContain("Прив'язати до підрозділу 123 омсбр");
+    expect(document.body.textContent).not.toContain('Синонім підрозділу');
     act(() => buttonContaining('68 мсд 6 ЗВА ЛВО').click());
     await act(async () => button("Прив'язати").click());
 
     expect(mocks.resolve).toHaveBeenCalledWith({
       unitTxt: '123 омсбр',
-      label: 'Відредагований синонім',
+      label: '123 омсбр',
       sigintUnitId: 35729,
     });
 

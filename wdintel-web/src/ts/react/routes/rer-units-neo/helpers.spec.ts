@@ -19,10 +19,17 @@ import {
 function unit(overrides: Partial<Unit>): Unit {
   return {
     id: 1,
+    other: '',
+    teamOrCrew: '',
+    section: '',
+    squad: '',
+    platoon: '',
     company: '',
     battalion: '',
     regiment: '',
+    brigade: '',
     division: '',
+    corps: '',
     army: '',
     militaryDistrict: '',
     armyRegion: '',
