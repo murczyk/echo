@@ -309,6 +309,33 @@ struct EtalonkaCollectionOptions {
     filters: Vec<NetworkFreqFilter>,
 }
 
+pub(crate) fn normalize_etalonka_report_period(
+    report_type: &mut EtalonkaReportType,
+    now_ms: i64,
+) {
+    let EtalonkaReportType::ExtendedReport(settings) = report_type else {
+        return;
+    };
+    let till_ms = settings.till_date_inclusive_ms.unwrap_or(now_ms);
+    settings.since_date_inclusive_ms =
+        etalonka_report_since_ms(settings.since_date_inclusive_ms, till_ms);
+    settings.till_date_inclusive_ms = Some(till_ms);
+}
+
+fn etalonka_report_since_ms(since_ms: i64, till_ms: i64) -> i64 {
+    if since_ms == 0 {
+        till_ms.saturating_sub(
+            chrono::Duration::days(
+                crate::config::RER_ETALONKA_REPORT_SINCE_DEFAULT_DAYS,
+            )
+            .num_milliseconds(),
+        )
+    } else {
+        since_ms
+    }
+    .max(crate::config::RER_ETALONKA_REPORT_SINCE_MIN_MS)
+}
+
 fn etalonka_collection_options(
     report_type: &EtalonkaReportType,
     chunking_hours: i64,
@@ -332,17 +359,10 @@ fn etalonka_collection_options(
         }
         EtalonkaReportType::ExtendedReport(settings) => {
             let till_ms = settings.till_date_inclusive_ms.unwrap_or(now_ms);
-            let since_ms = if settings.since_date_inclusive_ms == 0 {
-                till_ms.saturating_sub(
-                    chrono::Duration::days(
-                        crate::config::RER_ETALONKA_REPORT_SINCE_DEFAULT_DAYS,
-                    )
-                    .num_milliseconds(),
-                )
-            } else {
-                settings.since_date_inclusive_ms
-            }
-            .max(crate::config::RER_ETALONKA_REPORT_SINCE_MIN_MS);
+            let since_ms = etalonka_report_since_ms(
+                settings.since_date_inclusive_ms,
+                till_ms,
+            );
             let filters = report_period_chunks(
                 since_ms,
                 till_ms,
@@ -2393,17 +2413,33 @@ mod tests {
     }
 
     #[test]
-    fn extended_report_defaults_missing_since_to_one_year() {
+    fn extended_report_normalizes_missing_period_before_enqueue() {
         let till_ms =
             chrono::DateTime::parse_from_rfc3339("2026-08-13T00:00:00Z")
                 .unwrap()
                 .timestamp_millis();
-        let options = etalonka_collection_options(
-            &extended_report_type(0, till_ms),
-            24,
-            till_ms,
-        )
-        .unwrap();
+        let mut report_type = extended_report_type(0, till_ms);
+        let EtalonkaReportType::ExtendedReport(settings) = &mut report_type
+        else {
+            unreachable!();
+        };
+        settings.till_date_inclusive_ms = None;
+        normalize_etalonka_report_period(&mut report_type, till_ms);
+        let EtalonkaReportType::ExtendedReport(settings) = &report_type else {
+            unreachable!();
+        };
+
+        assert_eq!(settings.till_date_inclusive_ms, Some(till_ms));
+        assert_eq!(
+            settings.since_date_inclusive_ms,
+            till_ms
+                - chrono::Duration::days(
+                    crate::config::RER_ETALONKA_REPORT_SINCE_DEFAULT_DAYS,
+                )
+                .num_milliseconds()
+        );
+        let options =
+            etalonka_collection_options(&report_type, 24, till_ms).unwrap();
 
         assert_eq!(
             options.filters[0].since_date_inclusive_ms,
@@ -2421,12 +2457,18 @@ mod tests {
     fn extended_report_caps_since_at_2022() {
         let till_ms = crate::config::RER_ETALONKA_REPORT_SINCE_MIN_MS
             + chrono::Duration::days(1).num_milliseconds();
-        let options = etalonka_collection_options(
-            &extended_report_type(1, till_ms),
-            24,
-            till_ms,
-        )
-        .unwrap();
+        let mut report_type = extended_report_type(1, till_ms);
+        normalize_etalonka_report_period(&mut report_type, till_ms);
+        let EtalonkaReportType::ExtendedReport(settings) = &report_type else {
+            unreachable!();
+        };
+
+        assert_eq!(
+            settings.since_date_inclusive_ms,
+            crate::config::RER_ETALONKA_REPORT_SINCE_MIN_MS
+        );
+        let options =
+            etalonka_collection_options(&report_type, 24, till_ms).unwrap();
 
         assert_eq!(
             options.filters[0].since_date_inclusive_ms,

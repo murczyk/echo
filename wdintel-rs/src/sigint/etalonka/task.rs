@@ -1,7 +1,10 @@
 use super::types::{
     EtalonkaJimForksReq, EtalonkaNetworkBatchReq, EtalonkaReportType,
 };
-use super::{generate_networks_docx_report_to_path, EtalonkaData};
+use super::{
+    generate_networks_docx_report_to_path, normalize_etalonka_report_period,
+    EtalonkaData,
+};
 use crate::error::AppError;
 use crate::h;
 use crate::types::Env;
@@ -11,6 +14,7 @@ use crate::users::login_id_from_identity;
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::Json;
+use anyhow::Context;
 use tempfile::NamedTempFile;
 
 pub(crate) const DOCX_CONTENT_TYPE: &str =
@@ -38,8 +42,12 @@ pub async fn report_networks_task_launch(
     req: Json<EtalonkaJimForksReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let user_login = login_id_from_identity(&user)?;
-    let req = req.into_inner();
+    let user_login = login_id_from_identity(&user).context(h!())?;
+    let mut req = req.into_inner();
+    normalize_etalonka_report_period(
+        &mut req.etalonka_type,
+        chrono::Utc::now().timestamp_millis(),
+    );
     let report_history = crate::report_history::enqueue_report(
         &env.dbx,
         &user_login,
@@ -62,8 +70,12 @@ pub async fn report_networks_batch_id_task_launch(
     req: Json<EtalonkaNetworkBatchReq>,
 ) -> Result<Json<i64>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let user_login = login_id_from_identity(&user)?;
-    let req = req.into_inner();
+    let user_login = login_id_from_identity(&user).context(h!())?;
+    let mut req = req.into_inner();
+    normalize_etalonka_report_period(
+        &mut req.etalonka_type,
+        chrono::Utc::now().timestamp_millis(),
+    );
     let report_history = crate::report_history::enqueue_report(
         &env.dbx,
         &user_login,
