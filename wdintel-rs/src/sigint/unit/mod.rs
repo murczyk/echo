@@ -3638,9 +3638,9 @@ mod tests {
         insert_settings(&env.dbx, true).await;
         let login_id = test_login_id(&env).await;
         let mut orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
-        let unsupported_echelon_id = uuid::Uuid::new_v4();
+        let other_echelon_id = uuid::Uuid::new_v4();
         orbit_unit_echelon::ActiveModel {
-            id: Set(unsupported_echelon_id),
+            id: Set(other_echelon_id),
             key: Set("other".to_string()),
             name: Set(format!("Інше-{}", uuid::Uuid::new_v4())),
             ..Default::default()
@@ -3648,11 +3648,11 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
-        let unsupported_unit_id = uuid::Uuid::new_v4();
+        let other_unit_id = uuid::Uuid::new_v4();
         orbit_unit::ActiveModel {
-            unit_id: Set(unsupported_unit_id),
+            unit_id: Set(other_unit_id),
             unit_name_short: Set(Some("ВМФ".to_string())),
-            unit_echelon_id: Set(Some(unsupported_echelon_id)),
+            unit_echelon_id: Set(Some(other_echelon_id)),
             operational_parent_unit_id: Set(Some(orbit_fixture.unit_ids[5])),
             ..Default::default()
         }
@@ -3663,11 +3663,11 @@ mod tests {
             &env.dbx,
             orbit_fixture.unit_ids[4],
             None,
-            Some(unsupported_unit_id),
+            Some(other_unit_id),
         )
         .await;
-        orbit_fixture.unit_ids.push(unsupported_unit_id);
-        orbit_fixture.echelon_ids.push(unsupported_echelon_id);
+        orbit_fixture.unit_ids.push(other_unit_id);
+        orbit_fixture.echelon_ids.push(other_echelon_id);
 
         let rsp = orbit::import_orbit_unit_for_login(
             &login_id,
@@ -3679,11 +3679,12 @@ mod tests {
 
         assert_eq!(rsp.unit.company, "1 рота");
         assert_eq!(rsp.unit.battalion, "2 бат");
-        assert_eq!(rsp.unit.regiment, "55 мбр");
+        assert_eq!(rsp.unit.brigade, "55 мбр");
         assert_eq!(rsp.unit.division, "45 див");
         assert_eq!(rsp.unit.army, "20 ЗВА");
         assert_eq!(rsp.unit.military_district, "Західний ВО");
         assert_eq!(rsp.unit.army_region, "ЗС РФ");
+        assert_eq!(rsp.unit.other, "ВМФ");
         assert!(rsp.unit.active);
         assert!(orbit::unit_has_orbit(&env.dbx, rsp.unit.id).await.unwrap());
         let link = orbit_unit_sigint_unit::Entity::find_by_id((
@@ -3706,8 +3707,8 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<Vec<String>>(network.unit_mask).unwrap(),
             vec![
-                "1 рота 2 бат 55 мбр 45 див 20 ЗВА Західний ВО ЗС РФ",
-                "ЗС РФ Західний ВО 20 ЗВА 45 див 55 мбр 2 бат 1 рота",
+                "ВМФ 1 рота 2 бат 55 мбр 45 див 20 ЗВА Західний ВО ЗС РФ",
+                "ЗС РФ Західний ВО 20 ЗВА 45 див 55 мбр 2 бат 1 рота ВМФ",
             ]
         );
         let links = orbit_unit_sigint_unit::Entity::find()
@@ -3719,10 +3720,8 @@ mod tests {
             .all(&env.dbx)
             .await
             .unwrap();
-        assert_eq!(links.len(), 7);
-        assert!(!links
-            .iter()
-            .any(|link| link.orbit_unit_id == unsupported_unit_id));
+        assert_eq!(links.len(), 8);
+        assert!(links.iter().any(|link| link.orbit_unit_id == other_unit_id));
         let linked_unit_ids = links
             .into_iter()
             .map(|link| link.sigint_unit_id)
@@ -3732,7 +3731,7 @@ mod tests {
             .all(&env.dbx)
             .await
             .unwrap();
-        assert_eq!(linked_units.len(), 7);
+        assert_eq!(linked_units.len(), 8);
         assert!(linked_units.iter().all(|unit| unit.active));
         let unit_count_before_retry = unit_count(&env.dbx).await;
         let network_count_before_retry = network_count(&env.dbx).await;
@@ -3921,7 +3920,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(unit.company, "5101");
+        assert_eq!(unit.team_or_crew, "5101");
         assert!(!unit.active);
     }
 
