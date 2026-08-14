@@ -118,6 +118,7 @@ export const databaseSubs: Menu[] = [
     activeName: 'callsigns-neo',
     label: 'Позивні',
   },
+  devicesDatabaseSub,
   {
     type: 'item',
     link: { type: 'internal', path: '/rer-signals' },
@@ -144,8 +145,8 @@ export function getDatabaseSubs({
   }
 
   return includeDevicesItem
-    ? [networksDatabaseSub, devicesDatabaseSub, ...databaseSubs.slice(1)]
-    : databaseSubs;
+    ? databaseSubs
+    : databaseSubs.filter((item) => item !== devicesDatabaseSub);
 }
 
 export const converterSubs: Menu[] = [
@@ -184,21 +185,9 @@ export const converterSubs: Menu[] = [
 export const aiAgentAdminSubs: Menu[] = [
   {
     type: 'item',
-    link: { type: 'internal', path: '/admin/ai/providers' },
-    activeName: 'ai-agent-providers',
-    label: 'Провайдери',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/ai/settings' },
-    activeName: 'ai-agent-settings',
-    label: 'Налаштування ШІ',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/ai/containers' },
-    activeName: 'ai-agent-containers',
-    label: 'Контейнери',
+    link: { type: 'internal', path: '/admin/ai/dispatcher' },
+    activeName: 'ai-agent-dispatcher',
+    label: 'Диспетчер',
   },
   {
     type: 'item',
@@ -208,15 +197,21 @@ export const aiAgentAdminSubs: Menu[] = [
   },
   {
     type: 'item',
-    link: { type: 'internal', path: '/admin/ai/dispatcher' },
-    activeName: 'ai-agent-dispatcher',
-    label: 'Диспетчер',
-  },
-  {
-    type: 'item',
     link: { type: 'internal', path: '/admin/ai/echo-proxies' },
     activeName: 'ai-agent-echo-proxies',
     label: 'Зворотні проксі',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/ai/containers' },
+    activeName: 'ai-agent-containers',
+    label: 'Контейнери',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/ai/settings' },
+    activeName: 'ai-agent-settings',
+    label: 'Налаштування ШІ',
   },
   {
     type: 'item',
@@ -224,20 +219,26 @@ export const aiAgentAdminSubs: Menu[] = [
     activeName: 'ai-agent-callsigns',
     label: 'Позивні',
   },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/ai/providers' },
+    activeName: 'ai-agent-providers',
+    label: 'Провайдери',
+  },
 ];
 
 export const adminDatabaseSubs: Menu[] = [
   {
     type: 'item',
-    link: { type: 'internal', path: '/admin/api-integrations' },
-    activeName: 'api-integrations',
-    label: 'Інтеграції API',
+    link: { type: 'internal', path: '/admin/transcription-settings' },
+    activeName: 'transcription-settings',
+    label: 'Echo GPU сервери',
   },
   {
     type: 'item',
-    link: { type: 'internal', path: '/admin/transcription-settings' },
-    activeName: 'transcription-settings',
-    label: 'Echo GPU Сервери',
+    link: { type: 'internal', path: '/admin/device-analytics' },
+    activeName: 'device-analytics',
+    label: 'Аналіз пристроїв',
   },
   {
     type: 'item',
@@ -247,15 +248,15 @@ export const adminDatabaseSubs: Menu[] = [
   },
   {
     type: 'item',
-    link: { type: 'internal', path: '/admin/unit-unparsed' },
-    activeName: 'unit-admin',
-    label: 'Підрозділи',
-  },
-  {
-    type: 'item',
     link: { type: 'internal', path: '/admin/goi-integrations-neo' },
     activeName: 'goi-integrations-neo',
     label: 'ГОІ',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/api-integrations' },
+    activeName: 'api-integrations',
+    label: 'Інтеграції API',
   },
   {
     type: 'item',
@@ -271,31 +272,19 @@ export const adminDatabaseSubs: Menu[] = [
   },
   {
     type: 'item',
+    link: { type: 'internal', path: '/admin/unit-unparsed' },
+    activeName: 'unit-admin',
+    label: 'Підрозділи',
+  },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/admin/tags-neo' },
     activeName: 'tags-neo',
     label: 'Теги',
   },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/device-analytics' },
-    activeName: 'device-analytics',
-    label: 'Аналіз пристроїв',
-  },
 ];
 
 export const adminSubs: Menu[] = [
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/directions-neo' },
-    activeName: 'zones',
-    label: 'Напрямки',
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/organisms-neo' },
-    activeName: 'organisms-neo',
-    label: 'Організми',
-  },
   {
     type: 'item',
     link: { type: 'internal', path: '/admin/users-neo' },
@@ -307,6 +296,18 @@ export const adminSubs: Menu[] = [
     link: { type: 'internal', path: '/admin/messenger-neo' },
     activeName: 'messenger-neo',
     label: 'Месенджери',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/directions-neo' },
+    activeName: 'zones',
+    label: 'Напрямки',
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/organisms-neo' },
+    activeName: 'organisms-neo',
+    label: 'Організми',
   },
   {
     type: 'item',
@@ -323,7 +324,7 @@ export const adminSubs: Menu[] = [
   { type: 'separator' },
   {
     type: 'group',
-    label: 'База Знань',
+    label: 'База знань',
     subs: adminDatabaseSubs,
   },
   { type: 'separator' },

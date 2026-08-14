@@ -5,6 +5,7 @@ import Bindings as B exposing (..)
 import Config
 import Core.Auth
 import Core.Callsigns.HintStrategy
+import Core.Callsigns.MessageHint as MessageHint
 import Core.Types exposing (..)
 import Core.Unit
 import Dict exposing (Dict)
@@ -21,13 +22,13 @@ import Route exposing (Route)
 import Set exposing (Set)
 import Shared.Callsign
 import Shared.Components.Watermark as Watermark
-import Shared.Model
 import Shared.MarkedText
+import Shared.Model
 import String exposing (fromInt, trim)
 import Time
 import Time.Extra as TimeExtra
-import Utils.RerNetworkDetails
 import Utils.Api.ErrorHandling
+import Utils.RerNetworkDetails
 import Utils.Time
 import Utils.Utils exposing (..)
 import Utils.ViewUtils exposing (tagsBlock)
@@ -40,6 +41,7 @@ type alias ViewParams =
     , messages : List ( Int, InboxMessage )
     , tags : List ( Int, B.Tag )
     , callsignsInfo : Dict String (List B.CallsignInfo)
+    , messageCallsignsInfo : Dict String B.CallsignInfoRes
     , messageComments : Dict Int (List B.MessageComment)
     , user : B.User
     , users : Dict String (Maybe B.User)
@@ -1464,7 +1466,7 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                     ]
                   <|
                     (markedTextModel
-                        |> Shared.MarkedText.viewWithHintResults Dict.empty Nothing (Dict.values vps.networks) message.freq message.text (vps.pointTokenClickUrlFor message) metadataLinks
+                        |> Shared.MarkedText.viewWithMessageHintResults messageHintResults Nothing (Dict.values vps.networks) message.freq message.text (vps.pointTokenClickUrlFor message) metadataLinks
                     )
                 ]
             ]
@@ -1487,6 +1489,16 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
             message.textMarked
                 |> Maybe.map Shared.MarkedText.new
                 |> Maybe.withDefault (Shared.MarkedText.fromPlainText message.text)
+
+        messageHintResults =
+            MessageHint.callsignsFromMessage message
+                |> List.map
+                    (\callsign ->
+                        ( callsign
+                        , MessageHint.resolve message.networkIds vps.networks vps.messageCallsignsInfo callsign
+                        )
+                    )
+                |> Dict.fromList
 
         callsignsProposed : List String
         callsignsProposed =

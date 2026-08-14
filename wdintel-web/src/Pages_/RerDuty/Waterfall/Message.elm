@@ -5,7 +5,7 @@ import Bindings as B exposing (MessageMediaInfo)
 import Browser.Dom
 import Config
 import Core.Auth
-import Core.Callsigns.HintStrategy
+import Core.Callsigns.MessageHint as MessageHint
 import Core.Types exposing (ApiError)
 import Core.Unit
 import Dict exposing (Dict)
@@ -22,15 +22,15 @@ import Pages_.RerAnalysis.Utils
 import Shared.Components.Popup as Popup
 import Shared.Components.RerMessage
 import Shared.Components.Watermark as Watermark
-import Shared.Model
 import Shared.MarkedText
+import Shared.Model
 import String
 import Task
 import Time
 import Time.Extra
 import Url.Builder
-import Utils.RerNetworkDetails
 import Utils.Api.ErrorHandling
+import Utils.RerNetworkDetails
 import Utils.Time
 import Utils.Utils exposing (..)
 import Utils.ViewUtils exposing (tagsBlock)
@@ -77,6 +77,7 @@ type alias ViewParams =
     , message : ( Int, B.InboxMessage )
     , tags : List ( Int, B.Tag )
     , callsignsInfo : Dict String (List B.CallsignInfo)
+    , messageCallsignsInfo : Dict String B.CallsignInfoRes
     , masterUnits : Dict Int B.Unit
     , networkDetailsViewPreference : Shared.Model.RerNetworkDetailsPreferredView
     , signals : List B.Signal
@@ -699,7 +700,7 @@ view ps messageTuple model =
         ]
 
 
-leftColumn : ( Int, B.InboxMessage ) -> { isDarkMode : Bool, user : B.User, waterfallId : String, datasources : List ( Int, B.Datasource ), serverInfo : Maybe B.ServerInfo, networks : Dict Int B.Network, zone : Time.Zone, time : Maybe Time.Posix, profiles : Dict String (Maybe B.SignalProfileEntry), message : ( Int, B.InboxMessage ), tags : List ( Int, B.Tag ), callsignsInfo : Dict String (List B.CallsignInfo), masterUnits : Dict Int B.Unit, networkDetailsViewPreference : Shared.Model.RerNetworkDetailsPreferredView, signals : List B.Signal, isMsgVisible : List Int, groupInfos : Dict String B.SignalGroupEntry, messageNetworkIds : List Int, onlyMyUnitTagsEnabled : Bool, copied : Maybe ClipboardObject } -> { a | edited : Maybe { b | current : { c | extendedForm : Maybe String } }, isEditPopupOpen : Bool, id : Int, isDuplicate : Bool, isUnfolded : Bool } -> Html Msg
+leftColumn : ( Int, B.InboxMessage ) -> { isDarkMode : Bool, user : B.User, waterfallId : String, datasources : List ( Int, B.Datasource ), serverInfo : Maybe B.ServerInfo, networks : Dict Int B.Network, zone : Time.Zone, time : Maybe Time.Posix, profiles : Dict String (Maybe B.SignalProfileEntry), message : ( Int, B.InboxMessage ), tags : List ( Int, B.Tag ), callsignsInfo : Dict String (List B.CallsignInfo), messageCallsignsInfo : Dict String B.CallsignInfoRes, masterUnits : Dict Int B.Unit, networkDetailsViewPreference : Shared.Model.RerNetworkDetailsPreferredView, signals : List B.Signal, isMsgVisible : List Int, groupInfos : Dict String B.SignalGroupEntry, messageNetworkIds : List Int, onlyMyUnitTagsEnabled : Bool, copied : Maybe ClipboardObject } -> { a | edited : Maybe { b | current : { c | extendedForm : Maybe String } }, isEditPopupOpen : Bool, id : Int, isDuplicate : Bool, isUnfolded : Bool } -> Html Msg
 leftColumn ( messageId, message ) ps model =
     let
         clipboardBlock msgType isBig =
@@ -992,6 +993,7 @@ leftColumn ( messageId, message ) ps model =
                                 ]
                             ]
                         ]
+
         -- Classic duty shows only the current user's editable comment; peer/post comments belong to analysis.
         , flip HtmlX.viewMaybe message.extendedForm <|
             \extendedForm ->
@@ -1244,70 +1246,22 @@ rightColumn ( messageId, message ) ps model =
                         ++ (case message.textMarked of
                                 Just textMarked ->
                                     let
-                                        -- Створюємо контекст для HintStrategy
-                                        context =
-                                            { networks = ps.networks
-                                            , masterUnits = ps.masterUnits
-                                            , callsignsInfo = ps.callsignsInfo
-                                            }
-
-                                        -- Створюємо message для HintStrategy
-                                        messageForHints =
-                                            { freq = message.freq
-                                            , networkIds =
-                                                if List.isEmpty ps.messageNetworkIds then
-                                                    Nothing
-                                                    -- Немає мережі → MessageContext не показує каталог
-
-                                                else
-                                                    Just uniqueMessageNetworkIds
-
-                                            -- Є мережа → показуємо тільки мережеві підказки
-                                            }
-
-                                        callsignsForHints =
-                                            let
-                                                callsignsFromMarkedText =
-                                                    textMarked
-                                                        |> List.filterMap
-                                                            (\contentNode ->
-                                                                case contentNode of
-                                                                    B.CnCallsignC callsignContent ->
-                                                                        Just callsignContent.text
-
-                                                                    _ ->
-                                                                        Nothing
-                                                            )
-                                            in
-                                            if List.isEmpty callsignsFromMarkedText then
-                                                message.callsigns
-
-                                            else
-                                                callsignsFromMarkedText
-
                                         hintResultsDict =
-                                            callsignsForHints
-                                                |> List.foldl
-                                                    (\callsign dict ->
-                                                        let
-                                                            -- Використовуємо нову HintStrategy з MessageContext
-                                                            hintResult =
-                                                                Core.Callsigns.HintStrategy.getCallsignHints
-                                                                    Core.Callsigns.HintStrategy.MessageContext
-                                                                    messageForHints
-                                                                    context
-                                                                    callsign
-                                                        in
-                                                        Dict.insert (String.toLower callsign) hintResult dict
+                                            MessageHint.callsignsFromMessage message
+                                                |> List.map
+                                                    (\callsign ->
+                                                        ( callsign
+                                                        , MessageHint.resolve (Just uniqueMessageNetworkIds) ps.networks ps.messageCallsignsInfo callsign
+                                                        )
                                                     )
-                                                    Dict.empty
+                                                |> Dict.fromList
                                     in
                                     Shared.MarkedText.new textMarked
-                                        |> Shared.MarkedText.viewWithHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq message.text pointTokenClickUrl metadataLinks
+                                        |> Shared.MarkedText.viewWithMessageHintResults hintResultsDict (Just ps.signals) (Dict.values ps.networks) message.freq message.text pointTokenClickUrl metadataLinks
 
                                 Nothing ->
                                     Shared.MarkedText.fromPlainText message.text
-                                        |> Shared.MarkedText.viewWithHintResults Dict.empty (Just ps.signals) (Dict.values ps.networks) message.freq message.text pointTokenClickUrl metadataLinks
+                                        |> Shared.MarkedText.viewWithMessageHintResults Dict.empty (Just ps.signals) (Dict.values ps.networks) message.freq message.text pointTokenClickUrl metadataLinks
                            )
                         ++ [ div
                                 [ class "flex flex-col items-start gap-2 mt-2"

@@ -30,8 +30,8 @@ import {
   uniquePointEtalonsForMapSearch,
 } from '../../rer-duty-neo/utils';
 import {
-  formatCallsignHintTooltipData,
-  getCallsignHintResult,
+  formatMessageCallsignHintTooltipData,
+  getMessageCallsignHintResult,
 } from '../../rer-analysis-neo/callsign-hints';
 import { renderLinkifiedText } from './message-card-linkify';
 import {
@@ -470,49 +470,19 @@ function CallsignWithHint({
 }) {
   const displayText = text.toUpperCase();
   const href = `/rer-callsigns-neo?callsign=${encodeURIComponent(displayText)}`;
-  const callsignInfo = callsignInfoMap?.[normalizeCallsignLookupValue(displayText)]?.res ?? null;
-  const hasCatalogMatch = (callsignInfo?.length ?? 0) > 0;
-  const hasMessageNetworks = (networkIds?.length ?? 0) > 0;
   const wrapSearchHighlighted = (node: ReactNode) =>
     searchHighlighted ? <SearchHighlightedCallsign>{node}</SearchHighlightedCallsign> : node;
 
-  // Exact network matches use network hints. Catalog hints are shown only
-  // without an explicit message-network scope.
-
-  // If we don't have networks or unitsMap, just render as plain link
-  if (!networks || !unitsMap) {
-    return wrapSearchHighlighted(
-      linkCallsigns ? (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="content-token--ADP hover:cursor-pointer"
-        >
-          {displayText}
-        </a>
-      ) : (
-        <Box component="span" sx={callsignPlainStyle()}>
-          {displayText}
-        </Box>
-      ),
-    );
-  }
-
-  const hintResult = getCallsignHintResult({
-    hintContext: 'message',
-    freq: freq ?? null,
+  const hintResult = getMessageCallsignHintResult({
     networkIds,
-    networks,
-    unitsMap,
+    networks: networks ?? [],
     callsignInfoMap,
     callsign: displayText,
   });
 
-  const tooltipText = formatCallsignHintTooltipData(hintResult);
-  const isNetworkHint = hintResult.strategy === 'network';
-  const shouldLinkCallsign =
-    linkCallsigns && (isNetworkHint || isPresent(tooltipText) || hasCatalogMatch);
+  const tooltipText = formatMessageCallsignHintTooltipData(hintResult);
+  const isNetworkHint = hintResult.state === 'message-network';
+  const shouldLinkCallsign = linkCallsigns;
   const callsignDisplay = shouldLinkCallsign ? (
     <a
       href={href}
@@ -529,17 +499,7 @@ function CallsignWithHint({
   );
 
   if (isNullOrUndefined(tooltipText)) {
-    if (hasMessageNetworks) {
-      if (!isNetworkHint && !hasCatalogMatch) {
-        return wrapSearchHighlighted(
-          renderPlainCallsign(displayText, { testId: 'callsign-hint-plain-missing' }),
-        );
-      }
-      return wrapSearchHighlighted(callsignDisplay);
-    }
-    return wrapSearchHighlighted(
-      shouldLinkCallsign ? callsignDisplay : renderPlainCallsign(displayText),
-    );
+    return wrapSearchHighlighted(callsignDisplay);
   }
 
   return (
@@ -574,40 +534,36 @@ function CallsignWithHint({
               minWidth: 0,
             }}
           >
-            <Typography
-              component="div"
-              sx={{ fontSize: '0.875rem', fontWeight: 600, lineHeight: 1.3 }}
-            >
-              {tooltipText.header}
-            </Typography>
-            <Box
-              component="ul"
-              sx={{
-                m: 0,
-                pl: 0,
-                listStyle: 'none',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 0.5,
-                minWidth: 0,
-              }}
-            >
-              {tooltipText.items.map((item, index) => (
-                <Typography
-                  key={`${displayText}-${index}`}
-                  component="li"
-                  sx={CALLSIGN_TOOLTIP_ITEM_SX}
-                >
-                  {item}
+            {tooltipText.sections.map((section) => (
+              <Box key={section.header} component="section">
+                <Typography component="div" sx={{ fontSize: '0.875rem', fontWeight: 600 }}>
+                  {section.header}
                 </Typography>
-              ))}
-            </Box>
+                <Box component="ul" sx={{ m: 0, pl: 0, listStyle: 'none' }}>
+                  {section.items.map((item, index) => (
+                    <Typography
+                      key={`${displayText}-${section.header}-${index}`}
+                      component="li"
+                      sx={CALLSIGN_TOOLTIP_ITEM_SX}
+                    >
+                      {item}
+                    </Typography>
+                  ))}
+                </Box>
+              </Box>
+            ))}
           </Box>
         }
       >
         <IconButton
           type="button"
-          aria-label={isNetworkHint ? 'Підказка по мережі' : 'Підказка з каталогу'}
+          aria-label={
+            isNetworkHint
+              ? 'Підказка по мережі'
+              : hintResult.otherNetworkHints.length > 0 && hintResult.catalogRows.length === 0
+                ? 'Інформація про позивний'
+                : 'Підказка з каталогу'
+          }
           data-testid={isNetworkHint ? 'callsign-hint-badge-network' : 'callsign-hint-badge-system'}
           size="small"
           disableRipple

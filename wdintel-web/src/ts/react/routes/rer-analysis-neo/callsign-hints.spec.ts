@@ -4,7 +4,9 @@ import type { CallsignInfoRes, Network, Unit } from '../../../../Bindings';
 import {
   formatCallsignHintTooltip,
   formatCallsignHintTooltipData,
+  formatMessageCallsignHintTooltipData,
   getCallsignHintResult,
+  getMessageCallsignHintResult,
   isCallsignRelatedToNetworks,
   resolveNetworkCallsignHints,
 } from './callsign-hints';
@@ -149,6 +151,199 @@ function createCallsignInfoMap(
 }
 
 describe('rer-analysis-neo callsign hints', () => {
+  it('classifies message callsigns from explicit network hints only', () => {
+    const result = getMessageCallsignHintResult({
+      callsign: '  WoLf ',
+      networkIds: [10],
+      networks,
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [
+            {
+              id: 99,
+              callsign: 'wolf',
+              position: 'ТЮМЕНЬ',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: null,
+              networkIdsReportedIn: [20],
+            },
+          ],
+          networkHints: [{ id: 1, networkId: 10, position: 'cmd', formation: 'u1' }],
+        },
+      },
+    });
+    const tooltip = formatMessageCallsignHintTooltipData(result);
+    expect(result.state).toBe('message-network');
+    expect(result.catalogRows).toHaveLength(1);
+    expect(result.exactNetworkHints).toHaveLength(1);
+    expect(result.otherNetworkHints).toEqual([]);
+    expect(tooltip?.sections).toEqual([
+      { header: 'Позивні підрозділів мережі:', items: ['🐷 cmd u1'] },
+    ]);
+    expect(JSON.stringify(tooltip)).not.toContain('ТЮМЕНЬ');
+  });
+
+  it('keeps blank exact hints visible with a network fallback', () => {
+    const result = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      networkIds: [10],
+      networks,
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [],
+          networkHints: [{ id: 1, networkId: 10, position: '', formation: '' }],
+        },
+      },
+    });
+    expect(result.state).toBe('message-network');
+    expect(formatMessageCallsignHintTooltipData(result)?.sections[0].items[0]).toContain('Alpha');
+  });
+
+  it('separates catalog and other-network message information', () => {
+    const result = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      networkIds: [10],
+      networks,
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: '',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: null,
+              networkIdsReportedIn: [],
+            },
+          ],
+          networkHints: [{ id: 2, networkId: 20, position: '', formation: '' }],
+        },
+      },
+    });
+    expect(result.state).toBe('known-elsewhere');
+    expect(
+      formatMessageCallsignHintTooltipData(result)?.sections.map((section) => section.header),
+    ).toEqual(['Позивні з каталогу:', 'Позивний присутній в інших мережах:']);
+  });
+
+  it('classifies missing and empty responses as unresolved', () => {
+    for (const callsignInfoMap of [{}, { wolf: { callsign: 'wolf', res: [], networkHints: [] } }]) {
+      const result = getMessageCallsignHintResult({
+        callsign: 'wolf',
+        networkIds: [],
+        networks,
+        callsignInfoMap,
+      });
+      expect(result.state).toBe('unresolved');
+      expect(formatMessageCallsignHintTooltipData(result)).toBeNull();
+    }
+  });
+
+  it('classifies catalog-only callsigns and keeps the catalog section', () => {
+    const result = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      networkIds: [10],
+      networks,
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: 'cmd',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: null,
+              networkIdsReportedIn: [],
+            },
+          ],
+          networkHints: [],
+        },
+      },
+    });
+    expect(result.state).toBe('known-elsewhere');
+    expect(
+      formatMessageCallsignHintTooltipData(result)?.sections.map((section) => section.header),
+    ).toEqual(['Позивні з каталогу:']);
+  });
+
+  it('uses the catalog fallback for blank catalog rows', () => {
+    const result = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      networks,
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: '',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: null,
+              networkIdsReportedIn: [],
+            },
+          ],
+          networkHints: [],
+        },
+      },
+    });
+    expect(result.state).toBe('known-elsewhere');
+    expect(formatMessageCallsignHintTooltipData(result)?.sections[0].items).toEqual([
+      'Позивний присутній у каталозі. Додатковий опис відсутній.',
+    ]);
+  });
+
+  it('classifies other-network-only callsigns separately', () => {
+    const result = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      networkIds: [10],
+      networks,
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [],
+          networkHints: [{ id: 2, networkId: 20, position: 'p', formation: 'f' }],
+        },
+      },
+    });
+    expect(result.state).toBe('known-elsewhere');
+    expect(result.exactNetworkHints).toEqual([]);
+    expect(result.otherNetworkHints).toHaveLength(1);
+    expect(
+      formatMessageCallsignHintTooltipData(result)?.sections.map((section) => section.header),
+    ).toEqual(['Позивний присутній в інших мережах:']);
+  });
+
+  it('treats network hints as other-network when message networks are missing', () => {
+    const result = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      networkIds: undefined,
+      networks,
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [],
+          networkHints: [{ id: 1, networkId: 10, position: 'p', formation: 'f' }],
+        },
+      },
+    });
+    expect(result.state).toBe('known-elsewhere');
+    expect(result.exactNetworkHints).toEqual([]);
+    expect(result.otherNetworkHints).toHaveLength(1);
+  });
+
   it('keeps only hints in the requested network scope', () => {
     const callsignInfo = {
       callsign: 'ВЕТЕР',

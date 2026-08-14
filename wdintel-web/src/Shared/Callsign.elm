@@ -1,6 +1,7 @@
-module Shared.Callsign exposing (viewDefault, viewWithHintResult)
+module Shared.Callsign exposing (viewDefault, viewWithHintResult, viewWithMessageHintResult)
 
 import Core.Callsigns.HintStrategy as HintStrategy
+import Core.Callsigns.MessageHint as MessageHint
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Shared.Components.Tooltip as Tooltip
@@ -66,3 +67,28 @@ viewWithHintResult callsign hintResult =
             |> Tooltip.withIconName hintResult.iconClass
             |> Tooltip.withTextNoWrap
             |> Tooltip.view tooltip
+
+
+viewWithMessageHintResult : String -> MessageHint.MessageHintResult -> Html msg
+viewWithMessageHintResult callsign result =
+    case MessageHint.tooltipSections result of
+        [] ->
+            viewDefault callsign False
+
+        sections ->
+            let
+                tooltip =
+                    div [ id "tooltip-content" ]
+                        (List.concatMap
+                            (\section ->
+                                [ div [ class "text-sm mb-1" ] [ text section.header ]
+                                , div [] (List.map (\item -> div [ class "text-sm py-1" ] [ text item ]) section.items)
+                                ]
+                            )
+                            sections
+                        )
+            in
+            Tooltip.new (String.toUpper callsign)
+                |> Tooltip.withIconName (MessageHint.iconClass result)
+                |> Tooltip.withTextNoWrap
+                |> Tooltip.view tooltip

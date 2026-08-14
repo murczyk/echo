@@ -4,6 +4,7 @@ import Api
 import Auth
 import Bindings as B
 import Config
+import Core.Callsigns.MessageHint as MessageHint
 import Core.EventHelpers
 import Core.Types exposing (ApiError)
 import Date
@@ -250,6 +251,8 @@ init route _ =
             , newCallsignsLoading = False
             , newCallsignsRsp = Nothing
             , callsignsInfo = Dict.empty
+            , messageCallsignsInfo = Dict.empty
+            , messageCallsignsRequested = Set.empty
             , callsignsInfoSumTable = Dict.empty
             , messageComments = Dict.empty
             , users = Dict.empty
@@ -1019,7 +1022,33 @@ extractMetaInfo inboxRsp model =
         | callsignsInfo =
             inboxRsp.callsigns
                 |> List.foldl (\{ callsign, res } dict -> Dict.insert callsign res dict) model.callsignsInfo
+        , messageCallsignsInfo = MessageHint.mergeResponses inboxRsp.callsigns model.messageCallsignsInfo
     }
+
+
+requestMessageCallsigns : List ( Int, B.InboxMessage ) -> Model -> ( Model, Effect Msg )
+requestMessageCallsigns messages model =
+    let
+        candidates =
+            messages
+                |> List.concatMap (Tuple.second >> MessageHint.callsignsFromMessage)
+                |> Set.fromList
+
+        missing =
+            candidates
+                |> Set.filter
+                    (\callsign ->
+                        not (Set.member callsign model.messageCallsignsRequested)
+                    )
+                |> Set.toList
+    in
+    if List.isEmpty missing then
+        ( model, E.none )
+
+    else
+        ( { model | messageCallsignsRequested = Set.union model.messageCallsignsRequested (Set.fromList missing) }
+        , E.getCallsignsInfo (GotMessageCallsignsInfo missing) { callsigns = missing }
+        )
 
 
 networksForView : Shared.Model -> Model -> Dict Int B.Network
@@ -1255,8 +1284,19 @@ update user shared route msg model =
                         )
                         model.messages
                         rsp.messages
+
+                updatedModel =
+                    { model | messages = messages2 }
+
+                ( enrichedModel, callsignEffect ) =
+                    requestMessageCallsigns rsp.messages updatedModel
             in
-            ( { model | messages = messages2 }, E.none )
+            ( enrichedModel
+            , E.batch
+                [ callsignEffect
+                , loadNetworksForMessages shared updatedModel rsp.messages
+                ]
+            )
 
         GotInbox (Err e) ->
             ( { model | loadingInboxMessages = False }
@@ -1280,11 +1320,15 @@ update user shared route msg model =
 
                 m3 =
                     extractMetaInfo rsp m2
+
+                ( m4, messageCallsignsEffect ) =
+                    requestMessageCallsigns messages m3
             in
-            ( m3
+            ( m4
             , E.batch
                 [ eff3
                 , loadNetworksForMessages shared model messages
+                , messageCallsignsEffect
                 ]
             )
 
@@ -1315,13 +1359,31 @@ update user shared route msg model =
 
                 m3 =
                     extractMetaInfo rsp m2
+
+                ( m4, messageCallsignsEffect ) =
+                    requestMessageCallsigns messages m3
             in
-            ( m3
+            ( m4
             , E.batch
                 [ eff3
                 , loadNetworksForMessages shared model messages
+                , messageCallsignsEffect
                 ]
             )
+
+        GotMessageCallsignsInfo requested result ->
+            case result of
+                Ok callsignsInfo ->
+                    ( { model
+                        | messageCallsignsInfo = MessageHint.mergeResponses callsignsInfo model.messageCallsignsInfo
+                      }
+                    , E.none
+                    )
+
+                Err e ->
+                    ( { model | messageCallsignsRequested = List.foldl Set.remove model.messageCallsignsRequested requested }
+                    , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження інформації про позивні" e
+                    )
 
         NetworksInfoLoaded (Err e) ->
             ( model, Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження мереж" e )
@@ -1774,6 +1836,7 @@ update user shared route msg model =
                     , messages = model.messages
                     , tags = model.tags
                     , callsignsInfo = model.callsignsInfo
+                    , messageCallsignsInfo = model.messageCallsignsInfo
                     , messageComments = model.messageComments
                     , user = user
                     , users = model.users
