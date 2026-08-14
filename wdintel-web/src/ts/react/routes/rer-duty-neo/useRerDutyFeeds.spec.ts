@@ -264,6 +264,18 @@ describe('mergeKnownGroupKeys', () => {
       'saved-group',
     ]);
   });
+
+  it('retains groups present only in saved filters', () => {
+    expect(
+      mergeKnownGroupKeys(
+        [],
+        [],
+        [],
+        [],
+        [{ groupsSelected: ['saved-selected'], groupsDenied: ['saved-denied'] }],
+      ),
+    ).toEqual(['saved-selected', 'saved-denied']);
+  });
 });
 
 describe('getPendingDutyCallsignLookups', () => {
