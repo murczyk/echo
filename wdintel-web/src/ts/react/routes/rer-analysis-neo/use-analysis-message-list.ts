@@ -82,15 +82,19 @@ export function useAnalysisMessageList({
     messageCommentsRef.current = messageComments;
   }, [messageComments]);
 
-  const invalidateMessagePageRequests = useCallback(() => {
-    loadMoreMessagesRequestRef.current += 1;
-    setMessagesPaging(false);
-  }, []);
-
-  const invalidateMessagePaging = useCallback(() => {
+  const invalidateCallsignEnrichment = useCallback(() => {
     callsignEnrichmentGenerationRef.current += 1;
     unscopedCallsignsRef.current.clear();
     callsignEnrichmentInFlightRef.current.clear();
+  }, []);
+
+  const invalidateMessagePageRequests = useCallback(() => {
+    invalidateCallsignEnrichment();
+    loadMoreMessagesRequestRef.current += 1;
+    setMessagesPaging(false);
+  }, [invalidateCallsignEnrichment]);
+
+  const invalidateMessagePaging = useCallback(() => {
     invalidateMessagePageRequests();
     pageCursorsRef.current = [FIRST_PAGE_CURSOR];
     setPageIndex(0);

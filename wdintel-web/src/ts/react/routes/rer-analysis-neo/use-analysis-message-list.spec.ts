@@ -806,6 +806,77 @@ describe('useAnalysisMessageList pagination', () => {
     });
   });
 
+  it('re-enriches preserved-page messages after page-request invalidation', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    const firstResponse = {
+      callsign: 'wolf',
+      res: [],
+      networkHints: [{ id: 1, networkId: 10, position: 'first', formation: '' }],
+    } satisfies CallsignInfoRes;
+    const freshResponse = {
+      callsign: 'wolf',
+      res: [],
+      networkHints: [{ id: 2, networkId: 20, position: 'fresh', formation: '' }],
+    } satisfies CallsignInfoRes;
+    fetchAnalysisCallsignInfosMock.mockResolvedValueOnce([firstResponse]);
+    await act(async () => {
+      h.latest.setMessages([[1, buildMessage({ callsigns: ['wolf'] })]]);
+      await Promise.resolve();
+    });
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: page(2),
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => {
+      await h.latest.loadNextPage();
+    });
+    expect(h.latest.pageIndex).toBe(1);
+
+    act(() => h.latest.invalidateMessagePageRequests());
+    expect(h.latest.pageIndex).toBe(1);
+    expect(h.latest.getCurrentMessagePageCursor()).toEqual({
+      beforeIdNoninclusive: 1,
+      sinceIdNoninclusive: null,
+    });
+
+    fetchAnalysisCallsignInfosMock.mockResolvedValueOnce([freshResponse]);
+    act(() => h.latest.setMessages([[3, buildMessage({ callsigns: [' WOLF '] })]]));
+    await act(async () => Promise.resolve());
+
+    expect(fetchAnalysisCallsignInfosMock).toHaveBeenCalledTimes(2);
+    expect(h.summaryCallsignsInfo.wolf.networkHints).toEqual([
+      firstResponse.networkHints[0],
+      freshResponse.networkHints[0],
+    ]);
+  });
+
+  it('ignores an in-flight enrichment response after page-request invalidation', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    const oldRequest = deferred<CallsignInfoRes[]>();
+    const newRequest = deferred<CallsignInfoRes[]>();
+    fetchAnalysisCallsignInfosMock
+      .mockReturnValueOnce(oldRequest.promise)
+      .mockReturnValueOnce(newRequest.promise);
+
+    act(() => h.latest.setMessages([[1, buildMessage({ callsigns: ['wolf'] })]]));
+    await act(async () => Promise.resolve());
+    act(() => h.latest.invalidateMessagePageRequests());
+    act(() => h.latest.setMessages([[2, buildMessage({ callsigns: ['wolf'] })]]));
+    await act(async () => Promise.resolve());
+
+    oldRequest.resolve([{ callsign: 'wolf', res: [], networkHints: [] }]);
+    await act(async () => Promise.resolve());
+    expect(h.summaryCallsignsInfo).toEqual({});
+
+    const freshResponse = { callsign: 'wolf', res: [], networkHints: [] } satisfies CallsignInfoRes;
+    newRequest.resolve([freshResponse]);
+    await act(async () => Promise.resolve());
+    expect(h.summaryCallsignsInfo.wolf).toEqual(freshResponse);
+  });
+
   it('refreshes counts only when explicitly requested', async () => {
     vi.useFakeTimers();
     const h = renderHook();
