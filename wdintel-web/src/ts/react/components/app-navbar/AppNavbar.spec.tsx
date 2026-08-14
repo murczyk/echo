@@ -264,7 +264,7 @@ describe('AppNavbar', () => {
         },
       },
     });
-    expect(disabled.container.textContent).not.toContain('Echo GPU Сервери');
+    expect(disabled.container.textContent).not.toContain('Echo GPU сервери');
 
     currentSettingsMock.mockResolvedValue({
       defaultNeoAnalysis: false,
@@ -290,8 +290,8 @@ describe('AppNavbar', () => {
       },
     });
     const content = enabled.container.textContent ?? '';
-    expect(content).toContain('Echo GPU Сервери');
-    expect(content.indexOf('Інтеграції API')).toBeLessThan(content.indexOf('Echo GPU Сервери'));
+    expect(content).toContain('Echo GPU сервери');
+    expect(content.indexOf('Інтеграції API')).toBeLessThan(content.indexOf('Echo GPU сервери'));
   });
 
   it('updates Echo GPU servers when shared transcription settings change', () => {
@@ -312,7 +312,7 @@ describe('AppNavbar', () => {
       },
     };
     const { container, root } = renderComponent(props);
-    expect(container.textContent).not.toContain('Echo GPU Сервери');
+    expect(container.textContent).not.toContain('Echo GPU сервери');
 
     act(() => {
       root.render(
@@ -328,12 +328,12 @@ describe('AppNavbar', () => {
         />,
       );
     });
-    expect(container.textContent).toContain('Echo GPU Сервери');
+    expect(container.textContent).toContain('Echo GPU сервери');
 
     act(() => {
       root.render(<AppNavbar {...props} />);
     });
-    expect(container.textContent).not.toContain('Echo GPU Сервери');
+    expect(container.textContent).not.toContain('Echo GPU сервери');
   });
 
   it('renders Devices in the database menu when the Devices section is enabled', () => {

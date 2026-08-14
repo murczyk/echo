@@ -605,7 +605,7 @@ function AdminTranscriptionSettingsPageBody() {
         {restartWarning ? <PowerAlert severity="warning">{restartWarning}</PowerAlert> : null}
 
         <TablePageToolbar
-          title="Echo GPU Сервери"
+          title="Echo GPU сервери"
           withGlobalTextFilter
           hideGlobalTextFilter={loading && instances.length === 0}
           internalActionsDisabled={loading && instances.length === 0}

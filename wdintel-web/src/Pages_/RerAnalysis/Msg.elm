@@ -23,6 +23,7 @@ type Msg
     | InboxMessagesUpdated (Result ApiError B.MessageIdsRsp)
     | GotInbox (Result ApiError B.InboxMessagesRsp)
     | GotInboxMore (Result ApiError B.InboxMessagesRsp)
+    | GotMessageCallsignsInfo (List String) (Result ApiError (List B.CallsignInfoRes))
     | NetworksInfoLoaded (Result ApiError (List B.Network))
     | GetSumTable
     | GotSumTable (Result ApiError B.SummaryTableFreq)

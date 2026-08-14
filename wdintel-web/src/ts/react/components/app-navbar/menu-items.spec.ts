@@ -76,11 +76,11 @@ describe('menu-items', () => {
       );
     });
 
-    it('places Devices immediately after Networks when both gates are visible', () => {
+    it('places Devices immediately after Callsigns when both gates are visible', () => {
       const labels = getDatabaseSubs({ includeRerItems: true, includeDevicesItem: true }).map(
         (item) => (item.type === 'item' ? item.label : item.type),
       );
-      expect(labels.slice(0, 2)).toEqual(['Мережі', 'Пристрої']);
+      expect(labels.slice(3, 5)).toEqual(['Позивні', 'Пристрої']);
     });
 
     it('renders Devices as the only database item for non-RER Devices readers', () => {
@@ -110,15 +110,26 @@ describe('menu-items', () => {
     });
   });
 
+  it('alphabetizes standalone admin items while keeping system settings last', () => {
+    expect(adminSubs.filter((item) => item.type === 'item').map((item) => item.label)).toEqual([
+      'Користувачі',
+      'Месенджери',
+      'Напрямки',
+      'Організми',
+      'Смуги',
+      'Налаштування системи',
+    ]);
+  });
+
   it('exposes the first-class ШІ administration sections', () => {
     expect(aiAgentAdminSubs.flatMap((item) => (item.type === 'item' ? [item.label] : []))).toEqual([
-      'Провайдери',
-      'Налаштування ШІ',
-      'Контейнери',
-      'Запити',
       'Диспетчер',
+      'Запити',
       'Зворотні проксі',
+      'Контейнери',
+      'Налаштування ШІ',
       'Позивні',
+      'Провайдери',
     ]);
 
     const aiGroupIndex = adminSubs.findIndex(
@@ -155,25 +166,25 @@ describe('menu-items', () => {
     expect(menuIsActive('rer-delta-import', importGroup!)).toBe(true);
   });
 
-  it('groups the database administration block under База Знань', () => {
+  it('groups the database administration block under База знань', () => {
     const databaseGroup = adminSubs.find(
       (item): item is Extract<Menu, { type: 'group' }> =>
-        item.type === 'group' && item.label === 'База Знань',
+        item.type === 'group' && item.label === 'База знань',
     );
 
     expect(databaseGroup?.subs).toBe(adminDatabaseSubs);
     expect(
       databaseGroup?.subs.flatMap((item) => (item.type === 'item' ? [item.label] : [])),
     ).toEqual([
-      'Інтеграції API',
-      'Echo GPU Сервери',
+      'Echo GPU сервери',
+      'Аналіз пристроїв',
       'Всі звіти',
-      'Підрозділи',
       'ГОІ',
+      'Інтеграції API',
       'Ключі',
       'Населені пункти смуг',
+      'Підрозділи',
       'Теги',
-      'Аналіз пристроїв',
     ]);
     expect(menuIsActive('tags-neo', databaseGroup!)).toBe(true);
     expect(menuIsActive('device-analytics', databaseGroup!)).toBe(true);

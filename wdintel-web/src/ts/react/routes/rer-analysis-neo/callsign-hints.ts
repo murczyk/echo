@@ -26,6 +26,25 @@ export type CallsignHintTooltipData = {
   items: string[];
 };
 
+export type MessageCallsignHintState = 'message-network' | 'known-elsewhere' | 'unresolved';
+
+export type MessageCallsignHintResult = {
+  state: MessageCallsignHintState;
+  catalogRows: CallsignInfo[];
+  exactNetworkHints: CallsignNetworkHint[];
+  otherNetworkHints: CallsignNetworkHint[];
+  networkNames: Record<number, string>;
+};
+
+export type CallsignHintTooltipSection = {
+  header: string;
+  items: string[];
+};
+
+export type MessageCallsignHintTooltipData = {
+  sections: CallsignHintTooltipSection[];
+};
+
 function getReportedNetworkIds(callsignInfo: Pick<CallsignInfo, 'networkIdsReportedIn'>): number[] {
   return callsignInfo.networkIdsReportedIn ?? [];
 }
@@ -284,6 +303,82 @@ export function formatCallsignHintTooltip(result: CallsignHintResult): string | 
   const tooltipData = formatCallsignHintTooltipData(result);
   if (!tooltipData) return null;
   return [tooltipData.header, ...tooltipData.items].join('\n');
+}
+
+export function getMessageCallsignHintResult(params: {
+  networkIds?: number[] | null;
+  networks: Network[];
+  callsignInfoMap?: Record<string, CallsignInfoRes>;
+  callsign: string;
+}): MessageCallsignHintResult {
+  const response = params.callsignInfoMap?.[normalizeCallsignLookupValue(params.callsign)];
+  const messageNetworkIds = new Set(params.networkIds ?? []);
+  const catalogRows = response?.res ?? [];
+  const exactNetworkHints = (response?.networkHints ?? []).filter((hint) =>
+    messageNetworkIds.has(hint.networkId),
+  );
+  const otherNetworkHints = (response?.networkHints ?? []).filter(
+    (hint) => !messageNetworkIds.has(hint.networkId),
+  );
+  const state: MessageCallsignHintState =
+    exactNetworkHints.length > 0
+      ? 'message-network'
+      : catalogRows.length > 0 || otherNetworkHints.length > 0
+        ? 'known-elsewhere'
+        : 'unresolved';
+  return {
+    state,
+    catalogRows,
+    exactNetworkHints,
+    otherNetworkHints,
+    networkNames: Object.fromEntries(params.networks.map((network) => [network.id, network.name])),
+  };
+}
+
+function formatMessageNetworkHint(
+  hint: CallsignNetworkHint,
+  networkNames: Record<number, string>,
+): string {
+  const line = formatNetworkCallsignTooltipLine(hint);
+  return isTooltipLineVisible(line)
+    ? line
+    : `Позивний присутній у мережі «${networkNames[hint.networkId] ?? `#${hint.networkId}`}». Додатковий опис відсутній.`;
+}
+
+export function formatMessageCallsignHintTooltipData(
+  result: MessageCallsignHintResult,
+): MessageCallsignHintTooltipData | null {
+  if (result.state === 'unresolved') return null;
+  const sections: CallsignHintTooltipSection[] = [];
+  if (result.state === 'message-network') {
+    sections.push({
+      header: 'Позивні підрозділів мережі:',
+      items: result.exactNetworkHints.map((hint) =>
+        formatMessageNetworkHint(hint, result.networkNames),
+      ),
+    });
+  } else {
+    if (result.catalogRows.length > 0) {
+      sections.push({
+        header: 'Позивні з каталогу:',
+        items: result.catalogRows.map((row) => {
+          const line = formatLegacyCallsignTooltipLine(row);
+          return isTooltipLineVisible(line)
+            ? line
+            : 'Позивний присутній у каталозі. Додатковий опис відсутній.';
+        }),
+      });
+    }
+    if (result.otherNetworkHints.length > 0) {
+      sections.push({
+        header: 'Позивний присутній в інших мережах:',
+        items: result.otherNetworkHints.map((hint) =>
+          formatMessageNetworkHint(hint, result.networkNames),
+        ),
+      });
+    }
+  }
+  return { sections };
 }
 
 export const __private__ = {
