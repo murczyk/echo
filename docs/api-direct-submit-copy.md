@@ -166,7 +166,7 @@ Content-Type: application/json
 
 `message` у відповіді save може бути `null`. У такому випадку для оновленого відображення потрібно викликати `messages-by-id` із новим `signal_message_id`.
 
-Для редагування вже існуючого повідомлення залишається endpoint `POST /api/1.1/message/{id}/edit`. Його не можна використовувати для створення копії: payload із непорожнім `parent_signal_message_ids` дозволений лише під час створення нового повідомлення через `submit-direct`.
+Для редагування вже існуючого повідомлення залишається endpoint `POST /api/1.1/message/{id}/edit`. `parent_signal_message_ids` є create-only полем: під час edit backend його ігнорує, а вже збережені зв’язки `intel_prod` не змінюються. Frontend має за можливості не передавати це поле під час edit.
 
 ## Поля `DirectSubmitPayload`
 
@@ -191,7 +191,7 @@ Content-Type: application/json
 | `upload_urls` | `string[] \| null` | URL нових завершених upload-ів. Нові файли зберігаються у S3 під час submit. |
 | `deleted_media_ids` | `string[] \| null` | UUID media, які потрібно виключити з копії. Для копії це UUID media батьківського повідомлення. |
 | `retained_media_ids` | `string[] \| null` | UUID media батьківського повідомлення, які потрібно залишити в копії. |
-| `parent_signal_message_ids` | `number[]` | ID усіх `signal_message`, на яких базується нова копія. Для звичайного submit передається порожній масив. |
+| `parent_signal_message_ids` | `number[]` | ID усіх `signal_message`, на яких базується нова копія. Для звичайного submit передається порожній масив; під час edit поле ігнорується. |
 
 Усі поля, крім `signal_group_master_key`, мають default/optional поведінку на рівні JSON. Для copy flow рекомендується передавати весь payload, який повернув endpoint підготовки копії, і змінювати лише поля форми.
 
@@ -255,7 +255,7 @@ intel_prod.signal_message_id = new_signal_message.id
 intel_prod.parent_signal_message_id = every source ID
 ```
 
-Frontend не повинен обнуляти або видаляти `parent_signal_message_ids` під час submit. Backend створює окремий зв’язок для кожного ID після успішного збереження копії.
+Frontend не повинен обнуляти або видаляти `parent_signal_message_ids` під час створення копії. Під час edit це поле можна не передавати: backend не змінює вже збережені зв’язки та не створює нових.
 
 ## Помилки
 

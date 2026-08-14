@@ -1675,7 +1675,6 @@ async fn upsert_submit_signal_message_inner(
                     message_uid: Set(Some(message_uid)),
                     operator_tags: Set(operator_tags),
                     attachments_hash: Set(None),
-                    parent_signal_message_id: Set(None),
                 }
                 .insert(txn)
                 .await
@@ -1697,7 +1696,6 @@ async fn upsert_submit_signal_message_inner(
             message_uid: NotSet,
             operator_tags: Set(operator_tags),
             attachments_hash: Set(None),
-            parent_signal_message_id: Set(None),
         }
         .insert(txn)
         .await
