@@ -15,6 +15,7 @@ const referenceDataMocks = vi.hoisted(() => ({
 const directSubmitMocks = vi.hoisted(() => ({
   submitDirect: vi.fn().mockResolvedValue({ signal_message_id: 1 }),
   editDirectSubmit: vi.fn(),
+  copyDirectSubmit: vi.fn(),
   createDeviceName: vi.fn().mockResolvedValue({ id: 1 }),
   parseDirectSubmit: vi.fn(),
   searchNetworkNames: vi.fn().mockResolvedValue([]),
@@ -50,6 +51,7 @@ vi.mock('../../../services/api/direct-submit', () => ({
   parseDirectSubmit: directSubmitMocks.parseDirectSubmit,
   submitDirect: directSubmitMocks.submitDirect,
   editDirectSubmit: directSubmitMocks.editDirectSubmit,
+  copyDirectSubmit: directSubmitMocks.copyDirectSubmit,
   formatDirectSubmitError: (error: unknown) =>
     error instanceof Error ? error.message : 'save failed',
 }));
@@ -186,6 +188,8 @@ const autocompleteInputValuesByLabel = new Map<string, string>();
 const autocompleteOptionLabelsByLabel = new Map<string, string[]>();
 const pickerValuesByLabel = new Map<string, unknown>();
 let drawerModalProps: { closeAfterTransition?: boolean } | undefined;
+let drawerSlotProps:
+  { paper?: { sx?: { width?: string | Record<string, string | number> } } } | undefined;
 
 function setRecentValues(values: Record<string, unknown>) {
   Object.defineProperty(globalThis, 'localStorage', {
@@ -234,12 +238,15 @@ vi.mock('@mui/material', () => ({
     children,
     open,
     ModalProps,
+    slotProps,
   }: {
     children?: ReactNode;
     open?: boolean;
     ModalProps?: { closeAfterTransition?: boolean };
+    slotProps?: { paper?: { sx?: { width?: string | Record<string, string | number> } } };
   }) => {
     drawerModalProps = ModalProps;
+    drawerSlotProps = slotProps;
     return open ? <div role="dialog">{children}</div> : null;
   },
   Button: ({
@@ -445,6 +452,7 @@ describe('ManageMessageDrawer edit mode', () => {
     directSubmitMocks.submitDirect.mockReset();
     directSubmitMocks.submitDirect.mockResolvedValue({ signal_message_id: 1 });
     directSubmitMocks.editDirectSubmit.mockReset();
+    directSubmitMocks.copyDirectSubmit.mockReset();
     directSubmitMocks.createDeviceName.mockReset();
     directSubmitMocks.createDeviceName.mockResolvedValue({ id: 1 });
     directSubmitMocks.parseDirectSubmit.mockReset();
@@ -462,6 +470,91 @@ describe('ManageMessageDrawer edit mode', () => {
     referenceDataMocks.getGroupInfosBatch.mockResolvedValue([]);
     setRecentValues({});
     uppyMocks.latest = null;
+  });
+
+  it('creates a report from copied fields with optional group and retained media', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      source_signal_message_id: 42,
+      payload: {
+        full_body: 'original copied body',
+        text: 'original copied body',
+        comment: 'existing comment',
+        signal_group_master_key: null,
+        retained_media_ids: ['media-1'],
+        parent_signal_message_id: 42,
+      },
+    });
+    directSubmitMocks.submitDirect.mockResolvedValue({ signal_message_id: 91 });
+    const source = buildMessage({
+      text: 'original card body',
+      media: [
+        {
+          id: 'media-1',
+          contentType: 'image/jpeg',
+          fileName: 'photo.jpg',
+          sizeBytes: 10,
+          href: '/media/photo.jpg',
+          transcription: null,
+        },
+      ],
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: source }}
+        />,
+      );
+    });
+
+    expect(directSubmitMocks.copyDirectSubmit).toHaveBeenCalledWith(42);
+    expect(container.textContent).toContain('Створити розвіддонесення');
+    expect(textFieldPropsByLabel.get('Текст оригінального повідомлення')?.value).toBe(
+      'original copied body',
+    );
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('');
+    const reportTextRow = container.querySelector('[data-testid="report-text-row"]');
+    expect(reportTextRow?.textContent).toContain('Оригінальний текст');
+    expect(reportTextRow?.textContent).toContain('Розвіддонесення');
+    expect(reportTextRow?.parentElement?.firstElementChild).toBe(reportTextRow);
+    expect(drawerSlotProps?.paper?.sx?.width).toBe('100vw');
+    expect(container.querySelector('textarea[aria-label="Коментар"]')).toBeNull();
+    expect(container.textContent).not.toContain('Розширені поля');
+    expect(container.textContent).not.toContain('DMR метадані');
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(directSubmitMocks.submitDirect).not.toHaveBeenCalled();
+
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст розвіддонесення')
+        ?.onChange?.({ target: { value: 'new report body' } });
+    });
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        full_body: 'new report body',
+        signal_group_master_key: null,
+        retained_media_ids: ['media-1'],
+        parent_signal_message_id: 42,
+        comment: undefined,
+      }),
+    );
+
+    root.unmount();
   });
 
   it('restores focus before hiding the drawer from assistive technology', async () => {
@@ -1279,7 +1372,7 @@ describe('ManageMessageDrawer edit mode', () => {
     const onSubmitEdit = vi.fn();
     directSubmitMocks.editDirectSubmit.mockResolvedValue({
       signal_message_id: 55,
-      message: buildMessage({ extendedForm: 'edited comment', tags: [7] }),
+      message: buildMessage({ extendedForm: 'existing comment', tags: [7] }),
     });
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -1291,7 +1384,10 @@ describe('ManageMessageDrawer edit mode', () => {
           cyberEchoEnabled={false}
           currentUser={null}
           onClose={vi.fn()}
-          editTarget={{ id: 55, message: buildMessage({ tags: [7] }) }}
+          editTarget={{
+            id: 55,
+            message: buildMessage({ extendedForm: 'existing comment', tags: [7] }),
+          }}
           editSaveInFlight={false}
           onSubmitEdit={onSubmitEdit}
         />,
@@ -1302,12 +1398,11 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(container.textContent).not.toContain('арта');
 
     // User edits a non-tag field WHILE tags are still loading.
-    const commentField = container.querySelector(
-      'textarea[aria-label="Коментар"]',
-    ) as HTMLTextAreaElement;
-    expect(commentField).toBeTruthy();
+    expect(container.querySelector('textarea[aria-label="Коментар"]')).toBeNull();
     act(() => {
-      textFieldPropsByLabel.get('Коментар')?.onChange?.({ target: { value: 'edited comment' } });
+      textFieldPropsByLabel
+        .get('Текст повідомлення')
+        ?.onChange?.({ target: { value: 'edited body' } });
     });
 
     // Now the tags fetch resolves.
@@ -1324,9 +1419,13 @@ describe('ManageMessageDrawer edit mode', () => {
     });
 
     expect(onSubmitEdit).toHaveBeenCalledTimes(1);
-    // ...and the in-window comment edit was NOT clobbered by a second reset().
+    // ...and the in-window text edit was NOT clobbered by a second reset().
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      55,
+      expect.objectContaining({ full_body: 'edited body', comment: 'existing comment' }),
+    );
     expect(onSubmitEdit.mock.calls[0][1]).toMatchObject({
-      extendedForm: 'edited comment',
+      extendedForm: 'existing comment',
       tags: [7],
     });
 

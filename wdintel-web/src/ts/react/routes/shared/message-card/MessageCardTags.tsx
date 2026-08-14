@@ -222,6 +222,14 @@ function MessageCardTagsComponent({
     </Tooltip>
   );
 
+  if (tagsLayout === 'full') {
+    return (
+      <Box className="flex w-full min-w-0 flex-wrap items-start gap-x-1 gap-y-2.5">
+        {rows.map((row) => renderOneChip(row))}
+      </Box>
+    );
+  }
+
   const expandToggleButton = hasRest ? (
     <Button
       size="small"

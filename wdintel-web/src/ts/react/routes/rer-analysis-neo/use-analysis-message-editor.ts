@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
 import { submitAnalysisInboxMessages } from '../../services/api/analysis';
+import { fetchMessagesByIds } from '../../services/api/inbox-messages';
 
 type Props = {
   messages: Array<[number, InboxMessage]>;
@@ -16,9 +17,12 @@ type Props = {
 
 type Result = {
   editorMessage: { id: number; message: InboxMessage } | null;
+  reportSource: { id: number; message: InboxMessage } | null;
   editorSaveInFlight: boolean;
   closeEditor: () => void;
   openEditor: (messageId: number) => void;
+  openReportCreator: (messageId: number) => void;
+  openReportEditor: (messageId: number) => Promise<void>;
   saveEditor: (message: InboxMessage) => Promise<void>;
   saveMessageUpdate: (
     messageId: number,
@@ -79,6 +83,9 @@ export function useAnalysisMessageEditor({
   const [editorMessage, setEditorMessage] = useState<{ id: number; message: InboxMessage } | null>(
     null,
   );
+  const [reportSource, setReportSource] = useState<{ id: number; message: InboxMessage } | null>(
+    null,
+  );
   const editorSaveInFlight = false;
   const messagesRef = useRef(messages);
   const messageDraftsRef = useRef(buildMessageDraftMap(messages));
@@ -93,6 +100,7 @@ export function useAnalysisMessageEditor({
     (messageId: number) => {
       const entry = messages.find(([id]) => id === messageId) ?? null;
       if (isNullOrUndefined(entry)) return;
+      setReportSource(null);
       setEditorMessage({ id: entry[0], message: entry[1] });
     },
     [messages],
@@ -100,7 +108,32 @@ export function useAnalysisMessageEditor({
 
   const closeEditor = useCallback(() => {
     setEditorMessage(null);
+    setReportSource(null);
   }, []);
+
+  const openReportCreator = useCallback(
+    (messageId: number) => {
+      const entry = messages.find(([id]) => id === messageId) ?? null;
+      if (isNullOrUndefined(entry)) return;
+      setEditorMessage(null);
+      setReportSource({ id: entry[0], message: entry[1] });
+    },
+    [messages],
+  );
+
+  const openReportEditor = useCallback(
+    async (messageId: number) => {
+      try {
+        const [entry] = await fetchMessagesByIds([messageId]);
+        if (isNullOrUndefined(entry)) throw new Error('Розвіддонесення не знайдено.');
+        setReportSource(null);
+        setEditorMessage({ id: entry[0], message: entry[1] });
+      } catch (error) {
+        if (!onUnauthorized(error)) onError(toErrorMessage(error));
+      }
+    },
+    [onError, onUnauthorized],
+  );
 
   const saveMessageUpdate = useCallback(
     async (messageId: number, updater: (message: InboxMessage) => InboxMessage) => {
@@ -143,9 +176,12 @@ export function useAnalysisMessageEditor({
 
   return {
     editorMessage,
+    reportSource,
     editorSaveInFlight,
     closeEditor,
     openEditor,
+    openReportCreator,
+    openReportEditor,
     saveEditor,
     saveMessageUpdate,
   };

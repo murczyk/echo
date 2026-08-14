@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { HttpRequestError } from './client';
-import { editDirectSubmit, formatDirectSubmitError, submitDirect } from './direct-submit';
+import {
+  copyDirectSubmit,
+  editDirectSubmit,
+  formatDirectSubmitError,
+  submitDirect,
+} from './direct-submit';
 
 const apiMocks = vi.hoisted(() => ({
   postJson: vi.fn(),
@@ -53,6 +58,26 @@ const rawMessage = {
 };
 
 describe('direct-submit response normalization', () => {
+  it('loads the report-copy payload from the message endpoint', async () => {
+    const response = {
+      source_signal_message_id: 42,
+      payload: {
+        full_body: 'original',
+        signal_group_master_key: null,
+        retained_media_ids: ['media-1'],
+        parent_signal_message_id: 42,
+      },
+    };
+    apiMocks.postJson.mockResolvedValueOnce(response);
+
+    await expect(copyDirectSubmit(42)).resolves.toEqual(response);
+    expect(apiMocks.postJson).toHaveBeenCalledWith(
+      '/api/1.1/message/42/copy',
+      undefined,
+      undefined,
+    );
+  });
+
   it('normalizes an inline snake_case create message', async () => {
     apiMocks.postJson.mockResolvedValueOnce({ signal_message_id: 101, message: rawMessage });
 

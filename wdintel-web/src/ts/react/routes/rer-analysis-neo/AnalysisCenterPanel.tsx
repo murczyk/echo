@@ -253,10 +253,11 @@ export function AnalysisCenterPanel({
             onCancelBotTagAction={page.onCancelBotTagAction}
             onMarkBotTagWrong={page.onMarkBotTagWrong}
             onOpenEditor={page.openEditor}
+            onCreateReport={page.openReportCreator}
+            onEditReport={page.openReportEditor}
             onLoadMoreMessages={page.loadMoreMessages}
             onOpenPointsOnMap={page.openPointsOnMap}
             onSaveMessageUpdate={page.saveMessageUpdate}
-            onSaveMessageComment={page.onSaveMessageComment}
             onToggleMessageBookmark={page.onToggleMessageBookmark}
             onToggleMessageImportant={page.onToggleMessageImportant}
             onToggleMessageTag={page.onToggleMessageTag}

@@ -21,6 +21,7 @@ const manageMessageDrawerPropsHistory = vi.hoisted(
       onSubmitEdit?: (id: number, message: unknown) => Promise<void> | void;
       onEditSuccess?: (result: unknown) => Promise<void> | void;
       editTarget?: unknown;
+      reportSource?: unknown;
     }>,
 );
 
@@ -250,7 +251,9 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
     onClose: () => void;
     onCreated?: (result: unknown) => Promise<void> | void;
     onSubmitEdit?: (id: number, message: unknown) => Promise<void> | void;
+    onEditSuccess?: (result: unknown) => Promise<void> | void;
     editTarget?: unknown;
+    reportSource?: unknown;
   }) => {
     manageMessageDrawerPropsHistory.push(props);
     return props.open ? <div data-testid="manage-message-drawer" /> : null;
@@ -292,6 +295,7 @@ function buildPage() {
     countsLoading: true,
     error: null,
     editorMessage: null,
+    reportSource: null,
     editorSaveInFlight: false,
     filtersLoading: false,
     groupInfos: {},
@@ -381,11 +385,12 @@ function buildPage() {
     unitsMap: {},
     validationError: null,
     openEditor: vi.fn(),
+    openReportCreator: vi.fn(),
+    openReportEditor: vi.fn(),
     closeEditor: vi.fn(),
     saveEditor: vi.fn(),
     saveMessageUpdate: vi.fn(),
     onDeleteMessage: vi.fn(),
-    onSaveMessageComment: vi.fn(),
     onToggleMessageBookmark: vi.fn(),
     onToggleMessageImportant: vi.fn(),
     onToggleMessageTag: vi.fn(),
@@ -836,6 +841,65 @@ describe('RerAnalysisNeoPage', () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it('opens report creation mode and refreshes analysis after creation', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const reportSource = { id: 42, message: { messageUid: 'm-42' } as never };
+    const page = buildPage();
+    page.reportSource = reportSource;
+    useRerAnalysisNeoPageMock.mockReturnValueOnce(page);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    const drawer = manageMessageDrawerPropsHistory.at(-1);
+    expect(drawer?.open).toBe(true);
+    expect(drawer?.reportSource).toBe(reportSource);
+
+    await act(async () => {
+      await drawer?.onCreated?.({ signal_message_id: 91 });
+    });
+
+    expect(page.reload).toHaveBeenCalledTimes(1);
+    expect(notifyMock).toHaveBeenCalledWith({
+      message: 'Розвіддонесення успішно створено.',
+      severity: 'success',
+    });
+
+    await act(async () => root.unmount());
+  });
+
+  it('routes standalone report edits through server refresh instead of local message save', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const page = buildPage();
+    page.editorMessage = {
+      id: 91,
+      message: { messageUid: 'report-91', parentSignalMessageId: 42 } as never,
+    };
+    useRerAnalysisNeoPageMock.mockReturnValueOnce(page);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    const drawer = manageMessageDrawerPropsHistory.at(-1);
+    expect(drawer?.onSubmitEdit).toBeUndefined();
+    await act(async () => {
+      await drawer?.onEditSuccess?.({ signal_message_id: 91 });
+    });
+
+    expect(page.saveEditor).not.toHaveBeenCalled();
+    expect(page.reload).toHaveBeenCalledTimes(1);
+
+    await act(async () => root.unmount());
   });
 
   it('reloads after an edit without an inline message without saving a stale local message', async () => {

@@ -8,6 +8,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import DevicesIcon from '@mui/icons-material/Devices';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
+import NoteAddIcon from '@mui/icons-material/NoteAdd';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import DeskIcon from '@mui/icons-material/Desk';
@@ -47,6 +48,7 @@ import {
   type MessageCardNavigationMenuItem,
 } from './message-card.utils';
 import { formatCoordinatePreviewPointCount } from './message-coordinate-preview';
+import { getParentSignalMessageId } from '../intelligence-reports';
 
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
@@ -67,7 +69,7 @@ type ActionIconsRowProps = {
   copiedFeedbackId: string | null;
   onBookmark?: () => void;
   onImportant?: () => void;
-  onComment?: () => void;
+  onCreateReport?: () => void;
   onCopyText?: () => void;
   onCopyFreq?: () => void;
   onCopyTextWithNetwork?: () => void;
@@ -162,7 +164,7 @@ function ActionIconsRow({
   navigationMenuItems = [],
   onBookmark,
   onImportant,
-  onComment,
+  onCreateReport,
   onCopyText,
   onCopyFreq,
   onCopyTextWithNetwork,
@@ -287,17 +289,19 @@ function ActionIconsRow({
     closeOverflowMenu();
   }
 
-  if (!onBookmark || !onImportant || !onComment || !onCopyText || !onCopyFreq) {
+  if (!onBookmark || !onImportant || !onCopyText || !onCopyFreq) {
     return null;
   }
 
   const buttons = [
-    <ActionIconButton
-      key="comment"
-      title="Редагувати коментар"
-      icon={<ChatBubbleOutlineOutlinedIcon fontSize="inherit" />}
-      onClick={onComment}
-    />,
+    isPresent(onCreateReport) && getParentSignalMessageId(msg) == null ? (
+      <ActionIconButton
+        key="report"
+        title="Створити розвіддонесення"
+        icon={<NoteAddIcon fontSize="inherit" />}
+        onClick={onCreateReport}
+      />
+    ) : null,
     <ActionIconButton
       key="important"
       title={msg.important ? 'Позначити як не важливе' : 'Позначити як важливе'}
@@ -894,7 +898,7 @@ export type MessageCardHeaderProps = {
   metadataTrigger?: ReactNode;
   onBookmark?: () => void;
   onImportant?: () => void;
-  onComment?: () => void;
+  onCreateReport?: () => void;
   onCopyText?: () => void;
   onCopyFreq?: () => void;
   onCopyTextWithNetwork?: () => void;
@@ -927,7 +931,7 @@ function MessageCardHeaderComponent({
   metadataTrigger,
   onBookmark,
   onImportant,
-  onComment,
+  onCreateReport,
   onCopyText,
   onCopyFreq,
   onCopyTextWithNetwork,
@@ -1083,7 +1087,7 @@ function MessageCardHeaderComponent({
             navigationMenuItems={navigationMenuItems}
             onBookmark={onBookmark}
             onImportant={onImportant}
-            onComment={onComment}
+            onCreateReport={onCreateReport}
             onCopyText={onCopyText}
             onCopyFreq={onCopyFreq}
             onCopyTextWithNetwork={onCopyTextWithNetwork}

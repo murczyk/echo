@@ -4,6 +4,7 @@ import type {
   InboxMessage,
   MessageComment,
   Network,
+  SignalGroupEntry,
   Tag,
   Unit,
 } from '../../../../../Bindings';
@@ -50,6 +51,8 @@ import {
   MessageCardAttachmentPreviewProvider,
   type MessageCardPreviewAttachment,
 } from './attachment-preview/MessageCardAttachmentPreviewProvider';
+import { getIntelligenceReports } from '../intelligence-reports';
+import { MessageCardIntelligenceReports } from './MessageCardIntelligenceReports';
 
 export type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 
@@ -98,6 +101,8 @@ export function MessageCardMessageBody({
   networks,
   unitsMap,
   messageComments = [],
+  reportGroupInfos,
+  onEditReport,
   signalMessageSenderLabel,
   searchText,
   onOpenPointsOnMap,
@@ -121,6 +126,8 @@ export function MessageCardMessageBody({
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
   messageComments?: MessageComment[];
+  reportGroupInfos: Record<string, SignalGroupEntry>;
+  onEditReport?: (reportId: number) => void;
   signalMessageSenderLabel?: string | null;
   searchText?: string | null;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
@@ -390,6 +397,11 @@ export function MessageCardMessageBody({
           </Typography>
         </div>
       ) : null}
+      <MessageCardIntelligenceReports
+        reports={getIntelligenceReports(msg)}
+        groupInfos={reportGroupInfos}
+        onEdit={readOnly ? undefined : onEditReport}
+      />
       {messageComments.length > 0 ? (
         <MessageCardComments
           messageComments={messageComments}

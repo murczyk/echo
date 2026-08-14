@@ -110,7 +110,8 @@ type DutyMessageCardItemProps = {
   onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
   onMessageCopy: (text: string, feedbackId: string) => void;
   onMessageAddFrequencyToFilter: (feedId: string, freq: string) => void;
-  onMessageComment: (msgId: number, currentComment: string | null) => void;
+  onMessageCreateReport: (msgId: number, message: InboxMessage) => void;
+  onMessageEditReport: (reportId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
   onMessageEdit: (messageId: number, message: InboxMessage) => void;
@@ -145,7 +146,8 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   onMessageImportant,
   onMessageCopy,
   onMessageAddFrequencyToFilter,
-  onMessageComment,
+  onMessageCreateReport,
+  onMessageEditReport,
   onMessageExcludeEntity,
   onMessageToggleTag,
   onMessageEdit,
@@ -178,6 +180,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       authUserName={authUserName}
       tagContributionsOrganismId={tagContributionsOrganismId}
       groupName={labels.groupName}
+      reportGroupInfos={groupInfos}
       senderName={labels.senderName}
       copiedFeedbackId={copiedFeedbackId}
       networkDisplayMap={networkDisplayMap}
@@ -234,7 +237,8 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
           : () => onMessageCopy(etalonDisplayModel.copyLocationValue ?? '', `location-${id}`)
       }
       onAddFrequencyToFilter={(freq) => onMessageAddFrequencyToFilter(feedId, freq)}
-      onComment={() => onMessageComment(id, msg.extendedForm ?? null)}
+      onCreateReport={() => onMessageCreateReport(id, msg)}
+      onEditReport={onMessageEditReport}
       onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
       onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
       onEditDetails={() => onMessageEdit(id, msg)}
@@ -274,7 +278,8 @@ type DutyMessageListProps = {
   onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
   onMessageCopy: (text: string, feedbackId: string) => void;
   onMessageAddFrequencyToFilter: (feedId: string, freq: string) => void;
-  onMessageComment: (msgId: number, currentComment: string | null) => void;
+  onMessageCreateReport: (msgId: number, message: InboxMessage) => void;
+  onMessageEditReport: (reportId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
   onMessageEdit: (messageId: number, message: InboxMessage) => void;
@@ -311,7 +316,8 @@ const DutyMessageList = memo(
     onMessageImportant,
     onMessageCopy,
     onMessageAddFrequencyToFilter,
-    onMessageComment,
+    onMessageCreateReport,
+    onMessageEditReport,
     onMessageExcludeEntity,
     onMessageToggleTag,
     onMessageEdit,
@@ -356,7 +362,8 @@ const DutyMessageList = memo(
               onMessageImportant={onMessageImportant}
               onMessageCopy={onMessageCopy}
               onMessageAddFrequencyToFilter={onMessageAddFrequencyToFilter}
-              onMessageComment={onMessageComment}
+              onMessageCreateReport={onMessageCreateReport}
+              onMessageEditReport={onMessageEditReport}
               onMessageExcludeEntity={onMessageExcludeEntity}
               onMessageToggleTag={onMessageToggleTag}
               onMessageEdit={onMessageEdit}
@@ -394,7 +401,8 @@ const DutyMessageList = memo(
     prev.onMessageImportant === next.onMessageImportant &&
     prev.onMessageCopy === next.onMessageCopy &&
     prev.onMessageAddFrequencyToFilter === next.onMessageAddFrequencyToFilter &&
-    prev.onMessageComment === next.onMessageComment &&
+    prev.onMessageCreateReport === next.onMessageCreateReport &&
+    prev.onMessageEditReport === next.onMessageEditReport &&
     prev.onMessageExcludeEntity === next.onMessageExcludeEntity &&
     prev.onMessageToggleTag === next.onMessageToggleTag &&
     prev.onMessageEdit === next.onMessageEdit &&
@@ -576,7 +584,8 @@ export const FeedColumnContent = memo(
       onMessageImportant,
       onMessageAddFrequencyToFilter,
       onMessageCopy,
-      onMessageComment,
+      onMessageCreateReport,
+      onMessageEditReport,
       onMessageExcludeEntity,
       onMessageToggleTag,
       onMessageEdit,
@@ -631,7 +640,8 @@ export const FeedColumnContent = memo(
     const stableOnMessageImportant = useStableCallback(onMessageImportant);
     const stableOnMessageCopy = useStableCallback(onMessageCopy);
     const stableOnMessageAddFrequencyToFilter = useStableCallback(onMessageAddFrequencyToFilter);
-    const stableOnMessageComment = useStableCallback(onMessageComment);
+    const stableOnMessageCreateReport = useStableCallback(onMessageCreateReport);
+    const stableOnMessageEditReport = useStableCallback(onMessageEditReport);
     const stableOnMessageExcludeEntity = useStableCallback(onMessageExcludeEntity);
     const stableOnMessageToggleTag = useStableCallback(onMessageToggleTag);
     const stableOnMessageEdit = useStableCallback(onMessageEdit);
@@ -686,7 +696,8 @@ export const FeedColumnContent = memo(
           onMessageImportant={stableOnMessageImportant}
           onMessageCopy={stableOnMessageCopy}
           onMessageAddFrequencyToFilter={stableOnMessageAddFrequencyToFilter}
-          onMessageComment={stableOnMessageComment}
+          onMessageCreateReport={stableOnMessageCreateReport}
+          onMessageEditReport={stableOnMessageEditReport}
           onMessageExcludeEntity={stableOnMessageExcludeEntity}
           onMessageToggleTag={stableOnMessageToggleTag}
           onMessageEdit={stableOnMessageEdit}
@@ -823,7 +834,8 @@ export const FeedColumnContent = memo(
       prevActions.onMessageImportant !== nextActions.onMessageImportant ||
       prevActions.onMessageAddFrequencyToFilter !== nextActions.onMessageAddFrequencyToFilter ||
       prevActions.onMessageCopy !== nextActions.onMessageCopy ||
-      prevActions.onMessageComment !== nextActions.onMessageComment ||
+      prevActions.onMessageCreateReport !== nextActions.onMessageCreateReport ||
+      prevActions.onMessageEditReport !== nextActions.onMessageEditReport ||
       prevActions.onMessageExcludeEntity !== nextActions.onMessageExcludeEntity ||
       prevActions.onMessageToggleTag !== nextActions.onMessageToggleTag ||
       prevActions.onMessageEdit !== nextActions.onMessageEdit ||

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { fetchMessagesByIds } from './inbox-messages';
+import {
+  getIntelligenceReports,
+  getParentSignalMessageId,
+} from '../../routes/shared/intelligence-reports';
 
 const apiMocks = vi.hoisted(() => ({
   postJson: vi.fn(),
@@ -103,5 +107,41 @@ describe('fetchMessagesByIds', () => {
       },
       undefined,
     );
+  });
+
+  it('keeps parent linkage and non-recursive report summaries from the wire response', async () => {
+    apiMocks.postJson.mockResolvedValueOnce({
+      messages: [
+        [
+          7,
+          {
+            text: 'report',
+            parent_signal_message_id: 4,
+            intelligence_reports: [
+              {
+                id: 9,
+                text: 'summary',
+                timestamp: 100,
+                group_master_key: null,
+              },
+            ],
+          },
+        ],
+      ],
+    });
+
+    const [[, message]] = await fetchMessagesByIds([7]);
+
+    expect(getParentSignalMessageId(message)).toBe(4);
+    expect(getIntelligenceReports(message)).toEqual([
+      {
+        id: 9,
+        text: 'summary',
+        timestamp: 100,
+        date: null,
+        time: null,
+        groupMasterKey: null,
+      },
+    ]);
   });
 });

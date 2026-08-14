@@ -9,6 +9,7 @@ import type {
   MessageComment,
   Network,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
+  SignalGroupEntry,
   Tag,
   Unit,
 } from '../../../../../Bindings';
@@ -47,6 +48,7 @@ dayjs.extend(customParseFormat);
 const EMPTY_FILTER: RerDutyFeedFilterState = emptyFilter();
 const EMPTY_MESSAGE_COMMENTS: MessageComment[] = [];
 const EMPTY_EXCLUDE_OPTIONS: MessageEntityExcludeMenuOption[] = [];
+const EMPTY_GROUP_INFOS: Record<string, SignalGroupEntry> = {};
 const ANALYSIS_MESSAGE_CARD_VISIBILITY_STYLE = {
   contentVisibility: 'auto',
   containIntrinsicBlockSize: 'auto 120px',
@@ -93,6 +95,7 @@ export type MessageCardProps = {
   authUserName: string | null;
   tagContributionsOrganismId?: number;
   groupName: string | null;
+  reportGroupInfos?: Record<string, SignalGroupEntry>;
   senderName: string | null;
   copiedFeedbackId: string | null;
   networkDisplayMap: Record<number, string>;
@@ -117,7 +120,8 @@ export type MessageCardProps = {
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
   onAddFrequencyToFilter?: (freq: string) => void;
-  onComment?: () => void;
+  onCreateReport?: () => void;
+  onEditReport?: (reportId: number) => void;
   onDelete?: () => void;
   onEditDetails?: () => void;
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
@@ -146,6 +150,7 @@ function MessageCardComponent({
   authUserName,
   tagContributionsOrganismId,
   groupName,
+  reportGroupInfos = EMPTY_GROUP_INFOS,
   senderName,
   copiedFeedbackId,
   networkDisplayMap,
@@ -168,7 +173,8 @@ function MessageCardComponent({
   onCopyEtalon,
   onCopyLocation,
   onAddFrequencyToFilter,
-  onComment,
+  onCreateReport,
+  onEditReport,
   onDelete,
   onEditDetails,
   onExcludeMessageEntity,
@@ -293,7 +299,7 @@ function MessageCardComponent({
     topRight,
     onBookmark,
     onImportant,
-    onComment,
+    onCreateReport,
     onCopyText,
     onCopyFreq,
     onCopyTextWithNetwork,
@@ -345,6 +351,8 @@ function MessageCardComponent({
           networks={networks}
           unitsMap={unitsMap}
           messageComments={visibleMessageComments}
+          reportGroupInfos={reportGroupInfos}
+          onEditReport={onEditReport}
           signalMessageSenderLabel={senderName?.trim() ? senderName : msg.sender}
           searchText={searchText}
           onOpenPointsOnMap={onOpenPointsOnMap}

@@ -638,7 +638,6 @@ export function useAnalysisData({
     onDeleteMessage: messageActionState.onDeleteMessage,
     onCancelBotTagAction: messageActionState.onCancelBotTagAction,
     onMarkBotTagWrong: messageActionState.onMarkBotTagWrong,
-    onSaveMessageComment: messageActionState.onSaveMessageComment,
     onToggleMessageBookmark: messageActionState.onToggleMessageBookmark,
     onToggleMessageImportant: messageActionState.onToggleMessageImportant,
     onToggleMessageTag: messageActionState.onToggleMessageTag,

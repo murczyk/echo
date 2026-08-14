@@ -1,5 +1,5 @@
 import React from 'react';
-import { FormProvider, Controller } from 'react-hook-form';
+import { FormProvider, Controller, useFormContext } from 'react-hook-form';
 import {
   Drawer,
   Typography,
@@ -26,8 +26,8 @@ import { MetadataSection } from './drawer-sections/MetadataSection';
 import { NetworkSection } from './drawer-sections/NetworkSection';
 import { DmrSection } from './drawer-sections/DmrSection';
 import { LocationsSection } from './drawer-sections/LocationsSection';
-import { CommentSection } from './drawer-sections/CommentSection';
 import { AdvancedFieldsSection } from './drawer-sections/AdvancedFieldsSection';
+import type { MessageFormData } from './manage-message-drawer.schema';
 
 export type Props = {
   open: boolean;
@@ -41,16 +41,65 @@ export type Props = {
     result: import('../../../services/api/direct-submit').DirectSubmitResponse,
   ) => void | Promise<void>;
   editTarget?: { id: number; message: InboxMessage } | null;
+  reportSource?: { id: number; message: InboxMessage } | null;
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
 };
+
+function ReportTextRow({ originalText, busy }: { originalText: string; busy: boolean }) {
+  const { control } = useFormContext<MessageFormData>();
+
+  return (
+    <Box
+      data-testid="report-text-row"
+      sx={{
+        gridColumn: '1 / -1',
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+        gap: 3,
+        minWidth: 0,
+      }}
+    >
+      <FormSectionWrapper title="Оригінальний текст">
+        <TextField
+          label="Текст оригінального повідомлення"
+          value={originalText}
+          fullWidth
+          multiline
+          rows={12}
+          slotProps={{ input: { readOnly: true } }}
+        />
+      </FormSectionWrapper>
+      <FormSectionWrapper title="Розвіддонесення">
+        <Controller
+          name="full_body"
+          control={control}
+          render={({ field }) => (
+            <TextField
+              {...field}
+              label="Текст розвіддонесення"
+              fullWidth
+              multiline
+              rows={12}
+              required
+              disabled={busy}
+            />
+          )}
+        />
+      </FormSectionWrapper>
+    </Box>
+  );
+}
 
 export function ManageMessageDrawer(props: Props) {
   const drawerState = useManageMessageDrawer(props);
 
   const {
-    isAdmin,
     isEditMode,
+    isReportMode,
+    isReportCreateMode,
+    originalReportText,
+    existingMedia,
     showAdvanced,
     setShowAdvanced,
     signalGroups,
@@ -92,7 +141,7 @@ export function ManageMessageDrawer(props: Props) {
       slotProps={{
         paper: {
           sx: {
-            width: { xs: '100%', sm: 720, md: 1040 },
+            width: isReportMode ? '100vw' : { xs: '100%', sm: 720, md: 1040 },
             maxWidth: '100vw',
             display: 'flex',
             backgroundColor: 'background.default',
@@ -113,7 +162,13 @@ export function ManageMessageDrawer(props: Props) {
           }}
         >
           <Typography variant="h6">
-            {isEditMode ? 'Редагувати повідомлення' : 'Створити повідомлення'}
+            {isReportMode
+              ? isEditMode
+                ? 'Редагувати розвіддонесення'
+                : 'Створити розвіддонесення'
+              : isEditMode
+                ? 'Редагувати повідомлення'
+                : 'Створити повідомлення'}
           </Typography>
           <IconButton onClick={handleDrawerClose} disabled={busy}>
             <CloseIcon />
@@ -141,52 +196,62 @@ export function ManageMessageDrawer(props: Props) {
                 alignItems: 'start',
               }}
             >
+              {isReportMode ? (
+                <ReportTextRow originalText={originalReportText} busy={busy} />
+              ) : null}
+
               {/* LEFT COLUMN */}
               <Box component="fieldset" sx={{ minWidth: 0, border: 0, p: 0, m: 0 }}>
-                <Typography component="legend" variant="subtitle2" sx={{ mb: 1 }}>
-                  Вміст повідомлення <span aria-hidden="true">*</span>
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Додайте текст повідомлення або принаймні одне вкладення.
-                </Typography>
+                {!isReportMode ? (
+                  <>
+                    <Typography component="legend" variant="subtitle2" sx={{ mb: 1 }}>
+                      Вміст повідомлення <span aria-hidden="true">*</span>
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      Додайте текст повідомлення або принаймні одне вкладення.
+                    </Typography>
+                  </>
+                ) : null}
                 <Stack spacing={2.5}>
-                  <FormSectionWrapper
-                    title="Джерело"
-                    action={
-                      !isEditMode && (
-                        <Button
-                          onClick={handleParse}
-                          variant="outlined"
-                          size="small"
-                          startIcon={
-                            parsing ? (
-                              <CircularProgress size={16} color="inherit" />
-                            ) : (
-                              <AutoFixHighIcon />
-                            )
-                          }
-                          disabled={busy || parsing}
-                        >
-                          Розпарсити
-                        </Button>
-                      )
-                    }
-                  >
-                    <Controller
-                      name="full_body"
-                      control={methods.control}
-                      render={({ field }) => (
-                        <TextField
-                          {...field}
-                          label="Текст повідомлення"
-                          fullWidth
-                          multiline
-                          rows={12}
-                          disabled={busy}
-                        />
-                      )}
-                    />
-                  </FormSectionWrapper>
+                  {!isReportMode ? (
+                    <FormSectionWrapper
+                      title="Джерело"
+                      action={
+                        !isEditMode ? (
+                          <Button
+                            onClick={handleParse}
+                            variant="outlined"
+                            size="small"
+                            startIcon={
+                              parsing ? (
+                                <CircularProgress size={16} color="inherit" />
+                              ) : (
+                                <AutoFixHighIcon />
+                              )
+                            }
+                            disabled={busy || parsing}
+                          >
+                            Розпарсити
+                          </Button>
+                        ) : null
+                      }
+                    >
+                      <Controller
+                        name="full_body"
+                        control={methods.control}
+                        render={({ field }) => (
+                          <TextField
+                            {...field}
+                            label="Текст повідомлення"
+                            fullWidth
+                            multiline
+                            rows={12}
+                            disabled={busy}
+                          />
+                        )}
+                      />
+                    </FormSectionWrapper>
+                  ) : null}
 
                   <AttachmentsSection
                     uppy={uppy}
@@ -196,9 +261,7 @@ export function ManageMessageDrawer(props: Props) {
                     handleDrop={handleDrop}
                     handleDropzoneKeyDown={handleDropzoneKeyDown}
                     busy={busy}
-                    existingMedia={
-                      isEditMode && props.editTarget ? props.editTarget.message.media : []
-                    }
+                    existingMedia={existingMedia}
                     errorMsg={drawerState.attachmentErrorMsg}
                   />
                 </Stack>
@@ -211,6 +274,8 @@ export function ManageMessageDrawer(props: Props) {
                   groupsLoading={groupsLoading}
                   busy={busy}
                   isEditMode={isEditMode}
+                  groupOptional={isReportMode}
+                  groupEditable={isReportMode}
                   cyberEchoEnabled={props.cyberEchoEnabled}
                   deviceNameOptions={deviceNameOptions}
                   deviceNamesLoading={deviceNamesLoading}
@@ -259,18 +324,24 @@ export function ManageMessageDrawer(props: Props) {
                   onError={setErrorMsg}
                 />
 
-                <CommentSection busy={busy} />
+                {!isReportMode ? (
+                  <>
+                    <DmrSection
+                      showAdvanced={showAdvanced}
+                      busy={busy}
+                      recentValues={recentValues}
+                    />
 
-                <DmrSection showAdvanced={showAdvanced} busy={busy} recentValues={recentValues} />
-
-                <AdvancedFieldsSection
-                  showAdvanced={showAdvanced}
-                  busy={busy}
-                  recentValues={recentValues}
-                  signalNameOptions={drawerState.signalNameOptions}
-                  signalNameLoading={drawerState.signalNameLoading}
-                  setSignalNameInput={drawerState.setSignalNameInput}
-                />
+                    <AdvancedFieldsSection
+                      showAdvanced={showAdvanced}
+                      busy={busy}
+                      recentValues={recentValues}
+                      signalNameOptions={drawerState.signalNameOptions}
+                      signalNameLoading={drawerState.signalNameLoading}
+                      setSignalNameInput={drawerState.setSignalNameInput}
+                    />
+                  </>
+                ) : null}
               </Stack>
             </PowerForm>
           </FormProvider>
@@ -288,13 +359,15 @@ export function ManageMessageDrawer(props: Props) {
           }}
         >
           <Box sx={{ display: 'flex' }}>
-            <Button
-              onClick={() => setShowAdvanced((prev) => !prev)}
-              disabled={busy}
-              color="inherit"
-            >
-              {showAdvanced ? 'Приховати розширені поля' : 'Розширені поля'}
-            </Button>
+            {!isReportMode ? (
+              <Button
+                onClick={() => setShowAdvanced((prev) => !prev)}
+                disabled={busy}
+                color="inherit"
+              >
+                {showAdvanced ? 'Приховати розширені поля' : 'Розширені поля'}
+              </Button>
+            ) : null}
           </Box>
           <Box sx={{ display: 'flex', gap: 2 }}>
             <Button onClick={handleDrawerClose} disabled={busy}>
@@ -308,7 +381,13 @@ export function ManageMessageDrawer(props: Props) {
               disabled={!canSubmit}
               startIcon={busy && <CircularProgress size={20} color="inherit" />}
             >
-              {busy ? 'Збереження...' : isEditMode ? 'Зберегти' : 'Створити'}
+              {busy
+                ? 'Збереження...'
+                : isEditMode
+                  ? 'Зберегти'
+                  : isReportCreateMode
+                    ? 'Створити розвіддонесення'
+                    : 'Створити'}
             </Button>
           </Box>
         </Box>

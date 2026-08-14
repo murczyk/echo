@@ -1,0 +1,1 @@
+export const COORDINATE_PANEL_MAX_HEIGHT_PX = 236;
