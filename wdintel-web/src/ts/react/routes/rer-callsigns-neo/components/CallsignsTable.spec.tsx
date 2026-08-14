@@ -68,6 +68,21 @@ vi.mock('../../../components/SectionLoadingOverlay', () => ({
 vi.mock('../../../components/mui-customized/table/get-default-table-options', () => ({
   buildDefaultColumnOrder: ({ dataColumnIds }: { dataColumnIds: string[] }) => dataColumnIds,
   getDefaultMRTOptions: () => ({ displayColumnDefOptions: {} }),
+  mrtTextCell: ({ displayValue }: { displayValue: (props: unknown) => ReactNode }) => displayValue,
+  mrtItemsCell:
+    ({
+      items,
+      renderItem,
+    }: {
+      items: (props: any) => unknown[];
+      renderItem: (item: any) => ReactNode;
+    }) =>
+    (props: any) => <>{items(props).map(renderItem)}</>,
+  useAppMaterialReactTable: (options: Record<string, unknown>) => ({
+    ...options,
+    options,
+    getState: () => ({ isFullScreen: false }),
+  }),
   buildExplicitSingleSelectColumnFilter: () => () => null,
   getFilterModeHelperText: () => '',
   withExplicitSelectAllOption: (options: unknown[]) => options,

@@ -26,10 +26,8 @@ import {
 } from '@mui/material';
 import {
   type MRT_Column,
-  type MRT_ColumnDef,
   type MRT_PaginationState,
   MaterialReactTable,
-  useMaterialReactTable,
 } from 'material-react-table';
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 
@@ -41,8 +39,11 @@ import {
   getDefaultMrtPaperProps,
 } from '../../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   buildExplicitSingleSelectColumnFilter,
   getDefaultMRTOptions,
+  mrtTextCell,
+  useAppMaterialReactTable,
   getFilterModeHelperText,
   getSharedFilterTextFieldProps,
   renderColumnActionsMenuItems,
@@ -417,7 +418,7 @@ function useUnitColumns(
   searchMode: UnitSearchMode,
   onSearchModeChange: (searchMode: UnitSearchMode) => void,
   compactSearchMode: boolean,
-): MRT_ColumnDef<Unit>[] {
+): AppMrtColumnDef<Unit>[] {
   return useMemo(
     () => [
       {
@@ -436,77 +437,82 @@ function useUnitColumns(
             verticalAlign: 'middle',
           },
         },
-        Cell: ({ row }) => {
-          const detailsHref = `/rer-units/${row.original.id}`;
-          const filesHref = `${detailsHref}?tab=files`;
-          return (
-            <Stack
-              direction="row"
-              spacing={1}
-              alignItems="center"
-              useFlexGap
-              sx={{ minWidth: 0, width: '100%' }}
-            >
-              <Tooltip title={row.original.active ? 'Активний' : 'Неактивний'}>
-                <Box
-                  sx={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: '50%',
-                    bgcolor: row.original.active ? '#54c06c' : '#bfbfbf',
-                    flexShrink: 0,
-                  }}
-                />
-              </Tooltip>
-              <Tooltip title={row.original.name}>
-                <Link
-                  href={detailsHref}
-                  onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
-                  sx={{
-                    display: 'block',
-                    minWidth: 0,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {row.original.name}
-                </Link>
-              </Tooltip>
-              {row.original.isDeduplicateCandidate === true ? (
-                <Tooltip title="можливо дублікат, перевірте">
-                  <WarningAmberIcon color="warning" fontSize="small" />
-                </Tooltip>
-              ) : null}
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          interactive: true,
+          displayValue: ({ row }) => {
+            const detailsHref = `/rer-units/${row.original.id}`;
+            const filesHref = `${detailsHref}?tab=files`;
+            return (
               <Stack
                 direction="row"
                 spacing={1}
                 alignItems="center"
-                sx={{ ml: 'auto', flexShrink: 0 }}
+                useFlexGap
+                sx={{ minWidth: 0, width: '100%' }}
               >
-                {attachmentUnitIds.has(row.original.id) ? (
-                  <Tooltip title="Відкрити файли підрозділу">
-                    <Link
-                      href={filesHref}
-                      underline="none"
-                      onClick={(event) => handleNavigateWithinSpaClick(event, filesHref)}
-                      aria-label={`Відкрити файли підрозділу ${row.original.name}`}
-                    >
-                      <Chip
-                        component="span"
-                        icon={<AttachFileIcon />}
-                        label="Файли"
-                        size="small"
-                        color="primary"
-                        variant="outlined"
-                      />
-                    </Link>
+                <Tooltip title={row.original.active ? 'Активний' : 'Неактивний'}>
+                  <Box
+                    sx={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: '50%',
+                      bgcolor: row.original.active ? '#54c06c' : '#bfbfbf',
+                      flexShrink: 0,
+                    }}
+                  />
+                </Tooltip>
+                <Tooltip title={row.original.name}>
+                  <Link
+                    href={detailsHref}
+                    onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
+                    sx={{
+                      display: 'block',
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {row.original.name}
+                  </Link>
+                </Tooltip>
+                {row.original.isDeduplicateCandidate === true ? (
+                  <Tooltip title="можливо дублікат, перевірте">
+                    <WarningAmberIcon color="warning" fontSize="small" />
                   </Tooltip>
                 ) : null}
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  alignItems="center"
+                  sx={{ ml: 'auto', flexShrink: 0 }}
+                >
+                  {attachmentUnitIds.has(row.original.id) ? (
+                    <Tooltip title="Відкрити файли підрозділу">
+                      <Link
+                        href={filesHref}
+                        underline="none"
+                        onClick={(event) => handleNavigateWithinSpaClick(event, filesHref)}
+                        aria-label={`Відкрити файли підрозділу ${row.original.name}`}
+                      >
+                        <Chip
+                          component="span"
+                          icon={<AttachFileIcon />}
+                          label="Файли"
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                        />
+                      </Link>
+                    </Tooltip>
+                  ) : null}
+                </Stack>
               </Stack>
-            </Stack>
-          );
-        },
+            );
+          },
+          fullValue: ({ row }) => row.original.name,
+        }),
       },
       {
         header: 'Інше',
@@ -670,7 +676,11 @@ function useUnitColumns(
         sortDescFirst: true,
         enableColumnFilter: false,
         size: 160,
-        Cell: ({ row }) => formatDateTime(row.original.createdAt),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatDateTime(row.original.createdAt),
+          fullValue: ({ row }) => formatDateTime(row.original.createdAt),
+        }),
       },
       {
         header: 'Коментар',
@@ -682,6 +692,7 @@ function useUnitColumns(
           menuIdPrefix: 'comment',
         }),
         size: 300,
+        meta: { overflowMode: 'wrap' },
         Cell: ({ cell }) => (
           <Box sx={{ whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>
             {String(cell.getValue() ?? '')}
@@ -703,6 +714,7 @@ function useUnitColumns(
           compactSearchMode,
         }),
         size: 220,
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => <OrbitCell unit={row.original} />,
       },
       {
@@ -712,6 +724,7 @@ function useUnitColumns(
         enableSorting: false,
         enableColumnFilter: false,
         size: 360,
+        meta: { overflowMode: 'wrap' },
         Cell: ({ cell }) => (
           <Box sx={{ whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>
             {String(cell.getValue() ?? '')}
@@ -756,8 +769,7 @@ export function UnitsTable({
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('lg'));
   const columns = useUnitColumns(attachmentUnitIds, searchMode, onSearchModeChange, isSmallScreen);
-  const table = useMaterialReactTable({
-    ...defaultMrtOptions,
+  const table = useAppMaterialReactTable({
     columns,
     data: units,
     rowCount: totalCount,

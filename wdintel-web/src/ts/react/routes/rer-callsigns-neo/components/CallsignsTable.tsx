@@ -2,13 +2,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import { Box, Button, CircularProgress, Stack, Tooltip, Typography } from '@mui/material';
-import {
-  MRT_ColumnDef,
-  MRT_ColumnFiltersState,
-  MRT_SortingState,
-  MaterialReactTable,
-  useMaterialReactTable,
-} from 'material-react-table';
+import { MRT_ColumnFiltersState, MRT_SortingState, MaterialReactTable } from 'material-react-table';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
@@ -22,7 +16,6 @@ import { ELLIPSIS } from '../../../utils/misc';
 import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextValue';
 import { PowerChip } from '../../../components/PowerChip';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
-import { renderMrtCellTextValue } from '../../../components/mui-customized/table/mrt-cell-text';
 import {
   CUSTOM_STYLES,
   getDefaultMrtContainerProps,
@@ -30,9 +23,13 @@ import {
 } from '../../../components/mui-customized/table/custom-styles';
 import {
   buildExplicitSingleSelectColumnFilter,
+  type AppMrtColumnDef,
   buildDefaultColumnOrder,
   getFilterModeHelperText,
   getDefaultMRTOptions,
+  mrtItemsCell,
+  mrtTextCell,
+  useAppMaterialReactTable,
   getSharedFilterTextFieldProps,
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
@@ -126,19 +123,6 @@ export function getCallsignsTableContainerOverflowY({
   return hasVerticalOverflow ? 'auto' : 'hidden';
 }
 
-function CommentCell({ comment }: { comment: string }) {
-  const text = formatMrtCellTextValue(comment);
-  if (text.length <= 80) return renderMrtCellTextValue(text);
-
-  return (
-    <Tooltip title={text} placement="top-start">
-      <Typography variant="body2" sx={{ maxWidth: 280 }} noWrap>
-        {text}
-      </Typography>
-    </Tooltip>
-  );
-}
-
 function toMrtSorting(sort: CallsignsSortState): MRT_SortingState {
   return [{ id: sort.column, desc: sort.direction === 'desc' }];
 }
@@ -201,7 +185,7 @@ function CallsignsTableComponent({
   });
   const [tableContainerHasVerticalOverflow, setTableContainerHasVerticalOverflow] = useState(false);
 
-  const columns = useMemo<MRT_ColumnDef<CallsignRowView>[]>(
+  const columns = useMemo<AppMrtColumnDef<CallsignRowView>[]>(
     () => [
       {
         header: 'Позивний',
@@ -209,11 +193,18 @@ function CallsignsTableComponent({
         id: 'callsign',
         enableColumnFilter: true,
         size: 160,
-        Cell: ({ row }) => (
-          <Typography variant="body2" fontWeight={600}>
-            {formatMrtCellTextValue(row.original.callsign)}
-          </Typography>
-        ),
+        meta: {
+          activeFilterDefaultValue: ['Відомий'],
+          overflowMode: 'text',
+        },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => (
+            <Typography variant="body2" fontWeight={600}>
+              {formatMrtCellTextValue(row.original.callsign)}
+            </Typography>
+          ),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.callsign),
+        }),
       },
       {
         header: 'Посада',
@@ -221,7 +212,11 @@ function CallsignsTableComponent({
         id: 'position',
         enableColumnFilter: true,
         size: 170,
-        Cell: ({ row }) => formatMrtCellTextValue(row.original.position),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.position),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.position),
+        }),
       },
       {
         header: 'ПІП',
@@ -229,7 +224,11 @@ function CallsignsTableComponent({
         id: 'fullName',
         enableColumnFilter: true,
         size: 240,
-        Cell: ({ row }) => <CommentCell comment={row.original.fullName} />,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.fullName),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.fullName),
+        }),
       },
       {
         header: 'Коментар',
@@ -237,7 +236,11 @@ function CallsignsTableComponent({
         id: 'comment',
         enableColumnFilter: true,
         size: 240,
-        Cell: ({ row }) => <CommentCell comment={row.original.comment} />,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.comment),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.comment),
+        }),
       },
       {
         header: 'Підрозділ',
@@ -245,11 +248,11 @@ function CallsignsTableComponent({
         id: 'unit',
         enableColumnFilter: true,
         size: 240,
-        Cell: ({ row }) => (
-          <Typography variant="body2" sx={{ maxWidth: 260 }} noWrap title={row.original.unitName}>
-            {formatMrtCellTextValue(row.original.unitName)}
-          </Typography>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.unitName),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.unitName),
+        }),
       },
       {
         header: 'Основне джерело',
@@ -257,34 +260,15 @@ function CallsignsTableComponent({
         id: 'sourceName',
         enableColumnFilter: false,
         size: 260,
-        Cell: ({ row }) => (
-          <Stack spacing={0.75}>
-            <Typography variant="body2">
-              {formatMrtCellTextValue(row.original.sourceName)}
-            </Typography>
-            {row.original.callsignAdditionalSourceNames.length > 0 ? (
-              <>
-                <Typography variant="caption" color="text.secondary">
-                  Підтверджено:
-                </Typography>
-                <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap">
-                  {row.original.callsignAdditionalSourceIds.map((sourceId, index) => (
-                    <PowerChip
-                      key={`${row.original.id}-${sourceId}`}
-                      label={row.original.callsignAdditionalSourceNames[index] ?? `#${sourceId}`}
-                      size="small"
-                      interactive={false}
-                      unselectedOpacity={1}
-                      unselectedBackgroundColor="transparent"
-                      unselectedTextColor="text.primary"
-                      unselectedBorderColor="divider"
-                    />
-                  ))}
-                </Stack>
-              </>
-            ) : null}
-          </Stack>
-        ),
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<CallsignRowView, string>({
+          items: ({ row }) => [
+            formatMrtCellTextValue(row.original.sourceName),
+            ...row.original.callsignAdditionalSourceNames,
+          ],
+          renderItem: (label) => <PowerChip label={label} size="small" interactive={false} />,
+          getItemText: (label) => label,
+        }),
       },
       {
         header: 'Частота',
@@ -292,7 +276,11 @@ function CallsignsTableComponent({
         id: 'radioFreq',
         enableColumnFilter: false,
         size: 130,
-        Cell: ({ row }) => formatMrtCellTextValue(row.original.radioFreq),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.radioFreq),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.radioFreq),
+        }),
       },
       {
         header: 'Статус',
@@ -300,6 +288,7 @@ function CallsignsTableComponent({
         id: 'developing',
         meta: {
           activeFilterDefaultValue: ['Відомий'],
+          overflowMode: 'none',
         },
         filterVariant: 'select',
         filterSelectOptions: [...STATUS_FILTER_OPTIONS],
@@ -332,7 +321,11 @@ function CallsignsTableComponent({
         enableColumnFilter: false,
         sortDescFirst: true,
         size: 150,
-        Cell: ({ row }) => formatDateTime(row.original.createdAt),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatDateTime(row.original.createdAt),
+          fullValue: ({ row }) => formatDateTime(row.original.createdAt),
+        }),
       },
     ],
     [],
@@ -417,10 +410,9 @@ function CallsignsTableComponent({
     syncOverlayViewport();
   }, [syncOverlayViewport, showTableOverlay]);
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: rows,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableSortingRemoval: false,
     manualSorting: true,

@@ -4,11 +4,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import { Box, Chip, Stack, Tooltip } from '@mui/material';
-import {
-  MaterialReactTable,
-  type MRT_ColumnDef,
-  useMaterialReactTable,
-} from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo } from 'react';
 
 import type { AiEngineItem } from '../../../../Bindings';
@@ -22,7 +18,9 @@ import {
   getDefaultMrtPaperProps,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import {
@@ -128,7 +126,7 @@ function AiEnginesTableBody({
   onView,
 }: Props) {
   const tableStateContext = useTableStateContext();
-  const columns = useMemo<MRT_ColumnDef<AiEngineItem>[]>(
+  const columns = useMemo<AppMrtColumnDef<AiEngineItem>[]>(
     () => [
       { accessorKey: 'name', header: 'Назва', size: 180 },
       ...(getCompatibility
@@ -139,13 +137,14 @@ function AiEnginesTableBody({
                 getCompatibility(aiEngine).compatible ? 'Сумісний' : 'Несумісний',
               header: 'ШІ агент',
               size: 160,
+              meta: { overflowMode: 'none' },
               Cell: ({ row }: { row: { original: AiEngineItem } }) => (
                 <AiEngineCompatibilityStatus
                   aiEngine={row.original}
                   getCompatibility={getCompatibility}
                 />
               ),
-            } satisfies MRT_ColumnDef<AiEngineItem>,
+            } satisfies AppMrtColumnDef<AiEngineItem>,
           ]
         : []),
       { accessorKey: 'modelName', header: 'Модель', size: 220 },
@@ -171,10 +170,9 @@ function AiEnginesTableBody({
     ],
     [getCompatibility],
   );
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: aiEngines,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,

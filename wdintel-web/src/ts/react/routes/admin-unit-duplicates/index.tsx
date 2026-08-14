@@ -1,7 +1,6 @@
 import MergeIcon from '@mui/icons-material/Merge';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { Box, IconButton, Link, Stack, Tooltip } from '@mui/material';
-import type { MRT_ColumnDef } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { Unit, UnitDuplicate } from '../../../../Bindings';
@@ -9,6 +8,10 @@ import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowAction
 import { PowerAlert } from '../../components/PowerAlert';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import {
+  mrtTextCell,
+  type AppMrtColumnDef,
+} from '../../components/mui-customized/table/get-default-table-options';
 import { getUnitDuplicates, mergeDuplicateUnit } from '../../services/api/units';
 import { handleNavigateWithinSpaClick } from '../../utils/browser';
 import { hasRole } from '../../utils/roles';
@@ -107,46 +110,60 @@ export function AdminUnitDuplicatesPage({
     }
   }
 
-  const columns = useMemo<MRT_ColumnDef<UnitDuplicate>[]>(
+  const columns = useMemo<AppMrtColumnDef<UnitDuplicate>[]>(
     () => [
       {
         id: 'sigintUnitName',
         accessorFn: (row) => row.sigintUnit?.name ?? '',
         header: 'Назва SIGINT підрозділу',
         size: 280,
-        Cell: ({ row }) => {
-          const href = `/rer-units/${row.original.sigintUnit.id}`;
-          return (
-            <Link href={href} onClick={(event) => handleNavigateWithinSpaClick(event, href)}>
-              {row.original.sigintUnit.name}
-            </Link>
-          );
-        },
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell<UnitDuplicate>({
+          interactive: true,
+          fullValue: ({ row }) => row.original.sigintUnit.name,
+          displayValue: ({ row }) => {
+            const href = `/rer-units/${row.original.sigintUnit.id}`;
+            return (
+              <Link href={href} onClick={(event) => handleNavigateWithinSpaClick(event, href)}>
+                {row.original.sigintUnit.name}
+              </Link>
+            );
+          },
+        }),
       },
       {
         id: 'sigintUnitSegments',
         accessorFn: (row) => (row.sigintUnit ? sigintUnitSegments(row.sigintUnit) : ''),
         header: 'Сегменти назви SIGINT',
         size: 360,
-        Cell: ({ cell }) => String(cell.getValue() || '—'),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => String(cell.getValue() || '—'),
+          fullValue: ({ cell }) => String(cell.getValue() || ''),
+        }),
       },
       {
         id: 'orbitUnitFullName',
         accessorFn: (row) => row.orbitUnitFullName,
         header: 'Повна назва Orbit підрозділу',
         size: 360,
-        Cell: ({ row }) => {
-          const label = row.original.orbitUnitFullName.trim() || row.original.orbitUnitId;
-          return (
-            <Link
-              href={`https://delta.mil.gov.ua/orbit/units/${row.original.orbitUnitId}/organizational-structure`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {label}
-            </Link>
-          );
-        },
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell<UnitDuplicate>({
+          interactive: true,
+          fullValue: ({ row }) => row.original.orbitUnitFullName.trim() || row.original.orbitUnitId,
+          displayValue: ({ row }) => {
+            const label = row.original.orbitUnitFullName.trim() || row.original.orbitUnitId;
+            return (
+              <Link
+                href={`https://delta.mil.gov.ua/orbit/units/${row.original.orbitUnitId}/organizational-structure`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {label}
+              </Link>
+            );
+          },
+        }),
       },
     ],
     [],

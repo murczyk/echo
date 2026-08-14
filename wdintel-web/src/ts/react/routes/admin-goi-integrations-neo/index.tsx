@@ -18,7 +18,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import React from 'react';
 
 import { Login, Organism } from '../../../../Bindings';
@@ -34,7 +34,9 @@ import {
   getDefaultMrtPaperProps,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import {
@@ -148,7 +150,7 @@ function GoiIntegrationsTable({
     }),
     [tableStateContext.columnSizing],
   );
-  const columns = React.useMemo<MRT_ColumnDef<GoiAdminIntegration>[]>(
+  const columns = React.useMemo<AppMrtColumnDef<GoiAdminIntegration>[]>(
     () => [
       { id: 'owner', header: 'Організм-власник', accessorKey: 'ownerOrganismName', size: 200 },
       { id: 'server', header: 'Сервер', accessorKey: 'serverLabel', size: 190 },
@@ -181,10 +183,9 @@ function GoiIntegrationsTable({
     ],
     [],
   );
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: integrations,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,

@@ -3,13 +3,16 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { Box, Button, Chip, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import type { Dayjs } from 'dayjs';
 import type { ChipProps } from '@mui/material';
-import type { MRT_ColumnDef } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { EchoMissingMessageRow } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import {
+  mrtTextCell,
+  type AppMrtColumnDef,
+} from '../../components/mui-customized/table/get-default-table-options';
 import {
   listEchoMissingMessageCounts,
   listEchoMissingMessages,
@@ -107,7 +110,7 @@ function MissingMessageTable({
   onResolve,
   onRefresh,
 }: MissingMessageTableProps) {
-  const columns = useMemo<MRT_ColumnDef<EchoMissingMessageRow>[]>(
+  const columns = useMemo<AppMrtColumnDef<EchoMissingMessageRow>[]>(
     () => [
       {
         id: 'resolveManually',
@@ -115,6 +118,7 @@ function MissingMessageTable({
         size: 180,
         enableSorting: false,
         enableColumnFilter: false,
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => {
           const item = row.original;
           const disabled =
@@ -151,43 +155,29 @@ function MissingMessageTable({
         accessorKey: 'groupNames',
         header: TRANSLATIONS.groups,
         size: 220,
-        Cell: ({ cell }) => (
-          <Typography
-            component="span"
-            variant="body2"
-            sx={{
-              display: 'block',
-              maxWidth: 300,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-            title={cell.getValue<string>()}
-          >
-            {cell.getValue<string>()}
-          </Typography>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => (
+            <Typography component="span" variant="body2">
+              {cell.getValue() as string}
+            </Typography>
+          ),
+          fullValue: ({ cell }) => cell.getValue() as string,
+        }),
       },
       {
         accessorKey: 'body',
         header: TRANSLATIONS.body,
         size: 420,
-        Cell: ({ cell }) => (
-          <Typography
-            component="span"
-            variant="body2"
-            sx={{
-              display: 'block',
-              maxWidth: 520,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-            title={cell.getValue<string>()}
-          >
-            {cell.getValue<string>()}
-          </Typography>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => (
+            <Typography component="span" variant="body2">
+              {cell.getValue() as string}
+            </Typography>
+          ),
+          fullValue: ({ cell }) => cell.getValue() as string,
+        }),
       },
       {
         id: 'status',
@@ -196,6 +186,7 @@ function MissingMessageTable({
         filterVariant: 'select',
         filterSelectOptions: STATUS_FILTER_OPTIONS,
         size: 130,
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => {
           const status = row.original.status;
           return (
@@ -212,53 +203,64 @@ function MissingMessageTable({
         accessorKey: 'createdAt',
         header: TRANSLATIONS.createdAt,
         size: 180,
-        Cell: ({ cell }) => formatDateTime(cell.getValue<string>()),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => formatDateTime(cell.getValue() as string),
+          fullValue: ({ cell }) => formatDateTime(cell.getValue() as string),
+        }),
       },
       {
         accessorKey: 'isResolved',
         header: TRANSLATIONS.isResolved,
         size: 120,
-        Cell: ({ cell }) => (cell.getValue<boolean>() ? TRANSLATIONS.yes : TRANSLATIONS.no),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => (cell.getValue() ? TRANSLATIONS.yes : TRANSLATIONS.no),
+          fullValue: ({ cell }) => (cell.getValue() ? TRANSLATIONS.yes : TRANSLATIONS.no),
+        }),
       },
       {
         accessorKey: 'resolvedAt',
         header: TRANSLATIONS.resolvedAt,
         size: 180,
-        Cell: ({ cell }) => formatDateTime(cell.getValue<string | null>()),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => formatDateTime(cell.getValue() as string | null),
+          fullValue: ({ cell }) => formatDateTime(cell.getValue() as string | null),
+        }),
       },
       {
         accessorKey: 'scheduledBy',
         header: TRANSLATIONS.scheduledBy,
         size: 160,
-        Cell: ({ cell }) => cell.getValue<string | null>() ?? '',
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => (cell.getValue() as string | null) ?? '',
+          fullValue: ({ cell }) => (cell.getValue() as string | null) ?? '',
+        }),
       },
       {
         accessorKey: 'error',
         header: TRANSLATIONS.error,
         size: 360,
-        Cell: ({ cell, row }) => {
-          const value =
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell, row }) => {
+            const value =
+              row.original.status === 'deleted' || row.original.status === 'duplicate'
+                ? ''
+                : ((cell.getValue() as string | null) ?? '');
+            return (
+              <Typography component="span" variant="body2" color="error">
+                {value}
+              </Typography>
+            );
+          },
+          fullValue: ({ cell, row }) =>
             row.original.status === 'deleted' || row.original.status === 'duplicate'
               ? ''
-              : (cell.getValue<string | null>() ?? '');
-          return (
-            <Typography
-              component="span"
-              variant="body2"
-              color="error"
-              sx={{
-                display: 'block',
-                maxWidth: 460,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-              title={value}
-            >
-              {value}
-            </Typography>
-          );
-        },
+              : ((cell.getValue() as string | null) ?? ''),
+        }),
       },
     ],
     [onResolve, resolvingIds],

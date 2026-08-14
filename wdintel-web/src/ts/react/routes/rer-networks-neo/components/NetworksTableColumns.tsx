@@ -1,17 +1,15 @@
 import { Box } from '@mui/material';
-import type { MRT_ColumnDef } from 'material-react-table';
 import { useMemo } from 'react';
+import type { PointerEvent } from 'react';
 
-import { getSharedFilterTextFieldProps } from '../../../components/mui-customized/table/get-default-table-options';
-import { NO_AOR_FILTER_VALUE, type NetworkRowView } from '../helpers';
 import {
-  AorCell,
-  ActivityBars,
-  FrequencyCell,
-  LastActivityCell,
-  LocationCell,
-  NetworkCell,
-} from './NetworkCells';
+  type AppMrtColumnDef,
+  getSharedFilterTextFieldProps,
+  mrtItemsCell,
+  mrtTextCell,
+} from '../../../components/mui-customized/table/get-default-table-options';
+import { NO_AOR_FILTER_VALUE, type NetworkRowView } from '../helpers';
+import { ActivityBars, NetworkCell } from './NetworkCells';
 
 function formatAorActiveFilterValue(
   value: unknown,
@@ -60,7 +58,7 @@ export function useNetworksTableColumns({
   onFrequencyHoverLeave,
   onLocationHoverEnter,
   onLocationHoverLeave,
-}: Props): MRT_ColumnDef<NetworkRowView>[] {
+}: Props): AppMrtColumnDef<NetworkRowView>[] {
   return useMemo(
     () => [
       {
@@ -69,7 +67,12 @@ export function useNetworksTableColumns({
         accessorFn: (row) => row.network.name,
         enableColumnFilter: true,
         enableSorting: true,
-        Cell: ({ row }) => <NetworkCell network={row.original} />,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          interactive: true,
+          displayValue: ({ row }) => <NetworkCell network={row.original} />,
+          fullValue: ({ row }) => row.original.networkLabel,
+        }),
       },
       {
         id: 'aors',
@@ -79,10 +82,16 @@ export function useNetworksTableColumns({
         enableColumnFilter: true,
         enableSorting: true,
         meta: {
+          overflowMode: 'items',
           activeFilterValueFormatter: (value: unknown) =>
             formatAorActiveFilterValue(value, aorOptions),
         },
-        Cell: ({ row }) => <AorCell labels={row.original.aorLabels} />,
+        Cell: mrtItemsCell<NetworkRowView, string>({
+          items: ({ row }) => row.original.aorLabels,
+          renderItem: (label) => <Box component="span">{label}</Box>,
+          getItemKey: (label) => label,
+          getItemText: (label) => label,
+        }),
         filterVariant: 'multi-select',
         filterSelectOptions: aorFilterOptions,
         filterFn: 'arrIncludesSome',
@@ -126,13 +135,40 @@ export function useNetworksTableColumns({
           row.inactiveFrequencies.map((freq) => freq.freq).join(' '),
         enableColumnFilter: true,
         enableSorting: true,
-        Cell: ({ row }) => (
-          <FrequencyCell
-            row={row.original}
-            onPointerEnterAnchor={onFrequencyHoverEnter}
-            onPointerLeaveAnchor={onFrequencyHoverLeave}
-          />
-        ),
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<NetworkRowView, { id: number; freq: string; inactive: boolean }>({
+          items: ({ row }) => [
+            ...row.original.activeFrequencies.map((frequency) => ({
+              id: frequency.id,
+              freq: frequency.freq,
+              inactive: false,
+            })),
+            ...row.original.inactiveFrequencies.map((frequency) => ({
+              id: frequency.id,
+              freq: frequency.freq,
+              inactive: true,
+            })),
+          ],
+          renderItem: (frequency) => (
+            <Box
+              component="span"
+              sx={{
+                fontWeight: 700,
+                color: frequency.inactive ? 'text.secondary' : 'text.primary',
+              }}
+            >
+              {frequency.freq}
+            </Box>
+          ),
+          getItemKey: (frequency) => frequency.id,
+          getItemText: (frequency) => frequency.freq,
+          containerProps: ({ row }) => ({
+            'data-network-hover-anchor': 'true',
+            onPointerEnter: (event: PointerEvent<HTMLElement>) =>
+              onFrequencyHoverEnter(event.currentTarget, row.original),
+            onPointerLeave: onFrequencyHoverLeave,
+          }),
+        }),
       },
       {
         id: 'location',
@@ -140,13 +176,23 @@ export function useNetworksTableColumns({
         accessorFn: (row) => row.network.location,
         enableColumnFilter: true,
         enableSorting: true,
-        Cell: ({ row }) => (
-          <LocationCell
-            row={row.original}
-            onPointerEnterAnchor={onLocationHoverEnter}
-            onPointerLeaveAnchor={onLocationHoverLeave}
-          />
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          interactive: true,
+          displayValue: ({ row }) => (
+            <Box
+              component="span"
+              data-network-hover-anchor={row.original.network.location ? 'true' : undefined}
+              onPointerEnter={(event: PointerEvent<HTMLElement>) =>
+                onLocationHoverEnter(event.currentTarget, row.original)
+              }
+              onPointerLeave={onLocationHoverLeave}
+            >
+              {row.original.network.location || '—'}
+            </Box>
+          ),
+          fullValue: ({ row }) => row.original.network.location || '—',
+        }),
       },
       {
         id: 'activity',
@@ -154,6 +200,7 @@ export function useNetworksTableColumns({
         accessorFn: (row) => row.activityBars.reduce((sum, item) => sum + item.value, 0),
         enableColumnFilter: false,
         enableSorting: false,
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => (
           <Box>
             {row.original.activityBars.some((bar) => bar.value > 0) ? (
@@ -170,13 +217,11 @@ export function useNetworksTableColumns({
         accessorFn: (row) => row.lastActivityLabel,
         enableColumnFilter: false,
         enableSorting: true,
-        Cell: ({ row }) => (
-          <LastActivityCell
-            label={row.original.lastActivityLabel}
-            detail={row.original.lastActivityDetail}
-            tooltip={row.original.lastActivityTooltip}
-          />
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original.lastActivityLabel,
+          fullValue: ({ row }) => row.original.lastActivityTooltip,
+        }),
       },
     ],
     [

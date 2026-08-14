@@ -1,8 +1,7 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { Box, Button, IconButton, Paper, Tooltip, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
-import type { MRT_ColumnDef } from 'material-react-table';
-import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 
 import type { InboxMessage, InboxMessagesReq } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
@@ -11,6 +10,11 @@ import { SectionEmptyState } from '../../components/SectionEmptyState';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { fetchInboxMessages } from '../../services/api/inbox-messages';
 import { formatDateTime24, NO_DATA_LABEL } from '../../utils/misc';
+import {
+  mrtTextCell,
+  type AppMrtColumnDef,
+  useAppMaterialReactTable,
+} from '../../components/mui-customized/table/get-default-table-options';
 
 export type GroupCardData = {
   masterKey: string;
@@ -120,19 +124,24 @@ function GroupMessagesTable({ masterKey }: { masterKey: string }) {
     return () => controller.abort();
   }, [masterKey]);
 
-  const columns = useMemo<MRT_ColumnDef<MessageRow>[]>(
+  const columns = useMemo<AppMrtColumnDef<MessageRow>[]>(
     () => [
       {
         id: 'timestamp',
         header: 'Дата й час',
         accessorFn: (row) => row.message.timestamp,
-        Cell: ({ row }) => formatDateTime24(row.original.message.timestamp),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatDateTime24(row.original.message.timestamp),
+          fullValue: ({ row }) => formatDateTime24(row.original.message.timestamp),
+        }),
         size: 170,
       },
       {
         id: 'text',
         header: 'Повідомлення',
         accessorFn: (row) => row.message.text,
+        meta: { overflowMode: 'wrap' },
         Cell: ({ row }) => (
           <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
             {row.original.message.text || NO_DATA_LABEL}
@@ -163,7 +172,7 @@ function GroupMessagesTable({ masterKey }: { masterKey: string }) {
     [],
   );
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: rows,
     enableColumnFilters: false,

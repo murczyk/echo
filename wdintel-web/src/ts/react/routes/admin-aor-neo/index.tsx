@@ -20,7 +20,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
@@ -42,7 +42,9 @@ import {
   getPageScrollTableContainerSx,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import {
@@ -152,7 +154,7 @@ function buildAorLoadingRows(): AorRow[] {
   }));
 }
 
-function useAorColumns(): MRT_ColumnDef<AorRow>[] {
+function useAorColumns(): AppMrtColumnDef<AorRow>[] {
   return useMemo(
     () => [
       {
@@ -190,6 +192,7 @@ function useAorColumns(): MRT_ColumnDef<AorRow>[] {
         accessorFn: (row) =>
           `${formatCoords(row.leftCoordinates)} ${formatCoords(row.rightCoordinates)}`,
         id: 'coordinates',
+        meta: { overflowMode: 'wrap' },
         Cell: ({ row }) => (
           <div className="text-sm">
             <div>Ліва: {formatCoords(row.original.leftCoordinates)}</div>
@@ -203,6 +206,7 @@ function useAorColumns(): MRT_ColumnDef<AorRow>[] {
         header: 'Топ-рівень',
         accessorFn: (row) => (row.isTopLevel ? 1 : 0),
         id: 'isTopLevel',
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => (
           <div className="flex justify-center">
             {row.original.isTopLevel ? (
@@ -273,10 +277,9 @@ function AorTable(props: AorTableProps) {
     columnSizing: tableStateContext.columnSizing,
   };
 
-  const table = useMaterialReactTable<AorRow>({
+  const table = useAppMaterialReactTable<AorRow>({
     columns,
     data: props.loading ? buildAorLoadingRows() : props.data,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,

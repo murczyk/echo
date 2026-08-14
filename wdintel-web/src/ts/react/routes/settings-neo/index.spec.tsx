@@ -160,6 +160,11 @@ vi.mock('../../components/mui-customized/table/custom-styles', () => ({
 
 vi.mock('../../components/mui-customized/table/get-default-table-options', () => ({
   getDefaultMRTOptions: () => ({}),
+  useAppMaterialReactTable: (options: Record<string, unknown>) => ({
+    ...options,
+    options,
+    getState: () => ({ isFullScreen: false }),
+  }),
   renderColumnActionsMenuItems: () => [],
 }));
 

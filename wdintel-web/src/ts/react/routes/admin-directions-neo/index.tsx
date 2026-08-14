@@ -23,14 +23,12 @@ import {
   Typography,
 } from '@mui/material';
 import {
-  MRT_ColumnDef,
   MRT_RowData,
   MRT_SortingState,
   MRT_ShowHideColumnsButton,
   MRT_TableInstance,
   MRT_ToggleDensePaddingButton,
   MaterialReactTable,
-  useMaterialReactTable,
 } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -69,7 +67,11 @@ import {
   getPageScrollTableContainerSx,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtItemsCell,
+  mrtTextCell,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import {
@@ -518,6 +520,21 @@ function buildAccessLabel(
   return parts.length > 0 ? parts.join('; ') : 'без обмежень';
 }
 
+function buildAccessItems(
+  users: string[] | null | undefined,
+  userDetails: SignalGroupLogin[] | null | undefined,
+  organismIds: number[] | null | undefined,
+  organismById: OrganismById,
+  loginById: Map<string, Login>,
+) {
+  const detailsById = new Map((userDetails ?? []).map((detail) => [detail.loginId, detail]));
+  const userLabels = (users ?? []).map(
+    (id) => detailsById.get(id)?.login ?? loginById.get(id)?.login ?? id,
+  );
+  const organismLabels = (organismIds ?? []).map((id) => getOrganismLabel(id, organismById));
+  return [...userLabels, ...organismLabels];
+}
+
 function formatZoneGroupLoginIds(
   loginIds: string[],
   details: SignalGroupLogin[],
@@ -612,21 +629,7 @@ function renderDatasourceCell(
   const hasIcon = ['signal', 'whatsapp', 'echo_operator'].includes(datasource.kind.toLowerCase());
 
   if (!hasIcon) {
-    return (
-      <Tooltip title={label}>
-        <Box
-          component="span"
-          sx={{
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {label}
-        </Box>
-      </Tooltip>
-    );
+    return <Box component="span">{label}</Box>;
   }
 
   return (
@@ -639,19 +642,7 @@ function renderDatasourceCell(
       }}
     >
       <DatasourceKindIcon kind={datasource.kind} fontSize="small" />
-      <Tooltip title={label}>
-        <Box
-          component="span"
-          sx={{
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {label}
-        </Box>
-      </Tooltip>
+      <Box component="span">{label}</Box>
     </Box>
   );
 }
@@ -782,7 +773,7 @@ function OrphanGroupsTable(props: {
     isActivityTimelineVisible && !isLoading,
   );
 
-  const columns = useMemo<MRT_ColumnDef<OrphanSignalGroupEntry>[]>(
+  const columns = useMemo<AppMrtColumnDef<OrphanSignalGroupEntry>[]>(
     () => [
       {
         header: 'Група',
@@ -791,55 +782,70 @@ function OrphanGroupsTable(props: {
           if (!row?.masterKey) return NO_DATA_LABEL;
           return row.name && row.name.trim() ? row.name : row.masterKey.slice(-5);
         },
-        Cell: ({ row }) => {
-          if (isLoading || !row.original?.masterKey) return <span>{NO_DATA_LABEL}</span>;
-          const name =
-            row.original.name && row.original.name.trim()
-              ? row.original.name
-              : row.original.masterKey.slice(-5);
-          return (
-            <Tooltip title={name}>
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          interactive: true,
+          displayValue: ({ row }) => {
+            if (isLoading || !row.original?.masterKey) return <span>{NO_DATA_LABEL}</span>;
+            const name = getOrphanGroupName(row.original);
+            return (
               <ButtonBase
                 onClick={() => props.onView?.(row.original)}
                 sx={{ color: 'inherit', textAlign: 'left', justifyContent: 'flex-start' }}
               >
                 {name}
               </ButtonBase>
-            </Tooltip>
-          );
-        },
+            );
+          },
+          fullValue: ({ row }) =>
+            isLoading || !row.original?.masterKey
+              ? NO_DATA_LABEL
+              : getOrphanGroupName(row.original),
+        }),
         size: 220,
       },
       {
         header: 'Джерело',
         id: 'datasource',
         accessorFn: (row) => getDatasourceLabel(row?.datasourceId ?? null, props.datasourceById),
-        Cell: ({ row }) =>
-          renderDatasourceCell(row.original?.datasourceId ?? null, props.datasourceById),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) =>
+            renderDatasourceCell(row.original?.datasourceId ?? null, props.datasourceById),
+          fullValue: ({ row }) =>
+            getDatasourceLabel(row.original?.datasourceId ?? null, props.datasourceById),
+        }),
         size: 180,
       },
       {
         header: 'Активність (день)',
         id: 'activityDay',
         accessorFn: (row) => row?.groupStats?.activityLastDay ?? null,
-        Cell: ({ row }) => (
-          <span>{row.original?.groupStats?.activityLastDay ?? NO_DATA_LABEL}</span>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original?.groupStats?.activityLastDay ?? NO_DATA_LABEL,
+          fullValue: ({ row }) =>
+            String(row.original?.groupStats?.activityLastDay ?? NO_DATA_LABEL),
+        }),
         size: 140,
       },
       {
         header: 'Активність (тиждень)',
         id: 'activityWeek',
         accessorFn: (row) => row?.groupStats?.activityLastWeek ?? null,
-        Cell: ({ row }) => (
-          <span>{row.original?.groupStats?.activityLastWeek ?? NO_DATA_LABEL}</span>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original?.groupStats?.activityLastWeek ?? NO_DATA_LABEL,
+          fullValue: ({ row }) =>
+            String(row.original?.groupStats?.activityLastWeek ?? NO_DATA_LABEL),
+        }),
         size: 140,
       },
       {
         header: 'Активність (час)',
         id: GROUP_ACTIVITY_TIMELINE_COLUMN_ID,
         accessorFn: (row) => sumTimelinePoints(timeline.data.get(row?.masterKey ?? '')),
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => {
           if (isLoading || !row.original?.masterKey) {
             return <span>{NO_DATA_LABEL}</span>;
@@ -861,14 +867,13 @@ function OrphanGroupsTable(props: {
         header: 'Смуги',
         id: 'aors',
         accessorFn: (row) => buildAorNames(row?.areasOfResponsibility),
-        Cell: ({ row }) => {
-          const label = buildAorLabels(row.original?.areasOfResponsibility);
-          return (
-            <Tooltip title={label}>
-              <span>{label}</span>
-            </Tooltip>
-          );
-        },
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<OrphanSignalGroupEntry, string>({
+          items: ({ row }) => buildAorNames(row.original?.areasOfResponsibility),
+          renderItem: (name) => <PowerChip label={name} size="small" interactive={false} />,
+          getItemKey: (name) => name,
+          getItemText: (name) => name,
+        }),
         filterVariant: 'multi-select',
         filterSelectOptions: props.aorFilterOptions,
         filterFn: 'arrIncludesSome',
@@ -882,6 +887,7 @@ function OrphanGroupsTable(props: {
           const longNote = row?.groupAdminData?.longNote ?? '';
           return `${shortNote}${longNote ? ` / ${longNote}` : ''}`.trim() || NO_DATA_LABEL;
         },
+        meta: { overflowMode: 'wrap' },
         Cell: ({ row }) => {
           const shortNote = formatOptionalText(row.original?.groupAdminData?.shortNote ?? null);
           const longNote = formatOptionalText(row.original?.groupAdminData?.longNote ?? null);
@@ -902,11 +908,13 @@ function OrphanGroupsTable(props: {
         header: 'Створено',
         id: 'createdAt',
         accessorFn: (row) => row?.createdAt ?? null,
-        Cell: ({ row }) => (
-          <span>
-            {row.original?.createdAt ? formatDate(row.original.createdAt) : NO_DATA_LABEL}
-          </span>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) =>
+            row.original?.createdAt ? formatDate(row.original.createdAt) : NO_DATA_LABEL,
+          fullValue: ({ row }) =>
+            row.original?.createdAt ? formatDate(row.original.createdAt) : NO_DATA_LABEL,
+        }),
         size: 140,
       },
     ],
@@ -939,10 +947,9 @@ function OrphanGroupsTable(props: {
   const rowActionCount =
     (props.onAssign ? 1 : 0) + (props.onEdit ? 1 : 0) + (props.onArchive ? 1 : 0);
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: isLoading ? buildOrphanLoadingRows() : props.data,
-    ...orphanDefaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableGlobalFilter: true,
@@ -1118,7 +1125,7 @@ function ZoneGroupsTable(props: {
     isActivityTimelineVisible && !isLoading,
   );
 
-  const columns = useMemo<MRT_ColumnDef<ZoneGroupRow>[]>(
+  const columns = useMemo<AppMrtColumnDef<ZoneGroupRow>[]>(
     () => [
       {
         header: 'Група',
@@ -1127,44 +1134,44 @@ function ZoneGroupsTable(props: {
           row?.group?.groupMasterKey
             ? getGroupName(row.group.groupMasterKey, null, props.groupInfos)
             : NO_DATA_LABEL,
-        Cell: ({ row }) => {
-          if (isLoading || !row.original?.group?.groupMasterKey)
-            return <span>{NO_DATA_LABEL}</span>;
-          const groupName = getGroupName(row.original.group.groupMasterKey, null, props.groupInfos);
-          return (
-            <div className="flex flex-col gap-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <Tooltip title={groupName}>
-                  <ButtonBase
-                    onClick={() => props.onView(row.original.group.groupMasterKey)}
-                    sx={{ color: 'inherit', textAlign: 'left' }}
-                  >
-                    {groupName}
-                  </ButtonBase>
-                </Tooltip>
-                {row.original.group.isGroupSecret ? (
-                  <PowerChip
-                    size="small"
-                    label="прихована"
-                    interactive={false}
-                    unselectedOpacity={1}
-                    unselectedBackgroundColor="warning.main"
-                    unselectedTextColor="warning.contrastText"
-                    unselectedBorderColor="warning.main"
-                  />
-                ) : null}
-              </div>
-            </div>
-          );
-        },
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          interactive: true,
+          displayValue: ({ row }) => {
+            if (isLoading || !row.original?.group?.groupMasterKey)
+              return <span>{NO_DATA_LABEL}</span>;
+            const groupName = getGroupName(
+              row.original.group.groupMasterKey,
+              null,
+              props.groupInfos,
+            );
+            return (
+              <ButtonBase
+                onClick={() => props.onView(row.original.group.groupMasterKey)}
+                sx={{ color: 'inherit', textAlign: 'left' }}
+              >
+                {groupName}
+              </ButtonBase>
+            );
+          },
+          fullValue: ({ row }) =>
+            isLoading || !row.original?.group?.groupMasterKey
+              ? NO_DATA_LABEL
+              : getGroupName(row.original.group.groupMasterKey, null, props.groupInfos),
+        }),
         size: 240,
       },
       {
         header: 'Джерело',
         id: 'datasource',
         accessorFn: (row) => getDatasourceLabel(row?.datasourceId ?? null, props.datasourceById),
-        Cell: ({ row }) =>
-          renderDatasourceCell(row.original?.datasourceId ?? null, props.datasourceById),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) =>
+            renderDatasourceCell(row.original?.datasourceId ?? null, props.datasourceById),
+          fullValue: ({ row }) =>
+            getDatasourceLabel(row.original?.datasourceId ?? null, props.datasourceById),
+        }),
         size: 200,
       },
       {
@@ -1176,13 +1183,21 @@ function ZoneGroupsTable(props: {
             : null;
           return stats ? stats.activityLastDay : null;
         },
-        Cell: ({ row }) => {
-          const stats = row.original?.group?.groupMasterKey
-            ? props.groupInfos.get(row.original.group.groupMasterKey)?.groupStats
-            : null;
-          if (!stats) return <span>{NO_DATA_LABEL}</span>;
-          return <span>{stats.activityLastDay}</span>;
-        },
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => {
+            const stats = row.original?.group?.groupMasterKey
+              ? props.groupInfos.get(row.original.group.groupMasterKey)?.groupStats
+              : null;
+            return stats?.activityLastDay ?? NO_DATA_LABEL;
+          },
+          fullValue: ({ row }) => {
+            const stats = row.original?.group?.groupMasterKey
+              ? props.groupInfos.get(row.original.group.groupMasterKey)?.groupStats
+              : null;
+            return String(stats?.activityLastDay ?? NO_DATA_LABEL);
+          },
+        }),
         size: 140,
       },
       {
@@ -1194,19 +1209,28 @@ function ZoneGroupsTable(props: {
             : null;
           return stats ? stats.activityLastWeek : null;
         },
-        Cell: ({ row }) => {
-          const stats = row.original?.group?.groupMasterKey
-            ? props.groupInfos.get(row.original.group.groupMasterKey)?.groupStats
-            : null;
-          if (!stats) return <span>{NO_DATA_LABEL}</span>;
-          return <span>{stats.activityLastWeek}</span>;
-        },
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => {
+            const stats = row.original?.group?.groupMasterKey
+              ? props.groupInfos.get(row.original.group.groupMasterKey)?.groupStats
+              : null;
+            return stats?.activityLastWeek ?? NO_DATA_LABEL;
+          },
+          fullValue: ({ row }) => {
+            const stats = row.original?.group?.groupMasterKey
+              ? props.groupInfos.get(row.original.group.groupMasterKey)?.groupStats
+              : null;
+            return String(stats?.activityLastWeek ?? NO_DATA_LABEL);
+          },
+        }),
         size: 140,
       },
       {
         header: 'Активність (час)',
         id: GROUP_ACTIVITY_TIMELINE_COLUMN_ID,
         accessorFn: (row) => sumTimelinePoints(timeline.data.get(row?.group?.groupMasterKey ?? '')),
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => {
           const masterKey = row.original?.group?.groupMasterKey;
           if (isLoading || !masterKey) {
@@ -1236,20 +1260,22 @@ function ZoneGroupsTable(props: {
             props.organismById,
             props.loginById,
           ),
-        Cell: ({ row }) => {
-          const label = buildAccessLabel(
-            row.original?.group?.allowedUsers,
-            row.original?.group?.allowedUserDetails,
-            row.original?.group?.allowedOrganismIds,
-            props.organismById,
-            props.loginById,
-          );
-          return (
-            <Tooltip title={label}>
-              <span>{label}</span>
-            </Tooltip>
-          );
-        },
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<ZoneGroupRow, string>({
+          items: ({ row }) => {
+            const items = buildAccessItems(
+              row.original?.group?.allowedUsers,
+              row.original?.group?.allowedUserDetails,
+              row.original?.group?.allowedOrganismIds,
+              props.organismById,
+              props.loginById,
+            );
+            return items.length > 0 ? items : ['без обмежень'];
+          },
+          renderItem: (label) => <PowerChip label={label} size="small" interactive={false} />,
+          getItemKey: (label) => label,
+          getItemText: (label) => label,
+        }),
         size: 220,
       },
       {
@@ -1263,35 +1289,39 @@ function ZoneGroupsTable(props: {
                 props.loginById,
               )
             : NO_DATA_LABEL,
-        Cell: ({ row }) => {
-          const label =
-            row.original?.group?.adminLogins?.length > 0
-              ? formatZoneGroupLoginIds(
-                  row.original.group.adminLogins,
-                  row.original.group.adminLoginDetails,
-                  props.loginById,
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<ZoneGroupRow, string>({
+          items: ({ row }) => {
+            const loginIds = row.original?.group?.adminLogins ?? [];
+            const detailsById = new Map<string, SignalGroupLogin>(
+              (row.original?.group?.adminLoginDetails ?? []).map((detail) => [
+                detail.loginId,
+                detail,
+              ]),
+            );
+            return loginIds.length > 0
+              ? loginIds.map(
+                  (id) => detailsById.get(id)?.login ?? props.loginById.get(id)?.login ?? id,
                 )
-              : NO_DATA_LABEL;
-          return (
-            <Tooltip title={label}>
-              <span>{label}</span>
-            </Tooltip>
-          );
-        },
+              : [NO_DATA_LABEL];
+          },
+          renderItem: (label) => <PowerChip label={label} size="small" interactive={false} />,
+          getItemKey: (label) => label,
+          getItemText: (label) => label,
+        }),
         size: 220,
       },
       {
         header: 'Смуги',
         id: 'aors',
         accessorFn: (row) => buildAorNames(row?.group?.areasOfResponsibility),
-        Cell: ({ row }) => {
-          const label = buildAorLabels(row.original?.group?.areasOfResponsibility);
-          return (
-            <Tooltip title={label}>
-              <span>{label}</span>
-            </Tooltip>
-          );
-        },
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<ZoneGroupRow, string>({
+          items: ({ row }) => buildAorNames(row.original?.group?.areasOfResponsibility),
+          renderItem: (name) => <PowerChip label={name} size="small" interactive={false} />,
+          getItemKey: (name) => name,
+          getItemText: (name) => name,
+        }),
         filterVariant: 'multi-select',
         filterSelectOptions: props.aorFilterOptions,
         filterFn: 'arrIncludesSome',
@@ -1308,6 +1338,7 @@ function ZoneGroupsTable(props: {
           if (longNote === NO_DATA_LABEL) return shortNote;
           return `${shortNote} / ${longNote}`;
         },
+        meta: { overflowMode: 'wrap' },
         Cell: ({ row }) => {
           const shortNote = formatOptionalText(row.original?.group?.shortNote ?? null);
           const longNote = formatOptionalText(row.original?.group?.longNote ?? null);
@@ -1363,10 +1394,9 @@ function ZoneGroupsTable(props: {
     columnSizing: tableStateContext.columnSizing,
   };
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: isLoading ? buildZoneLoadingRows() : props.rows,
-    ...zoneDefaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableGlobalFilter: true,

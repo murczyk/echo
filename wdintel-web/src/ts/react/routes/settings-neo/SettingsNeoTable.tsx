@@ -1,13 +1,7 @@
 import { useEffect } from 'react';
 import { Box } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material/styles';
-import {
-  MaterialReactTable,
-  type MRT_ColumnDef,
-  type MRT_RowData,
-  type MRT_TableOptions,
-  useMaterialReactTable,
-} from 'material-react-table';
+import { MaterialReactTable, type MRT_RowData, type MRT_TableOptions } from 'material-react-table';
 import type { ReactNode } from 'react';
 
 import {
@@ -18,6 +12,8 @@ import {
 } from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
+  type AppMrtColumnDef,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
@@ -25,7 +21,7 @@ import { mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 
 type SettingsNeoTableProps<TData extends MRT_RowData> = {
-  columns: MRT_ColumnDef<TData>[];
+  columns: AppMrtColumnDef<TData>[];
   data: TData[];
   loading?: boolean;
   loadingRows?: TData[];
@@ -89,10 +85,10 @@ export function SettingsNeoTable<TData extends MRT_RowData>({
     typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
   const baseHeadCellProps = (CUSTOM_STYLES.muiTableHeadCellProps ?? {}) as { sx?: object };
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
+    ...getDefaultMRTOptions<TData>(),
     columns,
     data: loading && loadingRows ? loadingRows : data,
-    ...getDefaultMRTOptions<TData>(),
     layoutMode,
     enableSorting: true,
     enableColumnActions: true,

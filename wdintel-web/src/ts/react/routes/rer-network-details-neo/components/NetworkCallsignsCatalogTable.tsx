@@ -1,11 +1,7 @@
 import AddIcon from '@mui/icons-material/Add';
 import { Box, Button, Stack, Typography } from '@mui/material';
 import { useEffect, useMemo } from 'react';
-import {
-  MaterialReactTable,
-  type MRT_ColumnDef,
-  useMaterialReactTable,
-} from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 
 import type { NetworkCallsignCatalogRowView } from '../network-callsigns.types';
 import {
@@ -18,7 +14,10 @@ import {
   getPageScrollTableContainerSx,
 } from '../../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtTextCell,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
@@ -118,43 +117,55 @@ function NetworkCallsignsCatalogTableContent({
   const isInitialLoading = loading && rows.length === 0;
   const isBusy = loading || inFlightAddIds.length > 0;
   const loadingRows = useMemo(() => buildCatalogLoadingRows(), []);
-  const columns = useMemo<MRT_ColumnDef<NetworkCallsignCatalogRowView>[]>(
+  const columns = useMemo<AppMrtColumnDef<NetworkCallsignCatalogRowView>[]>(
     () => [
       {
         header: 'Позивний',
         accessorKey: 'callsign',
         id: 'callsign',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.callsign,
-        Cell: ({ row }) => (
-          <Typography variant="body2" fontWeight={700}>
-            {formatMrtCellTextValue(row.original.callsign)}
-          </Typography>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => (
+            <Typography variant="body2" fontWeight={700}>
+              {formatMrtCellTextValue(row.original.callsign)}
+            </Typography>
+          ),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.callsign),
+        }),
       },
       {
         header: 'Посада',
         accessorKey: 'position',
         id: 'position',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.position,
-        Cell: ({ row }) => renderMrtCellTextValue(row.original.position),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.position),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.position),
+        }),
       },
       {
         header: 'Підрозділ',
         accessorKey: 'unitName',
         id: 'unitName',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.unitName,
-        Cell: ({ row }) => (
-          <Typography variant="body2" noWrap title={row.original.unitName}>
-            {formatMrtCellTextValue(row.original.unitName)}
-          </Typography>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.unitName),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.unitName),
+        }),
       },
       {
         header: 'Останній раз',
         accessorFn: (row) => row.lastDatetime,
         id: 'lastDatetime',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.lastDatetime,
-        Cell: ({ row }) => formatDateTime24(row.original.lastDatetime),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatDateTime24(row.original.lastDatetime),
+          fullValue: ({ row }) => formatDateTime24(row.original.lastDatetime),
+        }),
         enableSorting: false,
       },
       {
@@ -162,29 +173,33 @@ function NetworkCallsignsCatalogTableContent({
         accessorKey: 'messageCount',
         id: 'messageCount',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.messageCount,
-        Cell: ({ row }) => (
-          <Typography variant="body2" fontWeight={700}>
-            {row.original.messageCount}
-          </Typography>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => String(row.original.messageCount),
+          fullValue: ({ row }) => String(row.original.messageCount),
+        }),
       },
       {
         header: 'Коментар',
         accessorKey: 'comment',
         id: 'comment',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.comment,
-        Cell: ({ row }) => (
-          <Typography variant="body2" noWrap title={row.original.comment}>
-            {formatMrtCellTextValue(row.original.comment)}
-          </Typography>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.comment),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.comment),
+        }),
       },
       {
         header: "Дата прив'язки",
         accessorFn: (row) => row.dateBoundAt,
         id: 'dateBoundAt',
         size: 150,
-        Cell: ({ row }) => formatDateTime24(row.original.dateBoundAt),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatDateTime24(row.original.dateBoundAt),
+          fullValue: ({ row }) => formatDateTime24(row.original.dateBoundAt),
+        }),
         enableSorting: false,
       },
       {
@@ -194,16 +209,22 @@ function NetworkCallsignsCatalogTableContent({
         size: NETWORK_CALLSIGN_COLUMN_SIZES.sourceName,
         grow: false,
         enableResizing: false,
-        Cell: ({ row }) => <NetworkCallsignSourceCell sourceName={row.original.sourceName} />,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          interactive: true,
+          displayValue: ({ row }) => (
+            <NetworkCallsignSourceCell sourceName={row.original.sourceName} />
+          ),
+          fullValue: ({ row }) => row.original.sourceName,
+        }),
       },
     ],
     [canManage, inFlightAddIds, isInitialLoading, onAddKnownCallsign],
   );
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: isInitialLoading ? loadingRows : rows,
-    ...catalogMRTOptions,
     localization: NETWORK_MRT_LOCALIZATION,
     enableColumnActions: true,
     enableRowSelection: false,

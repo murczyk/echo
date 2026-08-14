@@ -19,7 +19,6 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import type { MRT_ColumnDef } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type {
@@ -32,6 +31,7 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { PowerChip } from '../../components/PowerChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import type { AppMrtColumnDef } from '../../components/mui-customized/table/get-default-table-options';
 import { HttpRequestError } from '../../services/api/client';
 import {
   DEFAULT_LIST_UNITS_REQ,
@@ -403,12 +403,13 @@ export function AdminUnitUnparsedPage({
     }
   }
 
-  const columns = useMemo<MRT_ColumnDef<UnresolvedUnitLabel>[]>(
+  const columns = useMemo<AppMrtColumnDef<UnresolvedUnitLabel>[]>(
     () => [
       {
         accessorKey: 'unitTxt',
         header: 'Текст підрозділу',
         size: 520,
+        meta: { overflowMode: 'wrap' },
         Cell: ({ cell }) => (
           <Box sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
             {String(cell.getValue() ?? '')}
@@ -425,6 +426,7 @@ export function AdminUnitUnparsedPage({
         header: 'Нотатка',
         size: 360,
         enableSorting: false,
+        meta: { overflowMode: 'wrap' },
         Cell: ({ cell }) => (
           <Box sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
             {String(cell.getValue() || '—')}

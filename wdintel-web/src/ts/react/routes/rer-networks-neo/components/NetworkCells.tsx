@@ -120,13 +120,8 @@ export function AorCell({ labels }: { labels: string[] }) {
   return (
     <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
       {labels.length > 0
-        ? labels
-            .slice(0, 3)
-            .map((label) => <PowerChip key={label} label={label} interactive={false} />)
+        ? labels.map((label) => <PowerChip key={label} label={label} interactive={false} />)
         : '—'}
-      {labels.length > 3 ? (
-        <Box sx={{ color: 'text.secondary' }}>{`+${labels.length - 3}`}</Box>
-      ) : null}
     </Stack>
   );
 }
@@ -156,9 +151,7 @@ export function FrequencyCell({
       onPointerLeave={onPointerLeaveAnchor}
     >
       {groups.map((group) => {
-        const visibleFrequencies = group.frequencies.slice(0, 2);
-
-        return visibleFrequencies.length > 0 ? (
+        return group.frequencies.length > 0 ? (
           <Stack
             key={group.title}
             direction="row"
@@ -167,7 +160,7 @@ export function FrequencyCell({
             useFlexGap
             sx={{ flexWrap: 'wrap', minWidth: 0 }}
           >
-            {visibleFrequencies.map((freq) => (
+            {group.frequencies.map((freq) => (
               <Box
                 key={freq.id}
                 sx={{
@@ -178,9 +171,6 @@ export function FrequencyCell({
                 {freq.freq}
               </Box>
             ))}
-            {group.hiddenCount > 0 ? (
-              <Box sx={{ color: 'text.secondary' }}>{`+${group.hiddenCount}`}</Box>
-            ) : null}
           </Stack>
         ) : null;
       })}

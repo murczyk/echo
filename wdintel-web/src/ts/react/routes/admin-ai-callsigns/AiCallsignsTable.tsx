@@ -3,11 +3,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
-import {
-  MaterialReactTable,
-  type MRT_ColumnDef,
-  useMaterialReactTable,
-} from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useMemo, useState } from 'react';
 
 import type {
@@ -27,7 +23,9 @@ import {
   getDefaultMrtPaperProps,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../components/mui-customized/table/get-default-table-options';
@@ -93,7 +91,7 @@ export function AiCallsignsTable({
     [messages],
   );
   const currentTestResults = useMemo(() => resultMap(testResults), [testResults]);
-  const columns = useMemo<MRT_ColumnDef<AiCallsignTestMessageItem>[]>(
+  const columns = useMemo<AppMrtColumnDef<AiCallsignTestMessageItem>[]>(
     () => [
       {
         header: 'ID',
@@ -122,25 +120,28 @@ export function AiCallsignsTable({
             textAlign: 'center',
           },
         },
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => <CompactUuidCell uuid={row.original.id} />,
       },
       {
         header: 'Тестове повідомлення',
         accessorKey: 'message',
         size: 360,
+        meta: { overflowMode: 'wrap' },
         Cell: ({ cell }) => (
           <Box component="span" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
             {cell.getValue<string>()}
           </Box>
         ),
       },
-      ...engines.map((engine): MRT_ColumnDef<AiCallsignTestMessageItem> => ({
+      ...engines.map((engine): AppMrtColumnDef<AiCallsignTestMessageItem> => ({
         id: `engine-${engine.id}`,
         header: `${engine.modelName}: Позивні`,
         size: 220,
         enableColumnFilter: false,
         enableGlobalFilter: false,
         enableSorting: false,
+        meta: { overflowMode: 'wrap' },
         Cell: ({ row }) => {
           const key = resultKey(row.original.id, engine.id);
           const testResult = currentTestResults.get(key);
@@ -163,10 +164,9 @@ export function AiCallsignsTable({
     [currentTestResults, engines, savedResults],
   );
   const defaultMrtOptions = getDefaultMRTOptions<AiCallsignTestMessageItem>();
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: messages,
-    ...defaultMrtOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableColumnFilters: true,

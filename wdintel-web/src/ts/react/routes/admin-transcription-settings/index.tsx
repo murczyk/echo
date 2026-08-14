@@ -13,7 +13,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
@@ -30,7 +30,9 @@ import {
   getDefaultMrtPaperProps,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import {
@@ -161,7 +163,7 @@ function TranscriberInstancesTable({
     }),
     [tableStateContext.columnSizing],
   );
-  const columns = useMemo<MRT_ColumnDef<TranscriberInstance>[]>(
+  const columns = useMemo<AppMrtColumnDef<TranscriberInstance>[]>(
     () => [
       { header: 'Порядок', accessorKey: 'ordering', size: 90 },
       { header: 'Назва', accessorKey: 'name', size: 180 },
@@ -172,16 +174,16 @@ function TranscriberInstancesTable({
         header: 'Активний',
         accessorKey: 'is_active',
         size: 110,
-        Cell: ({ cell }) => (cell.getValue<boolean>() ? 'Так' : 'Ні'),
+        meta: { overflowMode: 'none' },
+        Cell: ({ cell }) => (cell.getValue() ? 'Так' : 'Ні'),
       },
     ],
     [],
   );
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: instances,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,

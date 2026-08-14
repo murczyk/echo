@@ -4,6 +4,7 @@
 import { act, createElement } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AreaOfResponsibility, Network, Unit } from '../../../../Bindings';
@@ -68,6 +69,16 @@ let capturedTableStateProviderProps: Record<string, unknown> | null = null;
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let defaultPageReturn: Record<string, unknown> | null = null;
+
+function renderNetworkCell(cell: ((props: any) => unknown) | undefined, original: unknown) {
+  if (!root || !container) throw new Error('test root is not initialized');
+  const element = cell?.({ row: { original } } as never);
+  if (!element) throw new Error('network Cell did not return an element');
+  act(() => {
+    root?.render(element as ReactNode);
+  });
+  return container;
+}
 
 vi.mock('../../components/mui-customized/table/table-state-provider', async (importOriginal) => {
   const actual =
@@ -300,7 +311,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  root?.unmount();
+  act(() => {
+    root?.unmount();
+  });
   root = null;
   container?.remove();
   container = null;
@@ -418,68 +431,43 @@ it('keeps MRT filter modes disabled on the networks table', () => {
   const networkCell = (
     capturedOptions?.columns as Array<{ id?: string; Cell?: (props: any) => unknown }>
   ).find((column) => column.id === 'network');
-  const renderedNetworkCell = (
-    (
-      networkCell?.Cell?.({
-        row: {
-          original: {
-            id: 42,
-            network: { name: 'Network 1' },
-            unitLabels: ['1 АК'],
-            developing: true,
-          },
-        } as never,
-      }) as any
-    )?.type as (props: any) => any
-  )?.(
-    (
-      networkCell?.Cell?.({
-        row: {
-          original: {
-            id: 42,
-            network: { name: 'Network 1' },
-            networkLabel: 'р/м Network 1 1 АК',
-            unitLabels: ['1 АК'],
-            developing: true,
-            statusLabel: 'Активна',
-            statusColor: '#54c06c',
-            statusKey: 'active',
-            aorLabels: [],
-            activeFrequencies: [],
-            inactiveFrequencies: [],
-            activityBars: [],
-            lastActivityLabel: '—',
-            lastActivityDetail: 'невідомий',
-            lastActivityTooltip: '—',
-            createdAtLabel: '—',
-          },
-        },
-      } as never) as any
-    ).props,
+  const renderedNetworkCell = renderNetworkCell(networkCell?.Cell, {
+    id: 42,
+    network: { name: 'Network 1' },
+    networkLabel: 'р/м Network 1 1 АК',
+    unitLabels: ['1 АК'],
+    developing: true,
+    statusLabel: 'Активна',
+    statusColor: '#54c06c',
+    statusKey: 'active',
+    aorLabels: [],
+    activeFrequencies: [],
+    inactiveFrequencies: [],
+    activityBars: [],
+    lastActivityLabel: '—',
+    lastActivityDetail: 'невідомий',
+    lastActivityTooltip: '—',
+    createdAtLabel: '—',
+  });
+  const networkAnchor = renderedNetworkCell.querySelector<HTMLAnchorElement>(
+    'a[href="/rer-networks-neo/42"]',
   );
-  const networkAnchor = renderedNetworkCell.props.children[1];
-  const developingChip = renderedNetworkCell.props.children[2];
-  expect(networkAnchor.props.href).toBe('/rer-networks-neo/42');
-  expect(networkAnchor.props.title).toBe('р/м Network 1 1 АК');
-  expect(networkAnchor.props.title).not.toContain('в дорозвідці');
-  expect(networkAnchor.props.target).toBeUndefined();
-  expect(networkAnchor.props.rel).toBeUndefined();
-  expect(networkAnchor.props.onClick).toEqual(expect.any(Function));
+  expect(networkAnchor).not.toBeNull();
+  expect(networkAnchor?.title).toBe('р/м Network 1 1 АК');
+  expect(networkAnchor?.getAttribute('aria-label')).toBe('р/м Network 1 1 АК');
+  expect(networkAnchor?.title).not.toContain('в дорозвідці');
+  expect(networkAnchor?.getAttribute('target')).toBeNull();
+  expect(networkAnchor?.getAttribute('rel')).toBeNull();
+  expect(renderedNetworkCell.textContent).toContain('В дорозвідці');
   const preventDefault = vi.fn();
-  networkAnchor.props.onClick({
-    defaultPrevented: false,
-    button: 0,
-    metaKey: false,
-    ctrlKey: false,
-    shiftKey: false,
-    altKey: false,
-    preventDefault,
+  const click = new MouseEvent('click', { bubbles: true, button: 0 });
+  Object.defineProperty(click, 'preventDefault', { value: preventDefault });
+  act(() => {
+    networkAnchor?.dispatchEvent(click);
   });
   expect(preventDefault).toHaveBeenCalledTimes(1);
   expect(browserMock.navigateWithinSpa).toHaveBeenCalledWith('/rer-networks-neo/42');
-  expect(networkAnchor.props.sx['&:hover'].textDecoration).toBe('none');
-  expect(networkAnchor.props.children.props.text).toBe('р/м Network 1 1 АК');
-  expect(developingChip.props.label).toBe('В дорозвідці');
+  expect(networkAnchor?.textContent).toBe('р/м Network 1 1 АК');
   expect(capturedTableStateProviderProps?.defaultSorting).toEqual([{ id: 'network', desc: false }]);
 });
 
@@ -494,64 +482,41 @@ it('wraps long network labels without truncating the status chip row', () => {
   const networkCell = (
     capturedOptions?.columns as Array<{ id?: string; Cell?: (props: any) => unknown }>
   ).find((column) => column.id === 'network');
-  const renderedNetworkCell = (
-    (
-      networkCell?.Cell?.({
-        row: {
-          original: {
-            id: 42,
-            network: { name: 'Network 1' },
-            unitLabels: ['1 АК'],
-            developing: true,
-          },
-        } as never,
-      }) as any
-    )?.type as (props: any) => any
-  )(
-    (
-      networkCell?.Cell?.({
-        row: {
-          original: {
-            id: 42,
-            network: { name: 'Network 1' },
-            networkLabel: 'р/м Network 1 з дуже довгою назвою для переносу',
-            unitLabels: ['1 АК'],
-            developing: true,
-            statusLabel: 'Активна',
-            statusColor: '#54c06c',
-            statusKey: 'active',
-            aorLabels: [],
-            activeFrequencies: [],
-            inactiveFrequencies: [],
-            activityBars: [],
-            lastActivityLabel: '—',
-            lastActivityDetail: 'невідомий',
-            lastActivityTooltip: '—',
-            createdAtLabel: '—',
-          },
-        },
-      } as never) as any
-    ).props,
-  );
+  const renderedNetworkCell = renderNetworkCell(networkCell?.Cell, {
+    id: 42,
+    network: { name: 'Network 1' },
+    networkLabel: 'р/м Network 1 з дуже довгою назвою для переносу',
+    unitLabels: ['1 АК'],
+    developing: true,
+    statusLabel: 'Активна',
+    statusColor: '#54c06c',
+    statusKey: 'active',
+    aorLabels: [],
+    activeFrequencies: [],
+    inactiveFrequencies: [],
+    activityBars: [],
+    lastActivityLabel: '—',
+    lastActivityDetail: 'невідомий',
+    lastActivityTooltip: '—',
+    createdAtLabel: '—',
+  });
 
-  const networkAnchor = renderedNetworkCell.props.children[1];
-  const rowLabel = networkAnchor.props.children;
-  const rowLabelBox = (rowLabel?.type as (props: any) => any)(rowLabel?.props);
-  const statusDot = renderedNetworkCell.props.children[0];
-  const statusDotBox = statusDot.props.children;
-  expect(renderedNetworkCell.props.alignItems).toBe('flex-start');
-  expect(statusDotBox.props.sx).toEqual(expect.objectContaining({ alignSelf: 'center' }));
-  expect(networkAnchor.props.sx).toEqual(
-    expect.objectContaining({ display: 'flex', alignItems: 'flex-start' }),
+  const networkAnchor = renderedNetworkCell.querySelector<HTMLAnchorElement>(
+    'a[href="/rer-networks-neo/42"]',
   );
-  expect(rowLabelBox.props.sx).toEqual(
-    expect.objectContaining({
-      whiteSpace: 'normal',
-      overflowWrap: 'anywhere',
-      lineHeight: 1.25,
-    }),
+  expect(networkAnchor?.textContent).toBe('р/м Network 1 з дуже довгою назвою для переносу');
+  expect(networkAnchor?.title).toBe('р/м Network 1 з дуже довгою назвою для переносу');
+  const networkCellsSource = readFileSync(
+    'src/ts/react/routes/rer-networks-neo/components/NetworkCells.tsx',
+    'utf8',
   );
-  expect(rowLabelBox.props.title).toBe('р/м Network 1 з дуже довгою назвою для переносу');
+  expect(networkCellsSource).toContain('alignItems="flex-start"');
+  expect(networkCellsSource).toContain("alignSelf: 'center'");
+  expect(networkCellsSource).toContain("whiteSpace: 'normal'");
+  expect(networkCellsSource).toContain("overflowWrap: 'anywhere'");
+  const source = readFileSync('src/ts/react/routes/rer-networks-neo/index.spec.tsx', 'utf8');
+  expect(source).not.toContain(['displayValue', '.type('].join(''));
+  expect(source).not.toMatch(new RegExp(['row', 'Label.*\\.type'].join('')));
 });
 
 it('refreshes AOR filter options after lookup data loads', () => {

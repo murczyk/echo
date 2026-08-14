@@ -74,6 +74,21 @@ vi.mock('../../../components/mui-customized/table/custom-styles', () => ({
 
 vi.mock('../../../components/mui-customized/table/get-default-table-options', () => ({
   getDefaultMRTOptions: () => ({}),
+  mrtTextCell: ({ displayValue }: { displayValue: (props: unknown) => ReactNode }) => displayValue,
+  mrtItemsCell:
+    ({
+      items,
+      renderItem,
+    }: {
+      items: (props: any) => unknown[];
+      renderItem: (item: any) => ReactNode;
+    }) =>
+    (props: any) => <>{items(props).map(renderItem)}</>,
+  useAppMaterialReactTable: (options: Record<string, unknown>) => ({
+    ...options,
+    options,
+    getState: () => ({ isFullScreen: false }),
+  }),
   renderDefaultMrtEmptyRowsFallback: ({ noDataMessage }: { noDataMessage: string }) => (
     <div>{noDataMessage}</div>
   ),

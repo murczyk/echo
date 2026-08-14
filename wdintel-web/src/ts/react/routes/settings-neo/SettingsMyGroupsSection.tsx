@@ -19,7 +19,6 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { MRT_ColumnDef } from 'material-react-table';
 import { useId, useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
 
@@ -37,6 +36,7 @@ import { PowerMenu } from '../../components/PowerMenu';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { fetchMyAdminGroupEditReference, updateMyAdminGroup } from '../../services/api/zones';
 import { SettingsNeoTable } from './SettingsNeoTable';
+import type { AppMrtColumnDef } from '../../components/mui-customized/table/get-default-table-options';
 
 const DEFAULT_MY_GROUPS_COLUMNS_VISIBILITY = {
   name: true,
@@ -239,19 +239,20 @@ function useMyGroupsColumns(
   enableEditActions: boolean,
   onEdit: (group: MyAdminSignalGroup) => void,
 ) {
-  return useMemo<MRT_ColumnDef<MyAdminSignalGroup>[]>(
+  return useMemo<AppMrtColumnDef<MyAdminSignalGroup>[]>(
     () => [
       ...(enableEditActions
         ? [
             {
               header: 'Дії',
               id: 'actions',
+              meta: { overflowMode: 'none' },
               Cell: ({ row }) => <MyGroupActions group={row.original} onEdit={onEdit} />,
               enableColumnActions: false,
               enableColumnFilter: false,
               enableSorting: false,
               size: 56,
-            } satisfies MRT_ColumnDef<MyAdminSignalGroup>,
+            } satisfies AppMrtColumnDef<MyAdminSignalGroup>,
           ]
         : []),
       {

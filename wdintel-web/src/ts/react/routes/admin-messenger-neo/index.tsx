@@ -22,7 +22,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
 import {
@@ -55,7 +55,10 @@ import {
   getPageScrollTableContainerSx,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtTextCell,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import {
@@ -442,7 +445,7 @@ function MessengerIcon({ messenger }: { messenger: string }) {
 function useMessengerColumns(
   timeline: ReturnType<typeof useDatasourceActivityTimeline>,
   isLoading: boolean,
-): MRT_ColumnDef<EchoAccountF1>[] {
+): AppMrtColumnDef<EchoAccountF1>[] {
   return useMemo(
     () => [
       {
@@ -453,9 +456,11 @@ function useMessengerColumns(
       {
         header: 'Системний сервіс',
         accessorKey: 'systemServiceName',
-        Cell: ({ cell }) => (
-          <span className="text-sm">{formatMrtCellTextValue(cell.getValue<string>())}</span>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.systemServiceName),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.systemServiceName),
+        }),
         size: 160,
       },
       {
@@ -463,21 +468,31 @@ function useMessengerColumns(
         accessorKey: 'phoneOrApi',
         accessorFn: (row) =>
           row.messenger === 'echo_operator' ? `API: ${row.apiLogin || ''}` : row.phoneNumber,
-        Cell: ({ row }) =>
-          row.original.messenger === 'echo_operator' ? (
-            row.original.apiLogin ? (
-              <span>API: {row.original.apiLogin}</span>
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) =>
+            row.original.messenger === 'echo_operator' ? (
+              row.original.apiLogin ? (
+                <span>API: {row.original.apiLogin}</span>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )
             ) : (
-              <span className="text-muted-foreground">—</span>
-            )
-          ) : (
-            <span>{row.original.phoneNumber}</span>
-          ),
+              <span>{row.original.phoneNumber}</span>
+            ),
+          fullValue: ({ row }) =>
+            row.original.messenger === 'echo_operator'
+              ? row.original.apiLogin
+                ? `API: ${row.original.apiLogin}`
+                : '—'
+              : (row.original.phoneNumber ?? '—'),
+        }),
         size: 160,
       },
       {
         header: 'Месенджер',
         accessorKey: 'messenger',
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => <MessengerIcon messenger={row.original.messenger} />,
         size: 80,
       },
@@ -489,6 +504,7 @@ function useMessengerColumns(
             .map((item) => item.value)
             .filter(Boolean)
             .join(' | '),
+        meta: { overflowMode: 'wrap' },
         Cell: ({ row }) => {
           const details = buildDebugDetails(row.original);
           if (details.length === 0) return <span className="text-muted-foreground">—</span>;
@@ -508,26 +524,20 @@ function useMessengerColumns(
       {
         header: 'Опис',
         accessorKey: 'description',
+        meta: { overflowMode: 'wrap' },
         Cell: ({ row }) => {
           const description = row.original.description;
           const endpoint = row.original.apiEndpoint;
           const trimmedDescription = description?.trim() || '';
-          const displayDescription =
-            trimmedDescription.length > 50
-              ? `${trimmedDescription.slice(0, 50)}...`
-              : trimmedDescription;
-
           return (
             <div className="space-y-1 text-sm">
               {trimmedDescription ? (
-                <span title={trimmedDescription}>{displayDescription}</span>
+                <span>{trimmedDescription}</span>
               ) : (
                 <span className="text-muted-foreground">—</span>
               )}
               {row.original.messenger === 'echo_operator' && endpoint ? (
-                <div className="text-xs text-gray-500" title={endpoint}>
-                  Endpoint: {endpoint.length > 30 ? `${endpoint.slice(0, 30)}...` : endpoint}
-                </div>
+                <div className="text-xs text-gray-500">Endpoint: {endpoint}</div>
               ) : null}
             </div>
           );
@@ -538,15 +548,19 @@ function useMessengerColumns(
         header: 'Смуга відповідальності',
         accessorKey: 'aor',
         accessorFn: (row) => formatMrtCellTextValue(row.areaOfResponsibility?.name),
-        Cell: ({ row }) => (
-          <span>{formatMrtCellTextValue(row.original.areaOfResponsibility?.name)}</span>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) =>
+            formatMrtCellTextValue(row.original.areaOfResponsibility?.name),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.areaOfResponsibility?.name),
+        }),
         size: 160,
       },
       {
         header: 'Статус',
         accessorKey: 'status',
         accessorFn: (row) => getStatusText(row),
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => (
           <span className={getStatusColorClass(row.original)}>{getStatusText(row.original)}</span>
         ),
@@ -556,6 +570,7 @@ function useMessengerColumns(
         header: 'Активність (час)',
         id: MESSENGER_ACTIVITY_TIMELINE_COLUMN_ID,
         accessorFn: (row) => sumTimelinePoints(timeline.data.get(row?.id ?? 0)),
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => {
           if (isLoading || !row.original?.id || row.original.id < 0) {
             return <span className="text-muted-foreground">—</span>;
@@ -674,10 +689,9 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
     columnSizing: tableStateContext.columnSizing,
   };
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: props.loading ? buildMessengerLoadingRows() : props.data,
-    ...defaultMRTOptions,
     enableColumnActions: true,
     enableRowNumbers: true,
     enableColumnFilters: true,
