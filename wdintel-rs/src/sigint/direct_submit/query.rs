@@ -49,16 +49,29 @@ pub async fn find_editable_signal_message<C>(
     dbx: &C,
     signal_message_id: i64,
     allowed_groups: &[String],
+    login: &uuid::Uuid,
+    organism_logins: &[uuid::Uuid],
 ) -> Result<signal_message::Model, AppError>
 where
     C: ConnectionTrait,
 {
-    let signal_message = signal_message::Entity::find_by_id(signal_message_id)
+    let message = signal_message::Entity::find_by_id(signal_message_id)
         .filter(signal_message::Column::Deleted.eq(false))
         .one(dbx)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
+    let login = login.to_string();
+    if message.datasource_group_id.is_none()
+        && (message.sender.as_deref() == Some(login.as_str())
+            || message.sender.as_deref().is_some_and(|sender| {
+                Uuid::parse_str(sender).ok().is_some_and(|sender_id| {
+                    organism_logins.contains(&sender_id)
+                })
+            }))
+    {
+        return Ok(message);
+    }
     let groups = signal_message_group::Entity::find()
         .filter(
             signal_message_group::Column::SignalMessageId.eq(signal_message_id),
@@ -72,7 +85,7 @@ where
             .as_ref()
             .is_some_and(|key| allowed_groups.contains(key))
     }) {
-        return Ok(signal_message);
+        return Ok(message.clone());
     }
     if !groups.is_empty() {
         return Err(AppError::NotFound);
@@ -91,7 +104,7 @@ where
         .c(h!())?
         .is_some();
     if has_parent_access {
-        Ok(signal_message)
+        Ok(message)
     } else {
         Err(AppError::NotFound)
     }

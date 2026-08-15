@@ -83,7 +83,7 @@ pub(crate) async fn submit_generic_inbox_item(
     submit_inbox_item_with_groups(
         env.as_ref(),
         txn,
-        datasource.id,
+        Some(datasource.id),
         &groups,
         login,
         logins,
@@ -96,7 +96,7 @@ pub(crate) async fn submit_generic_inbox_item(
 pub(crate) async fn submit_inbox_item_with_groups(
     env: &Env,
     txn: &DatabaseTransaction,
-    datasource_id: i64,
+    datasource_id: Option<i64>,
     groups: &[(String, i64)],
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
@@ -121,7 +121,7 @@ pub(crate) async fn submit_inbox_item_with_groups(
 pub(crate) async fn submit_inbox_item_with_groups_location_mode(
     env: &Env,
     txn: &DatabaseTransaction,
-    datasource_id: i64,
+    datasource_id: Option<i64>,
     groups: &[(String, i64)],
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
@@ -150,7 +150,7 @@ pub(crate) async fn edit_inbox_item_with_groups_location_mode(
     env: &Env,
     txn: &DatabaseTransaction,
     signal_message_id: i64,
-    datasource_id: i64,
+    datasource_id: Option<i64>,
     groups: &[(String, i64)],
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
@@ -178,7 +178,7 @@ pub(crate) async fn edit_inbox_item_with_groups_location_mode(
 async fn submit_inbox_item_with_groups_inner(
     env: &Env,
     txn: &DatabaseTransaction,
-    datasource_id: i64,
+    datasource_id: Option<i64>,
     groups: &[(String, i64)],
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
