@@ -884,6 +884,10 @@ async fn load_message_unit_ids(
     let mut unit_ids_by_message = HashMap::<i64, BTreeSet<i64>>::new();
     for message_ids in message_ids.chunks(20000) {
         let links = sigint_inbox_item_unit::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item_unit::Relation::SigintUnit.def(),
+            )
             .select_only()
             .column(sigint_inbox_item_unit::Column::ItemId)
             .column(sigint_inbox_item_unit::Column::UnitId)
@@ -891,6 +895,7 @@ async fn load_message_unit_ids(
                 sigint_inbox_item_unit::Column::ItemId
                     .is_in(message_ids.to_vec()),
             )
+            .filter(sigint_unit::Column::Deleted.eq(false))
             .into_tuple::<(i64, i64)>()
             .all(dbx)
             .await

@@ -1701,6 +1701,7 @@ mod tests {
             "network_name".to_string(),
             "signal_tokens".to_string(),
             "text_marked".to_string(),
+            "unit_ids".to_string(),
         ]);
 
         assert_eq!(omitted_keys, expected_omitted_keys);
