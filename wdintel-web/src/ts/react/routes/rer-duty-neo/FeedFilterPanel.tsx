@@ -4,6 +4,7 @@ import type {
   SignalProfileEntry,
   Unit,
 } from '../../../../Bindings';
+import type { GroupCatalogError } from './useRerDutyFilterOptions';
 import { FeedFilterPanelView } from './FeedFilterPanelView';
 import { useFeedFilterPanelViewModel } from './useFeedFilterPanelViewModel';
 
@@ -36,6 +37,8 @@ export type FeedFilterPanelModel = {
     onlyMyUnitTagsEnabled?: boolean;
     unitsExactMatchOnly?: boolean | null;
     reloadFreqsLoading: boolean;
+    groupCatalogLoading?: boolean;
+    groupCatalogError?: GroupCatalogError | null;
   };
   savedFilters: {
     savedFilters: SavedFilterDuty[];
@@ -58,6 +61,7 @@ export type FeedFilterPanelModel = {
     onHighlightSignalsChange?: (v: boolean) => void;
     onOnlyMyUnitTagsChange?: (v: boolean) => void;
     onReloadFreqs: () => void;
+    onReloadGroupCatalog?: () => void;
     onSavedFilterSelect: (id: number | '') => void;
     onSaveFilterNameChange: (value: string) => void;
     onSaveFilter: (feedId: string, name: string) => Promise<boolean>;

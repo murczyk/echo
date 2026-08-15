@@ -10,6 +10,7 @@
 
 ## NEXT
 
+- [#2983](https://github.com/echoua/echo/issues/2983) 🐞 Оперативний: виправлено поведінку роботи фільтра по групах.
 - [#3071](https://github.com/echoua/echo/issues/3071) 🐞 Оперативний, Аналіз: виправлено підсвітку позивних в картці повідомлення.
 - [#2818](https://github.com/echoua/echo/issues/2818) ✅👷 Палітри: додано можливість керування чорним списком точок палітр; стандартні `just deploy` і `just deploy-from-local` синхронізують виключення автоматично, а при ручному застосуванні міграцій на інстансах з ClickHouse перед ними виконати `/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes`, щоб виключити `palitra_highlight_blacklist` із дзеркала.
 - [#3098](https://github.com/echoua/echo/issues/3098) ✅ Аналіз, Оперативний: додано повернення локалітету для координат пеленга в повідомленнях.

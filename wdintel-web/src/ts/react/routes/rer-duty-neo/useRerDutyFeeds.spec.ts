@@ -5,7 +5,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getPendingDutyCallsignLookups } from './useRerDutyFeeds';
+import { getPendingDutyCallsignLookups, mergeKnownGroupKeys } from './useRerDutyFeeds';
 import { useRerDutyFeeds } from './useRerDutyFeeds';
 
 const hoisted = vi.hoisted(() => ({
@@ -236,6 +236,47 @@ async function flushMicrotasks(): Promise<void> {
     await Promise.resolve();
   }
 }
+
+describe('mergeKnownGroupKeys', () => {
+  it('keeps groups from a replaced message window and persisted filters', () => {
+    const initialFeeds = [
+      {
+        items: [
+          [1, { groupMasterKey: 'A' }],
+          [2, { groupMasterKey: 'B' }],
+          [3, { groupMasterKey: 'C' }],
+        ] as [number, { groupMasterKey: string }][],
+        filter: { groupsSelected: [], groupsDenied: [] },
+      },
+    ];
+    const replacedFeeds = [
+      {
+        items: [[1, { groupMasterKey: 'A' }]] as [number, { groupMasterKey: string }][],
+        filter: { groupsSelected: ['saved-group'], groupsDenied: [] },
+      },
+    ];
+
+    const known = mergeKnownGroupKeys([], [], [], initialFeeds);
+    expect(mergeKnownGroupKeys(known, [], [], replacedFeeds)).toEqual([
+      'A',
+      'B',
+      'C',
+      'saved-group',
+    ]);
+  });
+
+  it('retains groups present only in saved filters', () => {
+    expect(
+      mergeKnownGroupKeys(
+        [],
+        [],
+        [],
+        [],
+        [{ groupsSelected: ['saved-selected'], groupsDenied: ['saved-denied'] }],
+      ),
+    ).toEqual(['saved-selected', 'saved-denied']);
+  });
+});
 
 describe('getPendingDutyCallsignLookups', () => {
   it('skips callsigns that already resolved as not found', () => {

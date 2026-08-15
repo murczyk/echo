@@ -30,6 +30,14 @@ export type FeedFilterSelectionSectionProps<T> = {
   excludeLabel?: string;
   rankedSearch?: boolean;
   keepOpenAndPreserveInputOnSelect?: boolean;
+  loading?: boolean;
+  loadingText?: string;
+  noOptionsText?: string;
+  clearText?: string;
+  openText?: string;
+  closeText?: string;
+  keepOpenOnSelect?: boolean;
+  preserveInputOnSelect?: boolean;
 };
 
 export function FeedFilterSelectionSection<T>({
@@ -49,7 +57,17 @@ export function FeedFilterSelectionSection<T>({
   excludeLabel = 'окрім',
   rankedSearch = false,
   keepOpenAndPreserveInputOnSelect = false,
+  loading = false,
+  loadingText = 'Завантаження…',
+  noOptionsText = 'Немає варіантів',
+  clearText = 'Очистити',
+  openText = 'Відкрити',
+  closeText = 'Закрити',
+  keepOpenOnSelect,
+  preserveInputOnSelect,
 }: FeedFilterSelectionSectionProps<T>) {
+  const shouldKeepOpen = keepOpenOnSelect ?? keepOpenAndPreserveInputOnSelect;
+  const shouldPreserveInput = preserveInputOnSelect ?? keepOpenAndPreserveInputOnSelect;
   const toggleGroupSx = useMemo(
     () =>
       ({
@@ -110,9 +128,9 @@ export function FeedFilterSelectionSection<T>({
   const applyResetAfterSelectionRef = useRef(false);
   const filterOptions = useMemo(() => {
     if (rankedFilterOptions == null) return undefined;
-    if (!keepOpenAndPreserveInputOnSelect) return rankedFilterOptions;
+    if (!shouldPreserveInput) return rankedFilterOptions;
     return (availableOptions: T[]) => rankedFilterOptions(availableOptions, { inputValue });
-  }, [inputValue, keepOpenAndPreserveInputOnSelect, rankedFilterOptions]);
+  }, [inputValue, rankedFilterOptions, shouldPreserveInput]);
 
   return (
     <Box>
@@ -142,27 +160,25 @@ export function FeedFilterSelectionSection<T>({
           options={options as T[]}
           getOptionLabel={getOptionLabel}
           value={value as T[]}
-          inputValue={rankedSearch ? inputValue : undefined}
+          inputValue={rankedSearch || shouldKeepOpen ? inputValue : undefined}
           onChange={(_, nextValue, reason) => {
-            if (rankedSearch) {
-              applyResetAfterSelectionRef.current = reason === 'selectOption';
+            applyResetAfterSelectionRef.current = reason === 'selectOption';
+            if (reason === 'selectOption' && shouldKeepOpen && !shouldPreserveInput) {
+              setInputValue('');
             }
             onValueChange(nextValue);
           }}
           onInputChange={
-            rankedSearch
+            rankedSearch || shouldKeepOpen
               ? (_, nextValue, reason) => {
-                  if (
-                    keepOpenAndPreserveInputOnSelect &&
-                    (reason === 'selectOption' || reason === 'removeOption')
-                  ) {
+                  if (shouldKeepOpen && reason === 'selectOption') {
                     applyResetAfterSelectionRef.current = false;
                     return;
                   }
                   if (reason === 'reset') {
                     if (applyResetAfterSelectionRef.current) {
                       applyResetAfterSelectionRef.current = false;
-                      if (!keepOpenAndPreserveInputOnSelect) {
+                      if (!shouldPreserveInput) {
                         setInputValue(nextValue);
                       }
                     }
@@ -173,12 +189,18 @@ export function FeedFilterSelectionSection<T>({
                 }
               : undefined
           }
-          disableCloseOnSelect={keepOpenAndPreserveInputOnSelect}
+          disableCloseOnSelect={shouldKeepOpen}
           onClose={() => {
-            if (keepOpenAndPreserveInputOnSelect) {
+            if (shouldKeepOpen) {
               setInputValue('');
             }
           }}
+          loading={loading}
+          loadingText={loadingText}
+          noOptionsText={noOptionsText}
+          clearText={clearText}
+          openText={openText}
+          closeText={closeText}
           isOptionEqualToValue={isOptionEqualToValue}
           filterOptions={filterOptions}
           filterSelectedOptions
