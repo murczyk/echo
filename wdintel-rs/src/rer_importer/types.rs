@@ -37,6 +37,8 @@ pub struct InboxMessage {
     pub post: Option<String>,
     pub post_id: Option<i64>,
     pub unit: Option<String>,
+    #[serde(default)]
+    pub unit_ids: Vec<i64>,
     /// overwritten upon save (ignored upon submission)
     pub callsign_tokens:
         Option<Vec<crate::rer_importer::highlight::CNCallsign>>,
@@ -160,6 +162,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             post: payload.post,
             post_id: payload.post_id,
             unit: payload.unit,
+            unit_ids: vec![],
             callsign_tokens: None,
             signal_tokens: None,
             point_tokens: payload.point_tokens,
@@ -1698,6 +1701,7 @@ mod tests {
             "network_name".to_string(),
             "signal_tokens".to_string(),
             "text_marked".to_string(),
+            "unit_ids".to_string(),
         ]);
 
         assert_eq!(omitted_keys, expected_omitted_keys);
