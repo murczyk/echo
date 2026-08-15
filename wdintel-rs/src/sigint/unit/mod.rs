@@ -1553,6 +1553,13 @@ async fn delete_unit_for_login(
         .ok_or(AppError::NotFound)?;
     let previous_unit = unit.clone();
     let unit_json_old = unit_json(&transaction, unit.id).await?;
+    crate::stats::enqueue_group_stats_recalculation_for_linked_unit(
+        &transaction,
+        unit.id,
+        format!("deleted unit {}", unit.id),
+    )
+    .await
+    .context(h!())?;
     let mut unit = unit.into_active_model();
     unit.deleted = Set(true);
     let unit = unit.update(&transaction).await.context(h!())?;
@@ -4280,6 +4287,73 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(remaining.is_deduplicate_candidate, Some(false));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn delete_unit_enqueues_linked_stats_recalculation() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_item = crate::functest::tests::mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let group = crate::functest::tests::mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::functest::tests::mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(inbox_item.id),
+                group_master_key: Set(Some(group.master_key.clone())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(inbox_item.id),
+            unit_id: Set(unit.id),
+            kind: Set(
+                crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind::Parsed,
+            ),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        delete_unit_for_login(&env.dbx, &login_id, unit.id)
+            .await
+            .unwrap();
+
+        let task = group_stats_recalculation_task::Entity::find()
+            .filter(
+                group_stats_recalculation_task::Column::GroupMasterKey
+                    .eq(group.master_key),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(task.reason, format!("deleted unit {}", unit.id));
     }
 
     async fn hierarchy_unit(
