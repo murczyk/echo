@@ -7,9 +7,10 @@ import {
   getSharedFilterTextFieldProps,
   mrtItemsCell,
   mrtTextCell,
+  mrtCustomCell,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { NO_AOR_FILTER_VALUE, type NetworkRowView } from '../helpers';
-import { ActivityBars, NetworkCell } from './NetworkCells';
+import { ActivityBars, FrequencyCell, NetworkCell } from './NetworkCells';
 
 function formatAorActiveFilterValue(
   value: unknown,
@@ -67,12 +68,8 @@ export function useNetworksTableColumns({
         accessorFn: (row) => row.network.name,
         enableColumnFilter: true,
         enableSorting: true,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          interactive: true,
-          displayValue: ({ row }) => <NetworkCell network={row.original} />,
-          fullValue: ({ row }) => row.original.networkLabel,
-        }),
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => <NetworkCell network={row.original} />),
       },
       {
         id: 'aors',
@@ -135,40 +132,14 @@ export function useNetworksTableColumns({
           row.inactiveFrequencies.map((freq) => freq.freq).join(' '),
         enableColumnFilter: true,
         enableSorting: true,
-        meta: { overflowMode: 'items' },
-        Cell: mrtItemsCell<NetworkRowView, { id: number; freq: string; inactive: boolean }>({
-          items: ({ row }) => [
-            ...row.original.activeFrequencies.map((frequency) => ({
-              id: frequency.id,
-              freq: frequency.freq,
-              inactive: false,
-            })),
-            ...row.original.inactiveFrequencies.map((frequency) => ({
-              id: frequency.id,
-              freq: frequency.freq,
-              inactive: true,
-            })),
-          ],
-          renderItem: (frequency) => (
-            <Box
-              component="span"
-              sx={{
-                fontWeight: 700,
-                color: frequency.inactive ? 'text.secondary' : 'text.primary',
-              }}
-            >
-              {frequency.freq}
-            </Box>
-          ),
-          getItemKey: (frequency) => frequency.id,
-          getItemText: (frequency) => frequency.freq,
-          containerProps: ({ row }) => ({
-            'data-network-hover-anchor': 'true',
-            onPointerEnter: (event: PointerEvent<HTMLElement>) =>
-              onFrequencyHoverEnter(event.currentTarget, row.original),
-            onPointerLeave: onFrequencyHoverLeave,
-          }),
-        }),
+        meta: { overflowMode: 'custom', overflowOwner: 'domain-hover' },
+        Cell: mrtCustomCell(({ row }) => (
+          <FrequencyCell
+            row={row.original}
+            onPointerEnterAnchor={onFrequencyHoverEnter}
+            onPointerLeaveAnchor={onFrequencyHoverLeave}
+          />
+        )),
       },
       {
         id: 'location',
@@ -176,23 +147,19 @@ export function useNetworksTableColumns({
         accessorFn: (row) => row.network.location,
         enableColumnFilter: true,
         enableSorting: true,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          interactive: true,
-          displayValue: ({ row }) => (
-            <Box
-              component="span"
-              data-network-hover-anchor={row.original.network.location ? 'true' : undefined}
-              onPointerEnter={(event: PointerEvent<HTMLElement>) =>
-                onLocationHoverEnter(event.currentTarget, row.original)
-              }
-              onPointerLeave={onLocationHoverLeave}
-            >
-              {row.original.network.location || '—'}
-            </Box>
-          ),
-          fullValue: ({ row }) => row.original.network.location || '—',
-        }),
+        meta: { overflowMode: 'custom', overflowOwner: 'domain-hover' },
+        Cell: mrtCustomCell(({ row }) => (
+          <Box
+            component="span"
+            data-network-hover-anchor={row.original.network.location ? 'true' : undefined}
+            onPointerEnter={(event: PointerEvent<HTMLElement>) =>
+              onLocationHoverEnter(event.currentTarget, row.original)
+            }
+            onPointerLeave={onLocationHoverLeave}
+          >
+            {row.original.network.location || '—'}
+          </Box>
+        )),
       },
       {
         id: 'activity',

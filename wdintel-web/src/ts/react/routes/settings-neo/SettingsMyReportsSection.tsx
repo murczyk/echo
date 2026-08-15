@@ -740,14 +740,7 @@ export function ReportHistoryTableSection({
         enableColumnFilter: false,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
-          displayValue: ({ row }) =>
-            row.original.details ? (
-              <Tooltip title={row.original.details}>
-                <Typography component="span" variant="body2">
-                  {row.original.details}
-                </Typography>
-              </Tooltip>
-            ) : null,
+          displayValue: ({ row }) => row.original.details ?? '',
           fullValue: ({ row }) => row.original.details ?? '',
         }),
       },

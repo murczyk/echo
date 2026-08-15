@@ -45,10 +45,12 @@ import {
   type AppMrtColumnDef,
   getDefaultMRTOptions,
   mrtItemsCell,
+  mrtCustomCell,
   mrtTextCell,
   useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../components/mui-customized/table/mrt-overflow';
 import {
   TableStateProvider,
   useTableStateContext,
@@ -423,13 +425,16 @@ function useUsersColumns(): AppMrtColumnDef<Login>[] {
       {
         header: 'Логін',
         accessorKey: 'login',
-        meta: { overflowMode: 'text', interactive: true },
-        Cell: mrtTextCell({
-          displayValue: ({ row }) => (
-            <Box
-              component="a"
-              href={`/admin/users-neo/${encodeURIComponent(row.original.id)}`}
-              onClick={(event) => {
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text', interactive: true },
+        Cell: mrtCustomCell(({ row }) => (
+          <MrtOverflowText
+            displayValue={row.original.login}
+            fullValue={row.original.login}
+            interactive
+            component="a"
+            componentProps={{
+              href: `/admin/users-neo/${encodeURIComponent(row.original.id)}`,
+              onClick: (event: MouseEvent) => {
                 if (
                   event.button === 0 &&
                   !event.ctrlKey &&
@@ -445,48 +450,40 @@ function useUsersColumns(): AppMrtColumnDef<Login>[] {
                   );
                   window.dispatchEvent(new PopStateEvent('popstate'));
                 }
-              }}
-            >
-              {row.original.login}
-            </Box>
-          ),
-          fullValue: ({ row }) => row.original.login,
-          interactive: true,
-        }),
+              },
+            }}
+          />
+        )),
         size: 200,
       },
       {
         header: 'UUID',
         accessorKey: 'id',
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell<Login>({
-          interactive: true,
-          fullValue: ({ row }) => row.original.id,
-          displayValue: ({ row }) => (
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 0.5,
-                width: '100%',
-                '& .uuid-copy-button': {
-                  opacity: 0,
-                  pointerEvents: 'none',
-                  transition: 'opacity 120ms ease',
-                },
-                '&:hover .uuid-copy-button, &:focus-within .uuid-copy-button': {
-                  opacity: 1,
-                  pointerEvents: 'auto',
-                },
-              }}
-            >
-              <Box component="span" sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                {formatUuidShort(row.original.id)}
-              </Box>
-              <CopyUuidButton uuid={row.original.id} className="uuid-copy-button" />
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell<Login>(({ row }) => (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              width: '100%',
+              '& .uuid-copy-button': {
+                opacity: 0,
+                pointerEvents: 'none',
+                transition: 'opacity 120ms ease',
+              },
+              '&:hover .uuid-copy-button, &:focus-within .uuid-copy-button': {
+                opacity: 1,
+                pointerEvents: 'auto',
+              },
+            }}
+          >
+            <Box component="span" sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+              {formatUuidShort(row.original.id)}
             </Box>
-          ),
-        }),
+            <CopyUuidButton uuid={row.original.id} className="uuid-copy-button" />
+          </Box>
+        )),
         size: 190,
       },
       {

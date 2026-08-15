@@ -19,6 +19,7 @@ import {
 import {
   type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtCustomCell,
   mrtTextCell,
   useAppMaterialReactTable,
   renderColumnActionsMenuItems,
@@ -218,34 +219,31 @@ function NetworkCallsignsNetworkTableContent({
         accessorKey: 'callsign',
         id: 'callsign',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.callsign,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          displayValue: ({ row }) => (
-            <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
-              <NetworkCallsignStatusDot
-                statusLabel={row.original.statusLabel}
-                status={row.original.status}
-              />
-              <Typography variant="body2" fontWeight={700}>
-                {formatMrtCellTextValue(row.original.callsign)}
-              </Typography>
-              {row.original.mainRadioStation ? (
-                <Tooltip title="Головна радіостанція" arrow>
-                  <StarIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} />
-                </Tooltip>
-              ) : null}
-              {row.original.commandControl ? (
-                <Tooltip title="Ланка управління" arrow>
-                  <MilitaryTechOutlinedIcon
-                    fontSize="small"
-                    sx={{ color: 'info.main', flexShrink: 0 }}
-                  />
-                </Tooltip>
-              ) : null}
-            </Stack>
-          ),
-          fullValue: ({ row }) => formatMrtCellTextValue(row.original.callsign),
-        }),
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => (
+          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+            <NetworkCallsignStatusDot
+              statusLabel={row.original.statusLabel}
+              status={row.original.status}
+            />
+            <Typography variant="body2" fontWeight={700}>
+              {formatMrtCellTextValue(row.original.callsign)}
+            </Typography>
+            {row.original.mainRadioStation ? (
+              <Tooltip title="Головна радіостанція" arrow>
+                <StarIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} />
+              </Tooltip>
+            ) : null}
+            {row.original.commandControl ? (
+              <Tooltip title="Ланка управління" arrow>
+                <MilitaryTechOutlinedIcon
+                  fontSize="small"
+                  sx={{ color: 'info.main', flexShrink: 0 }}
+                />
+              </Tooltip>
+            ) : null}
+          </Stack>
+        )),
       },
       {
         header: 'ПІП',
@@ -321,14 +319,10 @@ function NetworkCallsignsNetworkTableContent({
         size: NETWORK_CALLSIGN_COLUMN_SIZES.sourceName,
         grow: false,
         enableResizing: false,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          interactive: true,
-          displayValue: ({ row }) => (
-            <NetworkCallsignSourceCell sourceName={row.original.sourceName} />
-          ),
-          fullValue: ({ row }) => row.original.sourceName,
-        }),
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => (
+          <NetworkCallsignSourceCell sourceName={row.original.sourceName} />
+        )),
       },
     ],
     [],

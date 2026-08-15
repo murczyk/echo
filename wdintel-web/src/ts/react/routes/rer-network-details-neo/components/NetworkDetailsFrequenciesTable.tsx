@@ -17,6 +17,7 @@ import {
 import {
   type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtCustomCell,
   mrtTextCell,
   useAppMaterialReactTable,
   renderColumnActionsMenuItems,
@@ -201,12 +202,8 @@ function buildColumns(
       id: 'displayFreq',
       size: 280,
       enableSorting: true,
-      meta: { overflowMode: 'text' },
-      Cell: mrtTextCell({
-        interactive: true,
-        displayValue: ({ row }) => renderFrequencyCell(row.original),
-        fullValue: ({ row }) => row.original.displayFreq,
-      }),
+      meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+      Cell: mrtCustomCell(({ row }) => renderFrequencyCell(row.original)),
     },
     {
       header: 'Модуляція',
@@ -244,31 +241,25 @@ function buildColumns(
       id: 'callsignLabel',
       size: 300,
       enableSorting: false,
-      meta: { overflowMode: 'text' },
-      Cell: mrtTextCell({
-        interactive: true,
-        displayValue: ({ row }) => {
-          const label = getRowCallsignLabel(row.original);
-          const freqIds =
-            row.original.kind === 'group'
-              ? row.original.freqIds
-              : [row.original.freq.networkFreqId];
-          const isLoaded = freqIds.every((freqId) => freqCallsignsById.has(freqId));
-          if (freqCallsignsStatus === 'loading' && !isLoaded) {
-            return <CircularProgress size={14} />;
-          }
-          if (freqCallsignsStatus === 'error' && !isLoaded) {
-            return (
-              <Box component="span" aria-label="Не завантажено">
-                <Typography variant="body2" color="error" fontWeight={600}>
-                  Не завантажено
-                </Typography>
-              </Box>
-            );
-          }
-          return label;
-        },
-        fullValue: ({ row }) => getRowCallsignLabel(row.original),
+      meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+      Cell: mrtCustomCell(({ row }) => {
+        const label = getRowCallsignLabel(row.original);
+        const freqIds =
+          row.original.kind === 'group' ? row.original.freqIds : [row.original.freq.networkFreqId];
+        const isLoaded = freqIds.every((freqId) => freqCallsignsById.has(freqId));
+        if (freqCallsignsStatus === 'loading' && !isLoaded) {
+          return <CircularProgress size={14} />;
+        }
+        if (freqCallsignsStatus === 'error' && !isLoaded) {
+          return (
+            <Box component="span" aria-label="Не завантажено">
+              <Typography variant="body2" color="error" fontWeight={600}>
+                Не завантажено
+              </Typography>
+            </Box>
+          );
+        }
+        return label;
       }),
     },
     {

@@ -6,9 +6,11 @@ import type { Palitra } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
 import { FULL_HEIGHT_LOADING_ROW_COUNT } from '../../../components/mui-customized/table/custom-styles';
 import {
+  mrtCustomCell,
   mrtTextCell,
   type AppMrtColumnDef,
 } from '../../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../../components/mui-customized/table/mrt-overflow';
 import { formatDateTime24 } from '../../../utils/misc';
 import type { FolderTableRowView, TableRowView } from '../types';
 
@@ -49,9 +51,11 @@ function renderFolderNameCell(
       }}
     >
       <FolderOutlinedIcon fontSize="small" color="action" />
-      <Typography variant="body2" fontWeight={700} noWrap>
-        {formatText(row.name)}
-      </Typography>
+      <MrtOverflowText
+        displayValue={formatText(row.name)}
+        fullValue={formatText(row.name)}
+        sx={{ flex: '1 1 auto', fontWeight: 700 }}
+      />
       <PowerChip
         label={'Палітр: ' + String(row.totalCount)}
         size="small"
@@ -125,13 +129,14 @@ function renderNameCell(row: TableRowView, onToggleFolderExpanded: (path: string
       direction="row"
       spacing={1}
       alignItems="center"
-      flexWrap="wrap"
       useFlexGap
-      sx={{ pl: leftPadding }}
+      sx={{ minWidth: 0, width: '100%', pl: leftPadding }}
     >
-      <Typography variant="body2" fontWeight={600}>
-        {formatText(row.name)}
-      </Typography>
+      <MrtOverflowText
+        displayValue={formatText(row.name)}
+        fullValue={formatText(row.name)}
+        sx={{ minWidth: 0, flex: '1 1 auto', fontWeight: 600 }}
+      />
       {row.palitra.missingInGoi ? (
         <Tooltip title="Палітра відсутня на сервері ГОІ">
           <WarningAmberIcon color="error" fontSize="small" />
@@ -212,8 +217,8 @@ export function buildPalitraTableColumns(
       accessorKey: 'name',
       id: 'name',
       size: 360,
-      meta: { overflowMode: 'wrap' },
-      Cell: ({ row }) => renderNameCell(row.original, onToggleFolderExpanded),
+      meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
+      Cell: mrtCustomCell(({ row }) => renderNameCell(row.original, onToggleFolderExpanded)),
     },
     {
       header: 'Колір',
@@ -246,9 +251,7 @@ export function buildPalitraTableColumns(
       meta: { overflowMode: 'text' },
       Cell: mrtTextCell({
         displayValue: ({ row }) =>
-          row.original.kind === 'folder'
-            ? renderEmptyFolderCell()
-            : formatText(row.original.sourceFileName),
+          row.original.kind === 'folder' ? '' : formatText(row.original.sourceFileName),
         fullValue: ({ row }) =>
           row.original.kind === 'folder' ? '' : formatText(row.original.sourceFileName),
       }),
@@ -263,9 +266,7 @@ export function buildPalitraTableColumns(
       meta: { overflowMode: 'text' },
       Cell: mrtTextCell({
         displayValue: ({ row }) =>
-          row.original.kind === 'folder'
-            ? renderEmptyFolderCell()
-            : formatDateTime24(row.original.lastUploadedAtTs),
+          row.original.kind === 'folder' ? '' : formatDateTime24(row.original.lastUploadedAtTs),
         fullValue: ({ row }) =>
           row.original.kind === 'folder' ? '' : formatDateTime24(row.original.lastUploadedAtTs),
       }),
@@ -279,9 +280,7 @@ export function buildPalitraTableColumns(
       meta: { overflowMode: 'text' },
       Cell: mrtTextCell({
         displayValue: ({ row }) =>
-          row.original.kind === 'folder'
-            ? renderEmptyFolderCell()
-            : formatText(row.original.author),
+          row.original.kind === 'folder' ? '' : formatText(row.original.author),
         fullValue: ({ row }) =>
           row.original.kind === 'folder' ? '' : formatText(row.original.author),
       }),
@@ -295,9 +294,7 @@ export function buildPalitraTableColumns(
       meta: { overflowMode: 'text' },
       Cell: mrtTextCell({
         displayValue: ({ row }) =>
-          row.original.kind === 'folder'
-            ? renderEmptyFolderCell()
-            : formatText(row.original.accessSummary),
+          row.original.kind === 'folder' ? '' : formatText(row.original.accessSummary),
         fullValue: ({ row }) =>
           row.original.kind === 'folder' ? '' : formatText(row.original.accessSummary),
       }),

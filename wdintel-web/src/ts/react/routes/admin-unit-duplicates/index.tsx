@@ -2,6 +2,7 @@ import MergeIcon from '@mui/icons-material/Merge';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { Box, IconButton, Link, Stack, Tooltip } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 
 import type { Unit, UnitDuplicate } from '../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
@@ -9,9 +10,11 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import {
+  mrtCustomCell,
   mrtTextCell,
   type AppMrtColumnDef,
 } from '../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../components/mui-customized/table/mrt-overflow';
 import { getUnitDuplicates, mergeDuplicateUnit } from '../../services/api/units';
 import { handleNavigateWithinSpaClick } from '../../utils/browser';
 import { hasRole } from '../../utils/roles';
@@ -117,18 +120,22 @@ export function AdminUnitDuplicatesPage({
         accessorFn: (row) => row.sigintUnit?.name ?? '',
         header: 'Назва SIGINT підрозділу',
         size: 280,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell<UnitDuplicate>({
-          interactive: true,
-          fullValue: ({ row }) => row.original.sigintUnit.name,
-          displayValue: ({ row }) => {
-            const href = `/rer-units/${row.original.sigintUnit.id}`;
-            return (
-              <Link href={href} onClick={(event) => handleNavigateWithinSpaClick(event, href)}>
-                {row.original.sigintUnit.name}
-              </Link>
-            );
-          },
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
+        Cell: mrtCustomCell<UnitDuplicate>(({ row }) => {
+          const href = `/rer-units/${row.original.sigintUnit.id}`;
+          return (
+            <MrtOverflowText
+              displayValue={row.original.sigintUnit.name}
+              fullValue={row.original.sigintUnit.name}
+              interactive
+              component="a"
+              componentProps={{
+                href,
+                onClick: (event: ReactMouseEvent<HTMLElement>) =>
+                  handleNavigateWithinSpaClick(event, href),
+              }}
+            />
+          );
         }),
       },
       {
@@ -147,22 +154,22 @@ export function AdminUnitDuplicatesPage({
         accessorFn: (row) => row.orbitUnitFullName,
         header: 'Повна назва Orbit підрозділу',
         size: 360,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell<UnitDuplicate>({
-          interactive: true,
-          fullValue: ({ row }) => row.original.orbitUnitFullName.trim() || row.original.orbitUnitId,
-          displayValue: ({ row }) => {
-            const label = row.original.orbitUnitFullName.trim() || row.original.orbitUnitId;
-            return (
-              <Link
-                href={`https://delta.mil.gov.ua/orbit/units/${row.original.orbitUnitId}/organizational-structure`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {label}
-              </Link>
-            );
-          },
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
+        Cell: mrtCustomCell<UnitDuplicate>(({ row }) => {
+          const label = row.original.orbitUnitFullName.trim() || row.original.orbitUnitId;
+          return (
+            <MrtOverflowText
+              displayValue={label}
+              fullValue={label}
+              interactive
+              component="a"
+              componentProps={{
+                href: `https://delta.mil.gov.ua/orbit/units/${row.original.orbitUnitId}/organizational-structure`,
+                target: '_blank',
+                rel: 'noopener noreferrer',
+              }}
+            />
+          );
         }),
       },
     ],

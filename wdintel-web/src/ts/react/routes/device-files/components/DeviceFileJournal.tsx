@@ -45,11 +45,8 @@ function useJournalColumns(): AppMrtColumnDef<DeviceFileJournalEntry>[] {
         size: 240,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
-          displayValue: ({ cell }) => (
-            <Typography component="span" variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-              {cell.getValue() as string}
-            </Typography>
-          ),
+          displayValue: ({ cell }) => cell.getValue() as string,
+          displaySx: { overflowWrap: 'anywhere' },
           fullValue: ({ cell }) => cell.getValue() as string,
         }),
       },
@@ -59,11 +56,8 @@ function useJournalColumns(): AppMrtColumnDef<DeviceFileJournalEntry>[] {
         size: 520,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
-          displayValue: ({ cell }) => (
-            <Typography component="span" variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-              {cell.getValue() as string}
-            </Typography>
-          ),
+          displayValue: ({ cell }) => cell.getValue() as string,
+          displaySx: { overflowWrap: 'anywhere' },
           fullValue: ({ cell }) => cell.getValue() as string,
         }),
       },

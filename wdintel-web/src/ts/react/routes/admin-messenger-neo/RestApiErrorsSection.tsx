@@ -53,25 +53,8 @@ function formatDateTime(value: string | null | undefined): string {
   return date ? date.toLocaleString('uk-UA') : '';
 }
 
-function clippedText(value: string | null | undefined, color?: 'error') {
-  const text = value ?? '';
-  return (
-    <Typography
-      component="span"
-      variant="body2"
-      color={color}
-      sx={{
-        display: 'block',
-        maxWidth: 620,
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-      }}
-      title={text}
-    >
-      {text}
-    </Typography>
-  );
+function clippedText(value: string | null | undefined) {
+  return value ?? '';
 }
 
 function RestApiErrorsTable({
@@ -121,7 +104,7 @@ function RestApiErrorsTable({
         size: 520,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
-          displayValue: ({ cell }) => clippedText(cell.getValue(), 'error'),
+          displayValue: ({ cell }) => clippedText(cell.getValue()),
           fullValue: ({ cell }) => cell.getValue() ?? '',
         }),
       },

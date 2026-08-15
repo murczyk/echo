@@ -42,6 +42,7 @@ import {
   type AppMrtColumnDef,
   buildExplicitSingleSelectColumnFilter,
   getDefaultMRTOptions,
+  mrtCustomCell,
   mrtTextCell,
   useAppMaterialReactTable,
   getFilterModeHelperText,
@@ -437,81 +438,77 @@ function useUnitColumns(
             verticalAlign: 'middle',
           },
         },
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          interactive: true,
-          displayValue: ({ row }) => {
-            const detailsHref = `/rer-units/${row.original.id}`;
-            const filesHref = `${detailsHref}?tab=files`;
-            return (
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => {
+          const detailsHref = `/rer-units/${row.original.id}`;
+          const filesHref = `${detailsHref}?tab=files`;
+          return (
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              useFlexGap
+              sx={{ minWidth: 0, width: '100%' }}
+            >
+              <Tooltip title={row.original.active ? 'Активний' : 'Неактивний'}>
+                <Box
+                  sx={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    bgcolor: row.original.active ? '#54c06c' : '#bfbfbf',
+                    flexShrink: 0,
+                  }}
+                />
+              </Tooltip>
+              <Tooltip title={row.original.name}>
+                <Link
+                  href={detailsHref}
+                  onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
+                  sx={{
+                    display: 'block',
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {row.original.name}
+                </Link>
+              </Tooltip>
+              {row.original.isDeduplicateCandidate === true ? (
+                <Tooltip title="можливо дублікат, перевірте">
+                  <WarningAmberIcon color="warning" fontSize="small" />
+                </Tooltip>
+              ) : null}
               <Stack
                 direction="row"
                 spacing={1}
                 alignItems="center"
-                useFlexGap
-                sx={{ minWidth: 0, width: '100%' }}
+                sx={{ ml: 'auto', flexShrink: 0 }}
               >
-                <Tooltip title={row.original.active ? 'Активний' : 'Неактивний'}>
-                  <Box
-                    sx={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: '50%',
-                      bgcolor: row.original.active ? '#54c06c' : '#bfbfbf',
-                      flexShrink: 0,
-                    }}
-                  />
-                </Tooltip>
-                <Tooltip title={row.original.name}>
-                  <Link
-                    href={detailsHref}
-                    onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
-                    sx={{
-                      display: 'block',
-                      minWidth: 0,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {row.original.name}
-                  </Link>
-                </Tooltip>
-                {row.original.isDeduplicateCandidate === true ? (
-                  <Tooltip title="можливо дублікат, перевірте">
-                    <WarningAmberIcon color="warning" fontSize="small" />
+                {attachmentUnitIds.has(row.original.id) ? (
+                  <Tooltip title="Відкрити файли підрозділу">
+                    <Link
+                      href={filesHref}
+                      underline="none"
+                      onClick={(event) => handleNavigateWithinSpaClick(event, filesHref)}
+                      aria-label={`Відкрити файли підрозділу ${row.original.name}`}
+                    >
+                      <Chip
+                        component="span"
+                        icon={<AttachFileIcon />}
+                        label="Файли"
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                      />
+                    </Link>
                   </Tooltip>
                 ) : null}
-                <Stack
-                  direction="row"
-                  spacing={1}
-                  alignItems="center"
-                  sx={{ ml: 'auto', flexShrink: 0 }}
-                >
-                  {attachmentUnitIds.has(row.original.id) ? (
-                    <Tooltip title="Відкрити файли підрозділу">
-                      <Link
-                        href={filesHref}
-                        underline="none"
-                        onClick={(event) => handleNavigateWithinSpaClick(event, filesHref)}
-                        aria-label={`Відкрити файли підрозділу ${row.original.name}`}
-                      >
-                        <Chip
-                          component="span"
-                          icon={<AttachFileIcon />}
-                          label="Файли"
-                          size="small"
-                          color="primary"
-                          variant="outlined"
-                        />
-                      </Link>
-                    </Tooltip>
-                  ) : null}
-                </Stack>
               </Stack>
-            );
-          },
-          fullValue: ({ row }) => row.original.name,
+            </Stack>
+          );
         }),
       },
       {

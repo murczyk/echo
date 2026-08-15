@@ -310,6 +310,7 @@ export const getDefaultMRTOptions = <TData extends MRT_RowData>(): Partial<
 
 export type MrtColumnMeta = {
   overflowMode?: MrtOverflowMode;
+  overflowOwner?: 'shared-text' | 'domain-hover' | 'structured-layout';
   interactive?: boolean;
   [key: string]: unknown;
 };
@@ -339,6 +340,8 @@ export type AppMrtTableOptions<TData extends MRT_RowData> = Omit<
 
 const MRT_TEXT_CELL = Symbol('mrtTextCell');
 const MRT_ITEMS_CELL = Symbol('mrtItemsCell');
+const MRT_CUSTOM_CELL = Symbol('mrtCustomCell');
+const MRT_CUSTOM_OWNERS = new Set(['shared-text', 'domain-hover', 'structured-layout']);
 export type MrtTextCellRenderer<TData extends MRT_RowData> = NonNullable<
   MRT_ColumnDef<TData>['Cell']
 > & {
@@ -347,6 +350,9 @@ export type MrtTextCellRenderer<TData extends MRT_RowData> = NonNullable<
 export type MrtItemsCellRenderer<TData extends MRT_RowData> = NonNullable<
   MRT_ColumnDef<TData>['Cell']
 > & { [MRT_ITEMS_CELL]: true };
+export type MrtCustomCellRenderer<TData extends MRT_RowData> = NonNullable<
+  MRT_ColumnDef<TData>['Cell']
+> & { [MRT_CUSTOM_CELL]: true };
 
 export type AppMrtColumnDef<TData extends MRT_RowData> =
   | (AppMrtColumnBase<TData> & { Cell?: never; meta?: MrtColumnMeta })
@@ -359,6 +365,13 @@ export type AppMrtColumnDef<TData extends MRT_RowData> =
       meta: MrtColumnMeta & { overflowMode: 'items' };
     })
   | (AppMrtColumnBase<TData> & {
+      Cell: MrtCustomCellRenderer<TData>;
+      meta: MrtColumnMeta & {
+        overflowMode: 'custom';
+        overflowOwner: 'shared-text' | 'domain-hover' | 'structured-layout';
+      };
+    })
+  | (AppMrtColumnBase<TData> & {
       Cell: NonNullable<MRT_ColumnDef<TData>['Cell']>;
       meta: MrtColumnMeta & { overflowMode: 'wrap' | 'none' };
     });
@@ -369,7 +382,7 @@ export function mrtTextCell<TData extends MRT_RowData>({
   displaySx,
   interactive = false,
 }: {
-  displayValue: (props: any) => ReactNode;
+  displayValue: (props: any) => string | number;
   fullValue?: (props: any) => string | null | undefined;
   displaySx?: SxProps<Theme>;
   interactive?: boolean;
@@ -384,6 +397,14 @@ export function mrtTextCell<TData extends MRT_RowData>({
   )) as MrtTextCellRenderer<TData>;
   renderer[MRT_TEXT_CELL] = true;
   return renderer;
+}
+
+export function mrtCustomCell<TData extends MRT_RowData>(
+  renderer: NonNullable<MRT_ColumnDef<TData>['Cell']>,
+): MrtCustomCellRenderer<TData> {
+  const branded = renderer as MrtCustomCellRenderer<TData>;
+  branded[MRT_CUSTOM_CELL] = true;
+  return branded;
 }
 
 export function mrtItemsCell<TData extends MRT_RowData, TItem>({
@@ -528,6 +549,17 @@ export function validateMrtColumnPolicies<TData extends MRT_RowData>(
       !(column.Cell as MrtItemsCellRenderer<TData>)[MRT_ITEMS_CELL]
         ? [`${columnId} (items Cell must use mrtItemsCell)`]
         : [];
+    const unwrappedCustomViolation =
+      column.Cell &&
+      mode === 'custom' &&
+      !(column.Cell as MrtCustomCellRenderer<TData>)[MRT_CUSTOM_CELL]
+        ? [`${columnId} (custom Cell must use mrtCustomCell)`]
+        : [];
+    const customOwner = (column.meta as MrtColumnMeta | undefined)?.overflowOwner;
+    const invalidCustomOwnerViolation =
+      column.Cell && mode === 'custom' && !MRT_CUSTOM_OWNERS.has(customOwner ?? '')
+        ? [`${columnId} (custom Cell must declare a valid overflowOwner)`]
+        : [];
     const nestedViolations = column.columns
       ? validateMrtColumnPolicies(column.columns, columnId)
       : [];
@@ -535,6 +567,8 @@ export function validateMrtColumnPolicies<TData extends MRT_RowData>(
       ...ownViolation,
       ...unwrappedTextViolation,
       ...unwrappedItemsViolation,
+      ...unwrappedCustomViolation,
+      ...invalidCustomOwnerViolation,
       ...nestedViolations,
     ];
   });

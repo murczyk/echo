@@ -69,11 +69,13 @@ import {
 import {
   type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtCustomCell,
   mrtItemsCell,
   mrtTextCell,
   useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../components/mui-customized/table/mrt-overflow';
 import {
   TableStateProvider,
   useTableStateContext,
@@ -623,14 +625,26 @@ function renderDatasourceCell(
   datasourceById: Map<number, Datasource>,
 ) {
   const datasource = getDatasource(datasourceId, datasourceById);
-  if (!datasource) return <span>{NO_DATA_LABEL}</span>;
+  if (!datasource)
+    return (
+      <MrtOverflowText
+        displayValue={NO_DATA_LABEL}
+        fullValue={NO_DATA_LABEL}
+        sx={{ minWidth: 0, width: '100%', maxWidth: '100%' }}
+      />
+    );
 
   const label = datasource.displayName || `#${datasourceId}`;
   const hasIcon = ['signal', 'whatsapp', 'echo_operator'].includes(datasource.kind.toLowerCase());
 
-  if (!hasIcon) {
-    return <Box component="span">{label}</Box>;
-  }
+  if (!hasIcon)
+    return (
+      <MrtOverflowText
+        displayValue={label}
+        fullValue={label}
+        sx={{ minWidth: 0, width: '100%', maxWidth: '100%' }}
+      />
+    );
 
   return (
     <Box
@@ -639,10 +653,16 @@ function renderDatasourceCell(
         alignItems: 'center',
         gap: 1,
         minWidth: 0,
+        width: '100%',
+        maxWidth: '100%',
       }}
     >
-      <DatasourceKindIcon kind={datasource.kind} fontSize="small" />
-      <Box component="span">{label}</Box>
+      <DatasourceKindIcon kind={datasource.kind} fontSize="small" sx={{ flexShrink: 0 }} />
+      <MrtOverflowText
+        displayValue={label}
+        fullValue={label}
+        sx={{ minWidth: 0, flex: '1 1 auto' }}
+      />
     </Box>
   );
 }
@@ -782,25 +802,20 @@ function OrphanGroupsTable(props: {
           if (!row?.masterKey) return NO_DATA_LABEL;
           return row.name && row.name.trim() ? row.name : row.masterKey.slice(-5);
         },
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          interactive: true,
-          displayValue: ({ row }) => {
-            if (isLoading || !row.original?.masterKey) return <span>{NO_DATA_LABEL}</span>;
-            const name = getOrphanGroupName(row.original);
-            return (
-              <ButtonBase
-                onClick={() => props.onView?.(row.original)}
-                sx={{ color: 'inherit', textAlign: 'left', justifyContent: 'flex-start' }}
-              >
-                {name}
-              </ButtonBase>
-            );
-          },
-          fullValue: ({ row }) =>
-            isLoading || !row.original?.masterKey
-              ? NO_DATA_LABEL
-              : getOrphanGroupName(row.original),
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
+        Cell: mrtCustomCell(({ row }) => {
+          if (isLoading || !row.original?.masterKey) return <span>{NO_DATA_LABEL}</span>;
+          const name = getOrphanGroupName(row.original);
+          return (
+            <MrtOverflowText
+              displayValue={name}
+              fullValue={name}
+              interactive
+              component={ButtonBase}
+              componentProps={{ onClick: () => props.onView?.(row.original) }}
+              sx={{ color: 'inherit', textAlign: 'left', justifyContent: 'flex-start' }}
+            />
+          );
         }),
         size: 220,
       },
@@ -808,13 +823,10 @@ function OrphanGroupsTable(props: {
         header: 'Джерело',
         id: 'datasource',
         accessorFn: (row) => getDatasourceLabel(row?.datasourceId ?? null, props.datasourceById),
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          displayValue: ({ row }) =>
-            renderDatasourceCell(row.original?.datasourceId ?? null, props.datasourceById),
-          fullValue: ({ row }) =>
-            getDatasourceLabel(row.original?.datasourceId ?? null, props.datasourceById),
-        }),
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
+        Cell: mrtCustomCell(({ row }) =>
+          renderDatasourceCell(row.original?.datasourceId ?? null, props.datasourceById),
+        ),
         size: 180,
       },
       {
@@ -1134,30 +1146,21 @@ function ZoneGroupsTable(props: {
           row?.group?.groupMasterKey
             ? getGroupName(row.group.groupMasterKey, null, props.groupInfos)
             : NO_DATA_LABEL,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          interactive: true,
-          displayValue: ({ row }) => {
-            if (isLoading || !row.original?.group?.groupMasterKey)
-              return <span>{NO_DATA_LABEL}</span>;
-            const groupName = getGroupName(
-              row.original.group.groupMasterKey,
-              null,
-              props.groupInfos,
-            );
-            return (
-              <ButtonBase
-                onClick={() => props.onView(row.original.group.groupMasterKey)}
-                sx={{ color: 'inherit', textAlign: 'left' }}
-              >
-                {groupName}
-              </ButtonBase>
-            );
-          },
-          fullValue: ({ row }) =>
-            isLoading || !row.original?.group?.groupMasterKey
-              ? NO_DATA_LABEL
-              : getGroupName(row.original.group.groupMasterKey, null, props.groupInfos),
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
+        Cell: mrtCustomCell(({ row }) => {
+          if (isLoading || !row.original?.group?.groupMasterKey)
+            return <span>{NO_DATA_LABEL}</span>;
+          const groupName = getGroupName(row.original.group.groupMasterKey, null, props.groupInfos);
+          return (
+            <MrtOverflowText
+              displayValue={groupName}
+              fullValue={groupName}
+              interactive
+              component={ButtonBase}
+              componentProps={{ onClick: () => props.onView(row.original.group.groupMasterKey) }}
+              sx={{ color: 'inherit', textAlign: 'left' }}
+            />
+          );
         }),
         size: 240,
       },
@@ -1165,13 +1168,10 @@ function ZoneGroupsTable(props: {
         header: 'Джерело',
         id: 'datasource',
         accessorFn: (row) => getDatasourceLabel(row?.datasourceId ?? null, props.datasourceById),
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          displayValue: ({ row }) =>
-            renderDatasourceCell(row.original?.datasourceId ?? null, props.datasourceById),
-          fullValue: ({ row }) =>
-            getDatasourceLabel(row.original?.datasourceId ?? null, props.datasourceById),
-        }),
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
+        Cell: mrtCustomCell(({ row }) =>
+          renderDatasourceCell(row.original?.datasourceId ?? null, props.datasourceById),
+        ),
         size: 200,
       },
       {

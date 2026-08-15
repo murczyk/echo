@@ -157,11 +157,7 @@ function MissingMessageTable({
         size: 220,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
-          displayValue: ({ cell }) => (
-            <Typography component="span" variant="body2">
-              {cell.getValue() as string}
-            </Typography>
-          ),
+          displayValue: ({ cell }) => cell.getValue() as string,
           fullValue: ({ cell }) => cell.getValue() as string,
         }),
       },
@@ -171,11 +167,7 @@ function MissingMessageTable({
         size: 420,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
-          displayValue: ({ cell }) => (
-            <Typography component="span" variant="body2">
-              {cell.getValue() as string}
-            </Typography>
-          ),
+          displayValue: ({ cell }) => cell.getValue() as string,
           fullValue: ({ cell }) => cell.getValue() as string,
         }),
       },
@@ -250,11 +242,7 @@ function MissingMessageTable({
               row.original.status === 'deleted' || row.original.status === 'duplicate'
                 ? ''
                 : ((cell.getValue() as string | null) ?? '');
-            return (
-              <Typography component="span" variant="body2" color="error">
-                {value}
-              </Typography>
-            );
+            return value;
           },
           fullValue: ({ cell, row }) =>
             row.original.status === 'deleted' || row.original.status === 'duplicate'

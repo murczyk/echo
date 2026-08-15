@@ -198,11 +198,8 @@ function CallsignsTableComponent({
           overflowMode: 'text',
         },
         Cell: mrtTextCell({
-          displayValue: ({ row }) => (
-            <Typography variant="body2" fontWeight={600}>
-              {formatMrtCellTextValue(row.original.callsign)}
-            </Typography>
-          ),
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.callsign),
+          displaySx: { fontWeight: 600 },
           fullValue: ({ row }) => formatMrtCellTextValue(row.original.callsign),
         }),
       },

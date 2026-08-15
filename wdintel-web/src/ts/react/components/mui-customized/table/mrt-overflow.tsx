@@ -1,16 +1,18 @@
 import { Box, Button, ClickAwayListener, Popper, Tooltip } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material/styles';
-import type { ReactNode, RefObject } from 'react';
+import type { ElementType, ReactNode, RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
-export type MrtOverflowMode = 'text' | 'items' | 'wrap' | 'none';
+export type MrtOverflowMode = 'text' | 'items' | 'wrap' | 'custom' | 'none';
 
 type OverflowTextProps = {
   displayValue: ReactNode;
   fullValue: string | null | undefined;
   interactive?: boolean;
   sx?: SxProps<Theme>;
+  component?: ElementType;
+  componentProps?: Record<string, unknown>;
 };
 
 function useResizeVersion(ref: RefObject<HTMLElement | null>, value: unknown) {
@@ -32,9 +34,12 @@ export function MrtOverflowText({
   fullValue,
   interactive = false,
   sx,
+  component = 'span',
+  componentProps,
 }: OverflowTextProps) {
   const textRef = useRef<HTMLSpanElement>(null);
   const [isOverflowing, setIsOverflowing] = useState(false);
+  const [isTooltipOpen, setIsTooltipOpen] = useState(false);
   const resizeVersion = useResizeVersion(textRef, displayValue);
   const meaningfulValue = fullValue?.trim() && fullValue !== '—' ? fullValue : null;
 
@@ -44,10 +49,15 @@ export function MrtOverflowText({
     setIsOverflowing((current) => (current === nextValue ? current : nextValue));
   }, [displayValue, resizeVersion]);
 
+  useEffect(() => {
+    if (!isOverflowing) setIsTooltipOpen(false);
+  }, [isOverflowing]);
+
   const content = (
     <Box
-      component="span"
+      component={component}
       ref={textRef}
+      {...componentProps}
       tabIndex={isOverflowing && !interactive ? 0 : undefined}
       sx={{
         display: 'block',
@@ -73,6 +83,9 @@ export function MrtOverflowText({
   return (
     <Tooltip
       title={meaningfulValue}
+      open={isOverflowing && isTooltipOpen}
+      onOpen={() => setIsTooltipOpen(true)}
+      onClose={() => setIsTooltipOpen(false)}
       disableHoverListener={!isOverflowing}
       disableFocusListener={!isOverflowing}
       describeChild
@@ -153,11 +166,13 @@ export function MrtOverflowItems<T>({
   const surfaceId = `mrt-overflow-surface-${useId().replaceAll(':', '')}`;
   const [visibleCount, setVisibleCount] = useState(items.length);
   const [isOpen, setIsOpen] = useState(false);
-  const hiddenCount = items.length - visibleCount;
+  const compactFirstItem = visibleCount === 0;
+  const representedCount = compactFirstItem ? 1 : visibleCount;
+  const hiddenCount = items.length - representedCount;
   const hasOverflow = hiddenCount > 0;
-  const hiddenItems = items.slice(visibleCount);
+  const hiddenItems = items.slice(representedCount);
   const hiddenItemText = hiddenItems
-    .map((item, index) => getItemText(item, visibleCount + index))
+    .map((item, index) => getItemText(item, representedCount + index))
     .join(', ');
   const closeSurface = () => {
     setIsOpen(false);
@@ -319,13 +334,20 @@ export function MrtOverflowItems<T>({
             maxWidth: '100%',
           }}
         >
-          {items.slice(0, visibleCount).map((item, index) => (
-            <Box key={getItemKey(item, index)} sx={{ flexShrink: 0, minWidth: 0 }}>
-              {renderItem(item, index)}
-            </Box>
-          ))}
+          {compactFirstItem ? (
+            <MrtOverflowText
+              displayValue={getItemText(items[0], 0)}
+              fullValue={getItemText(items[0], 0)}
+            />
+          ) : (
+            items.slice(0, visibleCount).map((item, index) => (
+              <Box key={getItemKey(item, index)} sx={{ flexShrink: 0, minWidth: 0 }}>
+                {renderItem(item, index)}
+              </Box>
+            ))
+          )}
         </Box>
-        {hasOverflow ? (
+        {hasOverflow && !compactFirstItem ? (
           <Box
             aria-hidden
             data-mrt-overflow-fade=""
@@ -387,8 +409,8 @@ export function MrtOverflowItems<T>({
                 }}
               >
                 {hiddenItems.map((item, index) => (
-                  <Box key={getItemKey(item, visibleCount + index)}>
-                    {renderItem(item, visibleCount + index)}
+                  <Box key={getItemKey(item, representedCount + index)}>
+                    {renderItem(item, representedCount + index)}
                   </Box>
                 ))}
               </Box>

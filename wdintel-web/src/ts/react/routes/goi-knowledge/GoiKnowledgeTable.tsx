@@ -103,11 +103,7 @@ export function GoiKnowledgeTable(props: Props) {
         size: 220,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
-          displayValue: ({ row }) => (
-            <Typography variant="body2">
-              {formatMrtCellTextValue(row.original.serverLabel)}
-            </Typography>
-          ),
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.serverLabel),
           fullValue: ({ row }) => formatMrtCellTextValue(row.original.serverLabel),
         }),
       },
@@ -167,11 +163,7 @@ export function GoiKnowledgeTable(props: Props) {
         size: 220,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
-          displayValue: ({ row }) => (
-            <Typography variant="body2">
-              {formatMrtCellTextValue(row.original.formation)}
-            </Typography>
-          ),
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.formation),
           fullValue: ({ row }) => formatMrtCellTextValue(row.original.formation),
         }),
       },
@@ -195,9 +187,7 @@ export function GoiKnowledgeTable(props: Props) {
         size: 420,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
-          displayValue: ({ row }) => (
-            <Typography variant="body2">{formatMrtCellTextValue(row.original.note)}</Typography>
-          ),
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.note),
           fullValue: ({ row }) => formatMrtCellTextValue(row.original.note),
         }),
       },

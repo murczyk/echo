@@ -47,11 +47,13 @@ import {
 } from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
+  mrtCustomCell,
   mrtTextCell,
   useAppMaterialReactTable,
   renderColumnActionsMenuItems,
   type AppMrtColumnDef,
 } from '../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../components/mui-customized/table/mrt-overflow';
 import {
   TableStateProvider,
   useTableStateContext,
@@ -183,16 +185,18 @@ function ContainersTable({
         accessorKey: 'humanLogin',
         header: 'Користувач',
         size: 180,
-        meta: { overflowMode: 'text', interactive: true },
-        Cell: mrtTextCell({
-          displayValue: ({ row }) => (
-            <a href={`/admin/users-neo/${encodeURIComponent(row.original.humanLoginId)}`}>
-              {row.original.humanLogin}
-            </a>
-          ),
-          fullValue: ({ row }) => row.original.humanLogin,
-          interactive: true,
-        }),
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text', interactive: true },
+        Cell: mrtCustomCell(({ row }) => (
+          <MrtOverflowText
+            displayValue={row.original.humanLogin}
+            fullValue={row.original.humanLogin}
+            interactive
+            component="a"
+            componentProps={{
+              href: `/admin/users-neo/${encodeURIComponent(row.original.humanLoginId)}`,
+            }}
+          />
+        )),
       },
       {
         accessorKey: 'linkedLogin',
@@ -218,25 +222,21 @@ function ContainersTable({
         accessorKey: 'status',
         header: 'Стан',
         size: 170,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          displayValue: ({ row }) => (
-            <Stack spacing={0.5} alignItems="flex-start">
-              <Chip
-                size="small"
-                label={row.original.status}
-                color={statusColor(row.original.status)}
-              />
-              {row.original.lastError ? (
-                <Typography variant="caption" color="error">
-                  {row.original.lastError}
-                </Typography>
-              ) : null}
-            </Stack>
-          ),
-          fullValue: ({ row }) =>
-            [row.original.status, row.original.lastError].filter(Boolean).join(' '),
-        }),
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => (
+          <Stack spacing={0.5} alignItems="flex-start">
+            <Chip
+              size="small"
+              label={row.original.status}
+              color={statusColor(row.original.status)}
+            />
+            {row.original.lastError ? (
+              <Typography variant="caption" color="error">
+                {row.original.lastError}
+              </Typography>
+            ) : null}
+          </Stack>
+        )),
       },
       {
         id: 'resources',
@@ -694,23 +694,19 @@ function RequestsTable({
         accessorKey: 'reviewState',
         header: 'Перевірка',
         size: 180,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          displayValue: ({ row }) => (
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Chip
-                size="small"
-                label={row.original.reviewState}
-                color={statusColor(row.original.reviewState)}
-              />
-              {row.original.severity ? (
-                <Typography variant="body2">{row.original.severity}</Typography>
-              ) : null}
-            </Stack>
-          ),
-          fullValue: ({ row }) =>
-            [row.original.reviewState, row.original.severity].filter(Boolean).join(' '),
-        }),
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => (
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Chip
+              size="small"
+              label={row.original.reviewState}
+              color={statusColor(row.original.reviewState)}
+            />
+            {row.original.severity ? (
+              <Typography variant="body2">{row.original.severity}</Typography>
+            ) : null}
+          </Stack>
+        )),
       },
       {
         accessorKey: 'prompt',
@@ -718,7 +714,7 @@ function RequestsTable({
         size: 420,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
-          displayValue: ({ row }) => <Typography>{row.original.prompt}</Typography>,
+          displayValue: ({ row }) => row.original.prompt,
           fullValue: ({ row }) => row.original.prompt,
         }),
       },
@@ -1025,23 +1021,17 @@ function EchoProxiesTable({
         accessorFn: (proxy) => formatDateTime(proxy.lastTestedAt),
         header: 'Останній тест',
         size: 260,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          displayValue: ({ row }) => (
-            <Stack spacing={0.5} alignItems="flex-start">
-              <Typography variant="body2">{formatDateTime(row.original.lastTestedAt)}</Typography>
-              {row.original.lastTestError ? (
-                <Typography variant="caption" color="error">
-                  {row.original.lastTestError}
-                </Typography>
-              ) : null}
-            </Stack>
-          ),
-          fullValue: ({ row }) =>
-            [formatDateTime(row.original.lastTestedAt), row.original.lastTestError]
-              .filter(Boolean)
-              .join(' '),
-        }),
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => (
+          <Stack spacing={0.5} alignItems="flex-start">
+            <Typography variant="body2">{formatDateTime(row.original.lastTestedAt)}</Typography>
+            {row.original.lastTestError ? (
+              <Typography variant="caption" color="error">
+                {row.original.lastTestError}
+              </Typography>
+            ) : null}
+          </Stack>
+        )),
       },
     ],
     [],

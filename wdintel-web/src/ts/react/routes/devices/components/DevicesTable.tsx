@@ -2,6 +2,7 @@ import { Box, CircularProgress, Link, Typography } from '@mui/material';
 import type { MRT_ColumnOrderState, MRT_TableInstance } from 'material-react-table';
 import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useRef } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 
 import { mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import { PowerChip } from '../../../components/PowerChip';
@@ -17,11 +18,13 @@ import {
 } from '../../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
+  mrtCustomCell,
   mrtTextCell,
   type AppMrtColumnDef,
   useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../../components/mui-customized/table/mrt-overflow';
 import type { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import { DeviceRowActions } from './DeviceRowActions';
 import type { DeviceRowView } from '../helpers';
@@ -57,23 +60,23 @@ function useDevicesTableColumns(): AppMrtColumnDef<DeviceRowView>[] {
         accessorFn: (row) => row.name,
         header: 'Назва',
         size: 260,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell<DeviceRowView>({
-          interactive: true,
-          fullValue: ({ row }) => row.original.name,
-          displayValue: ({ row }) => {
-            const href = `/devices/${row.original.id}`;
-            return (
-              <Link
-                href={href}
-                underline="hover"
-                fontWeight={600}
-                onClick={(event) => handleNavigateWithinSpaClick(event, href)}
-              >
-                {row.original.name ?? 'Без назви'}
-              </Link>
-            );
-          },
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
+        Cell: mrtCustomCell<DeviceRowView>(({ row }) => {
+          const href = `/devices/${row.original.id}`;
+          return (
+            <MrtOverflowText
+              displayValue={row.original.name ?? 'Без назви'}
+              fullValue={row.original.name ?? 'Без назви'}
+              interactive
+              component="a"
+              componentProps={{
+                href,
+                onClick: (event: ReactMouseEvent<HTMLElement>) =>
+                  handleNavigateWithinSpaClick(event, href),
+              }}
+              sx={{ color: 'primary.main', fontWeight: 600, textDecoration: 'none' }}
+            />
+          );
         }),
       },
       {
@@ -85,14 +88,7 @@ function useDevicesTableColumns(): AppMrtColumnDef<DeviceRowView>[] {
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell<DeviceRowView>({
           fullValue: ({ cell }) => cell.getValue() as string,
-          displayValue: ({ cell }) => (
-            <Typography
-              variant="body2"
-              color={cell.getValue() === '—' ? 'text.secondary' : undefined}
-            >
-              {cell.getValue() as string}
-            </Typography>
-          ),
+          displayValue: ({ cell }) => cell.getValue() as string,
         }),
       },
       {
@@ -104,14 +100,7 @@ function useDevicesTableColumns(): AppMrtColumnDef<DeviceRowView>[] {
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell<DeviceRowView>({
           fullValue: ({ cell }) => cell.getValue() as string,
-          displayValue: ({ cell }) => (
-            <Typography
-              variant="body2"
-              color={cell.getValue() === '—' ? 'text.secondary' : undefined}
-            >
-              {cell.getValue() as string}
-            </Typography>
-          ),
+          displayValue: ({ cell }) => cell.getValue() as string,
         }),
       },
       {

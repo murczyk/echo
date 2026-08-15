@@ -471,15 +471,11 @@ function useMessengerColumns(
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
           displayValue: ({ row }) =>
-            row.original.messenger === 'echo_operator' ? (
-              row.original.apiLogin ? (
-                <span>API: {row.original.apiLogin}</span>
-              ) : (
-                <span className="text-muted-foreground">—</span>
-              )
-            ) : (
-              <span>{row.original.phoneNumber}</span>
-            ),
+            row.original.messenger === 'echo_operator'
+              ? row.original.apiLogin
+                ? `API: ${row.original.apiLogin}`
+                : '—'
+              : (row.original.phoneNumber ?? '—'),
           fullValue: ({ row }) =>
             row.original.messenger === 'echo_operator'
               ? row.original.apiLogin
@@ -504,21 +500,17 @@ function useMessengerColumns(
             .map((item) => item.value)
             .filter(Boolean)
             .join(' | '),
-        meta: { overflowMode: 'wrap' },
-        Cell: ({ row }) => {
-          const details = buildDebugDetails(row.original);
-          if (details.length === 0) return <span className="text-muted-foreground">—</span>;
-
-          return (
-            <ul className="space-y-1 list-disc list-inside ml-2 text-xs">
-              {details.map((detail) => (
-                <li key={detail.label}>
-                  <strong>{detail.label}</strong>: {detail.value}
-                </li>
-              ))}
-            </ul>
-          );
-        },
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) =>
+            buildDebugDetails(row.original)
+              .map((detail) => `${detail.label}: ${detail.value}`)
+              .join(' | ') || '—',
+          fullValue: ({ row }) =>
+            buildDebugDetails(row.original)
+              .map((detail) => `${detail.label}: ${detail.value}`)
+              .join('\n') || '—',
+        }),
         size: 240,
       },
       {

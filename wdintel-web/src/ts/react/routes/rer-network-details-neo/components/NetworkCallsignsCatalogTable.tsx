@@ -16,6 +16,7 @@ import {
 import {
   type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtCustomCell,
   mrtTextCell,
   useAppMaterialReactTable,
   renderColumnActionsMenuItems,
@@ -126,11 +127,8 @@ function NetworkCallsignsCatalogTableContent({
         size: NETWORK_CALLSIGN_COLUMN_SIZES.callsign,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
-          displayValue: ({ row }) => (
-            <Typography variant="body2" fontWeight={700}>
-              {formatMrtCellTextValue(row.original.callsign)}
-            </Typography>
-          ),
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.callsign),
+          displaySx: { fontWeight: 700 },
           fullValue: ({ row }) => formatMrtCellTextValue(row.original.callsign),
         }),
       },
@@ -209,14 +207,10 @@ function NetworkCallsignsCatalogTableContent({
         size: NETWORK_CALLSIGN_COLUMN_SIZES.sourceName,
         grow: false,
         enableResizing: false,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          interactive: true,
-          displayValue: ({ row }) => (
-            <NetworkCallsignSourceCell sourceName={row.original.sourceName} />
-          ),
-          fullValue: ({ row }) => row.original.sourceName,
-        }),
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => (
+          <NetworkCallsignSourceCell sourceName={row.original.sourceName} />
+        )),
       },
     ],
     [canManage, inFlightAddIds, isInitialLoading, onAddKnownCallsign],

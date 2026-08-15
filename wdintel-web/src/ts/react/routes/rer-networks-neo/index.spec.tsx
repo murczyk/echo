@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AreaOfResponsibility, Network, Unit } from '../../../../Bindings';
 import { NETWORK_STATUS_ACTIVE } from '../rer-network-details-neo/network-status';
-import { getLocationParts } from './components/NetworkCells';
+import { FrequencyCell, getLocationParts } from './components/NetworkCells';
 import {
   FREQUENCY_HOVER_POPPER_MODIFIERS,
   FREQUENCY_HOVER_POPPER_PLACEMENT,
@@ -765,6 +765,56 @@ it('splits location text into visible lines', () => {
     'Місто',
     'Район',
   ]);
+});
+
+it('keeps frequency disclosure owned by the domain hover surface', () => {
+  const onEnter = vi.fn();
+  const onLeave = vi.fn();
+  const row = {
+    activeFrequencies: [{ id: 1, freq: '123.45' }],
+    inactiveFrequencies: [],
+  } as any;
+  const frequencyContainer = document.createElement('div');
+  document.body.appendChild(frequencyContainer);
+  const frequencyRoot = createRoot(frequencyContainer);
+  act(() => {
+    frequencyRoot.render(
+      createElement(FrequencyCell, {
+        row,
+        onPointerEnterAnchor: onEnter,
+        onPointerLeaveAnchor: onLeave,
+      }),
+    );
+  });
+  const anchor = frequencyContainer.querySelector<HTMLElement>(
+    '[data-network-hover-anchor="true"]',
+  );
+  act(() => anchor?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })));
+  expect(onEnter).toHaveBeenCalledWith(anchor, row);
+  act(() => anchor?.dispatchEvent(new PointerEvent('pointerout', { bubbles: true })));
+  expect(onLeave).toHaveBeenCalledTimes(1);
+  expect(frequencyContainer.querySelector('[role="tooltip"]')).toBeNull();
+  act(() => frequencyRoot.unmount());
+  frequencyContainer.remove();
+
+  const empty = document.createElement('div');
+  document.body.appendChild(empty);
+  const emptyRoot = createRoot(empty);
+  act(() => {
+    emptyRoot.render(
+      createElement(FrequencyCell, {
+        row: { ...row, activeFrequencies: [] },
+        onPointerEnterAnchor: onEnter,
+        onPointerLeaveAnchor: onLeave,
+      }),
+    );
+  });
+  act(() =>
+    empty.firstElementChild?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })),
+  );
+  expect(onEnter).toHaveBeenCalledTimes(1);
+  act(() => emptyRoot.unmount());
+  empty.remove();
 });
 
 it('uses top-first placement for the frequency hover popper', () => {
