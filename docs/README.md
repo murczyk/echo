@@ -461,9 +461,11 @@ See the [Redis group-statistics note](../archive/2026-07-29-redis-group-stats/RE
 
 GOI integration is optional and configured per GOI instance in Echo. The
 diagram shows a full integration; a link-only integration omits the API and SSH
-sync paths. The HTTP API uses Basic authentication, while workbook and palette
-operations use SSH. See [GOI messenger setup](content/goi-messengers.md) for
-the user-facing Signal and WhatsApp connection flow.
+sync paths. The HTTP API uses Basic authentication. Echo advertises gzip support,
+and `goi-echo-worker` compresses API responses when the client accepts gzip.
+Workbook and palette operations use SSH. See
+[GOI messenger setup](content/goi-messengers.md) for the user-facing Signal and
+WhatsApp connection flow.
 
 ```mermaid
 flowchart LR
@@ -520,7 +522,7 @@ flowchart LR
     map_tiles["Esri World Imagery + Google labels<br/>coordinate screenshot tiles"]
     echo_swapp -->|coordinate screenshots| map_tiles
 
-    sync <-->|Basic-auth HTTP<br/>associations · knowledge · signed frequencies| goi_worker
+    sync <-->|Basic-auth HTTP · negotiated gzip responses<br/>associations · knowledge · signed frequencies| goi_worker
     sync <-->|SSH · knowledge workbook + palette files| goi_files
     sync -.->|SSH · remote sync lock| goi_pg
     echo_swapp -->|Echo IM + automation tables| echo_pg
