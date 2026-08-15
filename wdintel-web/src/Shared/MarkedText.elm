@@ -153,7 +153,7 @@ viewWithResults renderCallsign signals networks mFreq bodyText pointTokenClickUr
                 B.CnCallsignC obj ->
                     let
                         a2 =
-                            Dict.insert "callsign" obj.text Dict.empty
+                            Dict.insert "developing" "All" (Dict.insert "callsign" obj.text Dict.empty)
 
                         a3 =
                             case mFreq of

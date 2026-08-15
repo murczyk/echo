@@ -61,6 +61,15 @@ export async function retryReportHistory(id: number): Promise<ReportHistoryRow> 
   return transformSnakeToCamel<ReportHistoryRow>(raw);
 }
 
+export async function rerunSuccessfulReportHistory(id: number): Promise<ReportHistoryRow> {
+  const req: ReportHistoryIdReq = { id };
+  const raw = await postJson<unknown>(
+    '/api/admin/report-history/rerun',
+    transformCamelToSnake(req),
+  );
+  return transformSnakeToCamel<ReportHistoryRow>(raw);
+}
+
 export function isCancelledReportHistory(
   row: Pick<ReportHistoryRow, 'status' | 'lastError' | 'isCancelled'>,
 ): boolean {

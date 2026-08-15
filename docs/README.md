@@ -741,6 +741,15 @@ live ranges merge ClickHouse candidates with a PostgreSQL fresh tail before
 authoritative PostgreSQL hydration and pagination. Closed historical ranges
 continue to use ClickHouse with whole-query PostgreSQL fallback.
 
+RER Duty incremental count and newer-message requests use the same freshness
+boundary. Newer-message requests merge ClickHouse candidates with a primary
+PostgreSQL tail restricted by source `created_at` and the feed timestamp/ID
+cursor, then authoritatively hydrate the merged IDs on PostgreSQL. Counts use
+disjoint ranges: ClickHouse supplies rows older than the cutoff and PostgreSQL
+supplies the newer tail. This keeps new messages visible before CDC catches up
+without returning the Duty polling path to an unbounded source scan; an
+analytics or tail failure still retries the complete source query.
+
 PostgreSQL remains responsible for transactions, authoritative catalog and
 comment lookups, mutable caches, PostGIS processing, repeatable-read report
 snapshots, and analysis filters whose ClickHouse shape is not a single flat

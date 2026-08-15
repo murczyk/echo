@@ -34,6 +34,8 @@ import { buildUnitsListReq, type UnitStatusFilter } from './helpers';
 import { useRerUnitsPage } from './use-rer-units-page';
 import { type UnitSearchMode } from './search-mode';
 
+const FILTER_DEBOUNCE_MS = 500;
+
 const DEFAULT_COLUMN_VISIBILITY = {
   name: true,
   other: false,
@@ -257,8 +259,8 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
     pageIndex: 0,
     pageSize: 20,
   });
-  const debouncedGlobalFilter = useDebouncedValue(tableState.globalFilter, 300);
-  const debouncedColumnFilters = useDebouncedValue(tableState.columnFilters, 300);
+  const debouncedGlobalFilter = useDebouncedValue(tableState.globalFilter, FILTER_DEBOUNCE_MS);
+  const debouncedColumnFilters = useDebouncedValue(tableState.columnFilters, FILTER_DEBOUNCE_MS);
   const listReq = useMemo(
     () =>
       buildUnitsListReq({
@@ -332,7 +334,7 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
                 <GlobalFilterTextField
                   globalFilter={tableState.globalFilter}
                   setGlobalFilter={tableState.onChangeGlobalFilter}
-                  disabled={page.loading || page.loadError !== null}
+                  disabled={page.loadError !== null}
                 />
                 <SearchModeSettingsButton
                   compact={isSmallScreen}
@@ -349,37 +351,37 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
           }
           hideGlobalTextFilter={page.loading || page.loadError !== null}
           internalActionsDisabled={page.loading || page.loadError !== null}
+          leadingInternalActions={
+            <UnitsPaginationControl
+              pageIndex={pagination.pageIndex}
+              pageSize={pagination.pageSize}
+              totalCount={page.totalCount}
+              loading={page.loading || page.loadError !== null}
+              onPrevPage={() =>
+                setPagination((current) => ({
+                  ...current,
+                  pageIndex: Math.max(0, current.pageIndex - 1),
+                }))
+              }
+              onNextPage={() =>
+                setPagination((current) => ({
+                  ...current,
+                  pageIndex: current.pageIndex + 1,
+                }))
+              }
+            />
+          }
           actions={
-            <Stack direction="row" spacing={1} alignItems="center" useFlexGap>
-              <UnitsPaginationControl
-                pageIndex={pagination.pageIndex}
-                pageSize={pagination.pageSize}
-                totalCount={page.totalCount}
-                loading={page.loading || page.loadError !== null}
-                onPrevPage={() =>
-                  setPagination((current) => ({
-                    ...current,
-                    pageIndex: Math.max(0, current.pageIndex - 1),
-                  }))
-                }
-                onNextPage={() =>
-                  setPagination((current) => ({
-                    ...current,
-                    pageIndex: current.pageIndex + 1,
-                  }))
-                }
-              />
-              <PageActions
-                canEdit={page.canEdit}
-                createDisabled={
-                  page.loading || page.loadError !== null || page.submitting || !page.settingsReady
-                }
-                kmzDisabled={page.loading || page.loadError !== null || page.submitting}
-                uploadingKmz={page.uploadingKmz}
-                onCreate={page.openCreateDialog}
-                onOpenKmz={() => setKmzDialogOpen(true)}
-              />
-            </Stack>
+            <PageActions
+              canEdit={page.canEdit}
+              createDisabled={
+                page.loading || page.loadError !== null || page.submitting || !page.settingsReady
+              }
+              kmzDisabled={page.loading || page.loadError !== null || page.submitting}
+              uploadingKmz={page.uploadingKmz}
+              onCreate={page.openCreateDialog}
+              onOpenKmz={() => setKmzDialogOpen(true)}
+            />
           }
         />
 

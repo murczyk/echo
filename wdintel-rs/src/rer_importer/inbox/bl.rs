@@ -14,7 +14,7 @@ use crate::palitra::bl::collect_accessible_palitra_ids;
 use crate::rer_importer::collect_profiles_data;
 use crate::rer_importer::highlight::*;
 use crate::rer_importer::inbox::query::{
-    build_inbox_query, inbox_results_reverse_query_order,
+    build_inbox_map_query, inbox_results_reverse_query_order,
 };
 use crate::rer_importer::signals::*;
 use crate::storage::mk_media_url;
@@ -181,10 +181,7 @@ pub async fn get_inbox_map_items(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<InboxMapItem>, AppError> {
-    let q = build_inbox_query(login, env, req).await.c(h!())?;
-    let q = format!(
-        r#"SELECT id, message_uid, "freq" as freq, "coords" as coords from ({q}) q"#
-    );
+    let q = build_inbox_map_query(login, env, req).await.c(h!())?;
 
     let query_res: Vec<QueryResult> = env
         .dbx

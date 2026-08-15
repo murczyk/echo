@@ -8,6 +8,7 @@ import type {
   SavedFilterDutyUpsertReq,
 } from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
+import { normalizeRerDutyQueryStateWf } from '../../../rer-duty-filter-normalizer';
 import { postJson, postVoid } from './client';
 
 function rerDutyQueryStateWfToSnake(
@@ -37,7 +38,7 @@ export async function savedFiltersList(): Promise<SavedFilterDuty[]> {
   return (raw || []).map((r) => ({
     id: r.id,
     name: r.name,
-    req: r.req as RerDutyFeedFilterState,
+    req: normalizeRerDutyQueryStateWf((r.req as Record<string, unknown>) ?? {}),
   }));
 }
 
@@ -53,7 +54,7 @@ export async function savedFilterUpsert(req: SavedFilterDutyUpsertReq): Promise<
   return (raw || []).map((r) => ({
     id: r.id,
     name: r.name,
-    req: r.req as RerDutyFeedFilterState,
+    req: normalizeRerDutyQueryStateWf((r.req as Record<string, unknown>) ?? {}),
   }));
 }
 

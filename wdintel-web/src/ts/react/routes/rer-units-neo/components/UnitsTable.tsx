@@ -27,6 +27,7 @@ import {
 import {
   type MRT_Column,
   type MRT_PaginationState,
+  type MRT_TableInstance,
   MaterialReactTable,
 } from 'material-react-table';
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
@@ -41,7 +42,6 @@ import {
 import {
   type AppMrtColumnDef,
   buildExplicitSingleSelectColumnFilter,
-  getDefaultMRTOptions,
   mrtCustomCell,
   mrtTextCell,
   useAppMaterialReactTable,
@@ -60,7 +60,6 @@ import {
 } from '../helpers';
 import type { UnitSearchMode } from '../search-mode';
 
-const defaultMrtOptions = getDefaultMRTOptions<Unit>();
 const ROW_ACTIONS_COLUMN_SIZE = 76;
 const DUPLICATE_CANDIDATE_FILTER_OPTIONS = withExplicitSelectAllOption([
   { text: 'Можливий дублікат', value: 'yes' },
@@ -361,6 +360,38 @@ function formatDateTime(value: number): string {
     dateStyle: 'short',
     timeStyle: 'short',
   }).format(date);
+}
+
+function getUnitsTablePaperProps(table: MRT_TableInstance<Unit>, loading: boolean) {
+  const paperProps = getDefaultMrtPaperProps({ table, loading, layout: 'workspace' });
+
+  return {
+    ...paperProps,
+    sx: {
+      ...paperProps.sx,
+      display: 'block',
+      overflow: 'auto',
+    },
+  };
+}
+
+function getUnitsTableContainerProps(loading: boolean, hasRows: boolean) {
+  const containerProps = getDefaultMrtContainerProps({
+    loading,
+    layout: 'workspace',
+    hasRows,
+  });
+
+  return {
+    ...containerProps,
+    sx: {
+      ...containerProps.sx,
+      flex: 'none',
+      height: 'auto',
+      maxHeight: 'none',
+      overflow: 'visible',
+    },
+  };
 }
 
 function OrbitCell({ unit }: { unit: Unit }) {
@@ -766,6 +797,7 @@ export function UnitsTable({
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('lg'));
   const columns = useUnitColumns(attachmentUnitIds, searchMode, onSearchModeChange, isSmallScreen);
+  const hasNextPage = (pagination.pageIndex + 1) * pagination.pageSize < totalCount;
   const table = useAppMaterialReactTable({
     columns,
     data: units,
@@ -779,7 +811,7 @@ export function UnitsTable({
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
     enableColumnResizing: tableStateContext.enableColumnResizing,
     enablePagination: true,
-    enableBottomToolbar: true,
+    enableBottomToolbar: hasNextPage,
     enableMultiSort: false,
     manualFiltering: true,
     manualSorting: true,
@@ -840,21 +872,15 @@ export function UnitsTable({
         </MrtRowActions>
       </Box>
     ),
-    renderBottomToolbar: ({ table }) =>
-      table.getCanNextPage() ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-          <Button variant="outlined" onClick={() => table.nextPage()} disabled={loading}>
-            Завантажити ще
-          </Button>
-        </Box>
-      ) : null,
-    muiTablePaperProps: ({ table }) =>
-      getDefaultMrtPaperProps({ table, loading, layout: 'workspace' }),
-    muiTableContainerProps: getDefaultMrtContainerProps({
-      loading,
-      layout: 'workspace',
-      hasRows: units.length > 0,
-    }),
+    renderBottomToolbar: ({ table }) => (
+      <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+        <Button variant="outlined" onClick={() => table.nextPage()} disabled={loading}>
+          Завантажити ще
+        </Button>
+      </Box>
+    ),
+    muiTablePaperProps: ({ table }) => getUnitsTablePaperProps(table, loading),
+    muiTableContainerProps: getUnitsTableContainerProps(loading, units.length > 0),
     muiTableBodyCellProps: {
       sx: {
         ...CUSTOM_STYLES.muiTableBodyCellProps.sx,

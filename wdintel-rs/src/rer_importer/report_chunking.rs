@@ -4,7 +4,9 @@ use crate::rer_importer::types::{InboxMessagesReq, InboxMessagesSortBy};
 use crate::types::Env;
 use crate::utils::dt_from_millis;
 use anyhow::Context;
+use chrono::NaiveDateTime;
 use sea_orm::{ColumnTrait, ConnectionTrait, QueryFilter, Select};
+use std::cmp::Ordering;
 
 use crate::entities::{sigint_inbox_item, signal_message};
 
@@ -113,6 +115,46 @@ pub fn inbox_report_chunk_req(
     chunk_req.since_date_inclusive_ms = Some(chunk.since_ms);
     chunk_req.till_date_inclusive_ms = Some(chunk.till_ms);
     chunk_req
+}
+
+pub fn oldest_first_inbox_report_req(
+    req: &InboxMessagesReq,
+) -> InboxMessagesReq {
+    let mut req = req.clone();
+    req.load_latest = Some(false);
+    req.newest_first = Some(false);
+    req
+}
+
+pub fn compare_inbox_report_message_oldest_first(
+    req: &InboxMessagesReq,
+    left_datetime: Option<NaiveDateTime>,
+    left_timestamp: Option<NaiveDateTime>,
+    left_id: i64,
+    right_datetime: Option<NaiveDateTime>,
+    right_timestamp: Option<NaiveDateTime>,
+    right_id: i64,
+) -> Ordering {
+    let (left, right) = match req
+        .sort_by
+        .unwrap_or(InboxMessagesSortBy::IMSDatetime)
+    {
+        InboxMessagesSortBy::IMSDatetime => (left_datetime, right_datetime),
+        InboxMessagesSortBy::IMSTimestamp => (left_timestamp, right_timestamp),
+    };
+    compare_optional_datetime(left, right).then_with(|| left_id.cmp(&right_id))
+}
+
+fn compare_optional_datetime(
+    left: Option<NaiveDateTime>,
+    right: Option<NaiveDateTime>,
+) -> Ordering {
+    match (left, right) {
+        (Some(left), Some(right)) => left.cmp(&right),
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Greater,
+        (Some(_), None) => Ordering::Less,
+    }
 }
 
 pub async fn build_filtered_inbox_report_chunk_query<'a, 'async_trait, C>(
@@ -285,5 +327,56 @@ mod tests {
             ReportPeriodEnd::NonInclusive,
         )
         .is_err());
+    }
+
+    #[test]
+    fn compares_collected_messages_oldest_first() {
+        let older_datetime =
+            NaiveDateTime::parse_from_str("2026-08-14 10:00:00", "%F %T")
+                .unwrap();
+        let newer_datetime =
+            NaiveDateTime::parse_from_str("2026-08-14 11:00:00", "%F %T")
+                .unwrap();
+
+        assert_eq!(
+            compare_inbox_report_message_oldest_first(
+                &InboxMessagesReq::default(),
+                Some(older_datetime),
+                Some(newer_datetime),
+                1,
+                Some(newer_datetime),
+                Some(older_datetime),
+                2,
+            ),
+            Ordering::Less,
+        );
+        assert_eq!(
+            compare_inbox_report_message_oldest_first(
+                &InboxMessagesReq {
+                    sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+                    newest_first: Some(true),
+                    ..Default::default()
+                },
+                Some(older_datetime),
+                Some(newer_datetime),
+                1,
+                Some(newer_datetime),
+                Some(older_datetime),
+                2,
+            ),
+            Ordering::Greater,
+        );
+    }
+
+    #[test]
+    fn report_request_ignores_analysis_list_direction() {
+        let req = oldest_first_inbox_report_req(&InboxMessagesReq {
+            load_latest: Some(true),
+            newest_first: Some(true),
+            ..Default::default()
+        });
+
+        assert_eq!(req.load_latest, Some(false));
+        assert_eq!(req.newest_first, Some(false));
     }
 }

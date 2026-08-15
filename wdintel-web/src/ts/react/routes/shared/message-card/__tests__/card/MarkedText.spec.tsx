@@ -239,7 +239,7 @@ describe('MarkedText', () => {
 
     const link = container.querySelector('a.content-token--ADP');
     expect(link).not.toBeNull();
-    expect(link?.getAttribute('href')).toBe('/rer-callsigns-neo?callsign=ABCD');
+    expect(link?.getAttribute('href')).toBe('/rer-callsigns-neo?callsign=ABCD&developing=All');
     expect(link?.textContent).toBe('ABCD');
   });
 
@@ -562,7 +562,7 @@ describe('MarkedText', () => {
 
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('WOLF');
     expect(container.querySelector('a.content-token--ADP')?.getAttribute('href')).toBe(
-      '/rer-callsigns-neo?callsign=WOLF',
+      '/rer-callsigns-neo?callsign=WOLF&developing=All',
     );
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();

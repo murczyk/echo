@@ -26,6 +26,7 @@ import {
   downloadReportHistory,
   isCancelledReportHistory,
   listReportHistory,
+  rerunSuccessfulReportHistory,
   retryReportHistory,
   type ReportHistoryBatchRsp,
 } from '../../services/api/report-history';
@@ -79,6 +80,7 @@ export type ReportHistoryTableSectionProps = {
   loadingRowCount?: number;
   loadReportHistory?: LoadReportHistory;
   loadReportHistoryBatch?: LoadReportHistoryBatch;
+  allowSuccessfulRerun?: boolean;
 };
 
 const DEFAULT_REPORTS_COLUMNS_VISIBILITY = {
@@ -410,18 +412,23 @@ function canCancelReport(row: ReportHistoryRow): boolean {
 
 function ReportHistoryRowActions({
   row,
+  allowSuccessfulRerun,
   onDownload,
   onRetry,
+  onSuccessfulRerun,
   onCancel,
 }: {
   row: ReportHistoryRow;
+  allowSuccessfulRerun: boolean;
   onDownload: (row: ReportHistoryRow) => void;
   onRetry: (row: ReportHistoryRow) => void;
+  onSuccessfulRerun: (row: ReportHistoryRow) => void;
   onCancel: (row: ReportHistoryRow) => void;
 }) {
   const isCancelled = isCancelledReportHistory(row);
   const hasActions =
     (row.status === 'done' && row.hasFile) ||
+    (row.status === 'done' && allowSuccessfulRerun) ||
     (row.status === 'failed' && !isCancelled) ||
     canCancelReport(row);
   if (!hasActions) {
@@ -435,6 +442,14 @@ function ReportHistoryRowActions({
           label="Завантажити"
           icon={<DownloadIcon fontSize="small" />}
           onClick={() => onDownload(row)}
+        />
+      ) : null}
+      {row.status === 'done' && allowSuccessfulRerun ? (
+        <MrtRowActionButton
+          label="Сформувати повторно"
+          icon={<ReplayIcon fontSize="small" />}
+          tone="warning"
+          onClick={() => onSuccessfulRerun(row)}
         />
       ) : null}
       {row.status === 'failed' && !isCancelled ? (
@@ -483,6 +498,7 @@ export function ReportHistoryTableSection({
   loadingRowCount = REPORT_LOADING_ROW_COUNT,
   loadReportHistory = listReportHistory,
   loadReportHistoryBatch,
+  allowSuccessfulRerun = false,
 }: ReportHistoryTableSectionProps) {
   const [rows, setRows] = useState<ReportHistoryRow[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('idle');
@@ -626,6 +642,20 @@ export function ReportHistoryTableSection({
     }
   }
 
+  async function handleSuccessfulRerun(row: ReportHistoryRow) {
+    if (!allowSuccessfulRerun || row.status !== 'done') return;
+    try {
+      await rerunSuccessfulReportHistory(row.id);
+      await loadRows(
+        undefined,
+        loadReportHistoryBatch ? pageIndex * REPORT_HISTORY_BATCH_SIZE : 0,
+        loadReportHistoryBatch !== undefined,
+      );
+    } catch (rerunError) {
+      setError(formatErrorMessage(rerunError));
+    }
+  }
+
   async function handleCancel(row: ReportHistoryRow) {
     if (!canCancelReport(row)) return;
     if (row.status === 'in_progress') {
@@ -706,8 +736,10 @@ export function ReportHistoryTableSection({
         Cell: ({ row }) => (
           <ReportHistoryRowActions
             row={row.original}
+            allowSuccessfulRerun={allowSuccessfulRerun}
             onDownload={(report) => void handleDownload(report)}
             onRetry={(report) => void handleRetry(report)}
+            onSuccessfulRerun={(report) => void handleSuccessfulRerun(report)}
             onCancel={(report) => void handleCancel(report)}
           />
         ),
@@ -887,7 +919,14 @@ export function ReportHistoryTableSection({
     }
 
     return nextColumns;
-  }, [handleCancel, handleDownload, handleRetry, includeAuthor]);
+  }, [
+    allowSuccessfulRerun,
+    handleCancel,
+    handleDownload,
+    handleRetry,
+    handleSuccessfulRerun,
+    includeAuthor,
+  ]);
 
   return (
     <Box
