@@ -549,9 +549,16 @@ hours and ending within `max(2 * freshness_max_age_ms, 5 minutes)` of the
 current time read from source PostgreSQL. Longer live ranges merge the
 ClickHouse candidate page with a source PostgreSQL candidate page restricted
 to that fresh overlap, then deduplicate, hydrate, revalidate, order, and limit
-the merged IDs on source PostgreSQL. Any analytics, tail, or revalidation
-failure retries the complete message query on PostgreSQL. Other callers retain
-their existing routing.
+the merged IDs on source PostgreSQL. RER Duty newer-message requests also merge
+ClickHouse candidates with a source candidate page restricted by both the feed
+cursor and the same fresh-tail cutoff.
+
+RER Duty `/api/rer-importer/get-inbox-count` requests split the result into
+disjoint `signal_message.created_at` ranges: ClickHouse counts rows older than
+the cutoff and primary PostgreSQL counts the newer tail with the feed cursor.
+The counts and earliest timestamps are merged. Any analytics, tail, or
+revalidation failure retries the complete message query on PostgreSQL. Other
+callers retain their existing routing.
 
 ## WAL retention and recovery
 

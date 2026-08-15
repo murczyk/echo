@@ -697,6 +697,8 @@ async fn build_unit_filtered_inbox_digest_query(
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
+    created_at_lower_bound: Option<NaiveDateTime>,
+    created_at_upper_bound: Option<NaiveDateTime>,
 ) -> Result<String, AppError> {
     let purpose = if inbox_count_uses_indexed_query(req) {
         InboxQueryPurpose::IndexedDigest
@@ -719,6 +721,11 @@ async fn build_unit_filtered_inbox_digest_query(
             )
             .await
             .context(h!())?;
+            let candidates = apply_inbox_created_at_bounds(
+                candidates,
+                created_at_lower_bound,
+                created_at_upper_bound,
+            );
             return build_period_unit_filtered_inbox_digest(
                 req, candidates, dt_since, dt_till,
             );
@@ -728,7 +735,12 @@ async fn build_unit_filtered_inbox_digest_query(
         &env.dbx, login, env, req, None, None, purpose,
     )
     .await
-    .context(h!())?
+    .context(h!())?;
+    let query = apply_inbox_created_at_bounds(
+        query,
+        created_at_lower_bound,
+        created_at_upper_bound,
+    )
     .select_only()
     .column_as(Expr::cust("COUNT(*)"), "count")
     .column_as(
@@ -738,13 +750,38 @@ async fn build_unit_filtered_inbox_digest_query(
     Ok(render_inbox_digest_query(query))
 }
 
-pub(crate) async fn build_inbox_digest_query(
+fn apply_inbox_created_at_bounds(
+    mut query: Select<signal_message::Entity>,
+    lower_bound: Option<NaiveDateTime>,
+    upper_bound: Option<NaiveDateTime>,
+) -> Select<signal_message::Entity> {
+    if let Some(lower_bound) = lower_bound {
+        query =
+            query.filter(signal_message::Column::CreatedAt.gte(lower_bound));
+    }
+    if let Some(upper_bound) = upper_bound {
+        query = query.filter(signal_message::Column::CreatedAt.lt(upper_bound));
+    }
+    query
+}
+
+async fn build_inbox_digest_query_with_created_at_bounds(
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
+    created_at_lower_bound: Option<NaiveDateTime>,
+    created_at_upper_bound: Option<NaiveDateTime>,
 ) -> Result<String, AppError> {
     if inbox_count_has_unit_filter(req) {
-        return build_unit_filtered_inbox_digest_query(login, env, req).await;
+        return Ok(build_unit_filtered_inbox_digest_query(
+            login,
+            env,
+            req,
+            created_at_lower_bound,
+            created_at_upper_bound,
+        )
+        .await
+        .context(h!())?);
     }
     let purpose = if inbox_count_uses_indexed_query(req) {
         InboxQueryPurpose::IndexedDigest
@@ -755,7 +792,12 @@ pub(crate) async fn build_inbox_digest_query(
         &env.dbx, login, env, req, None, None, purpose,
     )
     .await
-    .context(h!())?
+    .context(h!())?;
+    let q = apply_inbox_created_at_bounds(
+        q,
+        created_at_lower_bound,
+        created_at_upper_bound,
+    )
     .select_only()
     .column_as(Expr::cust("COUNT(*)"), "count")
     .column_as(
@@ -766,12 +808,85 @@ pub(crate) async fn build_inbox_digest_query(
     Ok(render_inbox_digest_query(q))
 }
 
+pub(crate) async fn build_inbox_digest_query(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<String, AppError> {
+    Ok(build_inbox_digest_query_with_created_at_bounds(
+        login, env, req, None, None,
+    )
+    .await
+    .context(h!())?)
+}
+
+pub(crate) async fn build_postgres_fresh_tail_inbox_digest_query(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    created_at_lower_bound: NaiveDateTime,
+) -> Result<String, AppError> {
+    Ok(build_inbox_digest_query_with_created_at_bounds(
+        login,
+        env,
+        req,
+        Some(created_at_lower_bound),
+        None,
+    )
+    .await
+    .context(h!())?)
+}
+
 pub(crate) async fn build_analytics_inbox_digest_query(
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
     db: &DatabaseConnection,
     freshness_max_age_ms: u64,
+) -> Result<Option<String>, AppError> {
+    Ok(
+        build_analytics_inbox_digest_query_with_created_at_upper_bound(
+            login,
+            env,
+            req,
+            db,
+            freshness_max_age_ms,
+            None,
+        )
+        .await
+        .context(h!())?,
+    )
+}
+
+pub(crate) async fn build_historical_analytics_inbox_digest_query(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+    created_at_upper_bound: NaiveDateTime,
+) -> Result<Option<String>, AppError> {
+    Ok(
+        build_analytics_inbox_digest_query_with_created_at_upper_bound(
+            login,
+            env,
+            req,
+            db,
+            freshness_max_age_ms,
+            Some(created_at_upper_bound),
+        )
+        .await
+        .context(h!())?,
+    )
+}
+
+async fn build_analytics_inbox_digest_query_with_created_at_upper_bound(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+    created_at_upper_bound: Option<NaiveDateTime>,
 ) -> Result<Option<String>, AppError> {
     let Some((q, _)) = build_analytics_filtered_inbox_query(
         login,
@@ -780,11 +895,12 @@ pub(crate) async fn build_analytics_inbox_digest_query(
         db,
         freshness_max_age_ms,
     )
-    .await?
+    .await
+    .context(h!())?
     else {
         return Ok(None);
     };
-    let q = q
+    let q = apply_inbox_created_at_bounds(q, None, created_at_upper_bound)
         .select_only()
         .column_as(
             Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
