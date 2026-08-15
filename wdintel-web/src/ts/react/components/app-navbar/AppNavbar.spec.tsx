@@ -248,7 +248,7 @@ describe('AppNavbar', () => {
     expect(importTrigger?.nextElementSibling?.textContent).toContain('Імпорт Delta');
   });
 
-  it('shows Echo GPU servers after API integrations only when transcription is enabled', () => {
+  it('shows Echo GPU servers only when transcription is enabled', () => {
     const disabled = renderComponent({
       ...defaultProps,
       user: { ...defaultProps.user, roles: ['Admin'] },
@@ -291,7 +291,7 @@ describe('AppNavbar', () => {
     });
     const content = enabled.container.textContent ?? '';
     expect(content).toContain('Echo GPU сервери');
-    expect(content.indexOf('Інтеграції API')).toBeLessThan(content.indexOf('Echo GPU сервери'));
+    expect(content.indexOf('Echo GPU сервери')).toBeLessThan(content.indexOf('Інтеграції API'));
   });
 
   it('updates Echo GPU servers when shared transcription settings change', () => {
