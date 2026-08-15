@@ -1029,17 +1029,71 @@ pub async fn worker_tick(db: &DatabaseConnection) -> Result<()> {
         .await
         .c(h!())?;
     for automation in automations {
-        if let Err(err) = process_automation(db, automation.clone()).await {
-            set_error(db, automation.id, &err.to_string())
-                .await
-                .c(h!())?;
-            log::error!(
-                "echo-swapp automation {} failed: {err:#}",
-                automation.id
-            );
-        }
+        process_automation_with_integration_lock(db, automation)
+            .await
+            .c(h!())?;
     }
     Ok(())
+}
+
+async fn process_automation_with_integration_lock(
+    db: &DatabaseConnection,
+    automation: AutomationWorkerRow,
+) -> Result<()> {
+    let txn = db.begin().await.c(h!())?;
+    messenger::lock_integration_identity(&txn).await.c(h!())?;
+    if !automation_is_runnable(&txn, automation.id).await.c(h!())? {
+        txn.commit().await.c(h!())?;
+        return Ok(());
+    }
+    if let Err(err) = process_automation(db, automation.clone()).await {
+        set_error(db, automation.id, &err.to_string())
+            .await
+            .c(h!())?;
+        log::error!("echo-swapp automation {} failed: {err:#}", automation.id);
+    }
+    txn.commit().await.c(h!())?;
+    Ok(())
+}
+
+async fn automation_is_runnable<C>(db: &C, id: i64) -> Result<bool>
+where
+    C: ConnectionTrait,
+{
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select exists (
+                select 1
+                from echo_automation automation
+                where automation.id = $1
+                    and automation.is_paused = false
+                    and exists (
+                        select 1
+                        from echo_client_lock source_lock
+                        join echo_client source_client
+                            on source_client.id = source_lock.client_id
+                            and source_client.deleted = false
+                        where source_lock.account_id = automation.source_account_id
+                    )
+                    and exists (
+                        select 1
+                        from echo_client_lock target_lock
+                        join echo_client target_client
+                            on target_client.id = target_lock.client_id
+                            and target_client.deleted = false
+                        where target_lock.account_id = automation.target_account_id
+                    )
+            ) as is_runnable
+            "#,
+            [id.into()],
+        ))
+        .await
+        .c(h!())?
+        .context("automation runnable query did not return a row")
+        .c(h!())?;
+    row.try_get("", "is_runnable").c(h!())
 }
 
 async fn load_view(db: &DatabaseConnection, id: i64) -> Result<AutomationView> {
@@ -3879,6 +3933,56 @@ mod tests {
                     .c(h!())?
                     .is_paused
             );
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn worker_rechecks_pause_after_integration_edit_lock() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let edit_txn = db.begin().await.c(h!())?;
+            messenger::lock_integration_identity(&edit_txn)
+                .await
+                .c(h!())?;
+            edit_txn
+                .execute_raw(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "update echo_automation set is_paused = true where id = $1",
+                    [fixture.automation_id.into()],
+                ))
+                .await
+                .c(h!())?;
+
+            let worker_db = db.clone();
+            let automation_id = fixture.automation_id;
+            let mut worker = tokio::spawn(async move {
+                let worker_txn = worker_db.begin().await.c(h!())?;
+                messenger::lock_integration_identity(&worker_txn)
+                    .await
+                    .c(h!())?;
+                let is_runnable =
+                    automation_is_runnable(&worker_txn, automation_id)
+                        .await
+                        .c(h!())?;
+                worker_txn.commit().await.c(h!())?;
+                Result::<bool>::Ok(is_runnable)
+            });
+            assert!(tokio::time::timeout(
+                std::time::Duration::from_millis(50),
+                &mut worker,
+            )
+            .await
+            .is_err());
+            edit_txn.commit().await.c(h!())?;
+            assert!(!worker.await.c(h!())?.c(h!())?);
             Ok(())
         }
         .await;

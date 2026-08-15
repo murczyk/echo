@@ -21,7 +21,8 @@ use regex::Regex;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::Duration;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend,
@@ -33,6 +34,7 @@ use serde::{Deserialize, Serialize};
 
 const OWNED_CLIENT_PREFIX: &str = "echo-swapp-";
 const GLOBAL_SYNC_STATE_KEY: &str = "global";
+static CLIENT_DATA_BACKUP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -1104,15 +1106,7 @@ async fn backup_client_data(
     client_name: &str,
 ) -> Result<ClientDataBackup> {
     let original_path = client_data_path(config, kind, client_name);
-    let mut backup_path = original_path.as_os_str().to_owned();
-    backup_path.push(MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX);
-    let backup_path = PathBuf::from(backup_path);
-    if backup_path.exists() {
-        return Err(anyhow::anyhow!(
-            "integration client data backup already exists: {}",
-            backup_path.display()
-        ));
-    }
+    let backup_path = client_data_backup_path(&original_path).c(h!())?;
     if original_path.exists() {
         tokio::fs::rename(&original_path, &backup_path)
             .await
@@ -1146,6 +1140,21 @@ async fn backup_client_data(
         original_path,
         backup_path,
     })
+}
+
+fn client_data_backup_path(original_path: &std::path::Path) -> Result<PathBuf> {
+    let created_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .c(h!())?
+        .as_nanos();
+    let sequence = CLIENT_DATA_BACKUP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let mut backup_path = original_path.as_os_str().to_owned();
+    backup_path.push(format!(
+        "{MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX}.{}.{}.{sequence}",
+        std::process::id(),
+        created_at
+    ));
+    Ok(PathBuf::from(backup_path))
 }
 
 async fn restore_client_data(backup: &ClientDataBackup) -> Result<()> {
@@ -1703,12 +1712,24 @@ mod tests {
 
     #[test]
     fn update_confirmation_defaults_to_false() {
-        let req: UpdateMessengerReq = serde_json::from_value(serde_json::json!({
-            "name": "Signal",
-            "kind": "signal",
-            "phone": "+380501234567"
-        }))
-        .unwrap();
+        let req: UpdateMessengerReq =
+            serde_json::from_value(serde_json::json!({
+                "name": "Signal",
+                "kind": "signal",
+                "phone": "+380501234567"
+            }))
+            .unwrap();
         assert!(!req.stop_dependent_automations);
+    }
+
+    #[test]
+    fn creates_unique_client_data_backup_paths() {
+        let original_path = std::path::Path::new("/tmp/echo-swapp-client");
+        let first = client_data_backup_path(original_path).unwrap();
+        let second = client_data_backup_path(original_path).unwrap();
+        assert_ne!(first, second);
+        assert!(first
+            .to_string_lossy()
+            .contains(MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX));
     }
 }
