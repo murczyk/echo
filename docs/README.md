@@ -702,6 +702,16 @@ flowchart LR
 - [Analytics implementation decision record](../archive/2026-07-21-peerdb-clickhouse/README.md)
 - [Monitoring](MONITORING.md)
 
+### APT publication
+
+All repositories upload Debian packages to `echo-ci`, then invoke the
+`echo-install-utils publish-deb` command installed there. Only that command
+may mutate Aptly state. It serializes publications, reads signing credentials
+from the server-owned publisher configuration, preserves the configured
+shared-repository aggregation, and verifies signed index hashes before
+returning success. Build runners do not receive APT signing credentials and
+must not call Aptly directly.
+
 Analytics artifacts are produced on the dedicated Debian 13 builder
 `echo-build-deb13-main`; runtime containers contain no compiler. Secrets are
 stored as separate Bitwarden Secure Notes and rendered to root-owned
