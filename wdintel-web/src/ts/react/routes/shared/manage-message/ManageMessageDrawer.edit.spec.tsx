@@ -544,7 +544,7 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  it('creates a report from copied fields with optional group and retained media', async () => {
+  it('creates a nested report from copied fields with optional group and retained media', async () => {
     referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
     referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
       { masterKey: 'g-1', name: 'Group 1' },
@@ -564,6 +564,16 @@ describe('ManageMessageDrawer edit mode', () => {
     directSubmitMocks.submitDirect.mockResolvedValue({ signal_message_id: 91 });
     const source = buildMessage({
       text: 'original card body',
+      parentMessages: [
+        {
+          id: 7,
+          text: 'earlier original body',
+          timestamp: null,
+          date: null,
+          time: null,
+          groupMasterKey: 'g-1',
+        },
+      ],
       media: [
         {
           id: 'media-1',

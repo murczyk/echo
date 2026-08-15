@@ -1175,8 +1175,10 @@ describe('MessageCard', () => {
     expect(onEditReport).toHaveBeenCalledWith(91);
   });
 
-  it('does not offer nested report creation for a standalone report card', async () => {
+  it('offers report creation from a standalone report card', async () => {
+    const onCreateReport = vi.fn();
     const msg = buildMessage({
+      groupMasterKey: 'report-group',
       parentMessages: [
         {
           id: 42,
@@ -1188,12 +1190,11 @@ describe('MessageCard', () => {
         },
       ],
     });
-    const view = await renderCard({ msg });
+    const view = await renderCard({ msg, onCreateReport });
     rendered.push(view);
 
-    expect(
-      view.container.querySelector('button[aria-label="Створити розвіддонесення"]'),
-    ).toBeNull();
+    await click(view.container.querySelector('button[aria-label="Створити розвіддонесення"]'));
+    expect(onCreateReport).toHaveBeenCalledTimes(1);
     expect(view.container.textContent).toContain('Оригінальне повідомлення');
     expect(view.container.textContent).not.toContain('Короткий текст оригінального повідомлення');
   });
