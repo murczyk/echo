@@ -34,9 +34,6 @@ function MessageSummaryDetails({
         {editable ? <EditIcon sx={{ fontSize: 15 }} aria-hidden /> : null}
         {label}
       </span>
-      <span className="mt-1 line-clamp-2 whitespace-pre-wrap wrap-break-word">
-        {summary.text.trim() || `Повідомлення #${summary.id}`}
-      </span>
       {groupName || time ? (
         <span className="mt-1 block text-xs text-(--color-action)">
           {[groupName, time].filter(Boolean).join(' · ')}

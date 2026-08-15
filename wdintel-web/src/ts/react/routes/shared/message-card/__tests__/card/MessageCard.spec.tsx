@@ -1161,12 +1161,7 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('Короткий текст розвіддонесення');
-    const reportPreview = Array.from(view.container.querySelectorAll('span')).find(
-      (element) => element.textContent === 'Короткий текст розвіддонесення',
-    );
-    expect(reportPreview?.classList.contains('line-clamp-2')).toBe(true);
-    expect(reportPreview?.classList.contains('font-bold')).toBe(false);
+    expect(view.container.textContent).not.toContain('Короткий текст розвіддонесення');
     expect(view.container.textContent).toContain('Група донесення');
     const comment = getMuiTypographyElementByText(view.container, 'Коментар');
     const editReport = view.container.querySelector(
@@ -1200,7 +1195,7 @@ describe('MessageCard', () => {
       view.container.querySelector('button[aria-label="Створити розвіддонесення"]'),
     ).toBeNull();
     expect(view.container.textContent).toContain('Оригінальне повідомлення');
-    expect(view.container.textContent).toContain('Короткий текст оригінального повідомлення');
+    expect(view.container.textContent).not.toContain('Короткий текст оригінального повідомлення');
   });
 
   it('linkifies plain message text URLs in the body', async () => {

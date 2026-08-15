@@ -20,6 +20,7 @@ const manageMessageDrawerPropsHistory = vi.hoisted(
       onCreated?: (result: unknown) => Promise<void> | void;
       onSubmitEdit?: (id: number, message: unknown) => Promise<void> | void;
       onEditSuccess?: (result: unknown) => Promise<void> | void;
+      onDeleteSuccess?: (messageId: number) => Promise<void> | void;
       editTarget?: unknown;
       reportSource?: unknown;
     }>,
@@ -252,6 +253,7 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
     onCreated?: (result: unknown) => Promise<void> | void;
     onSubmitEdit?: (id: number, message: unknown) => Promise<void> | void;
     onEditSuccess?: (result: unknown) => Promise<void> | void;
+    onDeleteSuccess?: (messageId: number) => Promise<void> | void;
     editTarget?: unknown;
     reportSource?: unknown;
   }) => {
@@ -898,6 +900,15 @@ describe('RerAnalysisNeoPage', () => {
 
     expect(page.saveEditor).not.toHaveBeenCalled();
     expect(page.reload).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await drawer?.onDeleteSuccess?.(91);
+    });
+    expect(page.reload).toHaveBeenCalledTimes(2);
+    expect(notifyMock).toHaveBeenCalledWith({
+      message: 'Розвіддонесення успішно видалено.',
+      severity: 'success',
+    });
 
     await act(async () => root.unmount());
   });

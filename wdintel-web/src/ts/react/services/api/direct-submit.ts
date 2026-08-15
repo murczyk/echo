@@ -251,13 +251,18 @@ export type DirectSubmitParseResponse = {
   locations: string[];
 };
 
-export function formatDirectSubmitError(error: unknown, action: 'copy' | 'parse' | 'save'): string {
+export function formatDirectSubmitError(
+  error: unknown,
+  action: 'copy' | 'delete' | 'parse' | 'save',
+): string {
   const fallback =
     action === 'parse'
       ? 'Не вдалося розпізнати повідомлення. Спробуйте ще раз.'
       : action === 'copy'
         ? 'Не вдалося підготувати розвіддонесення. Спробуйте ще раз.'
-        : 'Не вдалося зберегти повідомлення. Спробуйте ще раз.';
+        : action === 'delete'
+          ? 'Не вдалося видалити розвіддонесення. Спробуйте ще раз.'
+          : 'Не вдалося зберегти повідомлення. Спробуйте ще раз.';
 
   if (!(error instanceof HttpRequestError)) {
     return error instanceof Error && error.message.trim() ? error.message : fallback;

@@ -251,6 +251,10 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         onEditSuccess={() => {
           page.reload();
         }}
+        onDeleteSuccess={() => {
+          page.reload();
+          notify({ message: 'Розвіддонесення успішно видалено.', severity: 'success' });
+        }}
         onCreated={async () => {
           setCreateMessageOpen(false);
           page.reload();

@@ -488,6 +488,7 @@ export function useManageMessageDrawer({
             full_body: '',
             text: '',
             comment: '',
+            signalGroupMasterKey: '',
             deviceName: reportSource?.message.deviceName ?? '',
           });
           setReportCopyLoaded(true);

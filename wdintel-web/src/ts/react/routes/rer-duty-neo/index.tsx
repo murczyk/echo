@@ -652,6 +652,10 @@ export function RerDutyNeoPage({
             reloadEditedFeeds();
           }
         }}
+        onDeleteSuccess={() => {
+          reloadFeeds();
+          notify({ message: 'Розвіддонесення успішно видалено.', severity: 'success' });
+        }}
         onCreated={handleCreatedMessage}
       />
 

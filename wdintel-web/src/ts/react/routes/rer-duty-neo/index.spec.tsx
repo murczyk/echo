@@ -92,6 +92,7 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
     reportSource,
     onSubmitEdit,
     onEditSuccess,
+    onDeleteSuccess,
   }: {
     open: boolean;
     onClose: () => void;
@@ -100,6 +101,7 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
     reportSource?: { id: number; message: any } | null;
     onSubmitEdit?: (id: number, message: any) => Promise<void> | void;
     onEditSuccess?: (result: { signal_message_id: number }) => Promise<void> | void;
+    onDeleteSuccess?: (messageId: number) => Promise<void> | void;
   }) =>
     open ? (
       <div role="dialog" data-testid="composer" data-report-source-id={reportSource?.id ?? ''}>
@@ -110,14 +112,24 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
           Помилка
         </button>
         {editTarget ? (
-          <button
-            type="button"
-            aria-label="Зберегти редагування"
-            onClick={async () => {
-              await onEditSuccess?.({ signal_message_id: editTarget.id });
-              onClose();
-            }}
-          />
+          <>
+            <button
+              type="button"
+              aria-label="Зберегти редагування"
+              onClick={async () => {
+                await onEditSuccess?.({ signal_message_id: editTarget.id });
+                onClose();
+              }}
+            />
+            <button
+              type="button"
+              aria-label="Видалити через редактор"
+              onClick={async () => {
+                onClose();
+                await onDeleteSuccess?.(editTarget.id);
+              }}
+            />
+          </>
         ) : null}
         <button
           type="button"
@@ -409,6 +421,23 @@ describe('RerDutyNeoPage creation workflow', () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it('refreshes all feeds after deletion from the editor', async () => {
+    const { container, root, state } = await renderPage();
+
+    await click(container.querySelector('button[aria-label="Редагувати повідомлення"]'));
+    await click(container.querySelector('button[aria-label="Видалити через редактор"]'));
+
+    expect(state.reloadFeeds).toHaveBeenCalledTimes(1);
+    expect(state.reloadEditedFeeds).not.toHaveBeenCalled();
+    expect(notifyMock).toHaveBeenCalledWith({
+      message: 'Розвіддонесення успішно видалено.',
+      severity: 'success',
+    });
+    expect(container.querySelector('[data-testid="composer"]')).toBeNull();
+
+    await act(async () => root.unmount());
   });
 
   it('opens report mode and refreshes all feeds after creation', async () => {

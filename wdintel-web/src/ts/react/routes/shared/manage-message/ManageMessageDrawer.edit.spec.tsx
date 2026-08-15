@@ -26,6 +26,9 @@ const networkMocks = vi.hoisted(() => ({
 const unitMocks = vi.hoisted(() => ({
   getUnitsByIds: vi.fn().mockResolvedValue([]),
 }));
+const inboxMessageActionMocks = vi.hoisted(() => ({
+  deleteMessage: vi.fn().mockResolvedValue(undefined),
+}));
 const uppyMocks = vi.hoisted(() => ({
   latest: null as {
     emitUploadProgress: (percentage: number) => void;
@@ -60,6 +63,38 @@ vi.mock('../../../services/api/networks', () => ({
 }));
 vi.mock('../../../services/api/units', () => ({
   getUnitsByIds: unitMocks.getUnitsByIds,
+}));
+vi.mock('../../../services/api/inbox-message-actions', () => ({
+  deleteMessage: inboxMessageActionMocks.deleteMessage,
+}));
+vi.mock('../../../components/ConfirmDangerDialog', () => ({
+  ConfirmDangerDialog: ({
+    open,
+    onClose,
+    onConfirm,
+    title,
+    description,
+    submitting,
+  }: {
+    open: boolean;
+    onClose: () => void;
+    onConfirm: () => void;
+    title?: ReactNode;
+    description?: ReactNode;
+    submitting?: boolean;
+  }) =>
+    open ? (
+      <div role="alertdialog">
+        <div>{title}</div>
+        <div>{description}</div>
+        <button type="button" onClick={onClose} disabled={submitting}>
+          Скасувати видалення
+        </button>
+        <button type="button" onClick={onConfirm} disabled={submitting}>
+          Підтвердити видалення
+        </button>
+      </div>
+    ) : null,
 }));
 vi.mock('@uppy/core', () => {
   class FakeUppy {
@@ -471,6 +506,8 @@ describe('ManageMessageDrawer edit mode', () => {
     networkMocks.getNetworksByIds.mockResolvedValue([]);
     unitMocks.getUnitsByIds.mockReset();
     unitMocks.getUnitsByIds.mockResolvedValue([]);
+    inboxMessageActionMocks.deleteMessage.mockReset();
+    inboxMessageActionMocks.deleteMessage.mockResolvedValue(undefined);
     document.body.innerHTML = '';
     referenceDataMocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
     referenceDataMocks.getUserSigintGroups.mockReset();
@@ -508,13 +545,17 @@ describe('ManageMessageDrawer edit mode', () => {
   });
 
   it('creates a report from copied fields with optional group and retained media', async () => {
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+      { masterKey: 'g-1', name: 'Group 1' },
+    ]);
     directSubmitMocks.copyDirectSubmit.mockResolvedValue({
       payloads: [
         {
           full_body: 'original copied body',
           text: 'original copied body',
           comment: 'existing comment',
-          signal_group_master_key: null,
+          signal_group_master_key: 'g-1',
           retained_media_ids: ['media-1'],
           parent_signal_message_ids: [42],
         },
@@ -556,6 +597,7 @@ describe('ManageMessageDrawer edit mode', () => {
       'original copied body',
     );
     expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('');
+    expect(autocompleteValuesByLabel.get('Група')).toBeNull();
     expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.autoFocus).toBe(true);
     await act(async () => {
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
@@ -663,6 +705,121 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(
       directSubmitMocks.editDirectSubmit.mock.calls[0][1].parent_signal_message_ids,
     ).toBeUndefined();
+
+    root.unmount();
+  });
+
+  it('deletes a standalone report after confirmation', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'original copied body' }],
+    });
+    const onClose = vi.fn();
+    const onDeleteSuccess = vi.fn();
+    const report = buildMessage({
+      text: 'existing report body',
+      parentMessages: [
+        {
+          id: 42,
+          text: 'original summary body',
+          timestamp: null,
+          date: null,
+          time: null,
+          groupMasterKey: 'g-1',
+        },
+      ],
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={onClose}
+          onDeleteSuccess={onDeleteSuccess}
+          editTarget={{ id: 91, message: report }}
+        />,
+      );
+    });
+
+    const deleteButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Видалити розвіддонесення',
+    );
+    expect(deleteButton).toBeDefined();
+    await act(async () => deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(container.querySelector('[role="alertdialog"]')?.textContent).toContain(
+      'Видалити розвіддонесення?',
+    );
+
+    const confirmButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Підтвердити видалення',
+    );
+    await act(async () => {
+      confirmButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(inboxMessageActionMocks.deleteMessage).toHaveBeenCalledWith({ id: 91 });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onDeleteSuccess).toHaveBeenCalledWith(91);
+
+    root.unmount();
+  });
+
+  it('keeps the report editor open when deletion fails', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'original copied body' }],
+    });
+    inboxMessageActionMocks.deleteMessage.mockRejectedValue(new Error('delete failed'));
+    const onClose = vi.fn();
+    const report = buildMessage({
+      parentMessages: [
+        {
+          id: 42,
+          text: 'original summary body',
+          timestamp: null,
+          date: null,
+          time: null,
+          groupMasterKey: 'g-1',
+        },
+      ],
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={onClose}
+          editTarget={{ id: 91, message: report }}
+        />,
+      );
+    });
+
+    const clickButton = async (label: string) => {
+      const button = Array.from(container.querySelectorAll('button')).find(
+        (candidate) => candidate.textContent?.trim() === label,
+      );
+      await act(async () => button?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    };
+    await clickButton('Видалити розвіддонесення');
+    await act(async () => {
+      const confirmButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'Підтвердити видалення',
+      );
+      confirmButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('delete failed');
+    expect(onClose).not.toHaveBeenCalled();
 
     root.unmount();
   });

@@ -37,6 +37,14 @@ describe('formatDirectSubmitError', () => {
       'Не вдалося зберегти повідомлення. Спробуйте ще раз. Якщо помилка повторюється, зверніться до адміністратора.',
     );
   });
+
+  it('formats an internal report deletion error', () => {
+    const error = new HttpRequestError(500, 'Internal server error');
+
+    expect(formatDirectSubmitError(error, 'delete')).toBe(
+      'Не вдалося видалити розвіддонесення. Спробуйте ще раз. Якщо помилка повторюється, зверніться до адміністратора.',
+    );
+  });
 });
 
 const request = { signal_group_master_key: 'group-1' };
