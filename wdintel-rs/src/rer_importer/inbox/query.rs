@@ -208,6 +208,7 @@ where
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum InboxQueryPurpose {
     Messages,
+    Map,
     Digest,
     IndexedDigest,
     Analytics,
@@ -567,7 +568,9 @@ where
             InboxQueryPurpose::Analytics => {
                 apply_flat_analytics_imported_coords_filter(q)
             }
-            InboxQueryPurpose::Digest | InboxQueryPurpose::IndexedDigest => {
+            InboxQueryPurpose::Map
+            | InboxQueryPurpose::Digest
+            | InboxQueryPurpose::IndexedDigest => {
                 q.filter(message_source_group_is_not_ignored_exists())
             }
         };
@@ -1278,6 +1281,47 @@ pub(crate) async fn build_inbox_query(
 ) -> Result<String, AppError> {
     build_inbox_query_with_internal_lower_bound(&env.dbx, login, env, req, None)
         .await
+}
+
+pub(crate) async fn build_inbox_map_query(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<String, AppError> {
+    let query = build_filtered_inbox_query_with_scope(
+        &env.dbx,
+        login,
+        env,
+        req,
+        None,
+        None,
+        InboxQueryPurpose::Map,
+    )
+    .await
+    .context(h!())?
+    .filter(crate::location::peleng::inbox_item_has_active_peleng_exists())
+    .select_only()
+    .column_as(
+        Expr::col((signal_message::Entity, signal_message::Column::Id)),
+        "id",
+    )
+    .column_as(
+        Expr::col((signal_message::Entity, signal_message::Column::MessageUid)),
+        "message_uid",
+    )
+    .column_as(
+        Expr::col((sigint_inbox_item::Entity, sigint_inbox_item::Column::Freq)),
+        "freq",
+    )
+    .column_as(
+        Expr::col((
+            sigint_inbox_item::Entity,
+            sigint_inbox_item::Column::Coords,
+        )),
+        "coords",
+    )
+    .distinct();
+    Ok(render_inbox_digest_query(query))
 }
 
 pub(crate) async fn build_inbox_query_with_internal_lower_bound<

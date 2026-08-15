@@ -475,7 +475,8 @@ minimum/maximum message-ID scope for its requested time interval. Concurrent
 requests for the same unresolved range share that lookup, but completed
 results are not cached. The timestamp predicate stays authoritative, while
 the same ID bounds constrain `signal_message`, `sigint_inbox_item`, every
-message-group relation, and tag, network, callsign, and AOR message links.
+message-group relation, and tag, network, callsign, metadata, and AOR message
+links.
 Group authorization, selected groups, and sender filtering use one bounded,
 flat message-group join unless the joined group relation supplies the facet
 dimension. An empty scope returns an empty facet or zero count without
@@ -522,7 +523,7 @@ The analysis result, facet, and dedicated facet-count endpoints use this path:
   historical portion of long live ranges;
 - `/api/rer-importer/get-inbox-count`
 - `/api/rer/analysis/stats/count`
-- `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}`
+- `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks,metadata}`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}/count`
 
 The expensive replicated-data reads for the interception, sender, posts, REO,

@@ -120,7 +120,7 @@ const styles = `
 class DateRangeSelector extends HTMLElement {
   private currentStartDate: Date;
   private currentEndDate: Date;
-  private daysJumpOption = [1, 3, 7, 30];
+  private daysJumpOption = [1, 3, 7];
   private currentJumpIndex = 0;
   private selectedJumpValue = 1;
   private isLoading = false;

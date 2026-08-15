@@ -71,6 +71,16 @@ async fn get_inbox_map(
     env: actix_web::web::Data<Env>,
     req: Json<MapPointsReq>,
 ) -> Result<Json<MapPointsRsp>, AppError> {
+    get_inbox_map_inner(user, env, req)
+        .await
+        .map_err(|error| map_postgres_runtime_timeout(error, "inbox map"))
+}
+
+async fn get_inbox_map_inner(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<MapPointsReq>,
+) -> Result<Json<MapPointsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let user_id = login_id_from_identity(&user)?;
     let page_id = req.page_id.clone();
@@ -5064,6 +5074,14 @@ mod tests {
             seed_message_with_media(&env, &datasource_group, None, "visible")
                 .await
                 .unwrap();
+        let no_peleng_message = seed_message_with_media(
+            &env,
+            &datasource_group,
+            None,
+            "without-peleng",
+        )
+        .await
+        .unwrap();
         let hidden_message = seed_message_with_media(
             &env,
             &other_datasource_group,
@@ -5102,6 +5120,9 @@ mod tests {
         assert!(initial_items
             .iter()
             .any(|item| item.id == hidden_message.id));
+        assert!(!initial_items
+            .iter()
+            .any(|item| item.id == no_peleng_message.id));
 
         organism_group::ActiveModel {
             organism_id: Set(login.organism_id.unwrap()),
