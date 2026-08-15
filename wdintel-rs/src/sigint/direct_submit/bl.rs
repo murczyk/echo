@@ -392,6 +392,9 @@ async fn save_signal_message(
         ),
         None => None,
     };
+    let logins = crate::users::get_organism_login_ids_by_id(&txn, login)
+        .await
+        .c(h!())?;
 
     let copy_sources = if copy_parent_signal_message_ids.is_empty() {
         vec![]
@@ -411,6 +414,7 @@ async fn save_signal_message(
                 signal_message_id,
                 &allowed_groups,
                 login,
+                &logins,
             )
             .await
             .c(h!())?,
@@ -477,9 +481,6 @@ async fn save_signal_message(
             .await
             .c(h!())?;
     }
-    let logins = crate::users::get_organism_login_ids_by_id(&txn, login)
-        .await
-        .c(h!())?;
     let previous_timestamp =
         signal_message.and_then(|signal_message| signal_message.timestamp);
     let keep_timestamp_missing = payload.timestamp.is_none()

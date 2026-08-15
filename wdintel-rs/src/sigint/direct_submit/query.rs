@@ -50,6 +50,7 @@ pub async fn find_editable_signal_message<C>(
     signal_message_id: i64,
     allowed_groups: &[String],
     login: &uuid::Uuid,
+    organism_logins: &[uuid::Uuid],
 ) -> Result<signal_message::Model, AppError>
 where
     C: ConnectionTrait,
@@ -62,7 +63,12 @@ where
         .ok_or(AppError::NotFound)?;
     let login = login.to_string();
     if message.datasource_group_id.is_none()
-        && message.sender.as_deref() == Some(login.as_str())
+        && (message.sender.as_deref() == Some(login.as_str())
+            || message.sender.as_deref().is_some_and(|sender| {
+                Uuid::parse_str(sender).ok().is_some_and(|sender_id| {
+                    organism_logins.contains(&sender_id)
+                })
+            }))
     {
         return Ok(message);
     }
