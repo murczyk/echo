@@ -5,7 +5,9 @@ use crate::error::{
     bad_request, not_found, ShortContext, UserError, UserErrorKind,
 };
 use crate::h;
-use crate::messenger::{self, CreateMessengerReq, MessengerKind};
+use crate::messenger::{
+    self, CreateMessengerReq, MessengerKind, UpdateMessengerReq,
+};
 use crate::AppState;
 use actix_web::{
     delete, get, http::StatusCode, post, put, web, HttpResponse, Responder,
@@ -18,6 +20,7 @@ use std::collections::HashSet;
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(list_messengers)
         .service(create_messenger)
+        .service(update_messenger)
         .service(link_messenger)
         .service(unlink_messenger)
         .service(messenger_status)
@@ -64,6 +67,24 @@ async fn create_messenger(
             .await
             .c(h!())
             .map_err(error)?;
+    Ok(web::Json(messenger))
+}
+
+#[put("/ui-api/messengers/{name}")]
+async fn update_messenger(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    req: web::Json<UpdateMessengerReq>,
+) -> actix_web::Result<impl Responder> {
+    let messenger = messenger::update(
+        &state.db,
+        &state.config,
+        &path.into_inner(),
+        req.into_inner(),
+    )
+    .await
+    .c(h!())
+    .map_err(error)?;
     Ok(web::Json(messenger))
 }
 

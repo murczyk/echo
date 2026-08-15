@@ -23,6 +23,7 @@ pub const AUTOMATION_MAP_SCREENSHOT_LABEL_TILE_URL: &str =
 pub const AUTOMATION_MAP_SCREENSHOT_MARKER_COLOR: [u8; 4] = [252, 239, 18, 255];
 pub const AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX: &str =
     "coordinate screenshot is unavailable:";
+pub const MESSENGER_INTEGRATION_UNIQUENESS_LOCK_ID: i64 = 4_563_686_943;
 const DEFAULT_PG_HOST: &str = "localhost";
 const DEFAULT_PG_PORT: u16 = 5432;
 const DEFAULT_PG_USER: &str = "wd";

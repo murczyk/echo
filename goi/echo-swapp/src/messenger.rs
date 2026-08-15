@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, MESSENGER_INTEGRATION_UNIQUENESS_LOCK_ID};
 use crate::error::{
     bad_request, conflict, not_found, service_unavailable,
     service_unavailable_with_source, ShortContext,
@@ -66,6 +66,13 @@ pub struct CreateMessengerReq {
     pub phone: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateMessengerReq {
+    pub name: String,
+    pub kind: MessengerKind,
+    pub phone: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessengerView {
@@ -120,25 +127,24 @@ pub async fn create(
     config: &Config,
     req: CreateMessengerReq,
 ) -> Result<MessengerView> {
-    let display_name = req.name.clone();
-    let name = available_public_name(db, &display_name).await.c(h!())?;
-    validate_name(&name).c(h!())?;
+    let display_name = normalize_display_name(&req.name).c(h!())?;
     let phone = normalize_phone(&req.phone).c(h!())?;
-    let client_name = owned_client_name(&name);
-    ensure_client_available(db, &client_name).await.c(h!())?;
-
     let txn = db.begin().await.c(h!())?;
+    lock_integration_identity(&txn).await.c(h!())?;
+    ensure_display_name_available(&txn, &display_name, "")
+        .await
+        .c(h!())?;
+    let name = available_public_name(&txn, &display_name).await.c(h!())?;
+    validate_name(&name).c(h!())?;
+    let client_name = owned_client_name(&name);
+    ensure_client_available(&txn, &client_name).await.c(h!())?;
+
     let port = echo_im::find_port_available(8010, 9000, &txn)
         .await
         .c(h!())?;
-    let process_name =
-        format!("{}@{}", unit_name(config, req.kind), client_name);
-    let attachment_path = format!(
-        "{}/{}/{}/attachments/",
-        client_dir(config, req.kind),
-        client_name,
-        cli_dir_name(req.kind),
-    );
+    let process_name = client_process_name(config, req.kind, &client_name);
+    let attachment_path =
+        client_attachment_path(config, req.kind, &client_name);
 
     echo_im::attach_new_client(
         &client_name,
@@ -174,6 +180,82 @@ pub async fn create(
     wait_for_signal_client(req.kind, port).await.c(h!())?;
     txn.commit().await.c(h!())?;
     load(db, &name).await.c(h!())
+}
+
+pub async fn update(
+    db: &DatabaseConnection,
+    config: &Config,
+    name: &str,
+    req: UpdateMessengerReq,
+) -> Result<MessengerView> {
+    let current = load(db, name).await.c(h!())?;
+    let display_name = normalize_display_name(&req.name).c(h!())?;
+    let phone = normalize_phone(&req.phone).c(h!())?;
+    let client_name = owned_client_name(name);
+    let account_changed =
+        current.kind != req.kind || current.phone.as_deref() != Some(&phone);
+
+    let txn = db.begin().await.c(h!())?;
+    lock_integration_identity(&txn).await.c(h!())?;
+    ensure_url_unique(&txn, &client_name).await.c(h!())?;
+    ensure_display_name_available(&txn, &display_name, &client_name)
+        .await
+        .c(h!())?;
+    persist_display_name(&txn, &client_name, &display_name)
+        .await
+        .c(h!())?;
+    if account_changed {
+        replace_account_lock(
+            &txn,
+            config,
+            &client_name,
+            current.kind,
+            req.kind,
+            phone,
+        )
+        .await
+        .c(h!())?;
+    }
+    txn.commit().await.c(h!())?;
+
+    load(db, name).await.c(h!())
+}
+
+async fn replace_account_lock(
+    txn: &DatabaseTransaction,
+    config: &Config,
+    client_name: &str,
+    old_kind: MessengerKind,
+    new_kind: MessengerKind,
+    phone: String,
+) -> Result<()> {
+    echo_im::unlink_account(client_name, old_kind.message_source(), txn)
+        .await
+        .c(h!())?;
+    delete_client_locks(txn, client_name).await.c(h!())?;
+    update_client_config(txn, config, client_name, new_kind)
+        .await
+        .c(h!())?;
+    echo_im::set_account_phone(
+        phone,
+        client_name,
+        new_kind.message_source(),
+        true,
+        txn,
+    )
+    .await
+    .map_err(|err| anyhow::anyhow!("{err}"))
+    .c(h!())?;
+    persist_is_linked(txn, client_name, new_kind, false)
+        .await
+        .c(h!())?;
+    stop_client(config, old_kind, client_name).await.c(h!())?;
+    let port = load_client_port(txn, client_name).await.c(h!())?;
+    start_client(config, new_kind, client_name, port)
+        .await
+        .c(h!())?;
+    wait_for_signal_client(new_kind, port).await.c(h!())?;
+    Ok(())
 }
 
 pub async fn delete(
@@ -603,10 +685,89 @@ pub async fn set_paused(
     Ok(is_paused)
 }
 
-async fn available_public_name(
-    db: &DatabaseConnection,
+async fn lock_integration_identity<C>(db: &C) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    db.query_one_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select pg_advisory_xact_lock($1)",
+        [MESSENGER_INTEGRATION_UNIQUENESS_LOCK_ID.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn ensure_display_name_available<C>(
+    db: &C,
     display_name: &str,
-) -> Result<String> {
+    current_client_name: &str,
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select exists (
+                select 1
+                from echo_client
+                where deleted = false
+                    and name like 'echo-swapp-%'
+                    and name <> $2
+                    and lower(btrim(coalesce(
+                        nullif(btrim(display_name), ''),
+                        regexp_replace(name, '^echo-swapp-', '')
+                    ))) = lower($1)
+            ) as exists
+            "#,
+            vec![
+                display_name.to_string().into(),
+                current_client_name.to_string().into(),
+            ],
+        ))
+        .await
+        .c(h!())?
+        .context("integration display name uniqueness query returned no row")
+        .c(h!())?;
+    let exists: bool = row.try_get("", "exists").c(h!())?;
+    if exists {
+        return Err(conflict(format!(
+            "Інтеграція з назвою «{display_name}» уже існує. Виберіть іншу назву."
+        )));
+    }
+    Ok(())
+}
+
+async fn ensure_url_unique<C>(db: &C, client_name: &str) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select count(*)::bigint as count from echo_client where deleted = false and name = $1",
+            [client_name.into()],
+        ))
+        .await
+        .c(h!())?
+        .context("integration URL uniqueness query returned no row")
+        .c(h!())?;
+    let count: i64 = row.try_get("", "count").c(h!())?;
+    if count != 1 {
+        return Err(conflict(
+            "URL інтеграції вже використовується. Оновіть сторінку та повторіть спробу.",
+        ));
+    }
+    Ok(())
+}
+
+async fn available_public_name<C>(db: &C, display_name: &str) -> Result<String>
+where
+    C: ConnectionTrait,
+{
     let name = normalize_public_name(display_name);
     for suffix in 0..1000 {
         let name = public_name_with_suffix(&name, suffix);
@@ -692,10 +853,10 @@ where
     row.try_get("", "display_name").c(h!())
 }
 
-async fn ensure_client_available(
-    db: &DatabaseConnection,
-    name: &str,
-) -> Result<()> {
+async fn ensure_client_available<C>(db: &C, name: &str) -> Result<()>
+where
+    C: ConnectionTrait,
+{
     let existing = echo_client::Entity::find()
         .filter(echo_client::Column::Name.eq(name))
         .filter(echo_client::Column::Deleted.eq(false))
@@ -708,6 +869,77 @@ async fn ensure_client_available(
         )));
     }
     Ok(())
+}
+
+async fn delete_client_locks<C>(db: &C, client_name: &str) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let client_id = load_client_id(db, client_name).await.c(h!())?;
+    echo_client_lock::Entity::delete_many()
+        .filter(echo_client_lock::Column::ClientId.eq(client_id))
+        .exec(db)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn update_client_config<C>(
+    db: &C,
+    config: &Config,
+    client_name: &str,
+    kind: MessengerKind,
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let client_id = load_client_id(db, client_name).await.c(h!())?;
+    let client_config = echo_client_config::Entity::find()
+        .filter(echo_client_config::Column::ClientId.eq(client_id))
+        .one(db)
+        .await
+        .c(h!())?
+        .context("integration echo client config not found")
+        .c(h!())?;
+    let mut client_config = client_config.into_active_model();
+    client_config.process_name =
+        Set(client_process_name(config, kind, client_name));
+    client_config.signal_api_attachment_path =
+        Set(client_attachment_path(config, kind, client_name));
+    client_config.whatsapp_app_name = Set(client_name.to_string());
+    client_config.is_configured = Set(false);
+    client_config.update(db).await.c(h!())?;
+    Ok(())
+}
+
+async fn load_client_id<C>(db: &C, client_name: &str) -> Result<i32>
+where
+    C: ConnectionTrait,
+{
+    let client = echo_client::Entity::find()
+        .filter(echo_client::Column::Name.eq(client_name))
+        .filter(echo_client::Column::Deleted.eq(false))
+        .one(db)
+        .await
+        .c(h!())?
+        .context("integration echo client not found")
+        .c(h!())?;
+    Ok(client.id)
+}
+
+async fn load_client_port<C>(db: &C, client_name: &str) -> Result<i32>
+where
+    C: ConnectionTrait,
+{
+    let client_id = load_client_id(db, client_name).await.c(h!())?;
+    let client_config = echo_client_config::Entity::find()
+        .filter(echo_client_config::Column::ClientId.eq(client_id))
+        .one(db)
+        .await
+        .c(h!())?
+        .context("integration echo client config not found")
+        .c(h!())?;
+    Ok(client_config.signal_port)
 }
 
 async fn load_account<C>(
@@ -916,6 +1148,14 @@ fn validate_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+fn normalize_display_name(name: &str) -> Result<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(bad_request("Вкажіть назву інтеграції."));
+    }
+    Ok(name.to_string())
+}
+
 fn normalize_public_name(display_name: &str) -> String {
     let mut name = String::new();
     let mut last_was_separator = false;
@@ -1021,6 +1261,27 @@ fn unit_name(config: &Config, kind: MessengerKind) -> &str {
         MessengerKind::Signal => config.signal_unit_name(),
         MessengerKind::Whatsapp => config.whatsapp_unit_name(),
     }
+}
+
+fn client_process_name(
+    config: &Config,
+    kind: MessengerKind,
+    client_name: &str,
+) -> String {
+    format!("{}@{client_name}", unit_name(config, kind))
+}
+
+fn client_attachment_path(
+    config: &Config,
+    kind: MessengerKind,
+    client_name: &str,
+) -> String {
+    format!(
+        "{}/{}/{}/attachments/",
+        client_dir(config, kind),
+        client_name,
+        cli_dir_name(kind),
+    )
 }
 
 fn client_dir(config: &Config, kind: MessengerKind) -> &str {
