@@ -108,10 +108,14 @@ Content-Type: application/json
         "intelligence_reports": [
           {
             "id": 912,
+            "is_accessible": true,
+            "is_deleted": false,
             "text": "Короткий текст розвіддонесення",
+            "attachments_count": 2,
             "timestamp": 1780000300000,
             "date": "2026-08-13",
             "time": "10:20",
+            "group_name": "Група донесення",
             "group_master_key": null
           }
         ]

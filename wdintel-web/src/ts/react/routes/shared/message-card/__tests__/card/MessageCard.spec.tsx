@@ -1144,10 +1144,14 @@ describe('MessageCard', () => {
       intelligenceReports: [
         {
           id: 91,
+          isAccessible: true,
+          isDeleted: false,
           text: 'Короткий текст розвіддонесення',
+          attachmentsCount: 2,
           timestamp: 1_710_000_000_000,
           date: null,
           time: null,
+          groupName: null,
           groupMasterKey: 'report-group',
         },
       ],
@@ -1182,10 +1186,14 @@ describe('MessageCard', () => {
       parentMessages: [
         {
           id: 42,
+          isAccessible: true,
+          isDeleted: false,
           text: 'Короткий текст оригінального повідомлення',
+          attachmentsCount: 1,
           timestamp: null,
           date: null,
           time: null,
+          groupName: null,
           groupMasterKey: 'original-group',
         },
       ],

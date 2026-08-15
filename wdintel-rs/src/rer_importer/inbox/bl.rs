@@ -70,24 +70,101 @@ struct IntelligenceReportSummaries {
     reports_by_message: HashMap<i64, Vec<InboxMessageSummary>>,
 }
 
+fn reference_inbox_message_summary(
+    message_id: i64,
+    is_accessible: bool,
+    is_deleted: bool,
+    timestamp: Option<i64>,
+    date: Option<String>,
+    time: Option<String>,
+    group_name: Option<String>,
+) -> InboxMessageSummary {
+    let (timestamp, date, time, group_name) = if is_deleted {
+        (None, None, None, None)
+    } else {
+        (timestamp, date, time, group_name)
+    };
+    InboxMessageSummary {
+        id: message_id,
+        is_accessible,
+        is_deleted,
+        text: String::new(),
+        attachments_count: 0,
+        timestamp,
+        date,
+        time,
+        group_name,
+        group_master_key: None,
+    }
+}
+
 fn inbox_message_summary(
     message_id: i64,
+    is_accessible: bool,
     messages: &HashMap<i64, signal_message::Model>,
     inbox_items: &HashMap<i64, sigint_inbox_item::Model>,
+    group_names: &HashMap<i64, String>,
     group_master_keys: &HashMap<i64, String>,
+    attachment_counts: &HashMap<i64, i64>,
 ) -> Option<InboxMessageSummary> {
     let message = messages.get(&message_id)?;
     let inbox_item = inbox_items.get(&message_id);
+    let timestamp = message
+        .timestamp
+        .map(|timestamp| timestamp.and_utc().timestamp_millis());
+    let date = inbox_item.and_then(|item| item.date.clone());
+    let time = inbox_item.and_then(|item| item.time.clone());
+    let group_name = group_names.get(&message_id).cloned();
+    if message.deleted || !is_accessible {
+        return Some(reference_inbox_message_summary(
+            message_id,
+            is_accessible,
+            message.deleted,
+            timestamp,
+            date,
+            time,
+            group_name,
+        ));
+    }
     Some(InboxMessageSummary {
         id: message_id,
+        is_accessible: true,
+        is_deleted: false,
         text: message.body.clone().unwrap_or_default(),
-        timestamp: message
-            .timestamp
-            .map(|timestamp| timestamp.and_utc().timestamp_millis()),
-        date: inbox_item.and_then(|item| item.date.clone()),
-        time: inbox_item.and_then(|item| item.time.clone()),
+        attachments_count: attachment_counts
+            .get(&message_id)
+            .copied()
+            .unwrap_or_default(),
+        timestamp,
+        date,
+        time,
+        group_name,
         group_master_key: group_master_keys.get(&message_id).cloned(),
     })
+}
+
+async fn load_attachment_counts(
+    message_ids: &HashSet<i64>,
+    dbx: &DatabaseConnection,
+) -> Result<HashMap<i64, i64>, AppError> {
+    Ok(signal_message_media::Entity::find()
+        .filter(
+            signal_message_media::Column::SignalMessageId
+                .is_in(message_ids.iter().copied()),
+        )
+        .select_only()
+        .column(signal_message_media::Column::SignalMessageId)
+        .expr_as(
+            Expr::col(signal_message_media::Column::Id).count(),
+            "attachments_count",
+        )
+        .group_by(signal_message_media::Column::SignalMessageId)
+        .into_tuple::<(i64, i64)>()
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect())
 }
 
 async fn load_intelligence_report_summaries(
@@ -127,7 +204,6 @@ async fn load_intelligence_report_summaries(
         .collect::<HashSet<_>>();
     let messages = signal_message::Entity::find()
         .filter(signal_message::Column::Id.is_in(related_ids.iter().copied()))
-        .filter(signal_message::Column::Deleted.eq(false))
         .all(dbx)
         .await
         .c(h!())?
@@ -144,6 +220,8 @@ async fn load_intelligence_report_summaries(
         .into_iter()
         .map(|item| (item.id, item))
         .collect::<HashMap<_, _>>();
+    let attachment_counts =
+        load_attachment_counts(&related_ids, dbx).await.c(h!())?;
     let group_rows = signal_message_group::Entity::find()
         .filter(
             signal_message_group::Column::SignalMessageId
@@ -153,33 +231,63 @@ async fn load_intelligence_report_summaries(
         .all(dbx)
         .await
         .c(h!())?;
+    let group_master_keys = group_rows
+        .iter()
+        .filter_map(|group| group.group_master_key.clone())
+        .collect::<HashSet<_>>();
+    let group_names_by_master_key = signal_group::Entity::find()
+        .filter(signal_group::Column::MasterKey.is_in(group_master_keys))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|group| {
+            let name = group.name.unwrap_or_else(|| group.master_key.clone());
+            (group.master_key, name)
+        })
+        .collect::<HashMap<_, _>>();
     let allowed_groups = allowed_groups.iter().collect::<HashSet<_>>();
     let mut grouped_message_ids = HashSet::new();
+    let mut group_names = HashMap::new();
     let mut accessible_group_master_keys = HashMap::new();
     for group in group_rows {
         grouped_message_ids.insert(group.signal_message_id);
-        if let Some(group_master_key) = group
-            .group_master_key
-            .filter(|key| allowed_groups.contains(key))
+        let Some(group_master_key) = group.group_master_key else {
+            continue;
+        };
+        let group_name =
+            group_names_by_master_key.get(&group_master_key).cloned();
+        if allowed_groups.contains(&group_master_key)
+            && !accessible_group_master_keys
+                .contains_key(&group.signal_message_id)
         {
+            if let Some(group_name) = group_name {
+                group_names.insert(group.signal_message_id, group_name);
+            }
             accessible_group_master_keys
                 .entry(group.signal_message_id)
                 .or_insert(group_master_key);
+        } else if let Some(group_name) = group_name {
+            group_names
+                .entry(group.signal_message_id)
+                .or_insert(group_name);
         }
     }
 
     let requested_ids = message_ids.iter().copied().collect::<HashSet<_>>();
     let mut summaries = IntelligenceReportSummaries::default();
     for link in links {
-        if requested_ids.contains(&link.signal_message_id)
-            && accessible_group_master_keys
-                .contains_key(&link.parent_signal_message_id)
-        {
+        if requested_ids.contains(&link.signal_message_id) {
+            let parent_is_accessible = accessible_group_master_keys
+                .contains_key(&link.parent_signal_message_id);
             if let Some(parent) = inbox_message_summary(
                 link.parent_signal_message_id,
+                parent_is_accessible,
                 &messages,
                 &inbox_items,
+                &group_names,
                 &accessible_group_master_keys,
+                &attachment_counts,
             ) {
                 summaries
                     .parents_by_message
@@ -191,14 +299,20 @@ async fn load_intelligence_report_summaries(
         let report_is_accessible = accessible_group_master_keys
             .contains_key(&link.signal_message_id)
             || !grouped_message_ids.contains(&link.signal_message_id);
+        let report_is_deleted = messages
+            .get(&link.signal_message_id)
+            .is_none_or(|message| message.deleted);
         if requested_ids.contains(&link.parent_signal_message_id)
-            && report_is_accessible
+            && !report_is_deleted
         {
             if let Some(report) = inbox_message_summary(
                 link.signal_message_id,
+                report_is_accessible,
                 &messages,
                 &inbox_items,
+                &group_names,
                 &accessible_group_master_keys,
+                &attachment_counts,
             ) {
                 summaries
                     .reports_by_message
@@ -1714,6 +1828,52 @@ fn split_manual_locations(location: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn redacted_intelligence_summary_exposes_only_safe_metadata() {
+        let summary = reference_inbox_message_summary(
+            42,
+            false,
+            false,
+            Some(1_755_252_200_000),
+            Some("2026-08-15".to_string()),
+            Some("09:10".to_string()),
+            Some("Група оригіналу".to_string()),
+        );
+
+        assert_eq!(summary.id, 42);
+        assert!(!summary.is_accessible);
+        assert!(!summary.is_deleted);
+        assert!(summary.text.is_empty());
+        assert_eq!(summary.attachments_count, 0);
+        assert_eq!(summary.timestamp, Some(1_755_252_200_000));
+        assert_eq!(summary.date.as_deref(), Some("2026-08-15"));
+        assert_eq!(summary.time.as_deref(), Some("09:10"));
+        assert_eq!(summary.group_name.as_deref(), Some("Група оригіналу"));
+        assert_eq!(summary.group_master_key, None);
+    }
+
+    #[test]
+    fn deleted_intelligence_summary_is_a_tombstone() {
+        let summary = reference_inbox_message_summary(
+            42,
+            true,
+            true,
+            Some(1_755_252_200_000),
+            Some("2026-08-15".to_string()),
+            Some("09:10".to_string()),
+            Some("Група оригіналу".to_string()),
+        );
+
+        assert!(summary.is_accessible);
+        assert!(summary.is_deleted);
+        assert!(summary.text.is_empty());
+        assert_eq!(summary.attachments_count, 0);
+        assert_eq!(summary.timestamp, None);
+        assert_eq!(summary.date, None);
+        assert_eq!(summary.time, None);
+        assert_eq!(summary.group_name, None);
+    }
 
     #[test]
     fn merge_point_palitra_ids_keeps_all_source_palitras() {

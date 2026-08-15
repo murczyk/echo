@@ -1036,8 +1036,8 @@ mod tests {
     };
     use crate::functest::tests::cleanup;
     use sea_orm::{
-        ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, NotSet,
-        PaginatorTrait, QueryFilter, Set,
+        ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait,
+        IntoActiveModel, NotSet, PaginatorTrait, QueryFilter, Set,
     };
     use serial_test::serial;
 
@@ -1067,6 +1067,22 @@ mod tests {
             retained_media_ids: None,
             parent_signal_message_ids: vec![],
         }
+    }
+
+    async fn set_signal_message_deleted(
+        dbx: &DatabaseConnection,
+        signal_message_id: i64,
+        deleted: bool,
+    ) {
+        let mut signal_message =
+            signal_message::Entity::find_by_id(signal_message_id)
+                .one(dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .into_active_model();
+        signal_message.deleted = Set(deleted);
+        signal_message.update(dbx).await.unwrap();
     }
 
     #[test]
@@ -1450,12 +1466,34 @@ mod tests {
 
         let report_message = report.message.as_ref().unwrap();
         assert_eq!(report_message.parent_messages.len(), 1);
+        assert!(report_message.parent_messages[0].is_accessible);
+        assert!(!report_message.parent_messages[0].is_deleted);
         assert_eq!(
             report_message.parent_messages[0].id,
             original.signal_message_id
         );
         assert_eq!(report_message.parent_messages[0].text, "original body");
+        assert_eq!(
+            report_message.parent_messages[0].group_name.as_deref(),
+            Some("Вухо-Тест")
+        );
+        assert_eq!(report_message.parent_messages[0].attachments_count, 0);
         assert_eq!(report_message.group_master_key, None);
+
+        signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(report.signal_message_id),
+            content_type: Set("image/png".into()),
+            file_ext: Set(Some("png".into())),
+            file_name: Set(Some("report.png".into())),
+            size_bytes: Set(1),
+            is_encrypted: Set(false),
+            storage_key: NotSet,
+            created_at: Set(chrono::Utc::now().naive_utc()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
 
         let logins =
             crate::users::get_organism_login_ids_by_id(&env.dbx, &login_id)
@@ -1472,6 +1510,8 @@ mod tests {
         .unwrap();
         let original_message = &messages[0].1;
         assert_eq!(original_message.intelligence_reports.len(), 1);
+        assert!(original_message.intelligence_reports[0].is_accessible);
+        assert!(!original_message.intelligence_reports[0].is_deleted);
         assert_eq!(
             original_message.intelligence_reports[0].id,
             report.signal_message_id
@@ -1480,6 +1520,26 @@ mod tests {
             original_message.intelligence_reports[0].text,
             "report body"
         );
+        assert_eq!(
+            original_message.intelligence_reports[0].attachments_count,
+            1
+        );
+
+        set_signal_message_deleted(&env.dbx, report.signal_message_id, true)
+            .await;
+        let messages = crate::rer_importer::inbox::messages_by_id_bl(
+            &login_id,
+            &logins,
+            &env,
+            &[original.signal_message_id],
+            &crate::rer_importer::types::InboxMessagesReq::default(),
+        )
+        .await
+        .unwrap();
+        assert!(messages[0].1.intelligence_reports.is_empty());
+
+        set_signal_message_deleted(&env.dbx, report.signal_message_id, false)
+            .await;
 
         let mut edit_payload = direct_submit_payload("updated report body");
         edit_payload.signal_group_master_key = None;
@@ -1514,6 +1574,28 @@ mod tests {
                 .unwrap(),
             1
         );
+
+        set_signal_message_deleted(&env.dbx, original.signal_message_id, true)
+            .await;
+
+        let messages = crate::rer_importer::inbox::messages_by_id_bl(
+            &login_id,
+            &logins,
+            &env,
+            &[report.signal_message_id],
+            &crate::rer_importer::types::InboxMessagesReq::default(),
+        )
+        .await
+        .unwrap();
+        let deleted_parent = &messages[0].1.parent_messages[0];
+        assert!(deleted_parent.is_accessible);
+        assert!(deleted_parent.is_deleted);
+        assert!(deleted_parent.text.is_empty());
+        assert_eq!(deleted_parent.attachments_count, 0);
+        assert_eq!(deleted_parent.timestamp, None);
+        assert_eq!(deleted_parent.date, None);
+        assert_eq!(deleted_parent.time, None);
+        assert_eq!(deleted_parent.group_name, None);
     }
 
     #[tokio::test]

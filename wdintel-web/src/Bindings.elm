@@ -1135,10 +1135,14 @@ inboxMessageEncoder struct =
 
 type alias InboxMessageSummary =
     { id : Int
+    , isAccessible : Bool
+    , isDeleted : Bool
     , text : String
+    , attachmentsCount : Int
     , timestamp : Maybe (Int)
     , date : Maybe (String)
     , time : Maybe (String)
+    , groupName : Maybe (String)
     , groupMasterKey : Maybe (String)
     }
 
@@ -1147,10 +1151,14 @@ inboxMessageSummaryEncoder : InboxMessageSummary -> Json.Encode.Value
 inboxMessageSummaryEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
+        , ( "is_accessible", (Json.Encode.bool) struct.isAccessible )
+        , ( "is_deleted", (Json.Encode.bool) struct.isDeleted )
         , ( "text", (Json.Encode.string) struct.text )
+        , ( "attachments_count", (Json.Encode.int) struct.attachmentsCount )
         , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.timestamp )
         , ( "date", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.date )
         , ( "time", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.time )
+        , ( "group_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupName )
         , ( "group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupMasterKey )
         ]
 
@@ -13311,10 +13319,14 @@ inboxMessageSummaryDecoder : Json.Decode.Decoder InboxMessageSummary
 inboxMessageSummaryDecoder =
     Json.Decode.succeed InboxMessageSummary
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_accessible" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_deleted" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "date" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "time" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.nullable (Json.Decode.string))))
 
 

@@ -567,10 +567,14 @@ describe('ManageMessageDrawer edit mode', () => {
       parentMessages: [
         {
           id: 7,
+          isAccessible: true,
+          isDeleted: false,
           text: 'earlier original body',
+          attachmentsCount: 0,
           timestamp: null,
           date: null,
           time: null,
+          groupName: null,
           groupMasterKey: 'g-1',
         },
       ],
@@ -669,10 +673,14 @@ describe('ManageMessageDrawer edit mode', () => {
       parentMessages: [
         {
           id: 42,
+          isAccessible: true,
+          isDeleted: false,
           text: 'original summary body',
+          attachmentsCount: 0,
           timestamp: null,
           date: null,
           time: null,
+          groupName: null,
           groupMasterKey: 'g-1',
         },
       ],
@@ -730,10 +738,14 @@ describe('ManageMessageDrawer edit mode', () => {
       parentMessages: [
         {
           id: 42,
+          isAccessible: true,
+          isDeleted: false,
           text: 'original summary body',
+          attachmentsCount: 0,
           timestamp: null,
           date: null,
           time: null,
+          groupName: null,
           groupMasterKey: 'g-1',
         },
       ],
@@ -789,10 +801,14 @@ describe('ManageMessageDrawer edit mode', () => {
       parentMessages: [
         {
           id: 42,
+          isAccessible: true,
+          isDeleted: false,
           text: 'original summary body',
+          attachmentsCount: 0,
           timestamp: null,
           date: null,
           time: null,
+          groupName: null,
           groupMasterKey: 'g-1',
         },
       ],

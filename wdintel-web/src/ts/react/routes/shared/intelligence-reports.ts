@@ -8,10 +8,14 @@ export function summarizeIntelligenceMessage(
 ): IntelligenceReportSummary {
   return {
     id,
+    isAccessible: true,
+    isDeleted: false,
     text: message.text,
+    attachmentsCount: message.media.length,
     timestamp: message.timestamp,
     date: message.date,
     time: message.time,
+    groupName: null,
     groupMasterKey: message.groupMasterKey,
   };
 }

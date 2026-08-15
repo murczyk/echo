@@ -13,10 +13,18 @@ use std::sync::Arc;
 )]
 pub struct InboxMessageSummary {
     pub id: i64,
+    #[serde(default)]
+    pub is_accessible: bool,
+    #[serde(default)]
+    pub is_deleted: bool,
     pub text: String,
+    #[serde(default)]
+    pub attachments_count: i64,
     pub timestamp: Option<i64>,
     pub date: Option<String>,
     pub time: Option<String>,
+    #[serde(default)]
+    pub group_name: Option<String>,
     pub group_master_key: Option<String>,
 }
 

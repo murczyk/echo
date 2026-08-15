@@ -423,10 +423,14 @@ export type InboxMessage = {
 
 export type InboxMessageSummary = {
   id: number;
+  isAccessible: boolean;
+  isDeleted: boolean;
   text: string;
+  attachmentsCount: number;
   timestamp: number | null;
   date: string | null;
   time: string | null;
+  groupName: string | null;
   groupMasterKey: string | null;
 };
 
