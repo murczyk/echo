@@ -1,4 +1,5 @@
 use crate::config::*;
+use crate::h;
 use anyhow::{bail, Context};
 use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
 use itertools::Itertools;
@@ -1140,7 +1141,7 @@ impl GroupStatsRedis {
         date: NaiveDate,
         units: &UnitBucket,
     ) -> anyhow::Result<()> {
-        let timestamp = super::start_of_day(date)?;
+        let timestamp = super::start_of_day(date).context(h!())?;
         let mut redis = self.redis.clone();
         write_expiring(
             &mut redis,
@@ -1280,19 +1281,24 @@ impl GroupStatsRedis {
         let keys = timestamps
             .iter()
             .flat_map(|timestamp| {
-                [group_5min_key(*timestamp), detail_5min_key(*timestamp)]
+                [
+                    group_5min_key(*timestamp),
+                    detail_5min_key(*timestamp),
+                    unit_5min_key(*timestamp),
+                ]
             })
             .collect_vec();
         let values = self.read_optional(keys).await?;
         Ok(timestamps
             .into_iter()
-            .zip(values.chunks_exact(2))
+            .zip(values.chunks_exact(3))
             .filter_map(|(timestamp, values)| {
                 let valid = matches!(
                     values,
-                    [Some(groups), Some(details)]
+                    [Some(groups), Some(details), Some(units)]
                         if decode::<GroupBucket>(groups).is_ok()
                             && decode::<DetailBucket>(details).is_ok()
+                            && decode::<UnitBucket>(units).is_ok()
                 );
                 (!valid).then_some(timestamp)
             })
@@ -1304,16 +1310,21 @@ impl GroupStatsRedis {
         dates: &[NaiveDate],
     ) -> anyhow::Result<Vec<NaiveDate>> {
         let dates = dates.iter().copied().unique().collect_vec();
-        let values = self
-            .read_optional(dates.iter().copied().map(general_day_key).collect())
-            .await?;
+        let keys = dates
+            .iter()
+            .flat_map(|date| [general_day_key(*date), unit_day_key(*date)])
+            .collect_vec();
+        let values = self.read_optional(keys).await?;
         Ok(dates
             .into_iter()
-            .zip(values)
-            .filter_map(|(date, value)| {
-                let valid = value.as_deref().is_some_and(|value| {
-                    decode::<GeneralDayBucket>(value).is_ok()
-                });
+            .zip(values.chunks_exact(2))
+            .filter_map(|(date, values)| {
+                let valid = matches!(
+                    values,
+                    [Some(general), Some(units)]
+                        if decode::<GeneralDayBucket>(general).is_ok()
+                            && decode::<UnitBucket>(units).is_ok()
+                );
                 (!valid).then_some(date)
             })
             .collect())
@@ -2007,6 +2018,13 @@ mod tests {
             .write_5min(timestamp, &groups, &details)
             .await
             .unwrap();
+        assert_eq!(
+            stats_redis
+                .missing_five_minute_buckets(&[timestamp])
+                .await
+                .unwrap(),
+            vec![timestamp]
+        );
         stats_redis
             .write_unit_5min(timestamp, &units)
             .await
@@ -2021,7 +2039,7 @@ mod tests {
         );
         assert_eq!(
             stats_redis.read_unit_5min(&[timestamp]).await.unwrap(),
-            vec![units]
+            vec![units.clone()]
         );
         assert!(stats_redis
             .missing_five_minute_buckets(&[timestamp])
@@ -2046,6 +2064,33 @@ mod tests {
             .write_5min(timestamp, &groups, &details)
             .await
             .unwrap();
+
+        let general = GeneralDayBucket {
+            groups: groups.groups.clone(),
+            details: details.clone(),
+        };
+        stats_redis.write_general_day(date, &general).await.unwrap();
+        assert_eq!(
+            stats_redis.missing_general_days(&[date]).await.unwrap(),
+            vec![date]
+        );
+        stats_redis.write_unit_day(date, &units).await.unwrap();
+        assert!(stats_redis
+            .missing_general_days(&[date])
+            .await
+            .unwrap()
+            .is_empty());
+        redis::cmd("SET")
+            .arg(unit_day_key(date))
+            .arg("invalid")
+            .query_async::<()>(&mut redis)
+            .await
+            .unwrap();
+        assert_eq!(
+            stats_redis.missing_general_days(&[date]).await.unwrap(),
+            vec![date]
+        );
+        stats_redis.write_unit_day(date, &units).await.unwrap();
 
         let network_bucket = NetworkDayBucket {
             networks: vec![
@@ -2111,6 +2156,7 @@ mod tests {
                 group_5min_key(timestamp),
                 detail_5min_key(timestamp),
                 unit_5min_key(timestamp),
+                general_day_key(date),
                 unit_day_key(date),
                 network_day_key(date),
             ])

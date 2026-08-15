@@ -2750,7 +2750,8 @@ async fn enrich_stats_linked_units(
         dbx,
         &stats.iter().map(|row| row.id).unique().collect_vec(),
     )
-    .await?;
+    .await
+    .context(h!())?;
     for row in stats {
         row.linked_unit_ids = unit_ids.get(&row.id).cloned();
     }
