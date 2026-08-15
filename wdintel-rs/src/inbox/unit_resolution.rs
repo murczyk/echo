@@ -948,9 +948,17 @@ pub(crate) async fn run_failed_inbox_unit_worker_once(
         .await
         .context(h!())?;
     for failure in failures {
+        let inbox_item_id = failure.inbox_item_id;
         verify_pending_failure(&transaction, failure)
             .await
             .context(h!())?;
+        crate::stats::enqueue_group_stats_recalculation_for_message(
+            &transaction,
+            inbox_item_id,
+            format!("resolved pending unit for inbox message {inbox_item_id}"),
+        )
+        .await
+        .context(h!())?;
     }
     transaction.commit().await.context(h!())?;
     Ok(())

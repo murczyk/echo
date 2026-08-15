@@ -457,7 +457,8 @@ pub(super) async fn build_5min_buckets(
     })?;
     append_id_counts(&mut result, linked_unit_counts, batches, |bucket| {
         &mut bucket.units.units
-    })?;
+    })
+    .context(h!())?;
     append_string_counts(&mut result, callsign_counts, batches, |details| {
         &mut details.callsigns
     })?;
@@ -484,7 +485,8 @@ pub(super) async fn build_5min_buckets(
     })?;
     append_id_hlls(&mut result, linked_unit_hlls, batches, |bucket| {
         &mut bucket.units.unit_hlls
-    })?;
+    })
+    .context(h!())?;
     append_id_hlls(&mut result, post_hlls, batches, |bucket| {
         &mut bucket.details.post_hlls
     })?;
@@ -507,18 +509,14 @@ fn linked_unit_values(
     rows: &[super::StatsRow],
 ) -> impl Iterator<Item = (NaiveDateTime, i64, i64, String)> + '_ {
     rows.iter().flat_map(|row| {
-        row.linked_unit_ids
-            .clone()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|unit_id| {
-                (
-                    bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
-                    row.id,
-                    unit_id,
-                    row.group_master_key.clone(),
-                )
-            })
+        row.linked_unit_ids.iter().copied().map(move |unit_id| {
+            (
+                bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
+                row.id,
+                unit_id,
+                row.group_master_key.clone(),
+            )
+        })
     })
 }
 
@@ -1288,7 +1286,7 @@ impl GroupStatsRedis {
                 ]
             })
             .collect_vec();
-        let values = self.read_optional(keys).await?;
+        let values = self.read_optional(keys).await.context(h!())?;
         Ok(timestamps
             .into_iter()
             .zip(values.chunks_exact(3))
@@ -1314,7 +1312,7 @@ impl GroupStatsRedis {
             .iter()
             .flat_map(|date| [general_day_key(*date), unit_day_key(*date)])
             .collect_vec();
-        let values = self.read_optional(keys).await?;
+        let values = self.read_optional(keys).await.context(h!())?;
         Ok(dates
             .into_iter()
             .zip(values.chunks_exact(2))

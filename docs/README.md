@@ -462,7 +462,8 @@ counts and distinct-message sketches keyed by `sigint_unit.id` for 16 days;
 `parsed` and `network` links are included once per message and unit, inactive
 units remain included, and deleted units are excluded. Missing or corrupt unit
 buckets are incomplete and are rebuilt from PostgreSQL with the corresponding
-group-statistics bucket.
+group-statistics bucket. Unit merges, label-driven reparsing, and queued
+network-unit recalculations enqueue the affected historical statistics ranges.
 
 See the [Redis group-statistics note](../archive/2026-07-29-redis-group-stats/README.md) for derived-statistics storage and retention.
 

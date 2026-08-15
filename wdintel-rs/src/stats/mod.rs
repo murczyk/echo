@@ -109,6 +109,9 @@ pub async fn oneoff_calculate_historic_stats(
     let force = params.force;
     let recalculate_day_stats = !params.skip_day;
     let recalculate_5min_stats = !params.skip_5min;
+    let now = Utc::now().naive_utc();
+    let min_since_ts =
+        historic_stats_start(params.start.as_deref(), now).context(h!())?;
     let config = read_config(mode).context(h!())?;
     let dbx = crate::new_pg_pool_from_config(&config)
         .await
@@ -118,16 +121,11 @@ pub async fn oneoff_calculate_historic_stats(
             .await
             .context(h!())?;
     let stats_redis = redis::GroupStatsRedis::new(stats_redis);
-    let min_since_ts = match params.start.as_deref() {
-        Some(start) => parse_local_datetime(start).c(h!())?,
-        None => {
-            Utc::now().naive_utc() - Duration::days(STATS_MIN_DATETIME_DAYS)
-        }
-    };
-    let mut till_ts = Utc::now().naive_utc();
+    let mut till_ts = now;
     if !force {
         info!(
-            "historic Redis stats backfill refreshes the full retention window"
+            "historic Redis stats backfill refreshes from local day {} through now",
+            get_local_date(min_since_ts),
         );
     }
 
@@ -174,6 +172,23 @@ pub async fn oneoff_calculate_historic_stats(
     Ok(())
 }
 
+fn historic_stats_start(
+    start: Option<&str>,
+    now: NaiveDateTime,
+) -> Result<NaiveDateTime, AppError> {
+    let start = match start {
+        Some(start) => parse_local_datetime(start).c(h!())?,
+        None => now - Duration::days(STATS_MIN_DATETIME_DAYS),
+    };
+    if start >= now {
+        return Err(AppError::BL {
+            msg: "Historic statistics start must be earlier than now"
+                .to_string(),
+        });
+    }
+    Ok(start_of_day(get_local_date(start)).c(h!())?)
+}
+
 #[derive(FromQueryResult)]
 struct GroupStatsActivityWindow {
     since_ts: Option<NaiveDateTime>,
@@ -211,6 +226,50 @@ where
     .c(h!())?;
 
     Ok(true)
+}
+
+pub async fn enqueue_group_stats_recalculation_for_linked_unit<'a, C>(
+    dbx: &'a C,
+    unit_id: i64,
+    reason: String,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait + 'a,
+{
+    let master_keys = sigint_inbox_item_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_unit::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .filter(sigint_inbox_item_unit::Column::UnitId.eq(unit_id))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_message_group::Column::GroupMasterKey.is_not_null())
+        .select_only()
+        .column(signal_message_group::Column::GroupMasterKey)
+        .distinct()
+        .into_tuple::<String>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut enqueued = false;
+    for master_key in master_keys {
+        enqueued |= enqueue_group_stats_recalculation_for_group_history(
+            dbx,
+            &master_key,
+            reason.clone(),
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(enqueued)
 }
 
 pub async fn enqueue_group_stats_recalculation_for_message<'a, C>(
@@ -1947,7 +2006,7 @@ struct StatsRow {
     pub tags: Option<Vec<i64>>,
     pub location_v2: Option<String>,
     pub unit_v2: Option<String>,
-    pub linked_unit_ids: Option<Vec<i64>>,
+    pub linked_unit_ids: Vec<i64>,
 }
 
 #[derive(FromQueryResult, Clone)]
@@ -2513,7 +2572,9 @@ async fn load_generic_stats(
         .chain(stats_by_created_at)
         .collect_vec();
     enrich_stats_callsigns(dbx, &mut stats).await?;
-    enrich_stats_linked_units(dbx, &mut stats).await?;
+    enrich_stats_linked_units(dbx, &mut stats)
+        .await
+        .context(h!())?;
     Ok(stats)
 }
 
@@ -2753,7 +2814,8 @@ async fn enrich_stats_linked_units(
     .await
     .context(h!())?;
     for row in stats {
-        row.linked_unit_ids = unit_ids.get(&row.id).cloned();
+        row.linked_unit_ids =
+            unit_ids.get(&row.id).cloned().unwrap_or_default();
     }
     Ok(())
 }
@@ -2765,26 +2827,34 @@ async fn load_stats_linked_unit_ids(
     if inbox_item_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    Ok(sigint_inbox_item_unit::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item_unit::Relation::SigintUnit.def(),
-        )
-        .filter(
-            sigint_inbox_item_unit::Column::ItemId
-                .is_in(inbox_item_ids.to_vec()),
-        )
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .select_only()
-        .column(sigint_inbox_item_unit::Column::ItemId)
-        .column(sigint_inbox_item_unit::Column::UnitId)
-        .distinct()
-        .into_tuple::<(i64, i64)>()
-        .all(dbx)
-        .await
-        .c(h!())?
-        .into_iter()
-        .into_group_map())
+    let inbox_item_ids = inbox_item_ids.iter().copied().unique().collect_vec();
+    let mut result = HashMap::<i64, Vec<i64>>::new();
+    for inbox_item_ids in
+        inbox_item_ids.chunks(GROUP_STATS_LINKED_UNIT_LOAD_BATCH_SIZE)
+    {
+        let rows = sigint_inbox_item_unit::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item_unit::Relation::SigintUnit.def(),
+            )
+            .filter(
+                sigint_inbox_item_unit::Column::ItemId
+                    .is_in(inbox_item_ids.to_vec()),
+            )
+            .filter(sigint_unit::Column::Deleted.eq(false))
+            .select_only()
+            .column(sigint_inbox_item_unit::Column::ItemId)
+            .column(sigint_inbox_item_unit::Column::UnitId)
+            .distinct()
+            .into_tuple::<(i64, i64)>()
+            .all(dbx)
+            .await
+            .c(h!())?;
+        for (inbox_item_id, unit_id) in rows {
+            result.entry(inbox_item_id).or_default().push(unit_id);
+        }
+    }
+    Ok(result)
 }
 
 async fn enrich_network_stats_callsigns(
@@ -3109,7 +3179,7 @@ mod tests {
         let inbox_item_id = signal_message_group::Entity::find()
             .filter(
                 signal_message_group::Column::GroupMasterKey
-                    .eq(group.master_key),
+                    .eq(group.master_key.clone()),
             )
             .select_only()
             .column(signal_message_group::Column::SignalMessageId)
@@ -3184,8 +3254,7 @@ mod tests {
         .unwrap();
         let linked_row =
             rows.iter().find(|row| row.id == inbox_item_id).unwrap();
-        let mut linked_unit_ids =
-            linked_row.linked_unit_ids.clone().unwrap_or_default();
+        let mut linked_unit_ids = linked_row.linked_unit_ids.clone();
         linked_unit_ids.sort_unstable();
         assert_eq!(linked_unit_ids, [active_unit.id, inactive_unit.id]);
 
@@ -3213,16 +3282,43 @@ mod tests {
             .unit_hlls
             .iter()
             .all(|unit| unit.sketch.estimate() == 1));
-        let mut day_unit_counts = redis::aggregate_unit_day([units.clone()])
+        let day_units = redis::aggregate_unit_day([units.clone()]);
+        let mut day_exact_counts = day_units
+            .units
+            .iter()
+            .map(|unit| (unit.value, unit.quantity))
+            .collect_vec();
+        day_exact_counts.sort_unstable();
+        assert_eq!(
+            day_exact_counts,
+            [(active_unit.id, 1), (inactive_unit.id, 1)]
+        );
+        let mut day_distinct_counts = day_units
             .unit_hlls
             .into_iter()
             .map(|unit| (unit.value, unit.sketch.estimate()))
             .collect_vec();
-        day_unit_counts.sort_unstable();
+        day_distinct_counts.sort_unstable();
         assert_eq!(
-            day_unit_counts,
+            day_distinct_counts,
             [(active_unit.id, 1), (inactive_unit.id, 1)]
         );
+        assert!(enqueue_group_stats_recalculation_for_linked_unit(
+            &env.dbx,
+            active_unit.id,
+            "updated linked unit".to_string(),
+        )
+        .await
+        .unwrap());
+        assert!(group_stats_recalculation_task::Entity::find()
+            .filter(
+                group_stats_recalculation_task::Column::GroupMasterKey
+                    .eq(group.master_key),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
     }
 
     #[test]

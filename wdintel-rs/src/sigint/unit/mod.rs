@@ -1652,6 +1652,13 @@ where
     let unit_original =
         find_available_unit_for_update(dbx, original_id).await?;
     let previous_unit_original = unit_original.clone();
+    crate::stats::enqueue_group_stats_recalculation_for_linked_unit(
+        dbx,
+        unit_to_delete_id,
+        format!("merged unit {unit_to_delete_id} into {original_id}"),
+    )
+    .await
+    .c(h!())?;
     let unit_original =
         update_original_unit(unit_original, &unit_to_delete, dbx)
             .await
