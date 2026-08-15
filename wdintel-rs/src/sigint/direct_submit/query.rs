@@ -467,6 +467,7 @@ where
                 comment: Set(comment_model.comment),
                 created_at: NotSet,
                 sigint_post_id: Set(comment_model.sigint_post_id),
+                migrated_signal_message_id: NotSet,
             },
         )
         .collect::<Vec<_>>();

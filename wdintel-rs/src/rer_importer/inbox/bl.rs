@@ -943,6 +943,7 @@ where
             comment: Set(comment.to_string()),
             created_at: NotSet,
             sigint_post_id: NotSet,
+            migrated_signal_message_id: NotSet,
         }
         .insert(db)
         .await
@@ -957,6 +958,9 @@ where
         comment: Set(comment.to_string()),
         created_at: NotSet,
         sigint_post_id: NotSet,
+        migrated_signal_message_id: Set(
+            comment_to_update.migrated_signal_message_id
+        ),
     }
     .update(db)
     .await

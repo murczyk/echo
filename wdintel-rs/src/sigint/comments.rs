@@ -1,14 +1,18 @@
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
+use crate::rer_importer::inbox::submit_bl;
+use crate::rer_importer::types::InboxSubmitItem;
 use crate::types::{error, info, warn};
 use crate::types::{Mode, ShortContext};
 use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Utc};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
-    DatabaseConnection, EntityTrait, ExprTrait, FromQueryResult, JoinType,
-    NotSet, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Set,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, DatabaseTransaction, EntityTrait, ExprTrait,
+    FromQueryResult, IntoActiveModel, JoinType, NotSet, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, RelationTrait, Set, Statement,
+    TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -30,6 +34,145 @@ struct CommentCsvRow {
     message_ts: String,
     source_login: String,
     source_organism: String,
+}
+
+const SIGINT_COMMENT_MIGRATION_LOCK_KEY: i64 = 7_421_983_615;
+
+pub async fn oneoff_migrate_sigint_comments(
+    mode: Mode,
+    ps: &crate::OneoffMigrateSigintCommentsPs,
+) -> Result<(), AppError> {
+    if ps.batch_size == 0 {
+        return Err(AppError::BL {
+            msg: "batch_size must be greater than zero".to_string(),
+        });
+    }
+
+    let env = crate::server::new_env(mode).await.c(h!())?;
+    let batch_size = std::cmp::min(ps.batch_size, i64::MAX as u64);
+    if ps.dry_run {
+        let pending = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
+            .count(&env.dbx)
+            .await
+            .c(h!())?;
+        info!(
+            "oneoff_migrate_sigint_comments_to_messages dry run: pending={pending}"
+        );
+        return Ok(());
+    }
+    let mut migrated = 0_u64;
+
+    loop {
+        let txn = env.dbx.begin().await.c(h!())?;
+        lock_sigint_comment_migration(&txn).await.c(h!())?;
+        let comments = load_pending_comments(&txn, batch_size).await?;
+        if comments.is_empty() {
+            txn.commit().await.c(h!())?;
+            break;
+        }
+
+        let batch_count = comments.len() as u64;
+        migrate_comment_batch(env.as_ref(), &txn, comments)
+            .await
+            .c(h!())?;
+        migrated += batch_count;
+        txn.commit().await.c(h!())?;
+    }
+
+    info!(
+        "oneoff_migrate_sigint_comments_to_messages completed: processed={migrated} dry_run={}",
+        ps.dry_run
+    );
+    Ok(())
+}
+
+async fn lock_sigint_comment_migration(
+    txn: &DatabaseTransaction,
+) -> Result<(), sea_orm::DbErr> {
+    txn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select pg_advisory_xact_lock($1)",
+        [SIGINT_COMMENT_MIGRATION_LOCK_KEY.into()],
+    ))
+    .await
+    .map(|_| ())
+}
+
+async fn load_pending_comments<C>(
+    dbx: &C,
+    batch_size: u64,
+) -> Result<Vec<sigint_comment::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(sigint_comment::Entity::find()
+        .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
+        .order_by_asc(sigint_comment::Column::Id)
+        .limit(batch_size)
+        .all(dbx)
+        .await
+        .c(h!())?)
+}
+
+async fn migrate_comment_batch(
+    env: &crate::types::Env,
+    txn: &DatabaseTransaction,
+    comments: Vec<sigint_comment::Model>,
+) -> Result<(), AppError> {
+    let mut links = Vec::with_capacity(comments.len());
+    let mut migrated_comments = Vec::with_capacity(comments.len());
+
+    for comment in comments {
+        let sender =
+            crate::sigint::direct_submit::query::ensure_current_user_sender(
+                txn,
+                &comment.login_id,
+            )
+            .await
+            .c(h!())?;
+        let author_logins = vec![comment.login_id];
+        let timestamp = comment.created_at.and_utc().to_rfc3339();
+        let item = InboxSubmitItem {
+            text: Some(comment.comment.clone()),
+            full_body: None,
+            timestamp,
+            sender: Some(sender),
+            parse_body_coordinates: false,
+            ..Default::default()
+        };
+        let submitted = submit_bl::submit_inbox_item_with_groups_location_mode(
+            env,
+            txn,
+            None,
+            &[],
+            &comment.login_id,
+            &author_logins,
+            item,
+            true,
+            true,
+            crate::rer_importer::inbox::bl::InboxLocationSubmitMode::PreserveTyped,
+        )
+        .await
+        .c(h!())?;
+        links.push(intel_prod::ActiveModel {
+            signal_message_id: Set(submitted.signal_message_id),
+            parent_signal_message_id: Set(comment.signal_message_id),
+            created_at: NotSet,
+        });
+        migrated_comments.push((comment, submitted.signal_message_id));
+    }
+
+    intel_prod::Entity::insert_many(links)
+        .exec(txn)
+        .await
+        .c(h!())?;
+    for (comment, signal_message_id) in migrated_comments {
+        let mut comment = comment.into_active_model();
+        comment.migrated_signal_message_id = Set(Some(signal_message_id));
+        comment.update(txn).await.c(h!())?;
+    }
+    Ok(())
 }
 
 pub async fn load_blacklist<C>(dbx: &C) -> Result<Vec<String>, AppError>
@@ -825,6 +968,7 @@ pub async fn oneoff_import_sigint_comments(
                 comment: Set(row.comment.clone()),
                 created_at: NotSet,
                 sigint_post_id: NotSet,
+                migrated_signal_message_id: NotSet,
             };
 
             match active.insert(&dbx).await {
