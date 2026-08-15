@@ -61,12 +61,18 @@ pub async fn download_palette_file(
     if !metadata.is_file() {
         return Err(ErrorNotFound("palette file not found"));
     }
+    let is_kmz = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("kmz"));
     let body = tokio::fs::read(path)
         .await
         .map_err(ErrorInternalServerError)?;
-    Ok(HttpResponse::Ok()
-        .content_type("application/octet-stream")
-        .body(body))
+    let mut response = HttpResponse::Ok();
+    if is_kmz {
+        response.insert_header(header::ContentEncoding::Identity);
+    }
+    Ok(response.content_type("application/octet-stream").body(body))
 }
 
 #[put("/api/palettes/file")]
