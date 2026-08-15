@@ -1333,6 +1333,7 @@ fn generic_submit_item_to_inbox_message(
         post: item.post.clone(),
         post_id: None,
         unit: item.unit.clone(),
+        unit_ids: vec![],
         callsign_tokens: None,
         signal_tokens: None,
         point_tokens: None,
@@ -3222,13 +3223,15 @@ async fn get_freq_pelengs_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
     use crate::entities::{
         datasource, datasource_group, echo_gpu_transcription_queue, login,
         organism, organism_group, sigint_comment, sigint_inbox_item,
-        sigint_inbox_item_metadata, sigint_inbox_item_point_token,
-        sigint_inbox_item_tag, sigint_peleng, sigint_zone_datasource,
-        signal_group, signal_message, signal_message_group,
-        signal_message_media, system_settings, tag,
+        sigint_inbox_item_metadata, sigint_inbox_item_network,
+        sigint_inbox_item_point_token, sigint_inbox_item_tag,
+        sigint_inbox_item_unit, sigint_network_unit, sigint_peleng,
+        sigint_zone_datasource, signal_group, signal_message,
+        signal_message_group, signal_message_media, system_settings, tag,
     };
     use crate::functest::tests::*;
     use chrono::{DateTime, SecondsFormat, Utc};
@@ -5390,6 +5393,76 @@ mod tests {
             .find(|t| t.login.as_deref() == Some(login.login.as_str()))
             .expect("tag by login must be present");
         assert_eq!(tag_entry.organism_id, login.organism_id);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_messages_by_id_includes_distinct_unit_ids() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let message =
+            seed_message_with_media(&env, &datasource_group, None, "units")
+                .await
+                .unwrap();
+        let first_unit =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let second_unit =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        mk_sigint_network_unit(
+            &env.dbx,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(network.id),
+                unit_id: Set(first_unit.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for (unit_id, kind) in [
+            (first_unit.id, SigintInboxItemUnitKind::Parsed),
+            (second_unit.id, SigintInboxItemUnitKind::Parsed),
+            (first_unit.id, SigintInboxItemUnitKind::Network),
+        ] {
+            sigint_inbox_item_unit::ActiveModel {
+                item_id: Set(message.id),
+                unit_id: Set(unit_id),
+                kind: Set(kind),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+
+        let logins = vec![login.id];
+        let messages = messages_by_id_bl(
+            &login.id,
+            &logins,
+            &env,
+            &[message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
+        let mut expected_unit_ids = vec![first_unit.id, second_unit.id];
+        expected_unit_ids.sort_unstable();
+
+        assert_eq!(messages[0].1.unit_ids, expected_unit_ids);
     }
 
     #[serial]

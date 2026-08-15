@@ -403,6 +403,7 @@ export type InboxMessage = {
   post: string | null;
   postId: number | null;
   unit: string | null;
+  unitIds: Array<number>;
   callsignTokens: Array<CnCallsign> | null;
   signalTokens: Array<CnSignal> | null;
   pointTokens: Array<CnPoint> | null;
