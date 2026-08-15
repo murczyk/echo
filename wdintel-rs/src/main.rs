@@ -668,6 +668,10 @@ pub struct OneoffCalculateStatsPs {
 
 #[derive(clap::Args, Debug, Clone)]
 pub struct OneoffCalculateHistoricStatsPs {
+    /// Start datetime in the configured local timezone (inclusive).
+    /// Defaults to the statistics retention window.
+    #[arg(long)]
+    pub start: Option<String>,
     #[arg(long, default_value = "false")]
     pub force: bool,
     #[arg(long, default_value = "false")]
