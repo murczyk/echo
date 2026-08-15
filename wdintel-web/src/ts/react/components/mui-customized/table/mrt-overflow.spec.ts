@@ -457,7 +457,7 @@ describe('MRT overflow policies', () => {
         aors: { mode: 'items', factory: 'mrtItemsCell' },
         freqs: { mode: 'custom', factory: 'mrtCustomCell', owner: 'domain-hover' },
         location: { mode: 'custom', factory: 'mrtCustomCell', owner: 'domain-hover' },
-        lastActivity: { mode: 'text', factory: 'mrtTextCell' },
+        lastActivity: { mode: 'custom', factory: 'mrtCustomCell', owner: 'structured-layout' },
         activity: { mode: 'none' },
       },
     );
@@ -542,6 +542,7 @@ describe('MRT overflow policies', () => {
       ['rer-networks-neo/components/NetworksTableColumns.tsx', 'network', 'structured-layout'],
       ['rer-networks-neo/components/NetworksTableColumns.tsx', 'freqs', 'domain-hover'],
       ['rer-networks-neo/components/NetworksTableColumns.tsx', 'location', 'domain-hover'],
+      ['rer-networks-neo/components/NetworksTableColumns.tsx', 'lastActivity', 'structured-layout'],
       ['rer-palitra-neo/components/PalitraTable.cells.tsx', 'name', 'shared-text'],
       ['rer-units-neo/components/UnitsTable.tsx', 'name', 'structured-layout'],
     ]

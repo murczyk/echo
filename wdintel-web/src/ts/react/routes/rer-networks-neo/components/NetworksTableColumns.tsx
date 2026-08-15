@@ -6,11 +6,10 @@ import {
   type AppMrtColumnDef,
   getSharedFilterTextFieldProps,
   mrtItemsCell,
-  mrtTextCell,
   mrtCustomCell,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { NO_AOR_FILTER_VALUE, type NetworkRowView } from '../helpers';
-import { ActivityBars, FrequencyCell, NetworkCell } from './NetworkCells';
+import { ActivityBars, FrequencyCell, LastActivityCell, NetworkCell } from './NetworkCells';
 
 function formatAorActiveFilterValue(
   value: unknown,
@@ -184,11 +183,14 @@ export function useNetworksTableColumns({
         accessorFn: (row) => row.lastActivityLabel,
         enableColumnFilter: false,
         enableSorting: true,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          displayValue: ({ row }) => row.original.lastActivityLabel,
-          fullValue: ({ row }) => row.original.lastActivityTooltip,
-        }),
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => (
+          <LastActivityCell
+            label={row.original.lastActivityLabel}
+            detail={row.original.lastActivityDetail}
+            tooltip={row.original.lastActivityTooltip}
+          />
+        )),
       },
     ],
     [

@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AreaOfResponsibility, Network, Unit } from '../../../../Bindings';
 import { NETWORK_STATUS_ACTIVE } from '../rer-network-details-neo/network-status';
-import { FrequencyCell, getLocationParts } from './components/NetworkCells';
+import { FrequencyCell, getLocationParts, LastActivityCell } from './components/NetworkCells';
 import {
   FREQUENCY_HOVER_POPPER_MODIFIERS,
   FREQUENCY_HOVER_POPPER_PLACEMENT,
@@ -815,6 +815,89 @@ it('keeps frequency disclosure owned by the domain hover surface', () => {
   expect(onEnter).toHaveBeenCalledTimes(1);
   act(() => emptyRoot.unmount());
   empty.remove();
+});
+
+it('keeps structured last activity visible and available through hover and focus', async () => {
+  vi.useFakeTimers();
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  const activityContainer = document.createElement('div');
+  document.body.appendChild(activityContainer);
+  const activityRoot = createRoot(activityContainer);
+  let activityUnmounted = false;
+  const tooltip = 'Створено: 01.01.2026\nОновлено: 02.01.2026\nАвтор: Оператор';
+  try {
+    act(() => {
+      activityRoot.render(
+        createElement(LastActivityCell, {
+          label: '02.01.2026 14:30',
+          detail: 'Оператор',
+          tooltip,
+        }),
+      );
+    });
+    const activity = activityContainer.querySelector<HTMLElement>('[tabindex="0"]');
+    expect(activity).not.toBeNull();
+    expect(activityContainer.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
+    expect(activity?.textContent).toContain('02.01.2026 14:30');
+    expect(activity?.textContent).toContain('Оператор');
+    const lines = activity?.querySelectorAll<HTMLElement>(':scope > div');
+    expect(lines).toHaveLength(2);
+    for (const line of lines ?? []) {
+      expect(getComputedStyle(line).overflow).toBe('hidden');
+      expect(getComputedStyle(line).textOverflow).toBe('ellipsis');
+      expect(getComputedStyle(line).whiteSpace).toBe('nowrap');
+    }
+
+    act(() => activity?.focus());
+    await act(async () => vi.runAllTimers());
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(tooltip);
+    act(() => activity?.blur());
+    await act(async () => vi.runAllTimers());
+    expect(
+      document.body.querySelector('[role="tooltip"]')?.classList.contains('MuiTooltip-popperOpen'),
+    ).toBe(false);
+
+    act(() => activity?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    await act(async () => vi.runAllTimers());
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(tooltip);
+    act(() => activity?.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true })));
+    await act(async () => vi.runAllTimers());
+    expect(
+      document.body.querySelector('[role="tooltip"]')?.classList.contains('MuiTooltip-popperOpen'),
+    ).toBe(false);
+
+    act(() => activityRoot.unmount());
+    activityContainer.remove();
+    activityUnmounted = true;
+
+    root = createRoot(container!);
+    act(() => {
+      root?.render(createElement(RerNetworksNeoPage));
+    });
+    const lastActivityCell = (
+      capturedOptions?.columns as Array<{ id?: string; Cell?: (props: any) => unknown }>
+    ).find((column) => column.id === 'lastActivity');
+    const renderedCell = renderNetworkCell(lastActivityCell?.Cell, {
+      lastActivityLabel: '02.01.2026 14:30',
+      lastActivityDetail: 'Оператор',
+      lastActivityTooltip: tooltip,
+    });
+    const renderedActivity = renderedCell.querySelector<HTMLElement>('[tabindex="0"]');
+    expect(renderedActivity?.textContent).toContain('02.01.2026 14:30');
+    expect(renderedActivity?.textContent).toContain('Оператор');
+    act(() => renderedActivity?.focus());
+    await act(async () => vi.runAllTimers());
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(tooltip);
+  } finally {
+    if (!activityUnmounted) {
+      act(() => activityRoot.unmount());
+      activityContainer.remove();
+    }
+    const errors = consoleError.mock.calls.map((args) => args.map(String).join(' ')).join('\n');
+    consoleError.mockRestore();
+    vi.useRealTimers();
+    expect(errors).not.toMatch(/warning|error|invalid prop|aria/i);
+  }
 });
 
 it('uses top-first placement for the frequency hover popper', () => {

@@ -248,10 +248,48 @@ export function LastActivityCell({
   tooltip: string;
 }) {
   return (
-    <Tooltip title={<span style={{ whiteSpace: 'pre-line' }}>{tooltip}</span>}>
-      <Stack spacing={0.25} sx={{ cursor: 'default' }}>
-        <Box sx={{ color: 'text.primary' }}>{label}</Box>
-        <Box sx={{ color: 'text.secondary' }}>{detail}</Box>
+    <Tooltip describeChild title={<span style={{ whiteSpace: 'pre-line' }}>{tooltip}</span>}>
+      <Stack
+        spacing={0.25}
+        tabIndex={0}
+        sx={{
+          cursor: 'default',
+          minWidth: 0,
+          maxWidth: '100%',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          '&:focus-visible': {
+            outline: '2px solid',
+            outlineColor: 'primary.main',
+            outlineOffset: 2,
+          },
+        }}
+      >
+        <Box
+          sx={{
+            minWidth: 0,
+            maxWidth: '100%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            color: 'text.primary',
+          }}
+        >
+          {label}
+        </Box>
+        <Box
+          sx={{
+            minWidth: 0,
+            maxWidth: '100%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            color: 'text.secondary',
+          }}
+        >
+          {detail}
+        </Box>
       </Stack>
     </Tooltip>
   );
