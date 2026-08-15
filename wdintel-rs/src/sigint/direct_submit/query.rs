@@ -193,6 +193,7 @@ pub async fn find_copyable_signal_message<C>(
 where
     C: ConnectionTrait,
 {
+    ensure_copy_sources_are_not_reports(dbx, &[signal_message_id]).await?;
     signal_message::Entity::find_by_id(signal_message_id)
         .join(
             JoinType::InnerJoin,
@@ -220,6 +221,7 @@ where
     if signal_message_ids.is_empty() {
         return Ok(vec![]);
     }
+    ensure_copy_sources_are_not_reports(dbx, signal_message_ids).await?;
     let sources = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -258,6 +260,27 @@ where
         })
         .collect::<Result<Vec<_>, _>>()
         .c(h!())?)
+}
+
+async fn ensure_copy_sources_are_not_reports<C>(
+    dbx: &C,
+    signal_message_ids: &[i64],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let report_count = intel_prod::Entity::find()
+        .filter(
+            intel_prod::Column::SignalMessageId
+                .is_in(signal_message_ids.to_vec()),
+        )
+        .count(dbx)
+        .await
+        .c(h!())?;
+    if report_count > 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(())
 }
 
 pub async fn find_copy_signal_message_inputs<C>(
