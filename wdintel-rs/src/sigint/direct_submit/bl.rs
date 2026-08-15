@@ -786,7 +786,9 @@ async fn persist_direct_submit_item(
             )
         }
         None => {
-            let datasource_id = if parent_signal_message_ids.is_empty() {
+            let datasource_id = if signal_message_id.is_some()
+                || parent_signal_message_ids.is_empty()
+            {
                 None
             } else {
                 Some(
