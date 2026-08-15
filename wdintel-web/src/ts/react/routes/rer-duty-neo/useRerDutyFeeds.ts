@@ -54,30 +54,36 @@ function mergeFreqsFromMessages(
   return sortFrequenciesNumerically([...merged]);
 }
 
-function mergeGroupsFromMessages(
-  apiGroups: string[],
+export function mergeKnownGroupKeys(
+  previousKeys: readonly string[],
+  apiGroups: readonly string[],
+  groupInfoKeys: readonly string[],
   messageFeeds: {
     items: [number, { groupMasterKey?: string | null }][];
     filter: { groupsSelected?: string[] | null; groupsDenied?: string[] | null };
   }[],
+  savedFilters: Array<{ groupsSelected?: string[] | null; groupsDenied?: string[] | null }> = [],
 ): string[] {
-  const fromMsgs = new Set<string>();
+  const known = new Set<string>();
+  const add = (key: string) => {
+    const normalized = key.trim();
+    if (normalized !== '') known.add(normalized);
+  };
+  [...previousKeys, ...apiGroups, ...groupInfoKeys].forEach(add);
   messageFeeds.forEach((feed) =>
     feed.items.forEach(([, msg]) => {
-      if (msg.groupMasterKey && msg.groupMasterKey.trim() !== '')
-        fromMsgs.add(msg.groupMasterKey.trim());
+      if (msg.groupMasterKey) add(msg.groupMasterKey);
     }),
   );
   messageFeeds.forEach((feed) => {
-    (feed.filter.groupsSelected ?? []).forEach((key) => {
-      if (key.trim() !== '') fromMsgs.add(key.trim());
-    });
-    (feed.filter.groupsDenied ?? []).forEach((key) => {
-      if (key.trim() !== '') fromMsgs.add(key.trim());
-    });
+    (feed.filter.groupsSelected ?? []).forEach(add);
+    (feed.filter.groupsDenied ?? []).forEach(add);
   });
-  const merged = new Set<string>([...apiGroups, ...fromMsgs]);
-  return [...merged].sort((a, b) => a.localeCompare(b));
+  savedFilters.forEach((filter) => {
+    (filter.groupsSelected ?? []).forEach(add);
+    (filter.groupsDenied ?? []).forEach(add);
+  });
+  return [...known];
 }
 
 function mergePostsFromMessages(
@@ -118,6 +124,7 @@ export function useRerDutyFeeds(
   const [pollIntervalSec, setPollIntervalSec] = useState(1);
   const dutySettings = useDutySettings();
   const [callsignRetryVersion, setCallsignRetryVersion] = useState(0);
+  const [knownGroupKeys, setKnownGroupKeys] = useState<string[]>([]);
   const loadingCallsignsRef = useRef<Set<string>>(new Set());
   const enrichedCallsignsRef = useRef<Set<string>>(new Set());
   const emptyResultRetryAfterMsRef = useRef<Map<string, number>>(new Map());
@@ -384,9 +391,41 @@ export function useRerDutyFeeds(
     [filterOpts.freqs, feedState.messageFeeds],
   );
   const groupsList = useMemo(
-    () => mergeGroupsFromMessages(filterOpts.groupsList, feedState.messageFeeds),
-    [filterOpts.groupsList, feedState.messageFeeds],
+    () =>
+      mergeKnownGroupKeys(
+        knownGroupKeys,
+        filterOpts.groupsList,
+        Object.keys(filterOpts.groupInfos),
+        feedState.messageFeeds,
+        filterOpts.savedFilters.map(({ req }) => req),
+      ),
+    [
+      feedState.messageFeeds,
+      filterOpts.groupInfos,
+      filterOpts.groupsList,
+      filterOpts.savedFilters,
+      knownGroupKeys,
+    ],
   );
+  useEffect(() => {
+    setKnownGroupKeys((previous) => {
+      const next = mergeKnownGroupKeys(
+        previous,
+        filterOpts.groupsList,
+        Object.keys(filterOpts.groupInfos),
+        feedState.messageFeeds,
+        filterOpts.savedFilters.map(({ req }) => req),
+      );
+      return next.length === previous.length && next.every((key, index) => key === previous[index])
+        ? previous
+        : next;
+    });
+  }, [
+    feedState.messageFeeds,
+    filterOpts.groupInfos,
+    filterOpts.groupsList,
+    filterOpts.savedFilters,
+  ]);
   const postsList = useMemo(
     () => mergePostsFromMessages(filterOpts.postsList, feedState.messageFeeds),
     [filterOpts.postsList, feedState.messageFeeds],
@@ -476,6 +515,9 @@ export function useRerDutyFeeds(
     setSaveFilterNameByFeedId: filterOpts.setSaveFilterNameByFeedId,
     reloadFreqsLoading: filterOpts.reloadFreqsLoading,
     reloadLatestFrequencies: filterOpts.reloadLatestFrequencies,
+    groupCatalogLoading: filterOpts.groupCatalogLoading,
+    groupCatalogError: filterOpts.groupCatalogError,
+    reloadGroupCatalog: filterOpts.reloadGroupCatalog,
     networkDisplayMap: feedState.networkDisplayMap,
     networkMap: feedState.networkMap,
     unitsMap: feedState.unitsMap,

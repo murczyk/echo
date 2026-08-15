@@ -475,7 +475,8 @@ minimum/maximum message-ID scope for its requested time interval. Concurrent
 requests for the same unresolved range share that lookup, but completed
 results are not cached. The timestamp predicate stays authoritative, while
 the same ID bounds constrain `signal_message`, `sigint_inbox_item`, every
-message-group relation, and tag, network, callsign, and AOR message links.
+message-group relation, and tag, network, callsign, metadata, and AOR message
+links.
 Group authorization, selected groups, and sender filtering use one bounded,
 flat message-group join unless the joined group relation supplies the facet
 dimension. An empty scope returns an empty facet or zero count without
@@ -522,7 +523,7 @@ The analysis result, facet, and dedicated facet-count endpoints use this path:
   historical portion of long live ranges;
 - `/api/rer-importer/get-inbox-count`
 - `/api/rer/analysis/stats/count`
-- `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}`
+- `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks,metadata}`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}/count`
 
 The expensive replicated-data reads for the interception, sender, posts, REO,
@@ -548,9 +549,16 @@ hours and ending within `max(2 * freshness_max_age_ms, 5 minutes)` of the
 current time read from source PostgreSQL. Longer live ranges merge the
 ClickHouse candidate page with a source PostgreSQL candidate page restricted
 to that fresh overlap, then deduplicate, hydrate, revalidate, order, and limit
-the merged IDs on source PostgreSQL. Any analytics, tail, or revalidation
-failure retries the complete message query on PostgreSQL. Other callers retain
-their existing routing.
+the merged IDs on source PostgreSQL. RER Duty newer-message requests also merge
+ClickHouse candidates with a source candidate page restricted by both the feed
+cursor and the same fresh-tail cutoff.
+
+RER Duty `/api/rer-importer/get-inbox-count` requests split the result into
+disjoint `signal_message.created_at` ranges: ClickHouse counts rows older than
+the cutoff and primary PostgreSQL counts the newer tail with the feed cursor.
+The counts and earliest timestamps are merged. Any analytics, tail, or
+revalidation failure retries the complete message query on PostgreSQL. Other
+callers retain their existing routing.
 
 ## WAL retention and recovery
 

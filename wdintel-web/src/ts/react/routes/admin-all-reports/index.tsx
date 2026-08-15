@@ -13,6 +13,7 @@ export function AdminAllReportsPage() {
       compactFullHeight
       loadingRowCount={FULL_HEIGHT_LOADING_ROW_COUNT}
       loadReportHistoryBatch={listAllReportHistory}
+      allowSuccessfulRerun
     />
   );
 }

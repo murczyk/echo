@@ -8,6 +8,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FeedFilterPanelProps } from './FeedFilterPanel';
 import type { SignalGroupEntry } from '../../../../Bindings';
 
+const selectionSpy = vi.hoisted(() => vi.fn());
+
+vi.mock('./FeedFilterSelectionSection', () => ({
+  FeedFilterSelectionSection: (props: { title: string }) => {
+    selectionSpy(props);
+    return <div data-testid={`selection-${props.title}`} />;
+  },
+}));
+
 vi.mock('../../components/SavedFiltersControl', () => ({
   SavedFiltersControl: () => <div data-testid="saved-filters-control" />,
 }));
@@ -73,6 +82,7 @@ function buildProps(overrides: Partial<FeedFilterPanelProps['panel']> = {}): Fee
         onHighlightSignalsChange: vi.fn(),
         onOnlyMyUnitTagsChange: vi.fn(),
         onReloadFreqs: vi.fn(),
+        onReloadGroupCatalog: vi.fn(),
         onSavedFilterSelect: vi.fn(),
         onSaveFilterNameChange: vi.fn(),
         onSaveFilter: vi.fn(async () => true),
@@ -91,6 +101,7 @@ describe('FeedFilterPanel', () => {
   let root: Root;
 
   beforeEach(() => {
+    selectionSpy.mockClear();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -119,5 +130,103 @@ describe('FeedFilterPanel', () => {
     expect(scrollArea?.style.maxHeight).toBe('100%');
     expect(scrollArea?.style.overflowY).toBe('auto');
     expect(scrollArea?.style.overflowX).toBe('hidden');
+  });
+
+  it('keeps catalog errors persistent and maps their structured severity', async () => {
+    vi.useFakeTimers();
+    const onReloadGroupCatalog = vi.fn();
+    const props = buildProps({
+      toggles: {
+        ...buildProps().panel.toggles,
+        groupCatalogError: { kind: 'catalog', message: 'catalog failed' },
+      },
+      actions: { ...buildProps().panel.actions, onReloadGroupCatalog },
+    });
+    await act(async () => root.render(<FeedFilterPanel {...props} />));
+
+    const alert = container.querySelector('.MuiAlert-root');
+    expect(alert?.getAttribute('class')).toContain('MuiAlert-standardError');
+    expect(alert?.textContent).toContain('Не вдалося завантажити повний список груп');
+    expect(alert?.textContent).toContain('Повторити');
+    expect(alert?.querySelector('button[aria-label="Close"]')).toBeNull();
+
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(container.querySelector('.MuiAlert-root')).not.toBeNull();
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Повторити',
+    );
+    expect(retry).toBeDefined();
+    if (retry) {
+      retry.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      retry.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    }
+    expect(onReloadGroupCatalog).toHaveBeenCalledTimes(1);
+
+    await act(async () =>
+      root.render(
+        <FeedFilterPanel
+          {...buildProps({
+            toggles: {
+              ...buildProps().panel.toggles,
+              groupCatalogLoading: true,
+              groupCatalogError: { kind: 'details', message: 'details failed' },
+            },
+            actions: { ...buildProps().panel.actions, onReloadGroupCatalog },
+          })}
+        />,
+      ),
+    );
+    const detailsAlert = container.querySelector('.MuiAlert-root');
+    expect(detailsAlert?.getAttribute('class')).toContain('MuiAlert-standardWarning');
+    expect(
+      Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Повторити',
+      )?.disabled,
+    ).toBe(true);
+
+    await act(async () => root.render(<FeedFilterPanel {...buildProps()} />));
+    expect(container.querySelector('.MuiAlert-root')).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('selects multiple groups without reloading the catalog', async () => {
+    const onGroupsChange = vi.fn();
+    const onReloadGroupCatalog = vi.fn();
+    const props = buildProps({
+      sources: {
+        ...buildProps().panel.sources,
+        groupsList: ['A', 'B', 'C'],
+        groupInfos: {},
+      },
+      actions: {
+        ...buildProps().panel.actions,
+        onGroupsChange,
+        onReloadGroupCatalog,
+      },
+    });
+    await act(async () => root.render(<FeedFilterPanel {...props} />));
+
+    const groupProps = selectionSpy.mock.calls
+      .map(
+        ([value]) =>
+          value as {
+            title: string;
+            options: string[];
+            onValueChange: (value: string[]) => void;
+            keepOpenOnSelect?: boolean;
+            preserveInputOnSelect?: boolean;
+          },
+      )
+      .find((value) => value.title === 'Групи');
+    expect(groupProps).toBeDefined();
+    expect(groupProps?.options).toEqual(['A', 'B', 'C']);
+    expect(groupProps?.keepOpenOnSelect).toBe(true);
+    expect(groupProps?.preserveInputOnSelect).toBe(false);
+
+    act(() => groupProps?.onValueChange(['A']));
+    act(() => groupProps?.onValueChange(['A', 'B']));
+    expect(onGroupsChange).toHaveBeenNthCalledWith(1, ['A']);
+    expect(onGroupsChange).toHaveBeenNthCalledWith(2, ['A', 'B']);
+    expect(onReloadGroupCatalog).not.toHaveBeenCalled();
   });
 });

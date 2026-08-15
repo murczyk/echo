@@ -28,6 +28,7 @@ import {
   type MRT_Column,
   type MRT_ColumnDef,
   type MRT_PaginationState,
+  type MRT_TableInstance,
   MaterialReactTable,
   useMaterialReactTable,
 } from 'material-react-table';
@@ -359,6 +360,38 @@ function formatDateTime(value: number): string {
     dateStyle: 'short',
     timeStyle: 'short',
   }).format(date);
+}
+
+function getUnitsTablePaperProps(table: MRT_TableInstance<Unit>, loading: boolean) {
+  const paperProps = getDefaultMrtPaperProps({ table, loading, layout: 'workspace' });
+
+  return {
+    ...paperProps,
+    sx: {
+      ...paperProps.sx,
+      display: 'block',
+      overflow: 'auto',
+    },
+  };
+}
+
+function getUnitsTableContainerProps(loading: boolean, hasRows: boolean) {
+  const containerProps = getDefaultMrtContainerProps({
+    loading,
+    layout: 'workspace',
+    hasRows,
+  });
+
+  return {
+    ...containerProps,
+    sx: {
+      ...containerProps.sx,
+      flex: 'none',
+      height: 'auto',
+      maxHeight: 'none',
+      overflow: 'visible',
+    },
+  };
 }
 
 function OrbitCell({ unit }: { unit: Unit }) {
@@ -756,6 +789,7 @@ export function UnitsTable({
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('lg'));
   const columns = useUnitColumns(attachmentUnitIds, searchMode, onSearchModeChange, isSmallScreen);
+  const hasNextPage = (pagination.pageIndex + 1) * pagination.pageSize < totalCount;
   const table = useMaterialReactTable({
     ...defaultMrtOptions,
     columns,
@@ -770,7 +804,7 @@ export function UnitsTable({
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
     enableColumnResizing: tableStateContext.enableColumnResizing,
     enablePagination: true,
-    enableBottomToolbar: true,
+    enableBottomToolbar: hasNextPage,
     enableMultiSort: false,
     manualFiltering: true,
     manualSorting: true,
@@ -831,21 +865,15 @@ export function UnitsTable({
         </MrtRowActions>
       </Box>
     ),
-    renderBottomToolbar: ({ table }) =>
-      table.getCanNextPage() ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-          <Button variant="outlined" onClick={() => table.nextPage()} disabled={loading}>
-            Завантажити ще
-          </Button>
-        </Box>
-      ) : null,
-    muiTablePaperProps: ({ table }) =>
-      getDefaultMrtPaperProps({ table, loading, layout: 'workspace' }),
-    muiTableContainerProps: getDefaultMrtContainerProps({
-      loading,
-      layout: 'workspace',
-      hasRows: units.length > 0,
-    }),
+    renderBottomToolbar: ({ table }) => (
+      <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+        <Button variant="outlined" onClick={() => table.nextPage()} disabled={loading}>
+          Завантажити ще
+        </Button>
+      </Box>
+    ),
+    muiTablePaperProps: ({ table }) => getUnitsTablePaperProps(table, loading),
+    muiTableContainerProps: getUnitsTableContainerProps(loading, units.length > 0),
     muiTableBodyCellProps: {
       sx: {
         ...CUSTOM_STYLES.muiTableBodyCellProps.sx,

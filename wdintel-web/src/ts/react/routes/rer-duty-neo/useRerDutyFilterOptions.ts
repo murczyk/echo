@@ -17,6 +17,9 @@ import {
 } from '../../services/api/inbox';
 import { fetchServerInfo } from '../../services/api/server-info';
 
+export type GroupCatalogError =
+  { kind: 'catalog'; message: string } | { kind: 'details'; message: string };
+
 export function useRerDutyFilterOptions() {
   const [profiles, setProfiles] = useState<Record<string, SignalProfileEntry | null>>({});
   const [freqs, setFreqs] = useState<string[]>([]);
@@ -31,8 +34,16 @@ export function useRerDutyFilterOptions() {
   >({});
   const [saveFilterNameByFeedId, setSaveFilterNameByFeedId] = useState<Record<string, string>>({});
   const [reloadFreqsLoading, setReloadFreqsLoading] = useState(false);
+  const [groupCatalogLoading, setGroupCatalogLoading] = useState(false);
+  const [groupCatalogError, setGroupCatalogError] = useState<GroupCatalogError | null>(null);
   const [featureStrictNetworks, setFeatureStrictNetworks] = useState(false);
   const mountedRef = useRef(true);
+  const groupRequestGenerationRef = useRef(0);
+  const groupsListRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    groupsListRef.current = groupsList;
+  }, [groupsList]);
 
   useEffect(() => {
     return () => {
@@ -51,43 +62,30 @@ export function useRerDutyFilterOptions() {
   }, []);
 
   const loadFilterOptions = useCallback(async () => {
-    const [sendersResult, freqsResult, postsResult, groupKeysResult, tagsResult] =
-      await Promise.allSettled([
-        getLatestSenders(),
-        getLatestFrequencies(),
-        getPostsList(),
-        getUserSigintGroups(Date.now() - 2 * 24 * 60 * 60 * 1000),
-        getTagsForDisplay(),
-      ]);
-    if (sendersResult.status === 'fulfilled') setProfiles(sendersResult.value.data ?? {});
-    else console.warn('loadFilterOptions: getLatestSenders failed', sendersResult.reason);
-    if (freqsResult.status === 'fulfilled') setFreqs(freqsResult.value);
-    else console.warn('loadFilterOptions: getLatestFrequencies failed', freqsResult.reason);
-    if (postsResult.status === 'fulfilled') setPostsList(postsResult.value);
-    else console.warn('loadFilterOptions: getPostsList failed', postsResult.reason);
-    if (groupKeysResult.status === 'fulfilled') {
-      const groupKeys = groupKeysResult.value;
-      if (groupKeys.length > 0) {
-        try {
-          const infos = await getGroupInfosBatch(groupKeys);
-          const map: Record<string, SignalGroupEntry> = {};
-          infos.forEach((g) => {
-            map[g.masterKey] = g;
-          });
-          setGroupInfos(map);
-          setGroupsList(groupKeys);
-        } catch (e) {
-          console.warn('loadFilterOptions: getGroupInfosBatch failed', e);
-        }
-      }
-    } else console.warn('loadFilterOptions: getUserSigintGroups failed', groupKeysResult.reason);
+    const [sendersResult, freqsResult, postsResult, tagsResult] = await Promise.allSettled([
+      getLatestSenders(),
+      getLatestFrequencies(),
+      getPostsList(),
+      getTagsForDisplay(),
+    ]);
+    if (sendersResult.status === 'fulfilled') {
+      if (mountedRef.current) setProfiles(sendersResult.value.data ?? {});
+    } else console.warn('loadFilterOptions: getLatestSenders failed', sendersResult.reason);
+    if (freqsResult.status === 'fulfilled') {
+      if (mountedRef.current) setFreqs(freqsResult.value);
+    } else console.warn('loadFilterOptions: getLatestFrequencies failed', freqsResult.reason);
+    if (postsResult.status === 'fulfilled') {
+      if (mountedRef.current) setPostsList(postsResult.value);
+    } else console.warn('loadFilterOptions: getPostsList failed', postsResult.reason);
     if (tagsResult.status === 'fulfilled') {
-      setTagsMap(tagsResult.value.tagsMap);
-      setTagsOrder(tagsResult.value.tagsOrder);
+      if (mountedRef.current) {
+        setTagsMap(tagsResult.value.tagsMap);
+        setTagsOrder(tagsResult.value.tagsOrder);
+      }
     } else console.warn('loadFilterOptions: getTagsForDisplay failed', tagsResult.reason);
     try {
       const saved = await savedFiltersList();
-      setSavedFilters(saved);
+      if (mountedRef.current) setSavedFilters(saved);
     } catch (e) {
       console.warn('loadFilterOptions: savedFiltersList failed', e);
     }
@@ -97,6 +95,48 @@ export function useRerDutyFilterOptions() {
     } catch (e) {
       console.warn('loadFilterOptions: fetchServerInfo failed', e);
     }
+  }, []);
+
+  const reloadGroupCatalog = useCallback(() => {
+    const generation = ++groupRequestGenerationRef.current;
+    setGroupCatalogLoading(true);
+    setGroupCatalogError(null);
+    const sinceDateInclusiveMs = Date.now() - 2 * 24 * 60 * 60 * 1000;
+    getUserSigintGroups(sinceDateInclusiveMs)
+      .then(async (groupKeys) => {
+        if (!mountedRef.current || generation !== groupRequestGenerationRef.current) return;
+        const normalizedKeys = groupKeys.filter((key) => key.trim() !== '');
+        setGroupsList((previous) => [...new Set([...previous, ...normalizedKeys])]);
+        if (normalizedKeys.length === 0) return;
+        try {
+          const infos = await getGroupInfosBatch(normalizedKeys);
+          if (!mountedRef.current || generation !== groupRequestGenerationRef.current) return;
+          setGroupInfos((previous) => ({
+            ...previous,
+            ...Object.fromEntries(infos.map((info) => [info.masterKey, info])),
+          }));
+        } catch {
+          if (!mountedRef.current || generation !== groupRequestGenerationRef.current) return;
+          setGroupCatalogError({
+            kind: 'details',
+            message: 'Не вдалося завантажити назви деяких груп.',
+          });
+        }
+      })
+      .catch(() => {
+        if (!mountedRef.current || generation !== groupRequestGenerationRef.current) return;
+        setGroupCatalogError({
+          kind: 'catalog',
+          message:
+            groupsListRef.current.length > 0
+              ? 'Не вдалося завантажити повний список груп. Показано раніше доступні групи.'
+              : 'Не вдалося завантажити список груп.',
+        });
+      })
+      .finally(() => {
+        if (mountedRef.current && generation === groupRequestGenerationRef.current)
+          setGroupCatalogLoading(false);
+      });
   }, []);
 
   const pruneSavedFilterUiState = useCallback((feedId: string) => {
@@ -118,6 +158,13 @@ export function useRerDutyFilterOptions() {
     loadFilterOptions();
   }, [loadFilterOptions]);
 
+  useEffect(() => {
+    reloadGroupCatalog();
+    return () => {
+      groupRequestGenerationRef.current += 1;
+    };
+  }, [reloadGroupCatalog]);
+
   return {
     profiles,
     setProfiles,
@@ -137,6 +184,9 @@ export function useRerDutyFilterOptions() {
     pruneSavedFilterUiState,
     reloadFreqsLoading,
     reloadLatestFrequencies,
+    groupCatalogLoading,
+    groupCatalogError,
+    reloadGroupCatalog,
     featureStrictNetworks,
   };
 }
