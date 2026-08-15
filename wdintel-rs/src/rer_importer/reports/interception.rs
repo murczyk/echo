@@ -8,8 +8,8 @@ use crate::error::AppError;
 use crate::rer_importer;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::report_chunking::{
-    compare_inbox_report_message_order, report_period_chunks,
-    ReportPeriodChunk, ReportPeriodEnd,
+    oldest_first_inbox_report_req, report_period_chunks, ReportPeriodChunk,
+    ReportPeriodEnd,
 };
 use crate::types::*;
 use crate::utils::dt_from_millis;
@@ -31,8 +31,6 @@ mod palette;
 #[derive(FromQueryResult)]
 struct InboxMessage {
     message_id: i64,
-    datetime: Option<NaiveDateTime>,
-    timestamp: Option<NaiveDateTime>,
     date: Option<String>,
     time: Option<String>,
     freq: Option<String>,
@@ -94,6 +92,8 @@ async fn collect_interception_report_messages(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<InboxMessage>, AppError> {
+    let req = oldest_first_inbox_report_req(req);
+    let req = &req;
     let report_settings =
         crate::system_settings::get_report_generation_settings(&env.dbx)
             .await
@@ -157,7 +157,7 @@ async fn collect_interception_report_messages(
         );
         ensure_interception_report_row_limit(user_login, messages.len())?;
     }
-    sort_interception_report_messages(&mut messages, req);
+    sort_interception_report_messages(&mut messages);
     Ok(messages)
 }
 
@@ -204,20 +204,12 @@ fn merge_interception_report_chunk(
     }
 }
 
-fn sort_interception_report_messages(
-    messages: &mut [InboxMessage],
-    req: &InboxMessagesReq,
-) {
+fn sort_interception_report_messages(messages: &mut [InboxMessage]) {
     messages.sort_by(|left, right| {
-        compare_inbox_report_message_order(
-            req,
-            left.datetime,
-            left.timestamp,
-            left.message_id,
-            right.datetime,
-            right.timestamp,
-            right.message_id,
-        )
+        left.date
+            .cmp(&right.date)
+            .then_with(|| left.time.cmp(&right.time))
+            .then_with(|| left.message_id.cmp(&right.message_id))
     });
 }
 
@@ -541,8 +533,6 @@ async fn build_inbox_messages_report_sql(
             .c(h!())?;
     let mut q = SignalMessage::find()
         .inner_join(sigint_inbox_item::Entity)
-        .column(sigint_inbox_item::Column::Datetime)
-        .column(signal_message::Column::Timestamp)
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
         .column(sigint_inbox_item::Column::Freq)
@@ -1182,8 +1172,6 @@ mod tests {
         .unwrap();
         InboxMessage {
             message_id: datetime.and_utc().timestamp(),
-            datetime: Some(datetime),
-            timestamp: Some(datetime),
             date: Some(date.to_string()),
             time: Some(time.to_string()),
             freq: None,
@@ -1261,39 +1249,20 @@ mod tests {
     }
 
     #[test]
-    fn interception_report_resorts_after_collecting_chunks() {
+    fn interception_report_resorts_displayed_datetime_oldest_first() {
         let mut messages = vec![
             interception_message("2026-08-06", "11:00:00", "second"),
             interception_message("2026-08-06", "10:00:00", "first"),
             interception_message("2026-08-06", "13:00:00", "fourth"),
             interception_message("2026-08-06", "12:00:00", "third"),
         ];
-
-        sort_interception_report_messages(
-            &mut messages,
-            &InboxMessagesReq::default(),
-        );
+        sort_interception_report_messages(&mut messages);
         assert_eq!(
             messages
                 .iter()
                 .filter_map(|message| message.body.as_deref())
                 .collect::<Vec<_>>(),
             vec!["first", "second", "third", "fourth"],
-        );
-
-        sort_interception_report_messages(
-            &mut messages,
-            &InboxMessagesReq {
-                newest_first: Some(true),
-                ..Default::default()
-            },
-        );
-        assert_eq!(
-            messages
-                .iter()
-                .filter_map(|message| message.body.as_deref())
-                .collect::<Vec<_>>(),
-            vec!["fourth", "third", "second", "first"],
         );
     }
 

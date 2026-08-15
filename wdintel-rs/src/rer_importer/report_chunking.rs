@@ -117,13 +117,16 @@ pub fn inbox_report_chunk_req(
     chunk_req
 }
 
-pub fn inbox_report_newest_first(req: &InboxMessagesReq) -> bool {
-    req.load_latest == Some(true)
-        || req.newest_first == Some(true)
-        || req.before_id_noninclusive.is_some()
+pub fn oldest_first_inbox_report_req(
+    req: &InboxMessagesReq,
+) -> InboxMessagesReq {
+    let mut req = req.clone();
+    req.load_latest = Some(false);
+    req.newest_first = Some(false);
+    req
 }
 
-pub fn compare_inbox_report_message_order(
+pub fn compare_inbox_report_message_oldest_first(
     req: &InboxMessagesReq,
     left_datetime: Option<NaiveDateTime>,
     left_timestamp: Option<NaiveDateTime>,
@@ -132,7 +135,6 @@ pub fn compare_inbox_report_message_order(
     right_timestamp: Option<NaiveDateTime>,
     right_id: i64,
 ) -> Ordering {
-    let newest_first = inbox_report_newest_first(req);
     let (left, right) = match req
         .sort_by
         .unwrap_or(InboxMessagesSortBy::IMSDatetime)
@@ -140,26 +142,16 @@ pub fn compare_inbox_report_message_order(
         InboxMessagesSortBy::IMSDatetime => (left_datetime, right_datetime),
         InboxMessagesSortBy::IMSTimestamp => (left_timestamp, right_timestamp),
     };
-    compare_optional_datetime(left, right, newest_first).then_with(|| {
-        if newest_first {
-            right_id.cmp(&left_id)
-        } else {
-            left_id.cmp(&right_id)
-        }
-    })
+    compare_optional_datetime(left, right).then_with(|| left_id.cmp(&right_id))
 }
 
 fn compare_optional_datetime(
     left: Option<NaiveDateTime>,
     right: Option<NaiveDateTime>,
-    newest_first: bool,
 ) -> Ordering {
     match (left, right) {
-        (Some(left), Some(right)) if newest_first => right.cmp(&left),
         (Some(left), Some(right)) => left.cmp(&right),
         (None, None) => Ordering::Equal,
-        (None, Some(_)) if newest_first => Ordering::Less,
-        (Some(_), None) if newest_first => Ordering::Greater,
         (None, Some(_)) => Ordering::Greater,
         (Some(_), None) => Ordering::Less,
     }
@@ -338,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn compares_collected_messages_by_requested_order() {
+    fn compares_collected_messages_oldest_first() {
         let older_datetime =
             NaiveDateTime::parse_from_str("2026-08-14 10:00:00", "%F %T")
                 .unwrap();
@@ -347,7 +339,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(
-            compare_inbox_report_message_order(
+            compare_inbox_report_message_oldest_first(
                 &InboxMessagesReq::default(),
                 Some(older_datetime),
                 Some(newer_datetime),
@@ -359,7 +351,7 @@ mod tests {
             Ordering::Less,
         );
         assert_eq!(
-            compare_inbox_report_message_order(
+            compare_inbox_report_message_oldest_first(
                 &InboxMessagesReq {
                     sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
                     newest_first: Some(true),
@@ -372,7 +364,19 @@ mod tests {
                 Some(older_datetime),
                 2,
             ),
-            Ordering::Less,
+            Ordering::Greater,
         );
+    }
+
+    #[test]
+    fn report_request_ignores_analysis_list_direction() {
+        let req = oldest_first_inbox_report_req(&InboxMessagesReq {
+            load_latest: Some(true),
+            newest_first: Some(true),
+            ..Default::default()
+        });
+
+        assert_eq!(req.load_latest, Some(false));
+        assert_eq!(req.newest_first, Some(false));
     }
 }
