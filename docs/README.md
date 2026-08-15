@@ -82,9 +82,13 @@ flowchart LR
 
     subgraph vllm_router_lxc["echo-vllm-router · Optional AI routing · Debian 13"]
         direction TB
-        vllm_router["vLLM Router<br/>native systemd · :8000<br/>cache_aware"]
+        vllm_router["General Gemma router<br/>native systemd · :8000<br/>cache_aware"]
+        vllm_ocr_router["OCR-Gemma router<br/>native systemd · :8001<br/>round_robin"]
+        vllm_nuextract_router["NuExtract router<br/>native systemd · :8002<br/>round_robin"]
         vllm_otel["SigNoz OTel collector<br/>native systemd"]
         vllm_router -.->|router metrics<br/>loopback :29000| vllm_otel
+        vllm_ocr_router -.->|router metrics<br/>loopback :29001| vllm_otel
+        vllm_nuextract_router -.->|router metrics<br/>loopback :29002| vllm_otel
     end
 
     subgraph analytics_lxc["LXC 2 · Secondary analytics · OPTIONAL · Debian 13"]
@@ -108,6 +112,22 @@ flowchart LR
         vllm -->|inference| gb10
     end
 
+    subgraph vllm_spark02["echo-gpu-spark-02 · Optional OCR inference"]
+        ocr_hf_cache[("Pinned Gemma 4 weights")]
+        ocr_vllm["vLLM OCR-Gemma API<br/>Docker · Tailscale :8000"]
+        ocr_gb10["NVIDIA GB10"]
+
+        ocr_hf_cache --> ocr_vllm -->|inference| ocr_gb10
+    end
+
+    subgraph vllm_flyingskull["echo-gpu-flyingskull · Optional OCR inference"]
+        nuextract_cache[("Pinned NuExtract3 weights")]
+        nuextract_vllm["vLLM NuExtract3 API<br/>dedicated Incus service · Tailscale :8000"]
+        rtx4070["NVIDIA RTX 4070 Ti SUPER"]
+
+        nuextract_cache --> nuextract_vllm -->|inference| rtx4070
+    end
+
     browser -->|HTTPS| web
     vault -.->|runtime secrets| api
     vault -.->|runtime secrets| bg
@@ -128,7 +148,11 @@ flowchart LR
     api -.->|Chat Completions HTTPS| openai_engine
     api <-->|Chat Completions HTTP<br/>Tailscale| vllm_router
     vllm_router -->|OpenAI-compatible HTTP<br/>Tailscale| vllm
+    vllm_ocr_router -->|OpenAI-compatible HTTP<br/>Tailscale| ocr_vllm
+    vllm_nuextract_router -->|OpenAI-compatible HTTP<br/>Tailscale| nuextract_vllm
     vllm -.->|Prometheus metrics<br/>Tailscale| vllm_otel
+    ocr_vllm -.->|Prometheus metrics<br/>Tailscale| vllm_otel
+    nuextract_vllm -.->|Prometheus metrics<br/>Tailscale| vllm_otel
 
     style echo_lxc stroke-width:2px
     style analytics_lxc stroke-width:2px,stroke-dasharray:8 5
@@ -136,10 +160,12 @@ flowchart LR
     style signoz_lxc stroke-width:2px,stroke-dasharray:8 5
     style vllm_router_lxc stroke-width:2px,stroke-dasharray:8 5
     style vllm_spark stroke-width:2px,stroke-dasharray:8 5
+    style vllm_spark02 stroke-width:2px,stroke-dasharray:8 5
+    style vllm_flyingskull stroke-width:2px,stroke-dasharray:8 5
     classDef canonical stroke-width:3px
     classDef optional stroke-dasharray:6 4
     class postgres canonical
-    class file_registry,nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm_router,vllm_otel,vllm,hf_cache,gb10 optional
+    class file_registry,nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm_router,vllm_ocr_router,vllm_nuextract_router,vllm_otel,vllm,hf_cache,gb10,ocr_hf_cache,ocr_vllm,ocr_gb10,nuextract_cache,nuextract_vllm,rtx4070 optional
 ```
 
 The diagram focuses on the core web, worker, messenger, storage, observability,
@@ -177,7 +203,10 @@ See [Echo vLLM](../echo-vllm/README.md) for the `echo-gpu-spark` worker and
 [Echo vLLM Router](../echo-vllm-router/README.md) for routing, observability,
 deployment, verification, and rollback commands. Echo uses the router as its
 normal OpenAI-compatible endpoint; direct Spark access is retained only as a
-fallback.
+fallback. The same router host owns isolated OCR-Gemma and NuExtract3 endpoints
+for a separately deployed document-extraction service; that service and its
+metrics are intentionally outside this topology until its deployment is
+designed.
 
 ### vLLM inference architecture
 
@@ -193,11 +222,15 @@ flowchart LR
     end
 
     subgraph router_lxc["echo-vllm-router LXC · Debian 13"]
-        router["vLLM Router · :8000<br/>cache_aware"]
-        router_metrics["Router metrics<br/>127.0.0.1:29000"]
+        router["General Gemma router · :8000<br/>cache_aware"]
+        ocr_router["OCR-Gemma router · :8001<br/>round_robin"]
+        nuextract_router["NuExtract router · :8002<br/>round_robin"]
+        router_metrics["Router metrics<br/>127.0.0.1:29000–29002"]
         collector["SigNoz OTel collector"]
 
         router -.-> router_metrics --> collector
+        ocr_router -.-> router_metrics
+        nuextract_router -.-> router_metrics
     end
 
     subgraph spark["echo-gpu-spark · AI inference"]
@@ -209,16 +242,25 @@ flowchart LR
         vllm -->|inference| gpu
     end
 
+    subgraph ocr_workers["Dedicated OCR workers"]
+        ocr_vllm["Spark-02 vLLM<br/>OCR-Gemma alias"]
+        nuextract_vllm["Flyingskull vLLM<br/>NuExtract3 BF16"]
+    end
+
     signoz["SigNoz<br/>central metrics"]
 
     ai_client -->|OpenAI-compatible HTTP<br/>Tailscale| router
     router -->|OpenAI-compatible HTTP<br/>Tailscale| vllm
+    ocr_router -->|OpenAI-compatible HTTP<br/>Tailscale| ocr_vllm
+    nuextract_router -->|OpenAI-compatible HTTP<br/>Tailscale| nuextract_vllm
     ai_client -.->|fallback only| vllm
     vllm -.->|Prometheus metrics<br/>Tailscale| collector
+    ocr_vllm -.->|Prometheus metrics<br/>Tailscale| collector
+    nuextract_vllm -.->|Prometheus metrics<br/>Tailscale| collector
     collector -->|OTLP gRPC<br/>Tailscale| signoz
 
     classDef optional stroke-dasharray:6 4
-    class ai_workers,router,router_metrics,collector,hf_cache,vllm,gpu,signoz optional
+    class ai_workers,router,ocr_router,nuextract_router,router_metrics,collector,hf_cache,vllm,gpu,ocr_vllm,nuextract_vllm,signoz optional
 ```
 
 ### Per-user AI agent harness

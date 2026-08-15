@@ -1,0 +1,87 @@
+{
+  "selection_id": "14aug26-best-combined-v1",
+  "models": {
+    "gemma-fp8-1120": "raw/layout-suite-fp8-1120",
+    "nuextract3-bf16": "raw/layout-suite-nuextract3-bf16"
+  },
+  "documents": {
+    "settlement-codes": {
+      "1": {"model": "gemma-fp8-1120", "operations": [{"name": "plain_three_cell_header"}]}
+    },
+    "uav-availability": {
+      "1": {
+        "model": "nuextract3-bf16",
+        "replacements": {"коперного": "коптерного", "1рога": "1рота", "ыдрБпС": "бдрБпС"},
+        "operations": [
+          {"name": "first_header_colspan", "value": 2},
+          {"name": "append_short_rows", "table": 1, "columns": 9}
+        ]
+      }
+    },
+    "group-tracking-119-137": {
+      "1": {"model": "nuextract3-bf16", "operations": [{"name": "single_cell_rows_colspan", "table": 1, "columns": 12}]},
+      "2": {"model": "nuextract3-bf16", "operations": [{"name": "single_cell_rows_colspan", "table": 1, "columns": 12}]},
+      "3": {"model": "nuextract3-bf16", "operations": [{"name": "single_cell_rows_colspan", "table": 1, "columns": 12}]},
+      "4": {"model": "nuextract3-bf16", "operations": [{"name": "single_cell_rows_colspan", "table": 1, "columns": 12}]}
+    },
+    "fpv-lightning-inventory": {
+      "1": {
+        "model": "nuextract3-bf16",
+        "operations": [
+          {"name": "first_header_colspan", "value": 2},
+          {"name": "insert_blank_before", "table": 1, "row_contains": "Гриф", "cell_contains": "Oca10"},
+          {"name": "append_blank", "table": 1, "row_contains": "Гром"}
+        ]
+      },
+      "2": {
+        "model": "nuextract3-bf16",
+        "replacements": {"6пБпЛА": "бпБпЛА", "НСУ 3мей": "НСУ Змей", "Щелогах": "Щелюгах", "само собраная": "само сборная", "Само собраное": "Само сборное"},
+        "operations": [
+          {"name": "insert_blank_before_all", "table": 1, "cell_pattern": "^(НСУ|Стрелец)"}
+        ]
+      }
+    },
+    "personnel-location": {
+      "1": {"model": "nuextract3-bf16", "operations": []}
+    },
+    "target-planning": {
+      "1": {"model": "gemma-fp8-1120", "operations": []}
+    },
+    "group-tracking-106": {
+      "1": {
+        "model": "nuextract3-bf16",
+        "replacements": {"pp/51": "рр/51", "МАЛЬШ": "МАЛЫШ"},
+        "operations": [
+          {"name": "header_cell_colspan", "table": 1, "cell_contains": "Подр.", "value": 2},
+          {"name": "single_cell_rows_colspan", "table": 1, "columns": 12},
+          {"name": "insert_cell", "table": 1, "row_contains": "ЛЕНА (2)", "before": 8, "text": "без изменений"},
+          {"name": "insert_cell", "table": 1, "row_contains": "СОКОЛ (2)", "before": 8, "text": "без изменений"},
+          {"name": "append_blank", "table": 1, "row_contains": "ИШМА (1)"},
+          {"name": "append_blank", "table": 1, "row_contains": "МАЛЫШ (2)"},
+          {"name": "insert_cell", "table": 1, "row_contains": "ПРОСТОЙ (2)", "before": 10, "text": ""},
+          {"name": "insert_cell", "table": 1, "row_contains": "ФИЛИН (2)", "before": 10, "text": ""},
+          {"name": "insert_cell", "table": 1, "row_contains": "АНТИЛОПА-3 (1)", "before": 10, "text": ""},
+          {"name": "insert_cell", "table": 1, "row_contains": "АНТИЛОПА (2)", "before": 9, "text": ""},
+          {"name": "insert_cell", "table": 1, "row_contains": "КОРШУН(2)", "before": 10, "text": ""},
+          {"name": "insert_cell", "table": 1, "row_contains": "СОЙКА (2)", "before": 10, "text": ""},
+          {"name": "append_blank", "table": 1, "row_contains": "СОВА (2)"},
+          {"name": "insert_cell", "table": 1, "row_contains": "ГОЛУБЬ (2)", "before": 10, "text": ""},
+          {"name": "insert_cell", "table": 1, "row_contains": "АИСТ (2)", "before": 10, "text": ""},
+          {"name": "insert_cell", "table": 1, "row_contains": "СИНИЦА (2)", "before": 10, "text": ""}
+        ]
+      }
+    },
+    "sparta-daily-report": {
+      "1": {"model": "gemma-fp8-1120", "operations": []}
+    },
+    "2msb-battle-report": {
+      "1": {"model": "nuextract3-bf16", "operations": []},
+      "2": {"model": "nuextract3-bf16", "operations": []},
+      "3": {"model": "nuextract3-bf16", "operations": []},
+      "4": {"model": "nuextract3-bf16", "operations": []}
+    },
+    "uav-service-order": {
+      "1": {"model": "nuextract3-bf16", "operations": []}
+    }
+  }
+}

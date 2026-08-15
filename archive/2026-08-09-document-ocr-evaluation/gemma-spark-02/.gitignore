@@ -1,0 +1,4 @@
+input/*.jpg
+input/*.jpeg
+input/*.png
+**/__pycache__/

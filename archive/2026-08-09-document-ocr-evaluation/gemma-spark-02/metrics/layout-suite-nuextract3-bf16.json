@@ -1,0 +1,863 @@
+{
+  "suite_id": "14aug26-layout-html-v1",
+  "pages": 17,
+  "passed": 8,
+  "failed": 9,
+  "results": [
+    {
+      "artifact": "settlement-codes__p01__nuextract3__bf16__non-thinking.json",
+      "document_id": "settlement-codes",
+      "page_index": 1,
+      "profile": "table",
+      "passed_automated_checks": false,
+      "finish_reason": "stop",
+      "latency_seconds": 16.53753387602046,
+      "usage": {
+        "completion_tokens": 1006,
+        "prompt_tokens": 491,
+        "total_tokens": 1497,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "tables": 1,
+        "rows": 22,
+        "max_columns": 3,
+        "table_columns": [
+          3
+        ],
+        "table_rows": [
+          22
+        ],
+        "table_row_widths": [
+          [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ]
+        ],
+        "row_widths": {
+          "3": 22
+        },
+        "empty_cells": 0,
+        "merged_cells": 0,
+        "formatted_cells": 0,
+        "image_cells": 0
+      },
+      "missing_anchors": [
+        "МЕКСИКА"
+      ],
+      "repeated_lines": [],
+      "failures": [
+        "missing anchor: МЕКСИКА"
+      ]
+    },
+    {
+      "artifact": "uav-availability__p01__nuextract3__bf16__non-thinking.json",
+      "document_id": "uav-availability",
+      "page_index": 1,
+      "profile": "table",
+      "passed_automated_checks": false,
+      "finish_reason": "stop",
+      "latency_seconds": 28.565505417995155,
+      "usage": {
+        "completion_tokens": 1716,
+        "prompt_tokens": 1501,
+        "total_tokens": 3217,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "tables": 1,
+        "rows": 16,
+        "max_columns": 9,
+        "table_columns": [
+          9
+        ],
+        "table_rows": [
+          16
+        ],
+        "table_row_widths": [
+          [
+            8,
+            8,
+            8,
+            8,
+            8,
+            9,
+            9,
+            8,
+            8,
+            8,
+            8,
+            8,
+            8,
+            8,
+            8,
+            8
+          ]
+        ],
+        "row_widths": {
+          "8": 14,
+          "9": 2
+        },
+        "empty_cells": 39,
+        "merged_cells": 5,
+        "formatted_cells": 0,
+        "image_cells": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": [
+        "table_1_row_columns=[8]; expected=9"
+      ]
+    },
+    {
+      "artifact": "group-tracking-119-137__p01__nuextract3__bf16__non-thinking.json",
+      "document_id": "group-tracking-119-137",
+      "page_index": 1,
+      "profile": "table",
+      "passed_automated_checks": false,
+      "finish_reason": "stop",
+      "latency_seconds": 49.3182940230472,
+      "usage": {
+        "completion_tokens": 2982,
+        "prompt_tokens": 1469,
+        "total_tokens": 4451,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "tables": 1,
+        "rows": 19,
+        "max_columns": 12,
+        "table_columns": [
+          12
+        ],
+        "table_rows": [
+          19
+        ],
+        "table_row_widths": [
+          [
+            11,
+            12,
+            12,
+            12,
+            12,
+            11,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12
+          ]
+        ],
+        "row_widths": {
+          "11": 2,
+          "12": 17
+        },
+        "empty_cells": 59,
+        "merged_cells": 2,
+        "formatted_cells": 0,
+        "image_cells": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": [
+        "table_1_row_columns=[11]; expected=12"
+      ]
+    },
+    {
+      "artifact": "group-tracking-119-137__p02__nuextract3__bf16__non-thinking.json",
+      "document_id": "group-tracking-119-137",
+      "page_index": 2,
+      "profile": "table",
+      "passed_automated_checks": false,
+      "finish_reason": "stop",
+      "latency_seconds": 53.499122162000276,
+      "usage": {
+        "completion_tokens": 3233,
+        "prompt_tokens": 1604,
+        "total_tokens": 4837,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "tables": 1,
+        "rows": 21,
+        "max_columns": 12,
+        "table_columns": [
+          12
+        ],
+        "table_rows": [
+          21
+        ],
+        "table_row_widths": [
+          [
+            11,
+            12,
+            12,
+            12,
+            12,
+            11,
+            12,
+            12,
+            12,
+            11,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12
+          ]
+        ],
+        "row_widths": {
+          "11": 3,
+          "12": 18
+        },
+        "empty_cells": 70,
+        "merged_cells": 3,
+        "formatted_cells": 0,
+        "image_cells": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": [
+        "table_1_row_columns=[11]; expected=12"
+      ]
+    },
+    {
+      "artifact": "group-tracking-119-137__p03__nuextract3__bf16__non-thinking.json",
+      "document_id": "group-tracking-119-137",
+      "page_index": 3,
+      "profile": "table",
+      "passed_automated_checks": true,
+      "finish_reason": "stop",
+      "latency_seconds": 58.509937032009475,
+      "usage": {
+        "completion_tokens": 3539,
+        "prompt_tokens": 1514,
+        "total_tokens": 5053,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "tables": 1,
+        "rows": 23,
+        "max_columns": 12,
+        "table_columns": [
+          12
+        ],
+        "table_rows": [
+          23
+        ],
+        "table_row_widths": [
+          [
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12
+          ]
+        ],
+        "row_widths": {
+          "12": 23
+        },
+        "empty_cells": 85,
+        "merged_cells": 1,
+        "formatted_cells": 0,
+        "image_cells": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": []
+    },
+    {
+      "artifact": "group-tracking-119-137__p04__nuextract3__bf16__non-thinking.json",
+      "document_id": "group-tracking-119-137",
+      "page_index": 4,
+      "profile": "table",
+      "passed_automated_checks": true,
+      "finish_reason": "stop",
+      "latency_seconds": 42.02477147395257,
+      "usage": {
+        "completion_tokens": 2551,
+        "prompt_tokens": 929,
+        "total_tokens": 3480,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "tables": 1,
+        "rows": 14,
+        "max_columns": 12,
+        "table_columns": [
+          12
+        ],
+        "table_rows": [
+          14
+        ],
+        "table_row_widths": [
+          [
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12,
+            12
+          ]
+        ],
+        "row_widths": {
+          "12": 14
+        },
+        "empty_cells": 38,
+        "merged_cells": 1,
+        "formatted_cells": 0,
+        "image_cells": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": []
+    },
+    {
+      "artifact": "fpv-lightning-inventory__p01__nuextract3__bf16__non-thinking.json",
+      "document_id": "fpv-lightning-inventory",
+      "page_index": 1,
+      "profile": "table",
+      "passed_automated_checks": false,
+      "finish_reason": "stop",
+      "latency_seconds": 29.18414681899594,
+      "usage": {
+        "completion_tokens": 1758,
+        "prompt_tokens": 1501,
+        "total_tokens": 3259,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "tables": 1,
+        "rows": 12,
+        "max_columns": 9,
+        "table_columns": [
+          9
+        ],
+        "table_rows": [
+          12
+        ],
+        "table_row_widths": [
+          [
+            8,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            8
+          ]
+        ],
+        "row_widths": {
+          "8": 2,
+          "9": 10
+        },
+        "empty_cells": 24,
+        "merged_cells": 5,
+        "formatted_cells": 0,
+        "image_cells": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": [
+        "table_1_row_columns=[8]; expected=9"
+      ]
+    },
+    {
+      "artifact": "fpv-lightning-inventory__p02__nuextract3__bf16__non-thinking.json",
+      "document_id": "fpv-lightning-inventory",
+      "page_index": 2,
+      "profile": "table",
+      "passed_automated_checks": false,
+      "finish_reason": "stop",
+      "latency_seconds": 27.337130229978357,
+      "usage": {
+        "completion_tokens": 1645,
+        "prompt_tokens": 1547,
+        "total_tokens": 3192,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "tables": 2,
+        "rows": 23,
+        "max_columns": 8,
+        "table_columns": [
+          8,
+          3
+        ],
+        "table_rows": [
+          10,
+          13
+        ],
+        "table_row_widths": [
+          [
+            8,
+            8,
+            8,
+            8,
+            8,
+            8,
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ]
+        ],
+        "row_widths": {
+          "3": 13,
+          "8": 10
+        },
+        "empty_cells": 34,
+        "merged_cells": 2,
+        "formatted_cells": 0,
+        "image_cells": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": [
+        "table_columns=[8, 3]!=[9, 3]",
+        "table_1_row_columns=[8]; expected=9"
+      ]
+    },
+    {
+      "artifact": "personnel-location__p01__nuextract3__bf16__non-thinking.json",
+      "document_id": "personnel-location",
+      "page_index": 1,
+      "profile": "table",
+      "passed_automated_checks": true,
+      "finish_reason": "stop",
+      "latency_seconds": 50.84886207705131,
+      "usage": {
+        "completion_tokens": 3093,
+        "prompt_tokens": 743,
+        "total_tokens": 3836,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "tables": 1,
+        "rows": 32,
+        "max_columns": 6,
+        "table_columns": [
+          6
+        ],
+        "table_rows": [
+          32
+        ],
+        "table_row_widths": [
+          [
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6
+          ]
+        ],
+        "row_widths": {
+          "6": 32
+        },
+        "empty_cells": 26,
+        "merged_cells": 0,
+        "formatted_cells": 0,
+        "image_cells": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": []
+    },
+    {
+      "artifact": "target-planning__p01__nuextract3__bf16__non-thinking.json",
+      "document_id": "target-planning",
+      "page_index": 1,
+      "profile": "table",
+      "passed_automated_checks": false,
+      "finish_reason": "stop",
+      "latency_seconds": 21.453177014016546,
+      "usage": {
+        "completion_tokens": 1255,
+        "prompt_tokens": 3305,
+        "total_tokens": 4560,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "tables": 1,
+        "rows": 5,
+        "max_columns": 5,
+        "table_columns": [
+          5
+        ],
+        "table_rows": [
+          5
+        ],
+        "table_row_widths": [
+          [
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        ],
+        "row_widths": {
+          "5": 5
+        },
+        "empty_cells": 0,
+        "merged_cells": 0,
+        "formatted_cells": 0,
+        "image_cells": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": [
+        "table_rows=[5]!=[6]",
+        "image_cells=0<4"
+      ]
+    },
+    {
+      "artifact": "group-tracking-106__p01__nuextract3__bf16__non-thinking.json",
+      "document_id": "group-tracking-106",
+      "page_index": 1,
+      "profile": "table",
+      "passed_automated_checks": false,
+      "finish_reason": "stop",
+      "latency_seconds": 47.53600965096848,
+      "usage": {
+        "completion_tokens": 2873,
+        "prompt_tokens": 1424,
+        "total_tokens": 4297,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "tables": 1,
+        "rows": 19,
+        "max_columns": 12,
+        "table_columns": [
+          12
+        ],
+        "table_rows": [
+          19
+        ],
+        "table_row_widths": [
+          [
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            12
+          ]
+        ],
+        "row_widths": {
+          "11": 18,
+          "12": 1
+        },
+        "empty_cells": 35,
+        "merged_cells": 3,
+        "formatted_cells": 0,
+        "image_cells": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": [
+        "table_1_row_columns=[11]; expected=12"
+      ]
+    },
+    {
+      "artifact": "sparta-daily-report__p01__nuextract3__bf16__non-thinking.json",
+      "document_id": "sparta-daily-report",
+      "page_index": 1,
+      "profile": "document",
+      "passed_automated_checks": false,
+      "finish_reason": "stop",
+      "latency_seconds": 24.473634254012723,
+      "usage": {
+        "completion_tokens": 1371,
+        "prompt_tokens": 5885,
+        "total_tokens": 7256,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "articles": 1,
+        "sections": 1,
+        "paragraphs": 19,
+        "headings": 1,
+        "lists": 0,
+        "tables": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": [
+        "sections=1<2"
+      ]
+    },
+    {
+      "artifact": "2msb-battle-report__p01__nuextract3__bf16__non-thinking.json",
+      "document_id": "2msb-battle-report",
+      "page_index": 1,
+      "profile": "document",
+      "passed_automated_checks": true,
+      "finish_reason": "stop",
+      "latency_seconds": 15.869946482009254,
+      "usage": {
+        "completion_tokens": 964,
+        "prompt_tokens": 788,
+        "total_tokens": 1752,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "articles": 1,
+        "sections": 1,
+        "paragraphs": 13,
+        "headings": 0,
+        "lists": 0,
+        "tables": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": []
+    },
+    {
+      "artifact": "2msb-battle-report__p02__nuextract3__bf16__non-thinking.json",
+      "document_id": "2msb-battle-report",
+      "page_index": 2,
+      "profile": "document",
+      "passed_automated_checks": true,
+      "finish_reason": "stop",
+      "latency_seconds": 14.809061484993435,
+      "usage": {
+        "completion_tokens": 900,
+        "prompt_tokens": 788,
+        "total_tokens": 1688,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "articles": 1,
+        "sections": 1,
+        "paragraphs": 24,
+        "headings": 0,
+        "lists": 1,
+        "tables": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": []
+    },
+    {
+      "artifact": "2msb-battle-report__p03__nuextract3__bf16__non-thinking.json",
+      "document_id": "2msb-battle-report",
+      "page_index": 3,
+      "profile": "document",
+      "passed_automated_checks": true,
+      "finish_reason": "stop",
+      "latency_seconds": 22.883195900009014,
+      "usage": {
+        "completion_tokens": 1392,
+        "prompt_tokens": 788,
+        "total_tokens": 2180,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "articles": 1,
+        "sections": 1,
+        "paragraphs": 20,
+        "headings": 0,
+        "lists": 2,
+        "tables": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": []
+    },
+    {
+      "artifact": "2msb-battle-report__p04__nuextract3__bf16__non-thinking.json",
+      "document_id": "2msb-battle-report",
+      "page_index": 4,
+      "profile": "document",
+      "passed_automated_checks": true,
+      "finish_reason": "stop",
+      "latency_seconds": 3.411265833012294,
+      "usage": {
+        "completion_tokens": 202,
+        "prompt_tokens": 788,
+        "total_tokens": 990,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "articles": 1,
+        "sections": 1,
+        "paragraphs": 4,
+        "headings": 0,
+        "lists": 0,
+        "tables": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": []
+    },
+    {
+      "artifact": "uav-service-order__p01__nuextract3__bf16__non-thinking.json",
+      "document_id": "uav-service-order",
+      "page_index": 1,
+      "profile": "document",
+      "passed_automated_checks": true,
+      "finish_reason": "stop",
+      "latency_seconds": 9.98166772397235,
+      "usage": {
+        "completion_tokens": 607,
+        "prompt_tokens": 696,
+        "total_tokens": 1303,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "structure": {
+        "articles": 1,
+        "sections": 1,
+        "paragraphs": 13,
+        "headings": 0,
+        "lists": 1,
+        "tables": 0
+      },
+      "missing_anchors": [],
+      "repeated_lines": [],
+      "failures": []
+    }
+  ],
+  "limitations": [
+    "Structural checks and manifest anchors do not replace visual auditing.",
+    "CER/WER require an audited reference transcription and are not fabricated for new pages."
+  ]
+}

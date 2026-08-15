@@ -1,0 +1,45 @@
+[Unit]
+Description=Echo vLLM Router (%i pool)
+Documentation=https://github.com/vllm-project/router
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=echo-vllm-router
+Group=echo-vllm-router
+EnvironmentFile=/etc/echo-vllm-router/router-%i.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/echo-vllm-router/bin/run-router
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=650s
+TimeoutStopSec=30s
+UMask=0027
+
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+ProtectSystem=strict
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ProcSubset=pid
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

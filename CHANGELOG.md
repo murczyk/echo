@@ -10,6 +10,7 @@
 
 ## NEXT
 
+- [#3110](https://github.com/echoua/echo/issues/3110) ✅👷🚨 ШІ, OCR: додано ізольовані router pools для OCR-Gemma (`100.105.172.96:8001/v1`) і NuExtract3 (`100.105.172.96:8002/v1`) та окремі метрики Router/worker у SigNoz; спочатку за [`echo-vllm-router/workers/README.md`](echo-vllm-router/workers/README.md) розгорнути production workers на Spark-02 і Flyingskull (NuExtract3 займає майже всі 16 GiB GPU, тому попереднє production-навантаження Flyingskull потрібно окремо перенести або зупинити), потім виконати `cd echo-vllm-router && just preflight && just deploy && just verify && CLIENT_HOST=echo-cbr just verify-client && CLIENT_HOST=echo-cbr just smoke`; спільний сервіс `echo-document-extractor` і його метрики розгортатимуться окремо після погодження плану.
 - [#2983](https://github.com/echoua/echo/issues/2983) 🐞 Оперативний: виправлено поведінку роботи фільтра по групах.
 - [#3071](https://github.com/echoua/echo/issues/3071) 🐞 Оперативний, Аналіз: виправлено підсвітку позивних в картці повідомлення.
 - [#2818](https://github.com/echoua/echo/issues/2818) ✅👷 Палітри: додано можливість керування чорним списком точок палітр; стандартні `just deploy` і `just deploy-from-local` синхронізують виключення автоматично, а при ручному застосуванні міграцій на інстансах з ClickHouse перед ними виконати `/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes`, щоб виключити `palitra_highlight_blacklist` із дзеркала.

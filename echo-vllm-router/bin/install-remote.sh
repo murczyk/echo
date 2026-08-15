@@ -19,19 +19,14 @@ CONFIG_ROOT=/etc/echo-vllm-router
   exit 1
 }
 
-# shellcheck disable=SC1091
-source "$BUNDLE_DIR/versions.env"
-# shellcheck disable=SC1091
-source "$BUNDLE_DIR/config/router.env"
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+load_bundle
 
-log() {
-  printf '[echo-vllm-router] %s\n' "$*"
-}
-
-die() {
-  printf '[echo-vllm-router] ERROR: %s\n' "$*" >&2
-  exit 1
-}
+declare -A router_changed=()
+otel_changed=0
+units_changed=0
 
 verify_archive_members() {
   local archive=$1
@@ -78,16 +73,28 @@ extract_collector() {
 
 validate_collector_config() {
   local binary=$1
+  local config="$DEPLOY_ROOT/otel-collector-validation.yaml"
   local copy_path="$DEPLOY_ROOT/collector-config-copy.yaml"
+  local pool_key
   local status
 
+  sed \
+    "s|directory: /var/lib/echo-vllm-router-otel/file_storage|directory: $DEPLOY_ROOT/file_storage|" \
+    "$BUNDLE_DIR/config/otel-collector.yaml" \
+    >"$config"
+  grep -Fx "    directory: $DEPLOY_ROOT/file_storage" "$config" >/dev/null
+
   set -a
-  # shellcheck disable=SC1091
-  source "$BUNDLE_DIR/config/router.env"
+  # shellcheck disable=SC1090
+  source "$OTEL_ENV_FILE"
+  for pool_key in "${POOL_KEYS[@]}"; do
+    # shellcheck disable=SC1090
+    source "$(pool_env_file "$pool_key")"
+  done
   set +a
   set +e
   timeout 3 "$binary" \
-    --config="$BUNDLE_DIR/config/otel-collector.yaml" \
+    --config="$config" \
     --copy-path="$copy_path" \
     >"$DEPLOY_ROOT/collector-validation.log" 2>&1
   status=$?
@@ -125,6 +132,15 @@ ensure_service_user() {
     "$user"
 }
 
+any_router_active() {
+  local pool_key
+
+  for pool_key in "${POOL_KEYS[@]}"; do
+    if systemctl is-active --quiet "$(pool_unit "$pool_key")"; then return 0; fi
+  done
+  return 1
+}
+
 create_release() {
   local release_dir=$1
   local router_shebang
@@ -137,8 +153,8 @@ create_release() {
       && "$release_dir/bin/vllm-router" --help >/dev/null; then
       return
     fi
-    systemctl is-active --quiet echo-vllm-router.service \
-      && die "refusing to replace an invalid release while the router is active"
+    any_router_active \
+      && die "refusing to replace an invalid release while a router pool is active"
     [[ "$release_dir" == /opt/echo-vllm-router/releases/* ]] \
       || die "unsafe release directory: $release_dir"
     rm -rf -- "$release_dir"
@@ -205,12 +221,34 @@ install_collector_if_changed() {
   return 0
 }
 
+mark_all_routers_changed() {
+  local pool_key
+
+  for pool_key in "${POOL_KEYS[@]}"; do router_changed[$pool_key]=1; done
+}
+
+install_pool_configs() {
+  local pool_key
+  local source
+  local destination
+
+  for pool_key in "${POOL_KEYS[@]}"; do
+    source=$(pool_env_file "$pool_key")
+    destination="$CONFIG_ROOT/$(basename "$source")"
+    if install_if_changed "$source" "$destination" 0644; then
+      router_changed[$pool_key]=1
+      otel_changed=1
+    fi
+  done
+}
+
 install_files() {
   local collector_binary=$1
+  local pool_key
   local release_id="$VLLM_ROUTER_VERSION-${VLLM_ROUTER_REQUIREMENTS_SHA256:0:12}"
   local release_dir="$INSTALL_ROOT/releases/$release_id"
 
-  router_changed=0
+  for pool_key in "${POOL_KEYS[@]}"; do router_changed[$pool_key]=0; done
   otel_changed=0
   units_changed=0
 
@@ -220,16 +258,16 @@ install_files() {
     "$INSTALL_ROOT/releases" \
     "$CONFIG_ROOT"
   create_release "$release_dir"
-  if activate_release "$release_id"; then router_changed=1; fi
+  if activate_release "$release_id"; then mark_all_routers_changed; fi
   if install_collector_if_changed "$collector_binary"; then otel_changed=1; fi
   if install_if_changed "$BUNDLE_DIR/bin/run-router.sh" "$INSTALL_ROOT/bin/run-router" 0755; then
-    router_changed=1
+    mark_all_routers_changed
   fi
 
   install -m 0644 "$BUNDLE_DIR/versions.env" "$INSTALL_ROOT/manifest/versions.env"
   install -m 0644 "$BUNDLE_DIR/requirements.lock" "$INSTALL_ROOT/manifest/requirements.lock"
-  if install_if_changed "$BUNDLE_DIR/config/router.env" "$CONFIG_ROOT/router.env" 0644; then
-    router_changed=1
+  install_pool_configs
+  if install_if_changed "$BUNDLE_DIR/config/otel.env" "$CONFIG_ROOT/otel.env" 0644; then
     otel_changed=1
   fi
   if install_if_changed "$BUNDLE_DIR/config/otel-collector.yaml" "$CONFIG_ROOT/otel-collector.yaml" 0644; then
@@ -238,9 +276,15 @@ install_files() {
 
   systemd-analyze verify \
     "$BUNDLE_DIR/systemd/echo-vllm-router.service" \
+    "$BUNDLE_DIR/systemd/echo-vllm-router@.service" \
     "$BUNDLE_DIR/systemd/echo-vllm-router-otel.service"
   if install_if_changed "$BUNDLE_DIR/systemd/echo-vllm-router.service" /etc/systemd/system/echo-vllm-router.service 0644; then
-    router_changed=1
+    router_changed[general]=1
+    units_changed=1
+  fi
+  if install_if_changed "$BUNDLE_DIR/systemd/echo-vllm-router@.service" /etc/systemd/system/echo-vllm-router@.service 0644; then
+    router_changed[ocr-gemma]=1
+    router_changed[nuextract]=1
     units_changed=1
   fi
   if install_if_changed "$BUNDLE_DIR/systemd/echo-vllm-router-otel.service" /etc/systemd/system/echo-vllm-router-otel.service 0644; then
@@ -261,9 +305,16 @@ start_service() {
 }
 
 start_services() {
+  local pool_key
+  local unit
+
   if [[ $units_changed -eq 1 ]]; then systemctl daemon-reload; fi
-  systemctl enable echo-vllm-router.service echo-vllm-router-otel.service >/dev/null
-  start_service echo-vllm-router.service "$router_changed"
+  for pool_key in "${POOL_KEYS[@]}"; do
+    unit=$(pool_unit "$pool_key")
+    systemctl enable "$unit" >/dev/null
+    start_service "$unit" "${router_changed[$pool_key]}"
+  done
+  systemctl enable echo-vllm-router-otel.service >/dev/null
   start_service echo-vllm-router-otel.service "$otel_changed"
 }
 

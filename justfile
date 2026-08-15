@@ -1425,11 +1425,13 @@ ai-sync-from-cloud:
     local_directory="${WD_FASTTEXT_MODELS}/"
     s5cmd --endpoint-url "$ENDPOINT_URL" cp --if-source-newer --show-progress "$remote_files" "$local_directory"
 
-ai-eval-sync-from-cloud eval:
-    bash ai-eval/sync.sh from-cloud "{{ eval }}"
+# Download all evaluation corpora, or one: just ai-eval-sync-from-cloud [2026-08-09-document-ocr-evaluation]
+ai-eval-sync-from-cloud evaluation="":
+    bash ai-eval/sync.sh from-cloud "{{ evaluation }}"
 
-ai-eval-sync-to-cloud eval:
-    bash ai-eval/sync.sh to-cloud "{{ eval }}"
+# Upload all local evaluation corpora, or one: just ai-eval-sync-to-cloud [2026-08-09-document-ocr-evaluation]
+ai-eval-sync-to-cloud evaluation="":
+    bash ai-eval/sync.sh to-cloud "{{ evaluation }}"
 
 # run like `just copy-db-backup echo-zp2`
 [arg('server', long='server')]

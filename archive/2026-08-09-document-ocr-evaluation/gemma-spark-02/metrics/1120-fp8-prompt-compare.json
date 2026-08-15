@@ -1,0 +1,375 @@
+{
+  "runs": 6,
+  "automatic_acceptances": 1,
+  "scores": [
+    {
+      "id": "prompt-compare__l54__bounded__t1p0__s0__rp1p0__v1120__fp8",
+      "path": "raw/1120-fp8-prompt-compare/prompt-compare__l54__bounded__t1p0__s0__rp1p0__v1120__fp8.json",
+      "document": "l54",
+      "prompt_version": "bounded",
+      "vision_budget": 1120,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 64,
+        "seed": 0,
+        "repetition_penalty": 1.0,
+        "repetition_detection": {
+          "min_pattern_size": 3,
+          "max_pattern_size": 20,
+          "min_count": 4
+        }
+      },
+      "finish_reason": "stop",
+      "latency_seconds": 31.21953277500006,
+      "usage": {
+        "prompt_tokens": 1320,
+        "total_tokens": 2603,
+        "completion_tokens": 1283,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.11875945537065052,
+        "wer": 0.18872017353579176,
+        "reference_characters": 2644,
+        "candidate_characters": 2563
+      },
+      "critical_retained": 46,
+      "critical_total": 47,
+      "critical_missing": [
+        "FPV СТ"
+      ],
+      "missing_sections": [],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": false,
+      "structured_json": {
+        "requested": false,
+        "valid": null
+      },
+      "table": {
+        "valid_structure": true,
+        "row_count": 17,
+        "reference_row_count": 6,
+        "cell_text": {
+          "cer": 0.38287153652392947,
+          "wer": 0.47126436781609193,
+          "reference_characters": 794,
+          "candidate_characters": 715
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    },
+    {
+      "id": "prompt-compare__l54__bounded__t1p0__s1__rp1p0__v1120__fp8",
+      "path": "raw/1120-fp8-prompt-compare/prompt-compare__l54__bounded__t1p0__s1__rp1p0__v1120__fp8.json",
+      "document": "l54",
+      "prompt_version": "bounded",
+      "vision_budget": 1120,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 64,
+        "seed": 1,
+        "repetition_penalty": 1.0,
+        "repetition_detection": {
+          "min_pattern_size": 3,
+          "max_pattern_size": 20,
+          "min_count": 4
+        }
+      },
+      "finish_reason": "stop",
+      "latency_seconds": 30.944370200999856,
+      "usage": {
+        "prompt_tokens": 1320,
+        "total_tokens": 2593,
+        "completion_tokens": 1273,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.11989409984871408,
+        "wer": 0.19305856832971802,
+        "reference_characters": 2644,
+        "candidate_characters": 2564
+      },
+      "critical_retained": 46,
+      "critical_total": 47,
+      "critical_missing": [
+        "FPV СТ"
+      ],
+      "missing_sections": [],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": false,
+      "structured_json": {
+        "requested": false,
+        "valid": null
+      },
+      "table": {
+        "valid_structure": true,
+        "row_count": 17,
+        "reference_row_count": 6,
+        "cell_text": {
+          "cer": 0.3879093198992443,
+          "wer": 0.4885057471264368,
+          "reference_characters": 794,
+          "candidate_characters": 715
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    },
+    {
+      "id": "prompt-compare__l54__bounded__t1p0__s2__rp1p0__v1120__fp8",
+      "path": "raw/1120-fp8-prompt-compare/prompt-compare__l54__bounded__t1p0__s2__rp1p0__v1120__fp8.json",
+      "document": "l54",
+      "prompt_version": "bounded",
+      "vision_budget": 1120,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 64,
+        "seed": 2,
+        "repetition_penalty": 1.0,
+        "repetition_detection": {
+          "min_pattern_size": 3,
+          "max_pattern_size": 20,
+          "min_count": 4
+        }
+      },
+      "finish_reason": "stop",
+      "latency_seconds": 31.040859833000013,
+      "usage": {
+        "prompt_tokens": 1320,
+        "total_tokens": 2596,
+        "completion_tokens": 1276,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.11800302571860817,
+        "wer": 0.18872017353579176,
+        "reference_characters": 2644,
+        "candidate_characters": 2564
+      },
+      "critical_retained": 47,
+      "critical_total": 47,
+      "critical_missing": [],
+      "missing_sections": [],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": false,
+      "structured_json": {
+        "requested": false,
+        "valid": null
+      },
+      "table": {
+        "valid_structure": true,
+        "row_count": 17,
+        "reference_row_count": 6,
+        "cell_text": {
+          "cer": 0.38413098236775817,
+          "wer": 0.4827586206896552,
+          "reference_characters": 794,
+          "candidate_characters": 715
+        }
+      },
+      "automatic_acceptance": true,
+      "human_audit_required_for_added_text": true
+    },
+    {
+      "id": "prompt-compare__l54__original__t1p0__s0__rp1p0__v1120__fp8",
+      "path": "raw/1120-fp8-prompt-compare/prompt-compare__l54__original__t1p0__s0__rp1p0__v1120__fp8.json",
+      "document": "l54",
+      "prompt_version": "original",
+      "vision_budget": 1120,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 64,
+        "seed": 0,
+        "repetition_penalty": 1.0,
+        "repetition_detection": {
+          "min_pattern_size": 3,
+          "max_pattern_size": 20,
+          "min_count": 4
+        }
+      },
+      "finish_reason": "repetition",
+      "latency_seconds": 30.922545723999974,
+      "usage": {
+        "prompt_tokens": 1331,
+        "total_tokens": 2608,
+        "completion_tokens": 1277,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.1251891074130106,
+        "wer": 0.19739696312364424,
+        "reference_characters": 2644,
+        "candidate_characters": 2544
+      },
+      "critical_retained": 45,
+      "critical_total": 47,
+      "critical_missing": [
+        "FPV СТ",
+        "Ю.Слобожанинов"
+      ],
+      "missing_sections": [
+        "Ю.Слобожанинов"
+      ],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": false,
+      "structured_json": {
+        "requested": false,
+        "valid": null
+      },
+      "table": {
+        "valid_structure": false,
+        "row_count": 16,
+        "reference_row_count": 6,
+        "cell_text": {
+          "cer": 0.43702770780856426,
+          "wer": 0.5229885057471264,
+          "reference_characters": 794,
+          "candidate_characters": 670
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    },
+    {
+      "id": "prompt-compare__l54__original__t1p0__s1__rp1p0__v1120__fp8",
+      "path": "raw/1120-fp8-prompt-compare/prompt-compare__l54__original__t1p0__s1__rp1p0__v1120__fp8.json",
+      "document": "l54",
+      "prompt_version": "original",
+      "vision_budget": 1120,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 64,
+        "seed": 1,
+        "repetition_penalty": 1.0,
+        "repetition_detection": {
+          "min_pattern_size": 3,
+          "max_pattern_size": 20,
+          "min_count": 4
+        }
+      },
+      "finish_reason": "stop",
+      "latency_seconds": 31.595757277999837,
+      "usage": {
+        "prompt_tokens": 1331,
+        "total_tokens": 2634,
+        "completion_tokens": 1303,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.12027231467473525,
+        "wer": 0.19305856832971802,
+        "reference_characters": 2644,
+        "candidate_characters": 2564
+      },
+      "critical_retained": 44,
+      "critical_total": 47,
+      "critical_missing": [
+        "FPV КТ",
+        "FPV КТ опт.",
+        "FPV СТ"
+      ],
+      "missing_sections": [],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": true,
+      "structured_json": {
+        "requested": false,
+        "valid": null
+      },
+      "table": {
+        "valid_structure": true,
+        "row_count": 17,
+        "reference_row_count": 6,
+        "cell_text": {
+          "cer": 0.38413098236775817,
+          "wer": 0.47701149425287354,
+          "reference_characters": 794,
+          "candidate_characters": 715
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    },
+    {
+      "id": "prompt-compare__l54__original__t1p0__s2__rp1p0__v1120__fp8",
+      "path": "raw/1120-fp8-prompt-compare/prompt-compare__l54__original__t1p0__s2__rp1p0__v1120__fp8.json",
+      "document": "l54",
+      "prompt_version": "original",
+      "vision_budget": 1120,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 64,
+        "seed": 2,
+        "repetition_penalty": 1.0,
+        "repetition_detection": {
+          "min_pattern_size": 3,
+          "max_pattern_size": 20,
+          "min_count": 4
+        }
+      },
+      "finish_reason": "stop",
+      "latency_seconds": 31.031430291000106,
+      "usage": {
+        "prompt_tokens": 1331,
+        "total_tokens": 2609,
+        "completion_tokens": 1278,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.11838124054462935,
+        "wer": 0.18655097613882862,
+        "reference_characters": 2644,
+        "candidate_characters": 2564
+      },
+      "critical_retained": 46,
+      "critical_total": 47,
+      "critical_missing": [
+        "FPV СТ"
+      ],
+      "missing_sections": [],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": true,
+      "structured_json": {
+        "requested": false,
+        "valid": null
+      },
+      "table": {
+        "valid_structure": true,
+        "row_count": 17,
+        "reference_row_count": 6,
+        "cell_text": {
+          "cer": 0.38287153652392947,
+          "wer": 0.47126436781609193,
+          "reference_characters": 794,
+          "candidate_characters": 715
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    }
+  ]
+}
