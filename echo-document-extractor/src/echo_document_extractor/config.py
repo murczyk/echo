@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Literal
@@ -63,6 +64,39 @@ class EndpointConfig(BaseModel):
         return value
 
 
+class PaddleRuntimeConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device: str = Field(default="cpu", pattern=r"^(?:cpu|gpu:\d+)$")
+    require_local_models: bool = False
+    model_root: Path | None = None
+    ocr_common: dict[str, object] = Field(default_factory=dict)
+    ocr_languages: dict[str, dict[str, object]] = Field(default_factory=dict)
+    structure_config: Path | None = None
+
+    @model_validator(mode="after")
+    def validate_local_models(self) -> PaddleRuntimeConfig:
+        if not self.require_local_models:
+            return self
+        if self.model_root is None or self.structure_config is None:
+            raise ValueError("production Paddle requires model_root and structure_config")
+        root = self.model_root.resolve()
+        paths = [self.structure_config]
+        for values in (self.ocr_common, *self.ocr_languages.values()):
+            paths.extend(Path(str(value)) for key, value in values.items() if key.endswith("_model_dir"))
+        if not paths or not self.ocr_languages:
+            raise ValueError("production Paddle requires explicit OCR model directories")
+        for path in paths:
+            resolved = path.resolve()
+            if resolved != root and root not in resolved.parents:
+                raise ValueError("Paddle model paths must remain below model_root")
+            if not resolved.exists():
+                raise ValueError(f"Paddle model path does not exist: {path}")
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+        return self
+
+
 class ExtractionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -76,6 +110,7 @@ class ExtractionConfig(BaseModel):
     endpoint_concurrency: int = Field(default=1, ge=1, le=1)
     enable_paddle: bool = True
     paddle_languages: tuple[Literal["ru", "uk", "en"], ...] = ("ru", "uk", "en")
+    paddle: PaddleRuntimeConfig = Field(default_factory=PaddleRuntimeConfig)
     preserve_raw_responses: bool = False
 
     @model_validator(mode="after")

@@ -9,14 +9,24 @@ from PIL import Image, ImageDraw
 from typer.testing import CliRunner
 
 from echo_document_extractor.adapters import markdown_to_html
-from echo_document_extractor.canonical import parse_canonical_html
+from echo_document_extractor.canonical import canonical_round_trip_preserves, parse_canonical_html
 from echo_document_extractor.cli import app
 from echo_document_extractor.config import EndpointConfig, ExtractionConfig
 from echo_document_extractor.ingest import _pdf_text_evidence, crop
-from echo_document_extractor.models import Evidence, Status
+from echo_document_extractor.models import (
+    Document,
+    Evidence,
+    ExtractionResult,
+    PackageManifest,
+    Page,
+    QualityReport,
+    Status,
+    TextBlock,
+)
 from echo_document_extractor.pipeline import Extractor
-from echo_document_extractor.sanitize import sanitize_candidate
-from echo_document_extractor.validation import validate_package
+from echo_document_extractor.render import render_html, render_markdown
+from echo_document_extractor.sanitize import has_fatal_sanitization_reason, sanitize_candidate
+from echo_document_extractor.validation import _normalized_markup, _normalized_text, validate_package
 
 
 class CountingAdapter:
@@ -99,6 +109,20 @@ def test_sanitizer_removes_unsafe_contents_and_external_images() -> None:
     assert "example.test" not in markup
     assert "unsafe_content_removed" in reasons
     assert "external_or_invented_url" in reasons
+    assert has_fatal_sanitization_reason(reasons)
+
+
+def test_sanitizer_allows_benign_tag_and_style_cleanup() -> None:
+    markup, reasons = sanitize_candidate("<div><p style='letter-spacing: 2px'>safe</p></div>")
+    assert "safe" in markup
+    assert "unsupported_tag_removed" in reasons
+    assert "unsupported_style_removed" in reasons
+    assert not has_fatal_sanitization_reason(reasons)
+
+
+def test_projection_validation_normalizes_markup_and_plain_text_separately() -> None:
+    assert _normalized_markup("<p>A &lt; Б &amp; В</p>") == _normalized_text("A < Б & В")
+    assert _normalized_markup("<p>Февраль<br>(Труконф)</p>") == _normalized_text("Февраль\n(Труконф)")
 
 
 def test_crop_always_respects_long_edge_cap() -> None:
@@ -158,6 +182,7 @@ async def test_conflicting_block_is_retried_once_without_sentence_splicing(
     assert nu.calls == 2
     assert gemma.calls == 2
     assert result.status == Status.DEGRADED
+    assert result.quality.degraded_reasons == ["unresolved decisions"]
     assert any(decision.retries for decision in result.decisions)
     assert ("Alpha 123 complete." in result.canonical_html) != ("Beta 456 complete." in result.canonical_html)
 
@@ -208,6 +233,63 @@ def test_markdown_and_canonical_round_trip_preserve_structure() -> None:
     assert "<h1>Title</h1>" in converted
     assert "<ol>" in converted
     assert "<table>" in converted
+
+
+def test_canonical_round_trip_preserves_multi_paragraph_visual_blocks() -> None:
+    digest = "a" * 64
+    document = Document(
+        id="doc-multi-paragraph",
+        pages=[
+            Page(
+                id="p1",
+                source_name="source.png",
+                source_sha256=digest,
+                raster_sha256=digest,
+                instance=0,
+                width=200,
+                height=100,
+                blocks=[
+                    TextBlock(
+                        kind="heading",
+                        id="p1-b1",
+                        bbox=(0, 0, 200, 30),
+                        reading_order=0,
+                        paragraphs=["First heading line", "Second heading line"],
+                        level=1,
+                    ),
+                    TextBlock(
+                        kind="figure",
+                        id="p1-b2",
+                        bbox=(0, 30, 200, 100),
+                        reading_order=1,
+                        paragraphs=["First caption", "Second caption"],
+                    ),
+                ],
+            )
+        ],
+    )
+    result = ExtractionResult(
+        document=document,
+        status=Status.ACCEPTED,
+        canonical_html="",
+        markdown="",
+        quality=QualityReport(status=Status.ACCEPTED, page_count=1),
+        manifest=PackageManifest(
+            document_id=document.id,
+            status=Status.ACCEPTED,
+            inputs=["source.png"],
+            hardware_profile="split_gpu",
+        ),
+    )
+    result.canonical_html = render_html(result)
+    result.markdown = render_markdown(result)
+    parsed = parse_canonical_html(result.canonical_html)
+
+    assert canonical_round_trip_preserves(document, result.canonical_html)
+    assert parsed.pages[0].blocks[0].paragraphs == ["First heading line", "Second heading line"]
+    assert parsed.pages[0].blocks[1].paragraphs == ["First caption", "Second caption"]
+    assert "First heading line\n\nSecond heading line" in result.markdown
+    assert "First caption\n\nSecond caption" in result.markdown
 
 
 class FakeTextPage:

@@ -91,6 +91,24 @@ flowchart LR
         vllm_nuextract_router -.->|router metrics<br/>loopback :29002| vllm_otel
     end
 
+    subgraph extractor_lxc["echo-gpu Incus · ct-echo-document-extractor · Debian 13"]
+        direction TB
+        extractor_api["Authenticated async API<br/>Tailscale 100.93.77.92:8000"]
+        extractor_worker["Single page-serial worker<br/>leases + heartbeats"]
+        extractor_queue[("SQLite WAL<br/>durable job queue")]
+        extractor_spool[("Private disk spool<br/>inputs + canonical ZIPs")]
+        extractor_paddle["PP-OCRv5 + PP-StructureV3<br/>RTX 4090 · offline immutable models"]
+        extractor_otel["Pinned SigNoz OTel collector"]
+
+        extractor_api --> extractor_queue
+        extractor_api --> extractor_spool
+        extractor_worker --> extractor_queue
+        extractor_worker --> extractor_spool
+        extractor_worker --> extractor_paddle
+        extractor_api -.->|metrics · 127.0.0.1:29000| extractor_otel
+        extractor_worker -.->|metrics · 127.0.0.1:29001| extractor_otel
+    end
+
     subgraph analytics_lxc["LXC 2 · Secondary analytics · OPTIONAL · Debian 13"]
         direction LR
         replication["Replication pipeline<br/>PeerDB + Temporal"]
@@ -150,6 +168,9 @@ flowchart LR
     vllm_router -->|OpenAI-compatible HTTP<br/>Tailscale| vllm
     vllm_ocr_router -->|OpenAI-compatible HTTP<br/>Tailscale| ocr_vllm
     vllm_nuextract_router -->|OpenAI-compatible HTTP<br/>Tailscale| nuextract_vllm
+    extractor_worker -->|OCR-Gemma requests| vllm_ocr_router
+    extractor_worker -->|NuExtract3 requests| vllm_nuextract_router
+    extractor_otel -->|metrics + journald<br/>OTLP gRPC · Tailscale| signoz
     vllm -.->|Prometheus metrics<br/>Tailscale| vllm_otel
     ocr_vllm -.->|Prometheus metrics<br/>Tailscale| vllm_otel
     nuextract_vllm -.->|Prometheus metrics<br/>Tailscale| vllm_otel
@@ -159,18 +180,20 @@ flowchart LR
     style greptime_lxc stroke-width:2px,stroke-dasharray:8 5
     style signoz_lxc stroke-width:2px,stroke-dasharray:8 5
     style vllm_router_lxc stroke-width:2px,stroke-dasharray:8 5
+    style extractor_lxc stroke-width:2px,stroke-dasharray:8 5
     style vllm_spark stroke-width:2px,stroke-dasharray:8 5
     style vllm_spark02 stroke-width:2px,stroke-dasharray:8 5
     style vllm_flyingskull stroke-width:2px,stroke-dasharray:8 5
     classDef canonical stroke-width:3px
     classDef optional stroke-dasharray:6 4
     class postgres canonical
-    class file_registry,nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm_router,vllm_ocr_router,vllm_nuextract_router,vllm_otel,vllm,hf_cache,gb10,ocr_hf_cache,ocr_vllm,ocr_gb10,nuextract_cache,nuextract_vllm,rtx4070 optional
+    class file_registry,nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm_router,vllm_ocr_router,vllm_nuextract_router,vllm_otel,extractor_api,extractor_worker,extractor_queue,extractor_spool,extractor_paddle,extractor_otel,vllm,hf_cache,gb10,ocr_hf_cache,ocr_vllm,ocr_gb10,nuextract_cache,nuextract_vllm,rtx4070 optional
 ```
 
 The diagram focuses on the core web, worker, messenger, storage, observability,
-and analytics paths. Other instance-specific integrations are configured
-independently.
+OCR, and analytics paths. The shared extractor is deployed and validated in
+this phase, but Echo application/job integration follows separately. Other
+instance-specific integrations are configured independently.
 
 The `wd_files` database is optional and configured independently under
 `[file_registry]`. Without that section, the backend skips its connection and
@@ -204,9 +227,14 @@ See [Echo vLLM](../echo-vllm/README.md) for the `echo-gpu-spark` worker and
 deployment, verification, and rollback commands. Echo uses the router as its
 normal OpenAI-compatible endpoint; direct Spark access is retained only as a
 fallback. The same router host owns isolated OCR-Gemma and NuExtract3 endpoints
-for a separately deployed document-extraction service; that service and its
-metrics are intentionally outside this topology until its deployment is
-designed.
+consumed by `ct-echo-document-extractor`. Its authenticated API, durable queue,
+offline Paddle runtime, package storage, deployment, telemetry, and rollback
+are documented in
+[`echo-document-extractor/README.md`](../echo-document-extractor/README.md).
+It is a separate native-systemd deployment in a GPU-backed Incus container on
+`echo-gpu` and does not share process or storage ownership with an Echo instance
+or a vLLM router. The original powered-off Proxmox CT is retained as the
+host-level rollback copy.
 
 ### vLLM inference architecture
 

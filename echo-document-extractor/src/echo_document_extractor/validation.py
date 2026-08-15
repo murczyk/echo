@@ -225,19 +225,19 @@ def _validate_permissions(package: Path, errors: list[str]) -> None:
 
 def _validate_projections(package: Path, document: object, errors: list[str]) -> None:
     markdown = (package / "document.md").read_text(encoding="utf-8")
-    normalized_markdown = _normalized(markdown)
+    normalized_markdown = _normalized_markup(markdown)
     for page in document.pages:
         for block in page.blocks:
             if isinstance(block, Table):
                 for cell in block.cells:
                     for paragraph in cell.paragraphs:
-                        if paragraph and _normalized(paragraph) not in normalized_markdown:
+                        if paragraph and _normalized_text(paragraph) not in normalized_markdown:
                             errors.append(f"Markdown omits {cell.id}")
                     if cell.asset and cell.asset.path not in markdown:
                         errors.append(f"Markdown omits asset {cell.asset.path}")
             elif block.kind not in {"figure", "unreadable"}:
                 for paragraph in block.paragraphs:
-                    if paragraph and _normalized(paragraph) not in normalized_markdown:
+                    if paragraph and _normalized_text(paragraph) not in normalized_markdown:
                         errors.append(f"Markdown omits {block.id}")
             if getattr(block, "asset", None) and block.asset.path not in markdown:
                 errors.append(f"Markdown omits asset {block.asset.path}")
@@ -271,7 +271,7 @@ def _validate_xlsx(path: Path, document: object, errors: list[str]) -> None:
         coordinate = str(cell_range).split(":", 1)[0]
         value = workbook[sheet_name][coordinate].value
         expected = "\n\n".join(expected_cells[unit_id].paragraphs)
-        if _normalized(str(value or "")) != _normalized(expected):
+        if _normalized_text(str(value or "")) != _normalized_text(expected):
             errors.append(f"XLSX text mismatch for {unit_id}")
     expected_images = sum(bool(cell.asset) for cell in expected_cells.values())
     actual_images = sum(len(sheet._images) for sheet in workbook.worksheets if sheet.title != "_provenance")
@@ -388,5 +388,12 @@ def _deterministic_provenance(path: Path) -> object:
     return value
 
 
-def _normalized(value: str) -> str:
-    return re.sub(r"\s+", " ", html.fromstring(f"<div>{value}</div>").text_content()).strip().casefold()
+def _normalized_markup(value: str) -> str:
+    root = html.fromstring(f"<div>{value}</div>")
+    for line_break in root.iter("br"):
+        line_break.tail = " " + (line_break.tail or "")
+    return re.sub(r"\s+", " ", root.text_content()).strip().casefold()
+
+
+def _normalized_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip().casefold()

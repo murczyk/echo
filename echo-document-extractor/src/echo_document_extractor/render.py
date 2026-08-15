@@ -112,8 +112,16 @@ def _block_element(block: TextBlock | Table, page_number: int) -> html.HtmlEleme
     attributes["data-paragraph-count"] = str(len(block.paragraphs))
     if block.kind == "heading":
         element = html.Element(f"h{block.level}", attributes)
-        if block.paragraphs:
-            _set_multiline_text(element, block.paragraphs[0])
+        if len(block.paragraphs) <= 1:
+            if block.paragraphs:
+                _set_multiline_text(element, block.paragraphs[0])
+            return element
+        for index, paragraph in enumerate(block.paragraphs):
+            if index:
+                etree.SubElement(element, "br")
+                etree.SubElement(element, "br")
+            span = etree.SubElement(element, "span", {"data-paragraph": ""})
+            _set_multiline_text(span, paragraph)
         return element
     if block.kind == "list":
         element = html.Element("ol" if block.list_ordered else "ul", attributes)
@@ -131,7 +139,10 @@ def _block_element(block: TextBlock | Table, page_number: int) -> html.HtmlEleme
             )
         if block.paragraphs:
             caption = etree.SubElement(element, "figcaption")
-            _set_multiline_text(caption, "\n\n".join(block.paragraphs))
+            if len(block.paragraphs) == 1:
+                _set_multiline_text(caption, block.paragraphs[0])
+            else:
+                _paragraphs(caption, block.paragraphs)
         return element
     if len(block.paragraphs) <= 1:
         element = html.Element("p", attributes)
@@ -216,12 +227,12 @@ def render_markdown(result: ExtractionResult) -> str:
                     value = f"![Source document region]({image[0].get('src')})"
                     captions = node.xpath("./figcaption")
                     if captions:
-                        value += f"\n\n{_node_text(captions[0])}"
+                        value += f"\n\n{_caption_text(captions[0])}"
                     output.append(value)
                 else:
                     captions = node.xpath("./figcaption")
                     if captions:
-                        output.append(_node_text(captions[0]))
+                        output.append(_caption_text(captions[0]))
             elif node.tag in {"ul", "ol"}:
                 marker = "1." if node.tag == "ol" else "-"
                 output.append("\n".join(f"{marker} {_node_text(item)}" for item in node.xpath("./li")))
@@ -246,6 +257,11 @@ def _node_text(node: html.HtmlElement) -> str:
         if child.tail:
             parts.append(child.tail)
     return "".join(parts).strip()
+
+
+def _caption_text(node: html.HtmlElement) -> str:
+    paragraphs = node.xpath("./p")
+    return "\n\n".join(_node_text(item) for item in paragraphs) if paragraphs else _node_text(node)
 
 
 def write_xlsx(result: ExtractionResult, path: Path) -> None:
@@ -280,7 +296,7 @@ def _write_table(
     table: Table,
     page: int,
     start_row: int,
-    assets: dict[str, bytes],
+    assets: dict[str, bytes | Path],
     skip_rows: int = 0,
 ) -> None:
     for cell in table.cells:
@@ -348,7 +364,8 @@ def _write_table(
             ]
         )
         if cell.asset and cell.asset.path in assets:
-            image = SpreadsheetImage(io.BytesIO(assets[cell.asset.path]))
+            content = assets[cell.asset.path]
+            image = SpreadsheetImage(str(content) if isinstance(content, Path) else io.BytesIO(content))
             sheet.add_image(image, target.coordinate)
 
 

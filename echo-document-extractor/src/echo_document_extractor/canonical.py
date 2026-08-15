@@ -54,7 +54,14 @@ def blocks_from_html(
             paragraphs = [_text(item) for item in node.xpath("./li")]
         elif kind == "figure":
             captions = node.xpath("./figcaption")
-            paragraphs = [_text(captions[0])] if captions else []
+            caption_paragraphs = captions[0].xpath("./p") if captions else []
+            paragraphs = (
+                [_text(item) for item in caption_paragraphs]
+                if caption_paragraphs
+                else [_text(captions[0])]
+                if captions
+                else []
+            )
         else:
             paragraphs = [_text(node)]
         blocks.append(
@@ -104,6 +111,11 @@ def _table(
     occupied: set[tuple[int, int]] = set()
     cells = []
     rows = node.xpath("./thead/tr|./tbody/tr|./tr")
+    row_boundaries = (
+        sorted({value for cell in skeleton.cells for value in (cell.bbox[1], cell.bbox[3])})
+        if isinstance(skeleton, Table)
+        else []
+    )
     for row_index, row in enumerate(rows):
         section = "thead" if any(parent.tag == "thead" for parent in row.iterancestors()) else "tbody"
         column = 0
@@ -119,7 +131,20 @@ def _table(
             if not paragraphs and _text(element):
                 paragraphs = [_text(element)]
             skeleton_cell = skeleton_cells.get((row_index, column))
-            cell_bbox = skeleton_cell.bbox if skeleton_cell else table_bbox
+            cell_bbox = (
+                skeleton_cell.bbox
+                if skeleton_cell
+                else _estimated_cell_bbox(
+                    skeleton,
+                    table_bbox,
+                    row_boundaries,
+                    row_index,
+                    column,
+                    rowspan,
+                    colspan,
+                    len(rows),
+                )
+            )
             cells.append(
                 Cell(
                     id=f"{table_id}-r{row_index + 1}c{column + 1}",
@@ -140,9 +165,19 @@ def _table(
             column += colspan
     caption = _text(node.xpath("./caption")[0]) if node.xpath("./caption") else None
     boundaries = skeleton.column_boundaries if isinstance(skeleton, Table) else []
+    content_bbox = (
+        (
+            table_bbox[0] if boundaries else min(cell.bbox[0] for cell in cells),
+            min(cell.bbox[1] for cell in cells),
+            table_bbox[2] if boundaries else max(cell.bbox[2] for cell in cells),
+            max(cell.bbox[3] for cell in cells),
+        )
+        if cells
+        else table_bbox
+    )
     return Table(
         id=table_id,
-        bbox=table_bbox,
+        bbox=content_bbox,
         reading_order=order,
         cells=cells,
         caption=caption,
@@ -150,6 +185,32 @@ def _table(
         confidence=0.9,
         decision_id=decision_id,
     )
+
+
+def _estimated_cell_bbox(
+    skeleton: Table | BBox,
+    table_bbox: BBox,
+    row_boundaries: list[int],
+    row: int,
+    column: int,
+    rowspan: int,
+    colspan: int,
+    row_count: int,
+) -> BBox:
+    if isinstance(skeleton, Table) and len(skeleton.column_boundaries) >= 2:
+        columns = skeleton.column_boundaries
+        left = columns[min(column, len(columns) - 2)]
+        right = columns[min(column + colspan, len(columns) - 1)]
+    else:
+        left, right = table_bbox[0], table_bbox[2]
+    if len(row_boundaries) >= 2:
+        top = row_boundaries[min(row, len(row_boundaries) - 2)]
+        bottom = row_boundaries[min(row + rowspan, len(row_boundaries) - 1)]
+    else:
+        height = max(1, table_bbox[3] - table_bbox[1])
+        top = table_bbox[1] + height * row // max(1, row_count)
+        bottom = table_bbox[1] + height * min(row + rowspan, row_count) // max(1, row_count)
+    return (left, top, max(left + 1, right), max(top + 1, bottom))
 
 
 def _style(value: str) -> CellStyle:
@@ -327,13 +388,25 @@ def _canonical_block(
         paragraphs = [_text(item) for item in node.xpath("./li")]
     elif kind in {"figure", "unreadable"}:
         captions = node.xpath("./figcaption")
-        paragraphs = [_text(captions[0])] if captions else []
+        caption_paragraphs = captions[0].xpath("./p") if captions else []
+        paragraphs = (
+            [_text(item) for item in caption_paragraphs]
+            if caption_paragraphs
+            else [_text(captions[0])]
+            if captions
+            else []
+        )
+    elif kind == "heading" and node.xpath("./span[@data-paragraph]"):
+        paragraphs = [_text(item) for item in node.xpath("./span[@data-paragraph]")]
     elif node.tag == "section":
         paragraphs = [_text(item) for item in node.xpath("./p")]
     else:
         paragraphs = [_text(node)] if paragraph_count else []
     if len(paragraphs) != paragraph_count:
-        raise ValueError("canonical paragraph count does not match block structure")
+        raise ValueError(
+            f"canonical paragraph count does not match {block_id}: "
+            f"expected {paragraph_count}, parsed {len(paragraphs)}"
+        )
     return TextBlock(
         kind=kind,
         id=block_id,

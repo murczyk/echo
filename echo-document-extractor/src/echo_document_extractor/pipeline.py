@@ -6,9 +6,12 @@ import html as std_html
 import inspect
 import io
 import json
+import os
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, TypeVar
+from typing import Any, Protocol, TypeVar
 
 import yaml
 from lxml import html
@@ -27,11 +30,12 @@ from .canonical import (
     asset_for_crop,
     blocks_from_html,
     canonical_round_trip_preserves,
+    table_dimensions,
     unreadable_block,
 )
 from .config import ExtractionConfig
 from .geometry import GeometryResult, detect_geometry
-from .ingest import RasterPage, crop_with_transform, ingest
+from .ingest import RasterPage, crop_with_transform, iter_ingest
 from .models import (
     AssetRef,
     BBox,
@@ -57,7 +61,7 @@ from .models import (
 from .ocr import PaddleEvidenceProvider
 from .reconcile import needs_retry, reconcile
 from .render import render_html, render_markdown
-from .sanitize import sanitize_candidate
+from .sanitize import has_fatal_sanitization_reason, sanitize_candidate
 
 
 class InputManifest(BaseModel):
@@ -85,25 +89,54 @@ class ProcessedPage:
     blocks: list[Block]
     evidence: list[Evidence]
     decisions: list[Decision]
-    assets: dict[str, bytes] = field(default_factory=dict)
-    raw_artifacts: dict[str, bytes] = field(default_factory=dict)
+    assets: dict[str, bytes | Path] = field(default_factory=dict)
+    raw_artifacts: dict[str, bytes | Path] = field(default_factory=dict)
     failed: bool = False
     degraded_reasons: list[str] = field(default_factory=list)
 
 
 T = TypeVar("T", TextBlock, Cell)
+PageCallback = Callable[[int, int | None], Awaitable[None] | None]
+SUPPORTING_EVIDENCE_MIN_COVERAGE = 0.5
+
+
+class ExtractionMetrics(Protocol):
+    def observe_paddle(self, duration: float, status: str) -> None: ...
+
+    def observe_model(self, response: ModelResponse) -> None: ...
+
+    def observe_model_error(self, adapter: str) -> None: ...
+
+
+class ExtractionCancelled(RuntimeError):
+    pass
 
 
 class Extractor:
-    def __init__(self, config: ExtractionConfig, adapters: list[ModelAdapter] | None = None) -> None:
+    def __init__(
+        self,
+        config: ExtractionConfig,
+        adapters: list[ModelAdapter] | None = None,
+        artifact_dir: Path | None = None,
+        page_callback: PageCallback | None = None,
+        metrics: ExtractionMetrics | None = None,
+        ocr: PaddleEvidenceProvider | None = None,
+    ) -> None:
         self.config = config
         self.adapters = adapters or [
             NuExtract3Adapter(config.nu_extract, config.endpoint_concurrency),
             GemmaAdapter(config.gemma, config.endpoint_concurrency),
         ]
-        self.ocr = PaddleEvidenceProvider(config.enable_paddle, config.paddle_languages)
+        self.ocr = ocr or PaddleEvidenceProvider(
+            config.enable_paddle,
+            config.paddle_languages,
+            config.paddle,
+        )
         self._request_artifacts: dict[str, bytes] = {}
         self._single_spark_queue = asyncio.Semaphore(1) if config.hardware_profile == "single_spark" else None
+        self.artifact_dir = artifact_dir
+        self.page_callback = page_callback
+        self.metrics = metrics
 
     async def extract(
         self,
@@ -112,52 +145,68 @@ class Extractor:
     ) -> ExtractionResult:
         self._request_artifacts = {}
         ordered_inputs, input_names, metadata = _resolve_inputs(inputs, manifest)
-        try:
-            raster_pages = ingest(ordered_inputs, self.config.pdf_dpi)
-        except Exception as error:
-            return self._failed_ingestion(input_names, str(error))
-        document_id = _document_id(raster_pages)
-        unique: dict[str, tuple[str, RasterPage]] = {}
-        for index, raster in enumerate(raster_pages):
-            unique.setdefault(raster.raster_sha256, (f"p{index + 1}", raster))
-        processed_values = await asyncio.gather(
-            *(self._process_page(raster, page_id) for page_id, raster in unique.values())
-        )
-        processed_by_hash = dict(zip(unique, processed_values, strict=True))
+        processed_by_hash: dict[str, ProcessedPage] = {}
         pages: list[Page] = []
         all_evidence: list[Evidence] = []
         decisions: list[Decision] = []
-        assets: dict[str, bytes] = {}
-        raw_artifacts: dict[str, bytes] = {}
+        assets: dict[str, bytes | Path] = {}
+        raw_artifacts: dict[str, bytes | Path] = {}
         degraded_reasons: list[str] = []
         failed_pages = 0
-        for index, raster in enumerate(raster_pages):
+        raster_pages = iter_ingest(ordered_inputs, self.config.pdf_dpi)
+        index = 0
+        while True:
+            try:
+                raster = next(raster_pages)
+            except StopIteration:
+                break
+            except Exception as error:
+                return self._failed_ingestion(input_names, str(error))
             page_id = f"p{index + 1}"
-            original = processed_by_hash[raster.raster_sha256]
-            processed = original if original.page_id == page_id else _clone_processed(original, page_id)
-            page_embedded = [item for item in processed.evidence if item.source == "embedded_pdf"]
-            pages.append(
-                Page(
-                    id=page_id,
-                    source_name=raster.source_name,
-                    source_sha256=raster.source_sha256,
-                    raster_sha256=raster.raster_sha256,
-                    instance=index,
-                    width=raster.image.width,
-                    height=raster.image.height,
-                    rotation_degrees=raster.rotation_degrees,
-                    blocks=processed.blocks,
-                    embedded_pdf_evidence=page_embedded,
+            try:
+                original = processed_by_hash.get(raster.raster_sha256)
+                if original is None:
+                    original = self._spill_artifacts(await self._process_page(raster, page_id))
+                    processed_by_hash[raster.raster_sha256] = original
+                processed = original if original.page_id == page_id else _clone_processed(original, page_id)
+                page_embedded = [item for item in processed.evidence if item.source == "embedded_pdf"]
+                pages.append(
+                    Page(
+                        id=page_id,
+                        source_name=raster.source_name,
+                        source_sha256=raster.source_sha256,
+                        raster_sha256=raster.raster_sha256,
+                        instance=index,
+                        width=raster.image.width,
+                        height=raster.image.height,
+                        rotation_degrees=raster.rotation_degrees,
+                        blocks=processed.blocks,
+                        embedded_pdf_evidence=page_embedded,
+                    )
                 )
-            )
-            all_evidence.extend(processed.evidence)
-            decisions.extend(processed.decisions)
-            assets.update(processed.assets)
-            raw_artifacts.update(processed.raw_artifacts)
-            degraded_reasons.extend(processed.degraded_reasons)
-            failed_pages += processed.failed
+                all_evidence.extend(processed.evidence)
+                decisions.extend(processed.decisions)
+                assets.update(processed.assets)
+                raw_artifacts.update(processed.raw_artifacts)
+                degraded_reasons.extend(processed.degraded_reasons)
+                failed_pages += processed.failed
+                if self.page_callback:
+                    callback = self.page_callback(index + 1, None)
+                    if inspect.isawaitable(callback):
+                        await callback
+            except BaseException:
+                raster_pages.close()
+                raise
+            finally:
+                raster.image.close()
+            index += 1
+        document_id = _document_id(pages)
         unresolved = sum(decision.unresolved for decision in decisions)
         hard_failures = sum(not decision.hard_checks_passed for decision in decisions)
+        if unresolved:
+            degraded_reasons.append("unresolved decisions")
+        if hard_failures:
+            degraded_reasons.append("hard check failures")
         if failed_pages == len(pages):
             status = Status.FAILED
         elif degraded_reasons or unresolved or hard_failures:
@@ -186,7 +235,7 @@ class Extractor:
                 document_id=document_id,
                 status=status,
                 inputs=input_names,
-                source_hashes=[hashlib.sha256(path.read_bytes()).hexdigest() for path in ordered_inputs],
+                source_hashes=[_sha256_file(path) for path in ordered_inputs],
                 raster_hashes=[page.raster_sha256 for page in pages],
                 hardware_profile=self.config.hardware_profile,
                 models=[
@@ -208,10 +257,37 @@ class Extractor:
         result.markdown = render_markdown(result)
         return result
 
+    def _spill_artifacts(self, page: ProcessedPage) -> ProcessedPage:
+        if self.artifact_dir is None:
+            return page
+        page.assets = self._spill_mapping(page.assets)
+        page.raw_artifacts = self._spill_mapping(page.raw_artifacts)
+        return page
+
+    def _spill_mapping(self, values: dict[str, bytes | Path]) -> dict[str, bytes | Path]:
+        output: dict[str, bytes | Path] = {}
+        for relative, content in values.items():
+            if isinstance(content, Path):
+                output[relative] = content
+                continue
+            target = self.artifact_dir.joinpath(*PurePosixPath(relative).parts)
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+            temporary.write_bytes(content)
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, target)
+            output[relative] = target
+        return output
+
     async def _process_page(self, raster: RasterPage, page_id: str) -> ProcessedPage:
         geometry = detect_geometry(raster.image, page_id)
+        paddle_started = time.monotonic()
         try:
-            paddle = self.ocr.extract_all(raster.image, page_id)
+            paddle = self.ocr.extract_all(
+                raster.image,
+                page_id,
+                use_table_recognition=not any(isinstance(block, Table) for block in geometry.blocks),
+            )
         except RuntimeError as error:
             paddle = None
             paddle_error = Evidence(
@@ -220,6 +296,11 @@ class Extractor:
                 page_id=page_id,
                 valid=False,
                 rejection_reasons=[str(error)[:160]],
+            )
+        if self.metrics:
+            self.metrics.observe_paddle(
+                time.monotonic() - paddle_started,
+                "success" if paddle is not None else "error",
             )
         embedded = [_page_evidence(item, page_id) for item in raster.embedded_evidence]
         supporting = [*geometry.evidence, *embedded]
@@ -242,6 +323,7 @@ class Extractor:
                 page_id,
                 candidate_documents,
                 supporting,
+                geometry.blocks,
             )
             evidence.extend(unit_evidence)
             if decisions and not any(decision.hard_checks_passed for decision in decisions):
@@ -364,11 +446,10 @@ class Extractor:
         return values
 
     def _crop_artifacts(self, page_id: str) -> dict[str, bytes]:
-        return {
-            path: content
-            for path, content in self._request_artifacts.items()
-            if PurePosixPath(path).name.startswith(f"{page_id}-")
-        }
+        paths = [
+            path for path in self._request_artifacts if PurePosixPath(path).name.startswith(f"{page_id}-")
+        ]
+        return {path: self._request_artifacts.pop(path) for path in paths}
 
     async def _call_adapter(
         self,
@@ -387,6 +468,8 @@ class Extractor:
                 async with self._single_spark_queue:
                     value = await self._invoke_adapter(adapter, request, image, parameter_count)
         except Exception as error:
+            if self.metrics:
+                self.metrics.observe_model_error(adapter.name)
             return CandidateEvidence(
                 id=f"{adapter.name}-{request.request_id}",
                 source=adapter.name,
@@ -397,6 +480,8 @@ class Extractor:
                 rejection_reasons=[f"request_error:{type(error).__name__}"],
             )
         if isinstance(value, ModelResponse):
+            if self.metrics:
+                self.metrics.observe_model(value)
             if self.config.preserve_raw_responses:
                 relative = f"raw/responses/{request.page_id}-{value.adapter}-{request.request_id}.json"
                 self._request_artifacts[relative] = json.dumps(
@@ -439,7 +524,7 @@ class Extractor:
             bbox=request.crop_bbox,
             html=markup,
             text=text,
-            valid=value.valid and not reasons and bool(text.strip()),
+            valid=value.valid and not has_fatal_sanitization_reason(reasons) and bool(text.strip()),
             rejection_reasons=sorted(set([*value.rejection_reasons, *reasons])),
             transform=request.source_transform,
         )
@@ -461,6 +546,7 @@ class Extractor:
         page_id: str,
         candidates: list[CandidateDocument],
         supporting: list[Evidence],
+        geometry_blocks: list[Block],
     ) -> tuple[list[Block], list[Evidence], list[Decision]]:
         base = max(
             candidates,
@@ -481,6 +567,25 @@ class Extractor:
                 if alignments[item.evidence.id].get(order) is not None
             ]
             if isinstance(base_block, Table):
+                geometry_table = _matching_geometry_table(base_block, geometry_blocks)
+                projected_base = (
+                    _project_table_structure(base_block, geometry_table, supporting)
+                    if geometry_table is not None
+                    else None
+                )
+                authoritative_base = projected_base or (base_block if base_block.column_boundaries else None)
+                if authoritative_base is not None:
+                    aligned = [
+                        (
+                            parent,
+                            authoritative_base
+                            if block is base_block
+                            else _project_table_values(block, authoritative_base, supporting),
+                        )
+                        for parent, block in aligned
+                        if isinstance(block, Table)
+                    ]
+                    base_block = authoritative_base
                 table, table_evidence, table_decisions = await self._reconcile_table(
                     raster,
                     page_id,
@@ -493,6 +598,14 @@ class Extractor:
                 decisions.extend(table_decisions)
             else:
                 text_values = [(parent, block) for parent, block in aligned if isinstance(block, TextBlock)]
+                matched_bbox = _matching_text_bbox(base_block, supporting)
+                base_block = base_block.model_copy(
+                    update={
+                        "bbox": matched_bbox
+                        if matched_bbox is not None
+                        else _expanded_text_bbox(base_block.bbox, supporting)
+                    }
+                )
                 block, block_evidence, decision = await self._select_text_block(
                     raster,
                     page_id,
@@ -520,7 +633,9 @@ class Extractor:
             unit_id, candidates, _supporting_for_bbox(supporting, base.bbox), base.bbox
         )
         retry_record = None
-        if _should_retry(candidates, len(self.adapters)):
+        if _should_retry(candidates, len(self.adapters)) and not _selected_is_grounded(
+            selected, base.bbox, supporting
+        ):
             retry, retry_blocks = await self._retry_text(raster, page_id, unit_id, base)
             candidates.extend(retry)
             by_id.update(retry_blocks)
@@ -533,7 +648,7 @@ class Extractor:
                 candidate_ids=[item.id for item in retry],
                 reason="conflicting complete block candidates",
             )
-            if _family_outputs_conflict(retry):
+            if _family_outputs_conflict(retry) and not _unique_cross_family_consensus(selected, candidates):
                 decision.unresolved = True
                 decision.reason += "; conflict persisted after retry"
         if selected is None:
@@ -607,35 +722,78 @@ class Extractor:
         table_candidates = [
             _evidence_for_table(parent, table, base.id, base.bbox) for parent, table in tables
         ]
+        topology_supporting = [item for item in supporting if item.source not in {"ppocr", "embedded_pdf"}]
         selected, table_decision = reconcile(
             base.id,
             table_candidates,
-            _supporting_for_bbox(supporting, base.bbox),
+            _supporting_for_bbox(topology_supporting, base.bbox),
             base.bbox,
             topology,
         )
+        if selected is not None:
+            table_decision.unresolved = False
+            table_decision.reason = "table topology reconciliation"
         retry_record = None
         if _table_retry_needed(table_candidates, len(self.adapters)):
             retry_candidates = await self._request_candidates(raster, page_id, base.id, base.bbox, retry=True)
             retry_tables = _retry_table_values(retry_candidates, base)
+            if base.column_boundaries:
+                retry_tables = _project_retry_table_values(retry_tables, base, supporting)
             tables.extend(retry_tables[1])
             table_candidates.extend(retry_tables[0])
             selected, table_decision = reconcile(
                 base.id,
                 table_candidates,
-                _supporting_for_bbox(supporting, base.bbox),
+                _supporting_for_bbox(topology_supporting, base.bbox),
                 base.bbox,
                 topology,
             )
+            if selected is not None:
+                table_decision.unresolved = False
+                table_decision.reason = "table topology reconciliation"
             retry_record = RetryRecord(
                 request_id=f"{base.id}-retry",
                 bbox=base.bbox,
                 candidate_ids=[item.id for item in retry_tables[0]],
                 reason="conflicting complete table topology candidates",
             )
+        elif _table_content_retry_needed(
+            base,
+            tables,
+            supporting,
+            len(self.adapters),
+        ):
+            retry_candidates = await self._request_candidates(raster, page_id, base.id, base.bbox, retry=True)
+            retry_tables = _project_retry_table_values(
+                _retry_table_values(retry_candidates, base),
+                base,
+                supporting,
+            )
+            tables.extend(retry_tables[1])
+            table_candidates.extend(retry_tables[0])
+            selected, table_decision = reconcile(
+                base.id,
+                table_candidates,
+                _supporting_for_bbox(topology_supporting, base.bbox),
+                base.bbox,
+                topology,
+            )
+            if selected is not None:
+                table_decision.unresolved = False
+                table_decision.reason = "table topology reconciliation"
+            retry_record = RetryRecord(
+                request_id=f"{base.id}-retry",
+                bbox=base.bbox,
+                candidate_ids=[item.id for item in retry_tables[0]],
+                reason="conflicting complete table cell candidates",
+            )
         if retry_record:
             table_decision.retries.append(retry_record)
-            if _table_family_conflict(retry_tables[0]):
+            if _table_family_conflict(retry_tables[0]) and not _unique_cross_family_consensus(
+                selected,
+                table_candidates,
+                topology=True,
+            ):
                 table_decision.unresolved = True
                 table_decision.reason += "; topology conflict persisted after retry"
         topology_families = {
@@ -659,29 +817,19 @@ class Extractor:
         cells = []
         compatible = [(parent, table) for parent, table in tables if _topology(table) == topology]
         for cell in sorted(base.cells, key=lambda item: (item.row, item.column)):
-            candidates_with_cells = []
-            for parent, table in compatible:
-                matching = next(
-                    (
-                        item
-                        for item in table.cells
-                        if (item.row, item.column, item.rowspan, item.colspan)
-                        == (cell.row, cell.column, cell.rowspan, cell.colspan)
-                    ),
-                    None,
-                )
-                if matching:
-                    candidates_with_cells.append((parent, matching))
+            candidates_with_cells = _matching_table_cells(cell, compatible)
             chosen, cell_evidence, decision = await self._select_cell(
                 raster,
                 page_id,
                 cell,
                 candidates_with_cells,
                 supporting,
+                allow_retry=False,
             )
             cells.append(chosen)
             evidence.extend(cell_evidence)
             decisions.append(decision)
+        cells = _normalize_table_sections(cells)
         return (
             selected_table.model_copy(
                 update={
@@ -703,14 +851,22 @@ class Extractor:
         base: Cell,
         values: list[tuple[Evidence, Cell]],
         supporting: list[Evidence],
+        allow_retry: bool = True,
     ) -> tuple[Cell, list[Evidence], Decision]:
         candidates = [_evidence_for_cell(parent, cell, base.id, base.bbox) for parent, cell in values]
         by_id = {candidate.id: cell for candidate, (_, cell) in zip(candidates, values, strict=True)}
         selected, decision = reconcile(
             base.id, candidates, _supporting_for_bbox(supporting, base.bbox), base.bbox
         )
+        local = _local_candidate(base.id, base.bbox, supporting)
+        empty_supported = _empty_cell_supported(base, supporting)
+        locally_supported = local is not None or empty_supported
         retry_record = None
-        if _should_retry(candidates, len(self.adapters)):
+        if (
+            allow_retry
+            and not empty_supported
+            and (selected is None or _should_retry(candidates, len(self.adapters), locally_supported))
+        ):
             retry = await self._request_candidates(raster, page_id, base.id, base.bbox, retry=True)
             retry_cells = _retry_cell_values(retry, base)
             candidates.extend(retry_cells[0])
@@ -724,28 +880,35 @@ class Extractor:
                 candidate_ids=[item.id for item in retry_cells[0]],
                 reason="conflicting complete cell candidates",
             )
-            if _family_outputs_conflict(retry_cells[0]):
+            if _family_outputs_conflict(retry_cells[0]) and not _unique_cross_family_consensus(
+                selected, candidates
+            ):
                 decision.unresolved = True
                 decision.reason += "; conflict persisted after retry"
-        if selected is None:
-            local = _local_candidate(base.id, base.bbox, supporting)
-            if local:
-                local_cell = base.model_copy(
-                    update={"paragraphs": local.text.splitlines(), "confidence": local.confidence}
-                )
-                candidates.append(local)
-                by_id[local.id] = local_cell
-                selected, decision = reconcile(
-                    base.id,
-                    candidates,
-                    _supporting_for_bbox(supporting, base.bbox),
-                    base.bbox,
-                )
-                decision.unresolved = True
-                decision.reason += "; local evidence fallback"
+        if selected is None and local:
+            local_cell = base.model_copy(
+                update={"paragraphs": local.text.splitlines(), "confidence": local.confidence}
+            )
+            candidates.append(local)
+            by_id[local.id] = local_cell
+            selected, decision = reconcile(
+                base.id,
+                candidates,
+                _supporting_for_bbox(supporting, base.bbox),
+                base.bbox,
+            )
+            decision.unresolved = True
+            decision.reason += "; local evidence fallback"
+        elif selected is None and empty_supported:
+            decision.unresolved = False
+            decision.hard_checks_passed = True
+            decision.reason = "empty cell supported by OpenCV geometry"
         if retry_record:
             decision.retries.append(retry_record)
-        if len({candidate.source_family for candidate in candidates if candidate.valid}) < 2:
+        if (
+            len({candidate.source_family for candidate in candidates if candidate.valid}) < 2
+            and not locally_supported
+        ):
             decision.unresolved = True
             decision.reason += "; missing independent family"
         chosen = by_id.get(selected.id) if selected else base
@@ -841,9 +1004,17 @@ def _resolve_inputs(
     return paths, parsed.inputs, parsed.metadata
 
 
-def _document_id(pages: list[RasterPage]) -> str:
+def _document_id(pages: list[Page]) -> str:
     value = "|".join(f"{page.raster_sha256}:{page.instance}" for page in pages).encode()
     return f"doc-{hashlib.sha256(value).hexdigest()[:16]}"
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _candidate_documents(
@@ -960,9 +1131,385 @@ def _fallback_candidate(page_id: str, supporting: list[Evidence], bbox: BBox) ->
         text="\n".join(item.text for item in ordered),
         bbox=bbox,
         confidence=max((item.confidence for item in ordered), default=0.0),
-        valid=not reasons,
+        valid=not has_fatal_sanitization_reason(reasons),
         rejection_reasons=reasons,
     )
+
+
+def _matching_geometry_table(base: Table, blocks: list[Block]) -> Table | None:
+    candidates = [
+        block
+        for block in blocks
+        if isinstance(block, Table)
+        and len(block.column_boundaries) >= 2
+        and _intersection_ratio(block.bbox, base.bbox) >= 0.5
+        and _intersection_ratio(base.bbox, block.bbox) >= 0.5
+    ]
+    return max(candidates, key=lambda table: _intersection_ratio(table.bbox, base.bbox), default=None)
+
+
+def _project_table_structure(
+    base: Table,
+    geometry: Table,
+    supporting: list[Evidence],
+) -> Table | None:
+    row_count, column_count = table_dimensions(base)
+    _, geometry_columns = table_dimensions(geometry)
+    if (
+        row_count == 0
+        or geometry_columns < column_count
+        or (geometry_columns == column_count and base.column_boundaries)
+    ):
+        return None
+    column_boundaries = geometry.column_boundaries
+    if len(column_boundaries) != geometry_columns + 1:
+        return None
+    row_boundaries = _projected_row_boundaries(
+        geometry,
+        row_count,
+        supporting,
+        base if geometry_columns == column_count else None,
+    )
+    if row_boundaries is None:
+        return None
+    occupied: set[tuple[int, int]] = set()
+    projected: list[Cell] = []
+    for row in range(row_count):
+        sources = sorted(
+            (cell for cell in base.cells if cell.row == row),
+            key=lambda cell: cell.column,
+        )
+        anchors = _geometry_row_anchors(
+            geometry,
+            row_boundaries,
+            column_boundaries,
+            row,
+            occupied,
+        )
+        if len(sources) > len(anchors):
+            return None
+        target_text = [
+            _local_text(
+                (
+                    column_boundaries[column],
+                    row_boundaries[row],
+                    column_boundaries[column + colspan],
+                    row_boundaries[row + 1],
+                ),
+                supporting,
+            )
+            for column, colspan in anchors
+        ]
+        mapping = _align_text_sequences(
+            [_block_text_value(cell.paragraphs) for cell in sources],
+            target_text,
+        )
+        source_by_target = {target: sources[source] for target, source in mapping.items()}
+        header_row = bool(sources) and all(cell.section == "thead" for cell in sources)
+        for target, (column, colspan) in enumerate(anchors):
+            source = source_by_target.get(target)
+            rowspan = min(source.rowspan, row_count - row) if source else 1
+            positions = {
+                (target_row, target_column)
+                for target_row in range(row, row + rowspan)
+                for target_column in range(column, column + colspan)
+            }
+            if positions & occupied:
+                rowspan = 1
+                positions = {(row, target_column) for target_column in range(column, column + colspan)}
+            occupied |= positions
+            bbox = (
+                column_boundaries[column],
+                row_boundaries[row],
+                column_boundaries[column + colspan],
+                row_boundaries[row + rowspan],
+            )
+            if source:
+                cell = source.model_copy(
+                    update={
+                        "id": f"{base.id}-r{row + 1}c{column + 1}",
+                        "row": row,
+                        "column": column,
+                        "rowspan": rowspan,
+                        "colspan": colspan,
+                        "bbox": bbox,
+                    }
+                )
+            else:
+                cell = Cell(
+                    id=f"{base.id}-r{row + 1}c{column + 1}",
+                    row=row,
+                    column=column,
+                    colspan=colspan,
+                    bbox=bbox,
+                    is_header=header_row,
+                    section="thead" if header_row else "tbody",
+                    confidence=base.confidence,
+                )
+            projected.append(cell)
+    projected_bbox = (
+        geometry.bbox[0],
+        row_boundaries[0],
+        geometry.bbox[2],
+        row_boundaries[-1],
+    )
+    try:
+        return Table.model_validate(
+            {
+                **base.model_dump(),
+                "bbox": projected_bbox,
+                "cells": projected,
+                "column_boundaries": column_boundaries,
+            }
+        )
+    except ValueError:
+        return None
+
+
+def _projected_row_boundaries(
+    geometry: Table,
+    row_count: int,
+    supporting: list[Evidence],
+    semantic: Table | None = None,
+) -> list[int] | None:
+    boundaries = sorted({value for cell in geometry.cells for value in (cell.bbox[1], cell.bbox[3])})
+    if len(boundaries) - 1 < row_count:
+        return None
+    consecutive = _matching_row_window(geometry, semantic, boundaries, row_count, supporting)
+    if consecutive is not None:
+        return consecutive
+    local = [
+        item
+        for item in supporting
+        if item.source in {"ppocr", "embedded_pdf"}
+        and item.bbox is not None
+        and _intersection_ratio(item.bbox, geometry.bbox) >= SUPPORTING_EVIDENCE_MIN_COVERAGE
+    ]
+    while len(boundaries) - 1 > row_count:
+        candidates = []
+        for index in range(1, len(boundaries) - 1):
+            boundary = boundaries[index]
+            crossings = sum(item.bbox[1] < boundary < item.bbox[3] for item in local if item.bbox)
+            narrowest = min(boundary - boundaries[index - 1], boundaries[index + 1] - boundary)
+            candidates.append((-narrowest, crossings, -index, index))
+        boundaries.pop(max(candidates)[-1])
+    return boundaries
+
+
+def _matching_row_window(
+    geometry: Table,
+    semantic: Table | None,
+    boundaries: list[int],
+    row_count: int,
+    supporting: list[Evidence],
+) -> list[int] | None:
+    geometry_rows = len(boundaries) - 1
+    if semantic is None or geometry_rows == row_count:
+        return boundaries if geometry_rows == row_count else None
+    source_text = [
+        " ".join(
+            _block_text_value(cell.paragraphs)
+            for cell in sorted(
+                (cell for cell in semantic.cells if cell.row == row),
+                key=lambda cell: cell.column,
+            )
+        )
+        for row in range(row_count)
+    ]
+    target_text = [
+        _local_text(
+            (geometry.bbox[0], boundaries[row], geometry.bbox[2], boundaries[row + 1]),
+            supporting,
+        )
+        for row in range(geometry_rows)
+    ]
+    if not any(source_text) or not any(target_text):
+        return None
+    offset = max(
+        range(geometry_rows - row_count + 1),
+        key=lambda start: sum(
+            _text_similarity(source_text[row], target_text[start + row]) for row in range(row_count)
+        ),
+    )
+    return boundaries[offset : offset + row_count + 1]
+
+
+def _geometry_row_anchors(
+    geometry: Table,
+    row_boundaries: list[int],
+    column_boundaries: list[int],
+    row: int,
+    occupied: set[tuple[int, int]],
+) -> list[tuple[int, int]]:
+    result = []
+    column = 0
+    while column < len(column_boundaries) - 1:
+        if (row, column) in occupied:
+            column += 1
+            continue
+        spans = []
+        for cell in geometry.cells:
+            if cell.bbox[0] != column_boundaries[column]:
+                continue
+            overlap = max(
+                0,
+                min(cell.bbox[3], row_boundaries[row + 1]) - max(cell.bbox[1], row_boundaries[row]),
+            )
+            if overlap == 0:
+                continue
+            right = next(
+                (index for index, boundary in enumerate(column_boundaries) if boundary == cell.bbox[2]),
+                column + 1,
+            )
+            colspan = max(1, right - column)
+            if all((row, value) not in occupied for value in range(column, column + colspan)):
+                spans.append(colspan)
+        colspan = max(spans, default=1)
+        result.append((column, colspan))
+        column += colspan
+    return result
+
+
+def _project_table_values(
+    candidate: Table,
+    topology: Table,
+    supporting: list[Evidence],
+) -> Table:
+    target_rows, _ = table_dimensions(topology)
+    source_rows, _ = table_dimensions(candidate)
+    target_text = [
+        " ".join(
+            _block_text_value(cell.paragraphs)
+            for cell in sorted(
+                (cell for cell in topology.cells if cell.row == row),
+                key=lambda cell: cell.column,
+            )
+        )
+        or _local_text(_table_row_bbox(topology, row), supporting)
+        for row in range(target_rows)
+    ]
+    source_text = [
+        " ".join(
+            _block_text_value(cell.paragraphs)
+            for cell in sorted(
+                (cell for cell in candidate.cells if cell.row == row),
+                key=lambda cell: cell.column,
+            )
+        )
+        for row in range(source_rows)
+    ]
+    row_mapping = _align_text_sequences(source_text, target_text, allow_source_skips=True)
+    output = [
+        cell.model_copy(
+            update={
+                "paragraphs": [],
+                "confidence": 0.0,
+                "asset": None,
+                "image_present": False,
+            }
+        )
+        for cell in topology.cells
+    ]
+    output_by_position = {(cell.row, cell.column): index for index, cell in enumerate(output)}
+    for target_row, source_row in row_mapping.items():
+        sources = sorted(
+            (cell for cell in candidate.cells if cell.row == source_row),
+            key=lambda cell: cell.column,
+        )
+        targets = sorted(
+            (cell for cell in topology.cells if cell.row == target_row),
+            key=lambda cell: cell.column,
+        )
+        mapping = _align_text_sequences(
+            [_block_text_value(cell.paragraphs) for cell in sources],
+            [_block_text_value(cell.paragraphs) or _local_text(cell.bbox, supporting) for cell in targets],
+            allow_source_skips=True,
+        )
+        for target, source in mapping.items():
+            target_cell = targets[target]
+            source_cell = sources[source]
+            output[output_by_position[(target_cell.row, target_cell.column)]] = target_cell.model_copy(
+                update={
+                    "paragraphs": source_cell.paragraphs,
+                    "style": source_cell.style,
+                    "confidence": source_cell.confidence,
+                    "asset": source_cell.asset,
+                    "image_present": source_cell.image_present,
+                }
+            )
+    return topology.model_copy(
+        update={
+            "cells": output,
+            "caption": candidate.caption,
+            "confidence": candidate.confidence,
+        }
+    )
+
+
+def _table_row_bbox(table: Table, row: int) -> BBox:
+    boundaries = sorted({value for cell in table.cells for value in (cell.bbox[1], cell.bbox[3])})
+    return (table.bbox[0], boundaries[row], table.bbox[2], boundaries[row + 1])
+
+
+def _local_text(bbox: BBox, supporting: list[Evidence]) -> str:
+    candidate = _local_candidate("alignment", bbox, supporting)
+    return candidate.text if candidate else ""
+
+
+def _block_text_value(paragraphs: list[str]) -> str:
+    return " ".join(" ".join(value.split()) for value in paragraphs).strip()
+
+
+def _align_text_sequences(
+    sources: list[str],
+    targets: list[str],
+    allow_source_skips: bool = False,
+) -> dict[int, int]:
+    if len(sources) == len(targets):
+        return {index: index for index in range(len(sources))}
+    negative = float("-inf")
+    scores = [[negative] * (len(targets) + 1) for _ in range(len(sources) + 1)]
+    paths: list[list[list[tuple[int, int]] | None]] = [
+        [None] * (len(targets) + 1) for _ in range(len(sources) + 1)
+    ]
+    scores[0][0] = 0.0
+    paths[0][0] = []
+    for source in range(len(sources) + 1):
+        for target in range(len(targets) + 1):
+            if paths[source][target] is None:
+                continue
+            transitions: list[tuple[int, int, float, list[tuple[int, int]]]] = []
+            if source < len(sources) and target < len(targets):
+                transitions.append(
+                    (
+                        source + 1,
+                        target + 1,
+                        _text_alignment_score(sources[source], targets[target]),
+                        [*paths[source][target], (target, source)],
+                    )
+                )
+            if target < len(targets):
+                penalty = 0.0 if not targets[target].strip() else -1.5
+                transitions.append((source, target + 1, penalty, paths[source][target]))
+            if allow_source_skips and source < len(sources):
+                penalty = -0.25 if not sources[source].strip() else -1.5
+                transitions.append((source + 1, target, penalty, paths[source][target]))
+            for next_source, next_target, delta, path in transitions:
+                score = scores[source][target] + delta
+                if score > scores[next_source][next_target]:
+                    scores[next_source][next_target] = score
+                    paths[next_source][next_target] = path
+    return dict(paths[-1][-1] or [])
+
+
+def _text_alignment_score(source: str, target: str) -> float:
+    source = source.strip()
+    target = target.strip()
+    if not source and not target:
+        return 2.0
+    if not source or not target:
+        return -2.0
+    return 4.0 * _text_similarity(source, target) - 1.0
 
 
 def _align_blocks(base: list[Block], candidate: list[Block]) -> dict[int, Block]:
@@ -1057,6 +1604,15 @@ def _retry_cell_values(candidates: list[Evidence], base: Cell) -> tuple[list[Evi
             (item for block in blocks if isinstance(block, Table) for item in block.cells),
             None,
         )
+        if cell is not None:
+            cell = cell.model_copy(
+                update={
+                    "row": base.row,
+                    "column": base.column,
+                    "rowspan": base.rowspan,
+                    "colspan": base.colspan,
+                }
+            )
         if cell is None:
             text = next((item for item in blocks if isinstance(item, TextBlock)), None)
             if text:
@@ -1104,10 +1660,76 @@ def _retry_table_values(
     return evidence, values
 
 
-def _should_retry(candidates: list[Evidence], adapter_count: int) -> bool:
+def _project_retry_table_values(
+    values: tuple[list[Evidence], list[tuple[Evidence, Table]]],
+    base: Table,
+    supporting: list[Evidence],
+) -> tuple[list[Evidence], list[tuple[Evidence, Table]]]:
+    evidence = []
+    tables = []
+    for unit, (parent, table) in zip(*values, strict=True):
+        if unit.valid:
+            table = _project_table_values(table, base, supporting)
+            unit = _evidence_for_table(parent, table, base.id, base.bbox)
+        evidence.append(unit)
+        tables.append((parent, table))
+    return evidence, tables
+
+
+def _matching_table_cells(
+    base: Cell,
+    tables: list[tuple[Evidence, Table]],
+) -> list[tuple[Evidence, Cell]]:
+    result = []
+    location = (base.row, base.column, base.rowspan, base.colspan)
+    for parent, table in tables:
+        matching = next(
+            (
+                cell
+                for cell in table.cells
+                if (cell.row, cell.column, cell.rowspan, cell.colspan) == location and cell.confidence > 0
+            ),
+            None,
+        )
+        if matching:
+            result.append((parent, matching))
+    return result
+
+
+def _table_content_retry_needed(
+    base: Table,
+    tables: list[tuple[Evidence, Table]],
+    supporting: list[Evidence],
+    adapter_count: int,
+) -> bool:
+    compatible = [(parent, table) for parent, table in tables if _topology(table) == _topology(base)]
+    for cell in base.cells:
+        if _empty_cell_supported(cell, supporting):
+            continue
+        values = _matching_table_cells(cell, compatible)
+        candidates = [_evidence_for_cell(parent, value, cell.id, cell.bbox) for parent, value in values]
+        selected, _ = reconcile(
+            cell.id,
+            candidates,
+            _supporting_for_bbox(supporting, cell.bbox),
+            cell.bbox,
+        )
+        locally_supported = _local_candidate(cell.id, cell.bbox, supporting) is not None
+        if selected is None or _should_retry(candidates, adapter_count, locally_supported):
+            return True
+    return False
+
+
+def _should_retry(
+    candidates: list[Evidence],
+    adapter_count: int,
+    has_local_support: bool = False,
+) -> bool:
     valid = [candidate for candidate in candidates if candidate.valid]
     families = {candidate.source_family for candidate in valid}
-    return needs_retry(candidates) or (bool(valid) and len(families) < min(2, adapter_count))
+    return needs_retry(candidates) or (
+        bool(valid) and len(families) + has_local_support < min(2, adapter_count)
+    )
 
 
 def _family_outputs_conflict(candidates: list[Evidence]) -> bool:
@@ -1119,6 +1741,30 @@ def _family_outputs_conflict(candidates: list[Evidence]) -> bool:
     families = {family for family, _ in values}
     texts = {text for _, text in values}
     return len(families) >= 2 and len(texts) > 1
+
+
+def _unique_cross_family_consensus(
+    selected: Evidence | None,
+    candidates: list[Evidence],
+    topology: bool = False,
+) -> bool:
+    if selected is None:
+        return False
+
+    def value(candidate: Evidence) -> str:
+        raw = candidate.metadata.get("topology", "") if topology else candidate.text
+        return " ".join(str(raw).split()).casefold()
+
+    families_by_value: dict[str, set[str]] = {}
+    for candidate in candidates:
+        candidate_value = value(candidate)
+        if not candidate.valid or not candidate_value:
+            continue
+        families_by_value.setdefault(candidate_value, set()).add(candidate.source_family)
+    supported = {
+        candidate_value for candidate_value, families in families_by_value.items() if len(families) >= 2
+    }
+    return supported == {value(selected)}
 
 
 def _table_retry_needed(candidates: list[Evidence], adapter_count: int) -> bool:
@@ -1171,11 +1817,89 @@ def _local_candidate(unit_id: str, bbox: BBox, supporting: list[Evidence]) -> Ev
     )
 
 
+def _expanded_text_bbox(bbox: BBox, supporting: list[Evidence]) -> BBox:
+    result = bbox
+    candidates = [
+        item.bbox
+        for item in supporting
+        if item.source in {"ppocr", "embedded_pdf"} and item.text and item.bbox is not None
+    ]
+    changed = True
+    while changed:
+        changed = False
+        for candidate in candidates:
+            horizontal = max(0, min(result[2], candidate[2]) - max(result[0], candidate[0]))
+            candidate_width = max(1, candidate[2] - candidate[0])
+            gap = max(0, candidate[1] - result[3], result[1] - candidate[3])
+            if horizontal / candidate_width < 0.5 or gap > max(16, (result[3] - result[1]) * 0.75):
+                continue
+            expanded = (
+                min(result[0], candidate[0]),
+                min(result[1], candidate[1]),
+                max(result[2], candidate[2]),
+                max(result[3], candidate[3]),
+            )
+            if expanded != result:
+                result = expanded
+                changed = True
+    return result
+
+
+def _matching_text_bbox(block: TextBlock, supporting: list[Evidence]) -> BBox | None:
+    text = _block_text_value(block.paragraphs)
+    if len(text) < 8:
+        return None
+    candidates = [
+        item
+        for item in supporting
+        if item.source in {"ppocr", "embedded_pdf"} and item.text and item.bbox is not None
+    ]
+    if not candidates:
+        return None
+    selected = max(candidates, key=lambda item: _text_similarity(text, item.text))
+    return selected.bbox if _text_similarity(text, selected.text) >= 0.72 else None
+
+
+def _selected_is_grounded(
+    selected: Evidence | None,
+    bbox: BBox,
+    supporting: list[Evidence],
+) -> bool:
+    local = _local_candidate("grounding", bbox, supporting)
+    return selected is not None and local is not None and _text_similarity(selected.text, local.text) >= 0.95
+
+
+def _empty_cell_supported(cell: Cell, supporting: list[Evidence]) -> bool:
+    if _block_text_value(cell.paragraphs):
+        return False
+    return any(
+        isinstance(item, CellEvidence)
+        and item.source == "opencv"
+        and item.bbox is not None
+        and item.bbox[0] == cell.bbox[0]
+        and item.bbox[2] == cell.bbox[2]
+        and item.bbox[1] >= cell.bbox[1]
+        and item.bbox[3] <= cell.bbox[3]
+        for item in supporting
+    )
+
+
 def _topology(table: Table) -> str:
     return ";".join(
         f"{cell.row},{cell.column},{cell.rowspan},{cell.colspan}"
         for cell in sorted(table.cells, key=lambda item: (item.row, item.column))
     )
+
+
+def _normalize_table_sections(cells: list[Cell]) -> list[Cell]:
+    header_open = True
+    sections: dict[int, str] = {}
+    for row in sorted({cell.row for cell in cells}):
+        row_cells = [cell for cell in cells if cell.row == row]
+        if not row_cells or not all(cell.section == "thead" for cell in row_cells):
+            header_open = False
+        sections[row] = "thead" if header_open else "tbody"
+    return [cell.model_copy(update={"section": sections[cell.row]}) for cell in cells]
 
 
 def _block_text(block: Block) -> str:
@@ -1190,7 +1914,11 @@ def _block_text(block: Block) -> str:
 
 
 def _supporting_for_bbox(supporting: list[Evidence], bbox: BBox) -> list[Evidence]:
-    return [item for item in supporting if item.bbox is None or _intersection_ratio(item.bbox, bbox) > 0]
+    return [
+        item
+        for item in supporting
+        if item.bbox is None or _intersection_ratio(item.bbox, bbox) >= SUPPORTING_EVIDENCE_MIN_COVERAGE
+    ]
 
 
 def _intersection_ratio(first: BBox, second: BBox) -> float:

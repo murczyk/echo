@@ -457,23 +457,25 @@ class ExtractionResult(StrictModel):
     markdown: str
     quality: QualityReport
     manifest: PackageManifest
-    assets: dict[str, bytes] = Field(default_factory=dict, exclude=True)
-    raw_artifacts: dict[str, bytes] = Field(default_factory=dict, exclude=True)
+    assets: dict[str, bytes | Path] = Field(default_factory=dict, exclude=True)
+    raw_artifacts: dict[str, bytes | Path] = Field(default_factory=dict, exclude=True)
 
     @field_validator("assets")
     @classmethod
-    def validate_assets(cls, value: dict[str, bytes]) -> dict[str, bytes]:
+    def validate_assets(cls, value: dict[str, bytes | Path]) -> dict[str, bytes | Path]:
         for path, content in value.items():
             safe_relative_path(path, "assets")
-            if hashlib.sha256(content).hexdigest() != PurePosixPath(path).stem:
+            if hashlib.sha256(_artifact_bytes(content)).hexdigest() != PurePosixPath(path).stem:
                 raise ValueError(f"asset hash does not match path: {path}")
         return value
 
     @field_validator("raw_artifacts")
     @classmethod
-    def validate_raw_artifacts(cls, value: dict[str, bytes]) -> dict[str, bytes]:
-        for path in value:
+    def validate_raw_artifacts(cls, value: dict[str, bytes | Path]) -> dict[str, bytes | Path]:
+        for path, content in value.items():
             safe_relative_path(path, "raw")
+            if isinstance(content, Path) and not content.is_file():
+                raise ValueError(f"artifact does not exist: {path}")
         return value
 
     def write_package(self, path: str | Path) -> None:
@@ -501,7 +503,10 @@ class ExtractionResult(StrictModel):
             for relative, content in {**self.assets, **self.raw_artifacts}.items():
                 target = self._safe_target(staging, relative)
                 target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                target.write_bytes(content)
+                if isinstance(content, Path):
+                    shutil.copyfile(content, target)
+                else:
+                    target.write_bytes(content)
                 os.chmod(target, 0o600)
             (staging / "assets").mkdir(mode=0o700, exist_ok=True)
             (staging / "raw").mkdir(mode=0o700, exist_ok=True)
@@ -509,7 +514,7 @@ class ExtractionResult(StrictModel):
                 write_xlsx(self, staging / "document.xlsx")
                 os.chmod(staging / "document.xlsx", 0o600)
             self.manifest.file_hashes = {
-                item.relative_to(staging).as_posix(): hashlib.sha256(item.read_bytes()).hexdigest()
+                item.relative_to(staging).as_posix(): _sha256_path(item)
                 for item in staging.rglob("*")
                 if item.is_file()
             }
@@ -543,6 +548,18 @@ class ExtractionResult(StrictModel):
 
 def sha256_bytes(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
+
+
+def _artifact_bytes(content: bytes | Path) -> bytes:
+    return content.read_bytes() if isinstance(content, Path) else content
+
+
+def _sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def is_sha256(value: str) -> bool:

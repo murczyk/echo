@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import mimetypes
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,6 +37,14 @@ def _sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _normalized_png(image: Image.Image) -> bytes:
     content = io.BytesIO()
     image.save(content, "PNG", optimize=False)
@@ -61,52 +70,54 @@ def _image_page(path: Path, instance: int) -> RasterPage:
     return RasterPage(path.name, instance, _sha256(source), _sha256(normalized), image, rotation)
 
 
-def _pdf_pages(path: Path, dpi: int, first_instance: int) -> list[RasterPage]:
+def _pdf_pages(path: Path, dpi: int, first_instance: int) -> Iterator[RasterPage]:
     try:
         import pypdfium2 as pdfium
     except ImportError as error:
         raise RuntimeError("PDF support requires pypdfium2") from error
 
     try:
-        source = path.read_bytes()
+        size = path.stat().st_size
     except OSError as error:
         raise ValueError(f"unreadable PDF: {path.name}") from error
-    if not source:
+    if not size:
         raise ValueError(f"empty input: {path.name}")
     try:
-        document = pdfium.PdfDocument(source)
+        document = pdfium.PdfDocument(str(path))
     except Exception as error:
         raise ValueError(f"unreadable PDF: {path.name}") from error
     if len(document) == 0:
         raise ValueError(f"PDF contains no pages: {path.name}")
-    pages = []
-    scale = dpi / 72
-    source_digest = _sha256(source)
-    for index in range(len(document)):
-        try:
-            page = document[index]
-            image = page.render(scale=scale).to_pil().convert("RGB")
-            image.load()
-        except Exception as error:
-            raise ValueError(f"unable to render {path.name} page {index + 1}") from error
-        raster_digest = _sha256(_normalized_png(image))
-        try:
-            rotation = int(page.get_rotation()) % 360
-        except Exception:
-            rotation = 0
-        evidence = tuple(_pdf_text_evidence(page, raster_digest, dpi, image.size, rotation))
-        pages.append(
-            RasterPage(
-                f"{path.name}#page={index + 1}",
-                first_instance + index,
-                source_digest,
-                raster_digest,
-                image,
-                rotation,
-                evidence,
-            )
-        )
-    return pages
+    try:
+        scale = dpi / 72
+        source_digest = _sha256_file(path)
+        for index in range(len(document)):
+            try:
+                page = document[index]
+                image = page.render(scale=scale).to_pil().convert("RGB")
+                image.load()
+            except Exception as error:
+                raise ValueError(f"unable to render {path.name} page {index + 1}") from error
+            raster_digest = _sha256(_normalized_png(image))
+            try:
+                rotation = int(page.get_rotation()) % 360
+            except Exception:
+                rotation = 0
+            evidence = tuple(_pdf_text_evidence(page, raster_digest, dpi, image.size, rotation))
+            try:
+                yield RasterPage(
+                    f"{path.name}#page={index + 1}",
+                    first_instance + index,
+                    source_digest,
+                    raster_digest,
+                    image,
+                    rotation,
+                    evidence,
+                )
+            finally:
+                page.close()
+    finally:
+        document.close()
 
 
 def _pdf_text_evidence(
@@ -211,10 +222,9 @@ def _rotate_pdf_bbox(
     return bbox
 
 
-def ingest(inputs: list[str | Path], dpi: int) -> list[RasterPage]:
+def iter_ingest(inputs: list[str | Path], dpi: int) -> Iterator[RasterPage]:
     if not inputs:
         raise ValueError("no input files")
-    pages: list[RasterPage] = []
     instance = 0
     for value in inputs:
         path = Path(value)
@@ -222,15 +232,18 @@ def ingest(inputs: list[str | Path], dpi: int) -> list[RasterPage]:
             raise ValueError(f"input is not a readable file: {path.name}")
         mime = mimetypes.guess_type(path.name)[0]
         if mime == "application/pdf" or path.suffix.casefold() == ".pdf":
-            rendered = _pdf_pages(path, dpi, instance)
-            pages.extend(rendered)
-            instance += len(rendered)
+            for page in _pdf_pages(path, dpi, instance):
+                yield page
+                instance += 1
         elif (mime and mime.startswith("image/")) or path.suffix.casefold() in {".png", ".jpg", ".jpeg"}:
-            pages.append(_image_page(path, instance))
+            yield _image_page(path, instance)
             instance += 1
         else:
             raise ValueError(f"unsupported input: {path.name}")
-    return pages
+
+
+def ingest(inputs: list[str | Path], dpi: int) -> list[RasterPage]:
+    return list(iter_ingest(inputs, dpi))
 
 
 def crop(image: Image.Image, bbox: BBox, padding: float, upscale: float, max_edge: int) -> Image.Image:

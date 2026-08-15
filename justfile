@@ -41,6 +41,18 @@ iggy_default_rev := "k-bx/2026-06-18-poll-option"
 default:
     @just --list
 
+doc-extractor-check:
+    just --justfile echo-document-extractor/justfile check
+
+doc-extractor-package:
+    just --justfile echo-document-extractor/justfile package
+
+doc-extractor-deploy:
+    just --justfile echo-document-extractor/justfile deploy
+
+doc-extractor-verify:
+    just --justfile echo-document-extractor/justfile verify
+
 # Send a Mattermost notification using the webhook configured in .env
 notify text:
     #!/usr/bin/env bash

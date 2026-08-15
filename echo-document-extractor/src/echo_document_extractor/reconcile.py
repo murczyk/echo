@@ -27,6 +27,34 @@ CRITICAL_PATTERN = re.compile(
     r"(?=\S*[A-Za-zА-Яа-яІіЇїЄєҐґ])(?=\S*\d)[A-Za-zА-Яа-яІіЇїЄєҐґ0-9][\w./:-]*",
     re.UNICODE,
 )
+TOKEN_PATTERN = re.compile(r"[\w./:-]+", re.UNICODE)
+VISUAL_CONFUSABLES = str.maketrans(
+    {
+        "а": "a",
+        "б": "6",
+        "в": "b",
+        "д": "a",
+        "е": "e",
+        "ё": "e",
+        "з": "3",
+        "к": "k",
+        "л": "i",
+        "м": "m",
+        "н": "h",
+        "о": "o",
+        "п": "n",
+        "р": "p",
+        "с": "c",
+        "т": "t",
+        "у": "y",
+        "ф": "f",
+        "х": "x",
+        "ч": "4",
+        "ш": "m",
+        "μ": "a",
+        "π": "n",
+    }
+)
 
 
 def reconcile(
@@ -41,7 +69,7 @@ def reconcile(
         (
             candidate,
             _rank_factors(candidate, eligible, supporting, expected_bbox, expected_topology),
-            _validators(candidate, supporting, expected_bbox, expected_topology),
+            _validators(candidate, eligible, supporting, expected_bbox, expected_topology),
         )
         for candidate in eligible
     ]
@@ -89,6 +117,7 @@ def needs_retry(candidates: list[Evidence]) -> bool:
 
 def _validators(
     candidate: Evidence,
+    peers: list[Evidence],
     supporting: list[Evidence],
     expected_bbox: BBox | None,
     expected_topology: str | None,
@@ -102,7 +131,17 @@ def _validators(
     support_critical = _multiset(CRITICAL_PATTERN, support_text)
     numeric_passed = not support_numbers or candidate_numbers == support_numbers
     coordinate_passed = not support_coordinates or candidate_coordinates == support_coordinates
-    critical_passed = not support_critical or candidate_critical == support_critical
+    agreeing = [
+        peer for peer in peers if peer.valid and _normalized(peer.text) == _normalized(candidate.text)
+    ]
+    cross_family_consensus = len({peer.source_family or peer.source for peer in agreeing}) >= 2
+    critical_passed = _critical_tokens_match(candidate.text, support_text) or (
+        cross_family_consensus
+        and (
+            _digit_multiset(candidate.text) == _digit_multiset(support_text)
+            or (not _digit_multiset(candidate.text) and len(agreeing) >= 3)
+        )
+    )
     geometry_score = _geometry_compatibility(candidate.bbox, expected_bbox)
     topology = str(candidate.metadata.get("topology", ""))
     topology_passed = expected_topology is None or topology == expected_topology
@@ -165,7 +204,7 @@ def _rank_factors(
     expected_bbox: BBox | None,
     expected_topology: str | None,
 ) -> RankFactors:
-    validators = _validators(candidate, supporting, expected_bbox, expected_topology)
+    validators = _validators(candidate, peers, supporting, expected_bbox, expected_topology)
     support_text = _support_text(supporting)
     candidate_tokens = _multiset(NUMBER_PATTERN, candidate.text) + _multiset(CRITICAL_PATTERN, candidate.text)
     support_tokens = _multiset(NUMBER_PATTERN, support_text) + _multiset(CRITICAL_PATTERN, support_text)
@@ -241,6 +280,28 @@ def _support_text(supporting: list[Evidence]) -> str:
 
 def _multiset(pattern: re.Pattern[str], value: str) -> Counter[str]:
     return Counter(_normalized(match.group(0)) for match in pattern.finditer(value))
+
+
+def _critical_tokens_match(candidate: str, support: str) -> bool:
+    candidate_critical = [match.group(0) for match in CRITICAL_PATTERN.finditer(candidate)]
+    support_critical = [match.group(0) for match in CRITICAL_PATTERN.finditer(support)]
+    if not support_critical:
+        return True
+    candidate_tokens = TOKEN_PATTERN.findall(candidate)
+    support_tokens = TOKEN_PATTERN.findall(support)
+    return all(
+        any(_visually_similar(token, peer) for peer in support_tokens) for token in candidate_critical
+    ) and all(any(_visually_similar(token, peer) for peer in candidate_tokens) for token in support_critical)
+
+
+def _digit_multiset(value: str) -> Counter[str]:
+    return Counter(re.findall(r"\d+", value))
+
+
+def _visually_similar(first: str, second: str) -> bool:
+    first = _normalized(first).translate(VISUAL_CONFUSABLES)
+    second = _normalized(second).translate(VISUAL_CONFUSABLES)
+    return SequenceMatcher(None, first, second).ratio() >= 0.8
 
 
 def _support_score(candidate: Counter[str], support: Counter[str]) -> float:

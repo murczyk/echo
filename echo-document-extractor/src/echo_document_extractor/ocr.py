@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -7,6 +8,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from .config import PaddleRuntimeConfig
 from .models import BBox, CellEvidence, Evidence, OcrTokenEvidence, RegionEvidence, TableEvidence
 
 
@@ -17,9 +19,15 @@ class PaddleResult:
 
 
 class PaddleEvidenceProvider:
-    def __init__(self, enabled: bool = True, languages: tuple[str, ...] = ("ru", "uk", "en")) -> None:
+    def __init__(
+        self,
+        enabled: bool = True,
+        languages: tuple[str, ...] = ("ru", "uk", "en"),
+        runtime: PaddleRuntimeConfig | None = None,
+    ) -> None:
         self.enabled = enabled
         self.languages = languages
+        self.runtime = runtime or PaddleRuntimeConfig()
         self._ocr: dict[str, object] = {}
         self._structure: object | None = None
         if enabled:
@@ -29,16 +37,23 @@ class PaddleEvidenceProvider:
         try:
             from paddleocr import PaddleOCR, PPStructureV3
 
-            self._ocr = {
-                language: PaddleOCR(
-                    lang=language,
-                    use_doc_orientation_classify=True,
-                    use_doc_unwarping=True,
-                    use_textline_orientation=True,
-                )
-                for language in self.languages
-            }
-            self._structure = PPStructureV3()
+            pipelines: dict[str, object] = {}
+            self._ocr = {}
+            for language in self.languages:
+                key = _ocr_pipeline_key(language, self.runtime)
+                if key not in pipelines:
+                    pipelines[key] = _create_ocr_pipeline(PaddleOCR, language, self.runtime)
+                self._ocr[language] = pipelines[key]
+            structure = (
+                {"paddlex_config": str(self.runtime.structure_config)}
+                if self.runtime.structure_config
+                else {}
+            )
+            self._structure = PPStructureV3(
+                device=self.runtime.device,
+                enable_mkldnn=False,
+                **structure,
+            )
         except Exception as error:
             raise RuntimeError(
                 "Paddle evidence is enabled but PP-OCRv5/PP-StructureV3 is unavailable; "
@@ -48,24 +63,60 @@ class PaddleEvidenceProvider:
     def extract(self, image: Image.Image, page_id: str) -> list[Evidence]:
         return self.extract_all(image, page_id).evidence
 
-    def extract_all(self, image: Image.Image, page_id: str) -> PaddleResult:
+    def extract_all(
+        self,
+        image: Image.Image,
+        page_id: str,
+        use_table_recognition: bool = True,
+    ) -> PaddleResult:
         if not self.enabled:
             return PaddleResult()
         array = np.asarray(image.convert("RGB"))
         tokens: list[OcrTokenEvidence] = []
+        results_by_pipeline: dict[int, list[object]] = {}
         for language, recognizer in self._ocr.items():
-            try:
-                results = recognizer.predict(array)
-            except Exception as error:
-                raise RuntimeError(f"PP-OCRv5 {language} inference failed") from error
+            pipeline_id = id(recognizer)
+            if pipeline_id not in results_by_pipeline:
+                try:
+                    results_by_pipeline[pipeline_id] = list(recognizer.predict(array))
+                except Exception as error:
+                    raise RuntimeError(f"PP-OCRv5 {language} inference failed") from error
+            results = results_by_pipeline[pipeline_id]
             tokens.extend(_ocr_tokens(results, page_id, language, image.size))
         merged = _merge_tokens(tokens)
         try:
-            structure_results = self._structure.predict(array) if self._structure is not None else []
+            structure_results = (
+                self._structure.predict(array, use_table_recognition=use_table_recognition)
+                if self._structure is not None
+                else []
+            )
         except Exception as error:
             raise RuntimeError("PP-StructureV3 inference failed") from error
         regions, visual_regions = _structure_evidence(structure_results, page_id, image.size)
         return PaddleResult([*regions, *merged], visual_regions)
+
+
+def _create_ocr_pipeline(factory: object, language: str, runtime: PaddleRuntimeConfig) -> object:
+    options = _ocr_options(language, runtime)
+    options["enable_mkldnn"] = False
+    return factory(  # type: ignore[operator]
+        use_doc_orientation_classify=True,
+        use_doc_unwarping=False,
+        use_textline_orientation=True,
+        **options,
+    )
+
+
+def _ocr_options(language: str, runtime: PaddleRuntimeConfig) -> dict[str, object]:
+    options = {**runtime.ocr_common, **runtime.ocr_languages.get(language, {})}
+    options["device"] = runtime.device
+    if "text_recognition_model_dir" not in options:
+        options["lang"] = language
+    return options
+
+
+def _ocr_pipeline_key(language: str, runtime: PaddleRuntimeConfig) -> str:
+    return json.dumps(_ocr_options(language, runtime), sort_keys=True, default=str)
 
 
 def _payload(item: Any) -> dict[str, Any]:

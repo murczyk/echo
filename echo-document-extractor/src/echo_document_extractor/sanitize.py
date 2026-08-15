@@ -51,6 +51,11 @@ ALLOWED_STYLE = {
     "font-style": {"italic"},
 }
 COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
+NON_FATAL_SANITIZATION_REASONS = frozenset({"unsupported_style_removed", "unsupported_tag_removed"})
+
+
+def has_fatal_sanitization_reason(reasons: list[str]) -> bool:
+    return any(reason not in NON_FATAL_SANITIZATION_REASONS for reason in reasons)
 
 
 def sanitize_candidate(value: str) -> tuple[str, list[str]]:

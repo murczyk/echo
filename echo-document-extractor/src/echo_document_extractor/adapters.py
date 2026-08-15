@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .config import EndpointConfig
 from .models import BBox, CandidateEvidence, Evidence, SourceTransform
-from .sanitize import sanitize_candidate
+from .sanitize import has_fatal_sanitization_reason, sanitize_candidate
 
 NUEXTRACT_PROMPT = """Transcribe the complete crop in reading order as Markdown with HTML tables.
 Preserve every paragraph, list type, table section, empty cell, rowspan, colspan,
@@ -220,10 +220,11 @@ def response_to_evidence(response: ModelResponse, request: ModelRequest) -> Evid
     if response.format == "markdown":
         content = markdown_to_html(content)
     sanitized, sanitize_reasons = sanitize_candidate(content)
-    reasons.extend(sanitize_reasons)
     text = _text_content(sanitized)
     if not text.strip():
         reasons.append("empty_content")
+    valid = not reasons and not has_fatal_sanitization_reason(sanitize_reasons)
+    reasons.extend(sanitize_reasons)
     return CandidateEvidence(
         id=f"{response.adapter}-{request.request_id}",
         kind="candidate",
@@ -233,9 +234,9 @@ def response_to_evidence(response: ModelResponse, request: ModelRequest) -> Evid
         html=sanitized,
         text=text,
         bbox=request.crop_bbox,
-        confidence=0.9 if not reasons else 0.0,
+        confidence=0.9 if valid else 0.0,
         transform=request.source_transform,
-        valid=not reasons,
+        valid=valid,
         rejection_reasons=sorted(set(reasons)),
         metadata={
             **response.request_metadata,

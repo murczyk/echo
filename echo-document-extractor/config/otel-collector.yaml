@@ -1,0 +1,113 @@
+receivers:
+  prometheus/api:
+    config:
+      scrape_configs:
+        - job_name: echo-document-extractor-api
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["127.0.0.1:29000"]
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: "(echo_document_extractor_.*|process_.*|python_.*)"
+              action: keep
+  prometheus/worker:
+    config:
+      scrape_configs:
+        - job_name: echo-document-extractor-worker
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["127.0.0.1:29001"]
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: "(echo_document_extractor_.*|process_.*|python_.*)"
+              action: keep
+  hostmetrics:
+    collection_interval: 60s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      disk: {}
+      filesystem:
+        metrics:
+          system.filesystem.utilization:
+            enabled: true
+      load: {}
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      network: {}
+      paging: {}
+      system: {}
+  journald:
+    directory: /var/log/journal
+    units:
+      - echo-document-extractor.service
+      - echo-document-extractor-worker.service
+      - echo-document-extractor-otel.service
+    start_at: end
+    storage: file_storage/journald
+
+processors:
+  resource/api:
+    attributes:
+      - {key: service.name, value: echo-document-extractor, action: upsert}
+      - {key: service.instance.id, value: ct-echo-document-extractor/api, action: upsert}
+      - {key: host.name, value: ct-echo-document-extractor, action: upsert}
+      - {key: echo.document_extractor.role, value: api, action: upsert}
+  resource/worker:
+    attributes:
+      - {key: service.name, value: echo-document-extractor, action: upsert}
+      - {key: service.instance.id, value: ct-echo-document-extractor/worker, action: upsert}
+      - {key: host.name, value: ct-echo-document-extractor, action: upsert}
+      - {key: echo.document_extractor.role, value: worker, action: upsert}
+  resource/host:
+    attributes:
+      - {key: service.name, value: echo-document-extractor, action: upsert}
+      - {key: service.instance.id, value: ct-echo-document-extractor/host, action: upsert}
+      - {key: host.name, value: ct-echo-document-extractor, action: upsert}
+      - {key: echo.document_extractor.role, value: host, action: upsert}
+  resource/logs:
+    attributes:
+      - {key: service.name, value: echo-document-extractor, action: upsert}
+      - {key: host.name, value: ct-echo-document-extractor, action: upsert}
+  batch/api: {timeout: 5s}
+  batch/worker: {timeout: 5s}
+  batch/host: {timeout: 10s}
+  batch/logs: {timeout: 5s}
+
+exporters:
+  otlp_grpc/signoz:
+    endpoint: "${env:OTLP_DESTINATION_ENDPOINT}"
+    tls:
+      insecure: true
+
+extensions:
+  file_storage/journald:
+    directory: /var/lib/echo-document-extractor-otel/file_storage
+    create_directory: true
+
+service:
+  telemetry:
+    metrics:
+      level: none
+  extensions: [file_storage/journald]
+  pipelines:
+    metrics/api:
+      receivers: [prometheus/api]
+      processors: [resource/api, batch/api]
+      exporters: [otlp_grpc/signoz]
+    metrics/worker:
+      receivers: [prometheus/worker]
+      processors: [resource/worker, batch/worker]
+      exporters: [otlp_grpc/signoz]
+    metrics/host:
+      receivers: [hostmetrics]
+      processors: [resource/host, batch/host]
+      exporters: [otlp_grpc/signoz]
+    logs/extractor:
+      receivers: [journald]
+      processors: [resource/logs, batch/logs]
+      exporters: [otlp_grpc/signoz]
