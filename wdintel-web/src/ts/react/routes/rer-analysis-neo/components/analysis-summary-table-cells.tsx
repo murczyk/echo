@@ -16,6 +16,40 @@ export function CompactListCell({ items }: { items: string[] }) {
   );
 }
 
+export function CallsignChip({
+  entry,
+}: {
+  entry: AnalysisSummaryTableRowView['callsignChips'][number];
+}) {
+  const hintIcon =
+    entry.iconClass === 'info-circle-fill' ? (
+      <InfoIcon fontSize="inherit" />
+    ) : entry.iconClass === 'info-circle' ? (
+      <InfoOutlinedIcon fontSize="inherit" />
+    ) : null;
+  const chip = (
+    <PowerChip
+      label={
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          {entry.tooltip && hintIcon ? hintIcon : null}
+          <span>{entry.callsign.toUpperCase()}</span>
+        </span>
+      }
+      size="small"
+      color={entry.tooltip ? 'primary' : 'default'}
+      selected={entry.isHighlighted}
+      title={entry.tooltip ?? entry.callsign.toUpperCase()}
+      sx={{ maxWidth: '100%', minWidth: 0, cursor: 'default' }}
+    />
+  );
+
+  return (
+    <Tooltip title={entry.tooltip ?? entry.callsign.toUpperCase()} placement="top">
+      <span>{chip}</span>
+    </Tooltip>
+  );
+}
+
 export function CallsignChipsCell({
   callsigns,
 }: {
@@ -25,39 +59,8 @@ export function CallsignChipsCell({
     <MrtOverflowItems
       items={callsigns}
       getItemText={(entry) => entry.callsign.toUpperCase()}
-      renderItem={(entry, index) => {
-        const hintIcon =
-          entry.iconClass === 'info-circle-fill' ? (
-            <InfoIcon fontSize="inherit" />
-          ) : entry.iconClass === 'info-circle' ? (
-            <InfoOutlinedIcon fontSize="inherit" />
-          ) : null;
-        const chip = (
-          <PowerChip
-            label={
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                {entry.tooltip && hintIcon ? hintIcon : null}
-                <span>{entry.callsign.toUpperCase()}</span>
-              </span>
-            }
-            size="small"
-            color={entry.tooltip ? 'primary' : 'default'}
-            selected={entry.isHighlighted}
-            title={entry.tooltip ?? entry.callsign.toUpperCase()}
-            sx={{ maxWidth: '100%', minWidth: 0, cursor: 'default' }}
-          />
-        );
-
-        return (
-          <Tooltip
-            key={`${entry.callsign}-${index}`}
-            title={entry.tooltip ?? entry.callsign.toUpperCase()}
-            placement="top"
-          >
-            <span>{chip}</span>
-          </Tooltip>
-        );
-      }}
+      getItemKey={(entry) => entry.callsign}
+      renderItem={(entry) => <CallsignChip entry={entry} />}
     />
   );
 }

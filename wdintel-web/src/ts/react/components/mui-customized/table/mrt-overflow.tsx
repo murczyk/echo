@@ -101,6 +101,11 @@ function scheduleFrame(callback: () => void) {
   return () => undefined;
 }
 
+function parseCssPixels(value: string): number {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export function calculateVisibleItemCount({
   itemWidths,
   contentWidth,
@@ -168,8 +173,8 @@ export function MrtOverflowItems<T>({
     const itemWidths = Array.from(measuredItems)
       .slice(0, items.length)
       .map((item) => item.getBoundingClientRect().width);
-    const itemGap = Number.parseFloat(getComputedStyle(measureRef.current!).columnGap || '0');
-    const triggerGap = Number.parseFloat(getComputedStyle(container).columnGap || '0');
+    const itemGap = parseCssPixels(getComputedStyle(measureRef.current!).columnGap || '0');
+    const triggerGap = parseCssPixels(getComputedStyle(container).columnGap || '0');
     const triggerWidths = triggerMeasureRefs.current.map(
       (trigger) => trigger?.getBoundingClientRect().width ?? 0,
     );
@@ -215,11 +220,13 @@ export function MrtOverflowItems<T>({
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen && hasOverflow) {
-      surfaceRef.current?.focus();
-    } else if (isOpen) {
+    if (!isOpen) return;
+    if (!hasOverflow) {
       closeSurface();
+      return;
     }
+
+    return scheduleFrame(() => surfaceRef.current?.focus());
   }, [hasOverflow, isOpen]);
 
   if (items.length === 0) return <Box component="span">{emptyValue}</Box>;
@@ -232,16 +239,30 @@ export function MrtOverflowItems<T>({
   return (
     <Box
       ref={containerRef}
+      data-mrt-overflow-items={surfaceId}
       {...containerProps}
-      sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0, position: 'relative' }}
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 0.5,
+        minWidth: 0,
+        width: '100%',
+        maxWidth: '100%',
+        flex: '1 1 auto',
+        overflow: 'hidden',
+        position: 'relative',
+      }}
     >
       <Box
+        data-mrt-overflow-visible=""
         sx={{
           display: 'flex',
           alignItems: 'center',
           gap: 0.5,
           minWidth: 0,
           overflow: 'hidden',
+          flex: '1 1 auto',
+          maxWidth: '100%',
         }}
       >
         {items.slice(0, visibleCount).map((item, index) => (
@@ -253,6 +274,7 @@ export function MrtOverflowItems<T>({
       {hasOverflow ? (
         <Box
           aria-hidden
+          data-mrt-overflow-fade=""
           {...({ inert: '' } as any)}
           sx={{
             width: '2rem',
@@ -284,6 +306,7 @@ export function MrtOverflowItems<T>({
         ? createPortal(
             <Box
               ref={measureRef}
+              data-mrt-overflow-measure={surfaceId}
               aria-hidden
               {...({ inert: '' } as any)}
               sx={{
@@ -295,7 +318,11 @@ export function MrtOverflowItems<T>({
               }}
             >
               {items.map((item, index) => (
-                <Box key={getItemKey(item, index)} sx={{ display: 'inline-flex', flexShrink: 0 }}>
+                <Box
+                  key={getItemKey(item, index)}
+                  data-mrt-overflow-measured-item=""
+                  sx={{ display: 'inline-flex', flexShrink: 0 }}
+                >
                   {renderMeasurementItem(item, index)}
                 </Box>
               ))}
@@ -307,6 +334,7 @@ export function MrtOverflowItems<T>({
                     triggerMeasureRefs.current[index] = element as HTMLElement | null;
                   }}
                   aria-hidden
+                  data-mrt-overflow-trigger-measure=""
                   {...({ inert: '' } as any)}
                   tabIndex={-1}
                   sx={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none' }}
@@ -316,6 +344,7 @@ export function MrtOverflowItems<T>({
               ))}
               <Box
                 ref={spacerMeasureRef}
+                data-mrt-overflow-spacer-measure=""
                 aria-hidden
                 {...({ inert: '' } as any)}
                 sx={{ width: '2rem', height: 1 }}
