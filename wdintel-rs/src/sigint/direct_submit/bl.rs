@@ -410,6 +410,7 @@ async fn save_signal_message(
                 &txn,
                 signal_message_id,
                 &allowed_groups,
+                login,
             )
             .await
             .c(h!())?,
@@ -558,7 +559,7 @@ fn validate_direct_submit_payload(
     let upload_urls = payload.upload_urls.as_deref().unwrap_or_default();
     validate_signal_group_master_key(
         payload.signal_group_master_key.as_deref(),
-        is_intelligence_report,
+        validate_parent_ids || is_intelligence_report,
     )?;
     if !upload_urls.is_empty()
         && (env.config.s3_config.is_none() || env.s3.is_none())
@@ -779,20 +780,26 @@ async fn persist_direct_submit_item(
                 .await
                 .c(h!())?;
             (
-                datasource_id,
+                Some(datasource_id),
                 vec![(signal_group.master_key, datasource_group_id)],
             )
         }
-        None => (
-            query::resolve_parent_datasource_id(
-                txn,
-                parent_signal_message_ids,
-                allowed_groups,
-            )
-            .await
-            .c(h!())?,
-            vec![],
-        ),
+        None => {
+            let datasource_id = if parent_signal_message_ids.is_empty() {
+                None
+            } else {
+                Some(
+                    query::resolve_parent_datasource_id(
+                        txn,
+                        parent_signal_message_ids,
+                        allowed_groups,
+                    )
+                    .await
+                    .c(h!())?,
+                )
+            };
+            (datasource_id, vec![])
+        }
     };
     if let Some(signal_message_id) = signal_message_id {
         query::delete_signal_message_groups(txn, signal_message_id)

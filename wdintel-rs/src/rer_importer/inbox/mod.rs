@@ -1590,7 +1590,7 @@ async fn ensure_submit_group_aor(
 async fn upsert_submit_signal_message(
     txn: &DatabaseTransaction,
     config: &Config,
-    datasource_id: i64,
+    datasource_id: Option<i64>,
     message_uid: Option<&str>,
     message: &InboxMessage,
     timestamp: Option<NaiveDateTime>,
@@ -1647,7 +1647,7 @@ async fn update_submit_signal_message(
 async fn upsert_submit_signal_message_inner(
     txn: &DatabaseTransaction,
     config: &Config,
-    datasource_id: i64,
+    datasource_id: Option<i64>,
     message_uid: Option<&str>,
     message: &InboxMessage,
     timestamp: Option<NaiveDateTime>,
@@ -4667,7 +4667,7 @@ mod tests {
         let err = upsert_submit_signal_message(
             &txn,
             &env.config,
-            datasource.id,
+            Some(datasource.id),
             Some(&uid),
             &message,
             Some(now),
