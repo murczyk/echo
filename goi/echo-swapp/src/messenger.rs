@@ -1,4 +1,7 @@
-use crate::config::{Config, MESSENGER_INTEGRATION_UNIQUENESS_LOCK_ID};
+use crate::config::{
+    Config, MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX,
+    MESSENGER_INTEGRATION_UNIQUENESS_LOCK_ID,
+};
 use crate::error::{
     bad_request, conflict, not_found, service_unavailable,
     service_unavailable_with_source, ShortContext,
@@ -15,6 +18,7 @@ use echo_im::entities::{
 use echo_im::types::{MessageSource, OutboxAttachmentInput, SendMessageReq};
 use regex::Regex;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
@@ -85,6 +89,11 @@ pub struct MessengerView {
     pub process_name: String,
     pub signal_port: i32,
     pub created_at: i64,
+}
+
+struct ClientDataBackup {
+    original_path: PathBuf,
+    backup_path: PathBuf,
 }
 
 #[derive(Debug, Serialize)]
@@ -200,9 +209,23 @@ pub async fn update(
     ensure_display_name_available(&txn, &display_name, &client_name)
         .await
         .c(h!())?;
+    if account_changed {
+        ensure_account_not_used_by_automations(&txn, &client_name)
+            .await
+            .c(h!())?;
+    }
     persist_display_name(&txn, &client_name, &display_name)
         .await
         .c(h!())?;
+    let client_data_backup = if account_changed {
+        Some(
+            backup_client_data(config, current.kind, &client_name)
+                .await
+                .c(h!())?,
+        )
+    } else {
+        None
+    };
     if account_changed {
         let replace_result = replace_account_lock(
             &txn,
@@ -226,6 +249,7 @@ pub async fn update(
                 current.kind,
                 req.kind,
                 current.signal_port,
+                client_data_backup.as_ref().c(h!())?,
             )
             .await;
             return Err(err);
@@ -240,10 +264,21 @@ pub async fn update(
                 current.kind,
                 req.kind,
                 current.signal_port,
+                client_data_backup.as_ref().c(h!())?,
             )
             .await;
         }
         return Err(err);
+    }
+    if let Some(client_data_backup) = client_data_backup {
+        if let Err(err) = discard_client_data_backup(&client_data_backup)
+            .await
+            .c(h!())
+        {
+            log::error!(
+                "failed to delete old client data backup for {client_name}: {err:#}"
+            );
+        }
     }
 
     load(db, name).await.c(h!())
@@ -255,6 +290,7 @@ async fn restore_old_client(
     old_kind: MessengerKind,
     new_kind: MessengerKind,
     port: i32,
+    client_data_backup: &ClientDataBackup,
 ) {
     if let Err(err) = stop_client(config, new_kind, client_name).await.c(h!()) {
         log::warn!(
@@ -262,6 +298,16 @@ async fn restore_old_client(
         );
     }
     let restore_result = async {
+        if old_kind != new_kind {
+            if let Err(err) =
+                stop_client(config, old_kind, client_name).await.c(h!())
+            {
+                log::warn!(
+                    "failed to stop old client {client_name} during recovery: {err:#}"
+                );
+            }
+        }
+        restore_client_data(client_data_backup).await.c(h!())?;
         start_client(config, old_kind, client_name, port)
             .await
             .c(h!())?;
@@ -284,9 +330,6 @@ async fn replace_account_lock(
     new_kind: MessengerKind,
     phone: String,
 ) -> Result<()> {
-    echo_im::unlink_account(client_name, old_kind.message_source(), txn)
-        .await
-        .c(h!())?;
     delete_client_locks(txn, client_name).await.c(h!())?;
     update_client_config(txn, config, client_name, new_kind)
         .await
@@ -822,6 +865,44 @@ where
     Ok(())
 }
 
+async fn ensure_account_not_used_by_automations<C>(
+    db: &C,
+    client_name: &str,
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select exists (
+                select 1
+                from echo_automation automation
+                join echo_client_lock client_lock
+                    on client_lock.account_id = automation.source_account_id
+                    or client_lock.account_id = automation.target_account_id
+                join echo_client client
+                    on client.id = client_lock.client_id
+                where client.deleted = false
+                    and client.name = $1
+            ) as exists
+            "#,
+            [client_name.into()],
+        ))
+        .await
+        .c(h!())?
+        .context("integration automation usage query returned no row")
+        .c(h!())?;
+    let exists: bool = row.try_get("", "exists").c(h!())?;
+    if exists {
+        return Err(conflict(
+            "Інтеграція використовується в автоматизаціях. Спочатку видаліть або переналаштуйте ці автоматизації.",
+        ));
+    }
+    Ok(())
+}
+
 async fn available_public_name<C>(db: &C, display_name: &str) -> Result<String>
 where
     C: ConnectionTrait,
@@ -937,6 +1018,75 @@ where
     echo_client_lock::Entity::delete_many()
         .filter(echo_client_lock::Column::ClientId.eq(client_id))
         .exec(db)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn backup_client_data(
+    config: &Config,
+    kind: MessengerKind,
+    client_name: &str,
+) -> Result<ClientDataBackup> {
+    let original_path = client_data_path(config, kind, client_name);
+    let mut backup_path = original_path.as_os_str().to_owned();
+    backup_path.push(MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX);
+    let backup_path = PathBuf::from(backup_path);
+    if backup_path.exists() {
+        return Err(anyhow::anyhow!(
+            "integration client data backup already exists: {}",
+            backup_path.display()
+        ));
+    }
+    if original_path.exists() {
+        tokio::fs::rename(&original_path, &backup_path)
+            .await
+            .c(h!())?;
+    } else {
+        tokio::fs::create_dir_all(&backup_path).await.c(h!())?;
+    }
+    let create_result = tokio::fs::create_dir_all(&original_path).await.c(h!());
+    if let Err(err) = create_result {
+        if original_path.exists() {
+            if let Err(remove_err) =
+                tokio::fs::remove_dir_all(&original_path).await.c(h!())
+            {
+                log::error!(
+                    "failed to remove partial client data directory: {remove_err:#}"
+                );
+            }
+        }
+        if let Err(restore_err) =
+            tokio::fs::rename(&backup_path, &original_path)
+                .await
+                .c(h!())
+        {
+            log::error!(
+                "failed to restore client data after backup preparation failure: {restore_err:#}"
+            );
+        }
+        return Err(err);
+    }
+    Ok(ClientDataBackup {
+        original_path,
+        backup_path,
+    })
+}
+
+async fn restore_client_data(backup: &ClientDataBackup) -> Result<()> {
+    if backup.original_path.exists() {
+        tokio::fs::remove_dir_all(&backup.original_path)
+            .await
+            .c(h!())?;
+    }
+    tokio::fs::rename(&backup.backup_path, &backup.original_path)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn discard_client_data_backup(backup: &ClientDataBackup) -> Result<()> {
+    tokio::fs::remove_dir_all(&backup.backup_path)
         .await
         .c(h!())?;
     Ok(())
@@ -1340,6 +1490,14 @@ fn client_attachment_path(
         client_name,
         cli_dir_name(kind),
     )
+}
+
+fn client_data_path(
+    config: &Config,
+    kind: MessengerKind,
+    client_name: &str,
+) -> PathBuf {
+    PathBuf::from(client_dir(config, kind)).join(client_name)
 }
 
 fn client_dir(config: &Config, kind: MessengerKind) -> &str {
