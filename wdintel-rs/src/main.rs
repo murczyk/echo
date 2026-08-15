@@ -668,6 +668,11 @@ pub struct OneoffCalculateStatsPs {
 
 #[derive(clap::Args, Debug, Clone)]
 pub struct OneoffCalculateHistoricStatsPs {
+    /// Oldest local calendar day to refresh, given as a local datetime.
+    /// Example: `2025-08-15T00:00:00`.
+    /// Defaults to the statistics retention window.
+    #[arg(long)]
+    pub start: Option<String>,
     #[arg(long, default_value = "false")]
     pub force: bool,
     #[arg(long, default_value = "false")]
@@ -907,7 +912,7 @@ enum Cmd {
     OneoffFixEchoimGroups(OneoffFixEchoimGroupsPs),
     OneoffUnlinkReserveGroupDupes,
     OneoffCalculateStats(OneoffCalculateStatsPs),
-    /// Refreshes Redis group statistics for the full retention window.
+    /// Refreshes historical Redis group statistics through the present.
     OneoffCalculateHistoricStats(OneoffCalculateHistoricStatsPs),
     OneoffDisableIm,
     OneoffDisableImAndGoi,

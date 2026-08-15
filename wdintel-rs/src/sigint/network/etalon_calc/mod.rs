@@ -324,6 +324,33 @@ where
     Ok(result)
 }
 
+pub(crate) async fn directly_recalculated_network_unit_item_ids<C>(
+    dbx: &C,
+    sigint_inbox_item_ids: &[i64],
+) -> anyhow::Result<Vec<i64>>
+where
+    C: ConnectionTrait,
+{
+    if !crate::system_settings::support_non_rer_interceptions_enabled(dbx)
+        .await
+        .c(h!())?
+    {
+        return Ok(sigint_inbox_item_ids.to_vec());
+    }
+    let deferred_item_ids =
+        crate::sigint::unit_tag::non_rer_item_ids_from_items(
+            dbx,
+            sigint_inbox_item_ids.to_vec(),
+        )
+        .await
+        .c(h!())?;
+    Ok(sigint_inbox_item_ids
+        .iter()
+        .filter(|item_id| !deferred_item_ids.contains(item_id))
+        .copied()
+        .collect())
+}
+
 async fn delete_sigint_inbox_item_networks<'a, 'async_trait, C>(
     sigint_inbox_item_ids: &[i64],
     dbx: &'a C,

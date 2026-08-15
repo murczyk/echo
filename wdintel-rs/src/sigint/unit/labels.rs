@@ -124,6 +124,13 @@ where
         .ok_or(AppError::NotFound)
         .c(h!())?;
     let sigint_unit_id = label.sigint_unit_id;
+    crate::stats::enqueue_group_stats_recalculation_for_linked_unit(
+        db,
+        sigint_unit_id,
+        format!("deleted unit label {label_id}"),
+    )
+    .await
+    .c(h!())?;
     label.delete(db).await.c(h!())?;
     crate::inbox::unit_resolution::reprocess_inbox_items_for_unit(
         db,

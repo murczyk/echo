@@ -455,6 +455,16 @@ follow-up task; failed work is requeued, stale tasks can be reclaimed, and
 completed rows are removed on the next pass. The regular recent-stat refresh
 still runs after each historical chunk in the same worker iteration.
 
+The group-statistics worker also owns linked-unit Redis aggregates under the
+`echo:group-stats:v3` prefix. `5m:unit-id:<timestamp>` stores per-group-batch
+counts and distinct-message sketches keyed by `sigint_unit.id` for 16 days;
+`day:unit-id:<date>` stores their local-day aggregates for 367 days. Both
+`parsed` and `network` links are included once per message and unit, inactive
+units remain included, and deleted units are excluded. Missing or corrupt unit
+buckets are incomplete and are rebuilt from PostgreSQL with the corresponding
+group-statistics bucket. Unit merges, label-driven reparsing, and queued
+network-unit recalculations enqueue the affected historical statistics ranges.
+
 See the [Redis group-statistics note](../archive/2026-07-29-redis-group-stats/README.md) for derived-statistics storage and retention.
 
 ## GOI integration

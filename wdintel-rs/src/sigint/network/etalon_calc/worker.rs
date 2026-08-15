@@ -1217,12 +1217,30 @@ async fn process_invalidation_filter(
         if items_to_process.is_empty() {
             continue;
         }
+        let stats_recalculation_item_ids =
+            super::directly_recalculated_network_unit_item_ids(
+                &txn,
+                &new_processed_item_ids,
+            )
+            .await
+            .c(h!())?;
         crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
             items_to_process,
             &txn,
         )
+        .await
+        .c(h!())?;
+        for item_id in stats_recalculation_item_ids {
+            crate::stats::enqueue_group_stats_recalculation_for_message(
+                &txn,
+                item_id,
+                format!(
+                    "recalculated network unit links for inbox message {item_id}"
+                ),
+            )
             .await
             .c(h!())?;
+        }
         txn.commit().await.c(h!())?;
         for id in new_processed_item_ids {
             processed_items.insert(id);

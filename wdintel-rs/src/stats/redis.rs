@@ -1,4 +1,5 @@
 use crate::config::*;
+use crate::h;
 use anyhow::{bail, Context};
 use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
 use itertools::Itertools;
@@ -177,9 +178,22 @@ pub struct DetailBucket {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct UnitBucket {
+    pub units: Vec<IdCount>,
+    pub unit_hlls: Vec<IdHll>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct GeneralDayBucket {
     pub groups: Vec<GroupCount>,
     pub details: DetailBucket,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(super) struct FiveMinuteBucket {
+    pub groups: GroupBucket,
+    pub details: DetailBucket,
+    pub units: UnitBucket,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -212,7 +226,7 @@ pub(super) async fn build_5min_buckets(
     since: NaiveDateTime,
     till: NaiveDateTime,
     batches: &mut HashMap<String, i64>,
-) -> anyhow::Result<BTreeMap<NaiveDateTime, (GroupBucket, DetailBucket)>> {
+) -> anyhow::Result<BTreeMap<NaiveDateTime, FiveMinuteBucket>> {
     let group_counts = count_group_values(rows.iter().map(|row| {
         (
             bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
@@ -245,6 +259,7 @@ pub(super) async fn build_5min_buckets(
             row.group_master_key.clone(),
         )
     }));
+    let linked_unit_counts = count_group_values(linked_unit_values(rows));
     let post_counts = count_group_values(rows.iter().filter_map(|row| {
         row.post_id.map(|post_id| {
             (
@@ -340,6 +355,7 @@ pub(super) async fn build_5min_buckets(
             row.group_master_key.clone(),
         )
     }));
+    let linked_unit_hlls = hll_group_values(linked_unit_values(rows));
     let post_hlls = hll_group_values(rows.iter().filter_map(|row| {
         row.post_id.map(|post_id| {
             (
@@ -418,6 +434,7 @@ pub(super) async fn build_5min_buckets(
         .chain(frequency_counts.keys().map(|(_, batch_key, _)| batch_key))
         .chain(sender_counts.keys().map(|(_, batch_key, _)| batch_key))
         .chain(unit_counts.keys().map(|(_, batch_key, _)| batch_key))
+        .chain(linked_unit_counts.keys().map(|(_, batch_key, _)| batch_key))
         .chain(post_counts.keys().map(|(_, batch_key, _)| batch_key))
         .chain(tag_counts.keys().map(|(_, batch_key, _)| batch_key))
         .chain(callsign_counts.keys().map(|(_, batch_key, _)| batch_key))
@@ -438,20 +455,24 @@ pub(super) async fn build_5min_buckets(
     append_string_counts(&mut result, unit_counts, batches, |details| {
         &mut details.units
     })?;
+    append_id_counts(&mut result, linked_unit_counts, batches, |bucket| {
+        &mut bucket.units.units
+    })
+    .context(h!())?;
     append_string_counts(&mut result, callsign_counts, batches, |details| {
         &mut details.callsigns
     })?;
     append_string_counts(&mut result, location_counts, batches, |details| {
         &mut details.locations
     })?;
-    append_id_counts(&mut result, post_counts, batches, |details| {
-        &mut details.posts
+    append_id_counts(&mut result, post_counts, batches, |bucket| {
+        &mut bucket.details.posts
     })?;
-    append_id_counts(&mut result, tag_counts, batches, |details| {
-        &mut details.tags
+    append_id_counts(&mut result, tag_counts, batches, |bucket| {
+        &mut bucket.details.tags
     })?;
-    append_id_counts(&mut result, aor_counts, batches, |details| {
-        &mut details.aors
+    append_id_counts(&mut result, aor_counts, batches, |bucket| {
+        &mut bucket.details.aors
     })?;
     append_string_hlls(&mut result, sender_hlls, batches, |details| {
         &mut details.sender_hlls
@@ -462,11 +483,15 @@ pub(super) async fn build_5min_buckets(
     append_string_hlls(&mut result, unit_hlls, batches, |details| {
         &mut details.unit_hlls
     })?;
-    append_id_hlls(&mut result, post_hlls, batches, |details| {
-        &mut details.post_hlls
+    append_id_hlls(&mut result, linked_unit_hlls, batches, |bucket| {
+        &mut bucket.units.unit_hlls
+    })
+    .context(h!())?;
+    append_id_hlls(&mut result, post_hlls, batches, |bucket| {
+        &mut bucket.details.post_hlls
     })?;
-    append_id_hlls(&mut result, tag_hlls, batches, |details| {
-        &mut details.tag_hlls
+    append_id_hlls(&mut result, tag_hlls, batches, |bucket| {
+        &mut bucket.details.tag_hlls
     })?;
     append_string_hlls(&mut result, callsign_hlls, batches, |details| {
         &mut details.callsign_hlls
@@ -474,10 +499,25 @@ pub(super) async fn build_5min_buckets(
     append_string_hlls(&mut result, location_hlls, batches, |details| {
         &mut details.location_hlls
     })?;
-    append_id_hlls(&mut result, aor_hlls, batches, |details| {
-        &mut details.aor_hlls
+    append_id_hlls(&mut result, aor_hlls, batches, |bucket| {
+        &mut bucket.details.aor_hlls
     })?;
     Ok(result)
+}
+
+fn linked_unit_values(
+    rows: &[super::StatsRow],
+) -> impl Iterator<Item = (NaiveDateTime, i64, i64, String)> + '_ {
+    rows.iter().flat_map(|row| {
+        row.linked_unit_ids.iter().copied().map(move |unit_id| {
+            (
+                bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
+                row.id,
+                unit_id,
+                row.group_master_key.clone(),
+            )
+        })
+    })
 }
 
 fn network_aor_values<'a>(
@@ -514,6 +554,20 @@ pub(super) fn aggregate_general_day(
             groups.into_iter().flat_map(|bucket| bucket.groups),
         ),
         details: aggregate_detail_buckets(details),
+    }
+}
+
+pub(super) fn aggregate_unit_day(
+    buckets: impl IntoIterator<Item = UnitBucket>,
+) -> UnitBucket {
+    let buckets = buckets.into_iter().collect::<Vec<_>>();
+    UnitBucket {
+        units: aggregate_id_counts(
+            buckets.iter().flat_map(|bucket| bucket.units.clone()),
+        ),
+        unit_hlls: aggregate_id_hlls(
+            buckets.iter().flat_map(|bucket| bucket.unit_hlls.clone()),
+        ),
     }
 }
 
@@ -712,7 +766,7 @@ async fn ensure_batch_keys(
 fn empty_5min_buckets(
     since: NaiveDateTime,
     till: NaiveDateTime,
-) -> BTreeMap<NaiveDateTime, (GroupBucket, DetailBucket)> {
+) -> BTreeMap<NaiveDateTime, FiveMinuteBucket> {
     let mut result = BTreeMap::new();
     let mut timestamp = since;
     while timestamp < till {
@@ -723,7 +777,7 @@ fn empty_5min_buckets(
 }
 
 fn append_group_counts(
-    result: &mut BTreeMap<NaiveDateTime, (GroupBucket, DetailBucket)>,
+    result: &mut BTreeMap<NaiveDateTime, FiveMinuteBucket>,
     counts: HashMap<(NaiveDateTime, String, ()), i32>,
     batches: &HashMap<String, i64>,
 ) -> anyhow::Result<()> {
@@ -731,7 +785,7 @@ fn append_group_counts(
         result
             .get_mut(&timestamp)
             .context("group count is outside requested bucket range")?
-            .0
+            .groups
             .groups
             .push(GroupCount {
                 signal_group_batch_id: *batches
@@ -744,17 +798,16 @@ fn append_group_counts(
 }
 
 fn append_id_counts(
-    result: &mut BTreeMap<NaiveDateTime, (GroupBucket, DetailBucket)>,
+    result: &mut BTreeMap<NaiveDateTime, FiveMinuteBucket>,
     counts: HashMap<(NaiveDateTime, String, i64), i32>,
     batches: &HashMap<String, i64>,
-    select: impl Fn(&mut DetailBucket) -> &mut Vec<IdCount>,
+    select: impl Fn(&mut FiveMinuteBucket) -> &mut Vec<IdCount>,
 ) -> anyhow::Result<()> {
     for ((timestamp, batch_key, value), quantity) in counts {
         select(
-            &mut result
+            result
                 .get_mut(&timestamp)
-                .context("ID count is outside requested bucket range")?
-                .1,
+                .context("ID count is outside requested bucket range")?,
         )
         .push(IdCount {
             signal_group_batch_id: *batches
@@ -768,7 +821,7 @@ fn append_id_counts(
 }
 
 fn append_string_counts(
-    result: &mut BTreeMap<NaiveDateTime, (GroupBucket, DetailBucket)>,
+    result: &mut BTreeMap<NaiveDateTime, FiveMinuteBucket>,
     counts: HashMap<(NaiveDateTime, String, String), i32>,
     batches: &HashMap<String, i64>,
     select: impl Fn(&mut DetailBucket) -> &mut Vec<StringCount>,
@@ -778,7 +831,7 @@ fn append_string_counts(
             &mut result
                 .get_mut(&timestamp)
                 .context("string count is outside requested bucket range")?
-                .1,
+                .details,
         )
         .push(StringCount {
             signal_group_batch_id: *batches
@@ -792,17 +845,16 @@ fn append_string_counts(
 }
 
 fn append_id_hlls(
-    result: &mut BTreeMap<NaiveDateTime, (GroupBucket, DetailBucket)>,
+    result: &mut BTreeMap<NaiveDateTime, FiveMinuteBucket>,
     hlls: HashMap<(NaiveDateTime, String, i64), HllSketch>,
     batches: &HashMap<String, i64>,
-    select: impl Fn(&mut DetailBucket) -> &mut Vec<IdHll>,
+    select: impl Fn(&mut FiveMinuteBucket) -> &mut Vec<IdHll>,
 ) -> anyhow::Result<()> {
     for ((timestamp, batch_key, value), sketch) in hlls {
         select(
-            &mut result
-                .get_mut(&timestamp)
-                .context("HLL ID statistic is outside requested bucket range")?
-                .1,
+            result.get_mut(&timestamp).context(
+                "HLL ID statistic is outside requested bucket range",
+            )?,
         )
         .push(IdHll {
             signal_group_batch_id: *batches
@@ -816,7 +868,7 @@ fn append_id_hlls(
 }
 
 fn append_string_hlls(
-    result: &mut BTreeMap<NaiveDateTime, (GroupBucket, DetailBucket)>,
+    result: &mut BTreeMap<NaiveDateTime, FiveMinuteBucket>,
     hlls: HashMap<(NaiveDateTime, String, String), HllSketch>,
     batches: &HashMap<String, i64>,
     select: impl Fn(&mut DetailBucket) -> &mut Vec<StringHll>,
@@ -828,7 +880,7 @@ fn append_string_hlls(
                 .context(
                     "HLL string statistic is outside requested bucket range",
                 )?
-                .1,
+                .details,
         )
         .push(StringHll {
             signal_group_batch_id: *batches
@@ -1051,6 +1103,21 @@ impl GroupStatsRedis {
         .await
     }
 
+    pub async fn write_unit_5min(
+        &self,
+        timestamp: NaiveDateTime,
+        units: &UnitBucket,
+    ) -> anyhow::Result<()> {
+        let mut redis = self.redis.clone();
+        write_expiring(
+            &mut redis,
+            unit_5min_key(timestamp),
+            units,
+            timestamp + Duration::days(GROUP_STATS_REDIS_DETAIL_5MIN_TTL_DAYS),
+        )
+        .await
+    }
+
     pub async fn write_general_day(
         &self,
         date: NaiveDate,
@@ -1062,6 +1129,22 @@ impl GroupStatsRedis {
             &mut redis,
             general_day_key(date),
             bucket,
+            timestamp + Duration::days(GROUP_STATS_REDIS_DAY_TTL_DAYS),
+        )
+        .await
+    }
+
+    pub async fn write_unit_day(
+        &self,
+        date: NaiveDate,
+        units: &UnitBucket,
+    ) -> anyhow::Result<()> {
+        let timestamp = super::start_of_day(date).context(h!())?;
+        let mut redis = self.redis.clone();
+        write_expiring(
+            &mut redis,
+            unit_day_key(date),
+            units,
             timestamp + Duration::days(GROUP_STATS_REDIS_DAY_TTL_DAYS),
         )
         .await
@@ -1115,6 +1198,16 @@ impl GroupStatsRedis {
     ) -> anyhow::Result<Vec<DetailBucket>> {
         self.read_required(
             timestamps.iter().copied().map(detail_5min_key).collect(),
+        )
+        .await
+    }
+
+    pub async fn read_unit_5min(
+        &self,
+        timestamps: &[NaiveDateTime],
+    ) -> anyhow::Result<Vec<UnitBucket>> {
+        self.read_required(
+            timestamps.iter().copied().map(unit_5min_key).collect(),
         )
         .await
     }
@@ -1186,19 +1279,24 @@ impl GroupStatsRedis {
         let keys = timestamps
             .iter()
             .flat_map(|timestamp| {
-                [group_5min_key(*timestamp), detail_5min_key(*timestamp)]
+                [
+                    group_5min_key(*timestamp),
+                    detail_5min_key(*timestamp),
+                    unit_5min_key(*timestamp),
+                ]
             })
             .collect_vec();
-        let values = self.read_optional(keys).await?;
+        let values = self.read_optional(keys).await.context(h!())?;
         Ok(timestamps
             .into_iter()
-            .zip(values.chunks_exact(2))
+            .zip(values.chunks_exact(3))
             .filter_map(|(timestamp, values)| {
                 let valid = matches!(
                     values,
-                    [Some(groups), Some(details)]
+                    [Some(groups), Some(details), Some(units)]
                         if decode::<GroupBucket>(groups).is_ok()
                             && decode::<DetailBucket>(details).is_ok()
+                            && decode::<UnitBucket>(units).is_ok()
                 );
                 (!valid).then_some(timestamp)
             })
@@ -1210,16 +1308,21 @@ impl GroupStatsRedis {
         dates: &[NaiveDate],
     ) -> anyhow::Result<Vec<NaiveDate>> {
         let dates = dates.iter().copied().unique().collect_vec();
-        let values = self
-            .read_optional(dates.iter().copied().map(general_day_key).collect())
-            .await?;
+        let keys = dates
+            .iter()
+            .flat_map(|date| [general_day_key(*date), unit_day_key(*date)])
+            .collect_vec();
+        let values = self.read_optional(keys).await.context(h!())?;
         Ok(dates
             .into_iter()
-            .zip(values)
-            .filter_map(|(date, value)| {
-                let valid = value.as_deref().is_some_and(|value| {
-                    decode::<GeneralDayBucket>(value).is_ok()
-                });
+            .zip(values.chunks_exact(2))
+            .filter_map(|(date, values)| {
+                let valid = matches!(
+                    values,
+                    [Some(general), Some(units)]
+                        if decode::<GeneralDayBucket>(general).is_ok()
+                            && decode::<UnitBucket>(units).is_ok()
+                );
                 (!valid).then_some(date)
             })
             .collect())
@@ -1609,8 +1712,19 @@ fn detail_5min_key(timestamp: NaiveDateTime) -> String {
     )
 }
 
+fn unit_5min_key(timestamp: NaiveDateTime) -> String {
+    format!(
+        "{GROUP_STATS_REDIS_KEY_PREFIX}:5m:unit-id:{}",
+        timestamp.and_utc().timestamp()
+    )
+}
+
 fn general_day_key(date: NaiveDate) -> String {
     format!("{GROUP_STATS_REDIS_KEY_PREFIX}:day:general:{date}")
+}
+
+fn unit_day_key(date: NaiveDate) -> String {
+    format!("{GROUP_STATS_REDIS_KEY_PREFIX}:day:unit-id:{date}")
 }
 
 fn network_day_key(date: NaiveDate) -> String {
@@ -1665,6 +1779,19 @@ mod tests {
         let decoded: GeneralDayBucket = decode(&encoded).unwrap();
 
         assert_eq!(decoded, bucket);
+
+        let units = UnitBucket {
+            units: vec![IdCount {
+                signal_group_batch_id: 42,
+                value: 7,
+                quantity: 3,
+            }],
+            ..Default::default()
+        };
+        let encoded = encode(&units).unwrap();
+        let decoded: UnitBucket = decode(&encoded).unwrap();
+
+        assert_eq!(decoded, units);
     }
 
     #[test]
@@ -1877,8 +2004,27 @@ mod tests {
             }],
             ..Default::default()
         };
+        let units = UnitBucket {
+            units: vec![IdCount {
+                signal_group_batch_id: 1,
+                value: 42,
+                quantity: 1,
+            }],
+            unit_hlls: Vec::new(),
+        };
         stats_redis
             .write_5min(timestamp, &groups, &details)
+            .await
+            .unwrap();
+        assert_eq!(
+            stats_redis
+                .missing_five_minute_buckets(&[timestamp])
+                .await
+                .unwrap(),
+            vec![timestamp]
+        );
+        stats_redis
+            .write_unit_5min(timestamp, &units)
             .await
             .unwrap();
         assert_eq!(
@@ -1888,6 +2034,10 @@ mod tests {
         assert_eq!(
             stats_redis.read_detail_5min(&[timestamp]).await.unwrap(),
             vec![details.clone()]
+        );
+        assert_eq!(
+            stats_redis.read_unit_5min(&[timestamp]).await.unwrap(),
+            vec![units.clone()]
         );
         assert!(stats_redis
             .missing_five_minute_buckets(&[timestamp])
@@ -1912,6 +2062,33 @@ mod tests {
             .write_5min(timestamp, &groups, &details)
             .await
             .unwrap();
+
+        let general = GeneralDayBucket {
+            groups: groups.groups.clone(),
+            details: details.clone(),
+        };
+        stats_redis.write_general_day(date, &general).await.unwrap();
+        assert_eq!(
+            stats_redis.missing_general_days(&[date]).await.unwrap(),
+            vec![date]
+        );
+        stats_redis.write_unit_day(date, &units).await.unwrap();
+        assert!(stats_redis
+            .missing_general_days(&[date])
+            .await
+            .unwrap()
+            .is_empty());
+        redis::cmd("SET")
+            .arg(unit_day_key(date))
+            .arg("invalid")
+            .query_async::<()>(&mut redis)
+            .await
+            .unwrap();
+        assert_eq!(
+            stats_redis.missing_general_days(&[date]).await.unwrap(),
+            vec![date]
+        );
+        stats_redis.write_unit_day(date, &units).await.unwrap();
 
         let network_bucket = NetworkDayBucket {
             networks: vec![
@@ -1976,6 +2153,9 @@ mod tests {
             .arg(&[
                 group_5min_key(timestamp),
                 detail_5min_key(timestamp),
+                unit_5min_key(timestamp),
+                general_day_key(date),
+                unit_day_key(date),
                 network_day_key(date),
             ])
             .query_async::<()>(&mut redis)
