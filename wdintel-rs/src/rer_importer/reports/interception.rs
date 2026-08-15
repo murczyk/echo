@@ -533,6 +533,7 @@ async fn build_inbox_messages_report_sql(
             .c(h!())?;
     let mut q = SignalMessage::find()
         .inner_join(sigint_inbox_item::Entity)
+        .column(sigint_inbox_item::Column::Datetime)
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
         .column(sigint_inbox_item::Column::Freq)
