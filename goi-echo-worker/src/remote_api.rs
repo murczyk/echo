@@ -8,7 +8,7 @@ use actix_web::error::{
     ErrorBadRequest, ErrorConflict, ErrorInternalServerError, ErrorNotFound,
 };
 use actix_web::{
-    delete, get, post, put, web, Error, HttpRequest, HttpResponse,
+    delete, get, http::header, post, put, web, Error, HttpRequest, HttpResponse,
 };
 use anyhow::{bail, Context};
 use goi_echo_worker::api::{
@@ -165,6 +165,7 @@ pub async fn download_palettes_archive(
         .map_err(ErrorInternalServerError)?
         .map_err(ErrorInternalServerError)?;
     Ok(HttpResponse::Ok()
+        .insert_header(header::ContentEncoding::Identity)
         .content_type("application/zip")
         .body(archive))
 }
@@ -189,6 +190,7 @@ pub async fn download_knowledge_workbook(
                 ),
             })?;
     Ok(HttpResponse::Ok()
+        .insert_header(header::ContentEncoding::Identity)
         .content_type(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
