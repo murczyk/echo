@@ -1338,6 +1338,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     }
 
     function automationStatusLabel(item) {
+      if (item.isBroken) return 'потребує налаштування';
       if (item.isPaused) return 'пауза';
       const labels = {
         idle: 'очікує',
@@ -1349,6 +1350,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     }
 
     function automationStatusClass(item) {
+      if (item.isBroken) return 'text-red-400';
       if (item.isPaused) return 'text-amber-300';
       if (item.status === 'error') return 'text-red-400';
       if (item.status === 'warning') return 'text-amber-300';
@@ -1406,6 +1408,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
         : 'ще не синхронізовано';
       const filters = [...item.keywordTokens, ...item.frequencyTokens].join(', ') || 'Усі повідомлення';
       const warnings = [];
+      const pauseDisabled = item.isBroken && item.isPaused;
+      const pauseTitle = pauseDisabled
+        ? 'Спочатку переналаштуйте акаунти та групи'
+        : item.isPaused ? 'Запустити автоматизацію' : 'Зупинити автоматизацію';
       if (!item.isPaused && !item.sourceAccountIsLinked) {
         warnings.push('Акаунт читання не підключено: нові повідомлення не синхронізуються.');
       }
@@ -1438,7 +1444,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
               ${usageChip(usage.allTime, 'весь час')}
             </div>
             <button data-automation-edit="${item.id}" class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900" type="button" aria-label="Редагувати автоматизацію" title="Редагувати автоматизацію">${pencilIcon()}</button>
-            <button data-automation-pause="${item.id}" data-paused="${item.isPaused}" class="inline-flex h-9 w-9 items-center justify-center rounded-md border ${item.isPaused ? 'border-amber-700 text-amber-300 hover:bg-amber-950/40' : 'border-zinc-700 text-zinc-200 hover:bg-zinc-900'}" type="button" aria-label="${item.isPaused ? 'Запустити автоматизацію' : 'Зупинити автоматизацію'}" title="${item.isPaused ? 'Запустити автоматизацію' : 'Зупинити автоматизацію'}">${item.isPaused ? playIcon() : pauseIcon()}</button>
+            <button data-automation-pause="${item.id}" data-paused="${item.isPaused}" class="inline-flex h-9 w-9 items-center justify-center rounded-md border ${pauseDisabled ? 'cursor-not-allowed border-zinc-800 text-zinc-600' : item.isPaused ? 'border-amber-700 text-amber-300 hover:bg-amber-950/40' : 'border-zinc-700 text-zinc-200 hover:bg-zinc-900'}" type="button" aria-label="${pauseTitle}" title="${pauseTitle}" ${pauseDisabled ? 'disabled' : ''}>${item.isPaused ? playIcon() : pauseIcon()}</button>
             <button data-automation-delete="${item.id}" class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-red-600 text-white hover:bg-red-500" type="button" aria-label="Видалити автоматизацію" title="Видалити автоматизацію">${deleteIcon()}</button>
           </div>
         </div>
@@ -1810,14 +1816,33 @@ const INDEX_HTML: &str = r#"<!doctype html>
         report: true,
       });
       if (!phone || !editIntegrationName) return;
-      integrationEditFormMsg.textContent = 'Збереження...';
       try {
+        const kind = document.getElementById('editIntegrationKindInput').value;
+        const current = messengers.find(messenger => messenger.name === editIntegrationName);
+        const accountChanged = current
+          && (current.kind !== kind || normalizedPhone(current.phone || '') !== phone);
+        let stopDependentAutomations = false;
+        if (accountChanged) {
+          integrationEditFormMsg.textContent = 'Перевірка залежних автоматизацій...';
+          const impact = await request(appUrl(`/ui-api/messengers/${editIntegrationName}/automation-impact`));
+          if (impact.automationCount > 0) {
+            const automationNames = impact.automationNames.map(name => `• ${name}`).join('\n');
+            const warning = `Зміна месенджера або номера телефону зупинить ${impact.automationCount} автоматизацій:\n\n${automationNames}\n\nЇх неможливо буде запустити, доки ви не переналаштуєте акаунти та групи. Продовжити?`;
+            if (!confirm(warning)) {
+              integrationEditFormMsg.textContent = 'Зміни скасовано.';
+              return;
+            }
+            stopDependentAutomations = true;
+          }
+        }
+        integrationEditFormMsg.textContent = 'Збереження...';
         await request(appUrl(`/ui-api/messengers/${editIntegrationName}`), {
           method: 'PUT',
           body: JSON.stringify({
             name: document.getElementById('editIntegrationNameInput').value,
-            kind: document.getElementById('editIntegrationKindInput').value,
+            kind,
             phone,
+            stopDependentAutomations,
           }),
         });
         integrationEditFormMsg.textContent = 'Збережено.';

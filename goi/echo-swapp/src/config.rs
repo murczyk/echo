@@ -23,6 +23,8 @@ pub const AUTOMATION_MAP_SCREENSHOT_LABEL_TILE_URL: &str =
 pub const AUTOMATION_MAP_SCREENSHOT_MARKER_COLOR: [u8; 4] = [252, 239, 18, 255];
 pub const AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX: &str =
     "coordinate screenshot is unavailable:";
+pub const AUTOMATION_BROKEN_INTEGRATION_ERROR: &str =
+    "Інтеграцію змінено. Переналаштуйте акаунти та групи автоматизації.";
 pub const MESSENGER_INTEGRATION_UNIQUENESS_LOCK_ID: i64 = 4_563_686_943;
 pub const MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX: &str =
     ".relink-backup";

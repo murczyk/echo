@@ -21,6 +21,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(list_messengers)
         .service(create_messenger)
         .service(update_messenger)
+        .service(messenger_automation_impact)
         .service(link_messenger)
         .service(unlink_messenger)
         .service(messenger_status)
@@ -47,6 +48,18 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(update_automation)
         .service(pause_automation)
         .service(delete_automation);
+}
+
+#[get("/ui-api/messengers/{name}/automation-impact")]
+async fn messenger_automation_impact(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> actix_web::Result<impl Responder> {
+    let impact = messenger::automation_impact(&state.db, &path.into_inner())
+        .await
+        .c(h!())
+        .map_err(error)?;
+    Ok(web::Json(impact))
 }
 
 #[get("/ui-api/messengers")]

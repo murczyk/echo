@@ -1,5 +1,6 @@
 use crate::config::{
-    Config, MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX,
+    Config, AUTOMATION_BROKEN_INTEGRATION_ERROR,
+    MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX,
     MESSENGER_INTEGRATION_UNIQUENESS_LOCK_ID,
 };
 use crate::error::{
@@ -71,10 +72,13 @@ pub struct CreateMessengerReq {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateMessengerReq {
     pub name: String,
     pub kind: MessengerKind,
     pub phone: String,
+    #[serde(default)]
+    pub stop_dependent_automations: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -89,6 +93,18 @@ pub struct MessengerView {
     pub process_name: String,
     pub signal_port: i32,
     pub created_at: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessengerAutomationImpact {
+    pub automation_count: usize,
+    pub automation_names: Vec<String>,
+}
+
+struct DependentAutomation {
+    id: i64,
+    name: String,
 }
 
 struct ClientDataBackup {
@@ -210,9 +226,18 @@ pub async fn update(
         .await
         .c(h!())?;
     if account_changed {
-        ensure_account_not_used_by_automations(&txn, &client_name)
-            .await
-            .c(h!())?;
+        let automations =
+            dependent_automations(&txn, &client_name).await.c(h!())?;
+        if !automations.is_empty() && !req.stop_dependent_automations {
+            return Err(conflict(
+                "Зміна зупинить залежні автоматизації. Підтвердьте дію після перегляду попередження.",
+            ));
+        }
+        if !automations.is_empty() {
+            stop_dependent_automations(&txn, &automations)
+                .await
+                .c(h!())?;
+        }
     }
     persist_display_name(&txn, &client_name, &display_name)
         .await
@@ -282,6 +307,23 @@ pub async fn update(
     }
 
     load(db, name).await.c(h!())
+}
+
+pub async fn automation_impact(
+    db: &DatabaseConnection,
+    name: &str,
+) -> Result<MessengerAutomationImpact> {
+    load(db, name).await.c(h!())?;
+    let automations = dependent_automations(db, &owned_client_name(name))
+        .await
+        .c(h!())?;
+    Ok(MessengerAutomationImpact {
+        automation_count: automations.len(),
+        automation_names: automations
+            .into_iter()
+            .map(|automation| automation.name)
+            .collect(),
+    })
 }
 
 async fn restore_old_client(
@@ -786,7 +828,7 @@ pub async fn set_paused(
     Ok(is_paused)
 }
 
-async fn lock_integration_identity<C>(db: &C) -> Result<()>
+pub(crate) async fn lock_integration_identity<C>(db: &C) -> Result<()>
 where
     C: ConnectionTrait,
 {
@@ -865,40 +907,73 @@ where
     Ok(())
 }
 
-async fn ensure_account_not_used_by_automations<C>(
+async fn dependent_automations<C>(
     db: &C,
     client_name: &str,
-) -> Result<()>
+) -> Result<Vec<DependentAutomation>>
 where
     C: ConnectionTrait,
 {
-    let row = db
-        .query_one_raw(Statement::from_sql_and_values(
+    let rows = db
+        .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
-            select exists (
-                select 1
-                from echo_automation automation
-                join echo_client_lock client_lock
-                    on client_lock.account_id = automation.source_account_id
-                    or client_lock.account_id = automation.target_account_id
-                join echo_client client
-                    on client.id = client_lock.client_id
-                where client.deleted = false
-                    and client.name = $1
-            ) as exists
+            select distinct
+                automation.id,
+                case
+                    when btrim(automation.name) = '' then 'Автоматизація #' || automation.id
+                    else automation.name
+                end as name
+            from echo_automation automation
+            join echo_client_lock client_lock
+                on client_lock.account_id = automation.source_account_id
+                or client_lock.account_id = automation.target_account_id
+            join echo_client client
+                on client.id = client_lock.client_id
+            where client.deleted = false
+                and client.name = $1
+            order by name, automation.id
             "#,
             [client_name.into()],
         ))
         .await
-        .c(h!())?
-        .context("integration automation usage query returned no row")
         .c(h!())?;
-    let exists: bool = row.try_get("", "exists").c(h!())?;
-    if exists {
-        return Err(conflict(
-            "Інтеграція використовується в автоматизаціях. Спочатку видаліть або переналаштуйте ці автоматизації.",
-        ));
+    let mut automations = Vec::with_capacity(rows.len());
+    for row in rows {
+        automations.push(DependentAutomation {
+            id: row.try_get("", "id").c(h!())?,
+            name: row.try_get("", "name").c(h!())?,
+        });
+    }
+    Ok(automations)
+}
+
+async fn stop_dependent_automations<C>(
+    db: &C,
+    automations: &[DependentAutomation],
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    for automation in automations {
+        db.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            update echo_automation
+            set
+                is_paused = true,
+                status = 'error',
+                last_error = $2,
+                updated_at = now() at time zone 'utc'
+            where id = $1
+            "#,
+            [
+                automation.id.into(),
+                AUTOMATION_BROKEN_INTEGRATION_ERROR.into(),
+            ],
+        ))
+        .await
+        .c(h!())?;
     }
     Ok(())
 }
@@ -1624,5 +1699,16 @@ mod tests {
         ] {
             assert!(normalize_phone(phone).is_err(), "{phone}");
         }
+    }
+
+    #[test]
+    fn update_confirmation_defaults_to_false() {
+        let req: UpdateMessengerReq = serde_json::from_value(serde_json::json!({
+            "name": "Signal",
+            "kind": "signal",
+            "phone": "+380501234567"
+        }))
+        .unwrap();
+        assert!(!req.stop_dependent_automations);
     }
 }
