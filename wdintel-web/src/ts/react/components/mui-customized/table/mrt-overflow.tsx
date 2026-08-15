@@ -236,162 +236,167 @@ export function MrtOverflowItems<T>({
     setIsOpen(true);
   };
 
+  const measurement =
+    typeof document !== 'undefined'
+      ? createPortal(
+          <Box
+            ref={measureRef}
+            data-mrt-overflow-measure={surfaceId}
+            aria-hidden
+            {...({ inert: '' } as any)}
+            sx={{
+              position: 'absolute',
+              visibility: 'hidden',
+              pointerEvents: 'none',
+              display: 'flex',
+              gap: 0.5,
+            }}
+          >
+            {items.map((item, index) => (
+              <Box
+                key={getItemKey(item, index)}
+                data-mrt-overflow-measured-item=""
+                sx={{ display: 'inline-flex', flexShrink: 0 }}
+              >
+                {renderMeasurementItem(item, index)}
+              </Box>
+            ))}
+            {items.map((_, index) => (
+              <Button
+                key={`trigger-${index + 1}`}
+                component="span"
+                ref={(element) => {
+                  triggerMeasureRefs.current[index] = element as HTMLElement | null;
+                }}
+                aria-hidden
+                data-mrt-overflow-trigger-measure=""
+                {...({ inert: '' } as any)}
+                tabIndex={-1}
+                sx={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none' }}
+              >
+                Ще {index + 1}
+              </Button>
+            ))}
+            <Box
+              ref={spacerMeasureRef}
+              data-mrt-overflow-spacer-measure=""
+              aria-hidden
+              {...({ inert: '' } as any)}
+              sx={{ width: '2rem', height: 1 }}
+            />
+          </Box>,
+          document.body,
+        )
+      : null;
+
   return (
-    <Box
-      ref={containerRef}
-      data-mrt-overflow-items={surfaceId}
-      {...containerProps}
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 0.5,
-        minWidth: 0,
-        width: '100%',
-        maxWidth: '100%',
-        flex: '1 1 auto',
-        overflow: 'hidden',
-        position: 'relative',
-      }}
-    >
+    <>
       <Box
-        data-mrt-overflow-visible=""
+        ref={containerRef}
+        data-mrt-overflow-items={surfaceId}
+        {...containerProps}
         sx={{
           display: 'flex',
           alignItems: 'center',
           gap: 0.5,
           minWidth: 0,
-          overflow: 'hidden',
-          flex: '1 1 auto',
+          width: '100%',
           maxWidth: '100%',
+          flex: '1 1 auto',
+          overflow: 'hidden',
+          position: 'relative',
         }}
       >
-        {items.slice(0, visibleCount).map((item, index) => (
-          <Box key={getItemKey(item, index)} sx={{ flexShrink: 0, minWidth: 0 }}>
-            {renderItem(item, index)}
-          </Box>
-        ))}
-      </Box>
-      {hasOverflow ? (
         <Box
-          aria-hidden
-          data-mrt-overflow-fade=""
-          {...({ inert: '' } as any)}
+          data-mrt-overflow-visible=""
           sx={{
-            width: '2rem',
-            flex: '0 0 2rem',
-            height: '100%',
-            pointerEvents: 'none',
-            background: (theme) =>
-              `linear-gradient(to right, transparent, ${theme.palette.background.paper})`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.5,
+            minWidth: 0,
+            overflow: 'hidden',
+            flex: '1 1 auto',
+            maxWidth: '100%',
           }}
-        />
-      ) : null}
-      {hasOverflow ? (
-        <Tooltip title={hiddenItemText || `Показати ще ${hiddenCount} значення`} describeChild>
-          <Button
-            ref={triggerRef}
-            size="small"
-            variant="text"
-            onClick={() => (isOpen ? closeSurface() : openSurface())}
-            aria-label={`Показати ще ${hiddenCount} значення`}
-            aria-expanded={isOpen}
-            aria-controls={isOpen ? surfaceId : undefined}
-            sx={{ minWidth: 'fit-content', flexShrink: 0, whiteSpace: 'nowrap', px: 0.5 }}
-          >
-            Ще {hiddenCount}
-          </Button>
-        </Tooltip>
-      ) : null}
-      {typeof document !== 'undefined'
-        ? createPortal(
-            <Box
-              ref={measureRef}
-              data-mrt-overflow-measure={surfaceId}
-              aria-hidden
-              {...({ inert: '' } as any)}
-              sx={{
-                position: 'absolute',
-                visibility: 'hidden',
-                pointerEvents: 'none',
-                display: 'flex',
-                gap: 0.5,
-              }}
-            >
-              {items.map((item, index) => (
-                <Box
-                  key={getItemKey(item, index)}
-                  data-mrt-overflow-measured-item=""
-                  sx={{ display: 'inline-flex', flexShrink: 0 }}
-                >
-                  {renderMeasurementItem(item, index)}
-                </Box>
-              ))}
-              {items.map((_, index) => (
-                <Button
-                  key={`trigger-${index + 1}`}
-                  component="span"
-                  ref={(element) => {
-                    triggerMeasureRefs.current[index] = element as HTMLElement | null;
-                  }}
-                  aria-hidden
-                  data-mrt-overflow-trigger-measure=""
-                  {...({ inert: '' } as any)}
-                  tabIndex={-1}
-                  sx={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none' }}
-                >
-                  Ще {index + 1}
-                </Button>
-              ))}
-              <Box
-                ref={spacerMeasureRef}
-                data-mrt-overflow-spacer-measure=""
-                aria-hidden
-                {...({ inert: '' } as any)}
-                sx={{ width: '2rem', height: 1 }}
-              />
-            </Box>,
-            document.body,
-          )
-        : null}
-      {isOpen && hasOverflow ? (
-        <Popper
-          open={isOpen}
-          anchorEl={triggerRef.current}
-          placement="bottom-start"
-          sx={{ zIndex: (theme) => theme.zIndex.tooltip + 1 }}
         >
-          <ClickAwayListener onClickAway={closeSurface}>
-            <Box
-              id={surfaceId}
-              ref={surfaceRef}
-              role="dialog"
-              aria-label="Додаткові значення"
-              tabIndex={-1}
-              sx={{
-                p: 1,
-                mt: 0.5,
-                maxWidth: 'min(90vw, 640px)',
-                bgcolor: 'background.paper',
-                color: 'text.primary',
-                border: 1,
-                borderColor: 'divider',
-                boxShadow: 4,
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 0.5,
-                whiteSpace: 'normal',
-                overflowWrap: 'anywhere',
-              }}
-            >
-              {hiddenItems.map((item, index) => (
-                <Box key={getItemKey(item, visibleCount + index)}>
-                  {renderItem(item, visibleCount + index)}
-                </Box>
-              ))}
+          {items.slice(0, visibleCount).map((item, index) => (
+            <Box key={getItemKey(item, index)} sx={{ flexShrink: 0, minWidth: 0 }}>
+              {renderItem(item, index)}
             </Box>
-          </ClickAwayListener>
-        </Popper>
-      ) : null}
-    </Box>
+          ))}
+        </Box>
+        {hasOverflow ? (
+          <Box
+            aria-hidden
+            data-mrt-overflow-fade=""
+            {...({ inert: '' } as any)}
+            sx={{
+              width: '2rem',
+              flex: '0 0 2rem',
+              height: '100%',
+              pointerEvents: 'none',
+              background: (theme) =>
+                `linear-gradient(to right, transparent, ${theme.palette.background.paper})`,
+            }}
+          />
+        ) : null}
+        {hasOverflow ? (
+          <Tooltip title={hiddenItemText || `Показати ще ${hiddenCount} значення`} describeChild>
+            <Button
+              ref={triggerRef}
+              size="small"
+              variant="text"
+              onClick={() => (isOpen ? closeSurface() : openSurface())}
+              aria-label={`Показати ще ${hiddenCount} значення`}
+              aria-expanded={isOpen}
+              aria-controls={isOpen ? surfaceId : undefined}
+              sx={{ minWidth: 'fit-content', flexShrink: 0, whiteSpace: 'nowrap', px: 0.5 }}
+            >
+              Ще {hiddenCount}
+            </Button>
+          </Tooltip>
+        ) : null}
+        {isOpen && hasOverflow ? (
+          <Popper
+            open={isOpen}
+            anchorEl={triggerRef.current}
+            placement="bottom-start"
+            sx={{ zIndex: (theme) => theme.zIndex.tooltip + 1 }}
+          >
+            <ClickAwayListener onClickAway={closeSurface}>
+              <Box
+                id={surfaceId}
+                ref={surfaceRef}
+                role="dialog"
+                aria-label="Додаткові значення"
+                tabIndex={-1}
+                sx={{
+                  p: 1,
+                  mt: 0.5,
+                  maxWidth: 'min(90vw, 640px)',
+                  bgcolor: 'background.paper',
+                  color: 'text.primary',
+                  border: 1,
+                  borderColor: 'divider',
+                  boxShadow: 4,
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 0.5,
+                  whiteSpace: 'normal',
+                  overflowWrap: 'anywhere',
+                }}
+              >
+                {hiddenItems.map((item, index) => (
+                  <Box key={getItemKey(item, visibleCount + index)}>
+                    {renderItem(item, visibleCount + index)}
+                  </Box>
+                ))}
+              </Box>
+            </ClickAwayListener>
+          </Popper>
+        ) : null}
+      </Box>
+      {measurement}
+    </>
   );
 }

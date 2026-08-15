@@ -26,7 +26,7 @@ function recordBrowserProblems(page: Page) {
     const text = message.text();
     if (
       (message.type() === 'error' && !text.startsWith('Warning:')) ||
-      /each child|accessib|aria-/i.test(text)
+      /each child|accessib|aria-|failed prop type|invalid prop .* supplied/i.test(text)
     ) {
       problems.push(text);
     }

@@ -485,6 +485,35 @@ describe('MRT rendered overflow components', () => {
     destroy(interactive);
   });
 
+  it('does not pass invalid portal children to MUI components', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let view: Rendered | undefined;
+    let errors = '';
+
+    try {
+      itemWidths = { alpha: 60, beta: 60, 'Ще 1': 32, 'Ще 2': 32 };
+      availableWidth = 100;
+      view = render(
+        createElement(MrtOverflowItems<string>, {
+          items: ['alpha', 'beta'],
+          renderItem: (value) => createElement('span', null, value),
+          renderMeasurementItem: (value) => createElement('span', null, value),
+          getItemText: (value) => value,
+        }),
+      );
+      triggerResize();
+    } finally {
+      try {
+        if (view) destroy(view);
+      } finally {
+        errors = consoleError.mock.calls.map((args) => args.map(String).join(' ')).join('\n');
+        consoleError.mockRestore();
+      }
+    }
+
+    expect(errors).not.toMatch(/failed prop type|invalid prop .* supplied/i);
+  });
+
   it('measures whole items, adapts on resize, and discloses only hidden items', async () => {
     itemWidths = { alpha: 60, beta: 60, gamma: 60, 'Ще 1': 32, 'Ще 2': 32, 'Ще 3': 32 };
     availableWidth = 150;
