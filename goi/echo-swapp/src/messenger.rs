@@ -188,15 +188,14 @@ pub async fn update(
     name: &str,
     req: UpdateMessengerReq,
 ) -> Result<MessengerView> {
-    let current = load(db, name).await.c(h!())?;
     let display_name = normalize_display_name(&req.name).c(h!())?;
     let phone = normalize_phone(&req.phone).c(h!())?;
     let client_name = owned_client_name(name);
-    let account_changed =
-        current.kind != req.kind || current.phone.as_deref() != Some(&phone);
-
     let txn = db.begin().await.c(h!())?;
     lock_integration_identity(&txn).await.c(h!())?;
+    let current = load(&txn, name).await.c(h!())?;
+    let account_changed =
+        current.kind != req.kind || current.phone.as_deref() != Some(&phone);
     ensure_url_unique(&txn, &client_name).await.c(h!())?;
     ensure_display_name_available(&txn, &display_name, &client_name)
         .await
@@ -205,7 +204,7 @@ pub async fn update(
         .await
         .c(h!())?;
     if account_changed {
-        replace_account_lock(
+        let replace_result = replace_account_lock(
             &txn,
             config,
             &client_name,
@@ -214,11 +213,67 @@ pub async fn update(
             phone,
         )
         .await
-        .c(h!())?;
+        .c(h!());
+        if let Err(err) = replace_result {
+            if let Err(rollback_err) = txn.rollback().await.c(h!()) {
+                log::error!(
+                    "failed to roll back integration update for {client_name}: {rollback_err:#}"
+                );
+            }
+            restore_old_client(
+                config,
+                &client_name,
+                current.kind,
+                req.kind,
+                current.signal_port,
+            )
+            .await;
+            return Err(err);
+        }
     }
-    txn.commit().await.c(h!())?;
+    let commit_result = txn.commit().await.c(h!());
+    if let Err(err) = commit_result {
+        if account_changed {
+            restore_old_client(
+                config,
+                &client_name,
+                current.kind,
+                req.kind,
+                current.signal_port,
+            )
+            .await;
+        }
+        return Err(err);
+    }
 
     load(db, name).await.c(h!())
+}
+
+async fn restore_old_client(
+    config: &Config,
+    client_name: &str,
+    old_kind: MessengerKind,
+    new_kind: MessengerKind,
+    port: i32,
+) {
+    if let Err(err) = stop_client(config, new_kind, client_name).await.c(h!()) {
+        log::warn!(
+            "failed to stop replacement client {client_name} during recovery: {err:#}"
+        );
+    }
+    let restore_result = async {
+        start_client(config, old_kind, client_name, port)
+            .await
+            .c(h!())?;
+        wait_for_signal_client(old_kind, port).await.c(h!())?;
+        Result::<()>::Ok(())
+    }
+    .await;
+    if let Err(err) = restore_result {
+        log::error!(
+            "failed to restore old client {client_name} after integration update failure: {err:#}"
+        );
+    }
 }
 
 async fn replace_account_lock(
@@ -296,10 +351,10 @@ pub async fn list(db: &DatabaseConnection) -> Result<Vec<MessengerView>> {
     Ok(result)
 }
 
-pub async fn load(
-    db: &DatabaseConnection,
-    name: &str,
-) -> Result<MessengerView> {
+pub async fn load<C>(db: &C, name: &str) -> Result<MessengerView>
+where
+    C: ConnectionTrait,
+{
     load_optional_owned(db, &owned_client_name(name))
         .await
         .c(h!())?
@@ -594,10 +649,13 @@ pub(crate) async fn tick_after_send(
     Ok(())
 }
 
-async fn load_optional_owned(
-    db: &DatabaseConnection,
+async fn load_optional_owned<C>(
+    db: &C,
     client_name: &str,
-) -> Result<Option<MessengerView>> {
+) -> Result<Option<MessengerView>>
+where
+    C: ConnectionTrait,
+{
     let Some(name) = public_client_name(client_name) else {
         return Ok(None);
     };
@@ -1314,17 +1372,17 @@ async fn sync_is_paused(
         || is_client_paused(db, client_name).await.c(h!())?)
 }
 
-async fn is_client_paused(
-    db: &DatabaseConnection,
-    client_name: &str,
-) -> Result<bool> {
+async fn is_client_paused<C>(db: &C, client_name: &str) -> Result<bool>
+where
+    C: ConnectionTrait,
+{
     sync_state_is_paused(db, &client_sync_state_key(client_name)).await
 }
 
-async fn sync_state_is_paused(
-    db: &DatabaseConnection,
-    key: &str,
-) -> Result<bool> {
+async fn sync_state_is_paused<C>(db: &C, key: &str) -> Result<bool>
+where
+    C: ConnectionTrait,
+{
     let row = db
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
