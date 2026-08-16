@@ -519,9 +519,10 @@ decoding and PostgreSQL query semantics consistent with the source database.
 
 The analysis result, facet, and dedicated facet-count endpoints use this path:
 
-- `/api/rer-importer/get-inbox` for closed RER analysis ranges and the
-  historical portion of long live ranges;
-- `/api/rer-importer/get-inbox-count`
+- `/api/rer-importer/get-inbox` for closed RER analysis ranges, historical
+  Duty context, and the historical portion of long live ranges;
+- `/api/rer-importer/get-inbox-count` except recent Duty polling described
+  below;
 - `/api/rer/analysis/stats/count`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks,metadata}`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}/count`
@@ -549,16 +550,17 @@ hours and ending within `max(2 * freshness_max_age_ms, 5 minutes)` of the
 current time read from source PostgreSQL. Longer live ranges merge the
 ClickHouse candidate page with a source PostgreSQL candidate page restricted
 to that fresh overlap, then deduplicate, hydrate, revalidate, order, and limit
-the merged IDs on source PostgreSQL. RER Duty newer-message requests also merge
-ClickHouse candidates with a source candidate page restricted by both the feed
-cursor and the same fresh-tail cutoff.
+the merged IDs on source PostgreSQL.
 
-RER Duty `/api/rer-importer/get-inbox-count` requests split the result into
-disjoint `signal_message.created_at` ranges: ClickHouse counts rows older than
-the cutoff and primary PostgreSQL counts the newer tail with the feed cursor.
-The counts and earliest timestamps are merged. Any analytics, tail, or
-revalidation failure retries the complete message query on PostgreSQL. Other
-callers retain their existing routing.
+Both RER Duty pages route initial/latest requests and requests whose cursor was
+created in source PostgreSQL within the last hour directly to source
+PostgreSQL, before any analytics health check or gateway query. Cursor age uses
+`signal_message.created_at`, not the interception timestamp. Recent date-only
+polls follow the same rule. Historical `before_id_noninclusive` context remains
+eligible for ClickHouse. Open-ended message and count requests after an older
+cursor split or merge the historical ClickHouse range with a primary
+PostgreSQL fresh tail. Any analytics, tail, or revalidation failure retries the
+complete request on PostgreSQL. Other callers retain their existing routing.
 
 ## WAL retention and recovery
 

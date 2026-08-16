@@ -216,6 +216,7 @@ type alias Model =
     , filterSelectedAdjacentFreqs : List String
     , filterDeniedAdjacentFreqs : List String
     , loadingInboxDigest : Bool
+    , pollingFailed : Bool
     }
 
 
@@ -326,6 +327,7 @@ init id_ ms =
       , filterSelectedAdjacentFreqs = []
       , filterDeniedAdjacentFreqs = []
       , loadingInboxDigest = False
+      , pollingFailed = False
       }
     , E.batch
         [ initCmd id_
@@ -808,12 +810,13 @@ commonGotVisibleMsgFunc msgIds model =
 
 commonGotInboxLoopFunc :
     List ( Int, B.InboxMessage )
-    -> { a | unreadMessagesLeft : Bool, groupInfos : Dict String B.SignalGroupEntry, profiles : Dict String (Maybe B.SignalProfileEntry) }
-    -> ( { a | unreadMessagesLeft : Bool, groupInfos : Dict String B.SignalGroupEntry, profiles : Dict String (Maybe B.SignalProfileEntry) }, Effect Msg )
+    -> { a | unreadMessagesLeft : Bool, groupInfos : Dict String B.SignalGroupEntry, profiles : Dict String (Maybe B.SignalProfileEntry), pollingFailed : Bool }
+    -> ( { a | unreadMessagesLeft : Bool, groupInfos : Dict String B.SignalGroupEntry, profiles : Dict String (Maybe B.SignalProfileEntry), pollingFailed : Bool }, Effect Msg )
 commonGotInboxLoopFunc messages model =
     ( { model
         | unreadMessagesLeft =
             List.length messages /= 0
+        , pollingFailed = False
       }
     , E.batch
         [ E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep loadingNewMessagesInterval)
@@ -1778,13 +1781,18 @@ update shared user msg model =
                         Nothing ->
                             model.firstNewMessageTimestamp
                 , loadingInboxDigest = False
+                , pollingFailed = False
               }
             , E.none
             )
 
-        GotInboxMessagesDigest (Err _) ->
-            ( { model | loadingInboxDigest = False }
-            , E.none
+        GotInboxMessagesDigest (Err error) ->
+            ( { model | loadingInboxDigest = False, pollingFailed = True }
+            , if model.pollingFailed then
+                E.none
+
+              else
+                Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка перевірки нових повідомлень" error
             )
 
         InboxLoopSleptBeforeLoadNewer ->
@@ -1792,10 +1800,16 @@ update shared user msg model =
             , E.sendCmd <| Task.perform (\_ -> InboxLoopLoadNewer) Time.now
             )
 
-        InboxLoopGotMessages _ (Err _) ->
-            -- Api.handleHttpError ToastMsg e model
-            ( { model | loadingInboxMessages = False }
-            , E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep loadingNewMessagesInterval)
+        InboxLoopGotMessages _ (Err error) ->
+            ( { model | loadingInboxMessages = False, pollingFailed = True }
+            , E.batch
+                [ E.sendCmd <| Task.perform (\_ -> InboxLoopSleptBeforeLoadNewer) (Process.sleep loadingNewMessagesInterval)
+                , if model.pollingFailed then
+                    E.none
+
+                  else
+                    Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження нових повідомлень" error
+                ]
             )
 
         InboxLoopGotMessages once (Ok inboxRsp) ->
