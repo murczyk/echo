@@ -20,13 +20,19 @@ pub async fn run_recent_inbox_network_worker_nofail(mode: Mode) {
     loop {
         let _loop_guard =
             worker_watch::loop_guard("run_recent_inbox_network_worker_nofail");
-        if let Err(e) = run_recent_inbox_network_worker_inner(mode).await {
-            error!("run_recent_inbox_network_worker_nofail failed: {:#?}", e);
-        }
-        tokio::time::sleep(Duration::from_secs(
-            NETWORK_INBOX_WORKER_DEFAULT_SLEEP,
-        ))
-        .await;
+        let sleep_secs = match run_recent_inbox_network_worker_inner(mode).await
+        {
+            Ok(()) => NETWORK_INBOX_WORKER_DEFAULT_SLEEP,
+            Err(e) => {
+                error!(
+                    "run_recent_inbox_network_worker_nofail failed; retrying after {} seconds: {:#?}",
+                    NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC,
+                    e
+                );
+                NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC
+            }
+        };
+        tokio::time::sleep(Duration::from_secs(sleep_secs)).await;
     }
 }
 
@@ -43,9 +49,8 @@ async fn run_recent_inbox_network_worker_inner(
     }
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
     info!("run_inbox_network_worker_once started");
-    if let Err(e) = run_inbox_network_worker_once(&db, false, &config).await {
-        error!("run_inbox_network_worker_once failed: {:#?}", e);
-    } else {
+    let result = run_inbox_network_worker_once(&db, false, &config).await;
+    if result.is_ok() {
         info!("run_inbox_network_worker_once completed");
     }
     update_worker_status(
@@ -55,7 +60,7 @@ async fn run_recent_inbox_network_worker_inner(
     )
     .await
     .c(h!())?;
-    Ok(())
+    result.c(h!())
 }
 
 async fn update_worker_status(
@@ -130,7 +135,6 @@ async fn run_old_inbox_network_worker_inner(mode: Mode) -> anyhow::Result<()> {
 
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
     wait_until_worker_shift_start(&config).await;
-    try_cleanup(&db).await.c(h!())?;
     info!("run_old_inbox_network_worker_once started");
     let result = run_inbox_network_worker_once(&db, true, &config).await;
     if result.is_ok() {
@@ -146,61 +150,30 @@ async fn run_old_inbox_network_worker_inner(mode: Mode) -> anyhow::Result<()> {
     result.c(h!())
 }
 
-// Emergency reset for a catastrophically large queue.
-async fn try_cleanup(db: &DatabaseConnection) -> anyhow::Result<()> {
-    let task_count = network_invalidation_task::Entity::find()
-        .count(db)
-        .await
-        .c(h!())?;
-    if task_count <= NETWORK_INVALIDATION_TASK_MAX_TASKS {
-        return Ok(());
-    }
-    if has_active_network_invalidation_workers(db).await.c(h!())? {
-        warn!(
-            "skip network invalidation cleanup: total_tasks={task_count}, worker is active"
-        );
-        return Ok(());
-    }
-    warn!("network invalidation cleanup triggered: total_tasks={task_count}");
-    network_invalidation_task::Entity::delete_many()
-        .exec(db)
-        .await
-        .c(h!())?;
-    crate::sigint::network::etalon_calc::oneoff::backfill_inbox_networks(
-        db, None, None,
-    )
-    .await
-    .c(h!())?;
-    tokio::time::sleep(Duration::from_secs(
-        NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC,
-    ))
-    .await;
-    Ok(())
-}
-
-async fn has_active_network_invalidation_workers(
+async fn ensure_network_invalidation_queue_within_limit(
     db: &DatabaseConnection,
-) -> anyhow::Result<bool> {
-    let has_started_tasks = network_invalidation_task::Entity::find()
-        .filter(network_invalidation_task::Column::StartedAt.is_not_null())
-        .filter(network_invalidation_task::Column::CompletedAt.is_null())
+) -> anyhow::Result<()> {
+    let first_overflow_task_id = network_invalidation_task::Entity::find()
+        .select_only()
+        .column(network_invalidation_task::Column::Id)
+        .order_by_asc(network_invalidation_task::Column::Id)
+        .offset(NETWORK_INVALIDATION_TASK_MAX_TASKS)
+        .limit(1)
+        .into_tuple::<i64>()
         .one(db)
         .await
-        .c(h!())?
-        .is_some();
-    if has_started_tasks {
-        return Ok(true);
+        .c(h!())?;
+    if let Some(first_overflow_task_id) = first_overflow_task_id {
+        error!(
+            "network invalidation queue exceeds limit: limit={}, first_overflow_task_id={first_overflow_task_id}; refusing to triage or delete tasks",
+            NETWORK_INVALIDATION_TASK_MAX_TASKS
+        );
+        anyhow::bail!(
+            "network invalidation queue exceeds {} tasks",
+            NETWORK_INVALIDATION_TASK_MAX_TASKS
+        );
     }
-    let has_active_worker = network_invalidation_worker::Entity::find()
-        .filter(
-            network_invalidation_worker::Column::Status
-                .ne(NetworkInvalidationWorkerStatus::Sleep),
-        )
-        .one(db)
-        .await
-        .c(h!())?
-        .is_some();
-    Ok(has_active_worker)
+    Ok(())
 }
 
 // Daily checker: compare calculated networks to stored ones for today's messages.
@@ -261,6 +234,9 @@ async fn run_inbox_network_worker_once(
     is_for_old_worker: bool,
     config: &Config,
 ) -> anyhow::Result<()> {
+    ensure_network_invalidation_queue_within_limit(db)
+        .await
+        .c(h!())?;
     let stats_redis = new_redis_for_db(config, config.group_stats_redis_db())
         .await
         .c(h!())?;
@@ -393,35 +369,20 @@ async fn load_and_triage_tasks_batch(
     tag: &str,
     max_pending_task_id: Option<i64>,
 ) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
-    let mut result = vec![];
     delete_completed_tasks(db, tag).await.c(h!())?;
-    loop {
-        let pending_tasks = load_pending_tasks_batch(
-            db,
-            is_for_old_worker,
-            tag,
-            max_pending_task_id,
-        )
-        .await
-        .c(h!())?;
-        if pending_tasks.is_empty() {
-            break;
-        }
-        let triaged_tasks = triage_pending_tasks_batch(
-            db,
-            pending_tasks,
-            is_for_old_worker,
-            cutoff,
-        )
-        .await
-        .c(h!())?;
-        if !triaged_tasks.is_empty() {
-            for t in triaged_tasks {
-                result.push(t);
-            }
-        }
+    let pending_tasks = load_pending_tasks_batch(
+        db,
+        is_for_old_worker,
+        tag,
+        max_pending_task_id,
+    )
+    .await
+    .c(h!())?;
+    if pending_tasks.is_empty() {
+        return Ok(vec![]);
     }
-    Ok(result)
+    triage_pending_tasks_batch(db, pending_tasks, is_for_old_worker, cutoff)
+        .await
 }
 
 async fn load_and_triage_old_tasks_batch(
@@ -532,6 +493,12 @@ async fn triage_pending_tasks_batch(
     is_for_old_worker: bool,
     cutoff: NaiveDateTime,
 ) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
+    let pending_tasks = select_tasks_within_triage_budget(
+        pending_tasks,
+        is_for_old_worker,
+        cutoff,
+    )
+    .c(h!())?;
     let txn = db.begin().await.c(h!())?;
     let task_list = if is_for_old_worker {
         triage_tasks_for_old_worker(pending_tasks, &txn)
@@ -542,6 +509,85 @@ async fn triage_pending_tasks_batch(
     };
     txn.commit().await.c(h!())?;
     Ok(task_list)
+}
+
+fn select_tasks_within_triage_budget(
+    pending_tasks: Vec<network_invalidation_task::Model>,
+    is_for_old_worker: bool,
+    cutoff: NaiveDateTime,
+) -> anyhow::Result<Vec<network_invalidation_task::Model>> {
+    let fetched_task_count = pending_tasks.len();
+    let mut selected_tasks = Vec::new();
+    let mut selected_window_count = 0;
+    for task in pending_tasks {
+        let window_count =
+            triaged_task_window_count(&task, is_for_old_worker, cutoff)
+                .c(h!())?;
+        if window_count > NETWORK_INVALIDATION_TRIAGE_MAX_WINDOWS {
+            error!(
+                "network invalidation task exceeds triage budget: task_id={}, since_ts={}, till_ts={}, planned_windows={}, max_windows={}",
+                task.id,
+                task.since_ts,
+                task.till_ts,
+                window_count,
+                NETWORK_INVALIDATION_TRIAGE_MAX_WINDOWS
+            );
+            anyhow::bail!(
+                "network invalidation task {} requires {} windows",
+                task.id,
+                window_count
+            );
+        }
+        if !selected_tasks.is_empty()
+            && selected_window_count + window_count
+                > NETWORK_INVALIDATION_TRIAGE_MAX_WINDOWS
+        {
+            break;
+        }
+        selected_window_count += window_count;
+        selected_tasks.push(task);
+    }
+    info!(
+        "network invalidation triage selected: fetched_tasks={fetched_task_count}, selected_tasks={}, planned_windows={selected_window_count}, max_windows={}",
+        selected_tasks.len(),
+        NETWORK_INVALIDATION_TRIAGE_MAX_WINDOWS
+    );
+    Ok(selected_tasks)
+}
+
+fn triaged_task_window_count(
+    task: &network_invalidation_task::Model,
+    is_for_old_worker: bool,
+    cutoff: NaiveDateTime,
+) -> anyhow::Result<usize> {
+    if !is_for_old_worker && task.till_ts <= cutoff {
+        return Ok(0);
+    }
+    let since_ts = if !is_for_old_worker && task.since_ts < cutoff {
+        cutoff
+    } else {
+        task.since_ts
+    };
+    split_task_window_count(since_ts, task.till_ts)
+}
+
+fn split_task_window_count(
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+) -> anyhow::Result<usize> {
+    if till_ts <= since_ts {
+        return Ok(1);
+    }
+    let first_boundary = next_hour_boundary(since_ts);
+    if first_boundary >= till_ts {
+        return Ok(1);
+    }
+    const HOUR_MICROSECONDS: i64 = 60 * 60 * 1_000_000;
+    let remaining_microseconds =
+        (till_ts - first_boundary).num_microseconds().c(h!())?;
+    let windows_after_first =
+        (remaining_microseconds + HOUR_MICROSECONDS - 1) / HOUR_MICROSECONDS;
+    usize::try_from(windows_after_first + 1).c(h!())
 }
 
 async fn load_signal_group_aors(
@@ -1376,6 +1422,73 @@ mod tests {
 
         assert!(!old_task_needs_split(&within_hour));
         assert!(old_task_needs_split(&crossing_hour));
+    }
+
+    #[test]
+    fn split_task_window_count_handles_partial_boundaries() {
+        let hour = NaiveDate::from_ymd_opt(2026, 8, 13)
+            .unwrap()
+            .and_hms_opt(10, 0, 0)
+            .unwrap();
+
+        assert_eq!(
+            split_task_window_count(
+                hour + chrono::Duration::minutes(15),
+                hour + chrono::Duration::hours(1),
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            split_task_window_count(
+                hour + chrono::Duration::minutes(15),
+                hour + chrono::Duration::hours(1)
+                    + chrono::Duration::microseconds(1),
+            )
+            .unwrap(),
+            2
+        );
+    }
+
+    #[test]
+    fn triage_rejects_single_task_over_window_budget() {
+        let since_ts = NaiveDate::from_ymd_opt(25, 8, 16)
+            .unwrap()
+            .and_hms_opt(21, 0, 0)
+            .unwrap();
+        let till_ts = NaiveDate::from_ymd_opt(2026, 8, 16)
+            .unwrap()
+            .and_hms_opt(18, 0, 0)
+            .unwrap();
+
+        let result = select_tasks_within_triage_budget(
+            vec![task(since_ts, till_ts, None)],
+            true,
+            till_ts,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn triage_defers_tasks_beyond_batch_window_budget() {
+        let since_ts = NaiveDate::from_ymd_opt(2026, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let till_ts = since_ts + chrono::Duration::hours(6_000);
+        let first = task(since_ts, till_ts, Some(10));
+        let mut second = task(since_ts, till_ts, Some(20));
+        second.id = 2;
+
+        let selected = select_tasks_within_triage_budget(
+            vec![first.clone(), second],
+            true,
+            till_ts,
+        )
+        .unwrap();
+
+        assert_eq!(selected, vec![first]);
     }
 
     #[test]
