@@ -78,6 +78,7 @@ vi.mock('@mui/material', () => {
     Stack: passthrough('div'),
     Tooltip: ({ children }: { children?: ReactNode }) => children,
     Typography: passthrough('div'),
+    useMediaQuery: () => false,
     useTheme: () => ({ palette: { divider: '#000' } }),
   };
 });

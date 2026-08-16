@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .models import BBox, Evidence, SourceTransform
@@ -51,7 +52,7 @@ def _normalized_png(image: Image.Image) -> bytes:
     return content.getvalue()
 
 
-def _image_page(path: Path, instance: int) -> RasterPage:
+def _read_image(path: Path) -> tuple[bytes, Image.Image, int]:
     try:
         source = path.read_bytes()
     except OSError as error:
@@ -66,8 +67,70 @@ def _image_page(path: Path, instance: int) -> RasterPage:
     except (UnidentifiedImageError, OSError, ValueError) as error:
         raise ValueError(f"unreadable image: {path.name}") from error
     rotation = {3: 180, 6: 90, 8: 270}.get(orientation, 0)
-    normalized = _normalized_png(image)
-    return RasterPage(path.name, instance, _sha256(source), _sha256(normalized), image, rotation)
+    return source, image, rotation
+
+
+def _image_pages(path: Path, first_instance: int) -> Iterator[RasterPage]:
+    source, image, rotation = _read_image(path)
+    pages = _split_spread(image)
+    source_digest = _sha256(source)
+    for index, page in enumerate(pages):
+        normalized = _normalized_png(page)
+        source_name = path.name if len(pages) == 1 else f"{path.name}#spread={index + 1}"
+        yield RasterPage(
+            source_name,
+            first_instance + index,
+            source_digest,
+            _sha256(normalized),
+            page,
+            rotation,
+        )
+
+
+def image_page_count(path: Path) -> int:
+    _, image, _ = _read_image(path)
+    return len(_split_spread(image))
+
+
+def _split_spread(image: Image.Image) -> list[Image.Image]:
+    width, height = image.size
+    if width < height * 1.45:
+        return [image]
+    gray = np.asarray(image.convert("L"))
+    dark_fraction = np.mean(gray < 40, axis=0)
+    runs = _dark_column_runs(dark_fraction > 0.75, max(6, round(width * 0.002)))
+    minimum_width = max(8, round(width * 0.004))
+    central = [
+        (start, end)
+        for start, end in runs
+        if end - start >= minimum_width and width * 0.35 <= (start + end) / 2 <= width * 0.65
+    ]
+    if not central:
+        return [image]
+    start, end = min(central, key=lambda run: abs((run[0] + run[1]) / 2 - width / 2))
+    if start < height * 0.55 or width - end < height * 0.55:
+        return [image]
+    return [image.crop((0, 0, start, height)), image.crop((end, 0, width, height))]
+
+
+def _dark_column_runs(mask: np.ndarray, maximum_gap: int) -> list[tuple[int, int]]:
+    raw: list[tuple[int, int]] = []
+    start = None
+    for index, selected in enumerate(mask):
+        if selected and start is None:
+            start = index
+        elif not selected and start is not None:
+            raw.append((start, index))
+            start = None
+    if start is not None:
+        raw.append((start, len(mask)))
+    merged: list[tuple[int, int]] = []
+    for start, end in raw:
+        if merged and start - merged[-1][1] <= maximum_gap:
+            merged[-1] = (merged[-1][0], end)
+        else:
+            merged.append((start, end))
+    return merged
 
 
 def _pdf_pages(path: Path, dpi: int, first_instance: int) -> Iterator[RasterPage]:
@@ -236,8 +299,9 @@ def iter_ingest(inputs: list[str | Path], dpi: int) -> Iterator[RasterPage]:
                 yield page
                 instance += 1
         elif (mime and mime.startswith("image/")) or path.suffix.casefold() in {".png", ".jpg", ".jpeg"}:
-            yield _image_page(path, instance)
-            instance += 1
+            for page in _image_pages(path, instance):
+                yield page
+                instance += 1
         else:
             raise ValueError(f"unsupported input: {path.name}")
 

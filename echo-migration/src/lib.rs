@@ -369,6 +369,7 @@ mod m20260811_142447_failed_inbox_unit_note;
 mod m20260811_161634_failed_inbox_unit_multi_text;
 mod m20260812_115511_sigint_inbox_item_datetime_neo_indexes;
 mod m20260813_183642_sigint_unit_orbit_echelons;
+mod m20260816_102640_ocr;
 
 pub struct Migrator;
 
@@ -847,6 +848,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260813_183642_sigint_unit_orbit_echelons::Migration,
             ),
+            Box::new(m20260816_102640_ocr::Migration),
         ]
     }
 }

@@ -1,3 +1,5 @@
+import type { OcrMediaSummary } from '../../../../../Bindings';
+
 export type MessageCardDocumentKind =
   'pdf' | 'docx' | 'xlsx' | 'csv' | 'txt' | 'md' | 'unsupported';
 
@@ -8,6 +10,7 @@ export type MessageCardDocument = {
   sizeBytes?: number | null;
   contentType?: string | null;
   kind: MessageCardDocumentKind;
+  ocr?: OcrMediaSummary | null;
 };
 
 export type DocumentPreviewStatus = 'idle' | 'loading' | 'ready' | 'error';

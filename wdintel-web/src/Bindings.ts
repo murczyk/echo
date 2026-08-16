@@ -2280,6 +2280,7 @@ export type MessageMediaInfo = {
   sizeBytes: number;
   href: string;
   transcription: string | null;
+  ocr: OcrMediaSummary | null;
 };
 
 export type SigintZone = {
@@ -4601,6 +4602,61 @@ export type SaveAiCallsignParsingReq = {
 export type SaveAiCallsignWorkerSettingsReq = {
   enabled: boolean;
   aiEngineId: string | null;
+};
+
+export type OcrMediaSummary = {
+  state: string;
+  qualityStatus: string | null;
+  processedPages: number;
+  totalPages: number;
+  lastError: string | null;
+};
+
+export type OcrSettingsItem = {
+  workerEnabled: boolean;
+  configured: boolean;
+  extractorReady: boolean;
+  readinessError: string | null;
+};
+
+export type OcrCounts = {
+  queued: number;
+  submitted: number;
+  retryWait: number;
+  completed: number;
+  failed: number;
+};
+
+export type OcrJobItem = {
+  mediaId: string;
+  signalMessageId: number;
+  fileName: string | null;
+  contentType: string;
+  sizeBytes: number;
+  sourceCreatedAt: number;
+  state: string;
+  qualityStatus: string | null;
+  processedPages: number;
+  totalPages: number;
+  attempts: number;
+  lastError: string | null;
+  updatedAt: number;
+  completedAt: number | null;
+  previewUrl: string | null;
+};
+
+export type OcrPageRsp = {
+  settings: OcrSettingsItem;
+  counts: OcrCounts;
+  jobs: Array<OcrJobItem>;
+};
+
+export type OcrPageReq = {
+  limit: number | null;
+};
+
+export type SaveOcrSettingsReq = {
+  workerEnabled: boolean;
 };
 
 export type EchoMissingMessageRow = {

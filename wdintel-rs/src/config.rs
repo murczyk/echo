@@ -177,6 +177,24 @@ pub const ECHO_AUDIO_TRANSCRIPTION_SHUTDOWN_GRACE_SECS: u64 = 120;
 pub const ECHO_AUDIO_TRANSCRIPTION_STATUS_LOG_INTERVAL_SECS: u64 = 60;
 pub const ECHO_AUDIO_TRANSCRIPTION_BGWORKER_SERVICE: &str =
     "wdintel-rs-bgworker.service";
+pub const OCR_SETTINGS_ID: i16 = 1;
+pub const OCR_TOKEN_ENV: &str = "ECHO_OCR_TOKEN";
+pub const OCR_DISCOVERY_DAYS: i64 = 7;
+pub const OCR_DISCOVERY_BATCH_SIZE: u64 = 100;
+pub const OCR_IDLE_SLEEP_MS: u64 = 30_000;
+pub const OCR_POLL_SLEEP_MS: u64 = 5_000;
+pub const OCR_MAX_ATTEMPTS: i32 = 8;
+pub const OCR_RETRY_BASE_SECS: i64 = 10;
+pub const OCR_RETRY_MAX_SECS: i64 = 15 * 60;
+pub const OCR_MAX_ERROR_CHARS: usize = 1_200;
+pub const OCR_HTTP_TIMEOUT_SECS: u64 = 10 * 60;
+pub const OCR_STATUS_TIMEOUT_SECS: u64 = 15;
+pub const OCR_MAX_SOURCE_BYTES: u64 = 250 * 1024 * 1024;
+pub const OCR_MAX_RESULT_BYTES: u64 = 250 * 1024 * 1024;
+pub const OCR_MAX_RESULT_ENTRIES: usize = 1_000;
+pub const OCR_MAX_STORED_HTML_BYTES: usize = 384 * 1024 * 1024;
+pub const OCR_ADMIN_DEFAULT_LIMIT: u64 = 200;
+pub const OCR_ADMIN_MAX_LIMIT: u64 = 500;
 // pub const CALLSIGNS_SEEN_LATELY_PERIOD_DAYS: i64 = 1;
 pub const CALLSIGNS_MAX_LEN: usize = 20;
 pub const CALLSIGNS_MAX_LINES: usize = 10;
@@ -891,6 +909,13 @@ pub struct Config {
     pub network_invalidation_worker_night_shift_start_hour: Option<u32>,
     pub network_invalidation_worker_night_shift_end_hour: Option<u32>,
     pub ai_agent_dispatcher: Option<AiAgentDispatcherConfig>,
+    pub ocr: Option<OcrConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct OcrConfig {
+    pub base_url: String,
+    pub instance_id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

@@ -12,7 +12,7 @@ from echo_document_extractor.adapters import markdown_to_html
 from echo_document_extractor.canonical import canonical_round_trip_preserves, parse_canonical_html
 from echo_document_extractor.cli import app
 from echo_document_extractor.config import EndpointConfig, ExtractionConfig
-from echo_document_extractor.ingest import _pdf_text_evidence, crop
+from echo_document_extractor.ingest import _pdf_text_evidence, crop, iter_ingest
 from echo_document_extractor.models import (
     Document,
     Evidence,
@@ -26,6 +26,7 @@ from echo_document_extractor.models import (
 from echo_document_extractor.pipeline import Extractor
 from echo_document_extractor.render import render_html, render_markdown
 from echo_document_extractor.sanitize import has_fatal_sanitization_reason, sanitize_candidate
+from echo_document_extractor.storage import count_pages
 from echo_document_extractor.validation import _normalized_markup, _normalized_text, validate_package
 
 
@@ -44,6 +45,31 @@ class CountingAdapter:
             text="source",
             confidence=0.9,
         )
+
+
+def test_black_gutter_image_is_counted_and_ingested_as_two_pages(tmp_path: Path) -> None:
+    source = tmp_path / "spread.jpg"
+    image = Image.new("RGB", (400, 240), "white")
+    draw = ImageDraw.Draw(image)
+    draw.text((20, 20), "left page", fill="black")
+    draw.text((230, 20), "right page", fill="black")
+    draw.rectangle((194, 0, 205, 239), fill="black")
+    image.save(source)
+
+    pages = list(iter_ingest([source], 300))
+
+    assert count_pages(source) == 2
+    assert [page.source_name for page in pages] == ["spread.jpg#spread=1", "spread.jpg#spread=2"]
+    assert [page.instance for page in pages] == [0, 1]
+
+
+def test_thin_table_rule_does_not_split_image(tmp_path: Path) -> None:
+    source = tmp_path / "table.jpg"
+    image = Image.new("RGB", (400, 240), "white")
+    ImageDraw.Draw(image).line((200, 0, 200, 239), fill="black", width=3)
+    image.save(source)
+
+    assert count_pages(source) == 1
 
 
 @pytest.fixture
@@ -254,7 +280,7 @@ def test_canonical_round_trip_preserves_multi_paragraph_visual_blocks() -> None:
                         id="p1-b1",
                         bbox=(0, 0, 200, 30),
                         reading_order=0,
-                        paragraphs=["First heading line", "Second heading line"],
+                        paragraphs=["First heading line <KHTd8 >>", "Second heading line"],
                         level=1,
                     ),
                     TextBlock(
@@ -286,9 +312,12 @@ def test_canonical_round_trip_preserves_multi_paragraph_visual_blocks() -> None:
     parsed = parse_canonical_html(result.canonical_html)
 
     assert canonical_round_trip_preserves(document, result.canonical_html)
-    assert parsed.pages[0].blocks[0].paragraphs == ["First heading line", "Second heading line"]
+    assert parsed.pages[0].blocks[0].paragraphs == [
+        "First heading line <KHTd8 >>",
+        "Second heading line",
+    ]
     assert parsed.pages[0].blocks[1].paragraphs == ["First caption", "Second caption"]
-    assert "First heading line\n\nSecond heading line" in result.markdown
+    assert "First heading line &lt;KHTd8 &gt;&gt;\n\nSecond heading line" in result.markdown
     assert "First caption\n\nSecond caption" in result.markdown
 
 

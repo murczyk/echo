@@ -40,7 +40,7 @@ def detect_geometry(image: Image.Image, page_id: str) -> GeometryResult:
     tables = _grid_tables(grid, page_id, inverse, image.size)
     table_boxes = [table.bbox for table in tables]
     content_boxes = _text_regions(working, inverse, image.size, table_boxes)
-    visual_regions = _visual_regions(gray, table_boxes)
+    visual_regions = _visual_regions(gray, rgb, table_boxes)
     raw_blocks: list[TextBlock | Table] = [*tables]
     for index, bbox in enumerate(content_boxes):
         raw_blocks.append(
@@ -344,7 +344,7 @@ def _merge_nearby(boxes: list[BBox]) -> list[BBox]:
     return result
 
 
-def _visual_regions(gray: np.ndarray, table_boxes: list[BBox]) -> list[BBox]:
+def _visual_regions(gray: np.ndarray, rgb: np.ndarray, table_boxes: list[BBox]) -> list[BBox]:
     edges = cv2.Canny(gray, 80, 180)
     closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
     contours, _ = cv2.findContours(closed, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
@@ -365,8 +365,15 @@ def _visual_regions(gray: np.ndarray, table_boxes: list[BBox]) -> list[BBox]:
             y + margin_y : y + height - margin_y,
             x + margin_x : x + width - margin_x,
         ]
-        if patch.size and (
-            float(np.std(patch)) >= 35 and np.count_nonzero(patch_edges) / patch.size >= 0.025
+        patch_rgb = rgb[y + margin_y : y + height - margin_y, x + margin_x : x + width - margin_x]
+        saturation = cv2.cvtColor(patch_rgb, cv2.COLOR_RGB2HSV)[:, :, 1]
+        visual_fill = np.count_nonzero(patch < 180) / patch.size
+        saturated_fill = np.count_nonzero(saturation > 40) / saturation.size
+        if (
+            patch.size
+            and float(np.std(patch)) >= 35
+            and np.count_nonzero(patch_edges) / patch.size >= 0.025
+            and (visual_fill >= 0.25 or saturated_fill >= 0.05)
         ):
             regions.append(bbox)
     return _deduplicate_contained(regions)

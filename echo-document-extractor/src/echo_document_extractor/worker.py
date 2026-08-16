@@ -186,20 +186,11 @@ class Worker:
 
     async def _extract(self, job: Job) -> str:
         root = Path(job.spool_path)
-        inputs_dir = root / "inputs"
         work = root / "work"
         package = root / "package"
         result_path = root / "result.zip"
         _reset_work_directories(root, work, package)
-        manifest_path = root / "manifest.json"
-        if manifest_path.is_file():
-            manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
-            names = manifest_data["inputs"]
-            manifest: Path | None = manifest_path
-        else:
-            names = sorted(path.name for path in inputs_dir.iterdir() if path.is_file())
-            manifest = None
-        inputs = [inputs_dir / name for name in names]
+        inputs, manifest = _job_inputs(root)
 
         async def page_boundary(processed: int, _: int | None) -> None:
             self.metrics.pages.inc()
@@ -225,7 +216,10 @@ class Worker:
         if paddle_failure:
             reason = next(iter(paddle_failure.rejection_reasons), "Paddle inference failed")
             raise InfrastructureFailure(reason)
-        if any("request_error" in item.rejection_reasons for item in result.evidence):
+        if (
+            any("request_error" in item.rejection_reasons for item in result.evidence)
+            and job.attempts <= self.service.worker.infrastructure_retries
+        ):
             raise InfrastructureFailure("one or more model requests failed")
         package.mkdir(mode=0o700)
         result.write_package(package)
@@ -263,6 +257,19 @@ def _reset_work_directories(root: Path, work: Path, package: Path) -> None:
         shutil.rmtree(target, ignore_errors=True)
     (root / "result.zip").unlink(missing_ok=True)
     work.mkdir(mode=0o700)
+
+
+def _job_inputs(root: Path) -> tuple[list[Path], Path | None]:
+    inputs_dir = root / "inputs"
+    manifest_path = root / "manifest.json"
+    if not manifest_path.is_file():
+        names = sorted(path.name for path in inputs_dir.iterdir() if path.is_file())
+        return [inputs_dir / name for name in names], None
+    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    names = manifest_data["inputs"]
+    runtime_manifest = inputs_dir / ".manifest.json"
+    runtime_manifest.write_text(json.dumps(manifest_data), encoding="utf-8")
+    return [inputs_dir / name for name in names], runtime_manifest
 
 
 def _is_infrastructure(error: Exception) -> bool:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as std_html
 import io
 import re
 from pathlib import Path
@@ -227,21 +228,23 @@ def render_markdown(result: ExtractionResult) -> str:
                     value = f"![Source document region]({image[0].get('src')})"
                     captions = node.xpath("./figcaption")
                     if captions:
-                        value += f"\n\n{_caption_text(captions[0])}"
+                        value += f"\n\n{_markdown_text(_caption_text(captions[0]))}"
                     output.append(value)
                 else:
                     captions = node.xpath("./figcaption")
                     if captions:
-                        output.append(_caption_text(captions[0]))
+                        output.append(_markdown_text(_caption_text(captions[0])))
             elif node.tag in {"ul", "ol"}:
                 marker = "1." if node.tag == "ol" else "-"
-                output.append("\n".join(f"{marker} {_node_text(item)}" for item in node.xpath("./li")))
+                output.append(
+                    "\n".join(f"{marker} {_markdown_text(_node_text(item))}" for item in node.xpath("./li"))
+                )
             elif node.tag == "section":
-                output.append("\n\n".join(_node_text(item) for item in node.xpath("./p")))
+                output.append("\n\n".join(_markdown_text(_node_text(item)) for item in node.xpath("./p")))
             else:
                 level = int(node.tag[1]) if node.tag.startswith("h") else 0
                 prefix = "#" * (level + 1) + " " if level else ""
-                output.append(prefix + _node_text(node))
+                output.append(prefix + _markdown_text(_node_text(node)))
     return "\n\n".join(item for item in output if item)
 
 
@@ -262,6 +265,10 @@ def _node_text(node: html.HtmlElement) -> str:
 def _caption_text(node: html.HtmlElement) -> str:
     paragraphs = node.xpath("./p")
     return "\n\n".join(_node_text(item) for item in paragraphs) if paragraphs else _node_text(node)
+
+
+def _markdown_text(value: str) -> str:
+    return std_html.escape(value, quote=False)
 
 
 def write_xlsx(result: ExtractionResult, path: Path) -> None:

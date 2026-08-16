@@ -44,6 +44,7 @@ parquet = { version = "59.1.0", features = ["arrow"] }
 tokio = { workspace = true }
 tokio-util = { version = "0.7.18", features = ["codec", "io"] }
 nipper = "0.1"
+ammonia = "4.1.2"
 futures-util = "0.3.32"
 futures = "0.3.32"
 fs_extra = "~1.3"

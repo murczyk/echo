@@ -74,6 +74,19 @@ def test_critical_tokens_do_not_fail_without_supporting_tokens() -> None:
     assert validator.passed
 
 
+def test_identical_embedded_critical_token_passes() -> None:
+    text = "ΠB□-14 e."
+    selected, decision = reconcile(
+        "block",
+        [Evidence(id="candidate", source="nuextract3", html="<p>x</p>", text=text)],
+        [Evidence(id="ocr", source="ppocr", text=text, confidence=0.9)],
+    )
+
+    assert selected is not None
+    validator = next(item for item in decision.validators if item.name == "critical_tokens")
+    assert validator.passed
+
+
 def test_repeated_cross_family_consensus_overrides_ocr_introduced_digits() -> None:
     candidates = [
         Evidence(id="nu-initial", source="nuextract3", html="<p>Бибо</p>", text="Бибо"),

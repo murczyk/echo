@@ -1167,13 +1167,17 @@ pub async fn delete_media_objects_best_effort(
     };
     let s3_config = crate::storage::S3Config::from(s3_config);
     for media_id in media_ids {
-        let object_keys = [
+        let mut object_keys = vec![
             crate::storage::nested_object_key(&media_id),
             crate::storage::plaintext_media_object_key(&media_id),
             crate::storage::plaintext_media_migration_marker_object_key(
                 &media_id,
             ),
         ];
+        if let Some(ocr) = app_config.ocr.as_ref() {
+            object_keys
+                .push(crate::ocr::ocr_result_key(&ocr.instance_id, media_id));
+        }
         for object_key in object_keys {
             let remote_key = s3_config.prefixed_key(&object_key);
             if let Err(err) = s3.delete(&remote_key).await {

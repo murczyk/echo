@@ -18,12 +18,9 @@ python3 - "$work/200-pages.pdf" <<'PY'
 import sys
 from PIL import Image, ImageDraw
 
-pages = []
-for index in range(200):
-    page = Image.new("RGB", (800, 1100), "white")
-    ImageDraw.Draw(page).text((40, 40), f"Synthetic bounded-memory page {index + 1}", fill="black")
-    pages.append(page)
-pages[0].save(sys.argv[1], save_all=True, append_images=pages[1:])
+page = Image.new("RGB", (800, 1100), "white")
+ImageDraw.Draw(page).text((40, 40), "Synthetic bounded-memory duplicate page", fill="black")
+page.save(sys.argv[1], save_all=True, append_images=[page] * 199)
 PY
 token=$(ssh -o BatchMode=yes "$TARGET_HOST" \
   "sudo awk -F= '\$1 == \"ECHO_DOCUMENT_EXTRACTOR_TOKEN\" {print substr(\$0, index(\$0, \"=\") + 1)}' /etc/echo-document-extractor/secret.env")

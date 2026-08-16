@@ -493,6 +493,8 @@ pub async fn delete_stored_media_files(
     if media.is_empty() {
         return;
     }
+    let ocr_instance_id =
+        config.ocr.as_ref().map(|ocr| ocr.instance_id.clone());
     for media in media {
         crate::messenger::media_cache::remove_cached_media_file_best_effort(
             config, media.id,
@@ -513,11 +515,14 @@ pub async fn delete_stored_media_files(
         return;
     };
     for media in media {
-        let object_keys = [
+        let mut object_keys = vec![
             storage::nested_object_key(&media.id),
             storage::plaintext_media_object_key(&media.id),
             storage::plaintext_media_migration_marker_object_key(&media.id),
         ];
+        if let Some(instance_id) = ocr_instance_id.as_deref() {
+            object_keys.push(crate::ocr::ocr_result_key(instance_id, media.id));
+        }
         for object_key in object_keys {
             let remote_key = s3_config.prefixed_key(&object_key);
             if let Err(e) = s3.delete(&remote_key).await {

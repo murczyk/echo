@@ -193,6 +193,12 @@
     },
     "echo:m20260806_141904_report_history_duplicate_lookup": {
       "changes": []
+    },
+    "echo:m20260816_102640_ocr": {
+      "changes": [
+        { "table": "public.ocr_settings", "strategy": "excluded" },
+        { "table": "public.ocr_job", "strategy": "excluded" }
+      ]
     }
   },
   "dependencies": {

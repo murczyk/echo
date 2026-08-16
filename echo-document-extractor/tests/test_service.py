@@ -22,8 +22,10 @@ from echo_document_extractor.ocr import (
     _ocr_pipeline_key,
 )
 from echo_document_extractor.package_archive import validate_package_zip
+from echo_document_extractor.pipeline import _resolve_inputs
 from echo_document_extractor.service_config import RuntimeConfig, ServiceLimits, ServiceSettings
 from echo_document_extractor.storage import StoragePressureError, ensure_capacity, parse_manifest
+from echo_document_extractor.worker import _job_inputs
 
 TOKEN = "a" * 48
 
@@ -192,6 +194,25 @@ def test_manifest_requires_exact_safe_order() -> None:
         parse_manifest(value, ["b.png", "a.png"])
     with pytest.raises(ValueError, match="InputManifest"):
         parse_manifest(json.dumps({"inputs": ["../a.png"]}), ["../a.png"])
+
+
+def test_worker_resolves_manifest_inputs_from_upload_directory(tmp_path: Path) -> None:
+    inputs_dir = tmp_path / "inputs"
+    inputs_dir.mkdir()
+    first = inputs_dir / "a.png"
+    second = inputs_dir / "b.png"
+    first.write_bytes(png_bytes())
+    second.write_bytes(png_bytes("black"))
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"inputs": [first.name, second.name]}), encoding="utf-8"
+    )
+
+    inputs, manifest = _job_inputs(tmp_path)
+
+    assert inputs == [first, second]
+    assert manifest is not None
+    assert manifest.parent == inputs_dir
+    assert _resolve_inputs(inputs, manifest)[0] == inputs
 
 
 def test_queue_depth_lease_recovery_retry_and_idempotency(tmp_path: Path) -> None:

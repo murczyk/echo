@@ -7,8 +7,7 @@ import shutil
 import uuid
 from pathlib import Path, PurePosixPath
 
-from PIL import Image, UnidentifiedImageError
-
+from .ingest import image_page_count
 from .pipeline import InputManifest
 
 
@@ -49,14 +48,9 @@ def count_pages(path: Path) -> int:
         if count < 1:
             raise ValueError(f"PDF contains no pages: {path.name}")
         return count
-    try:
-        with Image.open(path) as image:
-            image.verify()
-    except (UnidentifiedImageError, OSError, ValueError) as error:
-        raise ValueError(f"unreadable image: {path.name}") from error
     if path.suffix.casefold() not in {".png", ".jpg", ".jpeg"}:
         raise ValueError(f"unsupported input: {path.name}")
-    return 1
+    return image_page_count(path)
 
 
 def request_digest(files: list[tuple[str, str]], manifest: dict[str, object] | None) -> str:

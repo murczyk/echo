@@ -111,6 +111,7 @@ def _table(
     occupied: set[tuple[int, int]] = set()
     cells = []
     rows = node.xpath("./thead/tr|./tbody/tr|./tr")
+    row_sections = []
     row_boundaries = (
         sorted({value for cell in skeleton.cells for value in (cell.bbox[1], cell.bbox[3])})
         if isinstance(skeleton, Table)
@@ -118,6 +119,7 @@ def _table(
     )
     for row_index, row in enumerate(rows):
         section = "thead" if any(parent.tag == "thead" for parent in row.iterancestors()) else "tbody"
+        row_sections.append(section)
         column = 0
         for element in row.xpath("./th|./td"):
             while (row_index, column) in occupied:
@@ -163,6 +165,41 @@ def _table(
                 )
             )
             column += colspan
+    if occupied:
+        row_count = max(row for row, _ in occupied) + 1
+        column_count = max(column for _, column in occupied) + 1
+        for row in range(row_count):
+            section = row_sections[row] if row < len(row_sections) else "tbody"
+            for column in range(column_count):
+                if (row, column) in occupied:
+                    continue
+                skeleton_cell = skeleton_cells.get((row, column))
+                cell_bbox = (
+                    skeleton_cell.bbox
+                    if skeleton_cell
+                    else _estimated_cell_bbox(
+                        skeleton,
+                        table_bbox,
+                        row_boundaries,
+                        row,
+                        column,
+                        1,
+                        1,
+                        row_count,
+                    )
+                )
+                cells.append(
+                    Cell(
+                        id=f"{table_id}-r{row + 1}c{column + 1}",
+                        row=row,
+                        column=column,
+                        bbox=cell_bbox,
+                        is_header=section == "thead",
+                        section=section,
+                        decision_id=decision_id,
+                    )
+                )
+                occupied.add((row, column))
     caption = _text(node.xpath("./caption")[0]) if node.xpath("./caption") else None
     boundaries = skeleton.column_boundaries if isinstance(skeleton, Table) else []
     content_bbox = (

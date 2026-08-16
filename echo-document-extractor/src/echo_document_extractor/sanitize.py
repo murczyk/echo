@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from collections import Counter
 
 from lxml import etree, html
 
@@ -51,7 +50,9 @@ ALLOWED_STYLE = {
     "font-style": {"italic"},
 }
 COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
-NON_FATAL_SANITIZATION_REASONS = frozenset({"unsupported_style_removed", "unsupported_tag_removed"})
+NON_FATAL_SANITIZATION_REASONS = frozenset(
+    {"malformed_table", "unsupported_style_removed", "unsupported_tag_removed"}
+)
 
 
 def has_fatal_sanitization_reason(reasons: list[str]) -> bool:
@@ -153,17 +154,30 @@ def _has_whitespace_padding(parts: list[str]) -> bool:
 
 def _has_repetition(text: str, root: html.HtmlElement) -> bool:
     lines = [re.sub(r"\s+", " ", line).strip() for line in text.splitlines() if line.strip()]
-    if any(len(line) > 20 and count >= 3 for line, count in Counter(lines).items()):
+    if _has_consecutive_repeats(lines, 3, 20):
         return True
     tokens = re.findall(r"\w+|[^\w\s]", text.casefold(), flags=re.UNICODE)
     for size in (12, 8):
-        if len(tokens) < size * 3:
-            continue
-        grams = Counter(tuple(tokens[index : index + size]) for index in range(len(tokens) - size + 1))
-        if any(count >= 3 for count in grams.values()):
-            return True
+        for index in range(len(tokens) - size * 3 + 1):
+            phrase = tokens[index : index + size]
+            if (
+                phrase
+                == tokens[index + size : index + size * 2]
+                == tokens[index + size * 2 : index + size * 3]
+            ):
+                return True
     rows = [re.sub(r"\s+", " ", " ".join(row.itertext())).strip() for row in root.xpath(".//tr")]
-    return any(value and count >= 3 for value, count in Counter(rows).items())
+    return _has_consecutive_repeats(rows, 3, 20)
+
+
+def _has_consecutive_repeats(values: list[str], count: int, minimum_length: int) -> bool:
+    for index in range(len(values) - count + 1):
+        value = values[index]
+        if len(value) >= minimum_length and all(
+            candidate == value for candidate in values[index + 1 : index + count]
+        ):
+            return True
+    return False
 
 
 def _malformed_table(root: html.HtmlElement) -> bool:

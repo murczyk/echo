@@ -94,6 +94,8 @@ pub mod network_callsign;
 pub mod network_invalidation_task;
 pub mod network_invalidation_worker;
 pub mod nominatimres;
+pub mod ocr_job;
+pub mod ocr_settings;
 pub mod orbit_combat_unit_type;
 pub mod orbit_grouping_of_forces;
 pub mod orbit_sync;

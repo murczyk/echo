@@ -5,6 +5,7 @@ import hashlib
 import html as std_html
 import inspect
 import io
+import itertools
 import json
 import os
 import time
@@ -203,6 +204,8 @@ class Extractor:
         document_id = _document_id(pages)
         unresolved = sum(decision.unresolved for decision in decisions)
         hard_failures = sum(not decision.hard_checks_passed for decision in decisions)
+        if any("request_error" in item.rejection_reasons for item in all_evidence):
+            degraded_reasons.append("model request failure")
         if unresolved:
             degraded_reasons.append("unresolved decisions")
         if hard_failures:
@@ -324,6 +327,7 @@ class Extractor:
                 candidate_documents,
                 supporting,
                 geometry.blocks,
+                visual_regions,
             )
             evidence.extend(unit_evidence)
             if decisions and not any(decision.hard_checks_passed for decision in decisions):
@@ -547,10 +551,12 @@ class Extractor:
         candidates: list[CandidateDocument],
         supporting: list[Evidence],
         geometry_blocks: list[Block],
+        visual_regions: list[BBox],
     ) -> tuple[list[Block], list[Evidence], list[Decision]]:
         base = max(
             candidates,
             key=lambda item: (
+                "malformed_table" not in item.evidence.rejection_reasons,
                 len(item.blocks),
                 sum(isinstance(block, Table) for block in item.blocks),
                 item.evidence.source == "nuextract3",
@@ -569,7 +575,12 @@ class Extractor:
             if isinstance(base_block, Table):
                 geometry_table = _matching_geometry_table(base_block, geometry_blocks)
                 projected_base = (
-                    _project_table_structure(base_block, geometry_table, supporting)
+                    _project_table_structure(
+                        base_block,
+                        geometry_table,
+                        supporting,
+                        visual_regions,
+                    )
                     if geometry_table is not None
                     else None
                 )
@@ -1152,13 +1163,16 @@ def _project_table_structure(
     base: Table,
     geometry: Table,
     supporting: list[Evidence],
+    visual_regions: list[BBox] | None = None,
 ) -> Table | None:
-    row_count, column_count = table_dimensions(base)
-    _, geometry_columns = table_dimensions(geometry)
+    semantic_rows, column_count = table_dimensions(base)
+    geometry_rows, _ = table_dimensions(geometry)
+    geometry_columns = len(geometry.column_boundaries) - 1
+    row_count = min(semantic_rows, geometry_rows)
     if (
         row_count == 0
         or geometry_columns < column_count
-        or (geometry_columns == column_count and base.column_boundaries)
+        or (geometry_columns == column_count and geometry_rows == row_count and base.column_boundaries)
     ):
         return None
     column_boundaries = geometry.column_boundaries
@@ -1168,15 +1182,18 @@ def _project_table_structure(
         geometry,
         row_count,
         supporting,
-        base if geometry_columns == column_count else None,
+        base,
+        visual_regions or [],
     )
     if row_boundaries is None:
         return None
+    source_rows = _projected_source_rows(base, geometry, row_boundaries, supporting)
     occupied: set[tuple[int, int]] = set()
     projected: list[Cell] = []
     for row in range(row_count):
+        source_row = source_rows.get(row, row)
         sources = sorted(
-            (cell for cell in base.cells if cell.row == row),
+            (cell for cell in base.cells if cell.row == source_row),
             key=lambda cell: cell.column,
         )
         anchors = _geometry_row_anchors(
@@ -1187,7 +1204,16 @@ def _project_table_structure(
             occupied,
         )
         if len(sources) > len(anchors):
-            return None
+            sources = _collapsed_full_width_sources(
+                base,
+                geometry,
+                row_boundaries,
+                supporting,
+                row,
+                anchors,
+            )
+            if sources is None:
+                return None
         target_text = [
             _local_text(
                 (
@@ -1266,16 +1292,57 @@ def _project_table_structure(
         return None
 
 
+def _collapsed_full_width_sources(
+    base: Table,
+    geometry: Table,
+    row_boundaries: list[int],
+    supporting: list[Evidence],
+    row: int,
+    anchors: list[tuple[int, int]],
+) -> list[Cell] | None:
+    if anchors != [(0, len(geometry.column_boundaries) - 1)]:
+        return None
+    bbox = (geometry.bbox[0], row_boundaries[row], geometry.bbox[2], row_boundaries[row + 1])
+    text = _local_text(bbox, supporting)
+    return [
+        Cell(
+            id=f"{base.id}-r{row + 1}c1",
+            row=row,
+            column=0,
+            bbox=bbox,
+            paragraphs=text.splitlines(),
+            confidence=base.confidence,
+        )
+    ]
+
+
 def _projected_row_boundaries(
     geometry: Table,
     row_count: int,
     supporting: list[Evidence],
     semantic: Table | None = None,
+    visual_regions: list[BBox] | None = None,
 ) -> list[int] | None:
     boundaries = sorted({value for cell in geometry.cells for value in (cell.bbox[1], cell.bbox[3])})
-    if len(boundaries) - 1 < row_count:
+    if len(boundaries) < 2:
         return None
-    consecutive = _matching_row_window(geometry, semantic, boundaries, row_count, supporting)
+    while len(boundaries) - 1 < row_count:
+        index = max(
+            range(len(boundaries) - 1),
+            key=lambda value: boundaries[value + 1] - boundaries[value],
+        )
+        midpoint = (boundaries[index] + boundaries[index + 1]) // 2
+        if midpoint in {boundaries[index], boundaries[index + 1]}:
+            return None
+        boundaries.insert(index + 1, midpoint)
+    consecutive = _matching_row_window(
+        geometry,
+        semantic,
+        boundaries,
+        row_count,
+        supporting,
+        visual_regions or [],
+    )
     if consecutive is not None:
         return consecutive
     local = [
@@ -1302,10 +1369,18 @@ def _matching_row_window(
     boundaries: list[int],
     row_count: int,
     supporting: list[Evidence],
+    visual_regions: list[BBox],
 ) -> list[int] | None:
     geometry_rows = len(boundaries) - 1
     if semantic is None or geometry_rows == row_count:
         return boundaries if geometry_rows == row_count else None
+    semantic_first_row = [cell for cell in semantic.cells if cell.row == 0]
+    if (
+        geometry_rows == row_count + 1
+        and len(semantic_first_row) > 1
+        and _geometry_row_spans_table(geometry, boundaries[0], boundaries[1])
+    ):
+        return boundaries[1:]
     source_text = [
         " ".join(
             _block_text_value(cell.paragraphs)
@@ -1325,13 +1400,68 @@ def _matching_row_window(
     ]
     if not any(source_text) or not any(target_text):
         return None
-    offset = max(
-        range(geometry_rows - row_count + 1),
-        key=lambda start: sum(
-            _text_similarity(source_text[row], target_text[start + row]) for row in range(row_count)
-        ),
+    candidates = {
+        tuple(boundaries[start : start + row_count + 1]) for start in range(geometry_rows - row_count + 1)
+    }
+    excess = geometry_rows - row_count
+    if 0 < excess <= 3:
+        for removed in itertools.combinations(range(1, len(boundaries) - 1), excess):
+            candidates.add(tuple(value for index, value in enumerate(boundaries) if index not in removed))
+
+    def score(candidate: tuple[int, ...]) -> tuple[int, float, int, tuple[int, ...]]:
+        visual_crossings = sum(
+            region[1] < boundary < region[3] for region in visual_regions for boundary in candidate[1:-1]
+        )
+        text_score = sum(
+            _text_similarity(
+                source_text[row],
+                _local_text(
+                    (geometry.bbox[0], candidate[row], geometry.bbox[2], candidate[row + 1]),
+                    supporting,
+                ),
+            )
+            for row in range(row_count)
+        )
+        return -visual_crossings, text_score, candidate[-1] - candidate[0], candidate
+
+    return list(max(candidates, key=score))
+
+
+def _geometry_row_spans_table(geometry: Table, top: int, bottom: int) -> bool:
+    return any(
+        cell.bbox[0] == geometry.column_boundaries[0]
+        and cell.bbox[2] == geometry.column_boundaries[-1]
+        and cell.bbox[1] <= top
+        and cell.bbox[3] >= bottom
+        for cell in geometry.cells
     )
-    return boundaries[offset : offset + row_count + 1]
+
+
+def _projected_source_rows(
+    base: Table,
+    geometry: Table,
+    row_boundaries: list[int],
+    supporting: list[Evidence],
+) -> dict[int, int]:
+    source_rows, _ = table_dimensions(base)
+    source_text = [
+        " ".join(
+            _block_text_value(cell.paragraphs)
+            for cell in sorted(
+                (cell for cell in base.cells if cell.row == row),
+                key=lambda cell: cell.column,
+            )
+        )
+        for row in range(source_rows)
+    ]
+    target_text = [
+        _local_text(
+            (geometry.bbox[0], row_boundaries[row], geometry.bbox[2], row_boundaries[row + 1]),
+            supporting,
+        )
+        for row in range(len(row_boundaries) - 1)
+    ]
+    return _align_text_sequences(source_text, target_text, allow_source_skips=True)
 
 
 def _geometry_row_anchors(
@@ -1856,8 +1986,23 @@ def _matching_text_bbox(block: TextBlock, supporting: list[Evidence]) -> BBox | 
     ]
     if not candidates:
         return None
-    selected = max(candidates, key=lambda item: _text_similarity(text, item.text))
-    return selected.bbox if _text_similarity(text, selected.text) >= 0.72 else None
+    ordered = sorted(candidates, key=lambda item: (item.bbox[1], item.bbox[0]))
+    matches = []
+    for start in range(len(ordered)):
+        for end in range(start + 1, min(len(ordered), start + 8) + 1):
+            values = ordered[start:end]
+            combined = "\n".join(item.text for item in values)
+            matches.append((_text_similarity(text, combined), len(values), values))
+    score, _, selected = max(matches, key=lambda item: (item[0], item[1]))
+    if score < 0.72:
+        return None
+    boxes = [item.bbox for item in selected if item.bbox is not None]
+    return (
+        min(bbox[0] for bbox in boxes),
+        min(bbox[1] for bbox in boxes),
+        max(bbox[2] for bbox in boxes),
+        max(bbox[3] for bbox in boxes),
+    )
 
 
 def _selected_is_grounded(
@@ -1872,7 +2017,7 @@ def _selected_is_grounded(
 def _empty_cell_supported(cell: Cell, supporting: list[Evidence]) -> bool:
     if _block_text_value(cell.paragraphs):
         return False
-    return any(
+    geometry_supported = any(
         isinstance(item, CellEvidence)
         and item.source == "opencv"
         and item.bbox is not None
@@ -1882,6 +2027,7 @@ def _empty_cell_supported(cell: Cell, supporting: list[Evidence]) -> bool:
         and item.bbox[3] <= cell.bbox[3]
         for item in supporting
     )
+    return geometry_supported or _local_candidate(cell.id, cell.bbox, supporting) is None
 
 
 def _topology(table: Table) -> str:
@@ -1976,6 +2122,11 @@ def _attach_visual_assets(
                         cell = cell.model_copy(update={"asset": available[match]})
                     else:
                         decisions.append(_missing_visual_decision(cell.id))
+                elif cell.asset is None:
+                    match = _best_asset(cell.bbox, available, used, minimum_score=0.9)
+                    if match is not None:
+                        used.add(match)
+                        cell = cell.model_copy(update={"asset": available[match]})
                 cells.append(cell)
             block = block.model_copy(update={"cells": cells})
         output_blocks.append(block)
@@ -2021,7 +2172,12 @@ def _missing_visual_decision(unit_id: str) -> Decision:
     )
 
 
-def _best_asset(bbox: BBox, assets: list[AssetRef], used: set[int]) -> int | None:
+def _best_asset(
+    bbox: BBox,
+    assets: list[AssetRef],
+    used: set[int],
+    minimum_score: float = 0.0,
+) -> int | None:
     scores = [
         (_intersection_ratio(asset.bbox, bbox), index)
         for index, asset in enumerate(assets)
@@ -2030,7 +2186,7 @@ def _best_asset(bbox: BBox, assets: list[AssetRef], used: set[int]) -> int | Non
     if not scores:
         return None
     score, index = max(scores)
-    return index if score > 0 else None
+    return index if score > minimum_score else None
 
 
 def _deduplicate_boxes(boxes: list[BBox]) -> list[BBox]:

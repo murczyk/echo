@@ -30,6 +30,7 @@ export function mockImageMediaEntry(overrides: Partial<MessageMediaInfo> = {}): 
     sizeBytes: 1024,
     href: MOCK_IMAGE_DATA_URL,
     transcription: null,
+    ocr: null,
     ...overrides,
   };
 }

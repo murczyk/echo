@@ -48,6 +48,7 @@ pub mod messenger;
 pub mod migration;
 pub mod ml;
 pub mod nlp;
+pub mod ocr;
 pub mod oneoff;
 pub mod operator;
 pub mod orbit;

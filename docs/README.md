@@ -163,6 +163,7 @@ flowchart LR
     bg <-->|palitra + folder sync| goi
     echo_im <-->|messenger bot integration| goi
     bg <-->|health · audio upload · transcription| echo_gpu
+    bg <-->|authenticated jobs · canonical packages| extractor_api
     api -.->|Chat Completions HTTPS| openai_engine
     api <-->|Chat Completions HTTP<br/>Tailscale| vllm_router
     vllm_router -->|OpenAI-compatible HTTP<br/>Tailscale| vllm
@@ -191,9 +192,8 @@ flowchart LR
 ```
 
 The diagram focuses on the core web, worker, messenger, storage, observability,
-OCR, and analytics paths. The shared extractor is deployed and validated in
-this phase, but Echo application/job integration follows separately. Other
-instance-specific integrations are configured independently.
+OCR, and analytics paths. Other instance-specific integrations are configured
+independently.
 
 The `wd_files` database is optional and configured independently under
 `[file_registry]`. Without that section, the backend skips its connection and
@@ -235,6 +235,40 @@ It is a separate native-systemd deployment in a GPU-backed Incus container on
 `echo-gpu` and does not share process or storage ownership with an Echo instance
 or a vLLM router. The original powered-off Proxmox CT is retained as the
 host-level rollback copy.
+
+### OCR application integration
+
+Each Echo instance can opt into the shared extractor with a unique identity:
+
+```toml
+[ocr]
+base_url = "http://100.93.77.92:8000"
+instance_id = "echo-staging"
+```
+
+The bearer credential is read only from `ECHO_OCR_TOKEN` in the systemd
+environment. On deployed hosts it belongs in `/etc/echo/ocr.env`, owned by
+root with mode `0600`; it must not be stored in `config.toml` or Git. Both Echo
+systemd units load this optional environment file.
+
+The `wdintel-rs-bgworker` OCR worker is disabled by default and controlled from
+the admin page at **ШІ → OCR**. When enabled, it discovers supported PDF, JPEG,
+and PNG messenger media created during the last seven days. PostgreSQL stores
+durable per-media queue, retry, progress, and quality state. At most one remote
+job is active per Echo instance. Extractor dependency outages postpone work,
+while other infrastructure failures use bounded exponential retry.
+
+The worker validates the canonical ZIP and every manifest digest, embeds only
+validated PNG assets, and sanitizes extracted HTML with Rust before encrypting
+it with StrongBox and storing it in the configured B2/S3 bucket. The API
+sanitizes the HTML again before serving it with a restrictive CSP. Authorized
+users can open the eye action beside media information for split-screen or
+full-pane preview; admins can review recent jobs and readiness under
+**ШІ → OCR**. Deleting source media also deletes its deterministic OCR object.
+
+Initial rollout is limited to `echo-staging` and `echo-cbr-staging`. The OCR
+tables are deliberately excluded from PeerDB/ClickHouse because they contain
+live queue state, not analytics data.
 
 ### vLLM inference architecture
 
@@ -483,6 +517,7 @@ flowchart TB
     bg --> network_workers["Network workers<br/>recent_inbox_network_worker<br/>old_inbox_network_worker<br/>inbox_network_daily_consistency_worker"]
     bg --> palitra_workers["Palitra worker<br/>palitra_highlight_worker"]
     bg --> goi_workers["GOI workers<br/>goi_sync_worker_0..N<br/>goi_association_message_uid_worker<br/>palitra_conversion_worker"]
+    bg -.-> ocr_worker["OCR worker<br/>default-off · recent messenger documents<br/>extractor jobs · sanitized B2 result"]
 
     bg -.-> configured_workers["Configuration-gated workers<br/>analytics_health_log_worker · analytics gateway<br/>activity_details_worker · GreptimeDB<br/>cleanup_networks_worker<br/>fill_comp_freq_worker<br/>inactive_users_worker<br/>location_v2_worker<br/>suggest_message_tags_worker<br/>refresh_models_worker · AI models<br/>cleanup_tmp_worker · in-memory tmp"]
     bg -.-> startup_workers["Startup task<br/>signal_cli_verbose_logger"]
@@ -492,7 +527,7 @@ flowchart TB
     reports --> report_workers_c["Report-history workers<br/>report_history_worker_kmz<br/>report_history_worker_geojson<br/>report_history_worker_etalonka<br/>report_history_worker_etalonka_1<br/>report_history_worker_goi<br/>report_history_worker_unknown<br/>report_history_timeout_worker"]
 
     classDef optional stroke-dasharray:6 4
-    class api_vault_worker,bg_vault_worker,configured_workers,startup_workers optional
+    class api_vault_worker,bg_vault_worker,ocr_worker,configured_workers,startup_workers optional
 ```
 
 `worker_calculate_group_stats` also owns historical group-stat recalculation.

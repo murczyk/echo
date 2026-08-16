@@ -287,6 +287,10 @@ def _critical_tokens_match(candidate: str, support: str) -> bool:
     support_critical = [match.group(0) for match in CRITICAL_PATTERN.finditer(support)]
     if not support_critical:
         return True
+    if Counter(_normalized(token) for token in candidate_critical) == Counter(
+        _normalized(token) for token in support_critical
+    ):
+        return True
     candidate_tokens = TOKEN_PATTERN.findall(candidate)
     support_tokens = TOKEN_PATTERN.findall(support)
     return all(

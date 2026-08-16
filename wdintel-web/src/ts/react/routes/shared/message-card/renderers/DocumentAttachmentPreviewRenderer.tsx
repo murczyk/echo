@@ -15,6 +15,7 @@ import { deriveDocumentDownloadName, deriveDocumentFileName } from '../message-c
 import { formatSizeBytes } from '../message-card-image-utils';
 import { getNextWheelZoom, isInteractivePreviewTarget } from '../message-card-image-preview-utils';
 import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
+import { OcrPreviewAction, OcrSplitPreview } from '../attachment-preview/OcrPreview';
 import { AttachmentPreviewZoomControls } from '../attachment-preview/MessageCardAttachmentPreviewControls';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
@@ -89,6 +90,8 @@ export function DocumentAttachmentPreviewRenderer({
   const currentDocument = document;
   const [zoom, setZoom] = useState(100);
   const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const [ocrVisible, setOcrVisible] = useState(false);
+  const [ocrFullPane, setOcrFullPane] = useState(false);
 
   const infoOpen = infoAnchorEl !== null;
   const currentDocumentKind = currentDocument.kind;
@@ -115,6 +118,8 @@ export function DocumentAttachmentPreviewRenderer({
   const resetPreviewState = () => {
     setZoom(100);
     setInfoAnchorEl(null);
+    setOcrVisible(false);
+    setOcrFullPane(false);
     changeFullscreen(false);
   };
 
@@ -127,6 +132,8 @@ export function DocumentAttachmentPreviewRenderer({
   useEffect(() => {
     setZoom(100);
     setInfoAnchorEl(null);
+    setOcrVisible(false);
+    setOcrFullPane(false);
   }, [currentDocument.href, resolvedIndex]);
 
   useEffect(() => {
@@ -254,7 +261,7 @@ export function DocumentAttachmentPreviewRenderer({
     };
   }, [canZoom, stageEl]);
 
-  const stage = (
+  const sourceStage = (
     <MessageCardAttachmentPreviewStage
       ref={setStageEl}
       kind="document"
@@ -267,6 +274,15 @@ export function DocumentAttachmentPreviewRenderer({
       ) : null}
     </MessageCardAttachmentPreviewStage>
   );
+  const stage = (
+    <OcrSplitPreview
+      source={sourceStage}
+      mediaId={currentDocument.id}
+      visible={ocrVisible}
+      fullPane={ocrFullPane}
+      onFullPaneChange={setOcrFullPane}
+    />
+  );
 
   const header = (
     <MessageCardAttachmentPreviewHeader
@@ -275,6 +291,13 @@ export function DocumentAttachmentPreviewRenderer({
       download={{ href: currentDocument.href, fileName: downloadFileName }}
       navigation={navigation}
       onInfoClick={handleInfoClick}
+      additionalActions={
+        <OcrPreviewAction
+          ocr={currentDocument.ocr}
+          active={ocrVisible}
+          onClick={() => setOcrVisible((visible) => !visible)}
+        />
+      }
       isFullscreen={dialogIsFullscreen}
       canFullscreen={canFullscreen}
       onToggleFullscreen={() => changeFullscreen(!dialogIsFullscreen)}
