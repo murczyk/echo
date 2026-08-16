@@ -318,6 +318,9 @@ async fn load_sanitized_ocr_html(
 
 async fn load_page(env: &Env, limit: u64) -> anyhow::Result<OcrPageRsp> {
     let settings = load_settings(env).await.c(h!())?;
+    let media_summary_settings = crate::media_summary::load_settings(&env.dbx)
+        .await
+        .c(h!())?;
     let counts = load_counts(&env.dbx).await.c(h!())?;
     let jobs = ocr_job::Entity::find()
         .order_by_desc(ocr_job::Column::UpdatedAt)
@@ -331,18 +334,26 @@ async fn load_page(env: &Env, limit: u64) -> anyhow::Result<OcrPageRsp> {
         .filter(signal_message_media::Column::Id.is_in(media_ids))
         .all(&env.dbx)
         .await
-        .c(h!())?
+        .c(h!())?;
+    let summaries = crate::media_summary::load_statuses(&env.dbx, &media)
+        .await
+        .c(h!())?;
+    let media = media
         .into_iter()
         .map(|media| (media.id, media))
         .collect::<HashMap<_, _>>();
     let jobs = jobs
         .into_iter()
         .filter_map(|job| {
-            media.get(&job.media_id).map(|media| job_item(job, media))
+            media.get(&job.media_id).map(|media| {
+                let summary = summaries.get(&job.media_id).cloned();
+                job_item(job, media, summary)
+            })
         })
         .collect();
     Ok(OcrPageRsp {
         settings,
+        media_summary_settings,
         counts,
         jobs,
     })
@@ -395,6 +406,7 @@ async fn count_state(
 fn job_item(
     job: ocr_job::Model,
     media: &signal_message_media::Model,
+    summary: Option<crate::media_summary::types::MediaSummaryStatus>,
 ) -> OcrJobItem {
     let preview_url = (job.state == "completed" && job.html_s3_key.is_some())
         .then(|| format!("/api/admin/ocr/{}/preview", job.media_id));
@@ -419,6 +431,7 @@ fn job_item(
         updated_at: timestamp_ms(job.updated_at),
         completed_at: job.completed_at.map(timestamp_ms),
         preview_url,
+        summary,
     }
 }
 
@@ -536,7 +549,7 @@ from (
         .queue_size)
 }
 
-async fn authorized_media(
+pub(crate) async fn authorized_media(
     env: &Env,
     user: &Identity,
     media_id: Uuid,

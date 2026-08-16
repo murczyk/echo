@@ -58,6 +58,7 @@ pub struct OcrJobItem {
     pub updated_at: i64,
     pub completed_at: Option<i64>,
     pub preview_url: Option<String>,
+    pub summary: Option<crate::media_summary::types::MediaSummaryStatus>,
 }
 
 #[derive(
@@ -66,6 +67,8 @@ pub struct OcrJobItem {
 #[serde(rename_all = "camelCase")]
 pub struct OcrPageRsp {
     pub settings: OcrSettingsItem,
+    pub media_summary_settings:
+        crate::media_summary::types::MediaSummarySettingsItem,
     pub counts: OcrCounts,
     pub jobs: Vec<OcrJobItem>,
 }

@@ -17,11 +17,12 @@ import {
 import { useTheme } from '@mui/material/styles';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
-import type { OcrMediaSummary } from '../../../../../../Bindings';
+import type { MediaSummaryStatus, OcrMediaSummary } from '../../../../../../Bindings';
 import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
 import { getMediaOcrStatus } from '../../../../services/api/ocr';
 import type { AttachmentPreviewDownloadItem } from './MessageCardAttachmentPreviewHeader';
 import type { AttachmentPreviewInfoSection } from './MessageCardAttachmentPreviewInfoPopover';
+import { MediaSummaryAction, MediaSummaryOverlay } from './MediaSummaryPreview';
 
 const OCR_STATE_LABELS: Record<string, string> = {
   pending: 'У черзі',
@@ -253,6 +254,10 @@ export function OcrSplitPreview({
   fullPane,
   onOcrChange,
   onFullPaneChange,
+  summary,
+  summaryVisible,
+  onSummaryChange,
+  onSummaryVisibleChange,
 }: {
   source: ReactNode;
   mediaId?: string | null;
@@ -261,6 +266,10 @@ export function OcrSplitPreview({
   fullPane: boolean;
   onOcrChange: (ocr: OcrMediaSummary) => void;
   onFullPaneChange: (value: boolean) => void;
+  summary?: MediaSummaryStatus | null;
+  summaryVisible: boolean;
+  onSummaryChange: (summary: MediaSummaryStatus) => void;
+  onSummaryVisibleChange: (value: boolean) => void;
 }) {
   const theme = useTheme();
   const mobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -309,7 +318,42 @@ export function OcrSplitPreview({
     return () => window.clearInterval(interval);
   }, [ocr?.qualityStatus, ocr?.state, refresh, visible]);
 
-  if (!visible || mediaId == null) return source;
+  useEffect(() => {
+    if (!summaryVisible) return;
+    onFullPaneChange(false);
+    setMobilePane('source');
+  }, [onFullPaneChange, summaryVisible]);
+
+  const sourceWithSummary = (
+    <MediaSummaryOverlay
+      source={source}
+      mediaId={mediaId}
+      status={summary}
+      visible={summaryVisible}
+      onStatusChange={onSummaryChange}
+      onClose={() => onSummaryVisibleChange(false)}
+    />
+  );
+
+  if (!visible || mediaId == null) {
+    if (summary == null || mediaId == null) return source;
+    return (
+      <Box sx={{ flex: '1 1 auto', minHeight: 0, display: 'flex', position: 'relative' }}>
+        {sourceWithSummary}
+        <Stack
+          direction="row"
+          spacing={0.5}
+          sx={{ position: 'absolute', top: 8, right: 8, zIndex: 4 }}
+        >
+          <MediaSummaryAction
+            status={summary}
+            active={summaryVisible}
+            onClick={() => onSummaryVisibleChange(!summaryVisible)}
+          />
+        </Stack>
+      </Box>
+    );
+  }
   const showSource = mobile ? mobilePane === 'source' : !fullPane;
   const showOcr = mobile ? mobilePane === 'ocr' : true;
 
@@ -325,7 +369,7 @@ export function OcrSplitPreview({
           borderColor: 'divider',
         }}
       >
-        {source}
+        {sourceWithSummary}
       </Box>
       <Box
         sx={{
@@ -360,6 +404,11 @@ export function OcrSplitPreview({
         spacing={0.5}
         sx={{ position: 'absolute', top: 8, right: 8, zIndex: 2 }}
       >
+        <MediaSummaryAction
+          status={summary}
+          active={summaryVisible}
+          onClick={() => onSummaryVisibleChange(!summaryVisible)}
+        />
         {mobile ? (
           <>
             <Button

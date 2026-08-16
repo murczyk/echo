@@ -229,6 +229,7 @@ describe('inbox API normalization', () => {
         href: '/api/messenger/media/audio-1',
         transcription: 'recognized speech',
         ocr: null,
+        summary: null,
       },
     ]);
   });
@@ -290,6 +291,7 @@ describe('normalizeMessageMediaInfo', () => {
       href: '/api/messenger/media/m1',
       transcription: null,
       ocr: null,
+      summary: null,
     });
   });
 });

@@ -7,6 +7,8 @@ use crate::config::{
     OCR_RETRY_MAX_SECS, OCR_SETTINGS_ID,
 };
 use crate::entities::{ocr_job, ocr_settings, signal_message_media};
+use crate::event_stream::fanout_mult;
+use crate::event_stream::types::{EventMsg, EventType};
 use crate::h;
 use crate::messenger::media::{
     fetch_media_bytes, stream_plaintext_media_range,
@@ -434,7 +436,7 @@ async fn finalize_job(
     let stored =
         prepare_and_store_result(env, config, job.media_id, extractor_job_id)
             .await;
-    let (object_key, html_size_bytes) = match stored {
+    let (object_key, html_size_bytes, html) = match stored {
         Ok(stored) => stored,
         Err(err) => {
             retry_job(&env.dbx, job, err.to_string(), true)
@@ -444,9 +446,11 @@ async fn finalize_job(
         }
     };
     let now = Utc::now().naive_utc();
+    let media_id = job.media_id;
     let mut job = job.into_active_model();
     job.state = Set("completed".to_string());
-    job.quality_status = Set(response.quality_status);
+    let quality_status = response.quality_status;
+    job.quality_status = Set(quality_status.clone());
     job.processed_pages = Set(response.page_progress.processed);
     job.total_pages = Set(response.page_progress.total);
     job.html_s3_key = Set(Some(object_key));
@@ -455,6 +459,45 @@ async fn finalize_job(
     job.completed_at = Set(Some(now));
     job.updated_at = Set(now);
     job.update(&env.dbx).await.context(h!())?;
+    if matches!(quality_status.as_deref(), Some("accepted" | "degraded")) {
+        enqueue_image_summary(env, media_id, &html)
+            .await
+            .unwrap_or_else(|err| {
+                error!("failed to enqueue media summary: {err:#?}")
+            });
+    }
+    Ok(())
+}
+
+async fn enqueue_image_summary(
+    env: &Env,
+    media_id: Uuid,
+    html: &str,
+) -> anyhow::Result<()> {
+    let media = signal_message_media::Entity::find_by_id(media_id)
+        .one(&env.dbx)
+        .await
+        .context(h!())?
+        .context(h!())?;
+    if !matches!(source_mime(&media), "image/jpeg" | "image/png") {
+        return Ok(());
+    }
+    let text = crate::media_summary::plain_text_from_sanitized_html(html)
+        .context(h!())?;
+    let enqueued =
+        crate::media_summary::enqueue(&env.dbx, media_id, "ocr_text", &text)
+            .await
+            .context(h!())?;
+    if enqueued {
+        fanout_mult(
+            &mut env.redis.clone(),
+            vec![EventMsg::new(EventType::ETInboxChanged(
+                media.signal_message_id,
+            ))],
+        )
+        .await
+        .context(h!())?;
+    }
     Ok(())
 }
 
@@ -463,7 +506,7 @@ async fn prepare_and_store_result(
     config: &OcrRuntimeConfig,
     media_id: Uuid,
     extractor_job_id: Uuid,
-) -> anyhow::Result<(String, i64)> {
+) -> anyhow::Result<(String, i64, String)> {
     let result = download_result(&env.rq, config, extractor_job_id)
         .await
         .context(h!())?;
@@ -484,7 +527,8 @@ async fn prepare_and_store_result(
     )
     .await
     .context(h!())?;
-    Ok((object_key, i64::try_from(html.len()).context(h!())?))
+    let html_size_bytes = i64::try_from(html.len()).context(h!())?;
+    Ok((object_key, html_size_bytes, html))
 }
 
 async fn download_result(

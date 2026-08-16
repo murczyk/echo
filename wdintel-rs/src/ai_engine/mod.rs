@@ -9,6 +9,7 @@ use crate::config::{
 };
 use crate::entities::{
     ai_callsign_settings, ai_chat, ai_chat_message, ai_engine, login,
+    media_summary, media_summary_settings,
 };
 use crate::error::AppError;
 use crate::h;
@@ -45,6 +46,12 @@ struct OpenAiChatCompletionReq {
     #[serde(rename = "model")]
     model_name: String,
     messages: Vec<AiEngineMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -56,6 +63,12 @@ pub struct AiEngineMessage {
 #[derive(Deserialize)]
 struct OpenAiChatCompletionRsp {
     choices: Vec<OpenAiChatChoice>,
+    model: Option<String>,
+}
+
+pub struct AiEngineResponse {
+    pub content: String,
+    pub model_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -137,6 +150,7 @@ pub async fn update_ai_engine(
     if !values.enabled {
         ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id)
             .await?;
+        ensure_not_used_by_media_summary(&env.dbx, ai_engine_id).await?;
     }
     ensure_unique_name(&env.dbx, &values.name, Some(ai_engine_id)).await?;
     let mut ai_engine = ai_engine.into_active_model();
@@ -160,6 +174,7 @@ pub async fn delete_ai_engine(
     let ai_engine_id = parse_uuid(&req.id)?;
     find_ai_engine(&env.dbx, ai_engine_id).await?;
     ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id).await?;
+    ensure_not_used_by_media_summary(&env.dbx, ai_engine_id).await?;
     ai_engine::Entity::delete_by_id(ai_engine_id)
         .exec(&env.dbx)
         .await
@@ -181,6 +196,36 @@ async fn ensure_not_used_by_enabled_callsign_worker(
     if is_used {
         return Err(AppError::BL {
             msg: "ШІ движок використовується воркером позивних. Спочатку вимкніть воркер або виберіть інший движок.".to_string(),
+        });
+    }
+    Ok(())
+}
+
+async fn ensure_not_used_by_media_summary(
+    dbx: &DatabaseConnection,
+    ai_engine_id: Uuid,
+) -> Result<(), AppError> {
+    let selected_by_enabled_settings = media_summary_settings::Entity::find()
+        .filter(media_summary_settings::Column::Enabled.eq(true))
+        .filter(media_summary_settings::Column::AiEngineId.eq(ai_engine_id))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    let has_nonterminal_job = media_summary::Entity::find()
+        .filter(media_summary::Column::AiEngineId.eq(ai_engine_id))
+        .filter(media_summary::Column::State.is_in([
+            "queued",
+            "running",
+            "retry_wait",
+        ]))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if selected_by_enabled_settings || has_nonterminal_job {
+        return Err(AppError::BL {
+            msg: "ШІ движок використовується стислим описом документів. Спочатку вимкніть описи, виберіть інший движок або дочекайтеся завершення завдань.".to_string(),
         });
     }
     Ok(())
@@ -511,6 +556,37 @@ pub async fn request_ai_response(
     ai_engine: &ai_engine::Model,
     messages: Vec<AiEngineMessage>,
 ) -> Result<String, AppError> {
+    Ok(
+        request_ai_response_with_options(ai_engine, messages, None, None, None)
+            .await?
+            .content,
+    )
+}
+
+pub async fn request_structured_ai_response(
+    ai_engine: &ai_engine::Model,
+    messages: Vec<AiEngineMessage>,
+    temperature: f32,
+    max_tokens: u32,
+    response_format: serde_json::Value,
+) -> Result<AiEngineResponse, AppError> {
+    request_ai_response_with_options(
+        ai_engine,
+        messages,
+        Some(temperature),
+        Some(max_tokens),
+        Some(response_format),
+    )
+    .await
+}
+
+async fn request_ai_response_with_options(
+    ai_engine: &ai_engine::Model,
+    messages: Vec<AiEngineMessage>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    response_format: Option<serde_json::Value>,
+) -> Result<AiEngineResponse, AppError> {
     let endpoint = chat_completions_url(&ai_engine.url)?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(AI_ENGINE_REQUEST_TIMEOUT_SEC))
@@ -519,6 +595,9 @@ pub async fn request_ai_response(
     let mut request = client.post(endpoint).json(&OpenAiChatCompletionReq {
         model_name: ai_engine.model_name.clone(),
         messages,
+        temperature,
+        max_tokens,
+        response_format,
     });
     if let Some(token) = ai_engine.token.as_deref() {
         request = request.bearer_auth(token);
@@ -531,14 +610,18 @@ pub async fn request_ai_response(
     }
     let response: OpenAiChatCompletionRsp =
         serde_json::from_str(&body).c(h!())?;
-    response
+    let content = response
         .choices
         .into_iter()
         .find_map(|choice| choice.message.content)
         .filter(|content| !content.trim().is_empty())
         .ok_or_else(|| AppError::BL {
             msg: "ШІ API повернув порожню відповідь".to_string(),
-        })
+        })?;
+    Ok(AiEngineResponse {
+        content,
+        model_name: response.model,
+    })
 }
 
 fn chat_completions_url(base_url: &str) -> Result<Url, AppError> {

@@ -89,6 +89,8 @@ pub mod group_admin_data;
 pub mod group_stats_recalculation_task;
 pub mod log_users_report_generation;
 pub mod login;
+pub mod media_summary;
+pub mod media_summary_settings;
 pub mod modulation;
 pub mod network_callsign;
 pub mod network_invalidation_task;

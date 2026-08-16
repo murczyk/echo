@@ -1,4 +1,4 @@
-import type { OcrMediaSummary } from '../../../../../Bindings';
+import type { MediaSummaryStatus, OcrMediaSummary } from '../../../../../Bindings';
 
 export type MessageCardDocumentKind =
   'pdf' | 'docx' | 'xlsx' | 'csv' | 'txt' | 'md' | 'unsupported';
@@ -11,6 +11,7 @@ export type MessageCardDocument = {
   contentType?: string | null;
   kind: MessageCardDocumentKind;
   ocr?: OcrMediaSummary | null;
+  summary?: MediaSummaryStatus | null;
 };
 
 export type DocumentPreviewStatus = 'idle' | 'loading' | 'ready' | 'error';

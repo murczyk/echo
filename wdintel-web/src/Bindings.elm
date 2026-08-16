@@ -5928,6 +5928,7 @@ type alias MessageMediaInfo =
     , href : String
     , transcription : Maybe (String)
     , ocr : Maybe (OcrMediaSummary)
+    , summary : Maybe (MediaSummaryStatus)
     }
 
 
@@ -5941,6 +5942,7 @@ messageMediaInfoEncoder struct =
         , ( "href", (Json.Encode.string) struct.href )
         , ( "transcription", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.transcription )
         , ( "ocr", (Maybe.withDefault Json.Encode.null << Maybe.map (ocrMediaSummaryEncoder)) struct.ocr )
+        , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (mediaSummaryStatusEncoder)) struct.summary )
         ]
 
 
@@ -11985,6 +11987,7 @@ type alias OcrJobItem =
     , updatedAt : Int
     , completedAt : Maybe (Int)
     , previewUrl : Maybe (String)
+    , summary : Maybe (MediaSummaryStatus)
     }
 
 
@@ -12007,11 +12010,13 @@ ocrJobItemEncoder struct =
         , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
         , ( "completedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.completedAt )
         , ( "previewUrl", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.previewUrl )
+        , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (mediaSummaryStatusEncoder)) struct.summary )
         ]
 
 
 type alias OcrPageRsp =
     { settings : OcrSettingsItem
+    , mediaSummarySettings : MediaSummarySettingsItem
     , counts : OcrCounts
     , jobs : List (OcrJobItem)
     }
@@ -12021,6 +12026,7 @@ ocrPageRspEncoder : OcrPageRsp -> Json.Encode.Value
 ocrPageRspEncoder struct =
     Json.Encode.object
         [ ( "settings", (ocrSettingsItemEncoder) struct.settings )
+        , ( "mediaSummarySettings", (mediaSummarySettingsItemEncoder) struct.mediaSummarySettings )
         , ( "counts", (ocrCountsEncoder) struct.counts )
         , ( "jobs", (Json.Encode.list (ocrJobItemEncoder)) struct.jobs )
         ]
@@ -12047,6 +12053,100 @@ saveOcrSettingsReqEncoder : SaveOcrSettingsReq -> Json.Encode.Value
 saveOcrSettingsReqEncoder struct =
     Json.Encode.object
         [ ( "workerEnabled", (Json.Encode.bool) struct.workerEnabled )
+        ]
+
+
+type alias MediaSummaryStatus =
+    { state : String
+    , lastError : Maybe (String)
+    }
+
+
+mediaSummaryStatusEncoder : MediaSummaryStatus -> Json.Encode.Value
+mediaSummaryStatusEncoder struct =
+    Json.Encode.object
+        [ ( "state", (Json.Encode.string) struct.state )
+        , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        ]
+
+
+type alias MediaSummaryResult =
+    { state : String
+    , summary : Maybe (String)
+    , who : Maybe (String)
+    , whereText : Maybe (String)
+    , whatHappened : Maybe (String)
+    , whatNext : Maybe (String)
+    , purpose : Maybe (String)
+    , lastError : Maybe (String)
+    , sourceKind : String
+    , sourceCharCount : Int
+    , aiEngineName : String
+    , modelName : String
+    }
+
+
+mediaSummaryResultEncoder : MediaSummaryResult -> Json.Encode.Value
+mediaSummaryResultEncoder struct =
+    Json.Encode.object
+        [ ( "state", (Json.Encode.string) struct.state )
+        , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.summary )
+        , ( "who", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.who )
+        , ( "whereText", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.whereText )
+        , ( "whatHappened", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.whatHappened )
+        , ( "whatNext", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.whatNext )
+        , ( "purpose", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.purpose )
+        , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "sourceKind", (Json.Encode.string) struct.sourceKind )
+        , ( "sourceCharCount", (Json.Encode.int) struct.sourceCharCount )
+        , ( "aiEngineName", (Json.Encode.string) struct.aiEngineName )
+        , ( "modelName", (Json.Encode.string) struct.modelName )
+        ]
+
+
+type alias MediaSummaryEngineItem =
+    { id : String
+    , name : String
+    , modelName : String
+    }
+
+
+mediaSummaryEngineItemEncoder : MediaSummaryEngineItem -> Json.Encode.Value
+mediaSummaryEngineItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "modelName", (Json.Encode.string) struct.modelName )
+        ]
+
+
+type alias MediaSummarySettingsItem =
+    { enabled : Bool
+    , aiEngineId : Maybe (String)
+    , engines : List (MediaSummaryEngineItem)
+    }
+
+
+mediaSummarySettingsItemEncoder : MediaSummarySettingsItem -> Json.Encode.Value
+mediaSummarySettingsItemEncoder struct =
+    Json.Encode.object
+        [ ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        , ( "engines", (Json.Encode.list (mediaSummaryEngineItemEncoder)) struct.engines )
+        ]
+
+
+type alias SaveMediaSummarySettingsReq =
+    { enabled : Bool
+    , aiEngineId : Maybe (String)
+    }
+
+
+saveMediaSummarySettingsReqEncoder : SaveMediaSummarySettingsReq -> Json.Encode.Value
+saveMediaSummarySettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
         ]
 
 
@@ -16336,6 +16436,7 @@ messageMediaInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "href" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ocr" (Json.Decode.nullable (ocrMediaSummaryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (mediaSummaryStatusDecoder))))
 
 
 sigintZoneDecoder : Json.Decode.Decoder SigintZone
@@ -20108,12 +20209,14 @@ ocrJobItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completedAt" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "previewUrl" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (mediaSummaryStatusDecoder))))
 
 
 ocrPageRspDecoder : Json.Decode.Decoder OcrPageRsp
 ocrPageRspDecoder =
     Json.Decode.succeed OcrPageRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" (ocrSettingsItemDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mediaSummarySettings" (mediaSummarySettingsItemDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "counts" (ocrCountsDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "jobs" (Json.Decode.list (ocrJobItemDecoder))))
 
@@ -20128,6 +20231,53 @@ saveOcrSettingsReqDecoder : Json.Decode.Decoder SaveOcrSettingsReq
 saveOcrSettingsReqDecoder =
     Json.Decode.succeed SaveOcrSettingsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "workerEnabled" (Json.Decode.bool)))
+
+
+mediaSummaryStatusDecoder : Json.Decode.Decoder MediaSummaryStatus
+mediaSummaryStatusDecoder =
+    Json.Decode.succeed MediaSummaryStatus
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
+
+
+mediaSummaryResultDecoder : Json.Decode.Decoder MediaSummaryResult
+mediaSummaryResultDecoder =
+    Json.Decode.succeed MediaSummaryResult
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "who" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "whereText" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "whatHappened" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "whatNext" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "purpose" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sourceKind" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sourceCharCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineName" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
+
+
+mediaSummaryEngineItemDecoder : Json.Decode.Decoder MediaSummaryEngineItem
+mediaSummaryEngineItemDecoder =
+    Json.Decode.succeed MediaSummaryEngineItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
+
+
+mediaSummarySettingsItemDecoder : Json.Decode.Decoder MediaSummarySettingsItem
+mediaSummarySettingsItemDecoder =
+    Json.Decode.succeed MediaSummarySettingsItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engines" (Json.Decode.list (mediaSummaryEngineItemDecoder))))
+
+
+saveMediaSummarySettingsReqDecoder : Json.Decode.Decoder SaveMediaSummarySettingsReq
+saveMediaSummarySettingsReqDecoder =
+    Json.Decode.succeed SaveMediaSummarySettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
 
 
 echoMissingMessageRowDecoder : Json.Decode.Decoder EchoMissingMessageRow

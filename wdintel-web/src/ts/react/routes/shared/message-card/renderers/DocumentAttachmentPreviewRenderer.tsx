@@ -99,6 +99,8 @@ export function DocumentAttachmentPreviewRenderer({
   const [ocrVisible, setOcrVisible] = useState(false);
   const [ocrFullPane, setOcrFullPane] = useState(false);
   const [ocrStatus, setOcrStatus] = useState(currentDocument.ocr ?? null);
+  const [summaryVisible, setSummaryVisible] = useState(currentDocument.summary != null);
+  const [summaryStatus, setSummaryStatus] = useState(currentDocument.summary ?? null);
 
   const infoOpen = infoAnchorEl !== null;
   const currentDocumentKind = currentDocument.kind;
@@ -127,6 +129,8 @@ export function DocumentAttachmentPreviewRenderer({
     setInfoAnchorEl(null);
     setOcrVisible(false);
     setOcrFullPane(false);
+    setSummaryVisible(currentDocument.summary != null);
+    setSummaryStatus(currentDocument.summary ?? null);
     changeFullscreen(false);
   };
 
@@ -142,7 +146,9 @@ export function DocumentAttachmentPreviewRenderer({
     setOcrVisible(false);
     setOcrFullPane(false);
     setOcrStatus(currentDocument.ocr ?? null);
-  }, [currentDocument.href, currentDocument.ocr, resolvedIndex]);
+    setSummaryVisible(currentDocument.summary != null);
+    setSummaryStatus(currentDocument.summary ?? null);
+  }, [currentDocument.href, currentDocument.ocr, currentDocument.summary, resolvedIndex]);
 
   useEffect(() => {
     if (!canZoom && zoom !== 100) {
@@ -291,6 +297,10 @@ export function DocumentAttachmentPreviewRenderer({
       fullPane={ocrFullPane}
       onOcrChange={setOcrStatus}
       onFullPaneChange={setOcrFullPane}
+      summary={summaryStatus}
+      summaryVisible={summaryVisible}
+      onSummaryChange={setSummaryStatus}
+      onSummaryVisibleChange={setSummaryVisible}
     />
   );
 

@@ -2281,6 +2281,7 @@ export type MessageMediaInfo = {
   href: string;
   transcription: string | null;
   ocr: OcrMediaSummary | null;
+  summary: MediaSummaryStatus | null;
 };
 
 export type SigintZone = {
@@ -4645,10 +4646,12 @@ export type OcrJobItem = {
   updatedAt: number;
   completedAt: number | null;
   previewUrl: string | null;
+  summary: MediaSummaryStatus | null;
 };
 
 export type OcrPageRsp = {
   settings: OcrSettingsItem;
+  mediaSummarySettings: MediaSummarySettingsItem;
   counts: OcrCounts;
   jobs: Array<OcrJobItem>;
 };
@@ -4659,6 +4662,43 @@ export type OcrPageReq = {
 
 export type SaveOcrSettingsReq = {
   workerEnabled: boolean;
+};
+
+export type MediaSummaryStatus = {
+  state: string;
+  lastError: string | null;
+};
+
+export type MediaSummaryResult = {
+  state: string;
+  summary: string | null;
+  who: string | null;
+  whereText: string | null;
+  whatHappened: string | null;
+  whatNext: string | null;
+  purpose: string | null;
+  lastError: string | null;
+  sourceKind: string;
+  sourceCharCount: number;
+  aiEngineName: string;
+  modelName: string;
+};
+
+export type MediaSummaryEngineItem = {
+  id: string;
+  name: string;
+  modelName: string;
+};
+
+export type MediaSummarySettingsItem = {
+  enabled: boolean;
+  aiEngineId: string | null;
+  engines: Array<MediaSummaryEngineItem>;
+};
+
+export type SaveMediaSummarySettingsReq = {
+  enabled: boolean;
+  aiEngineId: string | null;
 };
 
 export type EchoMissingMessageRow = {

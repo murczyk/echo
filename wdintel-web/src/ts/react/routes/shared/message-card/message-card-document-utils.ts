@@ -127,6 +127,7 @@ export function collectMessageDocuments(msg: InboxMessage): MessageCardDocument[
       contentType: attachment.contentType ?? null,
       kind,
       ocr: attachment.ocr ?? null,
+      summary: attachment.summary ?? null,
     });
   }
 

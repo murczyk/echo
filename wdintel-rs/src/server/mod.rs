@@ -619,6 +619,16 @@ fn spawn_background_workers(
         crate::ocr::worker::run_nofail(ocr_env, ocr_cancellation_token).await;
     });
 
+    let media_summary_env = env.clone();
+    let media_summary_cancellation_token = cancel_token.clone();
+    spawn_named_worker("media_summary_worker", bg_set, async move {
+        crate::media_summary::worker::run_nofail(
+            media_summary_env,
+            media_summary_cancellation_token,
+        )
+        .await;
+    });
+
     let ai_agent_env = env.clone();
     let ai_agent_cancellation = cancel_token.clone();
     spawn_named_worker("ai_agent_worker", bg_set, async move {
@@ -719,6 +729,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ocr::messenger_media_ocr)
             .service(crate::ocr::messenger_media_ocr_download)
             .service(crate::ocr::messenger_media_ocr_status)
+            .service(crate::media_summary::messenger_media_summary)
             .service(crate::rer_importer::rer_message_attachments_zip)
             .service(
                 crate::messenger::media_thumbnail::messenger_media_thumbnail,
@@ -882,6 +893,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ocr::get_ocr_page)
             .service(crate::ocr::save_ocr_settings)
             .service(crate::ocr::admin_ocr_preview)
+            .service(crate::media_summary::save_settings)
             .service(crate::transcriber::list_instances)
             .service(crate::transcriber::create_instance)
             .service(crate::transcriber::update_instance)

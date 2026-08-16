@@ -9,8 +9,12 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
+  FormControl,
   FormControlLabel,
   IconButton,
+  InputLabel,
+  MenuItem,
+  Select,
   Stack,
   Switch,
   Tooltip,
@@ -45,6 +49,11 @@ import {
   useTableStateContext,
 } from '../../components/mui-customized/table/table-state-provider';
 import { getOcrPage, saveOcrSettings } from '../../services/api/ocr';
+import { saveMediaSummarySettings } from '../../services/api/media-summary';
+import {
+  MediaSummaryAction,
+  MediaSummaryOverlay,
+} from '../shared/message-card/attachment-preview/MediaSummaryPreview';
 
 const DEFAULT_COLUMN_ORDER = [
   'mrt-row-numbers',
@@ -326,6 +335,30 @@ function PreviewPane({ title, children }: { title: string; children: ReactNode }
 function OcrEvaluationDialog({ job, onClose }: { job: OcrJobItem | null; onClose: () => void }) {
   const sourceUrl = job ? `/api/messenger/media/${encodeURIComponent(job.mediaId)}` : '';
   const isImage = job?.contentType.toLowerCase().startsWith('image/') ?? false;
+  const [summaryVisible, setSummaryVisible] = useState(job?.summary != null);
+  const [summaryStatus, setSummaryStatus] = useState(job?.summary ?? null);
+
+  useEffect(() => {
+    setSummaryVisible(job?.summary != null);
+    setSummaryStatus(job?.summary ?? null);
+  }, [job?.mediaId, job?.summary]);
+
+  const sourcePreview = isImage ? (
+    <Box
+      component="img"
+      src={sourceUrl}
+      alt={job?.fileName || 'Оригінал'}
+      sx={{ width: '100%', height: '100%', objectFit: 'contain', p: 1 }}
+    />
+  ) : (
+    <Box
+      component="iframe"
+      title="Оригінал"
+      src={sourceUrl}
+      referrerPolicy="no-referrer"
+      sx={{ flex: 1, minWidth: 0, border: 0 }}
+    />
+  );
 
   return (
     <Dialog
@@ -348,6 +381,11 @@ function OcrEvaluationDialog({ job, onClose }: { job: OcrJobItem | null; onClose
             label={`Тривалість: ${formatDuration(job.durationMs)}`}
           />
         ) : null}
+        <MediaSummaryAction
+          status={summaryStatus}
+          active={summaryVisible}
+          onClick={() => setSummaryVisible((visible) => !visible)}
+        />
         <IconButton aria-label="Закрити" onClick={onClose}>
           <CloseIcon />
         </IconButton>
@@ -357,22 +395,14 @@ function OcrEvaluationDialog({ job, onClose }: { job: OcrJobItem | null; onClose
         sx={{ p: 0, display: 'flex', flexDirection: { xs: 'column', md: 'row' }, minHeight: 0 }}
       >
         <PreviewPane title="Оригінал">
-          {isImage ? (
-            <Box
-              component="img"
-              src={sourceUrl}
-              alt={job?.fileName || 'Оригінал'}
-              sx={{ width: '100%', height: '100%', objectFit: 'contain', p: 1 }}
-            />
-          ) : (
-            <Box
-              component="iframe"
-              title="Оригінал"
-              src={sourceUrl}
-              referrerPolicy="no-referrer"
-              sx={{ flex: 1, minWidth: 0, border: 0 }}
-            />
-          )}
+          <MediaSummaryOverlay
+            source={sourcePreview}
+            mediaId={job?.mediaId}
+            status={summaryStatus}
+            visible={summaryVisible}
+            onStatusChange={setSummaryStatus}
+            onClose={() => setSummaryVisible(false)}
+          />
         </PreviewPane>
         <Box sx={{ borderLeft: { md: 1 }, borderTop: { xs: 1, md: 0 }, borderColor: 'divider' }} />
         <PreviewPane title="Результат OCR">
@@ -396,6 +426,10 @@ function AdminOcrPageBody() {
   const [page, setPage] = useState<OcrPageRsp | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [summarySaving, setSummarySaving] = useState(false);
+  const [summaryEnabled, setSummaryEnabled] = useState(false);
+  const [summaryEngineId, setSummaryEngineId] = useState('');
+  const [summaryDirty, setSummaryDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<OcrJobItem | null>(null);
   const { notify } = usePowerSnackbar();
@@ -423,6 +457,12 @@ function AdminOcrPageBody() {
   }, [load]);
 
   useEffect(() => {
+    if (page == null || summaryDirty) return;
+    setSummaryEnabled(page.mediaSummarySettings.enabled);
+    setSummaryEngineId(page.mediaSummarySettings.aiEngineId ?? '');
+  }, [page, summaryDirty]);
+
+  useEffect(() => {
     if (!activeJobs(page)) return;
     const interval = window.setInterval(() => void load(true), 10_000);
     return () => window.clearInterval(interval);
@@ -445,6 +485,33 @@ function AdminOcrPageBody() {
       });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveSummarySettings() {
+    if (summaryEnabled && summaryEngineId === '') {
+      notify({
+        severity: 'error',
+        message: 'Оберіть ШІ движок для стислого опису документів.',
+      });
+      return;
+    }
+    setSummarySaving(true);
+    try {
+      const mediaSummarySettings = await saveMediaSummarySettings({
+        enabled: summaryEnabled,
+        aiEngineId: summaryEngineId || null,
+      });
+      setPage((current) => (current ? { ...current, mediaSummarySettings } : current));
+      setSummaryDirty(false);
+      notify({ severity: 'success', message: 'Налаштування стислого опису збережено.' });
+    } catch (saveError) {
+      notify({
+        severity: 'error',
+        message: `Не вдалося зберегти стислий опис: ${errorMessage(saveError)}`,
+      });
+    } finally {
+      setSummarySaving(false);
     }
   }
 
@@ -509,6 +576,69 @@ function AdminOcrPageBody() {
             {page?.settings.readinessError ? (
               <PowerAlert severity="warning">{page.settings.readinessError}</PowerAlert>
             ) : null}
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card variant="outlined">
+        <CardContent>
+          <Stack spacing={2}>
+            <Typography variant="h6">Стислий опис документів</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Нові завершені OCR-завдання для JPG і PNG надсилатимуть очищений текст обраному ШІ
+              движку. Наявні документи не обробляються повторно.
+            </Typography>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={summaryEnabled}
+                  disabled={summarySaving || page == null}
+                  onChange={(_, checked) => {
+                    setSummaryEnabled(checked);
+                    setSummaryDirty(true);
+                  }}
+                />
+              }
+              label="Стислий опис документів"
+            />
+            <FormControl fullWidth disabled={summarySaving || page == null}>
+              <InputLabel id="media-summary-engine-label">ШІ движок</InputLabel>
+              <Select
+                labelId="media-summary-engine-label"
+                label="ШІ движок"
+                value={summaryEngineId}
+                onChange={(event) => {
+                  setSummaryEngineId(event.target.value);
+                  setSummaryDirty(true);
+                }}
+              >
+                <MenuItem value="">
+                  <em>Не вибрано</em>
+                </MenuItem>
+                {(page?.mediaSummarySettings.engines ?? []).map((engine) => (
+                  <MenuItem key={engine.id} value={engine.id}>
+                    {engine.name} · {engine.modelName}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {summaryEnabled && (page?.mediaSummarySettings.engines.length ?? 0) === 0 ? (
+              <PowerAlert severity="warning">Немає увімкнених ШІ движків.</PowerAlert>
+            ) : null}
+            <Box>
+              <PowerButton
+                variant="contained"
+                disabled={
+                  summarySaving ||
+                  page == null ||
+                  !summaryDirty ||
+                  (summaryEnabled && summaryEngineId === '')
+                }
+                onClick={() => void saveSummarySettings()}
+              >
+                Зберегти
+              </PowerButton>
+            </Box>
           </Stack>
         </CardContent>
       </Card>

@@ -199,6 +199,12 @@
         { "table": "public.ocr_settings", "strategy": "excluded" },
         { "table": "public.ocr_job", "strategy": "excluded" }
       ]
+    },
+    "echo:m20260816_173322_media_summary": {
+      "changes": [
+        { "table": "public.media_summary_settings", "strategy": "excluded" },
+        { "table": "public.media_summary", "strategy": "excluded" }
+      ]
     }
   },
   "dependencies": {

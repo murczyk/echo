@@ -230,6 +230,8 @@ export function ImageAttachmentPreviewRenderer({
   const [ocrVisible, setOcrVisible] = useState(false);
   const [ocrFullPane, setOcrFullPane] = useState(false);
   const [ocrStatus, setOcrStatus] = useState(currentImage.ocr ?? null);
+  const [summaryVisible, setSummaryVisible] = useState(currentImage.summary != null);
+  const [summaryStatus, setSummaryStatus] = useState(currentImage.summary ?? null);
   const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const copyRequestKeyRef = useRef<string | null>(null);
@@ -281,8 +283,10 @@ export function ImageAttachmentPreviewRenderer({
     setInfoAnchorEl(null);
     setOcrVisible(false);
     setOcrFullPane(false);
+    setSummaryVisible(currentImage.summary != null);
+    setSummaryStatus(currentImage.summary ?? null);
     copyRequestKeyRef.current = null;
-  }, [removePointerListeners]);
+  }, [currentImage.summary, removePointerListeners]);
 
   const resetPreviewState = useCallback(() => {
     resetImageState();
@@ -393,7 +397,7 @@ export function ImageAttachmentPreviewRenderer({
   useEffect(() => {
     resetImageState();
     setOcrStatus(currentImage.ocr ?? null);
-  }, [currentHref, currentImage.ocr, resolvedIndex, resetImageState]);
+  }, [currentHref, currentImage.ocr, currentImage.summary, resolvedIndex, resetImageState]);
 
   useEffect(() => {
     if (stageEl === null) return;
@@ -616,6 +620,10 @@ export function ImageAttachmentPreviewRenderer({
       fullPane={ocrFullPane}
       onOcrChange={setOcrStatus}
       onFullPaneChange={setOcrFullPane}
+      summary={summaryStatus}
+      summaryVisible={summaryVisible}
+      onSummaryChange={setSummaryStatus}
+      onSummaryVisibleChange={setSummaryVisible}
     />
   );
   const header = (

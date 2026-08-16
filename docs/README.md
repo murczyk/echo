@@ -269,9 +269,29 @@ users can open the eye action beside media information for split-screen or
 full-pane preview; admins can review recent jobs and readiness under
 **ШІ → OCR**. Deleting source media also deletes its deterministic OCR object.
 
+The same admin page contains the default-off **Стислий опис документів**
+setting. It requires an enabled AI engine and affects only future media. For
+version one, each newly completed JPEG or PNG OCR result with accepted or
+degraded quality is converted from sanitized HTML to normalized plain text;
+PDF results and existing media are not enqueued. The input is capped at 60,000
+characters while retaining its beginning and end. Filenames, message metadata,
+media identifiers, and image bytes are never sent to the AI engine.
+
+The independent `media_summary_worker` performs one inference at a time and
+stores a Ukrainian structured result directly against `signal_message_media`.
+It has its own leases and bounded exponential retries, so model outages never
+change OCR state or block OCR viewing. The selected engine is captured when a
+summary is enqueued. Source text is cleared after completion or terminal
+failure; its digest and original character count remain for provenance. Users
+see the summary in an escaped plain-text overlay over the lower 30% of the
+original preview pane, including queued, running, retry, and failure states.
+
 Initial rollout is limited to `echo-staging` and `echo-cbr-staging`. The OCR
-tables are deliberately excluded from PeerDB/ClickHouse because they contain
-live queue state, not analytics data.
+and media-summary tables are deliberately excluded from PeerDB/ClickHouse
+because they contain live queue state, source text, and user-facing results,
+not analytics data. After deploying to `echo-cbr-staging`, leave summaries off,
+select the Gemma router under **ШІ → OCR**, enable the setting, and submit a
+fresh JPEG or PNG to verify both preview surfaces before wider rollout.
 
 ### vLLM inference architecture
 
@@ -521,6 +541,7 @@ flowchart TB
     bg --> palitra_workers["Palitra worker<br/>palitra_highlight_worker"]
     bg --> goi_workers["GOI workers<br/>goi_sync_worker_0..N<br/>goi_association_message_uid_worker<br/>palitra_conversion_worker"]
     bg -.-> ocr_worker["OCR worker<br/>default-off · recent messenger documents<br/>extractor jobs · sanitized B2 result"]
+    bg -.-> media_summary_worker["Media summary worker<br/>default-off enqueue · one inference<br/>structured Ukrainian result"]
 
     bg -.-> configured_workers["Configuration-gated workers<br/>analytics_health_log_worker · analytics gateway<br/>activity_details_worker · GreptimeDB<br/>cleanup_networks_worker<br/>fill_comp_freq_worker<br/>inactive_users_worker<br/>location_v2_worker<br/>suggest_message_tags_worker<br/>refresh_models_worker · AI models<br/>cleanup_tmp_worker · in-memory tmp"]
     bg -.-> startup_workers["Startup task<br/>signal_cli_verbose_logger"]
@@ -530,7 +551,7 @@ flowchart TB
     reports --> report_workers_c["Report-history workers<br/>report_history_worker_kmz<br/>report_history_worker_geojson<br/>report_history_worker_etalonka<br/>report_history_worker_etalonka_1<br/>report_history_worker_goi<br/>report_history_worker_unknown<br/>report_history_timeout_worker"]
 
     classDef optional stroke-dasharray:6 4
-    class api_vault_worker,bg_vault_worker,ocr_worker,configured_workers,startup_workers optional
+    class api_vault_worker,bg_vault_worker,ocr_worker,media_summary_worker,configured_workers,startup_workers optional
 ```
 
 `worker_calculate_group_stats` also owns historical group-stat recalculation.

@@ -6,9 +6,13 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { getMediaOcrStatus } = vi.hoisted(() => ({ getMediaOcrStatus: vi.fn() }));
+const { getMediaOcrStatus, getMediaSummary } = vi.hoisted(() => ({
+  getMediaOcrStatus: vi.fn(),
+  getMediaSummary: vi.fn(),
+}));
 
 vi.mock('@mui/material', () => ({
+  alpha: () => 'transparent',
   Box: ({
     component = 'div',
     children,
@@ -46,8 +50,11 @@ vi.mock('@mui/icons-material/Fullscreen', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/FullscreenExit', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Refresh', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Visibility', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/Close', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/Description', () => ({ default: () => <span /> }));
 
 vi.mock('../../../../../services/api/ocr', () => ({ getMediaOcrStatus }));
+vi.mock('../../../../../services/api/media-summary', () => ({ getMediaSummary }));
 
 import {
   getOcrDownloadItems,
@@ -163,6 +170,10 @@ describe('OcrPreview', () => {
           fullPane={false}
           onOcrChange={vi.fn()}
           onFullPaneChange={vi.fn()}
+          summary={null}
+          summaryVisible={false}
+          onSummaryChange={vi.fn()}
+          onSummaryVisibleChange={vi.fn()}
         />,
       );
     });
@@ -204,6 +215,10 @@ describe('OcrPreview', () => {
           fullPane={false}
           onOcrChange={onOcrChange}
           onFullPaneChange={vi.fn()}
+          summary={null}
+          summaryVisible={false}
+          onSummaryChange={vi.fn()}
+          onSummaryVisibleChange={vi.fn()}
         />,
       );
       await Promise.resolve();
@@ -213,6 +228,61 @@ describe('OcrPreview', () => {
     expect(onOcrChange).toHaveBeenCalledWith(
       expect.objectContaining({ state: 'completed', processedPages: 2 }),
     );
+    root.unmount();
+  });
+
+  it('opens the summary over the original pane and restores split view', async () => {
+    getMediaSummary.mockResolvedValueOnce({
+      state: 'completed',
+      summary: 'Короткий опис',
+      who: 'Підрозділ',
+      whereText: null,
+      whatHappened: null,
+      whatNext: null,
+      purpose: null,
+      lastError: null,
+      sourceKind: 'ocr_text',
+      sourceCharCount: 100,
+      aiEngineName: 'Gemma',
+      modelName: 'gemma',
+    });
+    const onFullPaneChange = vi.fn();
+    const onSummaryChange = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <OcrSplitPreview
+          source={<div data-source />}
+          mediaId="media-id"
+          ocr={{
+            state: 'completed',
+            qualityStatus: 'accepted',
+            processedPages: 1,
+            totalPages: 1,
+            lastError: null,
+            queueSize: null,
+          }}
+          visible
+          fullPane
+          onOcrChange={vi.fn()}
+          onFullPaneChange={onFullPaneChange}
+          summary={{ state: 'queued', lastError: null }}
+          summaryVisible
+          onSummaryChange={onSummaryChange}
+          onSummaryVisibleChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(onFullPaneChange).toHaveBeenCalledWith(false);
+    expect(getMediaSummary).toHaveBeenCalledWith('media-id');
+    expect(onSummaryChange).toHaveBeenCalledWith({ state: 'completed', lastError: null });
+    expect(container.textContent).toContain('Короткий опис');
+    expect(container.textContent).toContain('Хто: Підрозділ');
     root.unmount();
   });
 });
