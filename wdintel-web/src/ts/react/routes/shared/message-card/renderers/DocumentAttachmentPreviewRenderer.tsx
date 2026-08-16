@@ -15,7 +15,13 @@ import { deriveDocumentDownloadName, deriveDocumentFileName } from '../message-c
 import { formatSizeBytes } from '../message-card-image-utils';
 import { getNextWheelZoom, isInteractivePreviewTarget } from '../message-card-image-preview-utils';
 import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
-import { OcrPreviewAction, OcrSplitPreview } from '../attachment-preview/OcrPreview';
+import {
+  getOcrDownloadItems,
+  getOcrInfoSections,
+  getOcrInfoSeverity,
+  OcrPreviewAction,
+  OcrSplitPreview,
+} from '../attachment-preview/OcrPreview';
 import { AttachmentPreviewZoomControls } from '../attachment-preview/MessageCardAttachmentPreviewControls';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
@@ -92,6 +98,7 @@ export function DocumentAttachmentPreviewRenderer({
   const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [ocrVisible, setOcrVisible] = useState(false);
   const [ocrFullPane, setOcrFullPane] = useState(false);
+  const [ocrStatus, setOcrStatus] = useState(currentDocument.ocr ?? null);
 
   const infoOpen = infoAnchorEl !== null;
   const currentDocumentKind = currentDocument.kind;
@@ -134,7 +141,8 @@ export function DocumentAttachmentPreviewRenderer({
     setInfoAnchorEl(null);
     setOcrVisible(false);
     setOcrFullPane(false);
-  }, [currentDocument.href, resolvedIndex]);
+    setOcrStatus(currentDocument.ocr ?? null);
+  }, [currentDocument.href, currentDocument.ocr, resolvedIndex]);
 
   useEffect(() => {
     if (!canZoom && zoom !== 100) {
@@ -278,8 +286,10 @@ export function DocumentAttachmentPreviewRenderer({
     <OcrSplitPreview
       source={sourceStage}
       mediaId={currentDocument.id}
+      ocr={ocrStatus}
       visible={ocrVisible}
       fullPane={ocrFullPane}
+      onOcrChange={setOcrStatus}
       onFullPaneChange={setOcrFullPane}
     />
   );
@@ -289,11 +299,13 @@ export function DocumentAttachmentPreviewRenderer({
       fileName={previewFileName}
       openHref={currentDocument.href}
       download={{ href: currentDocument.href, fileName: downloadFileName }}
+      downloadItems={getOcrDownloadItems(currentDocument.id, ocrStatus, previewFileName)}
       navigation={navigation}
       onInfoClick={handleInfoClick}
+      infoSeverity={getOcrInfoSeverity(ocrStatus)}
       additionalActions={
         <OcrPreviewAction
-          ocr={currentDocument.ocr}
+          ocr={ocrStatus}
           active={ocrVisible}
           onClick={() => setOcrVisible((visible) => !visible)}
         />
@@ -322,6 +334,7 @@ export function DocumentAttachmentPreviewRenderer({
         },
         { label: 'Тип перегляду', value: currentDocument.kind },
       ]}
+      sections={getOcrInfoSections(ocrStatus)}
     />
   );
 

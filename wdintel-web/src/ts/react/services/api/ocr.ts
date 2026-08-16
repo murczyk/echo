@@ -1,10 +1,11 @@
 import type {
   OcrPageReq,
   OcrPageRsp,
+  OcrMediaSummary,
   OcrSettingsItem,
   SaveOcrSettingsReq,
 } from '../../../../Bindings';
-import { postJson } from './client';
+import { getJson, postJson } from './client';
 
 export function getOcrPage(limit = 200): Promise<OcrPageRsp> {
   const req: OcrPageReq = { limit };
@@ -13,4 +14,8 @@ export function getOcrPage(limit = 200): Promise<OcrPageRsp> {
 
 export function saveOcrSettings(req: SaveOcrSettingsReq): Promise<OcrSettingsItem> {
   return postJson<OcrSettingsItem>('/api/admin/ocr/settings', req);
+}
+
+export function getMediaOcrStatus(mediaId: string): Promise<OcrMediaSummary> {
+  return getJson<OcrMediaSummary>(`/api/messenger/media/${encodeURIComponent(mediaId)}/ocr/status`);
 }

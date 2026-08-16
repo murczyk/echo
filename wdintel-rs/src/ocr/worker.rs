@@ -97,16 +97,21 @@ pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
 }
 
 async fn process_iteration(env: &Env) -> anyhow::Result<bool> {
+    let worker_enabled = worker_enabled(&env.dbx).await.c(h!())?;
+    let discovered = if worker_enabled {
+        discover_jobs(&env.dbx).await.c(h!())?
+    } else {
+        0
+    };
     if let Some(job) = load_submitted(&env.dbx).await.c(h!())? {
         if job.next_attempt_at > Utc::now().naive_utc() {
-            return Ok(false);
+            return Ok(discovered > 0);
         }
         return poll_submitted_job(env, job).await;
     }
-    if !worker_enabled(&env.dbx).await.c(h!())? {
+    if !worker_enabled {
         return Ok(false);
     }
-    let discovered = discover_jobs(&env.dbx).await.c(h!())?;
     let Some(job) = load_due_queued(&env.dbx).await.c(h!())? else {
         return Ok(discovered > 0);
     };
@@ -166,7 +171,9 @@ pub(crate) async fn extractor_readiness(
     Ok(())
 }
 
-async fn worker_enabled(dbx: &DatabaseConnection) -> anyhow::Result<bool> {
+pub(crate) async fn worker_enabled(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<bool> {
     Ok(ocr_settings::Entity::find_by_id(OCR_SETTINGS_ID)
         .one(dbx)
         .await

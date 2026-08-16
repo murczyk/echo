@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 from echo_document_extractor.canonical import blocks_from_html, table_dimensions
 from echo_document_extractor.config import EndpointConfig, ExtractionConfig
 from echo_document_extractor.geometry import _visual_regions
+from echo_document_extractor.ingest import RasterPage
 from echo_document_extractor.models import (
     CandidateEvidence,
     Cell,
@@ -20,8 +21,10 @@ from echo_document_extractor.models import (
     TextBlock,
 )
 from echo_document_extractor.pipeline import (
+    CandidateDocument,
     Extractor,
     _attach_visual_assets,
+    _collapse_aggregate_text_blocks,
     _empty_cell_supported,
     _expanded_text_bbox,
     _local_candidate,
@@ -81,6 +84,54 @@ def create_image(path: Path) -> None:
     draw.line((10, 80, 290, 80), fill="black", width=2)
     draw.line((150, 10, 150, 170), fill="black", width=2)
     image.save(path)
+
+
+def test_collapses_duplicate_column_aggregates_and_orders_columns() -> None:
+    left_text = "Left page content. " * 25
+    right_text = "Right page content. " * 25
+    def block(identifier: str, bbox: tuple[int, int, int, int], order: int, text: str) -> TextBlock:
+        return TextBlock(
+            kind="paragraph",
+            id=identifier,
+            bbox=bbox,
+            reading_order=order,
+            paragraphs=[text],
+        )
+
+    blocks = [
+        block("right-aggregate", (510, 0, 990, 900), 0, right_text),
+        block("right-child-1", (520, 20, 900, 80), 1, "A"),
+        block("right-child-2", (520, 100, 900, 160), 2, "B"),
+        block("right-child-3", (520, 180, 900, 240), 3, "C"),
+        block("left-aggregate", (10, 0, 490, 900), 4, left_text),
+        block("left-child-1", (20, 20, 400, 80), 5, "D"),
+        block("left-child-2", (20, 100, 400, 160), 6, "E"),
+        block("left-child-3", (20, 180, 400, 240), 7, "F"),
+        block("right-aggregate-copy", (510, 0, 990, 900), 8, right_text),
+        Table(
+            id="signature-table",
+            bbox=(0, 0, 1000, 900),
+            reading_order=9,
+            cells=[
+                Cell(id="signature-1", row=0, column=0, bbox=(0, 0, 1000, 900)),
+                Cell(id="signature-2", row=0, column=1, bbox=(0, 0, 1000, 900)),
+            ],
+        ),
+    ]
+
+    collapsed, removed = _collapse_aggregate_text_blocks(blocks, (0, 0, 1000, 900), 500)
+
+    assert [block.id for block in collapsed] == ["left-aggregate", "right-aggregate"]
+    assert removed == {
+        "right-child-1",
+        "right-child-2",
+        "right-child-3",
+        "left-child-1",
+        "left-child-2",
+        "left-child-3",
+        "right-aggregate-copy",
+        "signature-table",
+    }
 
 
 def test_visual_regions_reject_sparse_text_lines() -> None:
@@ -309,6 +360,154 @@ def test_local_candidate_excludes_adjacent_row_evidence() -> None:
     selected = _local_candidate("p1-b2-r12c1", cell_bbox, supporting)
     assert selected is not None
     assert selected.text == "11."
+
+
+async def test_unscoped_text_unit_does_not_fall_back_to_full_page_ocr(
+    config: ExtractionConfig,
+) -> None:
+    page_bbox = (0, 0, 100, 100)
+    header = TextBlock(
+        kind="heading",
+        id="p1-b1",
+        bbox=(0, 0, 100, 20),
+        reading_order=0,
+        paragraphs=["Stable header 11"],
+        level=1,
+    )
+    body = TextBlock(
+        kind="paragraph",
+        id="p1-b2",
+        bbox=page_bbox,
+        reading_order=1,
+        paragraphs=["Model section 22"],
+    )
+    candidates = [
+        CandidateDocument(
+            CandidateEvidence(
+                id=source,
+                source=source,
+                page_id="p1",
+                unit_id="p1",
+                bbox=page_bbox,
+                html="<article></article>",
+            ),
+            [header, body],
+        )
+        for source in ("nuextract3", "gemma")
+    ]
+    supporting = [
+        Evidence(
+            id="ocr-header",
+            source="ppocr",
+            page_id="p1",
+            text="Stable header 11",
+            bbox=(0, 0, 100, 20),
+        ),
+        Evidence(
+            id="ocr-body",
+            source="ppocr",
+            page_id="p1",
+            text="Unrelated local wording 22 and 33",
+            bbox=(0, 20, 100, 100),
+        ),
+    ]
+    raster = RasterPage("page.png", 0, "source", "raster", Image.new("RGB", (100, 100)))
+
+    blocks, evidence, _ = await Extractor(config)._reconcile_document_units(
+        raster,
+        "p1",
+        candidates,
+        supporting,
+        [],
+        [],
+    )
+
+    assert [block.paragraphs for block in blocks if isinstance(block, TextBlock)] == [
+        ["Stable header 11"],
+        ["Model section 22"],
+    ]
+    assert not any(item.source == "local_evidence" for item in evidence)
+
+
+async def test_text_retry_rejects_payload_without_canonical_text_block(
+    config: ExtractionConfig,
+) -> None:
+    raster = RasterPage("page.png", 0, "source", "raster", Image.new("RGB", (100, 100)))
+    base = TextBlock(
+        kind="paragraph",
+        id="p1-b1",
+        bbox=(0, 0, 100, 50),
+        reading_order=0,
+        paragraphs=["Expected text"],
+    )
+    extractor = Extractor(
+        config,
+        [StaticAdapter("gemma", "<article><table><tr><td>A 123</td></tr></table></article>")],
+    )
+
+    evidence, values = await extractor._retry_text(raster, "p1", base.id, base)
+
+    assert values == {}
+    assert not evidence[0].valid
+    assert "malformed_text_payload" in evidence[0].rejection_reasons
+
+
+async def test_ambiguous_table_cells_do_not_each_fall_back_to_full_page_ocr(
+    config: ExtractionConfig,
+) -> None:
+    page_bbox = (0, 0, 100, 100)
+    cells = [
+        Cell(
+            id=f"p1-b1-r1c{column + 1}",
+            row=0,
+            column=column,
+            bbox=page_bbox,
+            paragraphs=[text],
+        )
+        for column, text in enumerate(("Commander 4", "major", "Surname"))
+    ]
+    table = Table(id="p1-b1", bbox=page_bbox, reading_order=0, cells=cells)
+    candidates = [
+        CandidateDocument(
+            CandidateEvidence(
+                id=source,
+                source=source,
+                page_id="p1",
+                unit_id="p1",
+                bbox=page_bbox,
+                html="<article></article>",
+            ),
+            [table],
+        )
+        for source in ("nuextract3", "gemma")
+    ]
+    supporting = [
+        Evidence(
+            id="ocr-page",
+            source="ppocr",
+            page_id="p1",
+            text="Earlier page content 1 2 3 4",
+            bbox=page_bbox,
+        )
+    ]
+    raster = RasterPage("page.png", 0, "source", "raster", Image.new("RGB", (100, 100)))
+
+    blocks, evidence, _ = await Extractor(config)._reconcile_document_units(
+        raster,
+        "p1",
+        candidates,
+        supporting,
+        [],
+        [],
+    )
+
+    output = next(block for block in blocks if isinstance(block, Table))
+    assert [cell.paragraphs for cell in output.cells] == [
+        ["Commander 4"],
+        ["major"],
+        ["Surname"],
+    ]
+    assert not any(item.source == "local_evidence" for item in evidence)
 
 
 def test_text_bbox_expands_across_adjacent_ocr_lines_only() -> None:

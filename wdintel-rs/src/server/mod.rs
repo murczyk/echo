@@ -717,6 +717,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::delta::login::handle_redirect)
             .service(crate::rer_importer::messenger_media)
             .service(crate::ocr::messenger_media_ocr)
+            .service(crate::ocr::messenger_media_ocr_download)
+            .service(crate::ocr::messenger_media_ocr_status)
             .service(crate::rer_importer::rer_message_attachments_zip)
             .service(
                 crate::messenger::media_thumbnail::messenger_media_thumbnail,

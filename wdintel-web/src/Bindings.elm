@@ -11914,6 +11914,7 @@ type alias OcrMediaSummary =
     , processedPages : Int
     , totalPages : Int
     , lastError : Maybe (String)
+    , queueSize : Maybe (Int)
     }
 
 
@@ -11925,6 +11926,7 @@ ocrMediaSummaryEncoder struct =
         , ( "processedPages", (Json.Encode.int) struct.processedPages )
         , ( "totalPages", (Json.Encode.int) struct.totalPages )
         , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "queueSize", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.queueSize )
         ]
 
 
@@ -11979,6 +11981,7 @@ type alias OcrJobItem =
     , totalPages : Int
     , attempts : Int
     , lastError : Maybe (String)
+    , durationMs : Maybe (Int)
     , updatedAt : Int
     , completedAt : Maybe (Int)
     , previewUrl : Maybe (String)
@@ -12000,6 +12003,7 @@ ocrJobItemEncoder struct =
         , ( "totalPages", (Json.Encode.int) struct.totalPages )
         , ( "attempts", (Json.Encode.int) struct.attempts )
         , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "durationMs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.durationMs )
         , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
         , ( "completedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.completedAt )
         , ( "previewUrl", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.previewUrl )
@@ -20063,6 +20067,7 @@ ocrMediaSummaryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "processedPages" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totalPages" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "queueSize" (Json.Decode.nullable (Json.Decode.int))))
 
 
 ocrSettingsItemDecoder : Json.Decode.Decoder OcrSettingsItem
@@ -20099,6 +20104,7 @@ ocrJobItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totalPages" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attempts" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "durationMs" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completedAt" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "previewUrl" (Json.Decode.nullable (Json.Decode.string))))

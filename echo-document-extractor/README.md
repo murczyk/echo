@@ -7,7 +7,7 @@ as an authenticated, durable asynchronous service on
 `http://100.93.77.92:8000` inside `ct-echo-document-extractor`.
 
 ```bash
-uv sync --extra dev
+uv sync --extra cpu --extra dev
 echo-doc extract scan.pdf --output raw/result --config config.example.yaml
 echo-doc validate raw/result
 ```
@@ -58,7 +58,7 @@ package creation.
 ## Development and checks
 
 ```bash
-uv sync --extra dev
+uv sync --extra cpu --extra dev
 uv lock --check
 uv run ruff check .
 uv run pytest -m 'not live'
@@ -69,16 +69,17 @@ CPU development and CUDA 12.6 production runtimes with
 `paddleocr[doc-parser]` `3.7.0`. PP-StructureV3 is therefore installed with its
 required parser dependencies and a separate PaddlePaddle inference runtime.
 Production uses `gpu:0` in an `echo-gpu` Incus container and points every model
-at the immutable model package; startup is validated with networking disabled.
+at an immutable checksummed model set; startup is validated with networking
+disabled.
 
 ## Build and deploy
 
-The Debian 13 `amd64` builder is `echo-build-deb13-main` and must have `uv` in
-`PATH` and the runtime libraries `libgl1`, `libglib2.0-0t64`, and `libgomp1`.
-Its
-`/var/cache/echo-document-extractor/models` directory must contain the complete
-offline model tree and a `PP-StructureV3.yaml` whose enabled `model_dir` values
-point below `/opt/echo-document-extractor/models`. To create that initial tree:
+The Debian 13 `amd64` builder is `echo-build-deb13-main` and must have the
+version of `uv` pinned in `versions.env`. The application package contains only
+source, `uv.lock`, service/configuration files, pinned deployment tools, and the
+SigNoz collector. It does not contain Python dependencies or Paddle models.
+
+To prepare the initial model tree on a trusted GPU-capable host:
 
 ```bash
 uv run python bin/prepare-models.py \
@@ -86,7 +87,20 @@ uv run python bin/prepare-models.py \
   --output /var/cache/echo-document-extractor/models
 ```
 
-Then build and deploy both matching packages:
+Publish it once with a write-capable Backblaze key. The publisher uploads the
+checksum manifest last, so a partially uploaded set cannot become active:
+
+```bash
+AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... just publish-models
+```
+
+This runs against `/var/cache/echo-document-extractor/models` on the Debian 13
+builder. `just publish-models-local` is available when `MODEL_SOURCE_DIR` is
+present on the operator machine. Read-only credentials cannot publish the
+initial model set.
+
+Normal builds and deployments need only the read-only
+`ECHOUASTORAGE_LFS_RO_*` credentials already stored in the repository `.env`:
 
 ```bash
 just package
@@ -96,12 +110,16 @@ just verify
 just verify-clients
 ```
 
-`echo-document-extractor` contains the frozen application environment,
-collector, units, templates, and utilities. `echo-document-extractor-models`
-contains only immutable checksummed model data and must have the exact same
-version. Deployment compares package hashes, validates models and offline
-Paddle initialization, and restarts only affected units. It never changes an
-Echo instance or a vLLM router.
+At deployment, `uv sync --frozen` creates a versioned GPU environment below
+`/opt/echo-document-extractor/runtime` only when the lock hash changes. Wheels
+remain in `/var/cache/echo-document-extractor/uv`. Model objects are downloaded
+from the prefix in `/etc/echo-document-extractor/models.env`, keyed by SHA-256,
+materialized as a read-only versioned set, and activated atomically. Existing
+objects, environments, and successful offline Paddle gates are reused. A code-
+only redeploy therefore transfers only the small application package and does
+not reinstall Python or copy 1.6 GiB of models. The first transition can reuse
+the verified files from the legacy model package without downloading them
+again.
 
 The installer creates `/etc/echo-document-extractor/secret.env` with a random
 bearer token, owner `root:echo-document-extractor`, mode `0640`. The repository
@@ -126,12 +144,11 @@ model/token, retry, spool, cleanup, process, host, and journald telemetry with
 `host.name=ct-echo-document-extractor`. Filenames, contents, and job IDs never
 become metric labels.
 
-Rollback requires the retained matching package pair:
+Rollback installs a retained application package; lock-keyed runtimes and
+manifest-keyed models remain locally cached:
 
 ```bash
-PREVIOUS_APP_DEB=/path/app.deb \
-PREVIOUS_MODELS_DEB=/path/models.deb \
-just rollback
+PREVIOUS_APP_DEB=/path/app.deb just rollback
 ```
 
 Stopping or rolling back these units does not alter any Echo instance or vLLM

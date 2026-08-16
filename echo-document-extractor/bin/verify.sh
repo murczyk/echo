@@ -10,8 +10,8 @@ for unit in "${units[@]}"; do
   systemctl is-enabled --quiet "$unit"
   systemctl is-active --quiet "$unit"
 done
-cd /opt/echo-document-extractor/models
-sha256sum --check --strict SHA256SUMS >/dev/null
+/opt/echo-document-extractor/bin/verify-models.sh >/dev/null
+[[ -x /opt/echo-document-extractor/runtime/current/bin/python ]]
 source /etc/echo-document-extractor/secret.env
 base=http://100.93.77.92:8000
 curl -fsS "$base/health/live" | grep -F '"live"' >/dev/null

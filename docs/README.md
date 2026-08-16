@@ -234,7 +234,10 @@ are documented in
 It is a separate native-systemd deployment in a GPU-backed Incus container on
 `echo-gpu` and does not share process or storage ownership with an Echo instance
 or a vLLM router. The original powered-off Proxmox CT is retained as the
-host-level rollback copy.
+host-level rollback copy. Its small Debian package carries source and the
+frozen lock only; production Python environments are cached by lock hash and
+immutable Paddle model sets are pulled from Backblaze with the repository's
+read-only LFS key, verified by SHA-256, and activated atomically.
 
 ### OCR application integration
 

@@ -4610,6 +4610,7 @@ export type OcrMediaSummary = {
   processedPages: number;
   totalPages: number;
   lastError: string | null;
+  queueSize: number | null;
 };
 
 export type OcrSettingsItem = {
@@ -4640,6 +4641,7 @@ export type OcrJobItem = {
   totalPages: number;
   attempts: number;
   lastError: string | null;
+  durationMs: number | null;
   updatedAt: number;
   completedAt: number | null;
   previewUrl: string | null;

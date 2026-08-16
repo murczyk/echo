@@ -50,6 +50,19 @@ vi.mock('@mui/material', () => ({
       </Component>
     );
   },
+  Menu: ({ children, open }: { children?: ReactNode; open: boolean }) =>
+    open ? <div role="menu">{children}</div> : null,
+  MenuItem: ({
+    children,
+    component,
+    ...props
+  }: {
+    children?: ReactNode;
+    component?: string;
+  } & Record<string, unknown>) => {
+    const Component = component ?? 'button';
+    return <Component {...props}>{children}</Component>;
+  },
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Tooltip: ({ children, title }: { children?: ReactNode; title?: ReactNode }) => (
     <span data-tooltip-title={typeof title === 'string' ? title : undefined}>{children}</span>
@@ -143,7 +156,7 @@ describe('MessageCardAttachmentPreviewActions', () => {
     });
 
     const cardDownload = container.querySelector('a[download="shared.txt"]');
-    const previewDownload = container.querySelector('a[download="preview.png"]');
+    const previewDownload = container.querySelector('button[aria-label="Скачати"]');
 
     await act(async () => {
       cardDownload?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
@@ -151,14 +164,49 @@ describe('MessageCardAttachmentPreviewActions', () => {
 
     expect(cardDownload?.getAttribute('aria-label')).toBe('Завантаження…');
     expect(previewDownload?.getAttribute('disabled')).not.toBeNull();
-    const duplicateEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
     await act(async () => {
-      previewDownload?.dispatchEvent(duplicateEvent);
+      previewDownload?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    expect(duplicateEvent.defaultPrevented).toBe(true);
+    expect(container.querySelector('[role="menu"]')).toBeNull();
 
     root.unmount();
     fetchMock.mockRestore();
+  });
+
+  it('shows the original first and OCR formats in the download menu', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardAttachmentPreviewActions
+          download={{ href: '/original', fileName: 'scan.png' }}
+          downloadItems={[
+            {
+              label: 'Скачати DOCX',
+              download: { href: '/ocr/docx', fileName: 'scan-ocr.docx' },
+              downloadKey: 'ocr:docx',
+            },
+          ]}
+          navigation={{ index: 0, count: 1, onPrevious: vi.fn(), onNext: vi.fn() }}
+          onClose={vi.fn()}
+          downloadKey="media:scan"
+          isDownloadStarting={() => false}
+          onDownloadStart={() => true}
+        />,
+      );
+    });
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Скачати"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.querySelector('[role="menu"]')?.textContent).toBe(
+      'Скачати оригіналСкачати DOCX',
+    );
+    root.unmount();
   });
 
   it('forwards span props and refs from the disabled cursor wrapper', async () => {

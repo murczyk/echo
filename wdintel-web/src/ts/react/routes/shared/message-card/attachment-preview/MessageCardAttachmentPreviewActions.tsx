@@ -4,19 +4,22 @@ import type { MessageCardPreviewNavigation } from './message-card-preview.types'
 import {
   MessageCardAttachmentPreviewHeader,
   type AttachmentPreviewDownload,
+  type AttachmentPreviewDownloadItem,
 } from './MessageCardAttachmentPreviewHeader';
 
-export type { AttachmentPreviewDownload };
+export type { AttachmentPreviewDownload, AttachmentPreviewDownloadItem };
 
 export function MessageCardAttachmentPreviewActions(props: {
   fileName?: string | null;
   openHref?: string | null;
   download?: AttachmentPreviewDownload;
+  downloadItems?: AttachmentPreviewDownloadItem[];
   downloadKey?: string;
   navigation: MessageCardPreviewNavigation;
   additionalActions?: ReactNode;
   status?: ReactNode;
   onInfoClick?: (event: MouseEvent<HTMLButtonElement>) => void;
+  infoSeverity?: 'warning' | 'error';
   isFullscreen?: boolean;
   canFullscreen?: boolean;
   onToggleFullscreen?: () => void;

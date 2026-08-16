@@ -21,6 +21,10 @@ install -d -m 0750 -o root -g echo-document-extractor-otel \
   /etc/echo-document-extractor-otel
 install -d -m 0700 -o echo-document-extractor -g echo-document-extractor \
   /var/lib/echo-document-extractor /var/lib/echo-document-extractor/spool
+install -d -m 0755 -o root -g root /var/cache/echo-document-extractor \
+  /var/cache/echo-document-extractor/model-objects \
+  /var/cache/echo-document-extractor/uv \
+  /var/cache/echo-document-extractor/verified-assets
 
 if [[ ! -f /etc/echo-document-extractor/config.yaml ]]; then
   install -m 0640 -o root -g echo-document-extractor \
@@ -31,6 +35,11 @@ if [[ ! -f /etc/echo-document-extractor/firewall-sources.conf ]]; then
   install -m 0640 -o root -g echo-document-extractor \
     /usr/share/echo-document-extractor/firewall-sources.conf \
     /etc/echo-document-extractor/firewall-sources.conf
+fi
+if [[ ! -f /etc/echo-document-extractor/models.env ]]; then
+  install -m 0640 -o root -g echo-document-extractor \
+    /usr/share/echo-document-extractor/models.env \
+    /etc/echo-document-extractor/models.env
 fi
 if [[ ! -f /etc/echo-document-extractor/secret.env ]]; then
   token=$(openssl rand -base64 48 | tr -d '\n')

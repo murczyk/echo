@@ -11,6 +11,7 @@ pub struct OcrMediaSummary {
     pub processed_pages: i32,
     pub total_pages: i32,
     pub last_error: Option<String>,
+    pub queue_size: Option<i64>,
 }
 
 #[derive(
@@ -53,6 +54,7 @@ pub struct OcrJobItem {
     pub total_pages: i32,
     pub attempts: i32,
     pub last_error: Option<String>,
+    pub duration_ms: Option<i64>,
     pub updated_at: i64,
     pub completed_at: Option<i64>,
     pub preview_url: Option<String>,

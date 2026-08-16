@@ -60,6 +60,7 @@ from .models import (
     safe_relative_path,
 )
 from .ocr import PaddleEvidenceProvider
+from .postprocess import TextCorrection, normalize_document_unit_designations
 from .reconcile import needs_retry, reconcile
 from .render import render_html, render_markdown
 from .sanitize import has_fatal_sanitization_reason, sanitize_candidate
@@ -99,6 +100,7 @@ class ProcessedPage:
 T = TypeVar("T", TextBlock, Cell)
 PageCallback = Callable[[int, int | None], Awaitable[None] | None]
 SUPPORTING_EVIDENCE_MIN_COVERAGE = 0.5
+UNSCOPED_UNIT_PAGE_COVERAGE = 0.8
 
 
 class ExtractionMetrics(Protocol):
@@ -202,6 +204,9 @@ class Extractor:
                 raster.image.close()
             index += 1
         document_id = _document_id(pages)
+        document = Document(id=document_id, pages=pages)
+        document, corrections = normalize_document_unit_designations(document)
+        _record_text_corrections(corrections, all_evidence, decisions)
         unresolved = sum(decision.unresolved for decision in decisions)
         hard_failures = sum(not decision.hard_checks_passed for decision in decisions)
         if any("request_error" in item.rejection_reasons for item in all_evidence):
@@ -216,7 +221,6 @@ class Extractor:
             status = Status.DEGRADED
         else:
             status = Status.ACCEPTED
-        document = Document(id=document_id, pages=pages)
         quality = QualityReport(
             status=status,
             page_count=len(pages),
@@ -330,6 +334,13 @@ class Extractor:
                 visual_regions,
             )
             evidence.extend(unit_evidence)
+            column_split = _column_split_from_evidence(supporting, page_bbox)
+            blocks, removed_unit_ids = _collapse_aggregate_text_blocks(
+                blocks,
+                page_bbox,
+                column_split,
+            )
+            decisions = [decision for decision in decisions if decision.unit_id not in removed_unit_ids]
             if decisions and not any(decision.hard_checks_passed for decision in decisions):
                 block, assets = unreadable_block(page_id, page_bbox, raster.png_bytes())
                 block = block.model_copy(update={"decision_id": f"decision-{page_id}-unreadable"})
@@ -399,6 +410,7 @@ class Extractor:
             blocks,
             visual_regions,
         )
+        blocks = _order_blocks(blocks, page_bbox, _column_split_from_evidence(supporting, page_bbox))
         evidence.extend(visual_evidence)
         decisions.extend(visual_decisions)
         return ProcessedPage(
@@ -566,6 +578,8 @@ class Extractor:
         output: list[Block] = []
         evidence: list[Evidence] = []
         decisions: list[Decision] = []
+        page_bbox: BBox = (0, 0, raster.image.width, raster.image.height)
+        column_split = _column_split_from_evidence(supporting, page_bbox)
         for order, base_block in enumerate(base.blocks):
             aligned = [
                 (item.evidence, alignments[item.evidence.id].get(order))
@@ -609,12 +623,12 @@ class Extractor:
                 decisions.extend(table_decisions)
             else:
                 text_values = [(parent, block) for parent, block in aligned if isinstance(block, TextBlock)]
-                matched_bbox = _matching_text_bbox(base_block, supporting)
+                matched_bbox = _matching_text_bbox(base_block, supporting, column_split)
                 base_block = base_block.model_copy(
                     update={
                         "bbox": matched_bbox
                         if matched_bbox is not None
-                        else _expanded_text_bbox(base_block.bbox, supporting)
+                        else _expanded_text_bbox(base_block.bbox, supporting, column_split)
                     }
                 )
                 block, block_evidence, decision = await self._select_text_block(
@@ -623,6 +637,11 @@ class Extractor:
                     base_block,
                     text_values,
                     supporting,
+                    allow_spatial_fallback=_spatial_fallback_allowed(
+                        base_block.bbox,
+                        page_bbox,
+                        len(base.blocks),
+                    ),
                 )
                 output.append(block.model_copy(update={"reading_order": order}))
                 evidence.extend(block_evidence)
@@ -636,6 +655,7 @@ class Extractor:
         base: TextBlock,
         values: list[tuple[Evidence, TextBlock]],
         supporting: list[Evidence],
+        allow_spatial_fallback: bool = True,
     ) -> tuple[TextBlock, list[Evidence], Decision]:
         unit_id = base.id
         candidates = [_evidence_for_text(parent, block, unit_id, base.bbox) for parent, block in values]
@@ -644,8 +664,10 @@ class Extractor:
             unit_id, candidates, _supporting_for_bbox(supporting, base.bbox), base.bbox
         )
         retry_record = None
-        if _should_retry(candidates, len(self.adapters)) and not _selected_is_grounded(
-            selected, base.bbox, supporting
+        if (
+            allow_spatial_fallback
+            and _should_retry(candidates, len(self.adapters))
+            and not _selected_is_grounded(selected, base.bbox, supporting)
         ):
             retry, retry_blocks = await self._retry_text(raster, page_id, unit_id, base)
             candidates.extend(retry)
@@ -662,7 +684,7 @@ class Extractor:
             if _family_outputs_conflict(retry) and not _unique_cross_family_consensus(selected, candidates):
                 decision.unresolved = True
                 decision.reason += "; conflict persisted after retry"
-        if selected is None:
+        if selected is None and allow_spatial_fallback:
             local = _local_candidate(unit_id, base.bbox, supporting)
             if local:
                 local_block = base.model_copy(
@@ -684,6 +706,11 @@ class Extractor:
             decision.unresolved = True
             decision.reason += "; missing independent family"
         chosen = by_id.get(selected.id) if selected else base
+        if chosen is None:
+            chosen = base
+            decision.unresolved = True
+            decision.hard_checks_passed = False
+            decision.reason += "; selected text candidate had no canonical text block"
         chosen = chosen.model_copy(
             update={
                 "id": unit_id,
@@ -702,6 +729,7 @@ class Extractor:
         base: TextBlock,
     ) -> tuple[list[Evidence], dict[str, TextBlock]]:
         candidates = await self._request_candidates(raster, page_id, unit_id, base.bbox, retry=True)
+        evidence = []
         result: dict[str, TextBlock] = {}
         for candidate in candidates:
             blocks = (
@@ -718,7 +746,18 @@ class Extractor:
             block = next((item for item in blocks if isinstance(item, TextBlock)), None)
             if block:
                 result[candidate.id] = block
-        return candidates, result
+            elif candidate.valid:
+                candidate = candidate.model_copy(
+                    update={
+                        "valid": False,
+                        "rejection_reasons": [
+                            *candidate.rejection_reasons,
+                            "malformed_text_payload",
+                        ],
+                    }
+                )
+            evidence.append(candidate)
+        return evidence, result
 
     async def _reconcile_table(
         self,
@@ -826,6 +865,7 @@ class Extractor:
         evidence = list(table_candidates)
         decisions = [table_decision]
         cells = []
+        ambiguous_cell_ids = _ambiguous_cell_ids(base)
         compatible = [(parent, table) for parent, table in tables if _topology(table) == topology]
         for cell in sorted(base.cells, key=lambda item: (item.row, item.column)):
             candidates_with_cells = _matching_table_cells(cell, compatible)
@@ -836,6 +876,7 @@ class Extractor:
                 candidates_with_cells,
                 supporting,
                 allow_retry=False,
+                allow_spatial_fallback=cell.id not in ambiguous_cell_ids,
             )
             cells.append(chosen)
             evidence.extend(cell_evidence)
@@ -863,13 +904,14 @@ class Extractor:
         values: list[tuple[Evidence, Cell]],
         supporting: list[Evidence],
         allow_retry: bool = True,
+        allow_spatial_fallback: bool = True,
     ) -> tuple[Cell, list[Evidence], Decision]:
         candidates = [_evidence_for_cell(parent, cell, base.id, base.bbox) for parent, cell in values]
         by_id = {candidate.id: cell for candidate, (_, cell) in zip(candidates, values, strict=True)}
         selected, decision = reconcile(
             base.id, candidates, _supporting_for_bbox(supporting, base.bbox), base.bbox
         )
-        local = _local_candidate(base.id, base.bbox, supporting)
+        local = _local_candidate(base.id, base.bbox, supporting) if allow_spatial_fallback else None
         empty_supported = _empty_cell_supported(base, supporting)
         locally_supported = local is not None or empty_supported
         retry_record = None
@@ -987,6 +1029,51 @@ class Extractor:
             raise RuntimeError("failure canonical HTML round-trip lost IR relationships")
         result.markdown = render_markdown(result)
         return result
+
+
+def _record_text_corrections(
+    corrections: list[TextCorrection],
+    evidence: list[Evidence],
+    decisions: list[Decision],
+) -> None:
+    decisions_by_id = {decision.id: decision for decision in decisions}
+    for correction in corrections:
+        decision = decisions_by_id.get(correction.decision_id or "")
+        previous_evidence_id = decision.selected_evidence_id if decision else None
+        evidence_id = f"postprocess-{correction.unit_id}"
+        evidence.append(
+            CandidateEvidence(
+                id=evidence_id,
+                source="document_context_rules",
+                source_family="rules",
+                page_id=correction.page_id,
+                unit_id=correction.unit_id,
+                text=correction.after,
+                html="<p>" + std_html.escape(correction.after).replace("\n", "<br>") + "</p>",
+                bbox=correction.bbox,
+                confidence=correction.confidence,
+                metadata={
+                    "engine": "document_context_rules_v1",
+                    "before": correction.before,
+                    "previous_evidence_id": previous_evidence_id,
+                },
+            )
+        )
+        if decision is None:
+            decision = Decision(
+                id=f"decision-{correction.unit_id}-postprocess",
+                unit_id=correction.unit_id,
+                selected_evidence_id=evidence_id,
+                reason="same-page canonical military designation normalization",
+                hard_checks_passed=True,
+            )
+            decisions.append(decision)
+            decisions_by_id[decision.id] = decision
+            continue
+        if previous_evidence_id and previous_evidence_id not in decision.alternative_evidence_ids:
+            decision.alternative_evidence_ids.append(previous_evidence_id)
+        decision.selected_evidence_id = evidence_id
+        decision.reason += "; same-page canonical military designation normalization"
 
 
 def _resolve_inputs(
@@ -1913,6 +2000,17 @@ def _table_family_conflict(candidates: list[Evidence]) -> bool:
     return len({family for family, _ in values}) >= 2 and len({topology for _, topology in values}) > 1
 
 
+def _spatial_fallback_allowed(bbox: BBox, page_bbox: BBox, sibling_count: int) -> bool:
+    return sibling_count <= 1 or _intersection_ratio(page_bbox, bbox) < UNSCOPED_UNIT_PAGE_COVERAGE
+
+
+def _ambiguous_cell_ids(table: Table) -> set[str]:
+    cells_by_bbox: dict[BBox, list[Cell]] = {}
+    for cell in table.cells:
+        cells_by_bbox.setdefault(cell.bbox, []).append(cell)
+    return {cell.id for cells in cells_by_bbox.values() if len(cells) > 1 for cell in cells}
+
+
 def _local_candidate(unit_id: str, bbox: BBox, supporting: list[Evidence]) -> Evidence | None:
     local = [
         item
@@ -1947,12 +2045,20 @@ def _local_candidate(unit_id: str, bbox: BBox, supporting: list[Evidence]) -> Ev
     )
 
 
-def _expanded_text_bbox(bbox: BBox, supporting: list[Evidence]) -> BBox:
+def _expanded_text_bbox(
+    bbox: BBox,
+    supporting: list[Evidence],
+    column_split: float | None = None,
+) -> BBox:
     result = bbox
+    side = _column_side(bbox, column_split)
     candidates = [
         item.bbox
         for item in supporting
-        if item.source in {"ppocr", "embedded_pdf"} and item.text and item.bbox is not None
+        if item.source in {"ppocr", "embedded_pdf"}
+        and item.text
+        and item.bbox is not None
+        and _column_side(item.bbox, column_split) == side
     ]
     changed = True
     while changed:
@@ -1975,14 +2081,22 @@ def _expanded_text_bbox(bbox: BBox, supporting: list[Evidence]) -> BBox:
     return result
 
 
-def _matching_text_bbox(block: TextBlock, supporting: list[Evidence]) -> BBox | None:
+def _matching_text_bbox(
+    block: TextBlock,
+    supporting: list[Evidence],
+    column_split: float | None = None,
+) -> BBox | None:
     text = _block_text_value(block.paragraphs)
     if len(text) < 8:
         return None
+    side = _column_side(block.bbox, column_split)
     candidates = [
         item
         for item in supporting
-        if item.source in {"ppocr", "embedded_pdf"} and item.text and item.bbox is not None
+        if item.source in {"ppocr", "embedded_pdf"}
+        and item.text
+        and item.bbox is not None
+        and _column_side(item.bbox, column_split) == side
     ]
     if not candidates:
         return None
@@ -2003,6 +2117,127 @@ def _matching_text_bbox(block: TextBlock, supporting: list[Evidence]) -> BBox | 
         max(bbox[2] for bbox in boxes),
         max(bbox[3] for bbox in boxes),
     )
+
+
+def _column_side(bbox: BBox, column_split: float | None) -> int:
+    if column_split is None:
+        return 0
+    return int((bbox[0] + bbox[2]) / 2 >= column_split)
+
+
+def _column_split_from_evidence(supporting: list[Evidence], page_bbox: BBox) -> float | None:
+    boxes = [
+        item.bbox
+        for item in supporting
+        if item.source in {"ppocr", "embedded_pdf"} and item.text and item.bbox is not None
+    ]
+    return _column_split(boxes, page_bbox, minimum_group=3)
+
+
+def _column_split(boxes: list[BBox], page_bbox: BBox, minimum_group: int) -> float | None:
+    if len(boxes) < minimum_group * 2:
+        return None
+    centers = sorted((bbox[0] + bbox[2]) / 2 for bbox in boxes)
+    overall_mean = sum(centers) / len(centers)
+    overall_error = sum((value - overall_mean) ** 2 for value in centers)
+    if overall_error == 0:
+        return None
+    best: tuple[float, int, float, float] | None = None
+    for index in range(minimum_group, len(centers) - minimum_group + 1):
+        left = centers[:index]
+        right = centers[index:]
+        left_mean = sum(left) / len(left)
+        right_mean = sum(right) / len(right)
+        error = sum((value - left_mean) ** 2 for value in left)
+        error += sum((value - right_mean) ** 2 for value in right)
+        candidate = (error, index, left_mean, right_mean)
+        if best is None or candidate < best:
+            best = candidate
+    if best is None:
+        return None
+    error, index, left_mean, right_mean = best
+    width = page_bbox[2] - page_bbox[0]
+    if right_mean - left_mean < width * 0.3 or error > overall_error * 0.55:
+        return None
+    return (centers[index - 1] + centers[index]) / 2
+
+
+def _collapse_aggregate_text_blocks(
+    blocks: list[Block],
+    page_bbox: BBox,
+    column_split: float | None = None,
+) -> tuple[list[Block], set[str]]:
+    unique: list[Block] = []
+    removed: set[str] = set()
+    text_seen: dict[str, TextBlock] = {}
+    for block in blocks:
+        if not isinstance(block, TextBlock):
+            unique.append(block)
+            continue
+        normalized = " ".join(_block_text(block).split()).casefold()
+        if normalized and normalized in text_seen:
+            removed.add(block.id)
+            continue
+        text_seen[normalized] = block
+        unique.append(block)
+    text_blocks = [block for block in unique if isinstance(block, TextBlock)]
+    aggregates = {
+        block.id
+        for block in text_blocks
+        if len(_block_text(block)) >= 400
+        and sum(
+            other.id != block.id
+            and _intersection_ratio(other.bbox, block.bbox) >= 0.9
+            and _bbox_area(other.bbox) < _bbox_area(block.bbox) * 0.5
+            for other in text_blocks
+        )
+        >= 2
+    }
+    if aggregates:
+        aggregate_blocks = [block for block in text_blocks if block.id in aggregates]
+        for block in text_blocks:
+            if block.id in aggregates:
+                continue
+            if any(_intersection_ratio(block.bbox, aggregate.bbox) >= 0.9 for aggregate in aggregate_blocks):
+                removed.add(block.id)
+        for block in unique:
+            if not isinstance(block, Table) or not _ambiguous_table_geometry(block):
+                continue
+            if any(
+                _intersection_ratio(aggregate.bbox, block.bbox) >= 0.9
+                or _intersection_ratio(block.bbox, aggregate.bbox) >= 0.9
+                for aggregate in aggregate_blocks
+            ):
+                removed.add(block.id)
+        unique = [block for block in unique if block.id not in removed]
+    return _order_blocks(unique, page_bbox, column_split), removed
+
+
+def _bbox_area(bbox: BBox) -> int:
+    return max(0, bbox[2] - bbox[0]) * max(0, bbox[3] - bbox[1])
+
+
+def _ambiguous_table_geometry(table: Table) -> bool:
+    return len(table.cells) > 1 and len({cell.bbox for cell in table.cells}) == 1
+
+
+def _order_blocks(
+    blocks: list[Block],
+    page_bbox: BBox,
+    column_split: float | None = None,
+) -> list[Block]:
+    if column_split is None:
+        column_split = _column_split([block.bbox for block in blocks], page_bbox, minimum_group=1)
+    ordered = sorted(
+        blocks,
+        key=lambda block: (
+            _column_side(block.bbox, column_split),
+            block.bbox[1],
+            block.bbox[0],
+            block.reading_order,
+        ),
+    )
+    return [block.model_copy(update={"reading_order": index}) for index, block in enumerate(ordered)]
 
 
 def _selected_is_grounded(

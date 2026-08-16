@@ -7,7 +7,7 @@ default:
     @just --list
 
 sync:
-    uv sync --extra dev
+    uv sync --extra cpu --extra dev
 
 lock:
     uv lock
@@ -16,13 +16,13 @@ lock-check:
     uv lock --check
 
 format:
-    uv run ruff format .
+    uv run --extra cpu --extra dev ruff format .
 
 lint:
-    uv run ruff check .
+    uv run --extra cpu --extra dev ruff check .
 
 test:
-    uv run pytest -m 'not live'
+    uv run --extra cpu --extra dev pytest -m 'not live'
 
 check: lock-check lint test
 
@@ -32,8 +32,14 @@ package:
 package-local:
     ./bin/build-packages.sh
 
-package-models:
-    ./bin/build-model-package.sh
+publish-models:
+    BUILDER_HOST="{{builder_host}}" ./bin/publish-models-on-builder.sh
+
+publish-models-local:
+    ./bin/publish-models.sh
+
+sync-runtime:
+    sudo ./bin/sync-runtime.sh
 
 preflight:
     ./bin/preflight.sh "{{target_host}}"

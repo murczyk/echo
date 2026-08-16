@@ -11,8 +11,6 @@ source /etc/os-release
 [[ $(dpkg --print-architecture) == amd64 ]]
 [[ $(python3 -c 'import sys; print(sys.version_info[:2] == (3, 13))') == True ]]
 command -v uv >/dev/null || { printf 'uv is not installed on the builder\n' >&2; exit 1; }
-[[ -d /var/cache/echo-document-extractor/models ]] \
-  || { printf 'offline Paddle model source is absent on the builder\n' >&2; exit 1; }
 REMOTE
 remote=$(ssh -o BatchMode=yes "$BUILDER_HOST" mktemp -d /tmp/echo-document-extractor-build.XXXXXX)
 [[ "$remote" =~ ^/tmp/echo-document-extractor-build\.[A-Za-z0-9]+$ ]] \
@@ -25,7 +23,6 @@ tar -C "$PROJECT_DIR" --exclude=.venv --exclude=dist --exclude=.pytest_cache \
   --exclude=.ruff_cache --exclude=__pycache__ --exclude='*.pyc' -cf - . \
   | ssh -o BatchMode=yes "$BUILDER_HOST" tar -C "$remote" -xf -
 ssh -o BatchMode=yes "$BUILDER_HOST" \
-  "cd '$remote' && MODEL_SOURCE_DIR=/var/cache/echo-document-extractor/models ./bin/build-packages.sh"
+  "cd '$remote' && ./bin/build-packages.sh"
 mkdir -p "$PROJECT_DIR/dist"
 scp -q "$BUILDER_HOST:$remote/dist/echo-document-extractor_"'*.deb' "$PROJECT_DIR/dist/"
-scp -q "$BUILDER_HOST:$remote/dist/echo-document-extractor-models_"'*.deb' "$PROJECT_DIR/dist/"

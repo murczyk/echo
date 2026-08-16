@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-cd /opt/echo-document-extractor/models
-sha256sum --check --strict SHA256SUMS
-find . -type d -exec chmod 0555 {} +
-find . -type f -exec chmod 0444 {} +

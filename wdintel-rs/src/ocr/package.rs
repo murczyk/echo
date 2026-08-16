@@ -40,6 +40,14 @@ pub fn stored_html_from_zip(bytes: Vec<u8>) -> anyhow::Result<String> {
 }
 
 pub fn sanitize_html(html: &str) -> String {
+    sanitize_html_with_images(html, true)
+}
+
+pub fn sanitize_html_without_images(html: &str) -> String {
+    sanitize_html_with_images(html, false)
+}
+
+fn sanitize_html_with_images(html: &str, allow_images: bool) -> String {
     let tags = HashSet::from([
         "article",
         "section",
@@ -64,14 +72,13 @@ pub fn sanitize_html(html: &str) -> String {
         "td",
         "figure",
         "figcaption",
-        "img",
         "strong",
         "em",
         "b",
         "i",
     ]);
-    let tag_attributes = HashMap::from([
-        ("img", HashSet::from(["src", "alt"])),
+    let mut tags = tags;
+    let mut tag_attributes = HashMap::from([
         ("td", HashSet::from(["rowspan", "colspan"])),
         ("th", HashSet::from(["rowspan", "colspan"])),
         (
@@ -79,16 +86,34 @@ pub fn sanitize_html(html: &str) -> String {
             HashSet::from(["data-page-id", "data-source-page"]),
         ),
     ]);
+    if allow_images {
+        tags.insert("img");
+        tag_attributes.insert("img", HashSet::from(["src", "alt"]));
+    }
     let mut builder = Builder::empty();
     builder
         .tags(tags)
         .tag_attributes(tag_attributes)
+        .add_clean_content_tags(&[
+            "iframe", "object", "embed", "svg", "math", "template", "noscript",
+        ])
         .url_schemes(HashSet::from(["data"]))
         .url_relative(UrlRelative::Deny)
         .link_rel(None)
         .attribute_filter(|element, attribute, value| {
             if element == "img" && attribute == "src" {
                 return is_png_data_url(value).then_some(Cow::Borrowed(value));
+            }
+            if matches!(element, "td" | "th")
+                && matches!(attribute, "rowspan" | "colspan")
+            {
+                return value
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|value| {
+                        (1..=crate::config::OCR_EXPORT_MAX_SPAN).contains(value)
+                    })
+                    .map(|_| Cow::Borrowed(value));
             }
             Some(Cow::Borrowed(value))
         });
@@ -214,18 +239,22 @@ fn safe_archive_name(name: &str) -> bool {
 fn is_png_data_url(value: &str) -> bool {
     value
         .strip_prefix("data:image/png;base64,")
-        .is_some_and(|payload| {
-            !payload.is_empty()
-                && payload.bytes().all(|value| {
-                    value.is_ascii_alphanumeric()
-                        || matches!(value, b'+' | b'/' | b'=')
-                })
+        .and_then(|payload| {
+            base64::engine::general_purpose::STANDARD
+                .decode(payload)
+                .ok()
+        })
+        .is_some_and(|bytes| {
+            bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+                && infer::get(&bytes)
+                    .is_some_and(|kind| kind.mime_type() == "image/png")
         })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{sanitize_html, stored_html_from_zip};
+    use base64::Engine;
     use std::collections::HashMap;
     use std::io::{Cursor, Write};
     use zip::write::SimpleFileOptions;
@@ -286,7 +315,33 @@ mod tests {
         assert!(!html.contains("data:text"));
         assert!(!html.contains("onerror"));
         assert!(!html.contains("form"));
-        assert!(html.contains("data:image/png;base64,AA=="));
+        assert!(!html.contains("data:image/png;base64,AA=="));
+    }
+
+    #[test]
+    fn sanitizer_removes_all_known_active_content_and_unsafe_spans() {
+        let png = base64::engine::general_purpose::STANDARD
+            .encode(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR");
+        let html = sanitize_html(&format!(
+            r#"<article onclick="alert(1)" style="background:url(javascript:alert(2))"><style>@import 'https://bad.test'</style><iframe srcdoc="&lt;script&gt;alert(3)&lt;/script&gt;">fallback</iframe><svg><script>alert(4)</script></svg><table><tr><td rowspan="999999" colspan="nope">ok</td></tr></table><img src="data:image/svg+xml;base64,AAAA"><img src="data:image/png;base64,{png}" onload="alert(5)"></article>"#,
+        ));
+        for active in [
+            "javascript",
+            "script",
+            "style=",
+            "<style",
+            "iframe",
+            "svg",
+            "onclick",
+            "onload",
+            "999999",
+            "nope",
+            "image/svg",
+        ] {
+            assert!(!html.to_ascii_lowercase().contains(active), "{html}");
+        }
+        assert!(html.contains("data:image/png;base64,"));
+        assert_eq!(html, sanitize_html(&html));
     }
 
     #[test]
