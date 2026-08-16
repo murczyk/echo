@@ -4679,11 +4679,6 @@ export type MediaSummaryStatus = {
 export type MediaSummaryResult = {
   state: string;
   summary: string | null;
-  who: string | null;
-  whereText: string | null;
-  whatHappened: string | null;
-  whatNext: string | null;
-  purpose: string | null;
   lastError: string | null;
   sourceKind: string;
   sourceCharCount: number;

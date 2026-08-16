@@ -291,11 +291,6 @@ describe('OcrPreview', () => {
     getMediaSummary.mockResolvedValueOnce({
       state: 'completed',
       summary: 'Короткий опис',
-      who: 'Підрозділ',
-      whereText: null,
-      whatHappened: null,
-      whatNext: null,
-      purpose: null,
       lastError: null,
       sourceKind: 'ocr_text',
       sourceCharCount: 100,
@@ -340,7 +335,7 @@ describe('OcrPreview', () => {
     expect(getMediaSummary).toHaveBeenCalledWith('media-id');
     expect(onSummaryChange).toHaveBeenCalledWith({ state: 'completed', lastError: null });
     expect(container.textContent).toContain('Короткий опис');
-    expect(container.textContent).toContain('Хто: Підрозділ');
+    expect(container.textContent).not.toContain('Хто:');
     root.unmount();
   });
 });

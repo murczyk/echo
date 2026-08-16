@@ -278,7 +278,7 @@ characters while retaining its beginning and end. Filenames, message metadata,
 media identifiers, and image bytes are never sent to the AI engine.
 
 The independent `media_summary_worker` performs one inference at a time and
-stores a Ukrainian structured result directly against `signal_message_media`.
+stores a neutral Ukrainian summary directly against `signal_message_media`.
 It has its own leases and bounded exponential retries, so model outages never
 change OCR state or block OCR viewing. The selected engine is captured when a
 summary is enqueued. Source text is cleared after completion or terminal
@@ -541,7 +541,7 @@ flowchart TB
     bg --> palitra_workers["Palitra worker<br/>palitra_highlight_worker"]
     bg --> goi_workers["GOI workers<br/>goi_sync_worker_0..N<br/>goi_association_message_uid_worker<br/>palitra_conversion_worker"]
     bg -.-> ocr_worker["OCR worker<br/>default-off · recent messenger documents<br/>extractor jobs · sanitized B2 result"]
-    bg -.-> media_summary_worker["Media summary worker<br/>default-off enqueue · one inference<br/>structured Ukrainian result"]
+    bg -.-> media_summary_worker["Media summary worker<br/>default-off enqueue · one inference<br/>neutral Ukrainian summary"]
 
     bg -.-> configured_workers["Configuration-gated workers<br/>analytics_health_log_worker · analytics gateway<br/>activity_details_worker · GreptimeDB<br/>cleanup_networks_worker<br/>fill_comp_freq_worker<br/>inactive_users_worker<br/>location_v2_worker<br/>suggest_message_tags_worker<br/>refresh_models_worker · AI models<br/>cleanup_tmp_worker · in-memory tmp"]
     bg -.-> startup_workers["Startup task<br/>signal_cli_verbose_logger"]

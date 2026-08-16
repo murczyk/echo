@@ -17,11 +17,6 @@ pub struct MediaSummaryStatus {
 pub struct MediaSummaryResult {
     pub state: String,
     pub summary: Option<String>,
-    pub who: Option<String>,
-    pub where_text: Option<String>,
-    pub what_happened: Option<String>,
-    pub what_next: Option<String>,
-    pub purpose: Option<String>,
     pub last_error: Option<String>,
     pub source_kind: String,
     pub source_char_count: i32,

@@ -88,27 +88,10 @@ function SummaryContent({
   const state = result?.state ?? status.state;
   const lastError = result?.lastError ?? status.lastError;
   if (state === 'completed' && result?.summary) {
-    const fields = [
-      ['Хто', result.who],
-      ['Де', result.whereText],
-      ['Що сталося', result.whatHappened],
-      ['Що далі', result.whatNext],
-      ['Мета', result.purpose],
-    ].filter((field): field is [string, string] => Boolean(field[1]));
     return (
-      <Stack spacing={1.25}>
-        <Typography variant="body1" sx={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>
-          {result.summary}
-        </Typography>
-        {fields.map(([label, value]) => (
-          <Typography key={label} variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-            <Box component="span" sx={{ fontWeight: 600 }}>
-              {label}:{' '}
-            </Box>
-            {value}
-          </Typography>
-        ))}
-      </Stack>
+      <Typography variant="body1" sx={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>
+        {result.summary}
+      </Typography>
     );
   }
 

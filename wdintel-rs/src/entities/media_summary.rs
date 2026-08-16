@@ -31,16 +31,6 @@ pub struct Model {
     pub last_error: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub summary: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub who: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub where_text: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub what_happened: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub what_next: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub purpose: Option<String>,
     pub created_at: DateTime,
     pub started_at: Option<DateTime>,
     pub completed_at: Option<DateTime>,

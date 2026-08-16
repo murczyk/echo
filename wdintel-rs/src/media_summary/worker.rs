@@ -23,23 +23,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-const RESULT_FIELDS: [&str; 6] = [
-    "summary",
-    "who",
-    "where",
-    "what_happened",
-    "what_next",
-    "purpose",
-];
+const RESULT_FIELDS: [&str; 1] = ["summary"];
 
 #[derive(Debug, PartialEq)]
 struct StructuredSummary {
     summary: String,
-    who: Option<String>,
-    where_text: Option<String>,
-    what_happened: Option<String>,
-    what_next: Option<String>,
-    purpose: Option<String>,
 }
 
 pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
@@ -170,11 +158,6 @@ async fn complete(
         lease_expires_at: Set(None),
         last_error: Set(None),
         summary: Set(Some(summary.summary)),
-        who: Set(summary.who),
-        where_text: Set(summary.where_text),
-        what_happened: Set(summary.what_happened),
-        what_next: Set(summary.what_next),
-        purpose: Set(summary.purpose),
         model_name: Set(
             response_model_name.unwrap_or_else(|| job.model_name.clone())
         ),
@@ -262,12 +245,7 @@ fn response_format() -> Value {
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                    "summary": { "type": ["string", "null"] },
-                    "who": { "type": ["string", "null"] },
-                    "where": { "type": ["string", "null"] },
-                    "what_happened": { "type": ["string", "null"] },
-                    "what_next": { "type": ["string", "null"] },
-                    "purpose": { "type": ["string", "null"] }
+                    "summary": { "type": "string" }
                 },
                 "required": RESULT_FIELDS
             }
@@ -280,14 +258,7 @@ fn parse_response(response: &str) -> anyhow::Result<StructuredSummary> {
     let object = value.as_object().c(h!())?;
     validate_keys(object).c(h!())?;
     let summary = parse_field(object, "summary").c(h!())?.c(h!())?;
-    Ok(StructuredSummary {
-        summary,
-        who: parse_field(object, "who").c(h!())?,
-        where_text: parse_field(object, "where").c(h!())?,
-        what_happened: parse_field(object, "what_happened").c(h!())?,
-        what_next: parse_field(object, "what_next").c(h!())?,
-        purpose: parse_field(object, "purpose").c(h!())?,
-    })
+    Ok(StructuredSummary { summary })
 }
 
 fn validate_keys(object: &Map<String, Value>) -> anyhow::Result<()> {
@@ -333,26 +304,33 @@ fn truncate_error(error: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_response, summary_messages};
+    use super::{parse_response, response_format, summary_messages};
     use crate::config::MEDIA_SUMMARY_SYSTEM_PROMPT;
 
     #[test]
     fn strict_response_accepts_only_bounded_expected_plain_text() {
-        let parsed = parse_response(
-            r#"{"summary":"  Стисло  ","who":null,"where":"Київ","what_happened":"Подія","what_next":null,"purpose":"Мета"}"#,
-        )
-        .unwrap();
-        assert_eq!(parsed.summary, "Стисло");
-        assert_eq!(parsed.who, None);
-        assert_eq!(parsed.where_text.as_deref(), Some("Київ"));
-        assert!(parse_response(
-            r#"{"summary":"x","who":null,"where":null,"what_happened":null,"what_next":null,"purpose":null,"extra":"x"}"#,
-        )
-        .is_err());
-        assert!(parse_response(
-            r#"{"summary":null,"who":null,"where":null,"what_happened":null,"what_next":null,"purpose":null}"#,
-        )
-        .is_err());
+        let parsed =
+            parse_response(r#"{"summary":"  Стислий нейтральний опис  "}"#)
+                .unwrap();
+        assert_eq!(parsed.summary, "Стислий нейтральний опис");
+        assert!(parse_response(r#"{"summary":"x","where":"Київ"}"#).is_err());
+        assert!(parse_response(r#"{"summary":null}"#).is_err());
+    }
+
+    #[test]
+    fn contract_requests_only_a_neutral_summary() {
+        let format = response_format();
+        assert_eq!(
+            format["json_schema"]["schema"]["required"],
+            serde_json::json!(["summary"])
+        );
+        assert_eq!(
+            format["json_schema"]["schema"]["properties"],
+            serde_json::json!({ "summary": { "type": "string" } })
+        );
+        assert!(MEDIA_SUMMARY_SYSTEM_PROMPT.contains("Не аналізуй документ"));
+        assert!(MEDIA_SUMMARY_SYSTEM_PROMPT.contains("назви цілей"));
+        assert!(!MEDIA_SUMMARY_SYSTEM_PROMPT.contains("what_happened"));
     }
 
     #[test]

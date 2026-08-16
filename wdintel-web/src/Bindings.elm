@@ -12091,11 +12091,6 @@ mediaSummaryStatusEncoder struct =
 type alias MediaSummaryResult =
     { state : String
     , summary : Maybe (String)
-    , who : Maybe (String)
-    , whereText : Maybe (String)
-    , whatHappened : Maybe (String)
-    , whatNext : Maybe (String)
-    , purpose : Maybe (String)
     , lastError : Maybe (String)
     , sourceKind : String
     , sourceCharCount : Int
@@ -12109,11 +12104,6 @@ mediaSummaryResultEncoder struct =
     Json.Encode.object
         [ ( "state", (Json.Encode.string) struct.state )
         , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.summary )
-        , ( "who", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.who )
-        , ( "whereText", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.whereText )
-        , ( "whatHappened", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.whatHappened )
-        , ( "whatNext", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.whatNext )
-        , ( "purpose", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.purpose )
         , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
         , ( "sourceKind", (Json.Encode.string) struct.sourceKind )
         , ( "sourceCharCount", (Json.Encode.int) struct.sourceCharCount )
@@ -20272,11 +20262,6 @@ mediaSummaryResultDecoder =
     Json.Decode.succeed MediaSummaryResult
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "who" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "whereText" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "whatHappened" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "whatNext" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "purpose" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sourceKind" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sourceCharCount" (Json.Decode.int)))
