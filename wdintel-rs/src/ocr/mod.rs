@@ -14,7 +14,7 @@ use crate::h;
 use crate::ocr::package::sanitize_html;
 use crate::ocr::types::{
     OcrCounts, OcrJobItem, OcrMediaSummary, OcrPageReq, OcrPageRsp,
-    OcrSettingsItem, SaveOcrSettingsReq,
+    OcrSettingsItem, OcrStatusLogItem, SaveOcrSettingsReq,
 };
 use crate::storage;
 use crate::types::{Env, ShortContext};
@@ -112,21 +112,27 @@ pub async fn load_media_summaries(
                 && media_is_pending_candidate(media, cutoff)
         });
     let has_active_job = jobs.iter().any(|job| job_is_pending(&job.state));
-    let queue_size = if has_undiscovered || has_active_job {
-        Some(load_queue_size(dbx).await.c(h!())?)
+    let queue_positions = if has_undiscovered || has_active_job {
+        load_queue_positions(dbx).await.c(h!())?
     } else {
-        None
+        HashMap::new()
     };
     let mut summaries = jobs
         .into_iter()
-        .map(|job| (job.media_id, media_summary(job, queue_size)))
+        .map(|job| {
+            let queue_ahead = queue_positions.get(&job.media_id).copied();
+            (job.media_id, media_summary(job, queue_ahead))
+        })
         .collect::<HashMap<_, _>>();
     if worker_enabled {
         for media in media {
             if media_is_pending_candidate(media, cutoff) {
-                summaries
-                    .entry(media.id)
-                    .or_insert_with(|| pending_media_summary(queue_size));
+                summaries.entry(media.id).or_insert_with(|| {
+                    pending_media_summary(
+                        queue_positions.get(&media.id).copied(),
+                        media.created_at,
+                    )
+                });
             }
         }
     }
@@ -236,12 +242,16 @@ pub async fn messenger_media_ocr_status(
         .await
         .c(h!())?;
     if let Some(job) = job {
-        let queue_size = if job_is_pending(&job.state) {
-            Some(load_queue_size(&env.dbx).await.c(h!())?)
+        let queue_ahead = if job_is_pending(&job.state) {
+            load_queue_positions(&env.dbx)
+                .await
+                .c(h!())?
+                .get(&job.media_id)
+                .copied()
         } else {
             None
         };
-        return Ok(Json(media_summary(job, queue_size)));
+        return Ok(Json(media_summary(job, queue_ahead)));
     }
     let worker_enabled = worker::worker_enabled(&env.dbx).await.c(h!())?;
     let message_exists =
@@ -257,8 +267,12 @@ pub async fn messenger_media_ocr_status(
     {
         return Err(crate::error::AppError::NotFound);
     }
-    let queue_size = Some(load_queue_size(&env.dbx).await.c(h!())?);
-    Ok(Json(pending_media_summary(queue_size)))
+    let queue_ahead = load_queue_positions(&env.dbx)
+        .await
+        .c(h!())?
+        .get(&media.id)
+        .copied();
+    Ok(Json(pending_media_summary(queue_ahead, media.created_at)))
 }
 
 #[get("/api/admin/ocr/{media_id}/preview")]
@@ -437,9 +451,11 @@ fn job_item(
 
 fn media_summary(
     job: ocr_job::Model,
-    queue_size: Option<i64>,
+    queue_ahead: Option<i64>,
 ) -> OcrMediaSummary {
-    let queue_size = job_is_pending(&job.state).then_some(queue_size).flatten();
+    let queue_size =
+        job_is_pending(&job.state).then_some(queue_ahead).flatten();
+    let status_log = job_status_log(&job);
     OcrMediaSummary {
         state: job.state,
         quality_status: job.quality_status,
@@ -447,18 +463,81 @@ fn media_summary(
         total_pages: job.total_pages,
         last_error: job.last_error,
         queue_size,
+        attempts: job.attempts,
+        status_log,
     }
 }
 
-fn pending_media_summary(queue_size: Option<i64>) -> OcrMediaSummary {
+fn pending_media_summary(
+    queue_ahead: Option<i64>,
+    created_at: NaiveDateTime,
+) -> OcrMediaSummary {
     OcrMediaSummary {
         state: "pending".to_string(),
         quality_status: None,
         processed_pages: 0,
         total_pages: 0,
         last_error: None,
-        queue_size,
+        queue_size: queue_ahead,
+        attempts: 0,
+        status_log: vec![OcrStatusLogItem {
+            at: timestamp_ms(created_at),
+            message: "Файл отримано; очікує додавання до OCR-черги."
+                .to_string(),
+        }],
     }
+}
+
+fn job_status_log(job: &ocr_job::Model) -> Vec<OcrStatusLogItem> {
+    let mut log = vec![OcrStatusLogItem {
+        at: timestamp_ms(job.discovered_at),
+        message: "Додано до OCR-черги.".to_string(),
+    }];
+    if let Some(submitted_at) = job.submitted_at {
+        log.push(OcrStatusLogItem {
+            at: timestamp_ms(submitted_at),
+            message: "Передано до OCR-extractor.".to_string(),
+        });
+    }
+    let terminal_at = job.completed_at.unwrap_or(job.updated_at);
+    let current = match job.state.as_str() {
+        "queued" => None,
+        "submitted" if job.last_error.is_some() => Some(format!(
+            "OCR-extractor тимчасово недоступний; очікується повторна перевірка (спроб: {}).",
+            job.attempts
+        )),
+        "submitted" if job.total_pages > 0 => Some(format!(
+            "OCR-extractor обробляє сторінки: {} із {}.",
+            job.processed_pages, job.total_pages
+        )),
+        "submitted" => Some("OCR-extractor обробляє документ.".to_string()),
+        "retry_wait" => Some(format!(
+            "Очікує повторного надсилання до OCR-extractor (спроб: {}).",
+            job.attempts
+        )),
+        "completed" => Some(match job.quality_status.as_deref() {
+            Some("accepted") => "OCR завершено; якість прийнятна.".to_string(),
+            Some("degraded") => "OCR завершено зі зниженою якістю.".to_string(),
+            _ => "OCR завершено.".to_string(),
+        }),
+        "failed" => Some(format!(
+            "OCR завершився з помилкою після {} спроб.",
+            job.attempts
+        )),
+        _ => None,
+    };
+    if let Some(message) = current {
+        let at = if matches!(job.state.as_str(), "completed" | "failed") {
+            terminal_at
+        } else {
+            job.updated_at
+        };
+        log.push(OcrStatusLogItem {
+            at: timestamp_ms(at),
+            message,
+        });
+    }
+    log
 }
 
 fn job_is_pending(state: &str) -> bool {
@@ -506,24 +585,48 @@ fn media_is_ocr_eligible(media: &signal_message_media::Model) -> bool {
 }
 
 #[derive(FromQueryResult)]
-struct OcrQueueSize {
-    queue_size: i64,
+struct OcrQueuePosition {
+    media_id: Uuid,
+    queue_ahead: i64,
 }
 
-async fn load_queue_size(dbx: &DatabaseConnection) -> anyhow::Result<i64> {
+async fn load_queue_positions(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<HashMap<Uuid, i64>> {
     let statement = Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
-select count(*)::bigint as queue_size
-from (
-  select job.media_id
+with active as (
+  select job.media_id,
+         0 as priority,
+         job.submitted_at,
+         null::timestamp without time zone as next_attempt_at,
+         null::timestamp without time zone as discovered_at,
+         null::timestamp without time zone as pending_created_at
   from ocr_job job
   join signal_message_media media on media.id = job.media_id
   join signal_message message on message.id = media.signal_message_id
-  where job.state in ('queued', 'submitted', 'retry_wait')
+  where job.state = 'submitted'
+    and not message.deleted
+  union all
+  select job.media_id,
+         1 as priority,
+         null::timestamp without time zone as submitted_at,
+         job.next_attempt_at,
+         job.discovered_at,
+         null::timestamp without time zone as pending_created_at
+  from ocr_job job
+  join signal_message_media media on media.id = job.media_id
+  join signal_message message on message.id = media.signal_message_id
+  where job.state in ('queued', 'retry_wait')
     and not message.deleted
   union all
   select media.id
+       , 1 as priority
+       , null::timestamp without time zone as submitted_at
+       , now() at time zone 'utc' as next_attempt_at
+       , now() at time zone 'utc' as discovered_at
+       , media.created_at as pending_created_at
   from signal_message_media media
   join signal_message message on message.id = media.signal_message_id
   left join ocr_job job on job.media_id = media.id
@@ -537,16 +640,30 @@ from (
       or lower(coalesce(media.file_ext, '')) in ('pdf', 'jpg', 'jpeg', 'png')
       or lower(coalesce(media.file_name, '')) ~ '\.(pdf|jpe?g|png)$'
     )
-) pending
+), ranked as (
+  select media_id,
+         row_number() over (
+           order by priority,
+                    submitted_at nulls last,
+                    next_attempt_at nulls last,
+                    discovered_at nulls last,
+                    pending_created_at nulls first,
+                    media_id
+         )::bigint - 1 as queue_ahead
+  from active
+)
+select media_id, queue_ahead
+from ranked
         "#,
         [discovery_cutoff().into()],
     );
-    Ok(OcrQueueSize::find_by_statement(statement)
-        .one(dbx)
+    Ok(OcrQueuePosition::find_by_statement(statement)
+        .all(dbx)
         .await
         .c(h!())?
-        .c(h!())?
-        .queue_size)
+        .into_iter()
+        .map(|position| (position.media_id, position.queue_ahead))
+        .collect())
 }
 
 pub(crate) async fn authorized_media(
@@ -615,11 +732,12 @@ fn ocr_export_file_name(original: Option<&str>, extension: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        media_is_ocr_eligible, ocr_export_file_name, pending_media_summary,
-        render_document,
+        load_queue_positions, media_is_ocr_eligible, ocr_export_file_name,
+        pending_media_summary, render_document,
     };
-    use crate::entities::signal_message_media;
+    use crate::entities::{ocr_job, signal_message_media};
     use chrono::Utc;
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
     use uuid::Uuid;
 
     fn media(
@@ -664,10 +782,63 @@ mod tests {
     }
 
     #[test]
-    fn pending_summary_exposes_queue_size() {
-        let summary = pending_media_summary(Some(2));
+    fn pending_summary_exposes_items_ahead_and_status_log() {
+        let summary = pending_media_summary(Some(2), Utc::now().naive_utc());
         assert_eq!(summary.state, "pending");
         assert_eq!(summary.queue_size, Some(2));
+        assert_eq!(summary.status_log.len(), 1);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn queue_positions_count_only_items_ahead() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let mut media_ids = Vec::new();
+        for index in 0..3 {
+            let media = signal_message_media::ActiveModel {
+                id: Set(Uuid::now_v7()),
+                signal_message_id: Set(message.id),
+                content_type: Set("image/png".to_string()),
+                file_ext: Set(Some("png".to_string())),
+                file_name: Set(Some(format!("queue-{index}.png"))),
+                size_bytes: Set(1),
+                created_at: Set(now + chrono::Duration::milliseconds(index)),
+                is_encrypted: Set(true),
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            media_ids.push(media.id);
+        }
+        ocr_job::ActiveModel {
+            media_id: Set(media_ids[0]),
+            state: Set("submitted".to_string()),
+            submitted_at: Set(Some(now)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        ocr_job::ActiveModel {
+            media_id: Set(media_ids[1]),
+            state: Set("queued".to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let positions = load_queue_positions(&env.dbx).await.unwrap();
+        assert_eq!(positions.get(&media_ids[0]), Some(&0));
+        assert_eq!(positions.get(&media_ids[1]), Some(&1));
+        assert_eq!(positions.get(&media_ids[2]), Some(&2));
     }
 
     #[test]

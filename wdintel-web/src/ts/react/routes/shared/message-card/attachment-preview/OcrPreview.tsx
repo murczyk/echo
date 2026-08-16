@@ -99,7 +99,8 @@ export function getOcrInfoSections(
           },
         ]
       : []),
-    ...(ocr.queueSize == null ? [] : [{ label: 'Черга', value: `${ocr.queueSize}` }]),
+    ...(ocr.queueSize == null ? [] : [{ label: 'Попереду в черзі', value: `${ocr.queueSize}` }]),
+    ...(ocr.attempts > 0 ? [{ label: 'Повторні спроби', value: `${ocr.attempts}` }] : []),
     ...(ocr.lastError == null ? [] : [{ label: 'Деталі', value: ocr.lastError }]),
   ];
   const status =
@@ -125,7 +126,32 @@ function isProcessing(ocr: OcrMediaSummary): boolean {
 }
 
 function queueLabel(ocr: OcrMediaSummary): string {
-  return ocr.queueSize == null ? '' : ` · черга: ${ocr.queueSize}`;
+  return ocr.queueSize == null ? '' : ` · попереду: ${ocr.queueSize}`;
+}
+
+function statusDescription(ocr: OcrMediaSummary): string {
+  if (ocr.state === 'failed') return 'OCR завершився з помилкою.';
+  if (ocr.state === 'pending' || ocr.state === 'queued') {
+    return ocr.queueSize == null
+      ? 'OCR очікує в черзі.'
+      : `Попереду в OCR-черзі: ${ocr.queueSize}.`;
+  }
+  if (ocr.state === 'retry_wait') {
+    const position = ocr.queueSize == null ? '' : ` Попереду: ${ocr.queueSize}.`;
+    return `Очікує повторного надсилання.${position}`;
+  }
+  if (ocr.totalPages > 0) {
+    return `Опрацьовано сторінок: ${ocr.processedPages} із ${ocr.totalPages}.`;
+  }
+  return 'OCR-extractor обробляє документ.';
+}
+
+function formatStatusLogTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString('uk-UA', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 }
 
 export function OcrPreviewAction({
@@ -216,13 +242,7 @@ function OcrStatusPane({
         />
       </Box>
       <Typography variant="body2" color="text.secondary">
-        {ocr.state === 'pending' || ocr.state === 'queued'
-          ? ocr.queueSize == null
-            ? 'OCR очікує в черзі.'
-            : `Завдань OCR у черзі: ${ocr.queueSize}.`
-          : ocr.totalPages > 0
-            ? `Опрацьовано сторінок: ${ocr.processedPages} із ${ocr.totalPages}`
-            : 'Очікуємо дані про прогрес OCR.'}
+        {statusDescription(ocr)}
       </Typography>
       {ocr.lastError ? (
         <Typography variant="body2" color={failed ? 'error.main' : 'warning.main'}>
@@ -233,6 +253,41 @@ function OcrStatusPane({
         <Typography variant="body2" color="error.main" role="alert">
           {refreshError}
         </Typography>
+      ) : null}
+      {ocr.statusLog.length > 0 ? (
+        <Box
+          sx={{
+            width: 'min(100%, 520px)',
+            maxHeight: 180,
+            overflow: 'auto',
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 1,
+            p: 1.25,
+            textAlign: 'left',
+            bgcolor: 'background.paper',
+          }}
+        >
+          <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, mb: 0.75 }}>
+            Хід обробки
+          </Typography>
+          <Stack spacing={0.5}>
+            {ocr.statusLog.map((entry, index) => (
+              <Stack key={`${entry.at}:${index}`} direction="row" spacing={1} alignItems="baseline">
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ flex: '0 0 auto', fontVariantNumeric: 'tabular-nums' }}
+                >
+                  {formatStatusLogTime(entry.at)}
+                </Typography>
+                <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>
+                  {entry.message}
+                </Typography>
+              </Stack>
+            ))}
+          </Stack>
+        </Box>
       ) : null}
       <Button
         variant="outlined"

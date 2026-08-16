@@ -77,6 +77,8 @@ describe('OcrPreview', () => {
       totalPages: 2,
       lastError: null,
       queueSize: null,
+      attempts: 0,
+      statusLog: [],
     } as const;
     expect(getOcrDownloadItems('media/id', degraded, 'scan.png')).toHaveLength(4);
     expect(getOcrDownloadItems('media/id', { ...degraded, state: 'queued' }, 'scan.png')).toEqual(
@@ -106,6 +108,8 @@ describe('OcrPreview', () => {
               totalPages: 2,
               lastError: null,
               queueSize: null,
+              attempts: 0,
+              statusLog: [],
             }}
             active={false}
             onClick={vi.fn()}
@@ -118,6 +122,8 @@ describe('OcrPreview', () => {
               totalPages: 0,
               lastError: null,
               queueSize: 2,
+              attempts: 0,
+              statusLog: [],
             }}
             active={false}
             onClick={vi.fn()}
@@ -130,6 +136,8 @@ describe('OcrPreview', () => {
               totalPages: 2,
               lastError: 'failed',
               queueSize: null,
+              attempts: 3,
+              statusLog: [],
             }}
             active={false}
             onClick={vi.fn()}
@@ -142,9 +150,51 @@ describe('OcrPreview', () => {
     expect(buttons[0]?.disabled).toBe(false);
     expect(buttons[0]?.getAttribute('aria-label')).toContain('якість знижена');
     expect(buttons[1]?.disabled).toBe(false);
-    expect(buttons[1]?.getAttribute('aria-label')).toContain('черга: 2');
+    expect(buttons[1]?.getAttribute('aria-label')).toContain('попереду: 2');
     expect(buttons[2]?.disabled).toBe(false);
     expect(buttons[2]?.getAttribute('aria-label')).toContain('помилкою');
+    root.unmount();
+  });
+
+  it('shows items ahead and a compact processing log', async () => {
+    const submitted = {
+      state: 'submitted',
+      qualityStatus: null,
+      processedPages: 1,
+      totalPages: 3,
+      lastError: null,
+      queueSize: 0,
+      attempts: 0,
+      statusLog: [{ at: Date.now(), message: 'Передано до OCR-extractor.' }],
+    };
+    getMediaOcrStatus.mockResolvedValue(submitted);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <OcrSplitPreview
+          source={<div data-source />}
+          mediaId="media-id"
+          ocr={submitted}
+          visible
+          fullPane={false}
+          onOcrChange={vi.fn()}
+          onFullPaneChange={vi.fn()}
+          summary={null}
+          summaryVisible={false}
+          onSummaryChange={vi.fn()}
+          onSummaryVisibleChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Обробляється · попереду: 0');
+    expect(container.textContent).toContain('Опрацьовано сторінок: 1 із 3.');
+    expect(container.textContent).toContain('Хід обробки');
+    expect(container.textContent).toContain('Передано до OCR-extractor.');
     root.unmount();
   });
 
@@ -165,6 +215,8 @@ describe('OcrPreview', () => {
             totalPages: 1,
             lastError: null,
             queueSize: null,
+            attempts: 0,
+            statusLog: [],
           }}
           visible
           fullPane={false}
@@ -192,6 +244,8 @@ describe('OcrPreview', () => {
       totalPages: 2,
       lastError: null,
       queueSize: null,
+      attempts: 0,
+      statusLog: [],
     });
     const onOcrChange = vi.fn();
     const container = document.createElement('div');
@@ -210,6 +264,8 @@ describe('OcrPreview', () => {
             totalPages: 0,
             lastError: null,
             queueSize: 2,
+            attempts: 0,
+            statusLog: [],
           }}
           visible
           fullPane={false}
@@ -264,6 +320,8 @@ describe('OcrPreview', () => {
             totalPages: 1,
             lastError: null,
             queueSize: null,
+            attempts: 0,
+            statusLog: [],
           }}
           visible
           fullPane

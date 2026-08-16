@@ -11910,6 +11910,20 @@ saveAiCallsignWorkerSettingsReqEncoder struct =
         ]
 
 
+type alias OcrStatusLogItem =
+    { at : Int
+    , message : String
+    }
+
+
+ocrStatusLogItemEncoder : OcrStatusLogItem -> Json.Encode.Value
+ocrStatusLogItemEncoder struct =
+    Json.Encode.object
+        [ ( "at", (Json.Encode.int) struct.at )
+        , ( "message", (Json.Encode.string) struct.message )
+        ]
+
+
 type alias OcrMediaSummary =
     { state : String
     , qualityStatus : Maybe (String)
@@ -11917,6 +11931,8 @@ type alias OcrMediaSummary =
     , totalPages : Int
     , lastError : Maybe (String)
     , queueSize : Maybe (Int)
+    , attempts : Int
+    , statusLog : List (OcrStatusLogItem)
     }
 
 
@@ -11929,6 +11945,8 @@ ocrMediaSummaryEncoder struct =
         , ( "totalPages", (Json.Encode.int) struct.totalPages )
         , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
         , ( "queueSize", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.queueSize )
+        , ( "attempts", (Json.Encode.int) struct.attempts )
+        , ( "statusLog", (Json.Encode.list (ocrStatusLogItemEncoder)) struct.statusLog )
         ]
 
 
@@ -20160,6 +20178,13 @@ saveAiCallsignWorkerSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
 
 
+ocrStatusLogItemDecoder : Json.Decode.Decoder OcrStatusLogItem
+ocrStatusLogItemDecoder =
+    Json.Decode.succeed OcrStatusLogItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
+
+
 ocrMediaSummaryDecoder : Json.Decode.Decoder OcrMediaSummary
 ocrMediaSummaryDecoder =
     Json.Decode.succeed OcrMediaSummary
@@ -20169,6 +20194,8 @@ ocrMediaSummaryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totalPages" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "queueSize" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attempts" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "statusLog" (Json.Decode.list (ocrStatusLogItemDecoder))))
 
 
 ocrSettingsItemDecoder : Json.Decode.Decoder OcrSettingsItem

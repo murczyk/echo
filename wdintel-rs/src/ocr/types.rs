@@ -5,6 +5,15 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 #[serde(rename_all = "camelCase")]
+pub struct OcrStatusLogItem {
+    pub at: i64,
+    pub message: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
 pub struct OcrMediaSummary {
     pub state: String,
     pub quality_status: Option<String>,
@@ -12,6 +21,8 @@ pub struct OcrMediaSummary {
     pub total_pages: i32,
     pub last_error: Option<String>,
     pub queue_size: Option<i64>,
+    pub attempts: i32,
+    pub status_log: Vec<OcrStatusLogItem>,
 }
 
 #[derive(

@@ -4605,6 +4605,11 @@ export type SaveAiCallsignWorkerSettingsReq = {
   aiEngineId: string | null;
 };
 
+export type OcrStatusLogItem = {
+  at: number;
+  message: string;
+};
+
 export type OcrMediaSummary = {
   state: string;
   qualityStatus: string | null;
@@ -4612,6 +4617,8 @@ export type OcrMediaSummary = {
   totalPages: number;
   lastError: string | null;
   queueSize: number | null;
+  attempts: number;
+  statusLog: Array<OcrStatusLogItem>;
 };
 
 export type OcrSettingsItem = {
