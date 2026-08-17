@@ -11,7 +11,7 @@ use chrono::{NaiveDateTime, Utc};
 use futures_util::StreamExt;
 use iggy::prelude::{IggyMessage, IggyProducer};
 use sea_orm::sea_query::{
-    Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SelectStatement,
+    Alias, Expr, ExprTrait, Func, PostgresQueryBuilder, Query, SelectStatement,
 };
 use sea_orm::*;
 use serde::Serialize;
@@ -250,8 +250,11 @@ async fn load_callsign_ids(
                 sigint_callsign::Relation::SigintUnit.def(),
             )
             .filter(
-                sigint_callsign::Column::Callsign
-                    .is_in(callsigns.iter().cloned()),
+                Func::lower(Expr::col((
+                    sigint_callsign::Entity,
+                    sigint_callsign::Column::Callsign,
+                )))
+                .is_in(callsigns.iter().cloned()),
             )
             .filter(sigint_callsign::Column::Deleted.eq(false))
             .filter(sigint_unit::Column::Deleted.eq(false))
@@ -534,7 +537,7 @@ mod tests {
         intercepted_at: NaiveDateTime,
     ) -> i64 {
         sigint_callsign::ActiveModel {
-            callsign: Set("iggy-test-callsign".to_string()),
+            callsign: Set("Iggy-Test-Callsign".to_string()),
             position: Set(String::new()),
             comment: Set(String::new()),
             unit_id: Set(unit_id),
