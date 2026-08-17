@@ -6,7 +6,7 @@ use crate::types::*;
 use crate::users::ensure_rer_role;
 use actix_identity::Identity;
 use actix_web::post;
-use actix_web::web::Json;
+use actix_web::web::{Data, Json};
 use sea_orm::sea_query::{Expr, ExprTrait, Func};
 use sea_orm::*;
 
@@ -143,7 +143,7 @@ async fn rer_callsign_info_batch(
 }
 
 pub async fn load_callsigns(
-    env: &Env,
+    env: &Data<Env>,
     callsigns_data: Vec<CallsignNetworks>,
 ) -> Result<Vec<CallsignInfoRes>, AppError> {
     let requests = prepare_callsign_requests(callsigns_data);

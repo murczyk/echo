@@ -1,9 +1,9 @@
-use crate::entities::api_integration;
+use crate::entities::{api_integration, sigint_callsign, sigint_unit};
 use crate::error::AppError;
 use crate::rer_importer::types::{InboxMessage, InboxMessagesReq};
 use crate::sigint::etalonka::query::{
     build_network_freq_join_condition, SigintInboxItem, SigintInboxItemNetwork,
-    SigintNetworkFreq, SignalMessage,
+    SigintNetwork, SigintNetworkFreq, SignalMessage,
 };
 use crate::types::*;
 use bytes::Bytes;
@@ -226,27 +226,47 @@ async fn enrich_inbox_messages(
 
 async fn load_callsign_ids(
     env: &Env,
-    inbox_messages: &Vec<(i64, InboxMessage)>,
+    inbox_messages: &[(i64, InboxMessage)],
 ) -> Result<HashMap<String, BTreeSet<i64>>, AppError> {
-    let callsigns = crate::rer_importer::inbox::bl::load_inbox_callsigns(
-        inbox_messages,
-        env,
-    )
-    .await
-    .c(h!())?;
-    Ok(callsigns
-        .into_iter()
-        .map(|callsign| {
-            (
-                callsign.callsign.to_lowercase(),
-                callsign
-                    .res
-                    .into_iter()
-                    .map(|callsign| callsign.id)
-                    .collect::<BTreeSet<_>>(),
-            )
+    let callsigns = inbox_messages
+        .iter()
+        .flat_map(|(_, inbox_message)| {
+            inbox_message
+                .callsigns
+                .iter()
+                .chain(&inbox_message.callsigns_alg2)
         })
-        .collect())
+        .map(|callsign| callsign.to_lowercase())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut callsign_ids = HashMap::<String, BTreeSet<i64>>::new();
+    for callsigns in callsigns
+        .chunks(crate::config::API_INTEGRATION_IGGY_ENRICHMENT_ID_BATCH_SIZE)
+    {
+        let callsigns = sigint_callsign::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_callsign::Relation::SigintUnit.def(),
+            )
+            .filter(
+                sigint_callsign::Column::Callsign
+                    .is_in(callsigns.iter().cloned()),
+            )
+            .filter(sigint_callsign::Column::Deleted.eq(false))
+            .filter(sigint_unit::Column::Deleted.eq(false))
+            .filter(sigint_unit::Column::Active.eq(true))
+            .all(&env.dbx)
+            .await
+            .c(h!())?;
+        for callsign in callsigns {
+            callsign_ids
+                .entry(callsign.callsign.to_lowercase())
+                .or_default()
+                .insert(callsign.id);
+        }
+    }
+    Ok(callsign_ids)
 }
 
 fn enrich_inbox_message(
@@ -293,7 +313,9 @@ async fn load_network_freq_ids(
     inbox_item_ids: &[i64],
 ) -> Result<HashMap<i64, Vec<i64>>, AppError> {
     let mut ids_by_inbox_item = HashMap::<i64, BTreeSet<i64>>::new();
-    for inbox_item_ids in inbox_item_ids.chunks(20000) {
+    for inbox_item_ids in inbox_item_ids
+        .chunks(crate::config::API_INTEGRATION_IGGY_ENRICHMENT_ID_BATCH_SIZE)
+    {
         let query = build_network_freq_ids_query(inbox_item_ids).c(h!())?;
         let rows = dbx
             .query_all_raw(Statement::from_string(
@@ -356,6 +378,12 @@ fn build_network_freq_ids_query(
             network_freqs.clone(),
             join_condition,
         )
+        .join(
+            JoinType::InnerJoin,
+            SigintNetwork::Table,
+            Expr::col((SigintNetwork::Table, SigintNetwork::Id))
+                .equals((network_freqs.clone(), SigintNetworkFreq::NetworkId)),
+        )
         .and_where(
             Expr::col((SigintInboxItem::Table, SigintInboxItem::Id))
                 .is_in(inbox_item_ids.iter().copied()),
@@ -363,6 +391,9 @@ fn build_network_freq_ids_query(
         .and_where(
             Expr::col((network_freqs.clone(), SigintNetworkFreq::Deleted))
                 .eq(false),
+        )
+        .and_where(
+            Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
         )
         .order_by_expr(
             Expr::col((SigintInboxItem::Table, SigintInboxItem::Id)),
@@ -482,7 +513,7 @@ mod tests {
     use super::*;
     use crate::entities::{
         sigint_callsign, sigint_inbox_item, sigint_inbox_item_network,
-        sigint_network_freq, sigint_signal, signal_message,
+        sigint_network, sigint_network_freq, sigint_signal, signal_message,
     };
     use crate::functest::tests::*;
     use crate::rer_importer::signals::CNSignal;
@@ -497,17 +528,16 @@ mod tests {
         assert_eq!(publish_retry_delay(2), Some(Duration::from_secs(1)));
     }
 
-    #[actix_web::test]
-    #[serial]
-    async fn inbox_event_contains_dictionary_ids_and_stays_compatible() {
-        let env = cleanup().await.unwrap();
-        let intercepted_at = Utc::now().naive_utc();
-        let unit = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
-        let callsign = sigint_callsign::ActiveModel {
+    async fn insert_callsign(
+        env: &Env,
+        unit_id: i64,
+        intercepted_at: NaiveDateTime,
+    ) -> i64 {
+        sigint_callsign::ActiveModel {
             callsign: Set("iggy-test-callsign".to_string()),
             position: Set(String::new()),
             comment: Set(String::new()),
-            unit_id: Set(unit.id),
+            unit_id: Set(unit_id),
             deleted: Set(false),
             created_at: Set(intercepted_at),
             source_id: Set(None),
@@ -520,11 +550,19 @@ mod tests {
         }
         .insert(&env.dbx)
         .await
-        .unwrap();
-        let signal = sigint_signal::ActiveModel {
+        .unwrap()
+        .id
+    }
+
+    async fn insert_signal(
+        env: &Env,
+        unit_id: i64,
+        intercepted_at: NaiveDateTime,
+    ) -> i64 {
+        sigint_signal::ActiveModel {
             text: Set("iggy-test-signal".to_string()),
             meaning: Set(None),
-            unit: Set(Some(unit.id)),
+            unit: Set(Some(unit_id)),
             coordinates: Set(None),
             deleted: Set(false),
             created_at: Set(intercepted_at),
@@ -534,7 +572,14 @@ mod tests {
         }
         .insert(&env.dbx)
         .await
-        .unwrap();
+        .unwrap()
+        .id
+    }
+
+    async fn insert_inbox_item(
+        env: &Env,
+        intercepted_at: NaiveDateTime,
+    ) -> i64 {
         let signal_message = mk_signal_message(
             &env.dbx,
             signal_message::ActiveModel {
@@ -556,9 +601,29 @@ mod tests {
         )
         .await
         .unwrap();
-        let network = mk_sigint_network(&env.dbx, Default::default())
-            .await
-            .unwrap();
+        signal_message.id
+    }
+
+    struct NetworkFixture {
+        network_id: i64,
+        network_freq_id: i64,
+    }
+
+    async fn insert_network_frequency(
+        env: &Env,
+        inbox_item_id: i64,
+        intercepted_at: NaiveDateTime,
+        deleted: bool,
+    ) -> NetworkFixture {
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                deleted: Set(deleted),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let network_freq = mk_sigint_network_freq(
             &env.dbx,
             sigint_network_freq::ActiveModel {
@@ -574,46 +639,106 @@ mod tests {
         mk_sigint_inbox_item_network(
             &env.dbx,
             sigint_inbox_item_network::ActiveModel {
-                sigint_inbox_item_id: Set(signal_message.id),
+                sigint_inbox_item_id: Set(inbox_item_id),
                 sigint_network_id: Set(network.id),
                 ..Default::default()
             },
         )
         .await
         .unwrap();
+        NetworkFixture {
+            network_id: network.id,
+            network_freq_id: network_freq.id,
+        }
+    }
 
+    async fn insert_future_network_frequency(
+        env: &Env,
+        network_id: i64,
+        intercepted_at: NaiveDateTime,
+    ) {
+        mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network_id),
+                freq: Set("123.45".to_string()),
+                active_from: Set(intercepted_at + ChronoDuration::hours(1)),
+                active_to: Set(Some(intercepted_at + ChronoDuration::hours(2))),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    fn build_inbox_message(
+        unit_id: i64,
+        signal_id: i64,
+        network_id: i64,
+    ) -> InboxMessage {
         let mut inbox_message: InboxMessage = InboxInsertPayload {
             text: "interception".to_string(),
             freq: Some("123.45".to_string()),
             callsigns: vec!["IGGY-TEST-CALLSIGN".to_string()],
-            network_ids: Some(vec![network.id]),
+            network_ids: Some(vec![network_id]),
             ..Default::default()
         }
         .into();
-        inbox_message.unit_ids = vec![unit.id];
+        inbox_message.unit_ids = vec![unit_id];
         inbox_message.signal_tokens = Some(vec![CNSignal {
             begin: 0,
             end: 1,
             etalon: "iggy-test-signal".to_string(),
             text: "s".to_string(),
-            id: signal.id,
+            id: signal_id,
         }]);
+        inbox_message
+    }
 
-        let enriched = enrich_inbox_messages(
+    #[actix_web::test]
+    #[serial]
+    async fn inbox_event_contains_dictionary_ids_and_stays_compatible() {
+        let env = cleanup().await.unwrap();
+        let intercepted_at = Utc::now().naive_utc();
+        let unit = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let callsign_id = insert_callsign(&env, unit.id, intercepted_at).await;
+        let signal_id = insert_signal(&env, unit.id, intercepted_at).await;
+        let inbox_item_id = insert_inbox_item(&env, intercepted_at).await;
+        let network = insert_network_frequency(
             &env,
-            vec![(signal_message.id, inbox_message)],
+            inbox_item_id,
+            intercepted_at,
+            false,
         )
-        .await
-        .unwrap();
-        assert_eq!(enriched[0].1.sigint_callsign_ids, vec![callsign.id]);
-        assert_eq!(enriched[0].1.sigint_unit_ids, vec![unit.id]);
-        assert_eq!(enriched[0].1.sigint_signal_ids, vec![signal.id]);
-        assert_eq!(
-            enriched[0].1.sigint_network_freq_ids,
-            vec![network_freq.id]
-        );
-
+        .await;
+        insert_future_network_frequency(
+            &env,
+            network.network_id,
+            intercepted_at,
+        )
+        .await;
+        insert_network_frequency(&env, inbox_item_id, intercepted_at, true)
+            .await;
+        let inbox_message =
+            build_inbox_message(unit.id, signal_id, network.network_id);
+        let enriched =
+            enrich_inbox_messages(&env, vec![(inbox_item_id, inbox_message)])
+                .await
+                .unwrap();
         let event = serde_json::to_value(&enriched[0]).unwrap();
+        assert_eq!(
+            event[1]["sigint_callsign_ids"],
+            serde_json::json!([callsign_id])
+        );
+        assert_eq!(event[1]["sigint_unit_ids"], serde_json::json!([unit.id]));
+        assert_eq!(
+            event[1]["sigint_signal_ids"],
+            serde_json::json!([signal_id])
+        );
+        assert_eq!(
+            event[1]["sigint_network_freq_ids"],
+            serde_json::json!([network.network_freq_id])
+        );
         let old_message: InboxMessage =
             serde_json::from_value(event[1].clone()).unwrap();
         assert_eq!(old_message.text, "interception");
