@@ -27,7 +27,7 @@ function resolveMediaFileName(m: MessageMediaInfo, fallbackName: string): string
   return deriveFileNameFromHref(String(m.href ?? ''), fallbackName);
 }
 
-function getDocumentKind(m: MessageMediaInfo): MessageCardDocumentKind {
+export function getDocumentKind(m: MessageMediaInfo): MessageCardDocumentKind {
   const contentType = mediaAttachmentContentType(m);
   const fileName = mediaAttachmentDisplayName(m).toLowerCase();
   const href = String(m.href ?? '').toLowerCase();
