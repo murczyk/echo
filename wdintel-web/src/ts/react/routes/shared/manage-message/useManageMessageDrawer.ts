@@ -315,6 +315,8 @@ export function useManageMessageDrawer({
         sizeBytes,
         href,
         transcription: m.transcription ?? (raw as any).transcription ?? null,
+        ocr: m.ocr ?? (raw as any).ocr ?? null,
+        summary: m.summary ?? (raw as any).summary ?? null,
       };
     });
   }, [isEditMode, editTarget?.message.media, reportSource?.message.media]);

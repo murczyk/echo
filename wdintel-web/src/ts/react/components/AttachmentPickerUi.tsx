@@ -335,6 +335,36 @@ export function AttachmentFileRow({
               onError={onPreviewError}
               onClick={onPreviewClick}
             />
+          ) : onPreviewClick ? (
+            <Box
+              component="button"
+              type="button"
+              aria-label={`Переглянути ${file.name}`}
+              onClick={onPreviewClick}
+              sx={{
+                p: 0,
+                m: 0,
+                border: 0,
+                background: 'none',
+                cursor: 'pointer',
+                borderRadius: 0.75,
+                display: 'flex',
+                width: '100%',
+                height: '100%',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'background-color 150ms ease',
+                '&:hover': { bgcolor: 'action.focus' },
+                '&:focus-visible': {
+                  outline: '2px solid',
+                  outlineColor: 'primary.main',
+                  outlineOffset: 2,
+                },
+              }}
+            >
+              <FileIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+            </Box>
           ) : (
             <FileIcon fontSize="small" sx={{ color: 'text.secondary' }} />
           )}

@@ -252,4 +252,30 @@ describe('AttachmentsSection media previews', () => {
     linkClickSpy.mockRestore();
     act(() => root.unmount());
   });
+
+  it('opens attachment preview dialog when clicking on document icon', async () => {
+    const existingMedia = [
+      {
+        id: 'media-doc',
+        fileName: 'table.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        sizeBytes: 2048,
+        href: 'https://example.com/table.xlsx',
+        transcription: null,
+      },
+    ];
+
+    const { container, root } = await renderSection([], existingMedia);
+    const previewBtn = container.querySelector('button[aria-label="Переглянути table.xlsx"]');
+    expect(previewBtn).not.toBeNull();
+
+    await act(async () => {
+      (previewBtn as HTMLElement).click();
+    });
+
+    const dialog = document.body.querySelector('div[role="dialog"]');
+    expect(dialog).not.toBeNull();
+
+    act(() => root.unmount());
+  });
 });

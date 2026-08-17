@@ -220,6 +220,31 @@ export function AttachmentsSection({
             sizeBytes: file.size ?? undefined,
           },
         });
+      } else if (previewUrl) {
+        const href = previewUrl;
+        const docKind = getDocumentKind({
+          id: file.id,
+          contentType: file.type ?? '',
+          fileName: file.name ?? null,
+          sizeBytes: file.size ?? 0,
+          transcription: null,
+          ocr: null,
+          summary: null,
+          href,
+        });
+        if (docKind !== 'unsupported') {
+          items.push({
+            type: 'document',
+            value: {
+              id: file.id,
+              href,
+              fileName: file.name ?? '',
+              sizeBytes: file.size ?? null,
+              contentType: file.type ?? null,
+              kind: docKind,
+            },
+          });
+        }
       }
     }
 
