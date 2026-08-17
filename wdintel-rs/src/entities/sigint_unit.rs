@@ -67,6 +67,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     #[serde(default)]
     pub corps: String,
+    #[serde(default)]
+    pub is_inconsistent: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

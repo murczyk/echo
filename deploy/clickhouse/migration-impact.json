@@ -53,6 +53,11 @@
         { "table": "public.sigint_unit", "strategy": "mirror_resync" }
       ]
     },
+    "echo:m20260817_124312_sigint_unit_inconsistent": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "mirror_resync" }
+      ]
+    },
     "echo:m20260806_120000_drop_legacy_inbox_callsigns": {
       "changes": [
         {

@@ -2705,6 +2705,17 @@ export type ListUnitDuplicatesRsp = {
   units: Array<UnitDuplicate>;
 };
 
+export type InconsistentUnit = {
+  sigintUnitId: number;
+  name: string;
+  reasons: Array<string>;
+  problematicEchelons: Array<string>;
+};
+
+export type ListInconsistentUnitsRsp = {
+  units: Array<InconsistentUnit>;
+};
+
 export type CreateUnitReq = {
   other: string;
   teamOrCrew: string;

@@ -3,9 +3,10 @@ import { useEffect, useState } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
 import { AdminUnitDuplicatesPage } from '../admin-unit-duplicates';
+import { AdminUnitInconsistentPage } from '../admin-unit-inconsistent';
 import { AdminUnitUnparsedPage } from '../admin-unit-unparsed';
 
-type AdminUnitsTab = 'duplicates' | 'unparsed';
+type AdminUnitsTab = 'duplicates' | 'inconsistent' | 'unparsed';
 
 type AdminUnitsPageProps = {
   authUserRoles: string[];
@@ -14,6 +15,7 @@ type AdminUnitsPageProps = {
 
 const TAB_PATHS: Record<AdminUnitsTab, string> = {
   duplicates: '/admin/unit-duplicates',
+  inconsistent: '/admin/unit-inconsistent',
   unparsed: '/admin/unit-unparsed',
 };
 
@@ -40,6 +42,7 @@ export function AdminUnitsPage({ authUserRoles, initialTab }: AdminUnitsPageProp
             aria-label="Розділи адміністрування підрозділів"
           >
             <Tab value="duplicates" label="Дублікати Підрозділів" />
+            <Tab value="inconsistent" label="Неконсистентні підрозділи" />
             <Tab value="unparsed" label="Нерозпізнані підрозділи" />
           </Tabs>
         }
@@ -48,9 +51,11 @@ export function AdminUnitsPage({ authUserRoles, initialTab }: AdminUnitsPageProp
       <Box sx={{ flex: 1, minHeight: 0 }}>
         {tab === 'duplicates' ? (
           <AdminUnitDuplicatesPage authUserRoles={authUserRoles} embedded />
-        ) : (
+        ) : null}
+        {tab === 'inconsistent' ? <AdminUnitInconsistentPage embedded /> : null}
+        {tab === 'unparsed' ? (
           <AdminUnitUnparsedPage authUserRoles={authUserRoles} embedded />
-        )}
+        ) : null}
       </Box>
     </Stack>
   );
