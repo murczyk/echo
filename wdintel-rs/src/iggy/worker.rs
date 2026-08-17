@@ -598,7 +598,6 @@ mod tests {
             sigint_inbox_item::ActiveModel {
                 id: Set(signal_message.id),
                 freq: Set(Some("123.45".to_string())),
-                datetime: Set(Some(intercepted_at)),
                 ..Default::default()
             },
         )
