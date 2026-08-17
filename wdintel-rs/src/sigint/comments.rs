@@ -170,6 +170,7 @@ pub async fn create_linked_message_comment(
     created_at: Option<DateTime<Utc>>,
     post_id: Option<i64>,
 ) -> Result<i64, AppError> {
+    let source_created_at = created_at.map(|created_at| created_at.naive_utc());
     let sender =
         crate::sigint::direct_submit::query::ensure_current_user_sender(
             txn, login,
@@ -198,6 +199,18 @@ pub async fn create_linked_message_comment(
     )
     .await
     .c(h!())?;
+
+    if let Some(source_created_at) = source_created_at {
+        let mut signal_message =
+            signal_message::Entity::find_by_id(submitted.signal_message_id)
+                .one(txn)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)?
+                .into_active_model();
+        signal_message.created_at = Set(source_created_at);
+        signal_message.update(txn).await.c(h!())?;
+    }
 
     intel_prod::ActiveModel {
         signal_message_id: Set(submitted.signal_message_id),
