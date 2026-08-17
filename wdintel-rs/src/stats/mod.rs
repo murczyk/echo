@@ -9,7 +9,10 @@ use crate::sigint::freq::types::FreqGroupsMessageCountByDay;
 use crate::types::*;
 use crate::types::{Env, Mode, ShortContext};
 use crate::utils::{dt_from_millis, parse_local_datetime};
-use crate::{h, OneoffCalculateHistoricStatsPs, OneoffCalculateStatsPs};
+use crate::{
+    h, HistoricStatsKind, OneoffCalculateHistoricStatsPs,
+    OneoffCalculateStatsPs,
+};
 use anyhow::Context;
 use chrono::*;
 use echo_migration::{Expr, IntoCondition};
@@ -106,12 +109,17 @@ pub async fn oneoff_calculate_historic_stats(
     mode: Mode,
     params: OneoffCalculateHistoricStatsPs,
 ) -> Result<(), AppError> {
+    let selection = StatsSelection::from_only(&params.only);
     let force = params.force;
     let recalculate_day_stats = !params.skip_day;
     let recalculate_5min_stats = !params.skip_5min;
     let now = Utc::now().naive_utc();
-    let min_since_ts =
-        historic_stats_start(params.start.as_deref(), now).context(h!())?;
+    let min_since_ts = historic_stats_start(
+        params.start.as_deref(),
+        params.start_ts.as_deref(),
+        now,
+    )
+    .context(h!())?;
     let config = read_config(mode).context(h!())?;
     let dbx = crate::new_pg_pool_from_config(&config)
         .await
@@ -132,13 +140,14 @@ pub async fn oneoff_calculate_historic_stats(
     // calculate for part of the day today in order to proceed with rest of the days from start to finish
     let date_till_dt = get_local_date(till_ts);
     let dt_till_sod = start_of_day(date_till_dt).c(h!())?;
-    recalculate_group_stats(
+    recalculate_group_stats_redis(
         &dbx,
         &stats_redis,
         dt_till_sod,
         till_ts,
         true,
         recalculate_5min_stats,
+        selection,
     )
     .await
     .context(h!())?;
@@ -156,13 +165,14 @@ pub async fn oneoff_calculate_historic_stats(
         info!(
             "oneoff_calculate_historic_stats: from {since_ts} to {till_ts}, remaining {duration} days"
         );
-        recalculate_group_stats(
+        recalculate_group_stats_redis(
             &dbx,
             &stats_redis,
             since_ts,
             till_ts,
             recalculate_day_stats,
             recalculate_5min_stats,
+            selection,
         )
         .await
         .context(h!())?;
@@ -174,11 +184,25 @@ pub async fn oneoff_calculate_historic_stats(
 
 fn historic_stats_start(
     start: Option<&str>,
+    start_ts: Option<&str>,
     now: NaiveDateTime,
 ) -> Result<NaiveDateTime, AppError> {
-    let start = match start {
-        Some(start) => parse_local_datetime(start).c(h!())?,
-        None => now - Duration::days(STATS_MIN_DATETIME_DAYS),
+    let start = match (start, start_ts) {
+        (Some(start), None) => parse_local_datetime(start).c(h!())?,
+        (None, Some(start_ts)) => {
+            NaiveDateTime::parse_from_str(start_ts, "%Y-%m-%dT%H:%M:%S")
+                .map_err(|error| AppError::BL {
+                    msg: format!("Invalid UTC timestamp {start_ts:?}: {error}"),
+                })
+                .c(h!())?
+        }
+        (None, None) => now - Duration::days(STATS_MIN_DATETIME_DAYS),
+        (Some(_), Some(_)) => {
+            return Err(AppError::BL {
+                msg: "Historic statistics accepts only one of --start and --start-ts"
+                    .to_string(),
+            });
+        }
     };
     if start >= now {
         return Err(AppError::BL {
@@ -1269,6 +1293,7 @@ async fn repair_redis_general_day(
             till,
             None,
             batches_map,
+            StatsSelection::ALL,
         )
         .await
         .c(h!())
@@ -2055,6 +2080,36 @@ fn is_5min_stats_bucket_boundary(ts: NaiveDateTime) -> bool {
         && ts.time().nanosecond() == 0
 }
 
+#[derive(Clone, Copy)]
+struct StatsSelection {
+    general: bool,
+    unit_id: bool,
+    network: bool,
+}
+
+impl StatsSelection {
+    const ALL: Self = Self {
+        general: true,
+        unit_id: true,
+        network: true,
+    };
+
+    fn from_only(only: &[HistoricStatsKind]) -> Self {
+        if only.is_empty() {
+            return Self::ALL;
+        }
+        Self {
+            general: only.contains(&HistoricStatsKind::General),
+            unit_id: only.contains(&HistoricStatsKind::UnitId),
+            network: only.contains(&HistoricStatsKind::Network),
+        }
+    }
+
+    fn has_five_minute_stats(self) -> bool {
+        self.general || self.unit_id
+    }
+}
+
 pub async fn recalculate_group_stats(
     dbx: &DatabaseConnection,
     stats_redis: &redis::GroupStatsRedis,
@@ -2070,6 +2125,7 @@ pub async fn recalculate_group_stats(
         till_ts,
         recalculate_day_stats,
         recalculate_5min_stats,
+        StatsSelection::ALL,
     )
     .await
 }
@@ -2081,6 +2137,7 @@ async fn recalculate_group_stats_redis(
     till_ts: NaiveDateTime,
     recalculate_day_stats: bool,
     recalculate_5min_stats: bool,
+    selection: StatsSelection,
 ) -> Result<(), AppError> {
     let since_ts = round_to_5min(since_ts).c(h!())?;
     let till_ts = round_to_5min(till_ts).c(h!())?;
@@ -2090,16 +2147,18 @@ async fn recalculate_group_stats_redis(
         .map(|batch| (batch.group_master_keys, batch.id))
         .collect::<HashMap<_, _>>();
 
-    let buckets = if recalculate_5min_stats {
+    let buckets = if recalculate_5min_stats && selection.has_five_minute_stats()
+    {
         let buckets = calculate_redis_5min_range(
             dbx,
             since_ts,
             till_ts,
             &mut batches_map,
+            selection,
         )
         .await
         .c(h!())?;
-        write_redis_5min_buckets(stats_redis, &buckets)
+        write_redis_5min_buckets(stats_redis, &buckets, selection)
             .await
             .c(h!())?;
         Some(buckets)
@@ -2108,26 +2167,31 @@ async fn recalculate_group_stats_redis(
     };
 
     if recalculate_day_stats {
-        write_redis_general_days(
-            dbx,
-            stats_redis,
-            since_ts,
-            till_ts,
-            buckets.as_ref(),
-            &mut batches_map,
-        )
-        .await
-        .c(h!())?;
-        recalculate_network_stats_redis(
-            dbx,
-            stats_redis,
-            since_ts,
-            till_ts,
-            None,
-            &mut batches_map,
-        )
-        .await
-        .c(h!())?;
+        if selection.has_five_minute_stats() {
+            write_redis_general_days(
+                dbx,
+                stats_redis,
+                since_ts,
+                till_ts,
+                buckets.as_ref(),
+                &mut batches_map,
+                selection,
+            )
+            .await
+            .c(h!())?;
+        }
+        if selection.network {
+            recalculate_network_stats_redis(
+                dbx,
+                stats_redis,
+                since_ts,
+                till_ts,
+                None,
+                &mut batches_map,
+            )
+            .await
+            .c(h!())?;
+        }
     }
     Ok(())
 }
@@ -2142,11 +2206,16 @@ async fn write_redis_5min_range(
     if till_ts <= since_ts {
         return Ok(());
     }
-    let buckets =
-        calculate_redis_5min_range(dbx, since_ts, till_ts, batches_map)
-            .await
-            .c(h!())?;
-    write_redis_5min_buckets(stats_redis, &buckets).await
+    let buckets = calculate_redis_5min_range(
+        dbx,
+        since_ts,
+        till_ts,
+        batches_map,
+        StatsSelection::ALL,
+    )
+    .await
+    .c(h!())?;
+    write_redis_5min_buckets(stats_redis, &buckets, StatsSelection::ALL).await
 }
 
 async fn calculate_redis_5min_range(
@@ -2154,17 +2223,31 @@ async fn calculate_redis_5min_range(
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
     batches_map: &mut HashMap<String, i64>,
+    selection: StatsSelection,
 ) -> Result<BTreeMap<NaiveDateTime, redis::FiveMinuteBucket>, AppError> {
-    let generic_stats =
-        load_generic_stats(dbx, since_ts, till_ts).await.c(h!())?;
-    let network_stats = load_network_stats(dbx, since_ts, till_ts, None)
-        .await
-        .c(h!())?;
-    let network_ids = network_stats
-        .iter()
-        .map(|row| row.network_id)
-        .collect::<HashSet<_>>();
-    let network_aors = load_network_aor_map(dbx, &network_ids).await.c(h!())?;
+    let generic_stats = load_generic_stats_selected(
+        dbx,
+        since_ts,
+        till_ts,
+        selection.general,
+        selection.unit_id,
+    )
+    .await
+    .c(h!())?;
+    let (network_stats, network_aors) = if selection.general {
+        let network_stats = load_network_stats(dbx, since_ts, till_ts, None)
+            .await
+            .c(h!())?;
+        let network_ids = network_stats
+            .iter()
+            .map(|row| row.network_id)
+            .collect::<HashSet<_>>();
+        let network_aors =
+            load_network_aor_map(dbx, &network_ids).await.c(h!())?;
+        (network_stats, network_aors)
+    } else {
+        (Vec::new(), HashMap::new())
+    };
     let buckets = redis::build_5min_buckets(
         dbx,
         &generic_stats,
@@ -2182,16 +2265,21 @@ async fn calculate_redis_5min_range(
 async fn write_redis_5min_buckets(
     stats_redis: &redis::GroupStatsRedis,
     buckets: &BTreeMap<NaiveDateTime, redis::FiveMinuteBucket>,
+    selection: StatsSelection,
 ) -> Result<(), AppError> {
     for (timestamp, bucket) in buckets {
-        stats_redis
-            .write_5min(*timestamp, &bucket.groups, &bucket.details)
-            .await
-            .c(h!())?;
-        stats_redis
-            .write_unit_5min(*timestamp, &bucket.units)
-            .await
-            .c(h!())?;
+        if selection.general {
+            stats_redis
+                .write_5min(*timestamp, &bucket.groups, &bucket.details)
+                .await
+                .c(h!())?;
+        }
+        if selection.unit_id {
+            stats_redis
+                .write_unit_5min(*timestamp, &bucket.units)
+                .await
+                .c(h!())?;
+        }
     }
     Ok(())
 }
@@ -2205,6 +2293,7 @@ async fn write_redis_general_days(
         &BTreeMap<NaiveDateTime, redis::FiveMinuteBucket>,
     >,
     batches_map: &mut HashMap<String, i64>,
+    selection: StatsSelection,
 ) -> Result<(), AppError> {
     if till_ts <= since_ts {
         return Ok(());
@@ -2213,80 +2302,115 @@ async fn write_redis_general_days(
     let till_date = till_date_inclusive_for_exclusive_till(till_ts).c(h!())?;
     let mut date = since_date;
     while date <= till_date {
-        let day_since = start_of_day(date).c(h!())?;
-        let day_till = std::cmp::min(
-            start_of_day(date + Duration::days(1)).c(h!())?,
+        let (groups, details, units) = load_or_recalculate_day_sources(
+            dbx,
+            stats_redis,
+            date,
             till_ts,
-        );
-        let timestamps = five_minute_timestamps(day_since, day_till);
-        let calculated = calculated_buckets.and_then(|buckets| {
-            timestamps
-                .iter()
-                .map(|timestamp| buckets.get(timestamp).cloned())
-                .collect::<Option<Vec<_>>>()
-        });
-        let (groups, details, units) = if let Some(calculated) = calculated {
-            (
-                calculated
-                    .iter()
-                    .map(|bucket| bucket.groups.clone())
-                    .collect(),
-                calculated
-                    .iter()
-                    .map(|bucket| bucket.details.clone())
-                    .collect(),
-                calculated.into_iter().map(|bucket| bucket.units).collect(),
-            )
-        } else {
-            let groups = stats_redis.read_group_5min(&timestamps).await;
-            let details = stats_redis.read_detail_5min(&timestamps).await;
-            let units = stats_redis.read_unit_5min(&timestamps).await;
-            match (groups, details, units) {
-                (Ok(groups), Ok(details), Ok(units)) => {
-                    (groups, details, units)
-                }
-                (group_result, detail_result, unit_result) => {
-                    warn!(
-                        "rebuilding missing Redis 5-minute stats for {date}: groups={:?}, details={:?}, units={:?}",
-                        group_result.err(),
-                        detail_result.err(),
-                        unit_result.err(),
-                    );
-                    let buckets = calculate_redis_5min_range(
-                        dbx,
-                        day_since,
-                        day_till,
-                        batches_map,
-                    )
-                    .await
-                    .c(h!())?;
-                    write_redis_5min_buckets(stats_redis, &buckets)
-                        .await
-                        .c(h!())?;
-                    (
-                        buckets
-                            .values()
-                            .map(|bucket| bucket.groups.clone())
-                            .collect(),
-                        buckets
-                            .values()
-                            .map(|bucket| bucket.details.clone())
-                            .collect(),
-                        buckets
-                            .into_values()
-                            .map(|bucket| bucket.units)
-                            .collect(),
-                    )
-                }
-            }
-        };
-        let bucket = redis::aggregate_general_day(groups, details);
-        stats_redis.write_general_day(date, &bucket).await.c(h!())?;
-        let units = redis::aggregate_unit_day(units);
-        stats_redis.write_unit_day(date, &units).await.c(h!())?;
+            calculated_buckets,
+            batches_map,
+            selection,
+        )
+        .await
+        .c(h!())?;
+        if selection.general {
+            let bucket = redis::aggregate_general_day(groups, details);
+            stats_redis.write_general_day(date, &bucket).await.c(h!())?;
+        }
+        if selection.unit_id {
+            let units = redis::aggregate_unit_day(units);
+            stats_redis.write_unit_day(date, &units).await.c(h!())?;
+        }
         date += Duration::days(1);
     }
     Ok(())
+}
+
+type GeneralDaySources = (
+    Vec<redis::GroupBucket>,
+    Vec<redis::DetailBucket>,
+    Vec<redis::UnitBucket>,
+);
+
+async fn load_or_recalculate_day_sources(
+    dbx: &DatabaseConnection,
+    stats_redis: &redis::GroupStatsRedis,
+    date: NaiveDate,
+    till_ts: NaiveDateTime,
+    calculated_buckets: Option<
+        &BTreeMap<NaiveDateTime, redis::FiveMinuteBucket>,
+    >,
+    batches_map: &mut HashMap<String, i64>,
+    selection: StatsSelection,
+) -> Result<GeneralDaySources, AppError> {
+    let day_since = start_of_day(date).c(h!())?;
+    let day_till =
+        std::cmp::min(start_of_day(date + Duration::days(1)).c(h!())?, till_ts);
+    let timestamps = five_minute_timestamps(day_since, day_till);
+    let calculated = calculated_buckets.and_then(|buckets| {
+        timestamps
+            .iter()
+            .map(|timestamp| buckets.get(timestamp).cloned())
+            .collect::<Option<Vec<_>>>()
+    });
+    if let Some(calculated) = calculated {
+        return Ok(split_five_minute_buckets(calculated));
+    }
+
+    let groups = if selection.general {
+        stats_redis.read_group_5min(&timestamps).await
+    } else {
+        Ok(Vec::new())
+    };
+    let details = if selection.general {
+        stats_redis.read_detail_5min(&timestamps).await
+    } else {
+        Ok(Vec::new())
+    };
+    let units = if selection.unit_id {
+        stats_redis.read_unit_5min(&timestamps).await
+    } else {
+        Ok(Vec::new())
+    };
+    match (groups, details, units) {
+        (Ok(groups), Ok(details), Ok(units)) => {
+            return Ok((groups, details, units));
+        }
+        (groups, details, units) => {
+            warn!(
+                "rebuilding missing Redis 5-minute stats for {date}: groups={:?}, details={:?}, units={:?}",
+                groups.err(),
+                details.err(),
+                units.err(),
+            );
+        }
+    }
+    let buckets = calculate_redis_5min_range(
+        dbx,
+        day_since,
+        day_till,
+        batches_map,
+        selection,
+    )
+    .await
+    .c(h!())?;
+    write_redis_5min_buckets(stats_redis, &buckets, selection)
+        .await
+        .c(h!())?;
+    Ok(split_five_minute_buckets(buckets.into_values().collect()))
+}
+
+fn split_five_minute_buckets(
+    buckets: Vec<redis::FiveMinuteBucket>,
+) -> GeneralDaySources {
+    (
+        buckets.iter().map(|bucket| bucket.groups.clone()).collect(),
+        buckets
+            .iter()
+            .map(|bucket| bucket.details.clone())
+            .collect(),
+        buckets.into_iter().map(|bucket| bucket.units).collect(),
+    )
 }
 
 fn five_minute_timestamps(
@@ -2558,23 +2682,47 @@ pub async fn recalculate_last_seen_for_networks_exact(
     Ok(())
 }
 
+#[cfg(test)]
 async fn load_generic_stats(
     dbx: &DatabaseConnection,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
 ) -> Result<Vec<StatsRow>, AppError> {
-    let stats_by_datetime =
-        generic_stats_by_datetime(dbx, since_ts, till_ts).await?;
+    Ok(
+        load_generic_stats_selected(dbx, since_ts, till_ts, true, true)
+            .await
+            .context(h!())?,
+    )
+}
+
+async fn load_generic_stats_selected(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+    include_callsigns: bool,
+    include_linked_units: bool,
+) -> Result<Vec<StatsRow>, AppError> {
+    let stats_by_datetime = generic_stats_by_datetime(dbx, since_ts, till_ts)
+        .await
+        .context(h!())?;
     let stats_by_created_at =
-        generic_stats_by_created_at(dbx, since_ts, till_ts).await?;
+        generic_stats_by_created_at(dbx, since_ts, till_ts)
+            .await
+            .context(h!())?;
     let mut stats = stats_by_datetime
         .into_iter()
         .chain(stats_by_created_at)
         .collect_vec();
-    enrich_stats_callsigns(dbx, &mut stats).await?;
-    enrich_stats_linked_units(dbx, &mut stats)
-        .await
-        .context(h!())?;
+    if include_callsigns {
+        enrich_stats_callsigns(dbx, &mut stats)
+            .await
+            .context(h!())?;
+    }
+    if include_linked_units {
+        enrich_stats_linked_units(dbx, &mut stats)
+            .await
+            .context(h!())?;
+    }
     Ok(stats)
 }
 
@@ -3012,6 +3160,55 @@ fn batch_key_to_group_keys(batch_key: String) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::{CommandFactory, Parser};
+
+    #[test]
+    fn historic_stats_help_lists_all_statistics_families() {
+        let mut command = crate::Arg::command();
+        let help = command
+            .find_subcommand_mut("oneoff-calculate-historic-stats")
+            .unwrap()
+            .render_long_help()
+            .to_string();
+
+        assert!(help.contains("general"));
+        assert!(help.contains("unit-id"));
+        assert!(help.contains("network"));
+
+        let args = crate::Arg::try_parse_from([
+            "wdintel-rs",
+            "--mode",
+            "debug",
+            "oneoff-calculate-historic-stats",
+            "--only",
+            "general,unit-id",
+        ])
+        .unwrap();
+        let crate::Cmd::OneoffCalculateHistoricStats(params) = args.action
+        else {
+            panic!("unexpected command");
+        };
+        assert_eq!(
+            params.only,
+            vec![HistoricStatsKind::General, HistoricStatsKind::UnitId]
+        );
+    }
+
+    #[test]
+    fn historic_stats_start_supports_local_and_utc_parameters() {
+        let now = ndt(2026, 8, 17, 12, 0);
+
+        assert_eq!(
+            historic_stats_start(Some("2026-08-15T22:00:00"), None, now,)
+                .unwrap(),
+            ndt(2026, 8, 14, 21, 0),
+        );
+        assert_eq!(
+            historic_stats_start(None, Some("2026-08-15T22:00:00"), now,)
+                .unwrap(),
+            ndt(2026, 8, 15, 21, 0),
+        );
+    }
 
     #[test]
     fn aggregated_unit_stats_normalize_the_unknown_bucket() {

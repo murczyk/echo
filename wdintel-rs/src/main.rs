@@ -666,6 +666,16 @@ pub struct OneoffCalculateStatsPs {
     pub end: Option<String>,
 }
 
+#[derive(clap::ValueEnum, Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum HistoricStatsKind {
+    /// Group counts and detailed facets.
+    General,
+    /// Linked-unit ID counts.
+    UnitId,
+    /// Network, network-frequency, and network-callsign counts.
+    Network,
+}
+
 #[derive(clap::Args, Debug, Clone)]
 pub struct OneoffCalculateHistoricStatsPs {
     /// Oldest local calendar day to refresh, given as a local datetime.
@@ -673,6 +683,14 @@ pub struct OneoffCalculateHistoricStatsPs {
     /// Defaults to the statistics retention window.
     #[arg(long)]
     pub start: Option<String>,
+    /// UTC timestamp whose local calendar day is the oldest to refresh.
+    /// Example: `2025-08-15T00:00:00`.
+    #[arg(long, conflicts_with = "start")]
+    pub start_ts: Option<String>,
+    /// Recalculate only these statistics families (comma-separated).
+    /// By default, all statistics families are recalculated.
+    #[arg(long, value_enum, value_delimiter = ',')]
+    pub only: Vec<HistoricStatsKind>,
     #[arg(long, default_value = "false")]
     pub force: bool,
     #[arg(long, default_value = "false")]
