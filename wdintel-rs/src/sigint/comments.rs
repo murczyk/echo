@@ -46,6 +46,7 @@ pub struct LinkedMessageComment {
     pub created_at: NaiveDateTime,
     pub login_id: Option<uuid::Uuid>,
     pub post_id: Option<i64>,
+    pub legacy_comment_id: Option<i64>,
 }
 
 pub async fn find_linked_message_comments<C>(
@@ -69,34 +70,38 @@ where
         .all(dbx)
         .await
         .c(h!())?;
-    if links.is_empty() {
-        return Ok(vec![]);
-    }
-
     let child_ids = links
         .iter()
         .map(|link| link.signal_message_id)
         .collect::<Vec<_>>();
 
-    let messages = signal_message::Entity::find()
-        .filter(signal_message::Column::Id.is_in(child_ids.clone()))
-        .filter(signal_message::Column::Deleted.eq(false))
-        .all(dbx)
-        .await
-        .c(h!())?
-        .into_iter()
-        .map(|message| (message.id, message))
-        .collect::<HashMap<_, _>>();
-    let inbox_items = sigint_inbox_item::Entity::find()
-        .filter(sigint_inbox_item::Column::Id.is_in(child_ids))
-        .all(dbx)
-        .await
-        .c(h!())?
-        .into_iter()
-        .map(|item| (item.id, item))
-        .collect::<HashMap<_, _>>();
+    let messages = if child_ids.is_empty() {
+        HashMap::new()
+    } else {
+        signal_message::Entity::find()
+            .filter(signal_message::Column::Id.is_in(child_ids.clone()))
+            .filter(signal_message::Column::Deleted.eq(false))
+            .all(dbx)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|message| (message.id, message))
+            .collect::<HashMap<_, _>>()
+    };
+    let inbox_items = if child_ids.is_empty() {
+        HashMap::new()
+    } else {
+        sigint_inbox_item::Entity::find()
+            .filter(sigint_inbox_item::Column::Id.is_in(child_ids))
+            .all(dbx)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|item| (item.id, item))
+            .collect::<HashMap<_, _>>()
+    };
 
-    Ok(links
+    let mut comments = links
         .into_iter()
         .filter_map(|link| {
             let message = messages.get(&link.signal_message_id)?;
@@ -113,9 +118,43 @@ where
                 post_id: inbox_items
                     .get(&message.id)
                     .and_then(|item| item.post_id),
+                legacy_comment_id: None,
             })
         })
-        .collect())
+        .collect::<Vec<_>>();
+    let linked_message_ids = comments
+        .iter()
+        .map(|comment| comment.signal_message_id)
+        .collect::<HashSet<_>>();
+    let legacy_comments = sigint_comment::Entity::find()
+        .filter(
+            sigint_comment::Column::SignalMessageId
+                .is_in(parent_signal_message_ids.to_vec()),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    comments.extend(
+        legacy_comments
+            .into_iter()
+            .filter(|comment| {
+                comment
+                    .migrated_signal_message_id
+                    .is_none_or(|id| !linked_message_ids.contains(&id))
+            })
+            .map(|comment| LinkedMessageComment {
+                parent_signal_message_id: comment.signal_message_id,
+                signal_message_id: comment.id,
+                comment: comment.comment,
+                created_at: comment.created_at,
+                login_id: Some(comment.login_id),
+                post_id: comment.sigint_post_id,
+                legacy_comment_id: Some(comment.id),
+            }),
+    );
+    comments
+        .sort_by_key(|comment| (comment.created_at, comment.signal_message_id));
+    Ok(comments)
 }
 
 pub async fn create_linked_message_comment(

@@ -734,7 +734,21 @@ fn non_empty_comment_exists() -> SimpleExpr {
         )
         .into_query();
 
-    Expr::exists(subquery)
+    let legacy_subquery = sigint_comment::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(
+            Expr::col((
+                sigint_comment::Entity,
+                sigint_comment::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
+        .filter(sigint_comment::Column::Comment.ne(""))
+        .into_query();
+
+    Expr::exists(subquery).or(Expr::exists(legacy_subquery))
 }
 
 async fn load_non_empty_comments(

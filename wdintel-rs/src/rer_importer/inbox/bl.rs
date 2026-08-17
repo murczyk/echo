@@ -874,7 +874,8 @@ where
     let owner_logins = comment_ownership_logins(login, logins);
     Ok(
         crate::sigint::comments::find_linked_message_comments(db, &[item_id])
-            .await?
+            .await
+            .c(h!())?
             .into_iter()
             .filter(|comment| {
                 comment.post_id.is_none()
@@ -901,22 +902,37 @@ pub(crate) async fn upsert_editable_linked_message_comment(
     comment: &str,
 ) -> Result<(), AppError> {
     if let Some(existing) =
-        find_editable_linked_message_comment(db, item_id, login, logins).await?
+        find_editable_linked_message_comment(db, item_id, login, logins)
+            .await
+            .c(h!())?
     {
-        let mut message =
-            signal_message::Entity::find_by_id(existing.signal_message_id)
-                .one(db)
-                .await
-                .c(h!())?
-                .ok_or(AppError::NotFound)?
-                .into_active_model();
-        message.body = Set(Some(comment.to_string()));
-        message.update(db).await.c(h!())?;
+        if let Some(legacy_comment_id) = existing.legacy_comment_id {
+            let mut legacy_comment =
+                sigint_comment::Entity::find_by_id(legacy_comment_id)
+                    .one(db)
+                    .await
+                    .c(h!())?
+                    .ok_or(AppError::NotFound)?
+                    .into_active_model();
+            legacy_comment.comment = Set(comment.to_string());
+            legacy_comment.update(db).await.c(h!())?;
+        } else {
+            let mut message =
+                signal_message::Entity::find_by_id(existing.signal_message_id)
+                    .one(db)
+                    .await
+                    .c(h!())?
+                    .ok_or(AppError::NotFound)?
+                    .into_active_model();
+            message.body = Set(Some(comment.to_string()));
+            message.update(db).await.c(h!())?;
+        }
     } else {
         crate::sigint::comments::create_linked_message_comment(
             env, db, item_id, login, logins, comment, None, None,
         )
-        .await?;
+        .await
+        .c(h!())?;
     }
     Ok(())
 }
@@ -933,22 +949,30 @@ where
     let owner_logins = comment_ownership_logins(login, logins);
     let comments =
         crate::sigint::comments::find_linked_message_comments(db, &[item_id])
-            .await?;
+            .await
+            .c(h!())?;
     for comment in comments.into_iter().filter(|comment| {
         comment.post_id.is_none()
             && comment
                 .login_id
                 .is_some_and(|login_id| owner_logins.contains(&login_id))
     }) {
-        let mut message =
-            signal_message::Entity::find_by_id(comment.signal_message_id)
-                .one(db)
+        if let Some(legacy_comment_id) = comment.legacy_comment_id {
+            sigint_comment::Entity::delete_by_id(legacy_comment_id)
+                .exec(db)
                 .await
-                .c(h!())?
-                .ok_or(AppError::NotFound)?
-                .into_active_model();
-        message.deleted = Set(true);
-        message.update(db).await.c(h!())?;
+                .c(h!())?;
+        } else {
+            let mut message =
+                signal_message::Entity::find_by_id(comment.signal_message_id)
+                    .one(db)
+                    .await
+                    .c(h!())?
+                    .ok_or(AppError::NotFound)?
+                    .into_active_model();
+            message.deleted = Set(true);
+            message.update(db).await.c(h!())?;
+        }
     }
     Ok(())
 }

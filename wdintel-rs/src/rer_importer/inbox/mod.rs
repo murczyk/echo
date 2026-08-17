@@ -411,6 +411,26 @@ pub(crate) async fn messages_by_id_bl(
                 .is_in(sigint_groups.clone()),
         )
         .to_owned();
+    let owner_access_query = Query::select()
+        .expr(Expr::value(1))
+        .from(signal_message_group::Entity)
+        .and_where(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .to_owned();
+    let owner_sender_ids = logins
+        .iter()
+        .chain(std::iter::once(login))
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let owner_access = Condition::all()
+        .add(datasource_group::Column::GroupMasterKey.is_null())
+        .add(Expr::exists(owner_access_query).not())
+        .add(signal_message::Column::Sender.is_in(owner_sender_ids));
     let mut messages = SignalMessage::find()
         .join(
             JoinType::LeftJoin,
@@ -443,7 +463,8 @@ pub(crate) async fn messages_by_id_bl(
                     datasource_group::Column::GroupMasterKey
                         .eq_any(sigint_groups),
                 )
-                .add(Expr::exists(parent_access_query)),
+                .add(Expr::exists(parent_access_query))
+                .add(owner_access),
         )
         .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()));
     let owner_organism_id =

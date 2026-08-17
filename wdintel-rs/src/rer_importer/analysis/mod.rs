@@ -1859,7 +1859,7 @@ where
             m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
     }
     if or_with_extended_form == &Some(true) {
-        let comment_exists = sigint_comment::Entity::find()
+        let legacy_comment_exists = sigint_comment::Entity::find()
             .select_only()
             .expr(Expr::value(1))
             .filter(
@@ -1869,10 +1869,42 @@ where
                 ))
                 .equals((signal_message::Entity, signal_message::Column::Id)),
             )
+            .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
             .filter(sigint_comment::Column::Comment.eq("").not())
             .into_query();
+        let linked_message = Alias::new("linked_message");
+        let linked_comment_exists = intel_prod::Entity::find()
+            .select_only()
+            .expr(Expr::value(1))
+            .join_as(
+                JoinType::InnerJoin,
+                intel_prod::Relation::SignalMessage1.def(),
+                linked_message.clone(),
+            )
+            .filter(
+                Expr::col((
+                    intel_prod::Entity,
+                    intel_prod::Column::ParentSignalMessageId,
+                ))
+                .equals((signal_message::Entity, signal_message::Column::Id)),
+            )
+            .filter(
+                Expr::col((
+                    linked_message.clone(),
+                    signal_message::Column::Deleted,
+                ))
+                .eq(false),
+            )
+            .filter(
+                Expr::col((linked_message, signal_message::Column::Body))
+                    .ne(""),
+            )
+            .into_query();
 
-        q = q.filter(Expr::exists(comment_exists));
+        q = q.filter(
+            Expr::exists(legacy_comment_exists)
+                .or(Expr::exists(linked_comment_exists)),
+        );
     }
 
     if let Some(ref inner_expr) = m_inner_expr {
@@ -6201,19 +6233,48 @@ async fn accessible_message_ids(
         crate::messenger::group::get_identity_sigint_groups(dbx, login)
             .await
             .c(h!())?;
+    let organism_logins =
+        crate::users::get_organism_login_ids_by_id(dbx, login)
+            .await
+            .c(h!())?;
+    let owner_logins = organism_logins
+        .into_iter()
+        .chain(std::iter::once(*login))
+        .map(|login| login.to_string())
+        .collect::<Vec<_>>();
+    let has_group = Query::select()
+        .expr(Expr::value(1))
+        .from(signal_message_group::Entity)
+        .and_where(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .to_owned();
+    let owner_access = Condition::all()
+        .add(signal_message::Column::DatasourceGroupId.is_null())
+        .add(Expr::exists(has_group).not())
+        .add(signal_message::Column::Sender.is_in(owner_logins));
 
     Ok(signal_message::Entity::find()
         .select_only()
         .distinct()
         .column(signal_message::Column::Id)
         .join(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             signal_message::Relation::SignalMessageGroup.def(),
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()))
         .filter(
-            signal_message_group::Column::GroupMasterKey.eq_any(sigint_groups),
+            Condition::any()
+                .add(
+                    signal_message_group::Column::GroupMasterKey
+                        .eq_any(sigint_groups),
+                )
+                .add(owner_access),
         )
         .into_tuple::<i64>()
         .all(dbx)

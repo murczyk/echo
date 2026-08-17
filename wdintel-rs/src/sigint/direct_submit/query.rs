@@ -128,11 +128,71 @@ where
         .collect())
 }
 
+pub async fn normalize_copy_parent_signal_message_ids<C>(
+    dbx: &C,
+    signal_message_ids: &[i64],
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if signal_message_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let links = intel_prod::Entity::find()
+        .filter(
+            intel_prod::Column::SignalMessageId
+                .is_in(signal_message_ids.to_vec()),
+        )
+        .order_by_asc(intel_prod::Column::CreatedAt)
+        .order_by_asc(intel_prod::Column::ParentSignalMessageId)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut parents_by_message = HashMap::<i64, Vec<i64>>::new();
+    for link in links {
+        parents_by_message
+            .entry(link.signal_message_id)
+            .or_default()
+            .push(link.parent_signal_message_id);
+    }
+    let mut normalized = Vec::new();
+    let mut seen = HashSet::new();
+    for signal_message_id in signal_message_ids {
+        let parent_ids = parents_by_message
+            .get(signal_message_id)
+            .map(Vec::as_slice)
+            .unwrap_or(std::slice::from_ref(signal_message_id));
+        for parent_id in parent_ids {
+            if seen.insert(*parent_id) {
+                normalized.push(*parent_id);
+            }
+        }
+    }
+    Ok(normalized)
+}
+
 pub async fn resolve_parent_datasource_id<C>(
     dbx: &C,
     parent_signal_message_ids: &[i64],
     allowed_groups: &[String],
 ) -> Result<i64, AppError>
+where
+    C: ConnectionTrait,
+{
+    resolve_parent_datasource_id_or_none(
+        dbx,
+        parent_signal_message_ids,
+        allowed_groups,
+    )
+    .await?
+    .ok_or(AppError::NotFound)
+}
+
+pub async fn resolve_parent_datasource_id_or_none<C>(
+    dbx: &C,
+    parent_signal_message_ids: &[i64],
+    allowed_groups: &[String],
+) -> Result<Option<i64>, AppError>
 where
     C: ConnectionTrait,
 {
@@ -147,9 +207,32 @@ where
         )
         .one(dbx)
         .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)
         .c(h!())?;
+    let Some(parent_group) = parent_group else {
+        let has_grouped_parent = signal_message::Entity::find()
+            .filter(
+                signal_message::Column::Id
+                    .is_in(parent_signal_message_ids.to_vec()),
+            )
+            .filter(signal_message::Column::DatasourceGroupId.is_not_null())
+            .one(dbx)
+            .await
+            .c(h!())?
+            .is_some()
+            || signal_message_group::Entity::find()
+                .filter(
+                    signal_message_group::Column::SignalMessageId
+                        .is_in(parent_signal_message_ids.to_vec()),
+                )
+                .one(dbx)
+                .await
+                .c(h!())?
+                .is_some();
+        if has_grouped_parent {
+            return Err(AppError::NotFound);
+        }
+        return Ok(None);
+    };
     if let Some(datasource_group_id) = parent_group.datasource_group_id {
         if let Some(datasource_group) =
             datasource_group::Entity::find_by_id(datasource_group_id)
@@ -157,12 +240,14 @@ where
                 .await
                 .c(h!())?
         {
-            return Ok(datasource_group.datasource_id);
+            return Ok(Some(datasource_group.datasource_id));
         }
     }
     match parent_group.group_master_key.as_deref() {
         Some(group_master_key) => {
-            resolve_datasource_id_for_group(dbx, group_master_key).await
+            resolve_datasource_id_for_group(dbx, group_master_key)
+                .await
+                .map(Some)
         }
         None => Err(AppError::NotFound),
     }
@@ -193,7 +278,9 @@ pub async fn find_copyable_signal_message<C>(
 where
     C: ConnectionTrait,
 {
-    ensure_copy_sources_are_not_reports(dbx, &[signal_message_id]).await?;
+    ensure_copy_sources_are_not_reports(dbx, &[signal_message_id])
+        .await
+        .c(h!())?;
     signal_message::Entity::find_by_id(signal_message_id)
         .join(
             JoinType::InnerJoin,
@@ -214,6 +301,51 @@ pub async fn find_copyable_signal_messages<C>(
     dbx: &C,
     signal_message_ids: &[i64],
     allowed_groups: &[String],
+    login_id: &uuid::Uuid,
+    organism_logins: &[uuid::Uuid],
+) -> Result<Vec<signal_message::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    find_copyable_signal_messages_inner(
+        dbx,
+        signal_message_ids,
+        allowed_groups,
+        login_id,
+        organism_logins,
+        true,
+    )
+    .await
+}
+
+pub async fn find_copyable_signal_messages_for_copy<C>(
+    dbx: &C,
+    signal_message_ids: &[i64],
+    allowed_groups: &[String],
+    login_id: &uuid::Uuid,
+    organism_logins: &[uuid::Uuid],
+) -> Result<Vec<signal_message::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    find_copyable_signal_messages_inner(
+        dbx,
+        signal_message_ids,
+        allowed_groups,
+        login_id,
+        organism_logins,
+        false,
+    )
+    .await
+}
+
+async fn find_copyable_signal_messages_inner<C>(
+    dbx: &C,
+    signal_message_ids: &[i64],
+    allowed_groups: &[String],
+    login_id: &uuid::Uuid,
+    organism_logins: &[uuid::Uuid],
+    reject_reports: bool,
 ) -> Result<Vec<signal_message::Model>, AppError>
 where
     C: ConnectionTrait,
@@ -221,18 +353,14 @@ where
     if signal_message_ids.is_empty() {
         return Ok(vec![]);
     }
-    ensure_copy_sources_are_not_reports(dbx, signal_message_ids).await?;
+    if reject_reports {
+        ensure_copy_sources_are_not_reports(dbx, signal_message_ids)
+            .await
+            .c(h!())?;
+    }
     let sources = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
         .filter(signal_message::Column::Id.is_in(signal_message_ids.to_vec()))
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            datasource_group::Column::GroupMasterKey
-                .is_in(allowed_groups.to_vec()),
-        )
         .all(dbx)
         .await
         .c(h!())?;
@@ -245,6 +373,20 @@ where
         }
         unique
     });
+    for source in &sources {
+        if !message_has_copy_access(
+            dbx,
+            source,
+            allowed_groups,
+            login_id,
+            organism_logins,
+        )
+        .await
+        .c(h!())?
+        {
+            return Err(AppError::NotFound);
+        }
+    }
     let requested_ids = signal_message_ids.iter().collect::<HashSet<_>>();
     if sources.len() != requested_ids.len() {
         return Err(AppError::NotFound);
@@ -260,6 +402,107 @@ where
         })
         .collect::<Result<Vec<_>, _>>()
         .c(h!())?)
+}
+
+async fn message_has_copy_access<C>(
+    dbx: &C,
+    message: &signal_message::Model,
+    allowed_groups: &[String],
+    login_id: &uuid::Uuid,
+    organism_logins: &[uuid::Uuid],
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    if message_has_direct_copy_access(
+        dbx,
+        message,
+        allowed_groups,
+        login_id,
+        organism_logins,
+    )
+    .await
+    .c(h!())?
+    {
+        return Ok(true);
+    }
+
+    let parent_ids =
+        find_intel_prod_parent_ids(dbx, message.id).await.c(h!())?;
+    for parent_id in parent_ids {
+        let Some(parent) = signal_message::Entity::find_by_id(parent_id)
+            .filter(signal_message::Column::Deleted.eq(false))
+            .one(dbx)
+            .await
+            .c(h!())?
+        else {
+            continue;
+        };
+        if message_has_direct_copy_access(
+            dbx,
+            &parent,
+            allowed_groups,
+            login_id,
+            organism_logins,
+        )
+        .await
+        .c(h!())?
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+async fn message_has_direct_copy_access<C>(
+    dbx: &C,
+    message: &signal_message::Model,
+    allowed_groups: &[String],
+    login_id: &uuid::Uuid,
+    organism_logins: &[uuid::Uuid],
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    if let Some(datasource_group_id) = message.datasource_group_id {
+        let has_datasource_group_access =
+            datasource_group::Entity::find_by_id(datasource_group_id)
+                .filter(
+                    datasource_group::Column::GroupMasterKey
+                        .is_in(allowed_groups.to_vec()),
+                )
+                .one(dbx)
+                .await
+                .c(h!())?
+                .is_some();
+        if has_datasource_group_access {
+            return Ok(true);
+        }
+    }
+
+    let groups = signal_message_group::Entity::find()
+        .filter(signal_message_group::Column::SignalMessageId.eq(message.id))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    if groups.iter().any(|group| {
+        group
+            .group_master_key
+            .as_ref()
+            .is_some_and(|key| allowed_groups.contains(key))
+    }) {
+        return Ok(true);
+    }
+
+    let login = login_id.to_string();
+    Ok(message.datasource_group_id.is_none()
+        && groups.is_empty()
+        && (message.sender.as_deref() == Some(login.as_str())
+            || message.sender.as_deref().is_some_and(|sender| {
+                Uuid::parse_str(sender).ok().is_some_and(|sender_id| {
+                    organism_logins.contains(&sender_id)
+                })
+            })))
 }
 
 async fn ensure_copy_sources_are_not_reports<C>(
@@ -451,7 +694,8 @@ pub async fn copy_signal_message_comments(
         dbx,
         source_signal_message_ids,
     )
-    .await?;
+    .await
+    .c(h!())?;
 
     let mut copied_ids = std::collections::HashSet::new();
     for comment_model in comments {

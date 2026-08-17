@@ -72,18 +72,20 @@ pub async fn copy_signal_messages(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
+    let logins = crate::users::get_organism_login_ids_by_id(&env.dbx, login)
+        .await
+        .c(h!())?;
 
-    let sources = query::find_copyable_signal_messages(
+    let sources = query::find_copyable_signal_messages_for_copy(
         &env.dbx,
         &signal_message_ids,
         &allowed_groups,
+        login,
+        &logins,
     )
     .await
     .c(h!())?;
 
-    let logins = crate::users::get_organism_login_ids_by_id(&env.dbx, login)
-        .await
-        .c(h!())?;
     let request = crate::rer_importer::types::InboxMessagesReq {
         highlight_points: Some(true),
         ..Default::default()
@@ -122,12 +124,6 @@ async fn copy_signal_message_payload<C>(
 where
     C: sea_orm::ConnectionTrait,
 {
-    let group_master_key = message
-        .group_master_key
-        .clone()
-        .ok_or(AppError::NotFound)
-        .c(h!())?;
-
     let tag_ids = message.tags.clone().unwrap_or_default();
     let copy_inputs =
         query::find_copy_signal_message_inputs(dbx, source.id, &tag_ids)
@@ -163,6 +159,16 @@ where
             coordinates.push(coordinate);
         }
     }
+
+    let parent_signal_message_ids =
+        query::find_intel_prod_parent_ids(dbx, source.id)
+            .await
+            .c(h!())?;
+    let parent_signal_message_ids = if parent_signal_message_ids.is_empty() {
+        vec![source.id]
+    } else {
+        parent_signal_message_ids
+    };
 
     Ok(DirectSubmitPayload {
         full_body: source.body.clone().or_else(|| Some(message.text.clone())),
@@ -200,7 +206,7 @@ where
             }
         }),
         dmr: vec![],
-        signal_group_master_key: Some(group_master_key),
+        signal_group_master_key: message.group_master_key.clone(),
         device_name_id: Some(copy_inputs.inbox_item.device_name_id),
         upload_urls: None,
         deleted_media_ids: None,
@@ -211,7 +217,7 @@ where
                 .map(|media| media.id.to_string())
                 .collect(),
         ),
-        parent_signal_message_ids: vec![source.id],
+        parent_signal_message_ids,
     })
 }
 
@@ -356,12 +362,17 @@ async fn save_signal_message(
         None => vec![],
     };
     let parent_signal_message_ids = match signal_message_id {
-        Some(_) => stored_parent_signal_message_ids.as_slice(),
-        None => payload.parent_signal_message_ids.as_slice(),
+        Some(_) => stored_parent_signal_message_ids,
+        None => query::normalize_copy_parent_signal_message_ids(
+            &txn,
+            &payload.parent_signal_message_ids,
+        )
+        .await
+        .c(h!())?,
     };
     let copy_parent_signal_message_ids = match signal_message_id {
         Some(_) => &[][..],
-        None => parent_signal_message_ids,
+        None => parent_signal_message_ids.as_slice(),
     };
     let is_intelligence_report = !parent_signal_message_ids.is_empty();
     validate_direct_submit_payload(
@@ -403,6 +414,8 @@ async fn save_signal_message(
             &txn,
             copy_parent_signal_message_ids,
             &allowed_groups,
+            login,
+            &logins,
         )
         .await
         .c(h!())?
@@ -494,7 +507,7 @@ async fn save_signal_message(
         &txn,
         signal_message_id,
         signal_group,
-        parent_signal_message_ids,
+        &parent_signal_message_ids,
         &allowed_groups,
         login,
         &logins,
@@ -791,15 +804,13 @@ async fn persist_direct_submit_item(
             {
                 None
             } else {
-                Some(
-                    query::resolve_parent_datasource_id(
-                        txn,
-                        parent_signal_message_ids,
-                        allowed_groups,
-                    )
-                    .await
-                    .c(h!())?,
+                query::resolve_parent_datasource_id_or_none(
+                    txn,
+                    parent_signal_message_ids,
+                    allowed_groups,
                 )
+                .await
+                .c(h!())?
             };
             (datasource_id, vec![])
         }
