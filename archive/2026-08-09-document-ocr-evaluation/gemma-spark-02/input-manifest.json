@@ -1,0 +1,16 @@
+{
+  "files": [
+    {
+      "filename": "J5rHE_ZMsk1H_QDCCn3v.jpg",
+      "sha256": "28f4104b68166bdc60de3d6d91b47a4498591b30e422adb70faafad6ec07f8cf"
+    },
+    {
+      "filename": "l54dw_8gZt5foedpH-PY.jpg",
+      "sha256": "228a267a2a95eb746265eb2f32c0a3f14053b22d8657a3defd8defd834ee8d60"
+    }
+  ],
+  "images_stored_in_git": false,
+  "remote_input_directory": "/srv/echo-gemma-ocr/input",
+  "remote_input_mode": "0700"
+}
+

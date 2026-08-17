@@ -200,9 +200,6 @@ view user activeName shared route { toContentMsg, model, content } =
         supportsFullscreenToggle =
             route.url.path == "/rer-duty" || route.url.path == "/rer-duty-neo"
 
-        isDevicesPath =
-            route.url.path == "/devices" || String.startsWith "/devices/" route.url.path
-
         isDevicesListPath =
             route.url.path == "/devices"
 
@@ -353,13 +350,8 @@ view user activeName shared route { toContentMsg, model, content } =
                 )
              , onClick (toContentMsg (SetOpenDropdown Nothing))
              , attribute "data-auth-user-name" user.name
+             , attribute "data-auth-user-roles" (String.join "," user.roles)
              ]
-                ++ (if route.url.path == "/rer-duty-neo" || route.url.path == "/rer-callsigns-neo" || isDevicesPath then
-                        [ attribute "data-auth-user-roles" (String.join "," user.roles) ]
-
-                    else
-                        []
-                   )
                 ++ (if usesShellContentGap then
                         [ class "app-shell--with-content-gap" ]
 

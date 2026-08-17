@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+python=/opt/echo-document-extractor/runtime/current/bin/python
+[[ -x "$python" ]] || { printf 'extractor runtime is not synchronized\n' >&2; exit 1; }
+exec "$python" -c 'from echo_document_extractor.runtime import worker; worker()'

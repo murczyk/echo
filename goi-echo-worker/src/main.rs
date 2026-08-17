@@ -13,7 +13,7 @@ mod remote_api;
 mod worker;
 mod xlsx_sync;
 
-use actix_web::{web, App, HttpServer};
+use actix_web::{middleware::Compress, web, App, HttpServer};
 use anyhow::Result;
 use http_api::{
     import_signed_frequencies, list_associations, list_knowledge, AppState,
@@ -61,6 +61,7 @@ async fn main() -> Result<()> {
     );
     HttpServer::new(move || {
         App::new()
+            .wrap(Compress::default())
             .app_data(web::Data::new(state.clone()))
             .app_data(web::PayloadConfig::new(config::API_FILE_BODY_MAX_BYTES))
             .service(list_associations)

@@ -10,15 +10,14 @@ use crate::error::AppError;
 use crate::event_stream::fanout_mult;
 use crate::event_stream::types::{EventMsg, EventType};
 use crate::rer_importer::analysis::{
-    analytics_inbox_candidates_supported,
-    analytics_inbox_initial_unit_candidates_supported,
-    analytics_inbox_request_supported, map_postgres_runtime_timeout,
-    with_analytics_read_fallback,
+    analytics_inbox_candidates_supported, analytics_inbox_request_supported,
+    map_postgres_runtime_timeout, with_analytics_read_fallback,
 };
 use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
 use crate::session::record_page_visit;
 use crate::types::*;
+use crate::utils::dt_from_millis;
 use actix_identity::Identity;
 use actix_web::web::{Data, Json};
 use actix_web::{get, post};
@@ -691,7 +690,7 @@ fn rer_duty_neo_stats_window(
 }
 
 fn rer_duty_neo_adaptive_cutoff_is_eligible(req: &InboxMessagesReq) -> bool {
-    req.page_id.as_deref() == Some("rer-duty-neo")
+    req.page_id.as_deref() == Some(RER_DUTY_NEO_PAGE_ID)
         && inbox_request_is_unbounded(req)
         && req.load_latest == Some(true)
 }
@@ -1010,14 +1009,97 @@ where
     result
 }
 
+fn inbox_request_is_for_rer_duty(req: &InboxMessagesReq) -> bool {
+    matches!(
+        req.page_id.as_deref(),
+        Some(RER_DUTY_PAGE_ID | RER_DUTY_NEO_PAGE_ID)
+    )
+}
+
+fn duty_inbox_request_uses_source_postgres_for_cursor_created_at(
+    req: &InboxMessagesReq,
+    cursor_created_at: &HashMap<i64, NaiveDateTime>,
+    now: NaiveDateTime,
+) -> bool {
+    if !inbox_request_is_for_rer_duty(req) {
+        return false;
+    }
+    if inbox_request_is_unbounded_latest(req) {
+        return true;
+    }
+    let cutoff = now - Duration::hours(RER_DUTY_POSTGRES_FRESH_CURSOR_HOURS);
+    if [req.since_date_inclusive_ms, req.till_date_inclusive_ms]
+        .into_iter()
+        .flatten()
+        .any(|millis| {
+            dt_from_millis(millis).map_or(true, |datetime| datetime >= cutoff)
+        })
+    {
+        return true;
+    }
+    [req.since_id_noninclusive, req.before_id_noninclusive]
+        .into_iter()
+        .flatten()
+        .any(|id| {
+            cursor_created_at
+                .get(&id)
+                .is_none_or(|created_at| *created_at >= cutoff)
+        })
+}
+
+async fn duty_inbox_request_uses_source_postgres(
+    source_db: &DatabaseConnection,
+    req: &InboxMessagesReq,
+) -> bool {
+    if !inbox_request_is_for_rer_duty(req) {
+        return false;
+    }
+    let cursor_ids = [req.since_id_noninclusive, req.before_id_noninclusive]
+        .into_iter()
+        .flatten()
+        .unique()
+        .collect::<Vec<_>>();
+    let cursor_created_at = if cursor_ids.is_empty() {
+        HashMap::new()
+    } else {
+        match SignalMessage::find()
+            .select_only()
+            .columns([
+                signal_message::Column::Id,
+                signal_message::Column::CreatedAt,
+            ])
+            .filter(signal_message::Column::Id.is_in(cursor_ids))
+            .into_tuple::<(i64, NaiveDateTime)>()
+            .all(source_db)
+            .await
+        {
+            Ok(cursor_created_at) => cursor_created_at.into_iter().collect(),
+            Err(error) => {
+                warn!(
+                    "failed to resolve Duty inbox cursor freshness; using source PostgreSQL: {error:?}"
+                );
+                return true;
+            }
+        }
+    };
+    duty_inbox_request_uses_source_postgres_for_cursor_created_at(
+        req,
+        &cursor_created_at,
+        Utc::now().naive_utc(),
+    )
+}
+
 async fn query_inbox_digest_with_analytics(
     login: uuid::Uuid,
     env: actix_web::web::Data<Env>,
     req: InboxMessagesReq,
     postgres_query: String,
 ) -> Result<InboxDigest, AppError> {
-    if rer_duty_neo_fresh_tail_request_supported(&req) {
-        return Ok(query_rer_duty_neo_inbox_digest_with_fresh_tail(
+    if duty_inbox_request_uses_source_postgres(&env.dbx, &req).await {
+        return query_inbox_digest(env.dbx.clone(), postgres_query).await;
+    }
+    if rer_duty_fresh_tail_request_supported(&req) {
+        return Ok(query_rer_duty_inbox_digest_with_fresh_tail(
             login,
             env,
             req,
@@ -1068,7 +1150,7 @@ async fn query_inbox_digest_with_analytics(
     .context(h!())?)
 }
 
-async fn query_rer_duty_neo_inbox_digest_with_fresh_tail(
+async fn query_rer_duty_inbox_digest_with_fresh_tail(
     login: uuid::Uuid,
     env: actix_web::web::Data<Env>,
     req: InboxMessagesReq,
@@ -1078,7 +1160,7 @@ async fn query_rer_duty_neo_inbox_digest_with_fresh_tail(
     let fresh_tail_lower_bound = analytics_fresh_tail_lower_bound(
         Utc::now().naive_utc(),
         freshness_max_age_ms,
-        RER_DUTY_NEO_ANALYTICS_FRESH_TAIL_MINUTES,
+        RER_DUTY_ANALYTICS_FRESH_TAIL_MINUTES,
     );
     let postgres_tail_query = build_postgres_fresh_tail_inbox_digest_query(
         &login,
@@ -1094,7 +1176,7 @@ async fn query_rer_duty_neo_inbox_digest_with_fresh_tail(
     let postgres_fallback_db = env.dbx.clone();
     Ok(with_analytics_read_fallback(
         env.get_ref(),
-        "rer duty neo inbox messages count",
+        "rer duty inbox messages count",
         true,
         |db| async move {
             let postgres_tail = query_inbox_digest(
@@ -1116,7 +1198,7 @@ async fn query_rer_duty_neo_inbox_digest_with_fresh_tail(
                 .context(h!())?
             else {
                 debug!(
-                    "rer duty neo inbox messages count cursor is newer than analytics; using PostgreSQL fresh tail"
+                    "rer duty inbox messages count cursor is newer than analytics; using PostgreSQL fresh tail"
                 );
                 return Ok(postgres_tail);
             };
@@ -1333,6 +1415,7 @@ fn generic_submit_item_to_inbox_message(
         post: item.post.clone(),
         post_id: None,
         unit: item.unit.clone(),
+        unit_ids: vec![],
         callsign_tokens: None,
         signal_tokens: None,
         point_tokens: None,
@@ -2522,6 +2605,18 @@ async fn get_inbox_messages_with_analytics_candidates(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    if duty_inbox_request_uses_source_postgres(&env.dbx, req).await {
+        let internal_lower_bound =
+            rer_duty_neo_adaptive_lower_bound(login, env, req).await;
+        return get_inbox_messages_with_internal_lower_bound(
+            login,
+            logins,
+            env,
+            req,
+            internal_lower_bound,
+        )
+        .await;
+    }
     let now = Utc::now().naive_utc();
     let freshness_max_age_ms = analytics_freshness_max_age_ms(env);
     match rer_analysis_inbox_route(req, now, freshness_max_age_ms) {
@@ -2548,9 +2643,9 @@ async fn get_inbox_messages_with_analytics_candidates(
         RerAnalysisInboxRoute::Default => {}
     }
 
-    if rer_duty_neo_fresh_tail_candidates_supported(req) {
+    if rer_duty_fresh_tail_candidates_supported(req) {
         if let Some(messages) =
-            try_load_rer_duty_neo_inbox_hybrid(login, logins, env, req)
+            try_load_rer_duty_inbox_hybrid(login, logins, env, req)
                 .await
                 .context(h!())?
         {
@@ -2587,20 +2682,17 @@ async fn get_inbox_messages_with_analytics_candidates(
     .await
 }
 
-fn rer_duty_neo_fresh_tail_request_supported(req: &InboxMessagesReq) -> bool {
-    req.page_id.as_deref() == Some("rer-duty-neo")
+fn rer_duty_fresh_tail_request_supported(req: &InboxMessagesReq) -> bool {
+    inbox_request_is_for_rer_duty(req)
         && req.since_id_noninclusive.is_some()
         && req.before_id_noninclusive.is_none()
         && req.till_date_inclusive_ms.is_none()
         && analytics_inbox_request_supported(req)
 }
 
-fn rer_duty_neo_fresh_tail_candidates_supported(
-    req: &InboxMessagesReq,
-) -> bool {
-    analytics_inbox_initial_unit_candidates_supported(req)
-        || (rer_duty_neo_fresh_tail_request_supported(req)
-            && analytics_inbox_candidates_supported(req))
+fn rer_duty_fresh_tail_candidates_supported(req: &InboxMessagesReq) -> bool {
+    rer_duty_fresh_tail_request_supported(req)
+        && analytics_inbox_candidates_supported(req)
 }
 
 fn rer_analysis_inbox_route(
@@ -2724,7 +2816,7 @@ async fn try_load_rer_analysis_inbox_hybrid(
     Ok(Some(messages))
 }
 
-async fn try_load_rer_duty_neo_inbox_hybrid(
+async fn try_load_rer_duty_inbox_hybrid(
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
     env: &Env,
@@ -2735,7 +2827,7 @@ async fn try_load_rer_duty_neo_inbox_hybrid(
         login,
         env,
         req,
-        RER_DUTY_NEO_ANALYTICS_FRESH_TAIL_MINUTES,
+        RER_DUTY_ANALYTICS_FRESH_TAIL_MINUTES,
         AnalyticsEmptyScopePolicy::FreshTail,
     )
     .await
@@ -2743,16 +2835,16 @@ async fn try_load_rer_duty_neo_inbox_hybrid(
         Ok(Some(candidates)) => candidates,
         Ok(None) => {
             warn!(
-                target: "rer_duty_neo_inbox_route",
-                "rer_duty_neo_inbox_route route=postgres_fallback analytics_candidates_available=false elapsed_ms={}",
+                target: "rer_duty_inbox_route",
+                "rer_duty_inbox_route route=postgres_fallback analytics_candidates_available=false elapsed_ms={}",
                 started.elapsed().as_millis(),
             );
             return Ok(None);
         }
         Err(error) => {
             warn!(
-                target: "rer_duty_neo_inbox_route",
-                "rer_duty_neo_inbox_route route=postgres_fallback postgres_tail_failed=true elapsed_ms={} error={error:?}",
+                target: "rer_duty_inbox_route",
+                "rer_duty_inbox_route route=postgres_fallback postgres_tail_failed=true elapsed_ms={} error={error:?}",
                 started.elapsed().as_millis(),
             );
             return Ok(None);
@@ -2769,16 +2861,16 @@ async fn try_load_rer_duty_neo_inbox_hybrid(
     .await?
     else {
         warn!(
-            target: "rer_duty_neo_inbox_route",
-            "rer_duty_neo_inbox_route route=postgres_fallback candidate_revalidation_complete=false merged_candidate_count={} elapsed_ms={}",
+            target: "rer_duty_inbox_route",
+            "rer_duty_inbox_route route=postgres_fallback candidate_revalidation_complete=false merged_candidate_count={} elapsed_ms={}",
             merged_candidate_count,
             started.elapsed().as_millis(),
         );
         return Ok(None);
     };
     info!(
-        target: "rer_duty_neo_inbox_route",
-        "rer_duty_neo_inbox_route route=analytics_hybrid analytics_candidate_count={} postgres_tail_candidate_count={} merged_candidate_count={} result_count={} postgres_tail_ms={} elapsed_ms={}",
+        target: "rer_duty_inbox_route",
+        "rer_duty_inbox_route route=analytics_hybrid analytics_candidate_count={} postgres_tail_candidate_count={} merged_candidate_count={} result_count={} postgres_tail_ms={} elapsed_ms={}",
         candidates.analytics_count,
         candidates.postgres_tail_count,
         merged_candidate_count,
@@ -3222,13 +3314,15 @@ async fn get_freq_pelengs_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
     use crate::entities::{
         datasource, datasource_group, echo_gpu_transcription_queue, login,
         organism, organism_group, sigint_comment, sigint_inbox_item,
-        sigint_inbox_item_metadata, sigint_inbox_item_point_token,
-        sigint_inbox_item_tag, sigint_peleng, sigint_zone_datasource,
-        signal_group, signal_message, signal_message_group,
-        signal_message_media, system_settings, tag,
+        sigint_inbox_item_metadata, sigint_inbox_item_network,
+        sigint_inbox_item_point_token, sigint_inbox_item_tag,
+        sigint_inbox_item_unit, sigint_network_unit, sigint_peleng,
+        sigint_zone_datasource, signal_group, signal_message,
+        signal_message_group, signal_message_media, system_settings, tag,
     };
     use crate::functest::tests::*;
     use chrono::{DateTime, SecondsFormat, Utc};
@@ -3395,34 +3489,146 @@ mod tests {
     }
 
     #[test]
-    fn rer_duty_neo_incremental_requests_use_the_fresh_tail() {
+    fn recent_duty_cursors_use_source_postgres() {
+        let now = NaiveDate::from_ymd_opt(2026, 8, 16)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
         let req = InboxMessagesReq {
-            page_id: Some("rer-duty-neo".to_string()),
+            page_id: Some(RER_DUTY_PAGE_ID.to_string()),
+            since_id_noninclusive: Some(42),
+            since_date_inclusive_ms: Some(
+                (now - Duration::days(3)).and_utc().timestamp_millis(),
+            ),
+            sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+            ..Default::default()
+        };
+        for age in [1, 20, 59, 60] {
+            assert!(
+                duty_inbox_request_uses_source_postgres_for_cursor_created_at(
+                    &req,
+                    &HashMap::from([(42, now - Duration::minutes(age))]),
+                    now,
+                )
+            );
+        }
+        assert!(
+            duty_inbox_request_uses_source_postgres_for_cursor_created_at(
+                &InboxMessagesReq {
+                    page_id: Some(RER_DUTY_NEO_PAGE_ID.to_string()),
+                    ..req.clone()
+                },
+                &HashMap::from([(42, now - Duration::minutes(20))]),
+                now,
+            )
+        );
+        assert!(
+            duty_inbox_request_uses_source_postgres_for_cursor_created_at(
+                &req,
+                &HashMap::new(),
+                now,
+            )
+        );
+    }
+
+    #[test]
+    fn historical_duty_cursors_remain_analytics_eligible() {
+        let now = NaiveDate::from_ymd_opt(2026, 8, 16)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let req = InboxMessagesReq {
+            page_id: Some(RER_DUTY_PAGE_ID.to_string()),
             since_id_noninclusive: Some(42),
             sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
             ..Default::default()
         };
-        assert!(rer_duty_neo_fresh_tail_request_supported(&req));
-        assert!(rer_duty_neo_fresh_tail_candidates_supported(&req));
+        assert!(
+            !duty_inbox_request_uses_source_postgres_for_cursor_created_at(
+                &req,
+                &HashMap::from([(42, now - Duration::minutes(61))]),
+                now,
+            )
+        );
+        assert!(rer_duty_fresh_tail_request_supported(&req));
+        assert!(rer_duty_fresh_tail_candidates_supported(&req));
+        assert!(rer_duty_fresh_tail_request_supported(&InboxMessagesReq {
+            page_id: Some(RER_DUTY_NEO_PAGE_ID.to_string()),
+            ..req.clone()
+        }));
 
-        assert!(!rer_duty_neo_fresh_tail_request_supported(
-            &InboxMessagesReq {
-                page_id: Some("rer-analysis".to_string()),
-                ..req.clone()
-            }
-        ));
-        assert!(!rer_duty_neo_fresh_tail_request_supported(
-            &InboxMessagesReq {
-                before_id_noninclusive: Some(43),
-                ..req.clone()
-            }
-        ));
-        assert!(!rer_duty_neo_fresh_tail_candidates_supported(
+        assert!(!rer_duty_fresh_tail_request_supported(&InboxMessagesReq {
+            page_id: Some("rer-analysis".to_string()),
+            ..req.clone()
+        }));
+        assert!(!rer_duty_fresh_tail_request_supported(&InboxMessagesReq {
+            before_id_noninclusive: Some(43),
+            ..req.clone()
+        }));
+        let historical_context = InboxMessagesReq {
+            since_id_noninclusive: None,
+            before_id_noninclusive: Some(42),
+            ..req.clone()
+        };
+        assert!(
+            !duty_inbox_request_uses_source_postgres_for_cursor_created_at(
+                &historical_context,
+                &HashMap::from([(42, now - Duration::minutes(61))]),
+                now,
+            )
+        );
+        assert!(analytics_inbox_candidates_supported(&historical_context));
+        assert!(!rer_duty_fresh_tail_candidates_supported(
             &InboxMessagesReq {
                 nolimit: Some(true),
                 ..req
             }
         ));
+    }
+
+    #[test]
+    fn latest_and_recent_date_duty_requests_use_source_postgres() {
+        let now = NaiveDate::from_ymd_opt(2026, 8, 16)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let mut latest = rer_duty_neo_latest_req();
+        latest.selected_units = Some(vec!["unit".to_string()]);
+        assert!(
+            duty_inbox_request_uses_source_postgres_for_cursor_created_at(
+                &latest,
+                &HashMap::new(),
+                now,
+            )
+        );
+
+        let recent_count = InboxMessagesReq {
+            page_id: Some(RER_DUTY_PAGE_ID.to_string()),
+            since_date_inclusive_ms: Some(
+                (now - Duration::minutes(20)).and_utc().timestamp_millis(),
+            ),
+            nolimit: Some(true),
+            ..Default::default()
+        };
+        assert!(
+            duty_inbox_request_uses_source_postgres_for_cursor_created_at(
+                &recent_count,
+                &HashMap::new(),
+                now,
+            )
+        );
+        assert!(
+            !duty_inbox_request_uses_source_postgres_for_cursor_created_at(
+                &InboxMessagesReq {
+                    since_date_inclusive_ms: Some(
+                        (now - Duration::hours(2)).and_utc().timestamp_millis(),
+                    ),
+                    ..recent_count
+                },
+                &HashMap::new(),
+                now,
+            )
+        );
     }
 
     #[test]
@@ -5390,6 +5596,76 @@ mod tests {
             .find(|t| t.login.as_deref() == Some(login.login.as_str()))
             .expect("tag by login must be present");
         assert_eq!(tag_entry.organism_id, login.organism_id);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_messages_by_id_includes_distinct_unit_ids() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let message =
+            seed_message_with_media(&env, &datasource_group, None, "units")
+                .await
+                .unwrap();
+        let first_unit =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let second_unit =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        mk_sigint_network_unit(
+            &env.dbx,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(network.id),
+                unit_id: Set(first_unit.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for (unit_id, kind) in [
+            (first_unit.id, SigintInboxItemUnitKind::Parsed),
+            (second_unit.id, SigintInboxItemUnitKind::Parsed),
+            (first_unit.id, SigintInboxItemUnitKind::Network),
+        ] {
+            sigint_inbox_item_unit::ActiveModel {
+                item_id: Set(message.id),
+                unit_id: Set(unit_id),
+                kind: Set(kind),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+
+        let logins = vec![login.id];
+        let messages = messages_by_id_bl(
+            &login.id,
+            &logins,
+            &env,
+            &[message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
+        let mut expected_unit_ids = vec![first_unit.id, second_unit.id];
+        expected_unit_ids.sort_unstable();
+
+        assert_eq!(messages[0].1.unit_ids, expected_unit_ids);
     }
 
     #[serial]

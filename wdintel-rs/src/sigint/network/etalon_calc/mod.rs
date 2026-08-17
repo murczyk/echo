@@ -13,6 +13,71 @@ pub mod worker;
 pub(super) const ETALON_CALC_QUERY_PARAM_CHUNK_SIZE: usize = 20_000;
 const ETALON_CALC_NETWORK_INSERT_CHUNK_SIZE: usize = 5_000;
 
+#[derive(Default)]
+pub(super) struct NetworkInvalidationScope {
+    pub(super) frequency: Option<String>,
+    pub(super) sigint_network_id: Option<i64>,
+    pub(super) aor_id: Option<i64>,
+    pub(super) group_master_key: Option<String>,
+}
+
+fn normalize_network_invalidation_range(
+    since_ts: Option<NaiveDateTime>,
+    till_ts: Option<NaiveDateTime>,
+    now: NaiveDateTime,
+) -> Option<(NaiveDateTime, NaiveDateTime)> {
+    let earliest_ts =
+        now - Duration::days(config::NETWORK_INBOX_OLD_WORKER_CUTOFF_DAYS);
+    let since_ts =
+        std::cmp::Ord::max(since_ts.unwrap_or(earliest_ts), earliest_ts);
+    let till_ts = std::cmp::Ord::min(till_ts.unwrap_or(now), now);
+    (since_ts < till_ts).then_some((since_ts, till_ts))
+}
+
+pub(super) async fn enqueue_network_invalidation_task<'a, 'async_trait, C>(
+    db: &'a C,
+    since_ts: Option<NaiveDateTime>,
+    till_ts: Option<NaiveDateTime>,
+    scope: NetworkInvalidationScope,
+    context_msg: String,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let requested_since_ts = since_ts;
+    let requested_till_ts = till_ts;
+    let Some((since_ts, till_ts)) = normalize_network_invalidation_range(
+        since_ts,
+        till_ts,
+        Utc::now().naive_utc(),
+    ) else {
+        info!(
+            "network invalidation task skipped: requested_since_ts={requested_since_ts:?}, requested_till_ts={requested_till_ts:?}, reason: {context_msg}"
+        );
+        return Ok(());
+    };
+    info!(
+        "network invalidation task created: since_ts={since_ts}, till_ts={till_ts}, reason: {context_msg}"
+    );
+    network_invalidation_task::ActiveModel {
+        id: NotSet,
+        frequency: Set(scope.frequency),
+        since_ts: Set(since_ts),
+        till_ts: Set(till_ts),
+        group_master_key: Set(scope.group_master_key),
+        started_at: NotSet,
+        completed_at: NotSet,
+        created_at: NotSet,
+        aor_id: Set(scope.aor_id),
+        sigint_network_id: Set(scope.sigint_network_id),
+        tag: NotSet,
+    }
+    .insert(db)
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
 fn network_assignment_enabled_condition() -> Condition {
     Condition::all()
         .add(signal_group::Column::DisableNetworkAssignment.eq(false))
@@ -108,24 +173,17 @@ async fn invalidate_network_inbox_for_group_since<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    info!("network invalidation task created, reason: {}", context_msg);
-    network_invalidation_task::ActiveModel {
-        id: NotSet,
-        frequency: NotSet,
-        since_ts: Set(since_ts),
-        till_ts: Set(Utc::now().naive_utc()),
-        group_master_key: Set(Some(group.master_key.clone())),
-        started_at: NotSet,
-        completed_at: NotSet,
-        created_at: NotSet,
-        aor_id: NotSet,
-        sigint_network_id: NotSet,
-        tag: NotSet,
-    }
-    .insert(db)
+    enqueue_network_invalidation_task(
+        db,
+        Some(since_ts),
+        None,
+        NetworkInvalidationScope {
+            group_master_key: Some(group.master_key.clone()),
+            ..Default::default()
+        },
+        context_msg,
+    )
     .await
-    .c(h!())?;
-    Ok(())
 }
 
 async fn load_group_first_inbox_item_datetime<'a, 'async_trait, C>(
@@ -184,24 +242,17 @@ pub async fn invalidate_network_inbox_for_aor(
     aor: &area_of_responsibility::Model,
     context_msg: String,
 ) -> anyhow::Result<()> {
-    info!("network invalidation task created, reason: {}", context_msg);
-    network_invalidation_task::ActiveModel {
-        id: NotSet,
-        frequency: NotSet,
-        since_ts: Set(aor.created_at),
-        till_ts: Set(Utc::now().naive_utc()),
-        group_master_key: NotSet,
-        started_at: NotSet,
-        completed_at: NotSet,
-        created_at: NotSet,
-        aor_id: Set(Some(aor.id)),
-        sigint_network_id: NotSet,
-        tag: NotSet,
-    }
-    .insert(db)
+    enqueue_network_invalidation_task(
+        db,
+        Some(aor.created_at),
+        None,
+        NetworkInvalidationScope {
+            aor_id: Some(aor.id),
+            ..Default::default()
+        },
+        context_msg,
+    )
     .await
-    .c(h!())?;
-    Ok(())
 }
 
 pub async fn invalidate_network_inbox_for_freq(
@@ -211,27 +262,17 @@ pub async fn invalidate_network_inbox_for_freq(
     db: &DatabaseConnection,
     context_msg: String,
 ) -> anyhow::Result<()> {
-    info!("network invalidation task created, reason: {}", context_msg);
-    network_invalidation_task::ActiveModel {
-        id: NotSet,
-        frequency: Set(Some(freq.to_string())),
-        since_ts: Set(since_ts.unwrap_or(
-            Utc::now().naive_utc()
-                - Duration::days(config::GROUP_STATS_DAY_TTL_DAYS),
-        )),
-        till_ts: Set(till_ts.unwrap_or(Utc::now().naive_utc())),
-        started_at: NotSet,
-        completed_at: NotSet,
-        created_at: NotSet,
-        aor_id: NotSet,
-        sigint_network_id: NotSet,
-        tag: NotSet,
-        group_master_key: NotSet,
-    }
-    .insert(db)
+    enqueue_network_invalidation_task(
+        db,
+        since_ts,
+        till_ts,
+        NetworkInvalidationScope {
+            frequency: Some(freq.to_string()),
+            ..Default::default()
+        },
+        context_msg,
+    )
     .await
-    .c(h!())?;
-    Ok(())
 }
 
 pub async fn invalidate_network_inbox(
@@ -249,22 +290,18 @@ pub async fn invalidate_network_inbox(
         "network invalidation task created for network #{}, frequencies: {frequencies_desc}; reason: {context_msg}",
         network.id
     );
-    let backfill_task = network_invalidation_task::ActiveModel {
-        id: NotSet,
-        frequency: NotSet,
-        since_ts: Set(network
-            .active_from
-            .unwrap_or(Utc::now().naive_utc() - Duration::days(365))),
-        till_ts: Set(network.active_to.unwrap_or(Utc::now().naive_utc())),
-        started_at: NotSet,
-        completed_at: NotSet,
-        created_at: NotSet,
-        aor_id: NotSet,
-        sigint_network_id: Set(Some(network.id)),
-        group_master_key: NotSet,
-        tag: NotSet,
-    };
-    backfill_task.clone().insert(db).await.c(h!())?;
+    enqueue_network_invalidation_task(
+        db,
+        network.active_from,
+        network.active_to,
+        NetworkInvalidationScope {
+            sigint_network_id: Some(network.id),
+            ..Default::default()
+        },
+        context_msg.clone(),
+    )
+    .await
+    .c(h!())?;
     let mut sigint_freqs = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(network.id))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
@@ -275,12 +312,19 @@ pub async fn invalidate_network_inbox(
         sigint_freqs.retain(|f| frequencies.contains(&f.freq))
     }
     for freq in sigint_freqs {
-        let mut backfill_task = backfill_task.clone();
-        backfill_task.since_ts = Set(freq.active_from);
-        backfill_task.till_ts =
-            Set(freq.active_to.unwrap_or(Utc::now().naive_utc()));
-        backfill_task.frequency = Set(Some(freq.freq));
-        backfill_task.insert(db).await.c(h!())?;
+        enqueue_network_invalidation_task(
+            db,
+            Some(freq.active_from),
+            freq.active_to,
+            NetworkInvalidationScope {
+                frequency: Some(freq.freq),
+                sigint_network_id: Some(network.id),
+                ..Default::default()
+            },
+            context_msg.clone(),
+        )
+        .await
+        .c(h!())?;
     }
 
     Ok(())
@@ -322,6 +366,33 @@ where
     .await
     .c(h!())?;
     Ok(result)
+}
+
+pub(crate) async fn directly_recalculated_network_unit_item_ids<C>(
+    dbx: &C,
+    sigint_inbox_item_ids: &[i64],
+) -> anyhow::Result<Vec<i64>>
+where
+    C: ConnectionTrait,
+{
+    if !crate::system_settings::support_non_rer_interceptions_enabled(dbx)
+        .await
+        .c(h!())?
+    {
+        return Ok(sigint_inbox_item_ids.to_vec());
+    }
+    let deferred_item_ids =
+        crate::sigint::unit_tag::non_rer_item_ids_from_items(
+            dbx,
+            sigint_inbox_item_ids.to_vec(),
+        )
+        .await
+        .c(h!())?;
+    Ok(sigint_inbox_item_ids
+        .iter()
+        .filter(|item_id| !deferred_item_ids.contains(item_id))
+        .copied()
+        .collect())
 }
 
 async fn delete_sigint_inbox_item_networks<'a, 'async_trait, C>(
@@ -516,6 +587,55 @@ mod tests {
     use super::*;
     use crate::functest::tests::*;
     use serial_test::serial;
+
+    #[test]
+    fn invalidation_range_is_limited_to_supported_history() {
+        let now = NaiveDateTime::parse_from_str(
+            "2026-08-16 18:00:00",
+            "%Y-%m-%d %H:%M:%S",
+        )
+        .unwrap();
+        let malformed_since = NaiveDateTime::parse_from_str(
+            "0025-08-16 21:00:00",
+            "%Y-%m-%d %H:%M:%S",
+        )
+        .unwrap();
+
+        let (since_ts, till_ts) = normalize_network_invalidation_range(
+            Some(malformed_since),
+            None,
+            now,
+        )
+        .unwrap();
+
+        assert_eq!(
+            since_ts,
+            now - Duration::days(config::NETWORK_INBOX_OLD_WORKER_CUTOFF_DAYS,)
+        );
+        assert_eq!(till_ts, now);
+    }
+
+    #[test]
+    fn invalidation_range_skips_expired_or_inverted_ranges() {
+        let now = NaiveDateTime::parse_from_str(
+            "2026-08-16 18:00:00",
+            "%Y-%m-%d %H:%M:%S",
+        )
+        .unwrap();
+
+        assert!(normalize_network_invalidation_range(
+            Some(now - Duration::days(500)),
+            Some(now - Duration::days(400)),
+            now,
+        )
+        .is_none());
+        assert!(normalize_network_invalidation_range(
+            Some(now),
+            Some(now - Duration::hours(1)),
+            now,
+        )
+        .is_none());
+    }
 
     #[serial]
     #[tokio::test]

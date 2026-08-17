@@ -171,4 +171,15 @@ describe('NetworkFreqActivityPeriodControl', () => {
       ),
     ).toBe(true);
   });
+
+  it('warns for either activity date more than one month in the future', () => {
+    const view = renderHarness({ activeFrom: '2100-01-01', activeTo: '2100-01-02' });
+    rendered.push(view);
+
+    expect(
+      view.container.textContent?.match(
+        /Перевірте дату: вона більш ніж на місяць у майбутньому\./g,
+      ),
+    ).toHaveLength(2);
+  });
 });

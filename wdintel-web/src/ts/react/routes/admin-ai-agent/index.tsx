@@ -83,6 +83,7 @@ import {
 } from '../../services/api/ai-agent';
 import { listAiEngines } from '../../services/api/ai-engines';
 import { AdminAiCallsignsPage } from '../admin-ai-callsigns';
+import { AdminOcrPage } from '../admin-ocr';
 import { AiEnginesSection } from '../admin-system-settings-neo/AiEnginesSection';
 import {
   type AiAgentEngineCompatibility,
@@ -99,6 +100,7 @@ export type AiAgentAdminSection =
   | 'dispatcher'
   | 'echo-proxies'
   | 'callsigns'
+  | 'ocr'
   | 'settings';
 
 function errorMessage(error: unknown): string {
@@ -1764,6 +1766,8 @@ export function AdminAiAgentPage({ section }: { section: AiAgentAdminSection }) 
       return <EchoProxiesPage />;
     case 'callsigns':
       return <AdminAiCallsignsPage />;
+    case 'ocr':
+      return <AdminOcrPage />;
     case 'settings':
       return <SettingsPage />;
   }

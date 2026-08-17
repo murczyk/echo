@@ -7082,31 +7082,13 @@ fn analytical_inbox_candidates_reject_unbounded_media_search_and_nolimit() {
 }
 
 #[test]
-fn analytical_inbox_candidates_support_initial_rer_duty_unit_filters() {
-    let mut req = InboxMessagesReq {
+fn analytical_inbox_candidates_reject_unbounded_initial_duty_unit_filters() {
+    let req = InboxMessagesReq {
         page_id: Some("rer-duty-neo".to_string()),
         load_latest: Some(true),
         selected_units: Some(vec!["unit".to_string()]),
         ..Default::default()
     };
-    assert!(analytics_inbox_initial_unit_candidates_supported(&req));
-    assert!(analytics_inbox_candidates_supported(&req));
-
-    req.selected_units = None;
-    req.denied_units = Some(vec!["unit".to_string()]);
-    assert!(analytics_inbox_candidates_supported(&req));
-
-    req.only_with_media = Some(true);
-    assert!(!analytics_inbox_candidates_supported(&req));
-    req.only_with_media = None;
-    req.search = Some("message".to_string());
-    assert!(!analytics_inbox_candidates_supported(&req));
-    req.search = None;
-    req.nolimit = Some(true);
-    assert!(!analytics_inbox_candidates_supported(&req));
-
-    req.nolimit = None;
-    req.page_id = Some("rer-analysis".to_string());
     assert!(!analytics_inbox_candidates_supported(&req));
 }
 

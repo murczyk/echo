@@ -158,9 +158,19 @@ async fn run_unit_tag_queue_worker_once(
         return Ok(false);
     }
     for queue_item in queue_items {
-        recalculate_inbox_item_unit_tags(dbx, queue_item.sigint_inbox_item_id)
+        let inbox_item_id = queue_item.sigint_inbox_item_id;
+        recalculate_inbox_item_unit_tags(dbx, inbox_item_id)
             .await
             .c(h!())?;
+        crate::stats::enqueue_group_stats_recalculation_for_message(
+            dbx,
+            inbox_item_id,
+            format!(
+                "recalculated unit links for inbox message {inbox_item_id}"
+            ),
+        )
+        .await
+        .c(h!())?;
         sigint_inbox_item_unit_tag_queue::Entity::delete_by_id(queue_item.id)
             .exec(dbx)
             .await

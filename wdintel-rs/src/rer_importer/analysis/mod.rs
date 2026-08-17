@@ -7550,30 +7550,10 @@ pub(crate) fn analytics_inbox_request_supported(
         && !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
 }
 
-pub(crate) fn analytics_inbox_initial_unit_candidates_supported(
-    req: &InboxMessagesReq,
-) -> bool {
-    analytics_inbox_filter_supported(req)
-        && req.page_id.as_deref() == Some("rer-duty-neo")
-        && crate::rer_importer::inbox::query::inbox_request_is_unbounded_latest(
-            req,
-        )
-        && (req
-            .selected_units
-            .as_ref()
-            .is_some_and(|units| !units.is_empty())
-            || req
-                .denied_units
-                .as_ref()
-                .is_some_and(|units| !units.is_empty()))
-}
-
 pub(crate) fn analytics_inbox_candidates_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    (analytics_inbox_request_supported(req)
-        || analytics_inbox_initial_unit_candidates_supported(req))
-        && req.nolimit != Some(true)
+    analytics_inbox_request_supported(req) && req.nolimit != Some(true)
 }
 
 fn analytics_inbox_filter_supported(req: &InboxMessagesReq) -> bool {

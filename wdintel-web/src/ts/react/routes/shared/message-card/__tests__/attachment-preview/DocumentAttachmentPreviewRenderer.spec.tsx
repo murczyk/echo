@@ -55,11 +55,17 @@ vi.mock('@mui/material', () => {
     },
     DialogActions: passthrough('div'),
     DialogContent: passthrough('div'),
+    Divider: passthrough('hr'),
     IconButton: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
       <button {...props}>{children}</button>
     ),
     Popover: ({ children, open }: { children?: ReactNode; open?: boolean }) =>
       open ? <div>{children}</div> : null,
+    Menu: ({ children, open }: { children?: ReactNode; open?: boolean }) =>
+      open ? <div role="menu">{children}</div> : null,
+    MenuItem: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
+      <button {...props}>{children}</button>
+    ),
     Slider: ({
       value,
       onChange,
@@ -78,6 +84,7 @@ vi.mock('@mui/material', () => {
     Stack: passthrough('div'),
     Tooltip: ({ children }: { children?: ReactNode }) => children,
     Typography: passthrough('div'),
+    useMediaQuery: () => false,
     useTheme: () => ({ palette: { divider: '#000' } }),
   };
 });

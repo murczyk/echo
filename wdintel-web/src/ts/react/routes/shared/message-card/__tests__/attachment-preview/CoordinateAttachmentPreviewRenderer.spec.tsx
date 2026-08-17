@@ -42,11 +42,13 @@ const leafletMock = vi.hoisted(() => {
     getContainer() {
       return container;
     },
+    on: vi.fn(() => map),
     invalidateSize: vi.fn(),
     remove: vi.fn(),
   };
   const marker = {
     addTo: vi.fn(() => marker),
+    bindTooltip: vi.fn(() => marker),
     on: vi.fn(() => marker),
     setLatLng: vi.fn(() => marker),
     setStyle: vi.fn(() => marker),
@@ -99,6 +101,12 @@ vi.mock('@mui/material', () => ({
       if (typeof sx.minHeight === 'number' || typeof sx.minHeight === 'string') {
         computedStyle.minHeight =
           typeof sx.minHeight === 'number' ? `${sx.minHeight}px` : String(sx.minHeight);
+      }
+      if (typeof sx.color === 'string') {
+        computedStyle.color = sx.color;
+      }
+      if (typeof sx.bgcolor === 'string') {
+        computedStyle.backgroundColor = sx.bgcolor;
       }
     }
 
@@ -378,6 +386,114 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     blurSpy = vi.spyOn(HTMLElement.prototype, 'blur');
   });
 
+  it('shows the active document title and keeps marker labels as escaped text', async () => {
+    const title = '<img src=x onerror=alert(1)>';
+    const description = '<script>description()</script>';
+    const plannedMeans = '<svg onload=plannedMeans()>';
+    await act(async () => {
+      root.render(
+        <TestCoordinatePreviewDialog
+          open
+          points={[
+            {
+              lat: 47.1,
+              lng: 35.2,
+              label: title,
+              description,
+              plannedMeans,
+              source: 'document',
+            },
+          ]}
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(document.body.querySelector('[data-coordinate-document-title]')?.textContent).toBe(
+      title,
+    );
+    expect(document.body.querySelector('[data-coordinate-document-description]')?.textContent).toBe(
+      description,
+    );
+    expect(
+      document.body.querySelector('[data-coordinate-document-planned-means]')?.textContent,
+    ).toBe(plannedMeans);
+    expect(document.body.querySelector('img')).toBeNull();
+    expect(document.body.querySelector('script')).toBeNull();
+    expect(document.body.querySelector('svg[onload]')).toBeNull();
+
+    hostRect = { width: 800, height: 600 };
+    await act(async () => {
+      resizeObserverInstances.at(-1)?.trigger();
+      await Promise.resolve();
+    });
+    const markerLabel = leafletMock.circleMarker().bindTooltip.mock.calls[0]?.[0] as HTMLElement;
+    expect(markerLabel.textContent).toBe(title);
+    expect(markerLabel.querySelector('img')).toBeNull();
+  });
+
+  it('opens a readable light-theme card only after selection and dismisses it', async () => {
+    hostRect = { width: 800, height: 600 };
+    await act(async () => {
+      root.render(
+        <TestCoordinatePreviewDialog
+          open
+          points={[{ lat: 47.1, lng: 35.2, label: 'Дамба', source: 'document' }]}
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    const panel = document.body.querySelector('[data-coordinate-panel="true"]') as HTMLElement;
+    expect(panel.style.backgroundColor).toBe('rgba(255, 255, 255, 0.95)');
+    expect(panel.style.color).toBe('rgba(0, 0, 0, 0.87)');
+    expect(panel.style.display).toBe('none');
+
+    const marker = leafletMock.circleMarker.mock.results[0]?.value as {
+      on: ReturnType<typeof vi.fn>;
+    };
+    const markerClick = marker.on.mock.calls.find(([event]) => event === 'click')?.[1] as
+      (() => void) | undefined;
+    await act(async () => {
+      markerClick?.();
+      await Promise.resolve();
+    });
+    expect(panel.style.display).toBe('inline-flex');
+
+    await act(async () => {
+      document.body
+        .querySelector('button[aria-label="Закрити картку координати"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(
+      (document.body.querySelector('[data-coordinate-panel="true"]') as HTMLElement).style.display,
+    ).toBe('none');
+
+    await act(async () => {
+      markerClick?.();
+      await Promise.resolve();
+    });
+    expect(
+      (document.body.querySelector('[data-coordinate-panel="true"]') as HTMLElement).style.display,
+    ).toBe('inline-flex');
+
+    const map = leafletMock.map.mock.results[0]?.value as { on: ReturnType<typeof vi.fn> };
+    const mapClick = map.on.mock.calls.find(([event]) => event === 'click')?.[1] as
+      (() => void) | undefined;
+    await act(async () => {
+      mapClick?.();
+      await Promise.resolve();
+    });
+    expect(
+      (document.body.querySelector('[data-coordinate-panel="true"]') as HTMLElement).style.display,
+    ).toBe('none');
+  });
+
   afterEach(() => {
     act(() => {
       root.unmount();
@@ -441,7 +557,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
       '[data-coordinate-panel="true"]',
     ) as HTMLElement | null;
     expect(panel).not.toBeNull();
-    expect(panel?.style.display).toBe('inline-flex');
+    expect(panel?.style.display).toBe('none');
     expect(panel?.style.flexDirection).toBe('column');
     expect(panel?.style.alignItems).toBe('flex-start');
     expect(panel?.style.gap).toBe('6px');

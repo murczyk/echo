@@ -74,6 +74,9 @@ vi.mock('leaflet', () => {
     remove: vi.fn(),
   };
   const marker = {
+    bindTooltip() {
+      return marker;
+    },
     addTo() {
       return marker;
     },
@@ -353,6 +356,55 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
     expect(container.textContent).toContain('Не вдалося завантажити точку мапи');
     expect(container.querySelector('button[aria-label="Повторити"]')).not.toBeNull();
+  });
+
+  it('keeps successful document points visible while retrying a failed document request', async () => {
+    const retry = createDeferred<{
+      points: { source: 'document'; lat: number; lng: number; label: string }[];
+      etalons: string[];
+      lookupError: null;
+    }>();
+    vi.mocked(resolveMessageCoordinatePreview)
+      .mockResolvedValueOnce({
+        points: [{ source: 'document', lat: 47.1, lng: 35.2, label: 'Дамба' }],
+        etalons: [],
+        lookupError: new CoordinatePreviewLookupError(
+          'document-coordinates',
+          new Error('document failed'),
+        ),
+      })
+      .mockImplementationOnce(() => retry.promise);
+
+    await act(async () => {
+      root.render(<MessageCardCoordinateAttachment msg={{ media: [] } as InboxMessage} />);
+      await Promise.resolve();
+    });
+
+    const retryButton = container.querySelector(
+      'button[aria-label="Повторити"]',
+    ) as HTMLButtonElement;
+    expect(container.querySelector('button[aria-label="Open Дамба on map"]')).not.toBeNull();
+    expect(container.textContent).toContain('Не вдалося завантажити координати документа');
+
+    await act(async () => {
+      retryButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('button[aria-label="Open Дамба on map"]')).not.toBeNull();
+    expect(retryButton.disabled).toBe(true);
+
+    await act(async () => {
+      retry.resolve({
+        points: [{ source: 'document', lat: 47.1, lng: 35.2, label: 'Дамба' }],
+        etalons: [],
+        lookupError: null,
+      });
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('button[aria-label="Повторити"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Open Дамба on map"]')).not.toBeNull();
   });
 
   it('stays silent for a genuine preview miss', async () => {

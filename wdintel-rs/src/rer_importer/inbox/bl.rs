@@ -309,6 +309,9 @@ pub async fn aggregate_to_inbox_messages(
     let messages_networks = load_messages_networks(&messages, &env.dbx)
         .await
         .context(h!())?;
+    let mut message_unit_ids = load_message_unit_ids(&message_ids, &env.dbx)
+        .await
+        .c(h!())?;
     let media_entries = signal_message_media::Entity::find()
         .filter(
             signal_message_media::Column::SignalMessageId
@@ -319,6 +322,14 @@ pub async fn aggregate_to_inbox_messages(
         .c(h!())?;
     let transcriptions_by_media =
         load_completed_audio_transcriptions(&env.dbx, &media_entries)
+            .await
+            .c(h!())?;
+    let ocr_by_media =
+        crate::ocr::load_media_summaries(&env.dbx, &media_entries)
+            .await
+            .c(h!())?;
+    let summaries_by_media =
+        crate::media_summary::load_statuses(&env.dbx, &media_entries)
             .await
             .c(h!())?;
     let mut media_by_message: HashMap<i64, Vec<signal_message_media::Model>> =
@@ -398,6 +409,8 @@ pub async fn aggregate_to_inbox_messages(
                 size_bytes: m.size_bytes,
                 href: mk_media_url(m),
                 transcription: transcriptions_by_media.get(&m.id).cloned(),
+                ocr: ocr_by_media.get(&m.id).cloned(),
+                summary: summaries_by_media.get(&m.id).cloned(),
             })
             .collect_vec();
         let images = media
@@ -551,6 +564,9 @@ pub async fn aggregate_to_inbox_messages(
                 text_marked: Some(text_marked),
                 post: message.post_name.clone(),
                 post_id: message.post_id,
+                unit_ids: message_unit_ids
+                    .remove(&message.id)
+                    .unwrap_or_default(),
                 datasource_id: group_entry
                     .as_ref()
                     .and_then(|(_, datasource_group)| datasource_group.as_ref())
@@ -869,6 +885,44 @@ pub async fn load_messages_networks(
 ) -> Result<HashMap<i64, Vec<i64>>, AppError> {
     let message_ids = messages.iter().map(|m| m.id).collect_vec();
     load_messages_networks_by_ids(&message_ids, dbx).await
+}
+
+async fn load_message_unit_ids(
+    message_ids: &[i64],
+    dbx: &DatabaseConnection,
+) -> Result<HashMap<i64, Vec<i64>>, AppError> {
+    let mut unit_ids_by_message = HashMap::<i64, BTreeSet<i64>>::new();
+    for message_ids in message_ids.chunks(20000) {
+        let links = sigint_inbox_item_unit::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item_unit::Relation::SigintUnit.def(),
+            )
+            .select_only()
+            .column(sigint_inbox_item_unit::Column::ItemId)
+            .column(sigint_inbox_item_unit::Column::UnitId)
+            .filter(
+                sigint_inbox_item_unit::Column::ItemId
+                    .is_in(message_ids.to_vec()),
+            )
+            .filter(sigint_unit::Column::Deleted.eq(false))
+            .into_tuple::<(i64, i64)>()
+            .all(dbx)
+            .await
+            .c(h!())?;
+        for (message_id, unit_id) in links {
+            unit_ids_by_message
+                .entry(message_id)
+                .or_default()
+                .insert(unit_id);
+        }
+    }
+    Ok(unit_ids_by_message
+        .into_iter()
+        .map(|(message_id, unit_ids)| {
+            (message_id, unit_ids.into_iter().collect())
+        })
+        .collect())
 }
 
 pub async fn load_messages_networks_by_ids(
