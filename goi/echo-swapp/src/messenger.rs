@@ -1,5 +1,6 @@
 use crate::config::{
     Config, AUTOMATION_BROKEN_INTEGRATION_ERROR,
+    ECHO_SWAPP_ADVISORY_LOCK_RETRY_MILLIS,
     MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX,
     MESSENGER_INTEGRATION_OPERATION_LOCK_NAMESPACE,
     MESSENGER_INTEGRATION_UNIQUENESS_LOCK_ID,
@@ -230,9 +231,9 @@ pub async fn update(
     let phone = normalize_phone(&req.phone).c(h!())?;
     let replacement_phone = phone.clone();
     let client_name = owned_client_name(name);
-    let txn = db.begin().await.c(h!())?;
-    lock_integration_identity(&txn).await.c(h!())?;
-    lock_integration_client(&txn, &client_name).await.c(h!())?;
+    let txn = begin_locked_integration_update_transaction(db, &client_name)
+        .await
+        .c(h!())?;
     let current = load(&txn, name).await.c(h!())?;
     let account_changed =
         current.kind != req.kind || current.phone.as_deref() != Some(&phone);
@@ -258,16 +259,41 @@ pub async fn update(
         .await
         .c(h!())?;
     let client_data_backups = if account_changed {
-        Some(
-            backup_replacement_client_data(
-                config,
-                current.kind,
-                req.kind,
-                &client_name,
-            )
-            .await
-            .c(h!())?,
+        stop_clients_for_replacement(
+            config,
+            &client_name,
+            current.kind,
+            req.kind,
+            current.signal_port,
         )
+        .await
+        .c(h!())?;
+        match backup_replacement_client_data(
+            config,
+            current.kind,
+            req.kind,
+            &client_name,
+        )
+        .await
+        .c(h!())
+        {
+            Ok(client_data_backups) => Some(client_data_backups),
+            Err(err) => {
+                if let Err(rollback_err) = txn.rollback().await.c(h!()) {
+                    log::error!(
+                        "failed to roll back integration update after backup failure: {rollback_err:#}"
+                    );
+                }
+                restart_previous_client(
+                    config,
+                    &client_name,
+                    current.kind,
+                    current.signal_port,
+                )
+                .await;
+                return Err(err);
+            }
+        }
     } else {
         None
     };
@@ -361,6 +387,49 @@ pub async fn automation_impact(
     })
 }
 
+async fn stop_clients_for_replacement(
+    config: &Config,
+    client_name: &str,
+    current_kind: MessengerKind,
+    replacement_kind: MessengerKind,
+    port: i32,
+) -> Result<()> {
+    stop_client_process(config, current_kind, client_name)
+        .await
+        .c(h!())?;
+    if current_kind == replacement_kind {
+        return Ok(());
+    }
+    if let Err(err) = stop_client_process(config, replacement_kind, client_name)
+        .await
+        .c(h!())
+    {
+        restart_previous_client(config, client_name, current_kind, port).await;
+        return Err(err);
+    }
+    Ok(())
+}
+
+async fn restart_previous_client(
+    config: &Config,
+    client_name: &str,
+    kind: MessengerKind,
+    port: i32,
+) {
+    let restart_result = async {
+        start_client(config, kind, client_name, port)
+            .await
+            .c(h!())?;
+        wait_for_signal_client(kind, port).await.c(h!())
+    }
+    .await;
+    if let Err(err) = restart_result {
+        log::error!(
+            "failed to restart previous client {client_name} after replacement preparation failure: {err:#}"
+        );
+    }
+}
+
 async fn restore_old_client(
     config: &Config,
     client_name: &str,
@@ -369,19 +438,13 @@ async fn restore_old_client(
     port: i32,
     client_data_backups: &ClientDataBackups,
 ) -> Result<()> {
-    if let Err(err) = stop_client(config, new_kind, client_name).await.c(h!()) {
-        log::warn!(
-            "failed to stop replacement client {client_name} during recovery: {err:#}"
-        );
-    }
+    stop_client_process(config, new_kind, client_name)
+        .await
+        .c(h!())?;
     if old_kind != new_kind {
-        if let Err(err) =
-            stop_client(config, old_kind, client_name).await.c(h!())
-        {
-            log::warn!(
-                "failed to stop old client {client_name} during recovery: {err:#}"
-            );
-        }
+        stop_client_process(config, old_kind, client_name)
+            .await
+            .c(h!())?;
     }
     restore_client_data_backups(client_data_backups)
         .await
@@ -462,6 +525,18 @@ fn account_matches(
     messenger.kind == kind && messenger.phone.as_deref() == phone
 }
 
+fn ensure_messenger_kind(
+    actual: MessengerKind,
+    expected: MessengerKind,
+) -> Result<()> {
+    if actual != expected {
+        return Err(conflict(
+            "Тип інтеграції змінився. Оновіть дані та повторіть спробу.",
+        ));
+    }
+    Ok(())
+}
+
 async fn replace_account_lock(
     txn: &DatabaseTransaction,
     config: &Config,
@@ -487,12 +562,17 @@ async fn replace_account_lock(
     persist_is_linked(txn, client_name, new_kind, false)
         .await
         .c(h!())?;
-    stop_client(config, old_kind, client_name).await.c(h!())?;
     let port = load_client_port(txn, client_name).await.c(h!())?;
     start_client(config, new_kind, client_name, port)
         .await
         .c(h!())?;
     wait_for_signal_client(new_kind, port).await.c(h!())?;
+    if old_kind != new_kind {
+        let old_path = client_data_path(config, old_kind, client_name);
+        if old_path.exists() {
+            tokio::fs::remove_dir_all(old_path).await.c(h!())?;
+        }
+    }
     Ok(())
 }
 
@@ -502,8 +582,9 @@ pub async fn delete(
     name: &str,
 ) -> Result<()> {
     let client_name = owned_client_name(name);
-    let txn = db.begin().await.c(h!())?;
-    lock_integration_client(&txn, &client_name).await.c(h!())?;
+    let txn = begin_locked_integration_client_transaction(db, &client_name)
+        .await
+        .c(h!())?;
     let messenger = load(&txn, name).await.c(h!())?;
     stop_client(config, messenger.kind, &client_name)
         .await
@@ -556,10 +637,11 @@ pub async fn link(
     name: &str,
 ) -> Result<QrRsp> {
     let client_name = owned_client_name(name);
-    let txn = db.begin().await.c(h!())?;
-    lock_integration_client(&txn, &client_name).await.c(h!())?;
+    let txn = begin_locked_integration_client_transaction(db, &client_name)
+        .await
+        .c(h!())?;
     let messenger = load(&txn, name).await.c(h!())?;
-    erase_stale_qr_codes(db, &client_name, messenger.kind)
+    erase_stale_qr_codes(&txn, &client_name, messenger.kind)
         .await
         .c(h!())?;
     start_client(config, messenger.kind, &client_name, messenger.signal_port)
@@ -571,7 +653,7 @@ pub async fn link(
     wait_for_signal_client(messenger.kind, messenger.signal_port)
         .await
         .c(h!())?;
-    persist_is_linked(db, &client_name, messenger.kind, false)
+    persist_is_linked(&txn, &client_name, messenger.kind, false)
         .await
         .c(h!())?;
     let qr_code_base64 = echo_im::link_account(
@@ -587,8 +669,9 @@ pub async fn link(
 
 pub async fn unlink(db: &DatabaseConnection, name: &str) -> Result<()> {
     let client_name = owned_client_name(name);
-    let txn = db.begin().await.c(h!())?;
-    lock_integration_client(&txn, &client_name).await.c(h!())?;
+    let txn = begin_locked_integration_client_transaction(db, &client_name)
+        .await
+        .c(h!())?;
     let messenger = load(&txn, name).await.c(h!())?;
     let phone = messenger
         .phone
@@ -626,15 +709,19 @@ pub async fn is_linked(
     kind: MessengerKind,
 ) -> Result<bool> {
     let client_name = owned_client_name(name);
-    let txn = db.begin().await.c(h!())?;
+    let txn = begin_locked_integration_client_transaction(db, &client_name)
+        .await
+        .c(h!())?;
+    let messenger = load(&txn, name).await.c(h!())?;
+    ensure_messenger_kind(messenger.kind, kind).c(h!())?;
     let is_linked =
         echo_im::is_client_logged_in(&client_name, kind.message_source(), &txn)
             .await
             .c(h!())?;
-    txn.commit().await.c(h!())?;
-    persist_is_linked(db, &client_name, kind, is_linked)
+    persist_is_linked(&txn, &client_name, kind, is_linked)
         .await
         .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(is_linked)
 }
 
@@ -644,17 +731,64 @@ pub async fn refresh_groups(
     kind: MessengerKind,
 ) -> Result<()> {
     let client_name = owned_client_name(name);
-    if sync_is_paused(db, &client_name).await.c(h!())? {
+    let txn = begin_locked_integration_client_transaction(db, &client_name)
+        .await
+        .c(h!())?;
+    let messenger = load(&txn, name).await.c(h!())?;
+    ensure_messenger_kind(messenger.kind, kind).c(h!())?;
+    if sync_is_paused(&txn, &client_name).await.c(h!())? {
+        txn.commit().await.c(h!())?;
         return Ok(());
     }
+    tick_messenger_worker(db, &client_name, kind)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(())
+}
+
+pub async fn sync(db: &DatabaseConnection, name: &str) -> Result<()> {
+    let client_name = owned_client_name(name);
+    let txn = begin_locked_integration_client_transaction(db, &client_name)
+        .await
+        .c(h!())?;
+    let messenger = load(&txn, name).await.c(h!())?;
+    if sync_is_paused(&txn, &client_name).await.c(h!())? {
+        txn.commit().await.c(h!())?;
+        return Ok(());
+    }
+    let is_linked = echo_im::is_client_logged_in(
+        &client_name,
+        messenger.kind.message_source(),
+        &txn,
+    )
+    .await
+    .c(h!())?;
+    if is_linked {
+        tick_messenger_worker(db, &client_name, messenger.kind)
+            .await
+            .c(h!())?;
+    }
+    persist_is_linked(&txn, &client_name, messenger.kind, is_linked)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(())
+}
+
+async fn tick_messenger_worker(
+    db: &DatabaseConnection,
+    client_name: &str,
+    kind: MessengerKind,
+) -> Result<()> {
     match kind {
         MessengerKind::Signal => {
-            echo_im::worker::signal_worker_tick_once(&client_name, db)
+            echo_im::worker::signal_worker_tick_once(client_name, db)
                 .await
                 .c(h!())?
         }
         MessengerKind::Whatsapp => {
-            echo_im::worker::whatsapp_worker_tick_once(&client_name, db)
+            echo_im::worker::whatsapp_worker_tick_once(client_name, db)
                 .await
                 .c(h!())?
         }
@@ -764,10 +898,19 @@ pub async fn send(
     text: String,
     attachments: Vec<String>,
 ) -> Result<()> {
-    let lock_txn = db.begin().await.c(h!())?;
-    lock_integration_client(&lock_txn, &owned_client_name(name))
-        .await
-        .c(h!())?;
+    let lock_txn = begin_locked_integration_client_transaction(
+        db,
+        &owned_client_name(name),
+    )
+    .await
+    .c(h!())?;
+    let messenger = load(&lock_txn, name).await.c(h!())?;
+    ensure_messenger_kind(messenger.kind, kind).c(h!())?;
+    if !messenger.is_linked {
+        return Err(conflict(
+            "Обліковий запис месенджера не підключено. Підключіть його та повторіть спробу.",
+        ));
+    }
     let txn = db.begin().await.c(h!())?;
     enqueue(
         &txn,
@@ -951,6 +1094,88 @@ where
     Ok(())
 }
 
+async fn begin_locked_integration_update_transaction(
+    db: &DatabaseConnection,
+    client_name: &str,
+) -> Result<DatabaseTransaction> {
+    loop {
+        let client_id = load_client_id(db, client_name).await.c(h!())?;
+        let txn = db.begin().await.c(h!())?;
+        let identity_locked =
+            try_lock_integration_identity(&txn).await.c(h!())?;
+        let client_locked = identity_locked
+            && try_lock_integration_clients(&txn, &[client_id])
+                .await
+                .c(h!())?;
+        if client_locked
+            && load_client_id(&txn, client_name).await.c(h!())? == client_id
+        {
+            return Ok(txn);
+        }
+        rollback_before_lock_retry(txn).await.c(h!())?;
+    }
+}
+
+pub(crate) async fn begin_locked_integration_client_transaction(
+    db: &DatabaseConnection,
+    client_name: &str,
+) -> Result<DatabaseTransaction> {
+    loop {
+        let client_id = load_client_id(db, client_name).await.c(h!())?;
+        let txn = db.begin().await.c(h!())?;
+        if try_lock_integration_clients(&txn, &[client_id])
+            .await
+            .c(h!())?
+            && load_client_id(&txn, client_name).await.c(h!())? == client_id
+        {
+            return Ok(txn);
+        }
+        rollback_before_lock_retry(txn).await.c(h!())?;
+    }
+}
+
+pub(crate) async fn begin_locked_integration_accounts_transaction(
+    db: &DatabaseConnection,
+    account_ids: &[i32],
+) -> Result<DatabaseTransaction> {
+    loop {
+        let txn = db.begin().await.c(h!())?;
+        if try_lock_integration_accounts(&txn, account_ids)
+            .await
+            .c(h!())?
+        {
+            return Ok(txn);
+        }
+        rollback_before_lock_retry(txn).await.c(h!())?;
+    }
+}
+
+async fn rollback_before_lock_retry(txn: DatabaseTransaction) -> Result<()> {
+    txn.rollback().await.c(h!())?;
+    tokio::time::sleep(Duration::from_millis(
+        ECHO_SWAPP_ADVISORY_LOCK_RETRY_MILLIS,
+    ))
+    .await;
+    Ok(())
+}
+
+async fn try_lock_integration_identity<C>(db: &C) -> Result<bool>
+where
+    C: ConnectionTrait,
+{
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select pg_try_advisory_xact_lock($1) as locked",
+            [MESSENGER_INTEGRATION_UNIQUENESS_LOCK_ID.into()],
+        ))
+        .await
+        .c(h!())?
+        .context("integration identity lock query returned no row")
+        .c(h!())?;
+    row.try_get("", "locked").c(h!())
+}
+
 async fn lock_integration_client<C>(db: &C, client_name: &str) -> Result<()>
 where
     C: ConnectionTrait,
@@ -959,6 +1184,7 @@ where
     lock_integration_clients(db, &[client_id]).await.c(h!())
 }
 
+#[cfg(test)]
 pub(crate) async fn lock_integration_accounts<C>(
     db: &C,
     account_ids: &[i32],
@@ -983,6 +1209,30 @@ where
     lock_integration_clients(db, &client_ids).await.c(h!())
 }
 
+pub(crate) async fn try_lock_integration_accounts<C>(
+    db: &C,
+    account_ids: &[i32],
+) -> Result<bool>
+where
+    C: ConnectionTrait,
+{
+    if account_ids.is_empty() {
+        return Ok(true);
+    }
+    let client_ids = echo_client_lock::Entity::find()
+        .filter(
+            echo_client_lock::Column::AccountId
+                .is_in(account_ids.iter().copied()),
+        )
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|client_lock| client_lock.client_id)
+        .collect::<Vec<_>>();
+    try_lock_integration_clients(db, &client_ids).await.c(h!())
+}
+
 async fn lock_integration_clients<C>(db: &C, client_ids: &[i32]) -> Result<()>
 where
     C: ConnectionTrait,
@@ -1003,6 +1253,37 @@ where
         .c(h!())?;
     }
     Ok(())
+}
+
+async fn try_lock_integration_clients<C>(
+    db: &C,
+    client_ids: &[i32],
+) -> Result<bool>
+where
+    C: ConnectionTrait,
+{
+    let mut client_ids = client_ids.to_vec();
+    client_ids.sort_unstable();
+    client_ids.dedup();
+    for client_id in client_ids {
+        let row = db
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "select pg_try_advisory_xact_lock($1, $2) as locked",
+                [
+                    MESSENGER_INTEGRATION_OPERATION_LOCK_NAMESPACE.into(),
+                    client_id.into(),
+                ],
+            ))
+            .await
+            .c(h!())?
+            .context("integration operation lock query returned no row")
+            .c(h!())?;
+        if !row.try_get("", "locked").c(h!())? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 async fn ensure_display_name_available<C>(
@@ -1616,6 +1897,26 @@ async fn stop_client(
     Ok(())
 }
 
+async fn stop_client_process(
+    config: &Config,
+    kind: MessengerKind,
+    name: &str,
+) -> Result<()> {
+    let unit_name = client_process_name(config, kind, name);
+    for action in ["stop", "disable"] {
+        let status = Command::new("sudo")
+            .args(["-S", "-n", "systemctl", action, &unit_name])
+            .status()
+            .c(h!())?;
+        if !status.success() {
+            anyhow::bail!(
+                "failed to {action} messenger process {unit_name}: {status}"
+            );
+        }
+    }
+    Ok(())
+}
+
 async fn restart_client_process(
     config: &Config,
     kind: MessengerKind,
@@ -1833,11 +2134,13 @@ fn kind_from_process_name(process_name: &str) -> MessengerKind {
     }
 }
 
-async fn sync_is_paused(
-    db: &DatabaseConnection,
-    client_name: &str,
-) -> Result<bool> {
-    Ok(global_is_paused(db).await.c(h!())?
+async fn sync_is_paused<C>(db: &C, client_name: &str) -> Result<bool>
+where
+    C: ConnectionTrait,
+{
+    Ok(sync_state_is_paused(db, GLOBAL_SYNC_STATE_KEY)
+        .await
+        .c(h!())?
         || is_client_paused(db, client_name).await.c(h!())?)
 }
 

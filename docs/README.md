@@ -544,6 +544,9 @@ system of record. At startup it reconciles the automation columns it requires,
 so GOI-only deployments do not depend on the central Echo migrator. Automations
 can render extracted coordinates over Esri World Imagery with Google labels and
 attach the PNG to the forwarded text in the same outbound message.
+Account replacement is serialized with messenger and automation workers;
+changing a messenger kind or phone stops dependent automations, rotates the
+client credential directory, and requires relinking.
 Cross-automation send reservations, outbound queue rows, and delivery records
 commit atomically. `echo_automation_send_log` retains route-level
 deduplication state for 30 days; the cleanup worker hard-deletes older rows.

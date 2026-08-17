@@ -744,7 +744,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       select.innerHTML = '<option value="" disabled style="color:#71717a">Оберіть акаунт</option>' + automationAccounts.map(account => {
         const linked = account.isLinked ? '' : ' · не підключено';
         const style = account.isLinked ? '' : ' style="color:#71717a"';
-        return `<option value="${account.id}"${style}>${escapeHtml(account.name)} · ${account.phone}${linked}</option>`;
+        return `<option value="${account.id}"${style}>${escapeHtml(account.name)} · ${escapeHtml(account.phone)}${linked}</option>`;
       }).join('');
       if (automationAccounts.some(account => account.id === current)) {
         select.value = String(current);
