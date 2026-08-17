@@ -19,7 +19,7 @@ class EndpointConfig(BaseModel):
     token_env: str
     timeout_seconds: float = Field(default=180.0, gt=0)
     max_tokens: int = Field(default=10_000, gt=0)
-    prompt_version: str = "semantic-html-v1"
+    prompt_version: str = "semantic-html-v2"
     dtype: str | None = None
     kv_cache_dtype: str | None = None
     vision_budget: int | None = Field(default=None, gt=0)

@@ -378,7 +378,7 @@ mod tests {
     #[test]
     fn sanitized_html_becomes_normalized_plain_text() {
         let text = plain_text_from_sanitized_html(
-            "<article><p> Перший   рядок </p><script>bad()</script><p>Другий</p></article>",
+            "<article><section><p> Перший   рядок </p><script>bad()</script><p>Другий</p></section></article>",
         )
         .unwrap();
         assert_eq!(text, "Перший рядок\nДругий");

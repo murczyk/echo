@@ -177,8 +177,10 @@ fn collect_blocks(
             Block::ListItem,
         )?,
         _ => {
-            for child in tag.children().all(parser) {
-                collect_blocks(child, parser, document).c(h!())?;
+            for handle in tag.children().top().iter() {
+                if let Some(child) = handle.get(parser) {
+                    collect_blocks(child, parser, document).c(h!())?;
+                }
             }
         }
     }
@@ -518,7 +520,7 @@ mod tests {
     use std::io::{Cursor, Read};
     use zip::ZipArchive;
 
-    const HTML: &str = r#"<article><h1>Звіт</h1><p>Безпечний текст</p><script>alert(1)</script><table><tr><th>Назва</th><th>Значення</th></tr><tr><td rowspan="2">A</td><td>=HYPERLINK("javascript:alert(1)")</td></tr><tr><td>2</td></tr></table><table><tr><td>B</td></tr></table></article>"#;
+    const HTML: &str = r#"<article><section><h1>Звіт</h1><p>Безпечний текст</p><script>alert(1)</script><table><tr><th>Назва</th><th>Значення</th></tr><tr><td rowspan="2">A</td><td>=HYPERLINK("javascript:alert(1)")</td></tr><tr><td>2</td></tr></table><table><tr><td>B</td></tr></table></section></article>"#;
 
     #[test]
     fn markdown_contains_only_sanitized_document_content() {
@@ -568,7 +570,7 @@ mod tests {
 
     #[test]
     fn nested_table_content_is_exported_once() {
-        let html = "<table><tr><td>Зовнішній<table><tr><td>Вкладений</td></tr></table></td></tr></table>";
+        let html = "<article><section><table><tr><td>Зовнішній<table><tr><td>Вкладений</td></tr></table></td></tr></table></section></article>";
         let markdown =
             String::from_utf8(generate(html, ExportFormat::Markdown).unwrap())
                 .unwrap();
@@ -583,6 +585,19 @@ mod tests {
             .read_to_string(&mut document_xml)
             .unwrap();
         assert_eq!(document_xml.matches("Вкладений").count(), 1);
+    }
+
+    #[test]
+    fn nested_blocks_are_exported_once_without_deduplicating_siblings() {
+        let html = r#"<article><section><p>Один раз</p><p>Повтор</p><p>Повтор</p><figure><figcaption>Підпис</figcaption></figure><ul><li>Пункт</li></ul></section></article>"#;
+        let markdown =
+            String::from_utf8(generate(html, ExportFormat::Markdown).unwrap())
+                .unwrap();
+
+        assert_eq!(markdown.matches("Один раз").count(), 1);
+        assert_eq!(markdown.matches("Повтор").count(), 2);
+        assert_eq!(markdown.matches("Підпис").count(), 1);
+        assert_eq!(markdown.matches("Пункт").count(), 1);
     }
 
     #[test]
