@@ -1,14 +1,33 @@
 use crate::entities::api_integration;
 use crate::error::AppError;
-use crate::rer_importer::types::InboxMessagesReq;
+use crate::rer_importer::types::{InboxMessage, InboxMessagesReq};
+use crate::sigint::etalonka::query::{
+    build_network_freq_join_condition, SigintInboxItem, SigintInboxItemNetwork,
+    SigintNetworkFreq, SignalMessage,
+};
 use crate::types::*;
 use bytes::Bytes;
 use chrono::{NaiveDateTime, Utc};
 use futures_util::StreamExt;
 use iggy::prelude::{IggyMessage, IggyProducer};
+use sea_orm::sea_query::{
+    Alias, Expr, ExprTrait, PostgresQueryBuilder, Query, SelectStatement,
+};
 use sea_orm::*;
+use serde::Serialize;
+use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
 use tokio::time::{sleep, timeout, Instant};
+
+#[derive(Debug, Serialize)]
+struct IggyInboxMessage {
+    #[serde(flatten)]
+    inbox_message: InboxMessage,
+    sigint_callsign_ids: Vec<i64>,
+    sigint_unit_ids: Vec<i64>,
+    sigint_signal_ids: Vec<i64>,
+    sigint_network_freq_ids: Vec<i64>,
+}
 
 pub async fn run_nofail(env: Arc<Env>) {
     loop {
@@ -97,6 +116,8 @@ async fn sync_integration(
         );
         return Ok(());
     }
+    let inbox_messages =
+        enrich_inbox_messages(env, inbox_messages).await.c(h!())?;
     let client = crate::iggy::connect(url, iggy_login, password).await?;
     let sync_result = sync_connected_integration(
         env,
@@ -115,7 +136,7 @@ async fn sync_connected_integration(
     env: &Env,
     api_integration: &api_integration::Model,
     started_at: NaiveDateTime,
-    inbox_messages: Vec<(i64, crate::rer_importer::types::InboxMessage)>,
+    inbox_messages: Vec<(i64, IggyInboxMessage)>,
     client: &iggy::prelude::IggyClient,
 ) -> Result<(), AppError> {
     let inbox_topic = api_integration.iggy_inbox_topic.as_deref().c(h!())?;
@@ -173,6 +194,185 @@ async fn load_inbox_messages(
         started_at,
     )
     .await
+}
+
+async fn enrich_inbox_messages(
+    env: &Env,
+    inbox_messages: Vec<(i64, InboxMessage)>,
+) -> Result<Vec<(i64, IggyInboxMessage)>, AppError> {
+    let callsign_ids = load_callsign_ids(env, &inbox_messages).await.c(h!())?;
+    let inbox_item_ids =
+        inbox_messages.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+    let mut network_freq_ids = load_network_freq_ids(&env.dbx, &inbox_item_ids)
+        .await
+        .c(h!())?;
+
+    Ok(inbox_messages
+        .into_iter()
+        .map(|(id, inbox_message)| {
+            let network_freq_ids =
+                network_freq_ids.remove(&id).unwrap_or_default();
+            (
+                id,
+                enrich_inbox_message(
+                    inbox_message,
+                    &callsign_ids,
+                    network_freq_ids,
+                ),
+            )
+        })
+        .collect())
+}
+
+async fn load_callsign_ids(
+    env: &Env,
+    inbox_messages: &Vec<(i64, InboxMessage)>,
+) -> Result<HashMap<String, BTreeSet<i64>>, AppError> {
+    let callsigns = crate::rer_importer::inbox::bl::load_inbox_callsigns(
+        inbox_messages,
+        env,
+    )
+    .await
+    .c(h!())?;
+    Ok(callsigns
+        .into_iter()
+        .map(|callsign| {
+            (
+                callsign.callsign.to_lowercase(),
+                callsign
+                    .res
+                    .into_iter()
+                    .map(|callsign| callsign.id)
+                    .collect::<BTreeSet<_>>(),
+            )
+        })
+        .collect())
+}
+
+fn enrich_inbox_message(
+    inbox_message: InboxMessage,
+    callsign_ids: &HashMap<String, BTreeSet<i64>>,
+    sigint_network_freq_ids: Vec<i64>,
+) -> IggyInboxMessage {
+    let sigint_callsign_ids = inbox_message
+        .callsigns
+        .iter()
+        .chain(&inbox_message.callsigns_alg2)
+        .filter_map(|callsign| callsign_ids.get(&callsign.to_lowercase()))
+        .flatten()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let sigint_unit_ids = inbox_message
+        .unit_ids
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let sigint_signal_ids = inbox_message
+        .signal_tokens
+        .iter()
+        .flatten()
+        .map(|signal| signal.id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    IggyInboxMessage {
+        inbox_message,
+        sigint_callsign_ids,
+        sigint_unit_ids,
+        sigint_signal_ids,
+        sigint_network_freq_ids,
+    }
+}
+
+async fn load_network_freq_ids(
+    dbx: &DatabaseConnection,
+    inbox_item_ids: &[i64],
+) -> Result<HashMap<i64, Vec<i64>>, AppError> {
+    let mut ids_by_inbox_item = HashMap::<i64, BTreeSet<i64>>::new();
+    for inbox_item_ids in inbox_item_ids.chunks(20000) {
+        let query = build_network_freq_ids_query(inbox_item_ids).c(h!())?;
+        let rows = dbx
+            .query_all_raw(Statement::from_string(
+                DatabaseBackend::Postgres,
+                query.to_string(PostgresQueryBuilder),
+            ))
+            .await
+            .c(h!())?;
+        for row in rows {
+            let inbox_item_id = row.try_get("", "inbox_item_id").c(h!())?;
+            let network_freq_id = row.try_get("", "network_freq_id").c(h!())?;
+            ids_by_inbox_item
+                .entry(inbox_item_id)
+                .or_default()
+                .insert(network_freq_id);
+        }
+    }
+    Ok(ids_by_inbox_item
+        .into_iter()
+        .map(|(id, network_freq_ids)| {
+            (id, network_freq_ids.into_iter().collect())
+        })
+        .collect())
+}
+
+fn build_network_freq_ids_query(
+    inbox_item_ids: &[i64],
+) -> Result<SelectStatement, AppError> {
+    let network_freqs = Alias::new("network_freqs");
+    let join_condition =
+        build_network_freq_join_condition(None, false).c(h!())?;
+    Ok(Query::select()
+        .distinct()
+        .expr_as(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Id)),
+            Alias::new("inbox_item_id"),
+        )
+        .expr_as(
+            Expr::col((network_freqs.clone(), SigintNetworkFreq::Id)),
+            Alias::new("network_freq_id"),
+        )
+        .from(SignalMessage::Table)
+        .join(
+            JoinType::InnerJoin,
+            SigintInboxItem::Table,
+            Expr::col((SignalMessage::Table, SignalMessage::Id))
+                .equals((SigintInboxItem::Table, SigintInboxItem::Id)),
+        )
+        .join(
+            JoinType::InnerJoin,
+            SigintInboxItemNetwork::Table,
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Id)).equals((
+                SigintInboxItemNetwork::Table,
+                SigintInboxItemNetwork::SigintInboxItemId,
+            )),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            SigintNetworkFreq::Table,
+            network_freqs.clone(),
+            join_condition,
+        )
+        .and_where(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Id))
+                .is_in(inbox_item_ids.iter().copied()),
+        )
+        .and_where(
+            Expr::col((network_freqs.clone(), SigintNetworkFreq::Deleted))
+                .eq(false),
+        )
+        .order_by_expr(
+            Expr::col((SigintInboxItem::Table, SigintInboxItem::Id)),
+            Order::Asc,
+        )
+        .order_by_expr(
+            Expr::col((network_freqs, SigintNetworkFreq::Id)),
+            Order::Asc,
+        )
+        .to_owned())
 }
 
 async fn publish_with_retry(
@@ -280,11 +480,142 @@ async fn set_sync_completed(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::{
+        sigint_callsign, sigint_inbox_item, sigint_inbox_item_network,
+        sigint_network_freq, sigint_signal, signal_message,
+    };
+    use crate::functest::tests::*;
+    use crate::rer_importer::signals::CNSignal;
+    use crate::rer_importer::types::InboxInsertPayload;
+    use chrono::Duration as ChronoDuration;
+    use serial_test::serial;
 
     #[test]
     fn publish_retry_delays_match_required_attempts() {
         assert_eq!(publish_retry_delay(0), None);
         assert_eq!(publish_retry_delay(1), Some(Duration::from_millis(100)));
         assert_eq!(publish_retry_delay(2), Some(Duration::from_secs(1)));
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn inbox_event_contains_dictionary_ids_and_stays_compatible() {
+        let env = cleanup().await.unwrap();
+        let intercepted_at = Utc::now().naive_utc();
+        let unit = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let callsign = sigint_callsign::ActiveModel {
+            callsign: Set("iggy-test-callsign".to_string()),
+            position: Set(String::new()),
+            comment: Set(String::new()),
+            unit_id: Set(unit.id),
+            deleted: Set(false),
+            created_at: Set(intercepted_at),
+            source_id: Set(None),
+            developing: Set(false),
+            radio_freq: Set(String::new()),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            full_name: Set(String::new()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let signal = sigint_signal::ActiveModel {
+            text: Set("iggy-test-signal".to_string()),
+            meaning: Set(None),
+            unit: Set(Some(unit.id)),
+            coordinates: Set(None),
+            deleted: Set(false),
+            created_at: Set(intercepted_at),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let signal_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                created_at: Set(intercepted_at),
+                timestamp: Set(Some(intercepted_at)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(signal_message.id),
+                freq: Set(Some("123.45".to_string())),
+                datetime: Set(Some(intercepted_at)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("123.45".to_string()),
+                active_from: Set(intercepted_at - ChronoDuration::hours(1)),
+                active_to: Set(Some(intercepted_at + ChronoDuration::hours(1))),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(signal_message.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let mut inbox_message: InboxMessage = InboxInsertPayload {
+            text: "interception".to_string(),
+            freq: Some("123.45".to_string()),
+            callsigns: vec!["IGGY-TEST-CALLSIGN".to_string()],
+            network_ids: Some(vec![network.id]),
+            ..Default::default()
+        }
+        .into();
+        inbox_message.unit_ids = vec![unit.id];
+        inbox_message.signal_tokens = Some(vec![CNSignal {
+            begin: 0,
+            end: 1,
+            etalon: "iggy-test-signal".to_string(),
+            text: "s".to_string(),
+            id: signal.id,
+        }]);
+
+        let enriched = enrich_inbox_messages(
+            &env,
+            vec![(signal_message.id, inbox_message)],
+        )
+        .await
+        .unwrap();
+        assert_eq!(enriched[0].1.sigint_callsign_ids, vec![callsign.id]);
+        assert_eq!(enriched[0].1.sigint_unit_ids, vec![unit.id]);
+        assert_eq!(enriched[0].1.sigint_signal_ids, vec![signal.id]);
+        assert_eq!(
+            enriched[0].1.sigint_network_freq_ids,
+            vec![network_freq.id]
+        );
+
+        let event = serde_json::to_value(&enriched[0]).unwrap();
+        let old_message: InboxMessage =
+            serde_json::from_value(event[1].clone()).unwrap();
+        assert_eq!(old_message.text, "interception");
     }
 }

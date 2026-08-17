@@ -20,7 +20,6 @@ use crate::rer_importer::signals::*;
 use crate::storage::mk_media_url;
 use crate::types::*;
 use crate::utils::string::*;
-use actix_web::web::Data;
 use chrono::Utc;
 use geoconvert::{LatLon, Mgrs};
 use itertools::Itertools;
@@ -996,7 +995,7 @@ async fn backfill_missing_messages_networks(
 
 pub async fn load_inbox_callsigns(
     inbox_items: &Vec<(i64, InboxMessage)>,
-    env: &Data<Env>,
+    env: &Env,
 ) -> Result<Vec<CallsignInfoRes>, AppError> {
     let mut callsigns: HashMap<String, Vec<i64>> = HashMap::new();
     inbox_items
@@ -1012,17 +1011,12 @@ pub async fn load_inbox_callsigns(
             (item.network_ids.clone(), callsigns)
         })
         .for_each(|(network_ids, callsigns_vec)| {
-            if let Some(network_ids) = network_ids {
-                for c in callsigns_vec {
-                    callsigns
-                        .entry(c.clone())
-                        .and_modify(|ns| {
-                            for network_id in &network_ids {
-                                ns.push(*network_id)
-                            }
-                        })
-                        .or_insert(network_ids.clone());
-                }
+            let network_ids = network_ids.unwrap_or_default();
+            for c in callsigns_vec {
+                callsigns
+                    .entry(c)
+                    .or_default()
+                    .extend(network_ids.iter().copied());
             }
         });
     let mut callsigns_data = vec![];
