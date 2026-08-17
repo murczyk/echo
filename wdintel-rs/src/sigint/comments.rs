@@ -126,10 +126,6 @@ where
             })
         })
         .collect::<Vec<_>>();
-    let linked_message_ids = comments
-        .iter()
-        .map(|comment| comment.signal_message_id)
-        .collect::<HashSet<_>>();
     let legacy_comments = sigint_comment::Entity::find()
         .filter(
             sigint_comment::Column::SignalMessageId
@@ -141,10 +137,7 @@ where
     comments.extend(
         legacy_comments
             .into_iter()
-            .filter(|comment| {
-                comment.migrated_signal_message_id.is_none()
-                    && !linked_message_ids.contains(&comment.id)
-            })
+            .filter(|comment| comment.migrated_signal_message_id.is_none())
             .map(|comment| LinkedMessageComment {
                 parent_signal_message_id: comment.signal_message_id,
                 signal_message_id: comment.id,
