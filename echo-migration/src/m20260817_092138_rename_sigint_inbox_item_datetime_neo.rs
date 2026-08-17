@@ -16,6 +16,24 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
+lock table sigint_inbox_item in access exclusive mode;
+
+update sigint_inbox_item
+set datetime_neo = datetime
+where datetime is not null and datetime_neo is null;
+
+do $$
+begin
+    if exists (
+        select 1
+        from sigint_inbox_item
+        where datetime is not null and datetime_neo is null
+    ) then
+        raise exception 'cannot switch sigint_inbox_item datetime columns before datetime_neo backfill completes';
+    end if;
+end
+$$;
+
 drop index sigint_inbox_item_datetime_backfill_idx;
 drop index sigint_inbox_item_datetime_idx;
 drop index sigint_inbox_item_unit_v2_datetime_idx;
