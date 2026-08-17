@@ -128,8 +128,7 @@
       "changes": [
         {
           "table": "public.sigint_inbox_item",
-          "strategy": "cdc_backfill",
-          "backfill": "wdintel-rs/src/inbox/datetime.rs"
+          "strategy": "mirror_resync"
         }
       ]
     },
