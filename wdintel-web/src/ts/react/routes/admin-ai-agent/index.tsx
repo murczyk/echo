@@ -1,6 +1,6 @@
 import AddIcon from '@mui/icons-material/Add';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import NetworkCheckIcon from '@mui/icons-material/NetworkCheck';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -1052,7 +1052,7 @@ function EchoProxiesTable({
       <Stack direction="row" spacing={0.5}>
         <MrtRowActionButton
           label="Редагувати"
-          icon={<EditOutlinedIcon fontSize="small" />}
+          icon={<EditIcon fontSize="small" />}
           onClick={() => onEdit(row.original)}
           opensModal
         />
@@ -1071,7 +1071,7 @@ function EchoProxiesTable({
           />
           <MrtRowActionButton
             label="Видалити"
-            icon={<DeleteOutlineIcon fontSize="small" />}
+            icon={<DeleteIcon fontSize="small" />}
             onClick={() => onDelete(row.original)}
             disabled={actionId === row.original.id}
             tone="danger"
@@ -1095,9 +1095,10 @@ function EchoProxiesTable({
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: 96,
-        minSize: 96,
-        maxSize: 96,
+        size: 76,
+        minSize: 76,
+        maxSize: 76,
+        enableResizing: false,
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -1124,7 +1125,7 @@ function EchoProxiesTable({
       density: tableStateContext.density,
       sorting: tableStateContext.sorting,
       columnOrder: tableStateContext.columnOrder,
-      columnSizing: tableStateContext.columnSizing,
+      columnSizing: { ...tableStateContext.columnSizing, 'mrt-row-actions': 76 },
     },
   });
 

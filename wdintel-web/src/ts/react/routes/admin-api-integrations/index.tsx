@@ -65,7 +65,7 @@ type FormStatus = {
   message: string;
 } | null;
 
-const ROW_ACTIONS_COLUMN_SIZE = 96;
+const ROW_ACTIONS_COLUMN_SIZE = 76;
 const DEFAULT_COLUMNS_VISIBILITY = {
   description: true,
   api_user: true,
@@ -277,6 +277,7 @@ function ApiIntegrationsTable({
         size: ROW_ACTIONS_COLUMN_SIZE,
         minSize: ROW_ACTIONS_COLUMN_SIZE,
         maxSize: ROW_ACTIONS_COLUMN_SIZE,
+        enableResizing: false,
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],

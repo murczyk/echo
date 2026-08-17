@@ -191,7 +191,7 @@ export function AdminUnitDuplicatesPage({
     >
       <Stack spacing={1.5} sx={{ height: '100%', minHeight: 0, p: embedded ? 0 : 2 }}>
         <TablePageToolbar
-          title="Дублікати Підрозділів"
+          title="Дублікати підрозділів"
           withGlobalTextFilter
           trailingActionsAfterInternal={
             <Tooltip title="Оновити">

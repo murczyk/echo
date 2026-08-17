@@ -11,10 +11,14 @@ import type {
 
 const mocks = vi.hoisted(() => ({
   copyTextToClipboard: vi.fn(),
+  notify: vi.fn(),
 }));
 
 vi.mock('../../../copy-to-clipboard', () => ({
   copyTextToClipboard: mocks.copyTextToClipboard,
+}));
+vi.mock('../../components/PowerSnackbar', () => ({
+  useOptionalPowerSnackbar: () => ({ notify: mocks.notify }),
 }));
 
 import { AiCallsignsTable } from './AiCallsignsTable';
@@ -53,6 +57,7 @@ const messages: AiCallsignTestMessageItem[] = [
 beforeEach(() => {
   mocks.copyTextToClipboard.mockReset();
   mocks.copyTextToClipboard.mockResolvedValue(undefined);
+  mocks.notify.mockReset();
 });
 
 afterEach(() => {
@@ -96,9 +101,18 @@ describe('AiCallsignsTable', () => {
     ).toBe(false);
 
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('button[aria-label="Копіювати UUID"]')?.click(),
+      container.querySelector<HTMLButtonElement>('button[aria-label="Дії"]')?.click(),
+    );
+    await act(async () =>
+      Array.from(document.querySelectorAll('[role="menuitem"]'))
+        .find((item) => item.textContent?.includes('Копіювати UUID'))
+        ?.click(),
     );
     expect(mocks.copyTextToClipboard).toHaveBeenCalledWith(messageId);
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'success',
+      message: 'UUID скопійовано.',
+    });
 
     await act(async () =>
       root.render(
@@ -113,6 +127,41 @@ describe('AiCallsignsTable', () => {
       ),
     );
     expect(container.textContent).not.toContain('model-b: Позивні');
+
+    await act(async () => root.unmount());
+  });
+
+  it('notifies when UUID copying fails', async () => {
+    mocks.copyTextToClipboard.mockRejectedValue(new Error('denied'));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () =>
+      root.render(
+        <AiCallsignsTable
+          engines={engines}
+          messages={messages}
+          testResults={[]}
+          onCreate={() => undefined}
+          onDelete={() => undefined}
+          onEdit={() => undefined}
+        />,
+      ),
+    );
+
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Дії"]')?.click(),
+    );
+    await act(async () =>
+      Array.from(document.querySelectorAll('[role="menuitem"]'))
+        .find((item) => item.textContent?.includes('Копіювати UUID'))
+        ?.click(),
+    );
+    await act(async () => Promise.resolve());
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'error',
+      message: 'Не вдалося скопіювати UUID.',
+    });
     await act(async () => root.unmount());
   });
 });

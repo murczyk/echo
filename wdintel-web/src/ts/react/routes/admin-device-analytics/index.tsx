@@ -43,7 +43,15 @@ export function AdminDeviceAnalyticsPage() {
             role="tabpanel"
             aria-labelledby="device-analysis-settings-tab-general"
             hidden={activeTab !== 'general'}
-          />
+            sx={{ pt: 3 }}
+          >
+            <Typography variant="h6" component="h2">
+              Налаштування відсутні
+            </Typography>
+            <Typography color="text.secondary">
+              Цей розділ наразі не має параметрів, доступних для налаштування.
+            </Typography>
+          </Box>
           <Box
             id="device-analysis-settings-panel-tags"
             role="tabpanel"

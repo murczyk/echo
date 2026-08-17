@@ -54,7 +54,7 @@ import { currentSystemSettings } from '../../services/api/system-settings';
 
 const GPU_INSTANCE_TEXT_MAX_CHARS = 255;
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
-const ROW_ACTIONS_COLUMN_SIZE = 96;
+const ROW_ACTIONS_COLUMN_SIZE = 76;
 
 const DEFAULT_COLUMNS_VISIBILITY = {
   ordering: true,
@@ -236,6 +236,7 @@ function TranscriberInstancesTable({
         size: ROW_ACTIONS_COLUMN_SIZE,
         minSize: ROW_ACTIONS_COLUMN_SIZE,
         maxSize: ROW_ACTIONS_COLUMN_SIZE,
+        enableResizing: false,
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],

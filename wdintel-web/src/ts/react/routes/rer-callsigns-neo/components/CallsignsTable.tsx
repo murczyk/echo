@@ -252,7 +252,7 @@ function CallsignsTableComponent({
         }),
       },
       {
-        header: 'Основне джерело',
+        header: 'Джерела',
         accessorKey: 'sourceName',
         id: 'sourceName',
         enableColumnFilter: false,

@@ -7,7 +7,7 @@ import MergeIcon from '@mui/icons-material/Merge';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import ClearIcon from '@mui/icons-material/Clear';
 import SearchIcon from '@mui/icons-material/Search';
-import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import SettingsIcon from '@mui/icons-material/Settings';
 import {
   Box,
   Button,
@@ -33,6 +33,7 @@ import {
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 
 import type { Unit } from '../../../../../Bindings';
+import { PowerIconButton } from '../../../components/PowerIconButton';
 import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
 import {
   CUSTOM_STYLES,
@@ -99,7 +100,7 @@ function SearchModeSettingsButton({
 
   return (
     <>
-      <IconButton
+      <PowerIconButton
         size="small"
         aria-label="Налаштування пошуку"
         aria-controls={menuOpen ? menuId : undefined}
@@ -113,13 +114,11 @@ function SearchModeSettingsButton({
           width: compact ? 40 : 32,
           height: compact ? 40 : 32,
           borderRadius: 1,
-          border: '1px solid',
-          borderColor: 'divider',
           color: 'text.secondary',
         }}
       >
-        <SettingsOutlinedIcon sx={{ fontSize: compact ? 20 : 18 }} />
-      </IconButton>
+        <SettingsIcon sx={{ fontSize: compact ? 20 : 18 }} />
+      </PowerIconButton>
       <Menu
         id={menuId}
         anchorEl={anchorElement}
@@ -502,6 +501,8 @@ function useUnitColumns(
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
+                    textDecoration: 'none',
+                    '&:hover': { textDecoration: 'none' },
                   }}
                 >
                   {row.original.name}

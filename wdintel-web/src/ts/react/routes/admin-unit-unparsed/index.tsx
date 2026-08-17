@@ -47,7 +47,7 @@ import {
 import { hasRole } from '../../utils/roles';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
 
-const DEFAULT_COLUMN_ORDER = ['mrt-row-numbers', 'unitTxt', 'quantity', 'note', 'mrt-row-actions'];
+const DEFAULT_COLUMN_ORDER = ['mrt-row-actions', 'mrt-row-numbers', 'unitTxt', 'quantity', 'note'];
 const DEFAULT_COLUMN_VISIBILITY = {
   unitTxt: true,
   quantity: true,
@@ -267,7 +267,10 @@ export function AdminUnitUnparsedPage({
       setError(null);
       try {
         const response = await listUnresolvedUnitLabels(
-          { page: pageIndex, archiveFilter: ARCHIVE_FILTER_REQ[archiveFilter] },
+          {
+            page: pageIndex,
+            archiveFilter: ARCHIVE_FILTER_REQ[archiveFilter],
+          },
           signal ? { signal } : undefined,
         );
         if (signal?.aborted) return;
@@ -447,7 +450,7 @@ export function AdminUnitUnparsedPage({
       <Stack spacing={1.5} sx={{ height: '100%', minHeight: 0, p: embedded ? 0 : 2 }}>
         <TablePageToolbar
           title="Нерозпізнані підрозділи"
-          trailingActionsBeforeInternal={
+          filter={
             <ArchiveFilterChips
               value={archiveFilter}
               onChange={(value) => {

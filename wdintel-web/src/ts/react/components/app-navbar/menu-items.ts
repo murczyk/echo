@@ -272,7 +272,7 @@ export const adminDatabaseSubs: Menu[] = [
   },
   {
     type: 'item',
-    link: { type: 'internal', path: '/admin/unit-unparsed' },
+    link: { type: 'internal', path: '/admin/units?tab=duplicates' },
     activeName: 'unit-admin',
     label: 'Підрозділи',
   },

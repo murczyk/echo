@@ -1,10 +1,10 @@
 import AddIcon from '@mui/icons-material/Add';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import { Box, Stack, Typography } from '@mui/material';
 import { MaterialReactTable } from 'material-react-table';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 import type {
   AiCallsignEngineItem,
@@ -12,11 +12,7 @@ import type {
   AiCallsignTestMessageItem,
 } from '../../../../Bindings';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
-import {
-  MrtRowActionButton,
-  MrtRowActions,
-  mrtRowActionsColumnSize,
-} from '../../components/MrtRowActionButton';
+import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PowerButton } from '../../components/PowerButton';
 import {
   getDefaultMrtContainerProps,
@@ -29,6 +25,7 @@ import {
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../components/mui-customized/table/get-default-table-options';
+import { useOptionalPowerSnackbar } from '../../components/PowerSnackbar';
 import { AiCallsignResultCell } from './AiCallsignResultCell';
 
 function resultKey(testMessageId: string, aiEngineId: string): string {
@@ -38,36 +35,6 @@ function resultKey(testMessageId: string, aiEngineId: string): string {
 function resultMap(results: AiCallsignParseResultItem[]) {
   return new Map(
     results.map((result) => [resultKey(result.testMessageId, result.aiEngineId), result]),
-  );
-}
-
-function CompactUuidCell({ uuid }: { uuid: string }) {
-  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
-  const copyLabel =
-    copyStatus === 'copied'
-      ? 'UUID скопійовано'
-      : copyStatus === 'error'
-        ? 'Не вдалося скопіювати UUID'
-        : 'Копіювати UUID';
-
-  return (
-    <Tooltip title={copyLabel}>
-      <IconButton
-        size="small"
-        aria-label={copyLabel}
-        onClick={(event) => {
-          event.stopPropagation();
-          event.currentTarget.blur();
-          void copyTextToClipboard(uuid)
-            .then(() => setCopyStatus('copied'))
-            .catch(() => setCopyStatus('error'));
-        }}
-        onBlur={() => setCopyStatus('idle')}
-        onMouseLeave={() => setCopyStatus('idle')}
-      >
-        <ContentCopyIcon fontSize="small" />
-      </IconButton>
-    </Tooltip>
   );
 }
 
@@ -86,6 +53,7 @@ export function AiCallsignsTable({
   onDelete: (message: AiCallsignTestMessageItem) => void;
   onEdit: (message: AiCallsignTestMessageItem) => void;
 }) {
+  const { notify } = useOptionalPowerSnackbar();
   const savedResults = useMemo(
     () => resultMap(messages.flatMap((message) => message.results)),
     [messages],
@@ -93,36 +61,6 @@ export function AiCallsignsTable({
   const currentTestResults = useMemo(() => resultMap(testResults), [testResults]);
   const columns = useMemo<AppMrtColumnDef<AiCallsignTestMessageItem>[]>(
     () => [
-      {
-        header: 'ID',
-        accessorKey: 'id',
-        size: 48,
-        minSize: 48,
-        maxSize: 48,
-        grow: false,
-        enableColumnActions: false,
-        enableColumnFilter: false,
-        enableResizing: false,
-        muiTableHeadCellProps: {
-          sx: {
-            padding: '5px!important',
-            '& .Mui-TableHeadCell-Content': {
-              justifyContent: 'center',
-            },
-            '& .Mui-TableHeadCell-Content-Labels': {
-              justifyContent: 'center',
-            },
-          },
-        },
-        muiTableBodyCellProps: {
-          sx: {
-            padding: '5px!important',
-            textAlign: 'center',
-          },
-        },
-        meta: { overflowMode: 'none' },
-        Cell: ({ row }) => <CompactUuidCell uuid={row.original.id} />,
-      },
       {
         header: 'Тестове повідомлення',
         accessorKey: 'message',
@@ -178,14 +116,23 @@ export function AiCallsignsTable({
     renderRowActions: ({ row }) => (
       <MrtRowActions forceMenu>
         <MrtRowActionButton
+          label="Копіювати UUID"
+          onClick={() =>
+            void copyTextToClipboard(row.original.id)
+              .then(() => notify({ severity: 'success', message: 'UUID скопійовано.' }))
+              .catch(() => notify({ severity: 'error', message: 'Не вдалося скопіювати UUID.' }))
+          }
+          icon={<ContentCopyIcon fontSize="small" />}
+        />
+        <MrtRowActionButton
           label="Редагувати"
           onClick={() => onEdit(row.original)}
-          icon={<EditOutlinedIcon fontSize="small" />}
+          icon={<EditIcon fontSize="small" />}
         />
         <MrtRowActionButton
           label="Видалити"
           onClick={() => onDelete(row.original)}
-          icon={<DeleteOutlineIcon fontSize="small" />}
+          icon={<DeleteIcon fontSize="small" />}
           tone="danger"
           opensModal
         />
@@ -199,7 +146,10 @@ export function AiCallsignsTable({
       ...defaultMrtOptions.displayColumnDefOptions,
       'mrt-row-actions': {
         ...defaultMrtOptions.displayColumnDefOptions?.['mrt-row-actions'],
-        size: mrtRowActionsColumnSize(2),
+        size: 76,
+        minSize: 76,
+        maxSize: 76,
+        enableResizing: false,
       },
     },
     muiTablePaperProps: ({ table }) =>

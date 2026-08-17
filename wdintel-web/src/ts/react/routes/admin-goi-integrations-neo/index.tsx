@@ -67,7 +67,7 @@ import { buildLoginOptions, selectedLoginIds, selectLoginOptions } from '../../u
 const GOI_SSH_PORT_DEFAULT = 22;
 const GOI_API_PORT_DEFAULT = 8088;
 const GOI_PATH_DEFAULT = '/etc/goi/data/palettes';
-const ROW_ACTIONS_COLUMN_SIZE = 96;
+const ROW_ACTIONS_COLUMN_SIZE = 76;
 const DEFAULT_COLUMNS_VISIBILITY = {
   owner: true,
   server: true,
@@ -235,6 +235,7 @@ function GoiIntegrationsTable({
         size: ROW_ACTIONS_COLUMN_SIZE,
         minSize: ROW_ACTIONS_COLUMN_SIZE,
         maxSize: ROW_ACTIONS_COLUMN_SIZE,
+        enableResizing: false,
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],

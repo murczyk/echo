@@ -941,7 +941,7 @@ function OrphanGroupsTable(props: {
     density: tableStateContext.density,
     sorting: tableStateContext.sorting,
     columnOrder: tableStateContext.columnOrder,
-    columnSizing: tableStateContext.columnSizing,
+    columnSizing: { ...tableStateContext.columnSizing, 'mrt-row-actions': 76 },
   };
   const rowActionCount =
     (props.onAssign ? 1 : 0) + (props.onEdit ? 1 : 0) + (props.onArchive ? 1 : 0);
@@ -1019,7 +1019,10 @@ function OrphanGroupsTable(props: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: props.onEdit ? 80 : mrtRowActionsColumnSize(Math.max(rowActionCount, 1)),
+        size: 76,
+        minSize: 76,
+        maxSize: 76,
+        enableResizing: false,
       },
     },
     muiTablePaperProps: ({ table }) => {
@@ -1376,7 +1379,7 @@ function ZoneGroupsTable(props: {
     density: tableStateContext.density,
     sorting: tableStateContext.sorting,
     columnOrder: tableStateContext.columnOrder,
-    columnSizing: tableStateContext.columnSizing,
+    columnSizing: { ...tableStateContext.columnSizing, 'mrt-row-actions': 76 },
   };
 
   const table = useAppMaterialReactTable({
@@ -1451,7 +1454,10 @@ function ZoneGroupsTable(props: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: 80,
+        size: 76,
+        minSize: 76,
+        maxSize: 76,
+        enableResizing: false,
       },
     },
     muiTablePaperProps: ({ table }) => {

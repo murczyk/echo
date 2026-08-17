@@ -1,8 +1,8 @@
 import AddIcon from '@mui/icons-material/Add';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
+import VisibilityIcon from '@mui/icons-material/Visibility';
 import { Box, Chip, Stack, Tooltip } from '@mui/material';
 import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo } from 'react';
@@ -29,7 +29,7 @@ import {
 } from '../../components/mui-customized/table/table-state-provider';
 import { AI_AGENT_TOKEN_WARNING } from '../admin-ai-agent/engine-eligibility';
 
-const ROW_ACTIONS_COLUMN_SIZE = 96;
+const ROW_ACTIONS_COLUMN_SIZE = 76;
 const DEFAULT_COLUMN_ORDER = [
   'mrt-row-numbers',
   'mrt-row-actions',
@@ -185,18 +185,18 @@ function AiEnginesTableBody({
       <Stack direction="row" spacing={0.5}>
         <MrtRowActionButton
           label="Переглянути"
-          icon={<VisibilityOutlinedIcon fontSize="small" />}
+          icon={<VisibilityIcon fontSize="small" />}
           onClick={() => onView(row.original)}
         />
         <MrtRowActions forceMenu>
           <MrtRowActionButton
             label="Редагувати"
-            icon={<EditOutlinedIcon fontSize="small" />}
+            icon={<EditIcon fontSize="small" />}
             onClick={() => onEdit(row.original)}
           />
           <MrtRowActionButton
             label="Видалити"
-            icon={<DeleteOutlineIcon fontSize="small" />}
+            icon={<DeleteIcon fontSize="small" />}
             onClick={() => onDelete(row.original)}
             tone="danger"
             opensModal
@@ -223,6 +223,7 @@ function AiEnginesTableBody({
         size: ROW_ACTIONS_COLUMN_SIZE,
         minSize: ROW_ACTIONS_COLUMN_SIZE,
         maxSize: ROW_ACTIONS_COLUMN_SIZE,
+        enableResizing: false,
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -248,7 +249,10 @@ function AiEnginesTableBody({
       density: tableStateContext.density,
       sorting: tableStateContext.sorting,
       columnOrder: tableStateContext.columnOrder,
-      columnSizing: tableStateContext.columnSizing,
+      columnSizing: {
+        ...tableStateContext.columnSizing,
+        'mrt-row-actions': ROW_ACTIONS_COLUMN_SIZE,
+      },
     },
   });
 
