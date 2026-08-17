@@ -10,7 +10,7 @@
 
 ## NEXT
 
-- [#3110](https://github.com/echoua/echo/issues/3110) ✅🛡️👷 ШІ, OCR: додано фонове розпізнавання PDF і зображень, безпечний перегляд, експорт, стислі ШІ-описи та координати нових документів із назвами, описами й запланованими засобами на мапі повідомлення, адмінську повторну обробку медіа та сторінку контролю «ШІ → OCR»; [налаштування застосунку та rollout](docs/README.md#ocr-application-integration), [розгортання extractor](echo-document-extractor/README.md#build-and-deploy).
+- [#3110](https://github.com/echoua/echo/issues/3110) ✅🛡️👷 ШІ, OCR: додано фонове розпізнавання PDF і зображень, безпечний перегляд, актуальний експорт без повторів, стислі ШІ-описи під кожним документом та координати з назвами, описами й запланованими засобами на мапі повідомлення, адмінську повторну обробку медіа та сторінку контролю «ШІ → OCR»; [налаштування застосунку та rollout](docs/README.md#ocr-application-integration), [розгортання extractor](echo-document-extractor/README.md#build-and-deploy).
 - [#2983](https://github.com/echoua/echo/issues/2983) 🐞 Оперативний: виправлено поведінку роботи фільтра по групах.
 - [#3071](https://github.com/echoua/echo/issues/3071) 🐞 Оперативний, Аналіз: виправлено підсвітку позивних в картці повідомлення.
 - [#2818](https://github.com/echoua/echo/issues/2818) ✅👷 Палітри: додано можливість керування чорним списком точок палітр; стандартні `just deploy` і `just deploy-from-local` синхронізують виключення автоматично, а при ручному застосуванні міграцій на інстансах з ClickHouse перед ними виконати `/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes`, щоб виключити `palitra_highlight_blacklist` із дзеркала.

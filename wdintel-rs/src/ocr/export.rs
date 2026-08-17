@@ -208,9 +208,9 @@ fn parse_table(
     table: &tl::HTMLTag<'_>,
     parser: &tl::Parser<'_>,
 ) -> anyhow::Result<ExportTable> {
-    let caption = table
-        .query_selector(parser, "caption")
-        .and_then(|mut rows| rows.next())
+    let caption = own_table_tags(table, parser, "caption")
+        .into_iter()
+        .next()
         .and_then(|handle| handle.get(parser))
         .map(|node| normalize_text(&node.inner_text(parser)))
         .filter(|text| !text.is_empty());
@@ -218,15 +218,18 @@ fn parse_table(
         caption,
         ..Default::default()
     };
-    let rows = table.query_selector(parser, "tr").c(h!())?;
+    let rows = own_table_tags(table, parser, "tr");
     let mut occupied = HashSet::new();
-    for (row, handle) in rows.enumerate() {
+    for (row, handle) in rows.into_iter().enumerate() {
         let node = handle.get(parser).c(h!())?;
         let tl::Node::Tag(row_tag) = node else {
             continue;
         };
         let mut column: usize = 0;
-        for cell_node in row_tag.children().all(parser) {
+        for cell_handle in row_tag.children().top().iter() {
+            let Some(cell_node) = cell_handle.get(parser) else {
+                continue;
+            };
             let tl::Node::Tag(cell_tag) = cell_node else {
                 continue;
             };
@@ -266,6 +269,37 @@ fn parse_table(
         }
     }
     Ok(result)
+}
+
+fn own_table_tags(
+    table: &tl::HTMLTag<'_>,
+    parser: &tl::Parser<'_>,
+    target: &str,
+) -> Vec<tl::NodeHandle> {
+    let mut result = Vec::new();
+    collect_own_table_tags(table, parser, target, &mut result);
+    result
+}
+
+fn collect_own_table_tags(
+    parent: &tl::HTMLTag<'_>,
+    parser: &tl::Parser<'_>,
+    target: &str,
+    result: &mut Vec<tl::NodeHandle>,
+) {
+    for handle in parent.children().top().iter() {
+        let Some(tag) = handle.get(parser).and_then(tl::Node::as_tag) else {
+            continue;
+        };
+        let name = tag.name().as_utf8_str();
+        if name.as_ref() == target {
+            result.push(*handle);
+            continue;
+        }
+        if name.as_ref() != "table" {
+            collect_own_table_tags(tag, parser, target, result);
+        }
+    }
 }
 
 fn span(tag: &tl::HTMLTag<'_>, name: &str) -> usize {
@@ -481,7 +515,7 @@ fn xlsx(document: &ExportDocument) -> anyhow::Result<Vec<u8>> {
 mod tests {
     use super::{generate, ExportFormat};
     use calamine::{Reader, Xlsx};
-    use std::io::Cursor;
+    use std::io::{Cursor, Read};
     use zip::ZipArchive;
 
     const HTML: &str = r#"<article><h1>Звіт</h1><p>Безпечний текст</p><script>alert(1)</script><table><tr><th>Назва</th><th>Значення</th></tr><tr><td rowspan="2">A</td><td>=HYPERLINK("javascript:alert(1)")</td></tr><tr><td>2</td></tr></table><table><tr><td>B</td></tr></table></article>"#;
@@ -530,6 +564,25 @@ mod tests {
                 .to_ascii_lowercase()
                 .contains("vbaproject")
         }));
+    }
+
+    #[test]
+    fn nested_table_content_is_exported_once() {
+        let html = "<table><tr><td>Зовнішній<table><tr><td>Вкладений</td></tr></table></td></tr></table>";
+        let markdown =
+            String::from_utf8(generate(html, ExportFormat::Markdown).unwrap())
+                .unwrap();
+        assert_eq!(markdown.matches("Вкладений").count(), 1);
+
+        let bytes = generate(html, ExportFormat::Docx).unwrap();
+        let mut archive = ZipArchive::new(Cursor::new(bytes)).unwrap();
+        let mut document_xml = String::new();
+        archive
+            .by_name("word/document.xml")
+            .unwrap()
+            .read_to_string(&mut document_xml)
+            .unwrap();
+        assert_eq!(document_xml.matches("Вкладений").count(), 1);
     }
 
     #[test]

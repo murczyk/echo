@@ -220,6 +220,22 @@ pub async fn messenger_media_summary(
     Ok(Json(result(summary).c(h!())?))
 }
 
+#[get("/api/admin/ocr/{media_id}/summary")]
+pub async fn admin_ocr_media_summary(
+    env: actix_web::web::Data<Env>,
+    user: Identity,
+    path: actix_web::web::Path<(Uuid,)>,
+) -> Result<Json<MediaSummaryResult>, crate::error::AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let summary = media_summary_entity::Entity::find_by_id(path.0)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(crate::error::AppError::NotFound)
+        .c(h!())?;
+    Ok(Json(result(summary).c(h!())?))
+}
+
 #[get("/api/messenger/media/{media_id}/summary/coordinates")]
 pub async fn messenger_media_summary_coordinates(
     env: actix_web::web::Data<Env>,

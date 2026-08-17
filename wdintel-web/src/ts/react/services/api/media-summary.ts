@@ -4,7 +4,9 @@ import type {
   MediaSummarySettingsItem,
   SaveMediaSummarySettingsReq,
 } from '../../../../Bindings';
-import { getJson, postJson } from './client';
+import { getJson, postJson, type RequestOptions } from './client';
+
+export type MediaSummaryAccess = 'messenger' | 'admin-ocr';
 
 export function saveMediaSummarySettings(
   req: SaveMediaSummarySettingsReq,
@@ -12,8 +14,13 @@ export function saveMediaSummarySettings(
   return postJson<MediaSummarySettingsItem>('/api/admin/media-summary/settings', req);
 }
 
-export function getMediaSummary(mediaId: string): Promise<MediaSummaryResult> {
-  return getJson<MediaSummaryResult>(`/api/messenger/media/${encodeURIComponent(mediaId)}/summary`);
+export function getMediaSummary(
+  mediaId: string,
+  options?: RequestOptions,
+  access: MediaSummaryAccess = 'messenger',
+): Promise<MediaSummaryResult> {
+  const prefix = access === 'admin-ocr' ? '/api/admin/ocr' : '/api/messenger/media';
+  return getJson<MediaSummaryResult>(`${prefix}/${encodeURIComponent(mediaId)}/summary`, options);
 }
 
 export function getMediaSummaryCoordinates(

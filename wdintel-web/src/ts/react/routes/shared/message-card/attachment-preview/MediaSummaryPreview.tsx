@@ -3,7 +3,6 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import {
-  alpha,
   Box,
   Button,
   CircularProgress,
@@ -21,8 +20,9 @@ import type {
 } from '../../../../../../Bindings';
 import { formatCoordinateLocality } from '../../../../../maps/coordinate-locality';
 import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
+import { isAbortError } from '../../../../services/api/client';
 import { mapCoordinates, type CoordinateLocality } from '../../../../services/api/location';
-import { getMediaSummary } from '../../../../services/api/media-summary';
+import { getMediaSummary, type MediaSummaryAccess } from '../../../../services/api/media-summary';
 import { resolveMediaSummaryCoordinatePoint } from '../message-coordinate-preview';
 
 const STATE_LABELS: Record<string, string> = {
@@ -350,6 +350,191 @@ function SummaryContent({
   );
 }
 
+function useMediaSummaryResult({
+  mediaId,
+  status,
+  enabled,
+  summaryAccess,
+  onStatusChange,
+}: {
+  mediaId?: string | null;
+  status?: MediaSummaryStatus | null;
+  enabled: boolean;
+  summaryAccess: MediaSummaryAccess;
+  onStatusChange?: (status: MediaSummaryStatus) => void;
+}) {
+  const [result, setResult] = useState<MediaSummaryResult | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const refreshControllerRef = useRef<AbortController | null>(null);
+  const { notify } = useOptionalPowerSnackbar();
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
+  const onStatusChangeRef = useRef(onStatusChange);
+  onStatusChangeRef.current = onStatusChange;
+
+  useEffect(() => {
+    refreshControllerRef.current?.abort();
+    refreshControllerRef.current = null;
+    setResult(null);
+    setRefreshing(false);
+    setRefreshError(null);
+    return () => {
+      refreshControllerRef.current?.abort();
+      refreshControllerRef.current = null;
+    };
+  }, [mediaId, summaryAccess]);
+
+  const refresh = useCallback(
+    async (quiet: boolean) => {
+      if (mediaId == null || refreshControllerRef.current != null) return;
+      const controller = new AbortController();
+      refreshControllerRef.current = controller;
+      setRefreshing(true);
+      try {
+        const nextResult = await getMediaSummary(
+          mediaId,
+          { signal: controller.signal },
+          summaryAccess,
+        );
+        if (controller.signal.aborted) return;
+        setResult(nextResult);
+        setRefreshError(null);
+        onStatusChangeRef.current?.({
+          state: nextResult.state,
+          lastError: nextResult.lastError,
+          hasCoordinates: nextResult.state === 'completed' && nextResult.coordinates.length > 0,
+        });
+      } catch (error) {
+        if (controller.signal.aborted || isAbortError(error)) return;
+        const message = `Не вдалося завантажити стислий опис: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+        setRefreshError(message);
+        if (!quiet) notifyRef.current({ severity: 'error', message });
+      } finally {
+        if (refreshControllerRef.current === controller) {
+          refreshControllerRef.current = null;
+          setRefreshing(false);
+        }
+      }
+    },
+    [mediaId, summaryAccess],
+  );
+
+  const hasStatus = status != null;
+  useEffect(() => {
+    if (enabled && hasStatus) void refresh(false);
+  }, [enabled, hasStatus, mediaId, refresh]);
+
+  const state = result?.state ?? status?.state;
+  useEffect(() => {
+    if (!enabled || state == null || !isMediaSummaryProcessing(state)) return;
+    const interval = window.setInterval(() => void refresh(true), 5_000);
+    return () => window.clearInterval(interval);
+  }, [enabled, refresh, state]);
+
+  return { result, refreshing, refreshError, refresh };
+}
+
+export function MessageCardMediaSummary({
+  mediaId,
+  status,
+}: {
+  mediaId?: string | null;
+  status?: MediaSummaryStatus | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const { result, refreshing, refreshError, refresh } = useMediaSummaryResult({
+    mediaId,
+    status,
+    enabled: mediaId != null && status != null,
+    summaryAccess: 'messenger',
+  });
+  const state = result?.state ?? status?.state;
+  const summary = result?.summary?.trim() ?? '';
+  const lastError = result?.lastError ?? status?.lastError;
+  const expandable = summary.length > 280 || summary.split(/\r?\n/).length > 3;
+
+  useEffect(() => setExpanded(false), [mediaId, summary]);
+
+  if (mediaId == null || status == null || state == null) return null;
+
+  return (
+    <Box data-media-summary-inline="true" sx={{ mt: 0.5, width: 'min(460px, 100%)', minWidth: 0 }}>
+      {state === 'completed' && summary !== '' ? (
+        <Box
+          component="blockquote"
+          onClick={expandable ? () => setExpanded((current) => !current) : undefined}
+          role={expandable ? 'button' : undefined}
+          tabIndex={expandable ? 0 : undefined}
+          aria-expanded={expandable ? expanded : undefined}
+          onKeyDown={(event) => {
+            if (!expandable || (event.key !== 'Enter' && event.key !== ' ')) return;
+            event.preventDefault();
+            setExpanded((current) => !current);
+          }}
+          sx={{
+            m: 0,
+            px: 1,
+            py: 0.75,
+            borderLeft: 3,
+            borderColor: 'primary.main',
+            borderRadius: 0.5,
+            bgcolor: 'action.hover',
+            color: 'text.primary',
+            cursor: expandable ? 'pointer' : 'default',
+          }}
+        >
+          <Stack direction="row" spacing={0.75} alignItems="flex-start">
+            <DescriptionIcon sx={{ mt: 0.15, fontSize: 17, color: 'text.secondary' }} />
+            <Typography
+              variant="body2"
+              sx={{
+                minWidth: 0,
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+                ...(!expanded
+                  ? {
+                      display: '-webkit-box',
+                      WebkitBoxOrient: 'vertical',
+                      WebkitLineClamp: 3,
+                      overflow: 'hidden',
+                    }
+                  : {}),
+              }}
+            >
+              {summary}
+            </Typography>
+          </Stack>
+        </Box>
+      ) : (
+        <Stack
+          direction="row"
+          spacing={0.75}
+          alignItems="center"
+          sx={{ px: 1, py: 0.5, color: state === 'failed' ? 'error.main' : 'text.secondary' }}
+        >
+          {isMediaSummaryProcessing(state) || refreshing ? <CircularProgress size={14} /> : null}
+          <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>
+            {lastError || refreshError || STATE_LABELS[state] || state}
+          </Typography>
+          {state === 'failed' || refreshError != null ? (
+            <IconButton
+              size="small"
+              aria-label="Оновити стислий опис"
+              disabled={refreshing}
+              onClick={() => void refresh(false)}
+            >
+              <RefreshIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          ) : null}
+        </Stack>
+      )}
+    </Box>
+  );
+}
+
 export function MediaSummaryOverlay({
   source,
   mediaId,
@@ -357,6 +542,7 @@ export function MediaSummaryOverlay({
   visible,
   onStatusChange,
   onClose,
+  summaryAccess = 'messenger',
 }: {
   source: ReactNode;
   mediaId?: string | null;
@@ -364,87 +550,47 @@ export function MediaSummaryOverlay({
   visible: boolean;
   onStatusChange: (status: MediaSummaryStatus) => void;
   onClose: () => void;
+  summaryAccess?: MediaSummaryAccess;
 }) {
-  const [result, setResult] = useState<MediaSummaryResult | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshError, setRefreshError] = useState<string | null>(null);
-  const refreshInFlight = useRef(false);
-  const { notify } = useOptionalPowerSnackbar();
-  const notifyRef = useRef(notify);
-  notifyRef.current = notify;
-  const onStatusChangeRef = useRef(onStatusChange);
-  onStatusChangeRef.current = onStatusChange;
-
-  const refresh = useCallback(
-    async (quiet: boolean) => {
-      if (mediaId == null || refreshInFlight.current) return;
-      refreshInFlight.current = true;
-      setRefreshing(true);
-      try {
-        const nextResult = await getMediaSummary(mediaId);
-        setResult(nextResult);
-        setRefreshError(null);
-        onStatusChangeRef.current({
-          state: nextResult.state,
-          lastError: nextResult.lastError,
-          hasCoordinates: nextResult.state === 'completed' && nextResult.coordinates.length > 0,
-        });
-      } catch (error) {
-        const message = `Не вдалося завантажити стислий опис: ${
-          error instanceof Error ? error.message : String(error)
-        }`;
-        setRefreshError(message);
-        if (!quiet) notifyRef.current({ severity: 'error', message });
-      } finally {
-        refreshInFlight.current = false;
-        setRefreshing(false);
-      }
-    },
-    [mediaId],
-  );
-
-  const hasStatus = status != null;
-  useEffect(() => {
-    setResult(null);
-    setRefreshError(null);
-    if (visible && hasStatus) void refresh(false);
-  }, [hasStatus, mediaId, refresh, visible]);
-
-  const state = result?.state ?? status?.state;
-  useEffect(() => {
-    if (!visible || state == null || !isMediaSummaryProcessing(state)) return;
-    const interval = window.setInterval(() => void refresh(true), 5_000);
-    return () => window.clearInterval(interval);
-  }, [refresh, state, visible]);
+  const { result, refreshing, refreshError, refresh } = useMediaSummaryResult({
+    mediaId,
+    status,
+    enabled: visible,
+    summaryAccess,
+    onStatusChange,
+  });
 
   if (mediaId == null || status == null) return source;
 
   return (
     <Box
-      sx={{ flex: '1 1 auto', minHeight: 0, minWidth: 0, display: 'flex', position: 'relative' }}
+      sx={{
+        flex: '1 1 auto',
+        minHeight: 0,
+        minWidth: 0,
+        display: 'flex',
+        flexDirection: 'column',
+      }}
     >
-      {source}
+      <Box sx={{ flex: '1 1 auto', minHeight: 0, minWidth: 0, display: 'flex' }}>{source}</Box>
       {visible ? (
         <Box
           role="region"
           aria-label="Стислий опис документа"
-          sx={(theme) => ({
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: '30%',
-            minHeight: 120,
+          sx={{
+            position: 'relative',
+            flex: '0 0 auto',
+            maxHeight: '35%',
+            minHeight: 96,
             overflow: 'auto',
-            zIndex: 3,
             px: 2,
             py: 1.5,
             pr: 6,
             borderTop: 1,
             borderColor: 'divider',
-            bgcolor: alpha(theme.palette.background.paper, 0.82),
-            backdropFilter: 'blur(4px)',
-          })}
+            bgcolor: 'background.paper',
+            color: 'text.primary',
+          }}
         >
           <IconButton
             size="small"

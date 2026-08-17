@@ -2,6 +2,7 @@ import { Box } from '@mui/material';
 
 import type { MessageMediaInfo } from '../../../../../Bindings';
 import type { MessageCardImage } from './message-card-image-utils';
+import { MessageCardMediaSummary } from './attachment-preview/MediaSummaryPreview';
 import { MessageCardImageThumb } from './MessageCardImageThumb';
 import { MessageCardVideoThumb } from './MessageCardVideoThumb';
 
@@ -33,15 +34,28 @@ export function MessageCardImageList({
           maxWidth: '100%',
         }}
       >
-        {images.map((image, index) => (
-          <MessageCardImageThumb
-            key={`${image.href}-${index}`}
-            image={image}
-            index={index}
-            variant={imageCount === 1 && videoCount === 0 ? 'single' : 'multi'}
-            onOpen={onOpen}
-          />
-        ))}
+        {images.map((image, index) => {
+          const single = imageCount === 1 && videoCount === 0;
+          return (
+            <Box
+              key={`${image.href}-${index}`}
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                minWidth: 0,
+                maxWidth: image.summary == null ? 150 : single ? 460 : 300,
+              }}
+            >
+              <MessageCardImageThumb
+                image={image}
+                index={index}
+                variant={single ? 'single' : 'multi'}
+                onOpen={onOpen}
+              />
+              <MessageCardMediaSummary mediaId={image.id} status={image.summary} />
+            </Box>
+          );
+        })}
         {videos.map((attachment, index) => (
           <MessageCardVideoThumb
             key={attachment.id ?? `${attachment.href}-${index}`}

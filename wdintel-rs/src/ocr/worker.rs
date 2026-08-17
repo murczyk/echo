@@ -7,8 +7,6 @@ use crate::config::{
     OCR_RETRY_MAX_SECS, OCR_SETTINGS_ID,
 };
 use crate::entities::{ocr_job, ocr_settings, signal_message_media};
-use crate::event_stream::fanout_mult;
-use crate::event_stream::types::{EventMsg, EventType};
 use crate::h;
 use crate::messenger::media::{
     fetch_media_bytes, stream_plaintext_media_range,
@@ -301,7 +299,7 @@ async fn submit_job(
     let response = match response {
         Ok(response) => response,
         Err(err) => {
-            retry_job(&env.dbx, job, err.to_string(), false)
+            retry_job(env, job, err.to_string(), false)
                 .await
                 .context(h!())?;
             return Ok(());
@@ -311,7 +309,7 @@ async fn submit_job(
     if !status.is_success() {
         let error = response.text().await.unwrap_or_default();
         retry_job(
-            &env.dbx,
+            env,
             job,
             format!("OCR submission returned HTTP {status}: {error}"),
             false,
@@ -351,10 +349,10 @@ async fn poll_submitted_job(
     };
     let Some(extractor_job_id) = job.extractor_job_id else {
         retry_job(
-            &env.dbx,
+            env,
             job,
             "submitted OCR job has no extractor job ID".to_string(),
-            true,
+            false,
         )
         .await
         .context(h!())?;
@@ -370,7 +368,7 @@ async fn poll_submitted_job(
     let response = match response {
         Ok(response) => response,
         Err(err) => {
-            retry_job(&env.dbx, job, err.to_string(), true)
+            retry_job(env, job, err.to_string(), true)
                 .await
                 .context(h!())?;
             return Ok(true);
@@ -378,12 +376,13 @@ async fn poll_submitted_job(
     };
     let status = response.status();
     if !status.is_success() {
+        let missing = status == reqwest::StatusCode::NOT_FOUND;
         let error = response.text().await.unwrap_or_default();
         retry_job(
-            &env.dbx,
+            env,
             job,
             format!("OCR status returned HTTP {status}: {error}"),
-            true,
+            !missing,
         )
         .await
         .context(h!())?;
@@ -403,7 +402,7 @@ async fn poll_submitted_job(
         }
         "failed" | "cancelled" => {
             mark_failed(
-                &env.dbx,
+                env,
                 job,
                 response.error_summary.unwrap_or_else(|| {
                     format!("OCR extractor job ended as {}", response.state)
@@ -415,7 +414,7 @@ async fn poll_submitted_job(
         }
         state => {
             retry_job(
-                &env.dbx,
+                env,
                 job,
                 format!("OCR extractor returned unknown state {state}"),
                 true,
@@ -440,7 +439,7 @@ async fn finalize_job(
     let (object_key, html_size_bytes, html) = match stored {
         Ok(stored) => stored,
         Err(err) => {
-            retry_job(&env.dbx, job, err.to_string(), true)
+            retry_job(env, job, err.to_string(), true)
                 .await
                 .context(h!())?;
             return Ok(());
@@ -462,6 +461,7 @@ async fn finalize_job(
     job.updated_at = Set(now);
     job.force_summary = Set(false);
     job.update(&env.dbx).await.context(h!())?;
+    publish_inbox_change(env, media_id).await.context(h!())?;
     if matches!(quality_status.as_deref(), Some("accepted" | "degraded")) {
         enqueue_media_summary(env, media_id, &html, force_summary)
             .await
@@ -491,7 +491,7 @@ async fn enqueue_media_summary(
     }
     let text = crate::media_summary::plain_text_from_sanitized_html(html)
         .context(h!())?;
-    let enqueued = if force {
+    if force {
         crate::media_summary::enqueue_for_reprocessing(
             &env.dbx, media_id, "ocr_text", &text,
         )
@@ -502,16 +502,6 @@ async fn enqueue_media_summary(
             .await
             .context(h!())?
     };
-    if enqueued {
-        fanout_mult(
-            &mut env.redis.clone(),
-            vec![EventMsg::new(EventType::ETInboxChanged(
-                media.signal_message_id,
-            ))],
-        )
-        .await
-        .context(h!())?;
-    }
     Ok(())
 }
 
@@ -644,14 +634,14 @@ async fn postpone_for_dependency(
 }
 
 async fn retry_job(
-    dbx: &DatabaseConnection,
+    env: &Env,
     job: ocr_job::Model,
     error: String,
     preserve_submitted: bool,
 ) -> anyhow::Result<()> {
     let attempts = job.attempts + 1;
     if attempts >= OCR_MAX_ATTEMPTS {
-        return mark_failed(dbx, job, error, None).await.context(h!());
+        return mark_failed(env, job, error, None).await.context(h!());
     }
     let now = Utc::now().naive_utc();
     let mut job = job.into_active_model();
@@ -661,21 +651,26 @@ async fn retry_job(
         "retry_wait".to_string()
     });
     job.attempts = Set(attempts);
+    if !preserve_submitted {
+        job.extractor_job_id = Set(None);
+        job.submitted_at = Set(None);
+    }
     job.last_error = Set(Some(truncate_error(error)));
     job.next_attempt_at =
         Set(now + ChronoDuration::seconds(retry_delay(attempts)));
     job.updated_at = Set(now);
-    job.update(dbx).await.context(h!())?;
+    job.update(&env.dbx).await.context(h!())?;
     Ok(())
 }
 
 async fn mark_failed(
-    dbx: &DatabaseConnection,
+    env: &Env,
     job: ocr_job::Model,
     error: String,
     quality_status: Option<String>,
 ) -> anyhow::Result<()> {
     let now = Utc::now().naive_utc();
+    let media_id = job.media_id;
     let mut job = job.into_active_model();
     job.state = Set("failed".to_string());
     job.quality_status =
@@ -683,7 +678,25 @@ async fn mark_failed(
     job.last_error = Set(Some(truncate_error(error)));
     job.completed_at = Set(Some(now));
     job.updated_at = Set(now);
-    job.update(dbx).await.context(h!())?;
+    job.update(&env.dbx).await.context(h!())?;
+    publish_inbox_change(env, media_id).await.context(h!())?;
+    Ok(())
+}
+
+async fn publish_inbox_change(env: &Env, media_id: Uuid) -> anyhow::Result<()> {
+    let Some(media) = signal_message_media::Entity::find_by_id(media_id)
+        .one(&env.dbx)
+        .await
+        .context(h!())?
+    else {
+        return Ok(());
+    };
+    crate::inbox::fanout_inbox_changed(
+        &mut env.redis.clone(),
+        media.signal_message_id,
+    )
+    .await
+    .context(h!())?;
     Ok(())
 }
 
@@ -753,10 +766,11 @@ fn truncate_error(error: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{idempotency_key, retry_delay};
-    use crate::entities::ocr_job;
+    use super::{idempotency_key, retry_delay, retry_job};
+    use crate::entities::{ocr_job, signal_message_media};
     use crate::ocr::OcrRuntimeConfig;
     use chrono::Utc;
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
     use uuid::Uuid;
 
     #[test]
@@ -797,5 +811,55 @@ mod tests {
         reprocessed.discovered_at += chrono::Duration::microseconds(1);
 
         assert_ne!(first, idempotency_key(&config, &reprocessed));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn missing_remote_job_is_returned_to_submission() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            content_type: Set("application/pdf".to_string()),
+            file_ext: Set(Some("pdf".to_string())),
+            file_name: Set(Some("expired.pdf".to_string())),
+            size_bytes: Set(1),
+            created_at: Set(now),
+            is_encrypted: Set(true),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let job = ocr_job::ActiveModel {
+            media_id: Set(media.id),
+            state: Set("submitted".to_string()),
+            extractor_job_id: Set(Some(Uuid::now_v7())),
+            submitted_at: Set(Some(now)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        retry_job(&env, job, "OCR status returned HTTP 404".to_string(), false)
+            .await
+            .unwrap();
+
+        let job = ocr_job::Entity::find_by_id(media.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.state, "retry_wait");
+        assert_eq!(job.attempts, 1);
+        assert_eq!(job.extractor_job_id, None);
+        assert_eq!(job.submitted_at, None);
     }
 }

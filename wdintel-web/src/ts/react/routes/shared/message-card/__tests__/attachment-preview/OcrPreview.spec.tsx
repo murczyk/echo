@@ -69,6 +69,15 @@ import {
   OcrPreviewAction,
   OcrSplitPreview,
 } from '../../attachment-preview/OcrPreview';
+import { MessageCardMediaSummary } from '../../attachment-preview/MediaSummaryPreview';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
 
 describe('OcrPreview', () => {
   afterEach(() => {
@@ -286,14 +295,16 @@ describe('OcrPreview', () => {
       await Promise.resolve();
     });
 
-    expect(getMediaOcrStatus).toHaveBeenCalledWith('media-id');
+    expect(getMediaOcrStatus).toHaveBeenCalledWith('media-id', {
+      signal: expect.any(AbortSignal),
+    });
     expect(onOcrChange).toHaveBeenCalledWith(
       expect.objectContaining({ state: 'completed', processedPages: 2 }),
     );
     root.unmount();
   });
 
-  it('opens the summary over the original pane and restores split view', async () => {
+  it('opens the summary beneath the original pane and restores split view', async () => {
     getMediaSummary.mockResolvedValueOnce({
       state: 'completed',
       summary: 'Короткий опис',
@@ -339,7 +350,11 @@ describe('OcrPreview', () => {
     });
 
     expect(onFullPaneChange).toHaveBeenCalledWith(false);
-    expect(getMediaSummary).toHaveBeenCalledWith('media-id');
+    expect(getMediaSummary).toHaveBeenCalledWith(
+      'media-id',
+      { signal: expect.any(AbortSignal) },
+      'messenger',
+    );
     expect(onSummaryChange).toHaveBeenCalledWith({
       state: 'completed',
       lastError: null,
@@ -434,6 +449,133 @@ describe('OcrPreview', () => {
     expect(container.textContent).toContain('MGRS');
     expect(container.textContent).toContain('2,3 км на пн-сх від Малокатеринівка');
     expect(mapCoordinates).toHaveBeenCalledTimes(1);
+    root.unmount();
+  });
+
+  it('discards an OCR response after navigating to another attachment', async () => {
+    const oldResponse = deferred<{
+      state: string;
+      qualityStatus: null;
+      processedPages: number;
+      totalPages: number;
+      lastError: null;
+      queueSize: null;
+      attempts: number;
+      statusLog: never[];
+    }>();
+    getMediaOcrStatus
+      .mockImplementationOnce(() => oldResponse.promise)
+      .mockResolvedValueOnce({
+        state: 'completed',
+        qualityStatus: 'accepted',
+        processedPages: 2,
+        totalPages: 2,
+        lastError: null,
+        queueSize: null,
+        attempts: 0,
+        statusLog: [],
+      });
+    const onOcrChange = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const pending = {
+      state: 'pending',
+      qualityStatus: null,
+      processedPages: 0,
+      totalPages: 0,
+      lastError: null,
+      queueSize: null,
+      attempts: 0,
+      statusLog: [],
+    };
+    const render = (mediaId: string) => (
+      <OcrSplitPreview
+        source={<div data-source={mediaId} />}
+        mediaId={mediaId}
+        ocr={pending}
+        visible
+        fullPane={false}
+        onOcrChange={onOcrChange}
+        onFullPaneChange={vi.fn()}
+        summary={null}
+        summaryVisible={false}
+        onSummaryChange={vi.fn()}
+        onSummaryVisibleChange={vi.fn()}
+      />
+    );
+
+    await act(async () => {
+      root.render(render('old-media'));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      root.render(render('new-media'));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      oldResponse.resolve({
+        state: 'failed',
+        qualityStatus: null,
+        processedPages: 0,
+        totalPages: 0,
+        lastError: null,
+        queueSize: null,
+        attempts: 1,
+        statusLog: [],
+      });
+      await Promise.resolve();
+    });
+
+    expect(onOcrChange).toHaveBeenCalledTimes(1);
+    expect(onOcrChange).toHaveBeenCalledWith(expect.objectContaining({ state: 'completed' }));
+    root.unmount();
+  });
+
+  it('discards a summary response after navigating to another attachment', async () => {
+    const oldResponse = deferred<Record<string, unknown>>();
+    getMediaSummary
+      .mockImplementationOnce(() => oldResponse.promise)
+      .mockResolvedValueOnce({
+        state: 'completed',
+        summary: 'Новий опис',
+        coordinates: [],
+        lastError: null,
+        sourceKind: 'ocr_text',
+        sourceCharCount: 10,
+        aiEngineName: 'Gemma',
+        modelName: 'gemma',
+      });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const status = { state: 'completed', lastError: null, hasCoordinates: false };
+
+    await act(async () => {
+      root.render(<MessageCardMediaSummary mediaId="old-media" status={status} />);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      root.render(<MessageCardMediaSummary mediaId="new-media" status={status} />);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      oldResponse.resolve({
+        state: 'completed',
+        summary: 'Старий опис',
+        coordinates: [],
+        lastError: null,
+        sourceKind: 'ocr_text',
+        sourceCharCount: 10,
+        aiEngineName: 'Gemma',
+        modelName: 'gemma',
+      });
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Новий опис');
+    expect(container.textContent).not.toContain('Старий опис');
+    expect(container.querySelector('[data-media-summary-inline="true"]')).not.toBeNull();
     root.unmount();
   });
 });

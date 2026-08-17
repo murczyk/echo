@@ -61,7 +61,12 @@ def default_base() -> str:
 
 
 def changed_paths(base: str) -> list[str]:
-    output = git("diff", "--name-only", "--diff-filter=AM", f"{base}...HEAD")
+    output = git(
+        "diff",
+        "--name-only",
+        "--diff-filter=AM",
+        merge_base(base),
+    )
     return [line for line in output.splitlines() if line]
 
 

@@ -150,7 +150,9 @@ pub async fn update_ai_engine(
     if !values.enabled {
         ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id)
             .await?;
-        ensure_not_used_by_media_summary(&env.dbx, ai_engine_id).await?;
+        ensure_not_used_by_media_summary(&env.dbx, ai_engine_id)
+            .await
+            .c(h!())?;
     }
     ensure_unique_name(&env.dbx, &values.name, Some(ai_engine_id)).await?;
     let mut ai_engine = ai_engine.into_active_model();
@@ -174,7 +176,9 @@ pub async fn delete_ai_engine(
     let ai_engine_id = parse_uuid(&req.id)?;
     find_ai_engine(&env.dbx, ai_engine_id).await?;
     ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id).await?;
-    ensure_not_used_by_media_summary(&env.dbx, ai_engine_id).await?;
+    ensure_not_used_by_media_summary(&env.dbx, ai_engine_id)
+        .await
+        .c(h!())?;
     ai_engine::Entity::delete_by_id(ai_engine_id)
         .exec(&env.dbx)
         .await

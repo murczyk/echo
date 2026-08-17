@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import type { MediaSummaryStatus, OcrMediaSummary } from '../../../../../../Bindings';
 import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
+import { isAbortError } from '../../../../services/api/client';
 import { getMediaOcrStatus } from '../../../../services/api/ocr';
 import type { AttachmentPreviewDownloadItem } from './MessageCardAttachmentPreviewHeader';
 import type { AttachmentPreviewInfoSection } from './MessageCardAttachmentPreviewInfoPopover';
@@ -332,30 +333,46 @@ export function OcrSplitPreview({
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [iframeRevision, setIframeRevision] = useState(0);
-  const refreshInFlightRef = useRef(false);
+  const refreshControllerRef = useRef<AbortController | null>(null);
   const { notify } = useOptionalPowerSnackbar();
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
 
+  useEffect(() => {
+    refreshControllerRef.current?.abort();
+    refreshControllerRef.current = null;
+    setRefreshing(false);
+    setRefreshError(null);
+    return () => {
+      refreshControllerRef.current?.abort();
+      refreshControllerRef.current = null;
+    };
+  }, [mediaId]);
+
   const refresh = useCallback(
     async (quiet: boolean) => {
-      if (mediaId == null || refreshInFlightRef.current) return;
-      refreshInFlightRef.current = true;
+      if (mediaId == null || refreshControllerRef.current != null) return;
+      const controller = new AbortController();
+      refreshControllerRef.current = controller;
       setRefreshing(true);
       try {
-        const nextOcr = await getMediaOcrStatus(mediaId);
+        const nextOcr = await getMediaOcrStatus(mediaId, { signal: controller.signal });
+        if (controller.signal.aborted) return;
         onOcrChange(nextOcr);
         setRefreshError(null);
         if (isOcrReady(nextOcr)) setIframeRevision((revision) => revision + 1);
       } catch (error) {
+        if (controller.signal.aborted || isAbortError(error)) return;
         const message = `Не вдалося оновити статус OCR: ${
           error instanceof Error ? error.message : String(error)
         }`;
         setRefreshError(message);
         if (!quiet) notifyRef.current({ severity: 'error', message });
       } finally {
-        refreshInFlightRef.current = false;
-        setRefreshing(false);
+        if (refreshControllerRef.current === controller) {
+          refreshControllerRef.current = null;
+          setRefreshing(false);
+        }
       }
     },
     [mediaId, onOcrChange],

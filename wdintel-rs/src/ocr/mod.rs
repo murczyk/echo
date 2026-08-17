@@ -23,13 +23,15 @@ use crate::storage;
 use crate::types::{Env, ShortContext};
 use crate::users::{ensure_admin, ensure_rer_role, login_id_from_identity};
 use actix_identity::Identity;
-use actix_web::{get, http::header, post, web::Json, HttpResponse};
+use actix_web::{
+    get, http::header, post, web::Json, HttpRequest, HttpResponse,
+};
 use chrono::{NaiveDateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseBackend,
-    DatabaseConnection, EntityTrait, FromQueryResult, IntoActiveModel,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Statement,
-    TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
+    DatabaseBackend, DatabaseConnection, EntityTrait, FromQueryResult,
+    IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    Statement, TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -91,6 +93,26 @@ pub fn ocr_result_key(instance_id: &str, media_id: Uuid) -> String {
         "ocr/{}/{media_prefix}/{media_id}.html",
         &instance_hash[..16]
     )
+}
+
+pub async fn load_result_keys<C>(
+    dbx: &C,
+    media_ids: &[Uuid],
+) -> anyhow::Result<Vec<String>>
+where
+    C: ConnectionTrait,
+{
+    if media_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    Ok(ocr_job::Entity::find()
+        .filter(ocr_job::Column::MediaId.is_in(media_ids.iter().copied()))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .filter_map(|job| job.html_s3_key)
+        .collect())
 }
 
 pub async fn load_media_summaries(
@@ -288,8 +310,10 @@ pub async fn messenger_media_ocr(
     user: Identity,
     path: actix_web::web::Path<(Uuid,)>,
 ) -> Result<HttpResponse, crate::error::AppError> {
-    let media = authorized_media(env.as_ref(), &user, path.0).await?;
-    serve_ocr_html(env.as_ref(), media.id).await
+    let media = authorized_media(env.as_ref(), &user, path.0)
+        .await
+        .c(h!())?;
+    Ok(serve_ocr_html(env.as_ref(), media.id).await.c(h!())?)
 }
 
 #[get("/api/messenger/media/{media_id}/ocr/download/{format}")]
@@ -299,14 +323,18 @@ pub async fn messenger_media_ocr_download(
     path: actix_web::web::Path<(Uuid, String)>,
 ) -> Result<HttpResponse, crate::error::AppError> {
     let (media_id, format) = path.into_inner();
-    let media = authorized_media(env.as_ref(), &user, media_id).await?;
+    let media = authorized_media(env.as_ref(), &user, media_id)
+        .await
+        .c(h!())?;
     let format = export::ExportFormat::parse(&format)
         .ok_or(crate::error::AppError::NotFound)
         .c(h!())?;
     let extension = format.extension();
     let content_type = format.content_type();
     let file_name = ocr_export_file_name(media.file_name.as_deref(), extension);
-    let html = load_sanitized_ocr_html(env.as_ref(), media.id).await?;
+    let html = load_sanitized_ocr_html(env.as_ref(), media.id)
+        .await
+        .c(h!())?;
     let bytes =
         tokio::task::spawn_blocking(move || export::generate(&html, format))
             .await
@@ -343,7 +371,9 @@ pub async fn messenger_media_ocr_status(
     user: Identity,
     path: actix_web::web::Path<(Uuid,)>,
 ) -> Result<Json<OcrMediaSummary>, crate::error::AppError> {
-    let media = authorized_media(env.as_ref(), &user, path.0).await?;
+    let media = authorized_media(env.as_ref(), &user, path.0)
+        .await
+        .c(h!())?;
     let job = ocr_job::Entity::find_by_id(media.id)
         .one(&env.dbx)
         .await
@@ -389,14 +419,35 @@ pub async fn admin_ocr_preview(
     path: actix_web::web::Path<(Uuid,)>,
 ) -> Result<HttpResponse, crate::error::AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-    serve_ocr_html(env.as_ref(), path.0).await
+    Ok(serve_ocr_html(env.as_ref(), path.0).await.c(h!())?)
+}
+
+#[get("/api/admin/ocr/{media_id}/media")]
+pub async fn admin_ocr_media(
+    env: actix_web::web::Data<Env>,
+    user: Identity,
+    req: HttpRequest,
+    path: actix_web::web::Path<(Uuid,)>,
+) -> Result<HttpResponse, crate::error::AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let media = signal_message_media::Entity::find_by_id(path.0)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(crate::error::AppError::NotFound)
+        .c(h!())?;
+    Ok(
+        crate::rer_importer::serve_messenger_media(&req, env.as_ref(), &media)
+            .await
+            .c(h!())?,
+    )
 }
 
 async fn serve_ocr_html(
     env: &Env,
     media_id: Uuid,
 ) -> Result<HttpResponse, crate::error::AppError> {
-    let html = load_sanitized_ocr_html(env, media_id).await?;
+    let html = load_sanitized_ocr_html(env, media_id).await.c(h!())?;
     let body = render_document(&html);
     Ok(HttpResponse::Ok()
         .insert_header(("Content-Type", "text/html; charset=utf-8"))

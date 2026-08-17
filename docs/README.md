@@ -272,7 +272,8 @@ restart terminal PDF, JPEG, or PNG jobs. This clears the previous summary and
 coordinates and submits a new OCR generation; a new summary and coordinate
 extraction are enqueued after accepted or degraded OCR completes. The action
 requires the document-summary setting and its AI engine to be enabled. Deleting
-source media also deletes its deterministic OCR object.
+source media also deletes the OCR object recorded with its completed job, even
+if OCR configuration changes later.
 
 The same admin page contains the default-off **Стислий опис документів**
 setting. It requires an enabled AI engine and affects only future media. For
@@ -296,9 +297,9 @@ OCR state or block OCR viewing. The selected engine is captured when a summary
 is enqueued. Source text is cleared after completion or terminal failure; its
 digest and original character count remain for provenance.
 
-Users see the result as escaped plain text over the lower 30% of the original
-preview pane, including queued, running, retry, and failure states. Completed
-results with coordinates split the overlay into equal summary and grouped
+Users see the result as escaped plain text beneath each document and beneath the
+original preview pane, including queued, running, retry, and failure states.
+Completed preview results with coordinates split into equal summary and grouped
 coordinate columns, stacked on narrow screens. Message cards lazily request
 only coordinates for completed media, append every successfully converted
 document point after existing message/Palitra points, deduplicate markers, and
@@ -308,13 +309,14 @@ retried. Existing completed summaries keep their stored coordinate data; use
 the admin reprocessing action to populate the richer point context because
 there is no automatic regeneration or backfill.
 
+OCR exports are generated on demand from the latest sanitized HTML stored for
+the completed job. DOCX table traversal stops at nested table boundaries so the
+same rendered content is not copied into the document more than once.
+
 Initial rollout is limited to `echo-staging` and `echo-cbr-staging`. OCR worker
 state and media-summary settings remain excluded from PeerDB/ClickHouse, while
-`media_summary` is replicated for analytical queries. Because the coordinates
-migration adds a column after the table was first deployed as excluded, resync
-the mirror after applying migrations. On the paired analytics host, run
-`bin/resync.sh --yes`, followed by `bin/finish-resync.sh`, from the
-`deploy/clickhouse` checkout. Then leave summaries off, select the Gemma router
+`media_summary`, including extracted coordinates, is replicated for analytical
+queries from its initial schema. Leave summaries off, select the Gemma router
 under **ШІ → OCR**, enable the setting, and submit a fresh PDF, JPEG, or PNG to
 verify both preview surfaces before wider rollout.
 

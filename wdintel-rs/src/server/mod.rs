@@ -897,6 +897,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ocr::save_ocr_settings)
             .service(crate::ocr::reprocess_media_ocr)
             .service(crate::ocr::admin_ocr_preview)
+            .service(crate::ocr::admin_ocr_media)
+            .service(crate::media_summary::admin_ocr_media_summary)
             .service(crate::media_summary::save_settings)
             .service(crate::transcriber::list_instances)
             .service(crate::transcriber::create_instance)

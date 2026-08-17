@@ -333,7 +333,7 @@ function PreviewPane({ title, children }: { title: string; children: ReactNode }
 }
 
 function OcrEvaluationDialog({ job, onClose }: { job: OcrJobItem | null; onClose: () => void }) {
-  const sourceUrl = job ? `/api/messenger/media/${encodeURIComponent(job.mediaId)}` : '';
+  const sourceUrl = job ? `/api/admin/ocr/${encodeURIComponent(job.mediaId)}/media` : '';
   const isImage = job?.contentType.toLowerCase().startsWith('image/') ?? false;
   const [summaryVisible, setSummaryVisible] = useState(job?.summary != null);
   const [summaryStatus, setSummaryStatus] = useState(job?.summary ?? null);
@@ -402,6 +402,7 @@ function OcrEvaluationDialog({ job, onClose }: { job: OcrJobItem | null; onClose
             visible={summaryVisible}
             onStatusChange={setSummaryStatus}
             onClose={() => setSummaryVisible(false)}
+            summaryAccess="admin-ocr"
           />
         </PreviewPane>
         <Box sx={{ borderLeft: { md: 1 }, borderTop: { xs: 1, md: 0 }, borderColor: 'divider' }} />

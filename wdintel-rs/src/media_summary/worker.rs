@@ -13,7 +13,9 @@ use crate::config::{
     MEDIA_SUMMARY_OUTPUT_TOKENS, MEDIA_SUMMARY_RETRY_BASE_SECS,
     MEDIA_SUMMARY_RETRY_MAX_SECS, MEDIA_SUMMARY_SYSTEM_PROMPT,
 };
-use crate::entities::{ai_engine, media_summary as media_summary_entity};
+use crate::entities::{
+    ai_engine, media_summary as media_summary_entity, signal_message_media,
+};
 use crate::h;
 use crate::media_summary::types::MediaSummaryCoordinate;
 use crate::types::{error, info, Env, ShortContext};
@@ -78,11 +80,15 @@ async fn process_next(env: &Env) -> anyhow::Result<bool> {
             complete(&env.dbx, &job, summary, response.model_name)
                 .await
                 .c(h!())?;
+            publish_inbox_change(env, job.media_id).await.c(h!())?;
         }
         Err(err) => {
-            retry_or_fail(&env.dbx, &job, err.to_string())
+            let terminal = retry_or_fail(&env.dbx, &job, err.to_string())
                 .await
                 .c(h!())?;
+            if terminal {
+                publish_inbox_change(env, job.media_id).await.c(h!())?;
+            }
         }
     }
     Ok(true)
@@ -203,7 +209,7 @@ async fn retry_or_fail(
     dbx: &DatabaseConnection,
     job: &media_summary_entity::Model,
     error: String,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     let now = Utc::now().naive_utc();
     let terminal = job.attempts >= MEDIA_SUMMARY_MAX_ATTEMPTS;
     let mut update = media_summary_entity::ActiveModel {
@@ -236,6 +242,26 @@ async fn retry_or_fail(
     if updated.rows_affected != 1 {
         anyhow::bail!("media summary lease was lost before retry update");
     }
+    Ok(terminal)
+}
+
+async fn publish_inbox_change(
+    env: &Env,
+    media_id: uuid::Uuid,
+) -> anyhow::Result<()> {
+    let Some(media) = signal_message_media::Entity::find_by_id(media_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+    else {
+        return Ok(());
+    };
+    crate::inbox::fanout_inbox_changed(
+        &mut env.redis.clone(),
+        media.signal_message_id,
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 

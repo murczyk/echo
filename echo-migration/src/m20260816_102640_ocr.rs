@@ -35,7 +35,8 @@ create table ocr_job (
     discovered_at timestamp without time zone default (now() at time zone 'utc') not null,
     submitted_at timestamp without time zone,
     completed_at timestamp without time zone,
-    updated_at timestamp without time zone default (now() at time zone 'utc') not null
+    updated_at timestamp without time zone default (now() at time zone 'utc') not null,
+    force_summary boolean default false not null
 );
 
 create unique index ocr_job_extractor_job_id_idx

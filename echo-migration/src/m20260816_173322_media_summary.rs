@@ -36,6 +36,11 @@ create table media_summary (
     next_attempt_at timestamp without time zone default (now() at time zone 'utc') not null,
     last_error text,
     summary text,
+    coordinates jsonb default '[]'::jsonb not null
+        check (
+            jsonb_typeof(coordinates) = 'array'
+            and jsonb_array_length(coordinates) <= 50
+        ),
     created_at timestamp without time zone default (now() at time zone 'utc') not null,
     started_at timestamp without time zone,
     completed_at timestamp without time zone,
