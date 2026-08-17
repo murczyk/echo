@@ -438,46 +438,43 @@ where
     Ok(())
 }
 
-pub async fn copy_signal_message_comments<C>(
-    dbx: &C,
+pub async fn copy_signal_message_comments(
+    env: &crate::types::Env,
+    dbx: &DatabaseTransaction,
     source_signal_message_ids: &[i64],
     signal_message_id: i64,
     login: &uuid::Uuid,
     logins: &[uuid::Uuid],
     comment: Option<&str>,
-) -> Result<(), AppError>
-where
-    C: ConnectionTrait,
-{
-    let comments = crate::entities::sigint_comment::Entity::find()
-        .filter(
-            crate::entities::sigint_comment::Column::SignalMessageId
-                .is_in(source_signal_message_ids.to_vec()),
+) -> Result<(), AppError> {
+    let comments = crate::sigint::comments::find_linked_message_comments(
+        dbx,
+        source_signal_message_ids,
+    )
+    .await?;
+
+    let mut copied_ids = std::collections::HashSet::new();
+    for comment_model in comments {
+        if !copied_ids.insert(comment_model.signal_message_id) {
+            continue;
+        }
+        let Some(comment_login) = comment_model.login_id else {
+            continue;
+        };
+        crate::sigint::comments::create_linked_message_comment(
+            env,
+            dbx,
+            signal_message_id,
+            &comment_login,
+            &[comment_login],
+            &comment_model.comment,
+            Some(comment_model.created_at.and_utc()),
+            comment_model.post_id,
         )
-        .all(dbx)
         .await
         .c(h!())?;
-    let comment_models = comments
-        .into_iter()
-        .map(
-            |comment_model| crate::entities::sigint_comment::ActiveModel {
-                id: NotSet,
-                login_id: Set(comment_model.login_id),
-                signal_message_id: Set(signal_message_id),
-                comment: Set(comment_model.comment),
-                created_at: NotSet,
-                sigint_post_id: Set(comment_model.sigint_post_id),
-                migrated_signal_message_id: NotSet,
-            },
-        )
-        .collect::<Vec<_>>();
-    if !comment_models.is_empty() {
-        crate::entities::sigint_comment::Entity::insert_many(comment_models)
-            .exec(dbx)
-            .await
-            .c(h!())?;
     }
-    crate::rer_importer::inbox::bl::delete_editable_sigint_comments(
+    crate::rer_importer::inbox::bl::delete_editable_linked_message_comments(
         dbx,
         signal_message_id,
         login,
@@ -487,12 +484,15 @@ where
     .c(h!())?;
     if let Some(comment) = comment.filter(|comment| !comment.trim().is_empty())
     {
-        crate::rer_importer::inbox::bl::upsert_editable_sigint_comment(
+        crate::sigint::comments::create_linked_message_comment(
+            env,
             dbx,
             signal_message_id,
             login,
             logins,
             comment,
+            None,
+            None,
         )
         .await
         .c(h!())?;

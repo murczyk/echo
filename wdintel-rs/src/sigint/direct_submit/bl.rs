@@ -914,6 +914,7 @@ async fn finish_direct_submit(
         .await
         .c(h!())?;
         query::copy_signal_message_comments(
+            env,
             &txn,
             parent_signal_message_ids,
             signal_message_id,

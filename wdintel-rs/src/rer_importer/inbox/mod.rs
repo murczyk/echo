@@ -2356,13 +2356,15 @@ async fn comment_save(
     let comment = req.comment.as_ref().map(|c| c.trim()).unwrap_or("");
     for id in &message_ids {
         if comment.is_empty() {
-            delete_editable_sigint_comments(&txn, *id, &login, &logins)
+            delete_editable_linked_message_comments(&txn, *id, &login, &logins)
                 .await
                 .c(h!())?;
         } else {
-            upsert_editable_sigint_comment(&txn, *id, &login, &logins, comment)
-                .await
-                .c(h!())?;
+            upsert_editable_linked_message_comment(
+                &txn, &env, *id, &login, &logins, comment,
+            )
+            .await
+            .c(h!())?;
         }
     }
     txn.commit().await.c(h!())?;

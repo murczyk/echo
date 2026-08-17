@@ -20,7 +20,7 @@ use docx_rs::{
 };
 use log::error;
 use sea_orm::sea_query::{
-    extension::postgres::PgExpr, Expr, ExprTrait, SimpleExpr,
+    extension::postgres::PgExpr, Alias, Expr, ExprTrait, SimpleExpr,
 };
 use sea_orm::*;
 use std::cmp::Ordering;
@@ -706,17 +706,32 @@ fn item_network_link_exists() -> SimpleExpr {
 }
 
 fn non_empty_comment_exists() -> SimpleExpr {
-    let subquery = sigint_comment::Entity::find()
+    let linked_message = Alias::new("linked_message");
+    let subquery = intel_prod::Entity::find()
         .select_only()
         .expr(Expr::value(1))
+        .join_as(
+            JoinType::InnerJoin,
+            intel_prod::Relation::SignalMessage1.def(),
+            linked_message.clone(),
+        )
         .filter(
             Expr::col((
-                sigint_comment::Entity,
-                sigint_comment::Column::SignalMessageId,
+                intel_prod::Entity,
+                intel_prod::Column::ParentSignalMessageId,
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
-        .filter(sigint_comment::Column::Comment.ne(""))
+        .filter(
+            Expr::col((
+                linked_message.clone(),
+                signal_message::Column::Deleted,
+            ))
+            .eq(false),
+        )
+        .filter(
+            Expr::col((linked_message, signal_message::Column::Body)).ne(""),
+        )
         .into_query();
 
     Expr::exists(subquery)
@@ -727,14 +742,12 @@ async fn load_non_empty_comments(
     item_id: i64,
     blacklist: &[String],
 ) -> Result<Vec<String>, AppError> {
-    let comments = sigint_comment::Entity::find()
-        .filter(sigint_comment::Column::SignalMessageId.eq(item_id))
-        .all(dbx)
-        .await
-        .c(h!())?
-        .into_iter()
-        .map(|comment| comment.comment)
-        .collect();
+    let comments =
+        crate::sigint::comments::find_linked_message_comments(dbx, &[item_id])
+            .await?
+            .into_iter()
+            .map(|comment| comment.comment)
+            .collect();
     Ok(filter_report_comments(comments, blacklist))
 }
 
