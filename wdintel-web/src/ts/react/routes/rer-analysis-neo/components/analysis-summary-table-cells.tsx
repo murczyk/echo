@@ -30,9 +30,26 @@ export function CallsignChip({
   const chip = (
     <PowerChip
       label={
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            minWidth: 0,
+            maxWidth: '100%',
+          }}
+        >
           {entry.tooltip && hintIcon ? hintIcon : null}
-          <span>{entry.callsign.toUpperCase()}</span>
+          <span
+            style={{
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {entry.callsign.toUpperCase()}
+          </span>
         </span>
       }
       size="small"
@@ -44,8 +61,13 @@ export function CallsignChip({
   );
 
   return (
-    <Tooltip title={entry.tooltip ?? entry.callsign.toUpperCase()} placement="top">
-      <span>{chip}</span>
+    <Tooltip describeChild title={entry.tooltip ?? entry.callsign.toUpperCase()} placement="top">
+      <span
+        tabIndex={0}
+        style={{ display: 'inline-flex', minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}
+      >
+        {chip}
+      </span>
     </Tooltip>
   );
 }
@@ -55,15 +77,20 @@ export function CallsignChipsCell({
 }: {
   callsigns: AnalysisSummaryTableRowView['callsignChips'];
 }) {
-  return (
-    <MrtOverflowItems
-      items={callsigns}
-      getItemText={(entry) => entry.callsign.toUpperCase()}
-      getItemKey={(entry) => entry.callsign}
-      renderItem={(entry) => <CallsignChip entry={entry} />}
-    />
-  );
+  return <MrtOverflowItems items={callsigns} {...callsignOverflowRenderer} />;
 }
+
+export const callsignOverflowRenderer = {
+  getItemText: (entry: AnalysisSummaryTableRowView['callsignChips'][number]) =>
+    entry.callsign.toUpperCase(),
+  getItemKey: (entry: AnalysisSummaryTableRowView['callsignChips'][number]) => entry.callsign,
+  renderItem: (entry: AnalysisSummaryTableRowView['callsignChips'][number]) => (
+    <CallsignChip entry={entry} />
+  ),
+  renderCompactItem: (entry: AnalysisSummaryTableRowView['callsignChips'][number]) => (
+    <CallsignChip entry={entry} />
+  ),
+};
 
 export function SummaryTableLoadingState() {
   return (

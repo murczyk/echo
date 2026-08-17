@@ -13,7 +13,7 @@ import {
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
 import type { AnalysisSummaryTableRowView } from './analysis-summary-table-rows';
-import { CallsignChip, CompactListCell } from './analysis-summary-table-cells';
+import { callsignOverflowRenderer, CompactListCell } from './analysis-summary-table-cells';
 
 export const DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_VISIBILITY = {
   rowActions: true,
@@ -141,9 +141,7 @@ export function buildAnalysisSummaryTableColumns({
         AnalysisSummaryTableRowView['callsignChips'][number]
       >({
         items: ({ row }) => row.original.callsignChips,
-        getItemText: (item) => item.callsign.toUpperCase(),
-        getItemKey: (item) => item.callsign,
-        renderItem: (item) => <CallsignChip entry={item} />,
+        ...callsignOverflowRenderer,
       }),
     },
     {

@@ -597,4 +597,68 @@ describe('MRT rendered overflow components', () => {
     expect(view.container.querySelector('[data-mrt-overflow-fade]')).toBeNull();
     destroy(view);
   });
+
+  it('keeps a specialized compact first item outside the disclosure', () => {
+    itemWidths = { alpha: 140, beta: 30, 'Ще 1': 32 };
+    availableWidth = 80;
+    const compact = vi.fn((value: string, index: number) =>
+      createElement('button', { 'data-compact': `${value}-${index}` }, `icon-${value}`),
+    );
+    const view = render(
+      createElement(MrtOverflowItems<string>, {
+        items: ['alpha', 'beta'],
+        renderItem: (value, index) =>
+          createElement('button', { 'data-normal': `${value}-${index}` }, value),
+        renderCompactItem: compact,
+      }),
+    );
+    triggerResize();
+    expect(compact).toHaveBeenCalledWith('alpha', 0);
+    expect(view.container.querySelector('[data-compact="alpha-0"]')?.textContent).toBe(
+      'icon-alpha',
+    );
+    expect(view.container.querySelector('[data-normal="alpha-0"]')).toBeNull();
+    expect(view.container.querySelector('[data-normal="beta-1"]')).toBeNull();
+    const trigger = view.container.querySelector<HTMLButtonElement>(
+      '[aria-label="Показати ще 1 значення"]',
+    );
+    expect(trigger?.textContent).toBe('Ще 1');
+    act(() => trigger?.click());
+    expect(document.body.querySelector('[role="dialog"] [data-normal="beta-1"]')).not.toBeNull();
+    expect(document.body.querySelector('[role="dialog"] [data-compact="alpha-0"]')).toBeNull();
+    expect(document.body.querySelector('[role="dialog"] [data-normal="alpha-0"]')).toBeNull();
+    availableWidth = 300;
+    triggerResize();
+    expect(view.container.querySelector('[aria-label^="Показати ще"]')).toBeNull();
+    expect(view.container.querySelector('[data-compact]')).toBeNull();
+    expect(view.container.querySelectorAll('[data-normal]')).toHaveLength(2);
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    destroy(view);
+  });
+
+  it('keeps a specialized single zero-fit item without disclosure', () => {
+    itemWidths = { alpha: 140 };
+    availableWidth = 80;
+    const compact = vi.fn((value: string, index: number) =>
+      createElement('span', { 'data-compact': `${value}-${index}` }, `icon-${value}`),
+    );
+    const view = render(
+      createElement(MrtOverflowItems<string>, {
+        items: ['alpha'],
+        renderItem: (value, index) =>
+          createElement('span', { 'data-normal': `${value}-${index}` }, value),
+        renderCompactItem: compact,
+      }),
+    );
+    triggerResize();
+    expect(compact).toHaveBeenCalledWith('alpha', 0);
+    expect(view.container.querySelector('[data-compact="alpha-0"]')?.textContent).toBe(
+      'icon-alpha',
+    );
+    expect(view.container.querySelector('[data-normal="alpha-0"]')).toBeNull();
+    expect(view.container.querySelector('[aria-label^="Показати ще"]')).toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(view.container.querySelector('[data-mrt-overflow-fade]')).toBeNull();
+    destroy(view);
+  });
 });

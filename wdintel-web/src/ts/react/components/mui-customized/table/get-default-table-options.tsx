@@ -410,6 +410,7 @@ export function mrtCustomCell<TData extends MRT_RowData>(
 export function mrtItemsCell<TData extends MRT_RowData, TItem>({
   items,
   renderItem,
+  renderCompactItem,
   renderMeasurementItem,
   getItemKey,
   getItemText,
@@ -418,6 +419,7 @@ export function mrtItemsCell<TData extends MRT_RowData, TItem>({
 }: {
   items: (props: any) => readonly TItem[];
   renderItem: (item: TItem, index: number) => ReactNode;
+  renderCompactItem?: (item: TItem, index: number) => ReactNode;
   renderMeasurementItem?: (item: TItem, index: number) => ReactNode;
   getItemKey?: (item: TItem, index: number) => string | number;
   getItemText?: (item: TItem, index: number) => string;
@@ -428,6 +430,7 @@ export function mrtItemsCell<TData extends MRT_RowData, TItem>({
     <MrtOverflowItems
       items={items(props)}
       renderItem={renderItem}
+      renderCompactItem={renderCompactItem}
       renderMeasurementItem={renderMeasurementItem}
       getItemKey={getItemKey}
       getItemText={getItemText}

@@ -98,6 +98,7 @@ export function MrtOverflowText({
 type OverflowItemsProps<T> = {
   items: readonly T[];
   renderItem: (item: T, index: number) => ReactNode;
+  renderCompactItem?: (item: T, index: number) => ReactNode;
   renderMeasurementItem?: (item: T, index: number) => ReactNode;
   getItemKey?: (item: T, index: number) => string | number;
   getItemText?: (item: T, index: number) => string;
@@ -150,6 +151,7 @@ export function calculateVisibleItemCount({
 export function MrtOverflowItems<T>({
   items,
   renderItem,
+  renderCompactItem,
   renderMeasurementItem = renderItem,
   getItemKey = (_, index) => index,
   getItemText = (_, index) => `Значення ${index + 1}`,
@@ -335,10 +337,16 @@ export function MrtOverflowItems<T>({
           }}
         >
           {compactFirstItem ? (
-            <MrtOverflowText
-              displayValue={getItemText(items[0], 0)}
-              fullValue={getItemText(items[0], 0)}
-            />
+            <Box sx={{ minWidth: 0, maxWidth: '100%', overflow: 'hidden', flex: '1 1 auto' }}>
+              {renderCompactItem ? (
+                renderCompactItem(items[0], 0)
+              ) : (
+                <MrtOverflowText
+                  displayValue={getItemText(items[0], 0)}
+                  fullValue={getItemText(items[0], 0)}
+                />
+              )}
+            </Box>
           ) : (
             items.slice(0, visibleCount).map((item, index) => (
               <Box key={getItemKey(item, index)} sx={{ flexShrink: 0, minWidth: 0 }}>
