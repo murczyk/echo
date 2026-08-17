@@ -17,7 +17,15 @@ impl MigrationTrait for Migration {
             .execute_unprepared(
                 r#"
 alter table if exists sigint_unit
-    add column if not exists is_inconsistent boolean not null default false;
+    add column if not exists is_inconsistent boolean;
+
+update sigint_unit
+set is_inconsistent = false
+where is_inconsistent is null;
+
+alter table if exists sigint_unit
+    alter column is_inconsistent set default false,
+    alter column is_inconsistent set not null;
                 "#,
             )
             .await
