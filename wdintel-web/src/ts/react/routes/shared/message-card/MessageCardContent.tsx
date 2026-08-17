@@ -76,6 +76,7 @@ import {
   MessageCardAttachmentPreviewProvider,
   type MessageCardPreviewAttachment,
 } from './attachment-preview/MessageCardAttachmentPreviewProvider';
+import { MessageCardMediaSummary } from './attachment-preview/MediaSummaryPreview';
 import {
   pointBlacklistLabelKey,
   type AddPointHighlightBlacklistRequest,
@@ -642,23 +643,25 @@ export function MessageCardMessageBody({
               (previewableDocument) => previewableDocument.href === document.href,
             );
             return (
-              <MessageMediaDocumentLink
-                key={document.id ?? document.href}
-                document={document}
-                index={index}
-                onPreview={
-                  previewIndex >= 0
-                    ? () => {
-                        blurActiveElement();
-                        setAttachmentPreviewIndex(
-                          images.length + videoAttachments.length + previewIndex,
-                        );
-                      }
-                    : undefined
-                }
-                isDownloadStarting={isDownloadStarting}
-                onDownloadStart={onDownloadStart}
-              />
+              <div key={document.id ?? document.href} className="flex min-w-0 max-w-full flex-col">
+                <MessageMediaDocumentLink
+                  document={document}
+                  index={index}
+                  onPreview={
+                    previewIndex >= 0
+                      ? () => {
+                          blurActiveElement();
+                          setAttachmentPreviewIndex(
+                            images.length + videoAttachments.length + previewIndex,
+                          );
+                        }
+                      : undefined
+                  }
+                  isDownloadStarting={isDownloadStarting}
+                  onDownloadStart={onDownloadStart}
+                />
+                <MessageCardMediaSummary mediaId={document.id} status={document.summary} />
+              </div>
             );
           })}
           {downloadAttachments.map((attachment) => (

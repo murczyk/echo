@@ -2,6 +2,7 @@ import { useTheme } from '@mui/material';
 import { useMemo } from 'react';
 import { buildUnitFilterOptions, getUnitFilterValue } from '../../utils/unit-search';
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
+import type { GroupCatalogError } from './useRerDutyFilterOptions';
 import {
   useFeedFilterSavedFiltersViewModel,
   type FeedFilterSavedFiltersViewModel,
@@ -23,6 +24,17 @@ type FeedFilterSelectionViewModel<T> = {
   autocompleteClassName?: string;
   rankedSearch?: boolean;
   keepOpenAndPreserveInputOnSelect?: boolean;
+  loading?: boolean;
+  loadingText?: string;
+  noOptionsText?: string;
+  clearText?: string;
+  openText?: string;
+  closeText?: string;
+  keepOpenOnSelect?: boolean;
+  preserveInputOnSelect?: boolean;
+  groupCatalogError?: GroupCatalogError | null;
+  catalogLoading?: boolean;
+  onRetryGroupCatalog?: () => void;
 };
 
 export type FeedFilterPanelViewModel = {
@@ -60,6 +72,8 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     onlyMyUnitTagsEnabled,
     unitsExactMatchOnly,
     reloadFreqsLoading,
+    groupCatalogLoading = false,
+    groupCatalogError = null,
   } = toggles;
   const {
     onGroupsChange,
@@ -77,11 +91,13 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     onHighlightSignalsChange,
     onOnlyMyUnitTagsChange,
     onReloadFreqs,
+    onReloadGroupCatalog = () => {},
   } = actions;
   const sortedGroupKeys = useMemo(
     () =>
-      [...groupsList].sort((a, b) =>
-        (groupInfos[a]?.name ?? a).localeCompare(groupInfos[b]?.name ?? b),
+      [...groupsList].sort(
+        (a, b) =>
+          (groupInfos[a]?.name ?? a).localeCompare(groupInfos[b]?.name ?? b) || a.localeCompare(b),
       ),
     [groupInfos, groupsList],
   );
@@ -141,6 +157,13 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
   });
 
   const groupEmptyLabel = groupsSelectionState.mode === 'include' ? 'всі' : 'ніяка';
+  const visibleGroupCatalogError: GroupCatalogError | null =
+    groupCatalogError?.kind === 'catalog' && sortedGroupKeys.length > 0
+      ? {
+          kind: 'catalog',
+          message: 'Не вдалося завантажити повний список груп. Показано раніше доступні групи.',
+        }
+      : groupCatalogError;
   const senderEmptyLabel = senderSelectionState.mode === 'include' ? 'всі' : 'ніхто';
   const freqEmptyLabel = freqSelectionState.mode === 'include' ? 'всі' : 'ніяка';
   const postEmptyLabel = postSelectionState.mode === 'include' ? 'всі' : 'ніяка';
@@ -158,6 +181,17 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       getOptionKey: (key: string) => key,
       placeholder: groupsSelectionState.localValue.length === 0 ? groupEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[180px] min-[1024px]:flex-1',
+      loading: groupCatalogLoading && sortedGroupKeys.length === 0,
+      catalogLoading: groupCatalogLoading,
+      loadingText: 'Завантажуємо групи…',
+      noOptionsText: 'Груп не знайдено',
+      clearText: 'Очистити',
+      openText: 'Відкрити',
+      closeText: 'Закрити',
+      keepOpenOnSelect: true,
+      preserveInputOnSelect: false,
+      groupCatalogError: visibleGroupCatalogError,
+      onRetryGroupCatalog: onReloadGroupCatalog,
     },
     senders: {
       mode: senderSelectionState.mode,

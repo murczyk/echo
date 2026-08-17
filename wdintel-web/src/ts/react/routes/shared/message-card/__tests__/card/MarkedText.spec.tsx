@@ -239,7 +239,7 @@ describe('MarkedText', () => {
 
     const link = container.querySelector('a.content-token--ADP');
     expect(link).not.toBeNull();
-    expect(link?.getAttribute('href')).toBe('/rer-callsigns-neo?callsign=ABCD');
+    expect(link?.getAttribute('href')).toBe('/rer-callsigns-neo?callsign=ABCD&developing=All');
     expect(link?.textContent).toBe('ABCD');
   });
 
@@ -308,7 +308,7 @@ describe('MarkedText', () => {
 
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('GHOST');
     expect(container.querySelector('[data-testid="callsign-hint-plain-missing"]')).toBeNull();
-    expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).not.toBeNull();
   });
 
   it('uses the in-app map action when provided and falls back to a normal map link otherwise', async () => {
@@ -562,10 +562,10 @@ describe('MarkedText', () => {
 
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('WOLF');
     expect(container.querySelector('a.content-token--ADP')?.getAttribute('href')).toBe(
-      '/rer-callsigns-neo?callsign=WOLF',
+      '/rer-callsigns-neo?callsign=WOLF&developing=All',
     );
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
-    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
   });
 
   it('renders duplicate callsigns verbatim', async () => {
@@ -673,7 +673,7 @@ describe('MarkedText', () => {
     });
 
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('FOX');
-    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
   });
 
@@ -762,10 +762,8 @@ describe('MarkedText', () => {
     });
 
     const muted = container.querySelector('[data-testid="callsign-hint-plain-missing"]');
-    expect(muted).not.toBeNull();
-    expect(muted?.textContent).toBe('GHOST');
-    expect(muted?.getAttribute('title')).toBeNull();
-    expect(container.querySelector('a.content-token--ADP')).toBeNull();
+    expect(muted).toBeNull();
+    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('GHOST');
     expect(container.querySelector('span.content-token--ADP')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
@@ -843,10 +841,10 @@ describe('MarkedText', () => {
 
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('ЛУНА');
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
-    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
   });
 
-  it('keeps search-highlighted non-catalog callsigns as plain text', async () => {
+  it('keeps search-highlighted unresolved callsigns linked', async () => {
     await act(async () => {
       root.render(
         <TestHost
@@ -861,10 +859,8 @@ describe('MarkedText', () => {
       );
     });
 
-    expect(container.querySelector('a.content-token--ADP')).toBeNull();
-    expect(
-      container.querySelector('[data-testid="callsign-hint-plain-missing"]')?.textContent,
-    ).toBe('ГЛОБУС');
+    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('ГЛОБУС');
+    expect(container.querySelector('[data-testid="callsign-hint-plain-missing"]')).toBeNull();
   });
 
   it('uses multiline wrapping styles for long tooltip rows', async () => {
@@ -902,6 +898,136 @@ describe('MarkedText', () => {
     expect(CALLSIGN_TOOLTIP_ITEM_SX.whiteSpace).toBe('normal');
     expect(CALLSIGN_TOOLTIP_ITEM_SX.overflowWrap).toBe('anywhere');
     expect(CALLSIGN_TOOLTIP_ITEM_SX.wordBreak).toBe('break-word');
+  });
+
+  it('opens structured message-call-sign tooltips with the correct sections', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'wolf', begin: 0, end: 4, etalon: 'wolf' } }]}
+          bodyText="wolf"
+          message={{ freq: null, networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{
+            wolf: {
+              callsign: 'wolf',
+              res: [
+                {
+                  id: 1,
+                  callsign: 'wolf',
+                  position: 'ТЮМЕНЬ',
+                  comment: '',
+                  unit1: '',
+                  unit2: '',
+                  unitId: null,
+                  networkIdsReportedIn: [],
+                },
+              ],
+              networkHints: [{ id: 2, networkId: 20, position: '', formation: '' }],
+            },
+          }}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+    const button = container.querySelector('button[data-testid="callsign-hint-badge-system"]');
+    expect(button?.getAttribute('aria-label')).toBe('Підказка з каталогу');
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      button?.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+    const tooltip = document.querySelector('[role="tooltip"]');
+    expect(tooltip?.textContent).toContain('Позивні з каталогу:');
+    expect(tooltip?.textContent).toContain('Позивний присутній в інших мережах:');
+    const sections = tooltip?.querySelectorAll('section') ?? [];
+    expect(sections.length).toBe(2);
+    sections.forEach((section) => {
+      section.querySelectorAll('ul').forEach((list) => {
+        expect(Array.from(list.children).every((child) => child.tagName === 'LI')).toBe(true);
+      });
+      expect(section.querySelector('ul')?.previousElementSibling?.tagName).toBe('DIV');
+    });
+  });
+
+  it.each([
+    { position: 'cmd', formation: 'u1', expected: 'cmd u1' },
+    { position: '', formation: '', expected: 'Додатковий опис відсутній' },
+  ])('renders exact-network tooltip data without unrelated catalog data', async (hint) => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'wolf', begin: 0, end: 4, etalon: 'wolf' } }]}
+          bodyText="wolf"
+          message={{ networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{
+            wolf: {
+              callsign: 'wolf',
+              res: [
+                {
+                  id: 1,
+                  callsign: 'wolf',
+                  position: 'ТЮМЕНЬ',
+                  comment: '',
+                  unit1: '',
+                  unit2: '',
+                  unitId: null,
+                  networkIdsReportedIn: [],
+                },
+              ],
+              networkHints: [
+                { id: 2, networkId: 10, position: hint.position, formation: hint.formation },
+              ],
+            },
+          }}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+    const button = container.querySelector('button[data-testid="callsign-hint-badge-network"]');
+    expect(button).not.toBeNull();
+    expect(container.querySelector('button[data-testid="callsign-hint-badge-system"]')).toBeNull();
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+    const tooltip = document.querySelector('[role="tooltip"]');
+    expect(tooltip?.textContent).toContain('Позивні підрозділів мережі:');
+    expect(tooltip?.textContent).toContain(hint.expected);
+    expect(tooltip?.textContent).not.toContain('ТЮМЕНЬ');
+    expect(tooltip?.querySelectorAll('section')).toHaveLength(1);
+  });
+
+  it('labels other-network-only tooltip information neutrally', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'wolf', begin: 0, end: 4, etalon: 'wolf' } }]}
+          bodyText="wolf"
+          message={{ networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{
+            wolf: {
+              callsign: 'wolf',
+              res: [],
+              networkHints: [{ id: 2, networkId: 20, position: 'p', formation: 'f' }],
+            },
+          }}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+    const button = container.querySelector('button[data-testid="callsign-hint-badge-system"]');
+    expect(button?.getAttribute('aria-label')).toBe('Інформація про позивний');
+    expect(container.querySelector('button[data-testid="callsign-hint-badge-network"]')).toBeNull();
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+    const tooltip = document.querySelector('[role="tooltip"]');
+    expect(tooltip?.textContent).toContain('Позивний присутній в інших мережах:');
+    expect(tooltip?.textContent).not.toContain('Позивні з каталогу:');
   });
 
   it('keeps callsign contrast above WCAG AA in light and dark themes', () => {

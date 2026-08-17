@@ -1,0 +1,24 @@
+hardware_profile: split_gpu
+nu_extract:
+  url: http://100.105.172.96:8002/v1
+  model_id: numind/NuExtract3
+  revision: 2e9fca82ee641e6bb6e1f5d905241e994be27a07
+  token_env: NUEXTRACT_API_KEY
+  dtype: bfloat16
+  temperature: 0.2
+  seed: 0
+  extra_body:
+    chat_template_kwargs:
+      mode: markdown
+      enable_thinking: false
+gemma:
+  url: http://100.105.172.96:8001/v1
+  model_id: echo/ocr-gemma-4-26B-A4B-it
+  revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
+  token_env: GEMMA_API_KEY
+  dtype: fp8
+  kv_cache_dtype: fp8
+  vision_budget: 1120
+  temperature: 0
+  seed: 0
+enable_paddle: true

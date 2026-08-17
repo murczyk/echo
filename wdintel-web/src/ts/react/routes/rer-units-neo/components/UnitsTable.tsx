@@ -28,6 +28,7 @@ import {
   type MRT_Column,
   type MRT_ColumnDef,
   type MRT_PaginationState,
+  type MRT_TableInstance,
   MaterialReactTable,
   useMaterialReactTable,
 } from 'material-react-table';
@@ -361,6 +362,38 @@ function formatDateTime(value: number): string {
   }).format(date);
 }
 
+function getUnitsTablePaperProps(table: MRT_TableInstance<Unit>, loading: boolean) {
+  const paperProps = getDefaultMrtPaperProps({ table, loading, layout: 'workspace' });
+
+  return {
+    ...paperProps,
+    sx: {
+      ...paperProps.sx,
+      display: 'block',
+      overflow: 'auto',
+    },
+  };
+}
+
+function getUnitsTableContainerProps(loading: boolean, hasRows: boolean) {
+  const containerProps = getDefaultMrtContainerProps({
+    loading,
+    layout: 'workspace',
+    hasRows,
+  });
+
+  return {
+    ...containerProps,
+    sx: {
+      ...containerProps.sx,
+      flex: 'none',
+      height: 'auto',
+      maxHeight: 'none',
+      overflow: 'visible',
+    },
+  };
+}
+
 function OrbitCell({ unit }: { unit: Unit }) {
   return (
     <Stack direction="row" spacing={1} alignItems="center" sx={{ width: '100%', minWidth: 0 }}>
@@ -509,7 +542,62 @@ function useUnitColumns(
         },
       },
       {
-        header: 'Рота/Взвод',
+        header: 'Інше',
+        accessorKey: 'other',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'other',
+        }),
+        size: 160,
+      },
+      {
+        header: 'Команда/Екіпаж',
+        accessorKey: 'teamOrCrew',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'team-or-crew',
+        }),
+        size: 180,
+      },
+      {
+        header: 'Секція',
+        accessorKey: 'section',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'section',
+        }),
+        size: 160,
+      },
+      {
+        header: 'Відділення',
+        accessorKey: 'squad',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'squad',
+        }),
+        size: 160,
+      },
+      {
+        header: 'Взвод',
+        accessorKey: 'platoon',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'platoon',
+        }),
+        size: 160,
+      },
+      {
+        header: 'Рота',
         accessorKey: 'company',
         Filter: buildTextColumnFilter({
           searchMode,
@@ -531,13 +619,24 @@ function useUnitColumns(
         size: 160,
       },
       {
-        header: 'Полк/Бригада',
+        header: 'Полк',
         accessorKey: 'regiment',
         Filter: buildTextColumnFilter({
           searchMode,
           onSearchModeChange,
           compactSearchMode,
           menuIdPrefix: 'regiment',
+        }),
+        size: 180,
+      },
+      {
+        header: 'Бригада',
+        accessorKey: 'brigade',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'brigade',
         }),
         size: 180,
       },
@@ -553,7 +652,18 @@ function useUnitColumns(
         size: 160,
       },
       {
-        header: 'Корпус/Армія',
+        header: 'Корпус',
+        accessorKey: 'corps',
+        Filter: buildTextColumnFilter({
+          searchMode,
+          onSearchModeChange,
+          compactSearchMode,
+          menuIdPrefix: 'corps',
+        }),
+        size: 180,
+      },
+      {
+        header: 'Армія',
         accessorKey: 'army',
         Filter: buildTextColumnFilter({
           searchMode,
@@ -679,6 +789,7 @@ export function UnitsTable({
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('lg'));
   const columns = useUnitColumns(attachmentUnitIds, searchMode, onSearchModeChange, isSmallScreen);
+  const hasNextPage = (pagination.pageIndex + 1) * pagination.pageSize < totalCount;
   const table = useMaterialReactTable({
     ...defaultMrtOptions,
     columns,
@@ -693,7 +804,7 @@ export function UnitsTable({
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
     enableColumnResizing: tableStateContext.enableColumnResizing,
     enablePagination: true,
-    enableBottomToolbar: true,
+    enableBottomToolbar: hasNextPage,
     enableMultiSort: false,
     manualFiltering: true,
     manualSorting: true,
@@ -754,21 +865,15 @@ export function UnitsTable({
         </MrtRowActions>
       </Box>
     ),
-    renderBottomToolbar: ({ table }) =>
-      table.getCanNextPage() ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-          <Button variant="outlined" onClick={() => table.nextPage()} disabled={loading}>
-            Завантажити ще
-          </Button>
-        </Box>
-      ) : null,
-    muiTablePaperProps: ({ table }) =>
-      getDefaultMrtPaperProps({ table, loading, layout: 'workspace' }),
-    muiTableContainerProps: getDefaultMrtContainerProps({
-      loading,
-      layout: 'workspace',
-      hasRows: units.length > 0,
-    }),
+    renderBottomToolbar: ({ table }) => (
+      <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+        <Button variant="outlined" onClick={() => table.nextPage()} disabled={loading}>
+          Завантажити ще
+        </Button>
+      </Box>
+    ),
+    muiTablePaperProps: ({ table }) => getUnitsTablePaperProps(table, loading),
+    muiTableContainerProps: getUnitsTableContainerProps(loading, units.length > 0),
     muiTableBodyCellProps: {
       sx: {
         ...CUSTOM_STYLES.muiTableBodyCellProps.sx,

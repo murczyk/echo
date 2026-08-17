@@ -112,6 +112,7 @@ mainBody user model shared route =
                         , messages = model.messages
                         , tags = model.tags
                         , callsignsInfo = model.callsignsInfo
+                        , messageCallsignsInfo = model.messageCallsignsInfo
                         , messageComments = model.messageComments
                         , user = user
                         , users = model.users

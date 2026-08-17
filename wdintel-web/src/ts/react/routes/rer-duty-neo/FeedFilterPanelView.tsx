@@ -2,6 +2,9 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { Box, FormControl, InputLabel, MenuItem, Select, Tooltip } from '@mui/material';
 import type { SavedFilterDuty } from '../../../../Bindings';
 import { SavedFiltersControl } from '../../components/SavedFiltersControl';
+import { PowerAlert } from '../../components/PowerAlert';
+import { PowerButton } from '../../components/PowerButton';
+import type { GroupCatalogError } from './useRerDutyFilterOptions';
 import { FeedFilterAdvancedSection } from './FeedFilterAdvancedSection';
 import { FeedFilterFrequencySection } from './FeedFilterFrequencySection';
 import { FeedFilterSelectionSection } from './FeedFilterSelectionSection';
@@ -37,6 +40,17 @@ export type FeedFilterSelectionConfig<T> = {
   autocompleteClassName?: string;
   rankedSearch?: boolean;
   keepOpenAndPreserveInputOnSelect?: boolean;
+  loading?: boolean;
+  loadingText?: string;
+  noOptionsText?: string;
+  clearText?: string;
+  openText?: string;
+  closeText?: string;
+  keepOpenOnSelect?: boolean;
+  preserveInputOnSelect?: boolean;
+  groupCatalogError?: GroupCatalogError | null;
+  onRetryGroupCatalog?: () => void;
+  catalogLoading?: boolean;
 };
 
 type FeedFilterSavedFiltersConfig = {
@@ -141,7 +155,34 @@ export function FeedFilterPanelView({
           getOptionKey={groups.getOptionKey}
           placeholder={groups.placeholder}
           autocompleteClassName={groups.autocompleteClassName}
+          loading={groups.loading}
+          loadingText={groups.loadingText}
+          noOptionsText={groups.noOptionsText}
+          clearText={groups.clearText}
+          openText={groups.openText}
+          closeText={groups.closeText}
+          keepOpenOnSelect={groups.keepOpenOnSelect}
+          preserveInputOnSelect={groups.preserveInputOnSelect}
         />
+        {groups.groupCatalogError ? (
+          <PowerAlert
+            autoHideDuration={null}
+            dismissible={false}
+            severity={groups.groupCatalogError.kind === 'details' ? 'warning' : 'error'}
+            action={
+              <PowerButton
+                color="inherit"
+                size="small"
+                disabled={groups.catalogLoading}
+                onClick={groups.onRetryGroupCatalog}
+              >
+                Повторити
+              </PowerButton>
+            }
+          >
+            {groups.groupCatalogError.message}
+          </PowerAlert>
+        ) : null}
 
         <FeedFilterSelectionSection
           title="Відправник"

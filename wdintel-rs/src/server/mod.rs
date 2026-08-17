@@ -613,6 +613,22 @@ fn spawn_background_workers(
         .await;
     });
 
+    let ocr_env = env.clone();
+    let ocr_cancellation_token = cancel_token.clone();
+    spawn_named_worker("ocr_worker", bg_set, async move {
+        crate::ocr::worker::run_nofail(ocr_env, ocr_cancellation_token).await;
+    });
+
+    let media_summary_env = env.clone();
+    let media_summary_cancellation_token = cancel_token.clone();
+    spawn_named_worker("media_summary_worker", bg_set, async move {
+        crate::media_summary::worker::run_nofail(
+            media_summary_env,
+            media_summary_cancellation_token,
+        )
+        .await;
+    });
+
     let ai_agent_env = env.clone();
     let ai_agent_cancellation = cancel_token.clone();
     spawn_named_worker("ai_agent_worker", bg_set, async move {
@@ -710,6 +726,13 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::delta::login::fetch_redirect_url)
             .service(crate::delta::login::handle_redirect)
             .service(crate::rer_importer::messenger_media)
+            .service(crate::ocr::messenger_media_ocr)
+            .service(crate::ocr::messenger_media_ocr_download)
+            .service(crate::ocr::messenger_media_ocr_status)
+            .service(crate::media_summary::messenger_media_summary)
+            .service(
+                crate::media_summary::messenger_media_summary_coordinates,
+            )
             .service(crate::rer_importer::rer_message_attachments_zip)
             .service(
                 crate::messenger::media_thumbnail::messenger_media_thumbnail,
@@ -807,6 +830,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::reports::report_docx_task_launch)
             .service(crate::report_history::report_history_list)
             .service(crate::report_history::report_history_admin_list)
+            .service(crate::report_history::report_history_admin_rerun)
             .service(crate::report_history::report_history_status)
             .service(crate::report_history::report_history_download)
             .service(crate::report_history::report_history_retry)
@@ -869,6 +893,13 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_callsign::save_ai_callsign_parsing)
             .service(crate::ai_callsign::recalculate_ai_callsign_parsing)
             .service(crate::ai_callsign::save_ai_callsign_worker_settings)
+            .service(crate::ocr::get_ocr_page)
+            .service(crate::ocr::save_ocr_settings)
+            .service(crate::ocr::reprocess_media_ocr)
+            .service(crate::ocr::admin_ocr_preview)
+            .service(crate::ocr::admin_ocr_media)
+            .service(crate::media_summary::admin_ocr_media_summary)
+            .service(crate::media_summary::save_settings)
             .service(crate::transcriber::list_instances)
             .service(crate::transcriber::create_instance)
             .service(crate::transcriber::update_instance)
@@ -1575,30 +1606,7 @@ mod tests {
 
         let req = test::TestRequest::post()
             .uri("/api/sigint/units")
-            .set_json(crate::sigint::unit::types::ListUnitsReq {
-                sort_by: None,
-                after_unit_id: None,
-                before_unit_id: None,
-                include_inactive: false,
-                filter_active: None,
-                filter_text: None,
-                filter_name: None,
-                filter_company: None,
-                filter_battalion: None,
-                filter_regiment: None,
-                filter_division: None,
-                filter_army: None,
-                filter_military_district: None,
-                filter_army_region: None,
-                filter_comment: None,
-                filter_orbit_note: None,
-                filter_is_deduplicate_candidate: None,
-                filter_has_orbit: None,
-                filter_has_orbit_note: None,
-                search_mode: None,
-                limit: None,
-                offset: None,
-            })
+            .set_json(crate::sigint::unit::types::ListUnitsReq::default())
             .to_request();
         let res = test::call_service(&app, req).await;
 

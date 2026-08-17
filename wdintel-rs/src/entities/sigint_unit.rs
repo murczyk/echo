@@ -46,6 +46,27 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     #[serde(default)]
     pub military_district: String,
+    #[sea_orm(column_type = "Text")]
+    #[serde(default)]
+    pub other: String,
+    #[sea_orm(column_type = "Text")]
+    #[serde(default)]
+    pub team_or_crew: String,
+    #[sea_orm(column_type = "Text")]
+    #[serde(default)]
+    pub section: String,
+    #[sea_orm(column_type = "Text")]
+    #[serde(default)]
+    pub squad: String,
+    #[sea_orm(column_type = "Text")]
+    #[serde(default)]
+    pub platoon: String,
+    #[sea_orm(column_type = "Text")]
+    #[serde(default)]
+    pub brigade: String,
+    #[sea_orm(column_type = "Text")]
+    #[serde(default)]
+    pub corps: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

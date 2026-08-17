@@ -28,7 +28,7 @@ function RerDutyNeoRoot({ authUserName }: { authUserName: string | null }) {
         bottomInset={POWER_DUTY_SNACKBAR_CLEARANCE}
         rightInset={POWER_FLOATING_CONTROL_RIGHT_CLEARANCE}
       >
-        <RerDutyNeoPage authUserName={authUserName} />
+        <RerDutyNeoPage key={authUserName ?? 'anonymous'} authUserName={authUserName} />
       </PowerSnackbarProvider>
     </ThemeProvider>
   );

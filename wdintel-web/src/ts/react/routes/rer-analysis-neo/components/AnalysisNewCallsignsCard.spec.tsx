@@ -44,6 +44,6 @@ describe('AnalysisNewCallsignsCard', () => {
     expect(container.textContent).toContain('КОТ');
     expect(
       container.querySelector<HTMLAnchorElement>('a[href*="callsign"]')?.getAttribute('href'),
-    ).toBe('/rer-callsigns-neo?callsign=%D0%BA%D0%BE%D0%BC%D0%B5%D1%82%D0%B0');
+    ).toBe('/rer-callsigns-neo?callsign=%D0%BA%D0%BE%D0%BC%D0%B5%D1%82%D0%B0&developing=All');
   });
 });

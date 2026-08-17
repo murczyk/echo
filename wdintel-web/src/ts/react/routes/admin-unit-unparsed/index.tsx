@@ -1,4 +1,5 @@
 import ArchiveIcon from '@mui/icons-material/Archive';
+import EditNoteIcon from '@mui/icons-material/EditNote';
 import UnarchiveIcon from '@mui/icons-material/Unarchive';
 import LinkIcon from '@mui/icons-material/Link';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -71,10 +72,17 @@ function formatError(error: unknown): string {
 
 function unitSegments(unit: Unit): string {
   return [
+    unit.other,
+    unit.teamOrCrew,
+    unit.section,
+    unit.squad,
+    unit.platoon,
     unit.company,
     unit.battalion,
     unit.regiment,
+    unit.brigade,
     unit.division,
+    unit.corps,
     unit.army,
     unit.militaryDistrict,
     unit.armyRegion,
@@ -91,10 +99,17 @@ function unitTitle(unit: Unit): string {
 
 function unitEchelon(unit: Unit): number {
   return [
+    unit.other,
+    unit.teamOrCrew,
+    unit.section,
+    unit.squad,
+    unit.platoon,
     unit.company,
     unit.battalion,
     unit.regiment,
+    unit.brigade,
     unit.division,
+    unit.corps,
     unit.army,
     unit.militaryDistrict,
     unit.armyRegion,
@@ -208,49 +223,18 @@ function UnitCandidateButton({
 
 type ResolveState = {
   row: UnresolvedUnitLabel;
-  label: string;
   sigintUnit: Unit | null;
+};
+
+type NoteState = {
+  row: UnresolvedUnitLabel;
+  note: string;
 };
 
 type AdminUnitUnparsedPageProps = {
   authUserRoles: string[];
   embedded?: boolean;
 };
-
-type NoteCellProps = {
-  row: UnresolvedUnitLabel;
-  disabled: boolean;
-  onSave: (row: UnresolvedUnitLabel, note: string) => Promise<void>;
-};
-
-function NoteCell({ row, disabled, onSave }: NoteCellProps) {
-  const [value, setValue] = useState(row.note);
-
-  useEffect(() => setValue(row.note), [row.note]);
-
-  async function commit() {
-    const note = value.trim();
-    if (note === row.note) return;
-    try {
-      await onSave(row, note);
-    } catch {
-      setValue(row.note);
-    }
-  }
-
-  return (
-    <TextField
-      fullWidth
-      size="small"
-      value={value}
-      disabled={disabled}
-      placeholder="Нотатка"
-      inputProps={{ 'aria-label': `Нотатка для ${row.unitTxt}` }}
-      onChange={(event) => setValue(event.target.value)}
-      onBlur={() => void commit()}
-    />
-  );
-}
 
 export function AdminUnitUnparsedPage({
   authUserRoles,
@@ -265,6 +249,7 @@ export function AdminUnitUnparsedPage({
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [noteState, setNoteState] = useState<NoteState | null>(null);
   const [resolveState, setResolveState] = useState<ResolveState | null>(null);
   const [unitSearch, setUnitSearch] = useState('');
   const [unitOptions, setUnitOptions] = useState<UnitOption[]>([]);
@@ -389,9 +374,10 @@ export function AdminUnitUnparsedPage({
         ),
       );
       setStatus(`Нотатку для «${row.unitTxt}» збережено.`);
+      return true;
     } catch (error) {
       setError(formatError(error));
-      throw error;
+      return false;
     } finally {
       setProcessing(false);
     }
@@ -404,7 +390,7 @@ export function AdminUnitUnparsedPage({
     try {
       await resolveUnresolvedUnitLabel({
         unitTxt: resolveState.row.unitTxt,
-        label: resolveState.label,
+        label: resolveState.row.unitTxt,
         sigintUnitId: resolveState.sigintUnit.id,
       });
       setStatus(`Синонім для «${resolveState.row.unitTxt}» збережено.`);
@@ -439,10 +425,14 @@ export function AdminUnitUnparsedPage({
         header: 'Нотатка',
         size: 360,
         enableSorting: false,
-        Cell: ({ row }) => <NoteCell row={row.original} disabled={processing} onSave={saveNote} />,
+        Cell: ({ cell }) => (
+          <Box sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+            {String(cell.getValue() || '—')}
+          </Box>
+        ),
       },
     ],
-    [processing, saveNote],
+    [],
   );
 
   return (
@@ -499,6 +489,13 @@ export function AdminUnitUnparsedPage({
             renderRowActions={({ row }) => (
               <MrtRowActions forceMenu>
                 <MrtRowActionButton
+                  label="Редагувати нотатку"
+                  icon={<EditNoteIcon fontSize="small" />}
+                  opensModal
+                  disabled={processing}
+                  onClick={() => setNoteState({ row: row.original, note: row.original.note })}
+                />
+                <MrtRowActionButton
                   label={row.original.isArchived ? 'Розархівувати' : 'Архів'}
                   icon={
                     row.original.isArchived ? (
@@ -524,7 +521,6 @@ export function AdminUnitUnparsedPage({
                       setUnitSearchError(null);
                       setResolveState({
                         row: row.original,
-                        label: row.original.unitTxt,
                         sigintUnit: null,
                       });
                     }}
@@ -549,34 +545,58 @@ export function AdminUnitUnparsedPage({
       </Stack>
 
       <Dialog
+        open={noteState !== null}
+        fullWidth
+        maxWidth="sm"
+        onClose={processing ? undefined : () => setNoteState(null)}
+      >
+        <DialogTitle>Редагувати нотатку для {noteState?.row.unitTxt}</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            multiline
+            minRows={3}
+            label="Нотатка"
+            value={noteState?.note ?? ''}
+            disabled={processing}
+            onChange={(event) =>
+              setNoteState((current) =>
+                current ? { ...current, note: event.target.value } : current,
+              )
+            }
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setNoteState(null)} disabled={processing}>
+            Скасувати
+          </Button>
+          <Button
+            variant="contained"
+            disabled={processing || noteState === null}
+            onClick={() => {
+              if (noteState === null) return;
+              void saveNote(noteState.row, noteState.note.trim()).then((saved) => {
+                if (saved) setNoteState(null);
+              });
+            }}
+          >
+            {processing ? 'Збереження…' : 'Зберегти'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
         open={resolveState !== null}
         fullWidth
         maxWidth="md"
         onClose={processing ? undefined : () => setResolveState(null)}
       >
-        <DialogTitle>Прив'язати до підрозділу</DialogTitle>
+        <DialogTitle>Прив'язати до підрозділу {resolveState?.row.unitTxt}</DialogTitle>
         <DialogContent>
           {resolveState ? (
             <Stack spacing={2} sx={{ pt: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Нерозпізнаний текст: {resolveState.row.unitTxt}
-              </Typography>
-              <TextField
-                autoFocus
-                fullWidth
-                label="Синонім підрозділу"
-                value={resolveState.label}
-                disabled={processing}
-                error={resolveState.label.trim().length < 2}
-                helperText={
-                  resolveState.label.trim().length < 2
-                    ? 'Синонім має містити щонайменше 2 символи.'
-                    : 'Текст можна відредагувати перед збереженням.'
-                }
-                onChange={(event) =>
-                  setResolveState({ ...resolveState, label: event.target.value })
-                }
-              />
               {unitOptions.length > 0 ? (
                 <Stack spacing={1}>
                   <Typography variant="subtitle2">Топ кандидатів</Typography>
@@ -648,12 +668,7 @@ export function AdminUnitUnparsedPage({
           </Button>
           <Button
             variant="contained"
-            disabled={
-              processing ||
-              resolveState === null ||
-              resolveState.label.trim().length < 2 ||
-              resolveState.sigintUnit === null
-            }
+            disabled={processing || resolveState === null || resolveState.sigintUnit === null}
             onClick={() => void resolveGroup()}
           >
             {processing ? 'Збереження…' : "Прив'язати"}

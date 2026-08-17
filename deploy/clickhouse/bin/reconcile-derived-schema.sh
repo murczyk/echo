@@ -9,6 +9,19 @@ source "$ANALYTICS_LIB"
 load_analytics_config
 validate_runtime_identifiers
 
+# Source deploys can stream this script before the analytics library is updated.
+: "${ANALYTICS_SCHEMA_RECONCILE_LOCK_NAME:=echo_analytics_schema_reconciliation}"
+if ! declare -F print_analytics_schema_reconcile_lock_sql >/dev/null; then
+  print_analytics_schema_reconcile_lock_sql() {
+    cat <<'SQL'
+SELECT pg_catalog.pg_advisory_xact_lock(
+  pg_catalog.hashtextextended(:'schema_reconcile_lock_name', 0)
+) AS schema_reconcile_lock_acquired
+\gset
+SQL
+  }
+fi
+
 derived_database="${CLICKHOUSE_CURRENT_DB}_derived"
 metadata_database="${CLICKHOUSE_CURRENT_DB}_meta"
 message_callsign_view=message_callsign_v2
@@ -348,15 +361,12 @@ clickhouse_admin_http "
   GRANT SELECT ON \`$derived_database\`.* TO \`$CLICKHOUSE_GATEWAY_USER\`
 "
 
-postgres_psql --dbname "$GATEWAY_DB" \
-  -q \
-  -v ON_ERROR_STOP=1 \
-  -v derived_database="$derived_database" \
-  -v message_callsign_view="$message_callsign_view" \
-  -v message_aor_link_view="$message_aor_link_view" \
-  -v message_network_link_view="$message_network_link_view" \
-  -v gateway_user="$GATEWAY_USER" <<'SQL'
+{
+  cat <<'SQL'
 BEGIN;
+SQL
+  print_analytics_schema_reconcile_lock_sql
+  cat <<'SQL'
 CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived AUTHORIZATION postgres;
 REVOKE ALL ON SCHEMA echo_clickhouse_derived FROM PUBLIC;
 CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived_foreign
@@ -521,5 +531,14 @@ SELECT format(
 ) \gexec
 COMMIT;
 SQL
+} | postgres_psql --dbname "$GATEWAY_DB" \
+  -q \
+  -v ON_ERROR_STOP=1 \
+  -v schema_reconcile_lock_name="$ANALYTICS_SCHEMA_RECONCILE_LOCK_NAME" \
+  -v derived_database="$derived_database" \
+  -v message_callsign_view="$message_callsign_view" \
+  -v message_aor_link_view="$message_aor_link_view" \
+  -v message_network_link_view="$message_network_link_view" \
+  -v gateway_user="$GATEWAY_USER"
 
 log "Reconciled derived analytics schema"

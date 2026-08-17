@@ -77,6 +77,8 @@ type Params = {
   messageFeedsRef: MutableRefObject<MessageFeedState[]>;
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>;
   setError: Dispatch<SetStateAction<string | null>>;
+  reportPollingFailure: (error: unknown) => void;
+  clearPollingFailure: () => void;
   loadingNewerFeedIds: Set<string>;
   setLoadingNewerFeedIds: Dispatch<SetStateAction<Set<string>>>;
   buildReqForFeed: (
@@ -413,6 +415,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
             operation.newerResult = { ok: false, addedCount: 0 };
             return;
           }
+          runParams.clearPollingFailure();
           const previousTailId = loadedTailId;
           const pendingBefore = feedPendingNewerItems(latestFeed);
           const followTail = operation.newerOptions.scrollToEndAfterLoad && followStillValid;
@@ -565,6 +568,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
           operation.newerResult = { ok: false, addedCount: 0 };
           // Keep polling and the previously loaded messages after a transient failure.
           if (!isStillCurrent()) return;
+          runParams.reportPollingFailure(error);
           if (operation.newerOptions.confirmedTailAvailable) {
             runParams.setTailAvailability(feedId, 'available');
           }

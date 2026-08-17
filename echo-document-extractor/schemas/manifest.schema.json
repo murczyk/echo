@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://echo.local/schemas/document-extractor/manifest-v1.json",
+  "title": "Echo document extraction package manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "document_id", "status", "inputs", "hardware_profile", "models"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "document_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$" },
+    "status": { "enum": ["accepted", "degraded", "failed"] },
+    "inputs": { "type": "array", "items": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" } },
+    "source_hashes": { "type": "array", "items": { "$ref": "#/$defs/hash" } },
+    "raster_hashes": { "type": "array", "items": { "$ref": "#/$defs/hash" } },
+    "hardware_profile": { "enum": ["split_gpu", "single_spark"] },
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "revision", "prompt_version"],
+        "properties": {
+          "id": { "type": "string" },
+          "revision": { "type": "string" },
+          "prompt_version": { "type": "string" }
+        }
+      }
+    },
+    "metadata": { "type": "object", "additionalProperties": { "type": ["string", "integer", "number", "boolean", "null"] } },
+    "file_hashes": { "type": "object", "additionalProperties": { "$ref": "#/$defs/hash" } }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

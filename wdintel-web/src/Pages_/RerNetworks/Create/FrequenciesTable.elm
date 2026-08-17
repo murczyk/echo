@@ -13,6 +13,7 @@ import Json.Encode as Encode
 import List.Extra as ListX
 import Pages_.RerNetworks.Create.Model exposing (FreqActivityFilter(..), Mode(..), Model)
 import Pages_.RerNetworks.Create.Msg exposing (FrequenciesMsg(..))
+import Pages_.RerNetworks.Utils as RerNetworksUtils
 import Select
 import Shared
 import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
@@ -1243,6 +1244,7 @@ freqEditSidebarContent shared model _ freqId updateReq =
                                    )
                         ]
                         []
+                    , RerNetworksUtils.futureActivityDateWarning shared (Just updateReq.activeFrom)
                     ]
                 , div [ class "space-y-2" ]
                     [ Checkbox.new { isChecked = model.freqEditShowActiveTo, onToggle = \_ -> ToggleFreqEditShowActiveTo }
@@ -1268,6 +1270,7 @@ freqEditSidebarContent shared model _ freqId updateReq =
                                        )
                             ]
                             []
+                        , RerNetworksUtils.futureActivityDateWarning shared updateReq.activeTo
                         ]
 
                   else
@@ -1431,6 +1434,7 @@ freqCreateSidebarContent shared model _ =
                                )
                     ]
                     []
+                , RerNetworksUtils.futureActivityDateWarning shared model.freqCreateState.activeFrom
                 ]
             , div []
                 [ Checkbox.new { isChecked = model.freqCreateShowActiveTo, onToggle = \_ -> ToggleFreqCreateShowActiveTo }
@@ -1466,6 +1470,7 @@ freqCreateSidebarContent shared model _ =
                                    )
                         ]
                         []
+                    , RerNetworksUtils.futureActivityDateWarning shared model.freqCreateState.activeTo
                     ]
 
               else

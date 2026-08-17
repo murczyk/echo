@@ -1,10 +1,8 @@
-use crate::config::GROUP_STATS_DAY_TTL_DAYS;
-use crate::entities::network_invalidation_task;
 use crate::error::AppError;
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode, OneoffBackfillInboxNetworksPs};
-use chrono::{NaiveDateTime, Utc};
-use sea_orm::*;
+use chrono::NaiveDateTime;
+use sea_orm::DatabaseConnection;
 
 pub async fn oneoff_backfill_inbox_networks(
     mode: Mode,
@@ -24,28 +22,15 @@ pub async fn backfill_inbox_networks(
     since_ts: Option<NaiveDateTime>,
     till_ts: Option<NaiveDateTime>,
 ) -> anyhow::Result<()> {
-    let since_ts = since_ts.unwrap_or(
-        Utc::now().naive_utc()
-            - chrono::Duration::days(GROUP_STATS_DAY_TTL_DAYS),
-    );
-    let till_ts = till_ts.unwrap_or(Utc::now().naive_utc());
-    network_invalidation_task::ActiveModel {
-        since_ts: Set(since_ts),
-        till_ts: Set(till_ts),
-        sigint_network_id: Set(None),
-        id: NotSet,
-        frequency: NotSet,
-        started_at: NotSet,
-        completed_at: NotSet,
-        created_at: NotSet,
-        aor_id: NotSet,
-        group_master_key: NotSet,
-        tag: NotSet,
-    }
-    .insert(db)
+    super::enqueue_network_invalidation_task(
+        db,
+        since_ts,
+        till_ts,
+        super::NetworkInvalidationScope::default(),
+        "oneoff inbox network backfill".to_string(),
+    )
     .await
-    .c(h!())?;
-    Ok(())
+    .c(h!())
 }
 
 fn parse_m_ts(m_ts_txt: Option<String>) -> anyhow::Result<NaiveDateTime> {

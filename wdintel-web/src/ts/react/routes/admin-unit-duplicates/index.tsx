@@ -1,10 +1,11 @@
 import MergeIcon from '@mui/icons-material/Merge';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { Box, Button, IconButton, Link, Stack, Tooltip } from '@mui/material';
+import { Box, IconButton, Link, Stack, Tooltip } from '@mui/material';
 import type { MRT_ColumnDef } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { Unit, UnitDuplicate } from '../../../../Bindings';
+import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
@@ -20,22 +21,27 @@ const DEFAULT_COLUMN_ORDER = [
   'sigintUnitName',
   'sigintUnitSegments',
   'orbitUnitFullName',
-  'merge',
 ];
 
 const DEFAULT_COLUMN_VISIBILITY = {
   sigintUnitName: true,
   sigintUnitSegments: true,
   orbitUnitFullName: true,
-  merge: true,
 };
 
 function sigintUnitSegments(unit: Unit): string {
   return [
+    unit.other,
+    unit.teamOrCrew,
+    unit.section,
+    unit.squad,
+    unit.platoon,
     unit.company,
     unit.battalion,
     unit.regiment,
+    unit.brigade,
     unit.division,
+    unit.corps,
     unit.army,
     unit.militaryDistrict,
     unit.armyRegion,
@@ -142,44 +148,21 @@ export function AdminUnitDuplicatesPage({
           );
         },
       },
-      {
-        id: 'merge',
-        header: '',
-        size: 150,
-        enableSorting: false,
-        enableColumnActions: false,
-        enableColumnFilter: false,
-        enableHiding: false,
-        Cell: ({ row }) => (
-          <Tooltip title={canMerge ? 'Об’єднати дублікати' : 'Потрібні ролі Rer та UnitsEditor'}>
-            <span>
-              <Button
-                size="small"
-                color="warning"
-                variant="outlined"
-                startIcon={<MergeIcon fontSize="small" />}
-                disabled={!canMerge || submitting}
-                onClick={() => {
-                  setMergeError(null);
-                  setMergeTarget(row.original.sigintUnit);
-                }}
-                sx={{ whiteSpace: 'nowrap' }}
-              >
-                Об’єднати
-              </Button>
-            </span>
-          </Tooltip>
-        ),
-      },
     ],
-    [canMerge, submitting],
+    [],
   );
 
   return (
     <TableStateProvider
       tableId="admin-unit-duplicates"
-      defaultColumnOrder={DEFAULT_COLUMN_ORDER}
-      defaultColumnVisibility={DEFAULT_COLUMN_VISIBILITY}
+      defaultColumnOrder={
+        canMerge ? [...DEFAULT_COLUMN_ORDER, 'mrt-row-actions'] : DEFAULT_COLUMN_ORDER
+      }
+      defaultColumnVisibility={
+        canMerge
+          ? { ...DEFAULT_COLUMN_VISIBILITY, 'mrt-row-actions': true }
+          : DEFAULT_COLUMN_VISIBILITY
+      }
       defaultEnableColumnOrdering={false}
     >
       <Stack spacing={1.5} sx={{ height: '100%', minHeight: 0, p: embedded ? 0 : 2 }}>
@@ -208,6 +191,22 @@ export function AdminUnitDuplicatesPage({
             data={units}
             loading={loading}
             layoutMode="grid"
+            enableRowActions={canMerge}
+            renderRowActions={({ row }) => (
+              <MrtRowActions forceMenu>
+                <MrtRowActionButton
+                  label="Об’єднати дублікати"
+                  icon={<MergeIcon fontSize="small" />}
+                  tone="warning"
+                  opensModal
+                  disabled={submitting}
+                  onClick={() => {
+                    setMergeError(null);
+                    setMergeTarget(row.original.sigintUnit);
+                  }}
+                />
+              </MrtRowActions>
+            )}
             tablePaperSx={{ height: '100%', minHeight: 0 }}
             tableContainerSx={{ maxHeight: '100%' }}
           />

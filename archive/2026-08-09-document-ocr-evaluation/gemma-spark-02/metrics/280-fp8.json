@@ -1,0 +1,146 @@
+{
+  "runs": 2,
+  "automatic_acceptances": 0,
+  "scores": [
+    {
+      "id": "baseline__j5__original__t0__s0__rp1p0__v280__fp8",
+      "path": "raw/280-fp8/baseline__j5__original__t0__s0__rp1p0__v280__fp8.json",
+      "document": "j5",
+      "prompt_version": "original",
+      "vision_budget": 280,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 0,
+        "top_p": 1.0,
+        "top_k": 0,
+        "seed": 0,
+        "repetition_penalty": 1.0,
+        "repetition_detection": null
+      },
+      "finish_reason": "stop",
+      "latency_seconds": 28.306045928999993,
+      "usage": {
+        "prompt_tokens": 541,
+        "total_tokens": 1703,
+        "completion_tokens": 1162,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.06660323501427212,
+        "wer": 0.14363143631436315,
+        "reference_characters": 2102,
+        "candidate_characters": 2170
+      },
+      "critical_retained": 37,
+      "critical_total": 40,
+      "critical_missing": [
+        "Феникс",
+        "Стадион",
+        "КОФЗБЧ-3-Ф"
+      ],
+      "missing_sections": [],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": false,
+      "structured_json": {
+        "requested": false,
+        "valid": null
+      },
+      "table": {
+        "valid_structure": true,
+        "row_count": 7,
+        "reference_row_count": 7,
+        "cell_text": {
+          "cer": 0.06660323501427212,
+          "wer": 0.14363143631436315,
+          "reference_characters": 2102,
+          "candidate_characters": 2170
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    },
+    {
+      "id": "baseline__l54__original__t0__s0__rp1p0__v280__fp8",
+      "path": "raw/280-fp8/baseline__l54__original__t0__s0__rp1p0__v280__fp8.json",
+      "document": "l54",
+      "prompt_version": "original",
+      "vision_budget": 280,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 0,
+        "top_p": 1.0,
+        "top_k": 0,
+        "seed": 0,
+        "repetition_penalty": 1.0,
+        "repetition_detection": null
+      },
+      "finish_reason": "stop",
+      "latency_seconds": 33.09381759199982,
+      "usage": {
+        "prompt_tokens": 505,
+        "total_tokens": 1848,
+        "completion_tokens": 1343,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.20007564296520425,
+        "wer": 0.3492407809110629,
+        "reference_characters": 2644,
+        "candidate_characters": 2582
+      },
+      "critical_retained": 30,
+      "critical_total": 47,
+      "critical_missing": [
+        "MAVIC",
+        "МАЯЧКА",
+        "Днепрорудное",
+        "Васильевка",
+        "FPV КТ",
+        "FPV КТ опт.",
+        "FPV СТ",
+        "РЛС КББМ",
+        "FPV ПВО",
+        "99/29",
+        "149/43",
+        "35/4",
+        "БпЛА Майя",
+        "Кушугум",
+        "9065",
+        "9366",
+        "Ю.Слобожанинов"
+      ],
+      "missing_sections": [
+        "К выполнению задач привлечено",
+        "Всего за сутки совершено вылетов",
+        "Ю.Слобожанинов"
+      ],
+      "added_numbers": [
+        "49",
+        "9066",
+        "9367"
+      ],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": false,
+      "structured_json": {
+        "requested": false,
+        "valid": null
+      },
+      "table": {
+        "valid_structure": false,
+        "row_count": 20,
+        "reference_row_count": 6,
+        "cell_text": {
+          "cer": 0.44080604534005036,
+          "wer": 0.5689655172413793,
+          "reference_characters": 794,
+          "candidate_characters": 812
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    }
+  ]
+}

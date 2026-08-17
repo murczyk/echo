@@ -3,7 +3,9 @@
 set -euo pipefail
 
 : "${ROUTER_HOST:?ROUTER_HOST is required}"
+: "${ROUTER_POOL:?ROUTER_POOL is required}"
 : "${ROUTER_PORT:?ROUTER_PORT is required}"
+: "${ROUTER_EXPECTED_MODEL_ID:?ROUTER_EXPECTED_MODEL_ID is required}"
 : "${ROUTER_WORKER_URLS:?ROUTER_WORKER_URLS is required}"
 : "${ROUTER_POLICY:?ROUTER_POLICY is required}"
 : "${ROUTER_METRICS_HOST:?ROUTER_METRICS_HOST is required}"

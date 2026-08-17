@@ -9,7 +9,7 @@ import type {
   ReactNode,
 } from 'react';
 import { createRoot } from 'react-dom/client';
-import { act, forwardRef } from 'react';
+import { act, Children, forwardRef, isValidElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type DialogRecord = {
@@ -92,6 +92,7 @@ vi.mock('@mui/material', () => ({
   ),
   Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  useMediaQuery: () => false,
   useTheme: () => ({
     palette: { divider: '#000', text: { secondary: '#666' }, background: { default: '#fff' } },
   }),
@@ -129,10 +130,17 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
     onToggleFullscreen: () => void;
     onClose: () => void;
   }) => {
+    const copyAction = Children.toArray(additionalActions.props.children).find(
+      (child) => isValidElement(child) && typeof child.props.onCopy === 'function',
+    ) as ReactElement<{
+      status: 'idle' | 'copying' | 'copied' | 'error';
+      enabled: boolean;
+      onCopy: () => void;
+    }>;
     latestActionProps = {
-      copyStatus: additionalActions.props.status,
-      canCopyImage: additionalActions.props.enabled,
-      onCopyImage: additionalActions.props.onCopy,
+      copyStatus: copyAction.props.status,
+      canCopyImage: copyAction.props.enabled,
+      onCopyImage: copyAction.props.onCopy,
       isFullscreen,
       canFullscreen,
       onToggleFullscreen,
@@ -141,8 +149,8 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
     return (
       <div
         data-actions
-        data-copy-status={additionalActions.props.status}
-        data-copy-enabled={String(additionalActions.props.enabled)}
+        data-copy-status={copyAction.props.status}
+        data-copy-enabled={String(copyAction.props.enabled)}
       >
         <button aria-label="Інформація" onClick={onInfoClick} />
         {additionalActions}

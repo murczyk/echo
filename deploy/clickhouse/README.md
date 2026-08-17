@@ -475,7 +475,8 @@ minimum/maximum message-ID scope for its requested time interval. Concurrent
 requests for the same unresolved range share that lookup, but completed
 results are not cached. The timestamp predicate stays authoritative, while
 the same ID bounds constrain `signal_message`, `sigint_inbox_item`, every
-message-group relation, and tag, network, callsign, and AOR message links.
+message-group relation, and tag, network, callsign, metadata, and AOR message
+links.
 Group authorization, selected groups, and sender filtering use one bounded,
 flat message-group join unless the joined group relation supplies the facet
 dimension. An empty scope returns an empty facet or zero count without
@@ -518,11 +519,12 @@ decoding and PostgreSQL query semantics consistent with the source database.
 
 The analysis result, facet, and dedicated facet-count endpoints use this path:
 
-- `/api/rer-importer/get-inbox` for closed RER analysis ranges and the
-  historical portion of long live ranges;
-- `/api/rer-importer/get-inbox-count`
+- `/api/rer-importer/get-inbox` for closed RER analysis ranges, historical
+  Duty context, and the historical portion of long live ranges;
+- `/api/rer-importer/get-inbox-count` except recent Duty polling described
+  below;
 - `/api/rer/analysis/stats/count`
-- `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}`
+- `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks,metadata}`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}/count`
 
 The expensive replicated-data reads for the interception, sender, posts, REO,
@@ -548,9 +550,17 @@ hours and ending within `max(2 * freshness_max_age_ms, 5 minutes)` of the
 current time read from source PostgreSQL. Longer live ranges merge the
 ClickHouse candidate page with a source PostgreSQL candidate page restricted
 to that fresh overlap, then deduplicate, hydrate, revalidate, order, and limit
-the merged IDs on source PostgreSQL. Any analytics, tail, or revalidation
-failure retries the complete message query on PostgreSQL. Other callers retain
-their existing routing.
+the merged IDs on source PostgreSQL.
+
+Both RER Duty pages route initial/latest requests and requests whose cursor was
+created in source PostgreSQL within the last hour directly to source
+PostgreSQL, before any analytics health check or gateway query. Cursor age uses
+`signal_message.created_at`, not the interception timestamp. Recent date-only
+polls follow the same rule. Historical `before_id_noninclusive` context remains
+eligible for ClickHouse. Open-ended message and count requests after an older
+cursor split or merge the historical ClickHouse range with a primary
+PostgreSQL fresh tail. Any analytics, tail, or revalidation failure retries the
+complete request on PostgreSQL. Other callers retain their existing routing.
 
 ## WAL retention and recovery
 
@@ -760,6 +770,8 @@ sets differ; use `source-sync-exclusions-if-needed.sh --yes` first.
 Post-migration verification recognizes transient PostgreSQL deadlocks, tuple
 update conflicts, reconciliation-lock contention, and DDL lock timeouts. It
 makes up to five attempts at 30-second intervals before failing the deployment.
+Gateway and derived-schema catalog writes share a PostgreSQL transaction lock,
+so health probes wait for an in-progress deployment reconciliation.
 An unrecognized failure stops immediately. If all transient
 attempts fail, the deployment prints a prominent banner, the latest service
 log, and asks for one retry after two minutes; a further failure requires

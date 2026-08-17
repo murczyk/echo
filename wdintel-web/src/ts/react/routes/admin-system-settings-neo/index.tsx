@@ -430,7 +430,7 @@ function MainSettingsSection({
       />
       {form.enableAudioTranscription && !audioTranscriptionSaved ? (
         <PowerAlert severity="info">
-          Збережіть налаштування, щоб відкрити «Echo GPU Сервери» в меню «Адмін».
+          Збережіть налаштування, щоб відкрити «Echo GPU сервери» в меню «Адмін».
         </PowerAlert>
       ) : null}
 
@@ -533,7 +533,7 @@ function MainSettingsSection({
             }}
           />
         }
-        label="Обмежити неоптимізовані звіти лімітом в 10тис рядків"
+        label="Обмежити неоптимізовані звіти лімітом в 10 тис. рядків"
       />
     </>
   );

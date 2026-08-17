@@ -94,30 +94,7 @@ pub(crate) async fn units(
         .await
         .c(h!())?;
     access::require_analytical_write(&login.roles).c(h!())?;
-    let req = ListUnitsReq {
-        sort_by: None,
-        after_unit_id: None,
-        before_unit_id: None,
-        include_inactive: false,
-        filter_active: None,
-        filter_text: None,
-        filter_name: None,
-        filter_company: None,
-        filter_battalion: None,
-        filter_regiment: None,
-        filter_division: None,
-        filter_army: None,
-        filter_military_district: None,
-        filter_army_region: None,
-        filter_comment: None,
-        filter_orbit_note: None,
-        filter_is_deduplicate_candidate: None,
-        filter_has_orbit: None,
-        filter_has_orbit_note: None,
-        search_mode: None,
-        limit: None,
-        offset: None,
-    };
+    let req = ListUnitsReq::default();
     let mut response = crate::sigint::unit::read_units(&env.dbx, &req)
         .await
         .c(h!())?;

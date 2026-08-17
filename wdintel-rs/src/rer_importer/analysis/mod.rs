@@ -6960,9 +6960,50 @@ async fn metadata_stats(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
-    let metadata = stats::fetch_metadata_stats(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let analytics_freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let metadata = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats metadata",
+        analytics_stats_request_supported(&req, env.get_ref()),
+        |db| async move {
+            let message_id_scope = stats::resolve_analytics_message_id_scope(
+                &analytics_req.0,
+                &db,
+                analytics_freshness_max_age_ms,
+            )
+            .await?;
+            stats::fetch_metadata_stats_raw_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+                &message_id_scope,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::fetch_metadata_stats(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(metadata))
 }
 
@@ -7509,30 +7550,10 @@ pub(crate) fn analytics_inbox_request_supported(
         && !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
 }
 
-pub(crate) fn analytics_inbox_initial_unit_candidates_supported(
-    req: &InboxMessagesReq,
-) -> bool {
-    analytics_inbox_filter_supported(req)
-        && req.page_id.as_deref() == Some("rer-duty-neo")
-        && crate::rer_importer::inbox::query::inbox_request_is_unbounded_latest(
-            req,
-        )
-        && (req
-            .selected_units
-            .as_ref()
-            .is_some_and(|units| !units.is_empty())
-            || req
-                .denied_units
-                .as_ref()
-                .is_some_and(|units| !units.is_empty()))
-}
-
 pub(crate) fn analytics_inbox_candidates_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    (analytics_inbox_request_supported(req)
-        || analytics_inbox_initial_unit_candidates_supported(req))
-        && req.nolimit != Some(true)
+    analytics_inbox_request_supported(req) && req.nolimit != Some(true)
 }
 
 fn analytics_inbox_filter_supported(req: &InboxMessagesReq) -> bool {

@@ -1069,6 +1069,7 @@ type alias InboxMessage =
     , post : Maybe (String)
     , postId : Maybe (Int)
     , unit : Maybe (String)
+    , unitIds : List (Int)
     , callsignTokens : Maybe (List (CnCallsign))
     , signalTokens : Maybe (List (CnSignal))
     , pointTokens : Maybe (List (CnPoint))
@@ -1112,6 +1113,7 @@ inboxMessageEncoder struct =
         , ( "post", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.post )
         , ( "post_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.postId )
         , ( "unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unit )
+        , ( "unit_ids", (Json.Encode.list (Json.Encode.int)) struct.unitIds )
         , ( "callsign_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (cnCallsignEncoder))) struct.callsignTokens )
         , ( "signal_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (cnSignalEncoder))) struct.signalTokens )
         , ( "point_tokens", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (cnPointEncoder))) struct.pointTokens )
@@ -5925,6 +5927,8 @@ type alias MessageMediaInfo =
     , sizeBytes : Int
     , href : String
     , transcription : Maybe (String)
+    , ocr : Maybe (OcrMediaSummary)
+    , summary : Maybe (MediaSummaryStatus)
     }
 
 
@@ -5937,6 +5941,8 @@ messageMediaInfoEncoder struct =
         , ( "size_bytes", (Json.Encode.int) struct.sizeBytes )
         , ( "href", (Json.Encode.string) struct.href )
         , ( "transcription", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.transcription )
+        , ( "ocr", (Maybe.withDefault Json.Encode.null << Maybe.map (ocrMediaSummaryEncoder)) struct.ocr )
+        , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (mediaSummaryStatusEncoder)) struct.summary )
         ]
 
 
@@ -6674,14 +6680,28 @@ type ListUnitsSortBy
     | UnitNameLengthAsc
     | UnitNameAsc
     | UnitNameDesc
+    | UnitOtherAsc
+    | UnitOtherDesc
+    | UnitTeamOrCrewAsc
+    | UnitTeamOrCrewDesc
+    | UnitSectionAsc
+    | UnitSectionDesc
+    | UnitSquadAsc
+    | UnitSquadDesc
+    | UnitPlatoonAsc
+    | UnitPlatoonDesc
     | UnitCompanyAsc
     | UnitCompanyDesc
     | UnitBattalionAsc
     | UnitBattalionDesc
     | UnitRegimentAsc
     | UnitRegimentDesc
+    | UnitBrigadeAsc
+    | UnitBrigadeDesc
     | UnitDivisionAsc
     | UnitDivisionDesc
+    | UnitCorpsAsc
+    | UnitCorpsDesc
     | UnitArmyAsc
     | UnitArmyDesc
     | UnitMilitaryDistrictAsc
@@ -6711,6 +6731,26 @@ listUnitsSortByEncoder enum =
             Json.Encode.string "UnitNameAsc"
         UnitNameDesc ->
             Json.Encode.string "UnitNameDesc"
+        UnitOtherAsc ->
+            Json.Encode.string "UnitOtherAsc"
+        UnitOtherDesc ->
+            Json.Encode.string "UnitOtherDesc"
+        UnitTeamOrCrewAsc ->
+            Json.Encode.string "UnitTeamOrCrewAsc"
+        UnitTeamOrCrewDesc ->
+            Json.Encode.string "UnitTeamOrCrewDesc"
+        UnitSectionAsc ->
+            Json.Encode.string "UnitSectionAsc"
+        UnitSectionDesc ->
+            Json.Encode.string "UnitSectionDesc"
+        UnitSquadAsc ->
+            Json.Encode.string "UnitSquadAsc"
+        UnitSquadDesc ->
+            Json.Encode.string "UnitSquadDesc"
+        UnitPlatoonAsc ->
+            Json.Encode.string "UnitPlatoonAsc"
+        UnitPlatoonDesc ->
+            Json.Encode.string "UnitPlatoonDesc"
         UnitCompanyAsc ->
             Json.Encode.string "UnitCompanyAsc"
         UnitCompanyDesc ->
@@ -6723,10 +6763,18 @@ listUnitsSortByEncoder enum =
             Json.Encode.string "UnitRegimentAsc"
         UnitRegimentDesc ->
             Json.Encode.string "UnitRegimentDesc"
+        UnitBrigadeAsc ->
+            Json.Encode.string "UnitBrigadeAsc"
+        UnitBrigadeDesc ->
+            Json.Encode.string "UnitBrigadeDesc"
         UnitDivisionAsc ->
             Json.Encode.string "UnitDivisionAsc"
         UnitDivisionDesc ->
             Json.Encode.string "UnitDivisionDesc"
+        UnitCorpsAsc ->
+            Json.Encode.string "UnitCorpsAsc"
+        UnitCorpsDesc ->
+            Json.Encode.string "UnitCorpsDesc"
         UnitArmyAsc ->
             Json.Encode.string "UnitArmyAsc"
         UnitArmyDesc ->
@@ -6767,10 +6815,17 @@ listUnitsSearchModeEncoder enum =
 
 type alias Unit =
     { id : Int
+    , other : String
+    , teamOrCrew : String
+    , section : String
+    , squad : String
+    , platoon : String
     , company : String
     , battalion : String
     , regiment : String
+    , brigade : String
     , division : String
+    , corps : String
     , army : String
     , militaryDistrict : String
     , armyRegion : String
@@ -6791,10 +6846,17 @@ unitEncoder : Unit -> Json.Encode.Value
 unitEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
+        , ( "other", (Json.Encode.string) struct.other )
+        , ( "team_or_crew", (Json.Encode.string) struct.teamOrCrew )
+        , ( "section", (Json.Encode.string) struct.section )
+        , ( "squad", (Json.Encode.string) struct.squad )
+        , ( "platoon", (Json.Encode.string) struct.platoon )
         , ( "company", (Json.Encode.string) struct.company )
         , ( "battalion", (Json.Encode.string) struct.battalion )
         , ( "regiment", (Json.Encode.string) struct.regiment )
+        , ( "brigade", (Json.Encode.string) struct.brigade )
         , ( "division", (Json.Encode.string) struct.division )
+        , ( "corps", (Json.Encode.string) struct.corps )
         , ( "army", (Json.Encode.string) struct.army )
         , ( "military_district", (Json.Encode.string) struct.militaryDistrict )
         , ( "army_region", (Json.Encode.string) struct.armyRegion )
@@ -6819,10 +6881,17 @@ type alias ListUnitsReq =
     , filterActive : Maybe (Bool)
     , filterText : Maybe (String)
     , filterName : Maybe (String)
+    , filterOther : Maybe (String)
+    , filterTeamOrCrew : Maybe (String)
+    , filterSection : Maybe (String)
+    , filterSquad : Maybe (String)
+    , filterPlatoon : Maybe (String)
     , filterCompany : Maybe (String)
     , filterBattalion : Maybe (String)
     , filterRegiment : Maybe (String)
+    , filterBrigade : Maybe (String)
     , filterDivision : Maybe (String)
+    , filterCorps : Maybe (String)
     , filterArmy : Maybe (String)
     , filterMilitaryDistrict : Maybe (String)
     , filterArmyRegion : Maybe (String)
@@ -6847,10 +6916,17 @@ listUnitsReqEncoder struct =
         , ( "filter_active", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.filterActive )
         , ( "filter_text", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterText )
         , ( "filter_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterName )
+        , ( "filter_other", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterOther )
+        , ( "filter_team_or_crew", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterTeamOrCrew )
+        , ( "filter_section", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterSection )
+        , ( "filter_squad", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterSquad )
+        , ( "filter_platoon", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterPlatoon )
         , ( "filter_company", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterCompany )
         , ( "filter_battalion", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterBattalion )
         , ( "filter_regiment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterRegiment )
+        , ( "filter_brigade", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterBrigade )
         , ( "filter_division", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterDivision )
+        , ( "filter_corps", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterCorps )
         , ( "filter_army", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterArmy )
         , ( "filter_military_district", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterMilitaryDistrict )
         , ( "filter_army_region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterArmyRegion )
@@ -6950,10 +7026,17 @@ listUnitDuplicatesRspEncoder struct =
 
 
 type alias CreateUnitReq =
-    { company : String
+    { other : String
+    , teamOrCrew : String
+    , section : String
+    , squad : String
+    , platoon : String
+    , company : String
     , battalion : String
     , regiment : String
+    , brigade : String
     , division : String
+    , corps : String
     , army : String
     , militaryDistrict : String
     , armyRegion : String
@@ -6968,10 +7051,17 @@ type alias CreateUnitReq =
 createUnitReqEncoder : CreateUnitReq -> Json.Encode.Value
 createUnitReqEncoder struct =
     Json.Encode.object
-        [ ( "company", (Json.Encode.string) struct.company )
+        [ ( "other", (Json.Encode.string) struct.other )
+        , ( "team_or_crew", (Json.Encode.string) struct.teamOrCrew )
+        , ( "section", (Json.Encode.string) struct.section )
+        , ( "squad", (Json.Encode.string) struct.squad )
+        , ( "platoon", (Json.Encode.string) struct.platoon )
+        , ( "company", (Json.Encode.string) struct.company )
         , ( "battalion", (Json.Encode.string) struct.battalion )
         , ( "regiment", (Json.Encode.string) struct.regiment )
+        , ( "brigade", (Json.Encode.string) struct.brigade )
         , ( "division", (Json.Encode.string) struct.division )
+        , ( "corps", (Json.Encode.string) struct.corps )
         , ( "army", (Json.Encode.string) struct.army )
         , ( "military_district", (Json.Encode.string) struct.militaryDistrict )
         , ( "army_region", (Json.Encode.string) struct.armyRegion )
@@ -11820,6 +11910,290 @@ saveAiCallsignWorkerSettingsReqEncoder struct =
         ]
 
 
+type alias OcrStatusLogItem =
+    { at : Int
+    , message : String
+    }
+
+
+ocrStatusLogItemEncoder : OcrStatusLogItem -> Json.Encode.Value
+ocrStatusLogItemEncoder struct =
+    Json.Encode.object
+        [ ( "at", (Json.Encode.int) struct.at )
+        , ( "message", (Json.Encode.string) struct.message )
+        ]
+
+
+type alias OcrMediaSummary =
+    { state : String
+    , qualityStatus : Maybe (String)
+    , processedPages : Int
+    , totalPages : Int
+    , lastError : Maybe (String)
+    , queueSize : Maybe (Int)
+    , attempts : Int
+    , statusLog : List (OcrStatusLogItem)
+    }
+
+
+ocrMediaSummaryEncoder : OcrMediaSummary -> Json.Encode.Value
+ocrMediaSummaryEncoder struct =
+    Json.Encode.object
+        [ ( "state", (Json.Encode.string) struct.state )
+        , ( "qualityStatus", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.qualityStatus )
+        , ( "processedPages", (Json.Encode.int) struct.processedPages )
+        , ( "totalPages", (Json.Encode.int) struct.totalPages )
+        , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "queueSize", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.queueSize )
+        , ( "attempts", (Json.Encode.int) struct.attempts )
+        , ( "statusLog", (Json.Encode.list (ocrStatusLogItemEncoder)) struct.statusLog )
+        ]
+
+
+type alias OcrSettingsItem =
+    { workerEnabled : Bool
+    , configured : Bool
+    , extractorReady : Bool
+    , readinessError : Maybe (String)
+    }
+
+
+ocrSettingsItemEncoder : OcrSettingsItem -> Json.Encode.Value
+ocrSettingsItemEncoder struct =
+    Json.Encode.object
+        [ ( "workerEnabled", (Json.Encode.bool) struct.workerEnabled )
+        , ( "configured", (Json.Encode.bool) struct.configured )
+        , ( "extractorReady", (Json.Encode.bool) struct.extractorReady )
+        , ( "readinessError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.readinessError )
+        ]
+
+
+type alias OcrCounts =
+    { queued : Int
+    , submitted : Int
+    , retryWait : Int
+    , completed : Int
+    , failed : Int
+    }
+
+
+ocrCountsEncoder : OcrCounts -> Json.Encode.Value
+ocrCountsEncoder struct =
+    Json.Encode.object
+        [ ( "queued", (Json.Encode.int) struct.queued )
+        , ( "submitted", (Json.Encode.int) struct.submitted )
+        , ( "retryWait", (Json.Encode.int) struct.retryWait )
+        , ( "completed", (Json.Encode.int) struct.completed )
+        , ( "failed", (Json.Encode.int) struct.failed )
+        ]
+
+
+type alias OcrJobItem =
+    { mediaId : String
+    , signalMessageId : Int
+    , fileName : Maybe (String)
+    , contentType : String
+    , sizeBytes : Int
+    , sourceCreatedAt : Int
+    , state : String
+    , qualityStatus : Maybe (String)
+    , processedPages : Int
+    , totalPages : Int
+    , attempts : Int
+    , lastError : Maybe (String)
+    , durationMs : Maybe (Int)
+    , updatedAt : Int
+    , completedAt : Maybe (Int)
+    , previewUrl : Maybe (String)
+    , summary : Maybe (MediaSummaryStatus)
+    }
+
+
+ocrJobItemEncoder : OcrJobItem -> Json.Encode.Value
+ocrJobItemEncoder struct =
+    Json.Encode.object
+        [ ( "mediaId", (Json.Encode.string) struct.mediaId )
+        , ( "signalMessageId", (Json.Encode.int) struct.signalMessageId )
+        , ( "fileName", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileName )
+        , ( "contentType", (Json.Encode.string) struct.contentType )
+        , ( "sizeBytes", (Json.Encode.int) struct.sizeBytes )
+        , ( "sourceCreatedAt", (Json.Encode.int) struct.sourceCreatedAt )
+        , ( "state", (Json.Encode.string) struct.state )
+        , ( "qualityStatus", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.qualityStatus )
+        , ( "processedPages", (Json.Encode.int) struct.processedPages )
+        , ( "totalPages", (Json.Encode.int) struct.totalPages )
+        , ( "attempts", (Json.Encode.int) struct.attempts )
+        , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "durationMs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.durationMs )
+        , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        , ( "completedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.completedAt )
+        , ( "previewUrl", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.previewUrl )
+        , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (mediaSummaryStatusEncoder)) struct.summary )
+        ]
+
+
+type alias OcrPageRsp =
+    { settings : OcrSettingsItem
+    , mediaSummarySettings : MediaSummarySettingsItem
+    , counts : OcrCounts
+    , jobs : List (OcrJobItem)
+    }
+
+
+ocrPageRspEncoder : OcrPageRsp -> Json.Encode.Value
+ocrPageRspEncoder struct =
+    Json.Encode.object
+        [ ( "settings", (ocrSettingsItemEncoder) struct.settings )
+        , ( "mediaSummarySettings", (mediaSummarySettingsItemEncoder) struct.mediaSummarySettings )
+        , ( "counts", (ocrCountsEncoder) struct.counts )
+        , ( "jobs", (Json.Encode.list (ocrJobItemEncoder)) struct.jobs )
+        ]
+
+
+type alias OcrPageReq =
+    { limit : Maybe (Int)
+    }
+
+
+ocrPageReqEncoder : OcrPageReq -> Json.Encode.Value
+ocrPageReqEncoder struct =
+    Json.Encode.object
+        [ ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        ]
+
+
+type alias SaveOcrSettingsReq =
+    { workerEnabled : Bool
+    }
+
+
+saveOcrSettingsReqEncoder : SaveOcrSettingsReq -> Json.Encode.Value
+saveOcrSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "workerEnabled", (Json.Encode.bool) struct.workerEnabled )
+        ]
+
+
+type alias MediaSummaryStatus =
+    { state : String
+    , lastError : Maybe (String)
+    , hasCoordinates : Bool
+    }
+
+
+mediaSummaryStatusEncoder : MediaSummaryStatus -> Json.Encode.Value
+mediaSummaryStatusEncoder struct =
+    Json.Encode.object
+        [ ( "state", (Json.Encode.string) struct.state )
+        , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "hasCoordinates", (Json.Encode.bool) struct.hasCoordinates )
+        ]
+
+
+type alias MediaSummaryCoordinate =
+    { title : String
+    , description : String
+    , plannedMeans : Maybe (String)
+    , coordinateSystem : String
+    , value : String
+    }
+
+
+mediaSummaryCoordinateEncoder : MediaSummaryCoordinate -> Json.Encode.Value
+mediaSummaryCoordinateEncoder struct =
+    Json.Encode.object
+        [ ( "title", (Json.Encode.string) struct.title )
+        , ( "description", (Json.Encode.string) struct.description )
+        , ( "plannedMeans", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.plannedMeans )
+        , ( "coordinateSystem", (Json.Encode.string) struct.coordinateSystem )
+        , ( "value", (Json.Encode.string) struct.value )
+        ]
+
+
+type alias MediaSummaryCoordinatesResult =
+    { coordinates : List (MediaSummaryCoordinate)
+    }
+
+
+mediaSummaryCoordinatesResultEncoder : MediaSummaryCoordinatesResult -> Json.Encode.Value
+mediaSummaryCoordinatesResultEncoder struct =
+    Json.Encode.object
+        [ ( "coordinates", (Json.Encode.list (mediaSummaryCoordinateEncoder)) struct.coordinates )
+        ]
+
+
+type alias MediaSummaryResult =
+    { state : String
+    , summary : Maybe (String)
+    , coordinates : List (MediaSummaryCoordinate)
+    , lastError : Maybe (String)
+    , sourceKind : String
+    , sourceCharCount : Int
+    , aiEngineName : String
+    , modelName : String
+    }
+
+
+mediaSummaryResultEncoder : MediaSummaryResult -> Json.Encode.Value
+mediaSummaryResultEncoder struct =
+    Json.Encode.object
+        [ ( "state", (Json.Encode.string) struct.state )
+        , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.summary )
+        , ( "coordinates", (Json.Encode.list (mediaSummaryCoordinateEncoder)) struct.coordinates )
+        , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "sourceKind", (Json.Encode.string) struct.sourceKind )
+        , ( "sourceCharCount", (Json.Encode.int) struct.sourceCharCount )
+        , ( "aiEngineName", (Json.Encode.string) struct.aiEngineName )
+        , ( "modelName", (Json.Encode.string) struct.modelName )
+        ]
+
+
+type alias MediaSummaryEngineItem =
+    { id : String
+    , name : String
+    , modelName : String
+    }
+
+
+mediaSummaryEngineItemEncoder : MediaSummaryEngineItem -> Json.Encode.Value
+mediaSummaryEngineItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "modelName", (Json.Encode.string) struct.modelName )
+        ]
+
+
+type alias MediaSummarySettingsItem =
+    { enabled : Bool
+    , aiEngineId : Maybe (String)
+    , engines : List (MediaSummaryEngineItem)
+    }
+
+
+mediaSummarySettingsItemEncoder : MediaSummarySettingsItem -> Json.Encode.Value
+mediaSummarySettingsItemEncoder struct =
+    Json.Encode.object
+        [ ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        , ( "engines", (Json.Encode.list (mediaSummaryEngineItemEncoder)) struct.engines )
+        ]
+
+
+type alias SaveMediaSummarySettingsReq =
+    { enabled : Bool
+    , aiEngineId : Maybe (String)
+    }
+
+
+saveMediaSummarySettingsReqEncoder : SaveMediaSummarySettingsReq -> Json.Encode.Value
+saveMediaSummarySettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        ]
+
+
 type alias EchoMissingMessageRow =
     { id : Int
     , messageId : Int
@@ -13179,6 +13553,7 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "post_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign_tokens" (Json.Decode.nullable (Json.Decode.list (cnCallsignDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_tokens" (Json.Decode.nullable (Json.Decode.list (cnSignalDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "point_tokens" (Json.Decode.nullable (Json.Decode.list (cnPointDecoder)))))
@@ -16104,6 +16479,8 @@ messageMediaInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "size_bytes" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "href" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ocr" (Json.Decode.nullable (ocrMediaSummaryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (mediaSummaryStatusDecoder))))
 
 
 sigintZoneDecoder : Json.Decode.Decoder SigintZone
@@ -16606,6 +16983,96 @@ listUnitsSortByDecoder =
             |> Json.Decode.andThen
                 (\x ->
                     case x of
+                        "UnitOtherAsc" ->
+                            Json.Decode.succeed UnitOtherAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitOtherDesc" ->
+                            Json.Decode.succeed UnitOtherDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitTeamOrCrewAsc" ->
+                            Json.Decode.succeed UnitTeamOrCrewAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitTeamOrCrewDesc" ->
+                            Json.Decode.succeed UnitTeamOrCrewDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitSectionAsc" ->
+                            Json.Decode.succeed UnitSectionAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitSectionDesc" ->
+                            Json.Decode.succeed UnitSectionDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitSquadAsc" ->
+                            Json.Decode.succeed UnitSquadAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitSquadDesc" ->
+                            Json.Decode.succeed UnitSquadDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitPlatoonAsc" ->
+                            Json.Decode.succeed UnitPlatoonAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitPlatoonDesc" ->
+                            Json.Decode.succeed UnitPlatoonDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
                         "UnitCompanyAsc" ->
                             Json.Decode.succeed UnitCompanyAsc
                         unexpected ->
@@ -16660,6 +17127,24 @@ listUnitsSortByDecoder =
             |> Json.Decode.andThen
                 (\x ->
                     case x of
+                        "UnitBrigadeAsc" ->
+                            Json.Decode.succeed UnitBrigadeAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitBrigadeDesc" ->
+                            Json.Decode.succeed UnitBrigadeDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
                         "UnitDivisionAsc" ->
                             Json.Decode.succeed UnitDivisionAsc
                         unexpected ->
@@ -16671,6 +17156,24 @@ listUnitsSortByDecoder =
                     case x of
                         "UnitDivisionDesc" ->
                             Json.Decode.succeed UnitDivisionDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitCorpsAsc" ->
+                            Json.Decode.succeed UnitCorpsAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "UnitCorpsDesc" ->
+                            Json.Decode.succeed UnitCorpsDesc
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
@@ -16811,10 +17314,17 @@ unitDecoder : Json.Decode.Decoder Unit
 unitDecoder =
     Json.Decode.succeed Unit
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "other" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "team_or_crew" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "section" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "squad" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "platoon" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "company" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "battalion" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "regiment" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "brigade" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "division" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "corps" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "military_district" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army_region" (Json.Decode.string)))
@@ -16840,10 +17350,17 @@ listUnitsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_active" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_text" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_other" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_team_or_crew" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_section" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_squad" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_platoon" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_company" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_battalion" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_regiment" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_brigade" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_division" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_corps" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_army" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_military_district" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_army_region" (Json.Decode.nullable (Json.Decode.string))))
@@ -16902,10 +17419,17 @@ listUnitDuplicatesRspDecoder =
 createUnitReqDecoder : Json.Decode.Decoder CreateUnitReq
 createUnitReqDecoder =
     Json.Decode.succeed CreateUnitReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "other" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "team_or_crew" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "section" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "squad" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "platoon" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "company" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "battalion" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "regiment" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "brigade" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "division" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "corps" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "military_district" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army_region" (Json.Decode.string)))
@@ -19676,6 +20200,148 @@ saveAiCallsignParsingReqDecoder =
 saveAiCallsignWorkerSettingsReqDecoder : Json.Decode.Decoder SaveAiCallsignWorkerSettingsReq
 saveAiCallsignWorkerSettingsReqDecoder =
     Json.Decode.succeed SaveAiCallsignWorkerSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+
+
+ocrStatusLogItemDecoder : Json.Decode.Decoder OcrStatusLogItem
+ocrStatusLogItemDecoder =
+    Json.Decode.succeed OcrStatusLogItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
+
+
+ocrMediaSummaryDecoder : Json.Decode.Decoder OcrMediaSummary
+ocrMediaSummaryDecoder =
+    Json.Decode.succeed OcrMediaSummary
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "qualityStatus" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "processedPages" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totalPages" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "queueSize" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attempts" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "statusLog" (Json.Decode.list (ocrStatusLogItemDecoder))))
+
+
+ocrSettingsItemDecoder : Json.Decode.Decoder OcrSettingsItem
+ocrSettingsItemDecoder =
+    Json.Decode.succeed OcrSettingsItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "workerEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "configured" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extractorReady" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "readinessError" (Json.Decode.nullable (Json.Decode.string))))
+
+
+ocrCountsDecoder : Json.Decode.Decoder OcrCounts
+ocrCountsDecoder =
+    Json.Decode.succeed OcrCounts
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "queued" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "submitted" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retryWait" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completed" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "failed" (Json.Decode.int)))
+
+
+ocrJobItemDecoder : Json.Decode.Decoder OcrJobItem
+ocrJobItemDecoder =
+    Json.Decode.succeed OcrJobItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mediaId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signalMessageId" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fileName" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "contentType" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sizeBytes" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sourceCreatedAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "qualityStatus" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "processedPages" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totalPages" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attempts" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "durationMs" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completedAt" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "previewUrl" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (mediaSummaryStatusDecoder))))
+
+
+ocrPageRspDecoder : Json.Decode.Decoder OcrPageRsp
+ocrPageRspDecoder =
+    Json.Decode.succeed OcrPageRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" (ocrSettingsItemDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mediaSummarySettings" (mediaSummarySettingsItemDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "counts" (ocrCountsDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "jobs" (Json.Decode.list (ocrJobItemDecoder))))
+
+
+ocrPageReqDecoder : Json.Decode.Decoder OcrPageReq
+ocrPageReqDecoder =
+    Json.Decode.succeed OcrPageReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+
+
+saveOcrSettingsReqDecoder : Json.Decode.Decoder SaveOcrSettingsReq
+saveOcrSettingsReqDecoder =
+    Json.Decode.succeed SaveOcrSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "workerEnabled" (Json.Decode.bool)))
+
+
+mediaSummaryStatusDecoder : Json.Decode.Decoder MediaSummaryStatus
+mediaSummaryStatusDecoder =
+    Json.Decode.succeed MediaSummaryStatus
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasCoordinates" (Json.Decode.bool)))
+
+
+mediaSummaryCoordinateDecoder : Json.Decode.Decoder MediaSummaryCoordinate
+mediaSummaryCoordinateDecoder =
+    Json.Decode.succeed MediaSummaryCoordinate
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "plannedMeans" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinateSystem" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "value" (Json.Decode.string)))
+
+
+mediaSummaryCoordinatesResultDecoder : Json.Decode.Decoder MediaSummaryCoordinatesResult
+mediaSummaryCoordinatesResultDecoder =
+    Json.Decode.succeed MediaSummaryCoordinatesResult
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinates" (Json.Decode.list (mediaSummaryCoordinateDecoder))))
+
+
+mediaSummaryResultDecoder : Json.Decode.Decoder MediaSummaryResult
+mediaSummaryResultDecoder =
+    Json.Decode.succeed MediaSummaryResult
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinates" (Json.Decode.list (mediaSummaryCoordinateDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sourceKind" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sourceCharCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineName" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
+
+
+mediaSummaryEngineItemDecoder : Json.Decode.Decoder MediaSummaryEngineItem
+mediaSummaryEngineItemDecoder =
+    Json.Decode.succeed MediaSummaryEngineItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
+
+
+mediaSummarySettingsItemDecoder : Json.Decode.Decoder MediaSummarySettingsItem
+mediaSummarySettingsItemDecoder =
+    Json.Decode.succeed MediaSummarySettingsItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engines" (Json.Decode.list (mediaSummaryEngineItemDecoder))))
+
+
+saveMediaSummarySettingsReqDecoder : Json.Decode.Decoder SaveMediaSummarySettingsReq
+saveMediaSummarySettingsReqDecoder =
+    Json.Decode.succeed SaveMediaSummarySettingsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
 

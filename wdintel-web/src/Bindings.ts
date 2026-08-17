@@ -403,6 +403,7 @@ export type InboxMessage = {
   post: string | null;
   postId: number | null;
   unit: string | null;
+  unitIds: Array<number>;
   callsignTokens: Array<CnCallsign> | null;
   signalTokens: Array<CnSignal> | null;
   pointTokens: Array<CnPoint> | null;
@@ -2279,6 +2280,8 @@ export type MessageMediaInfo = {
   sizeBytes: number;
   href: string;
   transcription: string | null;
+  ocr: OcrMediaSummary | null;
+  summary: MediaSummaryStatus | null;
 };
 
 export type SigintZone = {
@@ -2571,14 +2574,28 @@ export type ListUnitsSortBy =
   | 'UnitNameLengthAsc'
   | 'UnitNameAsc'
   | 'UnitNameDesc'
+  | 'UnitOtherAsc'
+  | 'UnitOtherDesc'
+  | 'UnitTeamOrCrewAsc'
+  | 'UnitTeamOrCrewDesc'
+  | 'UnitSectionAsc'
+  | 'UnitSectionDesc'
+  | 'UnitSquadAsc'
+  | 'UnitSquadDesc'
+  | 'UnitPlatoonAsc'
+  | 'UnitPlatoonDesc'
   | 'UnitCompanyAsc'
   | 'UnitCompanyDesc'
   | 'UnitBattalionAsc'
   | 'UnitBattalionDesc'
   | 'UnitRegimentAsc'
   | 'UnitRegimentDesc'
+  | 'UnitBrigadeAsc'
+  | 'UnitBrigadeDesc'
   | 'UnitDivisionAsc'
   | 'UnitDivisionDesc'
+  | 'UnitCorpsAsc'
+  | 'UnitCorpsDesc'
   | 'UnitArmyAsc'
   | 'UnitArmyDesc'
   | 'UnitMilitaryDistrictAsc'
@@ -2600,10 +2617,17 @@ export type ListUnitsSearchMode =
 
 export type Unit = {
   id: number;
+  other: string;
+  teamOrCrew: string;
+  section: string;
+  squad: string;
+  platoon: string;
   company: string;
   battalion: string;
   regiment: string;
+  brigade: string;
   division: string;
+  corps: string;
   army: string;
   militaryDistrict: string;
   armyRegion: string;
@@ -2627,10 +2651,17 @@ export type ListUnitsReq = {
   filterActive: boolean | null;
   filterText: string | null;
   filterName: string | null;
+  filterOther: string | null;
+  filterTeamOrCrew: string | null;
+  filterSection: string | null;
+  filterSquad: string | null;
+  filterPlatoon: string | null;
   filterCompany: string | null;
   filterBattalion: string | null;
   filterRegiment: string | null;
+  filterBrigade: string | null;
   filterDivision: string | null;
+  filterCorps: string | null;
   filterArmy: string | null;
   filterMilitaryDistrict: string | null;
   filterArmyRegion: string | null;
@@ -2675,10 +2706,17 @@ export type ListUnitDuplicatesRsp = {
 };
 
 export type CreateUnitReq = {
+  other: string;
+  teamOrCrew: string;
+  section: string;
+  squad: string;
+  platoon: string;
   company: string;
   battalion: string;
   regiment: string;
+  brigade: string;
   division: string;
+  corps: string;
   army: string;
   militaryDistrict: string;
   armyRegion: string;
@@ -4563,6 +4601,118 @@ export type SaveAiCallsignParsingReq = {
 };
 
 export type SaveAiCallsignWorkerSettingsReq = {
+  enabled: boolean;
+  aiEngineId: string | null;
+};
+
+export type OcrStatusLogItem = {
+  at: number;
+  message: string;
+};
+
+export type OcrMediaSummary = {
+  state: string;
+  qualityStatus: string | null;
+  processedPages: number;
+  totalPages: number;
+  lastError: string | null;
+  queueSize: number | null;
+  attempts: number;
+  statusLog: Array<OcrStatusLogItem>;
+};
+
+export type OcrSettingsItem = {
+  workerEnabled: boolean;
+  configured: boolean;
+  extractorReady: boolean;
+  readinessError: string | null;
+};
+
+export type OcrCounts = {
+  queued: number;
+  submitted: number;
+  retryWait: number;
+  completed: number;
+  failed: number;
+};
+
+export type OcrJobItem = {
+  mediaId: string;
+  signalMessageId: number;
+  fileName: string | null;
+  contentType: string;
+  sizeBytes: number;
+  sourceCreatedAt: number;
+  state: string;
+  qualityStatus: string | null;
+  processedPages: number;
+  totalPages: number;
+  attempts: number;
+  lastError: string | null;
+  durationMs: number | null;
+  updatedAt: number;
+  completedAt: number | null;
+  previewUrl: string | null;
+  summary: MediaSummaryStatus | null;
+};
+
+export type OcrPageRsp = {
+  settings: OcrSettingsItem;
+  mediaSummarySettings: MediaSummarySettingsItem;
+  counts: OcrCounts;
+  jobs: Array<OcrJobItem>;
+};
+
+export type OcrPageReq = {
+  limit: number | null;
+};
+
+export type SaveOcrSettingsReq = {
+  workerEnabled: boolean;
+};
+
+export type MediaSummaryStatus = {
+  state: string;
+  lastError: string | null;
+  hasCoordinates: boolean;
+};
+
+export type MediaSummaryCoordinate = {
+  title: string;
+  description: string;
+  plannedMeans: string | null;
+  coordinateSystem: string;
+  value: string;
+};
+
+export type MediaSummaryCoordinatesResult = {
+  coordinates: Array<MediaSummaryCoordinate>;
+};
+
+export type MediaSummaryResult = {
+  state: string;
+  summary: string | null;
+  coordinates: Array<MediaSummaryCoordinate>;
+  lastError: string | null;
+  sourceKind: string;
+  sourceCharCount: number;
+  aiEngineName: string;
+  modelName: string;
+};
+
+export type MediaSummaryEngineItem = {
+  id: string;
+  name: string;
+  modelName: string;
+};
+
+export type MediaSummarySettingsItem = {
+  enabled: boolean;
+  aiEngineId: string | null;
+  engines: Array<MediaSummaryEngineItem>;
+};
+
+export type SaveMediaSummarySettingsReq = {
   enabled: boolean;
   aiEngineId: string | null;
 };

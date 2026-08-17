@@ -56,6 +56,11 @@
     "echo:m20260812_115511_sigint_inbox_item_datetime_neo_indexes": {
       "changes": []
     },
+    "echo:m20260813_183642_sigint_unit_orbit_echelons": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "mirror_resync" }
+      ]
+    },
     "echo:m20260806_120000_drop_legacy_inbox_callsigns": {
       "changes": [
         {
@@ -196,6 +201,18 @@
     },
     "echo:m20260806_141904_report_history_duplicate_lookup": {
       "changes": []
+    },
+    "echo:m20260816_102640_ocr": {
+      "changes": [
+        { "table": "public.ocr_settings", "strategy": "excluded" },
+        { "table": "public.ocr_job", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260816_173322_media_summary": {
+      "changes": [
+        { "table": "public.media_summary_settings", "strategy": "excluded" },
+        { "table": "public.media_summary", "strategy": "replicated_snapshot" }
+      ]
     }
   },
   "dependencies": {

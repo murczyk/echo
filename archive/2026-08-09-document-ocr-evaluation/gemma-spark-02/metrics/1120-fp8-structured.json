@@ -1,0 +1,141 @@
+{
+  "runs": 2,
+  "automatic_acceptances": 0,
+  "scores": [
+    {
+      "id": "structured__j5__historical_json_schema__t0__s0__rp1p0__v1120__fp8",
+      "path": "raw/1120-fp8-structured/structured__j5__historical_json_schema__t0__s0__rp1p0__v1120__fp8.json",
+      "document": "j5",
+      "prompt_version": "historical_json_schema",
+      "vision_budget": 1120,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 0,
+        "top_p": 1.0,
+        "top_k": 0,
+        "seed": 0,
+        "repetition_penalty": 1.0,
+        "repetition_detection": {
+          "min_pattern_size": 3,
+          "max_pattern_size": 20,
+          "min_count": 4
+        }
+      },
+      "finish_reason": "stop",
+      "latency_seconds": 33.76477967000028,
+      "usage": {
+        "prompt_tokens": 1316,
+        "total_tokens": 2723,
+        "completion_tokens": 1407,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.8392007611798288,
+        "wer": 0.9159891598915989,
+        "reference_characters": 2102,
+        "candidate_characters": 2758
+      },
+      "critical_retained": 40,
+      "critical_total": 40,
+      "critical_missing": [],
+      "missing_sections": [
+        "Объект поражения",
+        "Координаты",
+        "Спланированные средства",
+        "Примечания"
+      ],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": false,
+      "structured_json": {
+        "requested": true,
+        "valid": true
+      },
+      "table": {
+        "valid_structure": false,
+        "row_count": 0,
+        "reference_row_count": 7,
+        "cell_text": {
+          "cer": 1.0,
+          "wer": 1.0,
+          "reference_characters": 2102,
+          "candidate_characters": 0
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    },
+    {
+      "id": "structured__l54__historical_json_schema__t0__s0__rp1p0__v1120__fp8",
+      "path": "raw/1120-fp8-structured/structured__l54__historical_json_schema__t0__s0__rp1p0__v1120__fp8.json",
+      "document": "l54",
+      "prompt_version": "historical_json_schema",
+      "vision_budget": 1120,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 0,
+        "top_p": 1.0,
+        "top_k": 0,
+        "seed": 0,
+        "repetition_penalty": 1.0,
+        "repetition_detection": {
+          "min_pattern_size": 3,
+          "max_pattern_size": 20,
+          "min_count": 4
+        }
+      },
+      "finish_reason": "stop",
+      "latency_seconds": 60.7453574150004,
+      "usage": {
+        "prompt_tokens": 1294,
+        "total_tokens": 3797,
+        "completion_tokens": 2503,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 1.1312405446293494,
+        "wer": 1.0477223427331888,
+        "reference_characters": 2644,
+        "candidate_characters": 4530
+      },
+      "critical_retained": 43,
+      "critical_total": 47,
+      "critical_missing": [
+        "FPV КТ",
+        "FPV КТ опт.",
+        "FPV СТ",
+        "Ю.Слобожанинов"
+      ],
+      "missing_sections": [
+        "Доклад",
+        "К выполнению задач привлечено",
+        "Всего за сутки совершено вылетов",
+        "За сутки уничтожено",
+        "Основная задача на сутки",
+        "Ю.Слобожанинов"
+      ],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": false,
+      "structured_json": {
+        "requested": true,
+        "valid": true
+      },
+      "table": {
+        "valid_structure": false,
+        "row_count": 0,
+        "reference_row_count": 6,
+        "cell_text": {
+          "cer": 1.0,
+          "wer": 1.0,
+          "reference_characters": 794,
+          "candidate_characters": 0
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    }
+  ]
+}

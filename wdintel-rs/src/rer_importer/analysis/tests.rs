@@ -1132,6 +1132,21 @@ async fn fetch_metadata_stats_for_req(
     )
 }
 
+async fn fetch_bounded_metadata_stats_for_req(
+    env: &Arc<Env>,
+    req: &AnalysisStatsReq,
+) -> Result<MetadataStatsRsp, AppError> {
+    let (login, master_keys) = analysis_login_and_master_keys(env).await?;
+    stats::fetch_metadata_stats_with_db(
+        req,
+        &login,
+        &env.dbx,
+        master_keys,
+        Some(&AnalyticsMessageIdScope::From(0)),
+    )
+    .await
+}
+
 async fn fetch_selected_count_for_req(
     env: &Arc<Env>,
     req: &AnalysisStatsReq,
@@ -4269,8 +4284,15 @@ async fn rer_analysis_metadata_stats_use_ids_and_text_names() {
     let metadata = fetch_metadata_stats_for_req(&fixture.env, &req)
         .await
         .unwrap();
+    let bounded_metadata =
+        fetch_bounded_metadata_stats_for_req(&fixture.env, &req)
+            .await
+            .unwrap();
     let sender_values = metadata_value_counts(metadata.senders);
     let receiver_values = metadata_value_counts(metadata.receivers);
+    let bounded_sender_values = metadata_value_counts(bounded_metadata.senders);
+    let bounded_receiver_values =
+        metadata_value_counts(bounded_metadata.receivers);
 
     assert_eq!(
         sender_values,
@@ -4288,6 +4310,8 @@ async fn rer_analysis_metadata_stats_use_ids_and_text_names() {
             ("SAME-RECEIVER".to_string(), 1),
         ])
     );
+    assert_eq!(bounded_sender_values, sender_values);
+    assert_eq!(bounded_receiver_values, receiver_values);
 }
 
 #[tokio::test]
@@ -4628,7 +4652,7 @@ async fn rer_analysis_map_unit_filter_uses_message_network_links() {
         test_dt(2026, 3, 2, 10, 10),
         &[&fixture.group_x],
         &[selected_network.network.id],
-        false,
+        true,
     )
     .await
     .unwrap();
@@ -4643,7 +4667,7 @@ async fn rer_analysis_map_unit_filter_uses_message_network_links() {
         test_dt(2026, 3, 2, 10, 11),
         &[&fixture.group_x],
         &[other_network.network.id],
-        false,
+        true,
     )
     .await
     .unwrap();
@@ -4808,7 +4832,7 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
         test_dt(2026, 3, 2, 10, 5),
         &[&fixture.group_x],
         &[child_network.network.id],
-        false,
+        true,
     )
     .await
     .unwrap();
@@ -4822,7 +4846,7 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
         test_dt(2026, 3, 2, 10, 6),
         &[&fixture.group_x],
         &[other_network.network.id],
-        false,
+        true,
     )
     .await
     .unwrap();
@@ -4996,7 +5020,7 @@ async fn rer_analysis_unit_filter_does_not_match_child_unit_name_suffix() {
         test_dt(2026, 3, 2, 10, 7),
         &[&fixture.group_x],
         &[child_network.network.id],
-        false,
+        true,
     )
     .await
     .unwrap();
@@ -5010,7 +5034,7 @@ async fn rer_analysis_unit_filter_does_not_match_child_unit_name_suffix() {
         test_dt(2026, 3, 2, 10, 8),
         &[&fixture.group_x],
         &[other_network.network.id],
-        false,
+        true,
     )
     .await
     .unwrap();
@@ -7058,31 +7082,13 @@ fn analytical_inbox_candidates_reject_unbounded_media_search_and_nolimit() {
 }
 
 #[test]
-fn analytical_inbox_candidates_support_initial_rer_duty_unit_filters() {
-    let mut req = InboxMessagesReq {
+fn analytical_inbox_candidates_reject_unbounded_initial_duty_unit_filters() {
+    let req = InboxMessagesReq {
         page_id: Some("rer-duty-neo".to_string()),
         load_latest: Some(true),
         selected_units: Some(vec!["unit".to_string()]),
         ..Default::default()
     };
-    assert!(analytics_inbox_initial_unit_candidates_supported(&req));
-    assert!(analytics_inbox_candidates_supported(&req));
-
-    req.selected_units = None;
-    req.denied_units = Some(vec!["unit".to_string()]);
-    assert!(analytics_inbox_candidates_supported(&req));
-
-    req.only_with_media = Some(true);
-    assert!(!analytics_inbox_candidates_supported(&req));
-    req.only_with_media = None;
-    req.search = Some("message".to_string());
-    assert!(!analytics_inbox_candidates_supported(&req));
-    req.search = None;
-    req.nolimit = Some(true);
-    assert!(!analytics_inbox_candidates_supported(&req));
-
-    req.nolimit = None;
-    req.page_id = Some("rer-analysis".to_string());
     assert!(!analytics_inbox_candidates_supported(&req));
 }
 

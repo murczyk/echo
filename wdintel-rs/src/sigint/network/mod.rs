@@ -1056,6 +1056,7 @@ pub async fn create_network(
                 .unwrap_or(Utc::now().naive_utc());
             let active_to =
                 frequency.active_to.map(dt_from_millis).transpose()?;
+            validate_network_activity_range(active_from, active_to)?;
             let encryption_id = normalize_encryption_id_for_modulation(
                 &txn,
                 &frequency.modulation,
@@ -2305,6 +2306,7 @@ pub async fn add_network_freq(
             .unwrap_or(Utc::now().naive_utc());
         let active_to =
             req.freq_rec.active_to.map(dt_from_millis).transpose()?;
+        validate_network_activity_range(active_from, active_to)?;
         let encryption_id = normalize_encryption_id_for_modulation(
             &txn,
             &req.freq_rec.modulation,
@@ -2443,6 +2445,7 @@ pub async fn add_network_freq_v2(
             .unwrap_or(Utc::now().naive_utc());
         let active_to =
             req.freq_rec.active_to.map(dt_from_millis).transpose()?;
+        validate_network_activity_range(active_from, active_to)?;
         let normalized_encryption_id = normalize_encryption_id_for_modulation(
             &txn,
             &req.freq_rec.modulation,
@@ -2717,9 +2720,13 @@ pub async fn update_network_freq(
     // Check if network exists
     let network = find_network(&txn, req.network_id).await.context(h!())?;
     let updated_freq_active_from =
-        update_network_freq_active_from(req.active_from);
+        update_network_freq_active_from(req.active_from)?;
     let updated_freq_active_to =
         req.active_to.map(dt_from_millis).transpose()?;
+    validate_network_activity_range(
+        updated_freq_active_from,
+        updated_freq_active_to,
+    )?;
     let mut invalidation_range =
         (Some(updated_freq_active_from), updated_freq_active_to);
     let mut invalidation_freq = req.freq.clone();
@@ -2844,9 +2851,13 @@ pub async fn update_network_freq_v2(
 
     let network = find_network(&txn, req.network_id).await.context(h!())?;
     let updated_freq_active_from =
-        update_network_freq_active_from(req.active_from);
+        update_network_freq_active_from(req.active_from)?;
     let updated_freq_active_to =
         req.active_to.map(dt_from_millis).transpose()?;
+    validate_network_activity_range(
+        updated_freq_active_from,
+        updated_freq_active_to,
+    )?;
     let mut invalidation_range =
         (Some(updated_freq_active_from), updated_freq_active_to);
     let mut invalidation_freq = req.freq.clone();
@@ -2959,8 +2970,34 @@ pub async fn update_network_freq_v2(
     Ok(Json(response))
 }
 
-fn update_network_freq_active_from(active_from_millis: i64) -> NaiveDateTime {
-    dt_from_millis(active_from_millis).unwrap_or(Utc::now().naive_utc())
+fn update_network_freq_active_from(
+    active_from_millis: i64,
+) -> Result<NaiveDateTime, AppError> {
+    dt_from_millis(active_from_millis)
+}
+
+fn validate_network_activity_range(
+    active_from: NaiveDateTime,
+    active_to: Option<NaiveDateTime>,
+) -> Result<(), AppError> {
+    let earliest =
+        NaiveDate::from_ymd_opt(SIGINT_NETWORK_ACTIVITY_EARLIEST_YEAR, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+    if active_from < earliest {
+        return Err(AppError::BL {
+            msg: format!(
+                "Network activity start must be on or after {earliest}"
+            ),
+        });
+    }
+    if active_to.is_some_and(|active_to| active_to < active_from) {
+        return Err(AppError::BL {
+            msg: "Network activity end must not precede its start".to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// Normalise encryption_id based on modulation type:
@@ -4648,9 +4685,25 @@ mod tests {
     fn update_network_freq_active_from_preserves_input_day() {
         let active_from_millis = dt(5).and_utc().timestamp_millis();
 
-        let active_from = update_network_freq_active_from(active_from_millis);
+        let active_from =
+            update_network_freq_active_from(active_from_millis).unwrap();
 
         assert_eq!(active_from, dt(5));
+    }
+
+    #[test]
+    fn network_activity_range_rejects_pre_2000_start() {
+        let active_from = NaiveDate::from_ymd_opt(25, 8, 16)
+            .unwrap()
+            .and_hms_opt(21, 0, 0)
+            .unwrap();
+
+        assert!(validate_network_activity_range(active_from, None).is_err());
+    }
+
+    #[test]
+    fn network_activity_range_rejects_inverted_range() {
+        assert!(validate_network_activity_range(dt(5), Some(dt(4))).is_err());
     }
 
     #[test]

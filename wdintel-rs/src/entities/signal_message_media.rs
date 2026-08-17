@@ -24,6 +24,10 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_one = "super::media_summary::Entity")]
+    MediaSummary,
+    #[sea_orm(has_one = "super::ocr_job::Entity")]
+    OcrJob,
     #[sea_orm(
         belongs_to = "super::signal_message::Entity",
         from = "Column::SignalMessageId",
@@ -32,6 +36,18 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     SignalMessage,
+}
+
+impl Related<super::media_summary::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MediaSummary.def()
+    }
+}
+
+impl Related<super::ocr_job::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OcrJob.def()
+    }
 }
 
 impl Related<super::signal_message::Entity> for Entity {
