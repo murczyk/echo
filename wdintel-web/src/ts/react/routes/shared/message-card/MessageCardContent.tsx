@@ -76,7 +76,7 @@ import {
   MessageCardAttachmentPreviewProvider,
   type MessageCardPreviewAttachment,
 } from './attachment-preview/MessageCardAttachmentPreviewProvider';
-import { MessageCardMediaSummary } from './attachment-preview/MediaSummaryPreview';
+import { MessageCardMediaSummaryCarousel } from './attachment-preview/MediaSummaryPreview';
 import {
   pointBlacklistLabelKey,
   type AddPointHighlightBlacklistRequest,
@@ -494,6 +494,24 @@ export function MessageCardMessageBody({
 
   const imageHrefSet = useMemo(() => new Set(images.map((image) => image.href)), [images]);
   const documents = collectMessageDocuments(msg);
+  const summaryMedia = [...images, ...documents];
+  const [selectedSummaryMediaIndex, setSelectedSummaryMediaIndex] = useState(() =>
+    Math.max(
+      0,
+      summaryMedia.findIndex((media) => media.id != null && media.summary != null),
+    ),
+  );
+  const highlightSummaryMediaSelection =
+    summaryMedia.length > 3 &&
+    summaryMedia.some((media) => media.id != null && media.summary != null);
+  const selectedSummaryImageIndex =
+    highlightSummaryMediaSelection && selectedSummaryMediaIndex < images.length
+      ? selectedSummaryMediaIndex
+      : null;
+  const selectedSummaryDocumentIndex =
+    highlightSummaryMediaSelection && selectedSummaryMediaIndex >= images.length
+      ? selectedSummaryMediaIndex - images.length
+      : null;
   const previewableDocuments = documents.filter((document) => document.kind !== 'unsupported');
   const documentHrefSet = new Set(documents.map((document) => document.href));
   const attachmentMedia = (msg.media ?? []).filter((attachment) => {
@@ -593,6 +611,7 @@ export function MessageCardMessageBody({
           <MessageCardImageList
             images={images}
             videos={videoAttachments}
+            selectedImageIndex={selectedSummaryImageIndex}
             onOpen={(index) => {
               blurActiveElement();
               setAttachmentPreviewIndex(index);
@@ -643,25 +662,24 @@ export function MessageCardMessageBody({
               (previewableDocument) => previewableDocument.href === document.href,
             );
             return (
-              <div key={document.id ?? document.href} className="flex min-w-0 max-w-full flex-col">
-                <MessageMediaDocumentLink
-                  document={document}
-                  index={index}
-                  onPreview={
-                    previewIndex >= 0
-                      ? () => {
-                          blurActiveElement();
-                          setAttachmentPreviewIndex(
-                            images.length + videoAttachments.length + previewIndex,
-                          );
-                        }
-                      : undefined
-                  }
-                  isDownloadStarting={isDownloadStarting}
-                  onDownloadStart={onDownloadStart}
-                />
-                <MessageCardMediaSummary mediaId={document.id} status={document.summary} />
-              </div>
+              <MessageMediaDocumentLink
+                key={document.id ?? document.href}
+                document={document}
+                index={index}
+                selected={selectedSummaryDocumentIndex === index}
+                onPreview={
+                  previewIndex >= 0
+                    ? () => {
+                        blurActiveElement();
+                        setAttachmentPreviewIndex(
+                          images.length + videoAttachments.length + previewIndex,
+                        );
+                      }
+                    : undefined
+                }
+                isDownloadStarting={isDownloadStarting}
+                onDownloadStart={onDownloadStart}
+              />
             );
           })}
           {downloadAttachments.map((attachment) => (
@@ -683,6 +701,10 @@ export function MessageCardMessageBody({
           />
         </div>
       ) : null}
+      <MessageCardMediaSummaryCarousel
+        media={summaryMedia}
+        onIndexChange={setSelectedSummaryMediaIndex}
+      />
       {hasTextPrimary || hasMessageTextOverflow ? (
         <div
           className={
