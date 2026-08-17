@@ -203,6 +203,18 @@ provision the database before restart, and startup applies its schema migrations
 automatically. See [File registry database](../deploy/README.md#file-registry-database)
 for configuration and provisioning.
 
+Synchronized file metadata is identified externally by
+`(device_id, normalized_absolute_path)`. Echo generates file UUIDv7 values and
+an immutable revision for every accepted create or update, while `file_entry`
+stores the atomically matching current projection. Interactive callers use one
+bounded automatic transaction; Still uses persisted explicit
+session/batch/item state so the same payload and batch index survive restarts.
+Only one open session is allowed per device, and
+`file_sync_session_expiry_worker` in `wdintel-rs-bgworker.service` expires
+abandoned sessions. The initial protocol replacement is performed by the
+normal Echo and Still package migrations; Still leaves its integration disabled
+until an administrator explicitly re-enables it.
+
 The `device_file_analytics_worker` runs in `wdintel-rs-bgworker`, reads pending
 file metadata from `wd_files`, and writes derived tag assignments to `wd`.
 It classifies only normalized file names, paths, and extensions; it does not

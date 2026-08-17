@@ -70,6 +70,10 @@ pub mod tests {
                 .execute_unprepared(
                     r#"
                     truncate table
+                        public.file_sync_item,
+                        public.file_sync_batch,
+                        public.file_metadata_revision,
+                        public.file_sync_session,
                         public.file_analysis_reanalysis_job,
                         public.file_analysis_device_state,
                         public.file_analysis_state,

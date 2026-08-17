@@ -42,7 +42,12 @@ fn configure_routes(cfg: &mut ServiceConfig) {
         .service(super::files::browse)
         .service(super::files::search)
         .service(super::files::journal)
-        .service(super::files::sync)
+        .service(super::files::sync_files)
+        .service(super::files::start_sync_session)
+        .service(super::files::sync_session_status)
+        .service(super::files::apply_sync_batch)
+        .service(super::files::complete_sync_session)
+        .service(super::files::sync_session_items)
         .service(super::analytics::list_tags)
         .service(super::analytics::create_tag)
         .service(super::analytics::update_tag)
@@ -83,6 +88,11 @@ fn analytics_root_entry(
         created_at: Set(timestamp),
         updated_at: Set(timestamp),
         content_path: Set(None),
+        revision: Set(None),
+        sync_id: Set(None),
+        source_file_state: Set(None),
+        source_file_state_settled_at: Set(None),
+        source_file_state_settled_by: Set(None),
     }
 }
 
@@ -113,6 +123,11 @@ fn analytics_file_entry(
         created_at: Set(timestamp),
         updated_at: Set(timestamp),
         content_path: Set(None),
+        revision: Set(None),
+        sync_id: Set(None),
+        source_file_state: Set(None),
+        source_file_state_settled_at: Set(None),
+        source_file_state_settled_by: Set(None),
     }
 }
 
@@ -352,7 +367,7 @@ async fn target_api_smoke_covers_all_routes() {
     assert_eq!(response.status(), StatusCode::OK);
     let sync: Value = test::read_body_json(response).await;
     assert_eq!(sync["results"][0]["status"], "rejected");
-    assert_eq!(sync["results"][0]["error"]["kind"], "validation");
+    assert_eq!(sync["results"][0]["code"], "validation");
     assert_eq!(sync["results"][1]["status"], "accepted");
     env.metrics.as_ref().unwrap().force_flush_for_test();
     assert_eq!(
@@ -380,7 +395,8 @@ async fn target_api_smoke_covers_all_routes() {
         .update(env.file_registry_db().unwrap().connection())
         .await
         .unwrap();
-    let root_id = sync["results"][1]["root"]["entry_id"]
+    assert!(sync["results"][1].get("root").is_none());
+    let root_id = sync["results"][1]["file"]["root_entry_id"]
         .as_str()
         .unwrap()
         .to_string();
@@ -719,28 +735,30 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
         .insert(file_db)
         .await
         .unwrap();
-    analytics_file_entry(
-        tagged_file_id,
-        device.id,
-        root_id,
-        "tagged.pdf",
-        "pdf",
-        now.naive_utc(),
+    crate::file_registry::test_support::insert_entry(
+        file_db,
+        analytics_file_entry(
+            tagged_file_id,
+            device.id,
+            root_id,
+            "tagged.pdf",
+            "pdf",
+            now.naive_utc(),
+        ),
     )
-    .insert(file_db)
-    .await
-    .unwrap();
-    analytics_file_entry(
-        untagged_file_id,
-        device.id,
-        root_id,
-        "untagged.txt",
-        "txt",
-        now.naive_utc(),
+    .await;
+    crate::file_registry::test_support::insert_entry(
+        file_db,
+        analytics_file_entry(
+            untagged_file_id,
+            device.id,
+            root_id,
+            "untagged.txt",
+            "txt",
+            now.naive_utc(),
+        ),
     )
-    .insert(file_db)
-    .await
-    .unwrap();
+    .await;
 
     let active_tag_id = Uuid::now_v7();
     let archived_tag_id = Uuid::now_v7();
@@ -954,8 +972,9 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     let sparse_file_ids = (0..=100).map(|_| Uuid::now_v7()).collect::<Vec<_>>();
-    file_entry::Entity::insert_many(sparse_file_ids.iter().enumerate().map(
-        |(index, file_id)| {
+    for (index, file_id) in sparse_file_ids.iter().enumerate() {
+        crate::file_registry::test_support::insert_entry(
+            file_db,
             analytics_file_entry(
                 *file_id,
                 device.id,
@@ -963,12 +982,10 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
                 &format!("z-sparse-{index:03}.txt"),
                 "txt",
                 now.naive_utc(),
-            )
-        },
-    ))
-    .exec(file_db)
-    .await
-    .unwrap();
+            ),
+        )
+        .await;
+    }
     file_analysis_state::Entity::update_many()
         .col_expr(
             file_analysis_state::Column::AnalyzedSourceRevision,
@@ -1060,32 +1077,43 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
         created_at: Set(now.naive_utc()),
         updated_at: Set(now.naive_utc()),
         content_path: Set(None),
+        revision: Set(None),
+        sync_id: Set(None),
+        source_file_state: Set(None),
+        source_file_state_settled_at: Set(None),
+        source_file_state_settled_by: Set(None),
     }
     .insert(file_db)
     .await
     .unwrap();
-    file_entry::ActiveModel {
-        id: Set(nested_file_id),
-        device_id: Set(device.id),
-        parent_id: Set(Some(nested_directory_id)),
-        kind: Set(FileEntryKind::File),
-        name: Set("nested.pdf".to_string()),
-        absolute_path: Set(Some(r"C:\Nested\nested.pdf".to_string())),
-        hierarchy_path: Set(format!(
-            "{directory_hierarchy_path}.n{}",
-            nested_file_id.to_string().replace('-', ""),
-        )),
-        mime_type: Set(None),
-        extension: Set(Some("pdf".to_string())),
-        file_metadata_created_at: Set(None),
-        file_metadata_modified_at: Set(None),
-        created_at: Set(now.naive_utc()),
-        updated_at: Set(now.naive_utc()),
-        content_path: Set(None),
-    }
-    .insert(file_db)
-    .await
-    .unwrap();
+    crate::file_registry::test_support::insert_entry(
+        file_db,
+        file_entry::ActiveModel {
+            id: Set(nested_file_id),
+            device_id: Set(device.id),
+            parent_id: Set(Some(nested_directory_id)),
+            kind: Set(FileEntryKind::File),
+            name: Set("nested.pdf".to_string()),
+            absolute_path: Set(Some(r"C:\Nested\nested.pdf".to_string())),
+            hierarchy_path: Set(format!(
+                "{directory_hierarchy_path}.n{}",
+                nested_file_id.to_string().replace('-', ""),
+            )),
+            mime_type: Set(None),
+            extension: Set(Some("pdf".to_string())),
+            file_metadata_created_at: Set(None),
+            file_metadata_modified_at: Set(None),
+            created_at: Set(now.naive_utc()),
+            updated_at: Set(now.naive_utc()),
+            content_path: Set(None),
+            revision: Set(None),
+            sync_id: Set(None),
+            source_file_state: Set(None),
+            source_file_state_settled_at: Set(None),
+            source_file_state_settled_by: Set(None),
+        },
+    )
+    .await;
     device_file_tag::ActiveModel {
         id: Set(Uuid::now_v7()),
         file_entry_id: Set(nested_file_id),

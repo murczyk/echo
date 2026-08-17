@@ -417,6 +417,24 @@ fn spawn_device_file_analytics_worker_pool(
     }
 }
 
+fn spawn_device_file_sync_expiry_worker(
+    bg_set: &mut JoinSet<()>,
+    env: Arc<Env>,
+    cancellation_token: CancellationToken,
+) {
+    spawn_named_worker(
+        "device_file_sync_session_expiry_worker",
+        bg_set,
+        async move {
+            crate::devices::files::sync::worker::run_nofail(
+                env,
+                cancellation_token,
+            )
+            .await;
+        },
+    );
+}
+
 fn spawn_palitra_conversion_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
     spawn_named_worker("palitra_conversion_worker", bg_set, async move {
         crate::palitra::conversion_worker::palitra_conversion_worker_nofail(
@@ -691,6 +709,11 @@ fn spawn_background_workers(
     }
     if env.file_registry_db.is_some() {
         spawn_device_file_analytics_worker_pool(
+            bg_set,
+            env.clone(),
+            cancel_token.clone(),
+        );
+        spawn_device_file_sync_expiry_worker(
             bg_set,
             env.clone(),
             cancel_token.clone(),
@@ -982,7 +1005,12 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::files::browse)
             .service(crate::devices::files::search)
             .service(crate::devices::files::journal)
-            .service(crate::devices::files::sync)
+            .service(crate::devices::files::sync_files)
+            .service(crate::devices::files::start_sync_session)
+            .service(crate::devices::files::sync_session_status)
+            .service(crate::devices::files::apply_sync_batch)
+            .service(crate::devices::files::complete_sync_session)
+            .service(crate::devices::files::sync_session_items)
             .service(crate::devices::analytics::list_tags)
             .service(crate::devices::analytics::create_tag)
             .service(crate::devices::analytics::update_tag)

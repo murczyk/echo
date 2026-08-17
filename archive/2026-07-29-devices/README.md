@@ -1,5 +1,9 @@
 # 2026-07-29: Devices module
 
+> File metadata synchronization in this record is superseded by
+> [Batched file metadata synchronization](../2026-08-13-batched-file-metadata-sync/README.md).
+> Device registry and analytics behavior in this record remains current.
+
 ## Description
 
 Echo has a Devices module for registering technical sources, maintaining
@@ -509,13 +513,12 @@ Browse, search, and journal accept optional `tag_ids`, `tag_match` (`any` or
 mutually exclusive with explicit IDs. Existing endpoint paths and pagination
 contracts remain unchanged.
 
-Sync clients must distinguish request-level HTTP errors from ordered per-item
-results. They must retain the returned `file_id` for every accepted creation
-and use it for subsequent updates or moves. An item without `file_id` is a
-non-idempotent create, including a retry after an ambiguous transport outcome;
-the server neither deduplicates files by path nor exposes an idempotency-key
-protocol. Clients should inspect roots, browse, search, and journal state
-before retrying an outcome they could not confirm.
+The original client-owned file-ID synchronization contract documented here is
+superseded. Current clients identify mutations only by
+`(device_id, normalized_absolute_path)` and use either the automatic one-shot
+endpoint or persisted explicit sessions. See
+[Batched file metadata synchronization](../2026-08-13-batched-file-metadata-sync/README.md)
+for retry, outcome, revision, and recovery invariants.
 
 ## Authority
 

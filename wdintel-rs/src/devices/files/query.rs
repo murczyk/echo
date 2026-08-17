@@ -4,89 +4,27 @@ pub(super) mod core;
 mod counts;
 mod journal;
 pub(super) mod model;
-pub(super) mod mutation;
 mod roots;
 pub(super) mod search;
 
-pub(super) use model::{map_directory_model, map_file_model, map_root_model};
-#[cfg(test)]
-pub(super) use mutation::{
-    mutate_file as mutate_file_in_transaction, mutate_file_at,
-};
+pub(super) use model::{map_directory_model, map_root_model};
 #[cfg(test)]
 pub(super) use search::search_entries as search_entries_on_connection;
 
 use super::{
-    classify_transaction_error, map_database_error, map_transaction_body_error,
-    Breadcrumb, DirectoryScope, EntryQueryScope, EntrySortKey,
-    FileJournalEntry, FileJournalSortKey, FileMutationResult,
-    FileSearchFilters, FilesystemError, KeysetPage, KeysetPageRequest,
-    PreparedFileMutation, RootEntry, SearchEntry, SubtreeFileCount,
-    TransactionErrorClass, TreeEntry,
+    map_database_error, Breadcrumb, DirectoryScope, EntryQueryScope,
+    EntrySortKey, FileJournalEntry, FileJournalSortKey, FileSearchFilters,
+    FilesystemError, KeysetPage, KeysetPageRequest, RootEntry, SearchEntry,
+    SubtreeFileCount, TreeEntry,
 };
 use crate::file_registry::FileRegistryDb;
 use crate::h;
-use crate::types::ShortContext;
-use sea_orm::sea_query::{Alias, Expr, Func, Query};
 use sea_orm::{
-    AccessMode, ConnectionTrait, DatabaseTransaction, ExprTrait,
-    IsolationLevel, TransactionTrait,
+    AccessMode, DatabaseTransaction, IsolationLevel, TransactionTrait,
 };
 use std::collections::BTreeSet;
 use uuid::Uuid;
 
-pub(in crate::devices) async fn capture_transaction_id(
-    transaction: &DatabaseTransaction,
-) -> Result<String, FilesystemError> {
-    let query = Query::select()
-        .expr_as(
-            Expr::expr(Func::cust(Alias::new("pg_current_xact_id")))
-                .cast_as(Alias::new("text")),
-            Alias::new("transaction_id"),
-        )
-        .to_owned();
-    let row = transaction
-        .query_one(&query)
-        .await
-        .map_err(|error| {
-            map_transaction_body_error(anyhow::Error::new(error).context(h!()))
-        })?
-        .ok_or_else(|| {
-            map_transaction_body_error(anyhow::anyhow!(
-                "pg_current_xact_id returned no row"
-            ))
-        })?;
-    row.try_get("", "transaction_id")
-        .c(h!())
-        .map_err(map_transaction_body_error)
-}
-
-pub(in crate::devices) async fn handle_commit_error(
-    file_registry_db: &FileRegistryDb,
-    result: FileMutationResult,
-    transaction_id: String,
-    error: anyhow::Error,
-) -> Result<FileMutationResult, FilesystemError> {
-    match classify_transaction_error(&error) {
-        TransactionErrorClass::Retryable => Err(FilesystemError::Conflict),
-        TransactionErrorClass::DatabaseFailure => {
-            Err(map_database_error(error))
-        }
-        TransactionErrorClass::OutcomeUncertain => {
-            let reconciled = mutation::reconcile_file_mutation(
-                file_registry_db.connection(),
-                &result,
-                &transaction_id,
-            )
-            .await;
-            if matches!(reconciled, Ok(true)) {
-                Ok(result)
-            } else {
-                Err(FilesystemError::CommitUncertain(error))
-            }
-        }
-    }
-}
 async fn begin_read_snapshot(
     file_registry_db: &FileRegistryDb,
 ) -> Result<DatabaseTransaction, FilesystemError> {
@@ -108,59 +46,6 @@ async fn commit_read_snapshot(
     transaction.commit().await.map_err(|error| {
         map_database_error(anyhow::Error::new(error).context(h!()))
     })
-}
-
-pub(in crate::devices) async fn mutate_file(
-    file_registry_db: &FileRegistryDb,
-    mutation: &PreparedFileMutation,
-) -> Result<FileMutationResult, FilesystemError> {
-    let transaction =
-        file_registry_db
-            .connection()
-            .begin()
-            .await
-            .map_err(|error| {
-                map_database_error(anyhow::Error::new(error).context(h!()))
-            })?;
-    let result = match mutation::mutate_file(&transaction, mutation).await {
-        Ok(result) => result,
-        Err(error) => {
-            return Err(rollback_after_body_error(transaction, error).await);
-        }
-    };
-    let transaction_id = match capture_transaction_id(&transaction).await {
-        Ok(transaction_id) => transaction_id,
-        Err(error) => {
-            return Err(rollback_after_body_error(transaction, error).await);
-        }
-    };
-
-    match transaction.commit().await {
-        Ok(()) => Ok(result),
-        Err(error) => {
-            handle_commit_error(
-                file_registry_db,
-                result,
-                transaction_id,
-                anyhow::Error::new(error).context(h!()),
-            )
-            .await
-        }
-    }
-}
-
-async fn rollback_after_body_error(
-    transaction: DatabaseTransaction,
-    error: FilesystemError,
-) -> FilesystemError {
-    let rollback_error = transaction.rollback().await.err().map(|error| {
-        map_database_error(anyhow::Error::new(error).context(h!()))
-    });
-    if matches!(&error, FilesystemError::Conflict) {
-        return error;
-    }
-
-    rollback_error.unwrap_or(error)
 }
 
 pub(in crate::devices) async fn list_roots(

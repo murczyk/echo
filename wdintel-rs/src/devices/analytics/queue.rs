@@ -2,7 +2,8 @@ use super::DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS;
 use crate::file_registry::entities::{
     file_analysis_control, file_analysis_device_state,
     file_analysis_reanalysis_job, file_analysis_state, file_entry,
-    sea_orm_active_enums::FileEntryKind,
+    file_sync_session,
+    sea_orm_active_enums::{FileEntryKind, FileSyncSessionStatus},
 };
 use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Utc};
 use sea_orm::sea_query::{
@@ -19,6 +20,49 @@ use uuid::Uuid;
 
 const ANALYSIS_LEASE_SECONDS: i64 = 5 * 60;
 const LAST_ERROR_MAX_BYTES: usize = 4_096;
+
+// Keep predicates covered by partial indexes as SQL literals. PostgreSQL
+// cannot prove a partial-index predicate from unknown prepared parameters.
+fn file_entry_is_file() -> SimpleExpr {
+    Expr::col((file_entry::Entity, file_entry::Column::Kind))
+        .eq(SimpleExpr::Constant(FileEntryKind::File.to_value().into()))
+}
+
+fn analysis_state_is_pending() -> SimpleExpr {
+    Expr::col((
+        file_analysis_state::Entity,
+        file_analysis_state::Column::Pending,
+    ))
+}
+
+fn analysis_state_is_not_pending() -> SimpleExpr {
+    analysis_state_is_pending().not()
+}
+
+fn analysis_device_is_pending() -> SimpleExpr {
+    Expr::col((
+        file_analysis_device_state::Entity,
+        file_analysis_device_state::Column::Pending,
+    ))
+}
+
+fn sync_session_is_open() -> SimpleExpr {
+    Expr::col((file_sync_session::Entity, file_sync_session::Column::Status))
+        .eq(SimpleExpr::Constant(
+            FileSyncSessionStatus::Open.to_value().into(),
+        ))
+}
+
+fn open_sync_session_for_device(
+    device_id: Uuid,
+) -> sea_orm::sea_query::SelectStatement {
+    file_sync_session::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(file_sync_session::Column::DeviceId.eq(device_id))
+        .filter(sync_session_is_open())
+        .into_query()
+}
 
 #[derive(Clone, Debug, FromQueryResult)]
 struct AnalysisStateBackfillFile {
@@ -84,7 +128,7 @@ pub(super) async fn backfill_missing_analysis_state(
         .select_only()
         .column(file_entry::Column::Id)
         .column(file_entry::Column::DeviceId)
-        .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
+        .filter(file_entry_is_file())
         .order_by_asc(file_entry::Column::Id)
         .limit(fetch_limit);
     if let Some(cursor) = control.backfill_cursor {
@@ -180,10 +224,14 @@ pub(super) async fn expand_next_device_reanalysis_job(
     let transaction = file_db.begin().await?;
     let Some(device_state) =
         file_analysis_device_state::Entity::find_by_id(claim.device_id)
-            .filter(file_analysis_device_state::Column::Pending.eq(true))
+            .filter(analysis_device_is_pending())
             .filter(
                 file_analysis_device_state::Column::LeaseToken
                     .eq(claim.lease_token),
+            )
+            .filter(
+                Expr::exists(open_sync_session_for_device(claim.device_id))
+                    .not(),
             )
             .lock_exclusive()
             .one(&transaction)
@@ -235,7 +283,7 @@ async fn expand_reanalysis_job(
         .select_only()
         .column(file_entry::Column::Id)
         .column(file_entry::Column::DeviceId)
-        .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
+        .filter(file_entry_is_file())
         .filter(file_entry::Column::Id.lte(job.upper_file_entry_id))
         .order_by_asc(file_entry::Column::Id)
         .limit(limit);
@@ -311,7 +359,7 @@ async fn expand_reanalysis_job(
                 file_analysis_state::Column::RequiredGeneration
                     .lt(job.generation),
             )
-            .filter(file_analysis_state::Column::Pending.eq(false))
+            .filter(analysis_state_is_not_pending())
             .exec(transaction)
             .await?;
     }
@@ -346,7 +394,7 @@ pub(super) async fn recover_expired_analysis_leases(
     let transaction = file_db.begin().await?;
     let now = Utc::now().fixed_offset();
     let expired = file_analysis_state::Entity::find()
-        .filter(file_analysis_state::Column::Pending.eq(true))
+        .filter(analysis_state_is_pending())
         .filter(file_analysis_state::Column::LeaseToken.is_not_null())
         .filter(file_analysis_state::Column::LeaseExpiresAt.lte(now))
         .order_by_asc(file_analysis_state::Column::LeaseExpiresAt)
@@ -413,7 +461,7 @@ pub(super) async fn recover_expired_analysis_device_leases(
     let transaction = file_db.begin().await?;
     let now = Utc::now().fixed_offset();
     let expired = file_analysis_device_state::Entity::find()
-        .filter(file_analysis_device_state::Column::Pending.eq(true))
+        .filter(analysis_device_is_pending())
         .filter(file_analysis_device_state::Column::LeaseToken.is_not_null())
         .filter(file_analysis_device_state::Column::LeaseExpiresAt.lte(now))
         .order_by_asc(file_analysis_device_state::Column::LeaseExpiresAt)
@@ -517,12 +565,28 @@ pub(super) async fn claim_pending_analysis_device(
         .filter(file_analysis_reanalysis_job::Column::DeviceId.is_null())
         .filter(file_analysis_reanalysis_job::Column::ExpandedAt.is_null())
         .into_query();
+    let open_sync_session = file_sync_session::Entity::find()
+        .select_only()
+        .expr(Expr::value(1))
+        .filter(
+            Expr::col((
+                file_sync_session::Entity,
+                file_sync_session::Column::DeviceId,
+            ))
+            .equals((
+                file_analysis_device_state::Entity,
+                file_analysis_device_state::Column::DeviceId,
+            )),
+        )
+        .filter(sync_session_is_open())
+        .into_query();
     let device = file_analysis_device_state::Entity::find()
-        .filter(file_analysis_device_state::Column::Pending.eq(true))
+        .filter(analysis_device_is_pending())
         .filter(file_analysis_device_state::Column::LeaseToken.is_null())
         .filter(file_analysis_device_state::Column::AvailableAt.lte(now))
         .filter(Expr::exists(completed_backfill))
         .filter(Expr::exists(active_legacy_reanalysis).not())
+        .filter(Expr::exists(open_sync_session).not())
         .order_by_asc(file_analysis_device_state::Column::AvailableAt)
         .order_by_asc(file_analysis_device_state::Column::DeviceId)
         .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
@@ -568,12 +632,15 @@ pub(super) async fn claim_pending_analysis_files(
         .filter(
             file_analysis_device_state::Column::DeviceId.eq(device.device_id),
         )
-        .filter(file_analysis_device_state::Column::Pending.eq(true))
+        .filter(analysis_device_is_pending())
         .filter(
             file_analysis_device_state::Column::LeaseToken
                 .eq(device.lease_token),
         )
         .filter(file_analysis_device_state::Column::LeaseExpiresAt.gt(now))
+        .filter(
+            Expr::exists(open_sync_session_for_device(device.device_id)).not(),
+        )
         .exec(&transaction)
         .await?;
     if renewal.rows_affected == 0 {
@@ -586,7 +653,7 @@ pub(super) async fn claim_pending_analysis_files(
 
     let candidates = file_analysis_state::Entity::find()
         .filter(file_analysis_state::Column::DeviceId.eq(device.device_id))
-        .filter(file_analysis_state::Column::Pending.eq(true))
+        .filter(analysis_state_is_pending())
         .filter(file_analysis_state::Column::LeaseToken.is_null())
         .filter(file_analysis_state::Column::AvailableAt.lte(now))
         .order_by_asc(file_analysis_state::Column::AvailableAt)
@@ -652,7 +719,7 @@ pub(super) async fn claim_pending_analysis_files(
             file_entry::Relation::FileAnalysisState.def(),
         )
         .filter(file_entry::Column::DeviceId.eq(device.device_id))
-        .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
+        .filter(file_entry_is_file())
         .filter(file_entry::Column::Id.is_in(file_entry_ids))
         .filter(file_analysis_state::Column::LeaseToken.eq(device.lease_token))
         .order_by_asc(file_entry::Column::Id)
@@ -680,7 +747,7 @@ pub(super) async fn lock_claim_states(
                 .is_in(file_entry_ids.iter().copied()),
         )
         .filter(file_analysis_state::Column::LeaseToken.eq(lease_token))
-        .filter(file_analysis_state::Column::Pending.eq(true))
+        .filter(analysis_state_is_pending())
         .order_by_asc(file_analysis_state::Column::FileEntryId)
         .lock_exclusive()
         .all(transaction)
@@ -914,7 +981,7 @@ pub(super) async fn complete_analysis_device_claim(
         .select_only()
         .expr_as(Func::min(next_available_at), "next_available_at")
         .filter(file_analysis_state::Column::DeviceId.eq(claim.device_id))
-        .filter(file_analysis_state::Column::Pending.eq(true))
+        .filter(analysis_state_is_pending())
         .into_model::<RemainingAnalysisState>()
         .one(&transaction)
         .await?

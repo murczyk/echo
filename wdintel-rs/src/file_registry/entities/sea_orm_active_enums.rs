@@ -20,3 +20,118 @@ pub enum FileEntryKind {
     #[sea_orm(string_value = "file")]
     File,
 }
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "Enum",
+    db_type = "Enum",
+    enum_name = "file_sync_batch_status"
+)]
+pub enum FileSyncBatchStatus {
+    #[sea_orm(string_value = "processing")]
+    Processing,
+    #[sea_orm(string_value = "applied")]
+    Applied,
+    #[sea_orm(string_value = "applied_with_errors")]
+    AppliedWithErrors,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "Enum",
+    db_type = "Enum",
+    enum_name = "file_sync_item_outcome"
+)]
+pub enum FileSyncItemOutcome {
+    #[sea_orm(string_value = "created")]
+    Created,
+    #[sea_orm(string_value = "updated")]
+    Updated,
+    #[sea_orm(string_value = "rejected")]
+    Rejected,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "Enum",
+    db_type = "Enum",
+    enum_name = "file_sync_session_mode"
+)]
+pub enum FileSyncSessionMode {
+    #[sea_orm(string_value = "automatic")]
+    Automatic,
+    #[sea_orm(string_value = "explicit")]
+    Explicit,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "Enum",
+    db_type = "Enum",
+    enum_name = "file_sync_session_status"
+)]
+pub enum FileSyncSessionStatus {
+    #[sea_orm(string_value = "open")]
+    Open,
+    #[sea_orm(string_value = "completed")]
+    Completed,
+    #[sea_orm(string_value = "completed_with_errors")]
+    CompletedWithErrors,
+    #[sea_orm(string_value = "expired")]
+    Expired,
+}
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "Enum",
+    db_type = "Enum",
+    enum_name = "source_file_state_kind"
+)]
+pub enum SourceFileStateKind {
+    #[sea_orm(string_value = "scanned")]
+    Scanned,
+    #[sea_orm(string_value = "downloaded")]
+    Downloaded,
+    #[sea_orm(string_value = "changed")]
+    Changed,
+}

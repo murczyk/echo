@@ -9,3 +9,7 @@ pub use super::file_analysis_device_state::Entity as FileAnalysisDeviceState;
 pub use super::file_analysis_reanalysis_job::Entity as FileAnalysisReanalysisJob;
 pub use super::file_analysis_state::Entity as FileAnalysisState;
 pub use super::file_entry::Entity as FileEntry;
+pub use super::file_metadata_revision::Entity as FileMetadataRevision;
+pub use super::file_sync_batch::Entity as FileSyncBatch;
+pub use super::file_sync_item::Entity as FileSyncItem;
+pub use super::file_sync_session::Entity as FileSyncSession;

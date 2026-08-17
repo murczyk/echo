@@ -29,6 +29,7 @@ const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
 const ROOT_ID = '018f0000-0000-7000-8000-000000000001';
 const ENTRY_ID = '018f0000-0000-7000-8000-000000000002';
 const FILE_ID = '018f0000-0000-7000-8000-000000000003';
+const SYNC_ID = '018f0000-0000-7000-8000-000000000005';
 const TAG_ID = '018f0000-0000-7000-8000-000000000004';
 const CREATED_AT = '2026-07-24T06:00:00Z';
 const UPDATED_AT = '2026-07-24T07:00:00Z';
@@ -99,6 +100,10 @@ function mockFileResponse() {
     file_metadata_modified_at: UPDATED_AT,
     created_at: CREATED_AT,
     updated_at: UPDATED_AT,
+    revision: 1,
+    sync_id: SYNC_ID,
+    source_file_state: null,
+    tags: [],
   };
 }
 
@@ -106,6 +111,27 @@ beforeEach(() => {
   vi.restoreAllMocks();
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(mockDeviceDetailsResponse())));
 });
+
+function mockSyncSummaryResponse() {
+  return {
+    sync_id: SYNC_ID,
+    device_id: DEVICE_ID,
+    mode: 'automatic',
+    status: 'completed_with_errors',
+    next_batch_index: 1,
+    counts: {
+      received: 2,
+      accepted: 1,
+      created: 1,
+      updated: 0,
+      rejected: 1,
+    },
+    created_at: CREATED_AT,
+    updated_at: UPDATED_AT,
+    completed_at: UPDATED_AT,
+    expires_at: null,
+  };
+}
 
 describe('devices API service routes', () => {
   it('lists devices using only the target request and response fields', async () => {
@@ -370,6 +396,14 @@ describe('device filesystem API service routes', () => {
             absolute_path: '/report.log',
             has_content: true,
             synchronized_at: UPDATED_AT,
+            revision: 1,
+            sync_id: SYNC_ID,
+            source_file_state: {
+              state: 'downloaded',
+              settled_at: UPDATED_AT,
+              settled_by: 'device-source',
+            },
+            tags: [],
           },
         ],
         total_count: 12_345,
@@ -402,6 +436,14 @@ describe('device filesystem API service routes', () => {
           absolutePath: '/report.log',
           hasContent: true,
           synchronizedAt: UPDATED_AT,
+          revision: 1,
+          syncId: SYNC_ID,
+          sourceFileState: {
+            state: 'downloaded',
+            settledAt: UPDATED_AT,
+            settledBy: 'device-source',
+          },
+          tags: [],
         },
       ],
       totalCount: 12_345,
@@ -409,25 +451,25 @@ describe('device filesystem API service routes', () => {
     });
   });
 
-  it('omits a create file_id and normalizes tagged sync outcomes', async () => {
+  it('sends path identity and normalizes the sync summary and item outcomes', async () => {
     fetchMock().mockResolvedValueOnce(
       jsonResponse({
+        sync: mockSyncSummaryResponse(),
         results: [
           {
             status: 'accepted',
             index: 0,
             operation: 'created',
-            root: mockRootResponse(),
+            file_id: FILE_ID,
+            revision: 1,
             file: mockFileResponse(),
           },
           {
             status: 'rejected',
             index: 1,
-            error: {
-              kind: 'validation',
-              message: 'filesystem validation failed',
-              field_errors: [['files[1].absolute_path', 'invalid']],
-            },
+            code: 'validation',
+            message: 'file validation failed',
+            field_errors: [{ path: 'files[1].absolute_path', message: 'invalid' }],
           },
         ],
       }),
@@ -437,20 +479,24 @@ describe('device filesystem API service routes', () => {
       deviceId: DEVICE_ID,
       files: [
         {
-          fileId: null,
           absolutePath: 'C:\\report.log',
           mimeType: 'text/plain',
           extension: 'log',
           fileMetadataCreatedAt: CREATED_AT,
           fileMetadataModifiedAt: UPDATED_AT,
+          sourceFileState: {
+            state: 'downloaded',
+            settledAt: UPDATED_AT,
+            settledBy: 'device-source',
+          },
         },
         {
-          fileId: FILE_ID,
           absolutePath: 'C:\\moved.log',
           mimeType: null,
           extension: null,
           fileMetadataCreatedAt: null,
           fileMetadataModifiedAt: null,
+          sourceFileState: null,
         },
       ],
     });
@@ -464,40 +510,51 @@ describe('device filesystem API service routes', () => {
           extension: 'log',
           file_metadata_created_at: CREATED_AT,
           file_metadata_modified_at: UPDATED_AT,
+          source_file_state: {
+            state: 'downloaded',
+            settled_at: UPDATED_AT,
+            settled_by: 'device-source',
+          },
         },
         {
-          file_id: FILE_ID,
           absolute_path: 'C:\\moved.log',
           mime_type: null,
           extension: null,
           file_metadata_created_at: null,
           file_metadata_modified_at: null,
+          source_file_state: null,
         },
       ],
+    });
+    expect(rsp.sync).toMatchObject({
+      syncId: SYNC_ID,
+      mode: 'automatic',
+      counts: { accepted: 1, rejected: 1 },
     });
     expect(rsp.results).toEqual([
       {
         Accepted: {
           index: 0,
           operation: 'created',
-          root: expect.objectContaining({ entryId: ROOT_ID }),
+          fileId: FILE_ID,
+          revision: 1,
           file: expect.objectContaining({ fileId: FILE_ID, hasContent: false }),
         },
       },
       {
         Rejected: {
           index: 1,
-          error: {
-            kind: 'validation',
-            message: 'filesystem validation failed',
-            fieldErrors: [['files[1].absolute_path', 'invalid']],
-          },
+          code: 'validation',
+          message: 'file validation failed',
+          fieldErrors: [{ path: 'files[1].absolute_path', message: 'invalid' }],
         },
       },
     ]);
   });
   it('preserves Windows paths in sync request values', async () => {
-    fetchMock().mockResolvedValueOnce(jsonResponse({ results: [] }));
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({ sync: mockSyncSummaryResponse(), results: [] }),
+    );
     const absolutePath =
       'D:\\Counter-Strike Source v34 HD\\cstrike\\sound\\weapons\\csgo\\c4\\c4_plant.wav';
 
@@ -505,12 +562,12 @@ describe('device filesystem API service routes', () => {
       deviceId: DEVICE_ID,
       files: [
         {
-          fileId: null,
           absolutePath,
           mimeType: null,
           extension: null,
           fileMetadataCreatedAt: null,
           fileMetadataModifiedAt: null,
+          sourceFileState: null,
         },
       ],
     });
@@ -524,6 +581,7 @@ describe('device filesystem API service routes', () => {
           extension: null,
           file_metadata_created_at: null,
           file_metadata_modified_at: null,
+          source_file_state: null,
         },
       ],
     });

@@ -13,6 +13,7 @@ mod m20260808_113748_file_analysis_device_queue;
 mod m20260808_134904_file_analysis_retry_limit;
 mod m20260808_134905_analytics_tag_test_expectation;
 mod m20260810_120000_seed_default_analytics_tags;
+mod m20260813_120128_batched_file_metadata_sync;
 
 pub struct Migrator;
 
@@ -39,6 +40,7 @@ impl MigratorTrait for Migrator {
                 m20260808_134905_analytics_tag_test_expectation::Migration,
             ),
             Box::new(m20260810_120000_seed_default_analytics_tags::Migration),
+            Box::new(m20260813_120128_batched_file_metadata_sync::Migration),
         ]
     }
 }

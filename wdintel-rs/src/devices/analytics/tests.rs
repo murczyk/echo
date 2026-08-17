@@ -8,11 +8,16 @@ use super::types::{
 };
 use super::DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS;
 use super::{bl, query, queue, worker};
+use crate::devices::files::types::RawSyncDeviceFileItem;
+use crate::devices::{access, ROLE_DEVICE_SOURCE};
 use crate::entities::{device, login, organism};
 use crate::file_registry::entities::{
     analytics_tag, device_file_tag, file_analysis_control,
     file_analysis_device_state, file_analysis_reanalysis_job,
-    file_analysis_state, file_entry, sea_orm_active_enums::FileEntryKind,
+    file_analysis_state, file_entry, file_sync_session,
+    sea_orm_active_enums::{
+        FileEntryKind, FileSyncSessionMode, FileSyncSessionStatus,
+    },
 };
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
 use crate::types::Env;
@@ -462,6 +467,11 @@ async fn insert_pending_files(
             created_at: Set(now),
             updated_at: Set(now),
             content_path: Set(None),
+            revision: Set(None),
+            sync_id: Set(None),
+            source_file_state: Set(None),
+            source_file_state_settled_at: Set(None),
+            source_file_state_settled_by: Set(None),
         }
         .insert(file_db)
         .await
@@ -471,31 +481,74 @@ async fn insert_pending_files(
     let mut ids = Vec::with_capacity(files.len());
     for (name, absolute_path, extension) in files {
         let file_id = Uuid::now_v7();
-        file_entry::ActiveModel {
-            id: Set(file_id),
-            device_id: Set(device_id),
-            parent_id: Set(Some(root_id)),
-            kind: Set(FileEntryKind::File),
-            name: Set((*name).to_string()),
-            absolute_path: Set(Some((*absolute_path).to_string())),
-            hierarchy_path: Set(format!(
-                "{root_path}.{}",
-                hierarchy_label(file_id)
-            )),
-            mime_type: Set(None),
-            extension: Set(Some((*extension).to_string())),
-            file_metadata_created_at: Set(None),
-            file_metadata_modified_at: Set(None),
-            created_at: Set(now),
-            updated_at: Set(now),
-            content_path: Set(None),
-        }
-        .insert(file_db)
-        .await
-        .unwrap();
+        crate::file_registry::test_support::insert_entry(
+            file_db,
+            file_entry::ActiveModel {
+                id: Set(file_id),
+                device_id: Set(device_id),
+                parent_id: Set(Some(root_id)),
+                kind: Set(FileEntryKind::File),
+                name: Set((*name).to_string()),
+                absolute_path: Set(Some((*absolute_path).to_string())),
+                hierarchy_path: Set(format!(
+                    "{root_path}.{}",
+                    hierarchy_label(file_id)
+                )),
+                mime_type: Set(None),
+                extension: Set(Some((*extension).to_string())),
+                file_metadata_created_at: Set(None),
+                file_metadata_modified_at: Set(None),
+                created_at: Set(now),
+                updated_at: Set(now),
+                content_path: Set(None),
+                revision: Set(None),
+                sync_id: Set(None),
+                source_file_state: Set(None),
+                source_file_state_settled_at: Set(None),
+                source_file_state_settled_by: Set(None),
+            },
+        )
+        .await;
         ids.push(file_id);
     }
     ids
+}
+
+async fn sync_file_extension(
+    env: &Env,
+    device_id: Uuid,
+    absolute_path: &str,
+    extension: &str,
+) {
+    let device = device::Entity::find_by_id(device_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let owner = login::Entity::find()
+        .filter(login::Column::Login.eq(device.created_by))
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let actor = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
+    let response = crate::devices::files::sync::automatic(
+        &env.dbx,
+        env.file_registry_db().unwrap(),
+        &actor,
+        device_id,
+        vec![RawSyncDeviceFileItem {
+            absolute_path: absolute_path.to_string(),
+            mime_type: None,
+            extension: Some(extension.to_string()),
+            file_metadata_created_at: None,
+            file_metadata_modified_at: None,
+            source_file_state: None,
+        }],
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.sync.counts.accepted, 1);
 }
 
 async fn save_extension_rule(env: &Env, tag_id: Uuid, extension: &str) {
@@ -591,6 +644,80 @@ async fn missing_analysis_state_is_backfilled_as_pending() {
     assert_eq!(state.analyzed_source_revision, 0);
     assert_eq!(state.analyzed_rule_revision, 0);
     assert!(state.pending);
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn pending_analysis_waits_for_explicit_file_sync_completion() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let device_id = insert_analytics_test_device(env.as_ref()).await;
+    insert_pending_files(
+        env.as_ref(),
+        device_id,
+        &[("report.pdf", r"C:\report.pdf", "pdf")],
+    )
+    .await;
+    let active_claim = claim_analysis_device(env.as_ref()).await;
+    assert_eq!(active_claim.device_id, device_id);
+    let file_db = env.file_registry_db().unwrap().connection();
+    let now = Utc::now().fixed_offset();
+    let sync_id = Uuid::now_v7();
+    file_sync_session::ActiveModel {
+        sync_id: Set(sync_id),
+        device_id: Set(device_id),
+        mode: Set(FileSyncSessionMode::Explicit),
+        status: Set(FileSyncSessionStatus::Open),
+        next_batch_index: Set(0),
+        received_count: Set(0),
+        accepted_count: Set(0),
+        created_count: Set(0),
+        updated_count: Set(0),
+        rejected_count: Set(0),
+        created_at: Set(now),
+        updated_at: Set(now),
+        completed_at: Set(None),
+        expires_at: Set(Some(now + ChronoDuration::hours(1))),
+    }
+    .insert(file_db)
+    .await
+    .unwrap();
+
+    let paused_batch =
+        queue::claim_pending_analysis_files(file_db, &active_claim, 1)
+            .await
+            .unwrap();
+    assert!(
+        paused_batch.files.is_empty(),
+        "an already claimed analysis device must pause at the next batch boundary"
+    );
+    assert_eq!(
+        queue::complete_analysis_device_claim(file_db, &active_claim)
+            .await
+            .unwrap(),
+        Some(true)
+    );
+
+    assert!(
+        queue::claim_pending_analysis_device(file_db)
+            .await
+            .unwrap()
+            .is_none(),
+        "analysis must not compete with an open explicit sync session"
+    );
+
+    let session = file_sync_session::Entity::find_by_id(sync_id)
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut session = session.into_active_model();
+    session.status = Set(FileSyncSessionStatus::Completed);
+    session.completed_at = Set(Some(now));
+    session.expires_at = Set(None);
+    session.update(file_db).await.unwrap();
+
+    let claim = claim_analysis_device(env.as_ref()).await;
+    assert_eq!(claim.device_id, device_id);
 }
 
 #[tokio::test]
@@ -995,7 +1122,7 @@ async fn worker_finishes_one_device_before_claiming_the_next() {
 async fn device_progress_requeues_and_counts_updated_files() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let device_id = insert_analytics_test_device(env.as_ref()).await;
-    let file_ids = insert_pending_files(
+    insert_pending_files(
         env.as_ref(),
         device_id,
         &[
@@ -1028,17 +1155,7 @@ async fn device_progress_requeues_and_counts_updated_files() {
             .unwrap();
     assert!(!device_state.pending);
 
-    let file = file_entry::Entity::find_by_id(file_ids[0])
-        .one(file_db)
-        .await
-        .unwrap()
-        .unwrap();
-    let mut file = file.into_active_model();
-    file.name = Set("first-updated.pdf".to_string());
-    file.absolute_path = Set(Some(r"C:\first-updated.pdf".to_string()));
-    file.extension = Set(Some("pdf".to_string()));
-    file.updated_at = Set(Utc::now().naive_utc());
-    file.update(file_db).await.unwrap();
+    sync_file_extension(env.as_ref(), device_id, r"C:\first.txt", "pdf").await;
 
     let updated = query::device_summary(file_db, device_id).await.unwrap();
     assert_eq!(
@@ -1132,17 +1249,7 @@ async fn metadata_change_during_a_lease_discards_the_stale_result() {
         Some(lease_token)
     );
 
-    let file = file_entry::Entity::find_by_id(file_id)
-        .one(file_db)
-        .await
-        .unwrap()
-        .unwrap();
-    let mut file = file.into_active_model();
-    file.name = Set("notes.txt".to_string());
-    file.absolute_path = Set(Some(r"C:\notes.txt".to_string()));
-    file.extension = Set(Some("txt".to_string()));
-    file.updated_at = Set(Utc::now().naive_utc());
-    file.update(file_db).await.unwrap();
+    sync_file_extension(env.as_ref(), device_id, r"C:\report.pdf", "txt").await;
 
     let invalidated = analysis_state(env.as_ref(), file_id).await;
     assert_eq!(invalidated.source_revision, 2);
@@ -1529,15 +1636,8 @@ async fn analysis_stops_after_ten_failures_until_file_metadata_changes() {
         Some(false),
     );
 
-    let file = file_entry::Entity::find_by_id(file_id)
-        .one(file_db)
-        .await
-        .unwrap()
-        .unwrap();
-    let mut file = file.into_active_model();
-    file.name = Set("renamed.pdf".to_string());
-    file.absolute_path = Set(Some(r"C:\renamed.pdf".to_string()));
-    file.update(file_db).await.unwrap();
+    sync_file_extension(env.as_ref(), device_id, r"C:\exhausted.pdf", "txt")
+        .await;
 
     let requeued = analysis_state(env.as_ref(), file_id).await;
     assert!(requeued.pending);

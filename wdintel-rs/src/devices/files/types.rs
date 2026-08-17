@@ -1,10 +1,19 @@
 use super::error::{FilesystemError, FilesystemFieldError};
 use crate::devices::analytics::types::{AnalyticsTag, TagMatch};
-use chrono::NaiveDateTime;
+use chrono::{DateTime, FixedOffset, NaiveDateTime};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
 pub(in crate::devices) use crate::file_registry::entities::sea_orm_active_enums::FileEntryKind as DomainFileEntryKind;
+pub(in crate::devices) use crate::file_registry::entities::sea_orm_active_enums::SourceFileStateKind as DomainSourceFileStateKind;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct NormalizedFileMetadata {
+    pub(in crate::devices) mime_type: Option<String>,
+    pub(in crate::devices) extension: Option<String>,
+    pub(in crate::devices) file_metadata_created_at: Option<NaiveDateTime>,
+    pub(in crate::devices) file_metadata_modified_at: Option<NaiveDateTime>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct RootEntry {
@@ -86,6 +95,9 @@ pub(in crate::devices) struct FileEntry {
     pub(in crate::devices) file_metadata_modified_at: Option<NaiveDateTime>,
     pub(in crate::devices) created_at: NaiveDateTime,
     pub(in crate::devices) updated_at: NaiveDateTime,
+    pub(in crate::devices) revision: i64,
+    pub(in crate::devices) sync_id: Uuid,
+    pub(in crate::devices) source_file_state: Option<NormalizedSourceFileState>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -95,6 +107,9 @@ pub(in crate::devices) struct FileJournalEntry {
     pub(in crate::devices) absolute_path: String,
     pub(in crate::devices) has_content: bool,
     pub(in crate::devices) synchronized_at: NaiveDateTime,
+    pub(in crate::devices) revision: i64,
+    pub(in crate::devices) sync_id: Uuid,
+    pub(in crate::devices) source_file_state: Option<NormalizedSourceFileState>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -380,89 +395,65 @@ impl ParsedSourcePath {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::devices) struct SyncFilesCommand {
-    pub(in crate::devices) device_id: Uuid,
-    pub(in crate::devices) files: Vec<SyncFileItemCommand>,
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(in crate::devices) struct RawSourceFileState {
+    pub(in crate::devices) state: Option<String>,
+    pub(in crate::devices) settled_at: Option<String>,
+    pub(in crate::devices) settled_by: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(in crate::devices) struct SyncFilesResult {
-    pub(in crate::devices) results: Vec<SyncFileItemResult>,
-    pub(in crate::devices) tags_by_file: BTreeMap<Uuid, Vec<AnalyticsTag>>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::devices) struct SyncFileItemCommand {
-    pub(in crate::devices) file_id: Option<Uuid>,
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(in crate::devices) struct RawSyncDeviceFileItem {
     pub(in crate::devices) absolute_path: String,
     pub(in crate::devices) mime_type: Option<String>,
     pub(in crate::devices) extension: Option<String>,
     pub(in crate::devices) file_metadata_created_at: Option<String>,
     pub(in crate::devices) file_metadata_modified_at: Option<String>,
+    pub(in crate::devices) source_file_state: Option<RawSourceFileState>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(in crate::devices) struct RawSyncDeviceFilesReq {
+    #[serde(deserialize_with = "deserialize_canonical_uuid")]
+    pub(in crate::devices) device_id: String,
+    pub(in crate::devices) files: Vec<RawSyncDeviceFileItem>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(in crate::devices) struct RawApplyFileSyncBatchReq {
+    pub(in crate::devices) files: Vec<RawSyncDeviceFileItem>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::devices) struct NormalizedFileMetadata {
-    pub(in crate::devices) mime_type: Option<String>,
-    pub(in crate::devices) extension: Option<String>,
-    pub(in crate::devices) file_metadata_created_at: Option<NaiveDateTime>,
-    pub(in crate::devices) file_metadata_modified_at: Option<NaiveDateTime>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::devices) enum SyncFileOperation {
-    Created,
-    Updated,
+pub(in crate::devices) struct NormalizedSourceFileState {
+    pub(in crate::devices) state: DomainSourceFileStateKind,
+    pub(in crate::devices) settled_at: DateTime<FixedOffset>,
+    pub(in crate::devices) settled_by: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct PreparedFileMutation {
     pub(super) device_id: Uuid,
-    pub(super) operation: SyncFileOperation,
-    pub(super) file_id: Uuid,
+    pub(super) sync_id: Uuid,
+    pub(super) candidate_file_id: Uuid,
     pub(super) candidate_root_entry_id: Uuid,
     pub(super) candidate_directory_entry_ids: Vec<Uuid>,
     pub(super) source_path: ParsedSourcePath,
     pub(super) metadata: NormalizedFileMetadata,
+    pub(super) source_file_state: Option<NormalizedSourceFileState>,
 }
 
 impl PreparedFileMutation {
-    pub(in crate::devices) fn for_create(
+    pub(in crate::devices) fn new(
         device_id: Uuid,
+        sync_id: Uuid,
         source_path: ParsedSourcePath,
         metadata: NormalizedFileMetadata,
-    ) -> Self {
-        Self::new(
-            device_id,
-            SyncFileOperation::Created,
-            Uuid::now_v7(),
-            source_path,
-            metadata,
-        )
-    }
-
-    pub(in crate::devices) fn for_update(
-        device_id: Uuid,
-        file_id: Uuid,
-        source_path: ParsedSourcePath,
-        metadata: NormalizedFileMetadata,
-    ) -> Self {
-        Self::new(
-            device_id,
-            SyncFileOperation::Updated,
-            file_id,
-            source_path,
-            metadata,
-        )
-    }
-
-    fn new(
-        device_id: Uuid,
-        operation: SyncFileOperation,
-        file_id: Uuid,
-        source_path: ParsedSourcePath,
-        metadata: NormalizedFileMetadata,
+        source_file_state: Option<NormalizedSourceFileState>,
     ) -> Self {
         let candidate_directory_count = source_path
             .components
@@ -472,67 +463,25 @@ impl PreparedFileMutation {
 
         Self {
             device_id,
-            operation,
-            file_id,
+            sync_id,
+            candidate_file_id: Uuid::now_v7(),
             candidate_root_entry_id: Uuid::now_v7(),
             candidate_directory_entry_ids: (0..candidate_directory_count)
                 .map(|_| Uuid::now_v7())
                 .collect(),
             source_path,
             metadata,
+            source_file_state,
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::devices) struct FileMutationResult {
-    pub(in crate::devices) operation: SyncFileOperation,
-    pub(in crate::devices) root: RootEntry,
-    pub(in crate::devices) file: FileEntry,
-    pub(in crate::devices) path_components: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::devices) struct SyncFileItemResult {
-    pub(in crate::devices) index: usize,
-    pub(in crate::devices) outcome: SyncFileItemOutcome,
-}
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::devices) enum SyncFileItemOutcome {
-    Accepted {
-        operation: SyncFileOperation,
-        root: RootEntry,
-        file: FileEntry,
-        path_components: Vec<String>,
-    },
-    Rejected {
-        kind: SyncFileRejectionKind,
-        message: String,
-        retry: bool,
-        field_errors: Vec<FilesystemFieldError>,
-    },
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::devices) enum SyncFileRejectionKind {
-    Validation,
-    NotFound,
-    Conflict,
-    Dependency,
-    Internal,
-}
-
 use crate::devices::types::{
     deserialize_canonical_uuid, deserialize_canonical_uuid_vec,
-    deserialize_nullable_canonical_uuid, deserialize_optional_canonical_uuid,
-    deserialize_optional_datetime, RequiredPatch,
+    deserialize_nullable_canonical_uuid, deserialize_optional_datetime,
 };
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::{Deserialize, Serialize};
-
-pub type FieldError = (String, String);
 
 #[derive(
     Elm,
@@ -550,6 +499,42 @@ pub type FieldError = (String, String);
 pub enum FileEntryKind {
     Directory,
     File,
+}
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceFileStateKind {
+    Scanned,
+    Downloaded,
+    Changed,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct SourceFileState {
+    pub state: SourceFileStateKind,
+    pub settled_at: String,
+    pub settled_by: String,
 }
 
 #[derive(
@@ -619,6 +604,9 @@ pub struct DeviceFileTreeEntry {
     pub file_metadata_modified_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub revision: Option<i64>,
+    pub sync_id: Option<String>,
+    pub source_file_state: Option<SourceFileState>,
     pub tags: Vec<AnalyticsTag>,
 }
 
@@ -649,6 +637,9 @@ pub struct DeviceFile {
     pub file_metadata_modified_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub revision: i64,
+    pub sync_id: String,
+    pub source_file_state: Option<SourceFileState>,
     pub tags: Vec<AnalyticsTag>,
 }
 
@@ -848,6 +839,9 @@ pub struct DeviceFileJournalEntry {
     pub absolute_path: String,
     pub has_content: bool,
     pub synchronized_at: String,
+    pub revision: i64,
+    pub sync_id: String,
+    pub source_file_state: Option<SourceFileState>,
     pub tags: Vec<AnalyticsTag>,
 }
 
@@ -904,17 +898,12 @@ pub struct JournalDeviceFilesRsp {
 )]
 #[serde(deny_unknown_fields)]
 pub struct SyncDeviceFileItem {
-    #[serde(
-        default,
-        deserialize_with = "deserialize_optional_canonical_uuid",
-        skip_serializing_if = "RequiredPatch::is_missing"
-    )]
-    pub file_id: RequiredPatch<String>,
     pub absolute_path: String,
     pub mime_type: Option<String>,
     pub extension: Option<String>,
     pub file_metadata_created_at: Option<String>,
     pub file_metadata_modified_at: Option<String>,
+    pub source_file_state: Option<SourceFileState>,
 }
 
 #[derive(
@@ -932,6 +921,22 @@ pub struct SyncDeviceFileItem {
 pub struct SyncDeviceFilesReq {
     #[serde(deserialize_with = "deserialize_canonical_uuid")]
     pub device_id: String,
+    pub files: Vec<SyncDeviceFileItem>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct ApplyFileSyncBatchReq {
     pub files: Vec<SyncDeviceFileItem>,
 }
 
@@ -966,12 +971,67 @@ pub enum FileSyncOperation {
     Copy,
 )]
 #[serde(rename_all = "snake_case")]
-pub enum FileSyncErrorKind {
+pub enum FileSyncSessionMode {
+    Automatic,
+    Explicit,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum FileSyncSessionStatus {
+    #[serde(rename = "open")]
+    SyncOpen,
+    Completed,
+    CompletedWithErrors,
+    Expired,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum FileSyncBatchStatus {
+    Processing,
+    Applied,
+    AppliedWithErrors,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum FileSyncErrorCode {
     Validation,
-    NotFound,
-    Conflict,
-    Dependency,
-    Internal,
+    DuplicatePathInSession,
 }
 
 #[derive(
@@ -986,10 +1046,75 @@ pub enum FileSyncErrorKind {
     Clone,
 )]
 #[serde(deny_unknown_fields)]
-pub struct FileSyncError {
-    pub kind: FileSyncErrorKind,
+pub struct FileSyncFieldError {
+    pub path: String,
     pub message: String,
-    pub field_errors: Vec<FieldError>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct SyncCounts {
+    pub received: u64,
+    pub accepted: u64,
+    pub created: u64,
+    pub updated: u64,
+    pub rejected: u64,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct SyncSummary {
+    pub sync_id: String,
+    pub device_id: String,
+    pub mode: FileSyncSessionMode,
+    pub status: FileSyncSessionStatus,
+    pub next_batch_index: u64,
+    pub counts: SyncCounts,
+    pub created_at: String,
+    pub updated_at: String,
+    pub completed_at: Option<String>,
+    pub expires_at: Option<String>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct BatchSummary {
+    pub sync_id: String,
+    pub batch_index: u64,
+    pub status: FileSyncBatchStatus,
+    pub counts: SyncCounts,
+    pub created_at: String,
+    pub applied_at: Option<String>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -1007,14 +1132,50 @@ pub struct FileSyncError {
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum FileSyncResult {
     Accepted {
-        index: usize,
+        index: u64,
         operation: FileSyncOperation,
-        root: DeviceFileRoot,
+        file_id: String,
+        revision: i64,
         file: DeviceFile,
     },
     Rejected {
-        index: usize,
-        error: FileSyncError,
+        index: u64,
+        code: FileSyncErrorCode,
+        message: String,
+        field_errors: Vec<FileSyncFieldError>,
+    },
+}
+
+#[allow(clippy::large_enum_variant)]
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(tag = "status")]
+pub enum FileSyncSessionItemResult {
+    #[serde(rename = "accepted")]
+    SessionItemAccepted {
+        batch_index: u64,
+        item_index: u64,
+        operation: FileSyncOperation,
+        file_id: String,
+        revision: i64,
+        file: DeviceFile,
+    },
+    #[serde(rename = "rejected")]
+    SessionItemRejected {
+        batch_index: u64,
+        item_index: u64,
+        code: FileSyncErrorCode,
+        message: String,
+        field_errors: Vec<FileSyncFieldError>,
     },
 }
 
@@ -1031,5 +1192,91 @@ pub enum FileSyncResult {
 )]
 #[serde(deny_unknown_fields)]
 pub struct SyncDeviceFilesRsp {
+    pub sync: SyncSummary,
     pub results: Vec<FileSyncResult>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct StartFileSyncSessionReq {
+    #[serde(deserialize_with = "deserialize_canonical_uuid")]
+    pub device_id: String,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct FileSyncSessionRsp {
+    pub sync: SyncSummary,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct ApplyFileSyncBatchRsp {
+    pub sync: SyncSummary,
+    pub batch: BatchSummary,
+    pub results: Vec<FileSyncResult>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct CompleteFileSyncSessionReq {
+    pub expected_batch_count: u64,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct FileSyncSessionItemsRsp {
+    pub sync: SyncSummary,
+    pub results: Vec<FileSyncSessionItemResult>,
+    pub next_cursor: Option<String>,
 }

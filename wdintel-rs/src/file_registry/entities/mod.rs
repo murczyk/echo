@@ -11,4 +11,8 @@ pub mod file_analysis_device_state;
 pub mod file_analysis_reanalysis_job;
 pub mod file_analysis_state;
 pub mod file_entry;
+pub mod file_metadata_revision;
+pub mod file_sync_batch;
+pub mod file_sync_item;
+pub mod file_sync_session;
 pub mod sea_orm_active_enums;

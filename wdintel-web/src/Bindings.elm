@@ -4558,6 +4558,9 @@ type alias DeviceFileTreeEntry =
     , fileMetadataModifiedAt : Maybe (String)
     , createdAt : String
     , updatedAt : String
+    , revision : Maybe (Int)
+    , syncId : Maybe (String)
+    , sourceFileState : Maybe (SourceFileState)
     , tags : List (AnalyticsTag)
     }
 
@@ -4579,6 +4582,9 @@ deviceFileTreeEntryEncoder struct =
         , ( "file_metadata_modified_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileMetadataModifiedAt )
         , ( "created_at", (Json.Encode.string) struct.createdAt )
         , ( "updated_at", (Json.Encode.string) struct.updatedAt )
+        , ( "revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.revision )
+        , ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
+        , ( "source_file_state", (Maybe.withDefault Json.Encode.null << Maybe.map (sourceFileStateEncoder)) struct.sourceFileState )
         , ( "tags", (Json.Encode.list (analyticsTagEncoder)) struct.tags )
         ]
 
@@ -4598,6 +4604,9 @@ type alias DeviceFile =
     , fileMetadataModifiedAt : Maybe (String)
     , createdAt : String
     , updatedAt : String
+    , revision : Int
+    , syncId : String
+    , sourceFileState : Maybe (SourceFileState)
     , tags : List (AnalyticsTag)
     }
 
@@ -4619,6 +4628,9 @@ deviceFileEncoder struct =
         , ( "file_metadata_modified_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileMetadataModifiedAt )
         , ( "created_at", (Json.Encode.string) struct.createdAt )
         , ( "updated_at", (Json.Encode.string) struct.updatedAt )
+        , ( "revision", (Json.Encode.int) struct.revision )
+        , ( "sync_id", (Json.Encode.string) struct.syncId )
+        , ( "source_file_state", (Maybe.withDefault Json.Encode.null << Maybe.map (sourceFileStateEncoder)) struct.sourceFileState )
         , ( "tags", (Json.Encode.list (analyticsTagEncoder)) struct.tags )
         ]
 
@@ -4787,6 +4799,9 @@ type alias DeviceFileJournalEntry =
     , absolutePath : String
     , hasContent : Bool
     , synchronizedAt : String
+    , revision : Int
+    , syncId : String
+    , sourceFileState : Maybe (SourceFileState)
     , tags : List (AnalyticsTag)
     }
 
@@ -4799,6 +4814,9 @@ deviceFileJournalEntryEncoder struct =
         , ( "absolute_path", (Json.Encode.string) struct.absolutePath )
         , ( "has_content", (Json.Encode.bool) struct.hasContent )
         , ( "synchronized_at", (Json.Encode.string) struct.synchronizedAt )
+        , ( "revision", (Json.Encode.int) struct.revision )
+        , ( "sync_id", (Json.Encode.string) struct.syncId )
+        , ( "source_file_state", (Maybe.withDefault Json.Encode.null << Maybe.map (sourceFileStateEncoder)) struct.sourceFileState )
         , ( "tags", (Json.Encode.list (analyticsTagEncoder)) struct.tags )
         ]
 
@@ -4841,25 +4859,57 @@ journalDeviceFilesRspEncoder struct =
         ]
 
 
+type SourceFileStateKind
+    = Scanned
+    | Downloaded
+    | Changed
+
+
+sourceFileStateKindEncoder : SourceFileStateKind -> Json.Encode.Value
+sourceFileStateKindEncoder enum =
+    case enum of
+        Scanned ->
+            Json.Encode.string "scanned"
+        Downloaded ->
+            Json.Encode.string "downloaded"
+        Changed ->
+            Json.Encode.string "changed"
+
+type alias SourceFileState =
+    { state : SourceFileStateKind
+    , settledAt : String
+    , settledBy : String
+    }
+
+
+sourceFileStateEncoder : SourceFileState -> Json.Encode.Value
+sourceFileStateEncoder struct =
+    Json.Encode.object
+        [ ( "state", (sourceFileStateKindEncoder) struct.state )
+        , ( "settled_at", (Json.Encode.string) struct.settledAt )
+        , ( "settled_by", (Json.Encode.string) struct.settledBy )
+        ]
+
+
 type alias SyncDeviceFileItem =
-    { fileId : Maybe (String)
-    , absolutePath : String
+    { absolutePath : String
     , mimeType : Maybe (String)
     , extension : Maybe (String)
     , fileMetadataCreatedAt : Maybe (String)
     , fileMetadataModifiedAt : Maybe (String)
+    , sourceFileState : Maybe (SourceFileState)
     }
 
 
 syncDeviceFileItemEncoder : SyncDeviceFileItem -> Json.Encode.Value
 syncDeviceFileItemEncoder struct =
     Json.Encode.object
-        [ ( "file_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileId )
-        , ( "absolute_path", (Json.Encode.string) struct.absolutePath )
+        [ ( "absolute_path", (Json.Encode.string) struct.absolutePath )
         , ( "mime_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mimeType )
         , ( "extension", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.extension )
         , ( "file_metadata_created_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileMetadataCreatedAt )
         , ( "file_metadata_modified_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileMetadataModifiedAt )
+        , ( "source_file_state", (Maybe.withDefault Json.Encode.null << Maybe.map (sourceFileStateEncoder)) struct.sourceFileState )
         ]
 
 
@@ -4876,56 +4926,178 @@ fileSyncOperationEncoder enum =
         Updated ->
             Json.Encode.string "updated"
 
-type FileSyncErrorKind
+type FileSyncSessionMode
+    = Automatic
+    | Explicit
+
+
+fileSyncSessionModeEncoder : FileSyncSessionMode -> Json.Encode.Value
+fileSyncSessionModeEncoder enum =
+    case enum of
+        Automatic ->
+            Json.Encode.string "automatic"
+        Explicit ->
+            Json.Encode.string "explicit"
+
+type FileSyncSessionStatus
+    = SyncOpen
+    | Completed
+    | CompletedWithErrors
+    | Expired
+
+
+fileSyncSessionStatusEncoder : FileSyncSessionStatus -> Json.Encode.Value
+fileSyncSessionStatusEncoder enum =
+    case enum of
+        SyncOpen ->
+            Json.Encode.string "open"
+        Completed ->
+            Json.Encode.string "completed"
+        CompletedWithErrors ->
+            Json.Encode.string "completed_with_errors"
+        Expired ->
+            Json.Encode.string "expired"
+
+type FileSyncBatchStatus
+    = Processing
+    | Applied
+    | AppliedWithErrors
+
+
+fileSyncBatchStatusEncoder : FileSyncBatchStatus -> Json.Encode.Value
+fileSyncBatchStatusEncoder enum =
+    case enum of
+        Processing ->
+            Json.Encode.string "processing"
+        Applied ->
+            Json.Encode.string "applied"
+        AppliedWithErrors ->
+            Json.Encode.string "applied_with_errors"
+
+type FileSyncErrorCode
     = Validation
-    | NotFound
-    | Conflict
-    | Dependency
-    | Internal
+    | DuplicatePathInSession
 
 
-fileSyncErrorKindEncoder : FileSyncErrorKind -> Json.Encode.Value
-fileSyncErrorKindEncoder enum =
+fileSyncErrorCodeEncoder : FileSyncErrorCode -> Json.Encode.Value
+fileSyncErrorCodeEncoder enum =
     case enum of
         Validation ->
             Json.Encode.string "validation"
-        NotFound ->
-            Json.Encode.string "not_found"
-        Conflict ->
-            Json.Encode.string "conflict"
-        Dependency ->
-            Json.Encode.string "dependency"
-        Internal ->
-            Json.Encode.string "internal"
+        DuplicatePathInSession ->
+            Json.Encode.string "duplicate_path_in_session"
 
-type alias FileSyncError =
-    { kind : FileSyncErrorKind
+type alias FileSyncFieldError =
+    { path : String
     , message : String
-    , fieldErrors : List (( String, String ))
     }
 
 
-fileSyncErrorEncoder : FileSyncError -> Json.Encode.Value
-fileSyncErrorEncoder struct =
+fileSyncFieldErrorEncoder : FileSyncFieldError -> Json.Encode.Value
+fileSyncFieldErrorEncoder struct =
     Json.Encode.object
-        [ ( "kind", (fileSyncErrorKindEncoder) struct.kind )
+        [ ( "path", (Json.Encode.string) struct.path )
         , ( "message", (Json.Encode.string) struct.message )
-        , ( "field_errors", (Json.Encode.list (\( a, b) -> Json.Encode.list identity [ Json.Encode.string a, Json.Encode.string b ])) struct.fieldErrors )
+        ]
+
+
+type alias SyncCounts =
+    { received : Int
+    , accepted : Int
+    , created : Int
+    , updated : Int
+    , rejected : Int
+    }
+
+
+syncCountsEncoder : SyncCounts -> Json.Encode.Value
+syncCountsEncoder struct =
+    Json.Encode.object
+        [ ( "received", (Json.Encode.int) struct.received )
+        , ( "accepted", (Json.Encode.int) struct.accepted )
+        , ( "created", (Json.Encode.int) struct.created )
+        , ( "updated", (Json.Encode.int) struct.updated )
+        , ( "rejected", (Json.Encode.int) struct.rejected )
+        ]
+
+
+type alias SyncSummary =
+    { syncId : String
+    , deviceId : String
+    , mode : FileSyncSessionMode
+    , status : FileSyncSessionStatus
+    , nextBatchIndex : Int
+    , counts : SyncCounts
+    , createdAt : String
+    , updatedAt : String
+    , completedAt : Maybe (String)
+    , expiresAt : Maybe (String)
+    }
+
+
+syncSummaryEncoder : SyncSummary -> Json.Encode.Value
+syncSummaryEncoder struct =
+    Json.Encode.object
+        [ ( "sync_id", (Json.Encode.string) struct.syncId )
+        , ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "mode", (fileSyncSessionModeEncoder) struct.mode )
+        , ( "status", (fileSyncSessionStatusEncoder) struct.status )
+        , ( "next_batch_index", (Json.Encode.int) struct.nextBatchIndex )
+        , ( "counts", (syncCountsEncoder) struct.counts )
+        , ( "created_at", (Json.Encode.string) struct.createdAt )
+        , ( "updated_at", (Json.Encode.string) struct.updatedAt )
+        , ( "completed_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.completedAt )
+        , ( "expires_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.expiresAt )
+        ]
+
+
+type alias BatchSummary =
+    { syncId : String
+    , batchIndex : Int
+    , status : FileSyncBatchStatus
+    , counts : SyncCounts
+    , createdAt : String
+    , appliedAt : Maybe (String)
+    }
+
+
+batchSummaryEncoder : BatchSummary -> Json.Encode.Value
+batchSummaryEncoder struct =
+    Json.Encode.object
+        [ ( "sync_id", (Json.Encode.string) struct.syncId )
+        , ( "batch_index", (Json.Encode.int) struct.batchIndex )
+        , ( "status", (fileSyncBatchStatusEncoder) struct.status )
+        , ( "counts", (syncCountsEncoder) struct.counts )
+        , ( "created_at", (Json.Encode.string) struct.createdAt )
+        , ( "applied_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.appliedAt )
         ]
 
 
 type FileSyncResult
-    = Accepted { index : Int, operation : FileSyncOperation, root : DeviceFileRoot, file : DeviceFile }
-    | Rejected { index : Int, error : FileSyncError }
+    = Accepted { index : Int, operation : FileSyncOperation, fileId : String, revision : Int, file : DeviceFile }
+    | Rejected { index : Int, code : FileSyncErrorCode, message : String, fieldErrors : List (FileSyncFieldError) }
 
 
 fileSyncResultEncoder : FileSyncResult -> Json.Encode.Value
 fileSyncResultEncoder enum =
     case enum of
-        Accepted { index, operation, root, file } ->
-            Json.Encode.object [ ( "Accepted", Json.Encode.object [ ( "index", Json.Encode.int index ), ( "operation", fileSyncOperationEncoder operation ), ( "root", deviceFileRootEncoder root ), ( "file", deviceFileEncoder file ) ] ) ]
-        Rejected { index, error } ->
-            Json.Encode.object [ ( "Rejected", Json.Encode.object [ ( "index", Json.Encode.int index ), ( "error", fileSyncErrorEncoder error ) ] ) ]
+        Accepted { index, operation, fileId, revision, file } ->
+            Json.Encode.object [ ( "Accepted", Json.Encode.object [ ( "index", Json.Encode.int index ), ( "operation", fileSyncOperationEncoder operation ), ( "file_id", Json.Encode.string fileId ), ( "revision", Json.Encode.int revision ), ( "file", deviceFileEncoder file ) ] ) ]
+        Rejected { index, code, message, fieldErrors } ->
+            Json.Encode.object [ ( "Rejected", Json.Encode.object [ ( "index", Json.Encode.int index ), ( "code", fileSyncErrorCodeEncoder code ), ( "message", Json.Encode.string message ), ( "field_errors", Json.Encode.list (fileSyncFieldErrorEncoder) fieldErrors ) ] ) ]
+
+type FileSyncSessionItemResult
+    = SessionItemAccepted { batchIndex : Int, itemIndex : Int, operation : FileSyncOperation, fileId : String, revision : Int, file : DeviceFile }
+    | SessionItemRejected { batchIndex : Int, itemIndex : Int, code : FileSyncErrorCode, message : String, fieldErrors : List (FileSyncFieldError) }
+
+
+fileSyncSessionItemResultEncoder : FileSyncSessionItemResult -> Json.Encode.Value
+fileSyncSessionItemResultEncoder enum =
+    case enum of
+        SessionItemAccepted { batchIndex, itemIndex, operation, fileId, revision, file } ->
+            Json.Encode.object [ ( "status", Json.Encode.string "accepted" ), ( "batch_index", Json.Encode.int batchIndex ), ( "item_index", Json.Encode.int itemIndex ), ( "operation", fileSyncOperationEncoder operation ), ( "file_id", Json.Encode.string fileId ), ( "revision", Json.Encode.int revision ), ( "file", deviceFileEncoder file ) ]
+        SessionItemRejected { batchIndex, itemIndex, code, message, fieldErrors } ->
+            Json.Encode.object [ ( "status", Json.Encode.string "rejected" ), ( "batch_index", Json.Encode.int batchIndex ), ( "item_index", Json.Encode.int itemIndex ), ( "code", fileSyncErrorCodeEncoder code ), ( "message", Json.Encode.string message ), ( "field_errors", Json.Encode.list (fileSyncFieldErrorEncoder) fieldErrors ) ]
 
 type alias SyncDeviceFilesReq =
     { deviceId : String
@@ -4942,14 +5114,96 @@ syncDeviceFilesReqEncoder struct =
 
 
 type alias SyncDeviceFilesRsp =
-    { results : List (FileSyncResult)
+    { sync : SyncSummary
+    , results : List (FileSyncResult)
     }
 
 
 syncDeviceFilesRspEncoder : SyncDeviceFilesRsp -> Json.Encode.Value
 syncDeviceFilesRspEncoder struct =
     Json.Encode.object
-        [ ( "results", (Json.Encode.list (fileSyncResultEncoder)) struct.results )
+        [ ( "sync", (syncSummaryEncoder) struct.sync )
+        , ( "results", (Json.Encode.list (fileSyncResultEncoder)) struct.results )
+        ]
+
+
+type alias StartFileSyncSessionReq =
+    { deviceId : String
+    }
+
+
+startFileSyncSessionReqEncoder : StartFileSyncSessionReq -> Json.Encode.Value
+startFileSyncSessionReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        ]
+
+
+type alias FileSyncSessionRsp =
+    { sync : SyncSummary
+    }
+
+
+fileSyncSessionRspEncoder : FileSyncSessionRsp -> Json.Encode.Value
+fileSyncSessionRspEncoder struct =
+    Json.Encode.object
+        [ ( "sync", (syncSummaryEncoder) struct.sync )
+        ]
+
+
+type alias ApplyFileSyncBatchReq =
+    { files : List (SyncDeviceFileItem)
+    }
+
+
+applyFileSyncBatchReqEncoder : ApplyFileSyncBatchReq -> Json.Encode.Value
+applyFileSyncBatchReqEncoder struct =
+    Json.Encode.object
+        [ ( "files", (Json.Encode.list (syncDeviceFileItemEncoder)) struct.files )
+        ]
+
+
+type alias ApplyFileSyncBatchRsp =
+    { sync : SyncSummary
+    , batch : BatchSummary
+    , results : List (FileSyncResult)
+    }
+
+
+applyFileSyncBatchRspEncoder : ApplyFileSyncBatchRsp -> Json.Encode.Value
+applyFileSyncBatchRspEncoder struct =
+    Json.Encode.object
+        [ ( "sync", (syncSummaryEncoder) struct.sync )
+        , ( "batch", (batchSummaryEncoder) struct.batch )
+        , ( "results", (Json.Encode.list (fileSyncResultEncoder)) struct.results )
+        ]
+
+
+type alias CompleteFileSyncSessionReq =
+    { expectedBatchCount : Int
+    }
+
+
+completeFileSyncSessionReqEncoder : CompleteFileSyncSessionReq -> Json.Encode.Value
+completeFileSyncSessionReqEncoder struct =
+    Json.Encode.object
+        [ ( "expected_batch_count", (Json.Encode.int) struct.expectedBatchCount )
+        ]
+
+
+type alias FileSyncSessionItemsRsp =
+    { sync : SyncSummary
+    , results : List (FileSyncSessionItemResult)
+    , nextCursor : Maybe (String)
+    }
+
+
+fileSyncSessionItemsRspEncoder : FileSyncSessionItemsRsp -> Json.Encode.Value
+fileSyncSessionItemsRspEncoder struct =
+    Json.Encode.object
+        [ ( "sync", (syncSummaryEncoder) struct.sync )
+        , ( "results", (Json.Encode.list (fileSyncSessionItemResultEncoder)) struct.results )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
         ]
 
 
@@ -15497,6 +15751,9 @@ deviceFileTreeEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_metadata_modified_at" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_file_state" (Json.Decode.nullable (sourceFileStateDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (analyticsTagDecoder))))
 
 
@@ -15517,6 +15774,9 @@ deviceFileDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_metadata_modified_at" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_file_state" (Json.Decode.nullable (sourceFileStateDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (analyticsTagDecoder))))
 
 
@@ -15586,6 +15846,9 @@ deviceFileJournalEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_content" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "synchronized_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_file_state" (Json.Decode.nullable (sourceFileStateDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (analyticsTagDecoder))))
 
 
@@ -15608,15 +15871,55 @@ journalDeviceFilesRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
 
 
+sourceFileStateKindDecoder : Json.Decode.Decoder SourceFileStateKind
+sourceFileStateKindDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "scanned" ->
+                            Json.Decode.succeed Scanned
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "downloaded" ->
+                            Json.Decode.succeed Downloaded
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "changed" ->
+                            Json.Decode.succeed Changed
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+sourceFileStateDecoder : Json.Decode.Decoder SourceFileState
+sourceFileStateDecoder =
+    Json.Decode.succeed SourceFileState
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (sourceFileStateKindDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settled_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settled_by" (Json.Decode.string)))
+
+
 syncDeviceFileItemDecoder : Json.Decode.Decoder SyncDeviceFileItem
 syncDeviceFileItemDecoder =
     Json.Decode.succeed SyncDeviceFileItem
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mime_type" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extension" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_metadata_created_at" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_metadata_modified_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_file_state" (Json.Decode.nullable (sourceFileStateDecoder))))
 
 
 fileSyncOperationDecoder : Json.Decode.Decoder FileSyncOperation
@@ -15642,8 +15945,104 @@ fileSyncOperationDecoder =
                 )
         ]
 
-fileSyncErrorKindDecoder : Json.Decode.Decoder FileSyncErrorKind
-fileSyncErrorKindDecoder =
+fileSyncSessionModeDecoder : Json.Decode.Decoder FileSyncSessionMode
+fileSyncSessionModeDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "automatic" ->
+                            Json.Decode.succeed Automatic
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "explicit" ->
+                            Json.Decode.succeed Explicit
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+fileSyncSessionStatusDecoder : Json.Decode.Decoder FileSyncSessionStatus
+fileSyncSessionStatusDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "open" ->
+                            Json.Decode.succeed SyncOpen
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "completed" ->
+                            Json.Decode.succeed Completed
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "completed_with_errors" ->
+                            Json.Decode.succeed CompletedWithErrors
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "expired" ->
+                            Json.Decode.succeed Expired
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+fileSyncBatchStatusDecoder : Json.Decode.Decoder FileSyncBatchStatus
+fileSyncBatchStatusDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "processing" ->
+                            Json.Decode.succeed Processing
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "applied" ->
+                            Json.Decode.succeed Applied
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "applied_with_errors" ->
+                            Json.Decode.succeed AppliedWithErrors
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+fileSyncErrorCodeDecoder : Json.Decode.Decoder FileSyncErrorCode
+fileSyncErrorCodeDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen
@@ -15658,60 +16057,88 @@ fileSyncErrorKindDecoder =
             |> Json.Decode.andThen
                 (\x ->
                     case x of
-                        "not_found" ->
-                            Json.Decode.succeed NotFound
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "conflict" ->
-                            Json.Decode.succeed Conflict
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "dependency" ->
-                            Json.Decode.succeed Dependency
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "internal" ->
-                            Json.Decode.succeed Internal
+                        "duplicate_path_in_session" ->
+                            Json.Decode.succeed DuplicatePathInSession
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
         ]
 
-fileSyncErrorDecoder : Json.Decode.Decoder FileSyncError
-fileSyncErrorDecoder =
-    Json.Decode.succeed FileSyncError
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (fileSyncErrorKindDecoder)))
+fileSyncFieldErrorDecoder : Json.Decode.Decoder FileSyncFieldError
+fileSyncFieldErrorDecoder =
+    Json.Decode.succeed FileSyncFieldError
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "path" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "field_errors" (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string))))))
+
+
+syncCountsDecoder : Json.Decode.Decoder SyncCounts
+syncCountsDecoder =
+    Json.Decode.succeed SyncCounts
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "received" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "accepted" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rejected" (Json.Decode.int)))
+
+
+syncSummaryDecoder : Json.Decode.Decoder SyncSummary
+syncSummaryDecoder =
+    Json.Decode.succeed SyncSummary
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mode" (fileSyncSessionModeDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (fileSyncSessionStatusDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_batch_index" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "counts" (syncCountsDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completed_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expires_at" (Json.Decode.nullable (Json.Decode.string))))
+
+
+batchSummaryDecoder : Json.Decode.Decoder BatchSummary
+batchSummaryDecoder =
+    Json.Decode.succeed BatchSummary
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "batch_index" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (fileSyncBatchStatusDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "counts" (syncCountsDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "applied_at" (Json.Decode.nullable (Json.Decode.string))))
 
 
 fileSyncResultDecoder : Json.Decode.Decoder FileSyncResult
 fileSyncResultDecoder =
         let
-            elmRsConstructAccepted index operation root file =
-                        Accepted { index = index, operation = operation, root = root, file = file }
-            elmRsConstructRejected index error =
-                        Rejected { index = index, error = error }
+            elmRsConstructAccepted index operation fileId revision file =
+                        Accepted { index = index, operation = operation, fileId = fileId, revision = revision, file = file }
+            elmRsConstructRejected index code message fieldErrors =
+                        Rejected { index = index, code = code, message = message, fieldErrors = fieldErrors }
         in
     Json.Decode.oneOf
-        [ Json.Decode.field "Accepted" (Json.Decode.succeed elmRsConstructAccepted |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "index" (Json.Decode.int))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation" (fileSyncOperationDecoder))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "root" (deviceFileRootDecoder))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file" (deviceFileDecoder))))
-        , Json.Decode.field "Rejected" (Json.Decode.succeed elmRsConstructRejected |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "index" (Json.Decode.int))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error" (fileSyncErrorDecoder))))
+        [ Json.Decode.field "Accepted" (Json.Decode.succeed elmRsConstructAccepted |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "index" (Json.Decode.int))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation" (fileSyncOperationDecoder))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file" (deviceFileDecoder))))
+        , Json.Decode.field "Rejected" (Json.Decode.succeed elmRsConstructRejected |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "index" (Json.Decode.int))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "code" (fileSyncErrorCodeDecoder))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "field_errors" (Json.Decode.list (fileSyncFieldErrorDecoder)))))
         ]
+
+fileSyncSessionItemResultDecoder : Json.Decode.Decoder FileSyncSessionItemResult
+fileSyncSessionItemResultDecoder =
+        let
+            elmRsConstructSessionItemAccepted batchIndex itemIndex operation fileId revision file =
+                        SessionItemAccepted { batchIndex = batchIndex, itemIndex = itemIndex, operation = operation, fileId = fileId, revision = revision, file = file }
+            elmRsConstructSessionItemRejected batchIndex itemIndex code message fieldErrors =
+                        SessionItemRejected { batchIndex = batchIndex, itemIndex = itemIndex, code = code, message = message, fieldErrors = fieldErrors }
+        in
+    Json.Decode.field "status" Json.Decode.string
+        |> Json.Decode.andThen
+            (\tag ->
+                case tag of
+                    "accepted" ->
+                        Json.Decode.succeed elmRsConstructSessionItemAccepted |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "batch_index" (Json.Decode.int))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "item_index" (Json.Decode.int))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operation" (fileSyncOperationDecoder))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file" (deviceFileDecoder)))
+                    "rejected" ->
+                        Json.Decode.succeed elmRsConstructSessionItemRejected |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "batch_index" (Json.Decode.int))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "item_index" (Json.Decode.int))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "code" (fileSyncErrorCodeDecoder))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "field_errors" (Json.Decode.list (fileSyncFieldErrorDecoder))))
+                    unexpected ->
+                        Json.Decode.fail <| "Unexpected variant " ++ unexpected
+            )
 
 syncDeviceFilesReqDecoder : Json.Decode.Decoder SyncDeviceFilesReq
 syncDeviceFilesReqDecoder =
@@ -15723,7 +16150,48 @@ syncDeviceFilesReqDecoder =
 syncDeviceFilesRspDecoder : Json.Decode.Decoder SyncDeviceFilesRsp
 syncDeviceFilesRspDecoder =
     Json.Decode.succeed SyncDeviceFilesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync" (syncSummaryDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "results" (Json.Decode.list (fileSyncResultDecoder))))
+
+
+startFileSyncSessionReqDecoder : Json.Decode.Decoder StartFileSyncSessionReq
+startFileSyncSessionReqDecoder =
+    Json.Decode.succeed StartFileSyncSessionReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+
+
+fileSyncSessionRspDecoder : Json.Decode.Decoder FileSyncSessionRsp
+fileSyncSessionRspDecoder =
+    Json.Decode.succeed FileSyncSessionRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync" (syncSummaryDecoder)))
+
+
+applyFileSyncBatchReqDecoder : Json.Decode.Decoder ApplyFileSyncBatchReq
+applyFileSyncBatchReqDecoder =
+    Json.Decode.succeed ApplyFileSyncBatchReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "files" (Json.Decode.list (syncDeviceFileItemDecoder))))
+
+
+applyFileSyncBatchRspDecoder : Json.Decode.Decoder ApplyFileSyncBatchRsp
+applyFileSyncBatchRspDecoder =
+    Json.Decode.succeed ApplyFileSyncBatchRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync" (syncSummaryDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "batch" (batchSummaryDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "results" (Json.Decode.list (fileSyncResultDecoder))))
+
+
+completeFileSyncSessionReqDecoder : Json.Decode.Decoder CompleteFileSyncSessionReq
+completeFileSyncSessionReqDecoder =
+    Json.Decode.succeed CompleteFileSyncSessionReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expected_batch_count" (Json.Decode.int)))
+
+
+fileSyncSessionItemsRspDecoder : Json.Decode.Decoder FileSyncSessionItemsRsp
+fileSyncSessionItemsRspDecoder =
+    Json.Decode.succeed FileSyncSessionItemsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync" (syncSummaryDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "results" (Json.Decode.list (fileSyncSessionItemResultDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
 
 
 ruleFieldDecoder : Json.Decode.Decoder RuleField

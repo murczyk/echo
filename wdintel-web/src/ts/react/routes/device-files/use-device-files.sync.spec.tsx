@@ -5,7 +5,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { DeviceFile, DeviceFileRoot, SyncDeviceFilesRsp } from '../../../../Bindings';
+import type { DeviceFile, SyncDeviceFilesRsp } from '../../../../Bindings';
 import { useDeviceFilesSync } from './use-device-files.sync';
 import { HttpRequestError } from '../../services/api/client';
 
@@ -15,19 +15,8 @@ vi.mock('../../services/api/devices', () => apiMock);
 const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
 const ROOT_ID = '018f0000-0000-7000-8000-000000000001';
 const FILE_ID = '018f0000-0000-7000-8000-000000000002';
+const SYNC_ID = '018f0000-0000-7000-8000-000000000003';
 const NOW = '2026-07-24T08:00:00Z';
-
-function buildRoot(): DeviceFileRoot {
-  return {
-    entryId: ROOT_ID,
-    deviceId: DEVICE_ID,
-    parentEntryId: null,
-    kind: 'directory',
-    name: 'C:\\',
-    createdAt: NOW,
-    updatedAt: NOW,
-  };
-}
 
 function buildFile(absolutePath: string): DeviceFile {
   return {
@@ -45,6 +34,10 @@ function buildFile(absolutePath: string): DeviceFile {
     fileMetadataModifiedAt: null,
     createdAt: NOW,
     updatedAt: NOW,
+    revision: 1,
+    syncId: SYNC_ID,
+    sourceFileState: null,
+    tags: [],
   };
 }
 
@@ -53,9 +46,36 @@ function accepted(index: number, absolutePath: string): SyncDeviceFilesRsp['resu
     Accepted: {
       index,
       operation: 'created',
-      root: buildRoot(),
+      fileId: FILE_ID,
+      revision: 1,
       file: buildFile(absolutePath),
     },
+  };
+}
+
+function syncResponse(results: SyncDeviceFilesRsp['results']): SyncDeviceFilesRsp {
+  const acceptedCount = results.filter((result) => 'Accepted' in result).length;
+  const rejectedCount = results.length - acceptedCount;
+  return {
+    sync: {
+      syncId: SYNC_ID,
+      deviceId: DEVICE_ID,
+      mode: 'automatic',
+      status: rejectedCount === 0 ? 'completed' : 'completed_with_errors',
+      nextBatchIndex: 1,
+      counts: {
+        received: results.length,
+        accepted: acceptedCount,
+        created: acceptedCount,
+        updated: 0,
+        rejected: rejectedCount,
+      },
+      createdAt: NOW,
+      updatedAt: NOW,
+      completedAt: NOW,
+      expiresAt: null,
+    },
+    results,
   };
 }
 
@@ -103,22 +123,20 @@ afterEach(() => {
 describe('useDeviceFilesSync', () => {
   it('freezes submit indices and resubmits only rejected rows', async () => {
     apiMock.syncDeviceFiles
-      .mockResolvedValueOnce({
-        results: [
+      .mockResolvedValueOnce(
+        syncResponse([
           accepted(0, 'C:\\accepted.log'),
           {
             Rejected: {
               index: 1,
-              error: {
-                kind: 'validation',
-                message: 'invalid path',
-                fieldErrors: [['files[1].absolute_path', 'invalid path']],
-              },
+              code: 'validation',
+              message: 'invalid path',
+              fieldErrors: [{ path: 'files[1].absolute_path', message: 'invalid path' }],
             },
           },
-        ],
-      })
-      .mockResolvedValueOnce({ results: [accepted(0, 'C:\\corrected.log')] });
+        ]),
+      )
+      .mockResolvedValueOnce(syncResponse([accepted(0, 'C:\\corrected.log')]));
     await renderHarness();
 
     act(() => latest?.openSync());
@@ -143,6 +161,7 @@ describe('useDeviceFilesSync', () => {
     expect(latest!.rows[1].result?.kind).toBe('rejected');
     expect(latest!.rows[1].fieldErrors.absolutePath).toBe('invalid path');
     expect(onCommitted).toHaveBeenCalledTimes(1);
+    expect(latest!.syncSummary?.counts).toMatchObject({ accepted: 1, rejected: 1 });
 
     act(() => latest?.changeRowField(secondRowId, 'absolutePath', 'C:\\corrected.log'));
     await act(async () => {
@@ -160,7 +179,7 @@ describe('useDeviceFilesSync', () => {
   it('submits the exact Windows path without a path-syntax selector', async () => {
     const absolutePath =
       'D:\\Counter-Strike Source v34 HD\\cstrike\\sound\\weapons\\csgo\\c4\\c4_disarm.wav';
-    apiMock.syncDeviceFiles.mockResolvedValue({ results: [] });
+    apiMock.syncDeviceFiles.mockResolvedValue(syncResponse([]));
     await renderHarness();
     act(() => latest?.openSync());
     const rowId = latest!.rows[0].localId;
@@ -202,7 +221,7 @@ describe('useDeviceFilesSync', () => {
     expect(latest!.rows).toHaveLength(1);
     expect(latest!.rows[0].absolutePath).toBe('C:\\stable.log');
 
-    pending.resolve({ results: [accepted(0, 'C:\\stable.log')] });
+    pending.resolve(syncResponse([accepted(0, 'C:\\stable.log')]));
     await act(async () => {
       await firstSubmit;
     });

@@ -1,9 +1,6 @@
 use super::{
     error::{FilesystemError, FilesystemFieldError},
-    types::{
-        DomainFileEntryKind, FileSearchFilters, RawFileSearchFilters,
-        SyncFileItemCommand,
-    },
+    types::{DomainFileEntryKind, FileSearchFilters, RawFileSearchFilters},
 };
 use crate::config::{
     DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES, DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS,
@@ -121,23 +118,6 @@ pub(super) fn validate_subtree_count_directories(
     }
 
     Ok(())
-}
-
-pub(super) fn duplicate_file_ids(
-    files: &[SyncFileItemCommand],
-) -> HashSet<Uuid> {
-    let mut seen = HashSet::new();
-    let mut duplicates = HashSet::new();
-
-    for file in files {
-        if let Some(file_id) = file.file_id {
-            if !seen.insert(file_id) {
-                duplicates.insert(file_id);
-            }
-        }
-    }
-
-    duplicates
 }
 
 fn validation_error(field_path: &str, message: String) -> FilesystemError {

@@ -193,19 +193,6 @@ where
         .transpose()
 }
 
-pub(super) fn deserialize_optional_canonical_uuid<'de, D>(
-    deserializer: D,
-) -> Result<RequiredPatch<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Option::<String>::deserialize(deserializer)?
-        .map(validate_canonical_uuid)
-        .transpose()?
-        .map(RequiredPatch::Value)
-        .ok_or_else(|| D::Error::custom("field cannot be null"))
-}
-
 pub(super) fn deserialize_optional_datetime<'de, D>(
     deserializer: D,
 ) -> Result<Option<String>, D::Error>
