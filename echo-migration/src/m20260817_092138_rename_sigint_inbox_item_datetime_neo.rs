@@ -57,6 +57,7 @@ alter table sigint_inbox_item
                 r#"
 lock table sigint_inbox_item in access exclusive mode;
 
+-- datetime_old is generated from date and time, so synchronize its inputs.
 update sigint_inbox_item
 set
     date = case
@@ -74,6 +75,18 @@ set
         )
     end
 where datetime is distinct from datetime_old;
+
+do $$
+begin
+    if exists (
+        select 1
+        from sigint_inbox_item
+        where datetime is distinct from datetime_old
+    ) then
+        raise exception 'cannot restore the legacy sigint_inbox_item datetime column without losing timestamps';
+    end if;
+end
+$$;
 
 alter table sigint_inbox_item
     rename column datetime to datetime_neo;
