@@ -80,7 +80,7 @@ describe('MessageCardIntelligenceReports', () => {
     await wait(750);
   }
 
-  it('shows authorized parent and report details on hover', async () => {
+  it('shows authorized parent and report previews on hover', async () => {
     await renderSummaries();
     const linkedMessages = container?.querySelectorAll('article');
     const parentMessage = linkedMessages?.item(0) ?? null;
@@ -95,23 +95,36 @@ describe('MessageCardIntelligenceReports', () => {
     expect(document.querySelector('[role="tooltip"]')).toBeNull();
 
     await wait(250);
-    const parentTooltip = document.querySelector('[role="tooltip"]');
-    expect(parentTooltip?.textContent).toContain('Повний текст оригінального повідомлення');
-    expect(parentTooltip?.textContent).toContain('Група оригіналу');
-    expect(parentTooltip?.textContent).toContain('2026-08-15 09:10');
-    expect(parentTooltip?.textContent).toContain('Вкладення:1');
+    const parentPreview = document.querySelector('[role="tooltip"]');
+    expect(parentPreview?.textContent).toContain('Оригінальне повідомлення');
+    expect(parentPreview?.textContent).toContain('Повний текст оригінального повідомлення');
+    expect(parentPreview?.textContent).toContain('Група оригіналу');
+    expect(parentPreview?.textContent).toContain('2026-08-15 09:10');
+    expect(parentPreview?.textContent).toContain('Вкладення1');
+
+    await act(async () => {
+      parentMessage?.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
+    });
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
 
     await act(async () => {
       parentMessage?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
     });
     await hover(reportMessage);
-    const reportTooltip = document
-      .querySelector('[data-testid="message-summary-tooltip-91"]')
+    const reportPreview = document
+      .querySelector('[data-testid="message-summary-preview-91"]')
       ?.closest('[role="tooltip"]');
-    expect(reportTooltip?.textContent).toContain('Повний текст розвіддонесення');
-    expect(reportTooltip?.textContent).toContain('Група донесення');
-    expect(reportTooltip?.textContent).toContain('2026-08-15 09:30');
-    expect(reportTooltip?.textContent).toContain('Вкладення:2');
+    expect(reportPreview?.textContent).toContain('Розвіддонесення');
+    expect(reportPreview?.textContent).toContain('Повний текст розвіддонесення');
+    expect(reportPreview?.textContent).toContain('Група донесення');
+    expect(reportPreview?.textContent).toContain('2026-08-15 09:30');
+    expect(reportPreview?.textContent).toContain('Вкладення2');
+
+    await act(async () => {
+      reportMessage?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+      reportMessage?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    });
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
   });
 
   it('keeps inaccessible relationship blocks without exposing details or editing', async () => {
