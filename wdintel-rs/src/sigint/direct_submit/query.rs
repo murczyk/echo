@@ -93,8 +93,11 @@ where
     let parent_ids = find_intel_prod_parent_ids(dbx, signal_message_id)
         .await
         .c(h!())?;
-    let has_parent_access = signal_message_group::Entity::find()
-        .filter(signal_message_group::Column::SignalMessageId.is_in(parent_ids))
+    let has_parent_group_access = signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId
+                .is_in(parent_ids.clone()),
+        )
         .filter(
             signal_message_group::Column::GroupMasterKey
                 .is_in(allowed_groups.to_vec()),
@@ -103,7 +106,22 @@ where
         .await
         .c(h!())?
         .is_some();
-    if has_parent_access {
+    let has_parent_datasource_access = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .filter(signal_message::Column::Id.is_in(parent_ids))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .is_in(allowed_groups.to_vec()),
+        )
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if has_parent_group_access || has_parent_datasource_access {
         Ok(message)
     } else {
         Err(AppError::NotFound)
