@@ -60,7 +60,7 @@ const FINALIZE_BATCH_COUNTS_SQL: &str = r#"
             where outcome is null
         )::bigint as pending_count
     from file_sync_item
-    where sync_id = $1
+    where id = $1
       and batch_index = $2
 "#;
 
@@ -71,9 +71,9 @@ const LOAD_REVISIONS_SQL: &str = r#"
         requested_revision bigint
     )
     join file_metadata_revision as revision
-      on revision.file_id = requested.file_id
+      on revision.id = requested.file_id
      and revision.revision = requested.requested_revision
-    order by revision.file_id, revision.revision
+    order by revision.id, revision.revision
 "#;
 
 #[derive(FromQueryResult)]
@@ -341,7 +341,7 @@ pub(super) async fn complete(
         ));
     }
     let processing = file_sync_batch::Entity::find()
-        .filter(file_sync_batch::Column::SyncId.eq(sync_id))
+        .filter(file_sync_batch::Column::Id.eq(sync_id))
         .filter(file_sync_batch::Column::Status.eq(DbBatchStatus::Processing))
         .one(&transaction)
         .await
@@ -435,7 +435,7 @@ async fn process_pending_items(
     batch_index: i32,
 ) -> Result<(), SyncServiceError> {
     let pending = file_sync_item::Entity::find()
-        .filter(file_sync_item::Column::SyncId.eq(sync_id))
+        .filter(file_sync_item::Column::Id.eq(sync_id))
         .filter(file_sync_item::Column::BatchIndex.eq(batch_index))
         .filter(file_sync_item::Column::Outcome.is_null())
         .order_by_asc(file_sync_item::Column::ItemIndex)
@@ -456,7 +456,7 @@ async fn insert_session<C: ConnectionTrait>(
     now: chrono::DateTime<chrono::FixedOffset>,
 ) -> Result<(), SyncServiceError> {
     file_sync_session::ActiveModel {
-        sync_id: Set(sync_id),
+        id: Set(sync_id),
         device_id: Set(device_id),
         mode: Set(mode),
         status: Set(DbSessionStatus::Open),
@@ -485,7 +485,7 @@ async fn insert_batch_and_items(
     now: chrono::DateTime<chrono::FixedOffset>,
 ) -> Result<file_sync_batch::Model, SyncServiceError> {
     let batch = file_sync_batch::ActiveModel {
-        sync_id: Set(sync_id),
+        id: Set(sync_id),
         batch_index: Set(batch_index),
         status: Set(DbBatchStatus::Processing),
         received_count: Set(0),
@@ -569,7 +569,7 @@ async fn finalize_batch(
         FinalizeBatchCounts::find_by_statement(Statement::from_sql_and_values(
             DbBackend::Postgres,
             FINALIZE_BATCH_COUNTS_SQL,
-            [batch.sync_id.into(), batch.batch_index.into()],
+            [batch.id.into(), batch.batch_index.into()],
         ))
         .one(transaction)
         .await
@@ -602,7 +602,7 @@ async fn finalize_automatic_session(
     sync_id: Uuid,
     batch: &file_sync_batch::Model,
 ) -> Result<file_sync_session::Model, SyncServiceError> {
-    if batch.sync_id != sync_id || batch.batch_index != 0 {
+    if batch.id != sync_id || batch.batch_index != 0 {
         return Err(FilesystemError::Invariant(
             "automatic_sync_batch_mismatch",
         )
@@ -636,7 +636,7 @@ async fn load_results<C: ConnectionTrait>(
     boundary: Option<ResultCursor>,
 ) -> Result<Vec<RawResult>, SyncServiceError> {
     let mut query = file_sync_item::Entity::find()
-        .filter(file_sync_item::Column::SyncId.eq(sync_id))
+        .filter(file_sync_item::Column::Id.eq(sync_id))
         .filter(file_sync_item::Column::Outcome.is_not_null());
     if let Some(batch_index) = batch_index {
         query =
@@ -728,7 +728,7 @@ async fn hydrate_results(
     };
     let revisions = revisions
         .into_iter()
-        .map(|revision| ((revision.file_id, revision.revision), revision))
+        .map(|revision| ((revision.id, revision.revision), revision))
         .collect::<BTreeMap<_, _>>();
     let mut tags =
         hydrate_active_tags(file_db, &file_ids)
@@ -891,7 +891,7 @@ fn file_from_revision(
         }
     };
     Ok(FileEntry {
-        file_id: revision.file_id,
+        file_id: revision.id,
         device_id: revision.device_id,
         parent_entry_id,
         name: revision.name.clone(),
@@ -977,7 +977,7 @@ fn ensure_open_explicit(
 
 fn map_session(session: file_sync_session::Model) -> SyncSummary {
     SyncSummary {
-        sync_id: session.sync_id.hyphenated().to_string(),
+        sync_id: session.id.hyphenated().to_string(),
         device_id: session.device_id.hyphenated().to_string(),
         mode: match session.mode {
             DbSessionMode::Automatic => FileSyncSessionMode::Automatic,
@@ -1008,7 +1008,7 @@ fn map_session(session: file_sync_session::Model) -> SyncSummary {
 
 fn map_batch(batch: file_sync_batch::Model) -> BatchSummary {
     BatchSummary {
-        sync_id: batch.sync_id.hyphenated().to_string(),
+        sync_id: batch.id.hyphenated().to_string(),
         batch_index: batch.batch_index as u64,
         status: match batch.status {
             DbBatchStatus::Processing => FileSyncBatchStatus::Processing,

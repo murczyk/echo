@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 #[sea_orm(table_name = "file_sync_session")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub sync_id: Uuid,
+    pub id: Uuid,
     pub device_id: Uuid,
     pub mode: FileSyncSessionMode,
     pub status: FileSyncSessionStatus,

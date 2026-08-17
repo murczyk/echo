@@ -451,7 +451,7 @@ async fn explicit_sync_recovers_persisted_batches_and_completes_idempotently() {
         .is_none());
     assert_eq!(
         file_metadata_revision::Entity::find()
-            .filter(file_metadata_revision::Column::FileId.eq(first_file_id))
+            .filter(file_metadata_revision::Column::Id.eq(first_file_id))
             .count(file_db)
             .await
             .unwrap(),

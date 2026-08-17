@@ -663,7 +663,7 @@ async fn pending_analysis_waits_for_explicit_file_sync_completion() {
     let now = Utc::now().fixed_offset();
     let sync_id = Uuid::now_v7();
     file_sync_session::ActiveModel {
-        sync_id: Set(sync_id),
+        id: Set(sync_id),
         device_id: Set(device_id),
         mode: Set(FileSyncSessionMode::Explicit),
         status: Set(FileSyncSessionStatus::Open),

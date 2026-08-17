@@ -123,7 +123,7 @@ async fn batched_sync_migration_resets_inventory_and_preserves_analytics() {
             .unwrap();
         let connection = file_registry_db.connection();
         let pre_batched_sync_migration_count =
-            wdfiles_migration::Migrator::migrations().len() as u32 - 1;
+            wdfiles_migration::Migrator::migrations().len() as u32 - 2;
         wdfiles_migration::Migrator::up(
             connection,
             Some(pre_batched_sync_migration_count),
@@ -511,6 +511,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260808_134905_analytics_tag_test_expectation".to_string(),
             "m20260810_120000_seed_default_analytics_tags".to_string(),
             "m20260813_120128_batched_file_metadata_sync".to_string(),
+            "m20260815_152642_rename_file_sync_primary_key_columns".to_string(),
         ]
     );
 }
@@ -717,7 +718,7 @@ order by table_name
         connection,
         "file_sync_session",
         &[
-            ("sync_id", "NO", "uuid", "uuid"),
+            ("id", "NO", "uuid", "uuid"),
             ("device_id", "NO", "uuid", "uuid"),
             ("mode", "NO", "USER-DEFINED", "file_sync_session_mode"),
             ("status", "NO", "USER-DEFINED", "file_sync_session_status"),
@@ -758,7 +759,7 @@ order by table_name
         connection,
         "file_sync_batch",
         &[
-            ("sync_id", "NO", "uuid", "uuid"),
+            ("id", "NO", "uuid", "uuid"),
             ("batch_index", "NO", "integer", "int4"),
             ("status", "NO", "USER-DEFINED", "file_sync_batch_status"),
             ("received_count", "NO", "bigint", "int8"),
@@ -785,7 +786,7 @@ order by table_name
         connection,
         "file_metadata_revision",
         &[
-            ("file_id", "NO", "uuid", "uuid"),
+            ("id", "NO", "uuid", "uuid"),
             ("revision", "NO", "bigint", "int8"),
             ("device_id", "NO", "uuid", "uuid"),
             ("sync_id", "NO", "uuid", "uuid"),
@@ -831,7 +832,7 @@ order by table_name
         connection,
         "file_sync_item",
         &[
-            ("sync_id", "NO", "uuid", "uuid"),
+            ("id", "NO", "uuid", "uuid"),
             ("batch_index", "NO", "integer", "int4"),
             ("item_index", "NO", "integer", "int4"),
             ("outcome", "YES", "USER-DEFINED", "file_sync_item_outcome"),
@@ -1509,7 +1510,7 @@ async fn insert_sync_session(
 ) {
     let created_at = created_at.and_utc().fixed_offset();
     file_sync_session::ActiveModel {
-        sync_id: Set(sync_id),
+        id: Set(sync_id),
         device_id: Set(device_id),
         mode: Set(FileSyncSessionMode::Automatic),
         status: Set(FileSyncSessionStatus::Open),
@@ -1540,7 +1541,7 @@ async fn insert_file_revision(
 ) {
     let created_at_tz = created_at.and_utc().fixed_offset();
     file_metadata_revision::ActiveModel {
-        file_id: Set(file_id),
+        id: Set(file_id),
         revision: Set(1),
         device_id: Set(device_id),
         sync_id: Set(sync_id),

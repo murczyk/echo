@@ -159,7 +159,7 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
     ),
     inserted_revisions as (
         insert into file_metadata_revision (
-            file_id,
+            id,
             revision,
             device_id,
             sync_id,
@@ -190,7 +190,7 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             result.source_file_state_settled_by,
             result.updated_at at time zone 'UTC'
         from mutation_results as result
-        returning file_id, revision
+        returning id, revision
     ),
     enqueued_analysis as (
         insert into file_analysis_state (
@@ -240,11 +240,11 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             revision = result.revision,
             root_id = result.root_id
         from mutation_results as result
-        where item.sync_id = result.sync_id
+        where item.id = result.sync_id
           and item.batch_index = result.batch_index
           and item.item_index = result.item_index
           and item.outcome is null
-        returning item.sync_id
+        returning item.id
     ),
     rejected_input as materialized (
         select *
@@ -261,11 +261,11 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             error_message =
                 'the normalized path already has an accepted result in this session'
         from rejected_input as rejected
-        where item.sync_id = rejected.sync_id
+        where item.id = rejected.sync_id
           and item.batch_index = rejected.batch_index
           and item.item_index = rejected.item_index
           and item.outcome is null
-        returning item.sync_id
+        returning item.id
     )
     select
         (select count(*) from accepted_input) as expected_mutated_count,
@@ -326,11 +326,11 @@ pub(super) async fn apply_sync_items(
     let Some(first) = items.first() else {
         return Ok(());
     };
-    let sync_id = first.sync_id;
+    let sync_id = first.id;
     let batch_index = first.batch_index;
     if items
         .iter()
-        .any(|item| item.sync_id != sync_id || item.batch_index != batch_index)
+        .any(|item| item.id != sync_id || item.batch_index != batch_index)
     {
         return Err(FilesystemError::Invariant("sync_item_batch_mismatch"));
     }
@@ -346,7 +346,7 @@ pub(super) async fn apply_sync_items(
     let accepted_paths = file_sync_item::Entity::find()
         .select_only()
         .column(file_sync_item::Column::AbsolutePath)
-        .filter(file_sync_item::Column::SyncId.eq(sync_id))
+        .filter(file_sync_item::Column::Id.eq(sync_id))
         .filter(
             file_sync_item::Column::AbsolutePath.is_in(absolute_paths.clone()),
         )
@@ -369,7 +369,7 @@ pub(super) async fn apply_sync_items(
         }
         if !accepted_paths.insert(item.absolute_path.clone()) {
             rejected_items.push(RejectedMutation {
-                sync_id: item.sync_id,
+                sync_id: item.id,
                 batch_index: item.batch_index,
                 item_index: item.item_index,
             });
@@ -501,7 +501,7 @@ fn mutation_from_item(
 
     Ok(PreparedFileMutation::new(
         device_id,
-        item.sync_id,
+        item.id,
         source_path,
         metadata,
         source_file_state,
@@ -562,7 +562,7 @@ fn prepare_accepted_mutation(
     let source_file_state = source_state_columns(&mutation.source_file_state);
 
     Ok(AcceptedMutation {
-        sync_id: item.sync_id,
+        sync_id: item.id,
         batch_index: item.batch_index,
         item_index: item.item_index,
         candidate_file_id: mutation.candidate_file_id,

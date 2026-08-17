@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 #[sea_orm(table_name = "file_sync_batch")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub sync_id: Uuid,
+    pub id: Uuid,
     #[sea_orm(primary_key, auto_increment = false)]
     pub batch_index: i32,
     pub status: FileSyncBatchStatus,
@@ -29,8 +29,8 @@ pub enum Relation {
     FileSyncItem,
     #[sea_orm(
         belongs_to = "super::file_sync_session::Entity",
-        from = "Column::SyncId",
-        to = "super::file_sync_session::Column::SyncId",
+        from = "Column::Id",
+        to = "super::file_sync_session::Column::Id",
         on_update = "NoAction",
         on_delete = "Restrict"
     )]

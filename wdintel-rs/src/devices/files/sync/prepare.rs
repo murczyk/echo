@@ -42,7 +42,7 @@ pub(super) fn prepare_items(
             let rejected = !item.field_errors.is_empty();
             let source_file_state = item.source_file_state.as_ref();
             Ok(file_sync_item::ActiveModel {
-                sync_id: Set(sync_id),
+                id: Set(sync_id),
                 batch_index: Set(batch_index),
                 item_index: Set(item_index),
                 outcome: Set(rejected.then_some(FileSyncItemOutcome::Rejected)),

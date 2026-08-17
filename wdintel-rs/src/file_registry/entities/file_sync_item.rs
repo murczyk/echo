@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 #[sea_orm(table_name = "file_sync_item")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub sync_id: Uuid,
+    pub id: Uuid,
     #[sea_orm(primary_key, auto_increment = false)]
     pub batch_index: i32,
     #[sea_orm(primary_key, auto_increment = false)]
@@ -54,15 +54,15 @@ pub enum Relation {
     #[sea_orm(
         belongs_to = "super::file_metadata_revision::Entity",
         from = "(Column::FileId, Column::Revision)",
-        to = "(super::file_metadata_revision::Column::FileId, super::file_metadata_revision::Column::Revision)",
+        to = "(super::file_metadata_revision::Column::Id, super::file_metadata_revision::Column::Revision)",
         on_update = "NoAction",
         on_delete = "Restrict"
     )]
     FileMetadataRevision,
     #[sea_orm(
         belongs_to = "super::file_sync_batch::Entity",
-        from = "(Column::SyncId, Column::BatchIndex)",
-        to = "(super::file_sync_batch::Column::SyncId, super::file_sync_batch::Column::BatchIndex)",
+        from = "(Column::Id, Column::BatchIndex)",
+        to = "(super::file_sync_batch::Column::Id, super::file_sync_batch::Column::BatchIndex)",
         on_update = "NoAction",
         on_delete = "Restrict"
     )]

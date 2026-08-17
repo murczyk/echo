@@ -28,7 +28,7 @@ pub(crate) async fn insert_entry(
     let device_id = *entry.device_id.as_ref();
     let now = Utc::now().fixed_offset();
     file_sync_session::ActiveModel {
-        sync_id: Set(sync_id),
+        id: Set(sync_id),
         device_id: Set(device_id),
         mode: Set(FileSyncSessionMode::Automatic),
         status: Set(FileSyncSessionStatus::Completed),
@@ -54,7 +54,7 @@ pub(crate) async fn insert_entry(
     entry.source_file_state_settled_by = Set(None);
     let file = entry.insert(&transaction).await.unwrap();
     file_metadata_revision::ActiveModel {
-        file_id: Set(file.id),
+        id: Set(file.id),
         revision: Set(1),
         device_id: Set(file.device_id),
         sync_id: Set(sync_id),

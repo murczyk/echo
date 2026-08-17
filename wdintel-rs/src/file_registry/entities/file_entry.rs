@@ -66,7 +66,7 @@ pub enum Relation {
     #[sea_orm(
         belongs_to = "super::file_metadata_revision::Entity",
         from = "(Column::Id, Column::Revision)",
-        to = "(super::file_metadata_revision::Column::FileId, super::file_metadata_revision::Column::Revision)",
+        to = "(super::file_metadata_revision::Column::Id, super::file_metadata_revision::Column::Revision)",
         on_update = "NoAction",
         on_delete = "Restrict"
     )]
@@ -76,7 +76,7 @@ pub enum Relation {
     #[sea_orm(
         belongs_to = "super::file_sync_session::Entity",
         from = "Column::SyncId",
-        to = "super::file_sync_session::Column::SyncId",
+        to = "super::file_sync_session::Column::Id",
         on_update = "NoAction",
         on_delete = "Restrict"
     )]
