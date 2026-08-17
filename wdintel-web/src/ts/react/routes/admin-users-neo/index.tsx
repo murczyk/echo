@@ -60,6 +60,7 @@ import { listOrganisms } from '../../services/api/organisms';
 import { listSigintZones } from '../../services/api/zones';
 import { PowerAlert } from '../../components/PowerAlert';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
+import { UserUuidValue } from './UserUuidValue';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -478,9 +479,7 @@ function useUsersColumns(): AppMrtColumnDef<Login>[] {
               },
             }}
           >
-            <Box component="span" sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-              {formatUuidShort(row.original.id)}
-            </Box>
+            <UserUuidValue uuid={row.original.id} shortValue={formatUuidShort(row.original.id)} />
             <CopyUuidButton uuid={row.original.id} className="uuid-copy-button" />
           </Box>
         )),

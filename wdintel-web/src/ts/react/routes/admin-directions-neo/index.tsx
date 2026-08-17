@@ -85,6 +85,8 @@ import { listLogins } from '../../services/api/logins';
 import { editGroup } from '../../services/api/messenger';
 import { listOrganisms } from '../../services/api/organisms';
 import { currentSystemSettings } from '../../services/api/system-settings';
+import { ZoneGroupCell } from './ZoneGroupCell';
+import { buildAccessItems, type ZoneGroupAccessItem } from './zone-group-access';
 import {
   addZoneDatasourceGroup,
   archiveSignalGroup,
@@ -520,21 +522,6 @@ function buildAccessLabel(
   if (organismLabels.length > 0) parts.push(`Організми: ${organismLabels.join(', ')}`);
 
   return parts.length > 0 ? parts.join('; ') : 'без обмежень';
-}
-
-function buildAccessItems(
-  users: string[] | null | undefined,
-  userDetails: SignalGroupLogin[] | null | undefined,
-  organismIds: number[] | null | undefined,
-  organismById: OrganismById,
-  loginById: Map<string, Login>,
-) {
-  const detailsById = new Map((userDetails ?? []).map((detail) => [detail.loginId, detail]));
-  const userLabels = (users ?? []).map(
-    (id) => detailsById.get(id)?.login ?? loginById.get(id)?.login ?? id,
-  );
-  const organismLabels = (organismIds ?? []).map((id) => getOrganismLabel(id, organismById));
-  return [...userLabels, ...organismLabels];
 }
 
 function formatZoneGroupLoginIds(
@@ -1146,19 +1133,16 @@ function ZoneGroupsTable(props: {
           row?.group?.groupMasterKey
             ? getGroupName(row.group.groupMasterKey, null, props.groupInfos)
             : NO_DATA_LABEL,
-        meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
         Cell: mrtCustomCell(({ row }) => {
           if (isLoading || !row.original?.group?.groupMasterKey)
             return <span>{NO_DATA_LABEL}</span>;
           const groupName = getGroupName(row.original.group.groupMasterKey, null, props.groupInfos);
           return (
-            <MrtOverflowText
-              displayValue={groupName}
-              fullValue={groupName}
-              interactive
-              component={ButtonBase}
-              componentProps={{ onClick: () => props.onView(row.original.group.groupMasterKey) }}
-              sx={{ color: 'inherit', textAlign: 'left' }}
+            <ZoneGroupCell
+              name={groupName}
+              isSecret={row.original.group.isGroupSecret}
+              onView={() => props.onView(row.original.group.groupMasterKey)}
             />
           );
         }),
@@ -1261,7 +1245,7 @@ function ZoneGroupsTable(props: {
             props.loginById,
           ),
         meta: { overflowMode: 'items' },
-        Cell: mrtItemsCell<ZoneGroupRow, string>({
+        Cell: mrtItemsCell<ZoneGroupRow, ZoneGroupAccessItem>({
           items: ({ row }) => {
             const items = buildAccessItems(
               row.original?.group?.allowedUsers,
@@ -1270,11 +1254,12 @@ function ZoneGroupsTable(props: {
               props.organismById,
               props.loginById,
             );
-            return items.length > 0 ? items : ['без обмежень'];
+            return items;
           },
-          renderItem: (label) => <PowerChip label={label} size="small" interactive={false} />,
-          getItemKey: (label) => label,
-          getItemText: (label) => label,
+          renderItem: (item) => <PowerChip label={item.label} size="small" interactive={false} />,
+          getItemKey: (item) => `${item.kind}:${item.id}`,
+          getItemText: (item) => item.label,
+          emptyValue: 'без обмежень',
         }),
         size: 220,
       },
