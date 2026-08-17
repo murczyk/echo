@@ -7,7 +7,10 @@ use super::super::{
 use super::hierarchy::{
     resolve_new_file_hierarchies, root_entry_id, ResolvedNewFileHierarchy,
 };
-use crate::file_registry::entities::{file_entry, file_sync_item};
+use crate::file_registry::entities::{
+    file_entry, file_sync_item,
+    sea_orm_active_enums::FileSyncItemOutcome as DbItemOutcome,
+};
 use crate::h;
 use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
 use sea_orm::sea_query::{Expr, SimpleExpr};
@@ -19,6 +22,8 @@ use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
+// SeaORM cannot express a data-modifying CTE whose returned rows feed the
+// revision, analysis, and sync-item writes. Keep that atomic set-based boundary.
 const APPLY_SYNC_ITEMS_SQL: &str = r#"
     with accepted_input as materialized (
         select *
@@ -282,6 +287,13 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
         (select count(*) from rejected_items) as rejected_count
 "#;
 
+fn accepted_item_outcome_expr() -> SimpleExpr {
+    Expr::col(file_sync_item::Column::Outcome).is_in([
+        SimpleExpr::Constant(DbItemOutcome::Created.to_value().into()),
+        SimpleExpr::Constant(DbItemOutcome::Updated.to_value().into()),
+    ])
+}
+
 #[derive(Serialize)]
 struct AcceptedMutation {
     sync_id: Uuid,
@@ -350,9 +362,7 @@ pub(super) async fn apply_sync_items(
         .filter(
             file_sync_item::Column::AbsolutePath.is_in(absolute_paths.clone()),
         )
-        .filter(Expr::cust(
-            "file_sync_item.outcome in ('created', 'updated')",
-        ))
+        .filter(accepted_item_outcome_expr())
         .into_tuple::<String>()
         .all(transaction)
         .await

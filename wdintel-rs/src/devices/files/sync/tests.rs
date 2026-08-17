@@ -628,6 +628,14 @@ async fn expiry_is_terminal_idempotent_and_allows_a_new_session() {
     let started = start_explicit(&env.dbx, file_registry, &actor, device_id)
         .await
         .unwrap();
+    let created_at =
+        chrono::DateTime::parse_from_rfc3339(&started.response.sync.created_at)
+            .unwrap();
+    let expires_at = chrono::DateTime::parse_from_rfc3339(
+        started.response.sync.expires_at.as_deref().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(expires_at - created_at, Duration::hours(3));
     let sync_id = Uuid::parse_str(&started.response.sync.sync_id).unwrap();
     let mut session = file_sync_session::Entity::find_by_id(sync_id)
         .one(file_registry.connection())

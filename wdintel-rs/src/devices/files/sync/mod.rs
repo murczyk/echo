@@ -4,7 +4,7 @@ mod prepare;
 mod repository;
 pub(crate) mod worker;
 
-const DEVICE_FILE_SYNC_SESSION_TTL_SECS: i64 = 86_400;
+const DEVICE_FILE_SYNC_SESSION_TTL_SECS: i64 = 3 * 60 * 60;
 const DEVICE_FILE_SYNC_SESSION_EXPIRY_BATCH_SIZE: u64 = 100;
 const DEVICE_FILE_SYNC_SESSION_EXPIRY_POLL_SECS: u64 = 60;
 

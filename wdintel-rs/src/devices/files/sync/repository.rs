@@ -25,11 +25,12 @@ use crate::file_registry::entities::{
 use crate::h;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{Duration, Utc};
+use sea_orm::sea_query::{Expr, Func, SimpleExpr};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, DatabaseTransaction, DbBackend, EntityTrait, ExprTrait,
+    DatabaseConnection, DatabaseTransaction, EntityTrait, ExprTrait,
     FromQueryResult, IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
-    Statement, TransactionTrait,
+    TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -41,41 +42,6 @@ const TERMINAL_SESSION_CODE: &str = "terminal_session";
 const COMPLETE_MISMATCH_CODE: &str = "complete_mismatch";
 const BATCH_PROCESSING_CODE: &str = "batch_processing";
 
-const FINALIZE_BATCH_COUNTS_SQL: &str = r#"
-    select
-        count(*)::bigint as received_count,
-        count(*) filter (
-            where outcome in ('created', 'updated')
-        )::bigint as accepted_count,
-        count(*) filter (
-            where outcome = 'created'
-        )::bigint as created_count,
-        count(*) filter (
-            where outcome = 'updated'
-        )::bigint as updated_count,
-        count(*) filter (
-            where outcome = 'rejected'
-        )::bigint as rejected_count,
-        count(*) filter (
-            where outcome is null
-        )::bigint as pending_count
-    from file_sync_item
-    where id = $1
-      and batch_index = $2
-"#;
-
-const LOAD_REVISIONS_SQL: &str = r#"
-    select revision.*
-    from jsonb_to_recordset($1::jsonb) as requested(
-        file_id uuid,
-        requested_revision bigint
-    )
-    join file_metadata_revision as revision
-      on revision.id = requested.file_id
-     and revision.revision = requested.requested_revision
-    order by revision.id, revision.revision
-"#;
-
 #[derive(FromQueryResult)]
 struct FinalizeBatchCounts {
     received_count: i64,
@@ -86,10 +52,14 @@ struct FinalizeBatchCounts {
     pending_count: i64,
 }
 
-#[derive(Serialize)]
-struct RevisionKey {
-    file_id: Uuid,
-    requested_revision: i64,
+fn item_count_expr() -> SimpleExpr {
+    Func::count(Expr::col(file_sync_item::Column::ItemIndex)).into()
+}
+
+fn conditional_count_expr(condition: SimpleExpr) -> SimpleExpr {
+    let count: SimpleExpr =
+        Func::sum(Expr::case(condition, 1_i32).finally(0_i32)).into();
+    Func::coalesce([count, Expr::val(0_i64)]).into()
 }
 
 #[derive(Debug)]
@@ -565,12 +535,41 @@ async fn finalize_batch(
             FilesystemError::Invariant("sync_batch_not_processing").into()
         );
     }
-    let counts =
-        FinalizeBatchCounts::find_by_statement(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            FINALIZE_BATCH_COUNTS_SQL,
-            [batch.id.into(), batch.batch_index.into()],
-        ))
+    let counts = file_sync_item::Entity::find()
+        .select_only()
+        .column_as(item_count_expr(), "received_count")
+        .column_as(
+            conditional_count_expr(
+                file_sync_item::Column::Outcome
+                    .is_in([DbItemOutcome::Created, DbItemOutcome::Updated]),
+            ),
+            "accepted_count",
+        )
+        .column_as(
+            conditional_count_expr(
+                file_sync_item::Column::Outcome.eq(DbItemOutcome::Created),
+            ),
+            "created_count",
+        )
+        .column_as(
+            conditional_count_expr(
+                file_sync_item::Column::Outcome.eq(DbItemOutcome::Updated),
+            ),
+            "updated_count",
+        )
+        .column_as(
+            conditional_count_expr(
+                file_sync_item::Column::Outcome.eq(DbItemOutcome::Rejected),
+            ),
+            "rejected_count",
+        )
+        .column_as(
+            conditional_count_expr(file_sync_item::Column::Outcome.is_null()),
+            "pending_count",
+        )
+        .filter(file_sync_item::Column::Id.eq(batch.id))
+        .filter(file_sync_item::Column::BatchIndex.eq(batch.batch_index))
+        .into_model::<FinalizeBatchCounts>()
         .one(transaction)
         .await
         .map_err(map_database)?
@@ -694,37 +693,26 @@ async fn hydrate_results(
         .collect::<BTreeMap<_, _>>();
     let mut revision_keys = results
         .iter()
-        .filter_map(|result| {
-            result.0.file_id.zip(result.0.revision).map(
-                |(file_id, requested_revision)| RevisionKey {
-                    file_id,
-                    requested_revision,
-                },
-            )
-        })
+        .filter_map(|result| result.0.file_id.zip(result.0.revision))
         .collect::<Vec<_>>();
-    revision_keys
-        .sort_unstable_by_key(|key| (key.file_id, key.requested_revision));
-    revision_keys.dedup_by_key(|key| (key.file_id, key.requested_revision));
+    revision_keys.sort_unstable();
+    revision_keys.dedup();
     let revisions = if revision_keys.is_empty() {
         Vec::new()
     } else {
-        let payload =
-            serde_json::to_string(&revision_keys).map_err(|error| {
-                SyncServiceError::Filesystem(FilesystemError::Internal(
-                    anyhow::Error::new(error).context(h!()),
-                ))
-            })?;
-        file_metadata_revision::Model::find_by_statement(
-            Statement::from_sql_and_values(
-                DbBackend::Postgres,
-                LOAD_REVISIONS_SQL,
-                [payload.into()],
-            ),
-        )
-        .all(file_db)
-        .await
-        .map_err(map_database)?
+        file_metadata_revision::Entity::find()
+            .filter(
+                Expr::tuple([
+                    Expr::col(file_metadata_revision::Column::Id),
+                    Expr::col(file_metadata_revision::Column::Revision),
+                ])
+                .in_tuples(revision_keys),
+            )
+            .order_by_asc(file_metadata_revision::Column::Id)
+            .order_by_asc(file_metadata_revision::Column::Revision)
+            .all(file_db)
+            .await
+            .map_err(map_database)?
     };
     let revisions = revisions
         .into_iter()

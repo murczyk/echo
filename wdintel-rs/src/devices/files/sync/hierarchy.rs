@@ -2,195 +2,19 @@ use super::super::{
     ltree::{child_hierarchy_path, hierarchy_entry_ids, root_hierarchy_path},
     map_transaction_body_error,
     query::{map_directory_model, map_root_model},
-    FilesystemError, PreparedFileMutation,
+    DomainFileEntryKind, FilesystemError, PreparedFileMutation,
 };
 use crate::file_registry::entities::file_entry;
 use crate::h;
 use chrono::NaiveDateTime;
+use sea_orm::sea_query::{Expr, OnConflict, SimpleExpr};
 use sea_orm::{
-    ConnectionTrait, DatabaseTransaction, DbBackend, FromQueryResult, Statement,
+    ActiveEnum, ActiveValue::Set, ColumnTrait, DatabaseTransaction,
+    EntityTrait, ExprTrait, QueryFilter, QueryOrder, QuerySelect,
 };
-use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
-const INSERT_ROOTS_SQL: &str = r#"
-    insert into file_entry (
-        id,
-        device_id,
-        parent_id,
-        kind,
-        name,
-        absolute_path,
-        hierarchy_path,
-        mime_type,
-        extension,
-        file_metadata_created_at,
-        file_metadata_modified_at,
-        created_at,
-        updated_at,
-        content_path,
-        revision,
-        sync_id,
-        source_file_state,
-        source_file_state_settled_at,
-        source_file_state_settled_by
-    )
-    select
-        input.candidate_id,
-        input.device_id,
-        null,
-        'directory'::public.file_entry_kind,
-        input.name,
-        null,
-        input.hierarchy_path::public.ltree,
-        null,
-        null,
-        null,
-        null,
-        $2::timestamp without time zone,
-        $2::timestamp without time zone,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null
-    from jsonb_to_recordset($1::jsonb) as input(
-        candidate_id uuid,
-        device_id uuid,
-        name text,
-        hierarchy_path text
-    )
-    on conflict (device_id, name)
-        where parent_id is null
-    do nothing
-"#;
-
-const SELECT_ROOTS_SQL: &str = r#"
-    select
-        entry.id,
-        entry.device_id,
-        entry.parent_id,
-        entry.kind,
-        entry.name,
-        entry.absolute_path,
-        entry.hierarchy_path::text as hierarchy_path,
-        entry.mime_type,
-        entry.extension,
-        entry.file_metadata_created_at,
-        entry.file_metadata_modified_at,
-        entry.created_at,
-        entry.updated_at,
-        entry.content_path,
-        entry.revision,
-        entry.sync_id,
-        entry.source_file_state,
-        entry.source_file_state_settled_at,
-        entry.source_file_state_settled_by
-    from jsonb_to_recordset($1::jsonb) as input(
-        device_id uuid,
-        name text
-    )
-    join file_entry as entry
-      on entry.device_id = input.device_id
-     and entry.parent_id is null
-     and entry.kind = 'directory'::public.file_entry_kind
-     and entry.name = input.name
-    order by entry.id
-    for update of entry
-"#;
-
-const INSERT_DIRECTORIES_SQL: &str = r#"
-    insert into file_entry (
-        id,
-        device_id,
-        parent_id,
-        kind,
-        name,
-        absolute_path,
-        hierarchy_path,
-        mime_type,
-        extension,
-        file_metadata_created_at,
-        file_metadata_modified_at,
-        created_at,
-        updated_at,
-        content_path,
-        revision,
-        sync_id,
-        source_file_state,
-        source_file_state_settled_at,
-        source_file_state_settled_by
-    )
-    select
-        input.candidate_id,
-        input.device_id,
-        input.parent_id,
-        'directory'::public.file_entry_kind,
-        input.name,
-        null,
-        input.hierarchy_path::public.ltree,
-        null,
-        null,
-        null,
-        null,
-        $2::timestamp without time zone,
-        $2::timestamp without time zone,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null
-    from jsonb_to_recordset($1::jsonb) as input(
-        candidate_id uuid,
-        device_id uuid,
-        parent_id uuid,
-        name text,
-        hierarchy_path text
-    )
-    on conflict (device_id, parent_id, name)
-        where kind = 'directory'::public.file_entry_kind
-          and parent_id is not null
-    do nothing
-"#;
-
-const SELECT_DIRECTORIES_SQL: &str = r#"
-    select
-        entry.id,
-        entry.device_id,
-        entry.parent_id,
-        entry.kind,
-        entry.name,
-        entry.absolute_path,
-        entry.hierarchy_path::text as hierarchy_path,
-        entry.mime_type,
-        entry.extension,
-        entry.file_metadata_created_at,
-        entry.file_metadata_modified_at,
-        entry.created_at,
-        entry.updated_at,
-        entry.content_path,
-        entry.revision,
-        entry.sync_id,
-        entry.source_file_state,
-        entry.source_file_state_settled_at,
-        entry.source_file_state_settled_by
-    from jsonb_to_recordset($1::jsonb) as input(
-        device_id uuid,
-        parent_id uuid,
-        name text
-    )
-    join file_entry as entry
-      on entry.device_id = input.device_id
-     and entry.parent_id = input.parent_id
-     and entry.kind = 'directory'::public.file_entry_kind
-     and entry.name = input.name
-    order by entry.id
-"#;
-
-#[derive(Serialize)]
 struct RootInput {
     candidate_id: Uuid,
     device_id: Uuid,
@@ -198,7 +22,6 @@ struct RootInput {
     hierarchy_path: String,
 }
 
-#[derive(Serialize)]
 struct DirectoryInput {
     candidate_id: Uuid,
     device_id: Uuid,
@@ -236,7 +59,8 @@ pub(super) async fn resolve_new_file_hierarchies(
             ));
         }
         let directory_depth = directory_depth(mutation)?;
-        max_directory_depth = max_directory_depth.max(directory_depth);
+        max_directory_depth =
+            std::cmp::max(max_directory_depth, directory_depth);
     }
 
     let roots = resolve_roots(transaction, mutations, now).await?;
@@ -309,22 +133,41 @@ async fn resolve_roots(
             ),
         });
     }
-    let payload = serialize_inputs(&inputs.values().collect::<Vec<_>>())?;
-
-    transaction
-        .execute_raw(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            INSERT_ROOTS_SQL,
-            [payload.clone().into(), now.into()],
-        ))
-        .await
-        .map_err(map_database)?;
-    let rows =
-        file_entry::Model::find_by_statement(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            SELECT_ROOTS_SQL,
-            [payload.into()],
-        ))
+    file_entry::Entity::insert_many(inputs.values().map(|input| {
+        directory_active_model(
+            input.candidate_id,
+            input.device_id,
+            None,
+            &input.name,
+            &input.hierarchy_path,
+            now,
+        )
+    }))
+    .on_conflict(
+        OnConflict::columns([
+            file_entry::Column::DeviceId,
+            file_entry::Column::Name,
+        ])
+        .target_and_where(file_entry::Column::ParentId.is_null())
+        .do_nothing()
+        .to_owned(),
+    )
+    .exec_without_returning(transaction)
+    .await
+    .map_err(map_database)?;
+    let root_keys = inputs.keys().cloned().collect::<Vec<_>>();
+    let rows = file_entry::Entity::find()
+        .filter(file_entry::Column::ParentId.is_null())
+        .filter(directory_kind_expr())
+        .filter(
+            Expr::tuple([
+                Expr::col(file_entry::Column::DeviceId),
+                Expr::col(file_entry::Column::Name),
+            ])
+            .in_tuples(root_keys),
+        )
+        .order_by_asc(file_entry::Column::Id)
+        .lock_exclusive()
         .all(transaction)
         .await
         .map_err(map_database)?;
@@ -382,22 +225,45 @@ async fn resolve_directory_depth(
     if inputs.is_empty() {
         return Ok(HashMap::new());
     }
-    let payload = serialize_inputs(&inputs.values().collect::<Vec<_>>())?;
-
-    transaction
-        .execute_raw(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            INSERT_DIRECTORIES_SQL,
-            [payload.clone().into(), now.into()],
-        ))
-        .await
-        .map_err(map_database)?;
-    let rows =
-        file_entry::Model::find_by_statement(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            SELECT_DIRECTORIES_SQL,
-            [payload.into()],
-        ))
+    file_entry::Entity::insert_many(inputs.values().map(|input| {
+        directory_active_model(
+            input.candidate_id,
+            input.device_id,
+            Some(input.parent_id),
+            &input.name,
+            &input.hierarchy_path,
+            now,
+        )
+    }))
+    .on_conflict(
+        OnConflict::columns([
+            file_entry::Column::DeviceId,
+            file_entry::Column::ParentId,
+            file_entry::Column::Name,
+        ])
+        .target_and_where(
+            directory_kind_expr()
+                .and(file_entry::Column::ParentId.is_not_null()),
+        )
+        .do_nothing()
+        .to_owned(),
+    )
+    .exec_without_returning(transaction)
+    .await
+    .map_err(map_database)?;
+    let directory_keys = inputs.keys().cloned().collect::<Vec<_>>();
+    let rows = file_entry::Entity::find()
+        .filter(file_entry::Column::ParentId.is_not_null())
+        .filter(directory_kind_expr())
+        .filter(
+            Expr::tuple([
+                Expr::col(file_entry::Column::DeviceId),
+                Expr::col(file_entry::Column::ParentId),
+                Expr::col(file_entry::Column::Name),
+            ])
+            .in_tuples(directory_keys),
+        )
+        .order_by_asc(file_entry::Column::Id)
         .all(transaction)
         .await
         .map_err(map_database)?;
@@ -430,6 +296,43 @@ async fn resolve_directory_depth(
     Ok(directories)
 }
 
+fn directory_active_model(
+    id: Uuid,
+    device_id: Uuid,
+    parent_id: Option<Uuid>,
+    name: &str,
+    hierarchy_path: &str,
+    now: NaiveDateTime,
+) -> file_entry::ActiveModel {
+    file_entry::ActiveModel {
+        id: Set(id),
+        device_id: Set(device_id),
+        parent_id: Set(parent_id),
+        kind: Set(DomainFileEntryKind::Directory),
+        name: Set(name.to_owned()),
+        absolute_path: Set(None),
+        hierarchy_path: Set(hierarchy_path.to_owned()),
+        mime_type: Set(None),
+        extension: Set(None),
+        file_metadata_created_at: Set(None),
+        file_metadata_modified_at: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+        content_path: Set(None),
+        revision: Set(None),
+        sync_id: Set(None),
+        source_file_state: Set(None),
+        source_file_state_settled_at: Set(None),
+        source_file_state_settled_by: Set(None),
+    }
+}
+
+fn directory_kind_expr() -> SimpleExpr {
+    Expr::col(file_entry::Column::Kind).eq(SimpleExpr::Constant(
+        DomainFileEntryKind::Directory.to_value().into(),
+    ))
+}
+
 fn directory_depth(
     mutation: &PreparedFileMutation,
 ) -> Result<usize, FilesystemError> {
@@ -443,14 +346,6 @@ fn directory_depth(
         ));
     }
     Ok(directory_depth)
-}
-
-fn serialize_inputs<T: Serialize + ?Sized>(
-    inputs: &T,
-) -> Result<String, FilesystemError> {
-    serde_json::to_string(inputs).map_err(|error| {
-        map_transaction_body_error(anyhow::Error::new(error).context(h!()))
-    })
 }
 
 fn map_database(error: sea_orm::DbErr) -> FilesystemError {
