@@ -252,6 +252,23 @@ pub struct ListUnitDuplicatesRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct InconsistentUnit {
+    pub sigint_unit_id: i64,
+    pub name: String,
+    pub reasons: Vec<String>,
+    pub problematic_echelons: Vec<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListInconsistentUnitsRsp {
+    pub units: Vec<InconsistentUnit>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct CreateUnitReq {
     #[serde(default)]
     pub other: String,

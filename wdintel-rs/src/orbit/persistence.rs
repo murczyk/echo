@@ -11,11 +11,13 @@ use crate::orbit::types::SourceUnit;
 use crate::types::ShortContext;
 use chrono::{Duration, NaiveDateTime};
 use sea_orm::sea_query::Expr;
+#[cfg(test)]
+use sea_orm::DatabaseConnection;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
-    ConnectionTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
-    JoinType, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
-    TransactionSession, TransactionTrait,
+    ConnectionTrait, EntityTrait, IntoActiveModel, JoinType, QueryFilter,
+    QueryOrder, QuerySelect, RelationTrait, TransactionSession,
+    TransactionTrait,
 };
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -580,7 +582,8 @@ pub async fn replace_sigint_unit_links(
         &transaction,
         sigint_unit_ids_by_orbit_unit,
     )
-    .await?;
+    .await
+    .c(h!())?;
     transaction.commit().await.c(h!())?;
     Ok(())
 }
@@ -620,7 +623,9 @@ where
             .await
             .c(h!())?;
     }
-    super::reconcile_sigint_unit_deduplicate_candidates(db).await?;
+    super::reconcile_sigint_unit_deduplicate_candidates(db)
+        .await
+        .c(h!())?;
     Ok(())
 }
 
@@ -636,7 +641,8 @@ pub async fn replace_automatic_sigint_unit_links(
         sigint_unit_id,
         orbit_unit_ids,
     )
-    .await?;
+    .await
+    .c(h!())?;
     transaction.commit().await.c(h!())?;
     Ok(())
 }
@@ -784,6 +790,7 @@ fn automatic_sigint_unit_links(
         .collect()
 }
 
+#[cfg(test)]
 pub async fn replace_sigint_unit_link(
     db: &DatabaseConnection,
     sigint_unit_id: i64,
@@ -836,12 +843,32 @@ where
     Ok(())
 }
 
+#[cfg(test)]
 pub async fn delete_sigint_unit_link(
     db: &DatabaseConnection,
     sigint_unit_id: i64,
     orbit_unit_id: Uuid,
 ) -> Result<bool, AppError> {
     let transaction = db.begin().await.c(h!())?;
+    let deleted = delete_sigint_unit_link_in_transaction(
+        &transaction,
+        sigint_unit_id,
+        orbit_unit_id,
+    )
+    .await
+    .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(deleted)
+}
+
+pub(super) async fn delete_sigint_unit_link_in_transaction<C>(
+    db: &C,
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
     let rows_affected = orbit_unit_sigint_unit::Entity::update_many()
         .col_expr(orbit_unit_sigint_unit::Column::IsManual, Expr::value(false))
         .col_expr(
@@ -851,15 +878,15 @@ pub async fn delete_sigint_unit_link(
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
         .filter(orbit_unit_sigint_unit::Column::OrbitUnitId.eq(orbit_unit_id))
         .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
-        .exec(&transaction)
+        .exec(db)
         .await
         .c(h!())?
         .rows_affected;
     if rows_affected > 0 {
-        super::reconcile_sigint_unit_deduplicate_candidates(&transaction)
-            .await?;
+        super::reconcile_sigint_unit_deduplicate_candidates(db)
+            .await
+            .c(h!())?;
     }
-    transaction.commit().await.c(h!())?;
     Ok(rows_affected > 0)
 }
 

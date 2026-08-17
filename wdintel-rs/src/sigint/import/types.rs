@@ -100,6 +100,7 @@ mod tests {
             orbit_note: None,
             army_region: "ЗС РФ".to_string(),
             military_district: "Західний ВО".to_string(),
+            is_inconsistent: false,
         };
         let etalon = EtalonData {
             area_of_responsibility: vec![],

@@ -65,6 +65,7 @@ impl Drop for OrbitTerminal {
 pub enum StartAction {
     Import,
     FindMatch,
+    ReconcileSigintUnits,
     Reimport,
 }
 
@@ -153,8 +154,24 @@ pub fn confirm_reimport() -> Result<bool, AppError> {
     Ok(is_reimport_confirmed(result?.as_deref()))
 }
 
+pub fn confirm_sigint_unit_reconciliation() -> Result<bool, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_text_prompt(
+        &mut terminal,
+        "Type RECONCILE to fill hierarchies and merge exact duplicates (Esc: cancel)",
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    Ok(is_sigint_unit_reconciliation_confirmed(
+        result.c(h!())?.as_deref(),
+    ))
+}
+
 fn is_reimport_confirmed(input: Option<&str>) -> bool {
     input == Some("REIMPORT")
+}
+
+fn is_sigint_unit_reconciliation_confirmed(input: Option<&str>) -> bool {
+    input == Some("RECONCILE")
 }
 
 pub fn setup_terminal() -> io::Result<OrbitTerminal> {
@@ -277,6 +294,7 @@ fn run_start_menu(
     let actions = [
         StartAction::Import,
         StartAction::FindMatch,
+        StartAction::ReconcileSigintUnits,
         StartAction::Reimport,
     ];
     let mut selected = 0;
@@ -445,10 +463,11 @@ fn run_unchanged_archive_confirmation(
 }
 
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
-    let area = centered_area(frame, 70, 7);
+    let area = centered_area(frame, 70, 8);
     let options = [
         "Sync ORBIT units and rebuild SIGINT links",
         "Search an ORBIT unit by SIGINT unit name",
+        "Reconcile linked SIGINT units and merge exact duplicates",
         "Erase and reimport all ORBIT data",
     ];
     let items = options.into_iter().map(ListItem::new);
@@ -665,5 +684,12 @@ mod tests {
         assert!(is_reimport_confirmed(Some("REIMPORT")));
         assert!(!is_reimport_confirmed(Some("reimport")));
         assert!(!is_reimport_confirmed(None));
+    }
+
+    #[test]
+    fn sigint_unit_reconciliation_requires_exact_confirmation_text() {
+        assert!(is_sigint_unit_reconciliation_confirmed(Some("RECONCILE")));
+        assert!(!is_sigint_unit_reconciliation_confirmed(Some("reconcile")));
+        assert!(!is_sigint_unit_reconciliation_confirmed(None));
     }
 }

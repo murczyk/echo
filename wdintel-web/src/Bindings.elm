@@ -7025,6 +7025,36 @@ listUnitDuplicatesRspEncoder struct =
         ]
 
 
+type alias InconsistentUnit =
+    { sigintUnitId : Int
+    , name : String
+    , reasons : List (String)
+    , problematicEchelons : List (String)
+    }
+
+
+inconsistentUnitEncoder : InconsistentUnit -> Json.Encode.Value
+inconsistentUnitEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "reasons", (Json.Encode.list (Json.Encode.string)) struct.reasons )
+        , ( "problematic_echelons", (Json.Encode.list (Json.Encode.string)) struct.problematicEchelons )
+        ]
+
+
+type alias ListInconsistentUnitsRsp =
+    { units : List (InconsistentUnit)
+    }
+
+
+listInconsistentUnitsRspEncoder : ListInconsistentUnitsRsp -> Json.Encode.Value
+listInconsistentUnitsRspEncoder struct =
+    Json.Encode.object
+        [ ( "units", (Json.Encode.list (inconsistentUnitEncoder)) struct.units )
+        ]
+
+
 type alias CreateUnitReq =
     { other : String
     , teamOrCrew : String
@@ -17414,6 +17444,21 @@ listUnitDuplicatesRspDecoder : Json.Decode.Decoder ListUnitDuplicatesRsp
 listUnitDuplicatesRspDecoder =
     Json.Decode.succeed ListUnitDuplicatesRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (unitDuplicateDecoder))))
+
+
+inconsistentUnitDecoder : Json.Decode.Decoder InconsistentUnit
+inconsistentUnitDecoder =
+    Json.Decode.succeed InconsistentUnit
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasons" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "problematic_echelons" (Json.Decode.list (Json.Decode.string))))
+
+
+listInconsistentUnitsRspDecoder : Json.Decode.Decoder ListInconsistentUnitsRsp
+listInconsistentUnitsRspDecoder =
+    Json.Decode.succeed ListInconsistentUnitsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (inconsistentUnitDecoder))))
 
 
 createUnitReqDecoder : Json.Decode.Decoder CreateUnitReq

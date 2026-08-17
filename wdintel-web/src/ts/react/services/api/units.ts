@@ -8,7 +8,9 @@ import type {
   DeleteUnitAttachmentRsp,
   DeleteUnitDuplicateReq,
   ImportOrbitUnitReq,
+  InconsistentUnit,
   LinkOrbitUnitReq,
+  ListInconsistentUnitsRsp,
   ListUnitDuplicatesRsp,
   ListUnitsByIdRsp,
   ListUnitsReq,
@@ -173,6 +175,11 @@ export async function getUnitsByIds(ids: number[], options?: RequestOptions): Pr
 export async function getUnitDuplicates(options?: RequestOptions): Promise<UnitDuplicate[]> {
   const raw = await postJson<unknown>('/api/admin/unit-duplicates', null, options);
   return transformSnakeToCamel<ListUnitDuplicatesRsp>(raw).units;
+}
+
+export async function getInconsistentUnits(options?: RequestOptions): Promise<InconsistentUnit[]> {
+  const raw = await postJson<unknown>('/api/admin/unit-inconsistent', null, options);
+  return transformSnakeToCamel<ListInconsistentUnitsRsp>(raw).units;
 }
 
 export async function createUnit(unit: CreateUnitReq): Promise<Unit> {
