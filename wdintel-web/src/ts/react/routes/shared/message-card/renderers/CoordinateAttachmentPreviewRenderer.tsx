@@ -179,6 +179,7 @@ function CoordinateMapPreview({
   const baseLayerIdRef = useRef<BaseLayerId>('googleHybrid');
   const pointsRef = useRef(points);
   const activeIndexRef = useRef(activeIndex);
+  const previousActiveIndexRef = useRef(activeIndex);
   const onActiveIndexChangeRef = useRef(onActiveIndexChange);
   const initFrameRef = useRef<number | null>(null);
   const invalidateFrameRef = useRef<number | null>(null);
@@ -188,7 +189,7 @@ function CoordinateMapPreview({
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
   const [retryToken, setRetryToken] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isPanelOpen, setIsPanelOpen] = useState(true);
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
 
   useEffect(() => {
     baseLayerIdRef.current = baseLayerId;
@@ -208,7 +209,10 @@ function CoordinateMapPreview({
 
   useEffect(() => {
     setCopyStatus('idle');
-    setIsPanelOpen(true);
+    if (previousActiveIndexRef.current !== activeIndex) {
+      setIsPanelOpen(true);
+      previousActiveIndexRef.current = activeIndex;
+    }
   }, [activeIndex]);
 
   useEffect(() => {

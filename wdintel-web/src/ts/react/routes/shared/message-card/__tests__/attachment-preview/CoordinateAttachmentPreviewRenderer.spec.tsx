@@ -434,7 +434,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(markerLabel.querySelector('img')).toBeNull();
   });
 
-  it('uses readable light-theme colors and dismisses the card from its close button or the map', async () => {
+  it('opens a readable light-theme card only after selection and dismisses it', async () => {
     hostRect = { width: 800, height: 600 };
     await act(async () => {
       root.render(
@@ -451,6 +451,18 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     const panel = document.body.querySelector('[data-coordinate-panel="true"]') as HTMLElement;
     expect(panel.style.backgroundColor).toBe('rgba(255, 255, 255, 0.95)');
     expect(panel.style.color).toBe('rgba(0, 0, 0, 0.87)');
+    expect(panel.style.display).toBe('none');
+
+    const marker = leafletMock.circleMarker.mock.results[0]?.value as {
+      on: ReturnType<typeof vi.fn>;
+    };
+    const markerClick = marker.on.mock.calls.find(([event]) => event === 'click')?.[1] as
+      (() => void) | undefined;
+    await act(async () => {
+      markerClick?.();
+      await Promise.resolve();
+    });
+    expect(panel.style.display).toBe('inline-flex');
 
     await act(async () => {
       document.body
@@ -462,11 +474,6 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
       (document.body.querySelector('[data-coordinate-panel="true"]') as HTMLElement).style.display,
     ).toBe('none');
 
-    const marker = leafletMock.circleMarker.mock.results[0]?.value as {
-      on: ReturnType<typeof vi.fn>;
-    };
-    const markerClick = marker.on.mock.calls.find(([event]) => event === 'click')?.[1] as
-      (() => void) | undefined;
     await act(async () => {
       markerClick?.();
       await Promise.resolve();
@@ -550,7 +557,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
       '[data-coordinate-panel="true"]',
     ) as HTMLElement | null;
     expect(panel).not.toBeNull();
-    expect(panel?.style.display).toBe('inline-flex');
+    expect(panel?.style.display).toBe('none');
     expect(panel?.style.flexDirection).toBe('column');
     expect(panel?.style.alignItems).toBe('flex-start');
     expect(panel?.style.gap).toBe('6px');

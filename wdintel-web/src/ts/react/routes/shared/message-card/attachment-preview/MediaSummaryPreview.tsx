@@ -1,5 +1,6 @@
 import CloseIcon from '@mui/icons-material/Close';
 import DescriptionIcon from '@mui/icons-material/Description';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import {
   alpha,
@@ -103,19 +104,37 @@ function MediaSummaryCoordinateList({
     <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
       {coordinates.map((coordinate, index) => {
         const localityText = formatCoordinateLocality(localities[index] ?? null);
+        const description = coordinate.description?.trim() ?? '';
+        const plannedMeans = coordinate.plannedMeans?.trim() ?? '';
         return (
           <Box
             component="li"
             key={`${coordinate.coordinateSystem}:${coordinate.value}:${index}`}
             data-media-summary-coordinate-item="true"
-            sx={{ py: 1.25, borderBottom: 1, borderColor: 'divider', '&:first-of-type': { pt: 0 } }}
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) auto',
+              alignItems: 'center',
+              gap: 0.5,
+              py: 0.5,
+              minHeight: 32,
+              borderBottom: 1,
+              borderColor: 'divider',
+            }}
           >
-            <Stack
-              direction={{ xs: 'column', md: 'row' }}
-              spacing={{ xs: 0.25, md: 1 }}
-              alignItems={{ xs: 'flex-start', md: 'baseline' }}
-              sx={{ mb: 0.75 }}
+            <Box
+              sx={{
+                minWidth: 0,
+                display: 'flex',
+                alignItems: 'baseline',
+                columnGap: 1,
+                rowGap: 0.25,
+                flexWrap: 'wrap',
+              }}
             >
+              <Typography variant="subtitle2" sx={{ overflowWrap: 'anywhere' }}>
+                {coordinate.title}
+              </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
                 {COORDINATE_SYSTEM_LABELS[coordinate.coordinateSystem] ??
                   coordinate.coordinateSystem}
@@ -140,32 +159,52 @@ function MediaSummaryCoordinateList({
                   {localityText}
                 </Typography>
               ) : null}
-            </Stack>
-            <Typography variant="subtitle2" sx={{ mb: 0.5, overflowWrap: 'anywhere' }}>
-              {coordinate.title}
-            </Typography>
-            {coordinate.description?.trim() ? (
-              <Typography
-                variant="body2"
-                data-media-summary-coordinate-description="true"
-                sx={{ mb: 0.75, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+            </Box>
+            {description !== '' || plannedMeans !== '' ? (
+              <Tooltip
+                placement="left"
+                arrow
+                enterDelay={200}
+                slotProps={{ tooltip: { sx: { maxWidth: 420 } } }}
+                title={
+                  <Stack spacing={0.75} sx={{ maxWidth: 400 }}>
+                    {description !== '' ? (
+                      <Typography
+                        variant="body2"
+                        color="inherit"
+                        data-media-summary-coordinate-description="true"
+                        sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+                      >
+                        {coordinate.description}
+                      </Typography>
+                    ) : null}
+                    {plannedMeans !== '' ? (
+                      <Box>
+                        <Typography variant="caption" color="inherit" sx={{ fontWeight: 700 }}>
+                          Сплановані засоби
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          color="inherit"
+                          data-media-summary-coordinate-planned-means="true"
+                          sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+                        >
+                          {coordinate.plannedMeans}
+                        </Typography>
+                      </Box>
+                    ) : null}
+                  </Stack>
+                }
               >
-                {coordinate.description}
-              </Typography>
-            ) : null}
-            {coordinate.plannedMeans?.trim() ? (
-              <Box>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
-                  Сплановані засоби
-                </Typography>
-                <Typography
-                  variant="body2"
-                  data-media-summary-coordinate-planned-means="true"
-                  sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+                <IconButton
+                  size="small"
+                  aria-label={`Деталі координати: ${coordinate.title}`}
+                  data-media-summary-coordinate-info="true"
+                  sx={{ width: 28, height: 28, color: 'text.secondary' }}
                 >
-                  {coordinate.plannedMeans}
-                </Typography>
-              </Box>
+                  <InfoOutlinedIcon sx={{ fontSize: 17 }} />
+                </IconButton>
+              </Tooltip>
             ) : null}
           </Box>
         );

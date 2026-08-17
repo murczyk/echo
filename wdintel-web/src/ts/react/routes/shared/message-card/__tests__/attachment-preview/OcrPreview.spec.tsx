@@ -34,8 +34,11 @@ vi.mock('@mui/material', () => ({
   ),
   LinearProgress: () => <span data-linear-progress />,
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Tooltip: ({ children, title }: { children?: ReactNode; title?: string }) => (
-    <span data-tooltip={title}>{children}</span>
+  Tooltip: ({ children, title }: { children?: ReactNode; title?: ReactNode }) => (
+    <span>
+      {children}
+      <span data-tooltip-content="true">{title}</span>
+    </span>
   ),
   Typography: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
     <div {...props}>{children}</div>
@@ -53,6 +56,7 @@ vi.mock('@mui/icons-material/Refresh', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Visibility', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Close', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Description', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/InfoOutlined', () => ({ default: () => <span /> }));
 
 vi.mock('../../../../../services/api/ocr', () => ({ getMediaOcrStatus }));
 vi.mock('../../../../../services/api/media-summary', () => ({ getMediaSummary }));
@@ -412,6 +416,9 @@ describe('OcrPreview', () => {
     expect(container.querySelector('[data-media-summary-completed-layout="split"]')).not.toBeNull();
     expect(container.querySelector('[data-media-summary-coordinate-column="true"]')).not.toBeNull();
     expect(container.querySelectorAll('[data-media-summary-coordinate-item="true"]')).toHaveLength(
+      2,
+    );
+    expect(container.querySelectorAll('[data-media-summary-coordinate-info="true"]')).toHaveLength(
       2,
     );
     expect(container.textContent).toContain('<script>summary()</script>');
