@@ -55,6 +55,7 @@ pub const KIND_KMZ: &str = "kmz";
 pub const KIND_GEOJSON: &str = "geojson";
 pub const KIND_ETALONKA: &str = "etalonka";
 pub const KIND_GOI: &str = "goi";
+pub const KIND_GOI_ASSOCIATIONS: &str = "goi_associations";
 pub const KIND_RER_REPORT: &str = "rer_report";
 pub const KIND_SPOSOB: &str = "sposob";
 
@@ -84,6 +85,9 @@ pub enum ReportHistoryRequest {
     },
     GoiReport {
         payload: serde_json::Value,
+    },
+    GoiAssociationsReport {
+        payload: Box<crate::organism::goi::types::ListGoiAssociationsReq>,
     },
 }
 
@@ -718,6 +722,12 @@ fn report_history_period(request: &serde_json::Value) -> Option<String> {
             report_history_etalonka_period(&payload.etalonka_type)
         }
         ReportHistoryRequest::GoiReport { .. } => None,
+        ReportHistoryRequest::GoiAssociationsReport { payload } => {
+            report_history_period_from_ms(
+                payload.since_date_inclusive_ms?,
+                payload.till_date_inclusive_ms?,
+            )
+        }
     }
 }
 
@@ -849,7 +859,8 @@ fn report_history_detail_refs(
                 payload.network_ids.iter().copied(),
             );
         }
-        ReportHistoryRequest::GoiReport { .. } => {}
+        ReportHistoryRequest::GoiReport { .. }
+        | ReportHistoryRequest::GoiAssociationsReport { .. } => {}
     }
     refs
 }
@@ -2496,6 +2507,10 @@ fn worker_report_kinds() -> Vec<(&'static str, &'static str)> {
         ("report_history_worker_geojson", KIND_GEOJSON),
         ("report_history_worker_etalonka", KIND_ETALONKA),
         ("report_history_worker_goi", KIND_GOI),
+        (
+            "report_history_worker_goi_associations",
+            KIND_GOI_ASSOCIATIONS,
+        ),
     ]
     .into_iter()
     .collect()
@@ -2979,6 +2994,29 @@ async fn generate_report(
                     || {
                         format!(
                             "goi_report_{}.xlsx",
+                            Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f")
+                        )
+                    },
+                ),
+                content_type:
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        .to_string(),
+                bytes,
+            })
+        }
+        ReportHistoryRequest::GoiAssociationsReport { payload } => {
+            let bytes = crate::organism::goi::integrations::goi_associations_report_xlsx(
+                env,
+                &report_history.requested_by_login_id,
+                &payload,
+            )
+            .await
+            .c(h!())?;
+            Ok(GeneratedReport {
+                file_name: report_history.file_name.clone().unwrap_or_else(
+                    || {
+                        format!(
+                            "goi_associations_{}.xlsx",
                             Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f")
                         )
                     },

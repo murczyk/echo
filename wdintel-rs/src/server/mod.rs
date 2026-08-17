@@ -996,6 +996,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::organism::goi::integrations::download_current_user_goi_palettes)
             .service(crate::organism::goi::integrations::upload_current_user_goi_categories)
             .service(crate::organism::goi::integrations::list_current_user_goi_associations)
+            .service(crate::organism::goi::integrations::launch_current_user_goi_associations_report)
             .service(crate::organism::goi::integrations::list_current_user_goi_knowledge)
             .service(crate::organism::my_scope)
             .service(crate::organism::keyword_sets::list_keyword_sets)
