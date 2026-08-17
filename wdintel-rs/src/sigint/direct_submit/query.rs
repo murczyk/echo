@@ -712,6 +712,15 @@ pub async fn copy_signal_message_comments(
     .await
     .c(h!())?;
 
+    crate::rer_importer::inbox::bl::delete_editable_linked_message_comments(
+        dbx,
+        signal_message_id,
+        login,
+        logins,
+    )
+    .await
+    .c(h!())?;
+
     let mut copied_ids = std::collections::HashSet::new();
     for comment_model in comments {
         if !copied_ids.insert(comment_model.signal_message_id) {
@@ -733,14 +742,6 @@ pub async fn copy_signal_message_comments(
         .await
         .c(h!())?;
     }
-    crate::rer_importer::inbox::bl::delete_editable_linked_message_comments(
-        dbx,
-        signal_message_id,
-        login,
-        logins,
-    )
-    .await
-    .c(h!())?;
     if let Some(comment) = comment.filter(|comment| !comment.trim().is_empty())
     {
         crate::sigint::comments::create_linked_message_comment(
