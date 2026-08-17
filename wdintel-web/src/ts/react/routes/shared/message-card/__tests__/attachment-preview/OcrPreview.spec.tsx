@@ -6,9 +6,10 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { getMediaOcrStatus, getMediaSummary } = vi.hoisted(() => ({
+const { getMediaOcrStatus, getMediaSummary, mapCoordinates } = vi.hoisted(() => ({
   getMediaOcrStatus: vi.fn(),
   getMediaSummary: vi.fn(),
+  mapCoordinates: vi.fn(),
 }));
 
 vi.mock('@mui/material', () => ({
@@ -55,6 +56,7 @@ vi.mock('@mui/icons-material/Description', () => ({ default: () => <span /> }));
 
 vi.mock('../../../../../services/api/ocr', () => ({ getMediaOcrStatus }));
 vi.mock('../../../../../services/api/media-summary', () => ({ getMediaSummary }));
+vi.mock('../../../../../services/api/location', () => ({ mapCoordinates }));
 
 import {
   getOcrDownloadItems,
@@ -291,6 +293,7 @@ describe('OcrPreview', () => {
     getMediaSummary.mockResolvedValueOnce({
       state: 'completed',
       summary: 'Короткий опис',
+      coordinates: [],
       lastError: null,
       sourceKind: 'ocr_text',
       sourceCharCount: 100,
@@ -322,7 +325,7 @@ describe('OcrPreview', () => {
           fullPane
           onOcrChange={vi.fn()}
           onFullPaneChange={onFullPaneChange}
-          summary={{ state: 'queued', lastError: null }}
+          summary={{ state: 'queued', lastError: null, hasCoordinates: false }}
           summaryVisible
           onSummaryChange={onSummaryChange}
           onSummaryVisibleChange={vi.fn()}
@@ -333,9 +336,97 @@ describe('OcrPreview', () => {
 
     expect(onFullPaneChange).toHaveBeenCalledWith(false);
     expect(getMediaSummary).toHaveBeenCalledWith('media-id');
-    expect(onSummaryChange).toHaveBeenCalledWith({ state: 'completed', lastError: null });
+    expect(onSummaryChange).toHaveBeenCalledWith({
+      state: 'completed',
+      lastError: null,
+      hasCoordinates: false,
+    });
     expect(container.textContent).toContain('Короткий опис');
     expect(container.textContent).not.toContain('Хто:');
+    root.unmount();
+  });
+
+  it('renders one locality-aware list item per coordinate and escapes plain text', async () => {
+    mapCoordinates.mockResolvedValueOnce([
+      {
+        coords: { lat: 47.1, lon: 35.2 },
+        locality: {
+          settlementName: 'Малокатеринівка',
+          direction: 'NE',
+          region: null,
+          country: null,
+          distanceM: 2300,
+          isRf: false,
+        },
+      },
+      { coords: { lat: 47.2, lon: 35.3 }, locality: null },
+    ]);
+    getMediaSummary.mockResolvedValueOnce({
+      state: 'completed',
+      summary: '<script>summary()</script>',
+      coordinates: [
+        {
+          title: '<img src=x onerror=alert(1)>',
+          description: '<script>description()</script>',
+          plannedMeans: '<svg onload=plannedMeans()>',
+          coordinateSystem: 'sk42',
+          value: 'X=5291456, Y=6662340',
+        },
+        {
+          title: '<img src=x onerror=alert(1)>',
+          description: '<script>description()</script>',
+          plannedMeans: '<svg onload=plannedMeans()>',
+          coordinateSystem: 'mgrs',
+          value: '37U DR 05997 22279',
+        },
+      ],
+      lastError: null,
+      sourceKind: 'ocr_text',
+      sourceCharCount: 100,
+      aiEngineName: 'Gemma',
+      modelName: 'gemma',
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <OcrSplitPreview
+          source={<div data-source />}
+          mediaId="media-id"
+          ocr={null}
+          visible={false}
+          fullPane={false}
+          onOcrChange={vi.fn()}
+          onFullPaneChange={vi.fn()}
+          summary={{ state: 'completed', lastError: null, hasCoordinates: true }}
+          summaryVisible
+          onSummaryChange={vi.fn()}
+          onSummaryVisibleChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[data-media-summary-completed-layout="split"]')).not.toBeNull();
+    expect(container.querySelector('[data-media-summary-coordinate-column="true"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-media-summary-coordinate-item="true"]')).toHaveLength(
+      2,
+    );
+    expect(container.textContent).toContain('<script>summary()</script>');
+    expect(container.textContent).toContain('<img src=x onerror=alert(1)>');
+    expect(container.textContent).toContain('<script>description()</script>');
+    expect(container.textContent).toContain('<svg onload=plannedMeans()>');
+    expect(container.querySelector('script')).toBeNull();
+    expect(container.querySelector('svg[onload]')).toBeNull();
+    expect(container.querySelector('script')).toBeNull();
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.textContent?.match(/<img src=x onerror=alert\(1\)>/g)).toHaveLength(2);
+    expect(container.textContent).toContain('СК-42');
+    expect(container.textContent).toContain('MGRS');
+    expect(container.textContent).toContain('2,3 км на пн-сх від Малокатеринівка');
+    expect(mapCoordinates).toHaveBeenCalledTimes(1);
     root.unmount();
   });
 });

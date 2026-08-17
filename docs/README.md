@@ -267,31 +267,56 @@ it with StrongBox and storing it in the configured B2/S3 bucket. The API
 sanitizes the HTML again before serving it with a restrictive CSP. Authorized
 users can open the eye action beside media information for split-screen or
 full-pane preview; admins can review recent jobs and readiness under
-**ШІ → OCR**. Deleting source media also deletes its deterministic OCR object.
+**ШІ → OCR**. In the full media preview, admins can use the **…** menu to
+restart terminal PDF, JPEG, or PNG jobs. This clears the previous summary and
+coordinates and submits a new OCR generation; a new summary and coordinate
+extraction are enqueued after accepted or degraded OCR completes. The action
+requires the document-summary setting and its AI engine to be enabled. Deleting
+source media also deletes its deterministic OCR object.
 
 The same admin page contains the default-off **Стислий опис документів**
 setting. It requires an enabled AI engine and affects only future media. For
-version one, each newly completed JPEG or PNG OCR result with accepted or
-degraded quality is converted from sanitized HTML to normalized plain text;
-PDF results and existing media are not enqueued. The input is capped at 60,000
+version one, each newly completed PDF, JPEG, or PNG OCR result with accepted or
+degraded quality is converted from sanitized HTML to normalized plain text.
+Existing media are not enqueued automatically. The input is capped at 60,000
 characters while retaining its beginning and end. Filenames, message metadata,
 media identifiers, and image bytes are never sent to the AI engine.
 
 The independent `media_summary_worker` performs one inference at a time and
-stores a neutral Ukrainian summary directly against `signal_message_media`.
-It has its own leases and bounded exponential retries, so model outages never
-change OCR state or block OCR viewing. The selected engine is captured when a
-summary is enqueued. Source text is cleared after completion or terminal
-failure; its digest and original character count remain for provenance. Users
-see the summary in an escaped plain-text overlay over the lower 30% of the
-original preview pane, including queued, running, retry, and failure states.
+stores a neutral Ukrainian summary plus titled coordinates directly against
+`signal_message_media`. The same strict response supports СК-42, УСК-2000,
+WGS-84, and MGRS; unlabeled complete seven-digit X/Y pairs are interpreted as
+СК-42, while incomplete coordinates and four-digit squares are ignored. The
+OCR table structure is retained in the AI input so each point can inherit its
+object title, related description, and planned means from the same table
+column. The worker validates systems, formats, ranges, context lengths,
+duplicates, and the 50-point limit without calculating missing values. It has
+its own leases and bounded exponential retries, so model outages never change
+OCR state or block OCR viewing. The selected engine is captured when a summary
+is enqueued. Source text is cleared after completion or terminal failure; its
+digest and original character count remain for provenance.
 
-Initial rollout is limited to `echo-staging` and `echo-cbr-staging`. The OCR
-and media-summary tables are deliberately excluded from PeerDB/ClickHouse
-because they contain live queue state, source text, and user-facing results,
-not analytics data. After deploying to `echo-cbr-staging`, leave summaries off,
-select the Gemma router under **ШІ → OCR**, enable the setting, and submit a
-fresh JPEG or PNG to verify both preview surfaces before wider rollout.
+Users see the result as escaped plain text over the lower 30% of the original
+preview pane, including queued, running, retry, and failure states. Completed
+results with coordinates split the overlay into equal summary and grouped
+coordinate columns, stacked on narrow screens. Message cards lazily request
+only coordinates for completed media, append every successfully converted
+document point after existing message/Palitra points, deduplicate markers, and
+retain the extracted title, description, and planned means on the active map
+point. A failed request does not hide points from other documents and can be
+retried. Existing completed summaries keep their stored coordinate data; use
+the admin reprocessing action to populate the richer point context because
+there is no automatic regeneration or backfill.
+
+Initial rollout is limited to `echo-staging` and `echo-cbr-staging`. OCR worker
+state and media-summary settings remain excluded from PeerDB/ClickHouse, while
+`media_summary` is replicated for analytical queries. Because the coordinates
+migration adds a column after the table was first deployed as excluded, resync
+the mirror after applying migrations. On the paired analytics host, run
+`bin/resync.sh --yes`, followed by `bin/finish-resync.sh`, from the
+`deploy/clickhouse` checkout. Then leave summaries off, select the Gemma router
+under **ШІ → OCR**, enable the setting, and submit a fresh PDF, JPEG, or PNG to
+verify both preview surfaces before wider rollout.
 
 ### vLLM inference architecture
 

@@ -145,6 +145,36 @@ describe('MessageCardAttachmentPreviewActions', () => {
     root.unmount();
   });
 
+  it('renders the overflow action after open in new tab and before fullscreen', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardAttachmentPreviewActions
+          openHref="/media"
+          navigation={{ index: 0, count: 1, onPrevious: vi.fn(), onNext: vi.fn() }}
+          overflowAction={<button data-testid="overflow-action">⋮</button>}
+          canFullscreen
+          onToggleFullscreen={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      );
+    });
+
+    const open = container.querySelector('[aria-label="Відкрити в новій вкладці"]');
+    const overflow = container.querySelector('[data-testid="overflow-action"]');
+    const fullscreen = container.querySelector('[aria-label="Повноекранний режим"]');
+    expect(open?.compareDocumentPosition(overflow as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(
+      overflow?.compareDocumentPosition(fullscreen as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    root.unmount();
+  });
+
   it('blocks the same media key between its card and preview controls', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

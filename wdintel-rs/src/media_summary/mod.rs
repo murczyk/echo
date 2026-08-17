@@ -11,6 +11,7 @@ use crate::entities::{
 };
 use crate::h;
 use crate::media_summary::types::{
+    MediaSummaryCoordinate, MediaSummaryCoordinatesResult,
     MediaSummaryEngineItem, MediaSummaryResult, MediaSummarySettingsItem,
     MediaSummaryStatus, SaveMediaSummarySettingsReq,
 };
@@ -37,6 +38,31 @@ pub async fn enqueue<C>(
 where
     C: ConnectionTrait,
 {
+    enqueue_inner(dbx, media_id, source_kind, source_text, false).await
+}
+
+pub async fn enqueue_for_reprocessing<C>(
+    dbx: &C,
+    media_id: Uuid,
+    source_kind: &str,
+    source_text: &str,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    enqueue_inner(dbx, media_id, source_kind, source_text, true).await
+}
+
+async fn enqueue_inner<C>(
+    dbx: &C,
+    media_id: Uuid,
+    source_kind: &str,
+    source_text: &str,
+    force: bool,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
     let source_kind = source_kind.trim();
     if source_kind.is_empty()
         || source_kind.chars().count() > MEDIA_SUMMARY_SOURCE_KIND_MAX_CHARS
@@ -49,13 +75,15 @@ where
     }
     let Some(settings) =
         media_summary_settings::Entity::find_by_id(MEDIA_SUMMARY_SETTINGS_ID)
-            .filter(media_summary_settings::Column::Enabled.eq(true))
             .one(dbx)
             .await
             .c(h!())?
     else {
         return Ok(false);
     };
+    if !force && !settings.enabled {
+        return Ok(false);
+    }
     let Some(ai_engine_id) = settings.ai_engine_id else {
         return Ok(false);
     };
@@ -86,6 +114,7 @@ where
             next_attempt_at: NotSet,
             last_error: NotSet,
             summary: NotSet,
+            coordinates: NotSet,
             created_at: NotSet,
             started_at: NotSet,
             completed_at: NotSet,
@@ -100,17 +129,12 @@ where
 }
 
 pub fn plain_text_from_sanitized_html(html: &str) -> anyhow::Result<String> {
-    let html = crate::ocr::package::sanitize_html_without_images(html);
-    let dom = tl::parse(&html, tl::ParserOptions::default()).c(h!())?;
-    let parser = dom.parser();
-    let text = dom
-        .children()
-        .iter()
-        .filter_map(|handle| handle.get(parser))
-        .map(|node| node.inner_text(parser))
-        .collect::<Vec<_>>()
-        .join("\n");
-    Ok(normalize_plain_text(&text))
+    let text = crate::ocr::export::generate(
+        html,
+        crate::ocr::export::ExportFormat::Markdown,
+    )
+    .c(h!())?;
+    Ok(normalize_plain_text(&String::from_utf8(text).c(h!())?))
 }
 
 pub async fn load_statuses(
@@ -193,7 +217,27 @@ pub async fn messenger_media_summary(
         .c(h!())?
         .ok_or(crate::error::AppError::NotFound)
         .c(h!())?;
-    Ok(Json(result(summary)))
+    Ok(Json(result(summary).c(h!())?))
+}
+
+#[get("/api/messenger/media/{media_id}/summary/coordinates")]
+pub async fn messenger_media_summary_coordinates(
+    env: actix_web::web::Data<Env>,
+    user: Identity,
+    path: actix_web::web::Path<(Uuid,)>,
+) -> Result<Json<MediaSummaryCoordinatesResult>, crate::error::AppError> {
+    let media = crate::ocr::authorized_media(env.as_ref(), &user, path.0)
+        .await
+        .c(h!())?;
+    let summary = media_summary_entity::Entity::find_by_id(media.id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(crate::error::AppError::NotFound)
+        .c(h!())?;
+    Ok(Json(MediaSummaryCoordinatesResult {
+        coordinates: decode_coordinates(summary.coordinates).c(h!())?,
+    }))
 }
 
 pub async fn load_settings(
@@ -229,23 +273,42 @@ fn status(summary: &media_summary_entity::Model) -> MediaSummaryStatus {
     MediaSummaryStatus {
         state: summary.state.clone(),
         last_error: summary.last_error.clone(),
+        has_coordinates: summary.state == "completed"
+            && summary
+                .coordinates
+                .as_array()
+                .is_some_and(|coordinates| !coordinates.is_empty()),
     }
 }
 
-fn result(summary: media_summary_entity::Model) -> MediaSummaryResult {
-    MediaSummaryResult {
+fn result(
+    summary: media_summary_entity::Model,
+) -> anyhow::Result<MediaSummaryResult> {
+    let coordinates = decode_coordinates(summary.coordinates).c(h!())?;
+    Ok(MediaSummaryResult {
         state: summary.state,
         summary: summary.summary,
+        coordinates,
         last_error: summary.last_error,
         source_kind: summary.source_kind,
         source_char_count: summary.source_char_count,
         ai_engine_name: summary.ai_engine_name,
         model_name: summary.model_name,
-    }
+    })
+}
+
+fn decode_coordinates(
+    coordinates: serde_json::Value,
+) -> anyhow::Result<Vec<MediaSummaryCoordinate>> {
+    serde_json::from_value(coordinates).c(h!())
 }
 
 fn normalize_plain_text(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+    text.lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn bound_source_text(text: &str) -> String {
@@ -268,7 +331,10 @@ fn bound_source_text(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{bound_source_text, plain_text_from_sanitized_html};
+    use super::{
+        bound_source_text, decode_coordinates, plain_text_from_sanitized_html,
+        result, status,
+    };
     use crate::config::{
         MEDIA_SUMMARY_SETTINGS_ID, MEDIA_SUMMARY_SOURCE_MAX_CHARS,
         MEDIA_SUMMARY_TRUNCATION_MARKER,
@@ -280,6 +346,7 @@ mod tests {
     use sea_orm::{
         ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
     };
+    use serde_json::json;
     use uuid::Uuid;
 
     #[test]
@@ -298,7 +365,30 @@ mod tests {
             "<article><p> Перший   рядок </p><script>bad()</script><p>Другий</p></article>",
         )
         .unwrap();
-        assert_eq!(text, "Перший рядок Другий");
+        assert_eq!(text, "Перший рядок\nДругий");
+    }
+
+    #[test]
+    fn summary_source_preserves_table_columns() {
+        let text = plain_text_from_sanitized_html(
+            "<table><tr><th>Цель</th><th>Дамба</th></tr><tr><td>Координаты</td><td>X=5291456 Y=6662340</td></tr><tr><td>Объект поражения</td><td>Насыпная дамба</td></tr></table>",
+        )
+        .unwrap();
+        assert!(text.contains("| Цель | Дамба |"));
+        assert!(text.contains("| Координаты | X=5291456 Y=6662340 |"));
+        assert!(text.contains("| Объект поражения | Насыпная дамба |"));
+    }
+
+    #[test]
+    fn legacy_coordinates_decode_with_empty_context() {
+        let coordinates = decode_coordinates(json!([{
+            "title": "Координата з документа",
+            "coordinateSystem": "sk42",
+            "value": "X=5291456, Y=6662340"
+        }]))
+        .unwrap();
+        assert_eq!(coordinates[0].description, "");
+        assert_eq!(coordinates[0].planned_means, None);
     }
 
     #[tokio::test]
@@ -381,6 +471,7 @@ mod tests {
             .unwrap();
         assert_eq!(summary.ai_engine_id, Some(first_engine.id));
         assert_eq!(summary.model_name, "first-model");
+        assert_eq!(summary.coordinates, json!([]));
         assert_eq!(
             summary.source_text.unwrap().chars().count(),
             MEDIA_SUMMARY_SOURCE_MAX_CHARS
@@ -403,6 +494,24 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(summary.ai_engine_id, Some(first_engine.id));
+        assert!(!status(&summary).has_coordinates);
+
+        let mut summary = summary.into_active_model();
+        summary.state = Set("completed".to_string());
+        summary.source_text = Set(None);
+        summary.summary = Set(Some("Опис".to_string()));
+        summary.coordinates = Set(json!([{
+            "title": "Дамба",
+            "description": "Насипна дамба через русло річки.",
+            "plannedMeans": "Сокіл; Куля; Беркут",
+            "coordinateSystem": "sk42",
+            "value": "X=5291456, Y=6662340"
+        }]));
+        let summary = summary.update(&env.dbx).await.unwrap();
+        assert!(status(&summary).has_coordinates);
+        let summary = result(summary).unwrap();
+        assert_eq!(summary.coordinates.len(), 1);
+        assert_eq!(summary.coordinates[0].title, "Дамба");
         assert!(!super::enqueue(&env.dbx, media.id, "ocr_text", "  \n ")
             .await
             .unwrap());

@@ -8,8 +8,11 @@ use crate::config::{
     OCR_SETTINGS_ID, OCR_TOKEN_ENV,
 };
 use crate::entities::{
-    ocr_job, ocr_settings, signal_message, signal_message_media,
+    media_summary as media_summary_entity, ocr_job, ocr_settings,
+    signal_message, signal_message_media,
 };
+use crate::event_stream::fanout_mult;
+use crate::event_stream::types::{EventMsg, EventType};
 use crate::h;
 use crate::ocr::package::sanitize_html;
 use crate::ocr::types::{
@@ -26,6 +29,7 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseBackend,
     DatabaseConnection, EntityTrait, FromQueryResult, IntoActiveModel,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Statement,
+    TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -173,6 +177,109 @@ pub async fn save_ocr_settings(
     settings.updated_at = Set(Utc::now().naive_utc());
     settings.update(&env.dbx).await.c(h!())?;
     Ok(Json(load_settings(env.as_ref()).await.c(h!())?))
+}
+
+#[post("/api/admin/ocr/{media_id}/reprocess")]
+pub async fn reprocess_media_ocr(
+    env: actix_web::web::Data<Env>,
+    user: Identity,
+    path: actix_web::web::Path<(Uuid,)>,
+) -> Result<Json<OcrMediaSummary>, crate::error::AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let media = signal_message_media::Entity::find_by_id(path.0)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(crate::error::AppError::NotFound)
+        .c(h!())?;
+    if !media_is_ocr_eligible(&media) {
+        return Err(crate::error::AppError::BL {
+            msg: "Повторна OCR-обробка доступна лише для PDF, JPEG і PNG"
+                .to_string(),
+        });
+    }
+    let summary_settings = crate::media_summary::load_settings(&env.dbx)
+        .await
+        .c(h!())?;
+    let has_enabled_engine =
+        summary_settings.ai_engine_id.as_ref().is_some_and(|id| {
+            summary_settings
+                .engines
+                .iter()
+                .any(|engine| &engine.id == id)
+        });
+    if !summary_settings.enabled || !has_enabled_engine {
+        return Err(crate::error::AppError::BL {
+            msg: "Спочатку увімкніть стислий опис документів і оберіть увімкнений ШІ движок"
+                .to_string(),
+        });
+    }
+    let job = queue_media_reprocessing(&env.dbx, media.id).await.c(h!())?;
+    fanout_mult(
+        &mut env.redis.clone(),
+        vec![EventMsg::new(EventType::ETInboxChanged(
+            media.signal_message_id,
+        ))],
+    )
+    .await
+    .c(h!())?;
+    let queue_ahead = load_queue_positions(&env.dbx)
+        .await
+        .c(h!())?
+        .get(&media.id)
+        .copied();
+    Ok(Json(media_summary(job, queue_ahead)))
+}
+
+async fn queue_media_reprocessing(
+    dbx: &DatabaseConnection,
+    media_id: Uuid,
+) -> anyhow::Result<ocr_job::Model> {
+    let transaction = dbx.begin().await.c(h!())?;
+    let now = Utc::now().naive_utc();
+    let statement = Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+insert into ocr_job (
+    media_id, next_attempt_at, discovered_at, updated_at, force_summary
+)
+values ($1, $2, $2, $2, true)
+on conflict (media_id) do update
+set state = 'queued',
+    extractor_job_id = null,
+    attempts = 0,
+    next_attempt_at = excluded.next_attempt_at,
+    last_error = null,
+    quality_status = null,
+    processed_pages = 0,
+    total_pages = 0,
+    html_s3_key = null,
+    html_size_bytes = null,
+    discovered_at = excluded.discovered_at,
+    submitted_at = null,
+    completed_at = null,
+    updated_at = excluded.updated_at,
+    force_summary = true
+where ocr_job.state in ('completed', 'failed')
+returning ocr_job.*
+        "#,
+        [media_id.into(), now.into()],
+    );
+    let job = ocr_job::Entity::find()
+        .from_raw_sql(statement)
+        .one(&transaction)
+        .await
+        .c(h!())?
+        .ok_or_else(|| crate::error::AppError::BL {
+            msg: "OCR-обробка цього медіа вже виконується".to_string(),
+        })
+        .c(h!())?;
+    media_summary_entity::Entity::delete_by_id(media_id)
+        .exec(&transaction)
+        .await
+        .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(job)
 }
 
 #[get("/api/messenger/media/{media_id}/ocr")]
@@ -733,11 +840,14 @@ fn ocr_export_file_name(original: Option<&str>, extension: &str) -> String {
 mod tests {
     use super::{
         load_queue_positions, media_is_ocr_eligible, ocr_export_file_name,
-        pending_media_summary, render_document,
+        pending_media_summary, queue_media_reprocessing, render_document,
     };
-    use crate::entities::{ocr_job, signal_message_media};
+    use crate::entities::{
+        media_summary as media_summary_entity, ocr_job, signal_message_media,
+    };
     use chrono::Utc;
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
+    use serde_json::json;
     use uuid::Uuid;
 
     fn media(
@@ -839,6 +949,88 @@ mod tests {
         assert_eq!(positions.get(&media_ids[0]), Some(&0));
         assert_eq!(positions.get(&media_ids[1]), Some(&1));
         assert_eq!(positions.get(&media_ids[2]), Some(&2));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn reprocessing_resets_terminal_ocr_and_removes_stale_summary() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            content_type: Set("application/pdf".to_string()),
+            file_ext: Set(Some("pdf".to_string())),
+            file_name: Set(Some("report.pdf".to_string())),
+            size_bytes: Set(1),
+            created_at: Set(now),
+            is_encrypted: Set(true),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        ocr_job::ActiveModel {
+            media_id: Set(media.id),
+            state: Set("completed".to_string()),
+            extractor_job_id: Set(Some(Uuid::now_v7())),
+            attempts: Set(3),
+            last_error: Set(Some("old error".to_string())),
+            quality_status: Set(Some("accepted".to_string())),
+            processed_pages: Set(4),
+            total_pages: Set(4),
+            html_s3_key: Set(Some("old-key".to_string())),
+            html_size_bytes: Set(Some(100)),
+            submitted_at: Set(Some(now)),
+            completed_at: Set(Some(now)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        media_summary_entity::ActiveModel {
+            media_id: Set(media.id),
+            source_kind: Set("ocr_text".to_string()),
+            source_digest: Set("a".repeat(64)),
+            source_text: Set(None),
+            source_char_count: Set(10),
+            state: Set("completed".to_string()),
+            ai_engine_id: Set(None),
+            ai_engine_name: Set("engine".to_string()),
+            model_name: Set("summary-model".to_string()),
+            summary: Set(Some("old summary".to_string())),
+            coordinates: Set(json!([{
+                "title": "Old point",
+                "coordinateSystem": "sk42",
+                "value": "X=1234567 Y=2345678"
+            }])),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let job = queue_media_reprocessing(&env.dbx, media.id).await.unwrap();
+
+        assert_eq!(job.state, "queued");
+        assert_eq!(job.attempts, 0);
+        assert_eq!(job.extractor_job_id, None);
+        assert_eq!(job.quality_status, None);
+        assert_eq!(job.processed_pages, 0);
+        assert_eq!(job.total_pages, 0);
+        assert_eq!(job.html_s3_key, None);
+        assert_eq!(job.completed_at, None);
+        assert!(job.force_summary);
+        assert!(media_summary_entity::Entity::find_by_id(media.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[test]

@@ -19,3 +19,7 @@ export function saveOcrSettings(req: SaveOcrSettingsReq): Promise<OcrSettingsIte
 export function getMediaOcrStatus(mediaId: string): Promise<OcrMediaSummary> {
   return getJson<OcrMediaSummary>(`/api/messenger/media/${encodeURIComponent(mediaId)}/ocr/status`);
 }
+
+export function reprocessMediaOcr(mediaId: string): Promise<OcrMediaSummary> {
+  return postJson<OcrMediaSummary>(`/api/admin/ocr/${encodeURIComponent(mediaId)}/reprocess`);
+}

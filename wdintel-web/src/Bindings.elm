@@ -12077,6 +12077,7 @@ saveOcrSettingsReqEncoder struct =
 type alias MediaSummaryStatus =
     { state : String
     , lastError : Maybe (String)
+    , hasCoordinates : Bool
     }
 
 
@@ -12085,12 +12086,46 @@ mediaSummaryStatusEncoder struct =
     Json.Encode.object
         [ ( "state", (Json.Encode.string) struct.state )
         , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "hasCoordinates", (Json.Encode.bool) struct.hasCoordinates )
+        ]
+
+
+type alias MediaSummaryCoordinate =
+    { title : String
+    , description : String
+    , plannedMeans : Maybe (String)
+    , coordinateSystem : String
+    , value : String
+    }
+
+
+mediaSummaryCoordinateEncoder : MediaSummaryCoordinate -> Json.Encode.Value
+mediaSummaryCoordinateEncoder struct =
+    Json.Encode.object
+        [ ( "title", (Json.Encode.string) struct.title )
+        , ( "description", (Json.Encode.string) struct.description )
+        , ( "plannedMeans", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.plannedMeans )
+        , ( "coordinateSystem", (Json.Encode.string) struct.coordinateSystem )
+        , ( "value", (Json.Encode.string) struct.value )
+        ]
+
+
+type alias MediaSummaryCoordinatesResult =
+    { coordinates : List (MediaSummaryCoordinate)
+    }
+
+
+mediaSummaryCoordinatesResultEncoder : MediaSummaryCoordinatesResult -> Json.Encode.Value
+mediaSummaryCoordinatesResultEncoder struct =
+    Json.Encode.object
+        [ ( "coordinates", (Json.Encode.list (mediaSummaryCoordinateEncoder)) struct.coordinates )
         ]
 
 
 type alias MediaSummaryResult =
     { state : String
     , summary : Maybe (String)
+    , coordinates : List (MediaSummaryCoordinate)
     , lastError : Maybe (String)
     , sourceKind : String
     , sourceCharCount : Int
@@ -12104,6 +12139,7 @@ mediaSummaryResultEncoder struct =
     Json.Encode.object
         [ ( "state", (Json.Encode.string) struct.state )
         , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.summary )
+        , ( "coordinates", (Json.Encode.list (mediaSummaryCoordinateEncoder)) struct.coordinates )
         , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
         , ( "sourceKind", (Json.Encode.string) struct.sourceKind )
         , ( "sourceCharCount", (Json.Encode.int) struct.sourceCharCount )
@@ -20255,6 +20291,23 @@ mediaSummaryStatusDecoder =
     Json.Decode.succeed MediaSummaryStatus
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasCoordinates" (Json.Decode.bool)))
+
+
+mediaSummaryCoordinateDecoder : Json.Decode.Decoder MediaSummaryCoordinate
+mediaSummaryCoordinateDecoder =
+    Json.Decode.succeed MediaSummaryCoordinate
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "plannedMeans" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinateSystem" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "value" (Json.Decode.string)))
+
+
+mediaSummaryCoordinatesResultDecoder : Json.Decode.Decoder MediaSummaryCoordinatesResult
+mediaSummaryCoordinatesResultDecoder =
+    Json.Decode.succeed MediaSummaryCoordinatesResult
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinates" (Json.Decode.list (mediaSummaryCoordinateDecoder))))
 
 
 mediaSummaryResultDecoder : Json.Decode.Decoder MediaSummaryResult
@@ -20262,6 +20315,7 @@ mediaSummaryResultDecoder =
     Json.Decode.succeed MediaSummaryResult
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinates" (Json.Decode.list (mediaSummaryCoordinateDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sourceKind" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sourceCharCount" (Json.Decode.int)))

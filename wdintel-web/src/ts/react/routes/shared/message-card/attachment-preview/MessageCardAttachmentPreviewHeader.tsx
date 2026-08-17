@@ -39,6 +39,7 @@ export function MessageCardAttachmentPreviewHeader({
   downloadKey,
   navigation,
   additionalActions,
+  overflowAction,
   status,
   onInfoClick,
   infoSeverity,
@@ -56,6 +57,7 @@ export function MessageCardAttachmentPreviewHeader({
   downloadKey?: string;
   navigation: MessageCardPreviewNavigation;
   additionalActions?: ReactNode;
+  overflowAction?: ReactNode;
   status?: ReactNode;
   onInfoClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   infoSeverity?: 'warning' | 'error';
@@ -254,7 +256,7 @@ export function MessageCardAttachmentPreviewHeader({
         ) : null}
       </Stack>
 
-      {/* Right: System actions: [Info] [Download] [Open in new tab] [Full screen] [Close (X)] */}
+      {/* Right: System actions: [Info] [Download] [Open in new tab] [Overflow] [Full screen] [Close (X)] */}
       <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexShrink: 0, zIndex: 2 }}>
         {status}
         {onInfoClick != null ? (
@@ -306,6 +308,7 @@ export function MessageCardAttachmentPreviewHeader({
             </IconButton>
           </Tooltip>
         ) : null}
+        {overflowAction}
         {canFullscreen && onToggleFullscreen ? (
           <Tooltip
             title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}

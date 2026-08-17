@@ -4674,11 +4674,25 @@ export type SaveOcrSettingsReq = {
 export type MediaSummaryStatus = {
   state: string;
   lastError: string | null;
+  hasCoordinates: boolean;
+};
+
+export type MediaSummaryCoordinate = {
+  title: string;
+  description: string;
+  plannedMeans: string | null;
+  coordinateSystem: string;
+  value: string;
+};
+
+export type MediaSummaryCoordinatesResult = {
+  coordinates: Array<MediaSummaryCoordinate>;
 };
 
 export type MediaSummaryResult = {
   state: string;
   summary: string | null;
+  coordinates: Array<MediaSummaryCoordinate>;
   lastError: string | null;
   sourceKind: string;
   sourceCharCount: number;

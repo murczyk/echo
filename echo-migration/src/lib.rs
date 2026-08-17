@@ -371,6 +371,8 @@ mod m20260812_115511_sigint_inbox_item_datetime_neo_indexes;
 mod m20260813_183642_sigint_unit_orbit_echelons;
 mod m20260816_102640_ocr;
 mod m20260816_173322_media_summary;
+mod m20260816_202944_media_summary_coordinates;
+mod m20260817_052134_ocr_job_force_summary;
 
 pub struct Migrator;
 
@@ -851,6 +853,8 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260816_102640_ocr::Migration),
             Box::new(m20260816_173322_media_summary::Migration),
+            Box::new(m20260816_202944_media_summary_coordinates::Migration),
+            Box::new(m20260817_052134_ocr_job_force_summary::Migration),
         ]
     }
 }

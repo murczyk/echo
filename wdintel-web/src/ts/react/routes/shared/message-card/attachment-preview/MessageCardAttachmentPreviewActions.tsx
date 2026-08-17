@@ -17,6 +17,7 @@ export function MessageCardAttachmentPreviewActions(props: {
   downloadKey?: string;
   navigation: MessageCardPreviewNavigation;
   additionalActions?: ReactNode;
+  overflowAction?: ReactNode;
   status?: ReactNode;
   onInfoClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   infoSeverity?: 'warning' | 'error';

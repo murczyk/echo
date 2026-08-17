@@ -40,6 +40,10 @@ import { getMessageCardAttachmentPreviewConfig } from '../attachment-preview/mes
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
+import {
+  isSupportedOcrImage,
+  MediaReprocessAction,
+} from '../attachment-preview/MediaReprocessAction';
 
 type StageSize = {
   width: number;
@@ -534,6 +538,14 @@ export function ImageAttachmentPreviewRenderer({
     changeFullscreen(!dialogIsFullscreen);
   };
 
+  const handleReprocessQueued = useCallback((nextOcr: NonNullable<MessageCardImage['ocr']>) => {
+    setOcrStatus(nextOcr);
+    setOcrVisible(true);
+    setOcrFullPane(false);
+    setSummaryStatus(null);
+    setSummaryVisible(false);
+  }, []);
+
   const handleDoubleClick = (event: SyntheticEvent<HTMLDivElement>) => {
     const mouseEvent = event as unknown as MouseEvent;
     if (isInteractivePreviewTarget(mouseEvent.target)) return;
@@ -650,6 +662,17 @@ export function ImageAttachmentPreviewRenderer({
             onCopy={handleCopyImage}
           />
         </>
+      }
+      overflowAction={
+        <MediaReprocessAction
+          mediaId={currentImage.id}
+          supported={
+            ocrStatus != null ||
+            isSupportedOcrImage(currentImage.contentType, currentImage.fileName)
+          }
+          ocr={ocrStatus}
+          onQueued={handleReprocessQueued}
+        />
       }
       status={<ImageCopyStatus status={copyStatus} />}
       onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}

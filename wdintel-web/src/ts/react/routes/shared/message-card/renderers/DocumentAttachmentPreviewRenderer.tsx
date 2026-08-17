@@ -31,6 +31,7 @@ import { getMessageCardAttachmentPreviewConfig } from '../attachment-preview/mes
 import { blurActiveAttachmentPreviewElement } from '../attachment-preview/message-card-attachment-preview';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
+import { MediaReprocessAction } from '../attachment-preview/MediaReprocessAction';
 import { MarkdownDocumentPreview, TxtDocumentPreview } from '../text-document-preview';
 import { CsvDocumentPreview } from './CsvDocumentPreview';
 import { DocxDocumentPreview } from './DocxDocumentPreview';
@@ -173,6 +174,14 @@ export function DocumentAttachmentPreviewRenderer({
     if (!canZoom) return;
     setZoom((currentZoom) => (currentZoom > 100 ? 100 : 150));
   };
+
+  const handleReprocessQueued = useCallback((nextOcr: NonNullable<MessageCardDocument['ocr']>) => {
+    setOcrStatus(nextOcr);
+    setOcrVisible(true);
+    setOcrFullPane(false);
+    setSummaryStatus(null);
+    setSummaryVisible(false);
+  }, []);
 
   useEffect(() => {
     if (stageEl === null || !canZoom) return;
@@ -318,6 +327,14 @@ export function DocumentAttachmentPreviewRenderer({
           ocr={ocrStatus}
           active={ocrVisible}
           onClick={() => setOcrVisible((visible) => !visible)}
+        />
+      }
+      overflowAction={
+        <MediaReprocessAction
+          mediaId={currentDocument.id}
+          supported={currentDocument.kind === 'pdf'}
+          ocr={ocrStatus}
+          onQueued={handleReprocessQueued}
         />
       }
       isFullscreen={dialogIsFullscreen}

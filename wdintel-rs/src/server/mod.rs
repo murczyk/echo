@@ -730,6 +730,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ocr::messenger_media_ocr_download)
             .service(crate::ocr::messenger_media_ocr_status)
             .service(crate::media_summary::messenger_media_summary)
+            .service(
+                crate::media_summary::messenger_media_summary_coordinates,
+            )
             .service(crate::rer_importer::rer_message_attachments_zip)
             .service(
                 crate::messenger::media_thumbnail::messenger_media_thumbnail,
@@ -892,6 +895,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_callsign::save_ai_callsign_worker_settings)
             .service(crate::ocr::get_ocr_page)
             .service(crate::ocr::save_ocr_settings)
+            .service(crate::ocr::reprocess_media_ocr)
             .service(crate::ocr::admin_ocr_preview)
             .service(crate::media_summary::save_settings)
             .service(crate::transcriber::list_instances)

@@ -231,6 +231,7 @@ limit $2
             submitted_at: NotSet,
             completed_at: NotSet,
             updated_at: NotSet,
+            force_summary: NotSet,
         })
         .on_conflict_do_nothing()
         .exec(dbx)
@@ -292,7 +293,7 @@ async fn submit_job(
         .rq
         .post(format!("{}/v1/jobs", config.base_url))
         .bearer_auth(&config.token)
-        .header("Idempotency-Key", idempotency_key(config, media.id))
+        .header("Idempotency-Key", idempotency_key(config, &job))
         .multipart(Form::new().part("files", part))
         .timeout(Duration::from_secs(crate::config::OCR_HTTP_TIMEOUT_SECS))
         .send()
@@ -447,6 +448,7 @@ async fn finalize_job(
     };
     let now = Utc::now().naive_utc();
     let media_id = job.media_id;
+    let force_summary = job.force_summary;
     let mut job = job.into_active_model();
     job.state = Set("completed".to_string());
     let quality_status = response.quality_status;
@@ -458,9 +460,10 @@ async fn finalize_job(
     job.last_error = Set(response.error_summary.map(truncate_error));
     job.completed_at = Set(Some(now));
     job.updated_at = Set(now);
+    job.force_summary = Set(false);
     job.update(&env.dbx).await.context(h!())?;
     if matches!(quality_status.as_deref(), Some("accepted" | "degraded")) {
-        enqueue_image_summary(env, media_id, &html)
+        enqueue_media_summary(env, media_id, &html, force_summary)
             .await
             .unwrap_or_else(|err| {
                 error!("failed to enqueue media summary: {err:#?}")
@@ -469,25 +472,36 @@ async fn finalize_job(
     Ok(())
 }
 
-async fn enqueue_image_summary(
+async fn enqueue_media_summary(
     env: &Env,
     media_id: Uuid,
     html: &str,
+    force: bool,
 ) -> anyhow::Result<()> {
     let media = signal_message_media::Entity::find_by_id(media_id)
         .one(&env.dbx)
         .await
         .context(h!())?
         .context(h!())?;
-    if !matches!(source_mime(&media), "image/jpeg" | "image/png") {
+    if !matches!(
+        source_mime(&media),
+        "application/pdf" | "image/jpeg" | "image/png"
+    ) {
         return Ok(());
     }
     let text = crate::media_summary::plain_text_from_sanitized_html(html)
         .context(h!())?;
-    let enqueued =
+    let enqueued = if force {
+        crate::media_summary::enqueue_for_reprocessing(
+            &env.dbx, media_id, "ocr_text", &text,
+        )
+        .await
+        .context(h!())?
+    } else {
         crate::media_summary::enqueue(&env.dbx, media_id, "ocr_text", &text)
             .await
-            .context(h!())?;
+            .context(h!())?
+    };
     if enqueued {
         fanout_mult(
             &mut env.redis.clone(),
@@ -708,10 +722,15 @@ fn source_file_name(media: &signal_message_media::Model) -> String {
     format!("{}.{}", media.id, extension)
 }
 
-fn idempotency_key(config: &OcrRuntimeConfig, media_id: Uuid) -> String {
+fn idempotency_key(config: &OcrRuntimeConfig, job: &ocr_job::Model) -> String {
     format!(
         "echo-ocr:{}",
-        sha256::digest(format!("{}:{media_id}", config.instance_id))
+        sha256::digest(format!(
+            "{}:{}:{}",
+            config.instance_id,
+            job.media_id,
+            job.discovered_at.and_utc().timestamp_micros()
+        ))
     )
 }
 
@@ -734,12 +753,49 @@ fn truncate_error(error: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::retry_delay;
+    use super::{idempotency_key, retry_delay};
+    use crate::entities::ocr_job;
+    use crate::ocr::OcrRuntimeConfig;
+    use chrono::Utc;
+    use uuid::Uuid;
 
     #[test]
     fn ocr_retry_delay_is_bounded() {
         assert_eq!(retry_delay(1), 10);
         assert_eq!(retry_delay(2), 20);
         assert_eq!(retry_delay(20), 900);
+    }
+
+    #[test]
+    fn ocr_reprocessing_generation_changes_idempotency_key() {
+        let config = OcrRuntimeConfig {
+            base_url: "https://ocr.example.test".to_string(),
+            instance_id: "test-instance".to_string(),
+            token: "token".to_string(),
+        };
+        let now = Utc::now().naive_utc();
+        let job = ocr_job::Model {
+            media_id: Uuid::now_v7(),
+            state: "queued".to_string(),
+            extractor_job_id: None,
+            attempts: 0,
+            next_attempt_at: now,
+            last_error: None,
+            quality_status: None,
+            processed_pages: 0,
+            total_pages: 0,
+            html_s3_key: None,
+            html_size_bytes: None,
+            discovered_at: now,
+            submitted_at: None,
+            completed_at: None,
+            updated_at: now,
+            force_summary: false,
+        };
+        let first = idempotency_key(&config, &job);
+        let mut reprocessed = job;
+        reprocessed.discovered_at += chrono::Duration::microseconds(1);
+
+        assert_ne!(first, idempotency_key(&config, &reprocessed));
     }
 }

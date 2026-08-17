@@ -28,6 +28,7 @@ pub struct Model {
     pub submitted_at: Option<DateTime>,
     pub completed_at: Option<DateTime>,
     pub updated_at: DateTime,
+    pub force_summary: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

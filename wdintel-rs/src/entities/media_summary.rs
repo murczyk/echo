@@ -35,6 +35,8 @@ pub struct Model {
     pub started_at: Option<DateTime>,
     pub completed_at: Option<DateTime>,
     pub updated_at: DateTime,
+    #[sea_orm(column_type = "JsonBinary")]
+    pub coordinates: Json,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
