@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == remove && -d /run/systemd/system ]]; then
+  systemctl stop echo-document-extractor-otel.service echo-document-extractor-worker.service \
+    echo-document-extractor.service || true
+  systemctl stop echo-document-extractor-firewall.service || true
+fi

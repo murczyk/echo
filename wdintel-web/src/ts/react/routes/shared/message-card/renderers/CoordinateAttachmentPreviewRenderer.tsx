@@ -1,6 +1,7 @@
 import { Box, Button, CircularProgress, IconButton, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import CheckIcon from '@mui/icons-material/Check';
+import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -35,6 +36,50 @@ const COORDINATE_LABEL_WIDTH = 80;
 const COORDINATE_PANEL_WIDTH = 300;
 const COORDINATE_COPY_SIZE = 20;
 const COORDINATE_COPY_GAP = 4;
+
+function plainTextMarkerLabel(label: string): HTMLSpanElement {
+  const element = document.createElement('span');
+  element.textContent = label;
+  return element;
+}
+
+function DocumentPointContext({ point }: { point: CoordinatePreviewPoint }) {
+  if (point.source !== 'document') return null;
+  return (
+    <Box sx={{ maxWidth: '100%', maxHeight: 180, overflowY: 'auto', pr: 0.5 }}>
+      <Typography
+        variant="subtitle2"
+        data-coordinate-document-title="true"
+        sx={{ overflowWrap: 'anywhere', color: 'text.primary' }}
+      >
+        {point.label}
+      </Typography>
+      {point.description?.trim() ? (
+        <Typography
+          variant="body2"
+          data-coordinate-document-description="true"
+          sx={{ mt: 0.5, color: 'text.primary', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+        >
+          {point.description}
+        </Typography>
+      ) : null}
+      {point.plannedMeans?.trim() ? (
+        <Box sx={{ mt: 0.75 }}>
+          <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+            Сплановані засоби
+          </Typography>
+          <Typography
+            variant="body2"
+            data-coordinate-document-planned-means="true"
+            sx={{ color: 'text.primary', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+          >
+            {point.plannedMeans}
+          </Typography>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
 
 export function CoordinateAttachmentPreviewRenderer({
   points,
@@ -134,6 +179,7 @@ function CoordinateMapPreview({
   const baseLayerIdRef = useRef<BaseLayerId>('googleHybrid');
   const pointsRef = useRef(points);
   const activeIndexRef = useRef(activeIndex);
+  const previousActiveIndexRef = useRef(activeIndex);
   const onActiveIndexChangeRef = useRef(onActiveIndexChange);
   const initFrameRef = useRef<number | null>(null);
   const invalidateFrameRef = useRef<number | null>(null);
@@ -143,6 +189,7 @@ function CoordinateMapPreview({
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
   const [retryToken, setRetryToken] = useState(0);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
 
   useEffect(() => {
     baseLayerIdRef.current = baseLayerId;
@@ -162,6 +209,10 @@ function CoordinateMapPreview({
 
   useEffect(() => {
     setCopyStatus('idle');
+    if (previousActiveIndexRef.current !== activeIndex) {
+      setIsPanelOpen(true);
+      previousActiveIndexRef.current = activeIndex;
+    }
   }, [activeIndex]);
 
   useEffect(() => {
@@ -306,6 +357,7 @@ function CoordinateMapPreview({
         minZoom: 2,
         maxZoom: 17,
       });
+      map.on('click', () => setIsPanelOpen(false));
       L.control?.zoom?.({ position: 'bottomright' })?.addTo?.(map);
 
       const latLngs = visiblePoints.map(({ lat, lng }): [number, number] => [lat, lng]);
@@ -327,7 +379,7 @@ function CoordinateMapPreview({
           : tileLayers.openStreetMap;
       baseLayer.addTo(map);
 
-      const markers = visiblePoints.map(({ lat, lng }, index) => {
+      const markers = visiblePoints.map(({ lat, lng, label }, index) => {
         const marker = L.circleMarker([lat, lng], {
           radius: index === activeIndexRef.current ? 10 : 8,
           color: '#ffffff',
@@ -336,9 +388,12 @@ function CoordinateMapPreview({
           fillOpacity: 1,
           interactive: true,
           bubblingMouseEvents: false,
-        }).addTo(map);
+        })
+          .bindTooltip(plainTextMarkerLabel(label))
+          .addTo(map);
         marker.on('click', () => {
           map.setView([lat, lng], map.getZoom());
+          setIsPanelOpen(true);
           onActiveIndexChangeRef.current(index);
         });
         return marker;
@@ -455,6 +510,7 @@ function CoordinateMapPreview({
   const isDark = theme.palette.mode === 'dark';
   const panelBackground = isDark ? 'rgba(31, 36, 42, 0.96)' : 'rgba(255, 255, 255, 0.95)';
   const panelBorder = isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.12)';
+  const panelTextColor = isDark ? 'rgba(255, 255, 255, 0.96)' : theme.palette.text.primary;
   const coordinateLabelSx = {
     color: isDark ? 'rgba(255, 255, 255, 0.76)' : 'text.secondary',
     fontSize: 12,
@@ -612,7 +668,7 @@ function CoordinateMapPreview({
       >
         <Box
           sx={{
-            display: 'inline-flex',
+            display: isPanelOpen ? 'inline-flex' : 'none',
             flexDirection: 'column',
             alignItems: 'flex-start',
             gap: `${COORDINATE_ROW_GAP}px`,
@@ -622,7 +678,7 @@ function CoordinateMapPreview({
             maxWidth: 'min(100%, calc(100vw - 120px))',
             borderRadius: 2.5,
             bgcolor: panelBackground,
-            color: 'common.white',
+            color: panelTextColor,
             border: 1,
             borderColor: panelBorder,
             boxShadow: '0 14px 32px rgba(0, 0, 0, 0.36)',
@@ -630,7 +686,7 @@ function CoordinateMapPreview({
             pointerEvents: 'auto',
           }}
           style={{
-            display: 'inline-flex',
+            display: isPanelOpen ? 'inline-flex' : 'none',
             flexDirection: 'column',
             alignItems: 'flex-start',
             gap: `${COORDINATE_ROW_GAP}px`,
@@ -649,6 +705,26 @@ function CoordinateMapPreview({
           onClick={stopDragPropagation}
           onDoubleClick={stopDragPropagation}
         >
+          <IconButton
+            aria-label="Закрити картку координати"
+            title="Закрити"
+            size="small"
+            onClick={() => setIsPanelOpen(false)}
+            sx={{
+              alignSelf: 'flex-end',
+              width: 24,
+              height: 24,
+              color: 'text.secondary',
+              bgcolor: 'transparent',
+              '&:hover': {
+                color: 'text.primary',
+                bgcolor: 'action.hover',
+              },
+            }}
+          >
+            <CloseIcon sx={{ fontSize: 16 }} />
+          </IconButton>
+          <DocumentPointContext point={point} />
           <Box
             sx={{
               display: 'flex',

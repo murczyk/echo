@@ -1,14 +1,17 @@
 [Unit]
 Description=Echo vLLM Router OpenTelemetry collector
 Documentation=https://github.com/SigNoz/signoz-otel-collector
-After=network-online.target echo-vllm-router.service
-Wants=network-online.target echo-vllm-router.service
+After=network-online.target echo-vllm-router.service echo-vllm-router@ocr-gemma.service echo-vllm-router@nuextract.service
+Wants=network-online.target echo-vllm-router.service echo-vllm-router@ocr-gemma.service echo-vllm-router@nuextract.service
 
 [Service]
 Type=simple
 User=echo-vllm-router-otel
 Group=echo-vllm-router-otel
 EnvironmentFile=/etc/echo-vllm-router/router.env
+EnvironmentFile=/etc/echo-vllm-router/router-ocr-gemma.env
+EnvironmentFile=/etc/echo-vllm-router/router-nuextract.env
+EnvironmentFile=/etc/echo-vllm-router/otel.env
 StateDirectory=echo-vllm-router-otel
 ExecStart=/opt/echo-vllm-router/bin/signoz-otel-collector --config=/etc/echo-vllm-router/otel-collector.yaml --copy-path=/var/lib/echo-vllm-router-otel/config.yaml
 Restart=on-failure

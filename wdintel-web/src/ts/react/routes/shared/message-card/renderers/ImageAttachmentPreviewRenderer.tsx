@@ -23,6 +23,13 @@ import {
   type DragState,
 } from '../message-card-image-preview-utils';
 import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
+import {
+  getOcrDownloadItems,
+  getOcrInfoSections,
+  getOcrInfoSeverity,
+  OcrPreviewAction,
+  OcrSplitPreview,
+} from '../attachment-preview/OcrPreview';
 import { AttachmentPreviewZoomControls } from '../attachment-preview/MessageCardAttachmentPreviewControls';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
@@ -33,6 +40,10 @@ import { getMessageCardAttachmentPreviewConfig } from '../attachment-preview/mes
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
+import {
+  isSupportedOcrImage,
+  MediaReprocessAction,
+} from '../attachment-preview/MediaReprocessAction';
 
 type StageSize = {
   width: number;
@@ -220,6 +231,11 @@ export function ImageAttachmentPreviewRenderer({
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [imageSize, setImageSize] = useState<StageSize | null>(null);
   const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const [ocrVisible, setOcrVisible] = useState(false);
+  const [ocrFullPane, setOcrFullPane] = useState(false);
+  const [ocrStatus, setOcrStatus] = useState(currentImage.ocr ?? null);
+  const [summaryVisible, setSummaryVisible] = useState(currentImage.summary != null);
+  const [summaryStatus, setSummaryStatus] = useState(currentImage.summary ?? null);
   const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const copyRequestKeyRef = useRef<string | null>(null);
@@ -269,8 +285,12 @@ export function ImageAttachmentPreviewRenderer({
     setLoadedImageKey(null);
     setCopyStatus('idle');
     setInfoAnchorEl(null);
+    setOcrVisible(false);
+    setOcrFullPane(false);
+    setSummaryVisible(currentImage.summary != null);
+    setSummaryStatus(currentImage.summary ?? null);
     copyRequestKeyRef.current = null;
-  }, [removePointerListeners]);
+  }, [currentImage.summary, removePointerListeners]);
 
   const resetPreviewState = useCallback(() => {
     resetImageState();
@@ -380,7 +400,8 @@ export function ImageAttachmentPreviewRenderer({
 
   useEffect(() => {
     resetImageState();
-  }, [currentHref, resolvedIndex, resetImageState]);
+    setOcrStatus(currentImage.ocr ?? null);
+  }, [currentHref, currentImage.ocr, currentImage.summary, resolvedIndex, resetImageState]);
 
   useEffect(() => {
     if (stageEl === null) return;
@@ -517,6 +538,14 @@ export function ImageAttachmentPreviewRenderer({
     changeFullscreen(!dialogIsFullscreen);
   };
 
+  const handleReprocessQueued = useCallback((nextOcr: NonNullable<MessageCardImage['ocr']>) => {
+    setOcrStatus(nextOcr);
+    setOcrVisible(true);
+    setOcrFullPane(false);
+    setSummaryStatus(null);
+    setSummaryVisible(false);
+  }, []);
+
   const handleDoubleClick = (event: SyntheticEvent<HTMLDivElement>) => {
     const mouseEvent = event as unknown as MouseEvent;
     if (isInteractivePreviewTarget(mouseEvent.target)) return;
@@ -568,7 +597,7 @@ export function ImageAttachmentPreviewRenderer({
   };
 
   const fileSize = currentImage.sizeBytes;
-  const stage = (
+  const sourceStage = (
     <MessageCardAttachmentPreviewStage
       ref={setStageNode}
       kind="image"
@@ -594,25 +623,60 @@ export function ImageAttachmentPreviewRenderer({
       <AttachmentPreviewZoomBadge zoom={zoom} onResetZoom={() => setPreviewZoom(ZOOM_MIN)} />
     </MessageCardAttachmentPreviewStage>
   );
+  const stage = (
+    <OcrSplitPreview
+      source={sourceStage}
+      mediaId={currentImage.id}
+      ocr={ocrStatus}
+      visible={ocrVisible}
+      fullPane={ocrFullPane}
+      onOcrChange={setOcrStatus}
+      onFullPaneChange={setOcrFullPane}
+      summary={summaryStatus}
+      summaryVisible={summaryVisible}
+      onSummaryChange={setSummaryStatus}
+      onSummaryVisibleChange={setSummaryVisible}
+    />
+  );
   const header = (
     <MessageCardAttachmentPreviewHeader
       fileName={previewFileName}
       openHref={currentHref}
       download={{ href: currentHref, fileName: downloadFileName }}
+      downloadItems={getOcrDownloadItems(currentImage.id, ocrStatus, previewFileName)}
       navigation={navigation}
       additionalActions={
-        <ImageCopyAction
-          status={copyStatus}
-          enabled={
-            loadedImage !== null &&
-            loadedImageKey === currentPreviewKey &&
-            canCopyImageToClipboard(loadedImage)
+        <>
+          <OcrPreviewAction
+            ocr={ocrStatus}
+            active={ocrVisible}
+            onClick={() => setOcrVisible((visible) => !visible)}
+          />
+          <ImageCopyAction
+            status={copyStatus}
+            enabled={
+              loadedImage !== null &&
+              loadedImageKey === currentPreviewKey &&
+              canCopyImageToClipboard(loadedImage)
+            }
+            onCopy={handleCopyImage}
+          />
+        </>
+      }
+      overflowAction={
+        <MediaReprocessAction
+          mediaId={currentImage.id}
+          supported={
+            ocrStatus != null ||
+            isSupportedOcrImage(currentImage.contentType, currentImage.fileName)
           }
-          onCopy={handleCopyImage}
+          ocr={ocrStatus}
+          onQueued={handleReprocessQueued}
         />
       }
       status={<ImageCopyStatus status={copyStatus} />}
       onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
+      infoSeverity={getOcrInfoSeverity(ocrStatus)}
       isFullscreen={dialogIsFullscreen}
       canFullscreen={canFullscreen}
       onToggleFullscreen={handleToggleFullscreen}
@@ -638,6 +702,7 @@ export function ImageAttachmentPreviewRenderer({
         },
         ...(currentImage.id?.trim() ? [{ label: 'ID', value: currentImage.id.trim() }] : []),
       ]}
+      sections={getOcrInfoSections(ocrStatus)}
     />
   );
 

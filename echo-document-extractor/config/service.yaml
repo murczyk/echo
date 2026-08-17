@@ -1,0 +1,85 @@
+service:
+  listen_host: 100.93.77.92
+  api_port: 8000
+  api_metrics_host: 127.0.0.1
+  api_metrics_port: 29000
+  worker_metrics_host: 127.0.0.1
+  worker_metrics_port: 29001
+  state_dir: /var/lib/echo-document-extractor
+  spool_dir: /var/lib/echo-document-extractor/spool
+  database_path: /var/lib/echo-document-extractor/jobs.sqlite3
+  bearer_token_env: ECHO_DOCUMENT_EXTRACTOR_TOKEN
+  limits:
+    max_input_bytes: 262144000
+    max_pages: 200
+    max_queue_depth: 25
+    max_spool_bytes: 75161927680
+    min_free_bytes: 21474836480
+    retention_seconds: 604800
+  worker:
+    poll_seconds: 2
+    lease_seconds: 300
+    heartbeat_seconds: 30
+    infrastructure_retries: 3
+    retry_backoff_seconds: [30, 120, 600]
+
+extraction:
+  hardware_profile: split_gpu
+  nu_extract:
+    url: http://100.105.172.96:8002/v1
+    model_id: numind/NuExtract3
+    revision: 2e9fca82ee641e6bb6e1f5d905241e994be27a07
+    token_env: NUEXTRACT_API_KEY
+    timeout_seconds: 180
+    max_tokens: 10000
+    dtype: bfloat16
+    temperature: 0.2
+    seed: 0
+    extra_body:
+      chat_template_kwargs:
+        mode: markdown
+        enable_thinking: false
+  gemma:
+    url: http://100.105.172.96:8001/v1
+    model_id: echo/ocr-gemma-4-26B-A4B-it
+    revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
+    token_env: GEMMA_API_KEY
+    timeout_seconds: 180
+    max_tokens: 10000
+    dtype: fp8
+    kv_cache_dtype: fp8
+    vision_budget: 1120
+    temperature: 0
+    seed: 0
+  pdf_dpi: 300
+  max_raster_long_edge: 4096
+  crop_padding: 0.03
+  crop_upscale: 2
+  endpoint_concurrency: 1
+  enable_paddle: true
+  paddle_languages: [ru, uk, en]
+  paddle:
+    device: gpu:0
+    require_local_models: true
+    model_root: /opt/echo-document-extractor/models
+    structure_config: /opt/echo-document-extractor/models/PP-StructureV3.yaml
+    ocr_common:
+      doc_orientation_classify_model_name: PP-LCNet_x1_0_doc_ori
+      doc_orientation_classify_model_dir: /opt/echo-document-extractor/models/PP-LCNet_x1_0_doc_ori
+      doc_unwarping_model_name: UVDoc
+      doc_unwarping_model_dir: /opt/echo-document-extractor/models/UVDoc
+      text_detection_model_name: PP-OCRv5_server_det
+      text_detection_model_dir: /opt/echo-document-extractor/models/PP-OCRv5_server_det
+      textline_orientation_model_name: PP-LCNet_x1_0_textline_ori
+      textline_orientation_model_dir: /opt/echo-document-extractor/models/PP-LCNet_x1_0_textline_ori
+    ocr_languages:
+      ru:
+        text_recognition_model_name: eslav_PP-OCRv5_mobile_rec
+        text_recognition_model_dir: /opt/echo-document-extractor/models/eslav_PP-OCRv5_mobile_rec
+      uk:
+        text_recognition_model_name: eslav_PP-OCRv5_mobile_rec
+        text_recognition_model_dir: /opt/echo-document-extractor/models/eslav_PP-OCRv5_mobile_rec
+      en:
+        text_recognition_model_name: en_PP-OCRv5_mobile_rec
+        text_recognition_model_dir: /opt/echo-document-extractor/models/en_PP-OCRv5_mobile_rec
+  preserve_raw_responses: false

@@ -1,0 +1,50 @@
+services:
+  vllm:
+    image: ${VLLM_IMAGE}
+    container_name: echo-gemma-ocr-vllm
+    restart: unless-stopped
+    runtime: nvidia
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    ports:
+      - 127.0.0.1:8000:8000
+    environment:
+      HF_HOME: /root/.cache/huggingface
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      MODEL_ID: ${MODEL_ID}
+      MODEL_REVISION: ${MODEL_REVISION}
+      VISION_BUDGET: ${VISION_BUDGET}
+      PRECISION_ARGS: ${PRECISION_ARGS}
+    volumes:
+      - ../cache/huggingface:/root/.cache/huggingface
+      - ../cache/vllm:/root/.cache/vllm
+      - ../cache/flashinfer:/root/.cache/flashinfer
+      - ../cache/triton:/root/.triton
+    command:
+      - /bin/bash
+      - -lc
+      - >-
+        exec vllm serve "$${MODEL_ID}"
+        --revision "$${MODEL_REVISION}"
+        --served-model-name "$${MODEL_ID}"
+        --host 0.0.0.0
+        --port 8000
+        --max-model-len 16384
+        --gpu-memory-utilization 0.7
+        --max-num-batched-tokens 8192
+        --limit-mm-per-prompt '{"image":1}'
+        --mm-processor-kwargs "{\"max_soft_tokens\":$${VISION_BUDGET}}"
+        --reasoning-parser gemma4
+        --structured-outputs-config '{"backend":"xgrammar","disable_any_whitespace":true}'
+        $${PRECISION_ARGS}
+    healthcheck:
+      test: [CMD-SHELL, curl -fsS http://127.0.0.1:8000/health]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 20m

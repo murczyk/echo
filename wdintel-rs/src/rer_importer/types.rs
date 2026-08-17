@@ -192,6 +192,10 @@ pub struct MessageMediaInfo {
     pub href: String,
     #[serde(default)]
     pub transcription: Option<String>,
+    #[serde(default)]
+    pub ocr: Option<crate::ocr::types::OcrMediaSummary>,
+    #[serde(default)]
+    pub summary: Option<crate::media_summary::types::MediaSummaryStatus>,
 }
 
 #[derive(

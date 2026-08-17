@@ -103,6 +103,8 @@ export function normalizeMessageMediaInfo(m: MessageMediaInfoRaw): MessageMediaI
     sizeBytes: Number(m.sizeBytes ?? raw.size_bytes ?? 0),
     href: String(m.href ?? raw.href ?? ''),
     transcription: (m.transcription ?? raw.transcription ?? null) as string | null,
+    ocr: m.ocr ?? null,
+    summary: m.summary ?? null,
   };
 }
 

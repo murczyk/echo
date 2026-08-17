@@ -1,0 +1,618 @@
+{
+  "runs": 6,
+  "automatic_acceptances": 0,
+  "scores": [
+    {
+      "id": "j5-penalty__j5__original__t0__s0__rp1p03__v1120__fp8",
+      "path": "raw/1120-fp8-j5-penalty/j5-penalty__j5__original__t0__s0__rp1p03__v1120__fp8.json",
+      "document": "j5",
+      "prompt_version": "original",
+      "vision_budget": 1120,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 0,
+        "top_p": 1.0,
+        "top_k": 0,
+        "seed": 0,
+        "repetition_penalty": 1.03,
+        "repetition_detection": {
+          "min_pattern_size": 3,
+          "max_pattern_size": 20,
+          "min_count": 4
+        }
+      },
+      "finish_reason": "repetition",
+      "latency_seconds": 1.8853712480004106,
+      "usage": {
+        "prompt_tokens": 1357,
+        "total_tokens": 1433,
+        "completion_tokens": 76,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.950523311132255,
+        "wer": 0.940379403794038,
+        "reference_characters": 2102,
+        "candidate_characters": 104
+      },
+      "critical_retained": 3,
+      "critical_total": 40,
+      "critical_missing": [
+        "5291456",
+        "6662340",
+        "5291831",
+        "6669367",
+        "5290419",
+        "6670841",
+        "5287599",
+        "6674095",
+        "8370",
+        "8371",
+        "8572",
+        "8573",
+        "7751",
+        "7955",
+        "8258",
+        "8658",
+        "Сокол",
+        "Пуля",
+        "Беркут",
+        "Париж",
+        "Салют",
+        "Феникс",
+        "Рубин",
+        "Гагарин",
+        "Тополь",
+        "Топаз",
+        "Шторм",
+        "Санаторий",
+        "Трамплин",
+        "Гора",
+        "Вышка",
+        "Стадион",
+        "ПГ-9С",
+        "ПГ7Р",
+        "КОЗБЧ 1.8",
+        "ТМ-72",
+        "КОФЗБЧ-3-Ф"
+      ],
+      "missing_sections": [
+        "Объект поражения",
+        "Координаты",
+        "Спланированные средства",
+        "Примечания"
+      ],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": false,
+      "structured_json": {
+        "requested": false,
+        "valid": null
+      },
+      "table": {
+        "valid_structure": false,
+        "row_count": 2,
+        "reference_row_count": 7,
+        "cell_text": {
+          "cer": 0.950523311132255,
+          "wer": 0.940379403794038,
+          "reference_characters": 2102,
+          "candidate_characters": 104
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    },
+    {
+      "id": "j5-penalty__j5__original__t0__s0__rp1p05__v1120__fp8",
+      "path": "raw/1120-fp8-j5-penalty/j5-penalty__j5__original__t0__s0__rp1p05__v1120__fp8.json",
+      "document": "j5",
+      "prompt_version": "original",
+      "vision_budget": 1120,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 0,
+        "top_p": 1.0,
+        "top_k": 0,
+        "seed": 0,
+        "repetition_penalty": 1.05,
+        "repetition_detection": {
+          "min_pattern_size": 3,
+          "max_pattern_size": 20,
+          "min_count": 4
+        }
+      },
+      "finish_reason": "repetition",
+      "latency_seconds": 1.8700772750007673,
+      "usage": {
+        "prompt_tokens": 1357,
+        "total_tokens": 1433,
+        "completion_tokens": 76,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.950523311132255,
+        "wer": 0.940379403794038,
+        "reference_characters": 2102,
+        "candidate_characters": 104
+      },
+      "critical_retained": 3,
+      "critical_total": 40,
+      "critical_missing": [
+        "5291456",
+        "6662340",
+        "5291831",
+        "6669367",
+        "5290419",
+        "6670841",
+        "5287599",
+        "6674095",
+        "8370",
+        "8371",
+        "8572",
+        "8573",
+        "7751",
+        "7955",
+        "8258",
+        "8658",
+        "Сокол",
+        "Пуля",
+        "Беркут",
+        "Париж",
+        "Салют",
+        "Феникс",
+        "Рубин",
+        "Гагарин",
+        "Тополь",
+        "Топаз",
+        "Шторм",
+        "Санаторий",
+        "Трамплин",
+        "Гора",
+        "Вышка",
+        "Стадион",
+        "ПГ-9С",
+        "ПГ7Р",
+        "КОЗБЧ 1.8",
+        "ТМ-72",
+        "КОФЗБЧ-3-Ф"
+      ],
+      "missing_sections": [
+        "Объект поражения",
+        "Координаты",
+        "Спланированные средства",
+        "Примечания"
+      ],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": false,
+      "structured_json": {
+        "requested": false,
+        "valid": null
+      },
+      "table": {
+        "valid_structure": false,
+        "row_count": 2,
+        "reference_row_count": 7,
+        "cell_text": {
+          "cer": 0.950523311132255,
+          "wer": 0.940379403794038,
+          "reference_characters": 2102,
+          "candidate_characters": 104
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    },
+    {
+      "id": "j5-penalty__j5__original__t0__s1__rp1p03__v1120__fp8",
+      "path": "raw/1120-fp8-j5-penalty/j5-penalty__j5__original__t0__s1__rp1p03__v1120__fp8.json",
+      "document": "j5",
+      "prompt_version": "original",
+      "vision_budget": 1120,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 0,
+        "top_p": 1.0,
+        "top_k": 0,
+        "seed": 1,
+        "repetition_penalty": 1.03,
+        "repetition_detection": {
+          "min_pattern_size": 3,
+          "max_pattern_size": 20,
+          "min_count": 4
+        }
+      },
+      "finish_reason": "repetition",
+      "latency_seconds": 1.872318259000167,
+      "usage": {
+        "prompt_tokens": 1357,
+        "total_tokens": 1433,
+        "completion_tokens": 76,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.950523311132255,
+        "wer": 0.940379403794038,
+        "reference_characters": 2102,
+        "candidate_characters": 104
+      },
+      "critical_retained": 3,
+      "critical_total": 40,
+      "critical_missing": [
+        "5291456",
+        "6662340",
+        "5291831",
+        "6669367",
+        "5290419",
+        "6670841",
+        "5287599",
+        "6674095",
+        "8370",
+        "8371",
+        "8572",
+        "8573",
+        "7751",
+        "7955",
+        "8258",
+        "8658",
+        "Сокол",
+        "Пуля",
+        "Беркут",
+        "Париж",
+        "Салют",
+        "Феникс",
+        "Рубин",
+        "Гагарин",
+        "Тополь",
+        "Топаз",
+        "Шторм",
+        "Санаторий",
+        "Трамплин",
+        "Гора",
+        "Вышка",
+        "Стадион",
+        "ПГ-9С",
+        "ПГ7Р",
+        "КОЗБЧ 1.8",
+        "ТМ-72",
+        "КОФЗБЧ-3-Ф"
+      ],
+      "missing_sections": [
+        "Объект поражения",
+        "Координаты",
+        "Спланированные средства",
+        "Примечания"
+      ],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": false,
+      "structured_json": {
+        "requested": false,
+        "valid": null
+      },
+      "table": {
+        "valid_structure": false,
+        "row_count": 2,
+        "reference_row_count": 7,
+        "cell_text": {
+          "cer": 0.950523311132255,
+          "wer": 0.940379403794038,
+          "reference_characters": 2102,
+          "candidate_characters": 104
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    },
+    {
+      "id": "j5-penalty__j5__original__t0__s1__rp1p05__v1120__fp8",
+      "path": "raw/1120-fp8-j5-penalty/j5-penalty__j5__original__t0__s1__rp1p05__v1120__fp8.json",
+      "document": "j5",
+      "prompt_version": "original",
+      "vision_budget": 1120,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 0,
+        "top_p": 1.0,
+        "top_k": 0,
+        "seed": 1,
+        "repetition_penalty": 1.05,
+        "repetition_detection": {
+          "min_pattern_size": 3,
+          "max_pattern_size": 20,
+          "min_count": 4
+        }
+      },
+      "finish_reason": "repetition",
+      "latency_seconds": 1.8714648400000442,
+      "usage": {
+        "prompt_tokens": 1357,
+        "total_tokens": 1433,
+        "completion_tokens": 76,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.950523311132255,
+        "wer": 0.940379403794038,
+        "reference_characters": 2102,
+        "candidate_characters": 104
+      },
+      "critical_retained": 3,
+      "critical_total": 40,
+      "critical_missing": [
+        "5291456",
+        "6662340",
+        "5291831",
+        "6669367",
+        "5290419",
+        "6670841",
+        "5287599",
+        "6674095",
+        "8370",
+        "8371",
+        "8572",
+        "8573",
+        "7751",
+        "7955",
+        "8258",
+        "8658",
+        "Сокол",
+        "Пуля",
+        "Беркут",
+        "Париж",
+        "Салют",
+        "Феникс",
+        "Рубин",
+        "Гагарин",
+        "Тополь",
+        "Топаз",
+        "Шторм",
+        "Санаторий",
+        "Трамплин",
+        "Гора",
+        "Вышка",
+        "Стадион",
+        "ПГ-9С",
+        "ПГ7Р",
+        "КОЗБЧ 1.8",
+        "ТМ-72",
+        "КОФЗБЧ-3-Ф"
+      ],
+      "missing_sections": [
+        "Объект поражения",
+        "Координаты",
+        "Спланированные средства",
+        "Примечания"
+      ],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": false,
+      "structured_json": {
+        "requested": false,
+        "valid": null
+      },
+      "table": {
+        "valid_structure": false,
+        "row_count": 2,
+        "reference_row_count": 7,
+        "cell_text": {
+          "cer": 0.950523311132255,
+          "wer": 0.940379403794038,
+          "reference_characters": 2102,
+          "candidate_characters": 104
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    },
+    {
+      "id": "j5-penalty__j5__original__t0__s2__rp1p03__v1120__fp8",
+      "path": "raw/1120-fp8-j5-penalty/j5-penalty__j5__original__t0__s2__rp1p03__v1120__fp8.json",
+      "document": "j5",
+      "prompt_version": "original",
+      "vision_budget": 1120,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 0,
+        "top_p": 1.0,
+        "top_k": 0,
+        "seed": 2,
+        "repetition_penalty": 1.03,
+        "repetition_detection": {
+          "min_pattern_size": 3,
+          "max_pattern_size": 20,
+          "min_count": 4
+        }
+      },
+      "finish_reason": "repetition",
+      "latency_seconds": 1.871604326999659,
+      "usage": {
+        "prompt_tokens": 1357,
+        "total_tokens": 1433,
+        "completion_tokens": 76,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.950523311132255,
+        "wer": 0.940379403794038,
+        "reference_characters": 2102,
+        "candidate_characters": 104
+      },
+      "critical_retained": 3,
+      "critical_total": 40,
+      "critical_missing": [
+        "5291456",
+        "6662340",
+        "5291831",
+        "6669367",
+        "5290419",
+        "6670841",
+        "5287599",
+        "6674095",
+        "8370",
+        "8371",
+        "8572",
+        "8573",
+        "7751",
+        "7955",
+        "8258",
+        "8658",
+        "Сокол",
+        "Пуля",
+        "Беркут",
+        "Париж",
+        "Салют",
+        "Феникс",
+        "Рубин",
+        "Гагарин",
+        "Тополь",
+        "Топаз",
+        "Шторм",
+        "Санаторий",
+        "Трамплин",
+        "Гора",
+        "Вышка",
+        "Стадион",
+        "ПГ-9С",
+        "ПГ7Р",
+        "КОЗБЧ 1.8",
+        "ТМ-72",
+        "КОФЗБЧ-3-Ф"
+      ],
+      "missing_sections": [
+        "Объект поражения",
+        "Координаты",
+        "Спланированные средства",
+        "Примечания"
+      ],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": false,
+      "structured_json": {
+        "requested": false,
+        "valid": null
+      },
+      "table": {
+        "valid_structure": false,
+        "row_count": 2,
+        "reference_row_count": 7,
+        "cell_text": {
+          "cer": 0.950523311132255,
+          "wer": 0.940379403794038,
+          "reference_characters": 2102,
+          "candidate_characters": 104
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    },
+    {
+      "id": "j5-penalty__j5__original__t0__s2__rp1p05__v1120__fp8",
+      "path": "raw/1120-fp8-j5-penalty/j5-penalty__j5__original__t0__s2__rp1p05__v1120__fp8.json",
+      "document": "j5",
+      "prompt_version": "original",
+      "vision_budget": 1120,
+      "precision": "fp8",
+      "sampling": {
+        "temperature": 0,
+        "top_p": 1.0,
+        "top_k": 0,
+        "seed": 2,
+        "repetition_penalty": 1.05,
+        "repetition_detection": {
+          "min_pattern_size": 3,
+          "max_pattern_size": 20,
+          "min_count": 4
+        }
+      },
+      "finish_reason": "repetition",
+      "latency_seconds": 1.8699423980006031,
+      "usage": {
+        "prompt_tokens": 1357,
+        "total_tokens": 1433,
+        "completion_tokens": 76,
+        "prompt_tokens_details": null
+      },
+      "ocr": {
+        "cer": 0.950523311132255,
+        "wer": 0.940379403794038,
+        "reference_characters": 2102,
+        "candidate_characters": 104
+      },
+      "critical_retained": 3,
+      "critical_total": 40,
+      "critical_missing": [
+        "5291456",
+        "6662340",
+        "5291831",
+        "6669367",
+        "5290419",
+        "6670841",
+        "5287599",
+        "6674095",
+        "8370",
+        "8371",
+        "8572",
+        "8573",
+        "7751",
+        "7955",
+        "8258",
+        "8658",
+        "Сокол",
+        "Пуля",
+        "Беркут",
+        "Париж",
+        "Салют",
+        "Феникс",
+        "Рубин",
+        "Гагарин",
+        "Тополь",
+        "Топаз",
+        "Шторм",
+        "Санаторий",
+        "Трамплин",
+        "Гора",
+        "Вышка",
+        "Стадион",
+        "ПГ-9С",
+        "ПГ7Р",
+        "КОЗБЧ 1.8",
+        "ТМ-72",
+        "КОФЗБЧ-3-Ф"
+      ],
+      "missing_sections": [
+        "Объект поражения",
+        "Координаты",
+        "Спланированные средства",
+        "Примечания"
+      ],
+      "added_numbers": [],
+      "repeated_lines": [],
+      "repeated_token_patterns": [],
+      "whitespace_padding": false,
+      "structured_json": {
+        "requested": false,
+        "valid": null
+      },
+      "table": {
+        "valid_structure": false,
+        "row_count": 2,
+        "reference_row_count": 7,
+        "cell_text": {
+          "cer": 0.950523311132255,
+          "wer": 0.940379403794038,
+          "reference_characters": 2102,
+          "candidate_characters": 104
+        }
+      },
+      "automatic_acceptance": false,
+      "human_audit_required_for_added_text": true
+    }
+  ]
+}

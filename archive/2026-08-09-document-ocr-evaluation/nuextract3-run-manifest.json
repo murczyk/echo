@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-08T22:24:21Z",
+  "execution": {
+    "host": "echo-gpu-flyingskull",
+    "host_os": "Ubuntu 26.04",
+    "virtualization": "none",
+    "container_runtime": "Incus",
+    "container": "numarkdown-eval-20260808",
+    "container_os": "Debian GNU/Linux 13",
+    "container_project_path": "/workspace/numarkdown-eval",
+    "host_project_path": "/home/hammer/workspace/numarkdown-eval",
+    "gpu": "NVIDIA GeForce RTX 4070 Ti SUPER",
+    "gpu_memory_mib": 16376,
+    "apparmor_disabled": false,
+    "production_container": "echo-gpu-pve5-echo-gpu",
+    "production_restore_guard": "systemd timer plus shell EXIT/HUP/INT/TERM trap",
+    "final_production_state": "RUNNING; echo-gpu-py active",
+    "final_experiment_state": "STOPPED; retained for reproducibility"
+  },
+  "model": {
+    "id": "numind/NuExtract3",
+    "revision": "2e9fca82ee641e6bb6e1f5d905241e994be27a07",
+    "architecture": "Qwen3_5ForConditionalGeneration",
+    "parameters": 4539265536,
+    "checkpoint_dtype": "bfloat16",
+    "quantization": null,
+    "engine": "vLLM 0.26.0",
+    "pytorch": "2.11.0+cu130",
+    "cuda_runtime": "13.0",
+    "attention": "FlashAttention 2",
+    "sampler": "PyTorch; VLLM_USE_FLASHINFER_SAMPLER=0",
+    "max_model_len": 16384,
+    "max_num_seqs": 1,
+    "gpu_memory_utilization": 0.95,
+    "model_loading_gib": 8.61,
+    "observed_process_gpu_memory_gib": 14.4
+  },
+  "source_images": [
+    {
+      "file": "l54dw_8gZt5foedpH-PY.jpg",
+      "width": 1386,
+      "height": 1968,
+      "sha256": "228a267a2a95eb746265eb2f32c0a3f14053b22d8657a3defd8defd834ee8d60"
+    },
+    {
+      "file": "J5rHE_ZMsk1H_QDCCn3v.jpg",
+      "width": 2492,
+      "height": 1360,
+      "sha256": "28f4104b68166bdc60de3d6d91b47a4498591b30e422adb70faafad6ec07f8cf"
+    }
+  ],
+  "markdown_runs": [
+    {"file": "l54dw_8gZt5foedpH-PY.jpg", "mode": "non_thinking", "elapsed_seconds": 25.703, "prompt_tokens": 2695, "completion_tokens": 1470, "finish_reason": "stop"},
+    {"file": "J5rHE_ZMsk1H_QDCCn3v.jpg", "mode": "non_thinking", "elapsed_seconds": 21.571, "prompt_tokens": 3305, "completion_tokens": 1262, "finish_reason": "stop"},
+    {"file": "l54dw_8gZt5foedpH-PY.jpg", "mode": "thinking", "elapsed_seconds": 31.379, "prompt_tokens": 2693, "completion_tokens": 1889, "finish_reason": "stop"},
+    {"file": "J5rHE_ZMsk1H_QDCCn3v.jpg", "mode": "thinking", "elapsed_seconds": 29.573, "prompt_tokens": 3303, "completion_tokens": 1778, "finish_reason": "stop"}
+  ],
+  "structured_runs": [
+    {"file": "l54dw_8gZt5foedpH-PY.jpg", "mode": "non_thinking", "elapsed_seconds": 35.019, "prompt_tokens": 3188, "completion_tokens": 2079, "json_valid": true},
+    {"file": "J5rHE_ZMsk1H_QDCCn3v.jpg", "mode": "non_thinking", "elapsed_seconds": 20.848, "prompt_tokens": 3462, "completion_tokens": 1216, "json_valid": true},
+    {"file": "l54dw_8gZt5foedpH-PY.jpg", "mode": "thinking", "elapsed_seconds": 73.020, "prompt_tokens": 3186, "completion_tokens": 4403, "json_valid": true},
+    {"file": "J5rHE_ZMsk1H_QDCCn3v.jpg", "mode": "thinking", "elapsed_seconds": 42.204, "prompt_tokens": 3460, "completion_tokens": 2544, "json_valid": true}
+  ],
+  "partial_reference_metrics": {
+    "non_thinking": {"cer_percent": 0.29, "wer_percent": 3.30, "key_values": "16/16"},
+    "thinking": {"cer_percent": 0.29, "wer_percent": 3.30, "key_values": "16/16"}
+  },
+  "raw_outputs": [
+    {"file": "nuextract3.vllm.raw.json", "sha256": "1b367fe96c90491f42e3a4046f9c9af1fded916d1bc29d2f703ed24ad3455ca9"},
+    {"file": "nuextract3.structured.raw.json", "sha256": "08a89b4cdb5d3790db2d417e0d2e714f1262a0f2256e2764120b6a0eee48e1e3"},
+    {"file": "l54.gemma-summary.raw.json", "sha256": "ea055b1cf95cb889d3a86771bcbdd4a21e26776ab50bbf4577a058bfcc1cd087"},
+    {"file": "J5.gemma-summary.raw.json", "sha256": "872306b11b11561b79a518e963a165c6269d059acac57030b87ad11b9b9d2b7b"}
+  ],
+  "language_policy": "Russian source text remains verbatim; summaries are Ukrainian and validated for new numbers and proper-name fidelity."
+}
