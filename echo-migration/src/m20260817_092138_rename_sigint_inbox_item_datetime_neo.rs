@@ -55,6 +55,26 @@ alter table sigint_inbox_item
             .get_connection()
             .execute_unprepared(
                 r#"
+lock table sigint_inbox_item in access exclusive mode;
+
+update sigint_inbox_item
+set
+    date = case
+        when datetime is null then null
+        else to_char(
+            (datetime at time zone 'UTC') at time zone 'Europe/Kyiv',
+            'YYYY-MM-DD'
+        )
+    end,
+    time = case
+        when datetime is null then null
+        else to_char(
+            (datetime at time zone 'UTC') at time zone 'Europe/Kyiv',
+            'HH24:MI:SS.US'
+        )
+    end
+where datetime is distinct from datetime_old;
+
 alter table sigint_inbox_item
     rename column datetime to datetime_neo;
 alter table sigint_inbox_item

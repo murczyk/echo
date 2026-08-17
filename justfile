@@ -810,6 +810,23 @@ deploy _server_pos="" server silent="false":
     else
       just _print-servers; exit 1;
     fi
+    UNMASK_RUNTIME_SERVICES_ON_FAILURE=0
+
+    cleanup() {
+      local status=$?
+      trap - EXIT
+
+      if [[ $status -ne 0 && $UNMASK_RUNTIME_SERVICES_ON_FAILURE -eq 1 ]]; then
+        echo "Deployment failed; unmasking runtime services and leaving them stopped..." >&2
+        if ! ssh "$SERVER" 'sudo systemctl unmask --runtime wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service'; then
+          echo "Failed to unmask runtime services after deployment failure." >&2
+        fi
+      fi
+
+      exit "$status"
+    }
+    trap cleanup EXIT
+
     # Determine version from root Cargo.toml ([workspace.package].version)
     VERSION=$(tq -r -f Cargo.toml workspace.package.version)
 
@@ -895,8 +912,9 @@ deploy _server_pos="" server silent="false":
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
     bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" start "$SERVER"
+    UNMASK_RUNTIME_SERVICES_ON_FAILURE=1
     ssh "$SERVER" 'set -euo pipefail
-      for service in wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
+      for service in wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
         if systemctl cat "$service" >/dev/null 2>&1; then
           echo "Stopping $service and waiting up to 120 seconds..."
           sudo systemctl stop "$service" || true
@@ -914,7 +932,12 @@ deploy _server_pos="" server silent="false":
         else
           echo "$service is not installed; skipping stop wait."
         fi
-      done'
+      done
+      sudo systemctl mask --runtime \
+        wdintel-rs.socket \
+        wdintel-rs.service \
+        wdintel-rs-report-worker.service \
+        wdintel-rs-bgworker.service'
     # Keep apt mostly quiet, but print the command before running it and fail on timeouts.
     ssh "$SERVER" 'set -euo pipefail
       run_logged() {
@@ -960,6 +983,11 @@ deploy _server_pos="" server silent="false":
       set -euo pipefail
 
       sudo systemctl daemon-reload
+      sudo systemctl unmask --runtime \
+        wdintel-rs.socket \
+        wdintel-rs.service \
+        wdintel-rs-report-worker.service \
+        wdintel-rs-bgworker.service
       sudo systemctl disable --now wdintel-rs.service || true
 
       # Leave only wdintel-rs.socket on :8081; clean up legacy/generated sockets.
@@ -1082,6 +1110,7 @@ deploy _server_pos="" server silent="false":
         exit 1
       fi
     '
+    UNMASK_RUNTIME_SERVICES_ON_FAILURE=0
     ssh "$SERVER" 'if sudo -n test -f /etc/echo-peerdb/source.env; then /opt/echo-peerdb/current/bin/source-verify-deploy.sh; fi'
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
       echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
@@ -1145,7 +1174,7 @@ deploy-from-local _server_pos="" server silent="false":
     DEB_NAME="$(basename "$DEB_PATH")"
     REMOTE_DEB_NAME="${DEB_NAME%.deb}-local-$(date -u +%Y%m%d%H%M%S)-$$.deb"
     REMOTE_DEB_PATH="/var/tmp/${REMOTE_DEB_NAME}"
-    RESTART_WORKERS_ON_FAILURE=0
+    UNMASK_RUNTIME_SERVICES_ON_FAILURE=0
 
     cleanup() {
       local status=$?
@@ -1154,10 +1183,10 @@ deploy-from-local _server_pos="" server silent="false":
       if [[ -n "$REMOTE_DEB_PATH" ]]; then
         ssh "$SERVER" "rm -f -- '$REMOTE_DEB_PATH'" >/dev/null 2>&1 || true
       fi
-      if [[ $status -ne 0 && $RESTART_WORKERS_ON_FAILURE -eq 1 ]]; then
-        echo "Deployment failed; restarting worker services..." >&2
-        if ! ssh "$SERVER" 'sudo systemctl start wdintel-rs-bgworker.service wdintel-rs-report-worker.service'; then
-          echo "Failed to restart worker services after deployment failure." >&2
+      if [[ $status -ne 0 && $UNMASK_RUNTIME_SERVICES_ON_FAILURE -eq 1 ]]; then
+        echo "Deployment failed; unmasking runtime services and leaving them stopped..." >&2
+        if ! ssh "$SERVER" 'sudo systemctl unmask --runtime wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service'; then
+          echo "Failed to unmask runtime services after deployment failure." >&2
         fi
       fi
 
@@ -1168,7 +1197,6 @@ deploy-from-local _server_pos="" server silent="false":
     echo "Uploading ${DEB_NAME} to ${SERVER}:${REMOTE_DEB_PATH}..."
     scp "$DEB_PATH" "${SERVER}:${REMOTE_DEB_PATH}"
 
-    RESTART_WORKERS_ON_FAILURE=1
     ssh "$SERVER" 'set -euo pipefail
       if ! command -v java >/dev/null 2>&1; then
         echo "ERROR: Java is required for Signal normal mode, but java is not installed." >&2
@@ -1183,8 +1211,9 @@ deploy-from-local _server_pos="" server silent="false":
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
     bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" start "$SERVER"
+    UNMASK_RUNTIME_SERVICES_ON_FAILURE=1
     ssh "$SERVER" 'set -euo pipefail
-      for service in wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
+      for service in wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
         if systemctl cat "$service" >/dev/null 2>&1; then
           echo "Stopping $service and waiting up to 120 seconds..."
           sudo systemctl stop "$service" || true
@@ -1202,7 +1231,12 @@ deploy-from-local _server_pos="" server silent="false":
         else
           echo "$service is not installed; skipping stop wait."
         fi
-      done'
+      done
+      sudo systemctl mask --runtime \
+        wdintel-rs.socket \
+        wdintel-rs.service \
+        wdintel-rs-report-worker.service \
+        wdintel-rs-bgworker.service'
 
     echo "Installing ${DEB_NAME} on ${SERVER}..."
     ssh "$SERVER" "set -euo pipefail
@@ -1229,6 +1263,11 @@ deploy-from-local _server_pos="" server silent="false":
       set -euo pipefail
 
       sudo systemctl daemon-reload
+      sudo systemctl unmask --runtime \
+        wdintel-rs.socket \
+        wdintel-rs.service \
+        wdintel-rs-report-worker.service \
+        wdintel-rs-bgworker.service
       sudo systemctl disable --now wdintel-rs.service || true
 
       for unit in wdintel-rs-bgworker.socket wdintel-py.socket echo-vector.socket; do
@@ -1352,11 +1391,11 @@ deploy-from-local _server_pos="" server silent="false":
 
       echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
     '
+    UNMASK_RUNTIME_SERVICES_ON_FAILURE=0
     ssh "$SERVER" 'if sudo -n test -f /etc/echo-peerdb/source.env; then /opt/echo-peerdb/current/bin/source-verify-deploy.sh; fi'
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
       echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
     fi
-    RESTART_WORKERS_ON_FAILURE=0
 
     if [[ "{{ silent }}" != "true" ]]; then
       # Success notification
