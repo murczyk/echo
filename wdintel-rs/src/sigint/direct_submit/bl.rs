@@ -710,7 +710,8 @@ async fn load_copy_media(
             .c(h!())?;
     let deleted_media_ids = parse_media_ids(
         payload.deleted_media_ids.as_deref().unwrap_or_default(),
-    )?;
+    )
+    .c(h!())?;
     let source_media_ids = source_media
         .iter()
         .map(|media| media.id)
@@ -722,7 +723,7 @@ async fn load_copy_media(
         return Err(AppError::NotFound);
     }
     let retained_media_ids = match payload.retained_media_ids.as_deref() {
-        Some(ids) => parse_media_ids(ids)?,
+        Some(ids) => parse_media_ids(ids).c(h!())?,
         None => source_media.iter().map(|media| media.id).collect(),
     };
     let retained_media_ids = retained_media_ids

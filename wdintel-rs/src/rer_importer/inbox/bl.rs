@@ -170,6 +170,8 @@ async fn load_attachment_counts(
 async fn load_intelligence_report_summaries(
     message_ids: &[i64],
     allowed_groups: &[String],
+    login: &uuid::Uuid,
+    organism_logins: &[uuid::Uuid],
     dbx: &DatabaseConnection,
 ) -> Result<IntelligenceReportSummaries, AppError> {
     if message_ids.is_empty() {
@@ -317,12 +319,31 @@ async fn load_intelligence_report_summaries(
         }
     }
 
+    let owner_sender_ids = organism_logins
+        .iter()
+        .chain(std::iter::once(login))
+        .map(ToString::to_string)
+        .collect::<HashSet<_>>();
+    let owner_message_ids = messages
+        .values()
+        .filter(|message| {
+            message.datasource_group_id.is_none()
+                && !grouped_message_ids.contains(&message.id)
+                && message
+                    .sender
+                    .as_ref()
+                    .is_some_and(|sender| owner_sender_ids.contains(sender))
+        })
+        .map(|message| message.id)
+        .collect::<HashSet<_>>();
+
     let requested_ids = message_ids.iter().copied().collect::<HashSet<_>>();
     let mut summaries = IntelligenceReportSummaries::default();
     for link in links {
         if requested_ids.contains(&link.signal_message_id) {
             let parent_is_accessible = accessible_group_master_keys
-                .contains_key(&link.parent_signal_message_id);
+                .contains_key(&link.parent_signal_message_id)
+                || owner_message_ids.contains(&link.parent_signal_message_id);
             if let Some(parent) = inbox_message_summary(
                 link.parent_signal_message_id,
                 parent_is_accessible,
@@ -569,6 +590,8 @@ pub async fn aggregate_to_inbox_messages(
     let mut intelligence_report_summaries = load_intelligence_report_summaries(
         &message_ids,
         &sigint_groups,
+        login,
+        logins,
         &env.dbx,
     )
     .await
@@ -972,7 +995,8 @@ pub(crate) async fn upsert_editable_linked_message_comment(
                     .one(db)
                     .await
                     .c(h!())?
-                    .ok_or(AppError::NotFound)?
+                    .ok_or(AppError::NotFound)
+                    .c(h!())?
                     .into_active_model();
             legacy_comment.comment = Set(comment.to_string());
             legacy_comment.update(db).await.c(h!())?;
@@ -982,7 +1006,8 @@ pub(crate) async fn upsert_editable_linked_message_comment(
                     .one(db)
                     .await
                     .c(h!())?
-                    .ok_or(AppError::NotFound)?
+                    .ok_or(AppError::NotFound)
+                    .c(h!())?
                     .into_active_model();
             message.body = Set(Some(comment.to_string()));
             message.update(db).await.c(h!())?;
@@ -1028,7 +1053,8 @@ where
                     .one(db)
                     .await
                     .c(h!())?
-                    .ok_or(AppError::NotFound)?
+                    .ok_or(AppError::NotFound)
+                    .c(h!())?
                     .into_active_model();
             message.deleted = Set(true);
             message.update(db).await.c(h!())?;

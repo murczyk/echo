@@ -210,7 +210,8 @@ where
         parent_signal_message_ids,
         allowed_groups,
     )
-    .await?
+    .await
+    .c(h!())?
     .ok_or(AppError::NotFound)
 }
 

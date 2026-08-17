@@ -762,7 +762,8 @@ async fn load_non_empty_comments(
 ) -> Result<Vec<String>, AppError> {
     let comments =
         crate::sigint::comments::find_linked_message_comments(dbx, &[item_id])
-            .await?
+            .await
+            .c(h!())?
             .into_iter()
             .map(|comment| comment.comment)
             .collect();
