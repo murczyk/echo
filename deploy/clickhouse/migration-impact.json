@@ -1,5 +1,13 @@
 {
   "migrations": {
+    "echo:m20260813_181612_add_duty_collapse_media_previews": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "mirror_resync"
+        }
+      ]
+    },
     "echo:m20260723_125003_palitra_highlight_blacklist": {
       "changes": [
         {
