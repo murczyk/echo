@@ -569,6 +569,16 @@ const INDEX_HTML: &str = r#"<!doctype html>
       }
     }
 
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[char]);
+    }
+
     function clearActionError() {
       actionError.textContent = '';
       actionError.classList.add('hidden');
@@ -734,7 +744,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       select.innerHTML = '<option value="" disabled style="color:#71717a">Оберіть акаунт</option>' + automationAccounts.map(account => {
         const linked = account.isLinked ? '' : ' · не підключено';
         const style = account.isLinked ? '' : ' style="color:#71717a"';
-        return `<option value="${account.id}"${style}>${account.name} · ${account.phone}${linked}</option>`;
+        return `<option value="${account.id}"${style}>${escapeHtml(account.name)} · ${account.phone}${linked}</option>`;
       }).join('');
       if (automationAccounts.some(account => account.id === current)) {
         select.value = String(current);
@@ -747,7 +757,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       const current = select.value;
       const groups = automationGroups.filter(group => group.accountId === accountId);
       select.innerHTML = '<option value="" disabled style="color:#71717a">Оберіть групу</option>' + groups.map(group => {
-        return `<option value="${group.id}">${group.name} · ${group.messengerName}</option>`;
+        return `<option value="${group.id}">${escapeHtml(group.name)} · ${escapeHtml(group.messengerName)}</option>`;
       }).join('');
       if (groups.some(group => String(group.id) === current)) {
         select.value = current;
@@ -1315,7 +1325,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
-              <h3 class="truncate text-base font-medium">${item.displayName || item.name}</h3>
+              <h3 class="truncate text-base font-medium">${escapeHtml(item.displayName || item.name)}</h3>
               <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">${item.kind}</span>
               <span class="${item.isLinked ? 'text-emerald-400' : 'text-amber-400'} text-sm">${item.isLinked ? 'підключено' : 'не підключено'}</span>
               ${item.isPaused ? '<span class="text-sm text-amber-300">синхронізацію зупинено</span>' : ''}
@@ -1361,7 +1371,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     function automationField(label, value) {
       return `
         <p class="mt-1 text-xs text-zinc-400">
-          <span class="mr-1 text-zinc-500">${label}:</span>${value || '-'}
+          <span class="mr-1 text-zinc-500">${label}:</span>${escapeHtml(value || '-')}
         </p>
       `;
     }
