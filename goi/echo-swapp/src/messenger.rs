@@ -137,6 +137,7 @@ enum CommitRecovery {
     Replacement(MessengerView),
     Previous,
     Superseded,
+    Deleted,
 }
 
 #[derive(Debug, Serialize)]
@@ -547,18 +548,16 @@ async fn recover_interrupted_relink(
     validate_relink_recovery_state(relink_recovery).c(h!())?;
     let txn = db.begin().await.c(h!())?;
     lock_integration_identity(&txn).await.c(h!())?;
-    lock_integration_client(&txn, &relink_recovery.client_name)
+    lock_integration_client_records(&txn, &relink_recovery.client_name)
         .await
         .c(h!())?;
     let durable = load_optional_owned(&txn, &relink_recovery.client_name)
         .await
-        .c(h!())?
-        .context("integration disappeared during relink recovery")
         .c(h!())?;
     let client_data_backups =
         relink_client_data_backups(config, relink_recovery);
     let recovery = match durable {
-        messenger
+        Some(messenger)
             if account_matches(
                 &messenger,
                 relink_recovery.replacement_kind,
@@ -571,7 +570,7 @@ async fn recover_interrupted_relink(
             start_recovered_client(config, &messenger).await.c(h!())?;
             CommitRecovery::Replacement(messenger)
         }
-        messenger
+        Some(messenger)
             if account_matches(
                 &messenger,
                 relink_recovery.previous_kind,
@@ -590,12 +589,24 @@ async fn recover_interrupted_relink(
             .c(h!())?;
             CommitRecovery::Previous
         }
-        messenger => {
+        Some(messenger) => {
             discard_client_data_backups(&client_data_backups)
                 .await
                 .c(h!())?;
             start_recovered_client(config, &messenger).await.c(h!())?;
             CommitRecovery::Superseded
+        }
+        None => {
+            if let Err(err) = discard_client_data_backups(&client_data_backups)
+                .await
+                .c(h!())
+            {
+                log::warn!(
+                    "failed to discard stale client data for deleted integration {}: {err:#}",
+                    relink_recovery.client_name
+                );
+            }
+            CommitRecovery::Deleted
         }
     };
     txn.commit().await.c(h!())?;
@@ -1005,20 +1016,19 @@ pub async fn send(
     text: String,
     attachments: Vec<String>,
 ) -> Result<()> {
-    let lock_txn = begin_locked_integration_client_transaction(
+    let txn = begin_locked_integration_client_transaction(
         db,
         &owned_client_name(name),
     )
     .await
     .c(h!())?;
-    let messenger = load(&lock_txn, name).await.c(h!())?;
+    let messenger = load(&txn, name).await.c(h!())?;
     ensure_messenger_kind(messenger.kind, kind).c(h!())?;
     if !messenger.is_linked {
         return Err(conflict(
             "Обліковий запис месенджера не підключено. Підключіть його та повторіть спробу.",
         ));
     }
-    let txn = db.begin().await.c(h!())?;
     enqueue(
         &txn,
         name,
@@ -1032,7 +1042,6 @@ pub async fn send(
     .c(h!())?;
     txn.commit().await.c(h!())?;
     tick_after_send(db, name, kind).await.c(h!())?;
-    lock_txn.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -1283,12 +1292,22 @@ where
     row.try_get("", "locked").c(h!())
 }
 
-async fn lock_integration_client<C>(db: &C, client_name: &str) -> Result<()>
+async fn lock_integration_client_records<C>(
+    db: &C,
+    client_name: &str,
+) -> Result<()>
 where
     C: ConnectionTrait,
 {
-    let client_id = load_client_id(db, client_name).await.c(h!())?;
-    lock_integration_clients(db, &[client_id]).await.c(h!())
+    let client_ids = echo_client::Entity::find()
+        .filter(echo_client::Column::Name.eq(client_name))
+        .select_only()
+        .column(echo_client::Column::Id)
+        .into_tuple::<i32>()
+        .all(db)
+        .await
+        .c(h!())?;
+    lock_integration_clients(db, &client_ids).await.c(h!())
 }
 
 #[cfg(test)]
