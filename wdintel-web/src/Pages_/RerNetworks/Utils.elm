@@ -1,11 +1,41 @@
 module Pages_.RerNetworks.Utils exposing (..)
 
 import Bindings as B
+import Date
+import Html exposing (Html, p, text)
+import Html.Attributes exposing (class)
 import Json.Encode as Encode
 import Shared
 import Time
 import Url.Builder
 import Utils.Time
+
+
+futureActivityDateWarning : Shared.Model -> Maybe Int -> Html msg
+futureActivityDateWarning shared activityMillis =
+    case activityMillis of
+        Just millis ->
+            let
+                warningThreshold =
+                    shared.now
+                        |> Time.millisToPosix
+                        |> Date.fromPosix shared.timeZone
+                        |> Date.add Date.Months 1
+
+                activityDate =
+                    millis
+                        |> Time.millisToPosix
+                        |> Date.fromPosix shared.timeZone
+            in
+            if Date.compare activityDate warningThreshold == GT then
+                p [ class "mt-1 text-xs text-amber-600 dark:text-amber-400" ]
+                    [ text "Перевірте дату: вона більш ніж на місяць у майбутньому." ]
+
+            else
+                text ""
+
+        Nothing ->
+            text ""
 
 
 createAnalysisUrl : Shared.Model -> B.Network -> String -> String
