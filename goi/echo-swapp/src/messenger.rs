@@ -114,6 +114,10 @@ struct ClientDataBackup {
     backup_path: PathBuf,
 }
 
+struct ClientDataBackups {
+    paths: Vec<ClientDataBackup>,
+}
+
 enum CommitRecovery {
     Replacement(MessengerView),
     Previous,
@@ -251,11 +255,16 @@ pub async fn update(
     persist_display_name(&txn, &client_name, &display_name)
         .await
         .c(h!())?;
-    let client_data_backup = if account_changed {
+    let client_data_backups = if account_changed {
         Some(
-            backup_client_data(config, current.kind, &client_name)
-                .await
-                .c(h!())?,
+            backup_replacement_client_data(
+                config,
+                current.kind,
+                req.kind,
+                &client_name,
+            )
+            .await
+            .c(h!())?,
         )
     } else {
         None
@@ -283,7 +292,7 @@ pub async fn update(
                 current.kind,
                 req.kind,
                 current.signal_port,
-                client_data_backup.as_ref().c(h!())?,
+                client_data_backups.as_ref().c(h!())?,
             )
             .await
             .unwrap_or_else(|restore_err| {
@@ -304,7 +313,7 @@ pub async fn update(
                 &current,
                 req.kind,
                 &replacement_phone,
-                client_data_backup.as_ref().c(h!())?,
+                client_data_backups.as_ref().c(h!())?,
             )
             .await
             .with_context(|| {
@@ -319,8 +328,8 @@ pub async fn update(
         }
         return Err(err);
     }
-    if let Some(client_data_backup) = client_data_backup {
-        if let Err(err) = discard_client_data_backup(&client_data_backup)
+    if let Some(client_data_backups) = client_data_backups {
+        if let Err(err) = discard_client_data_backups(&client_data_backups)
             .await
             .c(h!())
         {
@@ -356,7 +365,7 @@ async fn restore_old_client(
     old_kind: MessengerKind,
     new_kind: MessengerKind,
     port: i32,
-    client_data_backup: &ClientDataBackup,
+    client_data_backups: &ClientDataBackups,
 ) -> Result<()> {
     if let Err(err) = stop_client(config, new_kind, client_name).await.c(h!()) {
         log::warn!(
@@ -372,7 +381,9 @@ async fn restore_old_client(
             );
         }
     }
-    restore_client_data(client_data_backup).await.c(h!())?;
+    restore_client_data_backups(client_data_backups)
+        .await
+        .c(h!())?;
     start_client(config, old_kind, client_name, port)
         .await
         .c(h!())?;
@@ -387,7 +398,7 @@ async fn reconcile_after_commit_error(
     previous: &MessengerView,
     replacement_kind: MessengerKind,
     replacement_phone: &str,
-    client_data_backup: &ClientDataBackup,
+    client_data_backups: &ClientDataBackups,
 ) -> Result<CommitRecovery> {
     let txn = db.begin().await.c(h!())?;
     lock_integration_identity(&txn).await.c(h!())?;
@@ -400,7 +411,7 @@ async fn reconcile_after_commit_error(
                 Some(replacement_phone),
             ) =>
         {
-            discard_client_data_backup(client_data_backup)
+            discard_client_data_backups(client_data_backups)
                 .await
                 .c(h!())?;
             CommitRecovery::Replacement(messenger)
@@ -418,14 +429,14 @@ async fn reconcile_after_commit_error(
                 previous.kind,
                 replacement_kind,
                 previous.signal_port,
-                client_data_backup,
+                client_data_backups,
             )
             .await
             .c(h!())?;
             CommitRecovery::Previous
         }
         _ => {
-            discard_client_data_backup(client_data_backup)
+            discard_client_data_backups(client_data_backups)
                 .await
                 .c(h!())?;
             CommitRecovery::Superseded
@@ -1230,6 +1241,42 @@ async fn backup_client_data(
     })
 }
 
+async fn backup_replacement_client_data(
+    config: &Config,
+    current_kind: MessengerKind,
+    replacement_kind: MessengerKind,
+    client_name: &str,
+) -> Result<ClientDataBackups> {
+    let current = backup_client_data(config, current_kind, client_name)
+        .await
+        .c(h!())?;
+    let replacement_path =
+        client_data_path(config, replacement_kind, client_name);
+    let replacement = if replacement_path != current.original_path {
+        match backup_client_data(config, replacement_kind, client_name)
+            .await
+            .c(h!())
+        {
+            Ok(replacement) => Some(replacement),
+            Err(err) => {
+                if let Err(restore_err) =
+                    restore_client_data(&current).await.c(h!())
+                {
+                    log::error!(
+                        "failed to restore current client data after destination backup failure: {restore_err:#}"
+                    );
+                }
+                return Err(err);
+            }
+        }
+    } else {
+        None
+    };
+    Ok(ClientDataBackups {
+        paths: std::iter::once(current).chain(replacement).collect(),
+    })
+}
+
 fn client_data_backup_path(original_path: &std::path::Path) -> Result<PathBuf> {
     let created_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1257,11 +1304,41 @@ async fn restore_client_data(backup: &ClientDataBackup) -> Result<()> {
     Ok(())
 }
 
+async fn restore_client_data_backups(
+    backups: &ClientDataBackups,
+) -> Result<()> {
+    let mut result = Ok(());
+    for backup in &backups.paths {
+        let restore_result = restore_client_data(backup).await.c(h!());
+        if result.is_ok() {
+            result = restore_result;
+        } else if let Err(err) = restore_result {
+            log::error!("failed to restore additional client data: {err:#}");
+        }
+    }
+    result
+}
+
 async fn discard_client_data_backup(backup: &ClientDataBackup) -> Result<()> {
     tokio::fs::remove_dir_all(&backup.backup_path)
         .await
         .c(h!())?;
     Ok(())
+}
+
+async fn discard_client_data_backups(
+    backups: &ClientDataBackups,
+) -> Result<()> {
+    let mut result = Ok(());
+    for backup in &backups.paths {
+        let discard_result = discard_client_data_backup(backup).await.c(h!());
+        if result.is_ok() {
+            result = discard_result;
+        } else if let Err(err) = discard_result {
+            log::error!("failed to discard additional client data: {err:#}");
+        }
+    }
+    result
 }
 
 async fn update_client_config<C>(
