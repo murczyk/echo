@@ -2420,15 +2420,114 @@ async fn ensure_comment_save_access(
     sigint_groups: &[String],
     message_id: i64,
 ) -> Result<(), AppError> {
+    let parent_group_access_query = Query::select()
+        .expr(Expr::value(1))
+        .from(signal_message_group::Entity)
+        .and_where(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((
+                intel_prod::Entity,
+                intel_prod::Column::ParentSignalMessageId,
+            )),
+        )
+        .and_where(
+            signal_message_group::Column::GroupMasterKey
+                .is_in(sigint_groups.to_vec()),
+        )
+        .to_owned();
+    let parent_datasource_group_access_query = Query::select()
+        .expr(Expr::value(1))
+        .from(signal_message::Entity)
+        .inner_join(
+            datasource_group::Entity,
+            Expr::col((
+                signal_message::Entity,
+                signal_message::Column::DatasourceGroupId,
+            ))
+            .equals((datasource_group::Entity, datasource_group::Column::Id)),
+        )
+        .and_where(
+            Expr::col((signal_message::Entity, signal_message::Column::Id))
+                .equals((
+                    intel_prod::Entity,
+                    intel_prod::Column::ParentSignalMessageId,
+                )),
+        )
+        .and_where(
+            datasource_group::Column::GroupMasterKey
+                .is_in(sigint_groups.to_vec()),
+        )
+        .to_owned();
+    let parent_access_query = Query::select()
+        .expr(Expr::value(1))
+        .from(intel_prod::Entity)
+        .and_where(
+            intel_prod::Column::RelationKind
+                .eq(intel_prod::RELATION_KIND_REPORT),
+        )
+        .and_where(
+            Expr::col((
+                intel_prod::Entity,
+                intel_prod::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .and_where(
+            Condition::any()
+                .add(Expr::exists(parent_group_access_query))
+                .add(Expr::exists(parent_datasource_group_access_query))
+                .into(),
+        )
+        .to_owned();
+    let owner_access_query = Query::select()
+        .expr(Expr::value(1))
+        .from(signal_message_group::Entity)
+        .and_where(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .to_owned();
+    let organism_logins =
+        crate::users::get_organism_login_ids_by_id(&env.dbx, login)
+            .await
+            .c(h!())?;
+    let owner_sender_ids = organism_logins
+        .iter()
+        .chain(std::iter::once(login))
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let owner_access = Condition::all()
+        .add(datasource_group::Column::GroupMasterKey.is_null())
+        .add(Expr::exists(owner_access_query).not())
+        .add(signal_message::Column::Sender.is_in(owner_sender_ids));
     let message = SignalMessage::find_by_id(message_id)
         .join(
             JoinType::LeftJoin,
             signal_message::Relation::SignalMessageGroup.def(),
         )
+        .join(
+            JoinType::LeftJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
-            signal_message_group::Column::GroupMasterKey
-                .eq_any(sigint_groups.to_vec()),
+            Condition::any()
+                .add(
+                    signal_message_group::Column::GroupMasterKey
+                        .eq_any(sigint_groups.to_vec()),
+                )
+                .add(
+                    datasource_group::Column::GroupMasterKey
+                        .eq_any(sigint_groups.to_vec()),
+                )
+                .add(Expr::exists(parent_access_query))
+                .add(owner_access),
         )
         .one(&env.dbx)
         .await

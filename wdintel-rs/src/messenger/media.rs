@@ -1,5 +1,8 @@
 use crate::config::Config;
-use crate::entities::{signal_message_group, signal_message_media};
+use crate::entities::{
+    datasource_group, intel_prod, signal_message, signal_message_group,
+    signal_message_media,
+};
 use crate::error::AppError;
 use crate::h;
 use crate::storage;
@@ -9,7 +12,7 @@ use echo_im::types::MessageAttachmentF1;
 use opendal::Operator;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, NotSet, QueryFilter, QuerySelect, Set,
+    EntityTrait, NotSet, QueryFilter, QuerySelect, RelationTrait, Set,
 };
 use std::collections::HashSet;
 use std::io::ErrorKind;
@@ -579,6 +582,40 @@ pub(crate) async fn ensure_media_access(
         .c(h!())?
         .is_some();
     if is_allowed {
+        return Ok(());
+    }
+
+    let parent_signal_message_ids = intel_prod::Entity::find()
+        .filter(intel_prod::Column::SignalMessageId.eq(signal_message_id))
+        .filter(
+            intel_prod::Column::RelationKind
+                .eq(intel_prod::RELATION_KIND_REPORT),
+        )
+        .select_only()
+        .column(intel_prod::Column::ParentSignalMessageId)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let is_parent_datasource_allowed = signal_message::Entity::find()
+        .join(
+            sea_orm::JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .filter(signal_message::Column::Id.is_in(parent_signal_message_ids))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .eq_any(allowed_groups.clone()),
+        )
+        .select_only()
+        .column(signal_message::Column::Id)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if is_parent_datasource_allowed {
         return Ok(());
     }
 
