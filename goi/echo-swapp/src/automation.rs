@@ -1,6 +1,8 @@
 use crate::config::{
+    AUTOMATION_BROKEN_INTEGRATION_ERROR,
     AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX,
-    AUTOMATION_SEND_LOG_RETENTION_DAYS,
+    AUTOMATION_OPERATION_LOCK_ID_BASE, AUTOMATION_SEND_LOG_RETENTION_DAYS,
+    ECHO_SWAPP_ADVISORY_LOCK_RETRY_MILLIS,
 };
 use crate::error::{bad_request, conflict, not_found, ShortContext};
 use crate::h;
@@ -12,7 +14,7 @@ use chrono::{Duration as ChronoDuration, NaiveDateTime, Utc};
 use regex::Regex;
 use sea_orm::{
     prelude::Json, ConnectionTrait, DatabaseBackend, DatabaseConnection,
-    FromQueryResult, Statement, TransactionTrait,
+    DatabaseTransaction, FromQueryResult, Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -109,6 +111,7 @@ pub struct AutomationView {
     pub polygon_name: Option<String>,
     pub polygon_coordinates: Vec<String>,
     pub is_paused: bool,
+    pub is_broken: bool,
     pub status: String,
     pub last_error: Option<String>,
     pub checkpoint_at: i64,
@@ -167,6 +170,7 @@ struct AutomationListRow {
     polygon_name: Option<String>,
     polygon_coordinates: Option<Json>,
     is_paused: bool,
+    is_broken: bool,
     status: String,
     last_error: Option<String>,
     usage_24h: i64,
@@ -789,9 +793,16 @@ pub async fn create(
     req: SaveAutomationReq,
 ) -> Result<AutomationView> {
     let automation = normalize_req(req).await.c(h!())?;
-    validate_group_accounts(db, &automation).await.c(h!())?;
-    validate_polygon_ref(db, &automation).await.c(h!())?;
-    let row = db
+    let txn = messenger::begin_locked_integration_accounts_transaction(
+        db,
+        &[automation.source_account_id, automation.target_account_id],
+    )
+    .await
+    .c(h!())?;
+    validate_group_accounts(&txn, &automation).await.c(h!())?;
+    validate_active_accounts(&txn, &automation).await.c(h!())?;
+    validate_polygon_ref(&txn, &automation).await.c(h!())?;
+    let row = txn
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
@@ -838,7 +849,9 @@ pub async fn create(
         .c(h!())?
         .context("automation insert did not return id")
         .c(h!())?;
-    load_view(db, row.try_get("", "id").c(h!())?).await.c(h!())
+    let id = row.try_get("", "id").c(h!())?;
+    txn.commit().await.c(h!())?;
+    load_view(db, id).await.c(h!())
 }
 
 pub async fn update(
@@ -847,9 +860,17 @@ pub async fn update(
     req: SaveAutomationReq,
 ) -> Result<AutomationView> {
     let automation = normalize_req(req).await.c(h!())?;
-    validate_group_accounts(db, &automation).await.c(h!())?;
-    validate_polygon_ref(db, &automation).await.c(h!())?;
-    db.execute_raw(Statement::from_sql_and_values(
+    let txn = begin_locked_automation_transaction(
+        db,
+        id,
+        &[automation.source_account_id, automation.target_account_id],
+    )
+    .await
+    .c(h!())?;
+    validate_group_accounts(&txn, &automation).await.c(h!())?;
+    validate_active_accounts(&txn, &automation).await.c(h!())?;
+    validate_polygon_ref(&txn, &automation).await.c(h!())?;
+    txn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation
@@ -893,17 +914,22 @@ pub async fn update(
     ))
     .await
     .c(h!())?;
+    txn.commit().await.c(h!())?;
     load_view(db, id).await.c(h!())
 }
 
 pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
-    db.execute_raw(Statement::from_sql_and_values(
+    let txn = begin_locked_automation_transaction(db, id, &[])
+        .await
+        .c(h!())?;
+    txn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "delete from echo_automation where id = $1",
         [id.into()],
     ))
     .await
     .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -912,23 +938,204 @@ pub async fn set_paused(
     id: i64,
     is_paused: bool,
 ) -> Result<AutomationView> {
-    db.execute_raw(Statement::from_sql_and_values(
+    let txn = begin_locked_automation_transaction(db, id, &[])
+        .await
+        .c(h!())?;
+    if !is_paused {
+        ensure_automation_can_start(&txn, id).await.c(h!())?;
+    }
+    txn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
         update echo_automation
-        set is_paused = $2, updated_at = now() at time zone 'utc'
+        set
+            is_paused = $2,
+            status = case when $2 then status else 'idle' end,
+            last_error = case when $2 then last_error else null end,
+            updated_at = now() at time zone 'utc'
         where id = $1
         "#,
         [id.into(), is_paused.into()],
     ))
     .await
     .c(h!())?;
+    txn.commit().await.c(h!())?;
     load_view(db, id).await.c(h!())
 }
 
+async fn ensure_automation_can_start<C>(db: &C, id: i64) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select
+                exists (
+                    select 1
+                    from echo_client_lock source_lock
+                    join echo_client source_client
+                        on source_client.id = source_lock.client_id
+                        and source_client.deleted = false
+                    where source_lock.account_id = automation.source_account_id
+                ) as source_ok,
+                exists (
+                    select 1
+                    from echo_client_lock target_lock
+                    join echo_client target_client
+                        on target_client.id = target_lock.client_id
+                        and target_client.deleted = false
+                    where target_lock.account_id = automation.target_account_id
+                ) as target_ok
+            from echo_automation automation
+            where automation.id = $1
+            "#,
+            [id.into()],
+        ))
+        .await
+        .c(h!())?
+        .ok_or_else(|| {
+            not_found(format!(
+                "Автоматизацію {id} не знайдено. Оновіть сторінку та повторіть спробу."
+            ))
+        })
+        .c(h!())?;
+    let source_ok: bool = row.try_get("", "source_ok").c(h!())?;
+    let target_ok: bool = row.try_get("", "target_ok").c(h!())?;
+    if !source_ok || !target_ok {
+        return Err(conflict(format!(
+            "Автоматизацію неможливо запустити. {AUTOMATION_BROKEN_INTEGRATION_ERROR}"
+        )));
+    }
+    Ok(())
+}
+
 pub async fn worker_tick(db: &DatabaseConnection) -> Result<()> {
-    let automations =
-        AutomationWorkerRow::find_by_statement(Statement::from_string(
+    let automations = db
+        .query_all_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "select id from echo_automation where is_paused = false order by id",
+        ))
+        .await
+        .c(h!())?;
+    for automation in automations {
+        process_automation_with_integration_lock(
+            db,
+            automation.try_get("", "id").c(h!())?,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn process_automation_with_integration_lock(
+    db: &DatabaseConnection,
+    automation_id: i64,
+) -> Result<()> {
+    let txn = begin_locked_automation_transaction(db, automation_id, &[])
+        .await
+        .c(h!())?;
+    let Some(automation) =
+        load_worker_automation(&txn, automation_id).await.c(h!())?
+    else {
+        txn.commit().await.c(h!())?;
+        return Ok(());
+    };
+    if !automation_is_runnable(&txn, automation.id).await.c(h!())? {
+        txn.commit().await.c(h!())?;
+        return Ok(());
+    }
+    if let Err(err) = process_automation(db, automation.clone()).await {
+        set_error(db, automation.id, &err.to_string())
+            .await
+            .c(h!())?;
+        log::error!("echo-swapp automation {} failed: {err:#}", automation.id);
+    }
+    txn.commit().await.c(h!())?;
+    Ok(())
+}
+
+async fn begin_locked_automation_transaction(
+    db: &DatabaseConnection,
+    id: i64,
+    additional_account_ids: &[i32],
+) -> Result<DatabaseTransaction> {
+    if id < 0 {
+        return Err(not_found(format!(
+            "Автоматизацію {id} не знайдено. Оновіть сторінку та повторіть спробу."
+        )));
+    }
+    loop {
+        let txn = db.begin().await.c(h!())?;
+        if try_lock_automation(&txn, id).await.c(h!())? {
+            let mut account_ids =
+                automation_account_ids(&txn, id).await.c(h!())?;
+            account_ids.extend_from_slice(additional_account_ids);
+            if messenger::try_lock_integration_accounts(&txn, &account_ids)
+                .await
+                .c(h!())?
+            {
+                return Ok(txn);
+            }
+        }
+        txn.rollback().await.c(h!())?;
+        tokio::time::sleep(std::time::Duration::from_millis(
+            ECHO_SWAPP_ADVISORY_LOCK_RETRY_MILLIS,
+        ))
+        .await;
+    }
+}
+
+async fn try_lock_automation<C>(db: &C, id: i64) -> Result<bool>
+where
+    C: ConnectionTrait,
+{
+    let lock_id = AUTOMATION_OPERATION_LOCK_ID_BASE + id;
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select pg_try_advisory_xact_lock($1) as locked",
+            [lock_id.into()],
+        ))
+        .await
+        .c(h!())?
+        .context("automation operation lock query returned no row")
+        .c(h!())?;
+    row.try_get("", "locked").c(h!())
+}
+
+async fn automation_account_ids<C>(db: &C, id: i64) -> Result<Vec<i32>>
+where
+    C: ConnectionTrait,
+{
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select source_account_id, target_account_id from echo_automation where id = $1",
+            [id.into()],
+        ))
+        .await
+        .c(h!())?;
+    let Some(row) = row else {
+        return Ok(Vec::new());
+    };
+    Ok(vec![
+        row.try_get("", "source_account_id").c(h!())?,
+        row.try_get("", "target_account_id").c(h!())?,
+    ])
+}
+
+async fn load_worker_automation<C>(
+    db: &C,
+    id: i64,
+) -> Result<Option<AutomationWorkerRow>>
+where
+    C: ConnectionTrait,
+{
+    let rows =
+        AutomationWorkerRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             select
@@ -951,25 +1158,54 @@ pub async fn worker_tick(db: &DatabaseConnection) -> Result<()> {
             from echo_automation automation
             left join echo_automation_polygon polygon
                 on polygon.id = automation.polygon_id
-            where is_paused = false
-            order by automation.id
+            where automation.id = $1 and is_paused = false
             "#,
+            [id.into()],
         ))
         .all(db)
         .await
         .c(h!())?;
-    for automation in automations {
-        if let Err(err) = process_automation(db, automation.clone()).await {
-            set_error(db, automation.id, &err.to_string())
-                .await
-                .c(h!())?;
-            log::error!(
-                "echo-swapp automation {} failed: {err:#}",
-                automation.id
-            );
-        }
-    }
-    Ok(())
+    Ok(rows.into_iter().next())
+}
+
+async fn automation_is_runnable<C>(db: &C, id: i64) -> Result<bool>
+where
+    C: ConnectionTrait,
+{
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select exists (
+                select 1
+                from echo_automation automation
+                where automation.id = $1
+                    and automation.is_paused = false
+                    and exists (
+                        select 1
+                        from echo_client_lock source_lock
+                        join echo_client source_client
+                            on source_client.id = source_lock.client_id
+                            and source_client.deleted = false
+                        where source_lock.account_id = automation.source_account_id
+                    )
+                    and exists (
+                        select 1
+                        from echo_client_lock target_lock
+                        join echo_client target_client
+                            on target_client.id = target_lock.client_id
+                            and target_client.deleted = false
+                        where target_lock.account_id = automation.target_account_id
+                    )
+            ) as is_runnable
+            "#,
+            [id.into()],
+        ))
+        .await
+        .c(h!())?
+        .context("automation runnable query did not return a row")
+        .c(h!())?;
+    row.try_get("", "is_runnable").c(h!())
 }
 
 async fn load_view(db: &DatabaseConnection, id: i64) -> Result<AutomationView> {
@@ -1066,10 +1302,13 @@ async fn normalize_req(req: SaveAutomationReq) -> Result<NormalizedAutomation> {
     })
 }
 
-async fn validate_polygon_ref(
-    db: &DatabaseConnection,
+async fn validate_polygon_ref<C>(
+    db: &C,
     automation: &NormalizedAutomation,
-) -> Result<()> {
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
     let Some(polygon_id) = automation.polygon_id else {
         return Ok(());
     };
@@ -1098,10 +1337,13 @@ async fn validate_polygon_ref(
     Ok(())
 }
 
-async fn validate_group_accounts(
-    db: &DatabaseConnection,
+async fn validate_group_accounts<C>(
+    db: &C,
     automation: &NormalizedAutomation,
-) -> Result<()> {
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
     let row = db
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -1143,6 +1385,54 @@ async fn validate_group_accounts(
     if !target_ok {
         return Err(bad_request(
             "Цільова група не належить вибраному обліковому запису. Виберіть групу зі списку цього облікового запису.",
+        ));
+    }
+    Ok(())
+}
+
+async fn validate_active_accounts<C>(
+    db: &C,
+    automation: &NormalizedAutomation,
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select
+                exists (
+                    select 1
+                    from echo_client_lock source_lock
+                    join echo_client source_client
+                        on source_client.id = source_lock.client_id
+                        and source_client.deleted = false
+                    where source_lock.account_id = $1
+                ) as source_ok,
+                exists (
+                    select 1
+                    from echo_client_lock target_lock
+                    join echo_client target_client
+                        on target_client.id = target_lock.client_id
+                        and target_client.deleted = false
+                    where target_lock.account_id = $2
+                ) as target_ok
+            "#,
+            [
+                automation.source_account_id.into(),
+                automation.target_account_id.into(),
+            ],
+        ))
+        .await
+        .c(h!())?
+        .context("automation account validation did not return a row")
+        .c(h!())?;
+    let source_ok: bool = row.try_get("", "source_ok").c(h!())?;
+    let target_ok: bool = row.try_get("", "target_ok").c(h!())?;
+    if !source_ok || !target_ok {
+        return Err(bad_request(
+            "Один з облікових записів більше не належить активній інтеграції. Виберіть акаунти та групи ще раз.",
         ));
     }
     Ok(())
@@ -2285,6 +2575,7 @@ fn automation_view(row: AutomationListRow) -> AutomationView {
         polygon_name: row.polygon_name,
         polygon_coordinates: json_vec(row.polygon_coordinates.as_ref()),
         is_paused: row.is_paused,
+        is_broken: row.is_broken,
         status: row.status,
         last_error: row.last_error,
         checkpoint_at: row.checkpoint_at.and_utc().timestamp_millis(),
@@ -2389,14 +2680,14 @@ fn list_sql_head() -> &'static str {
         a.id,
         a.name,
         a.source_account_id,
-        coalesce(nullif(source_client.display_name, ''), regexp_replace(source_client.name, '^echo-swapp-', '')) as source_account_name,
+        coalesce(nullif(source_client.display_name, ''), regexp_replace(source_client.name, '^echo-swapp-', ''), 'Недоступна інтеграція') as source_account_name,
         source_account.phone_number as source_account_phone,
         source_account.is_linked as source_account_is_linked,
         a.source_group_id,
         coalesce(nullif(source_group.name, ''), source_group.group_id) as source_group_name,
         source_account.source::text as source_messenger_kind,
         a.target_account_id,
-        coalesce(nullif(target_client.display_name, ''), regexp_replace(target_client.name, '^echo-swapp-', '')) as target_account_name,
+        coalesce(nullif(target_client.display_name, ''), regexp_replace(target_client.name, '^echo-swapp-', ''), 'Недоступна інтеграція') as target_account_name,
         target_account.phone_number as target_account_phone,
         target_account.is_linked as target_account_is_linked,
         a.target_group_id,
@@ -2413,6 +2704,7 @@ fn list_sql_head() -> &'static str {
         polygon.name as polygon_name,
         polygon.coordinates as polygon_coordinates,
         a.is_paused,
+        (source_client.id is null or target_client.id is null) as is_broken,
         a.status,
         a.last_error,
         count(delivery.id) filter (
@@ -2429,16 +2721,16 @@ fn list_sql_head() -> &'static str {
         a.updated_at
     from echo_automation a
     join echo_account source_account on source_account.id = a.source_account_id
-    join echo_client_lock source_lock on source_lock.account_id = source_account.id
-    join echo_client source_client
+    left join echo_client_lock source_lock on source_lock.account_id = source_account.id
+    left join echo_client source_client
         on source_client.id = source_lock.client_id
         and source_client.deleted = false
     join echo_group source_group
         on source_group.id = a.source_group_id
         and source_group.account_id = source_account.id
     join echo_account target_account on target_account.id = a.target_account_id
-    join echo_client_lock target_lock on target_lock.account_id = target_account.id
-    join echo_client target_client
+    left join echo_client_lock target_lock on target_lock.account_id = target_account.id
+    left join echo_client target_client
         on target_client.id = target_lock.client_id
         and target_client.deleted = false
     join echo_group target_group
@@ -2473,7 +2765,7 @@ fn list_sql() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_orm::{Database, Value};
+    use sea_orm::{ConnectOptions, Database, Value};
 
     static DB_TEST_LOCK: tokio::sync::Mutex<()> =
         tokio::sync::Mutex::const_new(());
@@ -2543,6 +2835,21 @@ mod tests {
         let url = std::env::var("ECHO_SWAPP_TEST_DATABASE_URL")
             .unwrap_or_else(|_| DEFAULT_TEST_DATABASE_URL.to_string());
         let db = Database::connect(url).await.c(h!())?;
+        crate::automation::ensure_schema(&db).await.c(h!())?;
+        crate::messenger::ensure_schema(&db).await.c(h!())?;
+        Ok(db)
+    }
+
+    async fn test_db_with_max_connections(
+        max_connections: u32,
+    ) -> Result<DatabaseConnection> {
+        let url = std::env::var("ECHO_SWAPP_TEST_DATABASE_URL")
+            .unwrap_or_else(|_| DEFAULT_TEST_DATABASE_URL.to_string());
+        let mut options = ConnectOptions::new(url);
+        options
+            .max_connections(max_connections)
+            .min_connections(max_connections);
+        let db = Database::connect(options).await.c(h!())?;
         crate::automation::ensure_schema(&db).await.c(h!())?;
         crate::messenger::ensure_schema(&db).await.c(h!())?;
         Ok(db)
@@ -3715,6 +4022,164 @@ mod tests {
             assert_eq!(view.usage.last_7d, 2);
             assert_eq!(view.usage.all_time, 3);
             assert_eq!(view.target_group_id, fixture.target_group_id);
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn broken_automation_remains_visible_and_cannot_resume() -> Result<()>
+    {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            set_paused(&db, fixture.automation_id, true).await.c(h!())?;
+            execute_test_sql(
+                &db,
+                "delete from echo_client_lock where account_id = $1",
+                vec![fixture.account_id.into()],
+            )
+            .await
+            .c(h!())?;
+
+            let automation =
+                load_view(&db, fixture.automation_id).await.c(h!())?;
+            assert!(automation.is_broken);
+            assert!(automation.is_paused);
+            assert!(set_paused(&db, fixture.automation_id, false)
+                .await
+                .is_err());
+            assert!(
+                load_view(&db, fixture.automation_id)
+                    .await
+                    .c(h!())?
+                    .is_paused
+            );
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn worker_rechecks_pause_after_integration_edit_lock() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let edit_txn = db.begin().await.c(h!())?;
+            messenger::lock_integration_accounts(
+                &edit_txn,
+                &[fixture.account_id],
+            )
+            .await
+            .c(h!())?;
+            edit_txn
+                .execute_raw(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "update echo_automation set is_paused = true where id = $1",
+                    [fixture.automation_id.into()],
+                ))
+                .await
+                .c(h!())?;
+
+            let worker_db = db.clone();
+            let automation_id = fixture.automation_id;
+            let mut worker = tokio::spawn(async move {
+                let worker_txn = begin_locked_automation_transaction(
+                    &worker_db,
+                    automation_id,
+                    &[],
+                )
+                .await
+                .c(h!())?;
+                let automation =
+                    load_worker_automation(&worker_txn, automation_id)
+                        .await
+                        .c(h!())?;
+                worker_txn.commit().await.c(h!())?;
+                Result::<bool>::Ok(automation.is_some())
+            });
+            assert!(tokio::time::timeout(
+                std::time::Duration::from_millis(50),
+                &mut worker,
+            )
+            .await
+            .is_err());
+            edit_txn.commit().await.c(h!())?;
+            assert!(!worker.await.c(h!())?.c(h!())?);
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn integration_lock_waiters_do_not_exhaust_the_pool() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db_with_max_connections(2).await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let held_txn = db.begin().await.c(h!())?;
+            messenger::lock_integration_accounts(
+                &held_txn,
+                &[fixture.account_id],
+            )
+            .await
+            .c(h!())?;
+
+            let first_db = db.clone();
+            let first_client_name = fixture.namespace.clone();
+            let first_waiter = tokio::spawn(async move {
+                let txn =
+                    messenger::begin_locked_integration_client_transaction(
+                        &first_db,
+                        &first_client_name,
+                    )
+                    .await
+                    .c(h!())?;
+                txn.commit().await.c(h!())
+            });
+            let second_db = db.clone();
+            let second_client_name = fixture.namespace.clone();
+            let second_waiter = tokio::spawn(async move {
+                let txn =
+                    messenger::begin_locked_integration_client_transaction(
+                        &second_db,
+                        &second_client_name,
+                    )
+                    .await
+                    .c(h!())?;
+                txn.commit().await.c(h!())
+            });
+
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            let row = tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                db.query_one_raw(Statement::from_string(
+                    DatabaseBackend::Postgres,
+                    "select 1 as value",
+                )),
+            )
+            .await
+            .c(h!())?
+            .c(h!())?;
+            assert!(row.is_some());
+
+            held_txn.commit().await.c(h!())?;
+            first_waiter.await.c(h!())?.c(h!())?;
+            second_waiter.await.c(h!())?.c(h!())?;
             Ok(())
         }
         .await;

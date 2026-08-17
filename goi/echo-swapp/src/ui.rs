@@ -90,7 +90,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
     <section id="integrationsTab" class="grid gap-4 lg:grid-cols-[360px_1fr]">
       <form id="createForm" class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
-        <h2 class="text-base font-medium">Новий месенджер</h2>
+        <h2 class="text-base font-medium">Нова інтеграція</h2>
         <div class="mt-4 grid gap-3">
           <label class="grid gap-1 text-sm">
             <span class="text-zinc-400">Назва</span>
@@ -117,7 +117,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
       <section class="rounded-lg border border-zinc-800 bg-zinc-900/50">
         <div class="border-b border-zinc-800 px-4 py-3">
-          <h2 class="text-base font-medium">Месенджери</h2>
+          <h2 class="text-base font-medium">Інтеграції</h2>
         </div>
         <div id="list" class="grid gap-3 p-4"></div>
       </section>
@@ -276,6 +276,45 @@ const INDEX_HTML: &str = r#"<!doctype html>
     </div>
   </dialog>
 
+  <dialog id="integrationEditDialog" class="w-[min(92vw,520px)] rounded-lg border border-zinc-800 bg-zinc-950 p-0 text-zinc-100 backdrop:bg-black/70">
+    <form id="integrationEditForm">
+      <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+        <h2 class="text-base font-medium">Редагувати інтеграцію</h2>
+        <button id="closeIntegrationEdit" class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900" type="button" aria-label="Закрити" title="Закрити">×</button>
+      </div>
+      <div class="grid max-h-[75vh] gap-3 overflow-y-auto p-4">
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Назва</span>
+          <input id="editIntegrationNameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required />
+        </label>
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">URL API</span>
+          <input id="editIntegrationUrlInput" class="h-10 rounded-md border border-zinc-800 bg-zinc-900 px-3 text-zinc-400" readonly />
+          <span class="text-xs text-zinc-500">URL не змінюється після перейменування.</span>
+        </label>
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Месенджер</span>
+          <select id="editIntegrationKindInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
+            <option value="signal">Signal</option>
+            <option value="whatsapp">WhatsApp</option>
+          </select>
+        </label>
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Телефон</span>
+          <input id="editIntegrationPhoneInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" type="tel" inputmode="tel" autocomplete="tel" placeholder="+380501234567" aria-describedby="editIntegrationPhoneHint editIntegrationPhoneError" required />
+          <span id="editIntegrationPhoneHint" class="text-xs text-zinc-500">Формат: +380XXXXXXXXX або 0XXXXXXXXX; пробіли можна використовувати.</span>
+          <span id="editIntegrationPhoneError" class="hidden text-xs text-red-400" role="alert"></span>
+        </label>
+        <p class="rounded-md border border-amber-900 bg-amber-950/30 px-3 py-2 text-xs text-amber-300">Після зміни месенджера або телефону інтеграцію потрібно підключити знову.</p>
+        <p id="integrationEditFormMsg" class="min-h-5 text-sm text-zinc-400"></p>
+      </div>
+      <div class="flex justify-end gap-2 border-t border-zinc-800 px-4 py-3">
+        <button class="h-10 rounded-md border border-zinc-700 px-4 text-sm text-zinc-200 hover:bg-zinc-900" type="button" data-integration-edit-cancel>Скасувати</button>
+        <button class="h-10 rounded-md bg-sky-500 px-4 text-sm font-medium text-zinc-950 hover:bg-sky-400" type="submit">Зберегти</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="automationEditDialog" class="w-[min(92vw,520px)] rounded-lg border border-zinc-800 bg-zinc-950 p-0 text-zinc-100 backdrop:bg-black/70">
     <form id="automationEditForm">
       <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
@@ -423,6 +462,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
     const actionError = document.getElementById('actionError');
     const phoneInput = document.getElementById('phoneInput');
     const phoneError = document.getElementById('phoneError');
+    const integrationEditDialog = document.getElementById('integrationEditDialog');
+    const integrationEditFormMsg = document.getElementById('integrationEditFormMsg');
+    const editIntegrationPhoneInput = document.getElementById('editIntegrationPhoneInput');
+    const editIntegrationPhoneError = document.getElementById('editIntegrationPhoneError');
     const qrDialog = document.getElementById('qrDialog');
     const qrBox = document.getElementById('qrBox');
     const qrTitle = document.getElementById('qrTitle');
@@ -444,6 +487,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     const keywordTokens = [];
     const frequencyTokens = [];
     let editAutomationId = null;
+    let editIntegrationName = null;
     const editKeywordTokens = [];
     const editFrequencyTokens = [];
 
@@ -525,6 +569,16 @@ const INDEX_HTML: &str = r#"<!doctype html>
       }
     }
 
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[char]);
+    }
+
     function clearActionError() {
       actionError.textContent = '';
       actionError.classList.add('hidden');
@@ -552,23 +606,23 @@ const INDEX_HTML: &str = r#"<!doctype html>
       return 'Введіть український номер як +380XXXXXXXXX або 0XXXXXXXXX.';
     }
 
-    function validatePhoneInput({ report = false } = {}) {
-      const phone = normalizedPhone(phoneInput.value);
-      const error = phone ? '' : phoneValidationError(phoneInput.value);
-      phoneInput.setCustomValidity(error);
-      phoneInput.setAttribute('aria-invalid', error === '' ? 'false' : 'true');
-      phoneError.textContent = error;
-      phoneError.classList.toggle('hidden', error === '');
-      if (phone) phoneInput.value = phone;
-      if (report && error) phoneInput.reportValidity();
+    function validatePhoneInput({ input = phoneInput, errorElement = phoneError, report = false } = {}) {
+      const phone = normalizedPhone(input.value);
+      const error = phone ? '' : phoneValidationError(input.value);
+      input.setCustomValidity(error);
+      input.setAttribute('aria-invalid', error === '' ? 'false' : 'true');
+      errorElement.textContent = error;
+      errorElement.classList.toggle('hidden', error === '');
+      if (phone) input.value = phone;
+      if (report && error) input.reportValidity();
       return phone;
     }
 
-    function clearPhoneValidation() {
-      phoneInput.setCustomValidity('');
-      phoneInput.setAttribute('aria-invalid', 'false');
-      phoneError.textContent = '';
-      phoneError.classList.add('hidden');
+    function clearPhoneValidation(input = phoneInput, errorElement = phoneError) {
+      input.setCustomValidity('');
+      input.setAttribute('aria-invalid', 'false');
+      errorElement.textContent = '';
+      errorElement.classList.add('hidden');
     }
 
     async function load() {
@@ -588,7 +642,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         const data = await request(appUrl('/ui-api/messengers'));
         messengers = data;
         if (data.length === 0) {
-          list.innerHTML = '<div class="p-4 text-sm text-zinc-400">Месенджерів ще немає.</div>';
+          list.innerHTML = '<div class="p-4 text-sm text-zinc-400">Інтеграцій ще немає.</div>';
           return;
         }
         list.innerHTML = '';
@@ -690,7 +744,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       select.innerHTML = '<option value="" disabled style="color:#71717a">Оберіть акаунт</option>' + automationAccounts.map(account => {
         const linked = account.isLinked ? '' : ' · не підключено';
         const style = account.isLinked ? '' : ' style="color:#71717a"';
-        return `<option value="${account.id}"${style}>${account.name} · ${account.phone}${linked}</option>`;
+        return `<option value="${account.id}"${style}>${escapeHtml(account.name)} · ${escapeHtml(account.phone)}${linked}</option>`;
       }).join('');
       if (automationAccounts.some(account => account.id === current)) {
         select.value = String(current);
@@ -703,7 +757,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       const current = select.value;
       const groups = automationGroups.filter(group => group.accountId === accountId);
       select.innerHTML = '<option value="" disabled style="color:#71717a">Оберіть групу</option>' + groups.map(group => {
-        return `<option value="${group.id}">${group.name} · ${group.messengerName}</option>`;
+        return `<option value="${group.id}">${escapeHtml(group.name)} · ${escapeHtml(group.messengerName)}</option>`;
       }).join('');
       if (groups.some(group => String(group.id) === current)) {
         select.value = current;
@@ -1271,7 +1325,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
-              <h3 class="truncate text-base font-medium">${item.displayName || item.name}</h3>
+              <h3 class="truncate text-base font-medium">${escapeHtml(item.displayName || item.name)}</h3>
               <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">${item.kind}</span>
               <span class="${item.isLinked ? 'text-emerald-400' : 'text-amber-400'} text-sm">${item.isLinked ? 'підключено' : 'не підключено'}</span>
               ${item.isPaused ? '<span class="text-sm text-amber-300">синхронізацію зупинено</span>' : ''}
@@ -1282,6 +1336,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
             ${item.isLinked
               ? `<button data-unlink="${item.name}" class="h-9 rounded-md border border-red-700 px-3 text-sm text-red-400 hover:bg-red-950/40">Відключити</button>`
               : `<button data-link="${item.name}" class="h-9 rounded-md border border-zinc-700 px-3 text-sm hover:bg-zinc-900">Підключити</button>`}
+            <button data-integration-edit="${item.name}" class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900" type="button" aria-label="Редагувати інтеграцію" title="Редагувати інтеграцію">${pencilIcon()}</button>
             <button data-pause="${item.name}" data-paused="${item.isPaused}" class="inline-flex h-9 w-9 items-center justify-center rounded-md border ${item.isPaused ? 'border-amber-700 text-amber-300 hover:bg-amber-950/40' : 'border-zinc-700 text-zinc-200 hover:bg-zinc-900'}" type="button" aria-label="${item.isPaused ? 'Відновити синхронізацію' : 'Зупинити синхронізацію'}" title="${item.isPaused ? 'Відновити синхронізацію' : 'Зупинити синхронізацію'}">${item.isPaused ? playIcon() : pauseIcon()}</button>
             <button data-copy="${item.name}" class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-zinc-100 text-zinc-950 hover:bg-white" type="button" aria-label="Скопіювати URL API" title="Скопіювати URL API">${copyIcon()}</button>
             <button data-delete="${item.name}" class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-red-600 text-white hover:bg-red-500" type="button" aria-label="Видалити месенджер" title="Видалити месенджер">${deleteIcon()}</button>
@@ -1293,6 +1348,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     }
 
     function automationStatusLabel(item) {
+      if (item.isBroken) return 'потребує налаштування';
       if (item.isPaused) return 'пауза';
       const labels = {
         idle: 'очікує',
@@ -1304,6 +1360,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     }
 
     function automationStatusClass(item) {
+      if (item.isBroken) return 'text-red-400';
       if (item.isPaused) return 'text-amber-300';
       if (item.status === 'error') return 'text-red-400';
       if (item.status === 'warning') return 'text-amber-300';
@@ -1314,7 +1371,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     function automationField(label, value) {
       return `
         <p class="mt-1 text-xs text-zinc-400">
-          <span class="mr-1 text-zinc-500">${label}:</span>${value || '-'}
+          <span class="mr-1 text-zinc-500">${label}:</span>${escapeHtml(value || '-')}
         </p>
       `;
     }
@@ -1361,6 +1418,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
         : 'ще не синхронізовано';
       const filters = [...item.keywordTokens, ...item.frequencyTokens].join(', ') || 'Усі повідомлення';
       const warnings = [];
+      const pauseDisabled = item.isBroken && item.isPaused;
+      const pauseTitle = pauseDisabled
+        ? 'Спочатку переналаштуйте акаунти та групи'
+        : item.isPaused ? 'Запустити автоматизацію' : 'Зупинити автоматизацію';
       if (!item.isPaused && !item.sourceAccountIsLinked) {
         warnings.push('Акаунт читання не підключено: нові повідомлення не синхронізуються.');
       }
@@ -1393,7 +1454,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
               ${usageChip(usage.allTime, 'весь час')}
             </div>
             <button data-automation-edit="${item.id}" class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900" type="button" aria-label="Редагувати автоматизацію" title="Редагувати автоматизацію">${pencilIcon()}</button>
-            <button data-automation-pause="${item.id}" data-paused="${item.isPaused}" class="inline-flex h-9 w-9 items-center justify-center rounded-md border ${item.isPaused ? 'border-amber-700 text-amber-300 hover:bg-amber-950/40' : 'border-zinc-700 text-zinc-200 hover:bg-zinc-900'}" type="button" aria-label="${item.isPaused ? 'Запустити автоматизацію' : 'Зупинити автоматизацію'}" title="${item.isPaused ? 'Запустити автоматизацію' : 'Зупинити автоматизацію'}">${item.isPaused ? playIcon() : pauseIcon()}</button>
+            <button data-automation-pause="${item.id}" data-paused="${item.isPaused}" class="inline-flex h-9 w-9 items-center justify-center rounded-md border ${pauseDisabled ? 'cursor-not-allowed border-zinc-800 text-zinc-600' : item.isPaused ? 'border-amber-700 text-amber-300 hover:bg-amber-950/40' : 'border-zinc-700 text-zinc-200 hover:bg-zinc-900'}" type="button" aria-label="${pauseTitle}" title="${pauseTitle}" ${pauseDisabled ? 'disabled' : ''}>${item.isPaused ? playIcon() : pauseIcon()}</button>
             <button data-automation-delete="${item.id}" class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-red-600 text-white hover:bg-red-500" type="button" aria-label="Видалити автоматизацію" title="Видалити автоматизацію">${deleteIcon()}</button>
           </div>
         </div>
@@ -1442,6 +1503,19 @@ const INDEX_HTML: &str = r#"<!doctype html>
     function selectOption(selectId, value) {
       const select = document.getElementById(selectId);
       select.value = String(value);
+    }
+
+    function openIntegrationEdit(name) {
+      const item = messengers.find(messenger => messenger.name === name);
+      if (!item) return;
+      editIntegrationName = item.name;
+      integrationEditFormMsg.textContent = '';
+      document.getElementById('editIntegrationNameInput').value = item.displayName || item.name;
+      document.getElementById('editIntegrationUrlInput').value = apiBase(item.name);
+      document.getElementById('editIntegrationKindInput').value = item.kind;
+      editIntegrationPhoneInput.value = item.phone || '';
+      clearPhoneValidation(editIntegrationPhoneInput, editIntegrationPhoneError);
+      integrationEditDialog.showModal();
     }
 
     function openAutomationEdit(id) {
@@ -1680,7 +1754,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
         const copyName = button.dataset.copy;
         const deleteName = button.dataset.delete;
         const pauseName = button.dataset.pause;
+        const editName = button.dataset.integrationEdit;
 
+        if (editName) openIntegrationEdit(editName);
         if (pauseName) {
           await request(appUrl(`/ui-api/messengers/${pauseName}/pause`), {
             method: 'POST',
@@ -1694,12 +1770,12 @@ const INDEX_HTML: &str = r#"<!doctype html>
           setTimeout(() => button.innerHTML = copyIcon(), 1200);
         }
         if (deleteName) {
-          if (!confirm(`Видалити месенджер ${messengerDisplayName(deleteName)}?`)) return;
+          if (!confirm(`Видалити інтеграцію ${messengerDisplayName(deleteName)}?`)) return;
           await request(appUrl(`/ui-api/messengers/${deleteName}`), { method: 'DELETE' });
           await load();
         }
         if (unlinkName) {
-          if (!confirm(`Відключити месенджер ${messengerDisplayName(unlinkName)}?`)) return;
+          if (!confirm(`Відключити інтеграцію ${messengerDisplayName(unlinkName)}?`)) return;
           await request(appUrl(`/ui-api/messengers/${unlinkName}/unlink`), { method: 'POST' });
           await load();
         }
@@ -1741,6 +1817,51 @@ const INDEX_HTML: &str = r#"<!doctype html>
       }
     }
 
+
+    document.getElementById('integrationEditForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const phone = validatePhoneInput({
+        input: editIntegrationPhoneInput,
+        errorElement: editIntegrationPhoneError,
+        report: true,
+      });
+      if (!phone || !editIntegrationName) return;
+      try {
+        const kind = document.getElementById('editIntegrationKindInput').value;
+        const current = messengers.find(messenger => messenger.name === editIntegrationName);
+        const accountChanged = current
+          && (current.kind !== kind || normalizedPhone(current.phone || '') !== phone);
+        let stopDependentAutomations = false;
+        if (accountChanged) {
+          integrationEditFormMsg.textContent = 'Перевірка залежних автоматизацій...';
+          const impact = await request(appUrl(`/ui-api/messengers/${editIntegrationName}/automation-impact`));
+          if (impact.automationCount > 0) {
+            const automationNames = impact.automationNames.map(name => `• ${name}`).join('\n');
+            const warning = `Зміна месенджера або номера телефону зупинить ${impact.automationCount} автоматизацій:\n\n${automationNames}\n\nЇх неможливо буде запустити, доки ви не переналаштуєте акаунти та групи. Продовжити?`;
+            if (!confirm(warning)) {
+              integrationEditFormMsg.textContent = 'Зміни скасовано.';
+              return;
+            }
+            stopDependentAutomations = true;
+          }
+        }
+        integrationEditFormMsg.textContent = 'Збереження...';
+        await request(appUrl(`/ui-api/messengers/${editIntegrationName}`), {
+          method: 'PUT',
+          body: JSON.stringify({
+            name: document.getElementById('editIntegrationNameInput').value,
+            kind,
+            phone,
+            stopDependentAutomations,
+          }),
+        });
+        integrationEditFormMsg.textContent = 'Збережено.';
+        integrationEditDialog.close();
+        await load();
+      } catch (err) {
+        integrationEditFormMsg.textContent = err.message;
+      }
+    });
 
     document.getElementById('polygonEditForm').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -1790,6 +1911,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
       }
     });
 
+    document.getElementById('closeIntegrationEdit').addEventListener('click', () => integrationEditDialog.close());
+    document.querySelector('[data-integration-edit-cancel]').addEventListener('click', () => integrationEditDialog.close());
     document.getElementById('closeAutomationEdit').addEventListener('click', () => automationEditDialog.close());
     document.querySelector('[data-edit-cancel]').addEventListener('click', () => automationEditDialog.close());
     document.getElementById('closePolygonEdit').addEventListener('click', () => polygonEditDialog.close());
@@ -1868,9 +1991,20 @@ const INDEX_HTML: &str = r#"<!doctype html>
     bindTokenInput('frequencyTokenInput', frequencyTokens, 'frequencyTokens', 'frequency');
     bindTokenInput('editKeywordTokenInput', editKeywordTokens, 'editKeywordTokens', 'edit-keyword');
     bindTokenInput('editFrequencyTokenInput', editFrequencyTokens, 'editFrequencyTokens', 'edit-frequency');
-    phoneInput.addEventListener('input', clearPhoneValidation);
+    phoneInput.addEventListener('input', () => clearPhoneValidation());
     phoneInput.addEventListener('blur', () => {
       if (phoneInput.value.trim() !== '') validatePhoneInput();
+    });
+    editIntegrationPhoneInput.addEventListener('input', () => {
+      clearPhoneValidation(editIntegrationPhoneInput, editIntegrationPhoneError);
+    });
+    editIntegrationPhoneInput.addEventListener('blur', () => {
+      if (editIntegrationPhoneInput.value.trim() !== '') {
+        validatePhoneInput({
+          input: editIntegrationPhoneInput,
+          errorElement: editIntegrationPhoneError,
+        });
+      }
     });
     updatePolygonAvailability();
     updateEditPolygonAvailability();
