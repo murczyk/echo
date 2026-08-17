@@ -2,6 +2,10 @@ import { Box, Button, ButtonGroup, Stack, Typography } from '@mui/material';
 import { useId } from 'react';
 
 import { formatUtcDateInputValue } from '../../../utils/misc';
+import {
+  isNetworkActivityDateMoreThanOneMonthAhead,
+  NETWORK_ACTIVITY_FUTURE_DATE_WARNING,
+} from '../network-activity-date-warning';
 import { NetworkFreqDatePickerField } from './NetworkFreqDatePickerField';
 
 type Props = {
@@ -18,6 +22,21 @@ type Props = {
   activeToError?: boolean;
   activeToHelperText?: string;
 };
+
+function FutureActivityDateWarning({ value }: { value: string }) {
+  if (!isNetworkActivityDateMoreThanOneMonthAhead(value)) return null;
+
+  return (
+    <Typography
+      component="span"
+      variant="caption"
+      color="warning.main"
+      sx={{ display: 'block', mt: 0.5 }}
+    >
+      {NETWORK_ACTIVITY_FUTURE_DATE_WARNING}
+    </Typography>
+  );
+}
 
 export function NetworkFreqActivityPeriodControl({
   activeFrom,
@@ -98,30 +117,36 @@ export function NetworkFreqActivityPeriodControl({
           alignItems: 'start',
         }}
       >
-        <NetworkFreqDatePickerField
-          label="Активна з"
-          value={activeFrom}
-          onChange={onActiveFromChange}
-          onBlur={onActiveFromBlur}
-          disabled={disabled}
-          required={required}
-          error={activeFromError}
-          helperText={activeFromHelperText}
-          textFieldSx={{ width: '100%' }}
-        />
-
-        {!isActive ? (
+        <Box>
           <NetworkFreqDatePickerField
-            label="Активна по"
-            value={activeTo}
-            onChange={onActiveToChange}
-            onBlur={onActiveToBlur}
+            label="Активна з"
+            value={activeFrom}
+            onChange={onActiveFromChange}
+            onBlur={onActiveFromBlur}
             disabled={disabled}
             required={required}
-            error={activeToError}
-            helperText={activeToHelperText}
+            error={activeFromError}
+            helperText={activeFromHelperText}
             textFieldSx={{ width: '100%' }}
           />
+          <FutureActivityDateWarning value={activeFrom} />
+        </Box>
+
+        {!isActive ? (
+          <Box>
+            <NetworkFreqDatePickerField
+              label="Активна по"
+              value={activeTo}
+              onChange={onActiveToChange}
+              onBlur={onActiveToBlur}
+              disabled={disabled}
+              required={required}
+              error={activeToError}
+              helperText={activeToHelperText}
+              textFieldSx={{ width: '100%' }}
+            />
+            <FutureActivityDateWarning value={activeTo} />
+          </Box>
         ) : null}
       </Box>
     </Stack>

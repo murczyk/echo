@@ -1,0 +1,115 @@
+{
+  "suite_id": "14aug26-layout-html-v1",
+  "source_directory": "/var/tmp/14AUG26",
+  "canonical_format": "semantic-html",
+  "derivatives": {
+    "table": ["xlsx"],
+    "document": ["markdown"]
+  },
+  "documents": [
+    {
+      "id": "settlement-codes",
+      "title": "Settlement codes",
+      "profile": "table",
+      "expect": {"min_tables": 1, "min_rows": 20, "min_columns": 3, "table_columns": [3], "table_rows": [22], "anchors": ["Кодировка населенных пунктов", "Михайловка", "МЕКСИКА", "Добровка", "РЕКА"]},
+      "pages": [
+        {"index": 1, "filename": "0vI7zZRxw8bTOwOpHZOd.png", "sha256": "9dba627846059ce60c130f54e59622d5fedc8840644f1b8b89ec6dbd636a0dd9", "mime_type": "image/png", "width": 712, "height": 680}
+      ]
+    },
+    {
+      "id": "uav-availability",
+      "title": "UAV availability at 07:00 on 14.08.26",
+      "profile": "table",
+      "expect": {"min_tables": 1, "min_rows": 12, "min_columns": 9, "table_columns": [9], "table_rows": [16], "anchors": ["Ведомость", "07:00", "14.08.26"]},
+      "pages": [
+        {"index": 1, "filename": "B6ZWjn40B-Brtf1eVEXU.png", "sha256": "3d8a6a072c325a8605f3aa9fc5b0887ccdf2bdaf7634d760fdad2fe0868b305e", "mime_type": "image/png", "width": 1478, "height": 1028}
+      ]
+    },
+    {
+      "id": "group-tracking-119-137",
+      "title": "Group tracking, continuation rows 16-84",
+      "profile": "table",
+      "expect": {"min_tables": 1, "min_rows": 10, "min_columns": 12, "table_columns": [12], "anchors": []},
+      "pages": [
+        {"index": 1, "filename": "CvSKQi6O4IlVAMbpJl68.jpg", "sha256": "a0358a8c5dc979a078a7fdcb78c7ff1ac578d6f15d6ba4f83e9ef61367aec074", "mime_type": "image/jpeg", "width": 1449, "height": 1015, "anchors": ["16", "31"], "expect": {"table_rows": [19]}},
+        {"index": 2, "filename": "J8OgdJ-ZZd4hd-3Q_Pp2.jpg", "sha256": "e0baab8f3ea4f3df7b2d46e0ecdb692a7c9b104f49c08b6703c9206b4991ed44", "mime_type": "image/jpeg", "width": 1449, "height": 1105, "anchors": ["32", "49"], "expect": {"table_rows": [21]}},
+        {"index": 3, "filename": "Rcj8f-Emk3WM6rhqU0aR.jpg", "sha256": "207caea2d8b72ab81fb57953a06b2935b42874aea1b6fae7550131336bebb3f4", "mime_type": "image/jpeg", "width": 1449, "height": 1044, "anchors": ["50", "71"], "expect": {"table_rows": [23]}},
+        {"index": 4, "filename": "wlOqekJBBOerUW3VJfQF.jpg", "sha256": "d0fea947a9e04e165aec48895841cf58e81e502266d2a4366a192185cc6a4dd1", "mime_type": "image/jpeg", "width": 1449, "height": 642, "anchors": ["72", "84"], "expect": {"table_rows": [14]}}
+      ]
+    },
+    {
+      "id": "fpv-lightning-inventory",
+      "title": "FPV Lightning inventory",
+      "profile": "table",
+      "expect": {"min_tables": 1, "min_rows": 8, "min_columns": 9, "table_columns": [9], "table_rows": [12], "anchors": ["Молния"]},
+      "pages": [
+        {"index": 1, "filename": "RzgUBWb1roQTU4Ztvo-v.png", "sha256": "4a1d90aa291a79e1d82269dbb389a1c15474c86b373362ad469c98de92750908", "mime_type": "image/png", "width": 1485, "height": 1023},
+        {"index": 2, "filename": "X7DYpxbHiYPrhT_bZeM7.png", "sha256": "f8539eeb676f3c86da061de839824a7774a30e335d916a8154dca4e0b183fc5f", "mime_type": "image/png", "width": 1482, "height": 1057, "expect": {"min_tables": 2, "min_rows": 4, "min_columns": 3, "table_columns": [9, 3], "table_rows": [10, 13]}}
+      ]
+    },
+    {
+      "id": "personnel-location",
+      "title": "Personnel and location",
+      "profile": "table",
+      "expect": {"min_tables": 1, "min_rows": 25, "min_columns": 6, "table_columns": [6], "table_rows": [32], "anchors": []},
+      "pages": [
+        {"index": 1, "filename": "Zdmv2-mW3tJAxoUraaIC.jpg", "sha256": "352d3a5038279ed55adb93a1a9045db2348aee707a1a24f6cb2ecd5f118ba3d8", "mime_type": "image/jpeg", "width": 1095, "height": 664}
+      ]
+    },
+    {
+      "id": "target-planning",
+      "title": "Target planning table",
+      "profile": "table",
+      "expect": {"min_tables": 1, "min_rows": 5, "min_columns": 5, "table_columns": [5], "table_rows": [6], "min_image_cells": 4, "anchors": ["Объект поражения", "Координаты", "Примечания"]},
+      "pages": [
+        {"index": 1, "filename": "oUgsWxaIeEWQNbnsH4_L.jpg", "sha256": "bc38e60fe483a2a2a61a06dda3aa405f9117e864ffed25827c5b778f38b16ca0", "mime_type": "image/jpeg", "width": 2484, "height": 1360}
+      ]
+    },
+    {
+      "id": "group-tracking-106",
+      "title": "Group tracking, row 106 onward",
+      "profile": "table",
+      "expect": {"min_tables": 1, "min_rows": 12, "min_columns": 12, "table_columns": [12], "table_rows": [19], "anchors": ["106"]},
+      "pages": [
+        {"index": 1, "filename": "y3ao68hMa5aAnfyiXq4x.jpg", "sha256": "30839be7fdd15cd033234644b18385c7454c2986a9b6d7d68cc216ae2b2de740", "mime_type": "image/jpeg", "width": 1448, "height": 997}
+      ]
+    },
+    {
+      "id": "sparta-daily-report",
+      "title": "Sparta daily report",
+      "profile": "document",
+      "expect": {"min_articles": 1, "min_sections": 2, "min_paragraphs": 6, "anchors": ["СПАРТА"]},
+      "pages": [
+        {"index": 1, "filename": "IrEAsRes43or-BSKKQmJ.jpg", "sha256": "0d3d6afcdf8a0b029216c92d4f9f1393dad40146feda02cdfbe054e67248c0e4", "mime_type": "image/jpeg", "width": 3072, "height": 1938, "visual_pages": 2}
+      ]
+    },
+    {
+      "id": "2msb-battle-report",
+      "title": "2 MSB battle report",
+      "profile": "document",
+      "expect": {"min_articles": 1, "min_sections": 1, "min_paragraphs": 3, "anchors": []},
+      "pages": [
+        {"index": 1, "filename": "p_faqwzskSrcGTLXsXCL.png", "sha256": "f0a10852428a2b98c689990734305b89362af00695751f2b4f7dc22befaa633e", "mime_type": "image/png", "width": 744, "height": 1050, "anchors": ["1.", "2."]},
+        {"index": 2, "filename": "KhS-lk23P100SI66EE5E.png", "sha256": "a67741bf5232993f9ca6ab603795825d19681fac18e04b15a99f3f6ff7f439b6", "mime_type": "image/png", "width": 745, "height": 1050, "anchors": ["3.", "5."]},
+        {"index": 3, "filename": "mMPzjlN-kA8KjgvCm445.jpg", "sha256": "42d1312cfa48f976f89a500eb6abb70eb8625ca28991ad45b6148f4a613d96c2", "mime_type": "image/jpeg", "width": 744, "height": 1051, "anchors": ["6.", "11."]},
+        {"index": 4, "filename": "Yr3PYnnDhWuxqqt3KZP-.png", "sha256": "690e3b3baf5f89fcf62c8c43396fb33fc7ed48d7ce04164a8b970016e8fcfbdb", "mime_type": "image/png", "width": 745, "height": 1050, "anchors": ["12."]}
+      ]
+    },
+    {
+      "id": "uav-service-order",
+      "title": "UAV service order",
+      "profile": "document",
+      "expect": {"min_articles": 1, "min_sections": 1, "min_paragraphs": 5, "anchors": ["ПРИКАЗ"]},
+      "pages": [
+        {"index": 1, "filename": "Nv3IbtU0nVxTCdwtuoXw.png", "sha256": "b3b94eeff7dfe845ec0684f112799ba69fd7518980d421c7bb4a4cdc4fc9a335", "mime_type": "image/png", "width": 723, "height": 925}
+      ]
+    }
+  ],
+  "duplicates": [
+    {
+      "filename": "B6ZWjn40B-Brtf1eVEXU(1).png",
+      "canonical_filename": "B6ZWjn40B-Brtf1eVEXU.png",
+      "sha256": "3d8a6a072c325a8605f3aa9fc5b0887ccdf2bdaf7634d760fdad2fe0868b305e"
+    }
+  ]
+}

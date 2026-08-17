@@ -71,6 +71,7 @@ import {
 } from './attachment-preview/MessageCardAttachmentPreviewProvider';
 import { getIntelligenceReports, getParentMessages } from '../intelligence-reports';
 import { MessageCardIntelligenceReports } from './MessageCardIntelligenceReports';
+import { MessageCardMediaSummaryCarousel } from './attachment-preview/MediaSummaryPreview';
 import {
   pointBlacklistLabelKey,
   type AddPointHighlightBlacklistRequest,
@@ -481,6 +482,24 @@ export function MessageCardMessageBody({
 
   const imageHrefSet = useMemo(() => new Set(images.map((image) => image.href)), [images]);
   const documents = collectMessageDocuments(msg);
+  const summaryMedia = [...images, ...documents];
+  const [selectedSummaryMediaIndex, setSelectedSummaryMediaIndex] = useState(() =>
+    Math.max(
+      0,
+      summaryMedia.findIndex((media) => media.id != null && media.summary != null),
+    ),
+  );
+  const highlightSummaryMediaSelection =
+    summaryMedia.length > 3 &&
+    summaryMedia.some((media) => media.id != null && media.summary != null);
+  const selectedSummaryImageIndex =
+    highlightSummaryMediaSelection && selectedSummaryMediaIndex < images.length
+      ? selectedSummaryMediaIndex
+      : null;
+  const selectedSummaryDocumentIndex =
+    highlightSummaryMediaSelection && selectedSummaryMediaIndex >= images.length
+      ? selectedSummaryMediaIndex - images.length
+      : null;
   const previewableDocuments = documents.filter((document) => document.kind !== 'unsupported');
   const documentHrefSet = new Set(documents.map((document) => document.href));
   const attachmentMedia = (msg.media ?? []).filter((attachment) => {
@@ -578,6 +597,7 @@ export function MessageCardMessageBody({
         <MessageCardImageList
           images={images}
           videos={videoAttachments}
+          selectedImageIndex={selectedSummaryImageIndex}
           onOpen={(index) => {
             blurActiveElement();
             setAttachmentPreviewIndex(index);
@@ -615,6 +635,7 @@ export function MessageCardMessageBody({
                 key={document.id ?? document.href}
                 document={document}
                 index={index}
+                selected={selectedSummaryDocumentIndex === index}
                 onPreview={
                   previewIndex >= 0
                     ? () => {
@@ -649,6 +670,10 @@ export function MessageCardMessageBody({
           />
         </div>
       ) : null}
+      <MessageCardMediaSummaryCarousel
+        media={summaryMedia}
+        onIndexChange={setSelectedSummaryMediaIndex}
+      />
       {hasTextPrimary || hasMessageTextOverflow ? (
         <div
           className={

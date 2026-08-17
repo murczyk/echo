@@ -4,12 +4,9 @@ set -euo pipefail
 
 expected_hostname=$1
 router_host=$2
-router_port=$3
-router_metrics_port=$4
-worker_urls_csv=$5
-signoz_host=$6
-signoz_port=$7
-expected_model_id=$8
+signoz_host=$3
+signoz_port=$4
+shift 4
 
 die() {
   printf '[echo-vllm-router] ERROR: %s\n' "$*" >&2
@@ -65,16 +62,18 @@ check_tcp() {
 }
 
 check_backend() {
-  local worker_url=$1
+  local pool=$1
+  local worker_url=$2
+  local expected_model_id=$3
 
   curl -fsS --max-time 10 "$worker_url/health" >/dev/null \
-    || die "worker health check failed: $worker_url/health"
+    || die "worker health check failed for $pool: $worker_url/health"
   curl -fsS --max-time 10 "$worker_url/v1/models" \
-    | python3 -c 'import json,sys; expected=sys.argv[1]; data=json.load(sys.stdin); assert expected in {item["id"] for item in data["data"]}' "$expected_model_id" \
-    || die "worker does not expose model $expected_model_id"
+    | python3 -c 'import json,sys; expected=sys.argv[1]; data=json.load(sys.stdin); assert {item["id"] for item in data["data"]} == {expected}' "$expected_model_id" \
+    || die "worker in $pool does not expose only model $expected_model_id"
   curl -fsS --max-time 10 "$worker_url/metrics" \
     | python3 -c 'import sys; data=sys.stdin.read(); assert any(line.startswith("vllm:") for line in data.splitlines())' \
-    || die "worker metrics are unavailable"
+    || die "worker metrics are unavailable for $pool"
 }
 
 check_port() {
@@ -90,17 +89,30 @@ check_port() {
 check_platform
 check_commands
 check_identity
-IFS=, read -r -a worker_urls <<<"$worker_urls_csv"
-for worker_url in "${worker_urls[@]}"; do
-  worker_endpoint=${worker_url#*://}
-  check_tcp "${worker_endpoint%:*}" "${worker_endpoint##*:}"
-  check_backend "$worker_url"
-done
 check_tcp "$signoz_host" "$signoz_port"
-check_port "$router_port" echo-vllm-router.service
-check_port "$router_metrics_port" echo-vllm-router.service
+
+(( $# > 0 && $# % 6 == 0 )) || die "invalid pool preflight arguments"
+while (( $# > 0 )); do
+  pool=$1
+  unit=$2
+  router_port=$3
+  router_metrics_port=$4
+  expected_model_id=$5
+  worker_urls_csv=$6
+  shift 6
+
+  IFS=, read -r -a worker_urls <<<"$worker_urls_csv"
+  for worker_url in "${worker_urls[@]}"; do
+    worker_endpoint=${worker_url#*://}
+    check_tcp "${worker_endpoint%:*}" "${worker_endpoint##*:}"
+    check_backend "$pool" "$worker_url" "$expected_model_id"
+  done
+  check_port "$router_port" "$unit"
+  check_port "$router_metrics_port" "$unit"
+  printf 'Pool %s: backends %s healthy, exact model %s present\n' \
+    "$pool" "$worker_urls_csv" "$expected_model_id"
+done
 
 printf 'Host: %s (%s)\n' "$(hostname)" "$router_host"
-printf 'Backends: %s healthy, model %s present\n' "$worker_urls_csv" "$expected_model_id"
 printf 'SigNoz OTLP: %s:%s reachable\n' "$signoz_host" "$signoz_port"
 printf '[echo-vllm-router] Preflight passed\n'

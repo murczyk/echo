@@ -52,6 +52,19 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     );
   });
   const [error, setError] = useState<string | null>(null);
+  const pollingErrorRef = useRef<string | null>(null);
+  const reportPollingFailure = useCallback((pollingError: unknown) => {
+    if (pollingErrorRef.current !== null) return;
+    const message = pollingError instanceof Error ? pollingError.message : String(pollingError);
+    pollingErrorRef.current = message;
+    setError(message);
+  }, []);
+  const clearPollingFailure = useCallback(() => {
+    const pollingError = pollingErrorRef.current;
+    if (pollingError === null) return;
+    pollingErrorRef.current = null;
+    setError((current) => (current === pollingError ? null : current));
+  }, []);
   const messageFeedsRef = useRef(messageFeeds);
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const invalidateFeedLoadsRef = useRef<(feedId: string) => void>(() => {});
@@ -616,6 +629,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       messageFeedsRef,
       setMessageFeeds,
       setError,
+      reportPollingFailure,
+      clearPollingFailure,
       loadingNewerFeedIds,
       setLoadingNewerFeedIds,
       buildReqForFeed,
@@ -714,7 +729,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         let entry: Awaited<ReturnType<typeof requestValidatedInboxCount>>;
         try {
           entry = await requestValidatedInboxCount(feed.id);
-        } catch {
+          clearPollingFailure();
+        } catch (error) {
+          reportPollingFailure(error);
           return;
         }
         if (!entry || isNullOrUndefined(entry.quantity)) return;
@@ -799,7 +816,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           let preview: ConfirmedTailPreview | null;
           try {
             preview = await requestValidatedTailPreview(feedId);
-          } catch {
+          } catch (error) {
+            reportPollingFailure(error);
             return;
           }
           if (!preview || tailPreviewGenerationByFeedIdRef.current[feedId] !== preview.generation)
@@ -830,7 +848,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
             let tailQuantity: number | null;
             try {
               tailQuantity = await requestValidatedTailCount(feedId, loadedTailId!);
-            } catch {
+            } catch (error) {
+              reportPollingFailure(error);
               setTailAvailability(
                 feedId,
                 previousAvailability === 'loading' ? 'available' : previousAvailability,
@@ -907,6 +926,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     setConfirmedTailPreview,
     invalidateTailPreview,
     markFeedReloadRequested,
+    reportPollingFailure,
+    clearPollingFailure,
   ]);
 
   const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);

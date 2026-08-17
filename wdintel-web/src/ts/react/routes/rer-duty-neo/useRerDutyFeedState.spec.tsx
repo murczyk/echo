@@ -731,6 +731,7 @@ describe('useRerDutyFeedState — loading', () => {
       await flushMicrotasks();
     });
     expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('available');
+    expect(apiRef.current!.error).toBe('network down');
   });
 
   it('does not expose a blind background failure as available tail content', async () => {
@@ -2078,6 +2079,7 @@ describe('useRerDutyFeedState — loading', () => {
 
     expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(5);
     expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
+    expect(apiRef.current?.error).toBe('count failed');
 
     hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 5, firstElementTs: null });
     await act(async () => {
@@ -2088,6 +2090,7 @@ describe('useRerDutyFeedState — loading', () => {
     });
 
     expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
+    expect(apiRef.current?.error).toBeNull();
   });
 
   it('keeps empty feeds from notifying even when count responses are positive', async () => {

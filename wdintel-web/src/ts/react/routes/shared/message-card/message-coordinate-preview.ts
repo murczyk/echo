@@ -1,4 +1,10 @@
-import type { InboxMessage, LocalityDetails, PalitraReadV2, Tag } from '../../../../../Bindings';
+import type {
+  InboxMessage,
+  LocalityDetails,
+  MediaSummaryCoordinate,
+  PalitraReadV2,
+  Tag,
+} from '../../../../../Bindings';
 
 import {
   renderWgsFloat,
@@ -7,16 +13,20 @@ import {
   isValidUsk2000Component,
 } from '../../importer-beta/coordinates';
 import { parseCoordinateInput } from '../../../../maps/coordinate-search';
+import { parseCoordinateBlock } from '../../../../maps/coordinate-parser';
 import { getPointEtalonsFromMessage } from '../../rer-duty-neo/utils';
+import { getMediaSummaryCoordinates } from '../../../services/api/media-summary';
 import { listMapPalitrasV2, searchPalitraPoints } from '../../../services/api/palitra';
 
-export type CoordinatePreviewSource = 'direct' | 'palitra';
+export type CoordinatePreviewSource = 'direct' | 'palitra' | 'document';
 
 export type CoordinatePreviewPoint = {
   source: CoordinatePreviewSource;
   lat: number;
   lng: number;
   label: string;
+  description?: string;
+  plannedMeans?: string | null;
   locality?: LocalityDetails | null;
 };
 
@@ -40,7 +50,8 @@ export type CoordinatePreviewInput = {
   tagsMap?: Record<number, Tag>;
 };
 
-export type CoordinatePreviewLookupErrorKind = 'palette-list' | 'point-search';
+export type CoordinatePreviewLookupErrorKind =
+  'palette-list' | 'point-search' | 'document-coordinates';
 
 export class CoordinatePreviewLookupError extends Error {
   readonly kind: CoordinatePreviewLookupErrorKind;
@@ -400,6 +411,15 @@ export function hasCoordinatePreviewCandidate(
     return true;
   }
 
+  if (
+    (message.media ?? []).some(
+      (media) =>
+        media.id != null && media.summary?.state === 'completed' && media.summary.hasCoordinates,
+    )
+  ) {
+    return true;
+  }
+
   return collectCoordinatePreviewEtalons(message, tagsMap).length > 0;
 }
 
@@ -500,7 +520,7 @@ async function resolvePointForEtalon(
   return request;
 }
 
-export async function resolveMessageCoordinatePreview(
+async function resolveExistingMessageCoordinatePreview(
   input: CoordinatePreviewInput,
 ): Promise<CoordinatePreviewResult | null> {
   const directPoints = resolveDirectCoordinatesFromMessage(input.message);
@@ -561,6 +581,92 @@ export async function resolveMessageCoordinatePreview(
   return {
     points,
     etalons,
+    lookupError,
+  };
+}
+
+function documentCoordinateSource(coordinate: MediaSummaryCoordinate): string {
+  if (coordinate.coordinateSystem === 'sk42') return `СК-42: ${coordinate.value}`;
+  if (coordinate.coordinateSystem === 'usk2000') return `УСК-2000: ${coordinate.value}`;
+  return coordinate.value;
+}
+
+export function resolveMediaSummaryCoordinatePoint(
+  coordinate: MediaSummaryCoordinate,
+): CoordinatePreviewPoint | null {
+  const point = parseCoordinateBlock(documentCoordinateSource(coordinate))[0];
+  if (point == null || point.format !== coordinate.coordinateSystem) return null;
+  return {
+    source: 'document',
+    lat: point.lat,
+    lng: point.lng,
+    label: coordinate.title,
+    description: coordinate.description ?? '',
+    plannedMeans: coordinate.plannedMeans ?? null,
+  };
+}
+
+async function resolveDocumentCoordinatePoints(message: InboxMessage): Promise<{
+  points: CoordinatePreviewPoint[];
+  lookupError: CoordinatePreviewLookupError | null;
+}> {
+  const mediaIds = Array.from(
+    new Set(
+      (message.media ?? []).flatMap((media) =>
+        media.id != null && media.summary?.state === 'completed' && media.summary.hasCoordinates
+          ? [media.id]
+          : [],
+      ),
+    ),
+  );
+  if (mediaIds.length === 0) return { points: [], lookupError: null };
+
+  const results = await Promise.all(
+    mediaIds.map(async (mediaId) => {
+      try {
+        const result = await getMediaSummaryCoordinates(mediaId);
+        return {
+          points: result.coordinates.flatMap((coordinate) => {
+            const point = resolveMediaSummaryCoordinatePoint(coordinate);
+            return point == null ? [] : [point];
+          }),
+          error: null,
+        };
+      } catch (error) {
+        return { points: [], error };
+      }
+    }),
+  );
+  const failed = results.find((result) => result.error != null);
+  return {
+    points: results.flatMap((result) => result.points),
+    lookupError:
+      failed == null
+        ? null
+        : new CoordinatePreviewLookupError('document-coordinates', failed.error),
+  };
+}
+
+export async function resolveMessageCoordinatePreview(
+  input: CoordinatePreviewInput,
+): Promise<CoordinatePreviewResult | null> {
+  const [existing, document] = await Promise.all([
+    resolveExistingMessageCoordinatePreview(input),
+    resolveDocumentCoordinatePoints(input.message),
+  ]);
+  const points: CoordinatePreviewPoint[] = [];
+  const seen = new Set<string>();
+  for (const point of [...(existing?.points ?? []), ...document.points]) {
+    const key = coordinatePointKey(point);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    points.push(point);
+  }
+  const lookupError = existing?.lookupError ?? document.lookupError;
+  if (points.length === 0 && lookupError == null) return null;
+  return {
+    points,
+    etalons: existing?.etalons ?? [],
     lookupError,
   };
 }

@@ -1,30 +1,79 @@
 receivers:
-  prometheus/router:
+  prometheus/router_general:
     config:
       scrape_configs:
-        - job_name: echo-vllm-router
+        - job_name: echo-vllm-router-general
           scrape_interval: 15s
           static_configs:
-            - targets: ["${env:ROUTER_METRICS_TARGET}"]
+            - targets: ["${env:OTEL_ROUTER_METRICS_TARGET_GENERAL}"]
           metric_relabel_configs:
             - source_labels: [__name__]
               regex: "vllm_router_.*"
               action: keep
 
-  prometheus/worker:
+  prometheus/worker_general:
     config:
       scrape_configs:
-        - job_name: echo-vllm-worker
+        - job_name: echo-vllm-worker-general
           scrape_interval: 15s
           metrics_path: /metrics
           static_configs:
-            - targets: ["${env:WORKER_METRICS_TARGET}"]
+            - targets: ["${env:OTEL_WORKER_METRICS_TARGET_GENERAL}"]
           metric_relabel_configs:
             - source_labels: [__name__]
               regex: "vllm:.*"
               action: keep
 
-  # Host-level metrics for ct-echo-vllm-router itself
+  prometheus/router_ocr_gemma:
+    config:
+      scrape_configs:
+        - job_name: echo-vllm-router-ocr-gemma
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:OTEL_ROUTER_METRICS_TARGET_OCR_GEMMA}"]
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: "vllm_router_.*"
+              action: keep
+
+  prometheus/worker_ocr_gemma:
+    config:
+      scrape_configs:
+        - job_name: echo-vllm-worker-ocr-gemma
+          scrape_interval: 15s
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["${env:OTEL_WORKER_METRICS_TARGET_OCR_GEMMA}"]
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: "vllm:.*"
+              action: keep
+
+  prometheus/router_nuextract:
+    config:
+      scrape_configs:
+        - job_name: echo-vllm-router-nuextract
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["${env:OTEL_ROUTER_METRICS_TARGET_NUEXTRACT}"]
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: "vllm_router_.*"
+              action: keep
+
+  prometheus/worker_nuextract:
+    config:
+      scrape_configs:
+        - job_name: echo-vllm-worker-nuextract
+          scrape_interval: 15s
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["${env:OTEL_WORKER_METRICS_TARGET_NUEXTRACT}"]
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: "vllm:.*"
+              action: keep
+
   hostmetrics:
     collection_interval: 60s
     scrapers:
@@ -52,12 +101,8 @@ receivers:
     storage: file_storage/journald
 
   # Workaround for the hostmetrics filesystem scraper reporting nothing on
-  # this host (confirmed via extensive isolated testing: not sandboxing, not
-  # permissions, not the read-only-mount concern - raw `stat -f /` succeeds
-  # fine as this same user, but the scraper's own enumeration still yields
-  # zero data points here even with hardening fully stripped and an explicit
-  # include_mount_points filter forced). Small local exporter mirrors the
-  # incus-state-exporter.py pattern used elsewhere in this environment.
+  # this host. This local exporter mirrors the incus-state-exporter.py pattern
+  # used elsewhere in this environment.
   prometheus/diskspace:
     config:
       scrape_configs:
@@ -67,7 +112,7 @@ receivers:
             - targets: ["127.0.0.1:9100"]
 
 processors:
-  resource/router:
+  resource/router_general:
     attributes:
       - key: service.name
         value: vllm-router
@@ -81,8 +126,14 @@ processors:
       - key: echo.vllm.role
         value: router
         action: upsert
+      - key: echo.vllm.pool
+        value: general-gemma
+        action: upsert
+      - key: echo.vllm.router
+        value: ct-echo-vllm-router
+        action: upsert
 
-  resource/worker:
+  resource/worker_general:
     attributes:
       - key: service.name
         value: vllm-worker
@@ -96,11 +147,108 @@ processors:
       - key: echo.vllm.role
         value: worker
         action: upsert
+      - key: echo.vllm.pool
+        value: general-gemma
+        action: upsert
+      - key: echo.vllm.worker
+        value: echo-gpu-spark
+        action: upsert
 
-  batch/router:
+  resource/router_ocr_gemma:
+    attributes:
+      - key: service.name
+        value: vllm-router
+        action: upsert
+      - key: service.instance.id
+        value: ct-echo-vllm-router/ocr-gemma
+        action: upsert
+      - key: host.name
+        value: ct-echo-vllm-router
+        action: upsert
+      - key: echo.vllm.role
+        value: router
+        action: upsert
+      - key: echo.vllm.pool
+        value: ocr-gemma
+        action: upsert
+      - key: echo.vllm.router
+        value: ct-echo-vllm-router
+        action: upsert
+
+  resource/worker_ocr_gemma:
+    attributes:
+      - key: service.name
+        value: vllm-worker
+        action: upsert
+      - key: service.instance.id
+        value: echo-gpu-spark-02
+        action: upsert
+      - key: host.name
+        value: echo-gpu-spark-02
+        action: upsert
+      - key: echo.vllm.role
+        value: worker
+        action: upsert
+      - key: echo.vllm.pool
+        value: ocr-gemma
+        action: upsert
+      - key: echo.vllm.worker
+        value: echo-gpu-spark-02
+        action: upsert
+
+  resource/router_nuextract:
+    attributes:
+      - key: service.name
+        value: vllm-router
+        action: upsert
+      - key: service.instance.id
+        value: ct-echo-vllm-router/nuextract
+        action: upsert
+      - key: host.name
+        value: ct-echo-vllm-router
+        action: upsert
+      - key: echo.vllm.role
+        value: router
+        action: upsert
+      - key: echo.vllm.pool
+        value: nuextract
+        action: upsert
+      - key: echo.vllm.router
+        value: ct-echo-vllm-router
+        action: upsert
+
+  resource/worker_nuextract:
+    attributes:
+      - key: service.name
+        value: vllm-worker
+        action: upsert
+      - key: service.instance.id
+        value: echo-nuextract3
+        action: upsert
+      - key: host.name
+        value: echo-nuextract3
+        action: upsert
+      - key: echo.vllm.role
+        value: worker
+        action: upsert
+      - key: echo.vllm.pool
+        value: nuextract
+        action: upsert
+      - key: echo.vllm.worker
+        value: echo-nuextract3
+        action: upsert
+
+  batch/router_general:
     timeout: 5s
-
-  batch/worker:
+  batch/worker_general:
+    timeout: 5s
+  batch/router_ocr_gemma:
+    timeout: 5s
+  batch/worker_ocr_gemma:
+    timeout: 5s
+  batch/router_nuextract:
+    timeout: 5s
+  batch/worker_nuextract:
     timeout: 5s
 
   resource/host:
@@ -134,14 +282,34 @@ service:
   extensions: [file_storage/journald]
 
   pipelines:
-    metrics/router:
-      receivers: [prometheus/router]
-      processors: [resource/router, batch/router]
+    metrics/router_general:
+      receivers: [prometheus/router_general]
+      processors: [resource/router_general, batch/router_general]
       exporters: [otlp_grpc/signoz]
 
-    metrics/worker:
-      receivers: [prometheus/worker]
-      processors: [resource/worker, batch/worker]
+    metrics/worker_general:
+      receivers: [prometheus/worker_general]
+      processors: [resource/worker_general, batch/worker_general]
+      exporters: [otlp_grpc/signoz]
+
+    metrics/router_ocr_gemma:
+      receivers: [prometheus/router_ocr_gemma]
+      processors: [resource/router_ocr_gemma, batch/router_ocr_gemma]
+      exporters: [otlp_grpc/signoz]
+
+    metrics/worker_ocr_gemma:
+      receivers: [prometheus/worker_ocr_gemma]
+      processors: [resource/worker_ocr_gemma, batch/worker_ocr_gemma]
+      exporters: [otlp_grpc/signoz]
+
+    metrics/router_nuextract:
+      receivers: [prometheus/router_nuextract]
+      processors: [resource/router_nuextract, batch/router_nuextract]
+      exporters: [otlp_grpc/signoz]
+
+    metrics/worker_nuextract:
+      receivers: [prometheus/worker_nuextract]
+      processors: [resource/worker_nuextract, batch/worker_nuextract]
       exporters: [otlp_grpc/signoz]
 
     metrics/host:
@@ -153,4 +321,3 @@ service:
       receivers: [journald]
       processors: [resource/host, batch/host]
       exporters: [otlp_grpc/signoz]
-

@@ -1,0 +1,38 @@
+[Unit]
+Description=Echo Document Extractor nftables policy
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
+Before=echo-document-extractor.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/echo-document-extractor/bin/configure-firewall.sh apply
+ExecReload=/opt/echo-document-extractor/bin/configure-firewall.sh apply
+ExecStop=/opt/echo-document-extractor/bin/configure-firewall.sh remove
+RemainAfterExit=true
+TimeoutStartSec=30s
+UMask=0077
+
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RemoveIPC=true
+RestrictAddressFamilies=AF_NETLINK AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

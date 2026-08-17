@@ -24,6 +24,7 @@ import Json.Encode as Encode
 import List.Extra as ListX
 import Pages_.RerNetworks.Id_.Model exposing (FreqActivityFilter(..), Mode(..), Model)
 import Pages_.RerNetworks.Id_.Msg exposing (FrequenciesMsg(..))
+import Pages_.RerNetworks.Utils as RerNetworksUtils
 import Select
 import Shared
 import Shared.CallsignsPopup as CallsignsPopup exposing (PopupCallerOrigin(..))
@@ -1738,6 +1739,7 @@ freqEditSidebarContent shared model _ networkFreqId freqId updateReq =
                                    )
                         ]
                         []
+                    , RerNetworksUtils.futureActivityDateWarning shared (Just updateReq.activeFrom)
                     ]
                 , div [ class "space-y-2" ]
                     [ Checkbox.new { isChecked = model.freqEditShowActiveTo, onToggle = \_ -> ToggleFreqEditShowActiveTo }
@@ -1763,6 +1765,7 @@ freqEditSidebarContent shared model _ networkFreqId freqId updateReq =
                                        )
                             ]
                             []
+                        , RerNetworksUtils.futureActivityDateWarning shared updateReq.activeTo
                         , if updateReq.activeTo /= Nothing then
                             div [ class "flex items-center gap-3 pt-2" ]
                                 [ if model.freqReactivateLoading then
@@ -2023,6 +2026,7 @@ freqCreateSidebarContent shared model _ =
                                )
                     ]
                     []
+                , RerNetworksUtils.futureActivityDateWarning shared model.freqCreateState.activeFrom
                 ]
             , div []
                 [ Checkbox.new { isChecked = model.freqCreateShowActiveTo, onToggle = \_ -> ToggleFreqCreateShowActiveTo }
@@ -2058,6 +2062,7 @@ freqCreateSidebarContent shared model _ =
                                    )
                         ]
                         []
+                    , RerNetworksUtils.futureActivityDateWarning shared model.freqCreateState.activeTo
                     ]
 
               else

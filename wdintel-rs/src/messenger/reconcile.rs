@@ -18,6 +18,7 @@ pub struct ReconcileResult {
     pub changed_inbox_item_ids: Vec<i64>,
     pub superseded_media_ids: Vec<Uuid>,
     pub superseded_media_storage_keys: Vec<(Uuid, String)>,
+    pub superseded_ocr_result_keys: Vec<String>,
     pub pending_dedupe_updates: Vec<DedupeRedisUpdate>,
     pub uploaded_files_ready_for_deletion: Vec<MediaUploadInput>,
 }
@@ -202,6 +203,7 @@ pub async fn reconcile_deleted_message(
         changed_inbox_item_ids,
         superseded_media_ids: vec![],
         superseded_media_storage_keys: vec![],
+        superseded_ocr_result_keys: vec![],
         pending_dedupe_updates,
         uploaded_files_ready_for_deletion: vec![],
     })
@@ -1001,8 +1003,9 @@ pub async fn reconcile_active_message(
             );
             return Ok(ReconcileResult {
                 changed_inbox_item_ids: retired_inbox_item_ids,
-                superseded_media_storage_keys: deleted_media.storage_keys,
                 superseded_media_ids: deleted_media.ids,
+                superseded_media_storage_keys: deleted_media.storage_keys,
+                superseded_ocr_result_keys: deleted_media.ocr_result_keys,
                 pending_dedupe_updates: vec![],
                 uploaded_files_ready_for_deletion: vec![],
             });
@@ -1041,6 +1044,8 @@ pub async fn reconcile_active_message(
         let superseded_media_ids = media_replacement.superseded_media_ids;
         let superseded_media_storage_keys =
             media_replacement.superseded_media_storage_keys;
+        let superseded_ocr_result_keys =
+            media_replacement.superseded_ocr_result_keys;
         let uploaded_files_ready_for_deletion =
             media_replacement.uploaded_files_ready_for_deletion;
         crate::transcriber::media_queue::reconcile_message(
@@ -1108,6 +1113,7 @@ pub async fn reconcile_active_message(
             changed_inbox_item_ids,
             superseded_media_ids,
             superseded_media_storage_keys,
+            superseded_ocr_result_keys,
             pending_dedupe_updates: vec![],
             uploaded_files_ready_for_deletion,
         })
@@ -1145,8 +1151,9 @@ pub async fn delete_media_objects_best_effort(
     dbx: &sea_orm::DatabaseConnection,
     media_ids: Vec<Uuid>,
     media_storage_keys: Vec<(Uuid, String)>,
+    ocr_result_keys: Vec<String>,
 ) {
-    if media_ids.is_empty() {
+    if media_ids.is_empty() && ocr_result_keys.is_empty() {
         return;
     }
     for media_id in &media_ids {
@@ -1214,6 +1221,15 @@ pub async fn delete_media_objects_best_effort(
                     remote_key, err
                 );
             }
+        }
+    }
+    for object_key in ocr_result_keys {
+        let remote_key = s3_config.prefixed_key(&object_key);
+        if let Err(err) = s3.delete(&remote_key).await {
+            error!(
+                "failed to delete superseded OCR result {}: {:?}",
+                remote_key, err
+            );
         }
     }
 }
@@ -1736,6 +1752,7 @@ fn dedupe_redis_key(body_for_dedupe: &str) -> String {
 struct MediaReplacementResult {
     superseded_media_ids: Vec<Uuid>,
     superseded_media_storage_keys: Vec<(Uuid, String)>,
+    superseded_ocr_result_keys: Vec<String>,
     preserved_previous: bool,
     uploaded_files_ready_for_deletion: Vec<MediaUploadInput>,
 }
@@ -1744,6 +1761,7 @@ struct MediaReplacementResult {
 struct DeletedMedia {
     ids: Vec<Uuid>,
     storage_keys: Vec<(Uuid, String)>,
+    ocr_result_keys: Vec<String>,
 }
 
 async fn replace_media_if_changed(
@@ -1768,6 +1786,7 @@ async fn replace_media_if_changed(
         return Ok(MediaReplacementResult {
             superseded_media_ids: vec![],
             superseded_media_storage_keys: vec![],
+            superseded_ocr_result_keys: vec![],
             preserved_previous: false,
             uploaded_files_ready_for_deletion: vec![],
         });
@@ -1777,6 +1796,7 @@ async fn replace_media_if_changed(
         return Ok(MediaReplacementResult {
             superseded_media_ids: vec![],
             superseded_media_storage_keys: vec![],
+            superseded_ocr_result_keys: vec![],
             preserved_previous: false,
             uploaded_files_ready_for_deletion: vec![],
         });
@@ -1793,6 +1813,7 @@ async fn replace_media_if_changed(
         return Ok(MediaReplacementResult {
             superseded_media_ids: vec![],
             superseded_media_storage_keys: vec![],
+            superseded_ocr_result_keys: vec![],
             preserved_previous: true,
             uploaded_files_ready_for_deletion: vec![],
         });
@@ -1834,10 +1855,12 @@ async fn replace_media_if_changed(
             signal_message.id,
             previous_attachments_hash,
         )
-        .await?;
+        .await
+        .c(h!())?;
         return Ok(MediaReplacementResult {
             superseded_media_ids: deleted_media.ids,
             superseded_media_storage_keys: deleted_media.storage_keys,
+            superseded_ocr_result_keys: deleted_media.ocr_result_keys,
             preserved_previous: true,
             uploaded_files_ready_for_deletion: if delete_uploaded {
                 upload_result.uploaded_files_ready_for_deletion
@@ -1850,6 +1873,7 @@ async fn replace_media_if_changed(
     Ok(MediaReplacementResult {
         superseded_media_ids: deleted_media.ids,
         superseded_media_storage_keys: deleted_media.storage_keys,
+        superseded_ocr_result_keys: deleted_media.ocr_result_keys,
         preserved_previous: false,
         uploaded_files_ready_for_deletion: if delete_uploaded {
             upload_result.uploaded_files_ready_for_deletion
@@ -1911,6 +1935,9 @@ async fn delete_old_media(
         .all(txn)
         .await
         .c(h!())?;
+    let ocr_result_keys = crate::ocr::load_result_keys(txn, &old_media_ids)
+        .await
+        .c(h!())?;
     signal_message_media::Entity::delete_many()
         .filter(signal_message_media::Column::Id.is_in(old_media_ids.clone()))
         .exec(txn)
@@ -1924,6 +1951,7 @@ async fn delete_old_media(
                 (media.id, crate::messenger::media::media_object_key(media))
             })
             .collect(),
+        ocr_result_keys,
     })
 }
 
@@ -1941,7 +1969,7 @@ async fn delete_media_for_message(
         .all(txn)
         .await
         .c(h!())?;
-    delete_old_media(txn, old_media_ids).await
+    delete_old_media(txn, old_media_ids).await.c(h!())
 }
 
 async fn should_preserve_unavailable_media(

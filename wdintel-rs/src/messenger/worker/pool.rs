@@ -331,6 +331,7 @@ async fn process_item_once(
     let mut changed_inbox_item_ids = vec![];
     let mut superseded_media_ids = vec![];
     let mut superseded_media_storage_keys = vec![];
+    let mut superseded_ocr_result_keys = vec![];
     let mut pending_dedupe_updates = vec![];
     let mut uploaded_files_ready_for_deletion = vec![];
     let mut redis = context.redis.clone();
@@ -354,6 +355,8 @@ async fn process_item_once(
         .await
         .c(h!())?;
         changed_inbox_item_ids.extend(result.changed_inbox_item_ids);
+        superseded_media_ids.extend(result.superseded_media_ids);
+        superseded_ocr_result_keys.extend(result.superseded_ocr_result_keys);
         pending_dedupe_updates.extend(result.pending_dedupe_updates);
         uploaded_files_ready_for_deletion
             .extend(result.uploaded_files_ready_for_deletion);
@@ -384,6 +387,8 @@ async fn process_item_once(
             superseded_media_ids.extend(result.superseded_media_ids);
             superseded_media_storage_keys
                 .extend(result.superseded_media_storage_keys);
+            superseded_ocr_result_keys
+                .extend(result.superseded_ocr_result_keys);
             pending_dedupe_updates.extend(result.pending_dedupe_updates);
             uploaded_files_ready_for_deletion
                 .extend(result.uploaded_files_ready_for_deletion);
@@ -451,6 +456,7 @@ async fn process_item_once(
         &context.dbx,
         superseded_media_ids,
         superseded_media_storage_keys,
+        superseded_ocr_result_keys,
     )
     .await;
     Ok(())

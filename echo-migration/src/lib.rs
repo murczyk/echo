@@ -371,6 +371,8 @@ mod m20260812_113859_signal_message_copy;
 mod m20260812_115511_sigint_inbox_item_datetime_neo_indexes;
 mod m20260813_183642_sigint_unit_orbit_echelons;
 mod m20260815_125337_add_sigint_comment_migration_marker;
+mod m20260816_102640_ocr;
+mod m20260816_173322_media_summary;
 
 pub struct Migrator;
 
@@ -853,6 +855,8 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260815_125337_add_sigint_comment_migration_marker::Migration,
             ),
+            Box::new(m20260816_102640_ocr::Migration),
+            Box::new(m20260816_173322_media_summary::Migration),
         ]
     }
 }

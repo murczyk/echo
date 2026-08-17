@@ -166,30 +166,45 @@ async fn messenger_media(
     path: actix_web::web::Path<(Uuid,)>,
 ) -> Result<HttpResponse, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     let media_id = path.0;
     let media = signal_message_media::Entity::find_by_id(media_id)
         .one(&env.dbx)
         .await
         .c(h!())?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
     crate::messenger::media::ensure_media_access(
         &env.dbx,
         &login,
         media.signal_message_id,
     )
-    .await?;
+    .await
+    .c(h!())?;
 
+    Ok(serve_messenger_media(&req, env.as_ref(), &media)
+        .await
+        .c(h!())?)
+}
+
+pub(crate) async fn serve_messenger_media(
+    req: &HttpRequest,
+    env: &Env,
+    media: &signal_message_media::Model,
+) -> Result<HttpResponse, AppError> {
     if !media.is_encrypted {
-        return serve_plaintext_messenger_media(&req, env.as_ref(), &media)
-            .await;
+        return Ok(serve_plaintext_messenger_media(req, env, media)
+            .await
+            .c(h!())?);
     }
-    if crate::messenger::media::is_video_media(&media)
+    if crate::messenger::media::is_video_media(media)
         && crate::messenger::media_cache::should_cache_media(media.size_bytes)
     {
-        return serve_cached_messenger_media(&req, env.as_ref(), &media).await;
+        return Ok(serve_cached_messenger_media(req, env, media)
+            .await
+            .c(h!())?);
     }
-    serve_small_messenger_media(&req, env.as_ref(), &media).await
+    Ok(serve_small_messenger_media(req, env, media).await.c(h!())?)
 }
 
 async fn serve_plaintext_messenger_media(

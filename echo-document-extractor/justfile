@@ -1,0 +1,60 @@
+set dotenv-load := true
+
+target_host := env_var_or_default("TARGET_HOST", "echo-document-extractor")
+builder_host := env_var_or_default("BUILDER_HOST", "echo-build-deb13-main")
+
+default:
+    @just --list
+
+sync:
+    uv sync --extra cpu --extra dev
+
+lock:
+    uv lock
+
+lock-check:
+    uv lock --check
+
+format:
+    uv run --extra cpu --extra dev ruff format .
+
+lint:
+    uv run --extra cpu --extra dev ruff check .
+
+test:
+    uv run --extra cpu --extra dev pytest -m 'not live'
+
+check: lock-check lint test
+
+package:
+    BUILDER_HOST="{{builder_host}}" ./bin/build-on-builder.sh
+
+package-local:
+    ./bin/build-packages.sh
+
+publish-models:
+    BUILDER_HOST="{{builder_host}}" ./bin/publish-models-on-builder.sh
+
+publish-models-local:
+    ./bin/publish-models.sh
+
+sync-runtime:
+    sudo ./bin/sync-runtime.sh
+
+preflight:
+    ./bin/preflight.sh "{{target_host}}"
+
+deploy:
+    ./bin/deploy.sh "{{target_host}}"
+
+verify:
+    ./bin/verify.sh "{{target_host}}"
+
+verify-clients:
+    EXTRACTOR_HOST="{{target_host}}" ./bin/verify-clients.sh
+
+verify-large-job:
+    TARGET_HOST="{{target_host}}" ./bin/verify-large-job.sh
+
+rollback:
+    TARGET_HOST="{{target_host}}" ./bin/rollback.sh

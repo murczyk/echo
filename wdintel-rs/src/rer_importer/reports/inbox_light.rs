@@ -41,6 +41,7 @@ pub(crate) fn blank_inbox_message() -> InboxMessage {
         post: None,
         post_id: None,
         unit: None,
+        unit_ids: vec![],
         callsign_tokens: None,
         signal_tokens: None,
         point_tokens: None,

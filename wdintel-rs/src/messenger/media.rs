@@ -488,6 +488,7 @@ pub async fn delete_uploaded_attachment_files(
 
 pub async fn delete_stored_media_files(
     media: &[signal_message_media::Model],
+    ocr_result_keys: &[String],
     config: &Config,
     s3: &Option<Operator>,
 ) {
@@ -518,6 +519,15 @@ pub async fn delete_stored_media_files(
                     remote_key, e
                 );
             }
+        }
+    }
+    for object_key in ocr_result_keys {
+        let remote_key = s3_config.prefixed_key(object_key);
+        if let Err(e) = s3.delete(&remote_key).await {
+            error!(
+                "failed to delete stored OCR result {}: {:?}",
+                remote_key, e
+            );
         }
     }
 }

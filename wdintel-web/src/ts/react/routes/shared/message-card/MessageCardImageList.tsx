@@ -8,11 +8,13 @@ import { MessageCardVideoThumb } from './MessageCardVideoThumb';
 export function MessageCardImageList({
   images,
   videos = [],
+  selectedImageIndex = null,
   onOpen,
   onOpenVideo,
 }: {
   images: MessageCardImage[];
   videos?: MessageMediaInfo[];
+  selectedImageIndex?: number | null;
   onOpen: (index: number) => void;
   onOpenVideo?: (index: number) => void;
 }) {
@@ -39,6 +41,7 @@ export function MessageCardImageList({
             image={image}
             index={index}
             variant={imageCount === 1 && videoCount === 0 ? 'single' : 'multi'}
+            selected={selectedImageIndex === index}
             onOpen={onOpen}
           />
         ))}

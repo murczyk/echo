@@ -31,9 +31,6 @@ jobs:
       ECHO_CI_SSH_USER: ${{ secrets.ECHO_CI_SSH_USER }}
       ECHO_CI_SSH_KEY: ${{ secrets.ECHO_CI_SSH_KEY }}
       # GPG signing configuration on echo-ci host (optional but recommended)
-      ECHO_CI_GPG_KEYID: ${{ secrets.ECHO_CI_GPG_KEYID }}
-      ECHO_CI_GPG_PASSPHRASE_FILE: ${{ secrets.ECHO_CI_GPG_PASSPHRASE_FILE }}
-      ECHO_CI_GPG_PROVIDER: ${{ secrets.ECHO_CI_GPG_PROVIDER }}
       # Repo/dist/component names can be overridden via secrets; defaults below
       ECHO_CI_REPO: ${{ secrets.ECHO_CI_REPO || 'echo' }}
       ECHO_CI_DIST: ${{ secrets.ECHO_CI_DIST || 'jammy' }}

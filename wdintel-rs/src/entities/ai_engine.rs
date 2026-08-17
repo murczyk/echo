@@ -39,6 +39,10 @@ pub enum Relation {
     AiCallsignSettings,
     #[sea_orm(has_many = "super::ai_chat::Entity")]
     AiChat,
+    #[sea_orm(has_many = "super::media_summary::Entity")]
+    MediaSummary,
+    #[sea_orm(has_many = "super::media_summary_settings::Entity")]
+    MediaSummarySettings,
 }
 
 impl Related<super::ai_agent_allowed_engine::Entity> for Entity {
@@ -80,6 +84,18 @@ impl Related<super::ai_callsign_settings::Entity> for Entity {
 impl Related<super::ai_chat::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiChat.def()
+    }
+}
+
+impl Related<super::media_summary::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MediaSummary.def()
+    }
+}
+
+impl Related<super::media_summary_settings::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MediaSummarySettings.def()
     }
 }
 

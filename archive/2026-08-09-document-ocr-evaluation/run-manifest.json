@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-08T20:14:29Z",
+  "execution": {
+    "client_host": "echo-cbr-staging",
+    "client_tailscale_ip": "100.64.63.98",
+    "direct_base_url": "http://100.92.119.116:8000/v1",
+    "worker_host": "echo-gpu-spark",
+    "worker_tailscale_ip": "100.92.119.117",
+    "model": "google/gemma-4-26B-A4B-it",
+    "vllm_version": "0.19.1rc1.dev284+g1a9353bb0.d20260414",
+    "health": "healthy",
+    "transport": "SSH to echo-cbr-staging, then direct Tailscale HTTP to Spark vLLM",
+    "router_bypassed": true,
+    "echo_api_bypassed": true,
+    "launch_arguments": [
+      "--max-model-len",
+      "262144",
+      "--gpu-memory-utilization",
+      "0.7",
+      "--load-format",
+      "fastsafetensors",
+      "--enable-prefix-caching",
+      "--enable-auto-tool-choice",
+      "--tool-call-parser",
+      "gemma4",
+      "--reasoning-parser",
+      "gemma4",
+      "--quantization",
+      "fp8",
+      "--kv-cache-dtype",
+      "fp8",
+      "--max-num-batched-tokens",
+      "8192",
+      "-tp",
+      "1"
+    ]
+  },
+  "decoding": {
+    "temperature": 0,
+    "seed": 0
+  },
+  "source_images": [
+    {
+      "file": "J5rHE_ZMsk1H_QDCCn3v.jpg",
+      "width": 2492,
+      "height": 1360,
+      "sha256": "28f4104b68166bdc60de3d6d91b47a4498591b30e422adb70faafad6ec07f8cf"
+    },
+    {
+      "file": "l54dw_8gZt5foedpH-PY.jpg",
+      "width": 1386,
+      "height": 1968,
+      "sha256": "228a267a2a95eb746265eb2f32c0a3f14053b22d8657a3defd8defd834ee8d60"
+    }
+  ],
+  "temporary_crops": [
+    {
+      "name": "l54-top",
+      "source": "l54dw_8gZt5foedpH-PY.jpg",
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1386,
+        "height": 800
+      },
+      "sha256": "f5e5019a173d0008f5b7e94cdfbd89c75f0e9f19dab8bd6afe3ba5744a080d3f"
+    },
+    {
+      "name": "l54-middle",
+      "source": "l54dw_8gZt5foedpH-PY.jpg",
+      "rectangle": {
+        "x": 0,
+        "y": 650,
+        "width": 1386,
+        "height": 800
+      },
+      "sha256": "fa88b4547c57704b17b6345ab491e2c3c47de158d38027c532f8fe41322a7cb0"
+    },
+    {
+      "name": "l54-bottom",
+      "source": "l54dw_8gZt5foedpH-PY.jpg",
+      "rectangle": {
+        "x": 0,
+        "y": 1300,
+        "width": 1386,
+        "height": 668
+      },
+      "sha256": "3b0cb0c5907f50a3b14285937a89c9d5e8a1ba193a9dac4f8eefcebfaa0893e6"
+    },
+    {
+      "name": "j5-column-1",
+      "source": "J5rHE_ZMsk1H_QDCCn3v.jpg",
+      "rectangle": {
+        "x": 250,
+        "y": 0,
+        "width": 580,
+        "height": 1360
+      },
+      "sha256": "d1d60245abbadf7acc76389c9a55365f851ede2505123978be240b8992de06d8"
+    },
+    {
+      "name": "j5-column-2",
+      "source": "J5rHE_ZMsk1H_QDCCn3v.jpg",
+      "rectangle": {
+        "x": 790,
+        "y": 0,
+        "width": 580,
+        "height": 1360
+      },
+      "sha256": "c4c2f437405587646c6f26385bca0ee4f95c6cdffc392d7eb454b72a6ab71af6"
+    },
+    {
+      "name": "j5-column-3",
+      "source": "J5rHE_ZMsk1H_QDCCn3v.jpg",
+      "rectangle": {
+        "x": 1325,
+        "y": 0,
+        "width": 590,
+        "height": 1360
+      },
+      "sha256": "d43060cd2a3b3bb7ae38703beab678b0f596ff3ec169b593b06208351c844d3f"
+    },
+    {
+      "name": "j5-column-4",
+      "source": "J5rHE_ZMsk1H_QDCCn3v.jpg",
+      "rectangle": {
+        "x": 1870,
+        "y": 0,
+        "width": 600,
+        "height": 1360
+      },
+      "sha256": "e426f1250d96f96bc3e2e3cb19c90776b4ba265b35bc61e3d7a24d6f76838e1d"
+    }
+  ],
+  "reference_policy": "The supplied partial transcription was withheld from every model request and used only after inference for evaluation and auditing.",
+  "language_policy": "Russian source text remains verbatim; summaries and normalized table labels are Ukrainian."
+}
+

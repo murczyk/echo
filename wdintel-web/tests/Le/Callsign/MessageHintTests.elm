@@ -96,6 +96,7 @@ message textMarked callsigns networkIds =
     , post = Nothing
     , postId = Nothing
     , unit = Nothing
+    , unitIds = []
     , callsignTokens = Nothing
     , signalTokens = Nothing
     , pointTokens = Nothing
