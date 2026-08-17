@@ -20,6 +20,7 @@ service:
     poll_seconds: 2
     lease_seconds: 300
     heartbeat_seconds: 30
+    max_active_jobs: 2
     infrastructure_retries: 3
     retry_backoff_seconds: [30, 120, 600]
 
@@ -31,7 +32,7 @@ extraction:
     revision: 2e9fca82ee641e6bb6e1f5d905241e994be27a07
     token_env: NUEXTRACT_API_KEY
     timeout_seconds: 180
-    max_tokens: 10000
+    max_tokens: 6000
     dtype: bfloat16
     temperature: 0.2
     seed: 0
@@ -45,7 +46,7 @@ extraction:
     revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
     token_env: GEMMA_API_KEY
     timeout_seconds: 180
-    max_tokens: 10000
+    max_tokens: 6000
     dtype: fp8
     kv_cache_dtype: fp8
     vision_budget: 1120
@@ -55,7 +56,7 @@ extraction:
   max_raster_long_edge: 4096
   crop_padding: 0.03
   crop_upscale: 2
-  endpoint_concurrency: 1
+  endpoint_concurrency: 2
   enable_paddle: true
   paddle_languages: [ru, uk, en]
   paddle:

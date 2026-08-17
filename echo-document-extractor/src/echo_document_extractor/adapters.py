@@ -191,6 +191,8 @@ class GemmaAdapter(OpenAICompatibleAdapter):
         payload = super()._request_body(request)
         payload["temperature"] = 0
         payload["seed"] = 0
+        payload["stop"] = [GEMMA_END_MARKER]
+        payload["include_stop_str_in_output"] = True
         if self.config.vision_budget:
             processor = dict(payload.get("mm_processor_kwargs", {}))
             processor["max_pixels"] = self.config.vision_budget * self.config.vision_budget

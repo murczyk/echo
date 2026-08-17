@@ -94,7 +94,7 @@ flowchart LR
     subgraph extractor_lxc["echo-gpu Incus · ct-echo-document-extractor · Debian 13"]
         direction TB
         extractor_api["Authenticated async API<br/>Tailscale 100.93.77.92:8000"]
-        extractor_worker["Single page-serial worker<br/>leases + heartbeats"]
+        extractor_worker["Two concurrent jobs<br/>serial Paddle · leases + heartbeats"]
         extractor_queue[("SQLite WAL<br/>durable job queue")]
         extractor_spool[("Private disk spool<br/>inputs + canonical ZIPs")]
         extractor_paddle["PP-OCRv5 + PP-StructureV3<br/>RTX 4090 · offline immutable models"]
@@ -247,6 +247,7 @@ Each Echo instance can opt into the shared extractor with a unique identity:
 [ocr]
 base_url = "http://100.93.77.92:8000"
 instance_id = "echo-staging"
+max_in_flight_jobs = 2
 ```
 
 The bearer credential is read only from `ECHO_OCR_TOKEN` in the systemd
@@ -257,8 +258,9 @@ systemd units load this optional environment file.
 The `wdintel-rs-bgworker` OCR worker is disabled by default and controlled from
 the admin page at **ШІ → OCR**. When enabled, it discovers supported PDF, JPEG,
 and PNG messenger media created during the last seven days. PostgreSQL stores
-durable per-media queue, retry, progress, and quality state. At most one remote
-job is active per Echo instance. Extractor dependency outages postpone work,
+durable per-media queue, retry, progress, and quality state. The per-instance
+remote-job limit is configurable from one through four and is two on the CBR
+instances. Extractor dependency outages postpone work,
 while other infrastructure failures use bounded exponential retry.
 
 The worker validates the canonical ZIP and every manifest digest, embeds only

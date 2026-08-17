@@ -5,7 +5,7 @@ pub mod worker;
 
 use crate::config::{
     OCR_ADMIN_DEFAULT_LIMIT, OCR_ADMIN_MAX_LIMIT, OCR_DISCOVERY_DAYS,
-    OCR_SETTINGS_ID, OCR_TOKEN_ENV,
+    OCR_MAX_IN_FLIGHT_JOBS, OCR_SETTINGS_ID, OCR_TOKEN_ENV,
 };
 use crate::entities::{
     media_summary as media_summary_entity, ocr_job, ocr_settings,
@@ -42,6 +42,7 @@ pub(crate) struct OcrRuntimeConfig {
     pub base_url: String,
     pub instance_id: String,
     pub token: String,
+    pub max_in_flight_jobs: usize,
 }
 
 pub(crate) fn runtime_config(env: &Env) -> anyhow::Result<OcrRuntimeConfig> {
@@ -66,6 +67,9 @@ pub(crate) fn runtime_config(env: &Env) -> anyhow::Result<OcrRuntimeConfig> {
     {
         anyhow::bail!("OCR instance ID is invalid");
     }
+    if !(1..=OCR_MAX_IN_FLIGHT_JOBS).contains(&config.max_in_flight_jobs) {
+        anyhow::bail!("OCR max in-flight jobs must be between 1 and {OCR_MAX_IN_FLIGHT_JOBS}");
+    }
     let token = std::env::var(OCR_TOKEN_ENV).c(h!())?;
     let token = token.trim().to_string();
     if token.len() < 32 {
@@ -83,6 +87,7 @@ pub(crate) fn runtime_config(env: &Env) -> anyhow::Result<OcrRuntimeConfig> {
         base_url,
         instance_id,
         token,
+        max_in_flight_jobs: config.max_in_flight_jobs,
     })
 }
 

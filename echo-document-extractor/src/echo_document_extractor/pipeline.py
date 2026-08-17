@@ -124,6 +124,7 @@ class Extractor:
         page_callback: PageCallback | None = None,
         metrics: ExtractionMetrics | None = None,
         ocr: PaddleEvidenceProvider | None = None,
+        paddle_semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         self.config = config
         self.adapters = adapters or [
@@ -135,6 +136,7 @@ class Extractor:
             config.paddle_languages,
             config.paddle,
         )
+        self.paddle_semaphore = paddle_semaphore
         self._request_artifacts: dict[str, bytes] = {}
         self._single_spark_queue = asyncio.Semaphore(1) if config.hardware_profile == "single_spark" else None
         self.artifact_dir = artifact_dir
@@ -290,11 +292,19 @@ class Extractor:
         geometry = detect_geometry(raster.image, page_id)
         paddle_started = time.monotonic()
         try:
-            paddle = self.ocr.extract_all(
-                raster.image,
-                page_id,
-                use_table_recognition=not any(isinstance(block, Table) for block in geometry.blocks),
-            )
+            if self.paddle_semaphore is None:
+                paddle = self.ocr.extract_all(
+                    raster.image,
+                    page_id,
+                    use_table_recognition=not any(isinstance(block, Table) for block in geometry.blocks),
+                )
+            else:
+                async with self.paddle_semaphore:
+                    paddle = self.ocr.extract_all(
+                        raster.image,
+                        page_id,
+                        use_table_recognition=not any(isinstance(block, Table) for block in geometry.blocks),
+                    )
         except RuntimeError as error:
             paddle = None
             paddle_error = Evidence(

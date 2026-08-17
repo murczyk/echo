@@ -22,7 +22,7 @@ use sea_orm::{
     ActiveModelTrait,
     ActiveValue::{NotSet, Set},
     ColumnTrait, DatabaseBackend, DatabaseConnection, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, Statement,
+    IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, Statement,
 };
 use serde::Deserialize;
 use std::sync::Arc;
@@ -103,17 +103,16 @@ async fn process_iteration(env: &Env) -> anyhow::Result<bool> {
     } else {
         0
     };
-    if let Some(job) = load_submitted(&env.dbx).await.c(h!())? {
-        if job.next_attempt_at > Utc::now().naive_utc() {
-            return Ok(discovered > 0);
-        }
-        return poll_submitted_job(env, job).await;
+    let mut processed = discovered > 0;
+    if let Some(job) = load_due_submitted(&env.dbx).await.c(h!())? {
+        processed = poll_submitted_job(env, job).await.c(h!())? || processed;
     }
+    let submitted_jobs = count_submitted(&env.dbx).await.c(h!())?;
     if !worker_enabled {
-        return Ok(false);
+        return Ok(processed || submitted_jobs > 0);
     }
     let Some(job) = load_due_queued(&env.dbx).await.c(h!())? else {
-        return Ok(discovered > 0);
+        return Ok(processed || submitted_jobs > 0);
     };
     let config = match runtime_config(env) {
         Ok(config) => config,
@@ -124,6 +123,9 @@ async fn process_iteration(env: &Env) -> anyhow::Result<bool> {
             return Ok(true);
         }
     };
+    if submitted_jobs >= u64::try_from(config.max_in_flight_jobs).c(h!())? {
+        return Ok(true);
+    }
     if let Err(err) = extractor_readiness(&env.rq, &config).await {
         postpone_for_dependency(&env.dbx, job, err.to_string())
             .await
@@ -240,14 +242,24 @@ limit $2
     Ok(inserted)
 }
 
-async fn load_submitted(
+async fn load_due_submitted(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Option<ocr_job::Model>> {
     ocr_job::Entity::find()
         .filter(ocr_job::Column::State.eq("submitted"))
+        .filter(ocr_job::Column::NextAttemptAt.lte(Utc::now().naive_utc()))
+        .order_by_asc(ocr_job::Column::NextAttemptAt)
         .order_by_asc(ocr_job::Column::SubmittedAt)
         .order_by_asc(ocr_job::Column::MediaId)
         .one(dbx)
+        .await
+        .context(h!())
+}
+
+async fn count_submitted(dbx: &DatabaseConnection) -> anyhow::Result<u64> {
+    ocr_job::Entity::find()
+        .filter(ocr_job::Column::State.eq("submitted"))
+        .count(dbx)
         .await
         .context(h!())
 }
@@ -786,6 +798,7 @@ mod tests {
             base_url: "https://ocr.example.test".to_string(),
             instance_id: "test-instance".to_string(),
             token: "token".to_string(),
+            max_in_flight_jobs: 2,
         };
         let now = Utc::now().naive_utc();
         let job = ocr_job::Model {

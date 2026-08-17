@@ -183,6 +183,8 @@ pub const OCR_DISCOVERY_DAYS: i64 = 7;
 pub const OCR_DISCOVERY_BATCH_SIZE: u64 = 100;
 pub const OCR_IDLE_SLEEP_MS: u64 = 30_000;
 pub const OCR_POLL_SLEEP_MS: u64 = 5_000;
+pub const OCR_DEFAULT_MAX_IN_FLIGHT_JOBS: usize = 1;
+pub const OCR_MAX_IN_FLIGHT_JOBS: usize = 4;
 pub const OCR_MAX_ATTEMPTS: i32 = 8;
 pub const OCR_RETRY_BASE_SECS: i64 = 10;
 pub const OCR_RETRY_MAX_SECS: i64 = 15 * 60;
@@ -956,6 +958,12 @@ pub struct Config {
 pub struct OcrConfig {
     pub base_url: String,
     pub instance_id: String,
+    #[serde(default = "ocr_default_max_in_flight_jobs")]
+    pub max_in_flight_jobs: usize,
+}
+
+fn ocr_default_max_in_flight_jobs() -> usize {
+    OCR_DEFAULT_MAX_IN_FLIGHT_JOBS
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

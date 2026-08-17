@@ -30,7 +30,7 @@ nu_extract:
   revision: 2e9fca82ee641e6bb6e1f5d905241e994be27a07
   token_env: NUEXTRACT_API_KEY
   timeout_seconds: 180
-  max_tokens: 10000
+  max_tokens: 6000
   prompt_version: semantic-html-v2
   dtype: bfloat16
   temperature: 0.2
@@ -45,7 +45,7 @@ gemma:
   revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
   token_env: GEMMA_API_KEY
   timeout_seconds: 180
-  max_tokens: 10000
+  max_tokens: 6000
   prompt_version: semantic-html-v2
   dtype: fp8
   kv_cache_dtype: fp8
@@ -68,9 +68,8 @@ crop_padding: 0.03
 # 1..4; default 2.
 crop_upscale: 2
 
-# Maximum concurrent requests per model endpoint. Currently only 1 is allowed;
-# split_gpu can still call the two independent endpoints concurrently.
-endpoint_concurrency: 1
+# Maximum concurrent requests per model endpoint. Allowed range: 1..4.
+endpoint_concurrency: 2
 
 # true requires local PP-OCRv5 and PP-StructureV3 runtimes/models at startup.
 # false disables Paddle evidence and explicitly permits degraded extraction.

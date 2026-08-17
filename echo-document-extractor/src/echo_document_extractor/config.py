@@ -107,7 +107,7 @@ class ExtractionConfig(BaseModel):
     max_raster_long_edge: int = Field(default=4096, ge=256)
     crop_padding: float = Field(default=0.03, ge=0.0, le=0.25)
     crop_upscale: float = Field(default=2.0, ge=1.0, le=4.0)
-    endpoint_concurrency: int = Field(default=1, ge=1, le=1)
+    endpoint_concurrency: int = Field(default=1, ge=1, le=4)
     enable_paddle: bool = True
     paddle_languages: tuple[Literal["ru", "uk", "en"], ...] = ("ru", "uk", "en")
     paddle: PaddleRuntimeConfig = Field(default_factory=PaddleRuntimeConfig)
