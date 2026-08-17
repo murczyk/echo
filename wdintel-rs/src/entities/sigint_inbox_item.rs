@@ -35,7 +35,7 @@ pub struct Model {
     pub location: Option<String>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub tags: Option<Json>,
-    pub datetime: Option<DateTime>,
+    pub datetime_old: Option<DateTime>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub signal_tokens: Option<Json>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
@@ -49,7 +49,7 @@ pub struct Model {
     pub device_name_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub network: Option<String>,
-    pub datetime_neo: Option<DateTime>,
+    pub datetime: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

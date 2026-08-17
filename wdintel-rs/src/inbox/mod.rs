@@ -249,7 +249,7 @@ where
         None => (default_date_v, default_time_v),
         Some((d, t)) => (Some(d), Some(t)),
     };
-    let datetime_neo =
+    let datetime =
         datetime::from_date_time_text(date_v.as_deref(), time_v.as_deref())
             .c(h!())?;
 
@@ -273,8 +273,8 @@ where
         location_v2: Set(location_v2),
         body_noheader: Set(Some(serde_json::to_value(&body_noheader).c(h!())?)),
         tags: NotSet,
-        datetime: NotSet,
-        datetime_neo: Set(datetime_neo),
+        datetime_old: NotSet,
+        datetime: Set(datetime),
         signal_tokens: Set(Some(serde_json::to_value(signal_tokens).c(h!())?)),
         post_id: Set(post_id),
         device_name_id: Set(None),
@@ -433,7 +433,7 @@ fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 21] {
     [
         sigint_inbox_item::Column::Date,
         sigint_inbox_item::Column::Time,
-        sigint_inbox_item::Column::DatetimeNeo,
+        sigint_inbox_item::Column::Datetime,
         sigint_inbox_item::Column::Freq,
         sigint_inbox_item::Column::Coords,
         sigint_inbox_item::Column::Lat,
@@ -933,12 +933,12 @@ mod tests {
         assert!(reprocessed_inbox_item_update_columns()
             .iter()
             .all(|column| {
-                !matches!(column, sigint_inbox_item::Column::Datetime)
+                !matches!(column, sigint_inbox_item::Column::DatetimeOld)
             }));
         assert!(reprocessed_inbox_item_update_columns()
             .iter()
             .any(|column| {
-                matches!(column, sigint_inbox_item::Column::DatetimeNeo)
+                matches!(column, sigint_inbox_item::Column::Datetime)
             }));
     }
 
