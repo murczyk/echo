@@ -28,6 +28,9 @@ async fn main() -> Result<()> {
     echo_im::run_migration(&db).await.c(h!())?;
     automation::ensure_schema(&db).await.c(h!())?;
     messenger::ensure_schema(&db).await.c(h!())?;
+    messenger::recover_interrupted_relinks(&db, &config)
+        .await
+        .c(h!())?;
     worker::spawn_workers(db.clone());
     let state = web::Data::new(AppState {
         config: config.clone(),

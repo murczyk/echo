@@ -3,6 +3,7 @@ use crate::config::{
     ECHO_SWAPP_ADVISORY_LOCK_RETRY_MILLIS,
     MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX,
     MESSENGER_INTEGRATION_OPERATION_LOCK_NAMESPACE,
+    MESSENGER_INTEGRATION_RELINK_STATE_PREFIX,
     MESSENGER_INTEGRATION_UNIQUENESS_LOCK_ID,
 };
 use crate::error::{
@@ -11,6 +12,7 @@ use crate::error::{
 };
 use crate::h;
 use anyhow::{Context, Result};
+use base64::{engine::general_purpose, Engine};
 use echo_im::entities::sea_orm_active_enums::{
     EchoMessageSource, SignalCliMode,
 };
@@ -21,7 +23,7 @@ use echo_im::entities::{
 use echo_im::types::{MessageSource, OutboxAttachmentInput, SendMessageReq};
 use regex::Regex;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -118,6 +120,17 @@ struct ClientDataBackup {
 
 struct ClientDataBackups {
     paths: Vec<ClientDataBackup>,
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct RelinkRecoveryState {
+    client_name: String,
+    previous_kind: MessengerKind,
+    previous_phone: Option<String>,
+    replacement_kind: MessengerKind,
+    replacement_phone: String,
+    signal_port: i32,
+    backup_token: String,
 }
 
 enum CommitRecovery {
@@ -229,7 +242,6 @@ pub async fn update(
 ) -> Result<MessengerView> {
     let display_name = normalize_display_name(&req.name).c(h!())?;
     let phone = normalize_phone(&req.phone).c(h!())?;
-    let replacement_phone = phone.clone();
     let client_name = owned_client_name(name);
     let txn = begin_locked_integration_update_transaction(db, &client_name)
         .await
@@ -258,8 +270,25 @@ pub async fn update(
     persist_display_name(&txn, &client_name, &display_name)
         .await
         .c(h!())?;
-    let client_data_backups = if account_changed {
-        stop_clients_for_replacement(
+    let relink_recovery = if account_changed {
+        let relink_recovery = RelinkRecoveryState {
+            client_name: client_name.clone(),
+            previous_kind: current.kind,
+            previous_phone: current.phone.clone(),
+            replacement_kind: req.kind,
+            replacement_phone: phone.clone(),
+            signal_port: current.signal_port,
+            backup_token: client_data_backup_token().c(h!())?,
+        };
+        persist_relink_recovery_state(db, &relink_recovery)
+            .await
+            .c(h!())?;
+        Some(relink_recovery)
+    } else {
+        None
+    };
+    let client_data_backups = if let Some(relink_recovery) = &relink_recovery {
+        let stop_result = stop_clients_for_replacement(
             config,
             &client_name,
             current.kind,
@@ -267,30 +296,25 @@ pub async fn update(
             current.signal_port,
         )
         .await
-        .c(h!())?;
+        .c(h!());
+        if let Err(err) = stop_result {
+            rollback_and_recover_relink(txn, db, config, relink_recovery).await;
+            return Err(err);
+        }
         match backup_replacement_client_data(
             config,
             current.kind,
             req.kind,
             &client_name,
+            &relink_recovery.backup_token,
         )
         .await
         .c(h!())
         {
             Ok(client_data_backups) => Some(client_data_backups),
             Err(err) => {
-                if let Err(rollback_err) = txn.rollback().await.c(h!()) {
-                    log::error!(
-                        "failed to roll back integration update after backup failure: {rollback_err:#}"
-                    );
-                }
-                restart_previous_client(
-                    config,
-                    &client_name,
-                    current.kind,
-                    current.signal_port,
-                )
-                .await;
+                rollback_and_recover_relink(txn, db, config, relink_recovery)
+                    .await;
                 return Err(err);
             }
         }
@@ -309,39 +333,23 @@ pub async fn update(
         .await
         .c(h!());
         if let Err(err) = replace_result {
-            if let Err(rollback_err) = txn.rollback().await.c(h!()) {
-                log::error!(
-                    "failed to roll back integration update for {client_name}: {rollback_err:#}"
-                );
-            }
-            restore_old_client(
+            rollback_and_recover_relink(
+                txn,
+                db,
                 config,
-                &client_name,
-                current.kind,
-                req.kind,
-                current.signal_port,
-                client_data_backups.as_ref().c(h!())?,
+                relink_recovery.as_ref().c(h!())?,
             )
-            .await
-            .unwrap_or_else(|restore_err| {
-                log::error!(
-                    "failed to restore old client {client_name} after integration update failure: {restore_err:#}"
-                );
-            });
+            .await;
             return Err(err);
         }
     }
     let commit_result = txn.commit().await.c(h!());
     if let Err(err) = commit_result {
-        if account_changed {
-            let recovery = reconcile_after_commit_error(
+        if let Some(relink_recovery) = &relink_recovery {
+            let recovery = recover_interrupted_relink(
                 db,
                 config,
-                &client_name,
-                &current,
-                req.kind,
-                &replacement_phone,
-                client_data_backups.as_ref().c(h!())?,
+                relink_recovery,
             )
             .await
             .with_context(|| {
@@ -356,13 +364,23 @@ pub async fn update(
         }
         return Err(err);
     }
-    if let Some(client_data_backups) = client_data_backups {
+    if let (Some(client_data_backups), Some(relink_recovery)) =
+        (client_data_backups, relink_recovery)
+    {
         if let Err(err) = discard_client_data_backups(&client_data_backups)
             .await
             .c(h!())
         {
             log::error!(
                 "failed to delete old client data backup for {client_name}: {err:#}"
+            );
+        } else if let Err(err) =
+            remove_relink_recovery_state(db, &relink_recovery)
+                .await
+                .c(h!())
+        {
+            log::error!(
+                "failed to delete relink recovery state for {client_name}: {err:#}"
             );
         }
     }
@@ -434,7 +452,7 @@ async fn restart_previous_client(
     }
 }
 
-async fn restore_old_client(
+async fn restore_interrupted_old_client(
     config: &Config,
     client_name: &str,
     old_kind: MessengerKind,
@@ -460,9 +478,10 @@ async fn restore_old_client(
             );
         }
     }
-    let restore_result = restore_client_data_backups(client_data_backups)
-        .await
-        .c(h!());
+    let restore_result =
+        restore_client_data_backups_if_present(client_data_backups)
+            .await
+            .c(h!());
     let restart_result = async {
         start_client(config, old_kind, client_name, port)
             .await
@@ -482,65 +501,127 @@ async fn restore_old_client(
     }
 }
 
-async fn reconcile_after_commit_error(
+async fn rollback_and_recover_relink(
+    txn: DatabaseTransaction,
     db: &DatabaseConnection,
     config: &Config,
-    client_name: &str,
-    previous: &MessengerView,
-    replacement_kind: MessengerKind,
-    replacement_phone: &str,
-    client_data_backups: &ClientDataBackups,
+    relink_recovery: &RelinkRecoveryState,
+) {
+    if let Err(err) = txn.rollback().await.c(h!()) {
+        log::error!(
+            "failed to roll back integration update for {}: {err:#}",
+            relink_recovery.client_name
+        );
+    }
+    if let Err(err) =
+        recover_interrupted_relink(db, config, relink_recovery).await
+    {
+        log::error!(
+            "failed to recover integration update for {}: {err:#}",
+            relink_recovery.client_name
+        );
+    }
+}
+
+pub async fn recover_interrupted_relinks(
+    db: &DatabaseConnection,
+    config: &Config,
+) -> Result<()> {
+    for relink_recovery in relink_recovery_states(db).await.c(h!())? {
+        log::warn!(
+            "recovering interrupted relink for {}",
+            relink_recovery.client_name
+        );
+        recover_interrupted_relink(db, config, &relink_recovery)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn recover_interrupted_relink(
+    db: &DatabaseConnection,
+    config: &Config,
+    relink_recovery: &RelinkRecoveryState,
 ) -> Result<CommitRecovery> {
+    validate_relink_recovery_state(relink_recovery).c(h!())?;
     let txn = db.begin().await.c(h!())?;
     lock_integration_identity(&txn).await.c(h!())?;
-    lock_integration_client(&txn, client_name).await.c(h!())?;
-    let durable = load_optional_owned(&txn, client_name).await.c(h!())?;
+    lock_integration_client(&txn, &relink_recovery.client_name)
+        .await
+        .c(h!())?;
+    let durable = load_optional_owned(&txn, &relink_recovery.client_name)
+        .await
+        .c(h!())?
+        .context("integration disappeared during relink recovery")
+        .c(h!())?;
+    let client_data_backups =
+        relink_client_data_backups(config, relink_recovery);
     let recovery = match durable {
-        Some(messenger)
+        messenger
             if account_matches(
                 &messenger,
-                replacement_kind,
-                Some(replacement_phone),
+                relink_recovery.replacement_kind,
+                Some(relink_recovery.replacement_phone.as_str()),
             ) =>
         {
-            discard_client_data_backups(client_data_backups)
+            discard_client_data_backups(&client_data_backups)
                 .await
                 .c(h!())?;
+            start_recovered_client(config, &messenger).await.c(h!())?;
             CommitRecovery::Replacement(messenger)
         }
-        Some(messenger)
+        messenger
             if account_matches(
                 &messenger,
-                previous.kind,
-                previous.phone.as_deref(),
+                relink_recovery.previous_kind,
+                relink_recovery.previous_phone.as_deref(),
             ) =>
         {
-            restore_old_client(
+            restore_interrupted_old_client(
                 config,
-                client_name,
-                previous.kind,
-                replacement_kind,
-                previous.signal_port,
-                client_data_backups,
+                &relink_recovery.client_name,
+                relink_recovery.previous_kind,
+                relink_recovery.replacement_kind,
+                relink_recovery.signal_port,
+                &client_data_backups,
             )
             .await
             .c(h!())?;
             CommitRecovery::Previous
         }
-        _ => {
-            discard_client_data_backups(client_data_backups)
+        messenger => {
+            discard_client_data_backups(&client_data_backups)
                 .await
                 .c(h!())?;
+            start_recovered_client(config, &messenger).await.c(h!())?;
             CommitRecovery::Superseded
         }
     };
     txn.commit().await.c(h!())?;
+    remove_relink_recovery_state(db, relink_recovery)
+        .await
+        .c(h!())?;
     if matches!(&recovery, CommitRecovery::Superseded) {
         log::warn!(
-            "integration {client_name} changed again before commit recovery completed"
+            "integration {} changed again before relink recovery completed",
+            relink_recovery.client_name
         );
     }
     Ok(recovery)
+}
+
+async fn start_recovered_client(
+    config: &Config,
+    messenger: &MessengerView,
+) -> Result<()> {
+    let client_name = owned_client_name(&messenger.name);
+    start_client(config, messenger.kind, &client_name, messenger.signal_port)
+        .await
+        .c(h!())?;
+    wait_for_signal_client(messenger.kind, messenger.signal_port)
+        .await
+        .c(h!())
 }
 
 fn account_matches(
@@ -1568,13 +1649,164 @@ where
     Ok(())
 }
 
+async fn persist_relink_recovery_state(
+    db: &DatabaseConnection,
+    relink_recovery: &RelinkRecoveryState,
+) -> Result<()> {
+    validate_relink_recovery_state(relink_recovery).c(h!())?;
+    let key_prefix = relink_recovery_client_key_prefix(relink_recovery);
+    let existing = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "
+            select 1
+            from echo_swapp_sync_state
+            where left(key, char_length($1)) = $1
+            limit 1
+            ",
+            [key_prefix.into()],
+        ))
+        .await
+        .c(h!())?;
+    if existing.is_some() {
+        anyhow::bail!(
+            "unfinished relink recovery already exists for {}",
+            relink_recovery.client_name
+        );
+    }
+    let key = relink_recovery_state_key(relink_recovery).c(h!())?;
+    db.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "
+        insert into echo_swapp_sync_state (key, paused, updated_at)
+        values ($1, false, now() at time zone 'utc')
+        ",
+        [key.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn remove_relink_recovery_state(
+    db: &DatabaseConnection,
+    relink_recovery: &RelinkRecoveryState,
+) -> Result<()> {
+    validate_relink_recovery_state(relink_recovery).c(h!())?;
+    let key_prefix = relink_recovery_client_key_prefix(relink_recovery);
+    db.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "
+        delete from echo_swapp_sync_state
+        where left(key, char_length($1)) = $1
+        ",
+        [key_prefix.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn relink_recovery_states(
+    db: &DatabaseConnection,
+) -> Result<Vec<RelinkRecoveryState>> {
+    let rows = db
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "
+            select key
+            from echo_swapp_sync_state
+            where left(key, char_length($1)) = $1
+            order by updated_at, key
+            ",
+            [MESSENGER_INTEGRATION_RELINK_STATE_PREFIX.into()],
+        ))
+        .await
+        .c(h!())?;
+    let mut recovery_states = Vec::with_capacity(rows.len());
+    for row in rows {
+        let key: String = row.try_get("", "key").c(h!())?;
+        recovery_states.push(relink_recovery_state_from_key(&key).c(h!())?);
+    }
+    Ok(recovery_states)
+}
+
+fn relink_recovery_state_key(
+    relink_recovery: &RelinkRecoveryState,
+) -> Result<String> {
+    validate_relink_recovery_state(relink_recovery).c(h!())?;
+    let state = serde_json::to_vec(relink_recovery).c(h!())?;
+    Ok(format!(
+        "{}{}",
+        relink_recovery_client_key_prefix(relink_recovery),
+        general_purpose::URL_SAFE_NO_PAD.encode(state)
+    ))
+}
+
+fn relink_recovery_state_from_key(key: &str) -> Result<RelinkRecoveryState> {
+    let state = key
+        .strip_prefix(MESSENGER_INTEGRATION_RELINK_STATE_PREFIX)
+        .context("invalid relink recovery state key")
+        .c(h!())?;
+    let (client_name, state) = state
+        .split_once(':')
+        .context("invalid relink recovery state key")
+        .c(h!())?;
+    let state = general_purpose::URL_SAFE_NO_PAD.decode(state).c(h!())?;
+    let relink_recovery: RelinkRecoveryState =
+        serde_json::from_slice(&state).c(h!())?;
+    validate_relink_recovery_state(&relink_recovery).c(h!())?;
+    if relink_recovery.client_name != client_name {
+        anyhow::bail!("relink recovery client name does not match its key");
+    }
+    Ok(relink_recovery)
+}
+
+fn relink_recovery_client_key_prefix(
+    relink_recovery: &RelinkRecoveryState,
+) -> String {
+    format!(
+        "{MESSENGER_INTEGRATION_RELINK_STATE_PREFIX}{}:",
+        relink_recovery.client_name
+    )
+}
+
+fn validate_relink_recovery_state(
+    relink_recovery: &RelinkRecoveryState,
+) -> Result<()> {
+    let public_name = public_client_name(&relink_recovery.client_name)
+        .context("invalid relink recovery client name")
+        .c(h!())?;
+    validate_name(&public_name).c(h!())?;
+    validate_client_data_backup_token(&relink_recovery.backup_token).c(h!())?;
+    Ok(())
+}
+
+fn validate_client_data_backup_token(backup_token: &str) -> Result<()> {
+    let mut parts = backup_token.split('.');
+    for _ in 0..3 {
+        let part = parts
+            .next()
+            .context("invalid client data backup token")
+            .c(h!())?;
+        if part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()) {
+            anyhow::bail!("invalid client data backup token");
+        }
+    }
+    if parts.next().is_some() {
+        anyhow::bail!("invalid client data backup token");
+    }
+    Ok(())
+}
+
 async fn backup_client_data(
     config: &Config,
     kind: MessengerKind,
     client_name: &str,
+    backup_token: &str,
 ) -> Result<ClientDataBackup> {
     let original_path = client_data_path(config, kind, client_name);
-    let backup_path = client_data_backup_path(&original_path).c(h!())?;
+    let backup_path = client_data_backup_path(&original_path, backup_token);
     if original_path.exists() {
         tokio::fs::rename(&original_path, &backup_path)
             .await
@@ -1615,16 +1847,23 @@ async fn backup_replacement_client_data(
     current_kind: MessengerKind,
     replacement_kind: MessengerKind,
     client_name: &str,
+    backup_token: &str,
 ) -> Result<ClientDataBackups> {
-    let current = backup_client_data(config, current_kind, client_name)
-        .await
-        .c(h!())?;
+    let current =
+        backup_client_data(config, current_kind, client_name, backup_token)
+            .await
+            .c(h!())?;
     let replacement_path =
         client_data_path(config, replacement_kind, client_name);
     let replacement = if replacement_path != current.original_path {
-        match backup_client_data(config, replacement_kind, client_name)
-            .await
-            .c(h!())
+        match backup_client_data(
+            config,
+            replacement_kind,
+            client_name,
+            backup_token,
+        )
+        .await
+        .c(h!())
         {
             Ok(replacement) => Some(replacement),
             Err(err) => {
@@ -1646,19 +1885,61 @@ async fn backup_replacement_client_data(
     })
 }
 
-fn client_data_backup_path(original_path: &std::path::Path) -> Result<PathBuf> {
+fn client_data_backup_token() -> Result<String> {
     let created_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .c(h!())?
         .as_nanos();
     let sequence = CLIENT_DATA_BACKUP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    Ok(format!("{}.{}.{sequence}", std::process::id(), created_at))
+}
+
+fn client_data_backup_path(
+    original_path: &Path,
+    backup_token: &str,
+) -> PathBuf {
     let mut backup_path = original_path.as_os_str().to_owned();
     backup_path.push(format!(
-        "{MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX}.{}.{}.{sequence}",
-        std::process::id(),
-        created_at
+        "{MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX}.{backup_token}"
     ));
-    Ok(PathBuf::from(backup_path))
+    PathBuf::from(backup_path)
+}
+
+fn relink_client_data_backups(
+    config: &Config,
+    relink_recovery: &RelinkRecoveryState,
+) -> ClientDataBackups {
+    let current = client_data_backup(
+        config,
+        relink_recovery.previous_kind,
+        &relink_recovery.client_name,
+        &relink_recovery.backup_token,
+    );
+    let replacement = client_data_backup(
+        config,
+        relink_recovery.replacement_kind,
+        &relink_recovery.client_name,
+        &relink_recovery.backup_token,
+    );
+    let replacement = (replacement.original_path != current.original_path)
+        .then_some(replacement);
+    ClientDataBackups {
+        paths: std::iter::once(current).chain(replacement).collect(),
+    }
+}
+
+fn client_data_backup(
+    config: &Config,
+    kind: MessengerKind,
+    client_name: &str,
+    backup_token: &str,
+) -> ClientDataBackup {
+    let original_path = client_data_path(config, kind, client_name);
+    let backup_path = client_data_backup_path(&original_path, backup_token);
+    ClientDataBackup {
+        original_path,
+        backup_path,
+    }
 }
 
 async fn restore_client_data(backup: &ClientDataBackup) -> Result<()> {
@@ -1673,12 +1954,16 @@ async fn restore_client_data(backup: &ClientDataBackup) -> Result<()> {
     Ok(())
 }
 
-async fn restore_client_data_backups(
+async fn restore_client_data_backups_if_present(
     backups: &ClientDataBackups,
 ) -> Result<()> {
     let mut result = Ok(());
     for backup in &backups.paths {
-        let restore_result = restore_client_data(backup).await.c(h!());
+        let restore_result = if backup.backup_path.exists() {
+            restore_client_data(backup).await.c(h!())
+        } else {
+            Ok(())
+        };
         if result.is_ok() {
             result = restore_result;
         } else if let Err(err) = restore_result {
@@ -1700,7 +1985,11 @@ async fn discard_client_data_backups(
 ) -> Result<()> {
     let mut result = Ok(());
     for backup in &backups.paths {
-        let discard_result = discard_client_data_backup(backup).await.c(h!());
+        let discard_result = if backup.backup_path.exists() {
+            discard_client_data_backup(backup).await.c(h!())
+        } else {
+            Ok(())
+        };
         if result.is_ok() {
             result = discard_result;
         } else if let Err(err) = discard_result {
@@ -2281,11 +2570,101 @@ mod tests {
     #[test]
     fn creates_unique_client_data_backup_paths() {
         let original_path = std::path::Path::new("/tmp/echo-swapp-client");
-        let first = client_data_backup_path(original_path).unwrap();
-        let second = client_data_backup_path(original_path).unwrap();
+        let first_token = client_data_backup_token().unwrap();
+        let second_token = client_data_backup_token().unwrap();
+        let first = client_data_backup_path(original_path, &first_token);
+        let second = client_data_backup_path(original_path, &second_token);
         assert_ne!(first, second);
         assert!(first
             .to_string_lossy()
             .contains(MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX));
+    }
+
+    #[test]
+    fn relink_recovery_state_round_trips_database_key() {
+        let relink_recovery = RelinkRecoveryState {
+            client_name: "echo-swapp-test".to_string(),
+            previous_kind: MessengerKind::Signal,
+            previous_phone: Some("+380501234567".to_string()),
+            replacement_kind: MessengerKind::Whatsapp,
+            replacement_phone: "+380671234567".to_string(),
+            signal_port: 8010,
+            backup_token: "1.2.3".to_string(),
+        };
+
+        let key = relink_recovery_state_key(&relink_recovery).unwrap();
+
+        assert_eq!(
+            relink_recovery_state_from_key(&key).unwrap(),
+            relink_recovery
+        );
+    }
+
+    #[tokio::test]
+    async fn interrupted_restore_preserves_data_before_backup() {
+        let root = std::env::temp_dir().join(format!(
+            "echo-swapp-relink-test-{}",
+            client_data_backup_token().unwrap()
+        ));
+        let original_path = root.join("client");
+        let backup_path = root.join("client.relink-backup");
+        tokio::fs::create_dir_all(&original_path).await.unwrap();
+        tokio::fs::write(original_path.join("credentials"), b"old")
+            .await
+            .unwrap();
+        let backups = ClientDataBackups {
+            paths: vec![ClientDataBackup {
+                original_path: original_path.clone(),
+                backup_path,
+            }],
+        };
+
+        restore_client_data_backups_if_present(&backups)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            tokio::fs::read(original_path.join("credentials"))
+                .await
+                .unwrap(),
+            b"old"
+        );
+        tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn interrupted_restore_replaces_partial_data_with_backup() {
+        let root = std::env::temp_dir().join(format!(
+            "echo-swapp-relink-test-{}",
+            client_data_backup_token().unwrap()
+        ));
+        let original_path = root.join("client");
+        let backup_path = root.join("client.relink-backup");
+        tokio::fs::create_dir_all(&backup_path).await.unwrap();
+        tokio::fs::write(backup_path.join("credentials"), b"old")
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(&original_path).await.unwrap();
+        tokio::fs::write(original_path.join("credentials"), b"partial")
+            .await
+            .unwrap();
+        let backups = ClientDataBackups {
+            paths: vec![ClientDataBackup {
+                original_path: original_path.clone(),
+                backup_path,
+            }],
+        };
+
+        restore_client_data_backups_if_present(&backups)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            tokio::fs::read(original_path.join("credentials"))
+                .await
+                .unwrap(),
+            b"old"
+        );
+        tokio::fs::remove_dir_all(root).await.unwrap();
     }
 }
