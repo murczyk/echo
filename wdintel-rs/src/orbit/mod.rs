@@ -624,6 +624,17 @@ where
         .c(h!())?
         .into_iter()
         .collect::<BTreeSet<_>>();
+    affected_sigint_unit_ids.extend(
+        sigint_unit::Entity::find()
+            .select_only()
+            .column(sigint_unit::Column::Id)
+            .filter(sigint_unit::Column::Deleted.eq(false))
+            .filter(sigint_unit::Column::IsInconsistent.eq(true))
+            .into_tuple::<i64>()
+            .all(&transaction)
+            .await
+            .c(h!())?,
+    );
     persistence::replace_sigint_unit_links_in_transaction(
         &transaction,
         &sigint_unit_ids_by_orbit_unit,

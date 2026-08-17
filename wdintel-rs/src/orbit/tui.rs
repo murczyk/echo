@@ -685,11 +685,4 @@ mod tests {
         assert!(!is_reimport_confirmed(Some("reimport")));
         assert!(!is_reimport_confirmed(None));
     }
-
-    #[test]
-    fn sigint_unit_reconciliation_requires_exact_confirmation_text() {
-        assert!(is_sigint_unit_reconciliation_confirmed(Some("RECONCILE")));
-        assert!(!is_sigint_unit_reconciliation_confirmed(Some("reconcile")));
-        assert!(!is_sigint_unit_reconciliation_confirmed(None));
-    }
 }

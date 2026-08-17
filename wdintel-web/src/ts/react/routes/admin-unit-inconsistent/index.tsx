@@ -67,7 +67,7 @@ export function AdminUnitInconsistentPage({ embedded = false }: AdminUnitInconsi
           const href = `/rer-units/${row.original.sigintUnitId}`;
           return (
             <Link href={href} onClick={(event) => handleNavigateWithinSpaClick(event, href)}>
-              {row.original.name}
+              {row.original.name.trim() || `#${row.original.sigintUnitId}`}
             </Link>
           );
         },
