@@ -726,6 +726,7 @@ mod tests {
                 .await
                 .unwrap();
         let event = serde_json::to_value(&enriched[0]).unwrap();
+        assert_eq!(event[0], serde_json::json!(inbox_item_id));
         assert_eq!(
             event[1]["sigint_callsign_ids"],
             serde_json::json!([callsign_id])
