@@ -18,10 +18,6 @@ impl MigrationTrait for Migration {
                 r#"
 lock table sigint_inbox_item in access exclusive mode;
 
-update sigint_inbox_item
-set datetime_neo = datetime
-where datetime is not null and datetime_neo is null;
-
 do $$
 begin
     if exists (
