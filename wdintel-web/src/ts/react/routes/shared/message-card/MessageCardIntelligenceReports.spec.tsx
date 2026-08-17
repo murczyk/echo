@@ -240,4 +240,24 @@ describe('MessageCardIntelligenceReports', () => {
     }
     expect(document.querySelector('[role="tooltip"]')).toBeNull();
   });
+
+  it('does not open preview tooltip on touch tap', async () => {
+    await renderSummaries();
+    const linkedMessages = container?.querySelectorAll('article');
+    const reportMessage = linkedMessages?.item(1) ?? null;
+
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+
+    // Simulate mobile touch sequence (touchstart / pointerdown with touch -> mouseenter -> focus)
+    await act(async () => {
+      reportMessage?.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }),
+      );
+      reportMessage?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      reportMessage?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    });
+    await wait(800);
+
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  });
 });

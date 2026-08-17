@@ -59,6 +59,15 @@ function fileUploadPresentation(
   return null;
 }
 
+function attachmentSortRank(contentType: string | undefined, fileName: string | undefined): number {
+  const kind = mediaKind(contentType, fileName);
+  if (kind === 'image') return 0;
+  if (kind === 'video') return 1;
+  const type = (contentType ?? '').toLowerCase();
+  if (type.startsWith('audio/')) return 3;
+  return 2;
+}
+
 export function AttachmentsSection({
   uppy,
   uppyFiles,
@@ -73,6 +82,37 @@ export function AttachmentsSection({
   const { watch, setValue } = useFormContext<MessageFormData>();
   const deletedMediaIds = watch('deleted_media_ids') || [];
   const visibleMedia = existingMedia.filter((media) => !deletedMediaIds.includes(media.id));
+
+  const sortedVisibleMedia = useMemo(() => {
+    return [...visibleMedia].sort((a, b) => {
+      const rawA = a as MessageMediaInfo & {
+        file_name?: string | null;
+        content_type?: string | null;
+      };
+      const rawB = b as MessageMediaInfo & {
+        file_name?: string | null;
+        content_type?: string | null;
+      };
+      const rankA = attachmentSortRank(
+        a.contentType ?? rawA.content_type ?? undefined,
+        a.fileName ?? rawA.file_name ?? undefined,
+      );
+      const rankB = attachmentSortRank(
+        b.contentType ?? rawB.content_type ?? undefined,
+        b.fileName ?? rawB.file_name ?? undefined,
+      );
+      return rankA - rankB;
+    });
+  }, [visibleMedia]);
+
+  const sortedUppyFiles = useMemo(() => {
+    return [...uppyFiles].sort((a, b) => {
+      const rankA = attachmentSortRank(a.type, a.name);
+      const rankB = attachmentSortRank(b.type, b.name);
+      return rankA - rankB;
+    });
+  }, [uppyFiles]);
+
   const previewFiles = uppyFiles.map((file) => ({
     id: file.id,
     name: file.name ?? '',
@@ -95,7 +135,66 @@ export function AttachmentsSection({
   const previewAttachments = useMemo<MessageCardPreviewItem[]>(() => {
     const items: MessageCardPreviewItem[] = [];
 
-    for (const file of uppyFiles) {
+    for (const media of sortedVisibleMedia) {
+      const rawMedia = media as MessageMediaInfo & {
+        file_name?: string | null;
+        content_type?: string | null;
+        size_bytes?: number | null;
+      };
+      const id = String(media.id ?? (rawMedia as any).id ?? '');
+      const fileName = media.fileName ?? rawMedia.file_name ?? null;
+      const contentType = media.contentType ?? rawMedia.content_type ?? undefined;
+      const sizeBytes = media.sizeBytes ?? rawMedia.size_bytes ?? undefined;
+      const href = media.href || (id ? `/api/messenger/media/${id}` : undefined);
+      if (failedExistingMediaIds.has(id) || !href) continue;
+      const kind = mediaKind(contentType, fileName ?? '');
+      if (
+        kind === 'image' ||
+        isImageMediaAttachment({ ...media, id, contentType, fileName, href })
+      ) {
+        items.push({
+          type: 'image',
+          value: {
+            id,
+            href,
+            fileName: fileName ?? '',
+            sizeBytes: sizeBytes ?? null,
+            contentType: contentType ?? null,
+          },
+        });
+      } else if (
+        kind === 'video' ||
+        isVideoMediaAttachment({ ...media, id, contentType, fileName, href })
+      ) {
+        items.push({
+          type: 'video',
+          value: {
+            id,
+            name: fileName ?? 'video',
+            source: href,
+            mimeType: contentType,
+            sizeBytes,
+          },
+        });
+      } else {
+        const docKind = getDocumentKind({ ...media, id, contentType, fileName, href });
+        if (docKind !== 'unsupported') {
+          items.push({
+            type: 'document',
+            value: {
+              id,
+              href,
+              fileName,
+              sizeBytes: sizeBytes ?? null,
+              contentType: contentType ?? null,
+              kind: docKind,
+            },
+          });
+        }
+      }
+    }
+
+    for (const file of sortedUppyFiles) {
       const preview = urls.get(file.id);
       const previewUrl = preview?.url;
       const kind = mediaKind(file.type, file.name);
@@ -124,51 +223,8 @@ export function AttachmentsSection({
       }
     }
 
-    for (const media of visibleMedia) {
-      if (failedExistingMediaIds.has(media.id) || !media.href) continue;
-      const kind = mediaKind(media.contentType, media.fileName ?? '');
-      if (kind === 'image' || isImageMediaAttachment(media)) {
-        items.push({
-          type: 'image',
-          value: {
-            id: media.id,
-            href: media.href,
-            fileName: media.fileName ?? null,
-            sizeBytes: media.sizeBytes ?? null,
-            contentType: media.contentType ?? null,
-          },
-        });
-      } else if (kind === 'video' || isVideoMediaAttachment(media)) {
-        items.push({
-          type: 'video',
-          value: {
-            id: media.id,
-            name: media.fileName ?? 'video',
-            source: media.href,
-            mimeType: media.contentType ?? undefined,
-            sizeBytes: media.sizeBytes ?? undefined,
-          },
-        });
-      } else {
-        const docKind = getDocumentKind(media);
-        if (docKind !== 'unsupported') {
-          items.push({
-            type: 'document',
-            value: {
-              id: media.id,
-              href: media.href,
-              fileName: media.fileName ?? null,
-              sizeBytes: media.sizeBytes ?? null,
-              contentType: media.contentType ?? null,
-              kind: docKind,
-            },
-          });
-        }
-      }
-    }
-
     return items;
-  }, [uppyFiles, urls, visibleMedia, failedExistingMediaIds]);
+  }, [sortedUppyFiles, urls, sortedVisibleMedia, failedExistingMediaIds]);
 
   const openPreviewForId = useCallback(
     (id: string) => {
@@ -227,7 +283,44 @@ export function AttachmentsSection({
 
       {totalFiles > 0 ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-          {uppyFiles.map((file) => {
+          {sortedVisibleMedia.map((media) => {
+            const rawMedia = media as MessageMediaInfo & {
+              file_name?: string | null;
+              content_type?: string | null;
+              size_bytes?: number | null;
+            };
+            const id = String(media.id ?? (rawMedia as any).id ?? '');
+            const fileName = media.fileName ?? rawMedia.file_name ?? 'Unnamed file';
+            const contentType = media.contentType ?? rawMedia.content_type ?? undefined;
+            const sizeBytes = media.sizeBytes ?? rawMedia.size_bytes ?? undefined;
+            const href = media.href || (id ? `/api/messenger/media/${id}` : undefined);
+            const isFailed = failedExistingMediaIds.has(id);
+            return (
+              <AttachmentFileRow
+                key={id}
+                file={{
+                  id,
+                  name: fileName,
+                  type: contentType,
+                  size: sizeBytes,
+                }}
+                busy={busy}
+                onRemove={() =>
+                  setValue('deleted_media_ids', [...deletedMediaIds, id], {
+                    shouldDirty: true,
+                  })
+                }
+                onDownload={() =>
+                  downloadExistingMedia({ ...media, id, fileName, contentType, href: href ?? '' })
+                }
+                previewUrl={!isFailed && href ? href : undefined}
+                onPreviewError={() => failExistingMedia(id)}
+                onPreviewClick={() => openPreviewForId(id)}
+              />
+            );
+          })}
+
+          {sortedUppyFiles.map((file) => {
             const previewFile = {
               id: file.id,
               name: file.name ?? '',
@@ -247,31 +340,6 @@ export function AttachmentsSection({
                 onPreviewError={() => failPreview(file.id)}
                 onPreviewClick={() => openPreviewForId(file.id)}
                 upload={fileUploadPresentation(file, busy)}
-              />
-            );
-          })}
-
-          {visibleMedia.map((media) => {
-            const isFailed = failedExistingMediaIds.has(media.id);
-            return (
-              <AttachmentFileRow
-                key={media.id}
-                file={{
-                  id: media.id,
-                  name: media.fileName ?? 'Unnamed file',
-                  type: media.contentType,
-                  size: media.sizeBytes,
-                }}
-                busy={busy}
-                onRemove={() =>
-                  setValue('deleted_media_ids', [...deletedMediaIds, media.id], {
-                    shouldDirty: true,
-                  })
-                }
-                onDownload={() => downloadExistingMedia(media)}
-                previewUrl={!isFailed && media.href ? media.href : undefined}
-                onPreviewError={() => failExistingMedia(media.id)}
-                onPreviewClick={() => openPreviewForId(media.id)}
               />
             );
           })}

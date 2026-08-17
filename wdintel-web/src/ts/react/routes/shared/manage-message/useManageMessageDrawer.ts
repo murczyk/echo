@@ -22,7 +22,13 @@ import {
 } from '../../../services/api/direct-submit';
 import { getNetworksByIds } from '../../../services/api/networks';
 import { getUnitsByIds } from '../../../services/api/units';
-import type { InboxMessage, SignalGroupEntry, Tag, User } from '../../../../../Bindings';
+import type {
+  InboxMessage,
+  MessageMediaInfo,
+  SignalGroupEntry,
+  Tag,
+  User,
+} from '../../../../../Bindings';
 import { mapDirectSubmitCopyToForm, mapInboxMessageToForm } from './manage-message-drawer.mappers';
 import { useRecentValues } from './useRecentValues';
 import { isPresent } from '../../../utils/misc';
@@ -287,9 +293,31 @@ export function useManageMessageDrawer({
   const { control, formState, getValues, setValue, reset } = methods;
   const formValues = useWatch({ control });
 
-  const existingMedia = isEditMode
-    ? (editTarget?.message.media ?? [])
-    : (reportSource?.message.media ?? []);
+  const existingMedia: MessageMediaInfo[] = useMemo(() => {
+    const rawList = isEditMode
+      ? (editTarget?.message.media ?? [])
+      : (reportSource?.message.media ?? []);
+    return rawList.map((m) => {
+      const raw = m as MessageMediaInfo & {
+        file_name?: string | null;
+        content_type?: string | null;
+        size_bytes?: number | null;
+      };
+      const id = String(m.id ?? (raw as any).id ?? '');
+      const fileName = m.fileName ?? raw.file_name ?? null;
+      const contentType = m.contentType ?? raw.content_type ?? '';
+      const sizeBytes = m.sizeBytes ?? raw.size_bytes ?? 0;
+      const href = m.href || (id ? `/api/messenger/media/${id}` : '');
+      return {
+        id,
+        fileName,
+        contentType,
+        sizeBytes,
+        href,
+        transcription: m.transcription ?? (raw as any).transcription ?? null,
+      };
+    });
+  }, [isEditMode, editTarget?.message.media, reportSource?.message.media]);
   const retainedAttachmentCount =
     isEditMode || isReportCreateMode
       ? (existingMedia.filter((media) => !(formValues.deleted_media_ids ?? []).includes(media.id))

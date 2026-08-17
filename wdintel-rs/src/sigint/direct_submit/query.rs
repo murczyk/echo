@@ -554,6 +554,7 @@ where
         .filter(
             signal_message_media::Column::SignalMessageId.eq(signal_message_id),
         )
+        .order_by_asc(signal_message_media::Column::Id)
         .all(dbx)
         .await
         .c(h!())?;
@@ -576,6 +577,7 @@ where
         .filter(
             signal_message_media::Column::SignalMessageId.eq(signal_message_id),
         )
+        .order_by_asc(signal_message_media::Column::Id)
         .all(dbx)
         .await
         .c(h!())?)
@@ -596,6 +598,7 @@ where
             signal_message_media::Column::SignalMessageId
                 .is_in(signal_message_ids.to_vec()),
         )
+        .order_by_asc(signal_message_media::Column::Id)
         .lock(LockType::Update)
         .all(dbx)
         .await

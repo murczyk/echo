@@ -797,7 +797,7 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(container.textContent).not.toContain('Редагувати розвіддонесення');
     expect(textFieldPropsByLabel.get('Текст повідомлення')?.value).toBe('forwarded report body');
     expect(textFieldPropsByLabel.has('Текст оригінального повідомлення')).toBe(false);
-    expect(container.textContent).not.toContain('Видалити розвіддонесення');
+    expect(container.textContent).not.toContain('Видалити');
 
     await act(async () => {
       (container.querySelector('form') as HTMLFormElement).dispatchEvent(
@@ -858,7 +858,7 @@ describe('ManageMessageDrawer edit mode', () => {
     });
 
     const deleteButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === 'Видалити розвіддонесення',
+      (button) => button.textContent?.trim() === 'Видалити',
     );
     expect(deleteButton).toBeDefined();
     await act(async () => deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
@@ -925,7 +925,7 @@ describe('ManageMessageDrawer edit mode', () => {
       );
       await act(async () => button?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     };
-    await clickButton('Видалити розвіддонесення');
+    await clickButton('Видалити');
     await act(async () => {
       const confirmButton = Array.from(container.querySelectorAll('button')).find(
         (button) => button.textContent?.trim() === 'Підтвердити видалення',

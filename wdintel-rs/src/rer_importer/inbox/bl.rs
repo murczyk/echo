@@ -582,6 +582,7 @@ pub async fn aggregate_to_inbox_messages(
             signal_message_media::Column::SignalMessageId
                 .eq_any(message_ids.clone()),
         )
+        .order_by_asc(signal_message_media::Column::Id)
         .all(&env.dbx)
         .await
         .c(h!())?;

@@ -62,19 +62,18 @@ describe('AttachmentsSection media previews', () => {
     ]);
 
     expect(createObjectURL).toHaveBeenCalledOnce();
-    const row = container.querySelector('button[aria-label="Видалити photo.JPG"]')?.parentElement;
     const preview = container.querySelector('img[src="blob:local"]');
     const filename = container.querySelector('p[title="photo.JPG"]');
-    const downloadBtn = container.querySelector('button[aria-label="Завантажити photo.JPG"]');
+    const moreBtn = container.querySelector('button[aria-label="Більше дій для photo.JPG"]');
     const deleteBtn = container.querySelector('button[aria-label="Видалити photo.JPG"]');
 
     expect(preview).not.toBeNull();
-    expect(downloadBtn).not.toBeNull();
+    expect(moreBtn).not.toBeNull();
     expect(deleteBtn).not.toBeNull();
     // Preview thumbnail is at the start (before filename)
     expect(preview?.compareDocumentPosition(filename!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    // Download button is after metadata, before delete button
-    expect(downloadBtn?.compareDocumentPosition(deleteBtn!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    // More button is after metadata, before delete button
+    expect(moreBtn?.compareDocumentPosition(deleteBtn!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 
     act(() => root.unmount());
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:local');
@@ -177,11 +176,13 @@ describe('AttachmentsSection media previews', () => {
     expect(pdfRow?.querySelector('video')).toBeNull();
     expect(pdfRow?.querySelector('svg')).not.toBeNull();
 
-    // Download buttons exist
+    // More buttons exist
     expect(
-      container.querySelector('button[aria-label="Завантажити existing-image.png"]'),
+      container.querySelector('button[aria-label="Більше дій для existing-image.png"]'),
     ).not.toBeNull();
-    expect(container.querySelector('button[aria-label="Завантажити report.pdf"]')).not.toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Більше дій для report.pdf"]'),
+    ).not.toBeNull();
 
     act(() => root.unmount());
   });
@@ -206,9 +207,9 @@ describe('AttachmentsSection media previews', () => {
     const previewButtons = container.querySelectorAll('button[aria-label^="Переглянути "]');
     expect(previewButtons.length).toBe(2);
 
-    // Click on the second preview (existing media)
+    // Click on the first preview (existing media because existing comes first)
     await act(async () => {
-      (previewButtons[1] as HTMLElement).click();
+      (previewButtons[0] as HTMLElement).click();
     });
 
     const dialog = document.body.querySelector('div[role="dialog"]');
@@ -217,7 +218,7 @@ describe('AttachmentsSection media previews', () => {
     act(() => root.unmount());
   });
 
-  it('triggers download when download button is clicked', async () => {
+  it('triggers download when download menu item is clicked', async () => {
     const linkClickSpy = vi
       .spyOn(HTMLAnchorElement.prototype, 'click')
       .mockImplementation(() => {});
@@ -233,11 +234,18 @@ describe('AttachmentsSection media previews', () => {
     ];
 
     const { container, root } = await renderSection([], existingMedia);
-    const downloadBtn = container.querySelector('button[aria-label="Завантажити document.pdf"]');
-    expect(downloadBtn).not.toBeNull();
+    const moreBtn = container.querySelector('button[aria-label="Більше дій для document.pdf"]');
+    expect(moreBtn).not.toBeNull();
 
     await act(async () => {
-      (downloadBtn as HTMLElement).click();
+      (moreBtn as HTMLElement).click();
+    });
+
+    const downloadMenuItem = document.body.querySelector('li[role="menuitem"]');
+    expect(downloadMenuItem).not.toBeNull();
+
+    await act(async () => {
+      (downloadMenuItem as HTMLElement).click();
     });
 
     expect(linkClickSpy).toHaveBeenCalled();

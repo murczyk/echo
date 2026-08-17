@@ -67,7 +67,7 @@ function ReportTextRow({ originalText, busy }: { originalText: string; busy: boo
       sx={{
         gridColumn: '1 / -1',
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+        gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' },
         gap: 3,
         minWidth: 0,
       }}
@@ -388,6 +388,33 @@ export function ManageMessageDrawer(props: Props) {
                 </Stack>
               </PowerForm>
             </FormProvider>
+
+            {reportDeleteId != null ? (
+              <Box sx={{ display: { xs: 'flex', md: 'none' }, mt: 3, pt: 1 }}>
+                <Button
+                  onClick={() => setDeleteConfirmOpen(true)}
+                  disabled={busy}
+                  color="error"
+                  variant="outlined"
+                  startIcon={<DeleteOutlineIcon />}
+                  fullWidth
+                >
+                  Видалити
+                </Button>
+              </Box>
+            ) : !isReportMode ? (
+              <Box sx={{ display: { xs: 'flex', md: 'none' }, mt: 3, pt: 1 }}>
+                <Button
+                  onClick={() => setShowAdvanced((prev) => !prev)}
+                  disabled={busy}
+                  color="inherit"
+                  variant="outlined"
+                  fullWidth
+                >
+                  {showAdvanced ? 'Приховати розширені поля' : 'Розширені поля'}
+                </Button>
+              </Box>
+            ) : null}
           </Box>
 
           <Box
@@ -401,7 +428,7 @@ export function ManageMessageDrawer(props: Props) {
               borderColor: 'divider',
             }}
           >
-            <Box sx={{ display: 'flex' }}>
+            <Box sx={{ display: { xs: 'none', md: 'flex' } }}>
               {reportDeleteId != null ? (
                 <Button
                   onClick={() => setDeleteConfirmOpen(true)}
@@ -409,7 +436,7 @@ export function ManageMessageDrawer(props: Props) {
                   color="error"
                   startIcon={<DeleteOutlineIcon />}
                 >
-                  Видалити розвіддонесення
+                  Видалити
                 </Button>
               ) : !isReportMode ? (
                 <Button
@@ -421,7 +448,7 @@ export function ManageMessageDrawer(props: Props) {
                 </Button>
               ) : null}
             </Box>
-            <Box sx={{ display: 'flex', gap: 2 }}>
+            <Box sx={{ display: 'flex', gap: 2, ml: 'auto' }}>
               <Button onClick={handleDrawerClose} disabled={busy}>
                 Скасувати
               </Button>
@@ -433,13 +460,7 @@ export function ManageMessageDrawer(props: Props) {
                 disabled={!canSubmit || deleteInFlight}
                 startIcon={busy && <CircularProgress size={20} color="inherit" />}
               >
-                {busy
-                  ? 'Збереження...'
-                  : isEditMode
-                    ? 'Зберегти'
-                    : isReportCreateMode
-                      ? 'Створити розвіддонесення'
-                      : 'Створити'}
+                {busy ? 'Збереження...' : isEditMode ? 'Зберегти' : 'Створити'}
               </Button>
             </Box>
           </Box>

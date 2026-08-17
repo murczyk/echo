@@ -1,8 +1,18 @@
 import CloseIcon from '@mui/icons-material/Close';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import DownloadIcon from '@mui/icons-material/Download';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import { Box, IconButton, LinearProgress, Typography } from '@mui/material';
+import {
+  Box,
+  IconButton,
+  LinearProgress,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Typography,
+} from '@mui/material';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 
 import { attachmentIcon, fileExtension, formatFileSize, mediaKind } from './attachment-files';
@@ -273,6 +283,22 @@ export function AttachmentFileRow({
   const size = formatFileSize(file.size);
   const meta = [ext, size].filter(Boolean).join(' · ');
   const isMedia = Boolean(mediaKind(file.type, file.name));
+  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const menuOpen = Boolean(menuAnchorEl);
+
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+    setMenuAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setMenuAnchorEl(null);
+  };
+
+  const handleDownloadClick = () => {
+    handleMenuClose();
+    onDownload?.();
+  };
 
   return (
     <Box
@@ -326,14 +352,33 @@ export function AttachmentFileRow({
           </Typography>
         ) : null}
         {onDownload ? (
-          <IconButton
-            size="small"
-            aria-label={`Завантажити ${file.name}`}
-            onClick={onDownload}
-            disabled={busy}
-          >
-            <DownloadIcon fontSize="small" />
-          </IconButton>
+          <>
+            <IconButton
+              size="small"
+              aria-label={`Більше дій для ${file.name}`}
+              aria-haspopup="true"
+              aria-expanded={menuOpen ? 'true' : undefined}
+              onClick={handleMenuOpen}
+              disabled={busy}
+              sx={{ flexShrink: 0 }}
+            >
+              <MoreVertIcon fontSize="small" />
+            </IconButton>
+            <Menu
+              anchorEl={menuAnchorEl}
+              open={menuOpen}
+              onClose={handleMenuClose}
+              transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+              anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+            >
+              <MenuItem onClick={handleDownloadClick}>
+                <ListItemIcon>
+                  <DownloadIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Завантажити</ListItemText>
+              </MenuItem>
+            </Menu>
+          </>
         ) : null}
         <IconButton
           size="small"

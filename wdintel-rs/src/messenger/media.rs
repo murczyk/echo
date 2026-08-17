@@ -558,7 +558,8 @@ pub(crate) async fn ensure_media_access(
             signal_message_group::Column::SignalMessageId.eq(signal_message_id),
         )
         .filter(
-            signal_message_group::Column::GroupMasterKey.eq_any(allowed_groups),
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(allowed_groups.clone()),
         )
         .select_only()
         .column(signal_message_group::Column::Id)
@@ -568,10 +569,63 @@ pub(crate) async fn ensure_media_access(
         .c(h!())?
         .is_some();
     if is_allowed {
-        Ok(())
-    } else {
-        Err(AppError::Forbidden("media access denied".into()))
+        return Ok(());
     }
+
+    let is_parent_allowed = signal_message_group::Entity::find()
+        .join(
+            sea_orm::JoinType::InnerJoin,
+            signal_message_group::Entity::belongs_to(
+                crate::entities::intel_prod::Entity,
+            )
+            .from(signal_message_group::Column::SignalMessageId)
+            .to(crate::entities::intel_prod::Column::ParentSignalMessageId)
+            .into(),
+        )
+        .filter(
+            crate::entities::intel_prod::Column::SignalMessageId
+                .eq(signal_message_id),
+        )
+        .filter(
+            signal_message_group::Column::GroupMasterKey.eq_any(allowed_groups),
+        )
+        .select_only()
+        .column(signal_message_group::Column::Id)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if is_parent_allowed {
+        return Ok(());
+    }
+
+    let logins = crate::users::get_organism_login_ids_by_id(dbx, login)
+        .await
+        .c(h!())?;
+    let owner_sender_ids = logins
+        .iter()
+        .chain(std::iter::once(login))
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let is_owner =
+        crate::entities::signal_message::Entity::find_by_id(signal_message_id)
+            .filter(
+                crate::entities::signal_message::Column::Sender
+                    .is_in(owner_sender_ids),
+            )
+            .select_only()
+            .column(crate::entities::signal_message::Column::Id)
+            .into_tuple::<i64>()
+            .one(dbx)
+            .await
+            .c(h!())?
+            .is_some();
+    if is_owner {
+        return Ok(());
+    }
+
+    Err(AppError::Forbidden("media access denied".into()))
 }
 
 pub fn is_audio_media(media: &signal_message_media::Model) -> bool {

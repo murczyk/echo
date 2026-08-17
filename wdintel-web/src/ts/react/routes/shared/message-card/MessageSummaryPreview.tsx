@@ -23,8 +23,20 @@ type PreviewTriggerProps = {
   onFocus?: FocusEventHandler<HTMLElement>;
   onMouseEnter?: MouseEventHandler<HTMLElement>;
   onMouseLeave?: MouseEventHandler<HTMLElement>;
+  onMouseMove?: MouseEventHandler<HTMLElement>;
   onPointerDown?: PointerEventHandler<HTMLElement>;
+  onTouchStart?: React.TouchEventHandler<HTMLElement>;
 };
+
+function canHover(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return true;
+  }
+  if (window.matchMedia('(hover: none)').matches) {
+    return false;
+  }
+  return true;
+}
 
 type MessageSummaryPreviewProps = {
   summary: IntelligenceReportSummary;
@@ -93,6 +105,7 @@ export function MessageSummaryPreview({
   const previewHoveredRef = useRef(false);
   const triggerFocusedRef = useRef(false);
   const interactionDismissedRef = useRef(false);
+  const isTouchInteractionRef = useRef(false);
   const previewElementRef = useRef<HTMLDivElement | null>(null);
   const previewId = useId().replace(/:/g, '-');
 
@@ -185,6 +198,7 @@ export function MessageSummaryPreview({
     'aria-describedby': open ? previewId : childProps['aria-describedby'],
     onMouseEnter: (event) => {
       childProps.onMouseEnter?.(event);
+      if (isTouchInteractionRef.current || !canHover()) return;
       interactionDismissedRef.current = false;
       triggerHoveredRef.current = true;
       cancelClose();
@@ -195,6 +209,12 @@ export function MessageSummaryPreview({
         PREVIEW_OPEN_DELAY_MS,
       );
     },
+    onMouseMove: (event) => {
+      childProps.onMouseMove?.(event);
+      if (isTouchInteractionRef.current) {
+        isTouchInteractionRef.current = false;
+      }
+    },
     onMouseLeave: (event) => {
       childProps.onMouseLeave?.(event);
       triggerHoveredRef.current = false;
@@ -202,10 +222,28 @@ export function MessageSummaryPreview({
     },
     onPointerDown: (event) => {
       childProps.onPointerDown?.(event);
+      if (event.pointerType === 'touch') {
+        isTouchInteractionRef.current = true;
+      }
+      dismissPreview();
+    },
+    onTouchStart: (event) => {
+      childProps.onTouchStart?.(event);
+      isTouchInteractionRef.current = true;
       dismissPreview();
     },
     onFocus: (event) => {
       childProps.onFocus?.(event);
+      if (isTouchInteractionRef.current || !canHover()) return;
+      let isFocusVisible = true;
+      try {
+        if (typeof event.currentTarget.matches === 'function') {
+          isFocusVisible = event.currentTarget.matches(':focus-visible');
+        }
+      } catch {
+        isFocusVisible = true;
+      }
+      if (!isFocusVisible) return;
       triggerFocusedRef.current = true;
       cancelClose();
       cancelOpen();
