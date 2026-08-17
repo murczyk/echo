@@ -204,6 +204,7 @@ Content-Type: application/json
 | `deleted_media_ids`         | `string[] \| null`                  | UUID media, які потрібно виключити з копії. Для копії це UUID media батьківського повідомлення.                                                                      |
 | `retained_media_ids`        | `string[] \| null`                  | UUID media батьківського повідомлення, які потрібно залишити в копії.                                                                                                |
 | `parent_signal_message_ids` | `number[]`                          | ID усіх `signal_message`, на яких базується нова копія. Для звичайного submit передається порожній масив; під час edit поле ігнорується.                             |
+| `copy_source_signal_message_ids` | `number[]`                     | ID вибраних фізичних джерел копіювання. Для копії звіту містить ID самого звіту, тоді як `parent_signal_message_ids` зберігає лише його lineage-батьків. |
 
 Усі поля мають default/optional поведінку на рівні JSON, але звичайний submit без `parent_signal_message_ids` все одно вимагає непорожній `signal_group_master_key`. Для copy flow рекомендується передавати весь payload, який повернув endpoint підготовки копії, і змінювати лише поля форми.
 

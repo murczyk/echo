@@ -218,6 +218,7 @@ where
                 .collect(),
         ),
         parent_signal_message_ids,
+        copy_source_signal_message_ids: vec![source.id],
     })
 }
 
@@ -374,6 +375,13 @@ async fn save_signal_message(
         Some(_) => &[][..],
         None => parent_signal_message_ids.as_slice(),
     };
+    let copy_source_signal_message_ids = match signal_message_id {
+        Some(_) => &[][..],
+        None if payload.copy_source_signal_message_ids.is_empty() => {
+            parent_signal_message_ids.as_slice()
+        }
+        None => payload.copy_source_signal_message_ids.as_slice(),
+    };
     let is_intelligence_report = !parent_signal_message_ids.is_empty();
     validate_direct_submit_payload(
         env,
@@ -407,12 +415,12 @@ async fn save_signal_message(
         .await
         .c(h!())?;
 
-    let copy_sources = if copy_parent_signal_message_ids.is_empty() {
+    let copy_sources = if copy_source_signal_message_ids.is_empty() {
         vec![]
     } else {
-        query::find_copyable_signal_messages(
+        query::find_copyable_signal_messages_for_copy(
             &txn,
-            copy_parent_signal_message_ids,
+            copy_source_signal_message_ids,
             &allowed_groups,
             login,
             &logins,
@@ -455,7 +463,7 @@ async fn save_signal_message(
         }
         None => {
             let media =
-                load_copy_media(&txn, copy_parent_signal_message_ids, &payload)
+                load_copy_media(&txn, copy_source_signal_message_ids, &payload)
                     .await
                     .c(h!())?;
             (media.len(), vec![])
@@ -539,6 +547,7 @@ async fn save_signal_message(
         &media_to_delete,
         delete_uploaded_attachments,
         copy_parent_signal_message_ids,
+        copy_source_signal_message_ids,
         &payload,
     )
     .await
@@ -868,6 +877,7 @@ async fn finish_direct_submit(
     media_to_delete: &[crate::entities::signal_message_media::Model],
     delete_uploaded_attachments: bool,
     parent_signal_message_ids: &[i64],
+    copy_source_signal_message_ids: &[i64],
     payload: &DirectSubmitPayload,
 ) -> Result<DirectSubmitRsp, AppError> {
     let signal_message_id = submitted.signal_message_id;
@@ -923,7 +933,7 @@ async fn finish_direct_submit(
 
     if !parent_signal_message_ids.is_empty() {
         let source_media =
-            load_copy_media(&txn, parent_signal_message_ids, payload)
+            load_copy_media(&txn, copy_source_signal_message_ids, payload)
                 .await
                 .c(h!())?;
         query::copy_signal_message_media(
@@ -1090,6 +1100,7 @@ mod tests {
             deleted_media_ids: None,
             retained_media_ids: None,
             parent_signal_message_ids: vec![],
+            copy_source_signal_message_ids: vec![],
         }
     }
 

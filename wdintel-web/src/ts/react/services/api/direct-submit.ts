@@ -210,6 +210,7 @@ export type DirectSubmitRequest = {
   deleted_media_ids?: string[];
   retained_media_ids?: string[];
   parent_signal_message_ids?: number[];
+  copy_source_signal_message_ids?: number[];
 };
 
 export type DirectSubmitCopyResponse = {

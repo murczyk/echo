@@ -57,6 +57,8 @@ pub struct DirectSubmitPayload {
     pub retained_media_ids: Option<Vec<String>>,
     #[serde(default)]
     pub parent_signal_message_ids: Vec<i64>,
+    #[serde(default)]
+    pub copy_source_signal_message_ids: Vec<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -132,6 +134,7 @@ mod tests {
             "signal_group_master_key": "group",
             "retained_media_ids": ["media-id"],
             "parent_signal_message_ids": [42],
+            "copy_source_signal_message_ids": [84],
         }))
         .unwrap();
 
@@ -140,5 +143,6 @@ mod tests {
             Some(vec!["media-id".to_string()])
         );
         assert_eq!(payload.parent_signal_message_ids, vec![42]);
+        assert_eq!(payload.copy_source_signal_message_ids, vec![84]);
     }
 }
