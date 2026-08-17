@@ -114,6 +114,12 @@ struct ClientDataBackup {
     backup_path: PathBuf,
 }
 
+enum CommitRecovery {
+    Replacement(MessengerView),
+    Previous,
+    Superseded,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QrRsp {
@@ -217,6 +223,7 @@ pub async fn update(
 ) -> Result<MessengerView> {
     let display_name = normalize_display_name(&req.name).c(h!())?;
     let phone = normalize_phone(&req.phone).c(h!())?;
+    let replacement_phone = phone.clone();
     let client_name = owned_client_name(name);
     let txn = db.begin().await.c(h!())?;
     lock_integration_identity(&txn).await.c(h!())?;
@@ -278,22 +285,37 @@ pub async fn update(
                 current.signal_port,
                 client_data_backup.as_ref().c(h!())?,
             )
-            .await;
+            .await
+            .unwrap_or_else(|restore_err| {
+                log::error!(
+                    "failed to restore old client {client_name} after integration update failure: {restore_err:#}"
+                );
+            });
             return Err(err);
         }
     }
     let commit_result = txn.commit().await.c(h!());
     if let Err(err) = commit_result {
         if account_changed {
-            restore_old_client(
+            let recovery = reconcile_after_commit_error(
+                db,
                 config,
                 &client_name,
-                current.kind,
+                &current,
                 req.kind,
-                current.signal_port,
+                &replacement_phone,
                 client_data_backup.as_ref().c(h!())?,
             )
-            .await;
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to reconcile integration {name} after commit failure: {err:#}"
+                )
+            })
+            .c(h!())?;
+            if let CommitRecovery::Replacement(messenger) = recovery {
+                return Ok(messenger);
+            }
         }
         return Err(err);
     }
@@ -335,35 +357,95 @@ async fn restore_old_client(
     new_kind: MessengerKind,
     port: i32,
     client_data_backup: &ClientDataBackup,
-) {
+) -> Result<()> {
     if let Err(err) = stop_client(config, new_kind, client_name).await.c(h!()) {
         log::warn!(
             "failed to stop replacement client {client_name} during recovery: {err:#}"
         );
     }
-    let restore_result = async {
-        if old_kind != new_kind {
-            if let Err(err) =
-                stop_client(config, old_kind, client_name).await.c(h!())
-            {
-                log::warn!(
-                    "failed to stop old client {client_name} during recovery: {err:#}"
-                );
-            }
+    if old_kind != new_kind {
+        if let Err(err) =
+            stop_client(config, old_kind, client_name).await.c(h!())
+        {
+            log::warn!(
+                "failed to stop old client {client_name} during recovery: {err:#}"
+            );
         }
-        restore_client_data(client_data_backup).await.c(h!())?;
-        start_client(config, old_kind, client_name, port)
+    }
+    restore_client_data(client_data_backup).await.c(h!())?;
+    start_client(config, old_kind, client_name, port)
+        .await
+        .c(h!())?;
+    wait_for_signal_client(old_kind, port).await.c(h!())?;
+    Ok(())
+}
+
+async fn reconcile_after_commit_error(
+    db: &DatabaseConnection,
+    config: &Config,
+    client_name: &str,
+    previous: &MessengerView,
+    replacement_kind: MessengerKind,
+    replacement_phone: &str,
+    client_data_backup: &ClientDataBackup,
+) -> Result<CommitRecovery> {
+    let txn = db.begin().await.c(h!())?;
+    lock_integration_identity(&txn).await.c(h!())?;
+    let durable = load_optional_owned(&txn, client_name).await.c(h!())?;
+    let recovery = match durable {
+        Some(messenger)
+            if account_matches(
+                &messenger,
+                replacement_kind,
+                Some(replacement_phone),
+            ) =>
+        {
+            discard_client_data_backup(client_data_backup)
+                .await
+                .c(h!())?;
+            CommitRecovery::Replacement(messenger)
+        }
+        Some(messenger)
+            if account_matches(
+                &messenger,
+                previous.kind,
+                previous.phone.as_deref(),
+            ) =>
+        {
+            restore_old_client(
+                config,
+                client_name,
+                previous.kind,
+                replacement_kind,
+                previous.signal_port,
+                client_data_backup,
+            )
             .await
             .c(h!())?;
-        wait_for_signal_client(old_kind, port).await.c(h!())?;
-        Result::<()>::Ok(())
-    }
-    .await;
-    if let Err(err) = restore_result {
-        log::error!(
-            "failed to restore old client {client_name} after integration update failure: {err:#}"
+            CommitRecovery::Previous
+        }
+        _ => {
+            discard_client_data_backup(client_data_backup)
+                .await
+                .c(h!())?;
+            CommitRecovery::Superseded
+        }
+    };
+    txn.commit().await.c(h!())?;
+    if matches!(&recovery, CommitRecovery::Superseded) {
+        log::warn!(
+            "integration {client_name} changed again before commit recovery completed"
         );
     }
+    Ok(recovery)
+}
+
+fn account_matches(
+    messenger: &MessengerView,
+    kind: MessengerKind,
+    phone: Option<&str>,
+) -> bool {
+    messenger.kind == kind && messenger.phone.as_deref() == phone
 }
 
 async fn replace_account_lock(
@@ -406,11 +488,12 @@ pub async fn delete(
     name: &str,
 ) -> Result<()> {
     let client_name = owned_client_name(name);
-    let messenger = load(db, name).await.c(h!())?;
+    let txn = db.begin().await.c(h!())?;
+    lock_integration_identity(&txn).await.c(h!())?;
+    let messenger = load(&txn, name).await.c(h!())?;
     stop_client(config, messenger.kind, &client_name)
         .await
         .c(h!())?;
-    let txn = db.begin().await.c(h!())?;
     echo_im::detach_client(&client_name, &txn)
         .await
         .map_err(|err| anyhow::anyhow!("{err}"))
@@ -459,7 +542,9 @@ pub async fn link(
     name: &str,
 ) -> Result<QrRsp> {
     let client_name = owned_client_name(name);
-    let messenger = load(db, name).await.c(h!())?;
+    let txn = db.begin().await.c(h!())?;
+    lock_integration_identity(&txn).await.c(h!())?;
+    let messenger = load(&txn, name).await.c(h!())?;
     erase_stale_qr_codes(db, &client_name, messenger.kind)
         .await
         .c(h!())?;
@@ -482,18 +567,20 @@ pub async fn link(
     )
     .await
     .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(QrRsp { qr_code_base64 })
 }
 
 pub async fn unlink(db: &DatabaseConnection, name: &str) -> Result<()> {
     let client_name = owned_client_name(name);
-    let messenger = load(db, name).await.c(h!())?;
+    let txn = db.begin().await.c(h!())?;
+    lock_integration_identity(&txn).await.c(h!())?;
+    let messenger = load(&txn, name).await.c(h!())?;
     let phone = messenger
         .phone
         .clone()
         .with_context(|| format!("phone not found for messenger: {name}"))
         .c(h!())?;
-    let txn = db.begin().await.c(h!())?;
     echo_im::unlink_account(
         &client_name,
         messenger.kind.message_source(),
@@ -512,10 +599,10 @@ pub async fn unlink(db: &DatabaseConnection, name: &str) -> Result<()> {
     .await
     .map_err(|err| anyhow::anyhow!("{err}"))
     .c(h!())?;
-    txn.commit().await.c(h!())?;
-    persist_is_linked(db, &client_name, messenger.kind, false)
+    persist_is_linked(&txn, &client_name, messenger.kind, false)
         .await
         .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -664,6 +751,7 @@ pub async fn send(
     attachments: Vec<String>,
 ) -> Result<()> {
     let txn = db.begin().await.c(h!())?;
+    lock_integration_identity(&txn).await.c(h!())?;
     enqueue(
         &txn,
         name,
