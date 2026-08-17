@@ -294,7 +294,7 @@ pub async fn unlink_sigint_unit_with_lock(
         &transaction,
         login,
         sigint_unit_id,
-        false,
+        true,
     )
     .await
     .c(h!())?;

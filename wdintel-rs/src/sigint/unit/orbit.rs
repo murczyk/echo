@@ -3324,6 +3324,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(!sigint_unit.is_inconsistent);
+        assert_eq!(sigint_unit.brigade, "Second ORBIT unit");
         assert_eq!(
             unit_orbit_details(&env.dbx, sigint_unit.id)
                 .await
