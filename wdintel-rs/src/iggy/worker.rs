@@ -2,8 +2,8 @@ use crate::entities::{api_integration, sigint_callsign, sigint_unit};
 use crate::error::AppError;
 use crate::rer_importer::types::{InboxMessage, InboxMessagesReq};
 use crate::sigint::etalonka::query::{
-    build_network_freq_join_condition, SigintInboxItem, SigintInboxItemNetwork,
-    SigintNetwork, SigintNetworkFreq, SignalMessage,
+    build_open_ended_network_freq_join_condition, SigintInboxItem,
+    SigintInboxItemNetwork, SigintNetwork, SigintNetworkFreq, SignalMessage,
 };
 use crate::types::*;
 use bytes::Bytes;
@@ -349,7 +349,7 @@ fn build_network_freq_ids_query(
 ) -> Result<SelectStatement, AppError> {
     let network_freqs = Alias::new("network_freqs");
     let join_condition =
-        build_network_freq_join_condition(None, true).c(h!())?;
+        build_open_ended_network_freq_join_condition(None, true).c(h!())?;
     Ok(Query::select()
         .distinct()
         .expr_as(
@@ -674,6 +674,26 @@ mod tests {
         .unwrap();
     }
 
+    async fn insert_open_ended_network_frequency(
+        env: &Env,
+        network_id: i64,
+        intercepted_at: NaiveDateTime,
+    ) -> i64 {
+        mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network_id),
+                freq: Set("123.45".to_string()),
+                active_from: Set(intercepted_at - ChronoDuration::hours(1)),
+                active_to: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+        .id
+    }
+
     fn build_inbox_message(
         unit_id: i64,
         signal_id: i64,
@@ -702,7 +722,7 @@ mod tests {
     #[serial]
     async fn inbox_event_contains_dictionary_ids_and_stays_compatible() {
         let env = cleanup().await.unwrap();
-        let intercepted_at = Utc::now().naive_utc();
+        let intercepted_at = Utc::now().naive_utc() + ChronoDuration::hours(1);
         let unit = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
         let callsign_id = insert_callsign(&env, unit.id, intercepted_at).await;
         let signal_id = insert_signal(&env, unit.id, intercepted_at).await;
@@ -715,6 +735,12 @@ mod tests {
         )
         .await;
         insert_future_network_frequency(
+            &env,
+            network.network_id,
+            intercepted_at,
+        )
+        .await;
+        let open_ended_network_freq_id = insert_open_ended_network_frequency(
             &env,
             network.network_id,
             intercepted_at,
@@ -741,7 +767,10 @@ mod tests {
         );
         assert_eq!(
             event[1]["sigint_network_freq_ids"],
-            serde_json::json!([network.network_freq_id])
+            serde_json::json!([
+                network.network_freq_id,
+                open_ended_network_freq_id
+            ])
         );
         let old_message: InboxMessage =
             serde_json::from_value(event[1].clone()).unwrap();
