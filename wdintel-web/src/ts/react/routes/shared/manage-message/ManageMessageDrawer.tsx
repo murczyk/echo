@@ -78,7 +78,7 @@ function ReportTextRow({ originalText, busy }: { originalText: string; busy: boo
           value={originalText}
           fullWidth
           multiline
-          rows={12}
+          rows={6}
           slotProps={{ input: { readOnly: true } }}
         />
       </FormSectionWrapper>
@@ -92,7 +92,7 @@ function ReportTextRow({ originalText, busy }: { originalText: string; busy: boo
               label="Текст розвіддонесення"
               fullWidth
               multiline
-              rows={12}
+              rows={6}
               required
               autoFocus
               inputRef={reportTextRef}
@@ -339,6 +339,7 @@ export function ManageMessageDrawer(props: Props) {
                     unitLocked={drawerState.unitLocked}
                     callsignOptions={drawerState.callsignOptions}
                     callsignLoading={drawerState.callsignLoading}
+                    callsignInput={drawerState.callsignInput}
                     setCallsignInput={drawerState.setCallsignInput}
                   />
 

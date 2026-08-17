@@ -6,7 +6,11 @@ import utc from 'dayjs/plugin/utc';
 import type { InboxMessage, Tag } from '../../../../../Bindings';
 import { APP_TIME_ZONE } from '../../../utils/misc';
 import type { DirectSubmitRequest } from '../../../services/api/direct-submit';
-import type { MessageFormData } from './manage-message-drawer.schema';
+import {
+  normalizeCallsign,
+  normalizeMultiValue,
+  type MessageFormData,
+} from './manage-message-drawer.schema';
 
 dayjs.extend(customParseFormat);
 dayjs.extend(utc);
@@ -66,7 +70,7 @@ export function mapInboxMessageToForm(
     time,
     freq: message.freq ?? '',
     coords: messageCoordinates(message),
-    callsigns: message.callsigns ?? [],
+    callsigns: normalizeMultiValue((message.callsigns ?? []).map(normalizeCallsign)),
     post: message.post ?? '',
     unit: message.unit ?? '',
     locations: splitLocations(message.location),
@@ -84,7 +88,7 @@ export function mapDirectSubmitCopyToForm(payload: DirectSubmitRequest): Message
     deviceName: '',
     freq: payload.freq ?? '',
     coords: (payload.coords ?? []).map(({ lat, lon }) => `${lat}, ${lon}`).join('\n'),
-    callsigns: payload.to ?? [],
+    callsigns: normalizeMultiValue((payload.to ?? []).map(normalizeCallsign)),
     tags: payload.tags ?? [],
     date: timestamp?.isValid() ? timestamp : null,
     time: timestamp?.isValid() ? timestamp : null,

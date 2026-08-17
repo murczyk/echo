@@ -60,14 +60,14 @@ const labelToTagId = new Map<string, number>([['арта', 7]]);
 
 describe('mapInboxMessageToForm', () => {
   it('maps scalar and structured fields into form values', () => {
-    const values = mapInboxMessageToForm(buildMessage(), tagsMap);
+    const values = mapInboxMessageToForm(buildMessage({ callsigns: ['alfa', 'сокіл'] }), tagsMap);
     expect(values.full_body).toBe('body text');
     expect(values.comment).toBe('a note');
     expect(values.freq).toBe('149.500');
     expect(values.coords).toBe('49.1, 37.2');
     expect(values.post).toBe('post-1');
     expect(values.unit).toBe('unit-1');
-    expect(values.callsigns).toEqual(['ALFA']);
+    expect(values.callsigns).toEqual(['ALFA', 'СОКІЛ']);
     expect(values.locations).toEqual(['Київ', 'Харків']);
     expect(values.tags).toEqual(['арта']);
     expect(values.date?.format('YYYY-MM-DD')).toBe('2026-07-01');

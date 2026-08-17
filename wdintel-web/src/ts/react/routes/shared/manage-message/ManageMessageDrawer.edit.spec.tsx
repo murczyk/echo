@@ -206,6 +206,7 @@ vi.mock('@mui/x-date-pickers/LocalizationProvider', () => ({
 type TextFieldMockProps = {
   label?: ReactNode;
   multiline?: boolean;
+  rows?: number;
   onChange?: (event: { target: { value: string } }) => void;
   onBlur?: () => void;
   onKeyDown?: (event: KeyboardEvent) => void;
@@ -220,6 +221,10 @@ type TextFieldMockProps = {
 
 const textFieldPropsByLabel = new Map<string | undefined, TextFieldMockProps>();
 const autocompleteOnChangeByLabel = new Map<string, (event: unknown, value: unknown) => void>();
+const autocompleteOnInputChangeByLabel = new Map<
+  string,
+  (event: unknown, value: string, reason: string) => void
+>();
 const autocompleteValuesByLabel = new Map<string, unknown>();
 const autocompleteInputValuesByLabel = new Map<string, string>();
 const autocompleteOptionLabelsByLabel = new Map<string, string[]>();
@@ -347,6 +352,7 @@ vi.mock('@mui/material', () => ({
   TextField: ({
     label,
     multiline,
+    rows,
     onChange,
     onBlur,
     onKeyDown,
@@ -362,6 +368,7 @@ vi.mock('@mui/material', () => ({
     textFieldPropsByLabel.set(labelKey, {
       label: labelKey,
       multiline,
+      rows,
       onChange,
       onBlur,
       onKeyDown,
@@ -380,6 +387,7 @@ vi.mock('@mui/material', () => ({
             aria-label={labelKey}
             placeholder={placeholder}
             value={value ?? ''}
+            rows={rows}
             disabled={disabled}
             autoFocus={autoFocus}
             ref={inputRef as Ref<HTMLTextAreaElement>}
@@ -409,6 +417,7 @@ vi.mock('@mui/material', () => ({
     value,
     inputValue,
     onChange,
+    onInputChange,
     options,
     getOptionLabel,
     loading: _loading,
@@ -417,6 +426,7 @@ vi.mock('@mui/material', () => ({
     value?: unknown;
     inputValue?: string;
     onChange?: (event: unknown, value: unknown) => void;
+    onInputChange?: (event: unknown, value: string, reason: string) => void;
     options?: unknown[];
     getOptionLabel?: (option: unknown) => string;
     loading?: boolean;
@@ -425,6 +435,9 @@ vi.mock('@mui/material', () => ({
     const label = (input as { props?: { label?: unknown } } | undefined)?.props?.label;
     if (typeof label === 'string' && onChange) {
       autocompleteOnChangeByLabel.set(label, onChange);
+    }
+    if (typeof label === 'string' && onInputChange) {
+      autocompleteOnInputChangeByLabel.set(label, onInputChange);
     }
     if (typeof label === 'string') autocompleteValuesByLabel.set(label, value);
     if (typeof label === 'string' && inputValue != null) {
@@ -488,6 +501,7 @@ describe('ManageMessageDrawer edit mode', () => {
   afterEach(() => {
     textFieldPropsByLabel.clear();
     autocompleteOnChangeByLabel.clear();
+    autocompleteOnInputChangeByLabel.clear();
     autocompleteValuesByLabel.clear();
     autocompleteInputValuesByLabel.clear();
     autocompleteOptionLabelsByLabel.clear();
@@ -555,6 +569,7 @@ describe('ManageMessageDrawer edit mode', () => {
           full_body: 'original copied body',
           text: 'original copied body',
           comment: 'existing comment',
+          to: ['alfa', 'сокіл'],
           signal_group_master_key: 'g-1',
           retained_media_ids: ['media-1'],
           parent_signal_message_ids: [42],
@@ -588,6 +603,7 @@ describe('ManageMessageDrawer edit mode', () => {
           transcription: null,
         },
       ],
+      deviceName: 'source-device',
     });
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -597,7 +613,7 @@ describe('ManageMessageDrawer edit mode', () => {
       root.render(
         <ManageMessageDrawer
           open
-          cyberEchoEnabled={false}
+          cyberEchoEnabled
           currentUser={null}
           onClose={vi.fn()}
           reportSource={{ id: 42, message: source }}
@@ -611,6 +627,14 @@ describe('ManageMessageDrawer edit mode', () => {
       'original copied body',
     );
     expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('');
+    expect(textFieldPropsByLabel.get('Текст оригінального повідомлення')?.rows).toBe(6);
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.rows).toBe(6);
+    expect(autocompleteValuesByLabel.get('Назва пристрою')).toBe('');
+    expect(autocompleteValuesByLabel.get('Позивні')).toEqual(['ALFA', 'СОКІЛ']);
+    await act(async () => {
+      autocompleteOnInputChangeByLabel.get('Позивні')?.(null, 'charlie', 'input');
+    });
+    expect(autocompleteInputValuesByLabel.get('Позивні')).toBe('CHARLIE');
     expect(autocompleteValuesByLabel.get('Група')).toBeNull();
     expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.autoFocus).toBe(true);
     await act(async () => {

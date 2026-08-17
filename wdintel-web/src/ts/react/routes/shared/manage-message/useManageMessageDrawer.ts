@@ -447,7 +447,6 @@ export function useManageMessageDrawer({
         ...EMPTY_FORM_VALUES,
         date: dayjs(),
         time: dayjs(),
-        deviceName: reportSource.message.deviceName ?? '',
       });
     } else {
       // Pre-fill the last-used values (MRU head) so repeated message creation
@@ -489,7 +488,7 @@ export function useManageMessageDrawer({
             text: '',
             comment: '',
             signalGroupMasterKey: '',
-            deviceName: reportSource?.message.deviceName ?? '',
+            deviceName: '',
           });
           setReportCopyLoaded(true);
         }
@@ -647,6 +646,7 @@ export function useManageMessageDrawer({
     setSignalNameInput,
     callsignOptions,
     callsignLoading,
+    callsignInput,
     setCallsignInput,
     freqOptions,
     freqLoading,
