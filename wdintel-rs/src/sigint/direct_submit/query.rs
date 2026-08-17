@@ -119,6 +119,10 @@ where
 {
     Ok(intel_prod::Entity::find()
         .filter(intel_prod::Column::SignalMessageId.eq(signal_message_id))
+        .filter(
+            intel_prod::Column::RelationKind
+                .eq(intel_prod::RELATION_KIND_REPORT),
+        )
         .order_by_asc(intel_prod::Column::CreatedAt)
         .all(dbx)
         .await
@@ -142,6 +146,10 @@ where
         .filter(
             intel_prod::Column::SignalMessageId
                 .is_in(signal_message_ids.to_vec()),
+        )
+        .filter(
+            intel_prod::Column::RelationKind
+                .eq(intel_prod::RELATION_KIND_REPORT),
         )
         .order_by_asc(intel_prod::Column::CreatedAt)
         .order_by_asc(intel_prod::Column::ParentSignalMessageId)
@@ -517,6 +525,10 @@ where
             intel_prod::Column::SignalMessageId
                 .is_in(signal_message_ids.to_vec()),
         )
+        .filter(
+            intel_prod::Column::RelationKind
+                .eq(intel_prod::RELATION_KIND_REPORT),
+        )
         .count(dbx)
         .await
         .c(h!())?;
@@ -863,6 +875,9 @@ where
             crate::entities::intel_prod::ActiveModel {
                 signal_message_id: Set(signal_message_id),
                 parent_signal_message_id: Set(*parent_signal_message_id),
+                relation_kind: Set(
+                    crate::entities::intel_prod::RELATION_KIND_REPORT,
+                ),
                 created_at: NotSet,
             }
         })

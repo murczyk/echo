@@ -384,19 +384,53 @@ pub(crate) async fn messages_by_id_bl(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
+    let parent_group_access_query = Query::select()
+        .expr(Expr::value(1))
+        .from(signal_message_group::Entity)
+        .and_where(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((
+                intel_prod::Entity,
+                intel_prod::Column::ParentSignalMessageId,
+            )),
+        )
+        .and_where(
+            signal_message_group::Column::GroupMasterKey
+                .is_in(sigint_groups.clone()),
+        )
+        .to_owned();
+    let parent_datasource_group_access_query = Query::select()
+        .expr(Expr::value(1))
+        .from(signal_message::Entity)
+        .inner_join(
+            datasource_group::Entity,
+            Expr::col((
+                signal_message::Entity,
+                signal_message::Column::DatasourceGroupId,
+            ))
+            .equals((datasource_group::Entity, datasource_group::Column::Id)),
+        )
+        .and_where(
+            Expr::col((signal_message::Entity, signal_message::Column::Id))
+                .equals((
+                    intel_prod::Entity,
+                    intel_prod::Column::ParentSignalMessageId,
+                )),
+        )
+        .and_where(
+            datasource_group::Column::GroupMasterKey
+                .is_in(sigint_groups.clone()),
+        )
+        .to_owned();
     let parent_access_query = Query::select()
         .expr(Expr::value(1))
         .from(intel_prod::Entity)
-        .inner_join(
-            signal_message_group::Entity,
-            Expr::col((
-                intel_prod::Entity,
-                intel_prod::Column::ParentSignalMessageId,
-            ))
-            .equals((
-                signal_message_group::Entity,
-                signal_message_group::Column::SignalMessageId,
-            )),
+        .and_where(
+            intel_prod::Column::RelationKind
+                .eq(intel_prod::RELATION_KIND_REPORT),
         )
         .and_where(
             Expr::col((
@@ -406,8 +440,10 @@ pub(crate) async fn messages_by_id_bl(
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
         .and_where(
-            signal_message_group::Column::GroupMasterKey
-                .is_in(sigint_groups.clone()),
+            Condition::any()
+                .add(Expr::exists(parent_group_access_query))
+                .add(Expr::exists(parent_datasource_group_access_query))
+                .into(),
         )
         .to_owned();
     let owner_access_query = Query::select()

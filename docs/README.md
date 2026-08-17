@@ -28,10 +28,14 @@ from the media-row UUID can orphan shared objects or delete the wrong object.
 
 Copy lineage is stored in PostgreSQL in the `intel_prod` table. Each row links
 the saved copy's `signal_message_id` to one source message, allowing one copy
-to be based on several messages. On analytics-enabled installations,
-`intel_prod` is a replicated snapshot table and `signal_message_media` schema
-changes require the documented PeerDB mirror-resync procedure before
-analytics is considered healthy.
+to be based on several messages. The `relation_kind` column distinguishes
+report lineage from linked comments so the two relationships are not exposed
+through each other's APIs. Existing `sigint_comment` rows remain a migration
+fallback until `oneoff-migrate-sigint-comments` completes. On
+analytics-enabled installations, `intel_prod` is a replicated snapshot table;
+changes to its schema and to replicated comment/media tables require the
+documented PeerDB mirror-resync procedure before analytics is considered
+healthy.
 
 ## Deployment topology
 

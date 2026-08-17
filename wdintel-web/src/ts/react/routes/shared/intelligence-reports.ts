@@ -33,5 +33,5 @@ export function getIntelligenceReports(message: InboxMessage): InboxMessageSumma
 }
 
 export function isIntelligenceReport(message: InboxMessage): boolean {
-  return getAccessibleParentMessages(message).length > 0;
+  return getParentMessages(message).length > 0;
 }

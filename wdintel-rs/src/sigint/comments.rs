@@ -65,6 +65,10 @@ where
             intel_prod::Column::ParentSignalMessageId
                 .is_in(parent_signal_message_ids.to_vec()),
         )
+        .filter(
+            intel_prod::Column::RelationKind
+                .eq(intel_prod::RELATION_KIND_COMMENT),
+        )
         .order_by_asc(intel_prod::Column::CreatedAt)
         .order_by_asc(intel_prod::Column::SignalMessageId)
         .all(dbx)
@@ -138,9 +142,8 @@ where
         legacy_comments
             .into_iter()
             .filter(|comment| {
-                comment
-                    .migrated_signal_message_id
-                    .is_none_or(|id| !linked_message_ids.contains(&id))
+                comment.migrated_signal_message_id.is_none()
+                    && !linked_message_ids.contains(&comment.id)
             })
             .map(|comment| LinkedMessageComment {
                 parent_signal_message_id: comment.signal_message_id,
@@ -199,6 +202,7 @@ pub async fn create_linked_message_comment(
     intel_prod::ActiveModel {
         signal_message_id: Set(submitted.signal_message_id),
         parent_signal_message_id: Set(parent_signal_message_id),
+        relation_kind: Set(intel_prod::RELATION_KIND_COMMENT),
         created_at: NotSet,
     }
     .insert(txn)
@@ -248,7 +252,7 @@ pub async fn oneoff_migrate_sigint_comments(
     loop {
         let txn = env.dbx.begin().await.c(h!())?;
         lock_sigint_comment_migration(&txn).await.c(h!())?;
-        let comments = load_pending_comments(&txn, batch_size).await?;
+        let comments = load_pending_comments(&txn, batch_size).await.c(h!())?;
         if comments.is_empty() {
             txn.commit().await.c(h!())?;
             break;
@@ -344,9 +348,20 @@ async fn migrate_comment_batch(
         )
         .await
         .c(h!())?;
+        let mut signal_message =
+            signal_message::Entity::find_by_id(submitted.signal_message_id)
+                .one(txn)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)
+                .c(h!())?
+                .into_active_model();
+        signal_message.created_at = Set(comment.created_at);
+        signal_message.update(txn).await.c(h!())?;
         links.push(intel_prod::ActiveModel {
             signal_message_id: Set(submitted.signal_message_id),
             parent_signal_message_id: Set(comment.signal_message_id),
+            relation_kind: Set(intel_prod::RELATION_KIND_COMMENT),
             created_at: NotSet,
         });
         migrated_comments.push((
@@ -360,8 +375,12 @@ async fn migrate_comment_batch(
         .exec(txn)
         .await
         .c(h!())?;
-    update_migrated_comment_posts(txn, &migrated_comments).await?;
-    update_migrated_comment_markers(txn, &migrated_comments).await?;
+    update_migrated_comment_posts(txn, &migrated_comments)
+        .await
+        .c(h!())?;
+    update_migrated_comment_markers(txn, &migrated_comments)
+        .await
+        .c(h!())?;
     Ok(())
 }
 

@@ -14,6 +14,16 @@
         { "table": "public.intel_prod", "strategy": "replicated_snapshot" }
       ]
     },
+    "echo:m20260815_125337_add_sigint_comment_migration_marker": {
+      "changes": [
+        { "table": "public.sigint_comment", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260817_125243_add_intel_prod_relation_kind": {
+      "changes": [
+        { "table": "public.intel_prod", "strategy": "mirror_resync" }
+      ]
+    },
     "echo:m20260810_062938_echo_automation_coordinates_screenshot": {
       "changes": [
         {

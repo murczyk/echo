@@ -177,6 +177,10 @@ async fn load_intelligence_report_summaries(
     }
     let links = intel_prod::Entity::find()
         .filter(
+            intel_prod::Column::RelationKind
+                .eq(intel_prod::RELATION_KIND_REPORT),
+        )
+        .filter(
             Condition::any()
                 .add(
                     intel_prod::Column::SignalMessageId
@@ -210,6 +214,18 @@ async fn load_intelligence_report_summaries(
         .into_iter()
         .map(|message| (message.id, message))
         .collect::<HashMap<_, _>>();
+    let datasource_group_ids = messages
+        .values()
+        .filter_map(|message| message.datasource_group_id)
+        .collect::<HashSet<_>>();
+    let datasource_groups = datasource_group::Entity::find()
+        .filter(datasource_group::Column::Id.is_in(datasource_group_ids))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|group| (group.id, group))
+        .collect::<HashMap<_, _>>();
     let inbox_items = sigint_inbox_item::Entity::find()
         .filter(
             sigint_inbox_item::Column::Id.is_in(related_ids.iter().copied()),
@@ -231,10 +247,15 @@ async fn load_intelligence_report_summaries(
         .all(dbx)
         .await
         .c(h!())?;
-    let group_master_keys = group_rows
+    let mut group_master_keys = group_rows
         .iter()
         .filter_map(|group| group.group_master_key.clone())
         .collect::<HashSet<_>>();
+    group_master_keys.extend(
+        datasource_groups
+            .values()
+            .map(|group| group.group_master_key.clone()),
+    );
     let group_names_by_master_key = signal_group::Entity::find()
         .filter(signal_group::Column::MasterKey.is_in(group_master_keys))
         .all(dbx)
@@ -271,6 +292,28 @@ async fn load_intelligence_report_summaries(
             group_names
                 .entry(group.signal_message_id)
                 .or_insert(group_name);
+        }
+    }
+    for message in messages.values() {
+        let Some(datasource_group_id) = message.datasource_group_id else {
+            continue;
+        };
+        grouped_message_ids.insert(message.id);
+        let Some(datasource_group) =
+            datasource_groups.get(&datasource_group_id)
+        else {
+            continue;
+        };
+        if allowed_groups.contains(&datasource_group.group_master_key) {
+            accessible_group_master_keys
+                .entry(message.id)
+                .or_insert_with(|| datasource_group.group_master_key.clone());
+            if let Some(group_name) = group_names_by_master_key
+                .get(&datasource_group.group_master_key)
+                .cloned()
+            {
+                group_names.entry(message.id).or_insert(group_name);
+            }
         }
     }
 

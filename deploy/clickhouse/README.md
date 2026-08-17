@@ -789,13 +789,16 @@ not require another S3 upload. Media cleanup must count references by
 removed.
 
 Message-copy lineage is stored in the PostgreSQL `intel_prod` table. Its
-composite rows link one saved copy to each source message, and the table is
-declared as `replicated_snapshot` in `migration-impact.json`. The
-`signal_message_media` schema change is declared `mirror_resync`; after
-applying that migration on a ClickHouse instance, run the full PeerDB mirror
-resync and completion waiter, then verify the `intel_prod` snapshot, current
-views, gateway views, and end-to-end analytics health before continuing the
-deployment. The copy operation itself never uploads unchanged S3 objects.
+composite rows link one saved copy to each source message, and
+`relation_kind` distinguishes report lineage from linked comments. The table
+is declared as `replicated_snapshot` for creation and `mirror_resync` for the
+relation-kind schema migration in `migration-impact.json`. The
+`signal_message_media` and `sigint_comment` schema changes are also declared
+`mirror_resync`; after applying these migrations on a ClickHouse instance, run
+the full PeerDB mirror resync and completion waiter, then verify the
+`intel_prod` and `sigint_comment` snapshots, current views, gateway views, and
+end-to-end analytics health before continuing the deployment. The copy
+operation itself never uploads unchanged S3 objects.
 
 Migration pull requests are checked against
 `migration-impact.json`. New tables declare `excluded` or

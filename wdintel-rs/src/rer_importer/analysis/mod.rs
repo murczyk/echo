@@ -1876,6 +1876,10 @@ where
         let linked_comment_exists = intel_prod::Entity::find()
             .select_only()
             .expr(Expr::value(1))
+            .filter(
+                intel_prod::Column::RelationKind
+                    .eq(intel_prod::RELATION_KIND_COMMENT),
+            )
             .join_as(
                 JoinType::InnerJoin,
                 intel_prod::Relation::SignalMessage1.def(),
