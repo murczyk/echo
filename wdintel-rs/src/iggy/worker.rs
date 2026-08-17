@@ -349,7 +349,7 @@ fn build_network_freq_ids_query(
 ) -> Result<SelectStatement, AppError> {
     let network_freqs = Alias::new("network_freqs");
     let join_condition =
-        build_network_freq_join_condition(None, false).c(h!())?;
+        build_network_freq_join_condition(None, true).c(h!())?;
     Ok(Query::select()
         .distinct()
         .expr_as(
@@ -633,7 +633,7 @@ mod tests {
                 network_id: Set(network.id),
                 freq: Set("123.45".to_string()),
                 active_from: Set(intercepted_at - ChronoDuration::hours(1)),
-                active_to: Set(Some(intercepted_at + ChronoDuration::hours(1))),
+                active_to: Set(Some(intercepted_at)),
                 ..Default::default()
             },
         )
