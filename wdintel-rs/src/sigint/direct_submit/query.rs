@@ -235,6 +235,29 @@ where
         .await
         .c(h!())?;
     let Some(parent_group) = parent_group else {
+        let parent_datasource_id = signal_message::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::DatasourceGroup.def(),
+            )
+            .filter(
+                signal_message::Column::Id
+                    .is_in(parent_signal_message_ids.to_vec()),
+            )
+            .filter(signal_message::Column::Deleted.eq(false))
+            .filter(
+                datasource_group::Column::GroupMasterKey
+                    .is_in(allowed_groups.to_vec()),
+            )
+            .select_only()
+            .column(datasource_group::Column::DatasourceId)
+            .into_tuple::<i64>()
+            .one(dbx)
+            .await
+            .c(h!())?;
+        if parent_datasource_id.is_some() {
+            return Ok(parent_datasource_id);
+        }
         let has_grouped_parent = signal_message::Entity::find()
             .filter(
                 signal_message::Column::Id
