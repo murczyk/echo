@@ -793,7 +793,12 @@ pub async fn create(
 ) -> Result<AutomationView> {
     let automation = normalize_req(req).await.c(h!())?;
     let txn = db.begin().await.c(h!())?;
-    messenger::lock_integration_identity(&txn).await.c(h!())?;
+    messenger::lock_integration_accounts(
+        &txn,
+        &[automation.source_account_id, automation.target_account_id],
+    )
+    .await
+    .c(h!())?;
     validate_group_accounts(&txn, &automation).await.c(h!())?;
     validate_active_accounts(&txn, &automation).await.c(h!())?;
     validate_polygon_ref(&txn, &automation).await.c(h!())?;
@@ -856,7 +861,13 @@ pub async fn update(
 ) -> Result<AutomationView> {
     let automation = normalize_req(req).await.c(h!())?;
     let txn = db.begin().await.c(h!())?;
-    messenger::lock_integration_identity(&txn).await.c(h!())?;
+    lock_automation_integrations(
+        &txn,
+        id,
+        &[automation.source_account_id, automation.target_account_id],
+    )
+    .await
+    .c(h!())?;
     validate_group_accounts(&txn, &automation).await.c(h!())?;
     validate_active_accounts(&txn, &automation).await.c(h!())?;
     validate_polygon_ref(&txn, &automation).await.c(h!())?;
@@ -909,13 +920,16 @@ pub async fn update(
 }
 
 pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
-    db.execute_raw(Statement::from_sql_and_values(
+    let txn = db.begin().await.c(h!())?;
+    lock_automation_integrations(&txn, id, &[]).await.c(h!())?;
+    txn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "delete from echo_automation where id = $1",
         [id.into()],
     ))
     .await
     .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -925,7 +939,7 @@ pub async fn set_paused(
     is_paused: bool,
 ) -> Result<AutomationView> {
     let txn = db.begin().await.c(h!())?;
-    messenger::lock_integration_identity(&txn).await.c(h!())?;
+    lock_automation_integrations(&txn, id, &[]).await.c(h!())?;
     if !is_paused {
         ensure_automation_can_start(&txn, id).await.c(h!())?;
     }
@@ -1041,7 +1055,12 @@ async fn process_automation_with_integration_lock(
     automation: AutomationWorkerRow,
 ) -> Result<()> {
     let txn = db.begin().await.c(h!())?;
-    messenger::lock_integration_identity(&txn).await.c(h!())?;
+    messenger::lock_integration_accounts(
+        &txn,
+        &[automation.source_account_id, automation.target_account_id],
+    )
+    .await
+    .c(h!())?;
     if !automation_is_runnable(&txn, automation.id).await.c(h!())? {
         txn.commit().await.c(h!())?;
         return Ok(());
@@ -1054,6 +1073,32 @@ async fn process_automation_with_integration_lock(
     }
     txn.commit().await.c(h!())?;
     Ok(())
+}
+
+async fn lock_automation_integrations<C>(
+    db: &C,
+    id: i64,
+    additional_account_ids: &[i32],
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select source_account_id, target_account_id from echo_automation where id = $1",
+            [id.into()],
+        ))
+        .await
+        .c(h!())?;
+    let mut account_ids = additional_account_ids.to_vec();
+    if let Some(row) = row {
+        account_ids.push(row.try_get("", "source_account_id").c(h!())?);
+        account_ids.push(row.try_get("", "target_account_id").c(h!())?);
+    }
+    messenger::lock_integration_accounts(db, &account_ids)
+        .await
+        .c(h!())
 }
 
 async fn automation_is_runnable<C>(db: &C, id: i64) -> Result<bool>
@@ -3949,9 +3994,12 @@ mod tests {
         let fixture = create_fixture(&db).await.c(h!())?;
         let result = async {
             let edit_txn = db.begin().await.c(h!())?;
-            messenger::lock_integration_identity(&edit_txn)
-                .await
-                .c(h!())?;
+            messenger::lock_integration_accounts(
+                &edit_txn,
+                &[fixture.account_id],
+            )
+            .await
+            .c(h!())?;
             edit_txn
                 .execute_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
@@ -3963,11 +4011,15 @@ mod tests {
 
             let worker_db = db.clone();
             let automation_id = fixture.automation_id;
+            let account_id = fixture.account_id;
             let mut worker = tokio::spawn(async move {
                 let worker_txn = worker_db.begin().await.c(h!())?;
-                messenger::lock_integration_identity(&worker_txn)
-                    .await
-                    .c(h!())?;
+                messenger::lock_integration_accounts(
+                    &worker_txn,
+                    &[account_id],
+                )
+                .await
+                .c(h!())?;
                 let is_runnable =
                     automation_is_runnable(&worker_txn, automation_id)
                         .await

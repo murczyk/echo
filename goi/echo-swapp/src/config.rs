@@ -26,6 +26,7 @@ pub const AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX: &str =
 pub const AUTOMATION_BROKEN_INTEGRATION_ERROR: &str =
     "Інтеграцію змінено. Переналаштуйте акаунти та групи автоматизації.";
 pub const MESSENGER_INTEGRATION_UNIQUENESS_LOCK_ID: i64 = 4_563_686_943;
+pub const MESSENGER_INTEGRATION_OPERATION_LOCK_NAMESPACE: i32 = 1_162_033_231;
 pub const MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX: &str =
     ".relink-backup";
 const DEFAULT_PG_HOST: &str = "localhost";

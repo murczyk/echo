@@ -1,6 +1,7 @@
 use crate::config::{
     Config, AUTOMATION_BROKEN_INTEGRATION_ERROR,
     MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX,
+    MESSENGER_INTEGRATION_OPERATION_LOCK_NAMESPACE,
     MESSENGER_INTEGRATION_UNIQUENESS_LOCK_ID,
 };
 use crate::error::{
@@ -231,6 +232,7 @@ pub async fn update(
     let client_name = owned_client_name(name);
     let txn = db.begin().await.c(h!())?;
     lock_integration_identity(&txn).await.c(h!())?;
+    lock_integration_client(&txn, &client_name).await.c(h!())?;
     let current = load(&txn, name).await.c(h!())?;
     let account_changed =
         current.kind != req.kind || current.phone.as_deref() != Some(&phone);
@@ -402,6 +404,7 @@ async fn reconcile_after_commit_error(
 ) -> Result<CommitRecovery> {
     let txn = db.begin().await.c(h!())?;
     lock_integration_identity(&txn).await.c(h!())?;
+    lock_integration_client(&txn, client_name).await.c(h!())?;
     let durable = load_optional_owned(&txn, client_name).await.c(h!())?;
     let recovery = match durable {
         Some(messenger)
@@ -500,7 +503,7 @@ pub async fn delete(
 ) -> Result<()> {
     let client_name = owned_client_name(name);
     let txn = db.begin().await.c(h!())?;
-    lock_integration_identity(&txn).await.c(h!())?;
+    lock_integration_client(&txn, &client_name).await.c(h!())?;
     let messenger = load(&txn, name).await.c(h!())?;
     stop_client(config, messenger.kind, &client_name)
         .await
@@ -554,7 +557,7 @@ pub async fn link(
 ) -> Result<QrRsp> {
     let client_name = owned_client_name(name);
     let txn = db.begin().await.c(h!())?;
-    lock_integration_identity(&txn).await.c(h!())?;
+    lock_integration_client(&txn, &client_name).await.c(h!())?;
     let messenger = load(&txn, name).await.c(h!())?;
     erase_stale_qr_codes(db, &client_name, messenger.kind)
         .await
@@ -585,7 +588,7 @@ pub async fn link(
 pub async fn unlink(db: &DatabaseConnection, name: &str) -> Result<()> {
     let client_name = owned_client_name(name);
     let txn = db.begin().await.c(h!())?;
-    lock_integration_identity(&txn).await.c(h!())?;
+    lock_integration_client(&txn, &client_name).await.c(h!())?;
     let messenger = load(&txn, name).await.c(h!())?;
     let phone = messenger
         .phone
@@ -761,8 +764,11 @@ pub async fn send(
     text: String,
     attachments: Vec<String>,
 ) -> Result<()> {
+    let lock_txn = db.begin().await.c(h!())?;
+    lock_integration_client(&lock_txn, &owned_client_name(name))
+        .await
+        .c(h!())?;
     let txn = db.begin().await.c(h!())?;
-    lock_integration_identity(&txn).await.c(h!())?;
     enqueue(
         &txn,
         name,
@@ -775,7 +781,9 @@ pub async fn send(
     .await
     .c(h!())?;
     txn.commit().await.c(h!())?;
-    tick_after_send(db, name, kind).await.c(h!())
+    tick_after_send(db, name, kind).await.c(h!())?;
+    lock_txn.commit().await.c(h!())?;
+    Ok(())
 }
 
 pub(crate) async fn enqueue(
@@ -940,6 +948,60 @@ where
     ))
     .await
     .c(h!())?;
+    Ok(())
+}
+
+async fn lock_integration_client<C>(db: &C, client_name: &str) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let client_id = load_client_id(db, client_name).await.c(h!())?;
+    lock_integration_clients(db, &[client_id]).await.c(h!())
+}
+
+pub(crate) async fn lock_integration_accounts<C>(
+    db: &C,
+    account_ids: &[i32],
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    if account_ids.is_empty() {
+        return Ok(());
+    }
+    let client_ids = echo_client_lock::Entity::find()
+        .filter(
+            echo_client_lock::Column::AccountId
+                .is_in(account_ids.iter().copied()),
+        )
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|client_lock| client_lock.client_id)
+        .collect::<Vec<_>>();
+    lock_integration_clients(db, &client_ids).await.c(h!())
+}
+
+async fn lock_integration_clients<C>(db: &C, client_ids: &[i32]) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let mut client_ids = client_ids.to_vec();
+    client_ids.sort_unstable();
+    client_ids.dedup();
+    for client_id in client_ids {
+        db.query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select pg_advisory_xact_lock($1, $2)",
+            [
+                MESSENGER_INTEGRATION_OPERATION_LOCK_NAMESPACE.into(),
+                client_id.into(),
+            ],
+        ))
+        .await
+        .c(h!())?;
+    }
     Ok(())
 }
 
