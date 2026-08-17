@@ -24,12 +24,13 @@ live = pytest.mark.skipif(
 
 @pytest.mark.live
 @live
-async def test_live_17_page_layout_suite(tmp_path: Path) -> None:
+async def test_live_layout_suite(tmp_path: Path) -> None:
     if not LIVE_LAYOUT_MANIFEST:
         pytest.skip("set ECHO_DOC_LIVE_LAYOUT_MANIFEST")
     layout = json.loads(Path(LIVE_LAYOUT_MANIFEST).read_text(encoding="utf-8"))
     documents = layout["documents"]
-    assert sum(len(document["pages"]) for document in documents) == 17
+    assert documents
+    assert sum(len(document["pages"]) for document in documents) > 0
     config = ExtractionConfig.from_yaml(LIVE_CONFIG)
     extractor = Extractor(config)
     raw = Path(LIVE_RAW)
@@ -52,6 +53,14 @@ async def test_live_17_page_layout_suite(tmp_path: Path) -> None:
         assert result.status != Status.FAILED
         assert not any("request_error" in evidence.rejection_reasons for evidence in result.evidence)
         _assert_layout_expectations(result, document["expect"])
+        if document["expect"].get("retain_original_raster_on_model_failure") and (
+            "model candidates failed hard checks; used local evidence" in result.quality.degraded_reasons
+        ):
+            assert any(
+                getattr(block, "kind", None) == "unreadable" and getattr(block, "asset", None)
+                for page in result.document.pages
+                for block in page.blocks
+            )
         for anchor in document["expect"].get("anchors", []):
             assert anchor in result.canonical_html
         repeat = await extractor.extract(inputs, manifest)

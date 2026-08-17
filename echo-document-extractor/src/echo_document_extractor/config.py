@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+TEXT_BBOX_MAX_OCR_LINES = 64
+
 
 class EndpointConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
