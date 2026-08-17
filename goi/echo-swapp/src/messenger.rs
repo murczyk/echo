@@ -394,9 +394,13 @@ async fn stop_clients_for_replacement(
     replacement_kind: MessengerKind,
     port: i32,
 ) -> Result<()> {
-    stop_client_process(config, current_kind, client_name)
+    if let Err(err) = stop_client_process(config, current_kind, client_name)
         .await
-        .c(h!())?;
+        .c(h!())
+    {
+        restart_previous_client(config, client_name, current_kind, port).await;
+        return Err(err);
+    }
     if current_kind == replacement_kind {
         return Ok(());
     }
@@ -641,7 +645,7 @@ pub async fn link(
         .await
         .c(h!())?;
     let messenger = load(&txn, name).await.c(h!())?;
-    erase_stale_qr_codes(&txn, &client_name, messenger.kind)
+    erase_stale_qr_codes(db, &client_name, messenger.kind)
         .await
         .c(h!())?;
     start_client(config, messenger.kind, &client_name, messenger.signal_port)
@@ -653,7 +657,7 @@ pub async fn link(
     wait_for_signal_client(messenger.kind, messenger.signal_port)
         .await
         .c(h!())?;
-    persist_is_linked(&txn, &client_name, messenger.kind, false)
+    persist_is_linked(db, &client_name, messenger.kind, false)
         .await
         .c(h!())?;
     let qr_code_base64 = echo_im::link_account(
