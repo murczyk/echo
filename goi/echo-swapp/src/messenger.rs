@@ -759,7 +759,7 @@ pub async fn link(
         .await
         .c(h!())?;
     let messenger = load(&txn, name).await.c(h!())?;
-    erase_stale_qr_codes(db, &client_name, messenger.kind)
+    erase_stale_qr_codes(&txn, &client_name, messenger.kind)
         .await
         .c(h!())?;
     start_client(config, messenger.kind, &client_name, messenger.signal_port)
@@ -771,9 +771,10 @@ pub async fn link(
     wait_for_signal_client(messenger.kind, messenger.signal_port)
         .await
         .c(h!())?;
-    persist_is_linked(db, &client_name, messenger.kind, false)
+    persist_is_linked(&txn, &client_name, messenger.kind, false)
         .await
         .c(h!())?;
+    txn.commit().await.c(h!())?;
     let qr_code_base64 = echo_im::link_account(
         &client_name,
         messenger.kind.message_source(),
@@ -781,7 +782,6 @@ pub async fn link(
     )
     .await
     .c(h!())?;
-    txn.commit().await.c(h!())?;
     Ok(QrRsp { qr_code_base64 })
 }
 
