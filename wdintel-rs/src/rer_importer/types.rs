@@ -1718,10 +1718,12 @@ mod tests {
             "callsign_tokens".to_string(),
             "coords_with_locality".to_string(),
             "device_name".to_string(),
+            "intelligence_reports".to_string(),
             "keyword_tokens".to_string(),
             "message_comments".to_string(),
             "message_uid".to_string(),
             "network_name".to_string(),
+            "parent_messages".to_string(),
             "signal_tokens".to_string(),
             "text_marked".to_string(),
         ]);
