@@ -16,7 +16,7 @@ hardware_profile: split_gpu
 # - timeout_seconds: positive request timeout; default 180.
 # - max_tokens: positive completion-token limit; default 10000.
 # - prompt_version: provenance label for the deployed prompt; default
-#   semantic-html-v1.
+#   semantic-html-v2.
 # - dtype, kv_cache_dtype: optional runtime metadata recorded in provenance.
 # - vision_budget: optional positive image budget used by the Gemma adapter.
 # - temperature: number from 0 through 2. The supported adapters pin NuExtract3
@@ -31,7 +31,7 @@ nu_extract:
   token_env: NUEXTRACT_API_KEY
   timeout_seconds: 180
   max_tokens: 10000
-  prompt_version: semantic-html-v1
+  prompt_version: semantic-html-v2
   dtype: bfloat16
   temperature: 0.2
   seed: 0
@@ -46,7 +46,7 @@ gemma:
   token_env: GEMMA_API_KEY
   timeout_seconds: 180
   max_tokens: 10000
-  prompt_version: semantic-html-v1
+  prompt_version: semantic-html-v2
   dtype: fp8
   kv_cache_dtype: fp8
   vision_budget: 1120

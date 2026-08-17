@@ -452,7 +452,7 @@ class Extractor:
             crop_bbox=bbox,
             source_transform=transform,
             profile=self.config.hardware_profile,
-            prompt_version="crop-conflict-v1" if retry else "semantic-html-v1",
+            prompt_version="crop-conflict-v1" if retry else "semantic-html-v2",
             image_png=image_png,
             retry=retry,
         )

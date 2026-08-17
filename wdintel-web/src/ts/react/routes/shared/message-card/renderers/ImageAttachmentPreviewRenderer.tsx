@@ -44,6 +44,7 @@ import {
   isSupportedOcrImage,
   MediaReprocessAction,
 } from '../attachment-preview/MediaReprocessAction';
+import { MediaSummaryAction } from '../attachment-preview/MediaSummaryPreview';
 
 type StageSize = {
   width: number;
@@ -651,6 +652,11 @@ export function ImageAttachmentPreviewRenderer({
             ocr={ocrStatus}
             active={ocrVisible}
             onClick={() => setOcrVisible((visible) => !visible)}
+          />
+          <MediaSummaryAction
+            status={summaryStatus}
+            active={summaryVisible}
+            onClick={() => setSummaryVisible((visible) => !visible)}
           />
           <ImageCopyAction
             status={copyStatus}

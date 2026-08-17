@@ -19,8 +19,10 @@ from .sanitize import has_fatal_sanitization_reason, sanitize_candidate
 NUEXTRACT_PROMPT = """Transcribe the complete crop in reading order as Markdown with HTML tables.
 Preserve every paragraph, list type, table section, empty cell, rowspan, colspan,
 spelling, punctuation, capitalization, number, coordinate, and mixed Cyrillic/alphanumeric token.
-Never translate, correct, summarize, infer, add, or repeat content. Use [unreadable]
-only for genuinely illegible source text. Return the transcription only."""
+Represent visible non-text imagery as <figure data-image="present"><figcaption>literal
+visual description</figcaption></figure>. Never emit img or invent an image URL. Never
+translate, correct, summarize, infer facts beyond visible content, add, or repeat content.
+Use [unreadable] only for genuinely illegible source text. Return the transcription only."""
 
 GEMMA_END_MARKER = "<!-- ECHO_EXTRACTION_END -->"
 GEMMA_PROMPT = f"""Transcribe the complete crop as bounded semantic HTML using only article,
@@ -258,6 +260,11 @@ def markdown_to_html(value: str) -> str:
         stripped = block.strip()
         if not stripped:
             continue
+        if stripped.casefold().startswith("<figure"):
+            figures = _normalized_figures(stripped)
+            if figures is not None:
+                root.extend(figures)
+                continue
         if stripped.casefold().startswith(("<table", "<article", "<section")):
             try:
                 fragments = html.fragments_fromstring(stripped)
@@ -292,6 +299,38 @@ def markdown_to_html(value: str) -> str:
         paragraph.text = std_html.unescape(stripped)
         root.append(paragraph)
     return html.tostring(root, encoding="unicode", method="html")
+
+
+def _normalized_figures(value: str) -> list[html.HtmlElement] | None:
+    try:
+        fragments = html.fragments_fromstring(value)
+    except (ValueError, etree.ParserError):
+        return None
+    figures = []
+    for fragment in fragments:
+        if isinstance(fragment, str):
+            if fragment.strip():
+                return None
+            continue
+        if fragment.tag.casefold() != "figure" or (fragment.tail and fragment.tail.strip()):
+            return None
+        figure = html.Element("figure", {"data-image": "present"})
+        caption = _figure_caption(fragment)
+        if caption:
+            etree.SubElement(figure, "figcaption").text = caption
+        figures.append(figure)
+    return figures or None
+
+
+def _figure_caption(figure: html.HtmlElement) -> str:
+    captions = figure.xpath("./figcaption")
+    if captions:
+        return " ".join(" ".join(captions[0].itertext()).split())
+    for image in figure.xpath(".//img[@alt]"):
+        caption = " ".join(image.get("alt", "").split())
+        if caption:
+            return caption
+    return ""
 
 
 def _text_content(markup: str) -> str:

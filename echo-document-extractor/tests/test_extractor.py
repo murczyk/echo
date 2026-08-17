@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw
 
 from echo_document_extractor.canonical import blocks_from_html, table_dimensions
 from echo_document_extractor.config import EndpointConfig, ExtractionConfig
-from echo_document_extractor.geometry import _visual_regions
+from echo_document_extractor.geometry import _visual_regions, detect_geometry
 from echo_document_extractor.ingest import RasterPage
 from echo_document_extractor.models import (
     CandidateEvidence,
@@ -84,6 +84,27 @@ def create_image(path: Path) -> None:
     draw.line((10, 80, 290, 80), fill="black", width=2)
     draw.line((150, 10, 150, 170), fill="black", width=2)
     image.save(path)
+
+
+def test_non_rectangular_table_merge_has_unique_cell_and_evidence_ids() -> None:
+    image = Image.new("RGB", (220, 220), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((10, 10, 210, 210), outline="black", width=3)
+    draw.line((110, 110, 110, 210), fill="black", width=3)
+    draw.line((110, 110, 210, 110), fill="black", width=3)
+
+    result = detect_geometry(image, "p1")
+
+    table = next(block for block in result.blocks if isinstance(block, Table))
+    assert [cell.id for cell in table.cells] == [
+        "p1-t1-c1",
+        "p1-t1-c2",
+        "p1-t1-c3",
+        "p1-t1-c4",
+    ]
+    evidence_ids = [item.id for item in result.evidence if isinstance(item, CellEvidence)]
+    assert evidence_ids == [f"geometry-p1-t1-c{index}" for index in range(1, 5)]
+    assert len(evidence_ids) == len(set(evidence_ids))
 
 
 def test_collapses_duplicate_column_aggregates_and_orders_columns() -> None:

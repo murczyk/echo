@@ -240,9 +240,8 @@ export function MediaSummaryAction({
           color={active ? 'primary' : 'default'}
           onClick={onClick}
           sx={{
-            bgcolor: 'background.paper',
-            boxShadow: 1,
             color: active ? 'primary.main' : processing ? 'info.main' : 'text.secondary',
+            '&:hover': { color: active ? 'primary.dark' : 'text.primary' },
           }}
         >
           <DescriptionIcon fontSize="small" />

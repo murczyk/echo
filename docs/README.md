@@ -543,6 +543,12 @@ flowchart LR
     class socket,nlp,iggy,promin,signal,whatsapp,vector,signoz,greptime,s3,wal_timer,wal_check,table_timer,table_reconcile,analytics optional
 ```
 
+Iggy inbox-topic events retain the JSON `[inbox_item_id, message]` shape used
+by the inbox API. The message object is enriched with
+`sigint_callsign_ids`, `sigint_unit_ids`, `sigint_signal_ids`, and
+`sigint_network_freq_ids`; frequency IDs are resolved against the
+interception timestamp and the frequency's active period.
+
 ## Bgworkers
 
 In a packaged live deployment, the API process owns only request-adjacent

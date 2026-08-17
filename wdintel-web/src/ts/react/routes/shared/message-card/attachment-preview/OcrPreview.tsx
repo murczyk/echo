@@ -23,7 +23,7 @@ import { isAbortError } from '../../../../services/api/client';
 import { getMediaOcrStatus } from '../../../../services/api/ocr';
 import type { AttachmentPreviewDownloadItem } from './MessageCardAttachmentPreviewHeader';
 import type { AttachmentPreviewInfoSection } from './MessageCardAttachmentPreviewInfoPopover';
-import { MediaSummaryAction, MediaSummaryOverlay } from './MediaSummaryPreview';
+import { MediaSummaryOverlay } from './MediaSummaryPreview';
 
 const OCR_STATE_LABELS: Record<string, string> = {
   pending: 'У черзі',
@@ -408,23 +408,7 @@ export function OcrSplitPreview({
   );
 
   if (!visible || mediaId == null) {
-    if (summary == null || mediaId == null) return source;
-    return (
-      <Box sx={{ flex: '1 1 auto', minHeight: 0, display: 'flex', position: 'relative' }}>
-        {sourceWithSummary}
-        <Stack
-          direction="row"
-          spacing={0.5}
-          sx={{ position: 'absolute', top: 8, right: 8, zIndex: 4 }}
-        >
-          <MediaSummaryAction
-            status={summary}
-            active={summaryVisible}
-            onClick={() => onSummaryVisibleChange(!summaryVisible)}
-          />
-        </Stack>
-      </Box>
-    );
+    return sourceWithSummary;
   }
   const showSource = mobile ? mobilePane === 'source' : !fullPane;
   const showOcr = mobile ? mobilePane === 'ocr' : true;
@@ -476,11 +460,6 @@ export function OcrSplitPreview({
         spacing={0.5}
         sx={{ position: 'absolute', top: 8, right: 8, zIndex: 2 }}
       >
-        <MediaSummaryAction
-          status={summary}
-          active={summaryVisible}
-          onClick={() => onSummaryVisibleChange(!summaryVisible)}
-        />
         {mobile ? (
           <>
             <Button
