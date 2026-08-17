@@ -255,7 +255,7 @@ def _cells_from_boundaries(
     for position in parent:
         groups.setdefault(find(position), set()).add(position)
     cells = []
-    for index, positions in enumerate(sorted(groups.values(), key=lambda value: min(value))):
+    for positions in sorted(groups.values(), key=lambda value: min(value)):
         rows = [position[0] for position in positions]
         columns = [position[1] for position in positions]
         top_row, bottom_row = min(rows), max(rows)
@@ -284,7 +284,7 @@ def _cells_from_boundaries(
             continue
         cells.append(
             Cell(
-                id=f"{table_id}-c{index + 1}",
+                id=f"{table_id}-c{len(cells) + 1}",
                 row=top_row,
                 column=left_column,
                 rowspan=bottom_row - top_row + 1,
