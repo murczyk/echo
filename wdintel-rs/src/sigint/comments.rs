@@ -1,14 +1,18 @@
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
+use crate::rer_importer::inbox::submit_bl;
+use crate::rer_importer::types::InboxSubmitItem;
 use crate::types::{error, info, warn};
 use crate::types::{Mode, ShortContext};
 use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Utc};
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Expr, Value};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
-    DatabaseConnection, EntityTrait, ExprTrait, FromQueryResult, JoinType,
-    NotSet, QueryFilter, QueryOrder, QuerySelect, RelationTrait, Set,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, DatabaseTransaction, EntityTrait, ExprTrait,
+    FromQueryResult, IntoActiveModel, JoinType, NotSet, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, RelationTrait, Set, Statement,
+    TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -30,6 +34,417 @@ struct CommentCsvRow {
     message_ts: String,
     source_login: String,
     source_organism: String,
+}
+
+const SIGINT_COMMENT_MIGRATION_LOCK_KEY: i64 = 7_421_983_615;
+
+#[derive(Clone, Debug)]
+pub struct LinkedMessageComment {
+    pub parent_signal_message_id: i64,
+    pub signal_message_id: i64,
+    pub comment: String,
+    pub created_at: NaiveDateTime,
+    pub login_id: Option<uuid::Uuid>,
+    pub post_id: Option<i64>,
+    pub legacy_comment_id: Option<i64>,
+}
+
+pub async fn find_linked_message_comments<C>(
+    dbx: &C,
+    parent_signal_message_ids: &[i64],
+) -> Result<Vec<LinkedMessageComment>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if parent_signal_message_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let links = intel_prod::Entity::find()
+        .filter(
+            intel_prod::Column::ParentSignalMessageId
+                .is_in(parent_signal_message_ids.to_vec()),
+        )
+        .order_by_asc(intel_prod::Column::CreatedAt)
+        .order_by_asc(intel_prod::Column::SignalMessageId)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let child_ids = links
+        .iter()
+        .map(|link| link.signal_message_id)
+        .collect::<Vec<_>>();
+
+    let messages = if child_ids.is_empty() {
+        HashMap::new()
+    } else {
+        signal_message::Entity::find()
+            .filter(signal_message::Column::Id.is_in(child_ids.clone()))
+            .filter(signal_message::Column::Deleted.eq(false))
+            .all(dbx)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|message| (message.id, message))
+            .collect::<HashMap<_, _>>()
+    };
+    let inbox_items = if child_ids.is_empty() {
+        HashMap::new()
+    } else {
+        sigint_inbox_item::Entity::find()
+            .filter(sigint_inbox_item::Column::Id.is_in(child_ids))
+            .all(dbx)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|item| (item.id, item))
+            .collect::<HashMap<_, _>>()
+    };
+
+    let mut comments = links
+        .into_iter()
+        .filter_map(|link| {
+            let message = messages.get(&link.signal_message_id)?;
+            let login_id = message
+                .sender
+                .as_deref()
+                .and_then(|sender| uuid::Uuid::parse_str(sender).ok());
+            Some(LinkedMessageComment {
+                parent_signal_message_id: link.parent_signal_message_id,
+                signal_message_id: message.id,
+                comment: message.body.clone().unwrap_or_default(),
+                created_at: message.created_at,
+                login_id,
+                post_id: inbox_items
+                    .get(&message.id)
+                    .and_then(|item| item.post_id),
+                legacy_comment_id: None,
+            })
+        })
+        .collect::<Vec<_>>();
+    let linked_message_ids = comments
+        .iter()
+        .map(|comment| comment.signal_message_id)
+        .collect::<HashSet<_>>();
+    let legacy_comments = sigint_comment::Entity::find()
+        .filter(
+            sigint_comment::Column::SignalMessageId
+                .is_in(parent_signal_message_ids.to_vec()),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    comments.extend(
+        legacy_comments
+            .into_iter()
+            .filter(|comment| {
+                comment
+                    .migrated_signal_message_id
+                    .is_none_or(|id| !linked_message_ids.contains(&id))
+            })
+            .map(|comment| LinkedMessageComment {
+                parent_signal_message_id: comment.signal_message_id,
+                signal_message_id: comment.id,
+                comment: comment.comment,
+                created_at: comment.created_at,
+                login_id: Some(comment.login_id),
+                post_id: comment.sigint_post_id,
+                legacy_comment_id: Some(comment.id),
+            }),
+    );
+    comments
+        .sort_by_key(|comment| (comment.created_at, comment.signal_message_id));
+    Ok(comments)
+}
+
+pub async fn create_linked_message_comment(
+    env: &crate::types::Env,
+    txn: &DatabaseTransaction,
+    parent_signal_message_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+    comment: &str,
+    created_at: Option<DateTime<Utc>>,
+    post_id: Option<i64>,
+) -> Result<i64, AppError> {
+    let sender =
+        crate::sigint::direct_submit::query::ensure_current_user_sender(
+            txn, login,
+        )
+        .await
+        .c(h!())?;
+    let item = InboxSubmitItem {
+        text: Some(comment.to_string()),
+        full_body: None,
+        timestamp: created_at.unwrap_or_else(Utc::now).to_rfc3339(),
+        sender: Some(sender),
+        parse_body_coordinates: false,
+        ..Default::default()
+    };
+    let submitted = submit_bl::submit_inbox_item_with_groups_location_mode(
+        env,
+        txn,
+        None,
+        &[],
+        login,
+        &logins.to_vec(),
+        item,
+        true,
+        true,
+        crate::rer_importer::inbox::bl::InboxLocationSubmitMode::PreserveTyped,
+    )
+    .await
+    .c(h!())?;
+
+    intel_prod::ActiveModel {
+        signal_message_id: Set(submitted.signal_message_id),
+        parent_signal_message_id: Set(parent_signal_message_id),
+        created_at: NotSet,
+    }
+    .insert(txn)
+    .await
+    .c(h!())?;
+
+    if let Some(post_id) = post_id {
+        let mut inbox_item =
+            sigint_inbox_item::Entity::find_by_id(submitted.signal_message_id)
+                .one(txn)
+                .await
+                .c(h!())?
+                .ok_or_else(|| AppError::NotFound)?
+                .into_active_model();
+        inbox_item.post_id = Set(Some(post_id));
+        inbox_item.update(txn).await.c(h!())?;
+    }
+
+    Ok(submitted.signal_message_id)
+}
+
+pub async fn oneoff_migrate_sigint_comments(
+    mode: Mode,
+    ps: &crate::OneoffMigrateSigintCommentsPs,
+) -> Result<(), AppError> {
+    if ps.batch_size == 0 {
+        return Err(AppError::BL {
+            msg: "batch_size must be greater than zero".to_string(),
+        });
+    }
+
+    let env = crate::server::new_env(mode).await.c(h!())?;
+    let batch_size = std::cmp::min(ps.batch_size, i64::MAX as u64);
+    if ps.dry_run {
+        let pending = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
+            .count(&env.dbx)
+            .await
+            .c(h!())?;
+        info!(
+            "oneoff_migrate_sigint_comments_to_messages dry run: pending={pending}"
+        );
+        return Ok(());
+    }
+    let mut migrated = 0_u64;
+
+    loop {
+        let txn = env.dbx.begin().await.c(h!())?;
+        lock_sigint_comment_migration(&txn).await.c(h!())?;
+        let comments = load_pending_comments(&txn, batch_size).await?;
+        if comments.is_empty() {
+            txn.commit().await.c(h!())?;
+            break;
+        }
+
+        let batch_count = comments.len() as u64;
+        migrate_comment_batch(env.as_ref(), &txn, comments)
+            .await
+            .c(h!())?;
+        migrated += batch_count;
+        txn.commit().await.c(h!())?;
+    }
+
+    info!(
+        "oneoff_migrate_sigint_comments_to_messages completed: processed={migrated} dry_run={}",
+        ps.dry_run
+    );
+    Ok(())
+}
+
+async fn lock_sigint_comment_migration(
+    txn: &DatabaseTransaction,
+) -> Result<(), sea_orm::DbErr> {
+    txn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select pg_advisory_xact_lock($1)",
+        [SIGINT_COMMENT_MIGRATION_LOCK_KEY.into()],
+    ))
+    .await
+    .map(|_| ())
+}
+
+async fn load_pending_comments<C>(
+    dbx: &C,
+    batch_size: u64,
+) -> Result<Vec<sigint_comment::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(sigint_comment::Entity::find()
+        .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
+        .order_by_asc(sigint_comment::Column::Id)
+        .limit(batch_size)
+        .all(dbx)
+        .await
+        .c(h!())?)
+}
+
+async fn migrate_comment_batch(
+    env: &crate::types::Env,
+    txn: &DatabaseTransaction,
+    comments: Vec<sigint_comment::Model>,
+) -> Result<(), AppError> {
+    let mut links = Vec::with_capacity(comments.len());
+    let mut migrated_comments = Vec::with_capacity(comments.len());
+    let mut senders: HashMap<uuid::Uuid, String> = HashMap::new();
+
+    for comment in comments {
+        let sender = if let Some(sender) = senders.get(&comment.login_id) {
+            sender.clone()
+        } else {
+            let sender =
+                crate::sigint::direct_submit::query::ensure_current_user_sender(
+                    txn,
+                    &comment.login_id,
+                )
+                .await
+                .c(h!())?;
+            senders.insert(comment.login_id, sender.clone());
+            sender
+        };
+        let author_logins = vec![comment.login_id];
+        let timestamp = comment.created_at.and_utc().to_rfc3339();
+        let item = InboxSubmitItem {
+            text: Some(comment.comment.clone()),
+            full_body: None,
+            timestamp,
+            sender: Some(sender),
+            parse_body_coordinates: false,
+            ..Default::default()
+        };
+        let submitted = submit_bl::submit_inbox_item_with_groups_location_mode(
+            env,
+            txn,
+            None,
+            &[],
+            &comment.login_id,
+            &author_logins,
+            item,
+            true,
+            true,
+            crate::rer_importer::inbox::bl::InboxLocationSubmitMode::PreserveTyped,
+        )
+        .await
+        .c(h!())?;
+        links.push(intel_prod::ActiveModel {
+            signal_message_id: Set(submitted.signal_message_id),
+            parent_signal_message_id: Set(comment.signal_message_id),
+            created_at: NotSet,
+        });
+        migrated_comments.push((
+            comment.id,
+            submitted.signal_message_id,
+            comment.sigint_post_id,
+        ));
+    }
+
+    intel_prod::Entity::insert_many(links)
+        .exec(txn)
+        .await
+        .c(h!())?;
+    update_migrated_comment_posts(txn, &migrated_comments).await?;
+    update_migrated_comment_markers(txn, &migrated_comments).await?;
+    Ok(())
+}
+
+async fn update_migrated_comment_posts(
+    txn: &DatabaseTransaction,
+    migrated_comments: &[(i64, i64, Option<i64>)],
+) -> Result<(), AppError> {
+    let posts = migrated_comments
+        .iter()
+        .filter_map(|(_, signal_message_id, post_id)| {
+            post_id.map(|post_id| (*signal_message_id, post_id))
+        })
+        .collect::<Vec<_>>();
+    if posts.is_empty() {
+        return Ok(());
+    }
+
+    let mut values = Vec::<Value>::with_capacity(posts.len() * 2);
+    let cases = posts
+        .iter()
+        .enumerate()
+        .map(|(index, (signal_message_id, post_id))| {
+            let id_placeholder = index * 2 + 1;
+            let post_placeholder = id_placeholder + 1;
+            values.push((*signal_message_id).into());
+            values.push((*post_id).into());
+            format!("WHEN ${id_placeholder} THEN ${post_placeholder}")
+        })
+        .collect::<Vec<_>>();
+    let ids = (0..posts.len())
+        .map(|index| format!("${}", index * 2 + 1))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "UPDATE sigint_inbox_item SET post_id = CASE id {} ELSE post_id END WHERE id IN ({ids})",
+        cases.join(" ")
+    );
+    txn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        values,
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn update_migrated_comment_markers(
+    txn: &DatabaseTransaction,
+    migrated_comments: &[(i64, i64, Option<i64>)],
+) -> Result<(), AppError> {
+    if migrated_comments.is_empty() {
+        return Ok(());
+    }
+
+    let mut values = Vec::<Value>::with_capacity(migrated_comments.len() * 2);
+    let cases = migrated_comments
+        .iter()
+        .enumerate()
+        .map(|(index, (comment_id, signal_message_id, _))| {
+            let comment_placeholder = index * 2 + 1;
+            let message_placeholder = comment_placeholder + 1;
+            values.push((*comment_id).into());
+            values.push((*signal_message_id).into());
+            format!("WHEN ${comment_placeholder} THEN ${message_placeholder}")
+        })
+        .collect::<Vec<_>>();
+    let ids = (0..migrated_comments.len())
+        .map(|index| format!("${}", index * 2 + 1))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "UPDATE sigint_comment SET migrated_signal_message_id = CASE id {} ELSE migrated_signal_message_id END WHERE id IN ({ids})",
+        cases.join(" ")
+    );
+    txn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        values,
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 pub async fn load_blacklist<C>(dbx: &C) -> Result<Vec<String>, AppError>
@@ -825,6 +1240,7 @@ pub async fn oneoff_import_sigint_comments(
                 comment: Set(row.comment.clone()),
                 created_at: NotSet,
                 sigint_post_id: NotSet,
+                migrated_signal_message_id: NotSet,
             };
 
             match active.insert(&dbx).await {

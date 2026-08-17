@@ -1859,7 +1859,7 @@ where
             m_inner_expr.map(|x| x.or(y.clone())).or(Some(y.clone()));
     }
     if or_with_extended_form == &Some(true) {
-        let comment_exists = sigint_comment::Entity::find()
+        let legacy_comment_exists = sigint_comment::Entity::find()
             .select_only()
             .expr(Expr::value(1))
             .filter(
@@ -1869,10 +1869,42 @@ where
                 ))
                 .equals((signal_message::Entity, signal_message::Column::Id)),
             )
+            .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
             .filter(sigint_comment::Column::Comment.eq("").not())
             .into_query();
+        let linked_message = Alias::new("linked_message");
+        let linked_comment_exists = intel_prod::Entity::find()
+            .select_only()
+            .expr(Expr::value(1))
+            .join_as(
+                JoinType::InnerJoin,
+                intel_prod::Relation::SignalMessage1.def(),
+                linked_message.clone(),
+            )
+            .filter(
+                Expr::col((
+                    intel_prod::Entity,
+                    intel_prod::Column::ParentSignalMessageId,
+                ))
+                .equals((signal_message::Entity, signal_message::Column::Id)),
+            )
+            .filter(
+                Expr::col((
+                    linked_message.clone(),
+                    signal_message::Column::Deleted,
+                ))
+                .eq(false),
+            )
+            .filter(
+                Expr::col((linked_message, signal_message::Column::Body))
+                    .ne(""),
+            )
+            .into_query();
 
-        q = q.filter(Expr::exists(comment_exists));
+        q = q.filter(
+            Expr::exists(legacy_comment_exists)
+                .or(Expr::exists(linked_comment_exists)),
+        );
     }
 
     if let Some(ref inner_expr) = m_inner_expr {
@@ -6092,38 +6124,37 @@ pub async fn batch_message_comments_bl(
 ) -> Result<MessageComments, AppError> {
     let message_ids = accessible_message_ids(dbx, login, message_ids).await?;
     let editable_comment_logins = editable_comment_logins(dbx, login).await?;
-    let comments = sigint_comment::Entity::find()
-        .find_also_related(sigint_post::Entity)
-        .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
-        .order_by_asc(sigint_comment::Column::CreatedAt)
-        .all(dbx)
-        .await
-        .c(h!())?;
+    let comments = crate::sigint::comments::find_linked_message_comments(
+        dbx,
+        &message_ids,
+    )
+    .await?;
     let login_names = crate::users::login_names_by_ids(
         dbx,
         comments
             .iter()
-            .map(|(comment, _)| comment.login_id)
+            .filter_map(|comment| comment.login_id)
             .collect(),
     )
     .await?;
     let mut res: BTreeMap<i64, Vec<MessageComment>> = BTreeMap::new();
-    for (comment, sigint_post) in comments {
-        if is_editable_comment_for_logins(
-            &comment,
-            &sigint_post,
-            &editable_comment_logins,
-        ) {
+    let post_names = linked_comment_post_names(dbx, &comments).await?;
+    for comment in comments {
+        if comment.post_id.is_none()
+            && comment.login_id.is_some_and(|login_id| {
+                editable_comment_logins.contains(&login_id)
+            })
+        {
             continue;
         }
-        let message_id = comment.signal_message_id;
-        res.entry(message_id)
-            .or_default()
-            .push(message_comment_from_model(
+        let message_id = comment.parent_signal_message_id;
+        res.entry(message_id).or_default().push(
+            message_comment_from_linked_message(
                 comment,
-                sigint_post,
                 &login_names,
-            ));
+                &post_names,
+            ),
+        );
     }
     let data = res
         .iter()
@@ -6133,6 +6164,47 @@ pub async fn batch_message_comments_bl(
         })
         .collect();
     Ok(MessageComments { data })
+}
+
+async fn linked_comment_post_names(
+    dbx: &DatabaseConnection,
+    comments: &[crate::sigint::comments::LinkedMessageComment],
+) -> Result<HashMap<i64, String>, AppError> {
+    let post_ids = comments
+        .iter()
+        .filter_map(|comment| comment.post_id)
+        .collect::<Vec<_>>();
+    if post_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    Ok(sigint_post::Entity::find()
+        .filter(sigint_post::Column::Id.is_in(post_ids))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|post| (post.id, post.name))
+        .collect())
+}
+
+fn message_comment_from_linked_message(
+    comment: crate::sigint::comments::LinkedMessageComment,
+    login_names: &HashMap<uuid::Uuid, String>,
+    post_names: &HashMap<i64, String>,
+) -> MessageComment {
+    let login = comment
+        .login_id
+        .and_then(|login_id| login_names.get(&login_id).cloned())
+        .unwrap_or_default();
+    MessageComment {
+        message_id: comment.parent_signal_message_id,
+        id: comment.signal_message_id,
+        comment: comment.comment,
+        login,
+        sigint_post_name: comment
+            .post_id
+            .and_then(|post_id| post_names.get(&post_id).cloned()),
+    }
 }
 
 async fn editable_comment_logins(
@@ -6148,28 +6220,6 @@ async fn editable_comment_logins(
     Ok(logins)
 }
 
-fn is_editable_comment_for_logins(
-    comment: &sigint_comment::Model,
-    sigint_post: &Option<sigint_post::Model>,
-    logins: &HashSet<uuid::Uuid>,
-) -> bool {
-    sigint_post.is_none() && logins.contains(&comment.login_id)
-}
-
-fn message_comment_from_model(
-    comment: sigint_comment::Model,
-    sigint_post: Option<sigint_post::Model>,
-    login_names: &HashMap<uuid::Uuid, String>,
-) -> MessageComment {
-    MessageComment {
-        message_id: comment.signal_message_id,
-        id: comment.id,
-        comment: comment.comment,
-        login: login_names[&comment.login_id].clone(),
-        sigint_post_name: sigint_post.map(|sigint_post| sigint_post.name),
-    }
-}
-
 async fn accessible_message_ids(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
@@ -6183,19 +6233,48 @@ async fn accessible_message_ids(
         crate::messenger::group::get_identity_sigint_groups(dbx, login)
             .await
             .c(h!())?;
+    let organism_logins =
+        crate::users::get_organism_login_ids_by_id(dbx, login)
+            .await
+            .c(h!())?;
+    let owner_logins = organism_logins
+        .into_iter()
+        .chain(std::iter::once(*login))
+        .map(|login| login.to_string())
+        .collect::<Vec<_>>();
+    let has_group = Query::select()
+        .expr(Expr::value(1))
+        .from(signal_message_group::Entity)
+        .and_where(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .to_owned();
+    let owner_access = Condition::all()
+        .add(signal_message::Column::DatasourceGroupId.is_null())
+        .add(Expr::exists(has_group).not())
+        .add(signal_message::Column::Sender.is_in(owner_logins));
 
     Ok(signal_message::Entity::find()
         .select_only()
         .distinct()
         .column(signal_message::Column::Id)
         .join(
-            JoinType::InnerJoin,
+            JoinType::LeftJoin,
             signal_message::Relation::SignalMessageGroup.def(),
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()))
         .filter(
-            signal_message_group::Column::GroupMasterKey.eq_any(sigint_groups),
+            Condition::any()
+                .add(
+                    signal_message_group::Column::GroupMasterKey
+                        .eq_any(sigint_groups),
+                )
+                .add(owner_access),
         )
         .into_tuple::<i64>()
         .all(dbx)
@@ -6217,36 +6296,35 @@ pub async fn message_comments(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
-    let comments = sigint_comment::Entity::find()
-        .find_also_related(sigint_post::Entity)
-        .filter(sigint_comment::Column::SignalMessageId.eq(req.message_id))
-        .order_by_asc(sigint_comment::Column::CreatedAt)
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
+    let comments = crate::sigint::comments::find_linked_message_comments(
+        &env.dbx,
+        &[req.message_id],
+    )
+    .await?;
     let login_names = crate::users::login_names_by_ids(
         &env.dbx,
         comments
             .iter()
-            .map(|(comment, _)| comment.login_id)
+            .filter_map(|comment| comment.login_id)
             .collect(),
     )
     .await?;
     let editable_comment_logins =
         editable_comment_logins(&env.dbx, &login).await?;
+    let post_names = linked_comment_post_names(&env.dbx, &comments).await?;
     let mut res = vec![];
-    for (comment, sigint_post) in comments {
-        if is_editable_comment_for_logins(
-            &comment,
-            &sigint_post,
-            &editable_comment_logins,
-        ) {
+    for comment in comments {
+        if comment.post_id.is_none()
+            && comment.login_id.is_some_and(|login_id| {
+                editable_comment_logins.contains(&login_id)
+            })
+        {
             continue;
         }
-        res.push(message_comment_from_model(
+        res.push(message_comment_from_linked_message(
             comment,
-            sigint_post,
             &login_names,
+            &post_names,
         ));
     }
     Ok(Json(res))

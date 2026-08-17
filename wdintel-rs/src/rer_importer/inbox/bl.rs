@@ -768,11 +768,10 @@ pub async fn aggregate_to_inbox_messages(
                 highlight_searchres: req.highlight_searchres,
             },
         )?;
-        let m_comment =
-            find_editable_sigint_comment_by_signal_message_id_and_logins(
-                &env.dbx, message.id, login, logins,
-            )
-            .await?;
+        let m_comment = find_editable_linked_message_comment(
+            &env.dbx, message.id, login, logins,
+        )
+        .await?;
         let location = format_inbox_message_location(
             message.location,
             message.location_v2,
@@ -863,6 +862,121 @@ fn comment_ownership_logins(
     res
 }
 
+pub(crate) async fn find_editable_linked_message_comment<C>(
+    db: &C,
+    item_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+) -> Result<Option<crate::sigint::comments::LinkedMessageComment>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let owner_logins = comment_ownership_logins(login, logins);
+    Ok(
+        crate::sigint::comments::find_linked_message_comments(db, &[item_id])
+            .await
+            .c(h!())?
+            .into_iter()
+            .filter(|comment| {
+                comment.post_id.is_none()
+                    && comment.login_id.is_some_and(|login_id| {
+                        owner_logins.contains(&login_id)
+                    })
+            })
+            .min_by_key(|comment| {
+                (
+                    comment.login_id != Some(*login),
+                    comment.created_at,
+                    comment.signal_message_id,
+                )
+            }),
+    )
+}
+
+pub(crate) async fn upsert_editable_linked_message_comment(
+    db: &DatabaseTransaction,
+    env: &Env,
+    item_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+    comment: &str,
+) -> Result<(), AppError> {
+    if let Some(existing) =
+        find_editable_linked_message_comment(db, item_id, login, logins)
+            .await
+            .c(h!())?
+    {
+        if let Some(legacy_comment_id) = existing.legacy_comment_id {
+            let mut legacy_comment =
+                sigint_comment::Entity::find_by_id(legacy_comment_id)
+                    .one(db)
+                    .await
+                    .c(h!())?
+                    .ok_or(AppError::NotFound)?
+                    .into_active_model();
+            legacy_comment.comment = Set(comment.to_string());
+            legacy_comment.update(db).await.c(h!())?;
+        } else {
+            let mut message =
+                signal_message::Entity::find_by_id(existing.signal_message_id)
+                    .one(db)
+                    .await
+                    .c(h!())?
+                    .ok_or(AppError::NotFound)?
+                    .into_active_model();
+            message.body = Set(Some(comment.to_string()));
+            message.update(db).await.c(h!())?;
+        }
+    } else {
+        crate::sigint::comments::create_linked_message_comment(
+            env, db, item_id, login, logins, comment, None, None,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn delete_editable_linked_message_comments<C>(
+    db: &C,
+    item_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let owner_logins = comment_ownership_logins(login, logins);
+    let comments =
+        crate::sigint::comments::find_linked_message_comments(db, &[item_id])
+            .await
+            .c(h!())?;
+    for comment in comments.into_iter().filter(|comment| {
+        comment.post_id.is_none()
+            && comment
+                .login_id
+                .is_some_and(|login_id| owner_logins.contains(&login_id))
+    }) {
+        if let Some(legacy_comment_id) = comment.legacy_comment_id {
+            sigint_comment::Entity::delete_by_id(legacy_comment_id)
+                .exec(db)
+                .await
+                .c(h!())?;
+        } else {
+            let mut message =
+                signal_message::Entity::find_by_id(comment.signal_message_id)
+                    .one(db)
+                    .await
+                    .c(h!())?
+                    .ok_or(AppError::NotFound)?
+                    .into_active_model();
+            message.deleted = Set(true);
+            message.update(db).await.c(h!())?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) async fn find_editable_sigint_comments_by_signal_message_id_and_logins<
     'a,
     'async_trait,
@@ -943,6 +1057,7 @@ where
             comment: Set(comment.to_string()),
             created_at: NotSet,
             sigint_post_id: NotSet,
+            migrated_signal_message_id: NotSet,
         }
         .insert(db)
         .await
@@ -957,29 +1072,15 @@ where
         comment: Set(comment.to_string()),
         created_at: NotSet,
         sigint_post_id: NotSet,
+        migrated_signal_message_id: Set(
+            comment_to_update.migrated_signal_message_id
+        ),
     }
     .update(db)
     .await
     .c(h!())?;
 
     comments.remove(0);
-    delete_sigint_comments(db, comments).await
-}
-
-pub(crate) async fn delete_editable_sigint_comments<'a, 'async_trait, C>(
-    db: &'a C,
-    item_id: i64,
-    login: &uuid::Uuid,
-    logins: &[uuid::Uuid],
-) -> Result<(), AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let comments =
-        find_editable_sigint_comments_by_signal_message_id_and_logins(
-            db, item_id, login, logins,
-        )
-        .await?;
     delete_sigint_comments(db, comments).await
 }
 
@@ -1002,6 +1103,24 @@ where
         .await
         .c(h!())?;
     Ok(())
+}
+
+#[allow(dead_code)]
+pub(crate) async fn delete_editable_sigint_comments<'a, 'async_trait, C>(
+    db: &'a C,
+    item_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let comments =
+        find_editable_sigint_comments_by_signal_message_id_and_logins(
+            db, item_id, login, logins,
+        )
+        .await?;
+    delete_sigint_comments(db, comments).await
 }
 
 pub(crate) async fn find_sigint_comment_by_signal_message_id_and_logins(

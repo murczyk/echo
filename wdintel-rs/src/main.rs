@@ -388,6 +388,16 @@ pub struct OneoffImportSigintCommentsPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffMigrateSigintCommentsPs {
+    /// Number of comments processed in one transaction.
+    #[arg(long, default_value_t = 500)]
+    pub batch_size: u64,
+    /// Only report pending comments without creating messages.
+    #[arg(long, action)]
+    pub dry_run: bool,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffTagMessagesReportPs {
     /// Start date (inclusive). Format: `YYYY-MM-DD`.
     #[arg(long)]
@@ -866,6 +876,7 @@ enum Cmd {
     OneoffExportSigintComments(OneoffExportSigintCommentsPs),
     OneoffExportCommentedMessages(OneoffExportCommentedMessagesPs),
     OneoffImportSigintComments(OneoffImportSigintCommentsPs),
+    OneoffMigrateSigintComments(OneoffMigrateSigintCommentsPs),
     OneoffReviewParsedSigintComments(OneoffReviewParsedSigintCommentsPs),
     OneoffTagMessagesReport(OneoffTagMessagesReportPs),
     OneoffEtalonkaReportNetworksFromRerAnalysis(
@@ -1473,6 +1484,9 @@ async fn async_main(
         }
         Cmd::OneoffImportSigintComments(ps) => {
             sigint::comments::oneoff_import_sigint_comments(mode, &ps).await
+        }
+        Cmd::OneoffMigrateSigintComments(ps) => {
+            sigint::comments::oneoff_migrate_sigint_comments(mode, &ps).await
         }
         Cmd::OneoffReviewParsedSigintComments(ps) => {
             sigint::comment_review_tui::run_comment_review_tui(mode, &ps).await

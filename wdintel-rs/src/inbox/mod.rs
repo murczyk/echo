@@ -698,6 +698,7 @@ where
             comment: Set(text),
             created_at: NotSet,
             sigint_post_id: Set(sigint_post_id),
+            migrated_signal_message_id: NotSet,
         }
         .insert(txn)
         .await

@@ -285,7 +285,7 @@ async fn delete_cleared_edit_comment(
     {
         return Ok(());
     }
-    super::delete_editable_sigint_comments(
+    super::delete_editable_linked_message_comments(
         txn,
         signal_message_id,
         login,
