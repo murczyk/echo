@@ -3,11 +3,17 @@
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { SignalGroupEntry } from '../../../../../Bindings';
 import type { IntelligenceReportSummary } from '../intelligence-reports';
 import { MessageCardIntelligenceReports } from './MessageCardIntelligenceReports';
+
+const inboxMessageMocks = vi.hoisted(() => ({ fetchMessagesByIds: vi.fn() }));
+
+vi.mock('../../../services/api/inbox-messages', () => ({
+  fetchMessagesByIds: inboxMessageMocks.fetchMessagesByIds,
+}));
 
 const groupInfos = {
   original: { masterKey: 'original', name: 'Група оригіналу' } as SignalGroupEntry,
@@ -50,9 +56,26 @@ describe('MessageCardIntelligenceReports', () => {
     container?.remove();
     container = null;
     document.body.innerHTML = '';
+    inboxMessageMocks.fetchMessagesByIds.mockReset();
   });
 
   async function renderSummaries() {
+    inboxMessageMocks.fetchMessagesByIds.mockImplementation(async ([id]: number[]) => {
+      const summary = id === parent.id ? parent : report;
+      return [
+        [
+          id,
+          {
+            text: id === report.id ? 'Оновлений текст розвіддонесення' : summary.text,
+            media: Array.from({ length: summary.attachmentsCount }),
+            timestamp: summary.timestamp,
+            date: summary.date,
+            time: summary.time,
+            groupMasterKey: summary.groupMasterKey,
+          },
+        ],
+      ];
+    });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -115,7 +138,8 @@ describe('MessageCardIntelligenceReports', () => {
       .querySelector('[data-testid="message-summary-preview-91"]')
       ?.closest('[role="tooltip"]');
     expect(reportPreview?.textContent).toContain('Розвіддонесення');
-    expect(reportPreview?.textContent).toContain('Повний текст розвіддонесення');
+    expect(reportPreview?.textContent).toContain('Оновлений текст розвіддонесення');
+    expect(reportPreview?.textContent).not.toContain('Повний текст розвіддонесення');
     expect(reportPreview?.textContent).toContain('Група донесення');
     expect(reportPreview?.textContent).toContain('2026-08-15 09:30');
     expect(reportPreview?.textContent).toContain('Вкладення2');

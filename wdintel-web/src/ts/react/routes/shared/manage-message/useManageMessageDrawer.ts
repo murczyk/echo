@@ -35,7 +35,7 @@ import { MAX_MESSAGE_ATTACHMENTS, useMessageUppy } from './useMessageUppy';
 import { useMessageParser } from './useMessageParser';
 import { useMessageSubmit } from './useMessageSubmit';
 import { isManageMessageSubmitEligible } from './manage-message-submit-eligibility';
-import { getParentMessages, summarizeIntelligenceMessage } from '../intelligence-reports';
+import { getAccessibleParentMessages, summarizeIntelligenceMessage } from '../intelligence-reports';
 
 export type UseManageMessageDrawerProps = {
   open: boolean;
@@ -69,7 +69,7 @@ export function useManageMessageDrawer({
   const reportParents = isPresent(reportSource)
     ? [summarizeIntelligenceMessage(reportSource.id, reportSource.message)]
     : isPresent(editTarget)
-      ? getParentMessages(editTarget.message)
+      ? getAccessibleParentMessages(editTarget.message)
       : [];
   const reportParentIds = reportParents.map(({ id }) => id);
   const reportParentIdsKey = reportParentIds.join(',');

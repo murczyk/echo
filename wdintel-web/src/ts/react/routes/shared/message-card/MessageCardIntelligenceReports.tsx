@@ -1,9 +1,15 @@
 import EditIcon from '@mui/icons-material/Edit';
 import dayjs from 'dayjs';
+import { useEffect, useState, type ReactElement } from 'react';
 
 import type { SignalGroupEntry } from '../../../../../Bindings';
+import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
+import { fetchMessagesByIds } from '../../../services/api/inbox-messages';
 import { APP_TIME_ZONE } from '../../../utils/misc';
-import type { IntelligenceReportSummary } from '../intelligence-reports';
+import {
+  summarizeIntelligenceMessage,
+  type IntelligenceReportSummary,
+} from '../intelligence-reports';
 import { MessageSummaryPreview } from './MessageSummaryPreview';
 
 function reportTime(report: IntelligenceReportSummary): string | null {
@@ -58,6 +64,53 @@ function MessageSummaryDetails({
   );
 }
 
+function RefreshableMessageSummaryPreview({
+  summary,
+  label,
+  groupInfos,
+  children,
+}: {
+  summary: IntelligenceReportSummary;
+  label: string;
+  groupInfos: Record<string, SignalGroupEntry>;
+  children: (currentSummary: IntelligenceReportSummary) => ReactElement;
+}) {
+  const [currentSummary, setCurrentSummary] = useState(summary);
+  const { notify } = useOptionalPowerSnackbar();
+
+  useEffect(() => setCurrentSummary(summary), [summary]);
+
+  const refreshSummary = async () => {
+    try {
+      const [message] = await fetchMessagesByIds([summary.id]);
+      if (!message) throw new Error('Пов’язане повідомлення не знайдено.');
+      setCurrentSummary(summarizeIntelligenceMessage(message[0], message[1]));
+      return true;
+    } catch (error) {
+      notify({
+        severity: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Не вдалося оновити попередній перегляд повідомлення.',
+      });
+      return false;
+    }
+  };
+  const info = messageSummaryInfo(currentSummary, groupInfos);
+
+  return (
+    <MessageSummaryPreview
+      summary={currentSummary}
+      label={label}
+      {...info}
+      onBeforeOpen={refreshSummary}
+    >
+      {children(currentSummary)}
+    </MessageSummaryPreview>
+  );
+}
+
 export function MessageCardIntelligenceReports({
   reports,
   parents,
@@ -75,64 +128,75 @@ export function MessageCardIntelligenceReports({
   return (
     <div className="flex min-w-0 flex-col items-start gap-2" aria-label="Пов’язані повідомлення">
       {parents.map((parent) => (
-        <MessageSummaryPreview
+        <RefreshableMessageSummaryPreview
           key={parent.id}
           summary={parent}
           label="Оригінальне повідомлення"
-          {...messageSummaryInfo(parent, groupInfos)}
+          groupInfos={groupInfos}
         >
-          <article
-            className="w-fit max-w-full min-w-0 border-l-4 border-solid border-(--color-divider) py-1 pl-2"
-            aria-label="Оригінальне повідомлення"
-            tabIndex={parent.isAccessible && !parent.isDeleted ? 0 : undefined}
-          >
-            <MessageSummaryDetails
-              summary={parent}
-              label="Оригінальне повідомлення"
-              groupInfos={groupInfos}
-              editable={false}
-            />
-          </article>
-        </MessageSummaryPreview>
+          {(currentParent) => (
+            <article
+              className="w-fit max-w-full min-w-0 border-l-4 border-solid border-(--color-divider) py-1 pl-2"
+              aria-label="Оригінальне повідомлення"
+              tabIndex={currentParent.isAccessible && !currentParent.isDeleted ? 0 : undefined}
+            >
+              <MessageSummaryDetails
+                summary={currentParent}
+                label="Оригінальне повідомлення"
+                groupInfos={groupInfos}
+                editable={false}
+              />
+            </article>
+          )}
+        </RefreshableMessageSummaryPreview>
       ))}
       {visibleReports.map((report) => {
-        const editReport = report.isAccessible && !report.isDeleted ? onEdit : undefined;
-
         return (
-          <MessageSummaryPreview
+          <RefreshableMessageSummaryPreview
             key={report.id}
             summary={report}
             label="Розвіддонесення"
-            {...messageSummaryInfo(report, groupInfos)}
+            groupInfos={groupInfos}
           >
-            <article
-              className="w-fit max-w-full min-w-0 border-l-4 border-solid border-(--color-divider) py-1 pl-2"
-              tabIndex={report.isAccessible && !report.isDeleted && !editReport ? 0 : undefined}
-            >
-              {editReport ? (
-                <button
-                  type="button"
-                  className="block w-full min-w-0 cursor-pointer border-0 bg-transparent p-0 text-left text-inherit"
-                  aria-label="Редагувати розвіддонесення"
-                  onClick={() => editReport(report.id)}
+            {(currentReport) => {
+              const editReport =
+                currentReport.isAccessible && !currentReport.isDeleted ? onEdit : undefined;
+
+              return (
+                <article
+                  className="w-fit max-w-full min-w-0 border-l-4 border-solid border-(--color-divider) py-1 pl-2"
+                  tabIndex={
+                    currentReport.isAccessible && !currentReport.isDeleted && !editReport
+                      ? 0
+                      : undefined
+                  }
                 >
-                  <MessageSummaryDetails
-                    summary={report}
-                    label="Розвіддонесення"
-                    groupInfos={groupInfos}
-                    editable
-                  />
-                </button>
-              ) : (
-                <MessageSummaryDetails
-                  summary={report}
-                  label="Розвіддонесення"
-                  groupInfos={groupInfos}
-                  editable={false}
-                />
-              )}
-            </article>
-          </MessageSummaryPreview>
+                  {editReport ? (
+                    <button
+                      type="button"
+                      className="block w-full min-w-0 cursor-pointer border-0 bg-transparent p-0 text-left text-inherit"
+                      aria-label="Редагувати розвіддонесення"
+                      onClick={() => editReport(currentReport.id)}
+                    >
+                      <MessageSummaryDetails
+                        summary={currentReport}
+                        label="Розвіддонесення"
+                        groupInfos={groupInfos}
+                        editable
+                      />
+                    </button>
+                  ) : (
+                    <MessageSummaryDetails
+                      summary={currentReport}
+                      label="Розвіддонесення"
+                      groupInfos={groupInfos}
+                      editable={false}
+                    />
+                  )}
+                </article>
+              );
+            }}
+          </RefreshableMessageSummaryPreview>
         );
       })}
     </div>

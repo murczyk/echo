@@ -24,10 +24,14 @@ export function getParentMessages(message: InboxMessage): InboxMessageSummary[] 
   return message.parentMessages ?? [];
 }
 
+export function getAccessibleParentMessages(message: InboxMessage): InboxMessageSummary[] {
+  return getParentMessages(message).filter((parent) => parent.isAccessible && !parent.isDeleted);
+}
+
 export function getIntelligenceReports(message: InboxMessage): InboxMessageSummary[] {
   return message.intelligenceReports ?? [];
 }
 
 export function isIntelligenceReport(message: InboxMessage): boolean {
-  return getParentMessages(message).length > 0;
+  return getAccessibleParentMessages(message).length > 0;
 }

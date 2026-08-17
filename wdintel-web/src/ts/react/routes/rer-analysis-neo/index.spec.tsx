@@ -884,7 +884,10 @@ describe('RerAnalysisNeoPage', () => {
     const page = buildPage();
     page.editorMessage = {
       id: 91,
-      message: { messageUid: 'report-91', parentMessages: [{ id: 42 }] } as never,
+      message: {
+        messageUid: 'report-91',
+        parentMessages: [{ id: 42, isAccessible: true, isDeleted: false }],
+      } as never,
     };
     useRerAnalysisNeoPageMock.mockReturnValueOnce(page);
 
@@ -908,6 +911,38 @@ describe('RerAnalysisNeoPage', () => {
     expect(notifyMock).toHaveBeenCalledWith({
       message: 'Розвіддонесення успішно видалено.',
       severity: 'success',
+    });
+
+    await act(async () => root.unmount());
+  });
+
+  it('routes a forwarded report with an inaccessible parent through regular message editing', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const page = buildPage();
+    page.editorMessage = {
+      id: 91,
+      message: {
+        messageUid: 'forwarded-report-91',
+        parentMessages: [{ id: 42, isAccessible: false, isDeleted: false }],
+      } as never,
+    };
+    useRerAnalysisNeoPageMock.mockReturnValueOnce(page);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    const drawer = manageMessageDrawerPropsHistory.at(-1);
+    expect(drawer?.onSubmitEdit).toBeTypeOf('function');
+    await act(async () => {
+      await drawer?.onSubmitEdit?.(91, { messageUid: 'forwarded-report-91-updated' });
+    });
+
+    expect(page.saveEditor).toHaveBeenCalledWith({
+      messageUid: 'forwarded-report-91-updated',
     });
 
     await act(async () => root.unmount());

@@ -8,6 +8,7 @@ import {
   useState,
   type FocusEventHandler,
   type MouseEventHandler,
+  type PointerEventHandler,
   type ReactElement,
 } from 'react';
 
@@ -22,6 +23,7 @@ type PreviewTriggerProps = {
   onFocus?: FocusEventHandler<HTMLElement>;
   onMouseEnter?: MouseEventHandler<HTMLElement>;
   onMouseLeave?: MouseEventHandler<HTMLElement>;
+  onPointerDown?: PointerEventHandler<HTMLElement>;
 };
 
 type MessageSummaryPreviewProps = {
@@ -29,6 +31,7 @@ type MessageSummaryPreviewProps = {
   label: string;
   groupName: string | null;
   time: string | null;
+  onBeforeOpen?: () => Promise<boolean | void>;
   children: ReactElement<PreviewTriggerProps>;
 };
 
@@ -80,6 +83,7 @@ export function MessageSummaryPreview({
   label,
   groupName,
   time,
+  onBeforeOpen,
   children,
 }: MessageSummaryPreviewProps) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -156,6 +160,25 @@ export function MessageSummaryPreview({
 
   if (!summary.isAccessible || summary.isDeleted) return children;
 
+  const openPreview = (target: HTMLElement) => {
+    const finishOpen = () => {
+      if (
+        interactionDismissedRef.current ||
+        (!triggerHoveredRef.current && !triggerFocusedRef.current)
+      ) {
+        return;
+      }
+      setAnchorEl(target);
+    };
+    if (!onBeforeOpen) {
+      finishOpen();
+      return;
+    }
+    void onBeforeOpen().then((shouldOpen) => {
+      if (shouldOpen !== false) finishOpen();
+    });
+  };
+
   const childProps = children.props;
   const open = anchorEl !== null;
   const trigger = cloneElement(children, {
@@ -168,7 +191,7 @@ export function MessageSummaryPreview({
       cancelOpen();
       const currentTarget = event.currentTarget;
       openTimeoutRef.current = window.setTimeout(
-        () => setAnchorEl(currentTarget),
+        () => openPreview(currentTarget),
         PREVIEW_OPEN_DELAY_MS,
       );
     },
@@ -177,13 +200,17 @@ export function MessageSummaryPreview({
       triggerHoveredRef.current = false;
       closeIfInactive();
     },
+    onPointerDown: (event) => {
+      childProps.onPointerDown?.(event);
+      dismissPreview();
+    },
     onFocus: (event) => {
       childProps.onFocus?.(event);
       triggerFocusedRef.current = true;
       cancelClose();
       cancelOpen();
       if (interactionDismissedRef.current) return;
-      setAnchorEl(event.currentTarget);
+      openPreview(event.currentTarget);
     },
     onBlur: (event) => {
       childProps.onBlur?.(event);

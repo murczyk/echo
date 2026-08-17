@@ -727,6 +727,72 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
+  it('edits a forwarded report with an inaccessible parent as an independent message', async () => {
+    const onSubmitEdit = vi.fn();
+    const report = buildMessage({
+      text: 'forwarded report body',
+      groupMasterKey: 'g-2',
+      parentMessages: [
+        {
+          id: 42,
+          isAccessible: false,
+          isDeleted: false,
+          text: '',
+          attachmentsCount: 0,
+          timestamp: null,
+          date: '2026-08-17',
+          time: '09:30',
+          groupName: 'Original group',
+          groupMasterKey: null,
+        },
+      ],
+    });
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({
+      signal_message_id: 91,
+      message: report,
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{ id: 91, message: report }}
+          onSubmitEdit={onSubmitEdit}
+        />,
+      );
+    });
+
+    expect(directSubmitMocks.copyDirectSubmit).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Редагувати повідомлення');
+    expect(container.textContent).not.toContain('Редагувати розвіддонесення');
+    expect(textFieldPropsByLabel.get('Текст повідомлення')?.value).toBe('forwarded report body');
+    expect(textFieldPropsByLabel.has('Текст оригінального повідомлення')).toBe(false);
+    expect(container.textContent).not.toContain('Видалити розвіддонесення');
+
+    await act(async () => {
+      (container.querySelector('form') as HTMLFormElement).dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      91,
+      expect.objectContaining({
+        full_body: 'forwarded report body',
+        signal_group_master_key: 'g-2',
+      }),
+    );
+    expect(onSubmitEdit).toHaveBeenCalledWith(91, report);
+
+    root.unmount();
+  });
+
   it('deletes a standalone report after confirmation', async () => {
     directSubmitMocks.copyDirectSubmit.mockResolvedValue({
       payloads: [{ full_body: 'original copied body' }],
