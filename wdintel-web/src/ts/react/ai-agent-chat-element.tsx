@@ -2,17 +2,27 @@ import { createRoot, Root } from 'react-dom/client';
 
 import { PowerSnackbarProvider } from './components/PowerSnackbar';
 import { NeoMuiThemeProvider } from './mui-theme';
-import { AiAgentChat, type AiAgentAvailabilityState } from './routes/ai-agent-chat';
+import {
+  AiAgentChat,
+  AiAgentChatInitialLoading,
+  type AiAgentAvailabilityState,
+} from './routes/ai-agent-chat';
 
 function AiAgentChatRoot({
   onAvailabilityChange,
+  loading,
 }: {
   onAvailabilityChange: (state: AiAgentAvailabilityState) => void;
+  loading: boolean;
 }) {
   return (
     <NeoMuiThemeProvider>
       <PowerSnackbarProvider>
-        <AiAgentChat onAvailabilityChange={onAvailabilityChange} />
+        {loading ? (
+          <AiAgentChatInitialLoading />
+        ) : (
+          <AiAgentChat onAvailabilityChange={onAvailabilityChange} />
+        )}
       </PowerSnackbarProvider>
     </NeoMuiThemeProvider>
   );
@@ -20,6 +30,8 @@ function AiAgentChatRoot({
 
 class AiAgentChatElement extends HTMLElement {
   private root: Root | null = null;
+
+  static observedAttributes = ['data-loading'];
 
   private readonly handleAvailabilityChange = (state: AiAgentAvailabilityState) => {
     this.dispatchEvent(
@@ -44,8 +56,17 @@ class AiAgentChatElement extends HTMLElement {
     this.root = null;
   }
 
+  attributeChangedCallback() {
+    this.render();
+  }
+
   private render() {
-    this.root?.render(<AiAgentChatRoot onAvailabilityChange={this.handleAvailabilityChange} />);
+    this.root?.render(
+      <AiAgentChatRoot
+        loading={this.getAttribute('data-loading') === 'true'}
+        onAvailabilityChange={this.handleAvailabilityChange}
+      />,
+    );
   }
 }
 
