@@ -442,22 +442,44 @@ async fn restore_old_client(
     port: i32,
     client_data_backups: &ClientDataBackups,
 ) -> Result<()> {
-    stop_client_process(config, new_kind, client_name)
+    if let Err(err) = stop_client_process(config, new_kind, client_name)
         .await
-        .c(h!())?;
+        .c(h!())
+    {
+        log::warn!(
+            "failed to stop replacement client {client_name} during recovery: {err:#}"
+        );
+    }
     if old_kind != new_kind {
-        stop_client_process(config, old_kind, client_name)
+        if let Err(err) = stop_client_process(config, old_kind, client_name)
+            .await
+            .c(h!())
+        {
+            log::warn!(
+                "failed to stop previous client {client_name} during recovery: {err:#}"
+            );
+        }
+    }
+    let restore_result = restore_client_data_backups(client_data_backups)
+        .await
+        .c(h!());
+    let restart_result = async {
+        start_client(config, old_kind, client_name, port)
             .await
             .c(h!())?;
+        wait_for_signal_client(old_kind, port).await.c(h!())
     }
-    restore_client_data_backups(client_data_backups)
-        .await
-        .c(h!())?;
-    start_client(config, old_kind, client_name, port)
-        .await
-        .c(h!())?;
-    wait_for_signal_client(old_kind, port).await.c(h!())?;
-    Ok(())
+    .await;
+    match (restore_result, restart_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(err), Ok(())) | (Ok(()), Err(err)) => Err(err),
+        (Err(restore_err), Err(restart_err)) => {
+            log::error!(
+                "failed to restart previous client {client_name} after credential restoration failure: {restart_err:#}"
+            );
+            Err(restore_err)
+        }
+    }
 }
 
 async fn reconcile_after_commit_error(
