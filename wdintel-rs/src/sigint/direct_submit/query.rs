@@ -702,6 +702,7 @@ where
             .column(signal_message_media::Column::Id)
             .filter(signal_message_media::Column::StorageKey.eq(storage_key))
             .lock(LockType::Update)
+            .into_tuple::<i64>()
             .all(dbx)
             .await
             .c(h!())?
