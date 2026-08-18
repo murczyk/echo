@@ -6,6 +6,7 @@ use crate::rer_importer::types::InboxSubmitItem;
 use crate::types::{error, info, warn};
 use crate::types::{Mode, ShortContext};
 use chrono::{DateTime, Duration, FixedOffset, NaiveDateTime, Utc};
+use indicatif::ProgressBar;
 use sea_orm::sea_query::{Expr, Value};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
@@ -246,17 +247,19 @@ pub async fn oneoff_migrate_sigint_comments(
     let env = crate::server::new_env(mode).await.c(h!())?;
     let batch_size =
         std::cmp::min(ps.batch_size, SIGINT_COMMENT_MIGRATION_MAX_BATCH_SIZE);
+    let pending = sigint_comment::Entity::find()
+        .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
+        .count(&env.dbx)
+        .await
+        .c(h!())?;
     if ps.dry_run {
-        let pending = sigint_comment::Entity::find()
-            .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
-            .count(&env.dbx)
-            .await
-            .c(h!())?;
         info!(
             "oneoff_migrate_sigint_comments_to_messages dry run: pending={pending}"
         );
         return Ok(());
     }
+    let progress = ProgressBar::new(pending);
+    progress.set_message("migrating sigint comments");
     let mut migrated = 0_u64;
 
     loop {
@@ -274,8 +277,11 @@ pub async fn oneoff_migrate_sigint_comments(
             .c(h!())?;
         migrated += batch_count;
         txn.commit().await.c(h!())?;
+        progress.inc(batch_count);
     }
 
+    progress
+        .finish_with_message(format!("migrated {migrated} sigint comments"));
     info!(
         "oneoff_migrate_sigint_comments_to_messages completed: processed={migrated} dry_run={}",
         ps.dry_run
