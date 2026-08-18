@@ -2,6 +2,7 @@ use super::{
     DEVICE_FILE_SYNC_SESSION_EXPIRY_BATCH_SIZE,
     DEVICE_FILE_SYNC_SESSION_EXPIRY_POLL_SECS,
 };
+use crate::devices::analytics::ensure_sync_run;
 use crate::file_registry::entities::{
     file_sync_session,
     sea_orm_active_enums::{FileSyncSessionMode, FileSyncSessionStatus},
@@ -72,10 +73,13 @@ pub(in crate::devices) async fn run_tick(env: &Env) -> anyhow::Result<bool> {
         let mut session = session.into_active_model();
         session.status = Set(FileSyncSessionStatus::Expired);
         session.updated_at = Set(Utc::now().fixed_offset());
-        session
+        let session = session
             .update(&transaction)
             .await
             .context("expire file sync session")?;
+        ensure_sync_run(&transaction, session.id, session.device_id)
+            .await
+            .context("schedule expired sync analysis")?;
     }
     transaction.commit().await.context("commit expiry tick")?;
     Ok(expired)

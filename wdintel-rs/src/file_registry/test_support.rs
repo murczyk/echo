@@ -1,12 +1,14 @@
 use super::entities::{
-    file_analysis_state, file_entry, file_metadata_revision, file_sync_session,
+    file_device_source_state, file_entry, file_metadata_revision,
+    file_sync_session,
     sea_orm_active_enums::{
         FileEntryKind, FileSyncSessionMode, FileSyncSessionStatus,
     },
 };
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, DatabaseConnection, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, DatabaseConnection, EntityTrait,
+    IntoActiveModel, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -20,6 +22,8 @@ pub(crate) async fn insert_entry(
         entry.source_file_state = Set(None);
         entry.source_file_state_settled_at = Set(None);
         entry.source_file_state_settled_by = Set(None);
+        entry.analysis_input_revision = Set(None);
+        entry.current_analysis_run_id = Set(None);
         return entry.insert(db).await.unwrap();
     }
 
@@ -47,17 +51,45 @@ pub(crate) async fn insert_entry(
     .await
     .unwrap();
 
+    let source_sequence =
+        match file_device_source_state::Entity::find_by_id(device_id)
+            .one(&transaction)
+            .await
+            .unwrap()
+        {
+            Some(state) => {
+                let next = state.last_source_sequence.checked_add(1).unwrap();
+                let mut state = state.into_active_model();
+                state.last_source_sequence = Set(next);
+                state.update(&transaction).await.unwrap();
+                next
+            }
+            None => {
+                file_device_source_state::ActiveModel {
+                    id: Set(device_id),
+                    last_source_sequence: Set(1),
+                }
+                .insert(&transaction)
+                .await
+                .unwrap();
+                1
+            }
+        };
     entry.revision = Set(Some(1));
     entry.sync_id = Set(Some(sync_id));
     entry.source_file_state = Set(None);
     entry.source_file_state_settled_at = Set(None);
     entry.source_file_state_settled_by = Set(None);
+    entry.analysis_input_revision = Set(Some(1));
+    entry.current_analysis_run_id = Set(None);
     let file = entry.insert(&transaction).await.unwrap();
     file_metadata_revision::ActiveModel {
         id: Set(file.id),
         revision: Set(1),
         device_id: Set(file.device_id),
         sync_id: Set(sync_id),
+        source_sequence: Set(source_sequence),
+        analysis_input_revision: Set(1),
         name: Set(file.name.clone()),
         absolute_path: Set(file.absolute_path.clone().unwrap()),
         mime_type: Set(file.mime_type.clone()),
@@ -72,14 +104,6 @@ pub(crate) async fn insert_entry(
         source_file_state_settled_at: Set(None),
         source_file_state_settled_by: Set(None),
         created_at: Set(file.updated_at.and_utc().fixed_offset()),
-    }
-    .insert(&transaction)
-    .await
-    .unwrap();
-    file_analysis_state::ActiveModel {
-        file_entry_id: Set(file.id),
-        device_id: Set(file.device_id),
-        ..Default::default()
     }
     .insert(&transaction)
     .await

@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 #[derive(
     Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize,
 )]
-#[sea_orm(table_name = "analytics_tag_rule_set_state")]
+#[sea_orm(table_name = "file_device_source_state")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub id: bool,
-    pub revision: i64,
+    pub id: Uuid,
+    pub last_source_sequence: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

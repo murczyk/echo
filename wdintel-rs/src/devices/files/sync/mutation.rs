@@ -7,23 +7,29 @@ use super::super::{
 use super::hierarchy::{
     resolve_new_file_hierarchies, root_entry_id, ResolvedNewFileHierarchy,
 };
+use crate::devices::analytics::{rules, types::FileAnalysisInput};
 use crate::file_registry::entities::{
-    file_entry, file_sync_item,
+    file_device_source_state, file_entry, file_sync_item,
     sea_orm_active_enums::FileSyncItemOutcome as DbItemOutcome,
 };
 use crate::h;
+use crate::telemetry::{FileAnalysisDbOperation, Metrics};
 use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
-use sea_orm::sea_query::{Expr, SimpleExpr};
+use sea_orm::sea_query::{Expr, LockType, OnConflict, SimpleExpr};
 use sea_orm::{
-    ActiveEnum, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend,
-    EntityTrait, ExprTrait, QueryFilter, QueryOrder, QuerySelect, Statement,
+    ActiveEnum, ActiveModelTrait, ActiveValue::Set, ColumnTrait,
+    ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait, ExprTrait,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement,
 };
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Instant,
+};
 use uuid::Uuid;
 
 // SeaORM cannot express a data-modifying CTE whose returned rows feed the
-// revision, analysis, and sync-item writes. Keep that atomic set-based boundary.
+// immutable revision and sync-item writes. Keep that atomic set-based boundary.
 const APPLY_SYNC_ITEMS_SQL: &str = r#"
     with accepted_input as materialized (
         select *
@@ -47,7 +53,8 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             source_file_state text,
             source_file_state_settled_at timestamp with time zone,
             source_file_state_settled_by text,
-            analysis_required boolean
+            source_sequence bigint,
+            analysis_input_revision bigint
         )
     ),
     mutated_files as (
@@ -68,6 +75,8 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             content_path,
             revision,
             sync_id,
+            analysis_input_revision,
+            current_analysis_run_id,
             source_file_state,
             source_file_state_settled_at,
             source_file_state_settled_by
@@ -89,6 +98,8 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             null,
             1,
             accepted.sync_id,
+            accepted.analysis_input_revision,
+            null,
             accepted.source_file_state::public.source_file_state_kind,
             accepted.source_file_state_settled_at,
             accepted.source_file_state_settled_by
@@ -108,6 +119,12 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             ),
             revision = current.revision + 1,
             sync_id = excluded.sync_id,
+            analysis_input_revision = excluded.analysis_input_revision,
+            current_analysis_run_id = case
+                when excluded.analysis_input_revision = current.revision + 1
+                    then null
+                else current.current_analysis_run_id
+            end,
             source_file_state = excluded.source_file_state,
             source_file_state_settled_at =
                 excluded.source_file_state_settled_at,
@@ -115,20 +132,21 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
                 excluded.source_file_state_settled_by
         where current.revision < 9223372036854775807
         returning
-            id,
-            device_id,
-            name,
-            absolute_path,
-            mime_type,
-            extension,
-            file_metadata_created_at,
-            file_metadata_modified_at,
-            updated_at,
-            revision,
-            sync_id,
-            source_file_state,
-            source_file_state_settled_at,
-            source_file_state_settled_by
+            current.id,
+            current.device_id,
+            current.name,
+            current.absolute_path,
+            current.mime_type,
+            current.extension,
+            current.file_metadata_created_at,
+            current.file_metadata_modified_at,
+            current.updated_at,
+            current.revision,
+            current.sync_id,
+            current.analysis_input_revision,
+            current.source_file_state,
+            current.source_file_state_settled_at,
+            current.source_file_state_settled_by
     ),
     mutation_results as materialized (
         select
@@ -146,21 +164,28 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             mutated.file_metadata_modified_at,
             mutated.updated_at,
             mutated.revision,
+            mutated.analysis_input_revision,
             mutated.source_file_state,
             mutated.source_file_state_settled_at,
             mutated.source_file_state_settled_by,
+            accepted.source_sequence,
             case
                 when mutated.id = accepted.candidate_file_id then 'created'
                 else 'updated'
             end as outcome,
-            (
-                accepted.analysis_required
-                or mutated.id = accepted.candidate_file_id
-            ) as analysis_required
+            (mutated.revision = mutated.analysis_input_revision)
+                as analysis_required
         from mutated_files as mutated
         join accepted_input as accepted
           on accepted.device_id = mutated.device_id
          and accepted.absolute_path = mutated.absolute_path
+    ),
+    cleared_current_tags as (
+        delete from device_file_tag as link
+        using mutation_results as result
+        where result.analysis_required
+          and link.file_entry_id = result.file_id
+        returning link.id
     ),
     inserted_revisions as (
         insert into file_metadata_revision (
@@ -168,6 +193,8 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             revision,
             device_id,
             sync_id,
+            source_sequence,
+            analysis_input_revision,
             name,
             absolute_path,
             mime_type,
@@ -184,6 +211,8 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             result.revision,
             result.device_id,
             result.sync_id,
+            result.source_sequence,
+            result.analysis_input_revision,
             result.name,
             result.absolute_path,
             result.mime_type,
@@ -196,47 +225,6 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
             result.updated_at at time zone 'UTC'
         from mutation_results as result
         returning id, revision
-    ),
-    enqueued_analysis as (
-        insert into file_analysis_state (
-            file_entry_id,
-            device_id,
-            source_revision,
-            analyzed_source_revision,
-            required_generation,
-            analyzed_generation,
-            analyzed_rule_revision,
-            pending,
-            retry_exhausted,
-            available_at,
-            created_at,
-            updated_at
-        )
-        select
-            result.file_id,
-            result.device_id,
-            1,
-            0,
-            0,
-            0,
-            0,
-            true,
-            false,
-            clock_timestamp(),
-            clock_timestamp(),
-            clock_timestamp()
-        from mutation_results as result
-        where result.analysis_required
-        on conflict (file_entry_id) do update
-        set device_id = excluded.device_id,
-            source_revision = file_analysis_state.source_revision + 1,
-            pending = true,
-            retry_exhausted = false,
-            available_at = clock_timestamp(),
-            attempt_count = 0,
-            last_error = null,
-            updated_at = clock_timestamp()
-        returning file_entry_id
     ),
     accepted_items as (
         update file_sync_item as item
@@ -277,12 +265,6 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
         (select count(*) from mutation_results) as mutated_count,
         (select count(*) from inserted_revisions) as revision_count,
         (select count(*) from accepted_items) as accepted_count,
-        (
-            select count(*)
-            from mutation_results
-            where analysis_required
-        ) as expected_analysis_count,
-        (select count(*) from enqueued_analysis) as analysis_count,
         (select count(*) from rejected_input) as expected_rejected_count,
         (select count(*) from rejected_items) as rejected_count
 "#;
@@ -315,7 +297,8 @@ struct AcceptedMutation {
     source_file_state: Option<&'static str>,
     source_file_state_settled_at: Option<DateTime<FixedOffset>>,
     source_file_state_settled_by: Option<String>,
-    analysis_required: bool,
+    source_sequence: i64,
+    analysis_input_revision: i64,
 }
 
 #[derive(Serialize)]
@@ -334,6 +317,7 @@ pub(super) async fn apply_sync_items(
     transaction: &DatabaseTransaction,
     device_id: Uuid,
     items: Vec<file_sync_item::Model>,
+    metrics: Option<&Metrics>,
 ) -> Result<(), FilesystemError> {
     let Some(first) = items.first() else {
         return Ok(());
@@ -346,6 +330,8 @@ pub(super) async fn apply_sync_items(
     {
         return Err(FilesystemError::Invariant("sync_item_batch_mismatch"));
     }
+
+    lock_source_state(transaction, device_id).await?;
 
     let mut absolute_paths = items
         .iter()
@@ -435,7 +421,14 @@ pub(super) async fn apply_sync_items(
         ));
     }
 
-    persist_sync_items(transaction, accepted_items, rejected_items).await
+    persist_sync_items(
+        transaction,
+        device_id,
+        accepted_items,
+        rejected_items,
+        metrics,
+    )
+    .await
 }
 
 async fn load_current_files(
@@ -527,10 +520,10 @@ fn prepare_accepted_mutation(
 ) -> Result<AcceptedMutation, FilesystemError> {
     let name = mutation.source_path.file_name().to_string();
     let absolute_path = mutation.source_path.absolute_path.clone();
-    let (root_id, parent_id, hierarchy_path, analysis_required) =
+    let (root_id, parent_id, hierarchy_path, analysis_input_revision) =
         match (existing, hierarchy) {
             (Some(current), None) => {
-                current
+                let revision = current
                     .revision
                     .ok_or(FilesystemError::Invariant(
                         "mutation_file_revision_missing",
@@ -539,19 +532,43 @@ fn prepare_accepted_mutation(
                     .ok_or(FilesystemError::Invariant(
                         "file_revision_overflow",
                     ))?;
+                let current_absolute_path = current
+                    .absolute_path
+                    .as_deref()
+                    .ok_or(FilesystemError::Invariant(
+                        "mutation_file_absolute_path_missing",
+                    ))?;
+                let current_input = FileAnalysisInput {
+                    name: &current.name,
+                    absolute_path: current_absolute_path,
+                    extension: current.extension.as_deref(),
+                };
+                let incoming_input = FileAnalysisInput {
+                    name: &name,
+                    absolute_path: &absolute_path,
+                    extension: mutation.metadata.extension.as_deref(),
+                };
+                let analysis_input_revision = if rules::evaluator_inputs_equal(
+                    &current_input,
+                    &incoming_input,
+                ) {
+                    current.analysis_input_revision.ok_or(
+                        FilesystemError::Invariant(
+                            "analysis_input_revision_missing",
+                        ),
+                    )?
+                } else {
+                    revision
+                };
                 let root_id = root_entry_id(&current.hierarchy_path)?;
                 let parent_id = current.parent_id.ok_or(
                     FilesystemError::Invariant("mutation_file_parent_missing"),
                 )?;
-                let analysis_required = current.name != name
-                    || current.absolute_path.as_deref()
-                        != Some(absolute_path.as_str())
-                    || current.extension != mutation.metadata.extension;
                 (
                     root_id,
                     parent_id,
                     current.hierarchy_path,
-                    analysis_required,
+                    analysis_input_revision,
                 )
             }
             (None, Some(hierarchy)) => (
@@ -561,7 +578,7 @@ fn prepare_accepted_mutation(
                     &hierarchy.parent_hierarchy_path,
                     mutation.candidate_file_id,
                 ),
-                true,
+                1,
             ),
             _ => {
                 return Err(FilesystemError::Invariant(
@@ -591,27 +608,49 @@ fn prepare_accepted_mutation(
         source_file_state: source_file_state.0,
         source_file_state_settled_at: source_file_state.1,
         source_file_state_settled_by: source_file_state.2,
-        analysis_required,
+        source_sequence: 0,
+        analysis_input_revision,
     })
 }
 
 async fn persist_sync_items(
     transaction: &DatabaseTransaction,
-    accepted_items: Vec<AcceptedMutation>,
+    device_id: Uuid,
+    mut accepted_items: Vec<AcceptedMutation>,
     rejected_items: Vec<RejectedMutation>,
+    metrics: Option<&Metrics>,
 ) -> Result<(), FilesystemError> {
     if accepted_items.is_empty() && rejected_items.is_empty() {
         return Ok(());
     }
+    accepted_items
+        .sort_unstable_by_key(|item| (item.batch_index, item.item_index));
     let expected_mutated_count = i64::try_from(accepted_items.len())
         .map_err(|_| FilesystemError::Invariant("sync_item_count_invalid"))?;
-    let expected_analysis_count = i64::try_from(
-        accepted_items
-            .iter()
-            .filter(|item| item.analysis_required)
-            .count(),
-    )
-    .map_err(|_| FilesystemError::Invariant("sync_item_count_invalid"))?;
+    if expected_mutated_count > 0 {
+        let allocation_started_at = Instant::now();
+        let first_source_sequence = allocate_source_sequence_range(
+            transaction,
+            device_id,
+            expected_mutated_count,
+        )
+        .await?;
+        if let Some(metrics) = metrics {
+            metrics.record_file_analysis_db_duration(
+                FileAnalysisDbOperation::SourceRangeAllocation,
+                allocation_started_at.elapsed(),
+            );
+        }
+        for (offset, item) in accepted_items.iter_mut().enumerate() {
+            item.source_sequence = first_source_sequence
+                .checked_add(i64::try_from(offset).map_err(|_| {
+                    FilesystemError::Invariant("sync_item_count_invalid")
+                })?)
+                .ok_or(FilesystemError::Invariant(
+                    "source_sequence_overflow",
+                ))?;
+        }
+    }
     let expected_rejected_count = i64::try_from(rejected_items.len())
         .map_err(|_| FilesystemError::Invariant("sync_item_count_invalid"))?;
     let accepted_payload =
@@ -658,16 +697,6 @@ async fn persist_sync_items(
             "sync_item_accept_count_invalid",
         ),
         (
-            "expected_analysis_count",
-            expected_analysis_count,
-            "analysis_input_count_invalid",
-        ),
-        (
-            "analysis_count",
-            expected_analysis_count,
-            "analysis_enqueue_count_invalid",
-        ),
-        (
             "expected_rejected_count",
             expected_rejected_count,
             "sync_item_reject_input_count_invalid",
@@ -687,6 +716,73 @@ async fn persist_sync_items(
     }
 
     Ok(())
+}
+
+async fn lock_source_state(
+    transaction: &DatabaseTransaction,
+    device_id: Uuid,
+) -> Result<(), FilesystemError> {
+    file_device_source_state::Entity::insert(
+        file_device_source_state::ActiveModel {
+            id: Set(device_id),
+            last_source_sequence: Set(0),
+        },
+    )
+    .on_conflict(
+        OnConflict::column(file_device_source_state::Column::Id)
+            .do_nothing()
+            .to_owned(),
+    )
+    .exec_without_returning(transaction)
+    .await
+    .map_err(|error| {
+        map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+    })?;
+    file_device_source_state::Entity::find_by_id(device_id)
+        .lock(LockType::Update)
+        .one(transaction)
+        .await
+        .map_err(|error| {
+            map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+        })?
+        .ok_or(FilesystemError::Invariant(
+            "file_device_source_state_missing",
+        ))?;
+    Ok(())
+}
+
+async fn allocate_source_sequence_range(
+    transaction: &DatabaseTransaction,
+    device_id: Uuid,
+    count: i64,
+) -> Result<i64, FilesystemError> {
+    // apply_sync_items locks this device's source state before it reads the
+    // current file projection. The allocation therefore orders concurrent
+    // sync batches together with manual watermark capture.
+    let source_state = file_device_source_state::Entity::find_by_id(device_id)
+        .lock(LockType::Update)
+        .one(transaction)
+        .await
+        .map_err(|error| {
+            map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+        })?
+        .ok_or(FilesystemError::Invariant(
+            "file_device_source_state_missing",
+        ))?;
+    let first_source_sequence = source_state
+        .last_source_sequence
+        .checked_add(1)
+        .ok_or(FilesystemError::Invariant("source_sequence_overflow"))?;
+    let last_source_sequence = source_state
+        .last_source_sequence
+        .checked_add(count)
+        .ok_or(FilesystemError::Invariant("source_sequence_overflow"))?;
+    let mut source_state = source_state.into_active_model();
+    source_state.last_source_sequence = Set(last_source_sequence);
+    source_state.update(transaction).await.map_err(|error| {
+        map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+    })?;
+    Ok(first_source_sequence)
 }
 
 fn source_state_columns(

@@ -27,8 +27,15 @@ import type {
   SearchDeviceFilesReq,
   SearchDeviceFilesRsp,
   SyncDeviceFilesReq,
-  ReanalysisRsp,
+  ReanalyzeAllRsp,
   ReanalyzeDeviceReq,
+  ReanalyzeDeviceRsp,
+  GetAnalysisRunReq,
+  GetAnalysisRunRsp,
+  ListAnalysisRunsReq,
+  ListAnalysisRunsRsp,
+  ListAnalysisRunFilesReq,
+  ListAnalysisRunFilesRsp,
   SyncDeviceFilesRsp,
   Unit,
   UpdateDeviceReq,
@@ -267,16 +274,52 @@ export async function listDeviceAnalyticsFiles(
 export async function reanalyzeDevice(
   req: ReanalyzeDeviceReq,
   options?: RequestOptions,
-): Promise<ReanalysisRsp> {
+): Promise<ReanalyzeDeviceRsp> {
   const data = await postJson(
     '/api/admin/device-analytics/reanalyze/device',
     transformCamelToSnake(req),
     options,
   );
-  return transformSnakeToCamel<ReanalysisRsp>(data);
+  return transformSnakeToCamel<ReanalyzeDeviceRsp>(data);
 }
 
-export async function reanalyzeAll(options?: RequestOptions): Promise<ReanalysisRsp> {
+export async function reanalyzeAll(options?: RequestOptions): Promise<ReanalyzeAllRsp> {
   const data = await postJson('/api/admin/device-analytics/reanalyze/all', undefined, options);
-  return transformSnakeToCamel<ReanalysisRsp>(data);
+  return transformSnakeToCamel<ReanalyzeAllRsp>(data);
+}
+
+export async function getAnalysisRun(
+  req: GetAnalysisRunReq,
+  options?: RequestOptions,
+): Promise<GetAnalysisRunRsp> {
+  const data = await postJson(
+    '/api/device/analytics/runs/get',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<GetAnalysisRunRsp>(data);
+}
+
+export async function listAnalysisRuns(
+  req: ListAnalysisRunsReq,
+  options?: RequestOptions,
+): Promise<ListAnalysisRunsRsp> {
+  const data = await postJson(
+    '/api/device/analytics/runs/list',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<ListAnalysisRunsRsp>(data);
+}
+
+export async function listAnalysisRunFiles(
+  req: ListAnalysisRunFilesReq,
+  options?: RequestOptions,
+): Promise<ListAnalysisRunFilesRsp> {
+  const data = await postJson(
+    '/api/device/analytics/runs/files',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<ListAnalysisRunFilesRsp>(data);
 }

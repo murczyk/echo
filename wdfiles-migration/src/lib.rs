@@ -15,6 +15,7 @@ mod m20260808_134905_analytics_tag_test_expectation;
 mod m20260810_120000_seed_default_analytics_tags;
 mod m20260813_120128_batched_file_metadata_sync;
 mod m20260815_152642_rename_file_sync_primary_key_columns;
+mod m20260818_094542_batched_file_analysis_runs;
 
 pub struct Migrator;
 
@@ -44,6 +45,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260813_120128_batched_file_metadata_sync::Migration),
             Box::new(
                 m20260815_152642_rename_file_sync_primary_key_columns::Migration,
+            ),
+            Box::new(
+                m20260818_094542_batched_file_analysis_runs::Migration,
             ),
         ]
     }

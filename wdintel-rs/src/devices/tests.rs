@@ -5,7 +5,7 @@ use crate::entities::{
     area_of_responsibility, login, organism, sigint_unit, system_settings,
 };
 use crate::file_registry::entities::{
-    analytics_tag, device_file_tag, file_analysis_state, file_entry,
+    analytics_tag, device_file_tag, file_entry,
     sea_orm_active_enums::FileEntryKind,
 };
 use crate::functest::tests::{
@@ -21,10 +21,8 @@ use actix_web::{
     http::StatusCode, test, web, App, HttpMessage, HttpRequest, HttpResponse,
 };
 use chrono::{NaiveDateTime, Utc};
-use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
-    IntoActiveModel, QueryFilter,
+    ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
 };
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -58,6 +56,9 @@ fn configure_routes(cfg: &mut ServiceConfig) {
         .service(super::analytics::test_tag_rule)
         .service(super::analytics::reanalyze_all)
         .service(super::analytics::reanalyze_device)
+        .service(super::analytics::get_analysis_run)
+        .service(super::analytics::list_analysis_runs)
+        .service(super::analytics::list_analysis_run_files)
         .service(super::analytics::device_tags)
         .service(super::analytics::device_summary)
         .service(super::analytics::device_files);
@@ -90,6 +91,8 @@ fn analytics_root_entry(
         content_path: Set(None),
         revision: Set(None),
         sync_id: Set(None),
+        analysis_input_revision: Set(None),
+        current_analysis_run_id: Set(None),
         source_file_state: Set(None),
         source_file_state_settled_at: Set(None),
         source_file_state_settled_by: Set(None),
@@ -125,6 +128,8 @@ fn analytics_file_entry(
         content_path: Set(None),
         revision: Set(None),
         sync_id: Set(None),
+        analysis_input_revision: Set(None),
+        current_analysis_run_id: Set(None),
         source_file_state: Set(None),
         source_file_state_settled_at: Set(None),
         source_file_state_settled_by: Set(None),
@@ -986,20 +991,6 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
         )
         .await;
     }
-    file_analysis_state::Entity::update_many()
-        .col_expr(
-            file_analysis_state::Column::AnalyzedSourceRevision,
-            Expr::col(file_analysis_state::Column::SourceRevision),
-        )
-        .col_expr(
-            file_analysis_state::Column::AnalyzedGeneration,
-            Expr::col(file_analysis_state::Column::RequiredGeneration),
-        )
-        .col_expr(file_analysis_state::Column::Pending, Expr::value(false))
-        .filter(file_analysis_state::Column::DeviceId.eq(device.id))
-        .exec(file_db)
-        .await
-        .unwrap();
     let sparse_tagged_file_id = *sparse_file_ids.last().unwrap();
     device_file_tag::ActiveModel {
         id: Set(Uuid::now_v7()),
@@ -1079,6 +1070,8 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
         content_path: Set(None),
         revision: Set(None),
         sync_id: Set(None),
+        analysis_input_revision: Set(None),
+        current_analysis_run_id: Set(None),
         source_file_state: Set(None),
         source_file_state_settled_at: Set(None),
         source_file_state_settled_by: Set(None),
@@ -1108,6 +1101,8 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
             content_path: Set(None),
             revision: Set(None),
             sync_id: Set(None),
+            analysis_input_revision: Set(None),
+            current_analysis_run_id: Set(None),
             source_file_state: Set(None),
             source_file_state_settled_at: Set(None),
             source_file_state_settled_by: Set(None),
@@ -1283,7 +1278,40 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
     );
     assert_eq!(response.status(), StatusCode::OK);
     let scheduled: Value = test::read_body_json(response).await;
-    assert_eq!(scheduled["scheduled_file_count"], 103);
+    let run_id = scheduled["run"]["run_id"].as_str().unwrap();
+    assert_eq!(scheduled["run"]["device_id"], device.id.to_string());
+    assert_eq!(scheduled["run"]["cause"], "manual_reanalysis");
+    assert_eq!(scheduled["run"]["target_source_sequence"], 104);
+    assert_eq!(scheduled["run"]["status"], "preparing");
+    assert_eq!(scheduled["run"]["item_count"], 0);
+    assert_eq!(scheduled["run"]["completed_count"], 0);
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/analytics/runs/get",
+        json!({"run_id": run_id})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let fetched: Value = test::read_body_json(response).await;
+    assert_eq!(fetched["run"], scheduled["run"]);
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/analytics/runs/list",
+        json!({"device_id": device.id, "limit": 1})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let listed: Value = test::read_body_json(response).await;
+    assert_eq!(listed["runs"], json!([scheduled["run"].clone()]));
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/analytics/runs/files",
+        json!({"run_id": run_id, "limit": 1})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let files: Value = test::read_body_json(response).await;
+    assert_eq!(files, json!({"files": [], "next_cursor": null}));
 
     let response = post_as!(
         admin_cookie,
@@ -1291,11 +1319,15 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
         json!({})
     );
     assert_eq!(response.status(), StatusCode::OK);
-    let scheduled: Value = test::read_body_json(response).await;
-    assert_eq!(scheduled["scheduled_file_count"], 0);
+    let scheduled_all: Value = test::read_body_json(response).await;
+    assert_eq!(
+        scheduled_all["definition_id"],
+        scheduled["run"]["definition_id"],
+    );
+    assert_eq!(scheduled_all["created_run_count"], 1);
 }
 
-const TARGET_ROUTES: [&str; 25] = [
+const TARGET_ROUTES: [&str; 28] = [
     "/api/device/list",
     "/api/device/unit-stats",
     "/api/device/aors",
@@ -1318,6 +1350,9 @@ const TARGET_ROUTES: [&str; 25] = [
     "/api/admin/device-analytics/tags/rule/test",
     "/api/admin/device-analytics/reanalyze/all",
     "/api/admin/device-analytics/reanalyze/device",
+    "/api/device/analytics/runs/get",
+    "/api/device/analytics/runs/list",
+    "/api/device/analytics/runs/files",
     "/api/device/analytics/tags",
     "/api/device/analytics/summary",
     "/api/device/analytics/files",

@@ -1941,6 +1941,7 @@ export type SyncSummary = {
   deviceId: string;
   mode: FileSyncSessionMode;
   status: FileSyncSessionStatus;
+  analysisRunId: string | null;
   nextBatchIndex: number;
   counts: SyncCounts;
   createdAt: string;
@@ -2098,8 +2099,79 @@ export type ReanalyzeDeviceReq = {
   deviceId: string;
 };
 
-export type ReanalysisRsp = {
-  scheduledFileCount: number;
+export type AnalysisRun = {
+  runId: string;
+  deviceId: string;
+  cause: string;
+  syncId: string | null;
+  definitionId: string;
+  targetSourceSequence: number | null;
+  analyzerVersion: number;
+  dslVersion: number;
+  status: string;
+  itemCount: number;
+  completedCount: number;
+  createdAt: string;
+  preparedAt: string | null;
+  completedAt: string | null;
+};
+
+export type ReanalyzeDeviceRsp = {
+  run: AnalysisRun;
+};
+
+export type ReanalyzeAllRsp = {
+  definitionId: string;
+  createdRunCount: number;
+};
+
+export type GetAnalysisRunReq = {
+  runId: string;
+};
+
+export type GetAnalysisRunRsp = {
+  run: AnalysisRun;
+};
+
+export type ListAnalysisRunsReq = {
+  deviceId: string;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type ListAnalysisRunsRsp = {
+  runs: Array<AnalysisRun>;
+  nextCursor: string | null;
+};
+
+export type ListAnalysisRunFilesReq = {
+  runId: string;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type AnalysisRunFileMetadata = {
+  name: string;
+  absolutePath: string;
+  extension: string | null;
+  mimeType: string | null;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+  sourceFileState: string | null;
+};
+
+export type AnalysisRunFile = {
+  fileId: string;
+  metadataRevision: number;
+  analysisInputRevision: number;
+  state: string;
+  metadata: AnalysisRunFileMetadata;
+  tagIds: Array<string> | null;
+};
+
+export type ListAnalysisRunFilesRsp = {
+  files: Array<AnalysisRunFile>;
+  nextCursor: string | null;
 };
 
 export type DeviceAnalyticsReq = {

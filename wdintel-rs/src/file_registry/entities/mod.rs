@@ -3,13 +3,12 @@
 pub mod prelude;
 
 pub mod analytics_tag;
-pub mod analytics_tag_rule_set_state;
 pub mod analytics_tag_test_file;
 pub mod device_file_tag;
-pub mod file_analysis_control;
-pub mod file_analysis_device_state;
-pub mod file_analysis_reanalysis_job;
-pub mod file_analysis_state;
+pub mod file_analysis_definition;
+pub mod file_analysis_run;
+pub mod file_analysis_run_item;
+pub mod file_device_source_state;
 pub mod file_entry;
 pub mod file_metadata_revision;
 pub mod file_sync_batch;

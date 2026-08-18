@@ -215,7 +215,7 @@ gen-seaorm-files mode="debug":
     fi
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     rm -rf wdintel-rs/src/file_registry/entities
-    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_rule_set_state,analytics_tag_test_file,device_file_tag,file_analysis_control,file_analysis_device_state,file_analysis_state,file_analysis_reanalysis_job,file_entry,file_metadata_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
+    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_test_file,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_device_source_state,file_entry,file_metadata_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
     python3 deploy/patch_seaorm_files.py
     rustfmt --config-path wdintel-rs wdintel-rs/src/file_registry/entities/*.rs
 
@@ -241,7 +241,7 @@ check-seaorm-files mode="debug":
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     entity_dir="$(mktemp -d)"
     trap 'rm -rf "$entity_dir"' EXIT
-    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_rule_set_state,analytics_tag_test_file,device_file_tag,file_analysis_control,file_analysis_device_state,file_analysis_state,file_analysis_reanalysis_job,file_entry,file_metadata_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
+    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_test_file,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_device_source_state,file_entry,file_metadata_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
     python3 deploy/patch_seaorm_files.py --entity-dir "$entity_dir"
     rustfmt --config-path wdintel-rs "$entity_dir"/*.rs
     diff -ru "$entity_dir" wdintel-rs/src/file_registry/entities

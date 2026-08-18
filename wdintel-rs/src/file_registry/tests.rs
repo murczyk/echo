@@ -1545,6 +1545,8 @@ async fn insert_file_revision(
         revision: Set(1),
         device_id: Set(device_id),
         sync_id: Set(sync_id),
+        source_sequence: Set(1),
+        analysis_input_revision: Set(1),
         name: Set(name.to_string()),
         absolute_path: Set(absolute_path.to_string()),
         mime_type: Set(Some("text/plain".to_string())),
@@ -1948,6 +1950,8 @@ fn file_entry_row(
         Set(Some(created_at - Duration::hours(1)));
     entry.revision = Set(Some(1));
     entry.sync_id = Set(Some(sync_id));
+    entry.analysis_input_revision = Set(Some(1));
+    entry.current_analysis_run_id = Set(None);
     entry
 }
 
@@ -1978,6 +1982,8 @@ fn base_file_entry(
         content_path: Set(None),
         revision: Set(None),
         sync_id: Set(None),
+        analysis_input_revision: Set(None),
+        current_analysis_run_id: Set(None),
         source_file_state: Set(None),
         source_file_state_settled_at: Set(None),
         source_file_state_settled_by: Set(None),

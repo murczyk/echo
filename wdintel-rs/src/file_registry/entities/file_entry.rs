@@ -47,14 +47,22 @@ pub struct Model {
     pub source_file_state_settled_at: Option<DateTimeWithTimeZone>,
     #[sea_orm(column_type = "Text", nullable)]
     pub source_file_state_settled_by: Option<String>,
+    pub analysis_input_revision: Option<i64>,
+    pub current_analysis_run_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::device_file_tag::Entity")]
     DeviceFileTag,
-    #[sea_orm(has_one = "super::file_analysis_state::Entity")]
-    FileAnalysisState,
+    #[sea_orm(
+        belongs_to = "super::file_analysis_run_item::Entity",
+        from = "(Column::CurrentAnalysisRunId, Column::Id)",
+        to = "(super::file_analysis_run_item::Column::Id, super::file_analysis_run_item::Column::FileId)",
+        on_update = "NoAction",
+        on_delete = "Restrict"
+    )]
+    FileAnalysisRunItem,
     #[sea_orm(
         belongs_to = "Entity",
         from = "(Column::DeviceId, Column::ParentId)",
@@ -65,12 +73,20 @@ pub enum Relation {
     SelfRef,
     #[sea_orm(
         belongs_to = "super::file_metadata_revision::Entity",
+        from = "(Column::Id, Column::AnalysisInputRevision)",
+        to = "(super::file_metadata_revision::Column::Id, super::file_metadata_revision::Column::Revision)",
+        on_update = "NoAction",
+        on_delete = "Restrict"
+    )]
+    FileMetadataRevision2,
+    #[sea_orm(
+        belongs_to = "super::file_metadata_revision::Entity",
         from = "(Column::Id, Column::Revision)",
         to = "(super::file_metadata_revision::Column::Id, super::file_metadata_revision::Column::Revision)",
         on_update = "NoAction",
         on_delete = "Restrict"
     )]
-    FileMetadataRevision,
+    FileMetadataRevision1,
     #[sea_orm(has_many = "super::file_sync_item::Entity")]
     FileSyncItem,
     #[sea_orm(
@@ -89,15 +105,9 @@ impl Related<super::device_file_tag::Entity> for Entity {
     }
 }
 
-impl Related<super::file_analysis_state::Entity> for Entity {
+impl Related<super::file_analysis_run_item::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::FileAnalysisState.def()
-    }
-}
-
-impl Related<super::file_metadata_revision::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::FileMetadataRevision.def()
+        Relation::FileAnalysisRunItem.def()
     }
 }
 

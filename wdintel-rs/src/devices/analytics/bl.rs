@@ -2,9 +2,11 @@ use super::query;
 use super::queue;
 use super::rules;
 use super::types::{
-    AdminAnalyticsTag, AnalyticsTag, DeviceAnalyticsFile,
-    DeviceAnalyticsFilesRsp, DeviceAnalyticsSummaryItem,
-    DeviceAnalyticsSummaryRsp, FileAnalysisInput, RuleExpression, RuleTestFile,
+    AdminAnalyticsTag, AnalysisRun, AnalysisRunFile, AnalysisRunFileMetadata,
+    AnalyticsTag, DeviceAnalyticsFile, DeviceAnalyticsFilesRsp,
+    DeviceAnalyticsSummaryItem, DeviceAnalyticsSummaryRsp, FileAnalysisInput,
+    GetAnalysisRunRsp, ListAnalysisRunFilesRsp, ListAnalysisRunsRsp,
+    ReanalyzeAllRsp, ReanalyzeDeviceRsp, RuleExpression, RuleTestFile,
     RuleTestFileResult, RuleValidationError, TagFilter, TagMatch,
     TagRuleDefinition, TestAnalyticsTagRuleRsp,
 };
@@ -19,8 +21,10 @@ use crate::error::AppError;
 use crate::file_registry::{entities::analytics_tag, FileRegistryDb};
 use crate::h;
 use crate::types::ShortContext;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, SecondsFormat, Utc};
 use sea_orm::{DatabaseConnection, DbErr, TransactionTrait};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -32,6 +36,10 @@ const RULE_TEST_MAX_FILES: usize = 100;
 const ANALYTICS_FILES_DEFAULT_LIMIT: u64 = 10;
 const ANALYTICS_FILES_MAX_LIMIT: u64 = 100;
 const ANALYTICS_FILE_LINK_CHUNK_SIZE: u64 = 101;
+const ANALYSIS_RUN_DEFAULT_LIMIT: u64 = 100;
+const ANALYSIS_RUN_MAX_LIMIT: u64 = 500;
+const ANALYSIS_RUN_FILE_DEFAULT_LIMIT: u64 = 100;
+const ANALYSIS_RUN_FILE_MAX_LIMIT: u64 = 500;
 const ORPHAN_WARNING_INTERVAL_SECS: u64 = 60;
 
 static LAST_ORPHAN_WARNING_AT: AtomicU64 = AtomicU64::new(0);
@@ -96,7 +104,10 @@ pub(super) async fn save_rule(
 ) -> Result<AdminAnalyticsTag, AppError> {
     let rule_expression = validate_rule_expression(tag_id, rule_expression)?;
     let transaction = file_db.begin().await.c(h!())?;
-    let tag = query::lock_tag_for_rule_set_mutation(&transaction, tag_id)
+    queue::lock_definition_publication(&transaction)
+        .await
+        .c(h!())?;
+    let tag = query::lock_tag(&transaction, tag_id)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
@@ -109,6 +120,9 @@ pub(super) async fn save_rule(
     )
     .await
     .c(h!())?;
+    queue::publish_definition_if_changed(&transaction)
+        .await
+        .c(h!())?;
     transaction.commit().await.c(h!())?;
     map_admin_tag(tag)
 }
@@ -118,11 +132,17 @@ pub(super) async fn archive_tag(
     tag_id: Uuid,
 ) -> Result<AdminAnalyticsTag, AppError> {
     let transaction = file_db.begin().await.c(h!())?;
-    let tag = query::lock_tag_for_rule_set_mutation(&transaction, tag_id)
+    queue::lock_definition_publication(&transaction)
+        .await
+        .c(h!())?;
+    let tag = query::lock_tag(&transaction, tag_id)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
     let tag = query::archive_tag(&transaction, tag).await.c(h!())?;
+    queue::publish_definition_if_changed(&transaction)
+        .await
+        .c(h!())?;
     transaction.commit().await.c(h!())?;
     map_admin_tag(tag)
 }
@@ -132,11 +152,17 @@ pub(super) async fn restore_tag(
     tag_id: Uuid,
 ) -> Result<AdminAnalyticsTag, AppError> {
     let transaction = file_db.begin().await.c(h!())?;
-    let tag = query::lock_tag_for_rule_set_mutation(&transaction, tag_id)
+    queue::lock_definition_publication(&transaction)
+        .await
+        .c(h!())?;
+    let tag = query::lock_tag(&transaction, tag_id)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
     let tag = query::restore_tag(&transaction, tag).await.c(h!())?;
+    queue::publish_definition_if_changed(&transaction)
+        .await
+        .c(h!())?;
     transaction.commit().await.c(h!())?;
     map_admin_tag(tag)
 }
@@ -209,17 +235,15 @@ pub(super) async fn test_rule(
 
 pub(super) async fn schedule_all_reanalysis(
     file_registry_db: &FileRegistryDb,
-) -> Result<u64, AppError> {
-    let rule_revision = query::rule_set_revision(file_registry_db.connection())
-        .await
-        .c(h!())?;
-    Ok(queue::schedule_reanalysis(
-        file_registry_db.connection(),
-        None,
-        rule_revision,
-    )
-    .await
-    .c(h!())?)
+) -> Result<ReanalyzeAllRsp, AppError> {
+    let scheduled =
+        queue::create_manual_runs_all(file_registry_db.connection())
+            .await
+            .c(h!())?;
+    Ok(ReanalyzeAllRsp {
+        definition_id: scheduled.definition_id.to_string(),
+        created_run_count: scheduled.created_run_count,
+    })
 }
 
 pub(super) async fn schedule_device_reanalysis(
@@ -227,7 +251,7 @@ pub(super) async fn schedule_device_reanalysis(
     file_registry_db: &FileRegistryDb,
     login: &login::Model,
     device_id: Uuid,
-) -> Result<u64, AppError> {
+) -> Result<ReanalyzeDeviceRsp, AppError> {
     device_query::find_visible_device(
         main_db,
         login,
@@ -236,16 +260,133 @@ pub(super) async fn schedule_device_reanalysis(
     )
     .await
     .c(h!())?;
-    let rule_revision = query::rule_set_revision(file_registry_db.connection())
-        .await
-        .c(h!())?;
-    Ok(queue::schedule_reanalysis(
+    let run =
+        queue::create_manual_run(file_registry_db.connection(), device_id)
+            .await
+            .c(h!())?;
+    Ok(ReanalyzeDeviceRsp {
+        run: map_analysis_run(run, queue::ANALYZER_VERSION, queue::DSL_VERSION),
+    })
+}
+
+pub(super) async fn get_analysis_run(
+    main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
+    login: &login::Model,
+    run_id: Uuid,
+) -> Result<GetAnalysisRunRsp, AppError> {
+    let (run, definition) =
+        query::find_analysis_run(file_registry_db.connection(), run_id)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+    authorize_analysis_device(main_db, login, run.device_id).await?;
+    Ok(GetAnalysisRunRsp {
+        run: map_analysis_run(
+            run,
+            definition.analyzer_version,
+            definition.dsl_version,
+        ),
+    })
+}
+
+pub(super) async fn list_analysis_runs(
+    main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
+    login: &login::Model,
+    device_id: Uuid,
+    limit: Option<u64>,
+    cursor: Option<String>,
+) -> Result<ListAnalysisRunsRsp, AppError> {
+    authorize_analysis_device(main_db, login, device_id).await?;
+    let limit = validate_page_limit(
+        limit.unwrap_or(ANALYSIS_RUN_DEFAULT_LIMIT),
+        ANALYSIS_RUN_MAX_LIMIT,
+    )?;
+    let cursor = cursor.as_deref().map(decode_run_cursor).transpose()?;
+    let mut records = query::list_analysis_runs(
         file_registry_db.connection(),
-        Some(device_id),
-        rule_revision,
+        device_id,
+        cursor.map(|cursor| cursor.run_sequence),
+        limit + 1,
     )
     .await
-    .c(h!())?)
+    .c(h!())?;
+    let has_more = records.len() > limit as usize;
+    records.truncate(limit as usize);
+    let next_cursor = has_more
+        .then(|| records.last().map(|(run, _)| run.run_sequence))
+        .flatten()
+        .map(|run_sequence| encode_cursor(&RunCursor { run_sequence }))
+        .transpose()?;
+    let runs = records
+        .into_iter()
+        .map(|(run, definition)| {
+            map_analysis_run(
+                run,
+                definition.analyzer_version,
+                definition.dsl_version,
+            )
+        })
+        .collect();
+    Ok(ListAnalysisRunsRsp { runs, next_cursor })
+}
+
+pub(super) async fn list_analysis_run_files(
+    main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
+    login: &login::Model,
+    run_id: Uuid,
+    limit: Option<u64>,
+    cursor: Option<String>,
+) -> Result<ListAnalysisRunFilesRsp, AppError> {
+    let (run, _) =
+        query::find_analysis_run(file_registry_db.connection(), run_id)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+    authorize_analysis_device(main_db, login, run.device_id).await?;
+    let limit = validate_page_limit(
+        limit.unwrap_or(ANALYSIS_RUN_FILE_DEFAULT_LIMIT),
+        ANALYSIS_RUN_FILE_MAX_LIMIT,
+    )?;
+    let after_file_id = cursor
+        .as_deref()
+        .map(|cursor| decode_run_file_cursor(cursor, run_id))
+        .transpose()?;
+    let mut rows = query::list_analysis_run_files(
+        file_registry_db.connection(),
+        run_id,
+        after_file_id,
+        limit + 1,
+    )
+    .await
+    .c(h!())?;
+    let has_more = rows.len() > limit as usize;
+    rows.truncate(limit as usize);
+    let next_cursor = has_more
+        .then(|| rows.last().map(|row| row.file_id))
+        .flatten()
+        .map(|file_id| encode_cursor(&RunFileCursor { run_id, file_id }))
+        .transpose()?;
+    let files = rows.into_iter().map(map_analysis_run_file).collect();
+    Ok(ListAnalysisRunFilesRsp { files, next_cursor })
+}
+
+async fn authorize_analysis_device(
+    main_db: &DatabaseConnection,
+    login: &login::Model,
+    device_id: Uuid,
+) -> Result<(), AppError> {
+    device_query::authorize_file_registry_access(
+        main_db,
+        login,
+        device_id,
+        FileRegistryDeviceAccess::Read,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 pub(in crate::devices) async fn hydrate_active_tags(
@@ -533,12 +674,139 @@ pub(super) fn validate_rule_expression(
     };
     let rule_expression = rules::deserialize_rule_expression(rule_expression)
         .map_err(validation_app_error)?;
-    rules::compile_tag_rules(vec![TagRuleDefinition {
-        tag_id,
-        rule_expression: rule_expression.clone(),
-    }])
-    .map_err(validation_app_error)?;
-    Ok(Some(rule_expression))
+    let mut definitions =
+        rules::canonicalize_tag_rules(vec![TagRuleDefinition {
+            tag_id,
+            rule_expression,
+        }])
+        .map_err(validation_app_error)?;
+    Ok(Some(
+        definitions
+            .pop()
+            .expect("one canonical rule definition")
+            .rule_expression,
+    ))
+}
+
+pub(super) fn map_analysis_run(
+    run: crate::file_registry::entities::file_analysis_run::Model,
+    analyzer_version: i32,
+    dsl_version: i32,
+) -> AnalysisRun {
+    AnalysisRun {
+        run_id: run.id.to_string(),
+        device_id: run.device_id.to_string(),
+        cause: if run.sync_id.is_some() {
+            "sync".to_owned()
+        } else {
+            "manual_reanalysis".to_owned()
+        },
+        sync_id: run.sync_id.map(|id| id.to_string()),
+        definition_id: run.definition_id.to_string(),
+        target_source_sequence: run.target_source_sequence,
+        analyzer_version,
+        dsl_version,
+        status: queue::run_status(&run).to_owned(),
+        item_count: run.item_count.try_into().unwrap_or_default(),
+        completed_count: run.completed_count.try_into().unwrap_or_default(),
+        created_at: format_datetime(run.created_at),
+        prepared_at: run.prepared_at.map(format_datetime),
+        completed_at: run.completed_at.map(format_datetime),
+    }
+}
+
+fn map_analysis_run_file(row: query::AnalysisRunFileRow) -> AnalysisRunFile {
+    AnalysisRunFile {
+        file_id: row.file_id.to_string(),
+        metadata_revision: row.metadata_revision,
+        analysis_input_revision: row.analysis_input_revision,
+        state: row.state,
+        metadata: AnalysisRunFileMetadata {
+            name: row.name,
+            absolute_path: row.absolute_path,
+            extension: row.extension,
+            mime_type: row.mime_type,
+            file_metadata_created_at: row
+                .file_metadata_created_at
+                .map(format_datetime),
+            file_metadata_modified_at: row
+                .file_metadata_modified_at
+                .map(format_datetime),
+            source_file_state: row.source_file_state,
+        },
+        tag_ids: row
+            .tag_ids
+            .map(|ids| ids.into_iter().map(|id| id.to_string()).collect()),
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+struct RunCursor {
+    run_sequence: i64,
+}
+
+#[derive(Deserialize, Serialize)]
+struct RunFileCursor {
+    run_id: Uuid,
+    file_id: Uuid,
+}
+
+fn decode_run_cursor(cursor: &str) -> Result<RunCursor, AppError> {
+    decode_cursor(cursor).map_err(|_| {
+        validation_app_error(validation_error(
+            "cursor",
+            "invalid_cursor",
+            "Курсор має некоректний формат",
+        ))
+    })
+}
+
+fn decode_run_file_cursor(
+    cursor: &str,
+    expected_run_id: Uuid,
+) -> Result<Uuid, AppError> {
+    let cursor: RunFileCursor = decode_cursor(cursor).map_err(|_| {
+        validation_app_error(validation_error(
+            "cursor",
+            "invalid_cursor",
+            "Курсор має некоректний формат",
+        ))
+    })?;
+    if cursor.run_id != expected_run_id {
+        return Err(validation_app_error(validation_error(
+            "cursor",
+            "invalid_cursor",
+            "Курсор належить іншому запуску аналізу",
+        )));
+    }
+    Ok(cursor.file_id)
+}
+
+fn encode_cursor<T: Serialize>(cursor: &T) -> Result<String, AppError> {
+    let bytes =
+        serde_json::to_vec(cursor).map_err(|error| AppError::AnyhowError {
+            source: anyhow::Error::new(error),
+        })?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
+}
+
+fn decode_cursor<T>(cursor: &str) -> Result<T, anyhow::Error>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let bytes = URL_SAFE_NO_PAD.decode(cursor)?;
+    Ok(serde_json::from_slice(&bytes)?)
+}
+
+fn validate_page_limit(limit: u64, max: u64) -> Result<u64, AppError> {
+    if !(1..=max).contains(&limit) {
+        return Err(validation_app_error(validation_error(
+            "limit",
+            "invalid_limit",
+            &format!("Значення limit має бути від 1 до {max}"),
+        )));
+    }
+    Ok(limit)
 }
 
 fn normalize_tag_name(name: String) -> Result<String, AppError> {

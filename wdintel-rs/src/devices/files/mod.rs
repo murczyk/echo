@@ -212,12 +212,13 @@ pub(crate) async fn sync_files(
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
-    let result = sync::automatic(
+    let result = sync::automatic_with_metrics(
         &env.dbx,
         env.file_registry_db()?,
         &login,
         parse_uuid(&body.device_id),
         body.files,
+        env.metrics.as_ref(),
     )
     .await
     .c(h!())?;
@@ -294,13 +295,14 @@ pub(crate) async fn apply_sync_batch(
         )])));
     }
     Ok(Json(
-        sync::apply_batch(
+        sync::apply_batch_with_metrics(
             &env.dbx,
             env.file_registry_db()?,
             &login,
             sync_id,
             batch_index,
             body.files,
+            env.metrics.as_ref(),
         )
         .await
         .c(h!())?,

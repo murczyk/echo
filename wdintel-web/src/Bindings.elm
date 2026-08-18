@@ -5026,6 +5026,7 @@ type alias SyncSummary =
     , deviceId : String
     , mode : FileSyncSessionMode
     , status : FileSyncSessionStatus
+    , analysisRunId : Maybe (String)
     , nextBatchIndex : Int
     , counts : SyncCounts
     , createdAt : String
@@ -5042,6 +5043,7 @@ syncSummaryEncoder struct =
         , ( "device_id", (Json.Encode.string) struct.deviceId )
         , ( "mode", (fileSyncSessionModeEncoder) struct.mode )
         , ( "status", (fileSyncSessionStatusEncoder) struct.status )
+        , ( "analysis_run_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.analysisRunId )
         , ( "next_batch_index", (Json.Encode.int) struct.nextBatchIndex )
         , ( "counts", (syncCountsEncoder) struct.counts )
         , ( "created_at", (Json.Encode.string) struct.createdAt )
@@ -5462,15 +5464,197 @@ reanalyzeDeviceReqEncoder struct =
         ]
 
 
-type alias ReanalysisRsp =
-    { scheduledFileCount : Int
+type alias AnalysisRun =
+    { runId : String
+    , deviceId : String
+    , cause : String
+    , syncId : Maybe (String)
+    , definitionId : String
+    , targetSourceSequence : Maybe (Int)
+    , analyzerVersion : Int
+    , dslVersion : Int
+    , status : String
+    , itemCount : Int
+    , completedCount : Int
+    , createdAt : String
+    , preparedAt : Maybe (String)
+    , completedAt : Maybe (String)
     }
 
 
-reanalysisRspEncoder : ReanalysisRsp -> Json.Encode.Value
-reanalysisRspEncoder struct =
+analysisRunEncoder : AnalysisRun -> Json.Encode.Value
+analysisRunEncoder struct =
     Json.Encode.object
-        [ ( "scheduled_file_count", (Json.Encode.int) struct.scheduledFileCount )
+        [ ( "run_id", (Json.Encode.string) struct.runId )
+        , ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "cause", (Json.Encode.string) struct.cause )
+        , ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
+        , ( "definition_id", (Json.Encode.string) struct.definitionId )
+        , ( "target_source_sequence", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.targetSourceSequence )
+        , ( "analyzer_version", (Json.Encode.int) struct.analyzerVersion )
+        , ( "dsl_version", (Json.Encode.int) struct.dslVersion )
+        , ( "status", (Json.Encode.string) struct.status )
+        , ( "item_count", (Json.Encode.int) struct.itemCount )
+        , ( "completed_count", (Json.Encode.int) struct.completedCount )
+        , ( "created_at", (Json.Encode.string) struct.createdAt )
+        , ( "prepared_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.preparedAt )
+        , ( "completed_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.completedAt )
+        ]
+
+
+type alias ReanalyzeDeviceRsp =
+    { run : AnalysisRun
+    }
+
+
+reanalyzeDeviceRspEncoder : ReanalyzeDeviceRsp -> Json.Encode.Value
+reanalyzeDeviceRspEncoder struct =
+    Json.Encode.object
+        [ ( "run", (analysisRunEncoder) struct.run )
+        ]
+
+
+type alias ReanalyzeAllRsp =
+    { definitionId : String
+    , createdRunCount : Int
+    }
+
+
+reanalyzeAllRspEncoder : ReanalyzeAllRsp -> Json.Encode.Value
+reanalyzeAllRspEncoder struct =
+    Json.Encode.object
+        [ ( "definition_id", (Json.Encode.string) struct.definitionId )
+        , ( "created_run_count", (Json.Encode.int) struct.createdRunCount )
+        ]
+
+
+type alias GetAnalysisRunReq =
+    { runId : String
+    }
+
+
+getAnalysisRunReqEncoder : GetAnalysisRunReq -> Json.Encode.Value
+getAnalysisRunReqEncoder struct =
+    Json.Encode.object
+        [ ( "run_id", (Json.Encode.string) struct.runId )
+        ]
+
+
+type alias GetAnalysisRunRsp =
+    { run : AnalysisRun
+    }
+
+
+getAnalysisRunRspEncoder : GetAnalysisRunRsp -> Json.Encode.Value
+getAnalysisRunRspEncoder struct =
+    Json.Encode.object
+        [ ( "run", (analysisRunEncoder) struct.run )
+        ]
+
+
+type alias ListAnalysisRunsReq =
+    { deviceId : String
+    , limit : Maybe (Int)
+    , cursor : Maybe (String)
+    }
+
+
+listAnalysisRunsReqEncoder : ListAnalysisRunsReq -> Json.Encode.Value
+listAnalysisRunsReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        ]
+
+
+type alias ListAnalysisRunsRsp =
+    { runs : List (AnalysisRun)
+    , nextCursor : Maybe (String)
+    }
+
+
+listAnalysisRunsRspEncoder : ListAnalysisRunsRsp -> Json.Encode.Value
+listAnalysisRunsRspEncoder struct =
+    Json.Encode.object
+        [ ( "runs", (Json.Encode.list (analysisRunEncoder)) struct.runs )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        ]
+
+
+type alias ListAnalysisRunFilesReq =
+    { runId : String
+    , limit : Maybe (Int)
+    , cursor : Maybe (String)
+    }
+
+
+listAnalysisRunFilesReqEncoder : ListAnalysisRunFilesReq -> Json.Encode.Value
+listAnalysisRunFilesReqEncoder struct =
+    Json.Encode.object
+        [ ( "run_id", (Json.Encode.string) struct.runId )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        ]
+
+
+type alias AnalysisRunFileMetadata =
+    { name : String
+    , absolutePath : String
+    , extension : Maybe (String)
+    , mimeType : Maybe (String)
+    , fileMetadataCreatedAt : Maybe (String)
+    , fileMetadataModifiedAt : Maybe (String)
+    , sourceFileState : Maybe (String)
+    }
+
+
+analysisRunFileMetadataEncoder : AnalysisRunFileMetadata -> Json.Encode.Value
+analysisRunFileMetadataEncoder struct =
+    Json.Encode.object
+        [ ( "name", (Json.Encode.string) struct.name )
+        , ( "absolute_path", (Json.Encode.string) struct.absolutePath )
+        , ( "extension", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.extension )
+        , ( "mime_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mimeType )
+        , ( "file_metadata_created_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileMetadataCreatedAt )
+        , ( "file_metadata_modified_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileMetadataModifiedAt )
+        , ( "source_file_state", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sourceFileState )
+        ]
+
+
+type alias AnalysisRunFile =
+    { fileId : String
+    , metadataRevision : Int
+    , analysisInputRevision : Int
+    , state : String
+    , metadata : AnalysisRunFileMetadata
+    , tagIds : Maybe (List (String))
+    }
+
+
+analysisRunFileEncoder : AnalysisRunFile -> Json.Encode.Value
+analysisRunFileEncoder struct =
+    Json.Encode.object
+        [ ( "file_id", (Json.Encode.string) struct.fileId )
+        , ( "metadata_revision", (Json.Encode.int) struct.metadataRevision )
+        , ( "analysis_input_revision", (Json.Encode.int) struct.analysisInputRevision )
+        , ( "state", (Json.Encode.string) struct.state )
+        , ( "metadata", (analysisRunFileMetadataEncoder) struct.metadata )
+        , ( "tag_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.tagIds )
+        ]
+
+
+type alias ListAnalysisRunFilesRsp =
+    { files : List (AnalysisRunFile)
+    , nextCursor : Maybe (String)
+    }
+
+
+listAnalysisRunFilesRspEncoder : ListAnalysisRunFilesRsp -> Json.Encode.Value
+listAnalysisRunFilesRspEncoder struct =
+    Json.Encode.object
+        [ ( "files", (Json.Encode.list (analysisRunFileEncoder)) struct.files )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
         ]
 
 
@@ -16088,6 +16272,7 @@ syncSummaryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mode" (fileSyncSessionModeDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (fileSyncSessionStatusDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_run_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_batch_index" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "counts" (syncCountsDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
@@ -16394,10 +16579,101 @@ reanalyzeDeviceReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
 
 
-reanalysisRspDecoder : Json.Decode.Decoder ReanalysisRsp
-reanalysisRspDecoder =
-    Json.Decode.succeed ReanalysisRsp
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "scheduled_file_count" (Json.Decode.int)))
+analysisRunDecoder : Json.Decode.Decoder AnalysisRun
+analysisRunDecoder =
+    Json.Decode.succeed AnalysisRun
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "run_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cause" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "definition_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "target_source_sequence" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analyzer_version" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dsl_version" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "item_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completed_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prepared_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completed_at" (Json.Decode.nullable (Json.Decode.string))))
+
+
+reanalyzeDeviceRspDecoder : Json.Decode.Decoder ReanalyzeDeviceRsp
+reanalyzeDeviceRspDecoder =
+    Json.Decode.succeed ReanalyzeDeviceRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "run" (analysisRunDecoder)))
+
+
+reanalyzeAllRspDecoder : Json.Decode.Decoder ReanalyzeAllRsp
+reanalyzeAllRspDecoder =
+    Json.Decode.succeed ReanalyzeAllRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "definition_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_run_count" (Json.Decode.int)))
+
+
+getAnalysisRunReqDecoder : Json.Decode.Decoder GetAnalysisRunReq
+getAnalysisRunReqDecoder =
+    Json.Decode.succeed GetAnalysisRunReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "run_id" (Json.Decode.string)))
+
+
+getAnalysisRunRspDecoder : Json.Decode.Decoder GetAnalysisRunRsp
+getAnalysisRunRspDecoder =
+    Json.Decode.succeed GetAnalysisRunRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "run" (analysisRunDecoder)))
+
+
+listAnalysisRunsReqDecoder : Json.Decode.Decoder ListAnalysisRunsReq
+listAnalysisRunsReqDecoder =
+    Json.Decode.succeed ListAnalysisRunsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+listAnalysisRunsRspDecoder : Json.Decode.Decoder ListAnalysisRunsRsp
+listAnalysisRunsRspDecoder =
+    Json.Decode.succeed ListAnalysisRunsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "runs" (Json.Decode.list (analysisRunDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+listAnalysisRunFilesReqDecoder : Json.Decode.Decoder ListAnalysisRunFilesReq
+listAnalysisRunFilesReqDecoder =
+    Json.Decode.succeed ListAnalysisRunFilesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "run_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+analysisRunFileMetadataDecoder : Json.Decode.Decoder AnalysisRunFileMetadata
+analysisRunFileMetadataDecoder =
+    Json.Decode.succeed AnalysisRunFileMetadata
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extension" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mime_type" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_metadata_created_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_metadata_modified_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_file_state" (Json.Decode.nullable (Json.Decode.string))))
+
+
+analysisRunFileDecoder : Json.Decode.Decoder AnalysisRunFile
+analysisRunFileDecoder =
+    Json.Decode.succeed AnalysisRunFile
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_revision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_input_revision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata" (analysisRunFileMetadataDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+
+
+listAnalysisRunFilesRspDecoder : Json.Decode.Decoder ListAnalysisRunFilesRsp
+listAnalysisRunFilesRspDecoder =
+    Json.Decode.succeed ListAnalysisRunFilesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "files" (Json.Decode.list (analysisRunFileDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
 
 
 deviceAnalyticsReqDecoder : Json.Decode.Decoder DeviceAnalyticsReq

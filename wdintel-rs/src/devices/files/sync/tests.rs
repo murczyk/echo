@@ -9,7 +9,7 @@ use crate::devices::{access, ROLE_DEVICE_SOURCE};
 use crate::entities::{device, login, organism};
 use crate::error::AppError;
 use crate::file_registry::entities::{
-    file_analysis_device_state, file_analysis_state, file_entry,
+    file_analysis_run, file_device_source_state, file_entry,
     file_metadata_revision, file_sync_batch, file_sync_item, file_sync_session,
 };
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
@@ -152,6 +152,9 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
     .await
     .unwrap();
     let first_sync_id = Uuid::parse_str(&response.sync.sync_id).unwrap();
+    let first_analysis_run_id =
+        Uuid::parse_str(response.sync.analysis_run_id.as_deref().unwrap())
+            .unwrap();
 
     assert_eq!(
         response.sync.status,
@@ -237,19 +240,25 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
         current.source_file_state_settled_by,
         revision.source_file_state_settled_by
     );
+    assert_eq!(current.analysis_input_revision, Some(1));
+    assert_eq!(current.current_analysis_run_id, None);
+    assert_eq!(revision.source_sequence, 1);
+    assert_eq!(revision.analysis_input_revision, 1);
+    let first_analysis_run =
+        file_analysis_run::Entity::find_by_id(first_analysis_run_id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(first_analysis_run.sync_id, Some(first_sync_id));
+    assert_eq!(first_analysis_run.device_id, device_id);
+    assert_eq!(first_analysis_run.target_source_sequence, None);
+    assert_eq!(first_analysis_run.item_count, 0);
 
     let mut forbidden_revision_update = revision.clone().into_active_model();
     forbidden_revision_update.mime_type =
         Set(Some("application/json".to_string()));
     assert!(forbidden_revision_update.update(file_db).await.is_err());
-
-    let analysis = file_analysis_state::Entity::find_by_id(file_id)
-        .one(file_db)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(analysis.source_revision, 1);
-    assert!(analysis.pending);
 
     let response = automatic(
         &env.dbx,
@@ -260,6 +269,7 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
     )
     .await
     .unwrap();
+    assert_eq!(response.sync.analysis_run_id, None);
     let (updated_file_id, revision) = accepted_result(&response.results[0]);
     assert_eq!(Uuid::parse_str(updated_file_id).unwrap(), file_id);
     assert_eq!(revision, 2);
@@ -274,12 +284,14 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
         _ => unreachable!(),
     }
 
-    let analysis = file_analysis_state::Entity::find_by_id(file_id)
-        .one(file_db)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(analysis.source_revision, 1);
+    let metadata_only_revision =
+        file_metadata_revision::Entity::find_by_id((file_id, 2))
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(metadata_only_revision.source_sequence, 2);
+    assert_eq!(metadata_only_revision.analysis_input_revision, 1);
 
     let mut changed = raw_item("C:\\reports\\report.log");
     changed.extension = Some(" TXT ".to_string());
@@ -292,6 +304,9 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
     )
     .await
     .unwrap();
+    let changed_analysis_run_id =
+        Uuid::parse_str(response.sync.analysis_run_id.as_deref().unwrap())
+            .unwrap();
     let (updated_file_id, revision) = accepted_result(&response.results[0]);
     assert_eq!(Uuid::parse_str(updated_file_id).unwrap(), file_id);
     assert_eq!(revision, 3);
@@ -308,29 +323,39 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
     let new_file_id = Uuid::parse_str(new_file_id).unwrap();
     assert_ne!(new_file_id, file_id);
     assert_eq!(revision, 1);
-
-    let updated_analysis = file_analysis_state::Entity::find_by_id(file_id)
-        .one(file_db)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(updated_analysis.source_revision, 2);
-    assert!(updated_analysis.pending);
-    let new_analysis = file_analysis_state::Entity::find_by_id(new_file_id)
-        .one(file_db)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(new_analysis.source_revision, 1);
-    assert!(new_analysis.pending);
-    assert!(
-        file_analysis_device_state::Entity::find_by_id(device_id)
+    let updated_revision =
+        file_metadata_revision::Entity::find_by_id((file_id, 3))
             .one(file_db)
             .await
             .unwrap()
+            .unwrap();
+    assert_eq!(updated_revision.source_sequence, 3);
+    assert_eq!(updated_revision.analysis_input_revision, 3);
+    let new_revision =
+        file_metadata_revision::Entity::find_by_id((new_file_id, 1))
+            .one(file_db)
+            .await
             .unwrap()
-            .pending
+            .unwrap();
+    assert_eq!(new_revision.source_sequence, 4);
+    assert_eq!(new_revision.analysis_input_revision, 1);
+    let changed_analysis_run =
+        file_analysis_run::Entity::find_by_id(changed_analysis_run_id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        changed_analysis_run.sync_id,
+        Some(Uuid::parse_str(&response.sync.sync_id).unwrap())
     );
+    let source_state = file_device_source_state::Entity::find_by_id(device_id)
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(source_state.last_source_sequence, 4);
+
     assert_eq!(
         file_entry::Entity::find()
             .filter(file_entry::Column::DeviceId.eq(device_id))

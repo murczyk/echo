@@ -338,6 +338,13 @@ async fn init_runtime_env(
     crate::migration::run_migration_1(mode).await.c(h!())?;
     crate::use_pg_runtime_pool(role);
     let env = new_env(mode).await.c(h!())?;
+    if let Some(file_registry_db) = &env.file_registry_db {
+        crate::devices::analytics::initialize_definition(
+            file_registry_db.connection(),
+        )
+        .await
+        .c(h!())?;
+    }
     let config = env.config.clone();
     if let Err(err) =
         crate::rer_importer::import_csv::ensure_import_group_exists(
@@ -395,9 +402,24 @@ fn spawn_device_file_analytics_worker_pool(
     env: Arc<Env>,
     cancellation_token: CancellationToken,
 ) {
+    {
+        let env = env.clone();
+        let cancellation_token = cancellation_token.clone();
+        spawn_named_worker(
+            "device_file_analytics_monitor",
+            bg_set,
+            async move {
+                crate::devices::analytics::worker::monitor_nofail(
+                    env,
+                    cancellation_token,
+                )
+                .await;
+            },
+        );
+    }
     let rule_cache =
         Arc::new(crate::devices::analytics::worker::RuleCache::default());
-    for worker_index in 0..crate::devices::analytics::WORKER_COUNT {
+    for worker_index in 0..crate::devices::analytics::worker::WORKER_COUNT {
         let env = env.clone();
         let cancellation_token = cancellation_token.clone();
         let rule_cache = rule_cache.clone();
@@ -409,7 +431,6 @@ fn spawn_device_file_analytics_worker_pool(
                     env,
                     cancellation_token,
                     rule_cache,
-                    crate::devices::analytics::BATCH_SIZE,
                 )
                 .await;
             },
@@ -1021,6 +1042,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::analytics::test_tag_rule)
             .service(crate::devices::analytics::reanalyze_all)
             .service(crate::devices::analytics::reanalyze_device)
+            .service(crate::devices::analytics::get_analysis_run)
+            .service(crate::devices::analytics::list_analysis_runs)
+            .service(crate::devices::analytics::list_analysis_run_files)
             .service(crate::devices::analytics::device_tags)
             .service(crate::devices::analytics::device_summary)
             .service(crate::devices::analytics::device_files)

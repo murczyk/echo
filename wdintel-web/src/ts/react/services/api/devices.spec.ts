@@ -9,10 +9,13 @@ import {
   createDevice,
   getDeviceDetail,
   getDeviceAnalyticsSummary,
+  getAnalysisRun,
   getDeviceUnitStats,
   listDeviceAors,
   listDeviceUnits,
   listAnalyticsTags,
+  listAnalysisRuns,
+  listAnalysisRunFiles,
   journalDeviceFiles,
   listDeviceFileRoots,
   listDevices,
@@ -671,20 +674,111 @@ describe('device analytics API service routes', () => {
     });
   });
 
-  it('schedules device and global reanalysis through the admin routes', async () => {
+  it('creates device and global reanalysis runs through the admin routes', async () => {
+    const run = {
+      run_id: 'run-1',
+      device_id: DEVICE_ID,
+      cause: 'manual_reanalysis',
+      sync_id: null,
+      target_source_sequence: 11,
+      definition_id: 'definition-1',
+      analyzer_version: 1,
+      dsl_version: 1,
+      status: 'preparing',
+      item_count: 0,
+      completed_count: 0,
+      prepared_at: null,
+      completed_at: null,
+      created_at: CREATED_AT,
+    };
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse({ scheduled_file_count: 2 }))
-      .mockResolvedValueOnce(jsonResponse({ scheduled_file_count: 5 }));
+      .mockResolvedValueOnce(jsonResponse({ run }))
+      .mockResolvedValueOnce(jsonResponse({ definition_id: 'definition-1', created_run_count: 5 }));
 
     const deviceRsp = await reanalyzeDevice({ deviceId: DEVICE_ID });
     const allRsp = await reanalyzeAll();
 
     expect(fetchMock().mock.calls[0][0]).toBe('/api/admin/device-analytics/reanalyze/device');
     expect(requestBody(0)).toEqual({ device_id: DEVICE_ID });
-    expect(deviceRsp).toEqual({ scheduledFileCount: 2 });
+    expect(deviceRsp.run.runId).toBe('run-1');
+    expect(deviceRsp.run).toMatchObject({
+      runId: 'run-1',
+      cause: 'manual_reanalysis',
+      syncId: null,
+      targetSourceSequence: 11,
+    });
     expect(fetchMock().mock.calls[1][0]).toBe('/api/admin/device-analytics/reanalyze/all');
     expect(requestBody(1)).toBeUndefined();
-    expect(allRsp).toEqual({ scheduledFileCount: 5 });
+    expect(allRsp).toEqual({ definitionId: 'definition-1', createdRunCount: 5 });
+  });
+
+  it('loads run status, device run history, and historical file results', async () => {
+    const run = {
+      run_id: 'run-1',
+      device_id: DEVICE_ID,
+      cause: 'manual_reanalysis',
+      sync_id: null,
+      target_source_sequence: 11,
+      definition_id: 'definition-1',
+      analyzer_version: 1,
+      dsl_version: 1,
+      status: 'completed',
+      item_count: 2,
+      completed_count: 2,
+      prepared_at: CREATED_AT,
+      completed_at: UPDATED_AT,
+      created_at: CREATED_AT,
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({ run }))
+      .mockResolvedValueOnce(jsonResponse({ runs: [run], next_cursor: 'runs-next' }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          files: [
+            {
+              file_id: FILE_ID,
+              metadata_revision: 3,
+              analysis_input_revision: 2,
+              state: 'completed',
+              tag_ids: [TAG_ID],
+              metadata: {
+                name: 'report.log',
+                absolute_path: 'C:\\report.log',
+                extension: 'log',
+                mime_type: 'text/plain',
+                file_metadata_created_at: CREATED_AT,
+                file_metadata_modified_at: UPDATED_AT,
+                source_file_state: null,
+              },
+            },
+          ],
+          next_cursor: null,
+        }),
+      );
+
+    const getRsp = await getAnalysisRun({ runId: 'run-1' });
+    const listRsp = await listAnalysisRuns({
+      deviceId: DEVICE_ID,
+      limit: 25,
+      cursor: null,
+    });
+    const filesRsp = await listAnalysisRunFiles({
+      runId: 'run-1',
+      limit: 25,
+      cursor: null,
+    });
+
+    expect(requestBody(0)).toEqual({ run_id: 'run-1' });
+    expect(requestBody(1)).toEqual({ device_id: DEVICE_ID, limit: 25, cursor: null });
+    expect(requestBody(2)).toEqual({ run_id: 'run-1', limit: 25, cursor: null });
+    expect(getRsp.run.status).toBe('completed');
+    expect(listRsp).toMatchObject({ runs: [{ runId: 'run-1' }], nextCursor: 'runs-next' });
+    expect(filesRsp.files[0]).toMatchObject({
+      fileId: FILE_ID,
+      state: 'completed',
+      tagIds: [TAG_ID],
+      metadata: { absolutePath: 'C:\\report.log', sourceFileState: null },
+    });
   });
 });
 

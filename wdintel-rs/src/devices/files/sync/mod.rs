@@ -24,6 +24,7 @@ use crate::error::AppError;
 use crate::file_registry::entities::sea_orm_active_enums::FileSyncItemOutcome;
 use crate::file_registry::FileRegistryDb;
 use crate::h;
+use crate::telemetry::Metrics;
 use crate::types::ShortContext;
 use sea_orm::DatabaseConnection;
 use uuid::Uuid;
@@ -33,6 +34,7 @@ pub(in crate::devices) struct StartSessionResult {
     pub(in crate::devices) created: bool,
 }
 
+#[cfg(test)]
 pub(in crate::devices) async fn automatic(
     main_db: &DatabaseConnection,
     file_registry_db: &FileRegistryDb,
@@ -40,11 +42,35 @@ pub(in crate::devices) async fn automatic(
     device_id: Uuid,
     files: Vec<RawSyncDeviceFileItem>,
 ) -> Result<SyncDeviceFilesRsp, AppError> {
+    automatic_with_metrics(
+        main_db,
+        file_registry_db,
+        login,
+        device_id,
+        files,
+        None,
+    )
+    .await
+}
+
+pub(in crate::devices) async fn automatic_with_metrics(
+    main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
+    login: &login::Model,
+    device_id: Uuid,
+    files: Vec<RawSyncDeviceFileItem>,
+    metrics: Option<&Metrics>,
+) -> Result<SyncDeviceFilesRsp, AppError> {
     validate_batch_size(files.len())?;
     let device_id = authorize(main_db, login, device_id).await?;
-    repository::automatic(file_registry_db.connection(), device_id, files)
-        .await
-        .map_err(map_service_error)
+    repository::automatic(
+        file_registry_db.connection(),
+        device_id,
+        files,
+        metrics,
+    )
+    .await
+    .map_err(map_service_error)
 }
 
 pub(in crate::devices) async fn start_explicit(
@@ -77,6 +103,7 @@ pub(in crate::devices) async fn status(
     Ok(response)
 }
 
+#[cfg(test)]
 pub(in crate::devices) async fn apply_batch(
     main_db: &DatabaseConnection,
     file_registry_db: &FileRegistryDb,
@@ -85,12 +112,34 @@ pub(in crate::devices) async fn apply_batch(
     batch_index: i32,
     files: Vec<RawSyncDeviceFileItem>,
 ) -> Result<ApplyFileSyncBatchRsp, AppError> {
+    apply_batch_with_metrics(
+        main_db,
+        file_registry_db,
+        login,
+        sync_id,
+        batch_index,
+        files,
+        None,
+    )
+    .await
+}
+
+pub(in crate::devices) async fn apply_batch_with_metrics(
+    main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
+    login: &login::Model,
+    sync_id: Uuid,
+    batch_index: i32,
+    files: Vec<RawSyncDeviceFileItem>,
+    metrics: Option<&Metrics>,
+) -> Result<ApplyFileSyncBatchRsp, AppError> {
     status(main_db, file_registry_db, login, sync_id).await?;
     repository::apply_batch(
         file_registry_db.connection(),
         sync_id,
         batch_index,
         files,
+        metrics,
     )
     .await
     .map_err(map_service_error)

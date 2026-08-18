@@ -107,7 +107,7 @@ beforeEach(async () => {
   mocks.saveRule.mockResolvedValue({ ...createdTag, ruleExpression: localExpression });
   mocks.archiveTag.mockResolvedValue({ ...createdTag, archivedAt: NOW });
   mocks.restoreTag.mockResolvedValue(createdTag);
-  mocks.reanalyzeAll.mockResolvedValue({ scheduledFileCount: 42 });
+  mocks.reanalyzeAll.mockResolvedValue({ definitionId: 'definition-1', createdRunCount: 42 });
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -261,7 +261,7 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(mocks.reanalyzeAll).toHaveBeenCalledTimes(1);
     expect(mocks.notify).toHaveBeenCalledWith({
       severity: 'success',
-      message: 'Заплановано повторний аналіз 42 файлів.',
+      message: 'Створено запусків повторного аналізу: 42.',
     });
   });
 });

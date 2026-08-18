@@ -215,10 +215,19 @@ abandoned sessions. The initial protocol replacement is performed by the
 normal Echo and Still package migrations; Still leaves its integration disabled
 until an administrator explicitly re-enables it.
 
-The `device_file_analytics_worker` runs in `wdintel-rs-bgworker`, reads pending
-file metadata from `wd_files`, and writes derived tag assignments to `wd`.
-It classifies only normalized file names, paths, and extensions; it does not
-read or transfer file content.
+The `device_file_analytics_worker` pool runs in `wdintel-rs-bgworker`. A
+terminal sync that accepts new evaluator input creates at most one bounded
+`file_analysis_run`; metadata-only revisions reuse their
+`analysis_input_revision` and do not schedule analysis. Manual device and
+global reanalysis capture the same per-device source watermark. Each run
+retains an immutable rule snapshot and write-once historical file results,
+while only the newest eligible result updates `file_entry.current_analysis_run_id`
+and the current `device_file_tag` projection. Workers prepare and claim bounded
+batches with expiring `SKIP LOCKED` leases, so independent workers can recover
+abandoned work without duplicating a result. The run status and historical
+file-result APIs expose this persisted progress. Analysis classifies only
+normalized file names, paths, and extensions; it never reads or transfers file
+content.
 
 See [Echo GPU audio transcription](../docs/ECHO_GPU_TRANSCRIPTION.md) for its
 configuration, network requirements, queue, cache, retry, and REST API flow.

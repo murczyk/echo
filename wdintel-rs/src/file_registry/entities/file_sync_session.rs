@@ -29,12 +29,20 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::file_analysis_run::Entity")]
+    FileAnalysisRun,
     #[sea_orm(has_many = "super::file_entry::Entity")]
     FileEntry,
     #[sea_orm(has_many = "super::file_metadata_revision::Entity")]
     FileMetadataRevision,
     #[sea_orm(has_many = "super::file_sync_batch::Entity")]
     FileSyncBatch,
+}
+
+impl Related<super::file_analysis_run::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileAnalysisRun.def()
+    }
 }
 
 impl Related<super::file_entry::Entity> for Entity {

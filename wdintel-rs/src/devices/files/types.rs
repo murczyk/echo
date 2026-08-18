@@ -1088,6 +1088,7 @@ pub struct SyncSummary {
     pub device_id: String,
     pub mode: FileSyncSessionMode,
     pub status: FileSyncSessionStatus,
+    pub analysis_run_id: Option<String>,
     pub next_batch_index: u64,
     pub counts: SyncCounts,
     pub created_at: String,

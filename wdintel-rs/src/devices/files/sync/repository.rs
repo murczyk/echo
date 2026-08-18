@@ -11,10 +11,10 @@ use super::{StartSessionResult, DEVICE_FILE_SYNC_SESSION_TTL_SECS};
 use crate::config::{
     DEVICE_FILE_PAGE_DEFAULT_LIMIT, DEVICE_FILE_PAGE_MAX_LIMIT,
 };
-use crate::devices::analytics::hydrate_active_tags;
+use crate::devices::analytics::{ensure_sync_run, hydrate_active_tags};
 use crate::file_registry::entities::{
-    file_entry, file_metadata_revision, file_sync_batch, file_sync_item,
-    file_sync_session,
+    file_analysis_run, file_entry, file_metadata_revision, file_sync_batch,
+    file_sync_item, file_sync_session,
     sea_orm_active_enums::{
         FileSyncBatchStatus as DbBatchStatus,
         FileSyncItemOutcome as DbItemOutcome,
@@ -23,6 +23,7 @@ use crate::file_registry::entities::{
     },
 };
 use crate::h;
+use crate::telemetry::Metrics;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{Duration, Utc};
 use sea_orm::sea_query::{Expr, Func, SimpleExpr};
@@ -78,6 +79,7 @@ pub(super) async fn automatic(
     file_db: &DatabaseConnection,
     device_id: Uuid,
     files: Vec<RawSyncDeviceFileItem>,
+    metrics: Option<&Metrics>,
 ) -> Result<SyncDeviceFilesRsp, SyncServiceError> {
     let transaction = begin_transaction(file_db).await?;
     if find_open_session(&transaction, device_id).await?.is_some() {
@@ -111,10 +113,13 @@ pub(super) async fn automatic(
     }
     let batch =
         insert_batch_and_items(&transaction, sync_id, 0, files, now).await?;
-    process_pending_items(&transaction, device_id, sync_id, 0).await?;
+    process_pending_items(&transaction, device_id, sync_id, 0, metrics).await?;
     let batch = finalize_batch(&transaction, batch).await?;
     let sync =
         finalize_automatic_session(&transaction, sync_id, &batch).await?;
+    let analysis_run_id = ensure_sync_run(&transaction, sync_id, device_id)
+        .await
+        .map_err(map_database)?;
     transaction.commit().await.map_err(map_infrastructure)?;
 
     let results = load_results(file_db, sync_id, Some(0), None, None).await?;
@@ -124,7 +129,7 @@ pub(super) async fn automatic(
         .map(into_immediate_result)
         .collect();
     Ok(SyncDeviceFilesRsp {
-        sync: map_session(sync),
+        sync: map_session(sync, analysis_run_id),
         results,
     })
 }
@@ -144,7 +149,7 @@ pub(super) async fn start_explicit(
         transaction.commit().await.map_err(map_infrastructure)?;
         return Ok(StartSessionResult {
             response: FileSyncSessionRsp {
-                sync: map_session(existing),
+                sync: map_session(existing, None),
             },
             created: false,
         });
@@ -184,7 +189,7 @@ pub(super) async fn start_explicit(
             }
             return Ok(StartSessionResult {
                 response: FileSyncSessionRsp {
-                    sync: map_session(existing),
+                    sync: map_session(existing, None),
                 },
                 created: false,
             });
@@ -195,7 +200,7 @@ pub(super) async fn start_explicit(
     let session = load_session(file_db, sync_id).await?;
     Ok(StartSessionResult {
         response: FileSyncSessionRsp {
-            sync: map_session(session),
+            sync: map_session(session, None),
         },
         created: true,
     })
@@ -205,8 +210,10 @@ pub(super) async fn status(
     file_db: &DatabaseConnection,
     sync_id: Uuid,
 ) -> Result<FileSyncSessionRsp, SyncServiceError> {
+    let session = load_session(file_db, sync_id).await?;
+    let analysis_run_id = load_analysis_run_id(file_db, sync_id).await?;
     Ok(FileSyncSessionRsp {
-        sync: map_session(load_session(file_db, sync_id).await?),
+        sync: map_session(session, analysis_run_id),
     })
 }
 
@@ -215,6 +222,7 @@ pub(super) async fn apply_batch(
     sync_id: Uuid,
     batch_index: i32,
     files: Vec<RawSyncDeviceFileItem>,
+    metrics: Option<&Metrics>,
 ) -> Result<ApplyFileSyncBatchRsp, SyncServiceError> {
     let transaction = begin_transaction(file_db).await?;
     let session = lock_session(&transaction, sync_id).await?;
@@ -246,7 +254,7 @@ pub(super) async fn apply_batch(
     }
     transaction.commit().await.map_err(map_infrastructure)?;
 
-    process_explicit_items(file_db, sync_id, batch_index).await?;
+    process_explicit_items(file_db, sync_id, batch_index, metrics).await?;
     let (sync, batch) =
         finalize_explicit_batch(file_db, sync_id, batch_index).await?;
 
@@ -258,7 +266,7 @@ pub(super) async fn apply_batch(
         .map(into_immediate_result)
         .collect();
     Ok(ApplyFileSyncBatchRsp {
-        sync: map_session(sync),
+        sync: map_session(sync, None),
         batch: map_batch(batch),
         results,
     })
@@ -277,9 +285,13 @@ pub(super) async fn complete(
             DbSessionStatus::Completed | DbSessionStatus::CompletedWithErrors
         ) && session.next_batch_index == expected_batch_count
         {
+            let analysis_run_id =
+                ensure_sync_run(&transaction, sync_id, session.device_id)
+                    .await
+                    .map_err(map_database)?;
             transaction.commit().await.map_err(map_infrastructure)?;
             return Ok(FileSyncSessionRsp {
-                sync: map_session(session),
+                sync: map_session(session, analysis_run_id),
             });
         }
         return Err(conflict(
@@ -335,9 +347,13 @@ pub(super) async fn complete(
     session.completed_at = Set(Some(now));
     session.expires_at = Set(None);
     let session = session.update(&transaction).await.map_err(map_database)?;
+    let analysis_run_id =
+        ensure_sync_run(&transaction, sync_id, session.device_id)
+            .await
+            .map_err(map_database)?;
     transaction.commit().await.map_err(map_infrastructure)?;
     Ok(FileSyncSessionRsp {
-        sync: map_session(session),
+        sync: map_session(session, analysis_run_id),
     })
 }
 
@@ -349,6 +365,7 @@ pub(super) async fn items(
     cursor: Option<&str>,
 ) -> Result<FileSyncSessionItemsRsp, SyncServiceError> {
     let session = load_session(file_db, sync_id).await?;
+    let analysis_run_id = load_analysis_run_id(file_db, sync_id).await?;
     let limit = limit.unwrap_or(DEVICE_FILE_PAGE_DEFAULT_LIMIT);
     if !(1..=DEVICE_FILE_PAGE_MAX_LIMIT).contains(&limit) {
         return Err(SyncServiceError::Filesystem(FilesystemError::Validation(
@@ -371,7 +388,7 @@ pub(super) async fn items(
         .map(encode_cursor);
     let results = hydrate_results(file_db, results).await?;
     Ok(FileSyncSessionItemsRsp {
-        sync: map_session(session),
+        sync: map_session(session, analysis_run_id),
         results,
         next_cursor,
     })
@@ -381,6 +398,7 @@ async fn process_explicit_items(
     file_db: &DatabaseConnection,
     sync_id: Uuid,
     batch_index: i32,
+    metrics: Option<&Metrics>,
 ) -> Result<(), SyncServiceError> {
     let transaction = begin_transaction(file_db).await?;
     let session = lock_session(&transaction, sync_id).await?;
@@ -392,6 +410,7 @@ async fn process_explicit_items(
             session.device_id,
             sync_id,
             batch_index,
+            metrics,
         )
         .await?;
     }
@@ -403,6 +422,7 @@ async fn process_pending_items(
     device_id: Uuid,
     sync_id: Uuid,
     batch_index: i32,
+    metrics: Option<&Metrics>,
 ) -> Result<(), SyncServiceError> {
     let pending = file_sync_item::Entity::find()
         .filter(file_sync_item::Column::Id.eq(sync_id))
@@ -413,7 +433,8 @@ async fn process_pending_items(
         .all(transaction)
         .await
         .map_err(map_database)?;
-    super::mutation::apply_sync_items(transaction, device_id, pending).await?;
+    super::mutation::apply_sync_items(transaction, device_id, pending, metrics)
+        .await?;
     Ok(())
 }
 
@@ -913,6 +934,20 @@ async fn load_session<C: ConnectionTrait>(
         .ok_or_else(|| SyncServiceError::Filesystem(FilesystemError::NotFound))
 }
 
+async fn load_analysis_run_id<C: ConnectionTrait>(
+    db: &C,
+    sync_id: Uuid,
+) -> Result<Option<Uuid>, SyncServiceError> {
+    file_analysis_run::Entity::find()
+        .select_only()
+        .column(file_analysis_run::Column::Id)
+        .filter(file_analysis_run::Column::SyncId.eq(sync_id))
+        .into_tuple::<Uuid>()
+        .one(db)
+        .await
+        .map_err(map_database)
+}
+
 async fn lock_session(
     transaction: &DatabaseTransaction,
     sync_id: Uuid,
@@ -963,7 +998,10 @@ fn ensure_open_explicit(
     Ok(())
 }
 
-fn map_session(session: file_sync_session::Model) -> SyncSummary {
+fn map_session(
+    session: file_sync_session::Model,
+    analysis_run_id: Option<Uuid>,
+) -> SyncSummary {
     SyncSummary {
         sync_id: session.id.hyphenated().to_string(),
         device_id: session.device_id.hyphenated().to_string(),
@@ -979,6 +1017,7 @@ fn map_session(session: file_sync_session::Model) -> SyncSummary {
             }
             DbSessionStatus::Expired => FileSyncSessionStatus::Expired,
         },
+        analysis_run_id: analysis_run_id.map(|id| id.to_string()),
         next_batch_index: session.next_batch_index as u64,
         counts: SyncCounts {
             received: session.received_count as u64,

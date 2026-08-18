@@ -13,6 +13,7 @@ pub struct Model {
     pub id: Uuid,
     #[sea_orm(primary_key, auto_increment = false)]
     pub revision: i64,
+    #[sea_orm(unique_key = "file_metadata_revision_source_sequence_key")]
     pub device_id: Uuid,
     pub sync_id: Uuid,
     #[sea_orm(column_type = "Text")]
@@ -30,10 +31,15 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub source_file_state_settled_by: Option<String>,
     pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(unique_key = "file_metadata_revision_source_sequence_key")]
+    pub source_sequence: i64,
+    pub analysis_input_revision: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::file_analysis_run_item::Entity")]
+    FileAnalysisRunItem,
     #[sea_orm(
         belongs_to = "super::file_entry::Entity",
         from = "Column::Id",
@@ -42,6 +48,14 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     FileEntry,
+    #[sea_orm(
+        belongs_to = "Entity",
+        from = "(Column::Id, Column::AnalysisInputRevision)",
+        to = "(Column::Id, Column::Revision)",
+        on_update = "NoAction",
+        on_delete = "Restrict"
+    )]
+    SelfRef,
     #[sea_orm(has_many = "super::file_sync_item::Entity")]
     FileSyncItem,
     #[sea_orm(
@@ -52,6 +66,12 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     FileSyncSession,
+}
+
+impl Related<super::file_analysis_run_item::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileAnalysisRunItem.def()
+    }
 }
 
 impl Related<super::file_entry::Entity> for Entity {

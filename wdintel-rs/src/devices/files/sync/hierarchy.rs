@@ -321,6 +321,8 @@ fn directory_active_model(
         content_path: Set(None),
         revision: Set(None),
         sync_id: Set(None),
+        analysis_input_revision: Set(None),
+        current_analysis_run_id: Set(None),
         source_file_state: Set(None),
         source_file_state_settled_at: Set(None),
         source_file_state_settled_by: Set(None),
