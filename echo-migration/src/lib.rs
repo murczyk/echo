@@ -374,6 +374,7 @@ mod m20260815_125337_add_sigint_comment_migration_marker;
 mod m20260816_102640_ocr;
 mod m20260816_173322_media_summary;
 mod m20260817_125243_add_intel_prod_relation_kind;
+mod m20260818_104740_sigint_comment_migration_indexes;
 
 pub struct Migrator;
 
@@ -859,6 +860,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260816_102640_ocr::Migration),
             Box::new(m20260816_173322_media_summary::Migration),
             Box::new(m20260817_125243_add_intel_prod_relation_kind::Migration),
+            Box::new(m20260818_104740_sigint_comment_migration_indexes::Migration),
         ]
     }
 }
