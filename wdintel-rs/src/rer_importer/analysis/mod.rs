@@ -6137,7 +6137,10 @@ pub async fn batch_message_comments_bl(
         &message_ids,
     )
     .await
-    .c(h!())?;
+    .c(h!())?
+    .into_iter()
+    .filter(|comment| comment.legacy_comment_id.is_some())
+    .collect::<Vec<_>>();
     let login_names = crate::users::login_names_by_ids(
         dbx,
         comments
@@ -6380,7 +6383,10 @@ pub async fn message_comments(
         &[req.message_id],
     )
     .await
-    .c(h!())?;
+    .c(h!())?
+    .into_iter()
+    .filter(|comment| comment.legacy_comment_id.is_some())
+    .collect::<Vec<_>>();
     let login_names = crate::users::login_names_by_ids(
         &env.dbx,
         comments

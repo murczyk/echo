@@ -384,6 +384,11 @@ pub(crate) async fn messages_by_id_bl(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
+    let owner_sender_ids = logins
+        .iter()
+        .chain(std::iter::once(login))
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
     let parent_group_access_query = Query::select()
         .expr(Expr::value(1))
         .from(signal_message_group::Entity)
@@ -425,13 +430,47 @@ pub(crate) async fn messages_by_id_bl(
                 .is_in(sigint_groups.clone()),
         )
         .to_owned();
+    let parent_owner_access_query = Query::select()
+        .expr(Expr::value(1))
+        .from(signal_message::Entity)
+        .and_where(
+            Expr::col((signal_message::Entity, signal_message::Column::Id))
+                .equals((
+                    intel_prod::Entity,
+                    intel_prod::Column::ParentSignalMessageId,
+                )),
+        )
+        .and_where(signal_message::Column::DatasourceGroupId.is_null())
+        .and_where(
+            signal_message::Column::Sender.is_in(owner_sender_ids.clone()),
+        )
+        .and_where(
+            Expr::exists(
+                Query::select()
+                    .expr(Expr::value(1))
+                    .from(signal_message_group::Entity)
+                    .and_where(
+                        Expr::col((
+                            signal_message_group::Entity,
+                            signal_message_group::Column::SignalMessageId,
+                        ))
+                        .equals((
+                            signal_message::Entity,
+                            signal_message::Column::Id,
+                        )),
+                    )
+                    .to_owned(),
+            )
+            .not(),
+        )
+        .to_owned();
     let parent_access_query = Query::select()
         .expr(Expr::value(1))
         .from(intel_prod::Entity)
-        .and_where(
-            intel_prod::Column::RelationKind
-                .eq(intel_prod::RELATION_KIND_REPORT),
-        )
+        .and_where(intel_prod::Column::RelationKind.is_in([
+            intel_prod::RELATION_KIND_REPORT,
+            intel_prod::RELATION_KIND_COMMENT,
+        ]))
         .and_where(
             Expr::col((
                 intel_prod::Entity,
@@ -443,6 +482,7 @@ pub(crate) async fn messages_by_id_bl(
             Condition::any()
                 .add(Expr::exists(parent_group_access_query))
                 .add(Expr::exists(parent_datasource_group_access_query))
+                .add(Expr::exists(parent_owner_access_query))
                 .into(),
         )
         .to_owned();
@@ -457,11 +497,6 @@ pub(crate) async fn messages_by_id_bl(
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
         .to_owned();
-    let owner_sender_ids = logins
-        .iter()
-        .chain(std::iter::once(login))
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
     let owner_access = Condition::all()
         .add(datasource_group::Column::GroupMasterKey.is_null())
         .add(Expr::exists(owner_access_query).not())
