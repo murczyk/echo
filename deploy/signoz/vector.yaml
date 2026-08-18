@@ -34,7 +34,14 @@ transforms:
       .SYSLOG_IDENTIFIER = "postgresql"
       ._SYSTEMD_UNIT = "postgresql@18-main.service"
 
-      pg_re = r'^(?P<pg_timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ [A-Z]+) \[(?P<postgresql_pid>\d+)\] (?P<postgresql_session>[^ ]*) (?P<postgresql_level>[A-Z]+):\s+(?P<postgresql_message>.*)$'
+      # The %h field in log_line_prefix ('%m [%p] %u@%d %h ') adds a second token
+      # between the pid and the level, which the previous single-token pattern
+      # could not match - so every Echo host was silently losing pid/session/
+      # level/timestamp and shipping Postgres logs with EMPTY severity. Only
+      # postgresql_log_kind and postgresql_duration_ms survived, because those are
+      # set by contains() outside this block, which is why it went unnoticed.
+      # %h is now optional and captured, so this matches hosts with and without it.
+      pg_re = r'^(?P<pg_timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ [A-Z]+) \[(?P<postgresql_pid>\d+)\]\s+(?P<postgresql_session>\S*)(?:\s+(?P<postgresql_client>\S+))?\s+(?P<postgresql_level>[A-Z]+):\s+(?P<postgresql_message>.*)$'
       if match(msg, pg_re) {
         parsed = parse_regex!(msg, pg_re)
         .postgresql_timestamp = parsed.pg_timestamp
@@ -43,6 +50,13 @@ transforms:
         .postgresql_level = parsed.postgresql_level
         .postgresql_message = parsed.postgresql_message
         .severity_text = parsed.postgresql_level
+        # No '?? ""' here: to_string() is infallible on this value and VRL
+        # rejects the coalescing (E651). `vector validate` does NOT catch it -
+        # only the topology build does, at service start.
+        pg_client = to_string(parsed.postgresql_client)
+        if pg_client != "" {
+          .postgresql_client = pg_client
+        }
       }
 
       .postgresql_log_kind = "other"
