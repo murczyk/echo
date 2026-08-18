@@ -565,6 +565,13 @@ flowchart LR
     class socket,nlp,iggy,promin,signal,whatsapp,vector,signoz,greptime,s3,wal_timer,wal_check,table_timer,table_reconcile,analytics optional
 ```
 
+Application-triggered Signal restarts are serialized per client by Redis. Echo
+owns a 90-second maintenance lease and a five-minute successful-restart
+cooldown; `echo-im` owns the systemd restart and waits for both `/v1/health`
+and every linked account in `/v1/accounts` before completing the lease. Signal
+workers defer API traffic and datasource sync timestamps while maintenance is
+active. Direct operator `systemctl` commands remain outside this coordination.
+
 Iggy inbox-topic events retain the JSON `[inbox_item_id, message]` shape used
 by the inbox API. The message object is enriched with
 `sigint_callsign_ids`, `sigint_unit_ids`, `sigint_signal_ids`, and

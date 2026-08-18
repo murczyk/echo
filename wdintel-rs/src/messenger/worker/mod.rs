@@ -334,6 +334,13 @@ async fn run_new_worker(
             }
             let sync_result =
                 sync_client_once(&config, cli, &dbx, &mut redis).await;
+            if sync_result.maintenance_skipped {
+                sleep(Duration::from_secs(
+                    SIGNAL_RESTART_MAINTENANCE_RETRY_SEC,
+                ))
+                .await;
+                continue;
+            }
             if !sync_result.is_healthy {
                 sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS))
                     .await;
@@ -365,6 +372,7 @@ async fn sync_client_once(
         return SyncResult {
             is_healthy: false,
             num_synced_inbox_messages: 0,
+            maintenance_skipped: false,
         };
     }
     if let Err(e) = clear_unlinked_datasource_notification(redis, cli.id).await
@@ -379,25 +387,43 @@ async fn sync_client_once(
         return SyncResult {
             is_healthy: false,
             num_synced_inbox_messages: 0,
+            maintenance_skipped: false,
         };
     };
     let mut client_groups_sync_ts_map =
         BTreeMap::<String, NaiveDateTime>::new();
-    let num_synced_inbox_messages = receive_thread(
+    let receive_result = receive_thread(
         config,
         &client_name,
         &mut client_groups_sync_ts_map,
         dbx,
+        redis,
     )
-    .await
-    .unwrap_or_else(|e| {
-        error!("> {client_name}::receive_thread_nofail error: {:?}", e);
-        0
-    });
+    .await;
+    let (num_synced_inbox_messages, maintenance_skipped) = match receive_result
+    {
+        Ok(ReceiveThreadResult::Synced(count)) => (count, false),
+        Ok(ReceiveThreadResult::Maintenance) => (0, true),
+        Err(failure) => {
+            error!(
+                "> {client_name}::receive_thread_nofail failed: {}",
+                crate::messenger::signal_restart::normalized_failure(&failure)
+            );
+            (0, false)
+        }
+    };
+    if maintenance_skipped {
+        return SyncResult {
+            is_healthy: true,
+            num_synced_inbox_messages,
+            maintenance_skipped,
+        };
+    }
     let is_healthy = !is_datasource_offline(dbx, cli.id).await;
     SyncResult {
         is_healthy,
         num_synced_inbox_messages,
+        maintenance_skipped,
     }
 }
 
@@ -597,36 +623,48 @@ async fn is_datasource_offline(dbx: &DatabaseConnection, id: i64) -> bool {
     last_sync_at < cutoff_ts
 }
 
+enum ReceiveThreadResult {
+    Synced(usize),
+    Maintenance,
+}
+
 async fn receive_thread(
     config: &Config,
     client_name: &str,
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
     dbx: &DatabaseConnection,
-) -> Result<usize, AppError> {
+    redis: &mut redis::aio::ConnectionManager,
+) -> Result<ReceiveThreadResult, AppError> {
     let datasource = load_client_datasource(dbx, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
     if datasource.echo_client_lock_id.is_none() {
         trace!("datasource {datasource_id} is not linked, skipping");
-        return Ok(0);
+        return Ok(ReceiveThreadResult::Synced(0));
     }
     if datasource.status == AccountStatus::Paused {
         trace!("datasource {datasource_id} is paused, skipping");
-        return Ok(0);
+        return Ok(ReceiveThreadResult::Synced(0));
     }
     ensure_initial_signal_login_delay().await;
     let restapi_error_discord_webhook_url =
         crate::system_settings::get_echo_restapi_error_discord_webhook_url(dbx)
             .await
             .c(h!())?;
-    echo_im::worker::signal_worker_tick_once_with_options(
+    let tick_outcome = echo_im::worker::signal_worker_tick_once_with_options(
         client_name,
         dbx,
-        echo_im::worker::SignalWorkerOptions {
+        crate::messenger::signal_restart::signal_worker_options(
+            crate::messenger::signal_restart::RedisSignalRestartCoordinator::new(
+                redis.clone(),
+            ),
             restapi_error_discord_webhook_url,
-        },
+        ),
     )
     .await
     .c(h!())?;
+    if tick_outcome == echo_im::worker::SignalWorkerTickOutcome::Maintenance {
+        return Ok(ReceiveThreadResult::Maintenance);
+    }
     echo_im::worker::whatsapp_worker_tick_once(client_name, dbx)
         .await
         .c(h!())?;
@@ -643,7 +681,7 @@ async fn receive_thread(
     model.last_sync_at = Set(Some(Utc::now().naive_utc()));
     model.update(dbx).await.c(h!())?;
 
-    Ok(items_synced)
+    Ok(ReceiveThreadResult::Synced(items_synced))
 }
 
 async fn ensure_initial_signal_login_delay() {
