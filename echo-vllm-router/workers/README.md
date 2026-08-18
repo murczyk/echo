@@ -24,7 +24,8 @@ cd echo-vllm-router/workers/ocr-gemma
 
 The production container binds only `100.95.57.33:8000`, uses the pinned image
 digest and model revision, and advertises the OCR-only alias rather than the
-general Gemma model ID.
+general Gemma model ID. vLLM admits up to two concurrent sequences so the
+shared extractor can batch two active documents.
 
 ## NuExtract on Flyingskull
 
@@ -46,7 +47,8 @@ Install Tailscale inside the container and preserve its identity in
 `/var/lib/tailscale` when migrating it. Share the `echo-nuextract3` node with
 the router tailnet; keep authentication keys out of Git. The checked-in worker
 profile binds vLLM only to the container's Tailscale address
-`100.113.47.83:8000`, with no Incus proxy device or host listener.
+`100.113.47.83:8000`, with no Incus proxy device or host listener. It admits
+up to two concurrent sequences.
 
 Confirm `ss -H -ltn 'sport = :8000'` inside the container reports only
 `100.113.47.83:8000`. The router preflight then verifies health, exact model

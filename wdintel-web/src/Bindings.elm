@@ -7025,6 +7025,36 @@ listUnitDuplicatesRspEncoder struct =
         ]
 
 
+type alias InconsistentUnit =
+    { sigintUnitId : Int
+    , name : String
+    , reasons : List (String)
+    , problematicEchelons : List (String)
+    }
+
+
+inconsistentUnitEncoder : InconsistentUnit -> Json.Encode.Value
+inconsistentUnitEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "reasons", (Json.Encode.list (Json.Encode.string)) struct.reasons )
+        , ( "problematic_echelons", (Json.Encode.list (Json.Encode.string)) struct.problematicEchelons )
+        ]
+
+
+type alias ListInconsistentUnitsRsp =
+    { units : List (InconsistentUnit)
+    }
+
+
+listInconsistentUnitsRspEncoder : ListInconsistentUnitsRsp -> Json.Encode.Value
+listInconsistentUnitsRspEncoder struct =
+    Json.Encode.object
+        [ ( "units", (Json.Encode.list (inconsistentUnitEncoder)) struct.units )
+        ]
+
+
 type alias CreateUnitReq =
     { other : String
     , teamOrCrew : String
@@ -10892,6 +10922,8 @@ type alias AiEngineItem =
     , url : String
     , modelName : String
     , enabled : Bool
+    , callsignEnabled : Bool
+    , ocrEnabled : Bool
     , hasToken : Bool
     , createdAt : Int
     , updatedAt : Int
@@ -10906,6 +10938,8 @@ aiEngineItemEncoder struct =
         , ( "url", (Json.Encode.string) struct.url )
         , ( "modelName", (Json.Encode.string) struct.modelName )
         , ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "callsignEnabled", (Json.Encode.bool) struct.callsignEnabled )
+        , ( "ocrEnabled", (Json.Encode.bool) struct.ocrEnabled )
         , ( "hasToken", (Json.Encode.bool) struct.hasToken )
         , ( "createdAt", (Json.Encode.int) struct.createdAt )
         , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
@@ -10942,6 +10976,8 @@ type alias CreateAiEngineReq =
     , token : Maybe (String)
     , modelName : String
     , enabled : Bool
+    , callsignEnabled : Bool
+    , ocrEnabled : Bool
     }
 
 
@@ -10953,6 +10989,8 @@ createAiEngineReqEncoder struct =
         , ( "token", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.token )
         , ( "modelName", (Json.Encode.string) struct.modelName )
         , ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "callsignEnabled", (Json.Encode.bool) struct.callsignEnabled )
+        , ( "ocrEnabled", (Json.Encode.bool) struct.ocrEnabled )
         ]
 
 
@@ -10964,6 +11002,8 @@ type alias UpdateAiEngineReq =
     , clearToken : Bool
     , modelName : String
     , enabled : Bool
+    , callsignEnabled : Bool
+    , ocrEnabled : Bool
     }
 
 
@@ -10977,6 +11017,8 @@ updateAiEngineReqEncoder struct =
         , ( "clearToken", (Json.Encode.bool) struct.clearToken )
         , ( "modelName", (Json.Encode.string) struct.modelName )
         , ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "callsignEnabled", (Json.Encode.bool) struct.callsignEnabled )
+        , ( "ocrEnabled", (Json.Encode.bool) struct.ocrEnabled )
         ]
 
 
@@ -11933,6 +11975,9 @@ type alias OcrMediaSummary =
     , queueSize : Maybe (Int)
     , attempts : Int
     , statusLog : List (OcrStatusLogItem)
+    , aiEngineId : Maybe (String)
+    , aiEngineName : Maybe (String)
+    , modelName : Maybe (String)
     }
 
 
@@ -11947,6 +11992,25 @@ ocrMediaSummaryEncoder struct =
         , ( "queueSize", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.queueSize )
         , ( "attempts", (Json.Encode.int) struct.attempts )
         , ( "statusLog", (Json.Encode.list (ocrStatusLogItemEncoder)) struct.statusLog )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        , ( "aiEngineName", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineName )
+        , ( "modelName", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.modelName )
+        ]
+
+
+type alias OcrEngineItem =
+    { id : String
+    , name : String
+    , modelName : String
+    }
+
+
+ocrEngineItemEncoder : OcrEngineItem -> Json.Encode.Value
+ocrEngineItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "modelName", (Json.Encode.string) struct.modelName )
         ]
 
 
@@ -11955,6 +12019,9 @@ type alias OcrSettingsItem =
     , configured : Bool
     , extractorReady : Bool
     , readinessError : Maybe (String)
+    , engines : List (OcrEngineItem)
+    , selectedAiEngineIds : List (String)
+    , mainAiEngineId : Maybe (String)
     }
 
 
@@ -11965,6 +12032,9 @@ ocrSettingsItemEncoder struct =
         , ( "configured", (Json.Encode.bool) struct.configured )
         , ( "extractorReady", (Json.Encode.bool) struct.extractorReady )
         , ( "readinessError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.readinessError )
+        , ( "engines", (Json.Encode.list (ocrEngineItemEncoder)) struct.engines )
+        , ( "selectedAiEngineIds", (Json.Encode.list (Json.Encode.string)) struct.selectedAiEngineIds )
+        , ( "mainAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mainAiEngineId )
         ]
 
 
@@ -12006,6 +12076,9 @@ type alias OcrJobItem =
     , completedAt : Maybe (Int)
     , previewUrl : Maybe (String)
     , summary : Maybe (MediaSummaryStatus)
+    , aiEngineId : Maybe (String)
+    , aiEngineName : Maybe (String)
+    , modelName : Maybe (String)
     }
 
 
@@ -12029,6 +12102,9 @@ ocrJobItemEncoder struct =
         , ( "completedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.completedAt )
         , ( "previewUrl", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.previewUrl )
         , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (mediaSummaryStatusEncoder)) struct.summary )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        , ( "aiEngineName", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineName )
+        , ( "modelName", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.modelName )
         ]
 
 
@@ -12064,6 +12140,8 @@ ocrPageReqEncoder struct =
 
 type alias SaveOcrSettingsReq =
     { workerEnabled : Bool
+    , aiEngineIds : List (String)
+    , mainAiEngineId : Maybe (String)
     }
 
 
@@ -12071,6 +12149,20 @@ saveOcrSettingsReqEncoder : SaveOcrSettingsReq -> Json.Encode.Value
 saveOcrSettingsReqEncoder struct =
     Json.Encode.object
         [ ( "workerEnabled", (Json.Encode.bool) struct.workerEnabled )
+        , ( "aiEngineIds", (Json.Encode.list (Json.Encode.string)) struct.aiEngineIds )
+        , ( "mainAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mainAiEngineId )
+        ]
+
+
+type alias ReprocessMediaOcrReq =
+    { aiEngineId : Maybe (String)
+    }
+
+
+reprocessMediaOcrReqEncoder : ReprocessMediaOcrReq -> Json.Encode.Value
+reprocessMediaOcrReqEncoder struct =
+    Json.Encode.object
+        [ ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
         ]
 
 
@@ -17416,6 +17508,21 @@ listUnitDuplicatesRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (unitDuplicateDecoder))))
 
 
+inconsistentUnitDecoder : Json.Decode.Decoder InconsistentUnit
+inconsistentUnitDecoder =
+    Json.Decode.succeed InconsistentUnit
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasons" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "problematic_echelons" (Json.Decode.list (Json.Decode.string))))
+
+
+listInconsistentUnitsRspDecoder : Json.Decode.Decoder ListInconsistentUnitsRsp
+listInconsistentUnitsRspDecoder =
+    Json.Decode.succeed ListInconsistentUnitsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (inconsistentUnitDecoder))))
+
+
 createUnitReqDecoder : Json.Decode.Decoder CreateUnitReq
 createUnitReqDecoder =
     Json.Decode.succeed CreateUnitReq
@@ -19700,6 +19807,8 @@ aiEngineItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "url" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsignEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ocrEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasToken" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
@@ -19725,6 +19834,8 @@ createAiEngineReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "token" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsignEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ocrEnabled" (Json.Decode.bool)))
 
 
 updateAiEngineReqDecoder : Json.Decode.Decoder UpdateAiEngineReq
@@ -19737,6 +19848,8 @@ updateAiEngineReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clearToken" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsignEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ocrEnabled" (Json.Decode.bool)))
 
 
 aiChatSummaryDecoder : Json.Decode.Decoder AiChatSummary
@@ -20222,6 +20335,17 @@ ocrMediaSummaryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "queueSize" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attempts" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "statusLog" (Json.Decode.list (ocrStatusLogItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineName" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.nullable (Json.Decode.string))))
+
+
+ocrEngineItemDecoder : Json.Decode.Decoder OcrEngineItem
+ocrEngineItemDecoder =
+    Json.Decode.succeed OcrEngineItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
 
 
 ocrSettingsItemDecoder : Json.Decode.Decoder OcrSettingsItem
@@ -20231,6 +20355,9 @@ ocrSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "configured" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extractorReady" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "readinessError" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engines" (Json.Decode.list (ocrEngineItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selectedAiEngineIds" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mainAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
 
 
 ocrCountsDecoder : Json.Decode.Decoder OcrCounts
@@ -20263,6 +20390,9 @@ ocrJobItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completedAt" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "previewUrl" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (mediaSummaryStatusDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineName" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.nullable (Json.Decode.string))))
 
 
 ocrPageRspDecoder : Json.Decode.Decoder OcrPageRsp
@@ -20284,6 +20414,14 @@ saveOcrSettingsReqDecoder : Json.Decode.Decoder SaveOcrSettingsReq
 saveOcrSettingsReqDecoder =
     Json.Decode.succeed SaveOcrSettingsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "workerEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineIds" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mainAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+
+
+reprocessMediaOcrReqDecoder : Json.Decode.Decoder ReprocessMediaOcrReq
+reprocessMediaOcrReqDecoder =
+    Json.Decode.succeed ReprocessMediaOcrReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
 
 
 mediaSummaryStatusDecoder : Json.Decode.Decoder MediaSummaryStatus

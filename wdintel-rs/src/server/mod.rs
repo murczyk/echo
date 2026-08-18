@@ -898,6 +898,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ocr::reprocess_media_ocr)
             .service(crate::ocr::admin_ocr_preview)
             .service(crate::ocr::admin_ocr_media)
+            .service(crate::ocr::gateway::infer)
             .service(crate::media_summary::admin_ocr_media_summary)
             .service(crate::media_summary::save_settings)
             .service(crate::transcriber::list_instances)
@@ -1043,6 +1044,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             )
             .service(crate::sigint::unit::orbit::unit_orbit_children)
             .service(crate::sigint::unit::orbit::list_unit_duplicates)
+            .service(crate::sigint::unit::orbit::list_inconsistent_units)
             .service(crate::sigint::unit::orbit::orbit_link_candidates)
             .service(
                 crate::sigint::unit::orbit::create_unit_duplicate_candidates,

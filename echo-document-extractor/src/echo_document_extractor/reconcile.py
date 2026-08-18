@@ -82,7 +82,7 @@ def reconcile(
         first, second = valid[0], valid[1]
         unresolved = (
             _normalized(first[0].text) != _normalized(second[0].text)
-            and first[1].tuple()[:-1] == second[1].tuple()[:-1]
+            and first[1].tuple()[:-2] == second[1].tuple()[:-2]
         )
     ranks = [
         CandidateRank(
@@ -233,6 +233,7 @@ def _rank_factors(
         ocr_similarity=ocr_similarity,
         peer_median_similarity=median(peer_similarities) if peer_similarities else 1.0,
         nuextract3_tiebreaker=candidate.source == "nuextract3",
+        preferred_tiebreaker=candidate.metadata.get("preferred_tiebreaker") is True,
     )
 
 

@@ -22,8 +22,9 @@ class DependencyChecker:
     def __init__(self, config: ExtractionConfig) -> None:
         self.endpoints = (("nuextract", config.nu_extract), ("ocr-gemma", config.gemma))
 
-    async def check_all(self) -> list[DependencyStatus]:
-        return list(await asyncio.gather(*(self._check(name, endpoint) for name, endpoint in self.endpoints)))
+    async def check_all(self, include_gemma: bool = True) -> list[DependencyStatus]:
+        endpoints = self.endpoints if include_gemma else (self.endpoints[0],)
+        return list(await asyncio.gather(*(self._check(name, endpoint) for name, endpoint in endpoints)))
 
     async def _check(self, name: str, endpoint: EndpointConfig) -> DependencyStatus:
         token = __import__("os").environ.get(endpoint.token_env)

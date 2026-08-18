@@ -23,6 +23,19 @@ pub struct OcrMediaSummary {
     pub queue_size: Option<i64>,
     pub attempts: i32,
     pub status_log: Vec<OcrStatusLogItem>,
+    pub ai_engine_id: Option<String>,
+    pub ai_engine_name: Option<String>,
+    pub model_name: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrEngineItem {
+    pub id: String,
+    pub name: String,
+    pub model_name: String,
 }
 
 #[derive(
@@ -34,6 +47,9 @@ pub struct OcrSettingsItem {
     pub configured: bool,
     pub extractor_ready: bool,
     pub readiness_error: Option<String>,
+    pub engines: Vec<OcrEngineItem>,
+    pub selected_ai_engine_ids: Vec<String>,
+    pub main_ai_engine_id: Option<String>,
 }
 
 #[derive(
@@ -70,6 +86,9 @@ pub struct OcrJobItem {
     pub completed_at: Option<i64>,
     pub preview_url: Option<String>,
     pub summary: Option<crate::media_summary::types::MediaSummaryStatus>,
+    pub ai_engine_id: Option<String>,
+    pub ai_engine_name: Option<String>,
+    pub model_name: Option<String>,
 }
 
 #[derive(
@@ -98,4 +117,17 @@ pub struct OcrPageReq {
 #[serde(rename_all = "camelCase")]
 pub struct SaveOcrSettingsReq {
     pub worker_enabled: bool,
+    #[serde(default)]
+    pub ai_engine_ids: Vec<String>,
+    #[serde(default)]
+    pub main_ai_engine_id: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ReprocessMediaOcrReq {
+    #[serde(default)]
+    pub ai_engine_id: Option<String>,
 }

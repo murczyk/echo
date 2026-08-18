@@ -234,6 +234,7 @@ Configure every participating Echo instance with its own stable ID in
 [ocr]
 base_url = "http://100.93.77.92:8000"
 instance_id = "echo-staging"
+max_in_flight_jobs = 2
 ```
 
 Store the extractor credential separately as `ECHO_OCR_TOKEN=...` in

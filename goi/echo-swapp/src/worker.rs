@@ -27,19 +27,7 @@ async fn messenger_worker_tick(db: &DatabaseConnection) -> anyhow::Result<()> {
     }
     let messengers = messenger::list(db).await.c(h!())?;
     for messenger in messengers {
-        if messenger.is_paused {
-            continue;
-        }
-        let is_linked =
-            messenger::is_linked(db, &messenger.name, messenger.kind)
-                .await
-                .c(h!())?;
-        if !is_linked {
-            continue;
-        }
-        messenger::refresh_groups(db, &messenger.name, messenger.kind)
-            .await
-            .c(h!())?;
+        messenger::sync(db, &messenger.name).await.c(h!())?;
     }
     messenger::repair_blank_whatsapp_group_names(db)
         .await

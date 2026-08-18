@@ -566,6 +566,9 @@ mod tests {
             created_at: now,
             updated_at: now,
             enabled,
+            callsign_enabled: true,
+            ocr_enabled: false,
+            ocr_request_profile: "openai_vision".to_string(),
         }
     }
 

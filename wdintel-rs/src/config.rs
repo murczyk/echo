@@ -179,10 +179,13 @@ pub const ECHO_AUDIO_TRANSCRIPTION_BGWORKER_SERVICE: &str =
     "wdintel-rs-bgworker.service";
 pub const OCR_SETTINGS_ID: i16 = 1;
 pub const OCR_TOKEN_ENV: &str = "ECHO_OCR_TOKEN";
+pub const OCR_GATEWAY_SIGNING_KEY_ENV: &str = "ECHO_OCR_GATEWAY_SIGNING_KEY";
 pub const OCR_DISCOVERY_DAYS: i64 = 7;
 pub const OCR_DISCOVERY_BATCH_SIZE: u64 = 100;
 pub const OCR_IDLE_SLEEP_MS: u64 = 30_000;
 pub const OCR_POLL_SLEEP_MS: u64 = 5_000;
+pub const OCR_DEFAULT_MAX_IN_FLIGHT_JOBS: usize = 1;
+pub const OCR_MAX_IN_FLIGHT_JOBS: usize = 4;
 pub const OCR_MAX_ATTEMPTS: i32 = 8;
 pub const OCR_RETRY_BASE_SECS: i64 = 10;
 pub const OCR_RETRY_MAX_SECS: i64 = 15 * 60;
@@ -359,6 +362,10 @@ pub const SIGINT_NETWORK_FIND_LIVE_QUERY_LIMIT: u64 = 250;
 pub const SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME: &str = "💻";
 pub const SIGINT_UNIT_LIST_DEFAULT_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_LIST_MAX_LIMIT: u64 = 100_000;
+pub const SIGINT_UNIT_INCONSISTENCY_MULTIPLE_ORBIT_LINKS_REASON_UK: &str =
+    "Кілька прив’язок ORBIT";
+pub const SIGINT_UNIT_INCONSISTENCY_LOWER_ORBIT_ECHELON_REASON_UK: &str =
+    "Нижчий ешелон ORBIT";
 pub const SIGINT_UNIT_DYNAMIC_REGEX_SIZE_LIMIT_BYTES: usize = 64 * 1024 * 1024;
 pub const SIGINT_UNIT_DYNAMIC_REGEX_CHUNK_SIZE: usize = 2_000;
 /// Ukraine boundaries WGS84
@@ -956,6 +963,14 @@ pub struct Config {
 pub struct OcrConfig {
     pub base_url: String,
     pub instance_id: String,
+    #[serde(default)]
+    pub gateway_url: Option<String>,
+    #[serde(default = "ocr_default_max_in_flight_jobs")]
+    pub max_in_flight_jobs: usize,
+}
+
+fn ocr_default_max_in_flight_jobs() -> usize {
+    OCR_DEFAULT_MAX_IN_FLIGHT_JOBS
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

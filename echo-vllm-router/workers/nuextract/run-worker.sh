@@ -28,7 +28,7 @@ exec /opt/vllm-venv/bin/vllm serve "$MODEL_SNAPSHOT" \
   --dtype bfloat16 \
   --max-model-len 16384 \
   --gpu-memory-utilization 0.95 \
-  --max-num-seqs 1 \
+  --max-num-seqs 2 \
   --limit-mm-per-prompt '{"image":1,"video":0}' \
   --chat-template-content-format openai \
   --generation-config vllm \

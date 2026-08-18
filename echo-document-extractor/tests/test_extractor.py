@@ -16,13 +16,16 @@ from echo_document_extractor.models import (
     Cell,
     CellEvidence,
     Evidence,
+    OcrTokenEvidence,
     Status,
     Table,
     TextBlock,
 )
+from echo_document_extractor.ocr import PaddleResult
 from echo_document_extractor.pipeline import (
     CandidateDocument,
     Extractor,
+    _align_blocks,
     _attach_visual_assets,
     _collapse_aggregate_text_blocks,
     _empty_cell_supported,
@@ -69,6 +72,32 @@ class RequestErrorAdapter:
         )
 
 
+class StaticOcr:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def extract_all(
+        self,
+        image: Image.Image,
+        page_id: str,
+        use_table_recognition: bool = True,
+    ) -> PaddleResult:
+        del use_table_recognition
+        return PaddleResult(
+            [
+                OcrTokenEvidence(
+                    id=f"ocr-{page_id}",
+                    source="ppocr",
+                    page_id=page_id,
+                    text=self.text,
+                    bbox=(10, 10, image.width - 10, image.height - 10),
+                    confidence=0.9,
+                    language="en",
+                )
+            ]
+        )
+
+
 @pytest.fixture
 def config() -> ExtractionConfig:
     endpoint = EndpointConfig(
@@ -110,6 +139,7 @@ def test_non_rectangular_table_merge_has_unique_cell_and_evidence_ids() -> None:
 def test_collapses_duplicate_column_aggregates_and_orders_columns() -> None:
     left_text = "Left page content. " * 25
     right_text = "Right page content. " * 25
+
     def block(identifier: str, bbox: tuple[int, int, int, int], order: int, text: str) -> TextBlock:
         return TextBlock(
             kind="paragraph",
@@ -153,6 +183,62 @@ def test_collapses_duplicate_column_aggregates_and_orders_columns() -> None:
         "right-aggregate-copy",
         "signature-table",
     }
+
+
+def test_aligns_shifted_blocks_across_model_markup_differences() -> None:
+    long_coordinates = " ".join(f"coordinate-{index}" for index in range(30))
+    base = blocks_from_html(
+        "<article><p>Header</p><ul><li>Situation</li></ul><p>Extra summary</p>"
+        f"<p>{long_coordinates}</p><ul><li>Closing</li></ul></article>",
+        "p1",
+        (0, 0, 100, 100),
+        "decision",
+    )
+    candidate = blocks_from_html(
+        f"<article><p>Header</p><p>Situation</p><p>{long_coordinates}</p><p>Closing</p></article>",
+        "p1",
+        (0, 0, 100, 100),
+        "decision",
+    )
+
+    mapping = _align_blocks(base, candidate)
+
+    assert candidate.index(mapping[0]) == 0
+    assert candidate.index(mapping[1]) == 1
+    assert 2 not in mapping
+    assert candidate.index(mapping[3]) == 2
+    assert candidate.index(mapping[4]) == 3
+
+
+def test_candidate_blocks_align_to_shifted_text_skeleton() -> None:
+    skeleton = [
+        TextBlock(
+            kind="paragraph",
+            id=f"skeleton-{index}",
+            bbox=(0, index * 20, 100, index * 20 + 15),
+            reading_order=index,
+            paragraphs=[text],
+        )
+        for index, text in enumerate(
+            ["Title", "Recipient", "Extra local region", "Body", "Coordinates", "Closing"]
+        )
+    ]
+
+    blocks = blocks_from_html(
+        "<article><p>Title</p><p>Recipient</p><p>Body</p><p>Coordinates</p><p>Closing</p></article>",
+        "p1",
+        (0, 0, 100, 120),
+        "decision",
+        skeleton,
+    )
+
+    assert [block.bbox for block in blocks] == [
+        skeleton[0].bbox,
+        skeleton[1].bbox,
+        skeleton[3].bbox,
+        skeleton[4].bbox,
+        skeleton[5].bbox,
+    ]
 
 
 def test_visual_regions_reject_sparse_text_lines() -> None:
@@ -541,6 +627,16 @@ def test_text_bbox_expands_across_adjacent_ocr_lines_only() -> None:
     assert _expanded_text_bbox((45, 0, 155, 25), supporting) == (40, 0, 160, 64)
 
 
+def test_text_bbox_expansion_does_not_chain_across_page() -> None:
+    supporting = [
+        Evidence(id="title", source="ppocr", page_id="p1", text="Title", bbox=(50, 15, 150, 37)),
+        Evidence(id="subtitle", source="ppocr", page_id="p1", text="Subtitle", bbox=(40, 42, 160, 64)),
+        Evidence(id="body", source="ppocr", page_id="p1", text="Body", bbox=(40, 75, 160, 97)),
+    ]
+
+    assert _expanded_text_bbox((45, 0, 155, 25), supporting) == (40, 0, 160, 64)
+
+
 def test_text_bbox_uses_matching_ocr_line_instead_of_full_page() -> None:
     block = TextBlock(
         kind="paragraph",
@@ -603,6 +699,56 @@ def test_text_bbox_combines_consecutive_ocr_lines_for_multiline_block() -> None:
     ]
 
     assert _matching_text_bbox(block, supporting) == (40, 15, 200, 64)
+
+
+def test_text_bbox_matches_more_than_eight_dense_ocr_lines() -> None:
+    lines = [f"Coordinate record {index:02d} X 12345{index:02d}" for index in range(12)]
+    block = TextBlock(
+        kind="paragraph",
+        id="p1-b1",
+        bbox=(0, 0, 300, 300),
+        reading_order=0,
+        paragraphs=["\n".join(lines)],
+    )
+    supporting = [
+        Evidence(
+            id=f"line-{index}",
+            source="ppocr",
+            page_id="p1",
+            text=line,
+            bbox=(40, 10 + index * 20, 260, 25 + index * 20),
+        )
+        for index, line in enumerate(lines)
+    ]
+
+    assert _matching_text_bbox(block, supporting) == (40, 10, 260, 245)
+
+
+async def test_failed_model_hard_checks_use_searchable_local_raster_fallback(
+    tmp_path: Path,
+    config: ExtractionConfig,
+) -> None:
+    source = tmp_path / "source.png"
+    create_image(source)
+    extractor = Extractor(
+        config,
+        [
+            StaticAdapter("nuextract3", "<article><p>Header 123</p><p>Report 123</p></article>"),
+            StaticAdapter("gemma", "<article><p>Header 123</p><p>Report 123</p></article>"),
+        ],
+        ocr=StaticOcr("Report 999"),
+    )
+
+    result = await extractor.extract([source])
+
+    assert result.status == Status.DEGRADED
+    assert "model candidates failed hard checks; used local evidence" in result.quality.degraded_reasons
+    assert "Report 999" in result.canonical_html
+    assert "<img" in result.canonical_html
+    assert result.assets
+    output = tmp_path / "output"
+    result.write_package(output)
+    assert validate_package(output) == []
 
 
 def test_geometry_expands_semantic_table_to_physical_grid() -> None:

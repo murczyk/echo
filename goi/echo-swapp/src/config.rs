@@ -23,6 +23,15 @@ pub const AUTOMATION_MAP_SCREENSHOT_LABEL_TILE_URL: &str =
 pub const AUTOMATION_MAP_SCREENSHOT_MARKER_COLOR: [u8; 4] = [252, 239, 18, 255];
 pub const AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX: &str =
     "coordinate screenshot is unavailable:";
+pub const AUTOMATION_BROKEN_INTEGRATION_ERROR: &str =
+    "Інтеграцію змінено. Переналаштуйте акаунти та групи автоматизації.";
+pub const AUTOMATION_OPERATION_LOCK_ID_BASE: i64 = i64::MIN;
+pub const ECHO_SWAPP_ADVISORY_LOCK_RETRY_MILLIS: u64 = 25;
+pub const MESSENGER_INTEGRATION_UNIQUENESS_LOCK_ID: i64 = 4_563_686_943;
+pub const MESSENGER_INTEGRATION_OPERATION_LOCK_NAMESPACE: i32 = 1_162_033_231;
+pub const MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX: &str =
+    ".relink-backup";
+pub const MESSENGER_INTEGRATION_RELINK_STATE_PREFIX: &str = "relink:";
 const DEFAULT_PG_HOST: &str = "localhost";
 const DEFAULT_PG_PORT: u16 = 5432;
 const DEFAULT_PG_USER: &str = "wd";

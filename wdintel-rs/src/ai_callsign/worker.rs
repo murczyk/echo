@@ -203,6 +203,7 @@ async fn load_worker_config(
     };
     let ai_engine = ai_engine::Entity::find_by_id(ai_engine_id)
         .filter(ai_engine::Column::Enabled.eq(true))
+        .filter(ai_engine::Column::CallsignEnabled.eq(true))
         .one(dbx)
         .await
         .c(h!())?

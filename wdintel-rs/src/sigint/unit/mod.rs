@@ -861,7 +861,7 @@ async fn insert_merge_link_unit(
         )
         .await?;
     }
-    let unit = merge_requested_duplicate_units(
+    let mut unit = merge_requested_duplicate_units(
         *login,
         transaction,
         unit.id,
@@ -872,6 +872,7 @@ async fn insert_merge_link_unit(
         crate::orbit::link_new_sigint_unit_in_transaction(transaction, unit.id)
             .await
             .c(h!())?;
+        unit = find_unit(transaction, unit.id).await.c(h!())?;
     }
     Ok(unit)
 }
@@ -997,6 +998,7 @@ where
         deleted: Set(false),
         sigint_origin_id: NotSet,
         original_id: NotSet,
+        is_inconsistent: NotSet,
     }
     .insert(dbx)
     .await
@@ -1341,6 +1343,11 @@ async fn update_unit_for_login(
         )
         .await?;
     }
+    let unit =
+        orbit::reconcile_sigint_unit_orbit(&transaction, login, unit.id, false)
+            .await
+            .c(h!())?
+            .unit;
     transaction.commit().await.context(h!())?;
     Ok(unit)
 }
@@ -1720,7 +1727,12 @@ where
         unit_original.id,
     )
     .await?;
-    find_unit(dbx, unit_original.id).await
+    Ok(
+        orbit::reconcile_sigint_unit_orbit(dbx, &login, unit_original.id, true)
+            .await
+            .c(h!())?
+            .unit,
+    )
 }
 
 async fn find_available_unit_for_update<C>(
@@ -4122,6 +4134,7 @@ mod tests {
     #[serial]
     async fn orbit_link_reconciliation_updates_existing_candidates() {
         let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
         let orbit_unit_id = uuid::Uuid::new_v4();
         orbit_unit::ActiveModel {
             unit_id: Set(orbit_unit_id),
@@ -4212,6 +4225,7 @@ mod tests {
 
         crate::orbit::unlink_sigint_unit_with_lock(
             &env.dbx,
+            &login_id,
             explicit_false.id,
             orbit_unit_id,
         )
@@ -4219,6 +4233,7 @@ mod tests {
         .unwrap();
         crate::orbit::unlink_sigint_unit_with_lock(
             &env.dbx,
+            &login_id,
             second.id,
             orbit_unit_id,
         )

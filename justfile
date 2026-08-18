@@ -790,7 +790,8 @@ migrate-signal-bots-to-jvm server non_interactive="false" yolo="false":
     EOF
 
 [arg('server', long='server')]
-deploy _server_pos="" server:
+[arg('silent', long='silent', value='true')]
+deploy _server_pos="" server silent="false":
     #!/bin/bash
     set -euo pipefail
     # Enable tracing if DEBUG=1 or TRACE=1 is set in environment
@@ -831,11 +832,13 @@ deploy _server_pos="" server:
 
     printf "\n🚀🚀🚀 deploying %s 🚀🚀🚀\n\n" "$SERVER"
 
-    # Notify Discord at the start of deployment including local hostname
-    curl -sS -X POST \
-      -H 'Content-Type: application/json' \
-      -d "{\"content\":\"deploying $SERVER (version $VERSION); waiting for CI from $(hostname)\"}" \
-      '{{ discord_webhook_infra }}' || true
+    if [[ "{{ silent }}" != "true" ]]; then
+      # Notify Discord at the start of deployment including local hostname
+      curl -sS -X POST \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"deploying $SERVER (version $VERSION); waiting for CI from $(hostname)\"}" \
+        '{{ discord_webhook_infra }}' || true
+    fi
 
     # Helpful link to CI runs
     echo "CI: https://github.com/echoua/echo/actions"
@@ -1014,14 +1017,17 @@ deploy _server_pos="" server:
     printf "\n⚠️⚠️⚠️ docs were not deployed. Run: just deploy-docs --server %s ⚠️⚠️⚠️\n" "$SERVER"
     echo "✅✅✅ deploy OK on $SERVER: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
 
-    # Success notification
-    curl -sS -X POST \
-      -H 'Content-Type: application/json' \
-      -d "{\"content\":\"✅ Deployed $SERVER (version $VERSION) via apt-get\"}" \
-      '{{ discord_webhook_infra }}' || true
+    if [[ "{{ silent }}" != "true" ]]; then
+      # Success notification
+      curl -sS -X POST \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"✅ Deployed $SERVER (version $VERSION) via apt-get\"}" \
+        '{{ discord_webhook_infra }}' || true
+    fi
 
 [arg('server', long='server')]
-deploy-from-local _server_pos="" server:
+[arg('silent', long='silent', value='true')]
+deploy-from-local _server_pos="" server silent="false":
     #!/bin/bash
     set -euo pipefail
     if [[ "${DEBUG:-0}" == "1" || "${TRACE:-0}" == "1" ]]; then
@@ -1044,6 +1050,14 @@ deploy-from-local _server_pos="" server:
     DEB_NAME=""
 
     printf "\n🚀🚀🚀 deploying %s from local .deb 🚀🚀🚀\n\n" "$SERVER"
+
+    if [[ "{{ silent }}" != "true" ]]; then
+      # Notify Discord at the start of deployment including local hostname
+      curl -sS -X POST \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"deploying $SERVER from local .deb from $(hostname)\"}" \
+        '{{ discord_webhook_infra }}' || true
+    fi
 
     echo "Building frontend assets..."
     (cd "{{ justfile_directory() }}" && just build-front)
@@ -1193,6 +1207,14 @@ deploy-from-local _server_pos="" server:
     '
     ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
     RESTART_WORKERS_ON_FAILURE=0
+
+    if [[ "{{ silent }}" != "true" ]]; then
+      # Success notification
+      curl -sS -X POST \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"✅ Deployed $SERVER from local .deb ($DEB_NAME)\"}" \
+        '{{ discord_webhook_infra }}' || true
+    fi
 
 [arg('server', long='server')]
 deploy-docs-from-local _server_pos="" server:

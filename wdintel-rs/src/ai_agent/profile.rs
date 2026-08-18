@@ -665,6 +665,9 @@ where
         token: Set(profile_engine.token.clone()),
         model_name: Set(profile_engine.model_name.clone()),
         enabled: Set(profile_engine.enabled),
+        callsign_enabled: Set(true),
+        ocr_enabled: Set(false),
+        ocr_request_profile: Set("openai_vision".to_string()),
         created_at: Set(now),
         updated_at: Set(now),
     }
@@ -785,6 +788,9 @@ fn engine_record(engine: &ProfileEngine) -> ai_engine::Model {
         created_at: now,
         updated_at: now,
         enabled: engine.enabled,
+        callsign_enabled: true,
+        ocr_enabled: false,
+        ocr_request_profile: "openai_vision".to_string(),
     }
 }
 

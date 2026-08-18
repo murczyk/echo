@@ -94,7 +94,7 @@ flowchart LR
     subgraph extractor_lxc["echo-gpu Incus · ct-echo-document-extractor · Debian 13"]
         direction TB
         extractor_api["Authenticated async API<br/>Tailscale 100.93.77.92:8000"]
-        extractor_worker["Single page-serial worker<br/>leases + heartbeats"]
+        extractor_worker["Two concurrent jobs<br/>serial Paddle · leases + heartbeats"]
         extractor_queue[("SQLite WAL<br/>durable job queue")]
         extractor_spool[("Private disk spool<br/>inputs + canonical ZIPs")]
         extractor_paddle["PP-OCRv5 + PP-StructureV3<br/>RTX 4090 · offline immutable models"]
@@ -247,18 +247,35 @@ Each Echo instance can opt into the shared extractor with a unique identity:
 [ocr]
 base_url = "http://100.93.77.92:8000"
 instance_id = "echo-staging"
+gateway_url = "http://100.64.63.98:8081"
+max_in_flight_jobs = 2
 ```
 
 The bearer credential is read only from `ECHO_OCR_TOKEN` in the systemd
 environment. On deployed hosts it belongs in `/etc/echo/ocr.env`, owned by
 root with mode `0600`; it must not be stored in `config.toml` or Git. Both Echo
-systemd units load this optional environment file.
+systemd units load this optional environment file. Dynamic OCR requests are
+forwarded through the Echo gateway and require a separate staging-only
+`ECHO_OCR_GATEWAY_SIGNING_KEY` of at least 32 bytes in the same protected
+environment file. The gateway grant contains only the selected engine, media
+generation, instance identity, and expiry; engine tokens never enter the
+extractor manifest, logs, or result package.
+
+Admins mark AI engines independently as **Використовувати для обробки
+позивних** and **Використовувати для OCR**. The OCR page accepts several
+enabled OCR engines and one required main engine. Automatic jobs use only the
+main engine; the media **…** menu offers one **Обробити повторно через X** item
+for each selected engine. OCR jobs snapshot the engine name and model for
+status and provenance. OCR-Gemma uses its existing vLLM-specific vision
+parameters, while other selected engines use the portable OpenAI-compatible
+vision request.
 
 The `wdintel-rs-bgworker` OCR worker is disabled by default and controlled from
 the admin page at **ШІ → OCR**. When enabled, it discovers supported PDF, JPEG,
 and PNG messenger media created during the last seven days. PostgreSQL stores
-durable per-media queue, retry, progress, and quality state. At most one remote
-job is active per Echo instance. Extractor dependency outages postpone work,
+durable per-media queue, retry, progress, and quality state. The per-instance
+remote-job limit is configurable from one through four and is two on the CBR
+instances. Extractor dependency outages postpone work,
 while other infrastructure failures use bounded exponential retry.
 
 The worker validates the canonical ZIP and every manifest digest, embeds only
@@ -269,11 +286,10 @@ users can open the eye action beside media information for split-screen or
 full-pane preview; admins can review recent jobs and readiness under
 **ШІ → OCR**. In the full media preview, admins can use the **…** menu to
 restart terminal PDF, JPEG, or PNG jobs. This clears the previous summary and
-coordinates and submits a new OCR generation; a new summary and coordinate
-extraction are enqueued after accepted or degraded OCR completes. The action
-requires the document-summary setting and its AI engine to be enabled. Deleting
-source media also deletes the OCR object recorded with its completed job, even
-if OCR configuration changes later.
+coordinates and submits a new OCR generation through the chosen engine. A
+summary is an optional independent downstream worker and is not required for
+OCR reprocessing. Deleting source media also deletes the OCR object recorded
+with its completed job, even if OCR configuration changes later.
 
 The same admin page contains the default-off **Стислий опис документів**
 setting. It requires an enabled AI engine and affects only future media. For
@@ -313,12 +329,14 @@ OCR exports are generated on demand from the latest sanitized HTML stored for
 the completed job. DOCX table traversal stops at nested table boundaries so the
 same rendered content is not copied into the document more than once.
 
-Initial rollout is limited to `echo-staging` and `echo-cbr-staging`. OCR worker
-state and media-summary settings remain excluded from PeerDB/ClickHouse, while
-`media_summary`, including extracted coordinates, is replicated for analytical
-queries from its initial schema. Leave summaries off, select the Gemma router
-under **ШІ → OCR**, enable the setting, and submit a fresh PDF, JPEG, or PNG to
-verify both preview surfaces before wider rollout.
+The staged rollout uses OCR-Gemma (`http://100.105.172.96:8001/v1`,
+`echo/ocr-gemma-4-26B-A4B-it`) and the existing Luna engine
+(`https://api.openai.com/v1`, `gpt-5.6-luna`), with OCR-Gemma as main; do not
+add Sol. OCR worker state, engine capability catalog, and media-summary
+settings remain excluded from PeerDB/ClickHouse, while `media_summary`,
+including extracted coordinates, is replicated for analytical queries from its
+initial schema. Verify one fresh attachment through each selected engine and
+retain the existing `max_figures: 0` regression check before wider rollout.
 
 ### vLLM inference architecture
 
@@ -719,6 +737,11 @@ system of record. At startup it reconciles the automation columns it requires,
 so GOI-only deployments do not depend on the central Echo migrator. Automations
 can render extracted coordinates over Esri World Imagery with Google labels and
 attach the PNG to the forwarded text in the same outbound message.
+Account replacement is serialized with messenger and automation workers;
+changing a messenger kind or phone stops dependent automations, rotates the
+client credential directory, and requires relinking. Before stopping clients,
+`echo-swapp` records a relink journal in PostgreSQL; startup uses it to finish
+or roll back an interrupted replacement.
 Cross-automation send reservations, outbound queue rows, and delivery records
 commit atomically. `echo_automation_send_log` retains route-level
 deduplication state for 30 days; the cleanup worker hard-deletes older rows.

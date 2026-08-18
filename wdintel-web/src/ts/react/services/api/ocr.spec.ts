@@ -17,6 +17,8 @@ describe('OCR API', () => {
     vi.mocked(postJson).mockResolvedValueOnce({ state: 'queued' });
 
     await expect(reprocessMediaOcr('media/id')).resolves.toEqual({ state: 'queued' });
-    expect(postJson).toHaveBeenCalledWith('/api/admin/ocr/media%2Fid/reprocess');
+    expect(postJson).toHaveBeenCalledWith('/api/admin/ocr/media%2Fid/reprocess', {
+      aiEngineId: null,
+    });
   });
 });

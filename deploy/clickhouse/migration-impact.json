@@ -61,6 +61,11 @@
         { "table": "public.sigint_unit", "strategy": "mirror_resync" }
       ]
     },
+    "echo:m20260817_124312_sigint_unit_inconsistent": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "mirror_resync" }
+      ]
+    },
     "echo:m20260806_120000_drop_legacy_inbox_callsigns": {
       "changes": [
         {
@@ -212,6 +217,19 @@
       "changes": [
         { "table": "public.media_summary_settings", "strategy": "excluded" },
         { "table": "public.media_summary", "strategy": "replicated_snapshot" }
+      ]
+    },
+    "echo:m20260817_124312_sigint_unit_inconsistent": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260818_052317_shared_ai_engine_capabilities": {
+      "changes": [
+        { "table": "public.ai_engine", "strategy": "excluded" },
+        { "table": "public.ocr_settings", "strategy": "excluded" },
+        { "table": "public.ocr_settings_ai_engine", "strategy": "excluded" },
+        { "table": "public.ocr_job", "strategy": "excluded" }
       ]
     }
   },
