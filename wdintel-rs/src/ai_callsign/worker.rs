@@ -151,7 +151,17 @@ async fn process_next(
             return Ok(true);
         }
     };
-    let callsigns = normalize_callsigns(callsigns);
+    let ai_callsigns = normalize_callsigns(callsigns);
+    let current_callsigns = crate::inbox::callsigns::load_by_item_ids(
+        dbx,
+        &[job.sigint_inbox_item_id],
+    )
+    .await
+    .c(h!())?
+    .remove(&job.sigint_inbox_item_id)
+    .unwrap_or_default();
+    let callsigns =
+        merge_current_and_ai_callsigns(current_callsigns.primary, ai_callsigns);
     let callsign_tokens = if callsigns.is_empty() {
         vec![]
     } else {
@@ -257,8 +267,9 @@ async fn complete_job(
     .await?
     .remove(&sigint_inbox_item_id)
     .unwrap_or_default();
-    let current = current_callsigns.primary;
+    let current = normalize_callsigns(current_callsigns.primary);
     let suggested = current_callsigns.alg2;
+    let callsigns = merge_current_and_ai_callsigns(current.clone(), callsigns);
     let callsigns_changed = callsigns != current;
     let should_update_callsign_tokens =
         inbox_item.callsign_tokens.as_ref() != Some(&callsign_tokens);
@@ -340,6 +351,15 @@ fn normalize_callsigns(callsigns: Vec<String>) -> Vec<String> {
     normalized
 }
 
+fn merge_current_and_ai_callsigns(
+    current: Vec<String>,
+    ai_callsigns: Vec<String>,
+) -> Vec<String> {
+    normalize_callsigns(
+        current.into_iter().chain(ai_callsigns).collect::<Vec<_>>(),
+    )
+}
+
 fn retry_delay_secs(attempts: i32) -> i64 {
     let exponent = u32::try_from(attempts.saturating_sub(1)).unwrap_or(0);
     AI_CALLSIGN_WORKER_RETRY_BASE_SECS
@@ -356,7 +376,9 @@ fn truncate_error(error: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_callsigns, retry_delay_secs};
+    use super::{
+        merge_current_and_ai_callsigns, normalize_callsigns, retry_delay_secs,
+    };
 
     #[test]
     fn normalizes_ai_callsigns_for_replacement() {
@@ -368,6 +390,17 @@ mod tests {
                 "".to_string()
             ]),
             vec!["alpha", "bravo"]
+        );
+    }
+
+    #[test]
+    fn merges_ai_callsigns_without_removing_current_primary() {
+        assert_eq!(
+            merge_current_and_ai_callsigns(
+                vec!["44408".to_string(), "саксофон".to_string()],
+                vec!["саксофон".to_string(), "двор".to_string()],
+            ),
+            vec!["44408", "саксофон", "двор"]
         );
     }
 
