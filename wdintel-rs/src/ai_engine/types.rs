@@ -1,6 +1,10 @@
 use crate::types::{Deserialize, Serialize};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
@@ -11,6 +15,8 @@ pub struct AiEngineItem {
     pub url: String,
     pub model_name: String,
     pub enabled: bool,
+    pub callsign_enabled: bool,
+    pub ocr_enabled: bool,
     pub has_token: bool,
     pub created_at: i64,
     pub updated_at: i64,
@@ -42,6 +48,10 @@ pub struct CreateAiEngineReq {
     pub token: Option<String>,
     pub model_name: String,
     pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub callsign_enabled: bool,
+    #[serde(default)]
+    pub ocr_enabled: bool,
 }
 
 #[derive(
@@ -56,6 +66,10 @@ pub struct UpdateAiEngineReq {
     pub clear_token: bool,
     pub model_name: String,
     pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub callsign_enabled: bool,
+    #[serde(default)]
+    pub ocr_enabled: bool,
 }
 
 #[derive(

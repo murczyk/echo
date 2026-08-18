@@ -50,6 +50,19 @@ vi.mock('@mui/material', () => ({
       </Component>
     );
   },
+  Menu: ({ children, open }: { children?: ReactNode; open: boolean }) =>
+    open ? <div role="menu">{children}</div> : null,
+  MenuItem: ({
+    children,
+    component,
+    ...props
+  }: {
+    children?: ReactNode;
+    component?: string;
+  } & Record<string, unknown>) => {
+    const Component = component ?? 'button';
+    return <Component {...props}>{children}</Component>;
+  },
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Tooltip: ({ children, title }: { children?: ReactNode; title?: ReactNode }) => (
     <span data-tooltip-title={typeof title === 'string' ? title : undefined}>{children}</span>
@@ -132,6 +145,36 @@ describe('MessageCardAttachmentPreviewActions', () => {
     root.unmount();
   });
 
+  it('renders the overflow action after open in new tab and before fullscreen', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardAttachmentPreviewActions
+          openHref="/media"
+          navigation={{ index: 0, count: 1, onPrevious: vi.fn(), onNext: vi.fn() }}
+          overflowAction={<button data-testid="overflow-action">⋮</button>}
+          canFullscreen
+          onToggleFullscreen={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      );
+    });
+
+    const open = container.querySelector('[aria-label="Відкрити в новій вкладці"]');
+    const overflow = container.querySelector('[data-testid="overflow-action"]');
+    const fullscreen = container.querySelector('[aria-label="Повноекранний режим"]');
+    expect(open?.compareDocumentPosition(overflow as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(
+      overflow?.compareDocumentPosition(fullscreen as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    root.unmount();
+  });
+
   it('blocks the same media key between its card and preview controls', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -159,6 +202,30 @@ describe('MessageCardAttachmentPreviewActions', () => {
 
     root.unmount();
     fetchMock.mockRestore();
+  });
+
+  it('downloads the original directly from the primary action', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardAttachmentPreviewActions
+          download={{ href: '/original', fileName: 'scan.png' }}
+          navigation={{ index: 0, count: 1, onPrevious: vi.fn(), onNext: vi.fn() }}
+          onClose={vi.fn()}
+          downloadKey="media:scan"
+          isDownloadStarting={() => false}
+          onDownloadStart={() => true}
+        />,
+      );
+    });
+    const download = container.querySelector('a[aria-label="Скачати"]');
+    expect(download?.getAttribute('href')).toBe('/original');
+    expect(download?.getAttribute('download')).toBe('scan.png');
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    root.unmount();
   });
 
   it('forwards span props and refs from the disabled cursor wrapper', async () => {

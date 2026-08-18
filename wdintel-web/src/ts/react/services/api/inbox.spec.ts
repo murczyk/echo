@@ -228,6 +228,8 @@ describe('inbox API normalization', () => {
         sizeBytes: 1024,
         href: '/api/messenger/media/audio-1',
         transcription: 'recognized speech',
+        ocr: null,
+        summary: null,
       },
     ]);
   });
@@ -288,6 +290,8 @@ describe('normalizeMessageMediaInfo', () => {
       sizeBytes: 2048,
       href: '/api/messenger/media/m1',
       transcription: null,
+      ocr: null,
+      summary: null,
     });
   });
 });

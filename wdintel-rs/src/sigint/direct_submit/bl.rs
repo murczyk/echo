@@ -516,6 +516,15 @@ async fn finish_direct_submit(
     .await
     .c(h!())?;
 
+    let media_to_delete_ids = media_to_delete
+        .iter()
+        .map(|media| media.id)
+        .collect::<Vec<_>>();
+    let ocr_result_keys =
+        crate::ocr::load_result_keys(&txn, &media_to_delete_ids)
+            .await
+            .c(h!())?;
+
     if !media_to_delete.is_empty() {
         crate::entities::signal_message_media::Entity::delete_many()
             .filter(
@@ -556,6 +565,7 @@ async fn finish_direct_submit(
     if !media_to_delete.is_empty() {
         crate::messenger::media::delete_stored_media_files(
             media_to_delete,
+            &ocr_result_keys,
             &env.config,
             &env.s3,
         )

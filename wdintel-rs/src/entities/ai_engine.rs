@@ -21,6 +21,10 @@ pub struct Model {
     pub created_at: DateTime,
     pub updated_at: DateTime,
     pub enabled: bool,
+    pub callsign_enabled: bool,
+    pub ocr_enabled: bool,
+    #[sea_orm(column_type = "Text")]
+    pub ocr_request_profile: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -39,6 +43,16 @@ pub enum Relation {
     AiCallsignSettings,
     #[sea_orm(has_many = "super::ai_chat::Entity")]
     AiChat,
+    #[sea_orm(has_many = "super::media_summary::Entity")]
+    MediaSummary,
+    #[sea_orm(has_many = "super::media_summary_settings::Entity")]
+    MediaSummarySettings,
+    #[sea_orm(has_many = "super::ocr_job::Entity")]
+    OcrJob,
+    #[sea_orm(has_many = "super::ocr_settings::Entity")]
+    OcrSettings,
+    #[sea_orm(has_many = "super::ocr_settings_ai_engine::Entity")]
+    OcrSettingsAiEngine,
 }
 
 impl Related<super::ai_agent_allowed_engine::Entity> for Entity {
@@ -83,6 +97,30 @@ impl Related<super::ai_chat::Entity> for Entity {
     }
 }
 
+impl Related<super::media_summary::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MediaSummary.def()
+    }
+}
+
+impl Related<super::media_summary_settings::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MediaSummarySettings.def()
+    }
+}
+
+impl Related<super::ocr_job::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OcrJob.def()
+    }
+}
+
+impl Related<super::ocr_settings_ai_engine::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OcrSettingsAiEngine.def()
+    }
+}
+
 impl Related<super::ai_callsign_test_message::Entity> for Entity {
     fn to() -> RelationDef {
         super::ai_callsign_parse_result::Relation::AiCallsignTestMessage.def()
@@ -90,6 +128,19 @@ impl Related<super::ai_callsign_test_message::Entity> for Entity {
     fn via() -> Option<RelationDef> {
         Some(
             super::ai_callsign_parse_result::Relation::AiEngine
+                .def()
+                .rev(),
+        )
+    }
+}
+
+impl Related<super::ocr_settings::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::ocr_settings_ai_engine::Relation::OcrSettings.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::ocr_settings_ai_engine::Relation::AiEngine
                 .def()
                 .rev(),
         )

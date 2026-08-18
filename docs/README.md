@@ -82,9 +82,31 @@ flowchart LR
 
     subgraph vllm_router_lxc["echo-vllm-router · Optional AI routing · Debian 13"]
         direction TB
-        vllm_router["vLLM Router<br/>native systemd · :8000<br/>cache_aware"]
+        vllm_router["General Gemma router<br/>native systemd · :8000<br/>cache_aware"]
+        vllm_ocr_router["OCR-Gemma router<br/>native systemd · :8001<br/>round_robin"]
+        vllm_nuextract_router["NuExtract router<br/>native systemd · :8002<br/>round_robin"]
         vllm_otel["SigNoz OTel collector<br/>native systemd"]
         vllm_router -.->|router metrics<br/>loopback :29000| vllm_otel
+        vllm_ocr_router -.->|router metrics<br/>loopback :29001| vllm_otel
+        vllm_nuextract_router -.->|router metrics<br/>loopback :29002| vllm_otel
+    end
+
+    subgraph extractor_lxc["echo-gpu Incus · ct-echo-document-extractor · Debian 13"]
+        direction TB
+        extractor_api["Authenticated async API<br/>Tailscale 100.93.77.92:8000"]
+        extractor_worker["Two concurrent jobs<br/>serial Paddle · leases + heartbeats"]
+        extractor_queue[("SQLite WAL<br/>durable job queue")]
+        extractor_spool[("Private disk spool<br/>inputs + canonical ZIPs")]
+        extractor_paddle["PP-OCRv5 + PP-StructureV3<br/>RTX 4090 · offline immutable models"]
+        extractor_otel["Pinned SigNoz OTel collector"]
+
+        extractor_api --> extractor_queue
+        extractor_api --> extractor_spool
+        extractor_worker --> extractor_queue
+        extractor_worker --> extractor_spool
+        extractor_worker --> extractor_paddle
+        extractor_api -.->|metrics · 127.0.0.1:29000| extractor_otel
+        extractor_worker -.->|metrics · 127.0.0.1:29001| extractor_otel
     end
 
     subgraph analytics_lxc["LXC 2 · Secondary analytics · OPTIONAL · Debian 13"]
@@ -108,6 +130,22 @@ flowchart LR
         vllm -->|inference| gb10
     end
 
+    subgraph vllm_spark02["echo-gpu-spark-02 · Optional OCR inference"]
+        ocr_hf_cache[("Pinned Gemma 4 weights")]
+        ocr_vllm["vLLM OCR-Gemma API<br/>Docker · Tailscale :8000"]
+        ocr_gb10["NVIDIA GB10"]
+
+        ocr_hf_cache --> ocr_vllm -->|inference| ocr_gb10
+    end
+
+    subgraph vllm_flyingskull["echo-gpu-flyingskull · Optional OCR inference"]
+        nuextract_cache[("Pinned NuExtract3 weights")]
+        nuextract_vllm["vLLM NuExtract3 API<br/>dedicated Incus service · Tailscale :8000"]
+        rtx4070["NVIDIA RTX 4070 Ti SUPER"]
+
+        nuextract_cache --> nuextract_vllm -->|inference| rtx4070
+    end
+
     browser -->|HTTPS| web
     vault -.->|runtime secrets| api
     vault -.->|runtime secrets| bg
@@ -125,25 +163,36 @@ flowchart LR
     bg <-->|palitra + folder sync| goi
     echo_im <-->|messenger bot integration| goi
     bg <-->|health · audio upload · transcription| echo_gpu
+    bg <-->|authenticated jobs · canonical packages| extractor_api
     api -.->|Chat Completions HTTPS| openai_engine
     api <-->|Chat Completions HTTP<br/>Tailscale| vllm_router
     vllm_router -->|OpenAI-compatible HTTP<br/>Tailscale| vllm
+    vllm_ocr_router -->|OpenAI-compatible HTTP<br/>Tailscale| ocr_vllm
+    vllm_nuextract_router -->|OpenAI-compatible HTTP<br/>Tailscale| nuextract_vllm
+    extractor_worker -->|OCR-Gemma requests| vllm_ocr_router
+    extractor_worker -->|NuExtract3 requests| vllm_nuextract_router
+    extractor_otel -->|metrics + journald<br/>OTLP gRPC · Tailscale| signoz
     vllm -.->|Prometheus metrics<br/>Tailscale| vllm_otel
+    ocr_vllm -.->|Prometheus metrics<br/>Tailscale| vllm_otel
+    nuextract_vllm -.->|Prometheus metrics<br/>Tailscale| vllm_otel
 
     style echo_lxc stroke-width:2px
     style analytics_lxc stroke-width:2px,stroke-dasharray:8 5
     style greptime_lxc stroke-width:2px,stroke-dasharray:8 5
     style signoz_lxc stroke-width:2px,stroke-dasharray:8 5
     style vllm_router_lxc stroke-width:2px,stroke-dasharray:8 5
+    style extractor_lxc stroke-width:2px,stroke-dasharray:8 5
     style vllm_spark stroke-width:2px,stroke-dasharray:8 5
+    style vllm_spark02 stroke-width:2px,stroke-dasharray:8 5
+    style vllm_flyingskull stroke-width:2px,stroke-dasharray:8 5
     classDef canonical stroke-width:3px
     classDef optional stroke-dasharray:6 4
     class postgres canonical
-    class file_registry,nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm_router,vllm_otel,vllm,hf_cache,gb10 optional
+    class file_registry,nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm_router,vllm_ocr_router,vllm_nuextract_router,vllm_otel,extractor_api,extractor_worker,extractor_queue,extractor_spool,extractor_paddle,extractor_otel,vllm,hf_cache,gb10,ocr_hf_cache,ocr_vllm,ocr_gb10,nuextract_cache,nuextract_vllm,rtx4070 optional
 ```
 
 The diagram focuses on the core web, worker, messenger, storage, observability,
-and analytics paths. Other instance-specific integrations are configured
+OCR, and analytics paths. Other instance-specific integrations are configured
 independently.
 
 The `wd_files` database is optional and configured independently under
@@ -177,7 +226,121 @@ See [Echo vLLM](../echo-vllm/README.md) for the `echo-gpu-spark` worker and
 [Echo vLLM Router](../echo-vllm-router/README.md) for routing, observability,
 deployment, verification, and rollback commands. Echo uses the router as its
 normal OpenAI-compatible endpoint; direct Spark access is retained only as a
-fallback.
+fallback. The same router host owns isolated OCR-Gemma and NuExtract3 endpoints
+consumed by `ct-echo-document-extractor`. Its authenticated API, durable queue,
+offline Paddle runtime, package storage, deployment, telemetry, and rollback
+are documented in
+[`echo-document-extractor/README.md`](../echo-document-extractor/README.md).
+It is a separate native-systemd deployment in a GPU-backed Incus container on
+`echo-gpu` and does not share process or storage ownership with an Echo instance
+or a vLLM router. The original powered-off Proxmox CT is retained as the
+host-level rollback copy. Its small Debian package carries source and the
+frozen lock only; production Python environments are cached by lock hash and
+immutable Paddle model sets are pulled from Backblaze with the repository's
+read-only LFS key, verified by SHA-256, and activated atomically.
+
+### OCR application integration
+
+Each Echo instance can opt into the shared extractor with a unique identity:
+
+```toml
+[ocr]
+base_url = "http://100.93.77.92:8000"
+instance_id = "echo-staging"
+gateway_url = "http://<this-instance-tailscale-ip>:8081"
+max_in_flight_jobs = 2
+```
+
+The bearer credential is read only from `ECHO_OCR_TOKEN` in the systemd
+environment. On deployed hosts it belongs in `/etc/echo/ocr.env`, owned by
+root with mode `0600`; it must not be stored in `config.toml` or Git. Both Echo
+systemd units load this optional environment file. Dynamic OCR requests are
+forwarded through the Echo gateway and require a separate staging-only
+`ECHO_OCR_GATEWAY_SIGNING_KEY` of at least 32 bytes in the same protected
+environment file. The gateway grant contains only the selected engine, media
+generation, instance identity, and expiry; engine tokens never enter the
+extractor manifest, logs, or result package.
+
+`gateway_url` must be the Tailscale-reachable address of the same Echo instance
+that created the job. Do not copy the staging value to another host: the
+gateway validates the grant against that instance's database and signing key.
+
+Admins mark AI engines independently as **Використовувати для обробки
+позивних** and **Використовувати для OCR**. The OCR page accepts several
+enabled OCR engines and one required main engine. Automatic jobs use only the
+main engine; the media **…** menu offers one **Обробити повторно через X** item
+for each selected engine. OCR jobs snapshot the engine name and model for
+status and provenance. OCR-Gemma uses its existing vLLM-specific vision
+parameters, while other selected engines use the portable OpenAI-compatible
+vision request.
+
+The `wdintel-rs-bgworker` OCR worker is disabled by default and controlled from
+the admin page at **ШІ → OCR**. When enabled, it discovers supported PDF, JPEG,
+and PNG messenger media created during the last seven days. PostgreSQL stores
+durable per-media queue, retry, progress, and quality state. The per-instance
+remote-job limit is configurable from one through four and is two on the CBR
+instances. Extractor dependency outages postpone work,
+while other infrastructure failures use bounded exponential retry.
+
+The worker validates the canonical ZIP and every manifest digest, embeds only
+validated PNG assets, and sanitizes extracted HTML with Rust before encrypting
+it with StrongBox and storing it in the configured B2/S3 bucket. The API
+sanitizes the HTML again before serving it with a restrictive CSP. Authorized
+users can open the eye action beside media information for split-screen or
+full-pane preview; admins can review recent jobs and readiness under
+**ШІ → OCR**. In the full media preview, admins can use the **…** menu to
+restart terminal PDF, JPEG, or PNG jobs. This clears the previous summary and
+coordinates and submits a new OCR generation through the chosen engine. A
+summary is an optional independent downstream worker and is not required for
+OCR reprocessing. Deleting source media also deletes the OCR object recorded
+with its completed job, even if OCR configuration changes later.
+
+The same admin page contains the default-off **Стислий опис документів**
+setting. It requires an enabled AI engine and affects only future media. For
+version one, each newly completed PDF, JPEG, or PNG OCR result with accepted or
+degraded quality is converted from sanitized HTML to normalized plain text.
+Existing media are not enqueued automatically. The input is capped at 60,000
+characters while retaining its beginning and end. Filenames, message metadata,
+media identifiers, and image bytes are never sent to the AI engine.
+
+The independent `media_summary_worker` performs one inference at a time and
+stores a neutral Ukrainian summary plus titled coordinates directly against
+`signal_message_media`. The same strict response supports СК-42, УСК-2000,
+WGS-84, and MGRS; unlabeled complete seven-digit X/Y pairs are interpreted as
+СК-42, while incomplete coordinates and four-digit squares are ignored. The
+OCR table structure is retained in the AI input so each point can inherit its
+object title, related description, and planned means from the same table
+column. The worker validates systems, formats, ranges, context lengths,
+duplicates, and the 50-point limit without calculating missing values. It has
+its own leases and bounded exponential retries, so model outages never change
+OCR state or block OCR viewing. The selected engine is captured when a summary
+is enqueued. Source text is cleared after completion or terminal failure; its
+digest and original character count remain for provenance.
+
+Users see the result as escaped plain text beneath each document and beneath the
+original preview pane, including queued, running, retry, and failure states.
+Completed preview results with coordinates split into equal summary and grouped
+coordinate columns, stacked on narrow screens. Message cards lazily request
+only coordinates for completed media, append every successfully converted
+document point after existing message/Palitra points, deduplicate markers, and
+retain the extracted title, description, and planned means on the active map
+point. A failed request does not hide points from other documents and can be
+retried. Existing completed summaries keep their stored coordinate data; use
+the admin reprocessing action to populate the richer point context because
+there is no automatic regeneration or backfill.
+
+OCR exports are generated on demand from the latest sanitized HTML stored for
+the completed job. DOCX table traversal stops at nested table boundaries so the
+same rendered content is not copied into the document more than once.
+
+The staged rollout uses OCR-Gemma (`http://100.105.172.96:8001/v1`,
+`echo/ocr-gemma-4-26B-A4B-it`) and the existing Luna engine
+(`https://api.openai.com/v1`, `gpt-5.6-luna`), with OCR-Gemma as main; do not
+add Sol. OCR worker state, engine capability catalog, and media-summary
+settings remain excluded from PeerDB/ClickHouse, while `media_summary`,
+including extracted coordinates, is replicated for analytical queries from its
+initial schema. Verify one fresh attachment through each selected engine and
+retain the existing `max_figures: 0` regression check before wider rollout.
 
 ### vLLM inference architecture
 
@@ -193,11 +356,15 @@ flowchart LR
     end
 
     subgraph router_lxc["echo-vllm-router LXC · Debian 13"]
-        router["vLLM Router · :8000<br/>cache_aware"]
-        router_metrics["Router metrics<br/>127.0.0.1:29000"]
+        router["General Gemma router · :8000<br/>cache_aware"]
+        ocr_router["OCR-Gemma router · :8001<br/>round_robin"]
+        nuextract_router["NuExtract router · :8002<br/>round_robin"]
+        router_metrics["Router metrics<br/>127.0.0.1:29000–29002"]
         collector["SigNoz OTel collector"]
 
         router -.-> router_metrics --> collector
+        ocr_router -.-> router_metrics
+        nuextract_router -.-> router_metrics
     end
 
     subgraph spark["echo-gpu-spark · AI inference"]
@@ -209,16 +376,25 @@ flowchart LR
         vllm -->|inference| gpu
     end
 
+    subgraph ocr_workers["Dedicated OCR workers"]
+        ocr_vllm["Spark-02 vLLM<br/>OCR-Gemma alias"]
+        nuextract_vllm["Flyingskull vLLM<br/>NuExtract3 BF16"]
+    end
+
     signoz["SigNoz<br/>central metrics"]
 
     ai_client -->|OpenAI-compatible HTTP<br/>Tailscale| router
     router -->|OpenAI-compatible HTTP<br/>Tailscale| vllm
+    ocr_router -->|OpenAI-compatible HTTP<br/>Tailscale| ocr_vllm
+    nuextract_router -->|OpenAI-compatible HTTP<br/>Tailscale| nuextract_vllm
     ai_client -.->|fallback only| vllm
     vllm -.->|Prometheus metrics<br/>Tailscale| collector
+    ocr_vllm -.->|Prometheus metrics<br/>Tailscale| collector
+    nuextract_vllm -.->|Prometheus metrics<br/>Tailscale| collector
     collector -->|OTLP gRPC<br/>Tailscale| signoz
 
     classDef optional stroke-dasharray:6 4
-    class ai_workers,router,router_metrics,collector,hf_cache,vllm,gpu,signoz optional
+    class ai_workers,router,ocr_router,nuextract_router,router_metrics,collector,hf_cache,vllm,gpu,ocr_vllm,nuextract_vllm,signoz optional
 ```
 
 ### Per-user AI agent harness
@@ -389,6 +565,19 @@ flowchart LR
     class socket,nlp,iggy,promin,signal,whatsapp,vector,signoz,greptime,s3,wal_timer,wal_check,table_timer,table_reconcile,analytics optional
 ```
 
+Application-triggered Signal restarts are serialized per client by Redis. Echo
+owns a 90-second maintenance lease and a five-minute successful-restart
+cooldown; `echo-im` owns the systemd restart and waits for both `/v1/health`
+and every linked account in `/v1/accounts` before completing the lease. Signal
+workers defer API traffic and datasource sync timestamps while maintenance is
+active. Direct operator `systemctl` commands remain outside this coordination.
+
+Iggy inbox-topic events retain the JSON `[inbox_item_id, message]` shape used
+by the inbox API. The message object is enriched with
+`sigint_callsign_ids`, `sigint_unit_ids`, `sigint_signal_ids`, and
+`sigint_network_freq_ids`; frequency IDs are resolved against the
+interception timestamp and the frequency's active period.
+
 ## Bgworkers
 
 In a packaged live deployment, the API process owns only request-adjacent
@@ -397,6 +586,10 @@ workers belong to the bgworker process; report-history workers run in the
 separately memory-capped report-worker process. Solid arrows show tasks that
 are always spawned; dotted arrows show tasks gated by configuration or used
 only during startup. Each process also starts its own `worker_metrics_logger`.
+The API source-PostgreSQL pool is capped at 50 connections. All long-running
+bgworkers, including per-datasource messenger workers, share one 20-connection
+source pool; report workers use a separate 20-connection pool, while one-off
+commands retain the 30-connection default.
 
 ```mermaid
 flowchart TB
@@ -413,6 +606,8 @@ flowchart TB
     bg --> network_workers["Network workers<br/>recent_inbox_network_worker<br/>old_inbox_network_worker<br/>inbox_network_daily_consistency_worker"]
     bg --> palitra_workers["Palitra worker<br/>palitra_highlight_worker"]
     bg --> goi_workers["GOI workers<br/>goi_sync_worker_0..N<br/>goi_association_message_uid_worker<br/>palitra_conversion_worker"]
+    bg -.-> ocr_worker["OCR worker<br/>default-off · recent messenger documents<br/>extractor jobs · sanitized B2 result"]
+    bg -.-> media_summary_worker["Media summary worker<br/>default-off enqueue · one inference<br/>neutral Ukrainian summary"]
 
     bg -.-> configured_workers["Configuration-gated workers<br/>analytics_health_log_worker · analytics gateway<br/>activity_details_worker · GreptimeDB<br/>cleanup_networks_worker<br/>fill_comp_freq_worker<br/>inactive_users_worker<br/>location_v2_worker<br/>suggest_message_tags_worker<br/>refresh_models_worker · AI models<br/>cleanup_tmp_worker · in-memory tmp"]
     bg -.-> startup_workers["Startup task<br/>signal_cli_verbose_logger"]
@@ -422,7 +617,7 @@ flowchart TB
     reports --> report_workers_c["Report-history workers<br/>report_history_worker_kmz<br/>report_history_worker_geojson<br/>report_history_worker_etalonka<br/>report_history_worker_etalonka_1<br/>report_history_worker_goi<br/>report_history_worker_unknown<br/>report_history_timeout_worker"]
 
     classDef optional stroke-dasharray:6 4
-    class api_vault_worker,bg_vault_worker,configured_workers,startup_workers optional
+    class api_vault_worker,bg_vault_worker,ocr_worker,media_summary_worker,configured_workers,startup_workers optional
 ```
 
 `worker_calculate_group_stats` also owns historical group-stat recalculation.
@@ -557,6 +752,11 @@ system of record. At startup it reconciles the automation columns it requires,
 so GOI-only deployments do not depend on the central Echo migrator. Automations
 can render extracted coordinates over Esri World Imagery with Google labels and
 attach the PNG to the forwarded text in the same outbound message.
+Account replacement is serialized with messenger and automation workers;
+changing a messenger kind or phone stops dependent automations, rotates the
+client credential directory, and requires relinking. Before stopping clients,
+`echo-swapp` records a relink journal in PostgreSQL; startup uses it to finish
+or roll back an interrupted replacement.
 Cross-automation send reservations, outbound queue rows, and delivery records
 commit atomically. `echo_automation_send_log` retains route-level
 deduplication state for 30 days; the cleanup worker hard-deletes older rows.

@@ -4,7 +4,6 @@ use crate::entities::*;
 use crate::error::*;
 use crate::messenger::bl::list_echo_accounts;
 use crate::messenger::types::*;
-use crate::new_pg_pool_from_mode;
 use crate::types::info;
 use crate::types::*;
 use ::serde::{Deserialize, Serialize};
@@ -39,13 +38,14 @@ struct UnlinkedDatasourceNotificationState {
 /// - puts them into the signal_message_queue table for further processing
 /// - messages are further processed by process_signal_message_queue_item function
 pub async fn receive_thread_nofail(
-    mode: Mode,
+    env: Arc<Env>,
     cancel_token: CancellationToken,
     shutdown_handle: Handle,
 ) {
     loop {
         if let Err(e) =
-            receive_thread_inner(mode, &cancel_token, &shutdown_handle).await
+            receive_thread_inner(env.clone(), &cancel_token, &shutdown_handle)
+                .await
         {
             error!("receive_thread_nofail encountered an error: {:?}", e);
             sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS)).await;
@@ -55,17 +55,20 @@ pub async fn receive_thread_nofail(
 }
 
 pub async fn receive_thread_inner(
-    mode: Mode,
+    env: Arc<Env>,
     cancel_token: &CancellationToken,
     shutdown_handle: &Handle,
 ) -> Result<(), AppError> {
-    let (config, settlements, rq, mut redis, dbx) =
-        crate::utils::setup_worker(mode).await.c(h!())?;
-    let s3 = mk_s3(&config).c(h!())?;
+    let config = &env.config;
+    let settlements = env.settlements.clone();
+    let rq = &env.rq;
+    let mut redis = env.redis.clone();
+    let dbx = &env.dbx;
+    let s3 = &env.s3;
 
     info!("started receive_thread_inner");
     if let Err(e) =
-        echo_im::enable_verbose_logging_for_all_signal_clients(&dbx).await
+        echo_im::enable_verbose_logging_for_all_signal_clients(dbx).await
     {
         error!("failed to enable verbose logging: {:?}", e);
     };
@@ -76,11 +79,10 @@ pub async fn receive_thread_inner(
 
     loop {
         receive_thread_inner_2(
-            mode,
             cancel_token,
             shutdown_handle,
-            &config,
-            &dbx,
+            config,
+            dbx,
             &mut redis,
             &mut workers,
             &mut running_ids,
@@ -88,11 +90,11 @@ pub async fn receive_thread_inner(
         .await
         .c(h!())?;
         let recovered_missing_count = maybe_run_echo_im_sync_recovery(
-            &config,
+            config,
             settlements.clone(),
-            &rq,
-            &s3,
-            &dbx,
+            rq,
+            s3,
+            dbx,
             &mut redis,
             &mut echo_im_sync_recovery_next_at,
         )
@@ -149,7 +151,6 @@ async fn maybe_run_echo_im_sync_recovery(
 }
 
 pub async fn receive_thread_inner_2(
-    mode: Mode,
     cancel_token: &CancellationToken,
     shutdown_handle: &Handle,
     config: &Config,
@@ -177,7 +178,6 @@ pub async fn receive_thread_inner_2(
     let clients = list_clients(dbx).await.c(h!())?;
     for datasource in clients {
         bl_spawn_worker_if_not_running(
-            mode,
             cancel_token,
             shutdown_handle,
             config,
@@ -195,7 +195,6 @@ pub async fn receive_thread_inner_2(
 }
 
 pub async fn bl_spawn_worker_if_not_running(
-    mode: Mode,
     cancel_token: &CancellationToken,
     shutdown_handle: &Handle,
     config: &Config,
@@ -248,7 +247,7 @@ pub async fn bl_spawn_worker_if_not_running(
             {
                 spawn_new_worker(
                     datasource_id,
-                    mode,
+                    dbx.clone(),
                     config.clone(),
                     redis,
                     worker_name,
@@ -263,7 +262,7 @@ pub async fn bl_spawn_worker_if_not_running(
 
 async fn spawn_new_worker(
     datasource_id: i64,
-    mode: Mode,
+    dbx: DatabaseConnection,
     config: Config,
     redis: redis::aio::ConnectionManager,
     worker_name: String,
@@ -273,7 +272,7 @@ async fn spawn_new_worker(
 
     let failed = match run_new_worker(
         datasource_id,
-        mode,
+        dbx,
         config,
         redis,
         worker_name_val.clone(),
@@ -300,14 +299,13 @@ async fn spawn_new_worker(
 
 async fn run_new_worker(
     datasource_id: i64,
-    mode: Mode,
+    dbx: DatabaseConnection,
     config: Config,
     mut redis: redis::aio::ConnectionManager,
     worker_name: String,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
     info!("spawning new worker: {worker_name}");
-    let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
     info!("{worker_name}: started processing");
     let result = async {
         loop {
@@ -336,6 +334,13 @@ async fn run_new_worker(
             }
             let sync_result =
                 sync_client_once(&config, cli, &dbx, &mut redis).await;
+            if sync_result.maintenance_skipped {
+                sleep(Duration::from_secs(
+                    SIGNAL_RESTART_MAINTENANCE_RETRY_SEC,
+                ))
+                .await;
+                continue;
+            }
             if !sync_result.is_healthy {
                 sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS))
                     .await;
@@ -367,6 +372,7 @@ async fn sync_client_once(
         return SyncResult {
             is_healthy: false,
             num_synced_inbox_messages: 0,
+            maintenance_skipped: false,
         };
     }
     if let Err(e) = clear_unlinked_datasource_notification(redis, cli.id).await
@@ -381,25 +387,43 @@ async fn sync_client_once(
         return SyncResult {
             is_healthy: false,
             num_synced_inbox_messages: 0,
+            maintenance_skipped: false,
         };
     };
     let mut client_groups_sync_ts_map =
         BTreeMap::<String, NaiveDateTime>::new();
-    let num_synced_inbox_messages = receive_thread(
+    let receive_result = receive_thread(
         config,
         &client_name,
         &mut client_groups_sync_ts_map,
         dbx,
+        redis,
     )
-    .await
-    .unwrap_or_else(|e| {
-        error!("> {client_name}::receive_thread_nofail error: {:?}", e);
-        0
-    });
+    .await;
+    let (num_synced_inbox_messages, maintenance_skipped) = match receive_result
+    {
+        Ok(ReceiveThreadResult::Synced(count)) => (count, false),
+        Ok(ReceiveThreadResult::Maintenance) => (0, true),
+        Err(failure) => {
+            error!(
+                "> {client_name}::receive_thread_nofail failed: {}",
+                crate::messenger::signal_restart::normalized_failure(&failure)
+            );
+            (0, false)
+        }
+    };
+    if maintenance_skipped {
+        return SyncResult {
+            is_healthy: true,
+            num_synced_inbox_messages,
+            maintenance_skipped,
+        };
+    }
     let is_healthy = !is_datasource_offline(dbx, cli.id).await;
     SyncResult {
         is_healthy,
         num_synced_inbox_messages,
+        maintenance_skipped,
     }
 }
 
@@ -599,36 +623,48 @@ async fn is_datasource_offline(dbx: &DatabaseConnection, id: i64) -> bool {
     last_sync_at < cutoff_ts
 }
 
+enum ReceiveThreadResult {
+    Synced(usize),
+    Maintenance,
+}
+
 async fn receive_thread(
     config: &Config,
     client_name: &str,
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
     dbx: &DatabaseConnection,
-) -> Result<usize, AppError> {
+    redis: &mut redis::aio::ConnectionManager,
+) -> Result<ReceiveThreadResult, AppError> {
     let datasource = load_client_datasource(dbx, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
     if datasource.echo_client_lock_id.is_none() {
         trace!("datasource {datasource_id} is not linked, skipping");
-        return Ok(0);
+        return Ok(ReceiveThreadResult::Synced(0));
     }
     if datasource.status == AccountStatus::Paused {
         trace!("datasource {datasource_id} is paused, skipping");
-        return Ok(0);
+        return Ok(ReceiveThreadResult::Synced(0));
     }
     ensure_initial_signal_login_delay().await;
     let restapi_error_discord_webhook_url =
         crate::system_settings::get_echo_restapi_error_discord_webhook_url(dbx)
             .await
             .c(h!())?;
-    echo_im::worker::signal_worker_tick_once_with_options(
+    let tick_outcome = echo_im::worker::signal_worker_tick_once_with_options(
         client_name,
         dbx,
-        echo_im::worker::SignalWorkerOptions {
+        crate::messenger::signal_restart::signal_worker_options(
+            crate::messenger::signal_restart::RedisSignalRestartCoordinator::new(
+                redis.clone(),
+            ),
             restapi_error_discord_webhook_url,
-        },
+        ),
     )
     .await
     .c(h!())?;
+    if tick_outcome == echo_im::worker::SignalWorkerTickOutcome::Maintenance {
+        return Ok(ReceiveThreadResult::Maintenance);
+    }
     echo_im::worker::whatsapp_worker_tick_once(client_name, dbx)
         .await
         .c(h!())?;
@@ -645,7 +681,7 @@ async fn receive_thread(
     model.last_sync_at = Set(Some(Utc::now().naive_utc()));
     model.update(dbx).await.c(h!())?;
 
-    Ok(items_synced)
+    Ok(ReceiveThreadResult::Synced(items_synced))
 }
 
 async fn ensure_initial_signal_login_delay() {

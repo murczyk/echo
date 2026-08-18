@@ -13,12 +13,14 @@ export function MessageCardImageThumb({
   index,
   variant,
   compact = false,
+  selected = false,
   onOpen,
 }: {
   image: MessageCardImage;
   index: number;
   variant: PreviewVariant;
   compact?: boolean;
+  selected?: boolean;
   onOpen: (index: number) => void;
 }) {
   const [loaded, setLoaded] = useState(false);
@@ -43,6 +45,8 @@ export function MessageCardImageThumb({
       onClick={canOpen ? handleOpenClick : undefined}
       disabled={!canOpen}
       aria-label="Відкрити зображення"
+      aria-current={selected ? 'true' : undefined}
+      data-summary-selected={selected ? 'true' : undefined}
       data-picture-thumb-state={failed ? 'failed' : loaded ? 'loaded' : 'loading'}
       data-picture-thumb-layout={variant}
       sx={{
@@ -57,8 +61,9 @@ export function MessageCardImageThumb({
         borderRadius: 1.5,
         overflow: 'hidden',
         border: '1px solid',
-        borderColor: 'divider',
-        backgroundColor: 'action.hover',
+        borderColor: selected ? 'primary.light' : 'divider',
+        backgroundColor: selected ? 'action.selected' : 'action.hover',
+        boxShadow: selected ? 1 : 0,
         '&:disabled': {
           color: 'text.disabled',
         },

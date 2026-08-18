@@ -1,10 +1,15 @@
 use super::types::{
     CreateUnitReq, CreateUnitWithAutoNetworkReq, CreateUnitWithAutoNetworkRsp,
-    ImportOrbitUnitReq, LinkOrbitUnitReq, ListUnitDuplicatesRsp,
-    ListUnitsByIdRsp, OrbitChildUnit, OrbitDictionaryValue, OrbitParentUnit,
-    OrbitUnitDetails, OrbitUnitLinkCandidate, OrbitUnitLinkCandidatesReq,
+    ImportOrbitUnitReq, InconsistentUnit, LinkOrbitUnitReq,
+    ListInconsistentUnitsRsp, ListUnitDuplicatesRsp, ListUnitsByIdRsp,
+    OrbitChildUnit, OrbitDictionaryValue, OrbitParentUnit, OrbitUnitDetails,
+    OrbitUnitLinkCandidate, OrbitUnitLinkCandidatesReq,
     OrbitUnitLinkCandidatesRsp, OrbitUnitSearchReq, UnitDetailsReq,
     UnitDuplicate, UnitOrbitChildrenRsp,
+};
+use crate::config::{
+    SIGINT_UNIT_INCONSISTENCY_LOWER_ORBIT_ECHELON_REASON_UK,
+    SIGINT_UNIT_INCONSISTENCY_MULTIPLE_ORBIT_LINKS_REASON_UK,
 };
 use crate::entities::*;
 use crate::error::AppError;
@@ -18,7 +23,7 @@ use actix_web::web::{Data, Json};
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::sea_query::{Expr, OnConflict, SimpleExpr};
 use sea_orm::*;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use uuid::Uuid;
 
 const ORBIT_LINK_CANDIDATE_LIMIT: u64 = 100;
@@ -127,6 +132,124 @@ pub async fn list_unit_duplicates(
     }))
 }
 
+#[post("/api/admin/unit-inconsistent")]
+pub async fn list_inconsistent_units(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+) -> Result<Json<ListInconsistentUnitsRsp>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    ensure_orbit_access(&env.dbx, &login).await.c(h!())?;
+    Ok(Json(ListInconsistentUnitsRsp {
+        units: load_inconsistent_units(&env.dbx).await.c(h!())?,
+    }))
+}
+
+async fn load_inconsistent_units(
+    dbx: &DatabaseConnection,
+) -> Result<Vec<InconsistentUnit>, AppError> {
+    let units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::IsInconsistent.eq(true))
+        .order_by_asc(sigint_unit::Column::Name)
+        .order_by_asc(sigint_unit::Column::Id)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let unit_ids = units.iter().map(|unit| unit.id).collect::<Vec<_>>();
+    let mut orbit_units_by_sigint_unit_id =
+        linked_orbit_units_by_sigint_unit_ids(dbx, &unit_ids)
+            .await
+            .c(h!())?;
+    let echelon_ids = orbit_units_by_sigint_unit_id
+        .values()
+        .flatten()
+        .filter_map(|unit| unit.unit_echelon_id)
+        .collect::<BTreeSet<_>>();
+    let echelons = load_orbit_echelons(dbx, &echelon_ids).await.c(h!())?;
+    let mut result = Vec::with_capacity(units.len());
+    for unit in units {
+        let orbit_units = orbit_units_by_sigint_unit_id
+            .remove(&unit.id)
+            .unwrap_or_default();
+        let details = unit_inconsistency_details_from_links(
+            &unit,
+            &orbit_units,
+            &echelons,
+        );
+        result.push(InconsistentUnit {
+            sigint_unit_id: unit.id,
+            name: unit.name,
+            reasons: details.reasons,
+            problematic_echelons: details.problematic_echelons,
+        });
+    }
+    Ok(result)
+}
+
+async fn linked_orbit_units_by_sigint_unit_ids<C>(
+    dbx: &C,
+    sigint_unit_ids: &[i64],
+) -> Result<HashMap<i64, Vec<orbit_unit::Model>>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if sigint_unit_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let links = orbit_unit_sigint_unit::Model::find_by_statement(
+        Statement::from_sql_and_values(
+            dbx.get_database_backend(),
+            r#"
+                select link.*
+                from orbit_unit_sigint_unit link
+                where link.sigint_unit_id = any($1::bigint[])
+                    and link.is_suppressed = false
+            "#,
+            [sigint_unit_ids.to_vec().into()],
+        ),
+    )
+    .all(dbx)
+    .await
+    .c(h!())?;
+    let orbit_unit_ids = links
+        .iter()
+        .map(|link| link.orbit_unit_id)
+        .collect::<BTreeSet<_>>();
+    if orbit_unit_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let orbit_units =
+        orbit_unit::Model::find_by_statement(Statement::from_sql_and_values(
+            dbx.get_database_backend(),
+            r#"
+                select unit.*
+                from orbit_unit unit
+                where unit.unit_id = any($1::uuid[])
+                    and unit.deleted = false
+            "#,
+            [orbit_unit_ids.into_iter().collect::<Vec<_>>().into()],
+        ))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|unit| (unit.unit_id, unit))
+        .collect::<HashMap<_, _>>();
+    let mut units_by_sigint_unit_id =
+        HashMap::<i64, Vec<orbit_unit::Model>>::new();
+    for link in links {
+        let Some(orbit_unit) = orbit_units.get(&link.orbit_unit_id) else {
+            continue;
+        };
+        units_by_sigint_unit_id
+            .entry(link.sigint_unit_id)
+            .or_default()
+            .push(orbit_unit.clone());
+    }
+    Ok(units_by_sigint_unit_id)
+}
+
 async fn load_unit_duplicates(
     dbx: &DatabaseConnection,
 ) -> Result<Vec<UnitDuplicate>, AppError> {
@@ -227,11 +350,325 @@ fn render_unit_duplicates(
     Ok(units)
 }
 
-pub async fn unit_orbit_details(
-    dbx: &DatabaseConnection,
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UnitInconsistencyDetails {
+    reasons: Vec<String>,
+    problematic_echelons: Vec<String>,
+}
+
+pub(crate) struct UnitOrbitReconcileOutcome {
+    pub unit: sigint_unit::Model,
+    pub hierarchy_updated: bool,
+    pub orbit_link_count: usize,
+}
+
+pub(crate) async fn reconcile_sigint_unit_orbit<C>(
+    dbx: &C,
+    login: &Uuid,
     sigint_unit_id: i64,
-) -> Result<Vec<OrbitUnitDetails>, AppError> {
-    let units = orbit_unit::Entity::find()
+    propagate_hierarchy: bool,
+) -> Result<UnitOrbitReconcileOutcome, AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut unit = sigint_unit::Entity::find_by_id(sigint_unit_id)
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .lock_exclusive()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
+    let previous_unit = unit.clone();
+    let orbit_units = linked_orbit_units(dbx, sigint_unit_id).await.c(h!())?;
+    let hierarchy_updated = propagate_hierarchy
+        && propagate_single_orbit_hierarchy(dbx, &orbit_units, &mut unit)
+            .await
+            .c(h!())?;
+    let details =
+        unit_inconsistency_details_for_links(dbx, &unit, &orbit_units)
+            .await
+            .c(h!())?;
+    let is_inconsistent = !details.reasons.is_empty();
+    let inconsistency_updated = unit.is_inconsistent != is_inconsistent;
+    if !hierarchy_updated && !inconsistency_updated {
+        return Ok(UnitOrbitReconcileOutcome {
+            unit,
+            hierarchy_updated,
+            orbit_link_count: orbit_units.len(),
+        });
+    }
+
+    let old_value = super::unit_json(dbx, unit.id).await.c(h!())?;
+    let mut unit_act = unit.clone().into_active_model();
+    if hierarchy_updated {
+        set_active_hierarchy(&mut unit_act, &unit);
+    }
+    if inconsistency_updated {
+        unit_act.is_inconsistent = Set(is_inconsistent);
+    }
+    let unit = unit_act.update(dbx).await.c(h!())?;
+    if hierarchy_updated {
+        super::unit_after_insert_update(dbx, unit.id)
+            .await
+            .c(h!())?;
+    }
+    let new_value = super::unit_json(dbx, unit.id).await.c(h!())?;
+    super::insert_unit_update_changelog(
+        dbx, login, unit.id, old_value, new_value,
+    )
+    .await
+    .c(h!())?;
+    if hierarchy_updated {
+        super::reconcile_parent_unit_activity(
+            dbx,
+            login,
+            &[previous_unit, unit.clone()],
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(UnitOrbitReconcileOutcome {
+        unit,
+        hierarchy_updated,
+        orbit_link_count: orbit_units.len(),
+    })
+}
+
+async fn propagate_single_orbit_hierarchy<C>(
+    dbx: &C,
+    orbit_units: &[orbit_unit::Model],
+    unit: &mut sigint_unit::Model,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let [orbit_unit] = orbit_units else {
+        return Ok(false);
+    };
+    let orbit_hierarchy =
+        match create_unit_req_from_orbit(dbx, orbit_unit, true).await {
+            Ok(req) => create_unit_req_hierarchy(req),
+            Err(AppError::BL { .. }) => return Ok(false),
+            Err(err) => return Err(err),
+        };
+    let mut hierarchy = owned_sigint_unit_hierarchy(unit);
+    let mut updated = false;
+    let other_level = crate::orbit::EchoEchelon::Other.index();
+    if hierarchy[other_level].trim().is_empty()
+        && !orbit_hierarchy[other_level].trim().is_empty()
+    {
+        hierarchy[other_level] = orbit_hierarchy[other_level].clone();
+        updated = true;
+    }
+    if let Some(lowest_level) = lowest_standard_hierarchy_level(&hierarchy) {
+        for level in (lowest_level + 1)..hierarchy.len() {
+            if hierarchy[level].trim().is_empty()
+                && !orbit_hierarchy[level].trim().is_empty()
+            {
+                hierarchy[level] = orbit_hierarchy[level].clone();
+                updated = true;
+            }
+        }
+    }
+    if updated {
+        apply_owned_sigint_unit_hierarchy(unit, hierarchy);
+    }
+    Ok(updated)
+}
+
+fn lowest_standard_hierarchy_level(hierarchy: &[String; 14]) -> Option<usize> {
+    hierarchy
+        .iter()
+        .enumerate()
+        .skip(crate::orbit::EchoEchelon::Other.index() + 1)
+        .find_map(|(level, value)| (!value.trim().is_empty()).then_some(level))
+}
+
+fn create_unit_req_hierarchy(req: CreateUnitReq) -> [String; 14] {
+    [
+        req.other,
+        req.team_or_crew,
+        req.section,
+        req.squad,
+        req.platoon,
+        req.company,
+        req.battalion,
+        req.regiment,
+        req.brigade,
+        req.division,
+        req.corps,
+        req.army,
+        req.military_district,
+        req.army_region,
+    ]
+}
+
+fn owned_sigint_unit_hierarchy(unit: &sigint_unit::Model) -> [String; 14] {
+    super::unit_hierarchy(unit).map(ToString::to_string)
+}
+
+fn apply_owned_sigint_unit_hierarchy(
+    unit: &mut sigint_unit::Model,
+    hierarchy: [String; 14],
+) {
+    let [other, team_or_crew, section, squad, platoon, company, battalion, regiment, brigade, division, corps, army, military_district, army_region] =
+        hierarchy;
+    unit.other = other;
+    unit.team_or_crew = team_or_crew;
+    unit.section = section;
+    unit.squad = squad;
+    unit.platoon = platoon;
+    unit.company = company;
+    unit.battalion = battalion;
+    unit.regiment = regiment;
+    unit.brigade = brigade;
+    unit.division = division;
+    unit.corps = corps;
+    unit.army = army;
+    unit.military_district = military_district;
+    unit.army_region = army_region;
+    unit.name = super::unit_name_from_hierarchy(super::unit_hierarchy(unit));
+}
+
+fn set_active_hierarchy(
+    unit_act: &mut sigint_unit::ActiveModel,
+    unit: &sigint_unit::Model,
+) {
+    unit_act.other = Set(unit.other.clone());
+    unit_act.team_or_crew = Set(unit.team_or_crew.clone());
+    unit_act.section = Set(unit.section.clone());
+    unit_act.squad = Set(unit.squad.clone());
+    unit_act.platoon = Set(unit.platoon.clone());
+    unit_act.company = Set(unit.company.clone());
+    unit_act.battalion = Set(unit.battalion.clone());
+    unit_act.regiment = Set(unit.regiment.clone());
+    unit_act.brigade = Set(unit.brigade.clone());
+    unit_act.division = Set(unit.division.clone());
+    unit_act.corps = Set(unit.corps.clone());
+    unit_act.army = Set(unit.army.clone());
+    unit_act.military_district = Set(unit.military_district.clone());
+    unit_act.army_region = Set(unit.army_region.clone());
+    unit_act.name = Set(unit.name.clone());
+}
+
+#[cfg(test)]
+async fn unit_inconsistency_details<C>(
+    dbx: &C,
+    unit: &sigint_unit::Model,
+) -> Result<UnitInconsistencyDetails, AppError>
+where
+    C: ConnectionTrait,
+{
+    let orbit_units = linked_orbit_units(dbx, unit.id).await.c(h!())?;
+    Ok(
+        unit_inconsistency_details_for_links(dbx, unit, &orbit_units)
+            .await
+            .c(h!())?,
+    )
+}
+
+async fn unit_inconsistency_details_for_links<C>(
+    dbx: &C,
+    unit: &sigint_unit::Model,
+    orbit_units: &[orbit_unit::Model],
+) -> Result<UnitInconsistencyDetails, AppError>
+where
+    C: ConnectionTrait,
+{
+    let echelon_ids = orbit_units
+        .iter()
+        .filter_map(|unit| unit.unit_echelon_id)
+        .collect::<BTreeSet<_>>();
+    let echelons = load_orbit_echelons(dbx, &echelon_ids).await.c(h!())?;
+    Ok(unit_inconsistency_details_from_links(
+        unit,
+        orbit_units,
+        &echelons,
+    ))
+}
+
+async fn load_orbit_echelons<C>(
+    dbx: &C,
+    echelon_ids: &BTreeSet<Uuid>,
+) -> Result<HashMap<Uuid, orbit_unit_echelon::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if echelon_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    Ok(orbit_unit_echelon::Entity::find()
+        .filter(
+            orbit_unit_echelon::Column::Id.is_in(echelon_ids.iter().copied()),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|echelon| (echelon.id, echelon))
+        .collect())
+}
+
+fn unit_inconsistency_details_from_links(
+    unit: &sigint_unit::Model,
+    orbit_units: &[orbit_unit::Model],
+    echelons: &HashMap<Uuid, orbit_unit_echelon::Model>,
+) -> UnitInconsistencyDetails {
+    let mut reasons = Vec::new();
+    if orbit_units.len() > 1 {
+        reasons.push(
+            SIGINT_UNIT_INCONSISTENCY_MULTIPLE_ORBIT_LINKS_REASON_UK
+                .to_string(),
+        );
+    }
+    let hierarchy = owned_sigint_unit_hierarchy(unit);
+    let Some(sigint_level) = lowest_standard_hierarchy_level(&hierarchy) else {
+        return UnitInconsistencyDetails {
+            reasons,
+            problematic_echelons: Vec::new(),
+        };
+    };
+    let mut problematic_echelons = BTreeSet::new();
+    for orbit_unit in orbit_units {
+        let Some(echelon) = orbit_unit
+            .unit_echelon_id
+            .and_then(|echelon_id| echelons.get(&echelon_id))
+        else {
+            continue;
+        };
+        let Some(level) = crate::orbit::echo_echelon(&echelon.key) else {
+            continue;
+        };
+        if level == crate::orbit::EchoEchelon::Other {
+            continue;
+        }
+        if level.index() < sigint_level {
+            problematic_echelons.insert((level.index(), echelon.name.clone()));
+        }
+    }
+    if !problematic_echelons.is_empty() {
+        reasons.push(
+            SIGINT_UNIT_INCONSISTENCY_LOWER_ORBIT_ECHELON_REASON_UK.to_string(),
+        );
+    }
+    UnitInconsistencyDetails {
+        reasons,
+        problematic_echelons: problematic_echelons
+            .into_iter()
+            .map(|(_, name)| name)
+            .collect(),
+    }
+}
+
+async fn linked_orbit_units<C>(
+    dbx: &C,
+    sigint_unit_id: i64,
+) -> Result<Vec<orbit_unit::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(orbit_unit::Entity::find()
         .join(
             JoinType::InnerJoin,
             orbit_unit::Relation::OrbitUnitSigintUnit.def(),
@@ -243,10 +680,17 @@ pub async fn unit_orbit_details(
         .order_by_asc(orbit_unit::Column::UnitId)
         .all(dbx)
         .await
-        .c(h!())?;
+        .c(h!())?)
+}
+
+pub async fn unit_orbit_details(
+    dbx: &DatabaseConnection,
+    sigint_unit_id: i64,
+) -> Result<Vec<OrbitUnitDetails>, AppError> {
+    let units = linked_orbit_units(dbx, sigint_unit_id).await.c(h!())?;
     let mut details = Vec::with_capacity(units.len());
     for unit in units {
-        details.push(render_orbit_unit_details(dbx, unit).await?);
+        details.push(render_orbit_unit_details(dbx, unit).await.c(h!())?);
     }
     Ok(details)
 }
@@ -645,6 +1089,7 @@ fn sigint_unit_for_orbit_matching(req: &CreateUnitReq) -> sigint_unit::Model {
         original_id: None,
         is_deduplicate_candidate: req.is_deduplicate_candidate,
         orbit_note: req.orbit_note.clone(),
+        is_inconsistent: false,
     }
 }
 
@@ -718,6 +1163,11 @@ pub(super) async fn link_orbit_unit_for_login(
     import_missing_orbit_ancestors(&transaction, login, &orbit_unit).await?;
     crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
         .await?;
+    let sigint_unit =
+        reconcile_sigint_unit_orbit(&transaction, login, sigint_unit.id, true)
+            .await
+            .c(h!())?
+            .unit;
     if sigint_unit.active {
         super::reconcile_parent_unit_activity(
             &transaction,
@@ -745,6 +1195,7 @@ pub async fn unlink_orbit_unit(
     find_available_orbit_unit(&env.dbx, orbit_unit_id).await?;
     crate::orbit::unlink_sigint_unit_with_lock(
         &env.dbx,
+        &login,
         req.sigint_unit_id,
         orbit_unit_id,
     )
@@ -814,6 +1265,10 @@ pub(super) async fn import_orbit_unit_for_login(
     .c(h!())?;
     crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
         .await?;
+    let unit = reconcile_sigint_unit_orbit(&transaction, login, unit.id, true)
+        .await
+        .c(h!())?
+        .unit;
     super::reconcile_parent_unit_activity(
         &transaction,
         login,
@@ -891,6 +1346,9 @@ where
             super::set_unit_activity(dbx, login, &unit, true).await?;
         }
         link_orbit_ancestor(dbx, ancestor.unit_id, unit.id).await?;
+        reconcile_sigint_unit_orbit(dbx, login, unit.id, true)
+            .await
+            .c(h!())?;
     }
     Ok(())
 }
@@ -1108,6 +1566,233 @@ pub async fn oneoff_import_unlinked_orbit_units(
     Ok(())
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OrbitUnitReconcileStats {
+    pub scanned: usize,
+    pub hierarchy_updated: usize,
+    pub inconsistent: usize,
+    pub multiple_links_skipped: usize,
+    pub merged: usize,
+}
+
+pub(crate) async fn reconcile_all_orbit_linked_units<C>(
+    dbx: &C,
+    login: &Uuid,
+) -> Result<OrbitUnitReconcileStats, AppError>
+where
+    C: ConnectionTrait,
+{
+    let sigint_unit_ids = sigint_unit_ids_requiring_reconciliation(dbx)
+        .await
+        .c(h!())?;
+    let mut stats = OrbitUnitReconcileStats {
+        scanned: sigint_unit_ids.len(),
+        ..Default::default()
+    };
+    for sigint_unit_id in sigint_unit_ids {
+        let outcome =
+            reconcile_sigint_unit_orbit(dbx, login, sigint_unit_id, true)
+                .await
+                .c(h!())?;
+        stats.hierarchy_updated += usize::from(outcome.hierarchy_updated);
+        stats.multiple_links_skipped +=
+            usize::from(outcome.orbit_link_count > 1);
+    }
+    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx)
+        .await
+        .c(h!())?;
+    stats.merged = merge_identical_duplicate_candidates(dbx, login)
+        .await
+        .c(h!())?;
+    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx)
+        .await
+        .c(h!())?;
+    for sigint_unit_id in sigint_unit_ids_requiring_reconciliation(dbx)
+        .await
+        .c(h!())?
+    {
+        reconcile_sigint_unit_orbit(dbx, login, sigint_unit_id, false)
+            .await
+            .c(h!())?;
+    }
+    stats.inconsistent = usize::try_from(
+        sigint_unit::Entity::find()
+            .filter(sigint_unit::Column::Deleted.eq(false))
+            .filter(sigint_unit::Column::IsInconsistent.eq(true))
+            .count(dbx)
+            .await
+            .c(h!())?,
+    )
+    .c(h!())?;
+    Ok(stats)
+}
+
+async fn sigint_unit_ids_requiring_reconciliation<C>(
+    dbx: &C,
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut sigint_unit_ids = linked_sigint_unit_ids(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    sigint_unit_ids.extend(
+        sigint_unit::Entity::find()
+            .select_only()
+            .column(sigint_unit::Column::Id)
+            .filter(sigint_unit::Column::Deleted.eq(false))
+            .filter(sigint_unit::Column::IsInconsistent.eq(true))
+            .into_tuple::<i64>()
+            .all(dbx)
+            .await
+            .c(h!())?,
+    );
+    Ok(sigint_unit_ids.into_iter().collect())
+}
+
+async fn linked_sigint_unit_ids<C>(dbx: &C) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(orbit_unit_sigint_unit::Entity::find()
+        .select_only()
+        .column(orbit_unit_sigint_unit::Column::SigintUnitId)
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+        )
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .group_by(orbit_unit_sigint_unit::Column::SigintUnitId)
+        .order_by_asc(orbit_unit_sigint_unit::Column::SigintUnitId)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?)
+}
+
+async fn merge_identical_duplicate_candidates<C>(
+    dbx: &C,
+    login: &Uuid,
+) -> Result<usize, AppError>
+where
+    C: ConnectionTrait,
+{
+    let links = orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+        )
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::IsDeduplicateCandidate.eq(true))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let unit_ids = links
+        .iter()
+        .map(|link| link.sigint_unit_id)
+        .collect::<BTreeSet<_>>();
+    let units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Id.is_in(unit_ids))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|unit| (unit.id, unit))
+        .collect::<BTreeMap<_, _>>();
+    let components = identical_duplicate_components(&links, &units);
+    let mut merged = 0;
+    for component in components {
+        let mut candidates = component
+            .into_iter()
+            .filter_map(|unit_id| units.get(&unit_id).cloned())
+            .collect::<Vec<_>>();
+        candidates.sort_by_key(|unit| (!unit.active, unit.id));
+        let Some(survivor) = candidates.first() else {
+            continue;
+        };
+        let survivor_id = survivor.id;
+        for duplicate in candidates.into_iter().skip(1) {
+            super::merge_units_in_transaction(
+                *login,
+                dbx,
+                duplicate.id,
+                survivor_id,
+            )
+            .await
+            .c(h!())?;
+            merged += 1;
+        }
+    }
+    Ok(merged)
+}
+
+fn identical_duplicate_components(
+    links: &[orbit_unit_sigint_unit::Model],
+    units: &BTreeMap<i64, sigint_unit::Model>,
+) -> Vec<BTreeSet<i64>> {
+    let mut ids_by_orbit_and_name =
+        BTreeMap::<(Uuid, String), BTreeSet<i64>>::new();
+    for link in links {
+        let Some(unit) = units.get(&link.sigint_unit_id) else {
+            continue;
+        };
+        if unit.name.is_empty() {
+            continue;
+        }
+        ids_by_orbit_and_name
+            .entry((link.orbit_unit_id, unit.name.clone()))
+            .or_default()
+            .insert(unit.id);
+    }
+    let mut adjacent = BTreeMap::<i64, BTreeSet<i64>>::new();
+    for unit_ids in ids_by_orbit_and_name.into_values() {
+        if unit_ids.len() < 2 {
+            continue;
+        }
+        for unit_id in &unit_ids {
+            adjacent
+                .entry(*unit_id)
+                .or_default()
+                .extend(unit_ids.iter().copied().filter(|id| id != unit_id));
+        }
+    }
+    let mut components = Vec::new();
+    let mut seen = BTreeSet::new();
+    for root in adjacent.keys().copied() {
+        if seen.contains(&root) {
+            continue;
+        }
+        let mut component = BTreeSet::new();
+        let mut pending = vec![root];
+        while let Some(unit_id) = pending.pop() {
+            if !seen.insert(unit_id) {
+                continue;
+            }
+            component.insert(unit_id);
+            pending
+                .extend(adjacent.get(&unit_id).into_iter().flatten().copied());
+        }
+        if component.len() > 1 {
+            components.push(component);
+        }
+    }
+    components
+}
+
 pub(super) async fn import_unlinked_orbit_units(
     dbx: &DatabaseConnection,
     login: &Uuid,
@@ -1191,6 +1876,9 @@ pub(super) async fn import_unlinked_orbit_units(
         .insert(&transaction)
         .await
         .c(h!())?;
+        reconcile_sigint_unit_orbit(&transaction, login, unit.id, true)
+            .await
+            .c(h!())?;
         imported += 1;
     }
     if let Some((orbit_unit_id, err)) = first_skipped {
@@ -1720,6 +2408,64 @@ mod tests {
         .unwrap()
     }
 
+    async fn orbit_echelon(
+        dbx: &DatabaseConnection,
+        key: &str,
+    ) -> orbit_unit_echelon::Model {
+        if let Some(echelon) = orbit_unit_echelon::Entity::find()
+            .filter(orbit_unit_echelon::Column::Key.eq(key))
+            .one(dbx)
+            .await
+            .unwrap()
+        {
+            return echelon;
+        }
+        orbit_unit_echelon::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            key: Set(key.to_string()),
+            name: Set(format!("Test {key}")),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn insert_orbit_unit(
+        dbx: &DatabaseConnection,
+        name: &str,
+        echelon_id: Option<Uuid>,
+        operational_parent_unit_id: Option<Uuid>,
+    ) -> orbit_unit::Model {
+        orbit_unit::ActiveModel {
+            unit_id: Set(Uuid::new_v4()),
+            unit_name: Set(Some(name.to_string())),
+            unit_name_short: Set(Some(name.to_string())),
+            unit_echelon_id: Set(echelon_id),
+            operational_parent_unit_id: Set(operational_parent_unit_id),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn link_orbit_unit(
+        dbx: &DatabaseConnection,
+        orbit_unit_id: Uuid,
+        sigint_unit_id: i64,
+    ) {
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit_id),
+            sigint_unit_id: Set(sigint_unit_id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+    }
+
     #[test]
     fn ancestor_import_state_reports_each_unsupported_ancestor_once() {
         let mut import_state = OrbitAncestorImportState::default();
@@ -2096,6 +2842,14 @@ mod tests {
                 }]
             )])
         );
+        let linked_orbit_units =
+            linked_orbit_units_by_sigint_unit_ids(&env.dbx, &unit_ids)
+                .await
+                .unwrap();
+        assert_eq!(
+            linked_orbit_units[&sigint_unit.id][0].unit_id,
+            orbit_unit_id
+        );
     }
 
     #[tokio::test]
@@ -2273,6 +3027,399 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(sigint_unit.active);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn reconciliation_propagates_other_and_higher_echelons() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let login =
+            create_login_with_roles(&env.dbx, "orbit-propagation", &[]).await;
+        let other = orbit_echelon(&env.dbx, "other").await;
+        let brigade = orbit_echelon(&env.dbx, "brigade").await;
+        let platoon = orbit_echelon(&env.dbx, "platoon").await;
+        let orbit_brigade = insert_orbit_unit(
+            &env.dbx,
+            "ORBIT brigade",
+            Some(brigade.id),
+            None,
+        )
+        .await;
+        let orbit_platoon = insert_orbit_unit(
+            &env.dbx,
+            "ORBIT platoon",
+            Some(platoon.id),
+            Some(orbit_brigade.unit_id),
+        )
+        .await;
+        let orbit_other = insert_orbit_unit(
+            &env.dbx,
+            "ORBIT other",
+            Some(other.id),
+            Some(orbit_platoon.unit_id),
+        )
+        .await;
+        let sigint_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("SIGINT unit".to_string()),
+                company: Set("Existing company".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let sigint_parent = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("ORBIT brigade".to_string()),
+                brigade: Set("ORBIT brigade".to_string()),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_orbit_unit(&env.dbx, orbit_other.unit_id, sigint_unit.id).await;
+
+        let outcome = reconcile_sigint_unit_orbit(
+            &env.dbx,
+            &login.id,
+            sigint_unit.id,
+            true,
+        )
+        .await
+        .unwrap();
+
+        assert!(outcome.hierarchy_updated);
+        assert_eq!(outcome.unit.other, "ORBIT other");
+        assert!(outcome.unit.platoon.is_empty());
+        assert_eq!(outcome.unit.company, "Existing company");
+        assert_eq!(outcome.unit.brigade, "ORBIT brigade");
+        assert!(!outcome.unit.is_inconsistent);
+        assert!(
+            sigint_unit::Entity::find_by_id(sigint_parent.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .active
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn reconciliation_does_not_treat_other_as_the_lowest_echelon() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let login =
+            create_login_with_roles(&env.dbx, "orbit-existing-other", &[])
+                .await;
+        let other = orbit_echelon(&env.dbx, "other").await;
+        let platoon = orbit_echelon(&env.dbx, "platoon").await;
+        let brigade = orbit_echelon(&env.dbx, "brigade").await;
+        let orbit_brigade = insert_orbit_unit(
+            &env.dbx,
+            "ORBIT brigade",
+            Some(brigade.id),
+            None,
+        )
+        .await;
+        let orbit_platoon = insert_orbit_unit(
+            &env.dbx,
+            "ORBIT platoon",
+            Some(platoon.id),
+            Some(orbit_brigade.unit_id),
+        )
+        .await;
+        let orbit_other = insert_orbit_unit(
+            &env.dbx,
+            "ORBIT other",
+            Some(other.id),
+            Some(orbit_platoon.unit_id),
+        )
+        .await;
+        let sigint_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                other: Set("Existing other".to_string()),
+                company: Set("Existing company".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_orbit_unit(&env.dbx, orbit_other.unit_id, sigint_unit.id).await;
+
+        let outcome = reconcile_sigint_unit_orbit(
+            &env.dbx,
+            &login.id,
+            sigint_unit.id,
+            true,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome.unit.other, "Existing other");
+        assert!(outcome.unit.platoon.is_empty());
+        assert_eq!(outcome.unit.company, "Existing company");
+        assert_eq!(outcome.unit.brigade, "ORBIT brigade");
+        assert!(!outcome.unit.is_inconsistent);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn reconciliation_marks_and_clears_lower_orbit_echelon() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let login =
+            create_login_with_roles(&env.dbx, "orbit-inconsistency", &[]).await;
+        let company = orbit_echelon(&env.dbx, "company").await;
+        let orbit_company = insert_orbit_unit(
+            &env.dbx,
+            "ORBIT company",
+            Some(company.id),
+            None,
+        )
+        .await;
+        let sigint_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                other: Set("Existing other".to_string()),
+                battalion: Set("SIGINT battalion".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_orbit_unit(&env.dbx, orbit_company.unit_id, sigint_unit.id).await;
+
+        let outcome = reconcile_sigint_unit_orbit(
+            &env.dbx,
+            &login.id,
+            sigint_unit.id,
+            true,
+        )
+        .await
+        .unwrap();
+        assert!(outcome.unit.is_inconsistent);
+        let details = unit_inconsistency_details(&env.dbx, &outcome.unit)
+            .await
+            .unwrap();
+        assert_eq!(
+            details.reasons,
+            vec![SIGINT_UNIT_INCONSISTENCY_LOWER_ORBIT_ECHELON_REASON_UK]
+        );
+        assert_eq!(details.problematic_echelons, vec![company.name]);
+        assert_eq!(
+            load_inconsistent_units(&env.dbx).await.unwrap(),
+            vec![InconsistentUnit {
+                sigint_unit_id: outcome.unit.id,
+                name: outcome.unit.name.clone(),
+                reasons: details.reasons,
+                problematic_echelons: details.problematic_echelons,
+            }]
+        );
+
+        let mut sigint_unit = outcome.unit.into_active_model();
+        sigint_unit.company = Set("Corrected company".to_string());
+        let sigint_unit = sigint_unit.update(&env.dbx).await.unwrap();
+        let outcome = reconcile_sigint_unit_orbit(
+            &env.dbx,
+            &login.id,
+            sigint_unit.id,
+            false,
+        )
+        .await
+        .unwrap();
+        assert!(!outcome.unit.is_inconsistent);
+        assert!(load_inconsistent_units(&env.dbx).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn multiple_orbit_links_are_inconsistent_and_all_are_returned() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let login =
+            create_login_with_roles(&env.dbx, "orbit-multiple-links", &[])
+                .await;
+        let brigade = orbit_echelon(&env.dbx, "brigade").await;
+        let first = insert_orbit_unit(
+            &env.dbx,
+            "First ORBIT unit",
+            Some(brigade.id),
+            None,
+        )
+        .await;
+        let second = insert_orbit_unit(
+            &env.dbx,
+            "Second ORBIT unit",
+            Some(brigade.id),
+            None,
+        )
+        .await;
+        let sigint_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                regiment: Set("Existing regiment".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_orbit_unit(&env.dbx, first.unit_id, sigint_unit.id).await;
+        link_orbit_unit(&env.dbx, second.unit_id, sigint_unit.id).await;
+
+        let outcome = reconcile_sigint_unit_orbit(
+            &env.dbx,
+            &login.id,
+            sigint_unit.id,
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome.orbit_link_count, 2);
+        assert!(outcome.unit.is_inconsistent);
+        assert!(outcome.unit.brigade.is_empty());
+        let details = unit_inconsistency_details(&env.dbx, &outcome.unit)
+            .await
+            .unwrap();
+        assert_eq!(
+            details.reasons,
+            vec![SIGINT_UNIT_INCONSISTENCY_MULTIPLE_ORBIT_LINKS_REASON_UK]
+        );
+        assert_eq!(
+            unit_orbit_details(&env.dbx, sigint_unit.id)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+
+        crate::orbit::unlink_sigint_unit_with_lock(
+            &env.dbx,
+            &login.id,
+            sigint_unit.id,
+            first.unit_id,
+        )
+        .await
+        .unwrap();
+        let sigint_unit = sigint_unit::Entity::find_by_id(sigint_unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!sigint_unit.is_inconsistent);
+        assert_eq!(sigint_unit.brigade, "Second ORBIT unit");
+        assert_eq!(
+            unit_orbit_details(&env.dbx, sigint_unit.id)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn batch_merges_only_exact_names_sharing_an_orbit_unit() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let login =
+            create_login_with_roles(&env.dbx, "orbit-batch-merge", &[]).await;
+        let orbit_unit =
+            insert_orbit_unit(&env.dbx, "Shared ORBIT", None, None).await;
+        let inactive_oldest = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Exact name".to_string()),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let active_newer = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Exact name".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let different_name = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("exact name".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let stale_inconsistent = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                is_inconsistent: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for sigint_unit_id in
+            [inactive_oldest.id, active_newer.id, different_name.id]
+        {
+            link_orbit_unit(&env.dbx, orbit_unit.unit_id, sigint_unit_id).await;
+        }
+
+        let stats = reconcile_all_orbit_linked_units(&env.dbx, &login.id)
+            .await
+            .unwrap();
+
+        assert_eq!(stats.merged, 1);
+        let inactive_oldest =
+            sigint_unit::Entity::find_by_id(inactive_oldest.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let active_newer = sigint_unit::Entity::find_by_id(active_newer.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let different_name = sigint_unit::Entity::find_by_id(different_name.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let stale_inconsistent =
+            sigint_unit::Entity::find_by_id(stale_inconsistent.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(inactive_oldest.deleted);
+        assert!(!active_newer.deleted);
+        assert!(!different_name.deleted);
+        assert!(!stale_inconsistent.is_inconsistent);
     }
 
     #[tokio::test]

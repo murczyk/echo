@@ -152,6 +152,10 @@ table reconciler adds them to PeerDB after the source migration; verify the raw
 ClickHouse table and current-state gateway view before considering the
 deployment complete.
 
+The AI-engine capability catalog and OCR settings/job provenance tables
+(`ai_engine`, `ocr_settings`, `ocr_settings_ai_engine`, and `ocr_job`) are
+operational source-only state and are intentionally excluded from analytics.
+
 The source monitor installer records its invoking Unix account in a systemd
 drop-in. Automatic table reconciliation runs as that account so it can reuse
 the same SSH identity and known-hosts file as manual reconciliation. Run the

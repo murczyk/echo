@@ -1,5 +1,5 @@
 [Unit]
-Description=Echo vLLM Router
+Description=Echo vLLM Router (general-gemma pool)
 Documentation=https://github.com/vllm-project/router
 After=network-online.target tailscaled.service
 Wants=network-online.target

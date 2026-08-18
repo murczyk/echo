@@ -31,7 +31,15 @@ pub async fn restart_datasource(
         .await
         .context(h!())?
         .context(h!())?;
-    echo_im::restart_client(&env.dbx, client_id).await.c(h!())?;
+    let options = crate::messenger::signal_restart::signal_worker_options(
+        crate::messenger::signal_restart::RedisSignalRestartCoordinator::new(
+            env.redis.clone(),
+        ),
+        None,
+    );
+    echo_im::restart_client_with_options(&env.dbx, client_id, &options)
+        .await
+        .c(h!())?;
     Ok(Json(true))
 }
 

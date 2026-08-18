@@ -837,8 +837,10 @@ async fn user_goi_state(
 }
 
 #[get("/api/user/logout")]
-async fn user_logout(user: Identity) -> Result<HttpResponse, AppError> {
-    user.logout();
+async fn user_logout(user: Option<Identity>) -> Result<HttpResponse, AppError> {
+    if let Some(user) = user {
+        user.logout();
+    }
     // todo call delta logout here
     Ok(HttpResponse::Found()
         .insert_header(("Location", "/login"))
@@ -1880,6 +1882,25 @@ mod tests {
         assert!(has_update_login_description(&serde_json::json!({
             "description": "note"
         })));
+    }
+
+    #[actix_web::test]
+    async fn logout_redirects_unauthenticated_user_to_login() {
+        let app =
+            actix_test::init_service(App::new().service(user_logout)).await;
+        let request = actix_test::TestRequest::get()
+            .uri("/api/user/logout")
+            .to_request();
+        let response = actix_test::call_service(&app, request).await;
+
+        assert_eq!(response.status(), actix_web::http::StatusCode::FOUND);
+        assert_eq!(
+            response
+                .headers()
+                .get(actix_web::http::header::LOCATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("/login")
+        );
     }
 
     async fn create_grouped_message(

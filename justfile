@@ -41,6 +41,18 @@ iggy_default_rev := "k-bx/2026-06-18-poll-option"
 default:
     @just --list
 
+doc-extractor-check:
+    just --justfile echo-document-extractor/justfile check
+
+doc-extractor-package:
+    just --justfile echo-document-extractor/justfile package
+
+doc-extractor-deploy:
+    just --justfile echo-document-extractor/justfile deploy
+
+doc-extractor-verify:
+    just --justfile echo-document-extractor/justfile verify
+
 # Send a Mattermost notification using the webhook configured in .env
 notify text:
     #!/usr/bin/env bash
@@ -778,7 +790,8 @@ migrate-signal-bots-to-jvm server non_interactive="false" yolo="false":
     EOF
 
 [arg('server', long='server')]
-deploy _server_pos="" server:
+[arg('silent', long='silent', value='true')]
+deploy _server_pos="" server silent="false":
     #!/bin/bash
     set -euo pipefail
     # Enable tracing if DEBUG=1 or TRACE=1 is set in environment
@@ -819,11 +832,13 @@ deploy _server_pos="" server:
 
     printf "\n🚀🚀🚀 deploying %s 🚀🚀🚀\n\n" "$SERVER"
 
-    # Notify Discord at the start of deployment including local hostname
-    curl -sS -X POST \
-      -H 'Content-Type: application/json' \
-      -d "{\"content\":\"deploying $SERVER (version $VERSION); waiting for CI from $(hostname)\"}" \
-      '{{ discord_webhook_infra }}' || true
+    if [[ "{{ silent }}" != "true" ]]; then
+      # Notify Discord at the start of deployment including local hostname
+      curl -sS -X POST \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"deploying $SERVER (version $VERSION); waiting for CI from $(hostname)\"}" \
+        '{{ discord_webhook_infra }}' || true
+    fi
 
     # Helpful link to CI runs
     echo "CI: https://github.com/echoua/echo/actions"
@@ -1002,14 +1017,17 @@ deploy _server_pos="" server:
     printf "\n⚠️⚠️⚠️ docs were not deployed. Run: just deploy-docs --server %s ⚠️⚠️⚠️\n" "$SERVER"
     echo "✅✅✅ deploy OK on $SERVER: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
 
-    # Success notification
-    curl -sS -X POST \
-      -H 'Content-Type: application/json' \
-      -d "{\"content\":\"✅ Deployed $SERVER (version $VERSION) via apt-get\"}" \
-      '{{ discord_webhook_infra }}' || true
+    if [[ "{{ silent }}" != "true" ]]; then
+      # Success notification
+      curl -sS -X POST \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"✅ Deployed $SERVER (version $VERSION) via apt-get\"}" \
+        '{{ discord_webhook_infra }}' || true
+    fi
 
 [arg('server', long='server')]
-deploy-from-local _server_pos="" server:
+[arg('silent', long='silent', value='true')]
+deploy-from-local _server_pos="" server silent="false":
     #!/bin/bash
     set -euo pipefail
     if [[ "${DEBUG:-0}" == "1" || "${TRACE:-0}" == "1" ]]; then
@@ -1032,6 +1050,14 @@ deploy-from-local _server_pos="" server:
     DEB_NAME=""
 
     printf "\n🚀🚀🚀 deploying %s from local .deb 🚀🚀🚀\n\n" "$SERVER"
+
+    if [[ "{{ silent }}" != "true" ]]; then
+      # Notify Discord at the start of deployment including local hostname
+      curl -sS -X POST \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"deploying $SERVER from local .deb from $(hostname)\"}" \
+        '{{ discord_webhook_infra }}' || true
+    fi
 
     echo "Building frontend assets..."
     (cd "{{ justfile_directory() }}" && just build-front)
@@ -1181,6 +1207,14 @@ deploy-from-local _server_pos="" server:
     '
     ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
     RESTART_WORKERS_ON_FAILURE=0
+
+    if [[ "{{ silent }}" != "true" ]]; then
+      # Success notification
+      curl -sS -X POST \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"✅ Deployed $SERVER from local .deb ($DEB_NAME)\"}" \
+        '{{ discord_webhook_infra }}' || true
+    fi
 
 [arg('server', long='server')]
 deploy-docs-from-local _server_pos="" server:
@@ -1425,11 +1459,13 @@ ai-sync-from-cloud:
     local_directory="${WD_FASTTEXT_MODELS}/"
     s5cmd --endpoint-url "$ENDPOINT_URL" cp --if-source-newer --show-progress "$remote_files" "$local_directory"
 
-ai-eval-sync-from-cloud eval:
-    bash ai-eval/sync.sh from-cloud "{{ eval }}"
+# Download all evaluation corpora, or one: just ai-eval-sync-from-cloud [2026-08-09-document-ocr-evaluation]
+ai-eval-sync-from-cloud evaluation="":
+    bash ai-eval/sync.sh from-cloud "{{ evaluation }}"
 
-ai-eval-sync-to-cloud eval:
-    bash ai-eval/sync.sh to-cloud "{{ eval }}"
+# Upload all local evaluation corpora, or one: just ai-eval-sync-to-cloud [2026-08-09-document-ocr-evaluation]
+ai-eval-sync-to-cloud evaluation="":
+    bash ai-eval/sync.sh to-cloud "{{ evaluation }}"
 
 # run like `just copy-db-backup echo-zp2`
 [arg('server', long='server')]

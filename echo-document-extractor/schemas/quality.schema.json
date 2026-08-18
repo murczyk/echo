@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://echo.local/schemas/document-extractor/quality-v1.json",
+  "title": "Echo document extraction quality report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "page_count"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "status": { "enum": ["accepted", "degraded", "failed"] },
+    "page_count": { "type": "integer", "minimum": 0 },
+    "accepted_units": { "type": "integer", "minimum": 0 },
+    "unresolved_decisions": { "type": "integer", "minimum": 0 },
+    "unreadable_pages": { "type": "integer", "minimum": 0 },
+    "hard_check_failures": { "type": "integer", "minimum": 0 },
+    "degraded_reasons": { "type": "array", "items": { "type": "string" } }
+  }
+}

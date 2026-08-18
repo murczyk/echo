@@ -1,0 +1,182 @@
+{
+  "normalization": {
+    "unicode": "NFKC",
+    "casefold": true,
+    "yo_to_ye": true,
+    "layout_markup_removed": true,
+    "j5_non_text_image_row_excluded": true,
+    "aggregation": "micro-average"
+  },
+  "models": {
+    "nuextract3-bf16-non-thinking": {
+      "documents": {
+        "l54": {
+          "reference_characters": 2584,
+          "candidate_characters": 2567,
+          "character_distance": 156,
+          "reference_words": 441,
+          "candidate_words": 438,
+          "word_distance": 31,
+          "cer_percent": 6.04,
+          "wer_percent": 7.03
+        },
+        "j5": {
+          "reference_characters": 1956,
+          "candidate_characters": 1956,
+          "character_distance": 28,
+          "reference_words": 341,
+          "candidate_words": 341,
+          "word_distance": 7,
+          "cer_percent": 1.43,
+          "wer_percent": 2.05
+        }
+      },
+      "overall": {
+        "reference_characters": 4540,
+        "candidate_characters": 4523,
+        "character_distance": 184,
+        "reference_words": 782,
+        "candidate_words": 779,
+        "word_distance": 38,
+        "cer_percent": 4.05,
+        "wer_percent": 4.86
+      }
+    },
+    "nuextract3-bf16-thinking": {
+      "documents": {
+        "l54": {
+          "reference_characters": 2584,
+          "candidate_characters": 2569,
+          "character_distance": 24,
+          "reference_words": 441,
+          "candidate_words": 438,
+          "word_distance": 8,
+          "cer_percent": 0.93,
+          "wer_percent": 1.81
+        },
+        "j5": {
+          "reference_characters": 1956,
+          "candidate_characters": 1957,
+          "character_distance": 4,
+          "reference_words": 341,
+          "candidate_words": 341,
+          "word_distance": 2,
+          "cer_percent": 0.2,
+          "wer_percent": 0.59
+        }
+      },
+      "overall": {
+        "reference_characters": 4540,
+        "candidate_characters": 4526,
+        "character_distance": 28,
+        "reference_words": 782,
+        "candidate_words": 779,
+        "word_distance": 10,
+        "cer_percent": 0.62,
+        "wer_percent": 1.28
+      }
+    },
+    "numarkdown-8b-bnb4": {
+      "documents": {
+        "l54": {
+          "reference_characters": 2584,
+          "candidate_characters": 2543,
+          "character_distance": 130,
+          "reference_words": 441,
+          "candidate_words": 435,
+          "word_distance": 29,
+          "cer_percent": 5.03,
+          "wer_percent": 6.58
+        },
+        "j5": {
+          "reference_characters": 1956,
+          "candidate_characters": 1956,
+          "character_distance": 4,
+          "reference_words": 341,
+          "candidate_words": 341,
+          "word_distance": 2,
+          "cer_percent": 0.2,
+          "wer_percent": 0.59
+        }
+      },
+      "overall": {
+        "reference_characters": 4540,
+        "candidate_characters": 4499,
+        "character_distance": 134,
+        "reference_words": 782,
+        "candidate_words": 776,
+        "word_distance": 31,
+        "cer_percent": 2.95,
+        "wer_percent": 3.96
+      }
+    },
+    "gemma-4-26b-fp8-vision1120": {
+      "documents": {
+        "j5": {
+          "reference_characters": 1956,
+          "candidate_characters": 1956,
+          "character_distance": 0,
+          "reference_words": 341,
+          "candidate_words": 341,
+          "word_distance": 0,
+          "cer_percent": 0.0,
+          "wer_percent": 0.0
+        },
+        "l54": {
+          "reference_characters": 2584,
+          "candidate_characters": 2564,
+          "character_distance": 275,
+          "reference_words": 441,
+          "candidate_words": 438,
+          "word_distance": 74,
+          "cer_percent": 10.64,
+          "wer_percent": 16.78
+        }
+      },
+      "overall": {
+        "reference_characters": 4540,
+        "candidate_characters": 4520,
+        "character_distance": 275,
+        "reference_words": 782,
+        "candidate_words": 779,
+        "word_distance": 74,
+        "cer_percent": 6.06,
+        "wer_percent": 9.46
+      }
+    },
+    "numarkdown-8b-bf16": {
+      "documents": {
+        "l54": {
+          "reference_characters": 2584,
+          "candidate_characters": 2580,
+          "character_distance": 84,
+          "reference_words": 441,
+          "candidate_words": 442,
+          "word_distance": 30,
+          "cer_percent": 3.25,
+          "wer_percent": 6.8
+        },
+        "j5": {
+          "reference_characters": 1956,
+          "candidate_characters": 1945,
+          "character_distance": 74,
+          "reference_words": 341,
+          "candidate_words": 340,
+          "word_distance": 12,
+          "cer_percent": 3.78,
+          "wer_percent": 3.52
+        }
+      },
+      "overall": {
+        "reference_characters": 4540,
+        "candidate_characters": 4525,
+        "character_distance": 158,
+        "reference_words": 782,
+        "candidate_words": 782,
+        "word_distance": 42,
+        "cer_percent": 3.48,
+        "wer_percent": 5.37
+      }
+    }
+  }
+}

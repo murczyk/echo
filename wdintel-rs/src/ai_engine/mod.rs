@@ -9,6 +9,8 @@ use crate::config::{
 };
 use crate::entities::{
     ai_callsign_settings, ai_chat, ai_chat_message, ai_engine, login,
+    media_summary, media_summary_settings, ocr_job, ocr_settings,
+    ocr_settings_ai_engine,
 };
 use crate::error::AppError;
 use crate::h;
@@ -16,6 +18,7 @@ use crate::types::{Deserialize, Env, Serialize, ShortContext};
 use crate::users::{ensure_admin, login_id_from_identity};
 use actix_identity::Identity;
 use actix_web::{post, web::Json};
+use base64::Engine;
 use chrono::Utc;
 use reqwest::StatusCode;
 use sea_orm::{
@@ -38,6 +41,8 @@ struct AiEngineValues {
     token: Option<String>,
     model_name: String,
     enabled: bool,
+    callsign_enabled: bool,
+    ocr_enabled: bool,
 }
 
 #[derive(Serialize)]
@@ -45,6 +50,12 @@ struct OpenAiChatCompletionReq {
     #[serde(rename = "model")]
     model_name: String,
     messages: Vec<AiEngineMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -56,6 +67,59 @@ pub struct AiEngineMessage {
 #[derive(Deserialize)]
 struct OpenAiChatCompletionRsp {
     choices: Vec<OpenAiChatChoice>,
+    model: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiEngineOcrResponse {
+    pub content: String,
+    pub finish_reason: Option<String>,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub total_tokens: u64,
+    pub model_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AiEngineOcrRequest {
+    pub request_id: String,
+    pub page_id: String,
+    pub unit_id: String,
+    pub prompt_version: String,
+    pub retry: bool,
+    #[serde(skip_serializing)]
+    pub image_png: Vec<u8>,
+}
+
+#[derive(Deserialize)]
+struct OcrCompletionResponse {
+    choices: Vec<OcrCompletionChoice>,
+    model: Option<String>,
+    usage: Option<OcrUsage>,
+}
+
+#[derive(Deserialize)]
+struct OcrCompletionChoice {
+    message: OcrCompletionMessage,
+    finish_reason: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct OcrCompletionMessage {
+    content: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize, Default)]
+struct OcrUsage {
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
+    total_tokens: Option<u64>,
+}
+
+pub struct AiEngineResponse {
+    pub content: String,
+    pub model_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -114,6 +178,9 @@ pub async fn create_ai_engine(
         token: Set(values.token),
         model_name: Set(values.model_name),
         enabled: Set(values.enabled),
+        callsign_enabled: Set(values.callsign_enabled),
+        ocr_enabled: Set(values.ocr_enabled),
+        ocr_request_profile: Set("openai_vision".to_string()),
         created_at: Set(now),
         updated_at: Set(now),
     }
@@ -137,6 +204,16 @@ pub async fn update_ai_engine(
     if !values.enabled {
         ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id)
             .await?;
+        ensure_not_used_by_media_summary(&env.dbx, ai_engine_id)
+            .await
+            .c(h!())?;
+    }
+    if !values.callsign_enabled {
+        ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id)
+            .await?;
+    }
+    if !values.ocr_enabled {
+        ensure_not_used_by_ocr(&env.dbx, ai_engine_id).await?;
     }
     ensure_unique_name(&env.dbx, &values.name, Some(ai_engine_id)).await?;
     let mut ai_engine = ai_engine.into_active_model();
@@ -145,6 +222,8 @@ pub async fn update_ai_engine(
     ai_engine.token = Set(values.token);
     ai_engine.model_name = Set(values.model_name);
     ai_engine.enabled = Set(values.enabled);
+    ai_engine.callsign_enabled = Set(values.callsign_enabled);
+    ai_engine.ocr_enabled = Set(values.ocr_enabled);
     ai_engine.updated_at = Set(Utc::now().naive_utc());
     let ai_engine = ai_engine.update(&env.dbx).await.c(h!())?;
     Ok(Json(AiEngineItem::from(ai_engine)))
@@ -160,6 +239,10 @@ pub async fn delete_ai_engine(
     let ai_engine_id = parse_uuid(&req.id)?;
     find_ai_engine(&env.dbx, ai_engine_id).await?;
     ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id).await?;
+    ensure_not_used_by_media_summary(&env.dbx, ai_engine_id)
+        .await
+        .c(h!())?;
+    ensure_not_used_by_ocr(&env.dbx, ai_engine_id).await?;
     ai_engine::Entity::delete_by_id(ai_engine_id)
         .exec(&env.dbx)
         .await
@@ -181,6 +264,71 @@ async fn ensure_not_used_by_enabled_callsign_worker(
     if is_used {
         return Err(AppError::BL {
             msg: "ШІ движок використовується воркером позивних. Спочатку вимкніть воркер або виберіть інший движок.".to_string(),
+        });
+    }
+    Ok(())
+}
+
+async fn ensure_not_used_by_media_summary(
+    dbx: &DatabaseConnection,
+    ai_engine_id: Uuid,
+) -> Result<(), AppError> {
+    let selected_by_enabled_settings = media_summary_settings::Entity::find()
+        .filter(media_summary_settings::Column::Enabled.eq(true))
+        .filter(media_summary_settings::Column::AiEngineId.eq(ai_engine_id))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    let has_nonterminal_job = media_summary::Entity::find()
+        .filter(media_summary::Column::AiEngineId.eq(ai_engine_id))
+        .filter(media_summary::Column::State.is_in([
+            "queued",
+            "running",
+            "retry_wait",
+        ]))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if selected_by_enabled_settings || has_nonterminal_job {
+        return Err(AppError::BL {
+            msg: "ШІ движок використовується стислим описом документів. Спочатку вимкніть описи, виберіть інший движок або дочекайтеся завершення завдань.".to_string(),
+        });
+    }
+    Ok(())
+}
+
+async fn ensure_not_used_by_ocr(
+    dbx: &DatabaseConnection,
+    ai_engine_id: Uuid,
+) -> Result<(), AppError> {
+    let selected = ocr_settings_ai_engine::Entity::find()
+        .filter(ocr_settings_ai_engine::Column::AiEngineId.eq(ai_engine_id))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    let selected_as_main = ocr_settings::Entity::find()
+        .filter(ocr_settings::Column::MainAiEngineId.eq(ai_engine_id))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    let has_active_job = ocr_job::Entity::find()
+        .filter(ocr_job::Column::AiEngineId.eq(ai_engine_id))
+        .filter(ocr_job::Column::State.is_in([
+            "queued",
+            "submitted",
+            "retry_wait",
+        ]))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if selected || selected_as_main || has_active_job {
+        return Err(AppError::BL {
+            msg: "ШІ движок використовується OCR. Спочатку приберіть його з OCR-налаштувань або дочекайтеся завершення завдань.".to_string(),
         });
     }
     Ok(())
@@ -262,6 +410,8 @@ impl From<ai_engine::Model> for AiEngineItem {
             url: ai_engine.url,
             model_name: ai_engine.model_name,
             enabled: ai_engine.enabled,
+            callsign_enabled: ai_engine.callsign_enabled,
+            ocr_enabled: ai_engine.ocr_enabled,
             has_token: ai_engine.token.is_some(),
             created_at: ai_engine.created_at.and_utc().timestamp_millis(),
             updated_at: ai_engine.updated_at.and_utc().timestamp_millis(),
@@ -286,6 +436,8 @@ fn validate_create_values(
             AI_ENGINE_MODEL_NAME_MAX_CHARS,
         )?,
         enabled: req.enabled,
+        callsign_enabled: req.callsign_enabled,
+        ocr_enabled: req.ocr_enabled,
     })
 }
 
@@ -312,6 +464,8 @@ fn validate_update_values(
             AI_ENGINE_MODEL_NAME_MAX_CHARS,
         )?,
         enabled: req.enabled,
+        callsign_enabled: req.callsign_enabled,
+        ocr_enabled: req.ocr_enabled,
     })
 }
 
@@ -511,6 +665,125 @@ pub async fn request_ai_response(
     ai_engine: &ai_engine::Model,
     messages: Vec<AiEngineMessage>,
 ) -> Result<String, AppError> {
+    Ok(
+        request_ai_response_with_options(ai_engine, messages, None, None, None)
+            .await?
+            .content,
+    )
+}
+
+pub async fn request_ocr_response(
+    ai_engine: &ai_engine::Model,
+    request: AiEngineOcrRequest,
+) -> Result<AiEngineOcrResponse, AppError> {
+    let endpoint = chat_completions_url(&ai_engine.url)?;
+    let image_url = format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(request.image_png)
+    );
+    let mut body = serde_json::json!({
+        "model": ai_engine.model_name,
+        "temperature": 0,
+        "seed": 0,
+        "max_tokens": 6000,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": ocr_prompt()},
+                {"type": "image_url", "image_url": {"url": image_url}}
+            ]
+        }]
+    });
+    if ai_engine.ocr_request_profile == "ocr_gemma" {
+        body["stop"] = serde_json::json!(["<!-- ECHO_EXTRACTION_END -->"]);
+        body["include_stop_str_in_output"] = serde_json::json!(true);
+        body["mm_processor_kwargs"] =
+            serde_json::json!({"max_pixels": 1120_u64 * 1120});
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(AI_ENGINE_REQUEST_TIMEOUT_SEC))
+        .build()
+        .c(h!())?;
+    let mut request_builder = client.post(endpoint).json(&body);
+    if let Some(token) = ai_engine.token.as_deref() {
+        request_builder = request_builder.bearer_auth(token);
+    }
+    let response = request_builder.send().await.c(h!())?;
+    let status = response.status();
+    let body = response.text().await.c(h!())?;
+    if !status.is_success() {
+        return Err(ai_api_error(status, body));
+    }
+    let response: OcrCompletionResponse =
+        serde_json::from_str(&body).c(h!())?;
+    let choice =
+        response
+            .choices
+            .into_iter()
+            .next()
+            .ok_or_else(|| AppError::BL {
+                msg: "OCR ШІ API не повернув варіант відповіді".to_string(),
+            })?;
+    let content = match choice.message.content {
+        Some(serde_json::Value::String(content)) => content,
+        Some(value) => value
+            .as_array()
+            .map(|parts| {
+                parts
+                    .iter()
+                    .filter_map(|part| {
+                        part.get("text").and_then(serde_json::Value::as_str)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .unwrap_or_default(),
+        None => String::new(),
+    };
+    if content.trim().is_empty() {
+        return Err(AppError::BL {
+            msg: "OCR ШІ API повернув порожню відповідь".to_string(),
+        });
+    }
+    let usage = response.usage.unwrap_or_default();
+    Ok(AiEngineOcrResponse {
+        content,
+        finish_reason: choice.finish_reason,
+        prompt_tokens: usage.prompt_tokens.unwrap_or_default(),
+        completion_tokens: usage.completion_tokens.unwrap_or_default(),
+        total_tokens: usage.total_tokens.unwrap_or_default(),
+        model_name: response.model,
+    })
+}
+
+fn ocr_prompt() -> &'static str {
+    "Transcribe the complete crop as bounded semantic HTML using only article, section, h1-h6, p, ul, ol, li, table, caption, thead, tbody, tr, th, td, br, and figure. Preserve empty cells and exact text. Represent visible images with data-image=\"present\". Never translate, correct, summarize, infer, add, or repeat content. End exactly with <!-- ECHO_EXTRACTION_END -->"
+}
+
+pub async fn request_structured_ai_response(
+    ai_engine: &ai_engine::Model,
+    messages: Vec<AiEngineMessage>,
+    temperature: f32,
+    max_tokens: u32,
+    response_format: serde_json::Value,
+) -> Result<AiEngineResponse, AppError> {
+    request_ai_response_with_options(
+        ai_engine,
+        messages,
+        Some(temperature),
+        Some(max_tokens),
+        Some(response_format),
+    )
+    .await
+}
+
+async fn request_ai_response_with_options(
+    ai_engine: &ai_engine::Model,
+    messages: Vec<AiEngineMessage>,
+    temperature: Option<f32>,
+    max_tokens: Option<u32>,
+    response_format: Option<serde_json::Value>,
+) -> Result<AiEngineResponse, AppError> {
     let endpoint = chat_completions_url(&ai_engine.url)?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(AI_ENGINE_REQUEST_TIMEOUT_SEC))
@@ -519,6 +792,9 @@ pub async fn request_ai_response(
     let mut request = client.post(endpoint).json(&OpenAiChatCompletionReq {
         model_name: ai_engine.model_name.clone(),
         messages,
+        temperature,
+        max_tokens,
+        response_format,
     });
     if let Some(token) = ai_engine.token.as_deref() {
         request = request.bearer_auth(token);
@@ -531,14 +807,18 @@ pub async fn request_ai_response(
     }
     let response: OpenAiChatCompletionRsp =
         serde_json::from_str(&body).c(h!())?;
-    response
+    let content = response
         .choices
         .into_iter()
         .find_map(|choice| choice.message.content)
         .filter(|content| !content.trim().is_empty())
         .ok_or_else(|| AppError::BL {
             msg: "ШІ API повернув порожню відповідь".to_string(),
-        })
+        })?;
+    Ok(AiEngineResponse {
+        content,
+        model_name: response.model,
+    })
 }
 
 fn chat_completions_url(base_url: &str) -> Result<Url, AppError> {

@@ -48,6 +48,7 @@ use actix_web::http::header;
 use actix_web::post;
 use actix_web::web::{Json, Path as ActixPath};
 use actix_web::HttpResponse;
+use chrono::{DateTime, FixedOffset, Utc};
 use futures_util::StreamExt;
 use sea_orm::*;
 use sea_query::{extension::postgres::PgExpr, Expr};
@@ -498,25 +499,119 @@ pub async fn list_current_user_goi_associations(
     let page_limit = goi_associations_page_limit(req.limit);
     let page_offset = req.offset.unwrap_or(0);
     let associations = goi_associations_query(integration_ids, &req)
+        .c(h!())?
         .limit(page_limit + 1)
         .offset(page_offset)
         .all(&env.dbx)
         .await
         .c(h!())?;
     let has_more = associations.len() as u64 > page_limit;
+    let original_messages =
+        super::message_uid::load_association_original_messages(
+            &env.dbx,
+            &associations,
+        )
+        .await
+        .c(h!())?;
     let items = associations
         .into_iter()
         .take(page_limit as usize)
         .filter_map(|association| {
             integration_map.get(&association.integration_id).map(
                 |integration| {
-                    goi_association_from_model(association, integration)
+                    goi_association_from_model(
+                        association,
+                        integration,
+                        &original_messages,
+                    )
                 },
             )
         })
         .collect();
 
     Ok(Json(ListGoiAssociationsRsp { items, has_more }))
+}
+
+#[post("/api/goi/associations/report")]
+pub async fn launch_current_user_goi_associations_report(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<ListGoiAssociationsReq>,
+) -> Result<Json<i64>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let user_id = login_id_from_identity(&user).c(h!())?;
+    let mut req = req.into_inner();
+    goi_associations_period(&req, true).c(h!())?;
+    req.limit = None;
+    req.offset = None;
+    req.filter_deleted = Some(false);
+
+    let file_name = format!(
+        "goi_associations_{}.xlsx",
+        Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f")
+    );
+    let report_history = crate::report_history::enqueue_report(
+        &env.dbx,
+        &user_id,
+        crate::report_history::KIND_GOI_ASSOCIATIONS,
+        crate::report_history::ReportHistoryRequest::GoiAssociationsReport {
+            payload: Box::new(req),
+        },
+        Some(file_name),
+        Some(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                .to_string(),
+        ),
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(report_history.id))
+}
+
+pub(crate) async fn goi_associations_report_xlsx(
+    env: &Env,
+    user_id: &uuid::Uuid,
+    req: &ListGoiAssociationsReq,
+) -> Result<Vec<u8>, AppError> {
+    let integrations = load_accessible_integrations_for_user(&env.dbx, user_id)
+        .await
+        .c(h!())?;
+    let integration_map = integrations_to_map(&integrations);
+    let integration_ids = accessible_goi_data_integration_ids(
+        &integrations,
+        req.filter_server.clone(),
+    );
+    let associations = if integration_ids.is_empty() {
+        Vec::new()
+    } else {
+        goi_associations_query(integration_ids, req)
+            .c(h!())?
+            .all(&env.dbx)
+            .await
+            .c(h!())?
+    };
+    let original_messages =
+        super::message_uid::load_association_original_messages(
+            &env.dbx,
+            &associations,
+        )
+        .await
+        .c(h!())?;
+    let items = associations
+        .into_iter()
+        .filter_map(|association| {
+            integration_map.get(&association.integration_id).map(
+                |integration| {
+                    goi_association_from_model(
+                        association,
+                        integration,
+                        &original_messages,
+                    )
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    super::associations_report::render_goi_associations_report(&items)
 }
 
 #[post("/api/goi/knowledge")]
@@ -1491,9 +1586,19 @@ fn goi_knowledge_filter_optional_text(
 fn goi_associations_query(
     integration_ids: Vec<i64>,
     req: &ListGoiAssociationsReq,
-) -> Select<goi_association::Entity> {
+) -> Result<Select<goi_association::Entity>, AppError> {
+    let (since, till) = goi_associations_period(req, false).c(h!())?;
     let mut query = goi_association::Entity::find()
         .filter(goi_association::Column::IntegrationId.is_in(integration_ids));
+
+    if let Some(since) = since {
+        query =
+            query.filter(goi_association::Column::SourceCreatedAt.gte(since));
+    }
+    if let Some(till) = till {
+        query =
+            query.filter(goi_association::Column::SourceCreatedAt.lte(till));
+    }
 
     if let Some(filter_deleted) = req.filter_deleted {
         query =
@@ -1559,7 +1664,55 @@ fn goi_associations_query(
         req.filter_author.clone(),
     );
 
-    goi_associations_apply_sort(query, req.sort_by.clone())
+    Ok(goi_associations_apply_sort(query, req.sort_by.clone()))
+}
+
+fn goi_associations_period(
+    req: &ListGoiAssociationsReq,
+    required: bool,
+) -> Result<
+    (Option<DateTime<FixedOffset>>, Option<DateTime<FixedOffset>>),
+    AppError,
+> {
+    if required
+        && (req.since_date_inclusive_ms.is_none()
+            || req.till_date_inclusive_ms.is_none())
+    {
+        return Err(AppError::BL {
+            msg: "Вкажіть період звіту".to_string(),
+        });
+    }
+    let since = goi_associations_date_bound(
+        req.since_date_inclusive_ms,
+        "початок періоду",
+    )
+    .c(h!())?;
+    let till = goi_associations_date_bound(
+        req.till_date_inclusive_ms,
+        "кінець періоду",
+    )
+    .c(h!())?;
+    if since.zip(till).is_some_and(|(since, till)| since > till) {
+        return Err(AppError::BL {
+            msg: "Початок періоду має бути раніше за кінець".to_string(),
+        });
+    }
+    Ok((since, till))
+}
+
+fn goi_associations_date_bound(
+    value: Option<i64>,
+    label: &str,
+) -> Result<Option<DateTime<FixedOffset>>, AppError> {
+    value
+        .map(|value| {
+            DateTime::from_timestamp_millis(value)
+                .map(|value| value.fixed_offset())
+                .ok_or_else(|| AppError::BL {
+                    msg: format!("Некоректний {label}"),
+                })
+        })
+        .transpose()
 }
 
 fn goi_knowledge_query(
@@ -1772,7 +1925,19 @@ fn goi_knowledge_apply_sort(
 fn goi_association_from_model(
     association: goi_association::Model,
     integration: &GoiIntegrationWithOwner,
+    original_messages: &HashMap<String, String>,
 ) -> GoiAssociation {
+    let original_message = association
+        .message_uid
+        .as_deref()
+        .map(str::trim)
+        .and_then(|message_uid| original_messages.get(message_uid))
+        .cloned()
+        .or_else(|| {
+            super::message_uid::association_original_message_unescaped(
+                &association.row,
+            )
+        });
     GoiAssociation {
         id: association.id,
         integration_id: association.integration_id,
@@ -1796,6 +1961,7 @@ fn goi_association_from_model(
         source_date_ms: association
             .source_date
             .map(|value| value.timestamp_millis()),
+        original_message,
     }
 }
 

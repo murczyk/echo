@@ -11,6 +11,7 @@ import {
   type ImporterCoordinate,
 } from '../../../../importer-beta/coordinates';
 import { listMapPalitrasV2, searchPalitraPoints } from '../../../../../services/api/palitra';
+import { getMediaSummaryCoordinates } from '../../../../../services/api/media-summary';
 import { parseCoordinateInput } from '../../../../../../maps/coordinate-search';
 import {
   primeCoordinatePreviewPalitraIds,
@@ -23,6 +24,10 @@ import {
 vi.mock('../../../../../services/api/palitra', () => ({
   listMapPalitrasV2: vi.fn(),
   searchPalitraPoints: vi.fn(),
+}));
+
+vi.mock('../../../../../services/api/media-summary', () => ({
+  getMediaSummaryCoordinates: vi.fn(),
 }));
 
 function createPalitra(id: number): PalitraReadV2 {
@@ -100,6 +105,124 @@ describe('message coordinate preview resolver', () => {
     });
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('appends and deduplicates coordinates from every completed document', async () => {
+    vi.mocked(getMediaSummaryCoordinates).mockImplementation(async (mediaId) => {
+      if (mediaId === 'first') {
+        return {
+          coordinates: [
+            {
+              title: 'Дамба',
+              description: 'Насипна дамба через русло річки.',
+              plannedMeans: 'Сокіл; Куля; Беркут',
+              coordinateSystem: 'sk42',
+              value: 'X=5291456, Y=6662340',
+            },
+            {
+              title: 'Дубль',
+              description: 'Дубль координати.',
+              plannedMeans: null,
+              coordinateSystem: 'wgs84',
+              value: '50.45044, 30.52355',
+            },
+          ],
+        };
+      }
+      return {
+        coordinates: [
+          {
+            title: 'Шлях',
+            description: 'Контроль дороги.',
+            plannedMeans: null,
+            coordinateSystem: 'usk2000',
+            value: 'X=5268241, Y=6676046',
+          },
+          {
+            title: 'MGRS-точка',
+            description: 'Точка MGRS.',
+            plannedMeans: null,
+            coordinateSystem: 'mgrs',
+            value: '37U DR 05997 22279',
+          },
+        ],
+      };
+    });
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        coords: '50.45044, 30.52355',
+        media: [
+          {
+            id: 'first',
+            summary: { state: 'completed', lastError: null, hasCoordinates: true },
+          },
+          {
+            id: 'second',
+            summary: { state: 'completed', lastError: null, hasCoordinates: true },
+          },
+          {
+            id: 'empty',
+            summary: { state: 'completed', lastError: null, hasCoordinates: false },
+          },
+        ] as InboxMessage['media'],
+      }),
+    });
+
+    expect(getMediaSummaryCoordinates).toHaveBeenCalledTimes(2);
+    expect(result?.points.map(({ source, label }) => ({ source, label }))).toEqual([
+      { source: 'direct', label: '50.45044, 30.52355' },
+      { source: 'document', label: 'Дамба' },
+      { source: 'document', label: 'Шлях' },
+      { source: 'document', label: 'MGRS-точка' },
+    ]);
+    expect(result?.points[1]).toMatchObject({
+      description: 'Насипна дамба через русло річки.',
+      plannedMeans: 'Сокіл; Куля; Беркут',
+    });
+  });
+
+  it('keeps successful document points when another document request fails', async () => {
+    vi.mocked(getMediaSummaryCoordinates)
+      .mockResolvedValueOnce({
+        coordinates: [
+          {
+            title: 'Успішна точка',
+            description: 'Успішно завантажений опис.',
+            plannedMeans: null,
+            coordinateSystem: 'wgs84',
+            value: '47.1, 35.2',
+          },
+        ],
+      })
+      .mockRejectedValueOnce(new Error('network'));
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        media: [
+          {
+            id: 'success',
+            summary: { state: 'completed', lastError: null, hasCoordinates: true },
+          },
+          {
+            id: 'failure',
+            summary: { state: 'completed', lastError: null, hasCoordinates: true },
+          },
+        ] as InboxMessage['media'],
+      }),
+    });
+
+    expect(result?.points).toEqual([
+      {
+        source: 'document',
+        lat: 47.1,
+        lng: 35.2,
+        label: 'Успішна точка',
+        description: 'Успішно завантажений опис.',
+        plannedMeans: null,
+      },
+    ]);
+    expect(result?.lookupError).toMatchObject({ kind: 'document-coordinates' });
   });
 
   it('prefers every persisted coordinate with locality over legacy text fields', async () => {

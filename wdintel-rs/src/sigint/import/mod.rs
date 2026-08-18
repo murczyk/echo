@@ -1069,6 +1069,7 @@ where
             sigint_origin_id: Set(Some(origin_id)),
             is_deduplicate_candidate: NotSet,
             orbit_note: NotSet,
+            is_inconsistent: NotSet,
         };
 
         let new_rec = if new_record {

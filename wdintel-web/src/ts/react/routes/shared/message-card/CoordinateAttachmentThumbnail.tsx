@@ -17,6 +17,12 @@ const PREVIEW_ZOOM = 11;
 const PREVIEW_MAX_ZOOM = 13;
 const PREVIEW_BOUNDS_PADDING: [number, number] = [20, 20];
 
+function plainTextMarkerLabel(label: string): HTMLSpanElement {
+  const element = document.createElement('span');
+  element.textContent = label;
+  return element;
+}
+
 function fitMap(map: L.Map, points: CoordinatePreviewPoint[]): void {
   const latLngs = points.map(({ lat, lng }): [number, number] => [lat, lng]);
   if (latLngs.length === 1) {
@@ -31,14 +37,16 @@ function fitMap(map: L.Map, points: CoordinatePreviewPoint[]): void {
 }
 
 function createMarkers(map: L.Map, points: CoordinatePreviewPoint[]): L.CircleMarker[] {
-  return points.map(({ lat, lng }) =>
+  return points.map(({ lat, lng, label }) =>
     L.circleMarker([lat, lng], {
       radius: 8,
       color: '#ffffff',
       weight: 3,
       fillColor: '#ff4d2d',
       fillOpacity: 1,
-    }).addTo(map),
+    })
+      .bindTooltip(plainTextMarkerLabel(label))
+      .addTo(map),
   );
 }
 

@@ -1,0 +1,83 @@
+# Execution topology. Allowed values:
+# - split_gpu: recommended; NuExtract3 and Gemma use independent endpoint queues
+#   and may run concurrently.
+# - single_spark: benchmarking only; all model requests are serialized because
+#   both endpoints share one machine.
+hardware_profile: split_gpu
+
+# Both model sections describe OpenAI-compatible Chat Completions endpoints.
+# - url: http(s) base URL ending in /v1; credentials, query strings, and
+#   fragments are rejected.
+# - model_id: exact model name exposed by the endpoint.
+# - revision: pinned model revision (at least seven characters), recorded in
+#   provenance; the extractor does not download or select model weights.
+# - token_env: uppercase environment-variable name containing the API token.
+#   An unset variable means tokenless access; never put a token in this file.
+# - timeout_seconds: positive request timeout; default 180.
+# - max_tokens: positive completion-token limit; default 10000.
+# - prompt_version: provenance label for the deployed prompt; default
+#   semantic-html-v2.
+# - dtype, kv_cache_dtype: optional runtime metadata recorded in provenance.
+# - vision_budget: optional positive image budget used by the Gemma adapter.
+# - temperature: number from 0 through 2. The supported adapters pin NuExtract3
+#   to 0.2 and Gemma to 0 for deterministic operation.
+# - seed: integer sampling seed; supported adapters pin it to 0.
+# - extra_body: optional additional request fields. Secret-like keys are
+#   rejected; values override the base request before adapter-required fields.
+nu_extract:
+  url: http://nuextract.internal:8000/v1
+  model_id: numind/NuExtract3
+  revision: 2e9fca82ee641e6bb6e1f5d905241e994be27a07
+  token_env: NUEXTRACT_API_KEY
+  timeout_seconds: 180
+  max_tokens: 6000
+  prompt_version: semantic-html-v2
+  dtype: bfloat16
+  temperature: 0.2
+  seed: 0
+  extra_body:
+    chat_template_kwargs:
+      mode: markdown
+      enable_thinking: false
+gemma:
+  url: http://spark-02.internal:8000/v1
+  model_id: google/gemma-4-26B-A4B-it
+  revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
+  token_env: GEMMA_API_KEY
+  timeout_seconds: 180
+  max_tokens: 6000
+  prompt_version: semantic-html-v2
+  dtype: fp8
+  kv_cache_dtype: fp8
+  vision_budget: 1120
+  temperature: 0
+  seed: 0
+
+# PDF rasterization resolution. Allowed range: 72..600 DPI; default 300.
+pdf_dpi: 300
+
+# Maximum retry-crop long edge in pixels. Minimum 256; default 4096. Retry
+# crops are downscaled when necessary to remain within this limit.
+max_raster_long_edge: 4096
+
+# Fractional padding added around conflicting-unit retry crops. Allowed range:
+# 0..0.25; default 0.03 means 3% on every side.
+crop_padding: 0.03
+
+# Retry-crop scale factor before applying max_raster_long_edge. Allowed range:
+# 1..4; default 2.
+crop_upscale: 2
+
+# Maximum concurrent requests per model endpoint. Allowed range: 1..4.
+endpoint_concurrency: 2
+
+# true requires local PP-OCRv5 and PP-StructureV3 runtimes/models at startup.
+# false disables Paddle evidence and explicitly permits degraded extraction.
+enable_paddle: true
+
+# Unique PP-OCRv5 recognition passes to merge. Allowed values: ru, uk, en.
+paddle_languages: [ru, uk, en]
+
+# Store full model responses under raw/responses in the private output package.
+# Keep false unless those sensitive debugging artifacts are explicitly needed.
+preserve_raw_responses: false

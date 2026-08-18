@@ -369,6 +369,11 @@ mod m20260811_142447_failed_inbox_unit_note;
 mod m20260811_161634_failed_inbox_unit_multi_text;
 mod m20260812_115511_sigint_inbox_item_datetime_neo_indexes;
 mod m20260813_183642_sigint_unit_orbit_echelons;
+mod m20260816_102640_ocr;
+mod m20260816_173322_media_summary;
+mod m20260817_124312_sigint_unit_inconsistent;
+mod m20260818_052317_shared_ai_engine_capabilities;
+mod m20260818_081034_inbox_unit_backfill_lookup_indexes;
 
 pub struct Migrator;
 
@@ -846,6 +851,15 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260813_183642_sigint_unit_orbit_echelons::Migration,
+            ),
+            Box::new(m20260816_102640_ocr::Migration),
+            Box::new(m20260816_173322_media_summary::Migration),
+            Box::new(m20260817_124312_sigint_unit_inconsistent::Migration),
+            Box::new(
+                m20260818_052317_shared_ai_engine_capabilities::Migration,
+            ),
+            Box::new(
+                m20260818_081034_inbox_unit_backfill_lookup_indexes::Migration,
             ),
         ]
     }

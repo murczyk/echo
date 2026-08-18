@@ -367,11 +367,8 @@ update req msg model =
 
         SignOut ->
             ( { model | user = Nothing, userLoaded = False, eventService = Core.EventService.init }
-            , E.sendCmd <| Api.logout SignOutDone
+            , E.loadExternalUrl "/api/user/logout"
             )
-
-        SignOutDone _ ->
-            ( model, E.replaceRoutePath Route.Path.Login )
 
         GotLocation loc ->
             ( { model | location = Just loc }

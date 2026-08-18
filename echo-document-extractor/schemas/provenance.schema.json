@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://echo.local/schemas/document-extractor/provenance-v1.json",
+  "title": "Echo document extraction provenance",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "evidence", "decisions"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "source", "confidence", "valid", "rejection_reasons"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "kind": { "enum": ["page", "region", "table", "cell", "ocr_token", "topology", "candidate"] },
+          "source": { "type": "string", "minLength": 1 },
+          "page_id": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+          "unit_id": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+          "bbox": { "anyOf": [{ "$ref": "#/$defs/bbox" }, { "type": "null" }] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "valid": { "type": "boolean" },
+          "rejection_reasons": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "unit_id", "reason", "unresolved", "hard_checks_passed", "ranks", "validators", "retries"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "unit_id": { "$ref": "#/$defs/id" },
+          "selected_evidence_id": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+          "alternative_evidence_ids": { "type": "array", "items": { "$ref": "#/$defs/id" } },
+          "reason": { "type": "string" },
+          "unresolved": { "type": "boolean" },
+          "hard_checks_passed": { "type": "boolean" },
+          "ranks": { "type": "array" },
+          "validators": { "type": "array" },
+          "retries": { "type": "array" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$" },
+    "bbox": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "integer", "minimum": 0 },
+        { "type": "integer", "minimum": 1 },
+        { "type": "integer", "minimum": 1 }
+      ],
+      "minItems": 4,
+      "maxItems": 4
+    }
+  }
+}

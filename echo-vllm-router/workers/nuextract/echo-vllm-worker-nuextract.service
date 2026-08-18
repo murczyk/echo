@@ -1,0 +1,46 @@
+[Unit]
+Description=Echo NuExtract3 vLLM worker
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+User=echo-vllm-worker
+Group=echo-vllm-worker
+SupplementaryGroups=video render
+EnvironmentFile=/etc/echo-vllm-worker/nuextract.env
+Environment=CUDA_CACHE_PATH=/var/cache/echo-vllm-worker/cuda
+Environment=FLASHINFER_WORKSPACE_BASE=/var/cache/echo-vllm-worker
+Environment=TRITON_CACHE_DIR=/var/cache/echo-vllm-worker/triton
+Environment=XDG_CACHE_HOME=/var/cache/echo-vllm-worker
+ExecStart=/opt/echo-vllm-worker/bin/run-nuextract
+StateDirectory=echo-vllm-worker
+CacheDirectory=echo-vllm-worker
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=1800s
+TimeoutStopSec=60s
+UMask=0027
+
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

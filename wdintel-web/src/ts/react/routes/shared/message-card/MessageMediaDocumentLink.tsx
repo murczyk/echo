@@ -11,12 +11,14 @@ import { MessageCardDisabledControlCursorWrapper } from './MessageCardDisabledCo
 export function MessageMediaDocumentLink({
   document,
   index,
+  selected = false,
   onPreview,
   isDownloadStarting,
   onDownloadStart,
 }: {
   document: MessageCardDocument;
   index: number;
+  selected?: boolean;
   onPreview?: () => void;
   isDownloadStarting: (downloadKey: string) => boolean;
   onDownloadStart: (downloadKey: string) => boolean;
@@ -49,6 +51,8 @@ export function MessageMediaDocumentLink({
           onClick={canPreview ? handlePreviewClick : undefined}
           disabled={!canPreview}
           type="button"
+          aria-current={selected ? 'true' : undefined}
+          data-summary-selected={selected ? 'true' : undefined}
           sx={{
             minWidth: 0,
             maxWidth: '100%',
@@ -60,7 +64,8 @@ export function MessageMediaDocumentLink({
             textTransform: 'none',
             fontWeight: 500,
             color: 'text.primary',
-            borderColor: 'divider',
+            borderColor: selected ? 'primary.light' : 'divider',
+            backgroundColor: selected ? 'action.selected' : 'transparent',
             '&:hover': {
               backgroundColor: 'action.hover',
               borderColor: 'text.primary',

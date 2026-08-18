@@ -1,6 +1,6 @@
 [package]
 name = "echo-docs"
-version = "0.1.1-rc.202608162030"
+version = "0.1.1-rc.202608181204"
 edition = "2021"
 authors = ["rickyrepel@gmail.com"]
 license = "AllRightsReserved"

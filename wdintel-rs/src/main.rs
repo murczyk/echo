@@ -43,11 +43,13 @@ pub mod kv;
 mod location;
 pub mod log_api;
 pub mod logging;
+pub mod media_summary;
 pub mod message_queue;
 pub mod messenger;
 pub mod migration;
 pub mod ml;
 pub mod nlp;
+pub mod ocr;
 pub mod oneoff;
 pub mod operator;
 pub mod orbit;
@@ -104,7 +106,7 @@ impl PgRuntimePoolRole {
 
     fn max_connections(self) -> u32 {
         match self {
-            Self::Web => PG_POOL_DEFAULT_MAX_CONNECTIONS,
+            Self::Web => PG_POOL_WEB_MAX_CONNECTIONS,
             Self::Bgworker | Self::ReportWorker => {
                 PG_POOL_BGWORKER_MAX_CONNECTIONS
             }
@@ -140,6 +142,19 @@ fn pg_pool_max_connections() -> u32 {
 
 fn pg_runtime_pool_role() -> Option<PgRuntimePoolRole> {
     PgRuntimePoolRole::from_u8(PG_RUNTIME_POOL_ROLE.load(Ordering::Relaxed))
+}
+
+#[cfg(test)]
+mod pg_pool_limit_tests {
+    use super::*;
+
+    #[test]
+    fn uses_role_specific_postgres_pool_limits() {
+        assert_eq!(PgRuntimePoolRole::Web.max_connections(), 50);
+        assert_eq!(PgRuntimePoolRole::Bgworker.max_connections(), 20);
+        assert_eq!(PgRuntimePoolRole::ReportWorker.max_connections(), 20);
+        assert_eq!(PG_POOL_DEFAULT_MAX_CONNECTIONS, 30);
+    }
 }
 
 pub async fn renew_tailscale_cert(
@@ -293,6 +308,9 @@ pub struct OneoffBackfillInboxUnitLinksPs {
     /// End datetime in UTC (non-inclusive). Example: `2026-08-10T12:00:00`
     #[arg(long)]
     pub till_ts: Option<String>,
+    /// Resume after this inbox item ID (exclusive).
+    #[arg(long, default_value_t = 0)]
+    pub after_inbox_item_id: i64,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -666,6 +684,16 @@ pub struct OneoffCalculateStatsPs {
     pub end: Option<String>,
 }
 
+#[derive(clap::ValueEnum, Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum HistoricStatsKind {
+    /// Group counts and detailed facets.
+    General,
+    /// Linked-unit ID counts.
+    UnitId,
+    /// Network, network-frequency, and network-callsign counts.
+    Network,
+}
+
 #[derive(clap::Args, Debug, Clone)]
 pub struct OneoffCalculateHistoricStatsPs {
     /// Oldest local calendar day to refresh, given as a local datetime.
@@ -673,6 +701,14 @@ pub struct OneoffCalculateHistoricStatsPs {
     /// Defaults to the statistics retention window.
     #[arg(long)]
     pub start: Option<String>,
+    /// UTC timestamp whose local calendar day is the oldest to refresh.
+    /// Example: `2025-08-15T00:00:00`.
+    #[arg(long, conflicts_with = "start")]
+    pub start_ts: Option<String>,
+    /// Recalculate only these statistics families (comma-separated).
+    /// By default, all statistics families are recalculated.
+    #[arg(long, value_enum, value_delimiter = ',')]
+    pub only: Vec<HistoricStatsKind>,
     #[arg(long, default_value = "false")]
     pub force: bool,
     #[arg(long, default_value = "false")]

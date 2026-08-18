@@ -9,12 +9,11 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { Box, CircularProgress, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import type { MouseEvent, ReactNode } from 'react';
 
-import type { MessageCardPreviewNavigation } from './message-card-preview.types';
+import type {
+  AttachmentPreviewDownload,
+  MessageCardPreviewNavigation,
+} from './message-card-preview.types';
 import { MessageCardDisabledControlCursorWrapper } from '../MessageCardDisabledControlCursorWrapper';
-
-export type AttachmentPreviewDownload =
-  | { href: string; fileName: string; onDownload?: never }
-  | { href?: never; fileName?: never; onDownload: () => void };
 
 export function MessageCardAttachmentPreviewHeader({
   fileName,
@@ -23,8 +22,10 @@ export function MessageCardAttachmentPreviewHeader({
   downloadKey,
   navigation,
   additionalActions,
+  overflowAction,
   status,
   onInfoClick,
+  infoSeverity,
   isFullscreen,
   canFullscreen,
   onToggleFullscreen,
@@ -38,8 +39,10 @@ export function MessageCardAttachmentPreviewHeader({
   downloadKey?: string;
   navigation: MessageCardPreviewNavigation;
   additionalActions?: ReactNode;
+  overflowAction?: ReactNode;
   status?: ReactNode;
   onInfoClick?: (event: MouseEvent<HTMLButtonElement>) => void;
+  infoSeverity?: 'warning' | 'error';
   isFullscreen?: boolean;
   canFullscreen?: boolean;
   onToggleFullscreen?: () => void;
@@ -212,7 +215,7 @@ export function MessageCardAttachmentPreviewHeader({
         ) : null}
       </Stack>
 
-      {/* Right: System actions: [Info] [Download] [Open in new tab] [Full screen] [Close (X)] */}
+      {/* Right: System actions: [Info] [Download] [Open in new tab] [Overflow] [Full screen] [Close (X)] */}
       <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexShrink: 0, zIndex: 2 }}>
         {status}
         {onInfoClick != null ? (
@@ -221,7 +224,21 @@ export function MessageCardAttachmentPreviewHeader({
               aria-label="Інформація"
               size="small"
               onClick={onInfoClick}
-              sx={iconButtonSx}
+              sx={{
+                ...iconButtonSx,
+                color:
+                  infoSeverity === 'error'
+                    ? 'error.main'
+                    : infoSeverity === 'warning'
+                      ? 'warning.main'
+                      : iconButtonSx.color,
+                opacity: infoSeverity === 'error' ? 0.72 : infoSeverity === 'warning' ? 0.58 : 1,
+                '&:hover': {
+                  color: 'text.primary',
+                  backgroundColor: 'action.hover',
+                  opacity: 1,
+                },
+              }}
             >
               <InfoIcon fontSize="small" />
             </IconButton>
@@ -250,6 +267,7 @@ export function MessageCardAttachmentPreviewHeader({
             </IconButton>
           </Tooltip>
         ) : null}
+        {overflowAction}
         {canFullscreen && onToggleFullscreen ? (
           <Tooltip
             title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}

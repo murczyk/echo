@@ -1,0 +1,33 @@
+{
+  "suite_id": "17aug26-document-extractor-regressions-v1",
+  "canonical_format": "semantic-html",
+  "documents": [
+    {
+      "id": "dense-coordinate-battle-report",
+      "title": "Dense coordinate battle report",
+      "profile": "document",
+      "expect": {
+        "retain_original_raster_on_model_failure": true,
+        "max_figures": 0,
+        "anchors": [
+          "07.00",
+          "10.08.2026",
+          "5275563",
+          "6675537",
+          "5273763",
+          "6675133"
+        ]
+      },
+      "pages": [
+        {
+          "index": 1,
+          "filename": "VlJwPVl5SLP5mogJbY5G.png",
+          "sha256": "efe2179f6068fe39a808b034f51df83b2139c7f9e55f17e4a2cb611e394d53e1",
+          "mime_type": "image/png",
+          "width": 688,
+          "height": 1035
+        }
+      ]
+    }
+  ]
+}

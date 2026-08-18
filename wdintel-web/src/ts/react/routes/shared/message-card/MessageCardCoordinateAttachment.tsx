@@ -1,7 +1,8 @@
-import { Box, Button, Skeleton, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Skeleton, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 
 import type { InboxMessage, Tag } from '../../../../../Bindings';
+import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import {
   CoordinatePreviewLookupError,
   resolveMessageCoordinatePreview,
@@ -34,11 +35,16 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
   const pendingPreviewLoadRef = useRef(false);
   const [isNearViewport, setIsNearViewport] = useState(false);
   const [preview, setPreview] = useState<CoordinatePreviewResult | null | undefined>(undefined);
+  const [retrying, setRetrying] = useState(false);
   const [dialogIndex, setDialogIndex] = useState<number | null>(null);
+  const { notify } = useOptionalPowerSnackbar();
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
 
   useEffect(() => {
     setPreview(undefined);
     setDialogIndex(null);
+    setRetrying(false);
     pendingPreviewLoadRef.current = false;
     resolveRequestIdRef.current += 1;
   }, [msg, previewTagsMap]);
@@ -63,7 +69,7 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
   }, []);
 
   useEffect(() => {
-    if (!isNearViewport || preview !== undefined || pendingPreviewLoadRef.current) {
+    if (!isNearViewport || pendingPreviewLoadRef.current || (preview !== undefined && !retrying)) {
       return;
     }
 
@@ -79,6 +85,13 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
 
         pendingPreviewLoadRef.current = false;
         setPreview(result);
+        setRetrying(false);
+        if (result?.lookupError?.kind === 'document-coordinates') {
+          notifyRef.current({
+            severity: 'error',
+            message: 'Не вдалося завантажити координати документа.',
+          });
+        }
       })
       .catch((error: unknown) => {
         if (resolveRequestIdRef.current !== requestId) {
@@ -90,13 +103,14 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
           error instanceof CoordinatePreviewLookupError
             ? error
             : new CoordinatePreviewLookupError('point-search', error);
-        setPreview({
-          points: [],
-          etalons: [],
+        setPreview((current) => ({
+          points: current?.points ?? [],
+          etalons: current?.etalons ?? [],
           lookupError,
-        });
+        }));
+        setRetrying(false);
       });
-  }, [isNearViewport, msg, preview, previewTagsMap]);
+  }, [isNearViewport, msg, preview, previewTagsMap, retrying]);
 
   const points = preview?.points ?? EMPTY_POINTS;
   const previewAttachments: MessageCardPreviewAttachment[] =
@@ -122,7 +136,7 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
   const handleRetry = () => {
     pendingPreviewLoadRef.current = false;
     resolveRequestIdRef.current += 1;
-    setPreview(undefined);
+    setRetrying(true);
   };
 
   return (
@@ -158,11 +172,11 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
             }}
           />
           {lookupError != null ? (
-            <RetryTile compact error={lookupError} onRetry={handleRetry} />
+            <RetryTile compact error={lookupError} retrying={retrying} onRetry={handleRetry} />
           ) : null}
         </Box>
       ) : lookupError != null ? (
-        <RetryTile error={lookupError} onRetry={handleRetry} />
+        <RetryTile error={lookupError} retrying={retrying} onRetry={handleRetry} />
       ) : null}
 
       {onOpen == null && isDialogOpen ? (
@@ -180,11 +194,17 @@ function RetryTile({
   error,
   onRetry,
   compact = false,
+  retrying,
 }: {
   error: CoordinatePreviewLookupError;
   onRetry: () => void;
   compact?: boolean;
+  retrying: boolean;
 }) {
+  const errorLabel =
+    error.kind === 'document-coordinates'
+      ? 'Не вдалося завантажити координати документа'
+      : 'Не вдалося завантажити точку мапи';
   if (compact) {
     return (
       <Box
@@ -201,10 +221,17 @@ function RetryTile({
         title={error.cause instanceof Error ? error.cause.message : error.message}
       >
         <Typography variant="caption" sx={{ fontWeight: 700 }}>
-          Не вдалося завантажити точку мапи
+          {errorLabel}
         </Typography>
-        <Button type="button" variant="text" aria-label="Повторити" onClick={onRetry} sx={{ p: 0 }}>
-          Повторити
+        <Button
+          type="button"
+          variant="text"
+          aria-label="Повторити"
+          disabled={retrying}
+          onClick={onRetry}
+          sx={{ p: 0 }}
+        >
+          {retrying ? <CircularProgress size={14} /> : 'Повторити'}
         </Button>
       </Box>
     );
@@ -232,16 +259,17 @@ function RetryTile({
       title={error.cause instanceof Error ? error.cause.message : error.message}
     >
       <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 600 }}>
-        Не вдалося завантажити точку мапи
+        {errorLabel}
       </Typography>
       <Button
         type="button"
         variant="text"
         aria-label="Повторити"
+        disabled={retrying}
         onClick={onRetry}
         sx={{ flexShrink: 0 }}
       >
-        Повторити
+        {retrying ? <CircularProgress size={14} /> : 'Повторити'}
       </Button>
     </Box>
   );

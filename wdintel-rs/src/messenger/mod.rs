@@ -31,6 +31,7 @@ pub(crate) mod oneoff;
 pub mod ops;
 pub mod reconcile;
 pub mod restapi_errors;
+pub mod signal_restart;
 #[cfg(test)]
 pub mod tests;
 pub mod types;

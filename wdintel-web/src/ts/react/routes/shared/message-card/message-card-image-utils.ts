@@ -1,4 +1,9 @@
-import type { InboxMessage, MessageMediaInfo } from '../../../../../Bindings';
+import type {
+  InboxMessage,
+  MediaSummaryStatus,
+  MessageMediaInfo,
+  OcrMediaSummary,
+} from '../../../../../Bindings';
 import { isImageMediaAttachment } from './MessageCardMedia';
 
 export type MessageCardImage = {
@@ -7,6 +12,8 @@ export type MessageCardImage = {
   fileName?: string | null;
   sizeBytes?: number | null;
   contentType?: string | null;
+  ocr?: OcrMediaSummary | null;
+  summary?: MediaSummaryStatus | null;
 };
 
 function sanitizeDownloadFileName(fileName: string): string {
@@ -56,6 +63,8 @@ function mapMessageMediaImage(attachment: MessageMediaInfo): MessageCardImage {
     fileName: attachment.fileName ?? rawAttachment.file_name ?? null,
     sizeBytes: attachment.sizeBytes ?? rawAttachment.size_bytes ?? null,
     contentType: attachment.contentType ?? rawAttachment.content_type ?? null,
+    ocr: attachment.ocr ?? null,
+    summary: attachment.summary ?? null,
   };
 }
 

@@ -324,6 +324,14 @@ pub async fn aggregate_to_inbox_messages(
         load_completed_audio_transcriptions(&env.dbx, &media_entries)
             .await
             .c(h!())?;
+    let ocr_by_media =
+        crate::ocr::load_media_summaries(&env.dbx, &media_entries)
+            .await
+            .c(h!())?;
+    let summaries_by_media =
+        crate::media_summary::load_statuses(&env.dbx, &media_entries)
+            .await
+            .c(h!())?;
     let mut media_by_message: HashMap<i64, Vec<signal_message_media::Model>> =
         HashMap::new();
     for media in media_entries {
@@ -401,6 +409,8 @@ pub async fn aggregate_to_inbox_messages(
                 size_bytes: m.size_bytes,
                 href: mk_media_url(m),
                 transcription: transcriptions_by_media.get(&m.id).cloned(),
+                ocr: ocr_by_media.get(&m.id).cloned(),
+                summary: summaries_by_media.get(&m.id).cloned(),
             })
             .collect_vec();
         let images = media

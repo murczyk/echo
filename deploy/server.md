@@ -225,6 +225,25 @@ In `live` mode, the server process only runs `secret_worker` (vault secret loade
 full background workers are expected from `wdintel-rs-bgworker`.
 For local debug (`--mode=debug`), background workers are still enabled by default.
 
+### Optional OCR worker
+
+Configure every participating Echo instance with its own stable ID in
+`/etc/echo/config.toml`:
+
+```toml
+[ocr]
+base_url = "http://100.93.77.92:8000"
+instance_id = "echo-staging"
+gateway_url = "http://<this-instance-tailscale-ip>:8081"
+max_in_flight_jobs = 2
+```
+
+Store the extractor credential separately as `ECHO_OCR_TOKEN=...` in
+`/etc/echo/ocr.env`, owned by root with mode `0600`, then restart both
+`wdintel-rs.service` and `wdintel-rs-bgworker.service`. The worker remains off
+until an administrator enables it under **ШІ → OCR**. Configure this first only
+on `echo-staging` and `echo-cbr-staging`; never reuse an `instance_id`.
+
 ## Geo-screenshot
 
 ```

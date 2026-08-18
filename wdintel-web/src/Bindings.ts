@@ -2165,6 +2165,8 @@ export type ListGoiAssociationsSortBy =
 export type ListGoiAssociationsReq = {
   limit: number | null;
   offset: number | null;
+  sinceDateInclusiveMs: number | null;
+  tillDateInclusiveMs: number | null;
   sortBy: ListGoiAssociationsSortBy | null;
   filterText: string | null;
   filterServer: string | null;
@@ -2197,6 +2199,7 @@ export type GoiAssociation = {
   author: string | null;
   sourceDateRaw: string | null;
   sourceDateMs: number | null;
+  originalMessage: string | null;
 };
 
 export type ListGoiAssociationsRsp = {
@@ -2280,6 +2283,8 @@ export type MessageMediaInfo = {
   sizeBytes: number;
   href: string;
   transcription: string | null;
+  ocr: OcrMediaSummary | null;
+  summary: MediaSummaryStatus | null;
 };
 
 export type SigintZone = {
@@ -2701,6 +2706,17 @@ export type UnitDuplicate = {
 
 export type ListUnitDuplicatesRsp = {
   units: Array<UnitDuplicate>;
+};
+
+export type InconsistentUnit = {
+  sigintUnitId: number;
+  name: string;
+  reasons: Array<string>;
+  problematicEchelons: Array<string>;
+};
+
+export type ListInconsistentUnitsRsp = {
+  units: Array<InconsistentUnit>;
 };
 
 export type CreateUnitReq = {
@@ -4211,6 +4227,8 @@ export type AiEngineItem = {
   url: string;
   modelName: string;
   enabled: boolean;
+  callsignEnabled: boolean;
+  ocrEnabled: boolean;
   hasToken: boolean;
   createdAt: number;
   updatedAt: number;
@@ -4230,6 +4248,8 @@ export type CreateAiEngineReq = {
   token: string | null;
   modelName: string;
   enabled: boolean;
+  callsignEnabled: boolean;
+  ocrEnabled: boolean;
 };
 
 export type UpdateAiEngineReq = {
@@ -4240,6 +4260,8 @@ export type UpdateAiEngineReq = {
   clearToken: boolean;
   modelName: string;
   enabled: boolean;
+  callsignEnabled: boolean;
+  ocrEnabled: boolean;
 };
 
 export type AiChatSummary = {
@@ -4599,6 +4621,139 @@ export type SaveAiCallsignParsingReq = {
 };
 
 export type SaveAiCallsignWorkerSettingsReq = {
+  enabled: boolean;
+  aiEngineId: string | null;
+};
+
+export type OcrStatusLogItem = {
+  at: number;
+  message: string;
+};
+
+export type OcrMediaSummary = {
+  state: string;
+  qualityStatus: string | null;
+  processedPages: number;
+  totalPages: number;
+  lastError: string | null;
+  queueSize: number | null;
+  attempts: number;
+  statusLog: Array<OcrStatusLogItem>;
+  aiEngineId: string | null;
+  aiEngineName: string | null;
+  modelName: string | null;
+};
+
+export type OcrEngineItem = {
+  id: string;
+  name: string;
+  modelName: string;
+};
+
+export type OcrSettingsItem = {
+  workerEnabled: boolean;
+  configured: boolean;
+  extractorReady: boolean;
+  readinessError: string | null;
+  engines: Array<OcrEngineItem>;
+  selectedAiEngineIds: Array<string>;
+  mainAiEngineId: string | null;
+};
+
+export type OcrCounts = {
+  queued: number;
+  submitted: number;
+  retryWait: number;
+  completed: number;
+  failed: number;
+};
+
+export type OcrJobItem = {
+  mediaId: string;
+  signalMessageId: number;
+  fileName: string | null;
+  contentType: string;
+  sizeBytes: number;
+  sourceCreatedAt: number;
+  state: string;
+  qualityStatus: string | null;
+  processedPages: number;
+  totalPages: number;
+  attempts: number;
+  lastError: string | null;
+  durationMs: number | null;
+  updatedAt: number;
+  completedAt: number | null;
+  previewUrl: string | null;
+  summary: MediaSummaryStatus | null;
+  aiEngineId: string | null;
+  aiEngineName: string | null;
+  modelName: string | null;
+};
+
+export type OcrPageRsp = {
+  settings: OcrSettingsItem;
+  mediaSummarySettings: MediaSummarySettingsItem;
+  counts: OcrCounts;
+  jobs: Array<OcrJobItem>;
+};
+
+export type OcrPageReq = {
+  limit: number | null;
+};
+
+export type SaveOcrSettingsReq = {
+  workerEnabled: boolean;
+  aiEngineIds: Array<string>;
+  mainAiEngineId: string | null;
+};
+
+export type ReprocessMediaOcrReq = {
+  aiEngineId: string | null;
+};
+
+export type MediaSummaryStatus = {
+  state: string;
+  lastError: string | null;
+  hasCoordinates: boolean;
+};
+
+export type MediaSummaryCoordinate = {
+  title: string;
+  description: string;
+  plannedMeans: string | null;
+  coordinateSystem: string;
+  value: string;
+};
+
+export type MediaSummaryCoordinatesResult = {
+  coordinates: Array<MediaSummaryCoordinate>;
+};
+
+export type MediaSummaryResult = {
+  state: string;
+  summary: string | null;
+  coordinates: Array<MediaSummaryCoordinate>;
+  lastError: string | null;
+  sourceKind: string;
+  sourceCharCount: number;
+  aiEngineName: string;
+  modelName: string;
+};
+
+export type MediaSummaryEngineItem = {
+  id: string;
+  name: string;
+  modelName: string;
+};
+
+export type MediaSummarySettingsItem = {
+  enabled: boolean;
+  aiEngineId: string | null;
+  engines: Array<MediaSummaryEngineItem>;
+};
+
+export type SaveMediaSummarySettingsReq = {
   enabled: boolean;
   aiEngineId: string | null;
 };

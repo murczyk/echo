@@ -46,6 +46,12 @@ public.ai_callsign_test_message
 public.ai_callsign_parse_result
 public.ai_callsign_worker_job
 
+# OCR and media-summary settings, durable work queue, and encrypted OCR metadata.
+public.ocr_settings
+public.ocr_settings_ai_engine
+public.ocr_job
+public.media_summary_settings
+
 # Per-user AI agent control plane, audit history, and operational state.
 public.ai_agent_settings
 public.ai_agent_allowed_engine

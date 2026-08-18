@@ -37,6 +37,7 @@ use std::path::Path;
 use uuid::Uuid;
 
 pub(crate) mod aor_scope;
+mod associations_report;
 mod callsigns_sync;
 pub mod goi_api;
 mod goi_ssh;
@@ -898,6 +899,8 @@ fn goi_knowledge_apply_sort(
 fn goi_association_from_model(
     association: goi_association::Model,
 ) -> GoiAssociation {
+    let original_message =
+        message_uid::association_original_message_unescaped(&association.row);
     GoiAssociation {
         id: association.id,
         integration_id: association.integration_id,
@@ -921,6 +924,7 @@ fn goi_association_from_model(
         source_date_ms: association
             .source_date
             .map(|value| value.timestamp_millis()),
+        original_message,
     }
 }
 

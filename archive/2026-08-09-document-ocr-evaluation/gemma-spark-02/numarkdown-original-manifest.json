@@ -1,0 +1,34 @@
+{
+  "suite_id": "original-audited-pages-numarkdown-bf16-v1",
+  "source_directory": "/srv/echo-gemma-ocr/input",
+  "documents": [
+    {
+      "id": "l54",
+      "profile": "document",
+      "pages": [
+        {
+          "index": 1,
+          "filename": "l54dw_8gZt5foedpH-PY.jpg",
+          "sha256": "228a267a2a95eb746265eb2f32c0a3f14053b22d8657a3defd8defd834ee8d60",
+          "mime_type": "image/jpeg",
+          "width": 1386,
+          "height": 1968
+        }
+      ]
+    },
+    {
+      "id": "j5",
+      "profile": "table",
+      "pages": [
+        {
+          "index": 1,
+          "filename": "J5rHE_ZMsk1H_QDCCn3v.jpg",
+          "sha256": "28f4104b68166bdc60de3d6d91b47a4498591b30e422adb70faafad6ec07f8cf",
+          "mime_type": "image/jpeg",
+          "width": 2492,
+          "height": 1360
+        }
+      ]
+    }
+  ]
+}
