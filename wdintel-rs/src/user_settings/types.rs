@@ -53,7 +53,7 @@ pub struct UserDutySettingsDto {
 }
 
 fn default_duty_collapse_media_previews() -> bool {
-    true
+    false
 }
 
 impl Default for UserDutySettingsDto {
@@ -67,7 +67,7 @@ impl Default for UserDutySettingsDto {
             show_analysis_callsign_add_form: false,
             show_classic_duty: false,
             show_classic_analysis: false,
-            duty_collapse_media_previews: true,
+            duty_collapse_media_previews: false,
         }
     }
 }

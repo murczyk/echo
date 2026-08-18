@@ -60,7 +60,7 @@ export function RerDutyNeoPage({
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [audioTranscriptionCollapsed, setAudioTranscriptionCollapsed] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
-  const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(true);
+  const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const loadLayout = async () => {
@@ -69,7 +69,7 @@ export function RerDutyNeoPage({
         if (cancelled) return;
         setTagsLayout(prefs.tagsLayout);
         setAudioTranscriptionCollapsed(prefs.dutyAudioTranscriptionCollapsed ?? false);
-        setCollapseMediaPreviews(prefs.dutyCollapseMediaPreviews ?? true);
+        setCollapseMediaPreviews(prefs.dutyCollapseMediaPreviews ?? false);
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);

@@ -20,11 +20,11 @@ impl MigrationTrait for Migration {
                 add column if not exists duty_collapse_media_previews boolean;
 
             update user_settings
-            set duty_collapse_media_previews = coalesce(duty_collapse_media_previews, true)
+            set duty_collapse_media_previews = coalesce(duty_collapse_media_previews, false)
             where duty_collapse_media_previews is null;
 
             alter table if exists user_settings
-                alter column duty_collapse_media_previews set default true,
+                alter column duty_collapse_media_previews set default false,
                 alter column duty_collapse_media_previews set not null;
             "#,
             )

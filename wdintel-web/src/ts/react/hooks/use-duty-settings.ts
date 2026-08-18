@@ -41,7 +41,7 @@ function normalizeDutySettings(
     showAnalysisCallsignAddForm: settings?.showAnalysisCallsignAddForm ?? false,
     showClassicDuty: settings?.showClassicDuty ?? false,
     showClassicAnalysis: settings?.showClassicAnalysis ?? false,
-    dutyCollapseMediaPreviews: settings?.dutyCollapseMediaPreviews ?? true,
+    dutyCollapseMediaPreviews: settings?.dutyCollapseMediaPreviews ?? false,
   };
 }
 

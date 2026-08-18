@@ -79,7 +79,7 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     showAnalysisCallsignAddForm: raw.showAnalysisCallsignAddForm ?? false,
     showClassicDuty: raw.showClassicDuty ?? false,
     showClassicAnalysis: raw.showClassicAnalysis ?? false,
-    dutyCollapseMediaPreviews: raw.dutyCollapseMediaPreviews ?? true,
+    dutyCollapseMediaPreviews: raw.dutyCollapseMediaPreviews ?? false,
   };
 }
 
