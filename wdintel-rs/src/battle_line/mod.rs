@@ -881,6 +881,20 @@ pub async fn resolve_location_to_settlement(
     location: String,
     aor_ids: &[i64],
 ) -> anyhow::Result<BattleLineLocationResult> {
+    resolve_location_to_settlement_with_db(&env.dbx, env, location, aor_ids)
+        .await
+        .c(h!())
+}
+
+pub(crate) async fn resolve_location_to_settlement_with_db<C>(
+    dbx: &C,
+    env: &Env,
+    location: String,
+    aor_ids: &[i64],
+) -> anyhow::Result<BattleLineLocationResult>
+where
+    C: ConnectionTrait,
+{
     let settlements = crate::location::find_settlements_by_name_scope(
         env.settlements.clone(),
         location.clone(),
@@ -914,7 +928,7 @@ pub async fn resolve_location_to_settlement(
         })
         .collect::<Vec<_>>();
     let aor_scope = (!aor_ids.is_empty()).then_some(aor_ids);
-    let matched = match_battle_line_candidates(&env.dbx, &points, aor_scope)
+    let matched = match_battle_line_candidates(dbx, &points, aor_scope)
         .await
         .c(h!())?;
     let (chosen_settlement_id, distance_m) = matched

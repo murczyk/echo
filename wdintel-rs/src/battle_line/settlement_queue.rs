@@ -1,6 +1,7 @@
 use crate::battle_line::{
-    active_battle_line_id, ensure_active_battle_line, resolve_inbox_item_aors,
-    resolve_location_to_settlement,
+    active_battle_line_id, ensure_active_battle_line, lock_updates,
+    resolve_inbox_item_aors, resolve_location_to_settlement,
+    resolve_location_to_settlement_with_db,
 };
 use crate::config::{
     get_tz, INBOX_SETTLEMENT_WORKER_BATCH_SIZE,
@@ -247,13 +248,15 @@ async fn process_oneoff_item(
     location_v2: &str,
     stats: &mut OneoffLinkInboxSettlementsStats,
 ) -> anyhow::Result<()> {
-    ensure_active_battle_line(&env.dbx).await.c(h!())?;
-    let aor_context = resolve_inbox_item_aors(&env.dbx, item_id, None)
-        .await
-        .c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    lock_updates(&txn).await.c(h!())?;
+    ensure_active_battle_line(&txn).await.c(h!())?;
+    let aor_context =
+        resolve_inbox_item_aors(&txn, item_id, None).await.c(h!())?;
     let mut resolutions = vec![];
     for settlement_text in location_texts(Some(location_v2)) {
-        let result = resolve_location_to_settlement(
+        let result = resolve_location_to_settlement_with_db(
+            &txn,
             env,
             settlement_text.clone(),
             &aor_context.aor_ids,
@@ -262,7 +265,6 @@ async fn process_oneoff_item(
         .c(h!())?;
         resolutions.push((settlement_text, result.chosen_settlement_id));
     }
-    let txn = env.dbx.begin().await.c(h!())?;
     reconcile_item_locations(&txn, item_id, Some(location_v2))
         .await
         .c(h!())?;
