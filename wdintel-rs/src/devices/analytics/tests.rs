@@ -869,7 +869,7 @@ async fn manual_run_is_bounded_and_publishes_write_once_history() {
         .collect::<std::collections::BTreeMap<_, _>>();
     assert_eq!(
         historical_files.keys().copied().collect::<Vec<_>>(),
-        file_ids.iter().copied().collect::<Vec<_>>(),
+        file_ids.to_vec(),
     );
     assert_eq!(
         historical_files[&file_ids[0]].tag_ids.as_deref(),

@@ -111,10 +111,10 @@ pub(crate) async fn monitor_nofail(
 }
 
 async fn record_operational_state(env: &Env) -> Result<()> {
-    let snapshot =
-        queue::load_operational_snapshot(env.file_registry_db()?.connection())
-            .await
-            .context(h!())?;
+    let file_db = env.file_registry_db().context(h!())?.connection();
+    let snapshot = queue::load_operational_snapshot(file_db)
+        .await
+        .context(h!())?;
     if let Some(metrics) = &env.metrics {
         metrics.record_file_analysis_operational_state(
             snapshot.sync_runs,
@@ -165,7 +165,7 @@ pub(crate) async fn run_tick(
     claim_batch_size: u64,
     lease_duration_secs: i64,
 ) -> Result<bool> {
-    let file_db = env.file_registry_db()?.connection();
+    let file_db = env.file_registry_db().context(h!())?.connection();
     let preparation_started_at = Instant::now();
     let preparation = queue::prepare_next_page(file_db, preparation_page_size)
         .await

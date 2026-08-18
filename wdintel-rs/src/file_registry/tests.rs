@@ -122,11 +122,26 @@ async fn batched_sync_migration_resets_inventory_and_preserves_analytics() {
             .unwrap()
             .unwrap();
         let connection = file_registry_db.connection();
-        let pre_batched_sync_migration_count =
-            wdfiles_migration::Migrator::migrations().len() as u32 - 2;
+        let migrations = wdfiles_migration::Migrator::migrations();
+        let pre_batched_sync_migration_count = migrations
+            .iter()
+            .position(|migration| {
+                migration.name()
+                    == "m20260813_120128_batched_file_metadata_sync"
+            })
+            .unwrap();
+        let batched_sync_migration_count = migrations
+            .iter()
+            .position(|migration| {
+                migration.name()
+                    == "m20260815_152642_rename_file_sync_primary_key_columns"
+            })
+            .unwrap()
+            + 1
+            - pre_batched_sync_migration_count;
         wdfiles_migration::Migrator::up(
             connection,
-            Some(pre_batched_sync_migration_count),
+            Some(u32::try_from(pre_batched_sync_migration_count).unwrap()),
         )
         .await
         .unwrap();
@@ -334,9 +349,12 @@ where id;
             1
         );
 
-        wdfiles_migration::Migrator::up(connection, None)
-            .await
-            .unwrap();
+        wdfiles_migration::Migrator::up(
+            connection,
+            Some(u32::try_from(batched_sync_migration_count).unwrap()),
+        )
+        .await
+        .unwrap();
         assert!(!table_exists(connection, "device_file_sync_batch").await);
         assert!(
             !table_exists(connection, "device_file_sync_batch_entry").await
@@ -512,6 +530,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260810_120000_seed_default_analytics_tags".to_string(),
             "m20260813_120128_batched_file_metadata_sync".to_string(),
             "m20260815_152642_rename_file_sync_primary_key_columns".to_string(),
+            "m20260818_094542_batched_file_analysis_runs".to_string(),
         ]
     );
 }
@@ -673,6 +692,8 @@ async fn assert_file_entry_schema(connection: &DatabaseConnection) {
                 "timestamptz",
             ),
             ("source_file_state_settled_by", "YES", None, "text", "text"),
+            ("analysis_input_revision", "YES", None, "bigint", "int8"),
+            ("current_analysis_run_id", "YES", None, "uuid", "uuid"),
         ],
     )
     .await;
@@ -825,6 +846,8 @@ order by table_name
                 "timestamp with time zone",
                 "timestamptz",
             ),
+            ("source_sequence", "NO", "bigint", "int8"),
+            ("analysis_input_revision", "NO", "bigint", "int8"),
         ],
     )
     .await;
@@ -955,10 +978,15 @@ order by type.typname, value.enumsortorder
         constraint_names(connection, "file_metadata_revision", 'c').await,
         vec![
             "file_metadata_revision_absolute_path_check".to_string(),
+            "file_metadata_revision_analysis_check".to_string(),
             "file_metadata_revision_name_check".to_string(),
             "file_metadata_revision_revision_check".to_string(),
             "file_metadata_revision_source_state_check".to_string(),
         ]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_metadata_revision", 'u').await,
+        vec!["file_metadata_revision_source_sequence_key".to_string()]
     );
     assert_eq!(
         constraint_names(connection, "file_sync_item", 'c').await,
@@ -977,6 +1005,7 @@ order by type.typname, value.enumsortorder
         constraint_names(connection, "file_metadata_revision", 'f').await,
         vec![
             "file_metadata_revision_file_fk".to_string(),
+            "file_metadata_revision_input_fk".to_string(),
             "file_metadata_revision_session_fk".to_string(),
         ]
     );
@@ -1019,7 +1048,19 @@ order by tablename, indexname
     assert_eq!(
         indexes,
         [
+            (
+                "file_metadata_revision",
+                "file_metadata_revision_device_file_source_idx",
+            ),
             ("file_metadata_revision", "file_metadata_revision_pkey"),
+            (
+                "file_metadata_revision",
+                "file_metadata_revision_source_sequence_key",
+            ),
+            (
+                "file_metadata_revision",
+                "file_metadata_revision_sync_file_idx",
+            ),
             ("file_sync_batch", "file_sync_batch_pkey"),
             ("file_sync_item", "file_sync_item_accepted_path_uidx"),
             ("file_sync_item", "file_sync_item_pkey"),
@@ -1070,9 +1111,13 @@ where table_schema = 'public'
       'analytics_tag_test_file',
       'device_file_tag',
       'file_analysis_control',
+      'file_analysis_definition',
       'file_analysis_device_state',
       'file_analysis_reanalysis_job',
-      'file_analysis_state'
+      'file_analysis_run',
+      'file_analysis_run_item',
+      'file_analysis_state',
+      'file_device_source_state'
   )
 order by table_name
 "#
@@ -1087,14 +1132,146 @@ order by table_name
         table_names,
         vec![
             "analytics_tag".to_string(),
-            "analytics_tag_rule_set_state".to_string(),
             "analytics_tag_test_file".to_string(),
             "device_file_tag".to_string(),
-            "file_analysis_control".to_string(),
-            "file_analysis_device_state".to_string(),
-            "file_analysis_reanalysis_job".to_string(),
-            "file_analysis_state".to_string(),
+            "file_analysis_definition".to_string(),
+            "file_analysis_run".to_string(),
+            "file_analysis_run_item".to_string(),
+            "file_device_source_state".to_string(),
         ]
+    );
+
+    assert_column_shapes(
+        connection,
+        "file_analysis_definition",
+        &[
+            ("id", "NO", "uuid", "uuid"),
+            ("definition_sequence", "NO", "bigint", "int8"),
+            ("analyzer_version", "NO", "integer", "int4"),
+            ("dsl_version", "NO", "integer", "int4"),
+            ("rules", "NO", "jsonb", "jsonb"),
+            (
+                "created_at",
+                "NO",
+                "timestamp with time zone",
+                "timestamptz",
+            ),
+        ],
+    )
+    .await;
+    assert_column_shapes(
+        connection,
+        "file_analysis_run",
+        &[
+            ("id", "NO", "uuid", "uuid"),
+            ("run_sequence", "NO", "bigint", "int8"),
+            ("device_id", "NO", "uuid", "uuid"),
+            ("sync_id", "YES", "uuid", "uuid"),
+            ("target_source_sequence", "YES", "bigint", "int8"),
+            ("definition_id", "NO", "uuid", "uuid"),
+            ("item_count", "NO", "bigint", "int8"),
+            ("completed_count", "NO", "bigint", "int8"),
+            (
+                "created_at",
+                "NO",
+                "timestamp with time zone",
+                "timestamptz",
+            ),
+            (
+                "prepared_at",
+                "YES",
+                "timestamp with time zone",
+                "timestamptz",
+            ),
+            (
+                "completed_at",
+                "YES",
+                "timestamp with time zone",
+                "timestamptz",
+            ),
+        ],
+    )
+    .await;
+    assert_column_shapes(
+        connection,
+        "file_analysis_run_item",
+        &[
+            ("id", "NO", "uuid", "uuid"),
+            ("file_id", "NO", "uuid", "uuid"),
+            ("metadata_revision", "NO", "bigint", "int8"),
+            ("lease_token", "YES", "uuid", "uuid"),
+            (
+                "lease_expires_at",
+                "YES",
+                "timestamp with time zone",
+                "timestamptz",
+            ),
+            ("result_tag_ids", "YES", "ARRAY", "_uuid"),
+            (
+                "completed_at",
+                "YES",
+                "timestamp with time zone",
+                "timestamptz",
+            ),
+        ],
+    )
+    .await;
+    assert_column_shapes(
+        connection,
+        "file_device_source_state",
+        &[
+            ("id", "NO", "uuid", "uuid"),
+            ("last_source_sequence", "NO", "bigint", "int8"),
+        ],
+    )
+    .await;
+
+    assert_eq!(
+        constraint_names(connection, "file_analysis_definition", 'c').await,
+        vec![
+            "file_analysis_definition_rules_check".to_string(),
+            "file_analysis_definition_version_check".to_string(),
+        ]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_analysis_definition", 'u').await,
+        vec!["file_analysis_definition_sequence_key".to_string()]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_analysis_run", 'c').await,
+        vec![
+            "file_analysis_run_cause_check".to_string(),
+            "file_analysis_run_count_check".to_string(),
+        ]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_analysis_run", 'f').await,
+        vec![
+            "file_analysis_run_definition_fk".to_string(),
+            "file_analysis_run_sync_fk".to_string(),
+        ]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_analysis_run", 'u').await,
+        vec!["file_analysis_run_sequence_key".to_string()]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_analysis_run_item", 'c').await,
+        vec![
+            "file_analysis_run_item_lease_check".to_string(),
+            "file_analysis_run_item_result_check".to_string(),
+        ]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_analysis_run_item", 'f').await,
+        vec![
+            "file_analysis_run_item_revision_fk".to_string(),
+            "file_analysis_run_item_run_fk".to_string(),
+        ]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_device_source_state", 'c').await,
+        vec!["file_device_source_state_sequence_check".to_string()]
     );
 
     let link_foreign_keys = connection
@@ -1133,27 +1310,20 @@ order by conname
         ]
     );
 
-    let rule_revision: i64 = connection
-        .query_one_raw(Statement::from_string(
-            DbBackend::Postgres,
-            "select revision from public.analytics_tag_rule_set_state where id"
-                .to_string(),
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get("", "revision")
-        .unwrap();
-    assert_eq!(rule_revision, 1);
-    let state_triggers = connection
+    let indexes = connection
         .query_all_raw(Statement::from_string(
             DbBackend::Postgres,
             r#"
-select tgname, pg_get_triggerdef(oid) as definition
-from pg_trigger
-where tgrelid = 'public.file_analysis_state'::regclass
-  and not tgisinternal
-order by tgname
+select tablename, indexname
+from pg_catalog.pg_indexes
+where schemaname = 'public'
+  and tablename in (
+      'file_analysis_definition',
+      'file_analysis_run',
+      'file_analysis_run_item',
+      'file_device_source_state'
+  )
+order by tablename, indexname
 "#
             .to_string(),
         ))
@@ -1162,23 +1332,86 @@ order by tgname
         .into_iter()
         .map(|row| {
             (
-                row.try_get("", "tgname").unwrap(),
-                row.try_get("", "definition").unwrap(),
+                row.try_get("", "tablename").unwrap(),
+                row.try_get("", "indexname").unwrap(),
             )
         })
         .collect::<Vec<(String, String)>>();
     assert_eq!(
-        state_triggers,
-        vec![
+        indexes,
+        [
+            ("file_analysis_definition", "file_analysis_definition_pkey",),
             (
-                "file_analysis_enqueue_device_state_insert_trg".to_string(),
-                "CREATE TRIGGER file_analysis_enqueue_device_state_insert_trg AFTER INSERT ON public.file_analysis_state REFERENCING NEW TABLE AS new_analysis_states FOR EACH STATEMENT EXECUTE FUNCTION file_analysis_enqueue_inserted_device_states()".to_string(),
+                "file_analysis_definition",
+                "file_analysis_definition_sequence_key",
             ),
+            ("file_analysis_run", "file_analysis_run_device_sequence_idx"),
+            ("file_analysis_run", "file_analysis_run_pkey"),
+            ("file_analysis_run", "file_analysis_run_preparing_idx"),
+            ("file_analysis_run", "file_analysis_run_running_idx"),
+            ("file_analysis_run", "file_analysis_run_sequence_key"),
+            ("file_analysis_run", "file_analysis_run_sync_uidx"),
+            ("file_analysis_run_item", "file_analysis_run_item_file_idx",),
             (
-                "file_analysis_enqueue_device_state_update_trg".to_string(),
-                "CREATE TRIGGER file_analysis_enqueue_device_state_update_trg AFTER UPDATE ON public.file_analysis_state REFERENCING OLD TABLE AS old_analysis_states NEW TABLE AS new_analysis_states FOR EACH STATEMENT EXECUTE FUNCTION file_analysis_enqueue_updated_device_states()".to_string(),
+                "file_analysis_run_item",
+                "file_analysis_run_item_pending_idx",
+            ),
+            ("file_analysis_run_item", "file_analysis_run_item_pkey"),
+            ("file_device_source_state", "file_device_source_state_pkey"),
+        ]
+        .into_iter()
+        .map(|(table, index)| (table.to_string(), index.to_string()))
+        .collect::<Vec<_>>()
+    );
+
+    let triggers = connection
+        .query_all_raw(Statement::from_string(
+            DbBackend::Postgres,
+            r#"
+select relation.relname as table_name, trigger.tgname
+from pg_catalog.pg_trigger as trigger
+join pg_catalog.pg_class as relation on relation.oid = trigger.tgrelid
+join pg_catalog.pg_namespace as namespace
+  on namespace.oid = relation.relnamespace
+where namespace.nspname = 'public'
+  and relation.relname in (
+      'analytics_tag',
+      'file_analysis_definition',
+      'file_analysis_run',
+      'file_analysis_run_item'
+  )
+  and not trigger.tgisinternal
+order by relation.relname, trigger.tgname
+"#
+            .to_string(),
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get("", "table_name").unwrap(),
+                row.try_get("", "tgname").unwrap(),
+            )
+        })
+        .collect::<Vec<(String, String)>>();
+    assert_eq!(
+        triggers,
+        [
+            ("analytics_tag", "analytics_tag_referenced_delete_guard_trg"),
+            (
+                "file_analysis_definition",
+                "file_analysis_definition_immutable_trg",
+            ),
+            ("file_analysis_run", "file_analysis_run_mutation_guard_trg"),
+            (
+                "file_analysis_run_item",
+                "file_analysis_run_item_mutation_guard_trg",
             ),
         ]
+        .into_iter()
+        .map(|(table, trigger)| (table.to_string(), trigger.to_string()))
+        .collect::<Vec<_>>()
     );
 }
 
@@ -1303,6 +1536,8 @@ async fn assert_file_entry_constraints(connection: &DatabaseConnection) {
     assert_eq!(
         constraint_names(connection, "file_entry", 'f').await,
         vec![
+            "file_entry_analysis_input_fk".to_string(),
+            "file_entry_current_analysis_fk".to_string(),
             "file_entry_current_revision_fk".to_string(),
             "file_entry_current_session_fk".to_string(),
             "file_entry_parent_fk".to_string(),
@@ -1368,6 +1603,12 @@ order by tgname
     assert_eq!(
         triggers,
         vec![
+            (
+                "file_entry_current_analysis_guard_trg".to_string(),
+                true,
+                true,
+                "CREATE CONSTRAINT TRIGGER file_entry_current_analysis_guard_trg AFTER INSERT OR UPDATE ON public.file_entry DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION file_entry_reject_invalid_current_analysis()".to_string(),
+            ),
             (
                 "file_entry_hierarchy_trg".to_string(),
                 true,
@@ -1535,6 +1776,7 @@ async fn insert_file_revision(
     file_id: Uuid,
     device_id: Uuid,
     sync_id: Uuid,
+    source_sequence: i64,
     name: &str,
     absolute_path: &str,
     created_at: NaiveDateTime,
@@ -1545,7 +1787,7 @@ async fn insert_file_revision(
         revision: Set(1),
         device_id: Set(device_id),
         sync_id: Set(sync_id),
-        source_sequence: Set(1),
+        source_sequence: Set(source_sequence),
         analysis_input_revision: Set(1),
         name: Set(name.to_string()),
         absolute_path: Set(absolute_path.to_string()),
@@ -1598,6 +1840,7 @@ async fn assert_file_entry_entity_round_trip(connection: &DatabaseConnection) {
         second_file_id,
         tree.device_id,
         tree.sync_id,
+        2,
         "app.log",
         r"C:\var\copy.log",
         tree.created_at,
@@ -1688,6 +1931,7 @@ async fn insert_file_entry_tree(
         file_id,
         device_id,
         sync_id,
+        1,
         "app.log",
         r"C:\var\app.log",
         created_at,

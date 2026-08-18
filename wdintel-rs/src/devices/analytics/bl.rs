@@ -21,6 +21,7 @@ use crate::error::AppError;
 use crate::file_registry::{entities::analytics_tag, FileRegistryDb};
 use crate::h;
 use crate::types::ShortContext;
+use anyhow::Context;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, SecondsFormat, Utc};
 use sea_orm::{DatabaseConnection, DbErr, TransactionTrait};
@@ -794,8 +795,9 @@ fn decode_cursor<T>(cursor: &str) -> Result<T, anyhow::Error>
 where
     T: for<'de> Deserialize<'de>,
 {
-    let bytes = URL_SAFE_NO_PAD.decode(cursor)?;
-    Ok(serde_json::from_slice(&bytes)?)
+    let bytes = URL_SAFE_NO_PAD.decode(cursor).context(h!())?;
+    let cursor = serde_json::from_slice(&bytes).context(h!())?;
+    Ok(cursor)
 }
 
 fn validate_page_limit(limit: u64, max: u64) -> Result<u64, AppError> {

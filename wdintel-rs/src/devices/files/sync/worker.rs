@@ -7,7 +7,7 @@ use crate::file_registry::entities::{
     file_sync_session,
     sea_orm_active_enums::{FileSyncSessionMode, FileSyncSessionStatus},
 };
-use crate::types::Env;
+use crate::{h, types::Env};
 use anyhow::Context;
 use chrono::Utc;
 use sea_orm::sea_query::{LockBehavior, LockType};
@@ -49,11 +49,8 @@ pub(crate) async fn run_nofail(
 }
 
 pub(in crate::devices) async fn run_tick(env: &Env) -> anyhow::Result<bool> {
-    let file_db = env
-        .file_registry_db()
-        .context("file registry database is unavailable")?
-        .connection();
-    let transaction = file_db.begin().await.context("begin expiry tick")?;
+    let file_db = env.file_registry_db().context(h!())?.connection();
+    let transaction = file_db.begin().await.context(h!())?;
     let sessions = file_sync_session::Entity::find()
         .filter(
             file_sync_session::Column::Mode.eq(FileSyncSessionMode::Explicit),
@@ -67,20 +64,17 @@ pub(in crate::devices) async fn run_tick(env: &Env) -> anyhow::Result<bool> {
         .limit(DEVICE_FILE_SYNC_SESSION_EXPIRY_BATCH_SIZE)
         .all(&transaction)
         .await
-        .context("claim expired file sync sessions")?;
+        .context(h!())?;
     let expired = !sessions.is_empty();
     for session in sessions {
         let mut session = session.into_active_model();
         session.status = Set(FileSyncSessionStatus::Expired);
         session.updated_at = Set(Utc::now().fixed_offset());
-        let session = session
-            .update(&transaction)
-            .await
-            .context("expire file sync session")?;
+        let session = session.update(&transaction).await.context(h!())?;
         ensure_sync_run(&transaction, session.id, session.device_id)
             .await
-            .context("schedule expired sync analysis")?;
+            .context(h!())?;
     }
-    transaction.commit().await.context("commit expiry tick")?;
+    transaction.commit().await.context(h!())?;
     Ok(expired)
 }

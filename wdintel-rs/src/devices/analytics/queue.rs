@@ -7,6 +7,7 @@ use crate::file_registry::entities::{
     file_analysis_definition, file_analysis_run, file_analysis_run_item,
     file_device_source_state, file_metadata_revision,
 };
+use crate::h;
 use anyhow::{Context, Result};
 use chrono::{DateTime, FixedOffset, Utc};
 use sea_orm::{
@@ -36,8 +37,10 @@ pub(super) struct RuleSnapshot {
 
 impl RuleSnapshot {
     pub fn compile(&self) -> Result<CompiledTagRules> {
-        rules::compile_tag_rules(self.definitions.clone())
+        let rules = rules::compile_tag_rules(self.definitions.clone())
             .map_err(|error| anyhow::anyhow!(error.message))
+            .context(h!())?;
+        Ok(rules)
     }
 }
 
@@ -719,19 +722,16 @@ pub(super) async fn prepare_next_page(
     db: &DatabaseConnection,
     page_size: u64,
 ) -> Result<PreparationResult> {
-    let transaction = db.begin().await.context("begin analysis preparation")?;
+    let transaction = db.begin().await.context(h!())?;
     let Some(run) = file_analysis_run::Entity::find()
         .filter(file_analysis_run::Column::PreparedAt.is_null())
         .order_by_asc(file_analysis_run::Column::RunSequence)
         .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
         .one(&transaction)
         .await
-        .context("claim analysis run preparation")?
+        .context(h!())?
     else {
-        transaction
-            .commit()
-            .await
-            .context("commit empty preparation")?;
+        transaction.commit().await.context(h!())?;
         return Ok(PreparationResult {
             did_work: false,
             inserted_count: 0,
@@ -746,7 +746,7 @@ pub(super) async fn prepare_next_page(
         .into_tuple::<Uuid>()
         .one(&transaction)
         .await
-        .context("load analysis preparation cursor")?;
+        .context(h!())?;
     let cursor = last_file_id.unwrap_or(Uuid::nil());
     let candidates = if let Some(sync_id) = run.sync_id {
         file_metadata_revision::Entity::find()
@@ -768,15 +768,17 @@ pub(super) async fn prepare_next_page(
             .into_model::<PreparationCandidate>()
             .all(&transaction)
             .await
-            .context("load sync analysis targets")?
+            .context(h!())?
     } else {
-        let target_source_sequence =
-            run.target_source_sequence.ok_or_else(|| {
+        let target_source_sequence = run
+            .target_source_sequence
+            .ok_or_else(|| {
                 anyhow::anyhow!(
                     "manual analysis run {} has no watermark",
                     run.id
                 )
-            })?;
+            })
+            .context(h!())?;
         file_metadata_revision::Entity::find()
             .select_only()
             .column_as(file_metadata_revision::Column::Id, "file_id")
@@ -797,7 +799,7 @@ pub(super) async fn prepare_next_page(
             .into_model::<PreparationCandidate>()
             .all(&transaction)
             .await
-            .context("load manual analysis targets")?
+            .context(h!())?
     };
     let mut run_active = run.clone().into_active_model();
     let (inserted_count, completed_run_duration_secs) = if candidates.is_empty()
@@ -815,10 +817,7 @@ pub(super) async fn prepare_next_page(
             } else {
                 None
             };
-        run_active
-            .update(&transaction)
-            .await
-            .context("finalize analysis preparation")?;
+        run_active.update(&transaction).await.context(h!())?;
         (0, completed_run_duration_secs)
     } else {
         let inserted = file_analysis_run_item::Entity::insert_many(
@@ -844,23 +843,18 @@ pub(super) async fn prepare_next_page(
         )
         .exec_without_returning(&transaction)
         .await
-        .context("materialize analysis run items")?;
+        .context(h!())?;
         let item_count = run_active
             .item_count
             .as_ref()
-            .checked_add(i64::try_from(inserted)?)
-            .ok_or_else(|| anyhow::anyhow!("analysis item count overflow"))?;
+            .checked_add(i64::try_from(inserted).context(h!())?)
+            .ok_or_else(|| anyhow::anyhow!("analysis item count overflow"))
+            .context(h!())?;
         run_active.item_count = Set(item_count);
-        run_active
-            .update(&transaction)
-            .await
-            .context("increment analysis item count")?;
-        (u64::try_from(inserted)?, None)
+        run_active.update(&transaction).await.context(h!())?;
+        (inserted, None)
     };
-    transaction
-        .commit()
-        .await
-        .context("commit analysis preparation")?;
+    transaction.commit().await.context(h!())?;
     Ok(PreparationResult {
         did_work: true,
         inserted_count,
@@ -954,14 +948,14 @@ pub(super) async fn claim_analysis_batch(
         [
             ANALYZER_VERSION.into(),
             DSL_VERSION.into(),
-            i64::try_from(batch_size)?.into(),
+            i64::try_from(batch_size).context(h!())?.into(),
             lease_token.into(),
             lease_duration_secs.into(),
         ],
     ))
     .all(db)
     .await
-    .context("claim file analysis items")
+    .context(h!())
 }
 
 #[derive(Serialize)]
@@ -995,7 +989,7 @@ pub(super) async fn complete_analysis_batch(
             result_tag_ids: &item.matched_tag_ids,
         })
         .collect::<Vec<_>>();
-    let payload = serde_json::to_string(&payload)?;
+    let payload = serde_json::to_string(&payload).context(h!())?;
     // The immutable result write, current projection reconciliation, and run
     // counters must commit as one data-modifying CTE under the exact lease.
     // SeaORM's entity APIs cannot connect those returned row sets atomically.
@@ -1241,19 +1235,26 @@ pub(super) async fn complete_analysis_batch(
             [payload.into(), lease_token.into()],
         ))
         .await
-        .context("commit file analysis results")?
+        .context(h!())?
         .ok_or_else(|| {
             anyhow::anyhow!("file analysis completion counts missing")
-        })?;
-    let expected_count: i64 = row.try_get("", "expected_count")?;
-    let completed_count: i64 = row.try_get("", "completed_count")?;
-    let published_count: i64 = row.try_get("", "published_count")?;
-    let result_write_duration_secs: f64 =
-        row.try_get("", "result_write_duration_secs")?;
-    let current_publish_duration_secs: f64 =
-        row.try_get("", "current_publish_duration_secs")?;
-    let run_completion_duration_secs: Option<f64> =
-        row.try_get("", "run_completion_duration_secs")?;
+        })
+        .context(h!())?;
+    let expected_count: i64 =
+        row.try_get("", "expected_count").context(h!())?;
+    let completed_count: i64 =
+        row.try_get("", "completed_count").context(h!())?;
+    let published_count: i64 =
+        row.try_get("", "published_count").context(h!())?;
+    let result_write_duration_secs: f64 = row
+        .try_get("", "result_write_duration_secs")
+        .context(h!())?;
+    let current_publish_duration_secs: f64 = row
+        .try_get("", "current_publish_duration_secs")
+        .context(h!())?;
+    let run_completion_duration_secs: Option<f64> = row
+        .try_get("", "run_completion_duration_secs")
+        .context(h!())?;
     if expected_count != completed_count {
         return Err(anyhow::anyhow!(
             "file analysis lease lost for {} of {} items",
@@ -1262,8 +1263,8 @@ pub(super) async fn complete_analysis_batch(
         ));
     }
     Ok(CompletionResult {
-        completed_count: u64::try_from(completed_count)?,
-        published_count: u64::try_from(published_count)?,
+        completed_count: u64::try_from(completed_count).context(h!())?,
+        published_count: u64::try_from(published_count).context(h!())?,
         result_write_duration_secs,
         current_publish_duration_secs,
         run_completion_duration_secs,
