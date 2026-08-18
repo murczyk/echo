@@ -1497,7 +1497,7 @@ fn apply_babak_analytics_access_filter(
 }
 
 fn babak_unit_comment_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
-    Expr::exists(
+    let legacy_comment_exists = Expr::exists(
         Query::select()
             .expr(Expr::value(1))
             .from(sigint_comment::Entity)
@@ -1511,8 +1511,54 @@ fn babak_unit_comment_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
             .and_where(
                 sigint_comment::Column::LoginId.is_in(login_ids.to_vec()),
             )
+            .and_where(
+                sigint_comment::Column::MigratedSignalMessageId.is_null(),
+            )
             .to_owned(),
-    )
+    );
+    let linked_comment_exists = Expr::exists(
+        Query::select()
+            .expr(Expr::value(1))
+            .from(intel_prod::Entity)
+            .and_where(
+                intel_prod::Column::RelationKind
+                    .eq(intel_prod::RELATION_KIND_COMMENT),
+            )
+            .and_where(
+                Expr::col((
+                    intel_prod::Entity,
+                    intel_prod::Column::ParentSignalMessageId,
+                ))
+                .equals((signal_message::Entity, signal_message::Column::Id)),
+            )
+            .and_where(Expr::exists(
+                Query::select()
+                    .expr(Expr::value(1))
+                    .from(signal_message::Entity)
+                    .and_where(
+                        Expr::col((
+                            signal_message::Entity,
+                            signal_message::Column::Id,
+                        ))
+                        .equals((
+                            intel_prod::Entity,
+                            intel_prod::Column::SignalMessageId,
+                        )),
+                    )
+                    .and_where(signal_message::Column::Deleted.eq(false))
+                    .and_where(
+                        signal_message::Column::Sender.is_in(
+                            login_ids
+                                .iter()
+                                .map(ToString::to_string)
+                                .collect::<Vec<_>>(),
+                        ),
+                    )
+                    .to_owned(),
+            ))
+            .to_owned(),
+    );
+    legacy_comment_exists.or(linked_comment_exists)
 }
 
 fn babak_unit_tag_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
@@ -1624,10 +1670,33 @@ async fn load_babak_enrichment_batch(
                 select array_agg(
                     comment.comment order by comment.created_at, comment.id
                 ) as comments
-                from sigint_comment comment
-                where comment.signal_message_id = candidate.id
+                from (
+                    select
+                        linked.id,
+                        linked.created_at,
+                        linked.body as comment,
+                        linked.sender as author
+                    from intel_prod link
+                    join signal_message linked
+                      on linked.id = link.signal_message_id
+                    where link.parent_signal_message_id = candidate.id
+                      and link.relation_kind = 'comment'
+                      and linked.deleted = false
+                    union all
+                    select
+                        legacy.id,
+                        legacy.created_at,
+                        legacy.comment,
+                        legacy.login_id::text as author
+                    from sigint_comment legacy
+                    where legacy.signal_message_id = candidate.id
+                      and legacy.migrated_signal_message_id is null
+                ) comment
+                where comment.comment <> ''
                   and $6 = true
-                  and ($3 = false or comment.login_id = any($4::uuid[]))
+                  and ($3 = false or comment.author = any(
+                      select unnest($4::uuid[])::text
+                  ))
             ) comments
             where comments.comments is not null
         )

@@ -40,7 +40,7 @@ struct CommentCsvRow {
 const SIGINT_COMMENT_MIGRATION_LOCK_KEY: i64 = 7_421_983_615;
 const SIGINT_COMMENT_MIGRATION_MAX_BATCH_SIZE: u64 = 2_000;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LinkedMessageComment {
     pub parent_signal_message_id: i64,
     pub signal_message_id: i64,
@@ -153,6 +153,29 @@ where
     comments
         .sort_by_key(|comment| (comment.created_at, comment.signal_message_id));
     Ok(comments)
+}
+
+pub async fn find_report_comments<C>(
+    dbx: &C,
+    parent_signal_message_ids: &[i64],
+    allowed_logins: Option<&[uuid::Uuid]>,
+) -> Result<Vec<LinkedMessageComment>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let comments = find_linked_message_comments(dbx, parent_signal_message_ids)
+        .await
+        .c(h!())?;
+    Ok(comments
+        .into_iter()
+        .filter(|comment| {
+            allowed_logins.is_none_or(|logins| {
+                comment
+                    .login_id
+                    .is_some_and(|login_id| logins.contains(&login_id))
+            })
+        })
+        .collect())
 }
 
 pub async fn create_linked_message_comment(

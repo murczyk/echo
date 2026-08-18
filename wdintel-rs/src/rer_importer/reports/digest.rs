@@ -975,35 +975,35 @@ async fn load_messages_with_comments(
     let mut new_bodies = HashMap::new();
     let mut message_public_ids = HashMap::<i64, String>::new(); // todo fetch from db
     for ids in message_ids {
-        let comments_data = sigint_comment::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                sigint_comment::Relation::SignalMessage.def(),
-            )
-            .join(
-                JoinType::LeftJoin,
-                signal_message::Relation::SigintInboxItem.def(),
-            )
-            .filter(sigint_comment::Column::SignalMessageId.eq_any(ids))
+        let comments_data = crate::sigint::comments::find_report_comments(
+            dbx,
+            &ids,
+            allowed_comment_logins,
+        )
+        .await
+        .context(h!())?;
+        let comment_message_ids = comments_data
+            .iter()
+            .map(|comment| comment.parent_signal_message_id)
+            .collect::<Vec<_>>();
+        let bodies = sigint_inbox_item::Entity::find()
             .select_only()
-            .column(sigint_comment::Column::SignalMessageId)
-            .column(sigint_comment::Column::Comment)
+            .column(sigint_inbox_item::Column::Id)
             .column(sigint_inbox_item::Column::BodyNoheader)
-            .apply_if(allowed_comment_logins, |query, logins| {
-                query.filter(
-                    sigint_comment::Column::LoginId.eq_any(logins.to_vec()),
-                )
-            })
-            .into_tuple::<(i64, String, Option<Json>)>()
+            .filter(sigint_inbox_item::Column::Id.eq_any(comment_message_ids))
+            .into_tuple::<(i64, Option<Json>)>()
             .all(dbx)
             .await
-            .context(h!())?;
-        for (message_id, comment, body) in comments_data {
-            comments.push((message_id, comment));
+            .context(h!())?
+            .into_iter()
+            .collect::<HashMap<_, _>>();
+        for comment in comments_data {
+            let message_id = comment.parent_signal_message_id;
+            comments.push((message_id, comment.comment));
             messages_with_comment.insert(message_id);
-            if let Some(body) = body {
+            if let Some(Some(body)) = bodies.get(&message_id) {
                 let body: SigintBodyNoHeader =
-                    serde_json::from_value(body).context(h!())?;
+                    serde_json::from_value(body.clone()).context(h!())?;
                 new_bodies.insert(message_id, body.body);
             } else {
                 warn!("no inbox item for message {message_id}");

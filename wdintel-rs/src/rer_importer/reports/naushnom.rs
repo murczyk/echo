@@ -297,8 +297,8 @@ async fn get_inbox_messages_report_network_chunk(
         .column_as(sigint_unit::Column::Name, "unit_name")
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .column_as(sigint_network_freq::Column::Freq, "freq")
-        .column_as(sigint_comment::Column::Comment, "comment")
         .column_as(sigint_network::Column::Id, "network_id")
+        .column_as(signal_message::Column::Id, "message_id")
         .column(sigint_network_freq::Column::Modulation)
         .column(sigint_network::Column::Location)
         .join(
@@ -308,10 +308,6 @@ async fn get_inbox_messages_report_network_chunk(
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::DatasourceGroup.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintComment.def(),
         )
         .join(
             JoinType::InnerJoin,
@@ -360,8 +356,7 @@ async fn get_inbox_messages_report_network_chunk(
         .filter(
             datasource_group::Column::GroupMasterKey
                 .eq_any(sigint_groups.clone()),
-        )
-        .filter(sigint_comment::Column::Comment.eq("").not());
+        );
 
     if req.only_show_unprocessed == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
@@ -438,7 +433,7 @@ async fn get_inbox_messages_report_network_chunk(
 
     #[derive(FromQueryResult)]
     struct Row {
-        comment: String,
+        message_id: i64,
         body: Option<String>,
         datetime: Option<NaiveDateTime>,
         freq: String,
@@ -448,20 +443,35 @@ async fn get_inbox_messages_report_network_chunk(
         location: Option<String>,
     }
     let rows = q.into_model::<Row>().all(&read_db).await.context(h!())?;
+    let comments = crate::sigint::comments::find_report_comments(
+        &read_db,
+        &rows.iter().map(|row| row.message_id).collect::<Vec<_>>(),
+        None,
+    )
+    .await
+    .context(h!())?;
+    let mut comments_by_message = HashMap::<i64, Vec<String>>::new();
+    for comment in comments {
+        if !comment.comment.trim().is_empty() {
+            comments_by_message
+                .entry(comment.parent_signal_message_id)
+                .or_default()
+                .push(comment.comment);
+        }
+    }
 
     let mut res_map = HashMap::new();
     for row in rows {
+        let Some(comments_for_message) =
+            comments_by_message.get(&row.message_id)
+        else {
+            continue;
+        };
         let network_id = row.network_id;
         let unit_name = row.unit_name;
         let kind =
             display_network_type(row.modulation.as_deref()).unwrap_or_default();
         let location = row.location;
-        let message_report = NetworkMessagesReport {
-            comment: row.comment.clone(),
-            body: row.body.clone(),
-            datetime: row.datetime,
-            freq: row.freq.clone(),
-        };
         let network_map = res_map.entry(network_id).or_insert((
             location,
             kind,
@@ -469,7 +479,14 @@ async fn get_inbox_messages_report_network_chunk(
         ));
         let message_reports =
             network_map.2.entry(unit_name).or_insert(Vec::new());
-        message_reports.push(message_report);
+        message_reports.extend(comments_for_message.iter().map(|comment| {
+            NetworkMessagesReport {
+                comment: comment.clone(),
+                body: row.body.clone(),
+                datetime: row.datetime,
+                freq: row.freq.clone(),
+            }
+        }));
     }
 
     Ok(res_map)
