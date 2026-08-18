@@ -14,7 +14,7 @@ use crate::messenger::id::update_message_with_uid;
 use crate::system_settings::get_active_system_settings;
 use crate::system_settings::types::RerDutyTestReplayStatusRsp;
 use crate::types::{error, info};
-use crate::types::{Mode, ShortContext};
+use crate::types::{Env, ShortContext};
 use crate::utils::worker_watch;
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use lazy_static::lazy_static;
@@ -23,6 +23,7 @@ use regex::Regex;
 use sea_orm::*;
 use sea_query::{Expr, Query};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 struct ReplayIteration {
     sleep_sec: u64,
@@ -44,9 +45,12 @@ struct ReplaySource {
     point_tokens: Vec<sigint_inbox_item_point_token::Model>,
 }
 
-pub async fn run_rer_duty_historical_interceptions_worker_nofail(mode: Mode) {
-    let (config, _settlements, _rq, mut redis, dbx) =
-        crate::utils::setup_worker(mode).await.unwrap();
+pub async fn run_rer_duty_historical_interceptions_worker_nofail(
+    env: Arc<Env>,
+) {
+    let config = env.config.clone();
+    let mut redis = env.redis.clone();
+    let dbx = env.dbx.clone();
     loop {
         let _loop_guard = worker_watch::loop_guard(
             "rer_duty_historical_interceptions_worker",

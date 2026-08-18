@@ -62,6 +62,13 @@ struct SelectedMessageCandidate {
 }
 
 #[derive(Debug)]
+struct OriginalMessageSource {
+    id: i64,
+    timestamp: NaiveDateTime,
+    body: String,
+}
+
+#[derive(Debug)]
 struct AssociationMessageWorkItem {
     association: goi_association::Model,
     association_message: String,
@@ -73,6 +80,75 @@ struct AssociationMessageWorkItem {
 }
 
 type OrganismGroupCache = HashMap<i64, Arc<Vec<String>>>;
+
+pub(crate) async fn load_association_original_messages(
+    db: &DatabaseConnection,
+    associations: &[goi_association::Model],
+) -> Result<HashMap<String, String>, AppError> {
+    let mut message_uids = associations
+        .iter()
+        .filter_map(|association| association.message_uid.as_deref())
+        .map(str::trim)
+        .filter(|message_uid| !message_uid.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    message_uids.sort();
+    message_uids.dedup();
+
+    let mut sources = HashMap::<String, OriginalMessageSource>::new();
+    for chunk in message_uids
+        .chunks(ORGANISM_GOI_MESSAGE_UID_CANDIDATE_BATCH_SIZE as usize)
+    {
+        let rows = signal_message::Entity::find()
+            .filter(signal_message::Column::MessageUid.is_in(chunk.to_vec()))
+            .filter(signal_message::Column::MessageUid.is_not_null())
+            .filter(signal_message::Column::MessageUid.ne(""))
+            .filter(sigint_inbox_item::Column::Id.is_not_null())
+            .find_also_related(sigint_inbox_item::Entity)
+            .all(db)
+            .await
+            .c(h!())?;
+        for (message, inbox_item) in rows {
+            let Some(message_uid) = message
+                .message_uid
+                .as_deref()
+                .map(str::trim)
+                .filter(|message_uid| !message_uid.is_empty())
+            else {
+                continue;
+            };
+            let Some(body) = message
+                .body
+                .as_deref()
+                .map(str::trim)
+                .filter(|body| !body.is_empty())
+            else {
+                continue;
+            };
+            let source = OriginalMessageSource {
+                id: message.id,
+                timestamp: inbox_item
+                    .and_then(|inbox_item| inbox_item.datetime)
+                    .or(message.timestamp)
+                    .unwrap_or(message.created_at),
+                body: body.to_string(),
+            };
+            let should_replace =
+                sources.get(message_uid).is_none_or(|current| {
+                    (source.timestamp, source.id)
+                        > (current.timestamp, current.id)
+                });
+            if should_replace {
+                sources.insert(message_uid.to_string(), source);
+            }
+        }
+    }
+
+    Ok(sources
+        .into_iter()
+        .map(|(message_uid, source)| (message_uid, source.body))
+        .collect())
+}
 
 pub async fn oneoff_backfill_goi_association_message_uids(
     mode: Mode,
@@ -718,6 +794,20 @@ pub(crate) fn association_original_message(
         .as_str()
         .map(str::trim)
         .filter(|message| !message.is_empty())
+}
+
+pub(crate) fn association_original_message_unescaped(
+    row: &serde_json::Value,
+) -> Option<String> {
+    let message = association_original_message(row)?;
+    let message =
+        if goi_echo_worker::row::association_excel_text_is_unescaped(row) {
+            message.to_string()
+        } else {
+            goi_echo_worker::row::unescape_excel_text(message)
+        };
+    let message = message.trim();
+    (!message.is_empty()).then(|| message.to_string())
 }
 
 fn normalize_message_body(message: &str) -> String {

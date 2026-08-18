@@ -565,6 +565,13 @@ flowchart LR
     class socket,nlp,iggy,promin,signal,whatsapp,vector,signoz,greptime,s3,wal_timer,wal_check,table_timer,table_reconcile,analytics optional
 ```
 
+Application-triggered Signal restarts are serialized per client by Redis. Echo
+owns a 90-second maintenance lease and a five-minute successful-restart
+cooldown; `echo-im` owns the systemd restart and waits for both `/v1/health`
+and every linked account in `/v1/accounts` before completing the lease. Signal
+workers defer API traffic and datasource sync timestamps while maintenance is
+active. Direct operator `systemctl` commands remain outside this coordination.
+
 Iggy inbox-topic events retain the JSON `[inbox_item_id, message]` shape used
 by the inbox API. The message object is enriched with
 `sigint_callsign_ids`, `sigint_unit_ids`, `sigint_signal_ids`, and
@@ -579,6 +586,10 @@ workers belong to the bgworker process; report-history workers run in the
 separately memory-capped report-worker process. Solid arrows show tasks that
 are always spawned; dotted arrows show tasks gated by configuration or used
 only during startup. Each process also starts its own `worker_metrics_logger`.
+The API source-PostgreSQL pool is capped at 50 connections. All long-running
+bgworkers, including per-datasource messenger workers, share one 20-connection
+source pool; report workers use a separate 20-connection pool, while one-off
+commands retain the 30-connection default.
 
 ```mermaid
 flowchart TB

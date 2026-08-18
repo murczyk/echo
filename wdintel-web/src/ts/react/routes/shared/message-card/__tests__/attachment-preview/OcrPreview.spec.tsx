@@ -70,6 +70,7 @@ import {
   OcrSplitPreview,
 } from '../../attachment-preview/OcrPreview';
 import {
+  MediaSummaryOverlay,
   MessageCardMediaSummary,
   MessageCardMediaSummaryCarousel,
 } from '../../attachment-preview/MediaSummaryPreview';
@@ -579,6 +580,71 @@ describe('OcrPreview', () => {
     expect(container.textContent).toContain('Новий опис');
     expect(container.textContent).not.toContain('Старий опис');
     expect(container.querySelector('[data-media-summary-inline="true"]')).not.toBeNull();
+    root.unmount();
+  });
+
+  it('hides technical summary errors from messenger users', async () => {
+    const internalError = 'at wdintel-rs/src/media_summary/worker.rs line 166 column 55';
+    getMediaSummary.mockRejectedValueOnce(new Error(internalError));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardMediaSummary
+          mediaId="media-id"
+          status={{
+            state: 'failed',
+            lastError: internalError,
+            hasCoordinates: false,
+          }}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Не вдалося завантажити стислий опис');
+    expect(container.textContent).not.toContain(internalError);
+    root.unmount();
+  });
+
+  it('keeps technical summary errors available in the OCR admin overlay', async () => {
+    const internalError = 'media summary response is not valid JSON';
+    getMediaSummary.mockResolvedValueOnce({
+      state: 'failed',
+      summary: null,
+      coordinates: [],
+      lastError: internalError,
+      sourceKind: 'ocr_text',
+      sourceCharCount: 10,
+      aiEngineName: 'Gemma',
+      modelName: 'gemma',
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MediaSummaryOverlay
+          source={<div />}
+          mediaId="media-id"
+          status={{
+            state: 'failed',
+            lastError: internalError,
+            hasCoordinates: false,
+          }}
+          visible
+          onStatusChange={vi.fn()}
+          onClose={vi.fn()}
+          summaryAccess="admin-ocr"
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain(internalError);
     root.unmount();
   });
 

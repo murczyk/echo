@@ -231,6 +231,9 @@
         { "table": "public.ocr_settings_ai_engine", "strategy": "excluded" },
         { "table": "public.ocr_job", "strategy": "excluded" }
       ]
+    },
+    "echo:m20260818_081034_inbox_unit_backfill_lookup_indexes": {
+      "changes": []
     }
   },
   "dependencies": {

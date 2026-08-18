@@ -21,9 +21,9 @@ import type { MediaSummaryStatus, OcrMediaSummary } from '../../../../../../Bind
 import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
 import { isAbortError } from '../../../../services/api/client';
 import { getMediaOcrStatus } from '../../../../services/api/ocr';
-import type { AttachmentPreviewDownloadItem } from './MessageCardAttachmentPreviewHeader';
 import type { AttachmentPreviewInfoSection } from './MessageCardAttachmentPreviewInfoPopover';
-import { MediaSummaryOverlay } from './MediaSummaryPreview';
+import { MediaSummaryAction, MediaSummaryOverlay } from './MediaSummaryPreview';
+import type { AttachmentPreviewDownloadItem } from './message-card-preview.types';
 
 const OCR_STATE_LABELS: Record<string, string> = {
   pending: 'У черзі',
@@ -102,8 +102,6 @@ export function getOcrInfoSections(
       : []),
     ...(ocr.queueSize == null ? [] : [{ label: 'Попереду в черзі', value: `${ocr.queueSize}` }]),
     ...(ocr.attempts > 0 ? [{ label: 'Повторні спроби', value: `${ocr.attempts}` }] : []),
-    ...(ocr.aiEngineName == null ? [] : [{ label: 'OCR-движок', value: ocr.aiEngineName }]),
-    ...(ocr.modelName == null ? [] : [{ label: 'Модель', value: ocr.modelName }]),
     ...(ocr.lastError == null ? [] : [{ label: 'Деталі', value: ocr.lastError }]),
   ];
   const status =
@@ -410,7 +408,23 @@ export function OcrSplitPreview({
   );
 
   if (!visible || mediaId == null) {
-    return sourceWithSummary;
+    if (summary == null || mediaId == null) return source;
+    return (
+      <Box sx={{ flex: '1 1 auto', minHeight: 0, display: 'flex', position: 'relative' }}>
+        {sourceWithSummary}
+        <Stack
+          direction="row"
+          spacing={0.5}
+          sx={{ position: 'absolute', top: 8, right: 8, zIndex: 4 }}
+        >
+          <MediaSummaryAction
+            status={summary}
+            active={summaryVisible}
+            onClick={() => onSummaryVisibleChange(!summaryVisible)}
+          />
+        </Stack>
+      </Box>
+    );
   }
   const showSource = mobile ? mobilePane === 'source' : !fullPane;
   const showOcr = mobile ? mobilePane === 'ocr' : true;
@@ -462,6 +476,11 @@ export function OcrSplitPreview({
         spacing={0.5}
         sx={{ position: 'absolute', top: 8, right: 8, zIndex: 2 }}
       >
+        <MediaSummaryAction
+          status={summary}
+          active={summaryVisible}
+          onClick={() => onSummaryVisibleChange(!summaryVisible)}
+        />
         {mobile ? (
           <>
             <Button

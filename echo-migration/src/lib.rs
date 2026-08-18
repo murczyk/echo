@@ -374,6 +374,7 @@ mod m20260816_102640_ocr;
 mod m20260816_173322_media_summary;
 mod m20260817_124312_sigint_unit_inconsistent;
 mod m20260818_052317_shared_ai_engine_capabilities;
+mod m20260818_081034_inbox_unit_backfill_lookup_indexes;
 
 pub struct Migrator;
 
@@ -858,6 +859,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260817_124312_sigint_unit_inconsistent::Migration),
             Box::new(
                 m20260818_052317_shared_ai_engine_capabilities::Migration,
+            ),
+            Box::new(
+                m20260818_081034_inbox_unit_backfill_lookup_indexes::Migration,
             ),
         ]
     }

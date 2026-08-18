@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import dayjs from 'dayjs';
 import {
   GoiAssociation,
   ListGoiAssociationsReq,
@@ -6,8 +7,13 @@ import {
 } from '../../../../Bindings';
 
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
+import type { DateTimeRangeValue } from '../../components/DateTimeRangeControl';
 import { HttpRequestError } from '../../services/api/client';
-import { listCurrentUserGoiAssociations } from '../../services/api/goi-associations';
+import {
+  launchGoiAssociationsReport,
+  listCurrentUserGoiAssociations,
+} from '../../services/api/goi-associations';
+import { APP_TIME_ZONE, combineDateTimeInputToMs } from '../../utils/misc';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -93,6 +99,14 @@ function toRowView(association: GoiAssociation): GoiAssociationRowView {
   };
 }
 
+function defaultDateRange(): DateTimeRangeValue {
+  const to = dayjs().tz(APP_TIME_ZONE);
+  return {
+    fromDateTimeStr: to.subtract(7, 'day').format('YYYY-MM-DDTHH:mm'),
+    toDateTimeStr: to.format('YYYY-MM-DDTHH:mm'),
+  };
+}
+
 export function useGoiAssociationsPage() {
   const tableStateContext = useTableStateContext();
   const [rows, setRows] = useState<GoiAssociationRowView[]>([]);
@@ -102,14 +116,22 @@ export function useGoiAssociationsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [dateRange, setDateRange] = useState<DateTimeRangeValue>(defaultDateRange);
+  const [reporting, setReporting] = useState(false);
   const queryKey = useMemo(
     () =>
       JSON.stringify({
         globalFilter: tableStateContext.globalFilter,
         columnFilters: tableStateContext.columnFilters,
         sorting: tableStateContext.sorting,
+        dateRange,
       }),
-    [tableStateContext.globalFilter, tableStateContext.columnFilters, tableStateContext.sorting],
+    [
+      tableStateContext.globalFilter,
+      tableStateContext.columnFilters,
+      tableStateContext.sorting,
+      dateRange,
+    ],
   );
   const latestQueryKeyRef = useRef(queryKey);
   const loadMoreAbortControllerRef = useRef<AbortController | null>(null);
@@ -119,6 +141,8 @@ export function useGoiAssociationsPage() {
   const buildReq = (offset: number): ListGoiAssociationsReq => ({
     limit: 50,
     offset,
+    sinceDateInclusiveMs: combineDateTimeInputToMs(dateRange.fromDateTimeStr, APP_TIME_ZONE),
+    tillDateInclusiveMs: combineDateTimeInputToMs(dateRange.toDateTimeStr, APP_TIME_ZONE),
     sortBy: goiAssociationsSortBy(tableStateContext.sorting),
     filterText: tableStateContext.globalFilter.trim() || null,
     filterServer: getStringColumnFilterValue(tableStateContext.columnFilters, 'server') || null,
@@ -220,6 +244,22 @@ export function useGoiAssociationsPage() {
     tableStateContext.onColumnFiltersChange([]);
   }
 
+  async function onLaunchReport() {
+    if (reporting) return;
+    setReporting(true);
+    try {
+      await launchGoiAssociationsReport(buildReq(0));
+      setNotice({
+        kind: 'success',
+        text: 'Звіт поставлено в чергу. Стежити за прогресом і завантажити файл можна в «Мої звіти».',
+      });
+    } catch (error) {
+      setNotice({ kind: 'error', text: formatErrorMessage(error) });
+    } finally {
+      setReporting(false);
+    }
+  }
+
   const hasActiveFilters =
     tableStateContext.globalFilter.trim() !== '' || tableStateContext.columnFilters.length > 0;
 
@@ -231,7 +271,11 @@ export function useGoiAssociationsPage() {
     refreshing,
     loadingMore,
     hasMore,
+    dateRange,
+    reporting,
     hasActiveFilters,
+    onDateRangeChange: setDateRange,
+    onLaunchReport,
     onLoadMore,
     onClearFilters,
   };

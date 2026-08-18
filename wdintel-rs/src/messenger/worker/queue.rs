@@ -8,9 +8,12 @@ use tokio_util::sync::CancellationToken;
 ///
 /// - TODO: document producers, consumers etc.
 /// - at the end main processing business logic is done by [process_signal_message_queue_item](crate::message_queue::process_signal_message_queue_item)
-pub async fn process_queue_nofail(mode: Mode, cancel_token: CancellationToken) {
+pub async fn process_queue_nofail(
+    env: Arc<Env>,
+    cancel_token: CancellationToken,
+) {
     loop {
-        if let Err(e) = process_queue_inner(mode, &cancel_token).await {
+        if let Err(e) = process_queue_inner(env.clone(), &cancel_token).await {
             error!("process_queue_inner encountered an error: {:?}", e);
             sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS)).await;
         }
@@ -19,16 +22,15 @@ pub async fn process_queue_nofail(mode: Mode, cancel_token: CancellationToken) {
 }
 
 pub async fn process_queue_inner(
-    mode: Mode,
+    env: Arc<Env>,
     cancel_token: &CancellationToken,
 ) -> Result<(), AppError> {
-    let config = read_config(mode).c(h!())?;
-    let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
+    let dbx = env.dbx.clone();
 
     info!("started process_queue_inner");
 
     let mut worker_pool =
-        crate::messenger::worker::pool::mk_message_processor_pool(mode)
+        crate::messenger::worker::pool::mk_message_processor_pool(env)
             .await
             .c(h!())?;
 

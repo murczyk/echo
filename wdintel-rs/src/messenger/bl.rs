@@ -16,7 +16,6 @@ use crate::types::*;
 use echo_im::entities::sea_orm_active_enums::*;
 use echo_im::os_specific;
 use echo_im::types::MessageSource;
-use echo_im::worker::signal_worker_tick_once;
 use sea_orm::prelude::DateTime;
 use sea_orm::prelude::*;
 use sea_orm::*;
@@ -1098,10 +1097,35 @@ pub async fn sync_signal_once(client_name: String, config: Config) {
             return;
         }
     };
-    if let Err(e) = signal_worker_tick_once(&client_name, &db).await {
+    let coordinator = match crate::new_redis(&config).await {
+        Ok(redis) => {
+            crate::messenger::signal_restart::RedisSignalRestartCoordinator::new(
+                redis,
+            )
+        }
+        Err(failure) => {
+            warn!(
+                "Signal restart coordination unavailable for initial sync of '{client_name}': {failure}"
+            );
+            crate::messenger::signal_restart::RedisSignalRestartCoordinator::unavailable(
+                failure.to_string(),
+            )
+        }
+    };
+    let options = crate::messenger::signal_restart::signal_worker_options(
+        coordinator,
+        None,
+    );
+    if let Err(e) = echo_im::worker::signal_worker_tick_once_with_options(
+        &client_name,
+        &db,
+        options,
+    )
+    .await
+    {
         error!(
-            "failed to perform initial signal sync, client '{client_name}': {:#?}",
-            e
+            "failed to perform initial signal sync, client '{client_name}': {}",
+            crate::messenger::signal_restart::normalized_failure(&e)
         );
     }
 }
