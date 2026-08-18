@@ -843,7 +843,19 @@ async fn persist_direct_submit_item(
             .await
             .c(h!())?;
     }
-    Ok(match signal_message_id {
+    let linked_comment = if signal_message_id.is_none()
+        && parent_signal_message_ids.is_empty()
+    {
+        submit_item
+            .comment
+            .as_deref()
+            .map(str::trim)
+            .filter(|comment| !comment.is_empty())
+            .map(str::to_string)
+    } else {
+        None
+    };
+    let submitted = match signal_message_id {
         Some(signal_message_id) => {
             crate::rer_importer::inbox::submit_bl::edit_inbox_item_with_groups_location_mode(
                 env,
@@ -877,7 +889,44 @@ async fn persist_direct_submit_item(
             .await
             .c(h!())?
         }
-    })
+    };
+    let legacy_comment_id = if linked_comment.is_some() {
+        query::find_unmigrated_legacy_comment_id(
+            txn,
+            submitted.signal_message_id,
+            login,
+            linked_comment.as_deref().unwrap_or_default(),
+        )
+        .await
+        .c(h!())?
+    } else {
+        None
+    };
+    if let Some(comment) = linked_comment {
+        let linked_message_id =
+            crate::sigint::comments::create_linked_message_comment(
+                env,
+                txn,
+                submitted.signal_message_id,
+                login,
+                logins,
+                &comment,
+                None,
+                None,
+            )
+            .await
+            .c(h!())?;
+        if let Some(legacy_comment_id) = legacy_comment_id {
+            crate::sigint::comments::mark_legacy_comment_as_migrated(
+                txn,
+                legacy_comment_id,
+                linked_message_id,
+            )
+            .await
+            .c(h!())?;
+        }
+    }
+    Ok(submitted)
 }
 
 async fn finish_direct_submit(
@@ -1301,6 +1350,23 @@ mod tests {
                 .and_then(|message| message.device_name.as_deref()),
             Some("edit-test-device")
         );
+        let linked_comments =
+            crate::sigint::comments::find_linked_message_comments(
+                &env.dbx,
+                &[created.signal_message_id],
+            )
+            .await
+            .unwrap();
+        assert_eq!(linked_comments.len(), 1);
+        assert_eq!(linked_comments[0].comment, "old comment");
+        let linked_message = signal_message::Entity::find_by_id(
+            linked_comments[0].signal_message_id,
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(linked_message.timestamp, Some(linked_message.created_at));
 
         let inbox_item =
             sigint_inbox_item::Entity::find_by_id(created.signal_message_id)

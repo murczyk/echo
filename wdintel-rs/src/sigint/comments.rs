@@ -165,7 +165,35 @@ pub async fn create_linked_message_comment(
     created_at: Option<DateTime<Utc>>,
     post_id: Option<i64>,
 ) -> Result<i64, AppError> {
-    let source_created_at = created_at.map(|created_at| created_at.naive_utc());
+    create_linked_message_comment_with_context(
+        &env.config,
+        env.settlements.clone(),
+        txn,
+        parent_signal_message_id,
+        login,
+        logins,
+        comment,
+        created_at,
+        post_id,
+    )
+    .await
+}
+
+pub async fn create_linked_message_comment_with_context(
+    config: &crate::config::Config,
+    settlements: std::sync::Arc<
+        std::sync::RwLock<crate::location::SettlementsDataConfig>,
+    >,
+    txn: &DatabaseTransaction,
+    parent_signal_message_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+    comment: &str,
+    created_at: Option<DateTime<Utc>>,
+    post_id: Option<i64>,
+) -> Result<i64, AppError> {
+    let comment_created_at = created_at.unwrap_or_else(Utc::now);
+    let comment_created_at = comment_created_at.naive_utc();
     let sender =
         crate::sigint::direct_submit::query::ensure_current_user_sender(
             txn, login,
@@ -175,13 +203,14 @@ pub async fn create_linked_message_comment(
     let item = InboxSubmitItem {
         text: Some(comment.to_string()),
         full_body: None,
-        timestamp: created_at.unwrap_or_else(Utc::now).to_rfc3339(),
+        timestamp: comment_created_at.and_utc().to_rfc3339(),
         sender: Some(sender),
         parse_body_coordinates: false,
         ..Default::default()
     };
-    let submitted = submit_bl::submit_inbox_item_with_groups_location_mode(
-        env,
+    let submitted = submit_bl::submit_inbox_item_with_groups_location_mode_context(
+        config,
+        settlements,
         txn,
         None,
         &[],
@@ -195,18 +224,17 @@ pub async fn create_linked_message_comment(
     .await
     .c(h!())?;
 
-    if let Some(source_created_at) = source_created_at {
-        let mut signal_message =
-            signal_message::Entity::find_by_id(submitted.signal_message_id)
-                .one(txn)
-                .await
-                .c(h!())?
-                .ok_or(AppError::NotFound)
-                .c(h!())?
-                .into_active_model();
-        signal_message.created_at = Set(source_created_at);
-        signal_message.update(txn).await.c(h!())?;
-    }
+    let mut signal_message =
+        signal_message::Entity::find_by_id(submitted.signal_message_id)
+            .one(txn)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .c(h!())?
+            .into_active_model();
+    signal_message.created_at = Set(comment_created_at);
+    signal_message.timestamp = Set(Some(comment_created_at));
+    signal_message.update(txn).await.c(h!())?;
 
     intel_prod::ActiveModel {
         signal_message_id: Set(submitted.signal_message_id),
@@ -232,6 +260,116 @@ pub async fn create_linked_message_comment(
     }
 
     Ok(submitted.signal_message_id)
+}
+
+pub async fn mark_legacy_comment_as_migrated<C>(
+    dbx: &C,
+    legacy_comment_id: i64,
+    signal_message_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut comment = sigint_comment::Entity::find_by_id(legacy_comment_id)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+        .c(h!())?
+        .into_active_model();
+    comment.migrated_signal_message_id = Set(Some(signal_message_id));
+    comment.update(dbx).await.c(h!())?;
+    Ok(())
+}
+
+pub async fn create_linked_message_comment_from_ingestion<C>(
+    dbx: &C,
+    config: &crate::config::Config,
+    parent_signal_message_id: i64,
+    login: &uuid::Uuid,
+    comment: &str,
+    created_at: NaiveDateTime,
+    post_id: Option<i64>,
+) -> Result<i64, AppError>
+where
+    C: ConnectionTrait,
+{
+    let signal_message = signal_message::ActiveModel {
+        id: NotSet,
+        body: Set(Some(comment.to_string())),
+        created_at: Set(created_at),
+        timestamp: Set(Some(created_at)),
+        sender: Set(Some(login.to_string())),
+        format: Set(None),
+        deleted: Set(false),
+        external_id: Set(None),
+        message_uid: Set(None),
+        datasource_group_id: Set(None),
+        operator_tags: Set(None),
+        echo_inbox_message_id: Set(None),
+        attachments_hash: Set(None),
+    }
+    .insert(dbx)
+    .await
+    .c(h!())?;
+    let signal_message_id = signal_message.id;
+    let message_uid = crate::messenger::id::generate_message_id(
+        crate::messenger::id::MessageMeta {
+            id: signal_message_id,
+            datetime: created_at,
+        },
+        config,
+    )
+    .c(h!())?;
+    let mut signal_message = signal_message.into_active_model();
+    signal_message.message_uid = Set(Some(message_uid));
+    signal_message.update(dbx).await.c(h!())?;
+
+    let body_noheader = crate::rer_importer::body_noheader::NoHeadersBody {
+        body: comment.to_string(),
+        start: 0,
+        end: comment.len(),
+    };
+    sigint_inbox_item::ActiveModel {
+        id: Set(signal_message_id),
+        date: Set(None),
+        time: Set(None),
+        freq: Set(None),
+        coords: Set(None),
+        checked: Set(Some(true)),
+        reviewed: Set(Some(true)),
+        unit: Set(None),
+        callsign_tokens: Set(None),
+        keyword_tokens: Set(None),
+        lat: Set(None),
+        lng: Set(None),
+        nominatimres_id: Set(None),
+        location: Set(None),
+        tags: Set(None),
+        datetime: NotSet,
+        signal_tokens: Set(None),
+        body_noheader: Set(Some(serde_json::to_value(body_noheader).c(h!())?)),
+        location_v2: Set(None),
+        unit_v2: Set(None),
+        parsed_unit_v2: Set(true),
+        post_id: Set(post_id),
+        device_name_id: Set(None),
+        network: Set(None),
+        datetime_neo: Set(None),
+    }
+    .insert(dbx)
+    .await
+    .c(h!())?;
+    intel_prod::ActiveModel {
+        signal_message_id: Set(signal_message_id),
+        parent_signal_message_id: Set(parent_signal_message_id),
+        relation_kind: Set(intel_prod::RELATION_KIND_COMMENT),
+        created_at: NotSet,
+    }
+    .insert(dbx)
+    .await
+    .c(h!())?;
+    Ok(signal_message_id)
 }
 
 pub async fn oneoff_migrate_sigint_comments(
