@@ -579,6 +579,10 @@ workers belong to the bgworker process; report-history workers run in the
 separately memory-capped report-worker process. Solid arrows show tasks that
 are always spawned; dotted arrows show tasks gated by configuration or used
 only during startup. Each process also starts its own `worker_metrics_logger`.
+The API source-PostgreSQL pool is capped at 50 connections. All long-running
+bgworkers, including per-datasource messenger workers, share one 20-connection
+source pool; report workers use a separate 20-connection pool, while one-off
+commands retain the 30-connection default.
 
 ```mermaid
 flowchart TB

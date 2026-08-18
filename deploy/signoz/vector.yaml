@@ -11,6 +11,7 @@ sources:
     type: file
     include:
       - /var/lib/postgresql/18/main/log/postgresql-*.log
+    max_line_bytes: 204800
     read_from: end
     ignore_older_secs: 3600
     glob_minimum_cooldown_ms: 10000

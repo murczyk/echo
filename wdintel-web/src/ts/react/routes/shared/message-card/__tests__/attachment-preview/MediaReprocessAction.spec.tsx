@@ -18,9 +18,17 @@ vi.mock('@mui/material', () => ({
   ),
   Menu: ({ children, open }: { children?: ReactNode; open: boolean }) =>
     open ? <div role="menu">{children}</div> : null,
-  MenuItem: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
-    <button {...props}>{children}</button>
-  ),
+  MenuItem: ({
+    children,
+    component,
+    ...props
+  }: {
+    children?: ReactNode;
+    component?: string;
+  } & Record<string, unknown>) => {
+    const Component = component ?? 'button';
+    return <Component {...props}>{children}</Component>;
+  },
   Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
 }));
 
@@ -53,6 +61,53 @@ describe('MediaReprocessAction', () => {
 
   afterEach(() => {
     document.body.innerHTML = '';
+  });
+
+  it('shows OCR downloads in the overflow menu for non-admin users', async () => {
+    const shell = document.createElement('div');
+    shell.className = 'app-shell';
+    shell.setAttribute('data-auth-user-roles', 'Rer');
+    const container = document.createElement('div');
+    shell.appendChild(container);
+    document.body.appendChild(shell);
+    const root = createRoot(container);
+    const onDownloadStart = vi.fn(() => true);
+
+    await act(async () => {
+      root.render(
+        <MediaReprocessAction
+          mediaId="media-id"
+          supported
+          ocr={completedOcr}
+          onQueued={vi.fn()}
+          downloadItems={[
+            {
+              label: 'Скачати DOCX',
+              download: { href: '/ocr/docx', fileName: 'scan-ocr.docx' },
+              downloadKey: 'media:media-id:ocr:docx',
+            },
+          ]}
+          isDownloadStarting={() => false}
+          onDownloadStart={onDownloadStart}
+        />,
+      );
+    });
+    await act(async () => {
+      container
+        .querySelector('[aria-label="Більше дій"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const download = container.querySelector('a[download="scan-ocr.docx"]');
+    expect(download?.textContent).toBe('Скачати DOCX');
+    expect(download?.getAttribute('href')).toBe('/ocr/docx');
+    expect(container.textContent).not.toContain('Обробити повторно');
+
+    await act(async () => {
+      download?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    });
+    expect(onDownloadStart).toHaveBeenCalledWith('media:media-id:ocr:docx');
+    root.unmount();
   });
 
   it('is visible only to admins and queues a fresh media run', async () => {

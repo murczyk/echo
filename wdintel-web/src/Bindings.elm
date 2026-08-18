@@ -5652,6 +5652,8 @@ listGoiAssociationsSortByEncoder enum =
 type alias ListGoiAssociationsReq =
     { limit : Maybe (Int)
     , offset : Maybe (Int)
+    , sinceDateInclusiveMs : Maybe (Int)
+    , tillDateInclusiveMs : Maybe (Int)
     , sortBy : Maybe (ListGoiAssociationsSortBy)
     , filterText : Maybe (String)
     , filterServer : Maybe (String)
@@ -5669,6 +5671,8 @@ listGoiAssociationsReqEncoder struct =
     Json.Encode.object
         [ ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
         , ( "offset", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.offset )
+        , ( "since_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sinceDateInclusiveMs )
+        , ( "till_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillDateInclusiveMs )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (listGoiAssociationsSortByEncoder)) struct.sortBy )
         , ( "filter_text", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterText )
         , ( "filter_server", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterServer )
@@ -5702,6 +5706,7 @@ type alias GoiAssociation =
     , author : Maybe (String)
     , sourceDateRaw : Maybe (String)
     , sourceDateMs : Maybe (Int)
+    , originalMessage : Maybe (String)
     }
 
 
@@ -5728,6 +5733,7 @@ goiAssociationEncoder struct =
         , ( "author", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.author )
         , ( "source_date_raw", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sourceDateRaw )
         , ( "source_date_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sourceDateMs )
+        , ( "original_message", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.originalMessage )
         ]
 
 
@@ -16280,6 +16286,8 @@ listGoiAssociationsReqDecoder =
     Json.Decode.succeed ListGoiAssociationsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "offset" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_inclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (listGoiAssociationsSortByDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_text" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_server" (Json.Decode.nullable (Json.Decode.string))))
@@ -16314,6 +16322,7 @@ goiAssociationDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_date_raw" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_date_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "original_message" (Json.Decode.nullable (Json.Decode.string))))
 
 
 listGoiAssociationsRspDecoder : Json.Decode.Decoder ListGoiAssociationsRsp

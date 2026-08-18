@@ -498,15 +498,6 @@ rer_analysis_latest_senders toMsg =
         }
 
 
-logout : (Result ApiError () -> msg) -> Cmd msg
-logout toMsg =
-    Http.get
-        { url =
-            "/api/user/logout"
-        , expect = leExpectJson toMsg (Decode.succeed ())
-        }
-
-
 users_login :
     (Result ApiError () -> msg)
     -> LoginReq

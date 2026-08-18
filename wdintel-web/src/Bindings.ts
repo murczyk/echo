@@ -2165,6 +2165,8 @@ export type ListGoiAssociationsSortBy =
 export type ListGoiAssociationsReq = {
   limit: number | null;
   offset: number | null;
+  sinceDateInclusiveMs: number | null;
+  tillDateInclusiveMs: number | null;
   sortBy: ListGoiAssociationsSortBy | null;
   filterText: string | null;
   filterServer: string | null;
@@ -2197,6 +2199,7 @@ export type GoiAssociation = {
   author: string | null;
   sourceDateRaw: string | null;
   sourceDateMs: number | null;
+  originalMessage: string | null;
 };
 
 export type ListGoiAssociationsRsp = {

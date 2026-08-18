@@ -4,7 +4,6 @@ use crate::entities::*;
 use crate::error::*;
 use crate::messenger::bl::list_echo_accounts;
 use crate::messenger::types::*;
-use crate::new_pg_pool_from_mode;
 use crate::types::info;
 use crate::types::*;
 use ::serde::{Deserialize, Serialize};
@@ -39,13 +38,14 @@ struct UnlinkedDatasourceNotificationState {
 /// - puts them into the signal_message_queue table for further processing
 /// - messages are further processed by process_signal_message_queue_item function
 pub async fn receive_thread_nofail(
-    mode: Mode,
+    env: Arc<Env>,
     cancel_token: CancellationToken,
     shutdown_handle: Handle,
 ) {
     loop {
         if let Err(e) =
-            receive_thread_inner(mode, &cancel_token, &shutdown_handle).await
+            receive_thread_inner(env.clone(), &cancel_token, &shutdown_handle)
+                .await
         {
             error!("receive_thread_nofail encountered an error: {:?}", e);
             sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS)).await;
@@ -55,17 +55,20 @@ pub async fn receive_thread_nofail(
 }
 
 pub async fn receive_thread_inner(
-    mode: Mode,
+    env: Arc<Env>,
     cancel_token: &CancellationToken,
     shutdown_handle: &Handle,
 ) -> Result<(), AppError> {
-    let (config, settlements, rq, mut redis, dbx) =
-        crate::utils::setup_worker(mode).await.c(h!())?;
-    let s3 = mk_s3(&config).c(h!())?;
+    let config = &env.config;
+    let settlements = env.settlements.clone();
+    let rq = &env.rq;
+    let mut redis = env.redis.clone();
+    let dbx = &env.dbx;
+    let s3 = &env.s3;
 
     info!("started receive_thread_inner");
     if let Err(e) =
-        echo_im::enable_verbose_logging_for_all_signal_clients(&dbx).await
+        echo_im::enable_verbose_logging_for_all_signal_clients(dbx).await
     {
         error!("failed to enable verbose logging: {:?}", e);
     };
@@ -76,11 +79,10 @@ pub async fn receive_thread_inner(
 
     loop {
         receive_thread_inner_2(
-            mode,
             cancel_token,
             shutdown_handle,
-            &config,
-            &dbx,
+            config,
+            dbx,
             &mut redis,
             &mut workers,
             &mut running_ids,
@@ -88,11 +90,11 @@ pub async fn receive_thread_inner(
         .await
         .c(h!())?;
         let recovered_missing_count = maybe_run_echo_im_sync_recovery(
-            &config,
+            config,
             settlements.clone(),
-            &rq,
-            &s3,
-            &dbx,
+            rq,
+            s3,
+            dbx,
             &mut redis,
             &mut echo_im_sync_recovery_next_at,
         )
@@ -149,7 +151,6 @@ async fn maybe_run_echo_im_sync_recovery(
 }
 
 pub async fn receive_thread_inner_2(
-    mode: Mode,
     cancel_token: &CancellationToken,
     shutdown_handle: &Handle,
     config: &Config,
@@ -177,7 +178,6 @@ pub async fn receive_thread_inner_2(
     let clients = list_clients(dbx).await.c(h!())?;
     for datasource in clients {
         bl_spawn_worker_if_not_running(
-            mode,
             cancel_token,
             shutdown_handle,
             config,
@@ -195,7 +195,6 @@ pub async fn receive_thread_inner_2(
 }
 
 pub async fn bl_spawn_worker_if_not_running(
-    mode: Mode,
     cancel_token: &CancellationToken,
     shutdown_handle: &Handle,
     config: &Config,
@@ -248,7 +247,7 @@ pub async fn bl_spawn_worker_if_not_running(
             {
                 spawn_new_worker(
                     datasource_id,
-                    mode,
+                    dbx.clone(),
                     config.clone(),
                     redis,
                     worker_name,
@@ -263,7 +262,7 @@ pub async fn bl_spawn_worker_if_not_running(
 
 async fn spawn_new_worker(
     datasource_id: i64,
-    mode: Mode,
+    dbx: DatabaseConnection,
     config: Config,
     redis: redis::aio::ConnectionManager,
     worker_name: String,
@@ -273,7 +272,7 @@ async fn spawn_new_worker(
 
     let failed = match run_new_worker(
         datasource_id,
-        mode,
+        dbx,
         config,
         redis,
         worker_name_val.clone(),
@@ -300,14 +299,13 @@ async fn spawn_new_worker(
 
 async fn run_new_worker(
     datasource_id: i64,
-    mode: Mode,
+    dbx: DatabaseConnection,
     config: Config,
     mut redis: redis::aio::ConnectionManager,
     worker_name: String,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
     info!("spawning new worker: {worker_name}");
-    let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
     info!("{worker_name}: started processing");
     let result = async {
         loop {
