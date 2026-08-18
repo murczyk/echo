@@ -79,8 +79,6 @@ operations continue in `wd_files`;
   revision, retry, and analysis-handoff behavior.
 - [File analysis](ANALYSIS.md) describes rule snapshots, bounded runs, workers,
   publication, and concurrent-run behavior.
-- [HTTP API](API.md) lists all request and response contracts, examples, and
-  errors.
 
 ## Access and visibility
 
