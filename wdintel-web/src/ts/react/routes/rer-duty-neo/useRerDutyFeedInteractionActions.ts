@@ -7,7 +7,12 @@ type Params = {
   messageFeeds: MessageFeedState[];
   showArrowResult: (feedId: string, message: string) => void;
   columnRefsRef: MutableRefObject<
-    Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+    Record<
+      string,
+      {
+        scrollToEnd: (behavior?: ScrollBehavior, options?: { wakeIdleOffload?: boolean }) => void;
+      } | null
+    >
   >;
   setWatchModeByFeedId: Dispatch<SetStateAction<Record<string, boolean>>>;
   setLoadingNewerFeedIds: Dispatch<SetStateAction<Set<string>>>;
@@ -66,7 +71,9 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       flushPendingNewerMessages(feedId, { urgent: true });
       if (feed.items.length > 0) {
         const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-        columnRefsRef.current[feedId]?.scrollToEnd(reducedMotion ? 'auto' : 'smooth');
+        columnRefsRef.current[feedId]?.scrollToEnd(reducedMotion ? 'auto' : 'smooth', {
+          wakeIdleOffload: true,
+        });
       }
       if (!dutyDisableAutoScroll) {
         setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: true }));

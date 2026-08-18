@@ -420,6 +420,43 @@ describe('useWindowedFeedScroll', () => {
     expect(onPhysicalBottomChange).toHaveBeenLastCalledWith(true);
   });
 
+  it('resets bottom state on unmount without cancelling follow', async () => {
+    const onPhysicalBottomChange = vi.fn();
+    const onNearBottomChange = vi.fn();
+    const onAtBottomChange = vi.fn();
+    const onLeftBottom = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          onPhysicalBottomChange={onPhysicalBottomChange}
+          onNearBottomChange={onNearBottomChange}
+          onAtBottomChange={onAtBottomChange}
+          onLeftBottom={onLeftBottom}
+        />,
+      );
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    onPhysicalBottomChange.mockClear();
+    onNearBottomChange.mockClear();
+    onAtBottomChange.mockClear();
+    onLeftBottom.mockClear();
+
+    await act(async () => {
+      root.unmount();
+    });
+
+    expect(onPhysicalBottomChange).toHaveBeenCalledWith(false);
+    expect(onNearBottomChange).toHaveBeenCalledWith(false);
+    expect(onAtBottomChange).toHaveBeenCalledWith(false);
+    expect(onLeftBottom).not.toHaveBeenCalled();
+  });
+
   it('does not cancel follow across disable and re-enable until an upward scroll', async () => {
     const onLeftBottom = vi.fn();
     await act(async () => {

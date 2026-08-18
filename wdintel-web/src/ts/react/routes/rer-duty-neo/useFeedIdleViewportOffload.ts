@@ -12,6 +12,11 @@ export type FeedIdleViewportOffload = {
   /** When offload is active, only these ids keep a live MessageCard; others use placeholders. */
   mountedItemIds: Set<number> | null;
   placeholderHeightPx: (id: number) => number;
+  /**
+   * Remount the full window and re-arm idle. For user gestures outside the scroller
+   * (e.g. scroll FAB). Programmatic follow/settle must not call this.
+   */
+  wakeFromOffload: () => void;
 };
 
 function measureViewportOffload(
@@ -160,5 +165,6 @@ export function useFeedIdleViewportOffload(options: {
     offloadActive,
     mountedItemIds: offloadActive ? mountedItemIds : null,
     placeholderHeightPx,
+    wakeFromOffload,
   };
 }

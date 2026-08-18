@@ -197,6 +197,88 @@ describe('useFeedIdleViewportOffload', () => {
     expect(latest.mountedCount).toBeNull();
   });
 
+  it('exposes imperative wakeFromOffload for scroll FAB / arrow', async () => {
+    let wakeFromOffload: (() => void) | null = null;
+    function ImperativeHarness() {
+      const scrollerRef = useRef<HTMLDivElement | null>(null);
+      const offload = useFeedIdleViewportOffload({
+        enabled: true,
+        scrollerRef,
+        itemIds: [1, 2, 3, 4],
+        idleMs: 5_000,
+        overscanPx: 0,
+      });
+      wakeFromOffload = offload.wakeFromOffload;
+      latest = {
+        offloadActive: offload.offloadActive,
+        mountedCount: offload.mountedItemIds?.size ?? null,
+        hasPlaceholderHeight: offload.placeholderHeightPx(1) > 0,
+      };
+      return (
+        <div
+          ref={scrollerRef}
+          data-testid="scroller"
+          style={{ height: 100, overflow: 'auto', position: 'relative' }}
+        >
+          {[1, 2, 3, 4].map((id) => (
+            <div key={id} data-duty-message-id={String(id)} style={{ height: 50 }}>
+              card-{id}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    await act(async () => {
+      root.render(<ImperativeHarness />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    Object.defineProperty(scroller, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        top: 0,
+        bottom: 100,
+        left: 0,
+        right: 100,
+        width: 100,
+        height: 100,
+        x: 0,
+        y: 0,
+        toJSON() {},
+      }),
+    });
+    scroller.querySelectorAll<HTMLElement>('[data-duty-message-id]').forEach((node, index) => {
+      Object.defineProperty(node, 'offsetHeight', { configurable: true, value: 50 });
+      Object.defineProperty(node, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({
+          top: index * 50,
+          bottom: index * 50 + 50,
+          left: 0,
+          right: 100,
+          width: 100,
+          height: 50,
+          x: 0,
+          y: index * 50,
+          toJSON() {},
+        }),
+      });
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(latest.offloadActive).toBe(true);
+    expect(latest.mountedCount).toBe(2);
+
+    await act(async () => {
+      wakeFromOffload?.();
+    });
+    expect(latest.offloadActive).toBe(false);
+    expect(latest.mountedCount).toBeNull();
+  });
+
   it('does not arm when disabled', async () => {
     await act(async () => {
       root.render(

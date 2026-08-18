@@ -575,11 +575,14 @@ export function useWindowedFeedScroll({
     }, FLUSH_PENDING_SCROLL_IDLE_MS);
   }, [cancelFlushPendingIdle, captureAnchorSnapshot, debugFeedId]);
 
-  useLayoutEffect(() => {
-    enabledRef.current = enabled;
-
-    if (enabledBeforeRender && !enabled) {
-      recordDutyScrollDebugEvent(debugFeedId, 'tracking:disable');
+  // Clear route-level near/at/physical flags without onLeftBottom — same as disable.
+  // Narrow tab switches unmount the column, so disable never runs; poll still reads these refs.
+  const clearReportedScrollTrackingState = useCallback(
+    (reason: 'disable' | 'unmount') => {
+      recordDutyScrollDebugEvent(
+        debugFeedId,
+        reason === 'disable' ? 'tracking:disable' : 'tracking:unmount',
+      );
       cancelPendingScrollProcessing();
       stopBottomSettle();
       const { onAtBottomChange, onNearBottomChange, onPhysicalBottomChange } = callbacksRef.current;
@@ -592,8 +595,19 @@ export function useWindowedFeedScroll({
       liveBottomFollowRef.current = false;
       loadOlderTriggeredRef.current = false;
       loadNewerTriggeredRef.current = false;
+    },
+    [cancelPendingScrollProcessing, debugFeedId, stopBottomSettle],
+  );
+  const clearReportedScrollTrackingStateRef = useRef(clearReportedScrollTrackingState);
+  clearReportedScrollTrackingStateRef.current = clearReportedScrollTrackingState;
+
+  useLayoutEffect(() => {
+    enabledRef.current = enabled;
+
+    if (enabledBeforeRender && !enabled) {
+      clearReportedScrollTrackingState('disable');
     }
-  }, [cancelPendingScrollProcessing, debugFeedId, enabled, stopBottomSettle]);
+  }, [clearReportedScrollTrackingState, enabled]);
 
   const updateScrollState = useCallback(
     (
@@ -1107,9 +1121,10 @@ export function useWindowedFeedScroll({
 
   useEffect(() => {
     return () => {
-      cancelPendingScrollProcessing();
+      // Ref-stable: must not re-bind on helper identity changes or mid-life clears fire while mounted.
+      clearReportedScrollTrackingStateRef.current('unmount');
     };
-  }, [cancelPendingScrollProcessing]);
+  }, []);
 
   const handleScroll = useCallback<UIEventHandler<HTMLDivElement>>(() => {
     if (!enabledRef.current) return;

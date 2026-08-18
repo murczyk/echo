@@ -13,6 +13,7 @@ import {
   type RefObject,
 } from 'react';
 import type { ProfilerOnRenderCallback } from 'react';
+import { flushSync } from 'react-dom';
 import type {
   CallsignInfoRes,
   InboxMessage,
@@ -66,8 +67,13 @@ function filterOwnMessageComments(
   return filtered.length === 0 ? EMPTY_MESSAGE_COMMENTS : filtered;
 }
 
+export type FeedColumnContentScrollOptions = {
+  /** Wake idle offload before scrolling (scroll FAB / arrow). Follow/settle omit this. */
+  wakeIdleOffload?: boolean;
+};
+
 export type FeedColumnContentHandle = {
-  scrollToBottom: (behavior?: ScrollBehavior) => void;
+  scrollToBottom: (behavior?: ScrollBehavior, options?: FeedColumnContentScrollOptions) => void;
 };
 
 function useStableCallback<T extends (...args: any[]) => any>(callback: T | undefined): T {
@@ -688,9 +694,21 @@ export const FeedColumnContent = memo(
       workspaceFabAvoidance,
     });
 
-    useImperativeHandle(ref, () => ({ scrollToBottom: scroll.scrollToBottom }), [
-      scroll.scrollToBottom,
-    ]);
+    useImperativeHandle(
+      ref,
+      () => ({
+        scrollToBottom: (behavior?: ScrollBehavior, options?: FeedColumnContentScrollOptions) => {
+          if (options?.wakeIdleOffload === true) {
+            // Remount cards before moving the viewport or the FAB lands on placeholders.
+            flushSync(() => {
+              idleOffload.wakeFromOffload();
+            });
+          }
+          scroll.scrollToBottom(behavior);
+        },
+      }),
+      [idleOffload.wakeFromOffload, scroll.scrollToBottom],
+    );
 
     if (feed.loading && feed.items.length === 0) {
       return (
