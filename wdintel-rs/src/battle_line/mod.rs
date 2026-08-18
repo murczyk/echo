@@ -889,6 +889,7 @@ pub async fn resolve_location_to_settlement(
         None,
     )
     .c(h!())?;
+    let settlements = prefer_exact_settlement_names(&location, settlements);
     let mut seen = BTreeSet::new();
     let candidates = settlements
         .into_iter()
@@ -933,6 +934,20 @@ pub async fn resolve_location_to_settlement(
         distance_m,
         invalid_aor_ids: matched.invalid_aor_ids,
     })
+}
+
+fn prefer_exact_settlement_names(
+    location: &str,
+    mut settlements: Vec<crate::location::types::SettlementDetails>,
+) -> Vec<crate::location::types::SettlementDetails> {
+    let location = location.to_uppercase();
+    if settlements
+        .iter()
+        .any(|settlement| settlement.name == location)
+    {
+        settlements.retain(|settlement| settlement.name == location);
+    }
+    settlements
 }
 
 async fn read_battle_line_state<C>(dbx: &C) -> anyhow::Result<BattleLineState>
@@ -1248,6 +1263,28 @@ mod tests {
             },
         ])])
         .is_err());
+    }
+
+    #[test]
+    fn prefers_exact_settlement_names_over_containing_names() {
+        let settlements = vec![
+            crate::location::types::SettlementDetails {
+                id: Some(1),
+                name: "НОВОІВАНІВКА".to_string(),
+                ..Default::default()
+            },
+            crate::location::types::SettlementDetails {
+                id: Some(2),
+                name: "ІВАНІВКА".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        let settlements =
+            prefer_exact_settlement_names("Іванівка", settlements);
+
+        assert_eq!(settlements.len(), 1);
+        assert_eq!(settlements[0].id, Some(2));
     }
 
     #[tokio::test]
