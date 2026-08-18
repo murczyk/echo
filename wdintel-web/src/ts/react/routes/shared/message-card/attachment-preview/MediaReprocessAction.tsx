@@ -2,9 +2,9 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { CircularProgress, IconButton, Menu, MenuItem, Tooltip } from '@mui/material';
 import { useState, type MouseEvent } from 'react';
 
-import type { OcrMediaSummary } from '../../../../../../Bindings';
+import type { OcrEngineItem, OcrMediaSummary } from '../../../../../../Bindings';
 import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
-import { reprocessMediaOcr } from '../../../../services/api/ocr';
+import { getOcrPage, reprocessMediaOcr } from '../../../../services/api/ocr';
 import { hasRole } from '../../../../utils/roles';
 
 function currentUserIsAdmin(): boolean {
@@ -44,20 +44,38 @@ export function MediaReprocessAction({
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [reprocessing, setReprocessing] = useState(false);
+  const [engines, setEngines] = useState<OcrEngineItem[] | null>(null);
   const { notify } = useOptionalPowerSnackbar();
   const id = mediaId?.trim() ?? '';
 
   if (!supported || id === '' || !currentUserIsAdmin()) return null;
 
-  const reprocess = async () => {
+  const loadEngines = async () => {
+    try {
+      const page = await getOcrPage(1);
+      setEngines(page.settings.engines);
+    } catch (error) {
+      setEngines([]);
+      notify({
+        severity: 'error',
+        message: `Не вдалося завантажити OCR-движки: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      });
+    }
+  };
+
+  const reprocess = async (aiEngineId?: string) => {
     setAnchorEl(null);
     setReprocessing(true);
     try {
-      const nextOcr = await reprocessMediaOcr(id);
+      const nextOcr = aiEngineId
+        ? await reprocessMediaOcr(id, aiEngineId)
+        : await reprocessMediaOcr(id);
       onQueued(nextOcr);
       notify({
         severity: 'success',
-        message: 'Медіа додано до черги повторної обробки.',
+        message: `${aiEngineId ? 'Медіа додано до черги через вибраний OCR-движок.' : 'Медіа додано до черги повторної обробки.'}`,
       });
     } catch (error) {
       notify({
@@ -80,7 +98,10 @@ export function MediaReprocessAction({
           aria-label="Більше дій"
           aria-busy={reprocessing}
           size="small"
-          onClick={(event: MouseEvent<HTMLButtonElement>) => setAnchorEl(event.currentTarget)}
+          onClick={(event: MouseEvent<HTMLButtonElement>) => {
+            setAnchorEl(event.currentTarget);
+            void loadEngines();
+          }}
           sx={{
             color: 'text.secondary',
             '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
@@ -90,9 +111,17 @@ export function MediaReprocessAction({
         </IconButton>
       </Tooltip>
       <Menu anchorEl={anchorEl} open={anchorEl !== null} onClose={() => setAnchorEl(null)}>
-        <MenuItem disabled={disabled} onClick={reprocess}>
-          Обробити повторно
-        </MenuItem>
+        {engines == null && <MenuItem disabled>Завантаження OCR-движків…</MenuItem>}
+        {engines != null && engines.length === 0 && (
+          <MenuItem disabled={disabled} onClick={() => void reprocess()}>
+            Обробити повторно
+          </MenuItem>
+        )}
+        {engines?.map((engine) => (
+          <MenuItem key={engine.id} disabled={disabled} onClick={() => void reprocess(engine.id)}>
+            Обробити повторно через {engine.name}
+          </MenuItem>
+        ))}
       </Menu>
     </>
   );

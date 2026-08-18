@@ -5,6 +5,7 @@ import {
   Box,
   Card,
   CardContent,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogContent,
@@ -59,6 +60,7 @@ const DEFAULT_COLUMN_ORDER = [
   'mrt-row-numbers',
   'mrt-row-actions',
   'document',
+  'engine',
   'sourceCreatedAt',
   'state',
   'qualityStatus',
@@ -70,6 +72,7 @@ const DEFAULT_COLUMN_ORDER = [
 
 const DEFAULT_COLUMN_VISIBILITY = {
   document: true,
+  engine: true,
   sourceCreatedAt: true,
   state: true,
   qualityStatus: true,
@@ -186,6 +189,13 @@ function OcrJobsTable({
             </Box>
           </Tooltip>
         ),
+      },
+      {
+        id: 'engine',
+        accessorFn: (job) => job.aiEngineName ?? job.modelName ?? '',
+        header: 'OCR-движок',
+        size: 180,
+        Cell: ({ row }) => row.original.aiEngineName ?? row.original.modelName ?? '—',
       },
       {
         id: 'sourceCreatedAt',
@@ -374,6 +384,9 @@ function OcrEvaluationDialog({ job, onClose }: { job: OcrJobItem | null; onClose
         </Typography>
         {job ? <StatusPill state={job.state} /> : null}
         {job ? <QualityPill qualityStatus={job.qualityStatus} /> : null}
+        {job?.aiEngineName || job?.modelName ? (
+          <PowerChip selected color="default" label={`OCR: ${job.aiEngineName ?? job.modelName}`} />
+        ) : null}
         {job?.durationMs != null ? (
           <PowerChip
             selected
@@ -431,6 +444,8 @@ function AdminOcrPageBody() {
   const [summaryEnabled, setSummaryEnabled] = useState(false);
   const [summaryEngineId, setSummaryEngineId] = useState('');
   const [summaryDirty, setSummaryDirty] = useState(false);
+  const [ocrEngineIds, setOcrEngineIds] = useState<string[]>([]);
+  const [mainOcrEngineId, setMainOcrEngineId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<OcrJobItem | null>(null);
   const { notify } = usePowerSnackbar();
@@ -461,6 +476,8 @@ function AdminOcrPageBody() {
     if (page == null || summaryDirty) return;
     setSummaryEnabled(page.mediaSummarySettings.enabled);
     setSummaryEngineId(page.mediaSummarySettings.aiEngineId ?? '');
+    setOcrEngineIds(page.settings.selectedAiEngineIds);
+    setMainOcrEngineId(page.settings.mainAiEngineId ?? '');
   }, [page, summaryDirty]);
 
   useEffect(() => {
@@ -472,7 +489,11 @@ function AdminOcrPageBody() {
   async function changeWorkerEnabled(workerEnabled: boolean) {
     setSaving(true);
     try {
-      const settings = await saveOcrSettings({ workerEnabled });
+      const settings = await saveOcrSettings({
+        workerEnabled,
+        aiEngineIds: ocrEngineIds,
+        mainAiEngineId: mainOcrEngineId || null,
+      });
       setPage((current) => (current ? { ...current, settings } : current));
       notify({
         severity: 'success',
@@ -483,6 +504,26 @@ function AdminOcrPageBody() {
       notify({
         severity: 'error',
         message: `Не вдалося зберегти OCR: ${errorMessage(saveError)}`,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveEngineSettings() {
+    setSaving(true);
+    try {
+      const settings = await saveOcrSettings({
+        workerEnabled: page?.settings.workerEnabled ?? false,
+        aiEngineIds: ocrEngineIds,
+        mainAiEngineId: mainOcrEngineId || null,
+      });
+      setPage((current) => (current ? { ...current, settings } : current));
+      notify({ severity: 'success', message: 'OCR-движки збережено.' });
+    } catch (saveError) {
+      notify({
+        severity: 'error',
+        message: `Не вдалося зберегти OCR-движки: ${errorMessage(saveError)}`,
       });
     } finally {
       setSaving(false);
@@ -577,6 +618,75 @@ function AdminOcrPageBody() {
             {page?.settings.readinessError ? (
               <PowerAlert severity="warning">{page.settings.readinessError}</PowerAlert>
             ) : null}
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <Card variant="outlined">
+        <CardContent>
+          <Stack spacing={2}>
+            <Typography variant="h6">OCR-движки</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Вибрані движки доступні для повторної обробки. Автоматична черга використовує лише
+              головний движок.
+            </Typography>
+            <FormControl fullWidth disabled={saving || page == null}>
+              <InputLabel id="ocr-engines-label">Доступні OCR-движки</InputLabel>
+              <Select
+                multiple
+                labelId="ocr-engines-label"
+                label="Доступні OCR-движки"
+                value={ocrEngineIds}
+                renderValue={(selected) =>
+                  selected
+                    .map(
+                      (id) => page?.settings.engines.find((engine) => engine.id === id)?.name ?? id,
+                    )
+                    .join(', ')
+                }
+                onChange={(event) => {
+                  const next = event.target.value as string[];
+                  setOcrEngineIds(next);
+                  if (!next.includes(mainOcrEngineId)) setMainOcrEngineId(next[0] ?? '');
+                }}
+              >
+                {(page?.settings.engines ?? []).map((engine) => (
+                  <MenuItem key={engine.id} value={engine.id}>
+                    <Checkbox checked={ocrEngineIds.includes(engine.id)} />
+                    {engine.name} · {engine.modelName}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl fullWidth disabled={saving || page == null || ocrEngineIds.length === 0}>
+              <InputLabel id="ocr-main-engine-label">Головний OCR-движок</InputLabel>
+              <Select
+                labelId="ocr-main-engine-label"
+                label="Головний OCR-движок"
+                value={mainOcrEngineId}
+                onChange={(event) => setMainOcrEngineId(event.target.value)}
+              >
+                {ocrEngineIds.map((id) => {
+                  const engine = page?.settings.engines.find((item) => item.id === id);
+                  return (
+                    <MenuItem key={id} value={id}>
+                      {engine?.name ?? id} · {engine?.modelName ?? ''}
+                    </MenuItem>
+                  );
+                })}
+              </Select>
+            </FormControl>
+            <Box>
+              <PowerButton
+                variant="contained"
+                disabled={
+                  saving || page == null || (ocrEngineIds.length > 0 && mainOcrEngineId === '')
+                }
+                onClick={() => void saveEngineSettings()}
+              >
+                Зберегти OCR-движки
+              </PowerButton>
+            </Box>
           </Stack>
         </CardContent>
       </Card>

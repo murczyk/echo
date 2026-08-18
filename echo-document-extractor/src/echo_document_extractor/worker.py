@@ -10,14 +10,14 @@ import time
 import uuid
 from pathlib import Path
 
-from .adapters import GemmaAdapter, NuExtract3Adapter
+from .adapters import GatewayAdapter, GemmaAdapter, NuExtract3Adapter
 from .dependencies import DependencyChecker
 from .job_queue import Job, JobQueue
 from .metrics import ServiceMetrics
 from .models import Evidence
 from .ocr import PaddleEvidenceProvider
 from .package_archive import create_package_zip
-from .pipeline import ExtractionCancelled, Extractor
+from .pipeline import ExtractionCancelled, Extractor, InputManifest
 from .service_config import RuntimeConfig
 from .storage import StoragePressureError, directory_size, ensure_capacity, remove_job_directory
 
@@ -103,7 +103,7 @@ class Worker:
             if time.monotonic() - last_cleanup >= 60:
                 self.cleanup_expired()
                 last_cleanup = time.monotonic()
-            statuses = await self.dependencies.check_all()
+            statuses = await self.dependencies.check_all(include_gemma=False)
             self.dependencies_json = json.dumps(
                 [status.__dict__ for status in statuses], separators=(",", ":")
             )
@@ -221,13 +221,16 @@ class Worker:
             self.progress[job.id] = processed / job.total_pages
             if self.queue.update_progress(job.id, self.owner, processed):
                 raise ExtractionCancelled("job cancelled at page boundary")
-            statuses = await self.dependencies.check_all()
+            statuses = await self.dependencies.check_all(
+                include_gemma=manifest is None or manifest_uses_legacy_gemma(manifest)
+            )
             if not all(dependency.healthy for dependency in statuses):
                 raise InfrastructureFailure("required router became unavailable")
 
+        adapters = self._adapters_for_manifest(manifest)
         extractor = Extractor(
             self.config.extraction,
-            adapters=self.adapters,
+            adapters=adapters,
             artifact_dir=work,
             page_callback=page_boundary,
             metrics=self.metrics,
@@ -242,7 +245,8 @@ class Worker:
         if paddle_failure:
             reason = next(iter(paddle_failure.rejection_reasons), "Paddle inference failed")
             raise InfrastructureFailure(reason)
-        if _all_remote_model_families_failed(result.evidence) and (
+        remote_families = {"nuextract3", adapters[-1].name}
+        if _all_remote_model_families_failed(result.evidence, remote_families) and (
             job.attempts <= self.service.worker.infrastructure_retries
         ):
             raise InfrastructureFailure("all remote model families failed")
@@ -262,6 +266,26 @@ class Worker:
             result_path.stat().st_size,
         )
         return result.status.value
+
+    def _adapters_for_manifest(self, manifest: Path | None):
+        if manifest is None:
+            return self.adapters
+        parsed = InputManifest.model_validate(json.loads(manifest.read_text(encoding="utf-8")))
+        if parsed.ocr is None:
+            return self.adapters
+        ocr = parsed.ocr
+        return [
+            NuExtract3Adapter(self.config.extraction.nu_extract, self.config.extraction.endpoint_concurrency),
+            GatewayAdapter(
+                ocr.gateway_url,
+                ocr.grant,
+                ocr.engine_id,
+                ocr.engine_name,
+                ocr.model_name,
+                ocr.request_profile,
+                ocr.instance_id,
+            ),
+        ]
 
     def cleanup_expired(self) -> None:
         cutoff = time.time() - self.service.limits.retention_seconds
@@ -297,8 +321,10 @@ def _job_inputs(root: Path) -> tuple[list[Path], Path | None]:
     return [inputs_dir / name for name in names], runtime_manifest
 
 
-def _all_remote_model_families_failed(evidence: list[Evidence]) -> bool:
-    for source in ("nuextract3", "gemma"):
+def _all_remote_model_families_failed(
+    evidence: list[Evidence], sources: set[str] | None = None
+) -> bool:
+    for source in sources or {"nuextract3", "gemma"}:
         responses = [item for item in evidence if item.source == source]
         if not responses or any(
             not any(reason.startswith("request_error") for reason in item.rejection_reasons)
@@ -306,6 +332,11 @@ def _all_remote_model_families_failed(evidence: list[Evidence]) -> bool:
         ):
             return False
     return True
+
+
+def manifest_uses_legacy_gemma(manifest: Path) -> bool:
+    parsed = InputManifest.model_validate(json.loads(manifest.read_text(encoding="utf-8")))
+    return parsed.ocr is None
 
 
 def _is_infrastructure(error: Exception) -> bool:

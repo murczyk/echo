@@ -247,13 +247,28 @@ Each Echo instance can opt into the shared extractor with a unique identity:
 [ocr]
 base_url = "http://100.93.77.92:8000"
 instance_id = "echo-staging"
+gateway_url = "http://100.64.63.98:8081"
 max_in_flight_jobs = 2
 ```
 
 The bearer credential is read only from `ECHO_OCR_TOKEN` in the systemd
 environment. On deployed hosts it belongs in `/etc/echo/ocr.env`, owned by
 root with mode `0600`; it must not be stored in `config.toml` or Git. Both Echo
-systemd units load this optional environment file.
+systemd units load this optional environment file. Dynamic OCR requests are
+forwarded through the Echo gateway and require a separate staging-only
+`ECHO_OCR_GATEWAY_SIGNING_KEY` of at least 32 bytes in the same protected
+environment file. The gateway grant contains only the selected engine, media
+generation, instance identity, and expiry; engine tokens never enter the
+extractor manifest, logs, or result package.
+
+Admins mark AI engines independently as **Використовувати для обробки
+позивних** and **Використовувати для OCR**. The OCR page accepts several
+enabled OCR engines and one required main engine. Automatic jobs use only the
+main engine; the media **…** menu offers one **Обробити повторно через X** item
+for each selected engine. OCR jobs snapshot the engine name and model for
+status and provenance. OCR-Gemma uses its existing vLLM-specific vision
+parameters, while other selected engines use the portable OpenAI-compatible
+vision request.
 
 The `wdintel-rs-bgworker` OCR worker is disabled by default and controlled from
 the admin page at **ШІ → OCR**. When enabled, it discovers supported PDF, JPEG,
@@ -271,11 +286,10 @@ users can open the eye action beside media information for split-screen or
 full-pane preview; admins can review recent jobs and readiness under
 **ШІ → OCR**. In the full media preview, admins can use the **…** menu to
 restart terminal PDF, JPEG, or PNG jobs. This clears the previous summary and
-coordinates and submits a new OCR generation; a new summary and coordinate
-extraction are enqueued after accepted or degraded OCR completes. The action
-requires the document-summary setting and its AI engine to be enabled. Deleting
-source media also deletes the OCR object recorded with its completed job, even
-if OCR configuration changes later.
+coordinates and submits a new OCR generation through the chosen engine. A
+summary is an optional independent downstream worker and is not required for
+OCR reprocessing. Deleting source media also deletes the OCR object recorded
+with its completed job, even if OCR configuration changes later.
 
 The same admin page contains the default-off **Стислий опис документів**
 setting. It requires an enabled AI engine and affects only future media. For
@@ -315,12 +329,14 @@ OCR exports are generated on demand from the latest sanitized HTML stored for
 the completed job. DOCX table traversal stops at nested table boundaries so the
 same rendered content is not copied into the document more than once.
 
-Initial rollout is limited to `echo-staging` and `echo-cbr-staging`. OCR worker
-state and media-summary settings remain excluded from PeerDB/ClickHouse, while
-`media_summary`, including extracted coordinates, is replicated for analytical
-queries from its initial schema. Leave summaries off, select the Gemma router
-under **ШІ → OCR**, enable the setting, and submit a fresh PDF, JPEG, or PNG to
-verify both preview surfaces before wider rollout.
+The staged rollout uses OCR-Gemma (`http://100.105.172.96:8001/v1`,
+`echo/ocr-gemma-4-26B-A4B-it`) and the existing Luna engine
+(`https://api.openai.com/v1`, `gpt-5.6-luna`), with OCR-Gemma as main; do not
+add Sol. OCR worker state, engine capability catalog, and media-summary
+settings remain excluded from PeerDB/ClickHouse, while `media_summary`,
+including extracted coordinates, is replicated for analytical queries from its
+initial schema. Verify one fresh attachment through each selected engine and
+retain the existing `max_figures: 0` regression check before wider rollout.
 
 ### vLLM inference architecture
 

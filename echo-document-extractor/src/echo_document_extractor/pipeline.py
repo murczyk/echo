@@ -12,7 +12,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Protocol, TypeVar
+from typing import Any, Literal, Protocol, TypeVar
 
 import yaml
 from lxml import html
@@ -69,19 +69,30 @@ from .render import render_html, render_markdown
 from .sanitize import has_fatal_sanitization_reason, sanitize_candidate
 
 
+class OcrJobManifest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    gateway_url: str
+    grant: str = Field(min_length=32)
+    engine_id: str
+    engine_name: str
+    model_name: str
+    request_profile: Literal["openai_vision", "ocr_gemma"]
+    instance_id: str
+
+
 class InputManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: int = Field(default=1, ge=1, le=1)
+    schema_version: int = Field(default=1, ge=1, le=2)
     inputs: list[str] = Field(min_length=1)
     metadata: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+    ocr: OcrJobManifest | None = None
 
     @field_validator("inputs")
     @classmethod
     def safe_inputs(cls, values: list[str]) -> list[str]:
         return [safe_relative_path(value) for value in values]
-
-
 @dataclass
 class CandidateDocument:
     evidence: Evidence
@@ -250,14 +261,7 @@ class Extractor:
                 source_hashes=[_sha256_file(path) for path in ordered_inputs],
                 raster_hashes=[page.raster_sha256 for page in pages],
                 hardware_profile=self.config.hardware_profile,
-                models=[
-                    {
-                        "id": endpoint.model_id,
-                        "revision": endpoint.revision,
-                        "prompt_version": endpoint.prompt_version,
-                    }
-                    for endpoint in (self.config.nu_extract, self.config.gemma)
-                ],
+                models=self._package_models(metadata),
                 metadata=metadata,
             ),
             assets=assets,
@@ -268,6 +272,37 @@ class Extractor:
             raise RuntimeError("canonical HTML round-trip lost IR relationships")
         result.markdown = render_markdown(result)
         return result
+
+    def _package_models(
+        self, metadata: dict[str, str | int | float | bool | None]
+    ) -> list[dict[str, str | None]]:
+        models: list[dict[str, str | None]] = [
+            {
+                "id": self.config.nu_extract.model_id,
+                "revision": self.config.nu_extract.revision,
+                "prompt_version": self.config.nu_extract.prompt_version,
+            }
+        ]
+        engine_id = metadata.get("ocr_engine_id")
+        if engine_id:
+            models.append(
+                {
+                    "id": str(metadata.get("ocr_model_name", "semantic")),
+                    "revision": str(engine_id),
+                    "prompt_version": str(metadata.get("ocr_prompt_version", "semantic-html-v2")),
+                    "engine_id": str(engine_id),
+                    "engine_name": str(metadata.get("ocr_engine_name", "")),
+                }
+            )
+        else:
+            models.append(
+                {
+                    "id": self.config.gemma.model_id,
+                    "revision": self.config.gemma.revision,
+                    "prompt_version": self.config.gemma.prompt_version,
+                }
+            )
+        return models
 
     def _spill_artifacts(self, page: ProcessedPage) -> ProcessedPage:
         if self.artifact_dir is None:
@@ -1131,7 +1166,17 @@ def _resolve_inputs(
         if target != base and base not in target.parents:
             raise ValueError(f"manifest input escapes its directory: {relative}")
         paths.append(target)
-    return paths, parsed.inputs, parsed.metadata
+    metadata = dict(parsed.metadata)
+    if parsed.ocr is not None:
+        metadata.update(
+            {
+                "ocr_engine_id": parsed.ocr.engine_id,
+                "ocr_engine_name": parsed.ocr.engine_name,
+                "ocr_model_name": parsed.ocr.model_name,
+                "ocr_prompt_version": "semantic-html-v2",
+            }
+        )
+    return paths, parsed.inputs, metadata
 
 
 def _document_id(pages: list[Page]) -> str:

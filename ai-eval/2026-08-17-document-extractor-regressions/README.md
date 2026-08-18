@@ -17,3 +17,4 @@ Run the extractor live suite by setting `ECHO_DOC_LIVE_CONFIG`,
 The dense numeric report must never finish with failed quality, and the
 declared critical anchors must remain searchable. If every model candidate
 fails, degraded local OCR is allowed only when the original raster is retained.
+The canonical result must not add figure crops that duplicate recognized text.

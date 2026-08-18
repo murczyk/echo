@@ -179,6 +179,7 @@ pub const ECHO_AUDIO_TRANSCRIPTION_BGWORKER_SERVICE: &str =
     "wdintel-rs-bgworker.service";
 pub const OCR_SETTINGS_ID: i16 = 1;
 pub const OCR_TOKEN_ENV: &str = "ECHO_OCR_TOKEN";
+pub const OCR_GATEWAY_SIGNING_KEY_ENV: &str = "ECHO_OCR_GATEWAY_SIGNING_KEY";
 pub const OCR_DISCOVERY_DAYS: i64 = 7;
 pub const OCR_DISCOVERY_BATCH_SIZE: u64 = 100;
 pub const OCR_IDLE_SLEEP_MS: u64 = 30_000;
@@ -962,6 +963,8 @@ pub struct Config {
 pub struct OcrConfig {
     pub base_url: String,
     pub instance_id: String,
+    #[serde(default)]
+    pub gateway_url: Option<String>,
     #[serde(default = "ocr_default_max_in_flight_jobs")]
     pub max_in_flight_jobs: usize,
 }

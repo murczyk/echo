@@ -4224,6 +4224,8 @@ export type AiEngineItem = {
   url: string;
   modelName: string;
   enabled: boolean;
+  callsignEnabled: boolean;
+  ocrEnabled: boolean;
   hasToken: boolean;
   createdAt: number;
   updatedAt: number;
@@ -4243,6 +4245,8 @@ export type CreateAiEngineReq = {
   token: string | null;
   modelName: string;
   enabled: boolean;
+  callsignEnabled: boolean;
+  ocrEnabled: boolean;
 };
 
 export type UpdateAiEngineReq = {
@@ -4253,6 +4257,8 @@ export type UpdateAiEngineReq = {
   clearToken: boolean;
   modelName: string;
   enabled: boolean;
+  callsignEnabled: boolean;
+  ocrEnabled: boolean;
 };
 
 export type AiChatSummary = {
@@ -4630,6 +4636,15 @@ export type OcrMediaSummary = {
   queueSize: number | null;
   attempts: number;
   statusLog: Array<OcrStatusLogItem>;
+  aiEngineId: string | null;
+  aiEngineName: string | null;
+  modelName: string | null;
+};
+
+export type OcrEngineItem = {
+  id: string;
+  name: string;
+  modelName: string;
 };
 
 export type OcrSettingsItem = {
@@ -4637,6 +4652,9 @@ export type OcrSettingsItem = {
   configured: boolean;
   extractorReady: boolean;
   readinessError: string | null;
+  engines: Array<OcrEngineItem>;
+  selectedAiEngineIds: Array<string>;
+  mainAiEngineId: string | null;
 };
 
 export type OcrCounts = {
@@ -4665,6 +4683,9 @@ export type OcrJobItem = {
   completedAt: number | null;
   previewUrl: string | null;
   summary: MediaSummaryStatus | null;
+  aiEngineId: string | null;
+  aiEngineName: string | null;
+  modelName: string | null;
 };
 
 export type OcrPageRsp = {
@@ -4680,6 +4701,12 @@ export type OcrPageReq = {
 
 export type SaveOcrSettingsReq = {
   workerEnabled: boolean;
+  aiEngineIds: Array<string>;
+  mainAiEngineId: string | null;
+};
+
+export type ReprocessMediaOcrReq = {
+  aiEngineId: string | null;
 };
 
 export type MediaSummaryStatus = {

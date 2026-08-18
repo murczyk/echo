@@ -8,6 +8,7 @@
       "profile": "document",
       "expect": {
         "retain_original_raster_on_model_failure": true,
+        "max_figures": 0,
         "anchors": [
           "07.00",
           "10.08.2026",

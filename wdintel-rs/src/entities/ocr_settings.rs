@@ -12,9 +12,40 @@ pub struct Model {
     pub id: i16,
     pub worker_enabled: bool,
     pub updated_at: DateTime,
+    pub main_ai_engine_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::ai_engine::Entity",
+        from = "Column::MainAiEngineId",
+        to = "super::ai_engine::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Restrict"
+    )]
+    AiEngine,
+    #[sea_orm(has_many = "super::ocr_settings_ai_engine::Entity")]
+    OcrSettingsAiEngine,
+}
+
+impl Related<super::ocr_settings_ai_engine::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OcrSettingsAiEngine.def()
+    }
+}
+
+impl Related<super::ai_engine::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::ocr_settings_ai_engine::Relation::AiEngine.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::ocr_settings_ai_engine::Relation::OcrSettings
+                .def()
+                .rev(),
+        )
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}

@@ -9,7 +9,7 @@ import pytest
 
 from echo_document_extractor import ExtractionConfig, Extractor
 from echo_document_extractor.canonical import table_dimensions
-from echo_document_extractor.models import Status, Table
+from echo_document_extractor.models import Status, Table, TextBlock
 from echo_document_extractor.validation import evaluate
 
 LIVE_CONFIG = os.environ.get("ECHO_DOC_LIVE_CONFIG")
@@ -91,6 +91,15 @@ async def test_live_two_audited_legacy_pages(tmp_path: Path) -> None:
 def _assert_layout_expectations(result: object, expected: dict[str, object]) -> None:
     tables = [block for page in result.document.pages for block in page.blocks if isinstance(block, Table)]
     assert len(tables) >= expected.get("min_tables", 0)
+    figures = [
+        block
+        for page in result.document.pages
+        for block in page.blocks
+        if isinstance(block, TextBlock) and block.kind == "figure"
+    ]
+    max_figures = expected.get("max_figures")
+    if max_figures is not None:
+        assert len(figures) <= max_figures
     dimensions = [table_dimensions(table) for table in tables]
     if columns := expected.get("table_columns"):
         assert [value[1] for value in dimensions] == columns

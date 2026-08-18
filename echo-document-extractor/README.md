@@ -42,6 +42,13 @@ requires `Authorization: Bearer …`; submissions also require an
 - `GET /v1/status`: queue, worker, storage, Paddle, and exact router-model
   status.
 
+Manifest version one remains the compatibility path and uses the statically
+configured NuExtract3 plus OCR-Gemma adapters. Version two may carry an opaque
+Echo-issued OCR gateway grant and engine metadata; the extractor then uses
+NuExtract3 plus the gateway-selected semantic engine. It never receives or
+stores an engine credential. Paddle remains local supporting evidence in both
+paths.
+
 Queue states are `queued`, `running`, `retry_wait`, `completed`, `failed`, and
 `cancelled`; extraction quality remains independently `accepted`, `degraded`,
 or `failed`. SQLite uses WAL, one worker owns up to two leases with heartbeats,

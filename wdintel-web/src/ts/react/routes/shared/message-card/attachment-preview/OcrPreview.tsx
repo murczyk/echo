@@ -102,6 +102,8 @@ export function getOcrInfoSections(
       : []),
     ...(ocr.queueSize == null ? [] : [{ label: 'Попереду в черзі', value: `${ocr.queueSize}` }]),
     ...(ocr.attempts > 0 ? [{ label: 'Повторні спроби', value: `${ocr.attempts}` }] : []),
+    ...(ocr.aiEngineName == null ? [] : [{ label: 'OCR-движок', value: ocr.aiEngineName }]),
+    ...(ocr.modelName == null ? [] : [{ label: 'Модель', value: ocr.modelName }]),
     ...(ocr.lastError == null ? [] : [{ label: 'Деталі', value: ocr.lastError }]),
   ];
   const status =
