@@ -1886,8 +1886,18 @@ mod tests {
 
     #[actix_web::test]
     async fn logout_redirects_unauthenticated_user_to_login() {
-        let app =
-            actix_test::init_service(App::new().service(user_logout)).await;
+        let config = read_config(Mode::Test).unwrap();
+        let session_store =
+            RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
+                .await
+                .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(session_store, Key::generate()))
+                .service(user_logout),
+        )
+        .await;
         let request = actix_test::TestRequest::get()
             .uri("/api/user/logout")
             .to_request();
