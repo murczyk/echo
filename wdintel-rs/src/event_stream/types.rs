@@ -25,6 +25,14 @@ pub struct EventMsg {
     pub origin: Option<String>,
 }
 
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct DeploymentMaintenance {
+    pub id: String,
+    pub remaining_ms: i64,
+}
+
 impl EventMsg {
     pub fn new(event_type: EventType) -> Self {
         EventMsg {
@@ -47,6 +55,10 @@ impl EventMsg {
 pub struct LongPollReq {
     pub session_id: String,
     pub last_event_id: Option<String>,
+    #[serde(default)]
+    pub deployment_maintenance_protocol: Option<u8>,
+    #[serde(default)]
+    pub known_deployment_maintenance_id: Option<String>,
 }
 
 #[derive(
@@ -55,4 +67,6 @@ pub struct LongPollReq {
 pub struct LongPollRsp {
     pub events: Vec<EventMsg>,
     pub last_event_id: Option<String>,
+    #[serde(default)]
+    pub deployment_maintenance: Option<DeploymentMaintenance>,
 }

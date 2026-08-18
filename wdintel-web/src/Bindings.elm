@@ -12581,9 +12581,25 @@ eventMsgEncoder struct =
         ]
 
 
+type alias DeploymentMaintenance =
+    { id : String
+    , remainingMs : Int
+    }
+
+
+deploymentMaintenanceEncoder : DeploymentMaintenance -> Json.Encode.Value
+deploymentMaintenanceEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "remaining_ms", (Json.Encode.int) struct.remainingMs )
+        ]
+
+
 type alias LongPollReq =
     { sessionId : String
     , lastEventId : Maybe (String)
+    , deploymentMaintenanceProtocol : Maybe (Int)
+    , knownDeploymentMaintenanceId : Maybe (String)
     }
 
 
@@ -12592,12 +12608,15 @@ longPollReqEncoder struct =
     Json.Encode.object
         [ ( "session_id", (Json.Encode.string) struct.sessionId )
         , ( "last_event_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastEventId )
+        , ( "deployment_maintenance_protocol", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.deploymentMaintenanceProtocol )
+        , ( "known_deployment_maintenance_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.knownDeploymentMaintenanceId )
         ]
 
 
 type alias LongPollRsp =
     { events : List (EventMsg)
     , lastEventId : Maybe (String)
+    , deploymentMaintenance : Maybe (DeploymentMaintenance)
     }
 
 
@@ -12606,6 +12625,7 @@ longPollRspEncoder struct =
     Json.Encode.object
         [ ( "events", (Json.Encode.list (eventMsgEncoder)) struct.events )
         , ( "last_event_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastEventId )
+        , ( "deployment_maintenance", (Maybe.withDefault Json.Encode.null << Maybe.map (deploymentMaintenanceEncoder)) struct.deploymentMaintenance )
         ]
 
 
@@ -20828,11 +20848,20 @@ eventMsgDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "origin" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]))
 
 
+deploymentMaintenanceDecoder : Json.Decode.Decoder DeploymentMaintenance
+deploymentMaintenanceDecoder =
+    Json.Decode.succeed DeploymentMaintenance
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "remaining_ms" (Json.Decode.int)))
+
+
 longPollReqDecoder : Json.Decode.Decoder LongPollReq
 longPollReqDecoder =
     Json.Decode.succeed LongPollReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "session_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_event_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deployment_maintenance_protocol" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_deployment_maintenance_id" (Json.Decode.nullable (Json.Decode.string))))
 
 
 longPollRspDecoder : Json.Decode.Decoder LongPollRsp
@@ -20840,6 +20869,7 @@ longPollRspDecoder =
     Json.Decode.succeed LongPollRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "events" (Json.Decode.list (eventMsgDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_event_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "deployment_maintenance" (Json.Decode.nullable (deploymentMaintenanceDecoder)), Json.Decode.succeed Nothing ]))
 
 
 echoAccountF1Decoder : Json.Decode.Decoder EchoAccountF1

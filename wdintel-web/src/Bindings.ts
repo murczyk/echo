@@ -4865,14 +4865,22 @@ export type EventMsg = {
   origin: string | null;
 };
 
+export type DeploymentMaintenance = {
+  id: string;
+  remainingMs: number;
+};
+
 export type LongPollReq = {
   sessionId: string;
   lastEventId: string | null;
+  deploymentMaintenanceProtocol: number | null;
+  knownDeploymentMaintenanceId: string | null;
 };
 
 export type LongPollRsp = {
   events: Array<EventMsg>;
   lastEventId: string | null;
+  deploymentMaintenance: DeploymentMaintenance | null;
 };
 
 export type EchoAccountF1 = {

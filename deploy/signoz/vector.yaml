@@ -16,6 +16,25 @@ sources:
     ignore_older_secs: 3600
     glob_minimum_cooldown_ms: 10000
     rotate_wait_secs: 3600
+  deployment_maintenance:
+    type: exec
+    command:
+      - bash
+      - "-c"
+      - |
+        while true; do
+          if pttl_ms="$(redis-cli --raw PTTL echo:deployment:maintenance 2>/dev/null)" && [[ "$$pttl_ms" =~ ^-?[0-9]+$ ]]; then
+            :
+          else
+            pttl_ms=-3
+          fi
+          printf '{"_echo_deployment_maintenance_control":true,"pttl_ms":%s}\n' "$$pttl_ms"
+          sleep 1
+        done
+    mode: streaming
+    include_stderr: false
+    decoding:
+      codec: json
 
 transforms:
   parse_logs:
@@ -81,11 +100,44 @@ transforms:
       - parse_postgresql_logs
     condition: |
       .postgresql_log_kind != "temp_file" || (to_int(.postgresql_temp_file_size_bytes) ?? 0) >= 104857600
-  signoz_gate:
-    type: remap
+  deployment_maintenance_gate:
+    type: lua
     inputs:
       - parse_logs
       - postgresql_filter
+      - deployment_maintenance
+    version: "2"
+    hooks:
+      init: init
+      process: process
+    source: |
+      maintenance_until = 0
+
+      function init()
+        maintenance_until = 0
+      end
+
+      function process(event, emit)
+        local log = event.log
+        if log._echo_deployment_maintenance_control then
+          local pttl_ms = tonumber(log.pttl_ms)
+          if pttl_ms and pttl_ms > 0 then
+            local remaining_seconds = math.ceil(pttl_ms / 1000)
+            maintenance_until = os.time() + math.min(remaining_seconds, 120)
+          elseif pttl_ms == -2 or pttl_ms == -1 then
+            maintenance_until = 0
+          end
+          return
+        end
+
+        if os.time() >= maintenance_until then
+          emit(event)
+        end
+      end
+  signoz_gate:
+    type: remap
+    inputs:
+      - deployment_maintenance_gate
     source: |
       ._send_to_signoz = downcase(get_env_var("SIGNOZ_LOGS_ENABLED") ?? "false") == "true"
       ._signoz_logs_endpoint = strip_whitespace(get_env_var("SIGNOZ_LOGS_ENDPOINT") ?? "")

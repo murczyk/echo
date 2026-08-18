@@ -894,6 +894,7 @@ deploy _server_pos="" server silent="false":
       fi
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
+    bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" start "$SERVER"
     ssh "$SERVER" 'set -euo pipefail
       for service in wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
         if systemctl cat "$service" >/dev/null 2>&1; then
@@ -1014,6 +1015,9 @@ deploy _server_pos="" server silent="false":
       fi
     '
     ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
+    if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
+      echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
+    fi
     printf "\n⚠️⚠️⚠️ docs were not deployed. Run: just deploy-docs --server %s ⚠️⚠️⚠️\n" "$SERVER"
     echo "✅✅✅ deploy OK on $SERVER: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
 
@@ -1110,6 +1114,7 @@ deploy-from-local _server_pos="" server silent="false":
       fi
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
+    bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" start "$SERVER"
     ssh "$SERVER" 'set -euo pipefail
       for service in wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
         if systemctl cat "$service" >/dev/null 2>&1; then
@@ -1206,6 +1211,9 @@ deploy-from-local _server_pos="" server silent="false":
       echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, 8081 via systemd ✅✅✅"
     '
     ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
+    if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
+      echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
+    fi
     RESTART_WORKERS_ON_FAILURE=0
 
     if [[ "{{ silent }}" != "true" ]]; then

@@ -146,6 +146,12 @@ just config-deploy --server $SERVER
 just deploy --server $SERVER
 ```
 
+Both `just deploy` and `just deploy-from-local` automatically publish a
+two-minute Redis-backed maintenance state before stopping runtime services.
+The state wakes connected browsers to show the update notice and temporarily
+suppresses SigNoz log delivery; successful verification clears it immediately,
+while failures rely on the TTL.
+
 ## Instal AI
 
 ```

@@ -115,6 +115,7 @@ type alias Model =
     , posts : RemoteData ApiError (Dict Int B.Post)
     , toasts : Shared.Components.Toast.Model
     , eventService : Core.EventTypes.EventState
+    , deploymentMaintenance : Maybe B.DeploymentMaintenance
     , pendingEvents : List B.EventMsg
     , eventSubscriptions : Core.EventTypes.EventSubscriptions
     }

@@ -72,6 +72,7 @@ async fn long_poll(
         return Ok(Json(LongPollRsp {
             events: vec![],
             last_event_id: None,
+            deployment_maintenance: None,
         }));
     };
 
@@ -109,6 +110,17 @@ async fn long_poll(
     };
 
     let req: LongPollReq = req.into_inner();
+    let deployment_maintenance =
+        get_deployment_maintenance(&mut env.redis.clone())
+            .await
+            .c(h!())?;
+    if deployment_maintenance_changed(&req, deployment_maintenance.as_ref()) {
+        return Ok(Json(LongPollRsp {
+            events: vec![],
+            last_event_id: req.last_event_id,
+            deployment_maintenance,
+        }));
+    }
     let m_last_event_id = req.last_event_id;
     let srr_key = session_stream_id(session_id);
     let mut last_stream_id = "$".to_string();
@@ -212,6 +224,10 @@ async fn long_poll(
             }
         }
     }
+    let deployment_maintenance =
+        get_deployment_maintenance(&mut env.redis.clone())
+            .await
+            .c(h!())?;
     Ok(Json(LongPollRsp {
         events: res,
         last_event_id: if last_stream_id == "$" {
@@ -219,7 +235,37 @@ async fn long_poll(
         } else {
             Some(last_stream_id)
         },
+        deployment_maintenance,
     }))
+}
+
+async fn get_deployment_maintenance(
+    redis: &mut ConnectionManager,
+) -> Result<Option<DeploymentMaintenance>, AppError> {
+    let id: Option<String> =
+        redis.get(DEPLOYMENT_MAINTENANCE_REDIS_KEY).await.c(h!())?;
+    let Some(id) = id else {
+        return Ok(None);
+    };
+    let remaining_ms: i64 = redis::cmd("PTTL")
+        .arg(DEPLOYMENT_MAINTENANCE_REDIS_KEY)
+        .query_async(redis)
+        .await
+        .c(h!())?;
+    if remaining_ms <= 0 {
+        return Ok(None);
+    }
+    Ok(Some(DeploymentMaintenance { id, remaining_ms }))
+}
+
+fn deployment_maintenance_changed(
+    req: &LongPollReq,
+    deployment_maintenance: Option<&DeploymentMaintenance>,
+) -> bool {
+    req.deployment_maintenance_protocol
+        == Some(DEPLOYMENT_MAINTENANCE_PROTOCOL_VERSION)
+        && req.known_deployment_maintenance_id.as_deref()
+            != deployment_maintenance.map(|maintenance| maintenance.id.as_str())
 }
 
 pub fn pipe_xadd(pipe: &mut redis::Pipeline, session_id: Uuid, val: Vec<u8>) {
@@ -358,5 +404,39 @@ mod tests {
 
         assert_eq!(event.origin, None);
         assert_eq!(event.event_type, EventType::ETInboxChanged(7));
+    }
+
+    #[test]
+    fn deserializes_long_poll_requests_without_maintenance_protocol() {
+        let req: LongPollReq = serde_json::from_value(serde_json::json!({
+            "session_id": "current",
+            "last_event_id": null
+        }))
+        .expect("legacy long-poll request should deserialize");
+
+        assert_eq!(req.deployment_maintenance_protocol, None);
+        assert_eq!(req.known_deployment_maintenance_id, None);
+    }
+
+    #[test]
+    fn returns_maintenance_changes_immediately_only_for_supported_clients() {
+        let maintenance = DeploymentMaintenance {
+            id: "deploy-1".to_string(),
+            remaining_ms: 120_000,
+        };
+        let mut req = LongPollReq {
+            session_id: "current".to_string(),
+            last_event_id: None,
+            deployment_maintenance_protocol: None,
+            known_deployment_maintenance_id: None,
+        };
+
+        assert!(!deployment_maintenance_changed(&req, Some(&maintenance)));
+        req.deployment_maintenance_protocol =
+            Some(DEPLOYMENT_MAINTENANCE_PROTOCOL_VERSION);
+        assert!(deployment_maintenance_changed(&req, Some(&maintenance)));
+        req.known_deployment_maintenance_id = Some(maintenance.id.clone());
+        assert!(!deployment_maintenance_changed(&req, Some(&maintenance)));
+        assert!(deployment_maintenance_changed(&req, None));
     }
 }

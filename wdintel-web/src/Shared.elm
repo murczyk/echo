@@ -179,6 +179,7 @@ init flagsResult route =
       , posts = NotAsked
       , toasts = Shared.Components.Toast.init
       , eventService = Core.EventService.init
+      , deploymentMaintenance = Nothing
       , pendingEvents = []
       , eventSubscriptions = Dict.empty
       , networks = NotAsked
@@ -578,7 +579,7 @@ update req msg model =
 
         EventServicePollEvents ->
             if model.eventService.isPolling then
-                ( model, E.sendCmd <| pollEvents model.eventService.lastEventId )
+                ( model, E.sendCmd <| pollEvents model.eventService.lastEventId model.deploymentMaintenance )
 
             else
                 ( model, E.none )
@@ -605,9 +606,13 @@ update req msg model =
                         |> List.map (\eventMsg -> E.sendCmd <| Task.perform (\_ -> eventMsg) (Task.succeed ()))
                         |> E.batch
             in
-            ( { model | eventService = newEventService }
+            ( { model
+                | eventService = newEventService
+                , deploymentMaintenance = response.deploymentMaintenance
+              }
             , E.batch
                 [ processEventsEffect
+                , deploymentMaintenanceExpiryEffect response.deploymentMaintenance
                 , if List.isEmpty inboxChangedEvents then
                     E.none
 
@@ -648,7 +653,7 @@ update req msg model =
 
         EventServiceRetryPolling ->
             if model.eventService.isPolling then
-                ( model, E.sendCmd <| pollEvents model.eventService.lastEventId )
+                ( model, E.sendCmd <| pollEvents model.eventService.lastEventId model.deploymentMaintenance )
 
             else
                 ( model, E.none )
@@ -662,6 +667,18 @@ update req msg model =
                     { eventService | retryCount = 0, retryDelay = 1000 }
             in
             ( { model | eventService = newEventService }, E.none )
+
+        DeploymentMaintenanceExpired maintenanceId ->
+            case model.deploymentMaintenance of
+                Just deploymentMaintenance ->
+                    if deploymentMaintenance.id == maintenanceId then
+                        ( { model | deploymentMaintenance = Nothing }, E.none )
+
+                    else
+                        ( model, E.none )
+
+                Nothing ->
+                    ( model, E.none )
 
         EventReceived event ->
             case event.eventType of
@@ -799,13 +816,15 @@ subscriptions _ _ =
 -- HTTP REQUESTS
 
 
-pollEvents : Maybe String -> Cmd Msg
-pollEvents lastEventId =
+pollEvents : Maybe String -> Maybe B.DeploymentMaintenance -> Cmd Msg
+pollEvents lastEventId deploymentMaintenance =
     let
         request : B.LongPollReq
         request =
             { sessionId = "current" -- We'll get this from session later
             , lastEventId = lastEventId
+            , deploymentMaintenanceProtocol = Just deploymentMaintenanceProtocolVersion
+            , knownDeploymentMaintenanceId = Maybe.map .id deploymentMaintenance
             }
     in
     Http.post
@@ -813,6 +832,28 @@ pollEvents lastEventId =
         , body = Http.jsonBody (B.longPollReqEncoder request)
         , expect = leExpectJson EventServiceEventsReceived B.longPollRspDecoder
         }
+
+
+deploymentMaintenanceProtocolVersion : Int
+deploymentMaintenanceProtocolVersion =
+    1
+
+
+deploymentMaintenanceMaxDurationMs : Int
+deploymentMaintenanceMaxDurationMs =
+    120000
+
+
+deploymentMaintenanceExpiryEffect : Maybe B.DeploymentMaintenance -> Effect Msg
+deploymentMaintenanceExpiryEffect deploymentMaintenance =
+    case deploymentMaintenance of
+        Just maintenance ->
+            E.sendCmd <|
+                Task.perform (\_ -> DeploymentMaintenanceExpired maintenance.id) <|
+                    Process.sleep (toFloat (clamp 0 deploymentMaintenanceMaxDurationMs maintenance.remainingMs))
+
+        Nothing ->
+            E.none
 
 
 

@@ -56,6 +56,7 @@ type Msg
     | EventServiceEventsReceived (Result ApiError B.LongPollRsp)
     | EventServiceRetryPolling
     | EventServiceResetRetryCount
+    | DeploymentMaintenanceExpired String
     | EventReceived B.EventMsg -- Event received from backend
     | SubscribeToEvents Route.Path.Path (List B.EventType) -- Page subscribes to event types
     | UnsubscribeFromEvents Route.Path.Path -- Page unsubscribes from all events

@@ -578,6 +578,9 @@ pub const GROUP_STATS_RECALCULATION_TASK_CHUNK_DAYS: i64 = 1;
 pub const LONG_POLL_MIN_RESPONSE_TIME_MS: u64 = 500;
 pub const REDIS_MAXLEN: usize = 1000;
 pub const REDIS_SESSIONS_KEY: &str = "echo-sessions";
+pub const DEPLOYMENT_MAINTENANCE_REDIS_KEY: &str =
+    "echo:deployment:maintenance";
+pub const DEPLOYMENT_MAINTENANCE_PROTOCOL_VERSION: u8 = 1;
 pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;
 pub const EVENT_STREAM_ORIGIN_HEADER: &str = "x-echo-event-origin";
 pub const EVENT_STREAM_ORIGIN_MAX_BYTES: usize = 128;

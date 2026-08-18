@@ -32,6 +32,8 @@ const EVENT_MSG_ORIGIN_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> J
 const EVENT_MSG_ORIGIN_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "event_type" (eventTypeDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "origin" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]))"#;
+const LONG_POLL_DEPLOYMENT_MAINTENANCE_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deployment_maintenance" (Json.Decode.nullable (deploymentMaintenanceDecoder))))"#;
+const LONG_POLL_DEPLOYMENT_MAINTENANCE_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "deployment_maintenance" (Json.Decode.nullable (deploymentMaintenanceDecoder)), Json.Decode.succeed Nothing ]))"#;
 
 pub fn main_gen_elm() -> Result<(), AppError> {
     let mut target = vec![];
@@ -680,6 +682,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::types::ZoneDatasourceGroupAddRsp,
             crate::event_stream::types::EventType,
             crate::event_stream::types::EventMsg,
+            crate::event_stream::types::DeploymentMaintenance,
             crate::event_stream::types::LongPollReq,
             crate::event_stream::types::LongPollRsp,
             crate::messenger::types::EchoAccountF1,
@@ -1335,6 +1338,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::types::ZoneDatasourceGroupAddRsp,
             crate::event_stream::types::EventType,
             crate::event_stream::types::EventMsg,
+            crate::event_stream::types::DeploymentMaintenance,
             crate::event_stream::types::LongPollReq,
             crate::event_stream::types::LongPollRsp,
             crate::messenger::types::EchoAccountF1,
@@ -1477,5 +1481,9 @@ fn patch_backward_compatible_decoders(output: String) -> String {
         .replace(
             EVENT_MSG_ORIGIN_STRICT_DECODER,
             EVENT_MSG_ORIGIN_COMPAT_DECODER,
+        )
+        .replace(
+            LONG_POLL_DEPLOYMENT_MAINTENANCE_STRICT_DECODER,
+            LONG_POLL_DEPLOYMENT_MAINTENANCE_COMPAT_DECODER,
         )
 }
