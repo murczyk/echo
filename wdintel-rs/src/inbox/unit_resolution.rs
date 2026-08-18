@@ -76,7 +76,7 @@ struct UnitTextResolutionCacheKey {
 }
 
 type FailureMetadata = (bool, String);
-type FailureMetadataCache = HashMap<String, Option<FailureMetadata>>;
+type FailureMetadataCache = HashMap<String, FailureMetadata>;
 
 #[derive(Default)]
 struct InboxUnitBackfillCache {
@@ -587,7 +587,7 @@ where
         .as_deref()
         .and_then(|cache| cache.get(&normalized_unit_txt))
     {
-        group_metadata.clone()
+        Some(group_metadata.clone())
     } else {
         failed_inbox_unit::Entity::find()
             .filter(failed_inbox_unit::Column::Deleted.eq(false))
@@ -613,7 +613,7 @@ where
         .unwrap_or_default();
     let is_bad_data = is_bad_data || should_auto_archive_failed_unit(unit_txt);
     if let Some(cache) = cache {
-        cache.insert(normalized_unit_txt, Some((is_bad_data, note.clone())));
+        cache.insert(normalized_unit_txt, (is_bad_data, note.clone()));
     }
     failed_inbox_unit::Entity::insert(failed_inbox_unit::ActiveModel {
             id: NotSet,
@@ -1138,7 +1138,6 @@ pub(crate) async fn backfill_inbox_unit_links(
     .context(h!())?;
     let mut last_id = after_inbox_item_id;
     let mut processed = 0_u64;
-    let mut cache = InboxUnitBackfillCache::default();
     loop {
         let items = sigint_inbox_item::Entity::find()
             .join(
@@ -1158,6 +1157,7 @@ pub(crate) async fn backfill_inbox_unit_links(
         }
         let item_ids = items.iter().map(|item| item.id).collect_vec();
         let last_item_id = items.last().unwrap().id;
+        let mut cache = InboxUnitBackfillCache::default();
         let transaction = db.begin().await.context(h!())?;
         for item in &items {
             resolve_and_sync_inbox_item_cached(
