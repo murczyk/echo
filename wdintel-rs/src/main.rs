@@ -1390,8 +1390,15 @@ pub async fn new_redis_for_db(
     if !is_ok {
         bail!("Redis connection failed");
     }
-    let conn_manager =
-        redis_cli.get_connection_manager().await.context(h!())?;
+    let redis_config = redis::aio::ConnectionManagerConfig::new()
+        .set_pipeline_buffer_size(REDIS_CONNECTION_MANAGER_PIPELINE_BUFFER_SIZE)
+        .set_response_timeout(Some(std::time::Duration::from_secs(
+            REDIS_CONNECTION_MANAGER_RESPONSE_TIMEOUT_SECS,
+        )));
+    let conn_manager = redis_cli
+        .get_connection_manager_with_config(redis_config)
+        .await
+        .context(h!())?;
     Ok(conn_manager)
 }
 

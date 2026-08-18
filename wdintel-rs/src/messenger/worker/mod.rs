@@ -62,7 +62,7 @@ pub async fn receive_thread_inner(
     let config = &env.config;
     let settlements = env.settlements.clone();
     let rq = &env.rq;
-    let mut redis = env.redis.clone();
+    let mut redis = crate::new_redis(config).await.c(h!())?;
     let dbx = &env.dbx;
     let s3 = &env.s3;
 

@@ -256,11 +256,12 @@ async fn delete_message_and_attachments_nofail(
 pub async fn mk_message_processor_pool(
     env: Arc<Env>,
 ) -> anyhow::Result<ProcessorPool> {
+    let redis = crate::new_redis(&env.config).await.c(h!())?;
     let ctx = Arc::new(WorkerContext {
         config: env.config.clone(),
         settlements: env.settlements.clone(),
         rq: env.rq.clone(),
-        redis: env.redis.clone(),
+        redis,
         dbx: env.dbx.clone(),
         s3: env.s3.clone(),
     });

@@ -172,14 +172,19 @@ async fn process_next(
             .await
             .c(h!())?;
     if changed {
-        fanout_mult(
+        if let Err(error) = fanout_mult(
             redis,
             vec![EventMsg::new(EventType::ETInboxChanged(
                 job.sigint_inbox_item_id,
             ))],
         )
         .await
-        .c(h!())?;
+        {
+            error!(
+                "ai_callsign_worker failed to fanout completed message_id={}: {error:#?}",
+                job.sigint_inbox_item_id
+            );
+        }
     }
     Ok(true)
 }
