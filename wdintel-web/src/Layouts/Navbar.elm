@@ -1,6 +1,7 @@
 module Layouts.Navbar exposing (Model, Msg, Props, layout)
 
 import Auth
+import Bindings as B
 import Browser.Events
 import Core.Auth
 import Core.Types exposing (ApiError)
@@ -267,6 +268,10 @@ view user activeName shared route { toContentMsg, model, content } =
                                     Just ls -> Encode.string ls
                                     Nothing -> Encode.null
                               )
+                            , ( "deploymentMaintenance"
+                              , Maybe.withDefault Encode.null <|
+                                    Maybe.map B.deploymentMaintenanceEncoder shared.deploymentMaintenance
+                              )
                             , ( "systemSettings"
                               , case shared.systemSettings of
                                     Just settings ->
@@ -314,7 +319,6 @@ view user activeName shared route { toContentMsg, model, content } =
                 , stopPropagationOn "click" (Json.Decode.succeed ( NoOp, True ))
                 ]
                 [ navbarHtml ]
-            , deploymentMaintenanceNotice model.isNavbarVisible shared.deploymentMaintenance
             , if supportsFullscreenToggle && not model.isNavbarVisible then
                 div
                     [ class "fixed top-4 right-4 z-[1200] transition-opacity duration-300 ease-in-out opacity-100" ]
@@ -363,43 +367,3 @@ view user activeName shared route { toContentMsg, model, content } =
             content.body
         ]
     }
-
-
-deploymentMaintenanceNotice : Bool -> Maybe a -> Html msg
-deploymentMaintenanceNotice isNavbarVisible deploymentMaintenance =
-    let
-        isVisible =
-            case deploymentMaintenance of
-                Just _ ->
-                    True
-
-                Nothing ->
-                    False
-    in
-    div
-        [ class "fixed right-4 z-[1250] w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-3 text-sm text-[var(--color-text)] shadow-lg transition-all duration-200 ease-out motion-reduce:transition-none"
-        , class
-            (if isNavbarVisible then
-                "top-[calc(var(--app-shell-navbar-height)+0.5rem)]"
-
-             else
-                "top-3"
-            )
-        , class
-            (if isVisible then
-                "pointer-events-none translate-y-0 opacity-100"
-
-             else
-                "pointer-events-none -translate-y-2 opacity-0"
-            )
-        , attribute "role" "status"
-        , attribute "aria-live" "polite"
-        , attribute "aria-hidden"
-            (if isVisible then
-                "false"
-
-             else
-                "true"
-            )
-        ]
-        [ text "🚧 система оновлюється до нової версії" ]

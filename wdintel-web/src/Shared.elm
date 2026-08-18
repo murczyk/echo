@@ -612,7 +612,6 @@ update req msg model =
               }
             , E.batch
                 [ processEventsEffect
-                , deploymentMaintenanceExpiryEffect response.deploymentMaintenance
                 , if List.isEmpty inboxChangedEvents then
                     E.none
 
@@ -667,18 +666,6 @@ update req msg model =
                     { eventService | retryCount = 0, retryDelay = 1000 }
             in
             ( { model | eventService = newEventService }, E.none )
-
-        DeploymentMaintenanceExpired maintenanceId ->
-            case model.deploymentMaintenance of
-                Just deploymentMaintenance ->
-                    if deploymentMaintenance.id == maintenanceId then
-                        ( { model | deploymentMaintenance = Nothing }, E.none )
-
-                    else
-                        ( model, E.none )
-
-                Nothing ->
-                    ( model, E.none )
 
         EventReceived event ->
             case event.eventType of
@@ -837,24 +824,6 @@ pollEvents lastEventId deploymentMaintenance =
 deploymentMaintenanceProtocolVersion : Int
 deploymentMaintenanceProtocolVersion =
     1
-
-
-deploymentMaintenanceMaxDurationMs : Int
-deploymentMaintenanceMaxDurationMs =
-    120000
-
-
-deploymentMaintenanceExpiryEffect : Maybe B.DeploymentMaintenance -> Effect Msg
-deploymentMaintenanceExpiryEffect deploymentMaintenance =
-    case deploymentMaintenance of
-        Just maintenance ->
-            E.sendCmd <|
-                Task.perform (\_ -> DeploymentMaintenanceExpired maintenance.id) <|
-                    Process.sleep (toFloat (clamp 0 deploymentMaintenanceMaxDurationMs maintenance.remainingMs))
-
-        Nothing ->
-            E.none
-
 
 
 -- HELPERS

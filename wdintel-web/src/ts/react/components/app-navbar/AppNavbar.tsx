@@ -88,6 +88,7 @@ export interface AppNavbarProps {
     userLoaded: boolean;
     changelogLastSeenLoaded: boolean;
     changelogLastSeen: string | null;
+    deploymentMaintenance: { id: string; remaining_ms: number } | null;
     systemSettings?: {
       defaultNeoAnalysis: boolean;
       enableAudioTranscription: boolean;
@@ -202,13 +203,19 @@ export function AppNavbar({
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
-      if (navbarRef.current && !navbarRef.current.contains(e.target as Node)) {
+      const maintenanceNoticeIsOpen =
+        shared?.deploymentMaintenance?.id && openDropdown === 'changelog';
+      if (
+        navbarRef.current &&
+        !navbarRef.current.contains(e.target as Node) &&
+        !maintenanceNoticeIsOpen
+      ) {
         setOpenDropdown(null);
       }
     };
     document.addEventListener('click', handleOutsideClick);
     return () => document.removeEventListener('click', handleOutsideClick);
-  }, []);
+  }, [openDropdown, shared?.deploymentMaintenance?.id]);
 
   const handleDropdownToggle = (e: ReactMouseEvent, key: string) => {
     setOpenDropdown(openDropdown === key ? null : key);
