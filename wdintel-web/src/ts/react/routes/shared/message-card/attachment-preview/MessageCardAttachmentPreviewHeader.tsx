@@ -6,36 +6,19 @@ import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import InfoIcon from '@mui/icons-material/Info';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import {
-  Box,
-  CircularProgress,
-  IconButton,
-  Menu,
-  MenuItem,
-  Stack,
-  Tooltip,
-  Typography,
-} from '@mui/material';
-import { useState, type MouseEvent, type ReactNode } from 'react';
+import { Box, CircularProgress, IconButton, Stack, Tooltip, Typography } from '@mui/material';
+import type { MouseEvent, ReactNode } from 'react';
 
-import type { MessageCardPreviewNavigation } from './message-card-preview.types';
+import type {
+  AttachmentPreviewDownload,
+  MessageCardPreviewNavigation,
+} from './message-card-preview.types';
 import { MessageCardDisabledControlCursorWrapper } from '../MessageCardDisabledControlCursorWrapper';
-
-export type AttachmentPreviewDownload =
-  | { href: string; fileName: string; onDownload?: never }
-  | { href?: never; fileName?: never; onDownload: () => void };
-
-export type AttachmentPreviewDownloadItem = {
-  label: string;
-  download: AttachmentPreviewDownload;
-  downloadKey?: string;
-};
 
 export function MessageCardAttachmentPreviewHeader({
   fileName,
   openHref,
   download,
-  downloadItems,
   downloadKey,
   navigation,
   additionalActions,
@@ -53,7 +36,6 @@ export function MessageCardAttachmentPreviewHeader({
   fileName?: string | null;
   openHref?: string | null;
   download?: AttachmentPreviewDownload;
-  downloadItems?: AttachmentPreviewDownloadItem[];
   downloadKey?: string;
   navigation: MessageCardPreviewNavigation;
   additionalActions?: ReactNode;
@@ -68,32 +50,21 @@ export function MessageCardAttachmentPreviewHeader({
   isDownloadStarting?: (downloadKey: string) => boolean;
   onDownloadStart?: (downloadKey: string) => boolean;
 }) {
-  const [downloadAnchorEl, setDownloadAnchorEl] = useState<HTMLElement | null>(null);
-  const options =
-    download == null
-      ? []
-      : [{ label: 'Скачати оригінал', download, downloadKey }, ...(downloadItems ?? [])];
-  const downloading = options.some(
-    (item) =>
-      item.downloadKey != null &&
-      isDownloadStarting != null &&
-      isDownloadStarting(item.downloadKey),
-  );
+  const downloading =
+    downloadKey != null && isDownloadStarting != null && isDownloadStarting(downloadKey);
   const hasCarousel = navigation.count > 1;
 
-  const startDownload = (event: MouseEvent<HTMLElement>, option: AttachmentPreviewDownloadItem) => {
-    const key = option.downloadKey;
+  const startDownload = (event: MouseEvent<HTMLButtonElement | HTMLAnchorElement>) => {
     if (
-      key == null ||
+      downloadKey == null ||
       isDownloadStarting == null ||
       onDownloadStart == null ||
-      isDownloadStarting(key) ||
-      !onDownloadStart(key)
+      isDownloadStarting(downloadKey) ||
+      !onDownloadStart(downloadKey)
     ) {
       event.preventDefault();
       return false;
     }
-    setDownloadAnchorEl(null);
     return true;
   };
 
@@ -109,53 +80,41 @@ export function MessageCardAttachmentPreviewHeader({
   };
 
   const downloadButton =
-    options.length === 0 ? null : (
-      <>
-        <IconButton
-          aria-label={downloading ? 'Завантаження…' : 'Скачати'}
-          aria-busy={downloading}
-          disabled={downloading}
-          onClick={(event) => setDownloadAnchorEl(event.currentTarget)}
-          size="small"
-          sx={iconButtonSx}
-        >
-          {downloading ? (
-            <CircularProgress size={16} color="inherit" aria-label="Завантаження…" />
-          ) : (
-            <DownloadIcon fontSize="small" />
-          )}
-        </IconButton>
-        <Menu
-          anchorEl={downloadAnchorEl}
-          open={downloadAnchorEl !== null}
-          onClose={() => setDownloadAnchorEl(null)}
-        >
-          {options.map((option) => {
-            const optionDownload = option.download;
-            const key = `${option.label}:${option.downloadKey ?? ''}`;
-            return 'href' in optionDownload && typeof optionDownload.href === 'string' ? (
-              <MenuItem
-                key={key}
-                component="a"
-                href={optionDownload.href}
-                download={optionDownload.fileName}
-                onClick={(event) => startDownload(event, option)}
-              >
-                {option.label}
-              </MenuItem>
-            ) : (
-              <MenuItem
-                key={key}
-                onClick={(event) => {
-                  if (startDownload(event, option)) optionDownload.onDownload();
-                }}
-              >
-                {option.label}
-              </MenuItem>
-            );
-          })}
-        </Menu>
-      </>
+    download == null ? null : 'href' in download && typeof download.href === 'string' ? (
+      <IconButton
+        component="a"
+        href={download.href}
+        download={download.fileName}
+        aria-label={downloading ? 'Завантаження…' : 'Скачати'}
+        aria-busy={downloading}
+        disabled={downloading}
+        onClick={startDownload}
+        size="small"
+        sx={iconButtonSx}
+      >
+        {downloading ? (
+          <CircularProgress size={16} color="inherit" aria-label="Завантаження…" />
+        ) : (
+          <DownloadIcon fontSize="small" />
+        )}
+      </IconButton>
+    ) : (
+      <IconButton
+        aria-label={downloading ? 'Завантаження…' : 'Скачати'}
+        aria-busy={downloading}
+        disabled={downloading}
+        onClick={(event) => {
+          if (startDownload(event)) download.onDownload();
+        }}
+        size="small"
+        sx={iconButtonSx}
+      >
+        {downloading ? (
+          <CircularProgress size={16} color="inherit" aria-label="Завантаження…" />
+        ) : (
+          <DownloadIcon fontSize="small" />
+        )}
+      </IconButton>
     );
 
   return (

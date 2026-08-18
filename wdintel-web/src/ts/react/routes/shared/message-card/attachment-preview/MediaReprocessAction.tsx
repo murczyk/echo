@@ -6,6 +6,7 @@ import type { OcrMediaSummary } from '../../../../../../Bindings';
 import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
 import { reprocessMediaOcr } from '../../../../services/api/ocr';
 import { hasRole } from '../../../../utils/roles';
+import type { AttachmentPreviewDownloadItem } from './message-card-preview.types';
 
 function currentUserIsAdmin(): boolean {
   const roles =
@@ -36,18 +37,47 @@ export function MediaReprocessAction({
   supported,
   ocr,
   onQueued,
+  downloadItems = [],
+  isDownloadStarting,
+  onDownloadStart,
 }: {
   mediaId?: string | null;
   supported: boolean;
   ocr?: OcrMediaSummary | null;
   onQueued: (ocr: OcrMediaSummary) => void;
+  downloadItems?: AttachmentPreviewDownloadItem[];
+  isDownloadStarting?: (downloadKey: string) => boolean;
+  onDownloadStart?: (downloadKey: string) => boolean;
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [reprocessing, setReprocessing] = useState(false);
   const { notify } = useOptionalPowerSnackbar();
   const id = mediaId?.trim() ?? '';
+  const canReprocess = supported && id !== '' && currentUserIsAdmin();
+  const downloading = downloadItems.some(
+    (item) =>
+      item.downloadKey != null &&
+      isDownloadStarting != null &&
+      isDownloadStarting(item.downloadKey),
+  );
 
-  if (!supported || id === '' || !currentUserIsAdmin()) return null;
+  if (!canReprocess && downloadItems.length === 0) return null;
+
+  const startDownload = (event: MouseEvent<HTMLElement>, item: AttachmentPreviewDownloadItem) => {
+    const key = item.downloadKey;
+    if (
+      key == null ||
+      isDownloadStarting == null ||
+      onDownloadStart == null ||
+      isDownloadStarting(key) ||
+      !onDownloadStart(key)
+    ) {
+      event.preventDefault();
+      return false;
+    }
+    setAnchorEl(null);
+    return true;
+  };
 
   const reprocess = async () => {
     setAnchorEl(null);
@@ -78,7 +108,8 @@ export function MediaReprocessAction({
       <Tooltip title="Більше дій" enterDelay={300}>
         <IconButton
           aria-label="Більше дій"
-          aria-busy={reprocessing}
+          aria-busy={reprocessing || downloading}
+          disabled={downloading}
           size="small"
           onClick={(event: MouseEvent<HTMLButtonElement>) => setAnchorEl(event.currentTarget)}
           sx={{
@@ -86,13 +117,43 @@ export function MediaReprocessAction({
             '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
           }}
         >
-          {reprocessing ? <CircularProgress size={16} color="inherit" /> : <MoreVertIcon />}
+          {reprocessing || downloading ? (
+            <CircularProgress size={16} color="inherit" />
+          ) : (
+            <MoreVertIcon />
+          )}
         </IconButton>
       </Tooltip>
       <Menu anchorEl={anchorEl} open={anchorEl !== null} onClose={() => setAnchorEl(null)}>
-        <MenuItem disabled={disabled} onClick={reprocess}>
-          Обробити повторно
-        </MenuItem>
+        {downloadItems.map((item) => {
+          const itemDownload = item.download;
+          const key = `${item.label}:${item.downloadKey ?? ''}`;
+          return 'href' in itemDownload && typeof itemDownload.href === 'string' ? (
+            <MenuItem
+              key={key}
+              component="a"
+              href={itemDownload.href}
+              download={itemDownload.fileName}
+              onClick={(event) => startDownload(event, item)}
+            >
+              {item.label}
+            </MenuItem>
+          ) : (
+            <MenuItem
+              key={key}
+              onClick={(event) => {
+                if (startDownload(event, item)) itemDownload.onDownload();
+              }}
+            >
+              {item.label}
+            </MenuItem>
+          );
+        })}
+        {canReprocess ? (
+          <MenuItem disabled={disabled} onClick={reprocess}>
+            Обробити повторно
+          </MenuItem>
+        ) : null}
       </Menu>
     </>
   );

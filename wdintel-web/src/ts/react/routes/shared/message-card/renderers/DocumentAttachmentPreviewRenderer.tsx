@@ -318,7 +318,6 @@ export function DocumentAttachmentPreviewRenderer({
       fileName={previewFileName}
       openHref={currentDocument.href}
       download={{ href: currentDocument.href, fileName: downloadFileName }}
-      downloadItems={getOcrDownloadItems(currentDocument.id, ocrStatus, previewFileName)}
       navigation={navigation}
       onInfoClick={handleInfoClick}
       infoSeverity={getOcrInfoSeverity(ocrStatus)}
@@ -335,6 +334,9 @@ export function DocumentAttachmentPreviewRenderer({
           supported={currentDocument.kind === 'pdf'}
           ocr={ocrStatus}
           onQueued={handleReprocessQueued}
+          downloadItems={getOcrDownloadItems(currentDocument.id, ocrStatus, previewFileName)}
+          isDownloadStarting={isDownloadStarting}
+          onDownloadStart={onDownloadStart}
         />
       }
       isFullscreen={dialogIsFullscreen}

@@ -10,6 +10,16 @@ export type MessageCardPreviewNavigation = {
   onNext: () => void;
 };
 
+export type AttachmentPreviewDownload =
+  | { href: string; fileName: string; onDownload?: never }
+  | { href?: never; fileName?: never; onDownload: () => void };
+
+export type AttachmentPreviewDownloadItem = {
+  label: string;
+  download: AttachmentPreviewDownload;
+  downloadKey?: string;
+};
+
 export type MessageCardPreviewItem =
   | { type: 'image'; value: MessageCardImage }
   | { type: 'video'; value: VideoPreviewSource }
