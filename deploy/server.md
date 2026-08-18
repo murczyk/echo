@@ -148,9 +148,11 @@ just deploy --server $SERVER
 
 Both `just deploy` and `just deploy-from-local` automatically publish a
 two-minute Redis-backed maintenance state before stopping runtime services.
-The state wakes connected browsers to show the update notice and temporarily
-suppresses SigNoz log delivery; successful verification clears it immediately,
-while failures rely on the TTL.
+The state wakes connected browsers to show the update notice. Successful
+verification clears it immediately, while failures rely on the TTL.
+Log ingestion stays enabled during deploys. When deploy alerts must be
+silenced, use a SigNoz planned downtime scoped to the target host instead of
+stopping Vector, whose checkpointed sources forward their backlog after restart.
 Package-owned conffiles are updated from the package during these
 noninteractive installs; keep instance-specific settings in `config.toml`.
 
