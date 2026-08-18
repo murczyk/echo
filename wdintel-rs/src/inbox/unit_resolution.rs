@@ -802,6 +802,15 @@ where
     for unit_links in unit_links.chunks(INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE)
     {
         sigint_inbox_item_unit::Entity::insert_many(unit_links.to_vec())
+            .on_conflict(
+                OnConflict::columns([
+                    sigint_inbox_item_unit::Column::ItemId,
+                    sigint_inbox_item_unit::Column::UnitId,
+                    sigint_inbox_item_unit::Column::Kind,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
             .exec_without_returning(db)
             .await
             .context(h!())?;
@@ -2289,6 +2298,64 @@ mod tests {
         )
         .await
         .is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn calculated_network_sync_ignores_concurrent_unit_links() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let network = crate::functest::tests::mk_sigint_network(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        crate::functest::tests::mk_sigint_network_unit(
+            &env.dbx,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(network.id),
+                unit_id: Set(unit.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_item = insert_inbox_item(&env.dbx, None, None, None).await;
+        let network_ids_by_item =
+            HashMap::from([(inbox_item.id, vec![network.id])]);
+        let inbox_item_ids = [inbox_item.id];
+
+        let (first, second) = tokio::join!(
+            sync_calculated_network_unit_links(
+                &env.dbx,
+                &inbox_item_ids,
+                &network_ids_by_item,
+            ),
+            sync_calculated_network_unit_links(
+                &env.dbx,
+                &inbox_item_ids,
+                &network_ids_by_item,
+            ),
+        );
+        first.unwrap();
+        second.unwrap();
+
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                inbox_item.id,
+                SigintInboxItemUnitKind::Network,
+            )
+            .await,
+            vec![unit.id]
+        );
     }
 
     #[tokio::test]

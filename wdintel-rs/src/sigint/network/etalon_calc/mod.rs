@@ -3,6 +3,7 @@ use crate::sigint::network::etalon_calc::consistency::InboxItem;
 use crate::types::*;
 use crate::{config, h};
 use chrono::{Duration, NaiveDateTime, Utc};
+use sea_orm::sea_query::OnConflict;
 use sea_orm::*;
 
 mod consistency;
@@ -453,11 +454,32 @@ where
             result.entry(item_id).or_default().push(network_id);
         }
     }
+    insert_network_links(dbx, networks_to_insert)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn insert_network_links<C>(
+    dbx: &C,
+    networks_to_insert: Vec<sigint_inbox_item_network::ActiveModel>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     for networks_to_insert in
         networks_to_insert.chunks(ETALON_CALC_NETWORK_INSERT_CHUNK_SIZE)
     {
         sigint_inbox_item_network::Entity::insert_many(
             networks_to_insert.to_vec(),
+        )
+        .on_conflict(
+            OnConflict::columns([
+                sigint_inbox_item_network::Column::SigintNetworkId,
+                sigint_inbox_item_network::Column::SigintInboxItemId,
+            ])
+            .do_nothing()
+            .to_owned(),
         )
         .exec_without_returning(dbx)
         .await
@@ -723,5 +745,46 @@ mod tests {
         assert!(ids.contains(&disabled_msg.id));
 
         txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn calculated_network_links_ignore_concurrent_duplicates() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let inbox_item = mk_sigint_inbox_item(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let link = || sigint_inbox_item_network::ActiveModel {
+            id: NotSet,
+            sigint_inbox_item_id: Set(inbox_item.id),
+            sigint_network_id: Set(network.id),
+            created_at: NotSet,
+        };
+
+        let (first, second) = tokio::join!(
+            insert_network_links(&env.dbx, vec![link()]),
+            insert_network_links(&env.dbx, vec![link()]),
+        );
+        first.unwrap();
+        second.unwrap();
+
+        assert_eq!(
+            sigint_inbox_item_network::Entity::find()
+                .filter(
+                    sigint_inbox_item_network::Column::SigintInboxItemId
+                        .eq(inbox_item.id),
+                )
+                .filter(
+                    sigint_inbox_item_network::Column::SigintNetworkId
+                        .eq(network.id),
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
     }
 }

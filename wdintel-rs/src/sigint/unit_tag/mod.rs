@@ -296,13 +296,19 @@ where
         .collect::<HashSet<_>>();
     for network_id in desired_network_ids {
         if !existing_network_ids.contains(&network_id) {
-            sigint_inbox_item_network::ActiveModel {
-                id: NotSet,
-                sigint_inbox_item_id: Set(sigint_inbox_item_id),
-                sigint_network_id: Set(network_id),
-                created_at: NotSet,
-            }
-            .insert(db)
+            sigint_inbox_item_network::Entity::insert(
+                sigint_inbox_item_network::ActiveModel {
+                    id: NotSet,
+                    sigint_inbox_item_id: Set(sigint_inbox_item_id),
+                    sigint_network_id: Set(network_id),
+                    created_at: NotSet,
+                },
+            )
+            .on_conflict_do_nothing_on([
+                sigint_inbox_item_network::Column::SigintNetworkId,
+                sigint_inbox_item_network::Column::SigintInboxItemId,
+            ])
+            .exec(db)
             .await
             .c(h!())?;
         }

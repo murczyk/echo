@@ -687,13 +687,19 @@ where
     }
 
     for network in &source.networks {
-        sigint_inbox_item_network::ActiveModel {
-            id: NotSet,
-            sigint_inbox_item_id: Set(inserted.id),
-            sigint_network_id: Set(network.sigint_network_id),
-            created_at: Set(inserted.created_at),
-        }
-        .insert(dbx)
+        sigint_inbox_item_network::Entity::insert(
+            sigint_inbox_item_network::ActiveModel {
+                id: NotSet,
+                sigint_inbox_item_id: Set(inserted.id),
+                sigint_network_id: Set(network.sigint_network_id),
+                created_at: Set(inserted.created_at),
+            },
+        )
+        .on_conflict_do_nothing_on([
+            sigint_inbox_item_network::Column::SigintNetworkId,
+            sigint_inbox_item_network::Column::SigintInboxItemId,
+        ])
+        .exec(dbx)
         .await
         .c(h!())?;
     }

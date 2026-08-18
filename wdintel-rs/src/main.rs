@@ -278,6 +278,13 @@ pub struct OneoffBackfillInboxNetworksPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffPrepareInboxNetworkUniquenessPs {
+    /// Confirm deletion of duplicate links and online unique-index creation.
+    #[arg(long, action)]
+    pub yes: bool,
+}
+
+#[derive(clap::Parser, Debug)]
 #[command(
     after_help = "Example:\n  wdintel-rs --mode=live oneoff-backfill-inbox-network-units-tui --start 2026-07-01"
 )]
@@ -962,6 +969,7 @@ enum Cmd {
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffPrepareInboxNetworkUniqueness(OneoffPrepareInboxNetworkUniquenessPs),
     OneoffBackfillSigintInboxItemDatetimeNeo,
     OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
     OneoffBackfillInboxNetworkUnitsTui(OneoffBackfillInboxNetworkUnitsTuiPs),
@@ -999,6 +1007,18 @@ pub async fn new_pg_pool_from_mode(
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
     let config = read_config(mode).context(h!())?;
     new_pg_pool_from_config(&config).await
+}
+
+pub async fn new_pg_maintenance_connection_from_mode(
+    mode: Mode,
+) -> Result<sea_orm::DatabaseConnection, AppError> {
+    let config = read_config(mode).context(h!())?;
+    Ok(new_pg_pool_from_conn_string_with_max_connections(
+        mk_conn_string(&config),
+        1,
+    )
+    .await
+    .c(h!())?)
 }
 
 pub async fn new_pg_pool_from_config(
@@ -1682,6 +1702,12 @@ async fn async_main(
         Cmd::OneoffBackfillInboxNetworks(ps) => {
             sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
                 .await
+        }
+        Cmd::OneoffPrepareInboxNetworkUniqueness(ps) => {
+            sigint::network::etalon_calc::oneoff::oneoff_prepare_inbox_network_uniqueness(
+                mode, &ps,
+            )
+            .await
         }
         Cmd::OneoffBackfillInboxNetworkUnitsTui(ps) => {
             sigint::network::inbox_backfill_tui::run_inbox_network_unit_backfill_tui(
