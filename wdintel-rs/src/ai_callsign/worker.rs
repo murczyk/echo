@@ -152,35 +152,21 @@ async fn process_next(
         }
     };
     let ai_callsigns = normalize_callsigns(callsigns);
-    let current_callsigns = crate::inbox::callsigns::load_by_item_ids(
+    let changed = match complete_job(
         dbx,
-        &[job.sigint_inbox_item_id],
+        rq,
+        job.sigint_inbox_item_id,
+        &body,
+        ai_callsigns,
     )
     .await
-    .c(h!())?
-    .remove(&job.sigint_inbox_item_id)
-    .unwrap_or_default();
-    let callsigns =
-        merge_current_and_ai_callsigns(current_callsigns.primary, ai_callsigns);
-    let callsign_tokens = if callsigns.is_empty() {
-        vec![]
-    } else {
-        match crate::rer_importer::callsigns::highlight_callsigns(
-            rq, &body, &callsigns,
-        )
-        .await
-        {
-            Ok(callsign_tokens) => callsign_tokens,
-            Err(error) => {
-                fail_job(dbx, job, error.to_string()).await.c(h!())?;
-                return Ok(true);
-            }
+    {
+        Ok(changed) => changed,
+        Err(error) => {
+            fail_job(dbx, job, error.to_string()).await.c(h!())?;
+            return Ok(true);
         }
     };
-    let changed =
-        complete_job(dbx, job.sigint_inbox_item_id, callsigns, callsign_tokens)
-            .await
-            .c(h!())?;
     if changed {
         fanout_mult(
             redis,
@@ -244,11 +230,11 @@ async fn load_next_job(
 
 async fn complete_job(
     dbx: &DatabaseConnection,
+    rq: &reqwest::Client,
     sigint_inbox_item_id: i64,
-    callsigns: Vec<String>,
-    callsign_tokens: Vec<crate::rer_importer::highlight::CNCallsign>,
+    body: &str,
+    ai_callsigns: Vec<String>,
 ) -> Result<bool, AppError> {
-    let callsign_tokens = serde_json::to_value(callsign_tokens).c(h!())?;
     let transaction = dbx.begin().await.c(h!())?;
     let inbox_item =
         sigint_inbox_item::Entity::find_by_id(sigint_inbox_item_id)
@@ -269,7 +255,18 @@ async fn complete_job(
     .unwrap_or_default();
     let current = normalize_callsigns(current_callsigns.primary);
     let suggested = current_callsigns.alg2;
-    let callsigns = merge_current_and_ai_callsigns(current.clone(), callsigns);
+    let callsigns =
+        merge_current_and_ai_callsigns(current.clone(), ai_callsigns);
+    let callsign_tokens = if callsigns.is_empty() {
+        vec![]
+    } else {
+        crate::rer_importer::callsigns::highlight_callsigns(
+            rq, body, &callsigns,
+        )
+        .await
+        .c(h!())?
+    };
+    let callsign_tokens = serde_json::to_value(callsign_tokens).c(h!())?;
     let callsigns_changed = callsigns != current;
     let should_update_callsign_tokens =
         inbox_item.callsign_tokens.as_ref() != Some(&callsign_tokens);
