@@ -38,8 +38,6 @@ import { toErrorMessage } from '../rer-analysis-neo/use-analysis-data.shared';
 import { MessageCard } from '../shared/message-card/MessageCard';
 import { BattleLineMap } from './BattleLineMap';
 
-const PAGE_SIZE = 10;
-
 function ReadOnlyMessage({ id, message }: { id: number; message: BattleLineTestRsp['message'] }) {
   return (
     <MessageCard
@@ -310,7 +308,7 @@ function UnlinkedTab() {
       )}
       <Pagination
         page={page}
-        count={Math.max(1, Math.ceil(data.total / PAGE_SIZE))}
+        count={Math.max(1, Math.ceil(data.total / data.pageSize))}
         onChange={(_, value) => setPage(value)}
       />
     </Stack>
@@ -357,7 +355,7 @@ function UnresolvedTab() {
       </Table>
       <Pagination
         page={page}
-        count={Math.max(1, Math.ceil(data.total / PAGE_SIZE))}
+        count={Math.max(1, Math.ceil(data.total / data.pageSize))}
         onChange={(_, value) => setPage(value)}
       />
     </Stack>

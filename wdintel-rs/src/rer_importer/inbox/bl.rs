@@ -14,7 +14,8 @@ use crate::palitra::bl::collect_accessible_palitra_ids;
 use crate::rer_importer::collect_profiles_data;
 use crate::rer_importer::highlight::*;
 use crate::rer_importer::inbox::query::{
-    build_inbox_map_query, inbox_results_reverse_query_order,
+    build_inbox_map_query, build_inbox_settlement_ids_query,
+    inbox_results_reverse_query_order,
 };
 use crate::rer_importer::signals::*;
 use crate::storage::mk_media_url;
@@ -205,7 +206,44 @@ pub async fn get_inbox_map_items(
     Ok(result)
 }
 
-pub async fn get_inbox_map_settlements<C>(
+pub async fn get_inbox_map_settlements(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Vec<MapSettlement>, AppError> {
+    let filtered_ids = build_inbox_settlement_ids_query(login, env, req)
+        .await
+        .c(h!())?;
+    let sql = format!(
+        r#"
+with filtered_items as ({filtered_ids})
+select
+    s.id as settlement_id,
+    s.name,
+    s.region,
+    s.lat,
+    s.lon,
+    count(distinct link.item_id)::bigint as inbox_item_count
+from filtered_items
+join sigint_inbox_item_settlement link on link.item_id = filtered_items.id
+join settlement s on s.id = link.settlement_id
+where s.lat is not null
+  and s.lon is not null
+group by s.id, s.name, s.region, s.lat, s.lon
+order by inbox_item_count desc, s.id
+        "#
+    );
+    Ok(MapSettlement::find_by_statement(Statement::from_string(
+        DatabaseBackend::Postgres,
+        sql,
+    ))
+    .all(&env.dbx)
+    .await
+    .c(h!())?)
+}
+
+#[cfg(test)]
+pub(crate) async fn get_inbox_map_settlements_for_items<C>(
     dbx: &C,
     inbox_item_ids: &[i64],
 ) -> Result<Vec<MapSettlement>, AppError>

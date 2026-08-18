@@ -106,6 +106,25 @@ async fn test_bl_group_update_add_second_aor() {
         .unwrap();
     assert_eq!(tasks_after_first.len(), 1);
 
+    let settlement_id = settlement::Entity::find()
+        .select_only()
+        .column(settlement::Column::Id)
+        .into_tuple::<i32>()
+        .one(&txn)
+        .await
+        .unwrap()
+        .expect("test database must contain a settlement");
+    sigint_inbox_item_settlement::ActiveModel {
+        item_id: Set(msg.id),
+        settlement_text: Set("TEST".to_string()),
+        settlement_id: Set(Some(settlement_id)),
+        is_undefined: Set(None),
+        ..Default::default()
+    }
+    .insert(&txn)
+    .await
+    .unwrap();
+
     let req2 = GroupUpdateReq {
         master_key: group.master_key.clone(),
         short_note: Some("Test group updated".to_string()),
@@ -119,6 +138,14 @@ async fn test_bl_group_update_add_second_aor() {
     let res2 = bl_group_update(&req2, &txn).await.unwrap();
 
     assert_eq!(res2.aors.len(), 2);
+    let settlement_link = sigint_inbox_item_settlement::Entity::find()
+        .filter(sigint_inbox_item_settlement::Column::ItemId.eq(msg.id))
+        .one(&txn)
+        .await
+        .unwrap()
+        .expect("settlement link");
+    assert_eq!(settlement_link.settlement_id, None);
+    assert_eq!(settlement_link.is_undefined, None);
     let aor_ids: Vec<i64> = res2.aors.iter().map(|aor| aor.id).collect();
     assert!(aor_ids.contains(&aor1.id));
     assert!(aor_ids.contains(&aor2.id));

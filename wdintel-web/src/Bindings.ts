@@ -67,6 +67,7 @@ export type Key = {
 };
 
 export type MultiGeometry = {
+  points: Array<Point>;
   lineStrings: Array<LineString>;
 };
 
@@ -1251,6 +1252,7 @@ export type BattleLineAdminPageReq = {
 export type BattleLineUnlinkedInboxRsp = {
   items: Array<[number, InboxMessage]>;
   total: number;
+  pageSize: number;
 };
 
 export type BattleLineUnresolvedLocation = {
@@ -1261,6 +1263,7 @@ export type BattleLineUnresolvedLocation = {
 export type BattleLineUnresolvedLocationsRsp = {
   items: Array<BattleLineUnresolvedLocation>;
   total: number;
+  pageSize: number;
 };
 
 export type MessageIdsReq = {

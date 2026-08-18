@@ -17,7 +17,7 @@ use actix_web::web::{Data, Json};
 use actix_web::{get, post};
 use anyhow::Context;
 use chrono::NaiveDateTime;
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeSet;
@@ -212,63 +212,21 @@ pub async fn list_unlinked_inbox_items(
     req: Json<BattleLineAdminPageReq>,
 ) -> Result<Json<BattleLineUnlinkedInboxRsp>, AppError> {
     crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login_id = crate::users::login_id_from_identity(&user).c(h!())?;
+    let allowed_groups = crate::messenger::group::get_identity_sigint_groups(
+        &env.dbx, &login_id,
+    )
+    .await
+    .c(h!())?;
     let page = std::cmp::Ord::max(req.page, 1);
     let offset = page
         .saturating_sub(1)
         .saturating_mul(BATTLE_LINE_ADMIN_PAGE_SIZE);
-    let total = sigint_inbox_item::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def(),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            Expr::exists(
-                sigint_inbox_item_settlement::Entity::find()
-                    .filter(
-                        Expr::col((
-                            sigint_inbox_item_settlement::Entity,
-                            sigint_inbox_item_settlement::Column::ItemId,
-                        ))
-                        .equals((
-                            sigint_inbox_item::Entity,
-                            sigint_inbox_item::Column::Id,
-                        )),
-                    )
-                    .select_only()
-                    .column(sigint_inbox_item_settlement::Column::Id)
-                    .into_query(),
-            )
-            .not(),
-        )
+    let total = unlinked_inbox_query(&allowed_groups)
         .count(&env.dbx)
         .await
         .c(h!())?;
-    let ids = sigint_inbox_item::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def(),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            Expr::exists(
-                sigint_inbox_item_settlement::Entity::find()
-                    .filter(
-                        Expr::col((
-                            sigint_inbox_item_settlement::Entity,
-                            sigint_inbox_item_settlement::Column::ItemId,
-                        ))
-                        .equals((
-                            sigint_inbox_item::Entity,
-                            sigint_inbox_item::Column::Id,
-                        )),
-                    )
-                    .select_only()
-                    .column(sigint_inbox_item_settlement::Column::Id)
-                    .into_query(),
-            )
-            .not(),
-        )
+    let ids = unlinked_inbox_query(&allowed_groups)
         .order_by_desc(sigint_inbox_item::Column::Datetime)
         .order_by_desc(sigint_inbox_item::Column::Id)
         .offset(offset)
@@ -279,7 +237,6 @@ pub async fn list_unlinked_inbox_items(
         .all(&env.dbx)
         .await
         .c(h!())?;
-    let login_id = crate::users::login_id_from_identity(&user).c(h!())?;
     let organism_logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
         .c(h!())?;
@@ -303,7 +260,42 @@ pub async fn list_unlinked_inbox_items(
         .into_iter()
         .filter_map(|id| loaded.get(&id).cloned().map(|message| (id, message)))
         .collect();
-    Ok(Json(BattleLineUnlinkedInboxRsp { items, total }))
+    Ok(Json(BattleLineUnlinkedInboxRsp {
+        items,
+        total,
+        page_size: BATTLE_LINE_ADMIN_PAGE_SIZE,
+    }))
+}
+
+fn unlinked_inbox_query(
+    allowed_groups: &[String],
+) -> Select<sigint_inbox_item::Entity> {
+    sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(message_is_accessible(allowed_groups))
+        .filter(
+            Expr::exists(
+                sigint_inbox_item_settlement::Entity::find()
+                    .filter(
+                        Expr::col((
+                            sigint_inbox_item_settlement::Entity,
+                            sigint_inbox_item_settlement::Column::ItemId,
+                        ))
+                        .equals((
+                            sigint_inbox_item::Entity,
+                            sigint_inbox_item::Column::Id,
+                        )),
+                    )
+                    .select_only()
+                    .column(sigint_inbox_item_settlement::Column::Id)
+                    .into_query(),
+            )
+            .not(),
+        )
 }
 
 #[post("/api/battle-line/unresolved-locations")]
@@ -313,6 +305,12 @@ pub async fn list_unresolved_locations(
     req: Json<BattleLineAdminPageReq>,
 ) -> Result<Json<BattleLineUnresolvedLocationsRsp>, AppError> {
     crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login_id = crate::users::login_id_from_identity(&user).c(h!())?;
+    let allowed_groups = crate::messenger::group::get_identity_sigint_groups(
+        &env.dbx, &login_id,
+    )
+    .await
+    .c(h!())?;
     let page = std::cmp::Ord::max(req.page, 1);
     let offset = page
         .saturating_sub(1)
@@ -322,23 +320,27 @@ pub async fn list_unresolved_locations(
         settlement_text: String,
         item_count: i64,
     }
-    let rows = Row::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        r#"
-select settlement_text, count(distinct item_id)::bigint as item_count
-from sigint_inbox_item_settlement
-where settlement_id is null
-group by settlement_text
-order by item_count desc, settlement_text
-offset $1 limit $2
-        "#,
-        [offset.into(), BATTLE_LINE_ADMIN_PAGE_SIZE.into()],
-    ))
-    .all(&env.dbx)
-    .await
-    .c(h!())?;
-    let total = sigint_inbox_item_settlement::Entity::find()
-        .filter(sigint_inbox_item_settlement::Column::SettlementId.is_null())
+    let rows = unresolved_locations_query(&allowed_groups)
+        .select_only()
+        .column(sigint_inbox_item_settlement::Column::SettlementText)
+        .column_as(
+            Expr::col((
+                sigint_inbox_item_settlement::Entity,
+                sigint_inbox_item_settlement::Column::ItemId,
+            ))
+            .count_distinct(),
+            "item_count",
+        )
+        .group_by(sigint_inbox_item_settlement::Column::SettlementText)
+        .order_by_desc(Expr::cust("item_count"))
+        .order_by_asc(sigint_inbox_item_settlement::Column::SettlementText)
+        .offset(offset)
+        .limit(BATTLE_LINE_ADMIN_PAGE_SIZE)
+        .into_model::<Row>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let total = unresolved_locations_query(&allowed_groups)
         .select_only()
         .column_as(
             Expr::col((
@@ -362,10 +364,59 @@ offset $1 limit $2
             })
             .collect(),
         total,
+        page_size: BATTLE_LINE_ADMIN_PAGE_SIZE,
     }))
 }
 
+fn unresolved_locations_query(
+    allowed_groups: &[String],
+) -> Select<sigint_inbox_item_settlement::Entity> {
+    sigint_inbox_item_settlement::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_settlement::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(message_is_accessible(allowed_groups))
+        .filter(sigint_inbox_item_settlement::Column::SettlementId.is_null())
+        .filter(sigint_inbox_item_settlement::Column::IsUndefined.eq(true))
+}
+
+fn message_is_accessible(allowed_groups: &[String]) -> SimpleExpr {
+    Expr::exists(
+        signal_message_group::Entity::find()
+            .filter(
+                Expr::col((
+                    signal_message_group::Entity,
+                    signal_message_group::Column::SignalMessageId,
+                ))
+                .equals((signal_message::Entity, signal_message::Column::Id)),
+            )
+            .filter(
+                signal_message_group::Column::GroupMasterKey
+                    .is_in(allowed_groups.to_vec()),
+            )
+            .select_only()
+            .column(signal_message_group::Column::Id)
+            .into_query(),
+    )
+}
+
 pub async fn ensure_active_battle_line<C>(dbx: &C) -> anyhow::Result<i64>
+where
+    C: ConnectionTrait,
+{
+    active_battle_line_id(dbx)
+        .await
+        .c(h!())?
+        .context("No active Battle Line is configured")
+}
+
+pub async fn active_battle_line_id<C>(dbx: &C) -> anyhow::Result<Option<i64>>
 where
     C: ConnectionTrait,
 {
@@ -376,8 +427,7 @@ where
         .into_tuple::<i64>()
         .one(dbx)
         .await
-        .c(h!())?
-        .context("No active Battle Line is configured")
+        .c(h!())
 }
 
 async fn replace_active_battle_line(
@@ -451,7 +501,7 @@ returning id
     Ok(version_id)
 }
 
-async fn requeue_settlement_links<C>(dbx: &C) -> anyhow::Result<()>
+pub(crate) async fn requeue_settlement_links<C>(dbx: &C) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
@@ -464,6 +514,48 @@ where
             sigint_inbox_item_settlement::Column::IsUndefined,
             Expr::value(Option::<bool>::None),
         )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn requeue_settlement_links_for_group<C>(
+    dbx: &C,
+    group_master_key: &str,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    sigint_inbox_item_settlement::Entity::update_many()
+        .col_expr(
+            sigint_inbox_item_settlement::Column::SettlementId,
+            Expr::value(Option::<i32>::None),
+        )
+        .col_expr(
+            sigint_inbox_item_settlement::Column::IsUndefined,
+            Expr::value(Option::<bool>::None),
+        )
+        .filter(Expr::exists(
+            signal_message_group::Entity::find()
+                .filter(
+                    Expr::col((
+                        signal_message_group::Entity,
+                        signal_message_group::Column::SignalMessageId,
+                    ))
+                    .equals((
+                        sigint_inbox_item_settlement::Entity,
+                        sigint_inbox_item_settlement::Column::ItemId,
+                    )),
+                )
+                .filter(
+                    signal_message_group::Column::GroupMasterKey
+                        .eq(group_master_key),
+                )
+                .select_only()
+                .column(signal_message_group::Column::Id)
+                .into_query(),
+        ))
         .exec(dbx)
         .await
         .c(h!())?;

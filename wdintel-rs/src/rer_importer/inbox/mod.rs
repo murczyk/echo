@@ -122,9 +122,8 @@ async fn get_inbox_map_inner(
     let inbox_items = get_inbox_map_items(&login, &env, &filter)
         .await
         .context(h!())?;
-    let inbox_item_ids = inbox_items.iter().map(|item| item.id).collect_vec();
     let settlements = if req.show_settlements == Some(true) {
-        get_inbox_map_settlements(&env.dbx, &inbox_item_ids)
+        get_inbox_map_settlements(&login, &env, &filter)
             .await
             .context(h!())?
     } else {
@@ -1768,6 +1767,12 @@ async fn ensure_submit_group_aor(
         created_at: NotSet,
     }
     .insert(txn)
+    .await
+    .c(h!())?;
+    crate::battle_line::requeue_settlement_links_for_group(
+        txn,
+        group_master_key,
+    )
     .await
     .c(h!())?;
     Ok(())

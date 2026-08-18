@@ -182,6 +182,19 @@ async fn merge_group_into(
         .await
         .c(h!())?;
 
+    crate::battle_line::requeue_settlement_links_for_group(
+        txn,
+        &source_signal_group.master_key,
+    )
+    .await
+    .c(h!())?;
+    crate::battle_line::requeue_settlement_links_for_group(
+        txn,
+        &target_signal_group.master_key,
+    )
+    .await
+    .c(h!())?;
+
     let mut source_signal_group = source_signal_group.into_active_model();
     source_signal_group.deleted = Set(true);
     source_signal_group.update(txn).await.c(h!())?;

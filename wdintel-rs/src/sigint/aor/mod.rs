@@ -89,6 +89,9 @@ pub async fn update_aor(
     crate::battle_line::refresh_aor_geometry(&txn, aor.id)
         .await
         .c(h!())?;
+    crate::battle_line::requeue_settlement_links(&txn)
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(
         &env.dbx,
@@ -121,6 +124,9 @@ pub async fn delete_aor(
     aor_model.deleted = Set(true);
     let aor = aor_model.update(&txn).await.c(h!())?;
     crate::battle_line::refresh_aor_geometry(&txn, aor.id)
+        .await
+        .c(h!())?;
+    crate::battle_line::requeue_settlement_links(&txn)
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;

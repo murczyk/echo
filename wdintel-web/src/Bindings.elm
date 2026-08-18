@@ -210,14 +210,16 @@ keyEncoder struct =
 
 
 type alias MultiGeometry =
-    { lineStrings : List (LineString)
+    { points : List (Point)
+    , lineStrings : List (LineString)
     }
 
 
 multiGeometryEncoder : MultiGeometry -> Json.Encode.Value
 multiGeometryEncoder struct =
     Json.Encode.object
-        [ ( "LineString", (Json.Encode.list (lineStringEncoder)) struct.lineStrings )
+        [ ( "Point", (Json.Encode.list (pointEncoder)) struct.points )
+        , ( "LineString", (Json.Encode.list (lineStringEncoder)) struct.lineStrings )
         ]
 
 
@@ -3243,6 +3245,7 @@ battleLineAdminPageReqEncoder struct =
 type alias BattleLineUnlinkedInboxRsp =
     { items : List (( Int, InboxMessage ))
     , total : Int
+    , pageSize : Int
     }
 
 
@@ -3251,6 +3254,7 @@ battleLineUnlinkedInboxRspEncoder struct =
     Json.Encode.object
         [ ( "items", (Json.Encode.list (\( a, b) -> Json.Encode.list identity [ Json.Encode.int a, inboxMessageEncoder b ])) struct.items )
         , ( "total", (Json.Encode.int) struct.total )
+        , ( "page_size", (Json.Encode.int) struct.pageSize )
         ]
 
 
@@ -3271,6 +3275,7 @@ battleLineUnresolvedLocationEncoder struct =
 type alias BattleLineUnresolvedLocationsRsp =
     { items : List (BattleLineUnresolvedLocation)
     , total : Int
+    , pageSize : Int
     }
 
 
@@ -3279,6 +3284,7 @@ battleLineUnresolvedLocationsRspEncoder struct =
     Json.Encode.object
         [ ( "items", (Json.Encode.list (battleLineUnresolvedLocationEncoder)) struct.items )
         , ( "total", (Json.Encode.int) struct.total )
+        , ( "page_size", (Json.Encode.int) struct.pageSize )
         ]
 
 
@@ -13932,6 +13938,7 @@ keyDecoder =
 multiGeometryDecoder : Json.Decode.Decoder MultiGeometry
 multiGeometryDecoder =
     Json.Decode.succeed MultiGeometry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "Point" (Json.Decode.list (pointDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "LineString" (Json.Decode.list (lineStringDecoder))))
 
 
@@ -15449,6 +15456,7 @@ battleLineUnlinkedInboxRspDecoder =
     Json.Decode.succeed BattleLineUnlinkedInboxRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.int)) (Json.Decode.index 1 (inboxMessageDecoder))))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_size" (Json.Decode.int)))
 
 
 battleLineUnresolvedLocationDecoder : Json.Decode.Decoder BattleLineUnresolvedLocation
@@ -15463,6 +15471,7 @@ battleLineUnresolvedLocationsRspDecoder =
     Json.Decode.succeed BattleLineUnresolvedLocationsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (battleLineUnresolvedLocationDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_size" (Json.Decode.int)))
 
 
 messageIdsReqDecoder : Json.Decode.Decoder MessageIdsReq

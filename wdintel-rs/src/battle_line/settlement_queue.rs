@@ -1,5 +1,5 @@
 use crate::battle_line::{
-    ensure_active_battle_line, resolve_inbox_item_aors,
+    active_battle_line_id, ensure_active_battle_line, resolve_inbox_item_aors,
     resolve_location_to_settlement,
 };
 use crate::config::{
@@ -120,6 +120,9 @@ pub async fn inbox_settlement_worker_nofail(env: Arc<Env>) {
 pub async fn run_inbox_settlement_worker_once(
     env: &Env,
 ) -> anyhow::Result<bool> {
+    if active_battle_line_id(&env.dbx).await.c(h!())?.is_none() {
+        return Ok(false);
+    }
     let mut processed = false;
     for _ in 0..INBOX_SETTLEMENT_WORKER_BATCH_SIZE {
         let txn = env.dbx.begin().await.c(h!())?;
@@ -157,7 +160,6 @@ async fn resolve_claimed_row(
     txn: &DatabaseTransaction,
     row: sigint_inbox_item_settlement::Model,
 ) -> anyhow::Result<()> {
-    ensure_active_battle_line(&env.dbx).await.c(h!())?;
     let aor_context = resolve_inbox_item_aors(&env.dbx, row.item_id, None)
         .await
         .c(h!())?;
@@ -176,7 +178,7 @@ async fn resolve_claimed_row(
         }
         None => {
             row.settlement_id = Set(None);
-            row.is_undefined = Set(Some(false));
+            row.is_undefined = Set(Some(true));
         }
     }
     row.update(txn).await.c(h!())?;
@@ -263,7 +265,7 @@ async fn process_oneoff_item(
             )
             .col_expr(
                 sigint_inbox_item_settlement::Column::IsUndefined,
-                Expr::value((!matched).then_some(false)),
+                Expr::value((!matched).then_some(true)),
             )
             .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
             .filter(
@@ -444,7 +446,7 @@ mod tests {
         sigint_inbox_item_settlement::Entity::update_many()
             .col_expr(
                 sigint_inbox_item_settlement::Column::IsUndefined,
-                Expr::value(Some(false)),
+                Expr::value(Some(true)),
             )
             .filter(sigint_inbox_item_settlement::Column::Id.eq(preserved_id))
             .exec(&txn)
@@ -462,7 +464,7 @@ mod tests {
             .unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].id, preserved_id);
-        assert_eq!(rows[0].is_undefined, Some(false));
+        assert_eq!(rows[0].is_undefined, Some(true));
         assert_eq!(rows[1].settlement_text, "C");
         assert_eq!(rows[1].settlement_id, None);
         assert_eq!(rows[1].is_undefined, None);
@@ -557,14 +559,14 @@ mod tests {
             .unwrap();
         }
 
-        let rows = crate::rer_importer::inbox::bl::get_inbox_map_settlements(
+        let rows = crate::rer_importer::inbox::bl::get_inbox_map_settlements_for_items(
             &dbx,
             &[],
         )
         .await
         .unwrap();
         assert!(rows.is_empty());
-        let rows = crate::rer_importer::inbox::bl::get_inbox_map_settlements(
+        let rows = crate::rer_importer::inbox::bl::get_inbox_map_settlements_for_items(
             &txn, &item_ids,
         )
         .await
@@ -632,11 +634,21 @@ mod tests {
         assert_ne!(first.id, second.id);
         assert_eq!(
             BTreeSet::from([first.id, second.id]),
-            row_ids.into_iter().collect()
+            row_ids.iter().copied().collect()
         );
         second_worker.rollback().await.unwrap();
         first_worker.rollback().await.unwrap();
 
+        sigint_inbox_item_settlement::Entity::delete_many()
+            .filter(sigint_inbox_item_settlement::Column::Id.is_in(row_ids))
+            .exec(&dbx)
+            .await
+            .unwrap();
+        sigint_inbox_item::Entity::delete_many()
+            .filter(sigint_inbox_item::Column::Id.is_in(message_ids.clone()))
+            .exec(&dbx)
+            .await
+            .unwrap();
         signal_message::Entity::delete_many()
             .filter(signal_message::Column::Id.is_in(message_ids))
             .exec(&dbx)
@@ -651,17 +663,11 @@ mod tests {
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
         let setup = dbx.begin().await.unwrap();
-        let first_datetime =
-            NaiveDateTime::parse_from_str("2099-01-01 01:00:00", "%F %T")
-                .unwrap();
-        let second_datetime =
-            NaiveDateTime::parse_from_str("2099-01-01 02:00:00", "%F %T")
-                .unwrap();
         let mut expected = vec![];
-        for (suffix, datetime) in [
-            ("later", second_datetime),
-            ("earlier", first_datetime),
-            ("same-time", second_datetime),
+        for (suffix, time) in [
+            ("later", "04:00:00"),
+            ("earlier", "03:00:00"),
+            ("same-time", "04:00:00"),
         ] {
             let message = signal_message::ActiveModel {
                 body: Set(Some(format!("#2287 oneoff order {suffix}"))),
@@ -671,9 +677,10 @@ mod tests {
             .insert(&setup)
             .await
             .unwrap();
-            sigint_inbox_item::ActiveModel {
+            let item = sigint_inbox_item::ActiveModel {
                 id: Set(message.id),
-                datetime: Set(Some(datetime)),
+                date: Set(Some("2099-01-01".to_string())),
+                time: Set(Some(time.to_string())),
                 location_v2: Set(Some("|ORDER|".to_string())),
                 parsed_unit_v2: Set(false),
                 ..Default::default()
@@ -681,15 +688,14 @@ mod tests {
             .insert(&setup)
             .await
             .unwrap();
-            expected.push((datetime, message.id));
+            expected.push((item.datetime.unwrap(), message.id));
         }
         setup.commit().await.unwrap();
         expected.sort();
 
-        let till =
-            NaiveDateTime::parse_from_str("2099-01-02 00:00:00", "%F %T")
-                .unwrap();
-        let rows = load_oneoff_items(&dbx, Some(first_datetime), Some(till))
+        let since = expected.first().unwrap().0;
+        let till = expected.last().unwrap().0 + Duration::seconds(1);
+        let rows = load_oneoff_items(&dbx, Some(since), Some(till))
             .await
             .unwrap();
         assert_eq!(
@@ -697,6 +703,14 @@ mod tests {
             expected.iter().map(|(_, id)| *id).collect::<Vec<_>>()
         );
 
+        sigint_inbox_item::Entity::delete_many()
+            .filter(
+                sigint_inbox_item::Column::Id
+                    .is_in(expected.iter().map(|(_, id)| *id)),
+            )
+            .exec(&dbx)
+            .await
+            .unwrap();
         signal_message::Entity::delete_many()
             .filter(
                 signal_message::Column::Id

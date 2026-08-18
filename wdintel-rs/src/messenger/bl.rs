@@ -886,6 +886,9 @@ pub async fn upsert_group_area_of_responsibility(
         }
     };
     if aor_ids_changed {
+        crate::battle_line::requeue_settlement_links_for_group(txn, master_key)
+            .await
+            .c(h!())?;
         crate::stats::enqueue_group_stats_recalculation_for_group_history(
             txn,
             master_key,

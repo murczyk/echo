@@ -103,6 +103,7 @@ pub struct BattleLineAdminPageReq {
 pub struct BattleLineUnlinkedInboxRsp {
     pub items: Vec<(i64, InboxMessage)>,
     pub total: u64,
+    pub page_size: u64,
 }
 
 #[derive(
@@ -119,4 +120,5 @@ pub struct BattleLineUnresolvedLocation {
 pub struct BattleLineUnresolvedLocationsRsp {
     pub items: Vec<BattleLineUnresolvedLocation>,
     pub total: u64,
+    pub page_size: u64,
 }

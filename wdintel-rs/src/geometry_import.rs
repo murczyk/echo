@@ -2,7 +2,7 @@ use crate::h;
 use crate::kml::types::{Node, Placemark};
 use crate::types::ShortContext;
 use std::fs::File;
-use std::io;
+use std::io::{self, Read, Seek};
 use std::path::Path;
 use tempfile::tempdir;
 use tokio::fs;
@@ -87,12 +87,50 @@ fn extract_archive(path: &Path, extract_to: &Path) -> anyhow::Result<()> {
     let mut archive = ZipArchive::new(archive_file)
         .map_err(|error| io::Error::other(format!("Zip error: {error:?}")))
         .c(h!())?;
+    validate_archive_limits(
+        &mut archive,
+        crate::config::BATTLE_LINE_KMZ_MAX_ENTRIES,
+        crate::config::BATTLE_LINE_KMZ_MAX_EXTRACTED_BYTES,
+    )
+    .c(h!())?;
     archive
         .extract(extract_to)
         .map_err(|error| {
             io::Error::other(format!("Extraction error: {error:?}"))
         })
         .c(h!())?;
+    Ok(())
+}
+
+fn validate_archive_limits<R>(
+    archive: &mut ZipArchive<R>,
+    maximum_entries: usize,
+    maximum_extracted_bytes: u64,
+) -> anyhow::Result<()>
+where
+    R: Read + Seek,
+{
+    if archive.len() > maximum_entries {
+        anyhow::bail!(
+            "KMZ contains {} entries; the limit is {maximum_entries}",
+            archive.len()
+        );
+    }
+    let mut extracted_bytes = 0_u64;
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|error| {
+                io::Error::other(format!("Zip entry error: {error:?}"))
+            })
+            .c(h!())?;
+        extracted_bytes = extracted_bytes.checked_add(entry.size()).c(h!())?;
+        if extracted_bytes > maximum_extracted_bytes {
+            anyhow::bail!(
+                "KMZ expands to more than the {maximum_extracted_bytes} byte limit"
+            );
+        }
+    }
     Ok(())
 }
 
@@ -104,72 +142,88 @@ async fn parse_kml_file(
         .await
         .c(h!())?;
     let mut features = vec![];
-    collect_features(&kml.nodes, &mut features);
+    collect_features(&kml.nodes, &mut features).c(h!())?;
     Ok(features)
 }
 
 fn collect_features(
     nodes: &[Node],
     features: &mut Vec<ImportedGeometryFeature>,
-) {
+) -> anyhow::Result<()> {
     for node in nodes {
         match node {
-            Node::Folder(folder) => collect_features(&folder.nodes, features),
+            Node::Folder(folder) => {
+                collect_features(&folder.nodes, features).c(h!())?
+            }
             Node::Document(document) => {
-                collect_features(&document.nodes, features)
+                collect_features(&document.nodes, features).c(h!())?
             }
             Node::Placemark(placemark) => {
-                collect_placemark_features(placemark, features)
+                collect_placemark_features(placemark, features).c(h!())?
             }
             _ => {}
         }
     }
+    Ok(())
 }
 
 fn collect_placemark_features(
     placemark: &Placemark,
     features: &mut Vec<ImportedGeometryFeature>,
-) {
-    if let Some(coordinates) = placemark
-        .point
-        .as_ref()
-        .and_then(|point| point.coordinates.as_deref())
-    {
-        if let Ok(points) = parse_kml_coordinates_strict(coordinates) {
-            features
-                .extend(points.into_iter().map(ImportedGeometryFeature::Point));
-        }
+) -> anyhow::Result<()> {
+    if let Some(point) = &placemark.point {
+        let coordinates = point.coordinates.as_deref().c(h!())?;
+        collect_points(coordinates, features).c(h!())?;
     }
 
-    let direct_line = placemark
-        .line_string
-        .as_ref()
-        .and_then(|line| line.coordinates.as_ref())
-        .and_then(|coordinates| coordinates.body.as_deref());
-    collect_line_string(direct_line, features);
+    if let Some(line) = &placemark.line_string {
+        let coordinates = line
+            .coordinates
+            .as_ref()
+            .and_then(|coordinates| coordinates.body.as_deref())
+            .c(h!())?;
+        collect_line_string(coordinates, features).c(h!())?;
+    }
     if let Some(multi_geometry) = &placemark.multi_geometry {
+        for point in &multi_geometry.points {
+            let coordinates = point.coordinates.as_deref().c(h!())?;
+            collect_points(coordinates, features).c(h!())?;
+        }
         for line in &multi_geometry.line_strings {
             let coordinates = line
                 .coordinates
                 .as_ref()
-                .and_then(|coordinates| coordinates.body.as_deref());
-            collect_line_string(coordinates, features);
+                .and_then(|coordinates| coordinates.body.as_deref())
+                .c(h!())?;
+            collect_line_string(coordinates, features).c(h!())?;
         }
     }
+    Ok(())
+}
+
+fn collect_points(
+    coordinates: &str,
+    features: &mut Vec<ImportedGeometryFeature>,
+) -> anyhow::Result<()> {
+    features.extend(
+        parse_kml_coordinates_strict(coordinates)
+            .c(h!())?
+            .into_iter()
+            .map(ImportedGeometryFeature::Point),
+    );
+    Ok(())
 }
 
 fn collect_line_string(
-    coordinates: Option<&str>,
+    coordinates: &str,
     features: &mut Vec<ImportedGeometryFeature>,
-) {
-    let Some(coordinates) = coordinates else {
-        return;
-    };
-    if let Ok(coordinates) = parse_kml_coordinates_strict(coordinates) {
-        if coordinates.len() >= 2 {
-            features.push(ImportedGeometryFeature::LineString(coordinates));
-        }
+) -> anyhow::Result<()> {
+    let coordinates = parse_kml_coordinates_strict(coordinates).c(h!())?;
+    if coordinates.len() < 2 {
+        anyhow::bail!("KML LineString must contain at least two coordinates");
     }
+    features.push(ImportedGeometryFeature::LineString(coordinates));
+    Ok(())
 }
 
 fn parse_kml_coordinates_strict(
@@ -218,12 +272,30 @@ pub fn parse_kml_coordinates_lenient(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Cursor, Write};
+    use zip::write::SimpleFileOptions;
 
     #[test]
     fn parses_kml_coordinate_order() {
         let coordinate = parse_kml_coordinate("31.2,49.7,0").unwrap();
         assert_eq!(coordinate.lon, 31.2);
         assert_eq!(coordinate.lat, 49.7);
+    }
+
+    #[test]
+    fn rejects_kmz_archives_over_entry_and_expanded_size_limits() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        for name in ["one.kml", "two.kml"] {
+            writer
+                .start_file(name, SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(b"1234").unwrap();
+        }
+        let mut archive = ZipArchive::new(writer.finish().unwrap()).unwrap();
+
+        assert!(validate_archive_limits(&mut archive, 1, 8).is_err());
+        assert!(validate_archive_limits(&mut archive, 2, 7).is_err());
+        validate_archive_limits(&mut archive, 2, 8).unwrap();
     }
 
     #[tokio::test]
@@ -233,6 +305,10 @@ mod tests {
   <Placemark><Point><coordinates>31,49,0</coordinates></Point></Placemark>
   <Placemark><Polygon><outerBoundaryIs><LinearRing><coordinates>30,48 31,48 30,48</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
   <Placemark><LineString><coordinates>32,50,0 33,51,0</coordinates></LineString></Placemark>
+  <Placemark><MultiGeometry>
+    <Point><coordinates>34,52,0</coordinates></Point>
+    <LineString><coordinates>35,53,0 36,54,0</coordinates></LineString>
+  </MultiGeometry></Placemark>
 </Document></kml>"#;
         let features = parse_point_line_features("battle-line.kml", kml)
             .await
@@ -254,7 +330,34 @@ mod tests {
                         lon: 33.0,
                     },
                 ]),
+                ImportedGeometryFeature::Point(ImportedCoordinate {
+                    lat: 52.0,
+                    lon: 34.0,
+                }),
+                ImportedGeometryFeature::LineString(vec![
+                    ImportedCoordinate {
+                        lat: 53.0,
+                        lon: 35.0,
+                    },
+                    ImportedCoordinate {
+                        lat: 54.0,
+                        lon: 36.0,
+                    },
+                ]),
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn rejects_a_malformed_supported_geometry_instead_of_ignoring_it() {
+        let kml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+  <Placemark><Point><coordinates>invalid</coordinates></Point></Placemark>
+  <Placemark><LineString><coordinates>32,50,0 33,51,0</coordinates></LineString></Placemark>
+</Document></kml>"#;
+
+        assert!(parse_point_line_features("battle-line.kml", kml)
+            .await
+            .is_err());
     }
 }

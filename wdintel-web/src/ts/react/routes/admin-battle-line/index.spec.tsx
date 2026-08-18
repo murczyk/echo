@@ -110,10 +110,12 @@ beforeEach(() => {
   api.fetchBattleLineUnlinkedInbox.mockResolvedValue({
     items: [[9, minimalInboxMessage()]],
     total: 11,
+    pageSize: 10,
   });
   api.fetchBattleLineUnresolvedLocations.mockResolvedValue({
     items: [{ settlementText: 'НЕВІДОМО', itemCount: 4 }],
     total: 11,
+    pageSize: 10,
   });
 });
 

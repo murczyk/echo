@@ -31,7 +31,7 @@ pub enum Relation {
         from = "Column::SettlementId",
         to = "super::settlement::Column::Id",
         on_update = "NoAction",
-        on_delete = "Cascade"
+        on_delete = "SetNull"
     )]
     Settlement,
     #[sea_orm(

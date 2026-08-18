@@ -65,9 +65,10 @@ create table sigint_inbox_item_settlement (
         default (now() at time zone 'utc') not null,
     item_id bigint not null references sigint_inbox_item(id) on delete cascade,
     settlement_text text not null,
-    settlement_id integer references settlement(id) on delete cascade,
+    settlement_id integer references settlement(id) on delete set null,
     is_undefined boolean,
-    unique (item_id, settlement_text)
+    unique (item_id, settlement_text),
+    check (is_undefined is null or (is_undefined and settlement_id is null))
 );
 
 create index sigint_inbox_item_settlement_settlement_item_idx
@@ -80,7 +81,7 @@ create index sigint_inbox_item_settlement_pending_idx
 
 create index sigint_inbox_item_settlement_unresolved_text_item_idx
     on sigint_inbox_item_settlement (settlement_text, item_id)
-    where settlement_id is null;
+    where is_undefined is true;
                 "#,
             )
             .await

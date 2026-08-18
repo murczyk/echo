@@ -322,6 +322,9 @@ where
         id: NotSet,
     };
     model.insert(dbx).await.context(h!())?;
+    crate::battle_line::requeue_settlement_links_for_group(dbx, &master_key)
+        .await
+        .context(h!())?;
     let reason = format!("inserted aor {} for group {master_key}", aor.id);
     if let Err(e) =
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_with_key(
