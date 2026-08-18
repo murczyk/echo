@@ -308,6 +308,9 @@ pub struct OneoffBackfillInboxUnitLinksPs {
     /// End datetime in UTC (non-inclusive). Example: `2026-08-10T12:00:00`
     #[arg(long)]
     pub till_ts: Option<String>,
+    /// Resume after this inbox item ID (exclusive).
+    #[arg(long, default_value_t = 0)]
+    pub after_inbox_item_id: i64,
 }
 
 #[derive(clap::Parser, Debug)]
