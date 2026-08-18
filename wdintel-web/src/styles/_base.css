@@ -255,7 +255,6 @@ a {
 }
 
 .message-card-relative-time {
-  color: var(--mui-palette-text-secondary, rgba(0, 0, 0, 0.6));
   font-size: 0.875rem;
   line-height: 1.43;
   white-space: nowrap;
