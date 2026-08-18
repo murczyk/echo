@@ -615,6 +615,9 @@ pub const GENERATE_MESSAGE_UID_TILL_MAX_DAYS: i64 = 20;
 pub const UNKNOWN_GROUP_MASTER_KEY: &str = "undefined_group";
 pub const OPERATOR_INBOX_WORKER_LOOKBACK_HOURS: i64 = 3;
 pub const REDIS_MGS_ID_TTL: i32 = 3600;
+pub const SIGNAL_MESSAGE_DEDUPE_ADVISORY_LOCK_NAMESPACE: &str =
+    "signal-message-dedupe:";
+pub const SIGNAL_MESSAGE_DEDUPE_ADVISORY_LOCK_POLL_MS: u64 = 100;
 pub const SIGNOZ_METRICS_EXPORT_INTERVAL_SECS: u64 = 60;
 pub const SIGNOZ_METRICS_SERVICE_NAME: &str = "wdintel-rs";
 pub const SIGNOZ_METRICS_SERVICE_NAMESPACE: &str = "echo";
