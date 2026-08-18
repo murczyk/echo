@@ -22,7 +22,12 @@ Rules:
 - Do not interpret this rule as "remove all MUI".
 - Closed menus, dialogs, and popovers should remain unmounted when practical.
 - Preserve `memo`, stable default references, and conditional rendering used to reduce repeated work.
-- Hidden narrow-screen feeds remain mounted, but inactive feeds must not report visibility, bottom position, loading triggers, or read-state side effects.
+- On narrow multi-feed, mount only the active feed column’s card tree; inactive feeds stay in state but must not keep live MessageCard mounts, scroll tracking, loads, or read-state side effects.
+- On desktop multi-feed (`feedCount >= 2`), keep all columns visible. After ~10s without pointer/wheel/touch on a feed, off-viewport MessageCards in that feed become height placeholders (`useFeedIdleViewportOffload`); interaction wakes the feed and remounts the full window. Programmatic follow/settle scroll must not count as interaction.
+- Window `items` identity changes should commit via `startTransition` (`commitFeedWindowUpdate`) so scrolling stays responsive during MessageCard reconcile; keep urgent updates for loading flags and physical-bottom / follow / activate flushes.
+- Near-bottom newer pages that are not following stay in `pendingNewerItems` (off DOM) until scroll idle / physical bottom / follow / arrow — do not force those pages into `items` mid-scroll in the near zone.
+- Closed card action chrome should prefer native `button` + CSS (not always-mounted Tooltip/`Button`/`ButtonBase`) on the repeated Duty row; keep MUI menus unmounted until opened.
+- On Duty, when `dutyCollapseMediaPreviews` is enabled (user setting, default on), do not mount audio players, image/video thumbs, or coordinate map previews until the user opens the compact reveal banner (e.g. “1 аудіо”). Analysis keeps media expanded.
 - Preserve the current custom Duty windowing and scroll-anchor behavior.
 - Do not restore Virtuoso to the Duty feed without deliberate performance validation. Its XLSX usage is valid and unrelated.
 - Do not reverse these decisions during cleanup or unrelated feature work.

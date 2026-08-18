@@ -131,6 +131,7 @@ export function useRerDutyInitialLoad(params: Params) {
                   items,
                   loading: false,
                   referenceTimeMs: Date.now(),
+                  pendingNewerItems: [],
                   ...(preserveUnread && previousFeed
                     ? preserveUnreadState(previousFeed, items)
                     : {

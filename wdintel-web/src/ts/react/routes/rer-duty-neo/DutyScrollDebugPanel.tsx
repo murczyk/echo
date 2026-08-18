@@ -57,6 +57,8 @@ export function DutyScrollDebugPanel({ feed, view }: DutyScrollDebugPanelProps) 
         itemCount: feed.items.length,
         firstItemId: feed.items[0]?.[0] ?? null,
         lastItemId: feed.items.at(-1)?.[0] ?? null,
+        pendingNewerCount: feed.pendingNewerItems?.length ?? 0,
+        pendingNewerTailId: feed.pendingNewerItems?.at(-1)?.[0] ?? null,
         unreadCount: feed.unreadCount,
         readIdCount: feed.readIds.size,
         windowedUnreadCount: feed.windowedUnreadItems.size,
@@ -149,6 +151,8 @@ export function DutyScrollDebugPanel({ feed, view }: DutyScrollDebugPanelProps) 
         <strong>{`${view.tailAvailability ?? '—'} / ${formatBoolean(view.isWatchMode)} / ${formatBoolean(view.scrollTrackingEnabled ?? true)}`}</strong>
         <span>items / id range</span>
         <strong>{`${feed.items.length} / ${feed.items[0]?.[0] ?? '—'}→${feed.items.at(-1)?.[0] ?? '—'}`}</strong>
+        <span>pending newer</span>
+        <strong>{`${feed.pendingNewerItems?.length ?? 0} → ${feed.pendingNewerItems?.at(-1)?.[0] ?? '—'}`}</strong>
         <span>unread raw / shown</span>
         <strong>{`${feed.unreadCount} / ${view.bottomUnreadCount ?? 0}`}</strong>
         <span>read / evicted unread</span>

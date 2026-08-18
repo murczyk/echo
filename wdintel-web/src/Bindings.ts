@@ -5103,4 +5103,5 @@ export type UserDutySettingsDto = {
   showAnalysisCallsignAddForm: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  dutyCollapseMediaPreviews: boolean;
 };

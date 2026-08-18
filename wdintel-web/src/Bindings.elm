@@ -21079,6 +21079,7 @@ type alias UserDutySettingsDto =
     , showAnalysisCallsignAddForm : Bool
     , showClassicDuty : Bool
     , showClassicAnalysis : Bool
+    , dutyCollapseMediaPreviews : Bool
     }
 
 
@@ -21093,3 +21094,4 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "showAnalysisCallsignAddForm" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "showClassicDuty" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "showClassicAnalysis" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dutyCollapseMediaPreviews" (Json.Decode.bool)))

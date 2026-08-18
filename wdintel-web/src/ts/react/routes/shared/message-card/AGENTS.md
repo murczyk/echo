@@ -20,6 +20,7 @@ Rules:
 - Do not interpret this rule as "remove all MUI".
 - Closed menus, dialogs, and popovers should remain unmounted when practical.
 - Preserve `memo`, stable default references, and conditional rendering used to reduce repeated work.
+- On Duty, when user setting `dutyCollapseMediaPreviews` is on (default), heavy media stays behind reveal banners until opened; do not mount those players/previews on every closed card by default.
 - If a requested change needs structural layout inside the protected hot path, stop and call out the performance trade-off before implementing it.
 
 ## Theme parity

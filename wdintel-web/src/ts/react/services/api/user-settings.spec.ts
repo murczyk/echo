@@ -34,6 +34,7 @@ describe('user-settings api', () => {
       showAnalysisCallsignAddForm: false,
       showClassicDuty: false,
       showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: true,
     });
   });
 
@@ -47,6 +48,7 @@ describe('user-settings api', () => {
       showAnalysisCallsignAddForm: false,
       showClassicDuty: false,
       showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: false,
     });
 
     await saveUserSettings({
@@ -58,6 +60,7 @@ describe('user-settings api', () => {
       showAnalysisCallsignAddForm: false,
       showClassicDuty: false,
       showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: false,
     });
 
     expect(mocks.putJson).toHaveBeenCalledWith(
@@ -71,6 +74,7 @@ describe('user-settings api', () => {
         showAnalysisCallsignAddForm: false,
         showClassicDuty: false,
         showClassicAnalysis: false,
+        dutyCollapseMediaPreviews: false,
       },
       { signal: undefined },
     );

@@ -36,6 +36,8 @@ export type FeedColumnModel = {
     unreadCount?: number;
     /** When true, near-bottom should keep loading newer until the unread runway is filled. */
     unreadPrefetchNeeded?: boolean;
+    /** When true, flush `pendingNewerItems` into the window after scroll idle. */
+    pendingNewerFlushNeeded?: boolean;
     workspaceFabAvoidance?: DutyWorkspaceFabAvoidance;
   };
   filterPanel: FeedFilterPanelModel;
@@ -58,6 +60,8 @@ export type FeedColumnModel = {
     /** When true, empty network ids do not fall back to `msg.unit`. Server `featureStrictNetworks`. */
     featureStrictNetworks: boolean;
     tagsLayout: TagsLayoutVariant;
+    /** When true, Duty cards hide heavy media behind reveal banners until opened. */
+    collapseMediaPreviews?: boolean;
     tagsMap: Record<number, Tag>;
     tagsOrder: number[];
     botTagAction: MessageCardBotTagAction | null;
@@ -69,6 +73,8 @@ export type FeedColumnModel = {
   actions: {
     onLoadOlder: () => void;
     onLoadNewer?: () => void;
+    /** Push buffered newer pages into the visible window (scroll-idle / follow). */
+    onFlushPendingNewer?: () => void;
     onRemoveColumn: () => void;
     onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
     onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;

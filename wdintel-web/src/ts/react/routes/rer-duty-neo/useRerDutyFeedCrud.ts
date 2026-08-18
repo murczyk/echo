@@ -36,6 +36,7 @@ export function useRerDutyFeedCrud(
                 adjacentFreqsRange: feed.adjacentFreqsRange,
                 highlightSignalsEnabled: feed.highlightSignalsEnabled,
                 onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled,
+                pendingNewerItems: [],
               }
             : feed,
         );

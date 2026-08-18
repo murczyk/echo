@@ -59,6 +59,14 @@ import { MessageCardTags } from './MessageCardTags';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import { MessageMediaDocumentLink } from './MessageMediaDocumentLink';
 import { collectMessageDocuments } from './message-card-document-utils';
+import {
+  MESSAGE_CARD_AUDIO_REVEAL_ICON,
+  MESSAGE_CARD_COORDINATE_REVEAL_ICON,
+  MessageCardMediaRevealBanner,
+  formatMessageAudioRevealLabel,
+  formatMessageVisualRevealLabel,
+  messageCardVisualRevealIcon,
+} from './MessageCardMediaRevealBanner';
 import { blurActiveElement } from '../../../utils/focus';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
@@ -248,6 +256,7 @@ export function MessageCardMessageBody({
   searchText,
   onOpenPointsOnMap,
   onAddPointHighlightBlacklist,
+  collapseMediaPreviews = false,
 }: {
   compact?: boolean;
   messageId: number;
@@ -272,6 +281,8 @@ export function MessageCardMessageBody({
   searchText?: string | null;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
+  /** When true, heavy media mounts only after the user opens a reveal banner (Duty default). */
+  collapseMediaPreviews?: boolean;
 }) {
   const nameCache = usePointBlacklistPaletteNamesCache();
   const { notify } = useOptionalPowerSnackbar();
@@ -279,6 +290,9 @@ export function MessageCardMessageBody({
   const messageText = msg.text ?? '';
   const hasMessageTextOverflow = hasMoreThanPreviewLineLimit(messageText);
   const [isMessageTextExpanded, setIsMessageTextExpanded] = useState(false);
+  const [revealedVisualMedia, setRevealedVisualMedia] = useState(!collapseMediaPreviews);
+  const [revealedAudioMedia, setRevealedAudioMedia] = useState(!collapseMediaPreviews);
+  const [revealedCoordinateMedia, setRevealedCoordinateMedia] = useState(!collapseMediaPreviews);
   const [activeDownloadKeys, setActiveDownloadKeys] = useState<Set<string>>(() => new Set());
   const activeDownloadKeysRef = useRef<Set<string>>(new Set());
   const downloadCooldownTimersRef = useRef<Map<string, number>>(new Map());
@@ -314,6 +328,11 @@ export function MessageCardMessageBody({
   useEffect(() => {
     setIsMessageTextExpanded(false);
   }, [messageText]);
+  useEffect(() => {
+    setRevealedVisualMedia(!collapseMediaPreviews);
+    setRevealedAudioMedia(!collapseMediaPreviews);
+    setRevealedCoordinateMedia(!collapseMediaPreviews);
+  }, [collapseMediaPreviews, messageId]);
   const [attachmentPreviewIndex, setAttachmentPreviewIndex] = useState<number | null>(null);
   const [coordinatePreviewPoints, setCoordinatePreviewPoints] = useState<CoordinatePreviewPoint[]>(
     [],
@@ -544,6 +563,7 @@ export function MessageCardMessageBody({
     images.length + videoPreviewSources.length + previewableDocuments.length;
 
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
+  const hasCoordinatePreview = hasCoordinatePreviewCandidate(msg, tagsMap);
   const hasTags = tagsLayout !== 'hidden' && Object.keys(tagsMap).length > 0;
   const textPrimary = useMemoText(
     msg,
@@ -587,19 +607,28 @@ export function MessageCardMessageBody({
         />
       ) : null}
       {hasImageOrVideoAttachments ? (
-        <MessageCardImageList
-          images={images}
-          videos={videoAttachments}
-          selectedImageIndex={selectedSummaryImageIndex}
-          onOpen={(index) => {
-            blurActiveElement();
-            setAttachmentPreviewIndex(index);
-          }}
-          onOpenVideo={(index) => {
-            blurActiveElement();
-            setAttachmentPreviewIndex(images.length + index);
-          }}
-        />
+        revealedVisualMedia ? (
+          <MessageCardImageList
+            images={images}
+            videos={videoAttachments}
+            selectedImageIndex={selectedSummaryImageIndex}
+            onOpen={(index) => {
+              blurActiveElement();
+              setAttachmentPreviewIndex(index);
+            }}
+            onOpenVideo={(index) => {
+              blurActiveElement();
+              setAttachmentPreviewIndex(images.length + index);
+            }}
+          />
+        ) : (
+          <MessageCardMediaRevealBanner
+            kind="visuals"
+            label={formatMessageVisualRevealLabel(images.length, videoAttachments.length)}
+            icon={messageCardVisualRevealIcon(images.length, videoAttachments.length)}
+            onReveal={() => setRevealedVisualMedia(true)}
+          />
+        )
       ) : null}
       {attachmentPreviewIndex != null && previewAttachments.length > 0 ? (
         <MessageCardAttachmentPreviewProvider
@@ -611,11 +640,20 @@ export function MessageCardMessageBody({
         />
       ) : null}
       {audioAttachments.length > 0 ? (
-        <div className="mt-1 flex flex-col items-start w-full">
-          {audioAttachments.map((attachment) => (
-            <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
-          ))}
-        </div>
+        revealedAudioMedia ? (
+          <div className="mt-1 flex flex-col items-start w-full">
+            {audioAttachments.map((attachment) => (
+              <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
+            ))}
+          </div>
+        ) : (
+          <MessageCardMediaRevealBanner
+            kind="audio"
+            label={formatMessageAudioRevealLabel(audioAttachments.length)}
+            icon={MESSAGE_CARD_AUDIO_REVEAL_ICON}
+            onReveal={() => setRevealedAudioMedia(true)}
+          />
+        )
       ) : null}
       {documents.length > 0 || downloadAttachments.length > 0 ? (
         <div className="mt-1 flex flex-wrap items-start gap-2 w-full">
@@ -720,16 +758,25 @@ export function MessageCardMessageBody({
           ) : null}
         </div>
       ) : null}
-      {hasCoordinatePreviewCandidate(msg, tagsMap) ? (
-        <MessageCardCoordinateAttachment
-          msg={msg}
-          tagsMap={tagsMap}
-          onPointsChange={setCoordinatePreviewPoints}
-          onOpen={() => {
-            blurActiveElement();
-            setAttachmentPreviewIndex(coordinatePreviewStartIndex);
-          }}
-        />
+      {hasCoordinatePreview ? (
+        revealedCoordinateMedia ? (
+          <MessageCardCoordinateAttachment
+            msg={msg}
+            tagsMap={tagsMap}
+            onPointsChange={setCoordinatePreviewPoints}
+            onOpen={() => {
+              blurActiveElement();
+              setAttachmentPreviewIndex(coordinatePreviewStartIndex);
+            }}
+          />
+        ) : (
+          <MessageCardMediaRevealBanner
+            kind="coordinates"
+            label="Координати"
+            icon={MESSAGE_CARD_COORDINATE_REVEAL_ICON}
+            onReveal={() => setRevealedCoordinateMedia(true)}
+          />
+        )
       ) : null}
       {isPresent(msg.extendedForm) && msg.extendedForm.trim() !== '' ? (
         <div className="flex flex-row items-center gap-[6px] min-w-0">
