@@ -269,4 +269,20 @@ describe('analysis-map', () => {
       "<strong>&lt;Харків&gt;</strong>, Харківська<br>Пов'язаних перехоплень: 3",
     );
   });
+
+  it('does not redispatch settlement changes already emitted by the settings control', () => {
+    const analysisMap = document.createElement('analysis-map') as HTMLElement & {
+      _canShowSettlements: boolean;
+      _setShowSettlements: (show: boolean) => void;
+      _showSettlements: boolean;
+    };
+    const listener = vi.fn();
+    analysisMap._canShowSettlements = true;
+    analysisMap.addEventListener('show-settlements-change', listener);
+
+    analysisMap._setShowSettlements(true);
+
+    expect(analysisMap._showSettlements).toBe(true);
+    expect(listener).not.toHaveBeenCalled();
+  });
 });

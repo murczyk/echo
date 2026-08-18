@@ -114,6 +114,7 @@ describe('useAnalysisMapData settlement overlays', () => {
     expect(api.fetchAnalysisMapPoints.mock.calls[0][0].showSettlements).toBe(true);
 
     await act(async () => latest!.setShowSettlements(false));
+    expect(latest?.mapLoading).toBe(false);
     request.resolve(response());
     await act(async () => togglePromise);
 
@@ -141,6 +142,28 @@ describe('useAnalysisMapData settlement overlays', () => {
     await act(async () => refreshPromise);
 
     expect(latest?.mapSettlements).toEqual([]);
+  });
+
+  it('clears loading when disabling settlements invalidates a date-range request', async () => {
+    api.fetchAnalysisMapPoints.mockResolvedValueOnce(response());
+    await renderHook();
+    await act(async () => latest!.setShowSettlements(true));
+
+    const request = deferred<MapPointsRsp>();
+    api.fetchAnalysisMapPoints.mockReturnValueOnce(request.promise);
+    let refreshPromise!: Promise<void>;
+    await act(async () => {
+      refreshPromise = latest!.refreshMapDateRange({ startDate: 10, endDate: 20 });
+      await Promise.resolve();
+    });
+    expect(latest?.mapLoading).toBe(true);
+
+    await act(async () => latest!.setShowSettlements(false));
+    expect(latest?.mapLoading).toBe(false);
+
+    request.resolve(response());
+    await act(async () => refreshPromise);
+    expect(latest?.mapLoading).toBe(false);
   });
 
   it('does not retain markers when a date-range refresh fails', async () => {

@@ -152,6 +152,7 @@ export function useAnalysisMapData({
         settlementToggleAbortRef.current = null;
         mapDateRangeLoadVersionRef.current += 1;
         setMapSettlementsState([]);
+        setMapLoading(false);
         return;
       }
       const inboxReq = buildInboxReq(queryState, optionsFreqValues);

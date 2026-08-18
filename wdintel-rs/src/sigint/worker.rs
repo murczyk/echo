@@ -29,6 +29,12 @@ where
         .insert(dbx)
         .await
         .c(h!())?;
+        crate::battle_line::settlement_queue::requeue_item_settlements(
+            dbx,
+            original.id,
+        )
+        .await
+        .c(h!())?;
         if message.external_id.is_some()
             || message.echo_inbox_message_id.is_some()
         {
@@ -62,6 +68,11 @@ where
         created_at: Set(message.created_at),
     }
     .insert(dbx)
+    .await
+    .c(h!())?;
+    crate::battle_line::settlement_queue::requeue_item_settlements(
+        dbx, message.id,
+    )
     .await
     .c(h!())?;
     Ok(UnstageResult {
@@ -99,7 +110,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functest::tests::{cleanup, mk_signal_group, mk_signal_message};
+    use crate::functest::tests::{
+        cleanup, mk_sigint_inbox_item, mk_signal_group, mk_signal_message,
+    };
     use serial_test::serial;
 
     #[tokio::test]
@@ -173,6 +186,63 @@ mod tests {
             Some(duplicate_trace_message_uid(staged.id).as_str())
         );
         assert_ne!(trace.message_uid, original.message_uid);
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unstage_message_requeues_existing_settlement_links() {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let signal_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                deleted: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &txn,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item_settlement::ActiveModel {
+            item_id: Set(message.id),
+            settlement_text: Set("TEST".to_string()),
+            settlement_id: Set(None),
+            is_undefined: Set(Some(true)),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+
+        unstage_message(&txn, &signal_group.master_key, message.clone(), None)
+            .await
+            .unwrap();
+
+        let settlement_link = sigint_inbox_item_settlement::Entity::find()
+            .filter(sigint_inbox_item_settlement::Column::ItemId.eq(message.id))
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(settlement_link.settlement_id, None);
+        assert_eq!(settlement_link.is_undefined, None);
         txn.rollback().await.unwrap();
     }
 }

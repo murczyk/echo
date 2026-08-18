@@ -86,6 +86,29 @@ where
     Ok(())
 }
 
+pub async fn requeue_item_settlements<C>(
+    dbx: &C,
+    item_id: i64,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    sigint_inbox_item_settlement::Entity::update_many()
+        .col_expr(
+            sigint_inbox_item_settlement::Column::SettlementId,
+            Expr::value(Option::<i32>::None),
+        )
+        .col_expr(
+            sigint_inbox_item_settlement::Column::IsUndefined,
+            Expr::value(Option::<bool>::None),
+        )
+        .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
 fn location_texts(location_v2: Option<&str>) -> BTreeSet<String> {
     location_v2
         .map(to_location_list)

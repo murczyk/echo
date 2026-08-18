@@ -776,13 +776,6 @@ class AnalysisMap extends HTMLElement {
   private _setShowSettlements(show: boolean): void {
     this._showSettlements = this._canShowSettlements && show;
     this._replaceSettlementsOnMap();
-    this.dispatchEvent(
-      new CustomEvent('show-settlements-change', {
-        detail: { show: this._showSettlements },
-        bubbles: true,
-        composed: true,
-      }),
-    );
   }
 
   private _escapeHtml(value: string): string {
