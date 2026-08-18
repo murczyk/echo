@@ -415,7 +415,7 @@ async fn save_signal_message(
         .await
         .c(h!())?;
 
-    if !parent_signal_message_ids.is_empty() {
+    if signal_message_id.is_none() && !parent_signal_message_ids.is_empty() {
         query::find_copyable_signal_messages_for_copy(
             &txn,
             &parent_signal_message_ids,
