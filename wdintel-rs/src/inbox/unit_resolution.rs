@@ -69,6 +69,22 @@ struct UnitTextResolution {
     is_fallback: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct UnitTextResolutionCacheKey {
+    unit_v2: Option<String>,
+    unit: Option<String>,
+}
+
+type FailureMetadata = (bool, String);
+type FailureMetadataCache = HashMap<String, Option<FailureMetadata>>;
+
+#[derive(Default)]
+struct InboxUnitBackfillCache {
+    unit_text_resolutions:
+        HashMap<UnitTextResolutionCacheKey, Vec<UnitTextResolution>>,
+    failure_metadata: FailureMetadataCache,
+}
+
 fn contains_word(value: &str, word: &str) -> bool {
     value.match_indices(word).any(|(start, matched)| {
         let end = start + matched.len();
@@ -470,6 +486,35 @@ where
     Ok(resolved)
 }
 
+async fn resolve_unit_text_candidates_cached<C>(
+    db: &C,
+    unit_v2: Option<&str>,
+    unit: Option<&str>,
+    cache: &mut InboxUnitBackfillCache,
+) -> anyhow::Result<Vec<UnitTextResolution>>
+where
+    C: ConnectionTrait,
+{
+    let unit_v2 = nonempty(unit_v2).map(str::to_owned);
+    let unit = unit_v2
+        .is_none()
+        .then(|| nonempty(unit).map(str::to_owned))
+        .flatten();
+    let key = UnitTextResolutionCacheKey { unit_v2, unit };
+    if let Some(resolutions) = cache.unit_text_resolutions.get(&key) {
+        return Ok(resolutions.clone());
+    }
+    let resolutions = resolve_unit_text_candidates(
+        db,
+        key.unit_v2.as_deref(),
+        key.unit.as_deref(),
+    )
+    .await
+    .context(h!())?;
+    cache.unit_text_resolutions.insert(key, resolutions.clone());
+    Ok(resolutions)
+}
+
 async fn mark_failure_resolved<C>(
     db: &C,
     inbox_item_id: i64,
@@ -499,6 +544,34 @@ async fn upsert_failure<C>(
 where
     C: ConnectionTrait,
 {
+    upsert_failure_inner(db, inbox_item_id, unit_txt, None)
+        .await
+        .context(h!())
+}
+
+async fn upsert_failure_cached<C>(
+    db: &C,
+    inbox_item_id: i64,
+    unit_txt: &str,
+    cache: &mut FailureMetadataCache,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    upsert_failure_inner(db, inbox_item_id, unit_txt, Some(cache))
+        .await
+        .context(h!())
+}
+
+async fn upsert_failure_inner<C>(
+    db: &C,
+    inbox_item_id: i64,
+    unit_txt: &str,
+    cache: Option<&mut FailureMetadataCache>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     let normalized_unit_txt = normalize_unit_label(unit_txt);
     let existing = failed_inbox_unit::Entity::find()
         .filter(failed_inbox_unit::Column::InboxItemId.eq(inbox_item_id))
@@ -510,23 +583,38 @@ where
         .one(db)
         .await
         .context(h!())?;
-    let group_metadata = failed_inbox_unit::Entity::find()
-        .filter(failed_inbox_unit::Column::Deleted.eq(false))
-        .filter(Expr::cust_with_values(
-            "lower(regexp_replace(btrim(failed_inbox_unit.unit_txt), '[[:space:]]+', ' ', 'g')) = $1",
-            vec![normalized_unit_txt],
-        ))
-        .order_by_desc(failed_inbox_unit::Column::IsBadData)
-        .order_by_desc(failed_inbox_unit::Column::Id)
-        .one(db)
-        .await
-        .context(h!())?;
+    let group_metadata = if let Some(group_metadata) = cache
+        .as_deref()
+        .and_then(|cache| cache.get(&normalized_unit_txt))
+    {
+        group_metadata.clone()
+    } else {
+        failed_inbox_unit::Entity::find()
+            .filter(failed_inbox_unit::Column::Deleted.eq(false))
+            .filter(Expr::cust_with_values(
+                "lower(regexp_replace(btrim(failed_inbox_unit.unit_txt), '[[:space:]]+', ' ', 'g')) = $1",
+                vec![normalized_unit_txt.clone()],
+            ))
+            .order_by_desc(failed_inbox_unit::Column::IsBadData)
+            .order_by_desc(failed_inbox_unit::Column::Id)
+            .one(db)
+            .await
+            .context(h!())?
+            .map(|failure| (failure.is_bad_data, failure.note))
+    };
     let (is_bad_data, note) = group_metadata
         .as_ref()
-        .or(existing.as_ref())
-        .map(|failure| (failure.is_bad_data, failure.note.clone()))
+        .cloned()
+        .or_else(|| {
+            existing
+                .as_ref()
+                .map(|failure| (failure.is_bad_data, failure.note.clone()))
+        })
         .unwrap_or_default();
     let is_bad_data = is_bad_data || should_auto_archive_failed_unit(unit_txt);
+    if let Some(cache) = cache {
+        cache.insert(normalized_unit_txt, Some((is_bad_data, note.clone())));
+    }
     failed_inbox_unit::Entity::insert(failed_inbox_unit::ActiveModel {
             id: NotSet,
             created_at: NotSet,
@@ -783,6 +871,44 @@ where
     let resolved_unit_texts = resolve_unit_text_candidates(db, unit_v2, unit)
         .await
         .context(h!())?;
+    sync_resolved_inbox_item(db, inbox_item_id, resolved_unit_texts, None)
+        .await
+        .context(h!())
+}
+
+async fn resolve_and_sync_inbox_item_cached<C>(
+    db: &C,
+    inbox_item_id: i64,
+    unit_v2: Option<&str>,
+    unit: Option<&str>,
+    cache: &mut InboxUnitBackfillCache,
+) -> anyhow::Result<Option<i64>>
+where
+    C: ConnectionTrait,
+{
+    let resolved_unit_texts =
+        resolve_unit_text_candidates_cached(db, unit_v2, unit, cache)
+            .await
+            .context(h!())?;
+    sync_resolved_inbox_item(
+        db,
+        inbox_item_id,
+        resolved_unit_texts,
+        Some(&mut cache.failure_metadata),
+    )
+    .await
+    .context(h!())
+}
+
+async fn sync_resolved_inbox_item<C>(
+    db: &C,
+    inbox_item_id: i64,
+    resolved_unit_texts: Vec<UnitTextResolution>,
+    mut failure_metadata_cache: Option<&mut FailureMetadataCache>,
+) -> anyhow::Result<Option<i64>>
+where
+    C: ConnectionTrait,
+{
     let sigint_unit_ids = resolved_unit_texts
         .iter()
         .filter_map(|resolution| resolution.sigint_unit_id)
@@ -803,9 +929,20 @@ where
             .context(h!())?;
         for resolution in resolved_unit_texts {
             if resolution.sigint_unit_id.is_none() && !resolution.is_fallback {
-                upsert_failure(db, inbox_item_id, &resolution.text)
+                if let Some(cache) = failure_metadata_cache.as_deref_mut() {
+                    upsert_failure_cached(
+                        db,
+                        inbox_item_id,
+                        &resolution.text,
+                        cache,
+                    )
                     .await
                     .context(h!())?;
+                } else {
+                    upsert_failure(db, inbox_item_id, &resolution.text)
+                        .await
+                        .context(h!())?;
+                }
             }
         }
     }
@@ -990,13 +1127,18 @@ pub(crate) async fn backfill_inbox_unit_links(
     db: &DatabaseConnection,
     start_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
+    after_inbox_item_id: i64,
     progress: Option<&ProgressBar>,
 ) -> anyhow::Result<u64> {
-    if start_ts >= till_ts {
-        anyhow::bail!("start_ts must be earlier than till_ts");
-    }
-    let mut last_id = 0_i64;
+    validate_inbox_unit_link_backfill_bounds(
+        start_ts,
+        till_ts,
+        after_inbox_item_id,
+    )
+    .context(h!())?;
+    let mut last_id = after_inbox_item_id;
     let mut processed = 0_u64;
+    let mut cache = InboxUnitBackfillCache::default();
     loop {
         let items = sigint_inbox_item::Entity::find()
             .join(
@@ -1015,24 +1157,33 @@ pub(crate) async fn backfill_inbox_unit_links(
             break;
         }
         let item_ids = items.iter().map(|item| item.id).collect_vec();
+        let last_item_id = items.last().unwrap().id;
+        let transaction = db.begin().await.context(h!())?;
         for item in &items {
-            resolve_and_sync_inbox_item(
-                db,
+            resolve_and_sync_inbox_item_cached(
+                &transaction,
                 item.id,
                 item.unit_v2.as_deref(),
                 item.unit.as_deref(),
+                &mut cache,
             )
             .await
             .context(h!())?;
-            processed += 1;
-            if let Some(progress) = progress {
-                progress.inc(1);
-            }
         }
-        sync_network_unit_links(db, &item_ids).await.context(h!())?;
-        last_id = items.last().unwrap().id;
+        sync_network_unit_links(&transaction, &item_ids)
+            .await
+            .context(h!())?;
+        transaction.commit().await.context(h!())?;
+        let batch_size = u64::try_from(items.len()).context(h!())?;
+        processed += batch_size;
+        if let Some(progress) = progress {
+            progress.inc(batch_size);
+        }
+        last_id = last_item_id;
         info!(
-            "backfilled inbox unit links batch: processed={processed}, last_inbox_item_id={last_id}"
+            "backfilled inbox unit links batch: processed={processed}, last_inbox_item_id={last_id}, cached_unit_texts={}, cached_failure_texts={}",
+            cache.unit_text_resolutions.len(),
+            cache.failure_metadata.len(),
         );
         if let Some(progress) = progress {
             progress.set_message(format!("last inbox item {last_id}"));
@@ -1054,20 +1205,39 @@ pub(crate) async fn count_inbox_unit_link_backfill_items(
     db: &DatabaseConnection,
     start_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
+    after_inbox_item_id: i64,
 ) -> anyhow::Result<u64> {
-    if start_ts >= till_ts {
-        anyhow::bail!("start_ts must be earlier than till_ts");
-    }
+    validate_inbox_unit_link_backfill_bounds(
+        start_ts,
+        till_ts,
+        after_inbox_item_id,
+    )
+    .context(h!())?;
     sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
+        .filter(sigint_inbox_item::Column::Id.gt(after_inbox_item_id))
         .filter(signal_message::Column::CreatedAt.gte(start_ts))
         .filter(signal_message::Column::CreatedAt.lt(till_ts))
         .count(db)
         .await
         .context(h!())
+}
+
+fn validate_inbox_unit_link_backfill_bounds(
+    start_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+    after_inbox_item_id: i64,
+) -> anyhow::Result<()> {
+    if start_ts >= till_ts {
+        anyhow::bail!("start_ts must be earlier than till_ts");
+    }
+    if after_inbox_item_id < 0 {
+        anyhow::bail!("after_inbox_item_id must not be negative");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2123,7 +2293,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn backfill_syncs_network_derived_unit_links() {
+    async fn backfill_resumes_after_item_id_and_syncs_network_unit_links() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let unit = crate::functest::tests::mk_sigint_unit(
@@ -2148,15 +2318,18 @@ mod tests {
         )
         .await
         .unwrap();
-        let inbox_item = insert_inbox_item(&env.dbx, None, None, None).await;
-        sigint_inbox_item_network::ActiveModel {
-            sigint_inbox_item_id: Set(inbox_item.id),
-            sigint_network_id: Set(network.id),
-            ..Default::default()
+        let skipped_item = insert_inbox_item(&env.dbx, None, None, None).await;
+        let resumed_item = insert_inbox_item(&env.dbx, None, None, None).await;
+        for inbox_item_id in [skipped_item.id, resumed_item.id] {
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(inbox_item_id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
         }
-        .insert(&env.dbx)
-        .await
-        .unwrap();
         let now = Utc::now().naive_utc();
 
         assert_eq!(
@@ -2164,6 +2337,7 @@ mod tests {
                 &env.dbx,
                 now - Duration::minutes(1),
                 now + Duration::minutes(1),
+                skipped_item.id,
                 None,
             )
             .await
@@ -2173,7 +2347,16 @@ mod tests {
         assert_eq!(
             unit_ids_for_kind(
                 &env.dbx,
-                inbox_item.id,
+                skipped_item.id,
+                SigintInboxItemUnitKind::Network,
+            )
+            .await,
+            Vec::<i64>::new()
+        );
+        assert_eq!(
+            unit_ids_for_kind(
+                &env.dbx,
+                resumed_item.id,
                 SigintInboxItemUnitKind::Network,
             )
             .await,
