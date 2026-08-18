@@ -943,9 +943,9 @@ deploy _server_pos="" server silent="false":
 
       run_logged 600 "sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update" \
         sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update
-      run_logged 1200 "sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install echo-install wdintel-rs" \
+      run_logged 1200 "sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install echo-install wdintel-rs" \
         sudo env DEBIAN_FRONTEND=noninteractive \
-          apt-get -o Dpkg::Lock::Timeout=120 -y -qq install echo-install wdintel-rs'
+          apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install echo-install wdintel-rs'
 
     ssh "$SERVER" 'set -euo pipefail
       /opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh --yes
@@ -1140,10 +1140,10 @@ deploy-from-local _server_pos="" server silent="false":
     ssh "$SERVER" "set -euo pipefail
       export DEBIAN_FRONTEND=noninteractive
       cd /var/tmp
-      if ! sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'; then
+      if ! sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'; then
         echo 'Initial local package install failed; updating APT indexes and retrying...'
         sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update
-        sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'
+        sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'
       fi
       rm -f './${REMOTE_DEB_NAME}'
     "

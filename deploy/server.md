@@ -151,6 +151,8 @@ two-minute Redis-backed maintenance state before stopping runtime services.
 The state wakes connected browsers to show the update notice and temporarily
 suppresses SigNoz log delivery; successful verification clears it immediately,
 while failures rely on the TTL.
+Package-owned conffiles are updated from the package during these
+noninteractive installs; keep instance-specific settings in `config.toml`.
 
 ## Instal AI
 
