@@ -415,6 +415,18 @@ async fn save_signal_message(
         .await
         .c(h!())?;
 
+    if !parent_signal_message_ids.is_empty() {
+        query::find_copyable_signal_messages_for_copy(
+            &txn,
+            &parent_signal_message_ids,
+            &allowed_groups,
+            login,
+            &logins,
+        )
+        .await
+        .c(h!())?;
+    }
+
     let copy_sources = if copy_source_signal_message_ids.is_empty() {
         vec![]
     } else {
@@ -582,7 +594,7 @@ fn validate_direct_submit_payload(
     let upload_urls = payload.upload_urls.as_deref().unwrap_or_default();
     validate_signal_group_master_key(
         payload.signal_group_master_key.as_deref(),
-        validate_parent_ids || is_intelligence_report,
+        is_intelligence_report,
     )?;
     if !upload_urls.is_empty()
         && (env.config.s3_config.is_none() || env.s3.is_none())
@@ -1005,6 +1017,8 @@ async fn finish_direct_submit(
             &env.config,
         )
         .await;
+    }
+    if !media_to_delete_after_commit.is_empty() || !ocr_result_keys.is_empty() {
         crate::messenger::media::delete_stored_media_files(
             &media_to_delete_after_commit,
             &ocr_result_keys,

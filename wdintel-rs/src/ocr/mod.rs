@@ -897,7 +897,11 @@ mod tests {
         media_summary as media_summary_entity, ocr_job, signal_message_media,
     };
     use chrono::Utc;
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
+    use sea_orm::{
+        ActiveModelTrait,
+        ActiveValue::{NotSet, Set},
+        EntityTrait,
+    };
     use serde_json::json;
     use uuid::Uuid;
 
@@ -915,6 +919,7 @@ mod tests {
             size_bytes: 1,
             created_at: Utc::now().naive_utc(),
             is_encrypted: true,
+            storage_key: None,
         }
     }
 
@@ -972,6 +977,7 @@ mod tests {
                 size_bytes: Set(1),
                 created_at: Set(now + chrono::Duration::milliseconds(index)),
                 is_encrypted: Set(true),
+                storage_key: NotSet,
             }
             .insert(&env.dbx)
             .await
@@ -1022,6 +1028,7 @@ mod tests {
             size_bytes: Set(1),
             created_at: Set(now),
             is_encrypted: Set(true),
+            storage_key: NotSet,
         }
         .insert(&env.dbx)
         .await

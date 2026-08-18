@@ -60,9 +60,19 @@ where
         .one(dbx)
         .await
         .c(h!())?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
     let login = login.to_string();
     if message.datasource_group_id.is_none()
+        && signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId
+                    .eq(signal_message_id),
+            )
+            .one(dbx)
+            .await
+            .c(h!())?
+            .is_none()
         && (message.sender.as_deref() == Some(login.as_str())
             || message.sender.as_deref().is_some_and(|sender| {
                 Uuid::parse_str(sender).ok().is_some_and(|sender_id| {
@@ -297,6 +307,7 @@ where
         Some(group_master_key) => {
             resolve_datasource_id_for_group(dbx, group_master_key)
                 .await
+                .map_err(|error| error.c(h!()))
                 .map(Some)
         }
         None => Err(AppError::NotFound),

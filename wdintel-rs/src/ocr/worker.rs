@@ -770,7 +770,11 @@ mod tests {
     use crate::entities::{ocr_job, signal_message_media};
     use crate::ocr::OcrRuntimeConfig;
     use chrono::Utc;
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
+    use sea_orm::{
+        ActiveModelTrait,
+        ActiveValue::{NotSet, Set},
+        EntityTrait,
+    };
     use uuid::Uuid;
 
     #[test]
@@ -833,6 +837,7 @@ mod tests {
             size_bytes: Set(1),
             created_at: Set(now),
             is_encrypted: Set(true),
+            storage_key: NotSet,
         }
         .insert(&env.dbx)
         .await

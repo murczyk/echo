@@ -495,7 +495,7 @@ pub async fn delete_stored_media_files(
     config: &Config,
     s3: &Option<Operator>,
 ) {
-    if media.is_empty() {
+    if media.is_empty() && ocr_result_keys.is_empty() {
         return;
     }
     let Some(config) = config.s3_config.as_ref() else {
@@ -508,12 +508,17 @@ pub async fn delete_stored_media_files(
         return;
     };
     for media in media {
-        let object_keys = [
+        let mut object_keys = vec![
             media_object_key(media),
             storage::nested_object_key(&media.id),
             storage::plaintext_media_object_key(&media.id),
             storage::plaintext_media_migration_marker_object_key(&media.id),
         ];
+        if media.is_encrypted {
+            if let Some(storage_key) = media.storage_key.as_deref() {
+                object_keys.push(format!("{storage_key}.plaintext"));
+            }
+        }
         for object_key in object_keys {
             let remote_key = s3_config.prefixed_key(&object_key);
             if let Err(e) = s3.delete(&remote_key).await {
@@ -634,6 +639,10 @@ pub(crate) async fn ensure_media_access(
                 .eq(signal_message_id),
         )
         .filter(
+            crate::entities::intel_prod::Column::RelationKind
+                .eq(crate::entities::intel_prod::RELATION_KIND_REPORT),
+        )
+        .filter(
             signal_message_group::Column::GroupMasterKey.eq_any(allowed_groups),
         )
         .select_only()
@@ -655,20 +664,34 @@ pub(crate) async fn ensure_media_access(
         .chain(std::iter::once(login))
         .map(ToString::to_string)
         .collect::<Vec<_>>();
-    let is_owner =
-        crate::entities::signal_message::Entity::find_by_id(signal_message_id)
+    let is_owner = signal_message::Entity::find_by_id(signal_message_id)
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_message::Column::DatasourceGroupId.is_null())
+        .filter(signal_message::Column::Sender.is_in(owner_sender_ids))
+        .select_only()
+        .column(signal_message::Column::Id)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    let has_group_links = if is_owner {
+        signal_message_group::Entity::find()
             .filter(
-                crate::entities::signal_message::Column::Sender
-                    .is_in(owner_sender_ids),
+                signal_message_group::Column::SignalMessageId
+                    .eq(signal_message_id),
             )
             .select_only()
-            .column(crate::entities::signal_message::Column::Id)
+            .column(signal_message_group::Column::Id)
             .into_tuple::<i64>()
             .one(dbx)
             .await
             .c(h!())?
-            .is_some();
-    if is_owner {
+            .is_some()
+    } else {
+        false
+    };
+    if is_owner && !has_group_links {
         return Ok(());
     }
 

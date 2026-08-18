@@ -1848,8 +1848,9 @@ async fn replace_media_if_changed(
             .into_iter()
             .map(|media| media.id)
             .collect_vec();
-        let deleted_media =
-            delete_old_media(txn, uploaded_media_ids.clone()).await?;
+        let deleted_media = delete_old_media(txn, uploaded_media_ids.clone())
+            .await
+            .c(h!())?;
         update_attachments_hash(
             txn,
             signal_message.id,
@@ -1869,7 +1870,7 @@ async fn replace_media_if_changed(
             },
         });
     }
-    let deleted_media = delete_old_media(txn, old_media_ids).await?;
+    let deleted_media = delete_old_media(txn, old_media_ids).await.c(h!())?;
     Ok(MediaReplacementResult {
         superseded_media_ids: deleted_media.ids,
         superseded_media_storage_keys: deleted_media.storage_keys,

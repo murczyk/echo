@@ -272,6 +272,14 @@ vi.mock('@mui/material', () => ({
   ),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Divider: () => <hr />,
+  Menu: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  MenuItem: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) => (
+    <button type="button" onClick={onClick}>
+      {children}
+    </button>
+  ),
+  ListItemIcon: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
+  ListItemText: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   Typography: ({ children, component = 'div' }: { children?: ReactNode; component?: string }) => {
     const Component = component as keyof HTMLElementTagNameMap;
     return <Component>{children}</Component>;

@@ -202,6 +202,12 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('@mui/material/styles', () => ({
+  createTheme: () => ({
+    palette: {
+      background: { default: '#121212' },
+      mode: 'dark',
+    },
+  }),
   useTheme: () => ({ breakpoints: { down: () => '(max-width: 600px)' } }),
 }));
 vi.mock('../../../components/PowerAlert', () => ({

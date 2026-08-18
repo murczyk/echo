@@ -340,10 +340,10 @@ async fn load_intelligence_report_summaries(
     let requested_ids = message_ids.iter().copied().collect::<HashSet<_>>();
     let mut summaries = IntelligenceReportSummaries::default();
     for link in links {
+        let parent_is_accessible = accessible_group_master_keys
+            .contains_key(&link.parent_signal_message_id)
+            || owner_message_ids.contains(&link.parent_signal_message_id);
         if requested_ids.contains(&link.signal_message_id) {
-            let parent_is_accessible = accessible_group_master_keys
-                .contains_key(&link.parent_signal_message_id)
-                || owner_message_ids.contains(&link.parent_signal_message_id);
             if let Some(parent) = inbox_message_summary(
                 link.parent_signal_message_id,
                 parent_is_accessible,
@@ -362,7 +362,8 @@ async fn load_intelligence_report_summaries(
         }
         let report_is_accessible = accessible_group_master_keys
             .contains_key(&link.signal_message_id)
-            || !grouped_message_ids.contains(&link.signal_message_id);
+            || !grouped_message_ids.contains(&link.signal_message_id)
+            || parent_is_accessible;
         let report_is_deleted = messages
             .get(&link.signal_message_id)
             .is_none_or(|message| message.deleted);
@@ -851,7 +852,8 @@ pub async fn aggregate_to_inbox_messages(
         let m_comment = find_editable_linked_message_comment(
             &env.dbx, message.id, login, logins,
         )
-        .await?;
+        .await
+        .c(h!())?;
         let location = format_inbox_message_location(
             message.location,
             message.location_v2,
@@ -976,6 +978,34 @@ where
     )
 }
 
+pub(crate) async fn upsert_existing_editable_linked_message_comment<C>(
+    db: &C,
+    item_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+    comment: &str,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let Some(existing) =
+        find_editable_linked_message_comment(db, item_id, login, logins)
+            .await
+            .c(h!())?
+    else {
+        return Ok(false);
+    };
+    update_linked_message_comment(db, &existing, comment)
+        .await
+        .c(h!())?;
+    delete_editable_linked_message_comment_duplicates(
+        db, item_id, login, logins, &existing,
+    )
+    .await
+    .c(h!())?;
+    Ok(true)
+}
+
 pub(crate) async fn upsert_editable_linked_message_comment(
     db: &DatabaseTransaction,
     env: &Env,
@@ -984,40 +1014,106 @@ pub(crate) async fn upsert_editable_linked_message_comment(
     logins: &[uuid::Uuid],
     comment: &str,
 ) -> Result<(), AppError> {
-    if let Some(existing) =
-        find_editable_linked_message_comment(db, item_id, login, logins)
-            .await
-            .c(h!())?
+    if !upsert_existing_editable_linked_message_comment(
+        db, item_id, login, logins, comment,
+    )
+    .await
+    .c(h!())?
     {
-        if let Some(legacy_comment_id) = existing.legacy_comment_id {
-            let mut legacy_comment =
-                sigint_comment::Entity::find_by_id(legacy_comment_id)
-                    .one(db)
-                    .await
-                    .c(h!())?
-                    .ok_or(AppError::NotFound)
-                    .c(h!())?
-                    .into_active_model();
-            legacy_comment.comment = Set(comment.to_string());
-            legacy_comment.update(db).await.c(h!())?;
-        } else {
-            let mut message =
-                signal_message::Entity::find_by_id(existing.signal_message_id)
-                    .one(db)
-                    .await
-                    .c(h!())?
-                    .ok_or(AppError::NotFound)
-                    .c(h!())?
-                    .into_active_model();
-            message.body = Set(Some(comment.to_string()));
-            message.update(db).await.c(h!())?;
-        }
-    } else {
         crate::sigint::comments::create_linked_message_comment(
             env, db, item_id, login, logins, comment, None, None,
         )
         .await
         .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn update_linked_message_comment<C>(
+    db: &C,
+    comment: &crate::sigint::comments::LinkedMessageComment,
+    text: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if let Some(legacy_comment_id) = comment.legacy_comment_id {
+        let mut legacy_comment =
+            sigint_comment::Entity::find_by_id(legacy_comment_id)
+                .one(db)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)
+                .c(h!())?
+                .into_active_model();
+        legacy_comment.comment = Set(text.to_string());
+        legacy_comment.update(db).await.c(h!())?;
+    } else {
+        let mut message =
+            signal_message::Entity::find_by_id(comment.signal_message_id)
+                .one(db)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)
+                .c(h!())?
+                .into_active_model();
+        message.body = Set(Some(text.to_string()));
+        message.update(db).await.c(h!())?;
+    }
+    Ok(())
+}
+
+async fn delete_editable_linked_message_comment_duplicates<C>(
+    db: &C,
+    item_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+    retained: &crate::sigint::comments::LinkedMessageComment,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let owner_logins = comment_ownership_logins(login, logins);
+    let comments =
+        crate::sigint::comments::find_linked_message_comments(db, &[item_id])
+            .await
+            .c(h!())?;
+    for comment in comments.into_iter().filter(|comment| {
+        comment.post_id.is_none()
+            && comment
+                .login_id
+                .is_some_and(|login_id| owner_logins.contains(&login_id))
+            && (comment.signal_message_id != retained.signal_message_id
+                || comment.legacy_comment_id != retained.legacy_comment_id)
+    }) {
+        delete_linked_message_comment(db, &comment).await.c(h!())?;
+    }
+    Ok(())
+}
+
+async fn delete_linked_message_comment<C>(
+    db: &C,
+    comment: &crate::sigint::comments::LinkedMessageComment,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if let Some(legacy_comment_id) = comment.legacy_comment_id {
+        sigint_comment::Entity::delete_by_id(legacy_comment_id)
+            .exec(db)
+            .await
+            .c(h!())?;
+    } else {
+        let mut message =
+            signal_message::Entity::find_by_id(comment.signal_message_id)
+                .one(db)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)
+                .c(h!())?
+                .into_active_model();
+        message.deleted = Set(true);
+        message.update(db).await.c(h!())?;
     }
     Ok(())
 }
@@ -1042,23 +1138,7 @@ where
                 .login_id
                 .is_some_and(|login_id| owner_logins.contains(&login_id))
     }) {
-        if let Some(legacy_comment_id) = comment.legacy_comment_id {
-            sigint_comment::Entity::delete_by_id(legacy_comment_id)
-                .exec(db)
-                .await
-                .c(h!())?;
-        } else {
-            let mut message =
-                signal_message::Entity::find_by_id(comment.signal_message_id)
-                    .one(db)
-                    .await
-                    .c(h!())?
-                    .ok_or(AppError::NotFound)
-                    .c(h!())?
-                    .into_active_model();
-            message.deleted = Set(true);
-            message.update(db).await.c(h!())?;
-        }
+        delete_linked_message_comment(db, &comment).await.c(h!())?;
     }
     Ok(())
 }
@@ -1711,9 +1791,26 @@ pub async fn submit_upsert_inbox_item(
     };
     // upsert sigint_comment
     if let Some(extended_form) = message.extended_form.as_ref() {
-        upsert_editable_sigint_comment(txn, id, login, logins, extended_form)
+        if !upsert_existing_editable_linked_message_comment(
+            txn,
+            id,
+            login,
+            logins,
+            extended_form,
+        )
+        .await
+        .c(h!())?
+        {
+            upsert_editable_sigint_comment(
+                txn,
+                id,
+                login,
+                logins,
+                extended_form,
+            )
             .await
             .c(h!())?;
+        }
     }
 
     let location = message

@@ -37,6 +37,7 @@ struct CommentCsvRow {
 }
 
 const SIGINT_COMMENT_MIGRATION_LOCK_KEY: i64 = 7_421_983_615;
+const SIGINT_COMMENT_MIGRATION_MAX_BATCH_SIZE: u64 = 32_000;
 
 #[derive(Clone, Debug)]
 pub struct LinkedMessageComment {
@@ -199,7 +200,8 @@ pub async fn create_linked_message_comment(
                 .one(txn)
                 .await
                 .c(h!())?
-                .ok_or(AppError::NotFound)?
+                .ok_or(AppError::NotFound)
+                .c(h!())?
                 .into_active_model();
         signal_message.created_at = Set(source_created_at);
         signal_message.update(txn).await.c(h!())?;
@@ -221,7 +223,8 @@ pub async fn create_linked_message_comment(
                 .one(txn)
                 .await
                 .c(h!())?
-                .ok_or_else(|| AppError::NotFound)?
+                .ok_or_else(|| AppError::NotFound)
+                .c(h!())?
                 .into_active_model();
         inbox_item.post_id = Set(Some(post_id));
         inbox_item.update(txn).await.c(h!())?;
@@ -241,7 +244,8 @@ pub async fn oneoff_migrate_sigint_comments(
     }
 
     let env = crate::server::new_env(mode).await.c(h!())?;
-    let batch_size = std::cmp::min(ps.batch_size, i64::MAX as u64);
+    let batch_size =
+        std::cmp::min(ps.batch_size, SIGINT_COMMENT_MIGRATION_MAX_BATCH_SIZE);
     if ps.dry_run {
         let pending = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
