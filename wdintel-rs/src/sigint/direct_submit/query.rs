@@ -702,7 +702,7 @@ where
             .column(signal_message_media::Column::Id)
             .filter(signal_message_media::Column::StorageKey.eq(storage_key))
             .lock(LockType::Update)
-            .into_tuple::<i64>()
+            .into_tuple::<Uuid>()
             .all(dbx)
             .await
             .c(h!())?
