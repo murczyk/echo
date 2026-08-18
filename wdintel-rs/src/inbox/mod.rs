@@ -657,6 +657,24 @@ pub async fn fanout_inbox_changes(
     Ok(())
 }
 
+pub async fn fanout_intelligence_report_changes(
+    redis: &mut redis::aio::ConnectionManager,
+    inbox_item_ids: Vec<i64>,
+) -> Result<(), AppError> {
+    if inbox_item_ids.is_empty() {
+        return Ok(());
+    }
+    let events = inbox_item_ids
+        .into_iter()
+        .map(|inbox_item_id| {
+            EventMsg::new(EventType::ETInboxChanged(inbox_item_id))
+                .with_intelligence_report()
+        })
+        .collect();
+    fanout_mult(redis, events).await.c(h!())?;
+    Ok(())
+}
+
 async fn insert_missing_auto_comments<'a, 'async_trait, C>(
     txn: &'a C,
     signal_message_id: i64,

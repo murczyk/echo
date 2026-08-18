@@ -32,6 +32,10 @@ const EVENT_MSG_ORIGIN_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> J
 const EVENT_MSG_ORIGIN_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "event_type" (eventTypeDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "origin" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]))"#;
+const EVENT_MSG_INTELLIGENCE_REPORT_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "origin" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "intelligence_report" (Json.Decode.bool)))"#;
+const EVENT_MSG_INTELLIGENCE_REPORT_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "origin" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "intelligence_report" (Json.Decode.bool), Json.Decode.succeed False ]))"#;
 
 pub fn main_gen_elm() -> Result<(), AppError> {
     let mut target = vec![];
@@ -1467,6 +1471,10 @@ fn patch_backward_compatible_decoders(output: String) -> String {
         .replace(
             RER_DUTY_WF_UNITS_DENIED_AND_EXACT_STRICT_DECODER,
             RER_DUTY_WF_UNITS_DENIED_AND_EXACT_COMPAT_DECODER,
+        )
+        .replace(
+            EVENT_MSG_INTELLIGENCE_REPORT_STRICT_DECODER,
+            EVENT_MSG_INTELLIGENCE_REPORT_COMPAT_DECODER,
         )
         .replace(
             EVENT_MSG_ORIGIN_STRICT_DECODER,

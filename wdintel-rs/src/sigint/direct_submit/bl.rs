@@ -561,6 +561,7 @@ async fn save_signal_message(
         copy_parent_signal_message_ids,
         copy_source_signal_message_ids,
         &payload,
+        is_intelligence_report,
     )
     .await
     .c(h!())?;
@@ -892,6 +893,7 @@ async fn finish_direct_submit(
     parent_signal_message_ids: &[i64],
     copy_source_signal_message_ids: &[i64],
     payload: &DirectSubmitPayload,
+    is_intelligence_report: bool,
 ) -> Result<DirectSubmitRsp, AppError> {
     let signal_message_id = submitted.signal_message_id;
     let inbox_item_id = submitted.inbox_id;
@@ -1028,9 +1030,18 @@ async fn finish_direct_submit(
         .await;
     }
     let mut redis = env.redis.clone();
-    crate::inbox::fanout_inbox_changes(&mut redis, vec![inbox_item_id])
+    if is_intelligence_report {
+        crate::inbox::fanout_intelligence_report_changes(
+            &mut redis,
+            vec![inbox_item_id],
+        )
         .await
         .c(h!())?;
+    } else {
+        crate::inbox::fanout_inbox_changes(&mut redis, vec![inbox_item_id])
+            .await
+            .c(h!())?;
+    }
 
     Ok(DirectSubmitRsp {
         signal_message_id,

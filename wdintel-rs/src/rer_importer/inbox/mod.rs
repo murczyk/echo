@@ -1380,6 +1380,16 @@ async fn delete_message(
 ) -> Result<Json<()>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
+    let is_intelligence_report = intel_prod::Entity::find()
+        .filter(intel_prod::Column::SignalMessageId.eq(req.id))
+        .filter(
+            intel_prod::Column::RelationKind
+                .eq(intel_prod::RELATION_KIND_REPORT),
+        )
+        .one(&txn)
+        .await
+        .c(h!())?
+        .is_some();
     let result = match signal_message::Entity::find_by_id(req.id)
         .filter(signal_message::Column::Deleted.eq(false))
         .one(&txn)
@@ -1396,7 +1406,22 @@ async fn delete_message(
     };
     txn.commit().await.c(h!())?;
     if result.is_ok() {
-        fanout_inbox_changed(&env, vec![req.id]).await;
+        if is_intelligence_report {
+            let mut redis = env.redis.clone();
+            if let Err(error) =
+                crate::inbox::fanout_intelligence_report_changes(
+                    &mut redis,
+                    vec![req.id],
+                )
+                .await
+            {
+                error!(
+                    "failed to fan out intelligence report deletion: {error:?}"
+                );
+            }
+        } else {
+            fanout_inbox_changed(&env, vec![req.id]).await;
+        }
     }
     result
 }

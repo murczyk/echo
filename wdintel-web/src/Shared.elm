@@ -748,21 +748,28 @@ update req msg model =
             )
 
 
-extractInboxChangedEvents : List B.EventMsg -> List { messageId : Int, origin : Maybe String }
+extractInboxChangedEvents : List B.EventMsg -> List { messageId : Int, origin : Maybe String, intelligenceReport : Bool }
 extractInboxChangedEvents events =
     let
         step event ( inboxEvents, seen ) =
             case event.eventType of
                 B.EtInboxChanged messageId ->
                     let
+                        reportKey =
+                            if event.intelligenceReport then
+                                1
+
+                            else
+                                0
+
                         key =
-                            ( messageId, Maybe.withDefault "" event.origin )
+                            ( messageId, Maybe.withDefault "" event.origin, reportKey )
                     in
                     if Set.member key seen then
                         ( inboxEvents, seen )
 
                     else
-                        ( { messageId = messageId, origin = event.origin } :: inboxEvents
+                        ( { messageId = messageId, origin = event.origin, intelligenceReport = event.intelligenceReport } :: inboxEvents
                         , Set.insert key seen
                         )
 

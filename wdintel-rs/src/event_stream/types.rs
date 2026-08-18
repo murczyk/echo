@@ -23,6 +23,8 @@ pub struct EventMsg {
     pub created_at: i64,
     #[serde(default)]
     pub origin: Option<String>,
+    #[serde(default)]
+    pub intelligence_report: bool,
 }
 
 impl EventMsg {
@@ -32,11 +34,17 @@ impl EventMsg {
             event_type,
             created_at: Utc::now().timestamp_millis(),
             origin: None,
+            intelligence_report: false,
         }
     }
 
     pub fn with_origin(mut self, origin: Option<String>) -> Self {
         self.origin = origin;
+        self
+    }
+
+    pub fn with_intelligence_report(mut self) -> Self {
+        self.intelligence_report = true;
         self
     }
 }

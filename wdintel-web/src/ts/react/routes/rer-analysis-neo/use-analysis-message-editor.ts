@@ -4,6 +4,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 
 import { submitAnalysisInboxMessages } from '../../services/api/analysis';
 import { fetchMessagesByIds } from '../../services/api/inbox-messages';
+import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 
 type Props = {
   messages: Array<[number, InboxMessage]>;
@@ -95,6 +96,28 @@ export function useAnalysisMessageEditor({
     messagesRef.current = messages;
     messageDraftsRef.current = buildMessageDraftMap(messages);
   }, [messages]);
+
+  useInboxChangedMessageIds({
+    onMessageIds: async (messageIds) => {
+      const currentEditorMessage = editorMessage;
+      if (
+        isNullOrUndefined(currentEditorMessage) ||
+        !messageIds.includes(currentEditorMessage.id)
+      ) {
+        return;
+      }
+
+      try {
+        const [entry] = await fetchMessagesByIds([currentEditorMessage.id]);
+        if (isNullOrUndefined(entry)) return;
+        setEditorMessage((current) =>
+          current?.id === entry[0] ? { id: entry[0], message: entry[1] } : current,
+        );
+      } catch (error) {
+        if (!onUnauthorized(error)) onError(toErrorMessage(error));
+      }
+    },
+  });
 
   const openEditor = useCallback(
     (messageId: number) => {

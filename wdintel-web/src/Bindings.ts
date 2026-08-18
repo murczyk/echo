@@ -4837,6 +4837,7 @@ export type EventMsg = {
   eventType: EventType;
   createdAt: number;
   origin: string | null;
+  intelligenceReport: boolean;
 };
 
 export type LongPollReq = {

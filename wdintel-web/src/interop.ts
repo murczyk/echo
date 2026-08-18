@@ -807,7 +807,13 @@ export const onReady = ({ app, env }) => {
 
   if (app.ports && app.ports.shared_dispatchInboxChanged) {
     app.ports.shared_dispatchInboxChanged.subscribe(
-      (events: Array<{ messageId: number; origin: string | null }>) => {
+      (
+        events: Array<{
+          messageId: number;
+          origin: string | null;
+          intelligenceReport: boolean;
+        }>,
+      ) => {
         window.dispatchEvent(
           new CustomEvent('echo-inbox-changed', {
             detail: { events },

@@ -347,6 +347,128 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.reload).not.toHaveBeenCalled();
   });
 
+  it('reloads when a newly created intelligence report is accessible', async () => {
+    const report = inboxMessage({
+      text: 'new report',
+      parentMessages: [
+        {
+          id: 42,
+          isAccessible: false,
+          isDeleted: false,
+          text: '',
+          attachmentsCount: 0,
+          timestamp: null,
+          date: null,
+          time: null,
+          groupName: 'Group 1',
+          groupMasterKey: null,
+        },
+      ],
+    });
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[91, report]]);
+
+    renderHook({ groupsSelected: ['group-2'] });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds(
+        [91],
+        [{ messageId: 91, origin: null, intelligenceReport: true }],
+      );
+    });
+
+    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith(
+      [91],
+      expect.objectContaining({ highlightPoints: true }),
+    );
+    expect(hoisted.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reload for a new intelligence report the user cannot access', async () => {
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([]);
+
+    renderHook({ groupsSelected: ['group-2'] });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds(
+        [91],
+        [{ messageId: 91, origin: null, intelligenceReport: true }],
+      );
+    });
+
+    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith(
+      [91],
+      expect.objectContaining({ highlightPoints: true }),
+    );
+    expect(hoisted.reload).not.toHaveBeenCalled();
+  });
+
+  it('refreshes a parent card when its intelligence report changes', async () => {
+    const reportSummary = {
+      id: 91,
+      isAccessible: true,
+      isDeleted: false,
+      text: 'report',
+      attachmentsCount: 1,
+      timestamp: null,
+      date: null,
+      time: null,
+      groupName: 'Group 2',
+      groupMasterKey: 'group-2',
+    };
+    const parent = inboxMessage({ intelligenceReports: [reportSummary] });
+    const updatedParent = inboxMessage({
+      intelligenceReports: [{ ...reportSummary, attachmentsCount: 3 }],
+    });
+    hoisted.messages = [[42, parent]];
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[42, updatedParent]]);
+
+    renderHook();
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds(
+        [91],
+        [{ messageId: 91, origin: null, intelligenceReport: true }],
+      );
+    });
+
+    expectFetchMessagesByIdsCalledWith([42]);
+    expect(latest?.messages[0][1].intelligenceReports).toEqual([
+      { ...reportSummary, attachmentsCount: 3 },
+    ]);
+    expect(hoisted.reload).not.toHaveBeenCalled();
+  });
+
+  it('removes a deleted intelligence report preview from its parent card', async () => {
+    const parent = inboxMessage({
+      intelligenceReports: [
+        {
+          id: 91,
+          isAccessible: true,
+          isDeleted: false,
+          text: 'report',
+          attachmentsCount: 1,
+          timestamp: null,
+          date: null,
+          time: null,
+          groupName: 'Group 2',
+          groupMasterKey: 'group-2',
+        },
+      ],
+    });
+    const updatedParent = inboxMessage({ intelligenceReports: [] });
+    hoisted.messages = [[42, parent]];
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[42, updatedParent]]);
+
+    renderHook();
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds(
+        [91],
+        [{ messageId: 91, origin: null, intelligenceReport: true }],
+      );
+    });
+
+    expectFetchMessagesByIdsCalledWith([42]);
+    expect(latest?.messages[0][1].intelligenceReports).toEqual([]);
+    expect(hoisted.reload).not.toHaveBeenCalled();
+  });
+
   it('refreshes visible ids and rendered text fields', async () => {
     const currentMessage = inboxMessage({
       text: 'current',

@@ -19,7 +19,10 @@ import {
 } from './use-analysis-data.wiring';
 import type { AnalysisQueryState, AnalysisReloadOptions } from './types';
 import type { UseAnalysisDataProps, UseAnalysisDataResult } from './use-analysis-data.types';
-import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
+import {
+  useInboxChangedMessageIds,
+  type InboxChangedEvent,
+} from '../shared/useInboxChangedMessageIds';
 import { useLocalInboxChangeOrigins } from './use-local-inbox-change-origins';
 import { useTargetedInboxReconciliation } from './use-targeted-inbox-reconciliation';
 
@@ -31,17 +34,39 @@ function normalizeMessageIds(messageIds: readonly unknown[]): number[] {
   );
 }
 
+function relatedMessageIds(message: InboxMessage): number[] {
+  return [
+    ...(message.parentMessages ?? []).map(({ id }) => id),
+    ...(message.intelligenceReports ?? []).map(({ id }) => id),
+  ];
+}
+
+function collectVisibleInboxEventIds(
+  messages: Array<[number, InboxMessage]>,
+  mapOpenMessages: Array<[number, InboxMessage]>,
+): Set<number> {
+  return new Set(
+    [...messages, ...mapOpenMessages].flatMap(([messageId, message]) => [
+      messageId,
+      ...relatedMessageIds(message),
+    ]),
+  );
+}
+
 function collectVisibleChangedMessageIds(
   changedMessageIds: readonly unknown[],
   messages: Array<[number, InboxMessage]>,
   mapOpenMessages: Array<[number, InboxMessage]>,
 ): number[] {
-  const visibleMessageIds = new Set([
-    ...messages.map(([messageId]) => messageId),
-    ...mapOpenMessages.map(([messageId]) => messageId),
-  ]);
-  return normalizeMessageIds(changedMessageIds).filter((messageId) =>
-    visibleMessageIds.has(messageId),
+  const changedIds = new Set(normalizeMessageIds(changedMessageIds));
+  return normalizeMessageIds(
+    [...messages, ...mapOpenMessages]
+      .filter(
+        ([messageId, message]) =>
+          changedIds.has(messageId) ||
+          relatedMessageIds(message).some((relatedMessageId) => changedIds.has(relatedMessageId)),
+      )
+      .map(([messageId]) => messageId),
   );
 }
 
@@ -438,21 +463,46 @@ export function useAnalysisData({
   );
 
   const refreshVisibleChangedMessages = useCallback(
-    async (changedMessageIds: number[]) => {
+    async (changedMessageIds: number[], events: InboxChangedEvent[] = []) => {
       const visibleMessageIds = collectVisibleChangedMessageIds(
         changedMessageIds,
         messageList.messages,
         mapData.mapOpenMessages,
       );
-      if (visibleMessageIds.length === 0) return;
+      const visibleInboxEventIds = collectVisibleInboxEventIds(
+        messageList.messages,
+        mapData.mapOpenMessages,
+      );
+      const undisplayedReportIds = events
+        .filter((event) => event.intelligenceReport && !visibleInboxEventIds.has(event.messageId))
+        .map((event) => event.messageId);
 
-      if (!requiresServerFilteredInboxRefresh(queryState)) {
-        await refreshVisibleChangedMessagesTargeted(changedMessageIds);
-        return;
+      if (visibleMessageIds.length > 0) {
+        if (requiresServerFilteredInboxRefresh(queryState)) {
+          try {
+            await reloadRef.current();
+          } catch (loadError) {
+            if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+          }
+          return;
+        }
+
+        await refreshVisibleChangedMessagesTargeted(visibleMessageIds);
       }
 
+      if (undisplayedReportIds.length === 0) return;
+
       try {
-        await reloadRef.current();
+        const discoveredReports = await fetchMessagesByIds(
+          undisplayedReportIds,
+          buildLiveRefreshInboxReq(queryState, optionsFreqValues),
+        );
+        const shouldReload = requiresServerFilteredInboxRefresh(queryState)
+          ? discoveredReports.length > 0
+          : discoveredReports.some(([, message]) =>
+              messageMatchesLiveRefreshFilters(message, queryState, optionsFreqValues),
+            );
+        if (shouldReload) await reloadRef.current();
       } catch (loadError) {
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
       }
@@ -462,6 +512,7 @@ export function useAnalysisData({
       messageList.messages,
       onError,
       onUnauthorized,
+      optionsFreqValues,
       queryState,
       refreshVisibleChangedMessagesTargeted,
     ],
