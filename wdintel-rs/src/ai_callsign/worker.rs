@@ -16,6 +16,7 @@ use crate::event_stream::types::{EventMsg, EventType};
 use crate::h;
 use crate::types::{error, info, Env, ShortContext};
 use crate::utils::worker_watch;
+use anyhow::Context;
 use chrono::{Duration as ChronoDuration, Utc};
 use sea_orm::{
     ActiveModelTrait,
@@ -249,22 +250,32 @@ async fn complete_job(
 ) -> Result<bool, AppError> {
     let transaction = dbx.begin().await.c(h!())?;
     let Some(state) =
-        lock_callsign_job_state(&transaction, sigint_inbox_item_id).await?
+        lock_callsign_job_state(&transaction, sigint_inbox_item_id)
+            .await
+            .context(h!())?
     else {
-        delete_job(&transaction, sigint_inbox_item_id).await?;
+        delete_job(&transaction, sigint_inbox_item_id)
+            .await
+            .context(h!())?;
         transaction.commit().await.c(h!())?;
         return Ok(false);
     };
     transaction.commit().await.c(h!())?;
 
     let mut highlighted =
-        highlight_callsigns(rq, body, state.current, &ai_callsigns).await?;
+        highlight_callsigns(rq, body, state.current, &ai_callsigns)
+            .await
+            .context(h!())?;
     loop {
         let transaction = dbx.begin().await.c(h!())?;
         let Some(state) =
-            lock_callsign_job_state(&transaction, sigint_inbox_item_id).await?
+            lock_callsign_job_state(&transaction, sigint_inbox_item_id)
+                .await
+                .context(h!())?
         else {
-            delete_job(&transaction, sigint_inbox_item_id).await?;
+            delete_job(&transaction, sigint_inbox_item_id)
+                .await
+                .context(h!())?;
             transaction.commit().await.c(h!())?;
             return Ok(false);
         };
@@ -276,7 +287,8 @@ async fn complete_job(
             transaction.commit().await.c(h!())?;
             highlighted =
                 highlight_callsigns(rq, body, state.current, &ai_callsigns)
-                    .await?;
+                    .await
+                    .context(h!())?;
             continue;
         }
         let changed = save_completed_job(
@@ -285,8 +297,11 @@ async fn complete_job(
             state,
             highlighted,
         )
-        .await?;
-        delete_job(&transaction, sigint_inbox_item_id).await?;
+        .await
+        .context(h!())?;
+        delete_job(&transaction, sigint_inbox_item_id)
+            .await
+            .context(h!())?;
         transaction.commit().await.c(h!())?;
         return Ok(changed);
     }
@@ -309,7 +324,8 @@ async fn lock_callsign_job_state(
         transaction,
         &[sigint_inbox_item_id],
     )
-    .await?
+    .await
+    .context(h!())?
     .remove(&sigint_inbox_item_id)
     .unwrap_or_default();
     Ok(Some(CallsignJobState {
