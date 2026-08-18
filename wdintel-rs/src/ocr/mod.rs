@@ -1302,19 +1302,22 @@ mod tests {
         .await
         .unwrap();
 
-        let ai_engine = ai_engine::Model {
-            id: Uuid::now_v7(),
-            name: "OCR test engine".to_string(),
-            url: "http://127.0.0.1:8000/v1".to_string(),
-            token: None,
-            model_name: "test-model".to_string(),
-            created_at: now,
-            updated_at: now,
-            enabled: true,
-            callsign_enabled: true,
-            ocr_enabled: true,
-            ocr_request_profile: "openai_vision".to_string(),
-        };
+        let ai_engine = ai_engine::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            name: Set(format!("OCR test engine {}", Uuid::now_v7())),
+            url: Set("http://127.0.0.1:8000/v1".to_string()),
+            token: Set(None),
+            model_name: Set("test-model".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            enabled: Set(true),
+            callsign_enabled: Set(true),
+            ocr_enabled: Set(true),
+            ocr_request_profile: Set("openai_vision".to_string()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
         let job = queue_media_reprocessing(&env.dbx, media.id, &ai_engine)
             .await
             .unwrap();

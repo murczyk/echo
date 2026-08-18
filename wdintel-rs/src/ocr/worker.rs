@@ -141,8 +141,23 @@ async fn process_iteration(env: &Env) -> anyhow::Result<bool> {
             .c(h!())?;
         return Ok(true);
     }
-    submit_job(env, &config, job).await.c(h!())?;
+    if let Err(err) = submit_job(env, &config, job.clone()).await {
+        retry_submission_error(env, job, err).await.c(h!())?;
+    }
     Ok(true)
+}
+
+async fn retry_submission_error(
+    env: &Env,
+    job: ocr_job::Model,
+    error: anyhow::Error,
+) -> anyhow::Result<()> {
+    error!(
+        "OCR submission failed before extractor request media_id={} attempts={}: {error:#}",
+        job.media_id, job.attempts
+    );
+    retry_job(env, job, format!("OCR submission failed: {error:#}"), false)
+        .await
 }
 
 pub(crate) async fn extractor_readiness(
@@ -862,7 +877,9 @@ fn truncate_error(error: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{idempotency_key, retry_delay, retry_job};
+    use super::{
+        idempotency_key, retry_delay, retry_job, retry_submission_error,
+    };
     use crate::entities::{ocr_job, signal_message_media};
     use crate::ocr::OcrRuntimeConfig;
     use chrono::Utc;
@@ -964,5 +981,62 @@ mod tests {
         assert_eq!(job.attempts, 1);
         assert_eq!(job.extractor_job_id, None);
         assert_eq!(job.submitted_at, None);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn submission_error_is_backed_off_instead_of_blocking_queue() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            content_type: Set("image/jpeg".to_string()),
+            file_ext: Set(Some("jpg".to_string())),
+            file_name: Set(Some("unavailable.jpg".to_string())),
+            size_bytes: Set(1),
+            created_at: Set(now),
+            is_encrypted: Set(true),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let job = ocr_job::ActiveModel {
+            media_id: Set(media.id),
+            state: Set("queued".to_string()),
+            discovered_at: Set(now),
+            next_attempt_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        retry_submission_error(
+            &env,
+            job,
+            anyhow::anyhow!("Backblaze returned IncompleteBody"),
+        )
+        .await
+        .unwrap();
+
+        let job = ocr_job::Entity::find_by_id(media.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.state, "retry_wait");
+        assert_eq!(job.attempts, 1);
+        assert!(job.next_attempt_at > now);
+        assert!(job
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("IncompleteBody")));
     }
 }

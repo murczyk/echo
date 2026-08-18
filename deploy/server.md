@@ -234,6 +234,7 @@ Configure every participating Echo instance with its own stable ID in
 [ocr]
 base_url = "http://100.93.77.92:8000"
 instance_id = "echo-staging"
+gateway_url = "http://<this-instance-tailscale-ip>:8081"
 max_in_flight_jobs = 2
 ```
 

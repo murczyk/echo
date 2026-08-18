@@ -247,7 +247,7 @@ Each Echo instance can opt into the shared extractor with a unique identity:
 [ocr]
 base_url = "http://100.93.77.92:8000"
 instance_id = "echo-staging"
-gateway_url = "http://100.64.63.98:8081"
+gateway_url = "http://<this-instance-tailscale-ip>:8081"
 max_in_flight_jobs = 2
 ```
 
@@ -260,6 +260,10 @@ forwarded through the Echo gateway and require a separate staging-only
 environment file. The gateway grant contains only the selected engine, media
 generation, instance identity, and expiry; engine tokens never enter the
 extractor manifest, logs, or result package.
+
+`gateway_url` must be the Tailscale-reachable address of the same Echo instance
+that created the job. Do not copy the staging value to another host: the
+gateway validates the grant against that instance's database and signing key.
 
 Admins mark AI engines independently as **Використовувати для обробки
 позивних** and **Використовувати для OCR**. The OCR page accepts several
