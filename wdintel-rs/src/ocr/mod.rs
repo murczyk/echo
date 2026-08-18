@@ -582,7 +582,7 @@ async fn load_page(env: &Env, limit: u64) -> anyhow::Result<OcrPageRsp> {
         .all(&env.dbx)
         .await
         .c(h!())?;
-    let summaries = crate::media_summary::load_statuses(&env.dbx, &media)
+    let summaries = crate::media_summary::load_admin_statuses(&env.dbx, &media)
         .await
         .c(h!())?;
     let media = media

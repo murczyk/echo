@@ -41,6 +41,7 @@ const COORDINATE_SYSTEM_LABELS: Record<string, string> = {
 };
 
 const EMPTY_COORDINATES: MediaSummaryCoordinate[] = [];
+const SUMMARY_LOAD_ERROR = 'Не вдалося завантажити стислий опис';
 
 function useCoordinateLocalities(
   coordinates: MediaSummaryCoordinate[],
@@ -264,16 +265,18 @@ function SummaryContent({
   status,
   refreshing,
   refreshError,
+  showErrorDetails,
   onRefresh,
 }: {
   result: MediaSummaryResult | null;
   status: MediaSummaryStatus;
   refreshing: boolean;
   refreshError: string | null;
+  showErrorDetails: boolean;
   onRefresh: () => void;
 }) {
   const state = result?.state ?? status.state;
-  const lastError = result?.lastError ?? status.lastError;
+  const lastError = showErrorDetails ? (result?.lastError ?? status.lastError) : null;
   const coordinates = result?.coordinates ?? EMPTY_COORDINATES;
   const coordinateLocalities = useCoordinateLocalities(coordinates);
   if (state === 'completed' && result?.summary) {
@@ -406,9 +409,10 @@ function useMediaSummaryResult({
         });
       } catch (error) {
         if (controller.signal.aborted || isAbortError(error)) return;
-        const message = `Не вдалося завантажити стислий опис: ${
-          error instanceof Error ? error.message : String(error)
-        }`;
+        const message =
+          summaryAccess === 'admin-ocr'
+            ? `${SUMMARY_LOAD_ERROR}: ${error instanceof Error ? error.message : String(error)}`
+            : SUMMARY_LOAD_ERROR;
         setRefreshError(message);
         if (!quiet) notifyRef.current({ severity: 'error', message });
       } finally {
@@ -454,7 +458,6 @@ export function MessageCardMediaSummary({
   });
   const state = result?.state ?? status?.state;
   const summary = result?.summary?.trim() ?? '';
-  const lastError = result?.lastError ?? status?.lastError;
   const expandable = summary.length > 280 || summary.split(/\r?\n/).length > 3;
 
   useEffect(() => setExpanded(false), [mediaId, summary]);
@@ -527,7 +530,7 @@ export function MessageCardMediaSummary({
         >
           {isMediaSummaryProcessing(state) || refreshing ? <CircularProgress size={14} /> : null}
           <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>
-            {lastError || refreshError || STATE_LABELS[state] || state}
+            {refreshError || STATE_LABELS[state] || state}
           </Typography>
           {state === 'failed' || refreshError != null ? (
             <IconButton
@@ -743,6 +746,7 @@ export function MediaSummaryOverlay({
             status={status}
             refreshing={refreshing}
             refreshError={refreshError}
+            showErrorDetails={summaryAccess === 'admin-ocr'}
             onRefresh={() => void refresh(false)}
           />
         </Box>
