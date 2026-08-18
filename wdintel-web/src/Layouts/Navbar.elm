@@ -377,7 +377,7 @@ deploymentMaintenanceNotice isNavbarVisible deploymentMaintenance =
                     False
     in
     div
-        [ class "fixed left-1/2 z-[1250] w-max max-w-[calc(100vw-1.5rem)] -translate-x-1/2 rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] px-3 py-2 text-sm text-[var(--color-text)] shadow-lg transition-all duration-200 ease-out motion-reduce:transition-none"
+        [ class "fixed right-4 z-[1250] w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-[var(--color-border)] bg-[var(--color-card)] p-3 text-sm text-[var(--color-text)] shadow-lg transition-all duration-200 ease-out motion-reduce:transition-none"
         , class
             (if isNavbarVisible then
                 "top-[calc(var(--app-shell-navbar-height)+0.5rem)]"
