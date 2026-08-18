@@ -654,8 +654,13 @@ type ReloadParams = {
   setMapLoading: Setter<boolean>;
   setMapDateRange: Setter<{ startDate: number; endDate: number }>;
   setMapNetworkUnits: Setter<import('../../../../Bindings').NetworkUnit[]>;
+  applyMapSettlements: (
+    settlements: import('../../../../Bindings').MapSettlement[],
+    requestedShowSettlements: boolean,
+  ) => void;
   setMapOpenMessages: Setter<Array<[number, InboxMessage]>>;
   setMapPoints: Setter<import('../../../../Bindings').FreqDetailedPoint[]>;
+  showSettlements: boolean;
   setMessages: Setter<Array<[number, InboxMessage]>>;
   setMessagesLoading: Setter<boolean>;
   setNetworks: Setter<Network[]>;
@@ -1090,12 +1095,14 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             inboxItemsFilter: criticalData.inboxReq,
             mapFilter: null,
             pageId: ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
+            showSettlements: params.showSettlements,
           },
           params.signal ? { signal: params.signal } : undefined,
         );
         if (isStaleReload() || params.signal?.aborted) return;
         params.setMapPoints(mapRsp.points ?? []);
         params.setMapNetworkUnits(mapRsp.networkUnits ?? []);
+        params.applyMapSettlements(mapRsp.settlements ?? [], params.showSettlements);
         params.setMapOpenMessages([]);
       } catch (loadError) {
         if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return;

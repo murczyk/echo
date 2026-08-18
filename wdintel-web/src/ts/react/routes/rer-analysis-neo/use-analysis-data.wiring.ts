@@ -160,8 +160,10 @@ type BuildReloadParamsInput = {
   setMapLoading: MapData['setMapLoading'];
   setMapDateRange: MapData['setMapDateRange'];
   setMapNetworkUnits: MapData['setMapNetworkUnits'];
+  applyMapSettlements: MapData['applyMapSettlements'];
   setMapOpenMessages: MapData['setMapOpenMessages'];
   setMapPoints: MapData['setMapPoints'];
+  showSettlements: MapData['showSettlements'];
   setMessages: MessageList['setMessages'];
   setMessagesLoading: MessageList['setMessagesLoading'];
   setNetworks: ReferenceState['setNetworks'];
@@ -226,8 +228,10 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
     setMapLoading: input.setMapLoading,
     setMapDateRange: input.setMapDateRange,
     setMapNetworkUnits: input.setMapNetworkUnits,
+    applyMapSettlements: input.applyMapSettlements,
     setMapOpenMessages: input.setMapOpenMessages,
     setMapPoints: input.setMapPoints,
+    showSettlements: input.showSettlements,
     setMessages: input.setMessages,
     setMessagesLoading: input.setMessagesLoading,
     setNetworks: input.setNetworks,

@@ -93,9 +93,12 @@ async fn get_inbox_map_inner(
     req: Json<MapPointsReq>,
 ) -> Result<Json<MapPointsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let user_id = login_id_from_identity(&user)?;
+    let user_id = login_id_from_identity(&user).c(h!())?;
     let page_id = req.page_id.clone();
     let req = req.into_inner();
+    if req.show_settlements == Some(true) {
+        has_role(&env.dbx, &user_id, ROLE_ADMIN).await.c(h!())?;
+    }
 
     let payload = serde_json::to_value(&req).context(h!())?;
     record_page_visit(&user_id, &page_id, &env, Some(payload))
@@ -119,6 +122,14 @@ async fn get_inbox_map_inner(
     let inbox_items = get_inbox_map_items(&login, &env, &filter)
         .await
         .context(h!())?;
+    let inbox_item_ids = inbox_items.iter().map(|item| item.id).collect_vec();
+    let settlements = if req.show_settlements == Some(true) {
+        get_inbox_map_settlements(&env.dbx, &inbox_item_ids)
+            .await
+            .context(h!())?
+    } else {
+        vec![]
+    };
     info!("messages found: {}", inbox_items.len());
     let points = crate::location::peleng::collect_inbox_item_pelengs(
         &inbox_items,
@@ -142,6 +153,7 @@ async fn get_inbox_map_inner(
     Ok(Json(MapPointsRsp {
         network_units,
         points,
+        settlements,
     }))
 }
 

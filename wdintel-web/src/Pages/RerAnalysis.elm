@@ -675,7 +675,7 @@ loadCoreStats model =
                         NotAsked ->
                             if model.unfoldMapBlock then
                                 ( { model | mapPoints = Loading }
-                                , E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = getInboxReq model, mapFilter = Nothing, pageId = Just "rer-analysis" }
+                                , E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = getInboxReq model, mapFilter = Nothing, pageId = Just "rer-analysis", showSettlements = Nothing }
                                 )
 
                             else
@@ -684,7 +684,7 @@ loadCoreStats model =
                         NeedsReload _ ->
                             if model.unfoldMapBlock then
                                 ( { model | mapPoints = Loading }
-                                , E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = getInboxReq model, mapFilter = Nothing, pageId = Just "rer-analysis" }
+                                , E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = getInboxReq model, mapFilter = Nothing, pageId = Just "rer-analysis", showSettlements = Nothing }
                                 )
 
                             else
@@ -695,13 +695,13 @@ loadCoreStats model =
 
                         Failure _ ->
                             ( { model | mapPoints = Loading }
-                            , E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = getInboxReq model, mapFilter = Nothing, pageId = Just "rer-analysis" }
+                            , E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = getInboxReq model, mapFilter = Nothing, pageId = Just "rer-analysis", showSettlements = Nothing }
                             )
 
                         Success data ->
                             if model.unfoldMapBlock then
                                 ( { model | mapPoints = Loading }
-                                , E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = getInboxReq model, mapFilter = Nothing, pageId = Just "rer-analysis" }
+                                , E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = getInboxReq model, mapFilter = Nothing, pageId = Just "rer-analysis", showSettlements = Nothing }
                                 )
 
                             else
@@ -2353,12 +2353,12 @@ update user shared route msg model =
                     case ( model.mapPoints, unfoldMapBlock ) of
                         ( NotAsked, True ) ->
                             ( { model | mapPoints = Loading }
-                            , E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = inboxReq, mapFilter = Nothing, pageId = Just "rer-analysis" }
+                            , E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = inboxReq, mapFilter = Nothing, pageId = Just "rer-analysis", showSettlements = Nothing }
                             )
 
                         ( NeedsReload _, True ) ->
                             ( { model | mapPoints = Loading }
-                            , E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = inboxReq, mapFilter = Nothing, pageId = Just "rer-analysis" }
+                            , E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = inboxReq, mapFilter = Nothing, pageId = Just "rer-analysis", showSettlements = Nothing }
                             )
 
                         _ ->
@@ -4115,7 +4115,7 @@ update user shared route msg model =
                     { inboxReq | sinceDateInclusiveMs = Just startDate, tillDateInclusiveMs = Just endDate }
             in
             ( m2
-            , E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = inboxReq2, mapFilter = Nothing, pageId = Just "rer-analysis" }
+            , E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = inboxReq2, mapFilter = Nothing, pageId = Just "rer-analysis", showSettlements = Nothing }
             )
 
         LoadMessagesForMap ids ->
@@ -4186,7 +4186,7 @@ update user shared route msg model =
                 in
                 ( m2
                 , E.batch
-                    [ E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = { inboxReq | returnDuplicates = Just False }, mapFilter = Nothing, pageId = Just "rer-analysis" }
+                    [ E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = { inboxReq | returnDuplicates = Just False }, mapFilter = Nothing, pageId = Just "rer-analysis", showSettlements = Nothing }
                     , eff2
                     ]
                 )
@@ -4204,7 +4204,7 @@ update user shared route msg model =
                 in
                 ( m2
                 , E.batch
-                    [ E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = { inboxReq | returnDuplicates = Just False }, mapFilter = Nothing, pageId = Just "rer-analysis" }
+                    [ E.getMessagesMapPoints GotMapPoints { inboxItemsFilter = { inboxReq | returnDuplicates = Just False }, mapFilter = Nothing, pageId = Just "rer-analysis", showSettlements = Nothing }
                     , eff2
                     ]
                 )

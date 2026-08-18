@@ -9,6 +9,9 @@ type AnalysisMapSettingsControlProps = {
   visible: boolean;
   forceCollapsed?: boolean;
   onVisibleChange: (visible: boolean) => void;
+  canShowSettlements: boolean;
+  showSettlements: boolean;
+  onShowSettlementsChange: (show: boolean) => void;
 };
 
 function AnalysisMapSettingsControlInner(props: AnalysisMapSettingsControlProps) {
@@ -20,6 +23,11 @@ function AnalysisMapSettingsControlInner(props: AnalysisMapSettingsControlProps)
 
   const toggleVisible = useCallback(() => {
     props.onVisibleChange(!props.visible);
+  }, [props]);
+  const toggleSettlements = useCallback(() => {
+    if (props.canShowSettlements) {
+      props.onShowSettlementsChange(!props.showSettlements);
+    }
   }, [props]);
 
   useEffect(() => {
@@ -76,6 +84,27 @@ function AnalysisMapSettingsControlInner(props: AnalysisMapSettingsControlProps)
               <Typography className="palitra-name map-settings-label">Підписи пеленгів</Typography>
             </Box>
           </Box>
+          {props.canShowSettlements ? (
+            <Box className="palitra-main-row map-settings-item" onClick={toggleSettlements}>
+              <Checkbox
+                className="palitra-checkbox map-settings-checkbox"
+                checked={props.showSettlements}
+                onClick={(event) => {
+                  event.stopPropagation();
+                }}
+                onChange={toggleSettlements}
+                size="small"
+              />
+              <Box
+                className="palitra-title-button map-settings-item-label"
+                title="Показувати населені пункти"
+              >
+                <Typography className="palitra-name map-settings-label">
+                  Показувати населені пункти
+                </Typography>
+              </Box>
+            </Box>
+          ) : null}
         </Box>
       ) : null}
     </Box>

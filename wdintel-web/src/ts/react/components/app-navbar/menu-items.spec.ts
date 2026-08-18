@@ -112,6 +112,7 @@ describe('menu-items', () => {
 
   it('alphabetizes standalone admin items while keeping system settings last', () => {
     expect(adminSubs.filter((item) => item.type === 'item').map((item) => item.label)).toEqual([
+      'Карта',
       'Користувачі',
       'Месенджери',
       'Напрямки',

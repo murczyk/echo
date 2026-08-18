@@ -616,6 +616,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     downloadReport: report.downloadReport,
     openReport: report.openReport,
     refreshMapDateRange: data.refreshMapDateRange,
+    setShowSettlements: data.setShowSettlements,
     renameSummaryUnit: data.renameSummaryUnit,
     reload: data.reload,
     resetFilters,

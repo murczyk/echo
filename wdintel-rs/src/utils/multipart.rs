@@ -1,4 +1,6 @@
 use crate::error::AppError;
+use crate::h;
+use crate::types::ShortContext;
 use actix_multipart::Multipart;
 use futures_util::StreamExt;
 
@@ -15,6 +17,29 @@ pub async fn extract(
     }
 
     Err(to_app_error("No file found"))
+}
+
+pub async fn extract_limited(
+    payload: &mut Multipart,
+    maximum_bytes: usize,
+) -> Result<(actix_multipart::Field, Vec<u8>), AppError> {
+    let Some(item) = payload.next().await else {
+        return Err(to_app_error("No file found"));
+    };
+    let mut field = item.map_err(to_app_error).c(h!())?;
+    let mut value = Vec::new();
+    while let Some(chunk) = field.next().await {
+        let chunk = chunk.map_err(to_app_error).c(h!())?;
+        if value.len().saturating_add(chunk.len()) > maximum_bytes {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Uploaded file exceeds the {maximum_bytes} byte limit"
+                ),
+            });
+        }
+        value.extend_from_slice(&chunk);
+    }
+    Ok((field, value))
 }
 
 fn to_app_error<T>(e: T) -> AppError

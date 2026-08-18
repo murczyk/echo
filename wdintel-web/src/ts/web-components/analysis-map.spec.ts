@@ -1,10 +1,13 @@
 /**
  * @vitest-environment happy-dom
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { parseCoordinateInput } from '../maps/coordinate-search';
+import { L } from '../maps/leaflet-markercluster';
 import './analysis-map';
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('analysis-map', () => {
   function createAnalysisMap() {
@@ -221,5 +224,49 @@ describe('analysis-map', () => {
     )._flyToCoordinate({ lat: 47.42135, lng: 35.62197 });
 
     expect(map.flyTo).toHaveBeenCalledWith([47.42135, 35.62197], 13, { duration: 0.4 });
+  });
+
+  it('renders settlement quantities in marker labels and popups', () => {
+    const marker = {
+      addTo: vi.fn(),
+      bindPopup: vi.fn(),
+      bindTooltip: vi.fn(),
+    };
+    vi.spyOn(L, 'circleMarker').mockReturnValue(marker as never);
+    const layer = { addTo: vi.fn(), clearLayers: vi.fn() };
+    const map = { removeLayer: vi.fn() };
+    const analysisMap = Object.create(
+      (customElements.get('analysis-map') as CustomElementConstructor).prototype,
+    ) as {
+      _canShowSettlements: boolean;
+      _map: typeof map;
+      _replaceSettlementsOnMap: () => void;
+      _settlementMarkers: Map<number, unknown>;
+      _settlements: unknown[];
+      _settlementsLayerGroup: typeof layer;
+      _showSettlements: boolean;
+    };
+    analysisMap._map = map;
+    analysisMap._settlementsLayerGroup = layer;
+    analysisMap._settlementMarkers = new Map();
+    analysisMap._canShowSettlements = true;
+    analysisMap._showSettlements = true;
+    analysisMap._settlements = [
+      {
+        settlement_id: 7,
+        name: '<Харків>',
+        region: 'Харківська',
+        lat: 49.99,
+        lon: 36.23,
+        inbox_item_count: 3,
+      },
+    ];
+
+    analysisMap._replaceSettlementsOnMap();
+
+    expect(marker.bindTooltip).toHaveBeenCalledWith('&lt;Харків&gt; (3)', { direction: 'top' });
+    expect(marker.bindPopup).toHaveBeenCalledWith(
+      "<strong>&lt;Харків&gt;</strong>, Харківська<br>Пов'язаних перехоплень: 3",
+    );
   });
 });

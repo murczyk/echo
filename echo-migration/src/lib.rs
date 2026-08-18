@@ -375,6 +375,7 @@ mod m20260816_173322_media_summary;
 mod m20260817_124312_sigint_unit_inconsistent;
 mod m20260818_052317_shared_ai_engine_capabilities;
 mod m20260818_081034_inbox_unit_backfill_lookup_indexes;
+mod m20260818_130237_battle_line_and_inbox_settlement;
 mod m20260818_142214_unique_sigint_inbox_item_network;
 
 pub struct Migrator;
@@ -863,6 +864,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260818_081034_inbox_unit_backfill_lookup_indexes::Migration,
+            ),
+            Box::new(
+                m20260818_130237_battle_line_and_inbox_settlement::Migration,
             ),
             Box::new(
                 m20260818_142214_unique_sigint_inbox_item_network::Migration,

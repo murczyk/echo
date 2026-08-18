@@ -115,6 +115,9 @@ export type AnalysisMapAttrs = {
   daterange: string;
   daterangeLoading: string;
   points: string;
+  settlements: string;
+  canShowSettlements: string;
+  showSettlements: string;
   messages: string;
   selectedUnits: string;
   palitras: string;
@@ -285,6 +288,7 @@ export type AnalysisPageActions = {
   openReport: () => void;
   openEditor: (messageId: number) => void;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => void;
+  setShowSettlements: (show: boolean) => Promise<void>;
   reload: (options?: AnalysisReloadOptions) => void;
   resetFilters: () => void;
   saveAsNew: (name: string) => Promise<boolean>;

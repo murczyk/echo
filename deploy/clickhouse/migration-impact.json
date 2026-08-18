@@ -8,6 +8,19 @@
         }
       ]
     },
+    "echo:m20260818_130237_battle_line_and_inbox_settlement": {
+      "changes": [
+        { "table": "public.battle_line_version", "strategy": "excluded" },
+        {
+          "table": "public.battle_line_aor_geometry",
+          "strategy": "excluded"
+        },
+        {
+          "table": "public.sigint_inbox_item_settlement",
+          "strategy": "replicated_snapshot"
+        }
+      ]
+    },
     "echo:m20260723_125003_palitra_highlight_blacklist": {
       "changes": [
         {
