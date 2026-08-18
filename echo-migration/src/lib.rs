@@ -854,12 +854,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260816_102640_ocr::Migration),
             Box::new(m20260816_173322_media_summary::Migration),
             Box::new(m20260817_124312_sigint_unit_inconsistent::Migration),
-<<<<<<< HEAD
-=======
             Box::new(
                 m20260818_052317_shared_ai_engine_capabilities::Migration,
             ),
->>>>>>> 584717a24 (feat(ocr): added shared engine capabilities)
         ]
     }
 }
