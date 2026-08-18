@@ -154,6 +154,7 @@ where
         None,
         None,
         InboxQueryPurpose::Messages,
+        InboxUnitLookupStrategy::Default,
     )
     .await
 }
@@ -212,6 +213,12 @@ enum InboxQueryPurpose {
     Digest,
     IndexedDigest,
     Analytics,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum InboxUnitLookupStrategy {
+    Default,
+    Correlated,
 }
 
 fn inbox_query_needs_post_join(req: &InboxMessagesReq) -> bool {
@@ -515,6 +522,7 @@ async fn build_filtered_inbox_query_with_scope<'a, 'async_trait, C>(
     scope: Option<&AnalyticsMessageIdScope>,
     internal_lower_bound: Option<NaiveDateTime>,
     purpose: InboxQueryPurpose,
+    unit_lookup_strategy: InboxUnitLookupStrategy,
 ) -> Result<Select<signal_message::Entity>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -607,13 +615,32 @@ where
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
     let q = filter_search(q, &req.search)?;
     let q = filter_selected_device_names(q, &req.selected_device_names)?;
-    let q = filter_selected_units(
-        q,
-        &req.selected_units,
-        &req.units_exact_match_only,
-    )?;
-    let q =
-        filter_denied_units(q, &req.denied_units, &req.units_exact_match_only)?;
+    let q = match unit_lookup_strategy {
+        InboxUnitLookupStrategy::Default => filter_selected_units(
+            q,
+            &req.selected_units,
+            &req.units_exact_match_only,
+        )?,
+        InboxUnitLookupStrategy::Correlated => {
+            filter_selected_units_correlated(
+                q,
+                &req.selected_units,
+                &req.units_exact_match_only,
+            )?
+        }
+    };
+    let q = match unit_lookup_strategy {
+        InboxUnitLookupStrategy::Default => filter_denied_units(
+            q,
+            &req.denied_units,
+            &req.units_exact_match_only,
+        )?,
+        InboxUnitLookupStrategy::Correlated => filter_denied_units_correlated(
+            q,
+            &req.denied_units,
+            &req.units_exact_match_only,
+        )?,
+    };
     let q = filter_selected_tags(
         q,
         &req.selected_tags,
@@ -699,6 +726,7 @@ async fn build_unit_filtered_inbox_digest_query(
     req: &InboxMessagesReq,
     created_at_lower_bound: Option<NaiveDateTime>,
     created_at_upper_bound: Option<NaiveDateTime>,
+    unit_lookup_strategy: InboxUnitLookupStrategy,
 ) -> Result<String, AppError> {
     let purpose = if inbox_count_uses_indexed_query(req) {
         InboxQueryPurpose::IndexedDigest
@@ -718,6 +746,7 @@ async fn build_unit_filtered_inbox_digest_query(
                 None,
                 None,
                 purpose,
+                InboxUnitLookupStrategy::Default,
             )
             .await
             .context(h!())?;
@@ -732,7 +761,14 @@ async fn build_unit_filtered_inbox_digest_query(
         }
     }
     let query = build_filtered_inbox_query_with_scope(
-        &env.dbx, login, env, req, None, None, purpose,
+        &env.dbx,
+        login,
+        env,
+        req,
+        None,
+        None,
+        purpose,
+        unit_lookup_strategy,
     )
     .await
     .context(h!())?;
@@ -771,6 +807,7 @@ async fn build_inbox_digest_query_with_created_at_bounds(
     req: &InboxMessagesReq,
     created_at_lower_bound: Option<NaiveDateTime>,
     created_at_upper_bound: Option<NaiveDateTime>,
+    unit_lookup_strategy: InboxUnitLookupStrategy,
 ) -> Result<String, AppError> {
     if inbox_count_has_unit_filter(req) {
         return Ok(build_unit_filtered_inbox_digest_query(
@@ -779,6 +816,7 @@ async fn build_inbox_digest_query_with_created_at_bounds(
             req,
             created_at_lower_bound,
             created_at_upper_bound,
+            unit_lookup_strategy,
         )
         .await
         .context(h!())?);
@@ -789,7 +827,14 @@ async fn build_inbox_digest_query_with_created_at_bounds(
         InboxQueryPurpose::Digest
     };
     let q = build_filtered_inbox_query_with_scope(
-        &env.dbx, login, env, req, None, None, purpose,
+        &env.dbx,
+        login,
+        env,
+        req,
+        None,
+        None,
+        purpose,
+        unit_lookup_strategy,
     )
     .await
     .context(h!())?;
@@ -814,7 +859,29 @@ pub(crate) async fn build_inbox_digest_query(
     req: &InboxMessagesReq,
 ) -> Result<String, AppError> {
     Ok(build_inbox_digest_query_with_created_at_bounds(
-        login, env, req, None, None,
+        login,
+        env,
+        req,
+        None,
+        None,
+        InboxUnitLookupStrategy::Default,
+    )
+    .await
+    .context(h!())?)
+}
+
+pub(crate) async fn build_correlated_inbox_digest_query(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<String, AppError> {
+    Ok(build_inbox_digest_query_with_created_at_bounds(
+        login,
+        env,
+        req,
+        None,
+        None,
+        InboxUnitLookupStrategy::Correlated,
     )
     .await
     .context(h!())?)
@@ -832,6 +899,7 @@ pub(crate) async fn build_postgres_fresh_tail_inbox_digest_query(
         req,
         Some(created_at_lower_bound),
         None,
+        InboxUnitLookupStrategy::Correlated,
     )
     .await
     .context(h!())?)
@@ -1052,6 +1120,7 @@ async fn build_analytics_filtered_inbox_query(
         Some(&scope),
         None,
         InboxQueryPurpose::Analytics,
+        InboxUnitLookupStrategy::Default,
     )
     .await
     .context(h!())?;
@@ -1412,6 +1481,7 @@ pub(crate) async fn build_inbox_map_query(
         None,
         None,
         InboxQueryPurpose::Map,
+        InboxUnitLookupStrategy::Default,
     )
     .await
     .context(h!())?
@@ -1462,6 +1532,7 @@ where
         None,
         internal_lower_bound,
         InboxQueryPurpose::Messages,
+        InboxUnitLookupStrategy::Default,
     )
     .await
     .context(h!())?;
@@ -1483,6 +1554,7 @@ pub(crate) async fn build_postgres_fresh_tail_inbox_candidates_query(
         None,
         None,
         InboxQueryPurpose::Messages,
+        InboxUnitLookupStrategy::Default,
     )
     .await
     .context(h!())?
@@ -1508,6 +1580,7 @@ pub(crate) async fn build_inbox_query_for_candidate_ids(
         None,
         None,
         InboxQueryPurpose::Messages,
+        InboxUnitLookupStrategy::Default,
     )
     .await
     .context(h!())?
