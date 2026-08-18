@@ -2,7 +2,7 @@ use crate::config::OPERATOR_INBOX_WORKER_LOOKBACK_HOURS;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-use crate::types::{Mode, ShortContext};
+use crate::types::{Env, ShortContext};
 use crate::utils::worker_watch;
 use chrono::{NaiveDateTime, Utc};
 use echo_migration::JoinType;
@@ -12,9 +12,12 @@ use std::sync::{Arc, RwLock};
 
 const RECEIVE_INTERVAL_SECONDS: u32 = 3;
 
-pub async fn run_operator_inbox_worker_nofail(mode: Mode) {
-    let (config, settlements, rq, mut redis, dbx) =
-        crate::utils::setup_worker(mode).await.unwrap();
+pub async fn run_operator_inbox_worker_nofail(env: Arc<Env>) {
+    let config = env.config.clone();
+    let settlements = env.settlements.clone();
+    let rq = env.rq.clone();
+    let mut redis = env.redis.clone();
+    let dbx = env.dbx.clone();
     let mut all_datasources = vec![];
 
     let mut last_datasource_sync_at = tokio::time::Instant::now();
