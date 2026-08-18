@@ -24,6 +24,9 @@
         { "table": "public.intel_prod", "strategy": "mirror_resync" }
       ]
     },
+    "echo:m20260818_104740_sigint_comment_migration_indexes": {
+      "changes": []
+    },
     "echo:m20260810_062938_echo_automation_coordinates_screenshot": {
       "changes": [
         {

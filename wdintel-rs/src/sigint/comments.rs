@@ -411,7 +411,7 @@ async fn migrate_comment_batch(
             nominatimres_id: Set(None),
             location: Set(None),
             tags: Set(None),
-            datetime: Set(None),
+            datetime: NotSet,
             signal_tokens: Set(None),
             body_noheader: Set(Some(
                 serde_json::to_value(body_noheader).c(h!())?,
