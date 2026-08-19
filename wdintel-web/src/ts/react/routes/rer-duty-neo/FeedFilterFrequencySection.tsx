@@ -44,7 +44,7 @@ export function FeedFilterFrequencySection({
   const copySelectedFrequencies = async (selected: readonly string[]) => {
     try {
       await copyTextToClipboard(selected.join('\n'));
-      notify({ message: `Скопійовано ${selected.length} частот.`, severity: 'success' });
+      notify({ message: `Скопійовано частот: ${selected.length}.`, severity: 'success' });
     } catch {
       notify({ message: 'Не вдалося скопіювати частоти.', severity: 'error' });
     }
